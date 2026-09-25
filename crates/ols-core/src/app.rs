@@ -786,7 +786,19 @@ impl Inner {
             } else {
                 ("Web server".to_string(), server, static_sites.max(1), true)
             };
-            sites.push(crate::monitor::SiteUsage { hostname: d.hostname.clone(), via, cpu_percent: cpu, memory, shared_by, measured });
+            sites.push(crate::monitor::SiteUsage { hostname: d.hostname.clone(), via, cpu_percent: cpu, memory, shared_by, measured, disk: None });
+        }
+        let projects = self.projects.lock().unwrap().list();
+        let folders: Vec<(String, PathBuf)> = enabled
+            .iter()
+            .filter(|d| !matches!(d.kind, SiteKind::Proxy { upstream_host: Some(_), .. }))
+            .map(|d| (d.hostname.clone(), PathBuf::from(site_folder(d, &projects))))
+            .collect();
+        let sizes = self.monitor.folder_sizes(&folders.iter().map(|(_, f)| f.clone()).collect::<Vec<_>>());
+        for site in &mut sites {
+            if let Some((_, folder)) = folders.iter().find(|(h, _)| *h == site.hostname) {
+                site.disk = sizes.get(folder).copied();
+            }
         }
         stats.sites = sites;
 

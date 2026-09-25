@@ -103,6 +103,10 @@ function SiteRow({ site, heaviest }: { site: SiteUsage; heaviest: number }) {
             <span className="text-muted-foreground">RAM </span>
             {formatBytes(site.memory)}
           </span>
+          <span className="w-24 text-right text-xs tabular-nums" title="Size of the site's folder (counted every 10 minutes)">
+            <span className="text-muted-foreground">Disk </span>
+            {site.disk === null ? '…' : formatBytes(site.disk)}
+          </span>
           <span className="hidden h-1 w-20 overflow-hidden rounded-full bg-muted sm:block">
             <span className="block h-full rounded-full" style={{ width: `${(site.memory / heaviest) * 100}%`, background: RAM_COLOR }} />
           </span>

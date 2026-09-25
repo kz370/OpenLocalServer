@@ -7,7 +7,8 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use sysinfo::{Disks, Pid, ProcessRefreshKind, ProcessesToUpdate, RefreshKind, System};
@@ -40,6 +41,9 @@ pub struct SiteUsage {
     pub shared_by: usize,
     /// False when the work happens elsewhere (a Docker container, another computer).
     pub measured: bool,
+    /// Size of the site's folder on disk; `None` until the first background count ends.
+    #[serde(default)]
+    pub disk: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,17 +71,57 @@ pub struct Monitor {
     sys: Mutex<System>,
     /// Free space barely moves; re-read it at most once a minute.
     disks: Mutex<Option<(Instant, Vec<DiskStats>)>>,
+    /// Site folder sizes, counted in the background (walking vendor/ and node_modules/
+    /// is slow) and refreshed every few minutes.
+    folders: Arc<Mutex<FolderSizes>>,
+}
+
+#[derive(Default)]
+struct FolderSizes {
+    sizes: HashMap<PathBuf, u64>,
+    counted_at: Option<Instant>,
+    counting: bool,
 }
 
 impl Default for Monitor {
     fn default() -> Self {
-        Self { sys: Mutex::new(System::new_with_specifics(RefreshKind::nothing())), disks: Mutex::new(None) }
+        Self {
+            sys: Mutex::new(System::new_with_specifics(RefreshKind::nothing())),
+            disks: Mutex::new(None),
+            folders: Arc::new(Mutex::new(FolderSizes::default())),
+        }
     }
 }
 
 const DISK_REFRESH: Duration = Duration::from_secs(60);
+const FOLDER_REFRESH: Duration = Duration::from_secs(600);
 
 impl Monitor {
+    /// Last known size of each folder. Starts a background count when the numbers are
+    /// missing or old; never blocks the caller.
+    pub fn folder_sizes(&self, folders: &[PathBuf]) -> HashMap<PathBuf, u64> {
+        let mut state = self.folders.lock().unwrap();
+        let missing = folders.iter().any(|f| !state.sizes.contains_key(f));
+        let stale = state.counted_at.is_none_or(|t| t.elapsed() > FOLDER_REFRESH);
+        if (missing || stale) && !state.counting {
+            state.counting = true;
+            let shared = self.folders.clone();
+            let mut todo = folders.to_vec();
+            todo.sort();
+            todo.dedup();
+            std::thread::spawn(move || {
+                for folder in todo {
+                    let size = tree_size(&folder);
+                    shared.lock().unwrap().sizes.insert(folder, size);
+                }
+                let mut s = shared.lock().unwrap();
+                s.counted_at = Some(Instant::now());
+                s.counting = false;
+            });
+        }
+        state.sizes.clone()
+    }
+
     /// `places` are (label, folder) pairs; each drive holding one of them is reported.
     pub fn disks(&self, places: &[(String, PathBuf)]) -> Vec<DiskStats> {
         let mut cache = self.disks.lock().unwrap();
@@ -163,6 +207,28 @@ impl Monitor {
     }
 }
 
+/// Bytes under `dir`. Links and junctions are not followed, so a linked folder is neither
+/// counted twice nor walked in a loop.
+fn tree_size(dir: &Path) -> u64 {
+    let mut total = 0;
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&d) else { continue };
+        for e in rd.flatten() {
+            let Ok(ft) = e.file_type() else { continue };
+            if ft.is_symlink() {
+                continue;
+            }
+            if ft.is_dir() {
+                stack.push(e.path());
+            } else if let Ok(m) = e.metadata() {
+                total += m.len();
+            }
+        }
+    }
+    total
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -176,5 +242,23 @@ mod tests {
         assert!(stats.cpu_cores >= 1);
         assert!(stats.processes[&me].count >= 1 && stats.processes[&me].memory > 0);
         assert_eq!(stats.processes[&(u32::MAX - 1)].count, 0, "an unknown PID reports nothing rather than failing");
+    }
+
+    #[test]
+    fn folder_sizes_are_counted_in_the_background() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("vendor").join("x")).unwrap();
+        std::fs::write(dir.path().join("index.php"), vec![0u8; 1000]).unwrap();
+        std::fs::write(dir.path().join("vendor").join("x").join("lib.php"), vec![0u8; 500]).unwrap();
+        let monitor = Monitor::default();
+        let folder = dir.path().to_path_buf();
+        for _ in 0..100 {
+            if let Some(size) = monitor.folder_sizes(&[folder.clone()]).get(&folder) {
+                assert_eq!(*size, 1500);
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        panic!("the background count never finished");
     }
 }

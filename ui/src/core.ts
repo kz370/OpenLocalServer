@@ -712,6 +712,8 @@ export interface SiteUsage {
   memory: number
   shared_by: number
   measured: boolean
+  /** Size of the site's folder; null until the first count finishes. */
+  disk: number | null
 }
 
 export interface EditorInfo {

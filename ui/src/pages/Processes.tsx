@@ -13,17 +13,6 @@ import { type Diagnostic, type PortStatus, type ProcessEvent, type ProcessInfo, 
 import { formatBytes, usePoll } from '@/lib/hooks'
 import { waitForProcessExit } from '@/lib/wait'
 
-const STATE_VARIANT: Record<ProcessInfo['state'], 'success' | 'secondary' | 'destructive' | 'outline'> = {
-  running: 'success',
-  starting: 'secondary',
-  restarting: 'secondary',
-  stopping: 'secondary',
-  stopped: 'outline',
-  crashed: 'destructive',
-  failed: 'destructive',
-  unknown: 'outline',
-}
-
 const PRESETS = [
   { label: 'ping (10s)', executable: 'ping', args: '127.0.0.1 -n 10' },
   { label: 'echo hello', executable: 'cmd', args: '/C echo hello from OpenLocalServer' },
@@ -181,55 +170,63 @@ export function ProcessesPage() {
       <div className="grid gap-4 lg:grid-cols-[1fr_1.2fr]">
         <Card>
           <CardHeader>
-            <CardTitle>Running &amp; recent</CardTitle>
+            <CardTitle className="text-sm">Running &amp; recent · {processes.filter((p) => isLive(p.state)).length} running</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-1">
             {processes.length === 0 && (
               <p className="text-sm text-muted-foreground">No processes started yet.</p>
             )}
-            {processes.map((p) => (
-              <div
-                key={p.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => setSelected(p.id)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') setSelected(p.id)
-                }}
-                className={`flex cursor-pointer items-center justify-between rounded-md border px-3 py-2 text-left text-sm transition-colors ${
-                  selected === p.id ? 'border-primary bg-accent' : 'border-border hover:bg-accent/50'
-                }`}
-              >
-                <div className="flex flex-col">
-                  <span className="font-medium">{p.name}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {p.pid ? `PID ${p.pid}` : '—'}
-                    {p.pid && stats?.processes[p.pid]?.count
-                      ? ` · CPU ${stats.processes[p.pid].cpu_percent.toFixed(1)}% · RAM ${formatBytes(stats.processes[p.pid].memory)}${stats.processes[p.pid].count > 1 ? ` (${stats.processes[p.pid].count} processes)` : ''}`
-                      : ''}
-                    {p.restarts > 0 && ` · ${p.restarts} restart${p.restarts > 1 ? 's' : ''}`}
-                    {p.exit_code !== null && ` · exit ${p.exit_code}`}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant={STATE_VARIANT[p.state]}>{p.state}</Badge>
-                  {(p.state === 'running' || p.state === 'starting' || stopping === p.id) && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      disabled={stopping === p.id}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        stopProcess(p.id)
+            <div className="max-h-96 overflow-y-auto">
+              {[...processes]
+                // Running first, then what finished, newest first.
+                .sort((a, b) => Number(isLive(b.state)) - Number(isLive(a.state)) || b.id - a.id)
+                .map((p) => {
+                  const usage = p.pid ? stats?.processes[p.pid] : undefined
+                  const live = isLive(p.state)
+                  return (
+                    <div
+                      key={p.id}
+                      role="button"
+                      tabIndex={0}
+                      title={[p.pid && `PID ${p.pid}`, usage && usage.count > 1 && `${usage.count} processes`, p.restarts > 0 && `${p.restarts} restarts`, p.exit_code !== null && `exit ${p.exit_code}`]
+                        .filter(Boolean)
+                        .join(' · ')}
+                      onClick={() => setSelected(p.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') setSelected(p.id)
                       }}
-                      title="Stop"
+                      className={`group flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-sm transition-colors ${
+                        selected === p.id ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
+                      } ${live ? '' : 'opacity-60'}`}
                     >
-                      {stopping === p.id ? <Spinner className="size-3.5" /> : <StopIcon className="size-3.5" />}
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ))}
+                      <span className={`size-2 shrink-0 rounded-full ${STATE_DOT[p.state] ?? 'bg-muted-foreground'}`} title={p.state} />
+                      <span className="min-w-0 flex-1 truncate font-medium">{p.name}</span>
+                      {usage?.count ? (
+                        <span className="hidden text-xs tabular-nums text-muted-foreground sm:inline">
+                          CPU {usage.cpu_percent.toFixed(1)}% · RAM {formatBytes(usage.memory)}
+                        </span>
+                      ) : (
+                        !live && <span className="text-xs text-muted-foreground">{p.state}{p.exit_code !== null ? ` (${p.exit_code})` : ''}</span>
+                      )}
+                      {(live || stopping === p.id) && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-6"
+                          disabled={stopping === p.id}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            stopProcess(p.id)
+                          }}
+                          title="Stop"
+                        >
+                          {stopping === p.id ? <Spinner className="size-3.5" /> : <StopIcon className="size-3.5" />}
+                        </Button>
+                      )}
+                    </div>
+                  )
+                })}
+            </div>
           </CardContent>
         </Card>
 
@@ -289,4 +286,15 @@ export function ProcessesPage() {
       )}
     </div>
   )
+}
+
+const isLive = (state: ProcessInfo['state']) => state === 'running' || state === 'starting' || state === 'restarting'
+
+const STATE_DOT: Partial<Record<ProcessInfo['state'], string>> = {
+  running: 'bg-success',
+  starting: 'bg-warning',
+  restarting: 'bg-warning',
+  stopping: 'bg-warning',
+  crashed: 'bg-destructive',
+  failed: 'bg-destructive',
 }
