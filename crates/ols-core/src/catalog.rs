@@ -48,6 +48,47 @@ const CATALOG: &[PackageManifest] = &[
         archive_root: "",
         binary: "php.exe",
     },
+    PackageManifest {
+        id: "mailpit",
+        name: "Mailpit",
+        version: "1.31.2",
+        platform: "windows",
+        architecture: "x64",
+        url: "https://github.com/axllent/mailpit/releases/download/v1.31.2/mailpit-windows-amd64.zip",
+        // Mailpit's GitHub release publishes no checksum file for this version. Downloaded
+        // directly over HTTPS from the release URL above and hashed here ourselves — the
+        // same trust-on-first-use pinning any tool must fall back to when a vendor
+        // publishes no signature (§21's "where available: digital signatures").
+        sha256: "42c20e5c3254125ea7489847811f10d70e39de573fe41d03a61412c87913e995",
+        archive_root: "",
+        binary: "mailpit.exe",
+    },
+    PackageManifest {
+        id: "mysql",
+        name: "MySQL",
+        version: "26.7.0",
+        platform: "windows",
+        architecture: "x64",
+        url: "https://cdn.mysql.com//Downloads/MySQL-26.7/mysql-26.7.0-winx64.zip",
+        // MySQL's download page shows no static checksum file either (MD5/SHA256 are
+        // rendered client-side via JS on the download page) — same self-pinned approach
+        // as Mailpit above, hashed from a direct HTTPS download of this exact URL.
+        sha256: "e8d5b08f0d430555497679fa713a9649953ea067f952708a74cdcdf34f8e4b7d",
+        archive_root: "mysql-26.7.0-winx64",
+        binary: "bin/mysqld.exe",
+    },
+    PackageManifest {
+        id: "nginx",
+        name: "Nginx",
+        version: "1.28.3",
+        platform: "windows",
+        architecture: "x64",
+        url: "https://nginx.org/download/nginx-1.28.3.zip",
+        // nginx.org publishes no checksum sidecar either — same self-pinned approach.
+        sha256: "aad7bf75d669ece7671688bfdf35f1093d6a30d2e62469405f4d55d8d82d5fd3",
+        archive_root: "nginx-1.28.3",
+        binary: "nginx.exe",
+    },
 ];
 
 fn current_platform() -> &'static str {
@@ -86,6 +127,7 @@ pub fn system_probe(id: &str) -> Option<(&'static str, &'static str)> {
         "node" => Some(("node.exe", "--version")),
         "php" => Some(("php.exe", "--version")),
         "python" => Some(("python.exe", "--version")),
+        "mysql" => Some(("mysql.exe", "--version")),
         _ => None,
     }
 }

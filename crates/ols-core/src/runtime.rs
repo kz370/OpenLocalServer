@@ -136,6 +136,12 @@ impl RuntimeManager {
             .collect()
     }
 
+    /// The root of an installed version — e.g. MySQL's `--basedir`, which needs the whole
+    /// install tree (bin/, share/, ...), not just the directory holding the executable.
+    pub fn install_dir(&self, id: &str, version: &str) -> PathBuf {
+        self.version_dir(id, version)
+    }
+
     fn version_dir(&self, id: &str, version: &str) -> PathBuf {
         self.paths.runtimes_dir().join(id).join(version)
     }
@@ -188,48 +194,73 @@ async fn install_one(
     tokio::fs::create_dir_all(&cache_dir).await.map_err(|e| e.to_string())?;
     let archive_path = cache_dir.join(format!("{}-{}.download", manifest.id, manifest.version));
 
-    // -- Download, hashing as we go so we never buffer the whole file in memory. --
-    let response = http.get(manifest.url).send().await.map_err(|e| e.to_string())?;
-    if !response.status().is_success() {
-        return Err(format!("download failed: HTTP {}", response.status()));
-    }
-    let total = response.content_length();
-    let mut file = std::fs::File::create(&archive_path).map_err(|e| e.to_string())?;
-    let mut hasher = Sha256::new();
-    let mut downloaded: u64 = 0;
-    let mut stream = response.bytes_stream();
+    // §127: a previously-downloaded, still-correct copy is reused instead of fetched
+    // again. A cached file that fails to verify (corrupted, or from an older catalog
+    // entry with a different hash) is treated as absent and re-downloaded below.
+    let cached_digest: Option<String> = {
+        let path = archive_path.clone();
+        tokio::task::spawn_blocking(move || hash_file(&path)).await.map_err(|e| e.to_string())?.ok()
+    };
+    let already_cached = cached_digest.as_deref() == Some(manifest.sha256);
 
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| e.to_string())?;
-        file.write_all(&chunk).map_err(|e| e.to_string())?;
-        hasher.update(&chunk);
-        downloaded += chunk.len() as u64;
+    let mut downloaded: u64;
+    let total: Option<u64>;
+
+    if already_cached {
+        tracing::info!(id = manifest.id, version = manifest.version, "reusing verified cached download");
+        downloaded = std::fs::metadata(&archive_path).map(|m| m.len()).unwrap_or(0);
+        total = Some(downloaded);
         let _ = events_tx.send(RuntimeEvent::Progress {
             id: manifest.id.to_string(),
             version: manifest.version.to_string(),
-            state: InstallState::Downloading,
+            state: InstallState::Verifying,
             downloaded,
             total,
         });
-    }
-    drop(file);
+    } else {
+        // -- Download, hashing as we go so we never buffer the whole file in memory. --
+        let response = http.get(manifest.url).send().await.map_err(|e| e.to_string())?;
+        if !response.status().is_success() {
+            return Err(format!("download failed: HTTP {}", response.status()));
+        }
+        total = response.content_length();
+        downloaded = 0;
+        let mut file = std::fs::File::create(&archive_path).map_err(|e| e.to_string())?;
+        let mut hasher = Sha256::new();
+        let mut stream = response.bytes_stream();
 
-    // -- Verify (§21). A mismatch deletes the download and aborts; nothing is extracted. --
-    state.lock().unwrap().insert(key.clone(), InstallState::Verifying);
-    let _ = events_tx.send(RuntimeEvent::Progress {
-        id: manifest.id.to_string(),
-        version: manifest.version.to_string(),
-        state: InstallState::Verifying,
-        downloaded,
-        total,
-    });
-    let digest = format!("{:x}", hasher.finalize());
-    if digest != manifest.sha256 {
-        let _ = tokio::fs::remove_file(&archive_path).await;
-        return Err(format!(
-            "checksum mismatch: expected {}, got {digest} — refusing to install an unverified binary",
-            manifest.sha256
-        ));
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|e| e.to_string())?;
+            file.write_all(&chunk).map_err(|e| e.to_string())?;
+            hasher.update(&chunk);
+            downloaded += chunk.len() as u64;
+            let _ = events_tx.send(RuntimeEvent::Progress {
+                id: manifest.id.to_string(),
+                version: manifest.version.to_string(),
+                state: InstallState::Downloading,
+                downloaded,
+                total,
+            });
+        }
+        drop(file);
+
+        // -- Verify (§21). A mismatch deletes the download and aborts; nothing is extracted. --
+        state.lock().unwrap().insert(key.clone(), InstallState::Verifying);
+        let _ = events_tx.send(RuntimeEvent::Progress {
+            id: manifest.id.to_string(),
+            version: manifest.version.to_string(),
+            state: InstallState::Verifying,
+            downloaded,
+            total,
+        });
+        let digest = format!("{:x}", hasher.finalize());
+        if digest != manifest.sha256 {
+            let _ = tokio::fs::remove_file(&archive_path).await;
+            return Err(format!(
+                "checksum mismatch: expected {}, got {digest} — refusing to install an unverified binary",
+                manifest.sha256
+            ));
+        }
     }
 
     // -- Extract into a scratch dir, then atomically rename into place (§163). --
@@ -254,7 +285,9 @@ async fn install_one(
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())?;
 
-    let _ = tokio::fs::remove_file(&archive_path).await;
+    // The verified archive stays in cache/ on purpose (§127) — a later reinstall (or
+    // installing after a bad uninstall) reuses it via the cache-hit check above instead
+    // of downloading again. Only the extraction scratch dir is transient.
     if final_dir.exists() {
         let _ = tokio::fs::remove_dir_all(&final_dir).await;
     }
@@ -268,6 +301,24 @@ async fn install_one(
         path: final_dir.display().to_string(),
     });
     Ok(())
+}
+
+/// Hashes an existing file on disk, if present. Errors (including "not found") collapse
+/// to a plain `Result::Err` — the caller only cares whether the result equals the
+/// expected hash, not why it doesn't.
+fn hash_file(path: &Path) -> Result<String, std::io::Error> {
+    use std::io::Read;
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 /// Extracts `archive_path` (a zip) into `dest_dir`, stripping the single top-level

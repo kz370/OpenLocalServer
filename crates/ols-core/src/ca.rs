@@ -1,0 +1,214 @@
+//! Local Certificate Authority (§49–52 — Stage 6). Generates a root CA once, then issues
+//! a leaf certificate per domain signed by it. CA trust goes into the **CurrentUser**
+//! Root store (`certutil -user -addstore Root ...`), which — unlike the machine-wide
+//! store — does not require elevation, so this whole module needs no privileged helper.
+
+use std::path::{Path, PathBuf};
+
+use rcgen::{
+    BasicConstraints, CertificateParams, DistinguishedName, DnType, IsCa, Issuer, KeyPair, KeyUsagePurpose, SanType,
+};
+
+use crate::paths::AppPaths;
+
+pub struct LocalCa {
+    dir: PathBuf,
+}
+
+pub struct IssuedCert {
+    pub cert_pem: String,
+    pub key_pem: String,
+}
+
+impl LocalCa {
+    pub fn new(paths: &AppPaths) -> Self {
+        Self { dir: paths.root().join("certificates") }
+    }
+
+    fn ca_cert_path(&self) -> PathBuf {
+        self.dir.join("ca.pem")
+    }
+    fn ca_key_path(&self) -> PathBuf {
+        self.dir.join("ca-key.pem")
+    }
+
+    pub fn ca_cert_pem_path(&self) -> PathBuf {
+        self.ca_cert_path()
+    }
+
+    pub fn exists(&self) -> bool {
+        self.ca_cert_path().is_file() && self.ca_key_path().is_file()
+    }
+
+    /// The CA's own certificate parameters — deterministic, so re-deriving them (rather
+    /// than round-tripping through the stored PEM) is enough to reconstruct an `Issuer`
+    /// for signing leaf certs after a restart.
+    fn ca_params() -> CertificateParams {
+        let mut params = CertificateParams::default();
+        params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
+        let mut dn = DistinguishedName::new();
+        dn.push(DnType::CommonName, "OpenLocalServer Local CA");
+        dn.push(DnType::OrganizationName, "OpenLocalServer");
+        params.distinguished_name = dn;
+        params
+    }
+
+    /// Generates the root CA if it doesn't already exist. Idempotent — safe to call on
+    /// every startup. The private key is written with owner-only permissions (§142).
+    pub fn ensure_created(&self) -> Result<(), String> {
+        if self.exists() {
+            return Ok(());
+        }
+        std::fs::create_dir_all(&self.dir).map_err(|e| e.to_string())?;
+
+        let key_pair = KeyPair::generate().map_err(|e| e.to_string())?;
+        let cert = Self::ca_params().self_signed(&key_pair).map_err(|e| e.to_string())?;
+
+        write_restricted(&self.ca_cert_path(), cert.pem().as_bytes())?;
+        write_restricted(&self.ca_key_path(), key_pair.serialize_pem().as_bytes())?;
+        Ok(())
+    }
+
+    /// Issues a leaf certificate for `domain`, signed by the local CA (§51). Returns PEM
+    /// for both the certificate and its private key — caller decides where to store them.
+    pub fn issue(&self, domain: &str) -> Result<IssuedCert, String> {
+        self.ensure_created()?;
+
+        let ca_key_pem = std::fs::read_to_string(self.ca_key_path()).map_err(|e| e.to_string())?;
+        let ca_key_pair = KeyPair::from_pem(&ca_key_pem).map_err(|e| e.to_string())?;
+        let ca_params = Self::ca_params();
+        let issuer = Issuer::from_params(&ca_params, ca_key_pair);
+
+        let mut leaf_params = CertificateParams::new(vec![domain.to_string()]).map_err(|e| e.to_string())?;
+        let mut dn = DistinguishedName::new();
+        dn.push(DnType::CommonName, domain);
+        leaf_params.distinguished_name = dn;
+        leaf_params.subject_alt_names = vec![SanType::DnsName(domain.try_into().map_err(|e| format!("{e:?}"))?)];
+
+        let leaf_key = KeyPair::generate().map_err(|e| e.to_string())?;
+        let leaf_cert = leaf_params.signed_by(&leaf_key, &issuer).map_err(|e| e.to_string())?;
+
+        Ok(IssuedCert { cert_pem: leaf_cert.pem(), key_pem: leaf_key.serialize_pem() })
+    }
+
+    /// Trusts the CA in the CurrentUser Root store. No elevation needed — CurrentUser
+    /// scope only affects this Windows account, unlike LocalMachine\Root.
+    #[cfg(windows)]
+    pub fn trust_current_user(&self) -> Result<(), String> {
+        self.ensure_created()?;
+        let output = std::process::Command::new("certutil")
+            .args(["-user", "-addstore", "Root", &self.ca_cert_path().display().to_string()])
+            .output()
+            .map_err(|e| e.to_string())?;
+        if output.status.success() {
+            Ok(())
+        } else {
+            Err(String::from_utf8_lossy(&output.stderr).to_string())
+        }
+    }
+}
+
+#[cfg(windows)]
+fn write_restricted(path: &Path, data: &[u8]) -> Result<(), String> {
+    std::fs::write(path, data).map_err(|e| e.to_string())?;
+    // icacls: strip inherited permissions, grant only the current user. Best-effort —
+    // the CA private key not existing at all is worse than it existing with default
+    // (still user-profile-scoped) ACLs, so a failure here doesn't abort cert generation.
+    let _ = std::process::Command::new("icacls")
+        .args([&path.display().to_string(), "/inheritance:r", "/grant:r", &format!("{}:F", whoami())])
+        .output();
+    Ok(())
+}
+
+#[cfg(windows)]
+fn whoami() -> String {
+    std::env::var("USERNAME").unwrap_or_else(|_| "%USERNAME%".to_string())
+}
+
+#[cfg(not(windows))]
+fn write_restricted(path: &Path, data: &[u8]) -> Result<(), String> {
+    std::fs::write(path, data).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::Arc;
+
+    fn test_ca() -> (LocalCa, crate::test_support::IsolatedHome) {
+        let home = crate::test_support::isolated_home();
+        let ca = LocalCa::new(&home.paths);
+        (ca, home)
+    }
+
+    #[test]
+    fn ensure_created_is_idempotent() {
+        let (ca, _home) = test_ca();
+        ca.ensure_created().unwrap();
+        let cert_before = std::fs::read(ca.ca_cert_path()).unwrap();
+        ca.ensure_created().unwrap();
+        let cert_after = std::fs::read(ca.ca_cert_path()).unwrap();
+        assert_eq!(cert_before, cert_after, "calling ensure_created twice must not regenerate the CA");
+    }
+
+    #[test]
+    fn issue_produces_a_cert_and_key_for_the_requested_domain() {
+        let (ca, _home) = test_ca();
+        let issued = ca.issue("shop.test").unwrap();
+        assert!(issued.cert_pem.contains("BEGIN CERTIFICATE"));
+        assert!(issued.key_pem.contains("PRIVATE KEY"));
+    }
+
+    /// The real proof: start a TLS server with the issued leaf cert, connect a client
+    /// that trusts only our CA (nothing else — not the system store), and confirm the
+    /// handshake succeeds. This is what "trusted local HTTPS" (§49) actually means.
+    #[test]
+    fn issued_certificate_is_trusted_by_a_client_that_trusts_only_this_ca() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let (ca, _home) = test_ca();
+        let issued = ca.issue("localhost").unwrap();
+
+        let cert_der = rustls_pemfile::certs(&mut issued.cert_pem.as_bytes()).collect::<Result<Vec<_>, _>>().unwrap();
+        let key_der =
+            rustls_pemfile::private_key(&mut issued.key_pem.as_bytes()).unwrap().expect("leaf key parses");
+
+        let server_config = rustls::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(cert_der, key_der)
+            .unwrap();
+        let server_config = Arc::new(server_config);
+
+        let ca_pem = std::fs::read_to_string(ca.ca_cert_pem_path()).unwrap();
+        let ca_der = rustls_pemfile::certs(&mut ca_pem.as_bytes()).next().unwrap().unwrap();
+        let mut root_store = rustls::RootCertStore::empty();
+        root_store.add(ca_der).unwrap();
+        let client_config =
+            rustls::ClientConfig::builder().with_root_certificates(root_store).with_no_client_auth();
+
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let server_thread = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut conn = rustls::ServerConnection::new(server_config).unwrap();
+            let mut tls_stream = rustls::Stream::new(&mut conn, &mut stream);
+            let mut buf = [0u8; 64];
+            let n = tls_stream.read(&mut buf).unwrap();
+            tls_stream.write_all(&buf[..n]).unwrap();
+        });
+
+        let server_name: rustls::pki_types::ServerName<'_> = "localhost".try_into().unwrap();
+        let mut conn = rustls::ClientConnection::new(Arc::new(client_config), server_name).unwrap();
+        let mut socket = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+        let mut tls_stream = rustls::Stream::new(&mut conn, &mut socket);
+        tls_stream.write_all(b"hello").unwrap();
+        let mut buf = [0u8; 64];
+        let n = tls_stream.read(&mut buf).unwrap();
+        assert_eq!(&buf[..n], b"hello", "TLS handshake + round trip through our issued cert must succeed");
+
+        server_thread.join().unwrap();
+    }
+}

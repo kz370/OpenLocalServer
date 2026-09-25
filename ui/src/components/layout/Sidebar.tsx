@@ -1,19 +1,20 @@
-import { Box, FolderKanban, LayoutDashboard, Moon, Server, Sun, SunMoon, Terminal } from 'lucide-react'
+import { Box, Database, FolderKanban, LayoutDashboard, Moon, Server, Sun, SunMoon, Terminal } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { useTheme } from '@/lib/theme'
 
-export type Page = 'dashboard' | 'processes' | 'runtimes' | 'projects'
+export type Page = 'dashboard' | 'processes' | 'runtimes' | 'projects' | 'services'
 
 const NAV_ITEMS: { id: Page; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'projects', label: 'Projects', icon: FolderKanban },
   { id: 'runtimes', label: 'Runtimes', icon: Box },
+  { id: 'services', label: 'Services', icon: Database },
   { id: 'processes', label: 'Processes', icon: Terminal },
 ]
 
-const SOON_ITEMS = ['Services', 'Domains']
+const SOON_ITEMS = ['Domains']
 
 export function Sidebar({ page, onNavigate }: { page: Page; onNavigate: (p: Page) => void }) {
   const { theme, resolvedTheme, setTheme } = useTheme()

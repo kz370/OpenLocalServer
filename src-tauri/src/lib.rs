@@ -1,8 +1,9 @@
 use std::sync::{Arc, Mutex};
 
+use ols_core::custom_install::CustomInstallStore;
 use ols_core::{
     AppPaths, Core, CoreCommand, CoreResponse, Diagnostic, ProcessSupervisor, ProjectStore, RuntimeManager,
-    SettingsService,
+    ServiceManager, SettingsService,
 };
 use tauri::Emitter;
 
@@ -32,12 +33,15 @@ pub fn run() {
 
     let settings = SettingsService::load(&paths).expect("failed to load settings");
     let projects = ProjectStore::load(&paths).expect("failed to load project store");
+    let custom_installs = CustomInstallStore::load(&paths).expect("failed to load custom install store");
     // Supervisor/runtimes held separately from `Core` (which also holds a clone of each)
     // so the setup hook below can subscribe to their events and forward them to the
     // webview independent of the `CoreState` mutex — the UI shouldn't have to poll.
     let supervisor = Arc::new(ProcessSupervisor::new());
     let runtimes = Arc::new(RuntimeManager::new(paths.clone()));
-    let core = Core::with_managers(settings, supervisor.clone(), runtimes.clone(), projects);
+    let services = Arc::new(ServiceManager::new(paths.clone(), runtimes.clone(), supervisor.clone()));
+    let core =
+        Core::with_managers(settings, supervisor.clone(), runtimes.clone(), services, projects, custom_installs);
 
     // ols_core::logging::init() above already installs the global tracing subscriber
     // (JSON, redacted, to disk — §118/§141). tauri-plugin-log would try to install a

@@ -114,6 +114,29 @@ export interface ProjectDetail {
   resolved: ResolvedRuntime[]
 }
 
+export type PortStatusLite = 'free' | 'in_use'
+
+export interface ServiceStatus {
+  id: string
+  name: string
+  installed: boolean
+  running: boolean
+  port: number | null
+  port_status: PortStatusLite | null
+}
+
+export interface DbTool {
+  id: string
+  name: string
+  found_path: string | null
+}
+
+export interface CustomInstall {
+  id: string
+  label: string
+  path: string
+}
+
 export interface CatalogEntry {
   id: string
   name: string
@@ -148,6 +171,15 @@ export type CoreCommand =
   | { type: 'remove_project'; id: string }
   | { type: 'get_project_detail'; id: string }
   | { type: 'run_in_project'; project_id: string; runtime_id: string; args: string[] }
+  | { type: 'list_services' }
+  | { type: 'start_service'; id: string }
+  | { type: 'stop_service'; id: string }
+  | { type: 'create_mysql_database'; name: string }
+  | { type: 'list_db_tools' }
+  | { type: 'open_db_tool'; id: string }
+  | { type: 'set_custom_install'; id: string; label: string; path: string }
+  | { type: 'remove_custom_install'; id: string; label: string }
+  | { type: 'list_custom_installs' }
 
 export type CoreResponse =
   | { type: 'pong'; version: string }
@@ -163,6 +195,10 @@ export type CoreResponse =
   | { type: 'project'; project: Project }
   | { type: 'projects'; projects: Project[] }
   | { type: 'project_detail'; detail: ProjectDetail }
+  | { type: 'services'; services: ServiceStatus[] }
+  | { type: 'secret'; key: string; value: string | null }
+  | { type: 'db_tools'; tools: DbTool[] }
+  | { type: 'custom_installs'; entries: CustomInstall[] }
 
 export interface Diagnostic {
   problem: string

@@ -16,6 +16,9 @@ pub enum CoreError {
 
     #[error("not a directory: {0}")]
     InvalidProjectPath(String),
+
+    #[error("{0}")]
+    ServiceError(String),
 }
 
 /// The shape every error crosses the IPC boundary as, so the UI can render
@@ -49,6 +52,11 @@ impl From<&CoreError> for Diagnostic {
                 problem: "That folder can't be added as a project.".into(),
                 cause: format!("\"{p}\" is not a directory on disk."),
                 fix: Some("Check the path and try again.".into()),
+            },
+            CoreError::ServiceError(msg) => Diagnostic {
+                problem: "That service operation failed.".into(),
+                cause: msg.clone(),
+                fix: None,
             },
         }
     }

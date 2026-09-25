@@ -8,12 +8,15 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::custom_install::{CustomInstall, CustomInstallStore};
 use crate::error::{CoreError, Diagnostic};
 use crate::paths::AppPaths;
 use crate::port::{self, PortStatus};
 use crate::process::{CommandHistoryEntry, ProcessId, ProcessInfo, ProcessSpec, ProcessSupervisor};
 use crate::project::{Project, ProjectDetail, ProjectStore};
+use crate::resolver::ResolutionSource;
 use crate::runtime::{CatalogEntry, RuntimeManager};
+use crate::service::{ServiceManager, ServiceStatus};
 use crate::settings::SettingsService;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,6 +57,29 @@ pub enum CoreCommand {
     /// project, with its bin dir first on PATH, and streams output like any other
     /// managed process (reuses the Process Supervisor — same live-output UI).
     RunInProject { project_id: String, runtime_id: String, args: Vec<String> },
+
+    // Service Manager (§22, §31, §61–68, Stage 5)
+    ListServices,
+    StartService { id: String },
+    StopService { id: String },
+    CreateMysqlDatabase { name: String },
+
+    // Secrets Manager (§104, §141, Stage 5)
+    SetSecret { key: String, value: String },
+    GetSecret { key: String },
+    DeleteSecret { key: String },
+
+    // External DB GUI tools (§102, Stage 5)
+    ListDbTools,
+    OpenDbTool { id: String },
+
+    // Custom install locations (Stage 5, user-requested): point DevForge at a tool or
+    // runtime version it didn't find/install itself, instead of only ever offering a
+    // download. `label` is a version string for runtimes ("8.1"), empty for single-path
+    // tools (heidisql/pgadmin).
+    SetCustomInstall { id: String, label: String, path: String },
+    RemoveCustomInstall { id: String, label: String },
+    ListCustomInstalls,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -72,19 +98,29 @@ pub enum CoreResponse {
     Project { project: Project },
     Projects { projects: Vec<Project> },
     ProjectDetail { detail: Box<ProjectDetail> },
+    Services { services: Vec<ServiceStatus> },
+    Secret { key: String, value: Option<String> },
+    DbTools { tools: Vec<crate::dbtools::DbTool> },
+    CustomInstalls { entries: Vec<CustomInstall> },
 }
 
 pub struct Core {
     settings: SettingsService,
     supervisor: Arc<ProcessSupervisor>,
     runtimes: Arc<RuntimeManager>,
+    services: Arc<ServiceManager>,
     projects: ProjectStore,
+    custom_installs: CustomInstallStore,
 }
 
 impl Core {
     pub fn new(settings: SettingsService, paths: AppPaths) -> Self {
         let projects = ProjectStore::load(&paths).expect("failed to load project store");
-        Self::with_managers(settings, Arc::new(ProcessSupervisor::new()), Arc::new(RuntimeManager::new(paths)), projects)
+        let custom_installs = CustomInstallStore::load(&paths).expect("failed to load custom install store");
+        let supervisor = Arc::new(ProcessSupervisor::new());
+        let runtimes = Arc::new(RuntimeManager::new(paths.clone()));
+        let services = Arc::new(ServiceManager::new(paths, runtimes.clone(), supervisor.clone()));
+        Self::with_managers(settings, supervisor, runtimes, services, projects, custom_installs)
     }
 
     /// Used by the Tauri shell so it can hold its own clones of the managers and forward
@@ -93,9 +129,11 @@ impl Core {
         settings: SettingsService,
         supervisor: Arc<ProcessSupervisor>,
         runtimes: Arc<RuntimeManager>,
+        services: Arc<ServiceManager>,
         projects: ProjectStore,
+        custom_installs: CustomInstallStore,
     ) -> Self {
-        Self { settings, supervisor, runtimes, projects }
+        Self { settings, supervisor, runtimes, services, projects, custom_installs }
     }
 
     /// Route a `CoreCommand` to the right manager and return its result.
@@ -200,7 +238,7 @@ impl Core {
             }
             CoreCommand::GetProjectDetail { id } => {
                 let project = self.projects.get(&id).ok_or_else(|| CoreError::InvalidProjectPath(id.clone()))?;
-                let detail = crate::project::build_detail(&project, &self.runtimes, &self.settings);
+                let detail = crate::project::build_detail(&project, &self.runtimes, &self.settings, &self.custom_installs);
                 Ok(CoreResponse::ProjectDetail { detail: Box::new(detail) })
             }
             CoreCommand::RunInProject { project_id, runtime_id, args } => {
@@ -208,20 +246,28 @@ impl Core {
                     .projects
                     .get(&project_id)
                     .ok_or_else(|| CoreError::InvalidProjectPath(project_id.clone()))?;
-                let detail = crate::project::build_detail(&project, &self.runtimes, &self.settings);
-                let resolved = detail
-                    .resolved
-                    .iter()
-                    .find(|r| r.id == runtime_id)
-                    .and_then(|r| r.installed_version.as_ref().map(|v| (v.clone(), r.bin_dir.clone())));
+                let detail = crate::project::build_detail(&project, &self.runtimes, &self.settings, &self.custom_installs);
+                let resolved = detail.resolved.iter().find(|r| r.id == runtime_id);
 
-                let Some((version, bin_dir)) = resolved else {
+                let Some(r) = resolved.filter(|r| r.installed_version.is_some()) else {
                     return Err(CoreError::InvalidProjectPath(format!(
                         "{runtime_id} is not resolved to an installed version for this project"
                     )));
                 };
-                let Some(binary) = self.runtimes.binary_path(&runtime_id, &version) else {
-                    return Err(CoreError::InvalidProjectPath(format!("{runtime_id} {version} binary missing on disk")));
+                let bin_dir = r.bin_dir.clone();
+
+                let binary = if r.source == ResolutionSource::Custom {
+                    // A custom install's own path IS the binary — bin_dir above is just
+                    // its parent directory (for PATH), not something to re-derive from.
+                    self.custom_installs
+                        .resolve(&runtime_id, r.requested_version.as_deref())
+                        .map(|c| std::path::PathBuf::from(&c.path))
+                        .ok_or_else(|| CoreError::InvalidProjectPath(format!("{runtime_id} custom install vanished")))?
+                } else {
+                    let version = r.installed_version.clone().unwrap();
+                    self.runtimes.binary_path(&runtime_id, &version).ok_or_else(|| {
+                        CoreError::InvalidProjectPath(format!("{runtime_id} {version} binary missing on disk"))
+                    })?
                 };
 
                 // Prepend the resolved runtime's own directory to PATH so a command this
@@ -233,7 +279,8 @@ impl Core {
                     None => system_path,
                 };
 
-                tracing::info!(command = "run_in_project", project = %project.name, runtime = %runtime_id, version = %version);
+                let version_for_log = r.installed_version.clone().unwrap_or_default();
+                tracing::info!(command = "run_in_project", project = %project.name, runtime = %runtime_id, version = %version_for_log);
                 let id = self.supervisor.start(ProcessSpec {
                     name: format!("{}: {} {}", project.name, runtime_id, args.join(" ")),
                     executable: binary.display().to_string(),
@@ -243,6 +290,83 @@ impl Core {
                     restart: None,
                 });
                 Ok(CoreResponse::ProcessStarted { id })
+            }
+
+            CoreCommand::ListServices => Ok(CoreResponse::Services { services: self.services.list() }),
+            CoreCommand::StartService { id } => {
+                tracing::info!(command = "start_service", id = %id);
+                self.services.start(&id).map_err(CoreError::ServiceError)?;
+                Ok(CoreResponse::Ok)
+            }
+            CoreCommand::StopService { id } => {
+                tracing::info!(command = "stop_service", id = %id);
+                self.services.stop(&id);
+                Ok(CoreResponse::Ok)
+            }
+            CoreCommand::CreateMysqlDatabase { name } => {
+                tracing::info!(command = "create_mysql_database", name = %name);
+                // Identifiers can't be parameterized in SQL — reject anything that isn't a
+                // plain name instead of building a query string from raw user input.
+                if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') || name.is_empty() {
+                    return Err(CoreError::ServiceError(
+                        "database name must be alphanumeric/underscore only".into(),
+                    ));
+                }
+                self.services
+                    .run_mysql_client(&format!("CREATE DATABASE IF NOT EXISTS `{name}`"))
+                    .map_err(CoreError::ServiceError)?;
+                Ok(CoreResponse::Ok)
+            }
+
+            CoreCommand::SetSecret { key, value } => {
+                // Never log the value itself, only that a secret was set (§141).
+                tracing::info!(command = "set_secret", key = %key);
+                crate::secrets::set_secret(&key, &value).map_err(CoreError::ServiceError)?;
+                Ok(CoreResponse::Ok)
+            }
+            CoreCommand::GetSecret { key } => {
+                let value = crate::secrets::get_secret(&key).map_err(CoreError::ServiceError)?;
+                Ok(CoreResponse::Secret { key, value })
+            }
+            CoreCommand::DeleteSecret { key } => {
+                crate::secrets::delete_secret(&key).map_err(CoreError::ServiceError)?;
+                Ok(CoreResponse::Ok)
+            }
+
+            CoreCommand::ListDbTools => {
+                // A user-pinned custom path always wins over auto-detection (§126).
+                let mut tools = crate::dbtools::detect_db_tools();
+                for tool in &mut tools {
+                    if let Some(custom) = self.custom_installs.resolve(&tool.id, None) {
+                        tool.found_path = Some(custom.path.clone());
+                    }
+                }
+                Ok(CoreResponse::DbTools { tools })
+            }
+            CoreCommand::OpenDbTool { id } => {
+                let path = self
+                    .custom_installs
+                    .resolve(&id, None)
+                    .map(|c| c.path.clone())
+                    .or_else(|| crate::dbtools::detect_db_tools().into_iter().find(|t| t.id == id).and_then(|t| t.found_path))
+                    .ok_or_else(|| CoreError::ServiceError(format!("{id} was not found on this system")))?;
+                // A standalone GUI app the user drives themselves — not managed/supervised
+                // (no output capture, no kill-on-drop tie to DevForge's own lifecycle).
+                std::process::Command::new(&path).spawn().map_err(|e| CoreError::ServiceError(e.to_string()))?;
+                Ok(CoreResponse::Ok)
+            }
+
+            CoreCommand::SetCustomInstall { id, label, path } => {
+                tracing::info!(command = "set_custom_install", id = %id, label = %label);
+                self.custom_installs.set(&id, &label, &path)?;
+                Ok(CoreResponse::Ok)
+            }
+            CoreCommand::RemoveCustomInstall { id, label } => {
+                self.custom_installs.remove(&id, &label)?;
+                Ok(CoreResponse::Ok)
+            }
+            CoreCommand::ListCustomInstalls => {
+                Ok(CoreResponse::CustomInstalls { entries: self.custom_installs.list() })
             }
         }
     }

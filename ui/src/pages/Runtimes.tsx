@@ -1,25 +1,59 @@
 import { listen } from '@tauri-apps/api/event'
-import { Download } from 'lucide-react'
+import { open } from '@tauri-apps/plugin-dialog'
+import { Download, FolderSearch, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { type CatalogEntry, type Diagnostic, type RuntimeEvent, runCommand } from '@/core'
+import { Input } from '@/components/ui/input'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { type CatalogEntry, type CustomInstall, type Diagnostic, type RuntimeEvent, runCommand } from '@/core'
 
 function formatBytes(bytes: number) {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+const RUNTIME_IDS = ['php', 'node', 'python']
+
 export function RuntimesPage() {
   const [catalog, setCatalog] = useState<CatalogEntry[]>([])
   const [progress, setProgress] = useState<Record<string, RuntimeEvent | undefined>>({})
   const [error, setError] = useState<Diagnostic | null>(null)
 
+  const [customInstalls, setCustomInstalls] = useState<CustomInstall[]>([])
+  const [customId, setCustomId] = useState('php')
+  const [customLabel, setCustomLabel] = useState('')
+
   async function refresh() {
     const res = await runCommand({ type: 'list_runtime_catalog' })
     if (res.type === 'runtime_catalog') setCatalog(res.entries)
+    const custom = await runCommand({ type: 'list_custom_installs' })
+    if (custom.type === 'custom_installs') setCustomInstalls(custom.entries)
+  }
+
+  async function addCustomInstall() {
+    const picked = await open({
+      multiple: false,
+      directory: false,
+      title: `Locate ${customId}${customLabel ? ` ${customLabel}` : ''}`,
+      filters: [{ name: 'Executable', extensions: ['exe'] }],
+    })
+    if (!picked || Array.isArray(picked)) return
+    setError(null)
+    try {
+      await runCommand({ type: 'set_custom_install', id: customId, label: customLabel, path: picked })
+      setCustomLabel('')
+      await refresh()
+    } catch (err) {
+      setError(err as Diagnostic)
+    }
+  }
+
+  async function removeCustomInstall(entry: CustomInstall) {
+    await runCommand({ type: 'remove_custom_install', id: entry.id, label: entry.label })
+    await refresh()
   }
 
   useEffect(() => {
@@ -52,67 +86,130 @@ export function RuntimesPage() {
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        {catalog.map((entry) => {
-          const key = `${entry.id}@${entry.version}`
-          const live = progress[key]
-          const isInstalling = live && live.kind === 'progress'
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">Catalog</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Version</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Detail</TableHead>
+                <TableHead className="text-right">Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {catalog.map((entry) => {
+                const key = `${entry.id}@${entry.version}`
+                const live = progress[key]
+                const isInstalling = live && live.kind === 'progress'
 
-          return (
-            <Card key={key}>
-              <CardHeader className="flex-row items-center justify-between space-y-0">
-                <CardTitle>
-                  {entry.name} <span className="text-muted-foreground font-normal">v{entry.version}</span>
-                </CardTitle>
-                {entry.installed ? (
-                  <Badge variant="success">Installed</Badge>
-                ) : isInstalling ? (
-                  <Badge variant="secondary" className="capitalize">
-                    {live.kind === 'progress' ? live.state : ''}
-                  </Badge>
-                ) : live?.kind === 'failed' ? (
-                  <Badge variant="destructive">Failed</Badge>
-                ) : (
-                  <Badge variant="outline">Not installed</Badge>
-                )}
-              </CardHeader>
-              <CardContent className="flex flex-col gap-3">
-                <CardDescription>
-                  {live?.kind === 'progress' &&
-                    `${formatBytes(live.downloaded)}${live.total ? ` / ${formatBytes(live.total)}` : ''}`}
-                  {live?.kind === 'failed' && live.message}
-                  {!live && !entry.installed && 'Windows x64 build from the vendor’s official distribution.'}
-                  {!live && entry.installed && 'Ready to use in any project.'}
-                </CardDescription>
-                {entry.system && !entry.installed && (
-                  <p className="text-xs text-muted-foreground">
-                    Found on your system: <span className="text-foreground">{entry.system.version}</span> at{' '}
-                    <code className="rounded bg-muted px-1 py-0.5">{entry.system.path}</code>
-                    <br />
-                    Not managed by OpenLocalServer — install below for per-project version control.
-                  </p>
-                )}
-                {live?.kind === 'progress' && live.total && (
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                    <div
-                      className="h-full bg-primary transition-all"
-                      style={{ width: `${Math.min(100, (live.downloaded / live.total) * 100)}%` }}
-                    />
-                  </div>
-                )}
-                {!entry.installed && !isInstalling && (
-                  <Button size="sm" onClick={() => install(entry)} className="w-fit">
-                    <Download /> Install
-                  </Button>
-                )}
-              </CardContent>
-            </Card>
-          )
-        })}
-        {catalog.length === 0 && (
-          <p className="text-sm text-muted-foreground">No runtimes in the catalog for this platform yet.</p>
-        )}
-      </div>
+                return (
+                  <TableRow key={key}>
+                    <TableCell className="font-medium">{entry.name}</TableCell>
+                    <TableCell className="text-muted-foreground">{entry.version}</TableCell>
+                    <TableCell>
+                      {entry.installed ? (
+                        <Badge variant="success">Installed</Badge>
+                      ) : isInstalling ? (
+                        <Badge variant="secondary" className="capitalize">
+                          {live.kind === 'progress' ? live.state : ''}
+                        </Badge>
+                      ) : live?.kind === 'failed' ? (
+                        <Badge variant="destructive">Failed</Badge>
+                      ) : (
+                        <Badge variant="outline">Not installed</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {live?.kind === 'progress' &&
+                        `${formatBytes(live.downloaded)}${live.total ? ` / ${formatBytes(live.total)}` : ''}`}
+                      {live?.kind === 'failed' && live.message}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {!entry.installed && !isInstalling && (
+                        <Button size="sm" variant="secondary" onClick={() => install(entry)}>
+                          <Download /> Install
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+              {catalog.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center text-sm text-muted-foreground">
+                    No runtimes in the catalog for this platform yet.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">Custom locations</CardTitle>
+          <CardDescription>
+            Already have PHP, Node, or Python installed elsewhere? Point a project at it instead of downloading.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={customId}
+              onChange={(e) => setCustomId(e.target.value)}
+              className="h-9 rounded-lg border border-transparent bg-input/60 px-3 text-sm"
+            >
+              {RUNTIME_IDS.map((id) => (
+                <option key={id} value={id}>
+                  {id}
+                </option>
+              ))}
+            </select>
+            <Input
+              value={customLabel}
+              onChange={(e) => setCustomLabel(e.target.value)}
+              placeholder="version label, e.g. 8.1"
+              className="w-40"
+            />
+            <Button size="sm" variant="secondary" onClick={addCustomInstall}>
+              <FolderSearch /> Locate executable
+            </Button>
+          </div>
+
+          {customInstalls.length > 0 && (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Runtime</TableHead>
+                  <TableHead>Version</TableHead>
+                  <TableHead>Path</TableHead>
+                  <TableHead className="text-right">Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {customInstalls.map((c) => (
+                  <TableRow key={`${c.id}-${c.label}`}>
+                    <TableCell className="font-medium uppercase">{c.id}</TableCell>
+                    <TableCell>{c.label || '—'}</TableCell>
+                    <TableCell className="max-w-xs truncate text-xs text-muted-foreground">{c.path}</TableCell>
+                    <TableCell className="text-right">
+                      <Button size="sm" variant="ghost" onClick={() => removeCustomInstall(c)}>
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
 
       {error && (
         <Card className="border-destructive/40 bg-destructive/5">

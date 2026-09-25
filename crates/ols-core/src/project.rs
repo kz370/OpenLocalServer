@@ -6,11 +6,12 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::custom_install::CustomInstallStore;
 use crate::detection::{self, DetectionResult};
 use crate::error::CoreError;
 use crate::manifest::{self, EnvironmentManifest};
 use crate::paths::AppPaths;
-use crate::resolver::{self, ResolvedRuntime};
+use crate::resolver::{self, ResolutionSource, ResolvedRuntime};
 use crate::runtime::RuntimeManager;
 use crate::settings::SettingsService;
 
@@ -113,6 +114,7 @@ pub fn build_detail(
     project: &Project,
     runtimes: &RuntimeManager,
     settings: &SettingsService,
+    custom_installs: &CustomInstallStore,
 ) -> ProjectDetail {
     let path = PathBuf::from(&project.path);
     let detection = detection::detect(&path);
@@ -140,7 +142,17 @@ pub fn build_detail(
             _ => None,
         };
         let global_version = global(id);
-        resolved.push(resolver::resolve(id, manifest_version, detected_version, global_version.as_deref(), runtimes));
+        let mut r = resolver::resolve(id, manifest_version, detected_version, global_version.as_deref(), runtimes);
+
+        // A user-pinned custom install always wins (§126).
+        if let Some(custom) = custom_installs.resolve(id, r.requested_version.as_deref()) {
+            r.source = ResolutionSource::Custom;
+            r.requested_version = Some(if custom.label.is_empty() { "custom".to_string() } else { custom.label.clone() });
+            r.installed_version = Some(r.requested_version.clone().unwrap());
+            r.bin_dir = PathBuf::from(&custom.path).parent().map(|p| p.display().to_string());
+        }
+
+        resolved.push(r);
     }
 
     ProjectDetail { project: project.clone(), detection, manifest, resolved }
@@ -229,11 +241,39 @@ mod tests {
 
         let runtimes = RuntimeManager::new(home.paths.clone());
         let settings = SettingsService::load(&home.paths).unwrap();
-        let detail = build_detail(&project, &runtimes, &settings);
+        let custom_installs = CustomInstallStore::load(&home.paths).unwrap();
+        let detail = build_detail(&project, &runtimes, &settings, &custom_installs);
 
         let php = detail.resolved.iter().find(|r| r.id == "php").unwrap();
         // The manifest says 8.3; composer.json's detected 8.1 must lose.
         assert_eq!(php.requested_version.as_deref(), Some("8.3"));
         assert_eq!(php.source, resolver::ResolutionSource::Manifest);
+    }
+
+    /// A user-pinned custom install must win even over an explicit manifest version —
+    /// it's the most explicit choice possible (§126).
+    #[test]
+    fn build_detail_prefers_a_matching_custom_install_over_the_manifest() {
+        let home = crate::test_support::isolated_home();
+        let project_dir = home.paths.root().join("shop");
+        std::fs::create_dir_all(&project_dir).unwrap();
+        let devforge_dir = project_dir.join(".devforge");
+        std::fs::create_dir_all(&devforge_dir).unwrap();
+        std::fs::write(devforge_dir.join("environment.yaml"), "runtime:\n  php: \"8.1\"\n").unwrap();
+
+        let custom_php = home.paths.root().join("custom-php.exe");
+        std::fs::write(&custom_php, b"fake").unwrap();
+
+        let mut store = ProjectStore::load(&home.paths).unwrap();
+        let project = store.register(project_dir.to_str().unwrap()).unwrap();
+        let runtimes = RuntimeManager::new(home.paths.clone());
+        let settings = SettingsService::load(&home.paths).unwrap();
+        let mut custom_installs = CustomInstallStore::load(&home.paths).unwrap();
+        custom_installs.set("php", "8.1", custom_php.to_str().unwrap()).unwrap();
+
+        let detail = build_detail(&project, &runtimes, &settings, &custom_installs);
+        let php = detail.resolved.iter().find(|r| r.id == "php").unwrap();
+        assert_eq!(php.source, resolver::ResolutionSource::Custom);
+        assert_eq!(php.bin_dir.as_deref(), Some(home.paths.root().display().to_string().as_str()));
     }
 }

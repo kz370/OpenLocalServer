@@ -14,6 +14,9 @@ pub enum ResolutionSource {
     Detected,
     Global,
     None,
+    /// A user-pinned custom install location — wins over everything (§126 principle:
+    /// an explicit choice is never silently overridden).
+    Custom,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

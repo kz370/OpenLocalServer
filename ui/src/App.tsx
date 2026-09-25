@@ -5,6 +5,7 @@ import { DashboardPage } from '@/pages/Dashboard'
 import { ProcessesPage } from '@/pages/Processes'
 import { ProjectsPage } from '@/pages/Projects'
 import { RuntimesPage } from '@/pages/Runtimes'
+import { ServicesPage } from '@/pages/Services'
 
 export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
@@ -17,6 +18,7 @@ export default function App() {
         {page === 'projects' && <ProjectsPage />}
         {page === 'processes' && <ProcessesPage />}
         {page === 'runtimes' && <RuntimesPage />}
+        {page === 'services' && <ServicesPage />}
       </main>
     </div>
   )
