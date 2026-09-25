@@ -11,6 +11,8 @@ This file has two parts:
 
 ## Progress (as of 2026-09-26)
 
+The full list of missing features is in [STATUS.md](STATUS.md).
+
 **Current stage: 11 — Runtime depth + diagnostics (in progress).** Release 0.1 features are largely built but
 its release gate (the clean-VM Laravel flow) has not been run, and several Stage 0–5 items are still open.
 
