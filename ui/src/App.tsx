@@ -22,7 +22,7 @@ export default function App() {
       <Sidebar page={page} onNavigate={setPage} />
       <main className="flex-1 overflow-y-auto p-6">
         {page === 'dashboard' && <DashboardPage onNavigate={setPage} />}
-        {page === 'projects' && <ProjectsPage onNavigate={setPage} />}
+        {page === 'projects' && <ProjectsPage />}
         {page === 'quickapps' && <QuickAppsPage onNavigate={setPage} />}
         {page === 'commands' && <CommandsPage />}
         {page === 'domains' && <DomainsPage />}
