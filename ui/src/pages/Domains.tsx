@@ -11,12 +11,12 @@ import {
   Plus,
   RefreshCw,
   ShieldCheck,
-  Square,
   Trash2,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
+import { StopIcon } from '@/components/StopIcon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -171,7 +171,7 @@ export function DomainsPage() {
                 })
               }
             >
-              <Square /> Stop
+              <StopIcon /> Stop
             </Button>
           )}
         </div>
@@ -289,7 +289,7 @@ export function DomainsPage() {
                             })
                           }
                         >
-                          {d.enabled ? <Square className="size-3.5" /> : <Play className="size-3.5" />}
+                          {d.enabled ? <StopIcon className="size-3.5" /> : <Play className="size-3.5" />}
                         </Button>
                         {d.has_app && (
                           <Button size="sm" variant="ghost" title="Restart app process" onClick={() => run('restart', () => runCommand({ type: 'restart_site_app', hostname: d.hostname }))}>
@@ -660,7 +660,8 @@ function DomainDialog({
     let kind = d!.kind
     if (detail.type === 'project_detail') {
       const fw = detail.detail.detection.framework
-      if (fw === 'laravel' || fw === 'symfony') root = `${p.path}\\public`
+      const sub = detail.detail.detection.doc_root ?? (fw === 'laravel' || fw === 'symfony' ? 'public' : null)
+      if (sub) root = `${p.path}\\${sub}`
       if (fw === 'laravel' || fw === 'symfony' || fw === 'word_press' || fw === 'generic_php') kind = { type: 'php', version: null }
       else if (fw === 'node' || fw === 'fast_api' || fw === 'django' || fw === 'flask') kind = { type: 'proxy', upstream_port: 3000 }
     }

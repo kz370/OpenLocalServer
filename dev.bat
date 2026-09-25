@@ -10,6 +10,10 @@ if not exist "ui\node_modules" (
   popd
 )
 
+rem The hosts-file helper must sit beside the app, and `cargo tauri dev` only builds the app itself.
+cargo build -p ols-helper
+if errorlevel 1 exit /b 1
+
 start "OpenLocalServer UI (vite)" /D "%~dp0ui" cmd /k npm run dev
 
 cargo tauri dev

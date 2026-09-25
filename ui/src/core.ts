@@ -84,6 +84,7 @@ export interface DetectionResult {
   framework: Framework
   markers: string[]
   requirements: RuntimeRequirement
+  doc_root: string | null
 }
 
 export interface EnvironmentManifest {

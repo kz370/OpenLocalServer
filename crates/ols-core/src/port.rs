@@ -15,6 +15,11 @@ pub enum PortStatus {
     },
 }
 
+/// Cheap free/in-use test: a bind attempt, no process lookup.
+pub fn port_is_free(port: u16) -> bool {
+    TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], port))).is_ok()
+}
+
 /// Check whether `port` is free on 127.0.0.1. If it's busy, best-effort identify the
 /// owning process (Windows: parse `netstat -ano` + `tasklist`) so the UI can show
 /// "Port 3306 is in use by mysqld.exe (PID 4821)" instead of a bare failure.
@@ -26,8 +31,18 @@ pub fn check_port(port: u16) -> PortStatus {
             PortStatus::Free
         }
         Err(_) => {
+            // netstat + tasklist cost ~0.5s and the UI polls this; owners rarely change, so cache.
+            static CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<u16, (std::time::Instant, Option<u32>, Option<String>)>>> =
+                std::sync::OnceLock::new();
+            let cache = CACHE.get_or_init(Default::default);
+            if let Some((at, pid, name)) = cache.lock().unwrap().get(&port) {
+                if at.elapsed() < std::time::Duration::from_secs(15) {
+                    return PortStatus::InUse { pid: *pid, process_name: name.clone() };
+                }
+            }
             let pid = find_owning_pid(port);
             let process_name = pid.and_then(find_process_name);
+            cache.lock().unwrap().insert(port, (std::time::Instant::now(), pid, process_name.clone()));
             PortStatus::InUse { pid, process_name }
         }
     }

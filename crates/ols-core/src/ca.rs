@@ -12,6 +12,10 @@ use rcgen::{
 
 use crate::paths::AppPaths;
 
+/// Last answer of the trust-store probe (Windows) so status polling doesn't spawn certutil each time.
+#[cfg(windows)]
+static TRUST_CACHE: std::sync::Mutex<Option<(std::time::Instant, bool)>> = std::sync::Mutex::new(None);
+
 pub struct LocalCa {
     dir: PathBuf,
 }
@@ -143,6 +147,7 @@ impl LocalCa {
     /// scope only affects this Windows account, unlike LocalMachine\Root.
     #[cfg(windows)]
     pub fn trust_current_user(&self) -> Result<(), String> {
+        *TRUST_CACHE.lock().unwrap() = None;
         self.ensure_created()?;
         let mut cmd = std::process::Command::new("certutil");
         cmd.args(["-user", "-addstore", "Root", &self.ca_cert_path().display().to_string()]);
@@ -160,14 +165,23 @@ impl LocalCa {
     /// Is the CA currently in the CurrentUser Root store? (§51 trust check)
     #[cfg(windows)]
     pub fn is_trusted(&self) -> bool {
+        // certutil takes ~100ms and the UI polls this; trust only changes through us, which resets the cache.
+        if let Some((at, trusted)) = *TRUST_CACHE.lock().unwrap() {
+            if at.elapsed() < std::time::Duration::from_secs(30) {
+                return trusted;
+            }
+        }
         let mut cmd = std::process::Command::new("certutil");
         cmd.args(["-user", "-store", "Root", CA_COMMON_NAME]);
         crate::exec::hide_window(&mut cmd);
-        cmd.output().map(|o| o.status.success()).unwrap_or(false)
+        let trusted = cmd.output().map(|o| o.status.success()).unwrap_or(false);
+        *TRUST_CACHE.lock().unwrap() = Some((std::time::Instant::now(), trusted));
+        trusted
     }
 
     #[cfg(windows)]
     pub fn untrust_current_user(&self) -> Result<(), String> {
+        *TRUST_CACHE.lock().unwrap() = None;
         let mut cmd = std::process::Command::new("certutil");
         cmd.args(["-user", "-delstore", "Root", CA_COMMON_NAME]);
         crate::exec::hide_window(&mut cmd);

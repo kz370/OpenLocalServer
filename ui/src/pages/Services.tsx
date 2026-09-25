@@ -1,7 +1,8 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { ExternalLink, FolderSearch, Play, Square } from 'lucide-react'
+import { ExternalLink, FolderSearch, Play } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
+import { StopIcon } from '@/components/StopIcon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -133,7 +134,7 @@ export function ServicesPage() {
                         <Button size="sm" variant="secondary" disabled={busy === s.id} onClick={() => toggle(s)}>
                           {s.running ? (
                             <>
-                              <Square /> Stop
+                              <StopIcon /> Stop
                             </>
                           ) : (
                             <>

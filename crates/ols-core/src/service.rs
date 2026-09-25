@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::exec::{run_capture, Captured};
 use crate::paths::AppPaths;
-use crate::port::{check_port, PortStatus};
+use crate::port::port_is_free;
 use crate::process::{ProcessId, ProcessSpec, ProcessSupervisor};
 use crate::runtime::RuntimeManager;
 
@@ -105,26 +105,24 @@ impl ServiceManager {
     }
 
     pub fn status(&self, id: &str) -> ServiceStatus {
-        let entry = self.runtimes.catalog().into_iter().find(|e| e.id == id);
-        let installed = entry.as_ref().map(|e| e.installed).unwrap_or(false);
+        let versions = self.runtimes.installed_versions(id);
+        let installed = !versions.is_empty();
         let running = self.is_running(id);
         let port = primary_port(id);
         ServiceStatus {
             id: id.to_string(),
-            name: entry.map(|e| e.name).unwrap_or_else(|| id.to_string()),
+            name: self.runtimes.display_name(id).unwrap_or_else(|| id.to_string()),
             installed,
             running,
             port,
-            port_status: port.map(|p| match check_port(p) {
-                PortStatus::Free => PortStatusLite::Free,
-                PortStatus::InUse { .. } => PortStatusLite::InUse,
-            }),
+            // Only free/in-use matters here, so skip the netstat/tasklist owner lookup.
+            port_status: port.map(|p| if port_is_free(p) { PortStatusLite::Free } else { PortStatusLite::InUse }),
             kind: kind_of(id).to_string(),
             connection: installed.then(|| connection_string(id)).flatten(),
             healthy: running.then(|| {
                 port.is_some_and(|p| TcpStream::connect_timeout(&([127, 0, 0, 1], p).into(), Duration::from_millis(300)).is_ok())
             }),
-            version: self.runtimes.installed_versions(id).into_iter().next(),
+            version: versions.into_iter().next(),
         }
     }
 

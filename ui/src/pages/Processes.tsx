@@ -1,7 +1,8 @@
 import { listen } from '@tauri-apps/api/event'
-import { Play, Square } from 'lucide-react'
+import { Play } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
+import { StopIcon } from '@/components/StopIcon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -198,7 +199,7 @@ export function ProcessesPage() {
                       }}
                       title="Stop"
                     >
-                      <Square className="size-3.5" />
+                      <StopIcon className="size-3.5" />
                     </Button>
                   )}
                 </div>

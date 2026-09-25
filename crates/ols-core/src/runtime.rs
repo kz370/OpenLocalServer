@@ -37,6 +37,22 @@ pub struct SystemInstall {
 /// it — purely informational, so the UI can say "found on your system" instead of only
 /// ever offering a download (§126: never modify an existing install without asking).
 pub fn detect_system_install(id: &str) -> Option<SystemInstall> {
+    // Each probe spawns `<tool> --version`, and the UI polls the catalog — remember answers briefly.
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, (std::time::Instant, Option<SystemInstall>)>>> =
+        std::sync::OnceLock::new();
+    const TTL: std::time::Duration = std::time::Duration::from_secs(60);
+    let cache = CACHE.get_or_init(Default::default);
+    if let Some((at, found)) = cache.lock().unwrap().get(id) {
+        if at.elapsed() < TTL {
+            return found.clone();
+        }
+    }
+    let found = probe_system_install(id);
+    cache.lock().unwrap().insert(id.to_string(), (std::time::Instant::now(), found.clone()));
+    found
+}
+
+fn probe_system_install(id: &str) -> Option<SystemInstall> {
     let (exe_name, version_flag) = crate::catalog::system_probe(id)?;
     let path_var = std::env::var_os("PATH")?;
     let exe_path = std::env::split_paths(&path_var).map(|dir| dir.join(exe_name)).find(|p| p.is_file())?;
@@ -110,6 +126,11 @@ impl RuntimeManager {
                 system: detect_system_install(m.id),
             })
             .collect()
+    }
+
+    /// Display name of `id` from the built-in catalog — no filesystem or process probing.
+    pub fn display_name(&self, id: &str) -> Option<String> {
+        builtin_catalog().into_iter().find(|m| m.id == id).map(|m| m.name.to_string())
     }
 
     pub fn binary_path(&self, id: &str, version: &str) -> Option<PathBuf> {

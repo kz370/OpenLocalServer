@@ -1,7 +1,8 @@
-import { AlertTriangle, CheckCircle2, ExternalLink, Globe, Play, Rocket, Square, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ExternalLink, Globe, Play, Rocket, XCircle } from 'lucide-react'
 import { useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
+import { StopIcon } from '@/components/StopIcon'
 import type { Page } from '@/components/layout/Sidebar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -64,7 +65,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: Page) => void })
                 })
               }
             >
-              <Square /> Stop
+              <StopIcon /> Stop
             </Button>
           )}
         </div>
@@ -172,7 +173,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: Page) => void })
                           })
                         }
                       >
-                        {s.running ? <Square className="size-3.5" /> : <Play className="size-3.5" />}
+                        {s.running ? <StopIcon className="size-3.5" /> : <Play className="size-3.5" />}
                       </Button>
                     </span>
                   </div>

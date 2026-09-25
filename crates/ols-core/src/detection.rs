@@ -34,6 +34,9 @@ pub struct DetectionResult {
     /// Marker filenames that led to the detection, for the UI to show its work.
     pub markers: Vec<String>,
     pub requirements: RuntimeRequirement,
+    /// Sub-folder to serve when the entry point isn't in the project root (`public` for
+    /// Laravel-style layouts). `None` means serve the project folder itself.
+    pub doc_root: Option<String>,
 }
 
 fn exists(root: &Path, name: &str) -> bool {
@@ -166,7 +169,10 @@ pub fn detect(project_path: &Path) -> DetectionResult {
         }
     }
 
-    DetectionResult { framework, markers, requirements }
+    let php_family = matches!(framework, Framework::Laravel | Framework::Symfony | Framework::GenericPhp);
+    let doc_root = (php_family && !exists(project_path, "index.php") && exists(project_path, "public/index.php")).then(|| "public".to_string());
+
+    DetectionResult { framework, markers, requirements, doc_root }
 }
 
 #[cfg(test)]
@@ -228,7 +234,9 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::create_dir(tmp.path().join("public")).unwrap();
         std::fs::write(tmp.path().join("public").join("index.php"), "<?php echo 1;").unwrap();
-        assert_eq!(detect(tmp.path()).framework, Framework::GenericPhp);
+        let found = detect(tmp.path());
+        assert_eq!(found.framework, Framework::GenericPhp);
+        assert_eq!(found.doc_root.as_deref(), Some("public"));
     }
 
     #[test]
