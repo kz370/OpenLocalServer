@@ -1,11 +1,11 @@
 import { listen } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
-import { ChevronDown, ChevronRight, Download, FolderSearch, Trash2 } from 'lucide-react'
+import { Download, FolderSearch, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { type CatalogEntry, type CustomInstall, type Diagnostic, type RuntimeEvent, runCommand } from '@/core'
@@ -47,7 +47,6 @@ export function RuntimesPage() {
   const [progress, setProgress] = useState<Record<string, RuntimeEvent | undefined>>({})
   const [error, setError] = useState<Diagnostic | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
 
   const [customInstalls, setCustomInstalls] = useState<CustomInstall[]>([])
   const [customId, setCustomId] = useState('php')
@@ -148,121 +147,104 @@ export function RuntimesPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Runtimes</h1>
         <p className="text-sm text-muted-foreground">
-          Grouped by runtime. Downloaded once, verified by SHA-256 and cached (§20–21, §127), or point at versions you already have.
+          Versions are grouped by runtime. Downloads are verified by SHA-256 and cached (§20–21, §127).
         </p>
       </div>
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm">Use versions you already have</CardTitle>
-          <CardDescription>
-            Point at a folder that holds many PHP versions and every one of them is added. They show up under PHP below and
-            can be chosen per site.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-wrap items-center gap-2">
-          <Button size="sm" onClick={scanPhpFolder}>
-            <FolderSearch /> Add folder of PHP versions
-          </Button>
-          <span className="px-1 text-xs text-muted-foreground">or one executable:</span>
-          <select
-            value={customId}
-            onChange={(e) => setCustomId(e.target.value)}
-            className="h-9 rounded-lg border border-transparent bg-input/60 px-3 text-sm"
-          >
-            {LOCATABLE.map((id) => (
-              <option key={id} value={id}>
-                {id}
-              </option>
-            ))}
-          </select>
-          <Input
-            value={customLabel}
-            onChange={(e) => setCustomLabel(e.target.value)}
-            placeholder="version label, e.g. 8.1.2"
-            className="w-44"
-          />
-          <Button size="sm" variant="secondary" onClick={addCustomInstall}>
-            <FolderSearch /> Locate executable
-          </Button>
-        </CardContent>
-      </Card>
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border px-3 py-2">
+        <span className="text-sm font-medium">Use versions you already have</span>
+        <Button size="sm" onClick={scanPhpFolder} title="Adds every PHP version found in the folder you pick">
+          <FolderSearch /> Add folder of PHP versions
+        </Button>
+        <span className="px-1 text-xs text-muted-foreground">or one executable:</span>
+        <select
+          value={customId}
+          onChange={(e) => setCustomId(e.target.value)}
+          className="h-8 rounded-lg border border-transparent bg-input/60 px-2 text-sm"
+        >
+          {LOCATABLE.map((id) => (
+            <option key={id} value={id}>
+              {id}
+            </option>
+          ))}
+        </select>
+        <Input
+          value={customLabel}
+          onChange={(e) => setCustomLabel(e.target.value)}
+          placeholder="version, e.g. 8.1.2"
+          className="h-8 w-36"
+        />
+        <Button size="sm" variant="secondary" onClick={addCustomInstall}>
+          <FolderSearch /> Locate
+        </Button>
+      </div>
 
       {notice && <p className="text-sm text-muted-foreground">{notice}</p>}
 
-      {groups.map((g) => {
-        const installed = g.rows.filter((r) => r.kind === 'custom' || r.entry?.installed).length
-        const isCollapsed = collapsed[g.id] ?? false
-        return (
-          <Card key={g.id}>
-            <CardHeader className="pb-2">
-              <button
-                className="flex items-center gap-2 text-left"
-                onClick={() => setCollapsed((c) => ({ ...c, [g.id]: !isCollapsed }))}
-              >
-                {isCollapsed ? <ChevronRight className="size-4" /> : <ChevronDown className="size-4" />}
-                <CardTitle className="text-sm">{g.name}</CardTitle>
-                <Badge variant={installed > 0 ? 'success' : 'outline'}>
-                  {installed > 0 ? `${installed} installed` : 'none installed'}
-                </Badge>
-                {g.rows.length > 1 && <span className="text-xs text-muted-foreground">{g.rows.length} versions</span>}
-              </button>
-            </CardHeader>
-            {!isCollapsed && (
-              <CardContent className="p-0">
-                <Table>
-                  <TableBody>
-                    {g.rows.map((row) => {
-                      const live = progress[row.key]
-                      const installing = live && live.kind === 'progress'
-                      return (
-                        <TableRow key={row.key}>
-                          <TableCell className="w-40 font-medium">{row.version}</TableCell>
-                          <TableCell className="w-36">
-                            {row.kind === 'custom' ? (
-                              <Badge variant="secondary">Your install</Badge>
-                            ) : row.entry?.installed ? (
-                              <Badge variant="success">Installed</Badge>
-                            ) : installing ? (
-                              <Badge variant="secondary" className="capitalize">
-                                {live.kind === 'progress' ? live.state : ''}
-                              </Badge>
-                            ) : live?.kind === 'failed' ? (
-                              <Badge variant="destructive">Failed</Badge>
-                            ) : (
-                              <Badge variant="outline">Not installed</Badge>
-                            )}
-                          </TableCell>
-                          <TableCell className="max-w-md truncate text-xs text-muted-foreground">
-                            {row.kind === 'custom' && row.custom?.path}
-                            {live?.kind === 'progress' &&
-                              `${formatBytes(live.downloaded)}${live.total ? ` / ${formatBytes(live.total)}` : ''}`}
-                            {live?.kind === 'failed' && live.message}
-                            {row.kind === 'managed' && !row.entry?.installed && !live && row.entry?.system &&
-                              `Found on PATH: ${row.entry.system.version}`}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {row.kind === 'managed' && !row.entry?.installed && !installing && row.entry && (
-                              <Button size="sm" variant="secondary" onClick={() => install(row.entry!)}>
-                                <Download /> Install
-                              </Button>
-                            )}
-                            {row.kind === 'custom' && row.custom && (
-                              <Button size="sm" variant="ghost" title="Remove from list" onClick={() => removeCustomInstall(row.custom!)}>
-                                <Trash2 className="size-3.5" />
-                              </Button>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            )}
-          </Card>
-        )
-      })}
+      <Table>
+        <TableBody>
+          {groups.map((g) => {
+            const installed = g.rows.filter((r) => r.kind === 'custom' || r.entry?.installed).length
+            return g.rows.map((row, i) => {
+              const live = progress[row.key]
+              const installing = live && live.kind === 'progress'
+              const last = i === g.rows.length - 1
+              return (
+                <TableRow key={row.key} className={last ? 'border-b-2' : 'border-b-0'}>
+                  <TableCell className="w-44 py-1 align-top">
+                    {i === 0 && (
+                      <span className="font-medium">
+                        {g.name}
+                        {g.rows.length > 1 && (
+                          <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                            {installed}/{g.rows.length}
+                          </span>
+                        )}
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell className="w-32 py-1">{row.version}</TableCell>
+                  <TableCell className="w-32 py-1">
+                    {row.kind === 'custom' ? (
+                      <Badge variant="secondary">Yours</Badge>
+                    ) : row.entry?.installed ? (
+                      <Badge variant="success">Installed</Badge>
+                    ) : installing ? (
+                      <Badge variant="secondary" className="capitalize">
+                        {live.kind === 'progress' ? live.state : ''}
+                      </Badge>
+                    ) : live?.kind === 'failed' ? (
+                      <Badge variant="destructive">Failed</Badge>
+                    ) : (
+                      <Badge variant="outline">Not installed</Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="max-w-0 truncate py-1 text-xs text-muted-foreground">
+                    {row.kind === 'custom' && row.custom?.path}
+                    {live?.kind === 'progress' &&
+                      `${formatBytes(live.downloaded)}${live.total ? ` / ${formatBytes(live.total)}` : ''}`}
+                    {live?.kind === 'failed' && live.message}
+                    {row.kind === 'managed' && !row.entry?.installed && !live && row.entry?.system &&
+                      `Found on PATH: ${row.entry.system.version}`}
+                  </TableCell>
+                  <TableCell className="w-28 py-1 text-right">
+                    {row.kind === 'managed' && !row.entry?.installed && !installing && row.entry && (
+                      <Button size="sm" variant="secondary" className="h-7" onClick={() => install(row.entry!)}>
+                        <Download /> Install
+                      </Button>
+                    )}
+                    {row.kind === 'custom' && row.custom && (
+                      <Button size="sm" variant="ghost" className="h-7" title="Remove from list" onClick={() => removeCustomInstall(row.custom!)}>
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    )}
+                  </TableCell>
+                </TableRow>
+              )
+            })
+          })}
+        </TableBody>
+      </Table>
       {groups.length === 0 && <p className="text-sm text-muted-foreground">No runtimes in the catalog for this platform yet.</p>}
 
       {error && (

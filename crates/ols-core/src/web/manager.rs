@@ -1035,10 +1035,10 @@ mod tests {
     fn static_site_with_an_index_php_is_served_as_php_not_downloaded() {
         let dir = tempfile::tempdir().unwrap();
         assert!(matches!(effective_kind(&static_domain(dir.path())), SiteKind::Static));
-        std::fs::write(dir.path().join("index.php"), "<?php").unwrap();
-        assert!(matches!(effective_kind(&static_domain(dir.path())), SiteKind::Php { version: None }));
         std::fs::write(dir.path().join("index.html"), "hi").unwrap();
-        assert!(matches!(effective_kind(&static_domain(dir.path())), SiteKind::Static), "an explicit index.html wins");
+        assert!(matches!(effective_kind(&static_domain(dir.path())), SiteKind::Static), "plain HTML stays static");
+        std::fs::write(dir.path().join("Contact.PHP"), "<?php").unwrap();
+        assert!(matches!(effective_kind(&static_domain(dir.path())), SiteKind::Php { version: None }), "any top-level php file needs the PHP handler");
     }
 
     #[test]
@@ -1083,16 +1083,18 @@ mod tests {
     }
 }
 
-/// A site saved as static whose folder is plainly PHP (an `index.php`, no `index.html`)
-/// would hand its source to the browser as a download. Serve it through PHP instead;
+/// A site saved as static whose folder holds PHP files would hand their source to the
+/// browser as downloads. Serve it through PHP instead (PHP serves plain files fine too);
 /// the stored kind is left alone so the user's choice is never rewritten behind their back.
 fn effective_kind(d: &Domain) -> SiteKind {
-    if matches!(d.kind, SiteKind::Static) {
-        let root = std::path::Path::new(&d.root);
-        let has = |name: &str| root.join(name).is_file();
-        if has("index.php") && !has("index.html") && !has("index.htm") {
-            return SiteKind::Php { version: None };
-        }
+    if matches!(d.kind, SiteKind::Static) && has_top_level_php(std::path::Path::new(&d.root)) {
+        return SiteKind::Php { version: None };
     }
     d.kind.clone()
+}
+
+fn has_top_level_php(root: &Path) -> bool {
+    std::fs::read_dir(root).is_ok_and(|rd| {
+        rd.flatten().any(|e| e.path().is_file() && e.path().extension().is_some_and(|x| x.eq_ignore_ascii_case("php")))
+    })
 }

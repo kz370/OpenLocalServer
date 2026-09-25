@@ -155,6 +155,12 @@ fn main() {
     )
     .unwrap();
 
+    // A site saved as "static" whose folder is really PHP must not hand its source to the browser.
+    let s_dir = work.join("s");
+    std::fs::create_dir_all(&s_dir).unwrap();
+    std::fs::write(s_dir.join("index.php"), "<?php echo 'PHP=' . PHP_VERSION;").unwrap();
+    dispatch(&core, CoreCommand::AddDomain { domain: domain("s.test", &s_dir, SiteKind::Static) });
+
     dispatch(&core, CoreCommand::AddDomain { domain: domain("a.test", &a_dir, SiteKind::Php { version: Some("8.1".into()) }) });
     dispatch(&core, CoreCommand::AddDomain { domain: domain("b.test", &b_dir, SiteKind::Php { version: Some("8.4".into()) }) });
     let mut c = domain("c.test", &c_dir, SiteKind::Proxy { upstream_port: 15173 });
@@ -173,6 +179,8 @@ fn main() {
 
     let (s, body) = https_get(&ca_pem, "a.test", https);
     check("a.test runs PHP 8.1 over HTTPS", s == 200 && body.contains("PHP=8.1.") && body.contains("HTTPS=on"), &body);
+    let (s, body) = https_get(&ca_pem, "s.test", https);
+    check("static-kind site with index.php runs through PHP instead of downloading", s == 200 && body.contains("PHP=8."), &body);
     let (s, body) = https_get(&ca_pem, "b.test", https);
     check("b.test runs PHP 8.4 over HTTPS", s == 200 && body.contains("PHP=8.4."), &body);
     // The Node dev server needs a moment to boot.
