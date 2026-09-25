@@ -1,9 +1,10 @@
 import { listen } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
-import { Download, FolderSearch, Puzzle, Trash2 } from 'lucide-react'
+import { Bug, Download, FolderSearch, Puzzle, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import { PhpExtensionsDialog } from '@/components/PhpExtensionsDialog'
+import { XdebugDialog } from '@/components/XdebugDialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -54,6 +55,7 @@ export function RuntimesPage() {
   const [customId, setCustomId] = useState('php')
   const [customLabel, setCustomLabel] = useState('')
   const [extVersion, setExtVersion] = useState<string | null>(null)
+  const [xdebugVersion, setXdebugVersion] = useState<string | null>(null)
 
   async function refresh() {
     const res = await runCommand({ type: 'list_runtime_catalog' })
@@ -230,10 +232,15 @@ export function RuntimesPage() {
                     {row.kind === 'managed' && !row.entry?.installed && !live && row.entry?.system &&
                       `Found on PATH: ${row.entry.system.version}`}
                   </TableCell>
-                  <TableCell className="w-36 py-1 text-right">
+                  <TableCell className="w-56 whitespace-nowrap py-1 text-right">
                     {g.id === 'php' && (row.kind === 'custom' ? !!row.custom?.label : row.entry?.installed) && (
                       <Button size="sm" variant="ghost" className="h-7" title="Extensions" onClick={() => setExtVersion(row.version)}>
                         <Puzzle className="size-3.5" /> Extensions
+                      </Button>
+                    )}
+                    {g.id === 'php' && (row.kind === 'custom' ? !!row.custom?.label : row.entry?.installed) && (
+                      <Button size="sm" variant="ghost" className="h-7" title="Xdebug" onClick={() => setXdebugVersion(row.version)}>
+                        <Bug className="size-3.5" /> Xdebug
                       </Button>
                     )}
                     {row.kind === 'managed' && !row.entry?.installed && !installing && row.entry && (
@@ -256,6 +263,7 @@ export function RuntimesPage() {
       {groups.length === 0 && <p className="text-sm text-muted-foreground">No runtimes in the catalog for this platform yet.</p>}
 
       <PhpExtensionsDialog key={extVersion ?? ''} version={extVersion} onClose={() => setExtVersion(null)} />
+      <XdebugDialog key={'x' + (xdebugVersion ?? '')} version={xdebugVersion} onClose={() => setXdebugVersion(null)} />
 
       {error && (
         <Card className="border-destructive/40 bg-destructive/5">

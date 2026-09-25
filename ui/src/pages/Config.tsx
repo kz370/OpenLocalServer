@@ -30,15 +30,9 @@ export function ConfigPage() {
   const [files, setFiles] = useState<ConfigFile[]>([])
   const [cfg, setCfg] = useState<WebConfig | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
-  const [tab, setTab] = useState<'editor' | 'structured' | 'history'>('editor')
-  const [text, setText] = useState('')
-  const [saved, setSaved] = useState('')
-  const [notice, setNotice] = useState<string | null>(null)
-  const [pendingOwnership, setPendingOwnership] = useState<Ownership | null>(null)
-  const { busy, error, setError, run } = useAction()
+  const { error, setError } = useAction()
 
   const file = useMemo(() => files.find((f) => fileKey(f) === selected) ?? null, [files, selected])
-  const dirty = text !== saved
 
   async function refreshList(keep?: string) {
     const [l, c] = await Promise.all([runCommand({ type: 'list_web_configs' }), runCommand({ type: 'get_web_config' })])
@@ -49,52 +43,12 @@ export function ConfigPage() {
     if (c.type === 'web_config') setCfg(c.config)
   }
 
-  async function load(f: ConfigFile) {
-    const res = await runCommand({ type: 'read_web_config', hostname: f.hostname, part: f.part })
-    if (res.type === 'text') {
-      setText(res.text)
-      setSaved(res.text)
-    }
-  }
-
   useEffect(() => {
     refreshList().catch((e) => setError(e))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  useEffect(() => {
-    setNotice(null)
-    if (file) load(file).catch(() => setText('(the file does not exist yet: apply the web config first)'))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected])
-
-  async function saveFile() {
-    if (!file?.hostname) return
-    const res = await runCommand({ type: 'write_web_config', hostname: file.hostname, part: file.part, content: text })
-    if (res.type === 'text') setNotice(`Saved. The server accepted it and was reloaded.\n${res.text}`)
-    setSaved(text)
-    await refreshList(selected ?? undefined)
-  }
-
-  async function changeOwnership(next: Ownership) {
-    if (!file?.hostname) return
-    await runCommand({ type: 'set_ownership', hostname: file.hostname, ownership: next })
-    // Regenerate so the file on disk matches the new ownership immediately.
-    await runCommand({ type: 'apply_web', overwrite: next === 'managed' || next === 'advanced' ? [file.hostname] : [] })
-    setPendingOwnership(null)
-    await refreshList(selected ?? undefined)
-    if (file) await load(file)
-  }
-
-  async function exportFile() {
-    if (!file) return
-    const dest = await save({ title: 'Export config', defaultPath: `${file.hostname ?? 'main'}.conf` })
-    if (!dest) return
-    if (file.hostname) await runCommand({ type: 'export_web_config', hostname: file.hostname, part: file.part, dest })
-  }
-
   const grouped = files.filter((f) => f.part !== 'custom')
-  const editable = !!file?.editable
 
   return (
     <div className="flex flex-col gap-4">
@@ -128,79 +82,7 @@ export function ConfigPage() {
 
         <div className="flex min-w-0 flex-col gap-3">
           {file ? (
-            <>
-              <Card>
-                <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-4">
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-medium">{file.hostname ?? 'Main config'}{file.part === 'custom' && ' (your snippet)'}</div>
-                    <div className="truncate font-mono text-xs text-muted-foreground">{file.path}</div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {file.drifted && (
-                      <Badge variant="warning">
-                        <AlertTriangle className="size-3" /> edited by hand
-                      </Badge>
-                    )}
-                    {file.hostname && file.ownership && (
-                      <Select
-                        value={file.ownership}
-                        onChange={(e) => setPendingOwnership(e.target.value as Ownership)}
-                        className="w-40"
-                        title="Who owns this file"
-                      >
-                        <option value="managed">Managed</option>
-                        <option value="advanced">Advanced</option>
-                        <option value="manual">Manual</option>
-                      </Select>
-                    )}
-                    <Button size="sm" variant="ghost" title="Open folder" onClick={() => run('open', () => runCommand({ type: 'open_path', path: file.path.replace(/[\\/][^\\/]*$/, '') }))}>
-                      <FolderOpen />
-                    </Button>
-                    {file.hostname && (
-                      <Button size="sm" variant="ghost" title="Export" onClick={() => run('export', exportFile)}>
-                        <Download />
-                      </Button>
-                    )}
-                    <Button size="sm" variant="secondary" disabled={busy !== null} onClick={() => run('validate', async () => {
-                      const r = await runCommand({ type: 'validate_web' })
-                      if (r.type === 'text') setNotice(`The server accepts the config on disk.\n${r.text}`)
-                    })}>
-                      <ShieldCheck /> Validate
-                    </Button>
-                    {editable && (
-                      <Button size="sm" disabled={!dirty || busy !== null} onClick={() => run('save', saveFile)}>
-                        <Save /> Save and reload
-                      </Button>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {notice && <pre className="whitespace-pre-wrap rounded-lg border border-success/40 bg-success/5 p-3 text-xs">{notice}</pre>}
-
-              {file.hostname && file.ownership && (
-                <p className="text-xs text-muted-foreground">
-                  <b>{OWNERSHIP_INFO[file.ownership].label}.</b> {OWNERSHIP_INFO[file.ownership].blurb}
-                  {!editable && file.part === 'site' && ' To edit this file directly, switch it to Manual; to add your own directives, switch it to Advanced.'}
-                </p>
-              )}
-
-              <Tabs
-                tabs={[
-                  { id: 'editor', label: 'Editor' },
-                  ...(file.hostname && file.part === 'site' ? [{ id: 'structured' as const, label: 'Structured' }] : []),
-                  ...(file.hostname ? [{ id: 'history' as const, label: 'History' }] : []),
-                ]}
-                value={tab}
-                onChange={setTab}
-              />
-
-              {tab === 'editor' && <CodeEditor value={text} onChange={setText} readOnly={!editable} language={languageFor(cfg?.server ?? 'nginx')} height="480px" />}
-              {tab === 'structured' && file.hostname && <StructuredEditor hostname={file.hostname} onApplied={() => { void refreshList(selected ?? undefined); void load(file) }} />}
-              {tab === 'history' && file.hostname && (
-                <HistoryPanel hostname={file.hostname} current={text} language={languageFor(cfg?.server ?? 'nginx')} onRestored={() => { void refreshList(selected ?? undefined); void load(file) }} canRestore={editable} />
-              )}
-            </>
+            <ConfigFilePane key={selected} file={file} server={cfg?.server ?? 'nginx'} onChanged={() => refreshList(selected ?? undefined)} />
           ) : (
             <Card>
               <CardContent className="pt-4 text-sm text-muted-foreground">Select a file.</CardContent>
@@ -208,6 +90,156 @@ export function ConfigPage() {
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+/**
+ * One web-server config file: header, ownership, the editor / structured / history tabs.
+ * Used by the Web config page and inside a domain's edit dialog, so both edit the same way.
+ * Remount it (`key`) to switch files.
+ */
+export function ConfigFilePane({ file, server, onChanged }: { file: ConfigFile; server: string; onChanged: () => void | Promise<void> }) {
+  const [tab, setTab] = useState<'editor' | 'structured' | 'history'>('editor')
+  const [text, setText] = useState('')
+  const [saved, setSaved] = useState('')
+  const [notice, setNotice] = useState<string | null>(null)
+  const [pendingOwnership, setPendingOwnership] = useState<Ownership | null>(null)
+  const { busy, error, setError, run } = useAction()
+
+  const dirty = text !== saved
+  const editable = !!file.editable
+
+  async function load() {
+    const res = await runCommand({ type: 'read_web_config', hostname: file.hostname, part: file.part })
+    if (res.type === 'text') {
+      setText(res.text)
+      setSaved(res.text)
+    }
+  }
+
+  useEffect(() => {
+    load().catch(() => setText('(the file does not exist yet: apply the web config first)'))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [file.hostname, file.part])
+
+  async function saveFile() {
+    if (!file.hostname) return
+    const res = await runCommand({ type: 'write_web_config', hostname: file.hostname, part: file.part, content: text })
+    if (res.type === 'text') setNotice(`Saved. The server accepted it and was reloaded.\n${res.text}`)
+    setSaved(text)
+    await onChanged()
+  }
+
+  async function changeOwnership(next: Ownership) {
+    if (!file.hostname) return
+    await runCommand({ type: 'set_ownership', hostname: file.hostname, ownership: next })
+    // Regenerate so the file on disk matches the new ownership immediately.
+    await runCommand({ type: 'apply_web', overwrite: next === 'managed' || next === 'advanced' ? [file.hostname] : [] })
+    setPendingOwnership(null)
+    await onChanged()
+    await load()
+  }
+
+  async function exportFile() {
+    const dest = await save({ title: 'Export config', defaultPath: `${file.hostname ?? 'main'}.conf` })
+    if (!dest) return
+    if (file.hostname) await runCommand({ type: 'export_web_config', hostname: file.hostname, part: file.part, dest })
+  }
+
+  return (
+    <>
+      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <Card>
+        <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-4">
+          <div className="min-w-0">
+            <div className="truncate text-sm font-medium">{file.hostname ?? 'Main config'}{file.part === 'custom' && ' (your snippet)'}</div>
+            <div className="truncate font-mono text-xs text-muted-foreground">{file.path}</div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {file.drifted && (
+              <Badge variant="warning">
+                <AlertTriangle className="size-3" /> edited by hand
+              </Badge>
+            )}
+            {file.hostname && file.ownership && (
+              <Select value={file.ownership} onChange={(e) => setPendingOwnership(e.target.value as Ownership)} className="w-40" title="Who owns this file">
+                <option value="managed">Managed</option>
+                <option value="advanced">Advanced</option>
+                <option value="manual">Manual</option>
+              </Select>
+            )}
+            <Button size="sm" variant="ghost" title="Open folder" onClick={() => run('open', () => runCommand({ type: 'open_path', path: file.path.replace(/[\\/][^\\/]*$/, '') }))}>
+              <FolderOpen />
+            </Button>
+            {file.hostname && (
+              <Button size="sm" variant="ghost" title="Export" onClick={() => run('export', exportFile)}>
+                <Download />
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={busy !== null}
+              onClick={() =>
+                run('validate', async () => {
+                  const r = await runCommand({ type: 'validate_web' })
+                  if (r.type === 'text') setNotice(`The server accepts the config on disk.\n${r.text}`)
+                })
+              }
+            >
+              <ShieldCheck /> Validate
+            </Button>
+            {editable && (
+              <Button size="sm" disabled={!dirty || busy !== null} onClick={() => run('save', saveFile)}>
+                <Save /> Save and reload
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {notice && <pre className="whitespace-pre-wrap rounded-lg border border-success/40 bg-success/5 p-3 text-xs">{notice}</pre>}
+
+      {file.hostname && file.ownership && (
+        <p className="text-xs text-muted-foreground">
+          <b>{OWNERSHIP_INFO[file.ownership].label}.</b> {OWNERSHIP_INFO[file.ownership].blurb}
+          {!editable && file.part === 'site' && ' To edit this file directly, switch it to Manual; to add your own directives, switch it to Advanced.'}
+        </p>
+      )}
+
+      <Tabs
+        tabs={[
+          { id: 'editor', label: 'Editor' },
+          ...(file.hostname && file.part === 'site' ? [{ id: 'structured' as const, label: 'Structured' }] : []),
+          ...(file.hostname ? [{ id: 'history' as const, label: 'History' }] : []),
+        ]}
+        value={tab}
+        onChange={setTab}
+      />
+
+      {tab === 'editor' && <CodeEditor value={text} onChange={setText} readOnly={!editable} language={languageFor(server)} height="480px" />}
+      {tab === 'structured' && file.hostname && (
+        <StructuredEditor
+          hostname={file.hostname}
+          onApplied={() => {
+            void onChanged()
+            void load()
+          }}
+        />
+      )}
+      {tab === 'history' && file.hostname && (
+        <HistoryPanel
+          hostname={file.hostname}
+          current={text}
+          language={languageFor(server)}
+          canRestore={editable}
+          onRestored={() => {
+            void onChanged()
+            void load()
+          }}
+        />
+      )}
 
       {/* §27 protection dialog */}
       <Dialog
@@ -237,6 +269,50 @@ export function ConfigPage() {
           </div>
         )}
       </Dialog>
+    </>
+  )
+}
+
+/** A domain's own config files (site file plus the Advanced snippet), for its edit dialog. */
+export function SiteConfigTab({ hostname }: { hostname: string }) {
+  const [files, setFiles] = useState<ConfigFile[]>([])
+  const [server, setServer] = useState('nginx')
+  const [part, setPart] = useState<'site' | 'custom'>('site')
+  const [missing, setMissing] = useState(false)
+
+  async function refresh() {
+    const [l, c] = await Promise.all([runCommand({ type: 'list_web_configs' }), runCommand({ type: 'get_web_config' })])
+    if (l.type === 'configs') {
+      const mine = l.files.filter((f) => f.hostname === hostname)
+      setFiles(mine)
+      setMissing(mine.length === 0)
+    }
+    if (c.type === 'web_config') setServer(c.config.server)
+  }
+
+  useEffect(() => {
+    refresh().catch(() => setMissing(true))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hostname])
+
+  const file = files.find((f) => f.part === part) ?? files.find((f) => f.part === 'site') ?? null
+  if (missing) return <p className="text-sm text-muted-foreground">This site has no config file yet. Save it (or apply the web config) first.</p>
+  if (!file) return null
+  const hasSnippet = files.some((f) => f.part === 'custom')
+
+  return (
+    <div className="flex flex-col gap-3">
+      {hasSnippet && (
+        <Tabs
+          tabs={[
+            { id: 'site', label: 'Site file' },
+            { id: 'custom', label: 'Your snippet' },
+          ]}
+          value={part}
+          onChange={setPart}
+        />
+      )}
+      <ConfigFilePane key={`${file.hostname}|${file.part}`} file={file} server={server} onChanged={refresh} />
     </div>
   )
 }

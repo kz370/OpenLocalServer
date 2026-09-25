@@ -81,6 +81,8 @@ pub struct DomainSummary {
     /// The folder to open in an editor: the linked project, else the site root without a
     /// trailing `public`/`web` docroot.
     pub folder: String,
+    /// Website type it is listed under: "php", "nodejs", "python", "static" or "proxy".
+    pub group: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -213,7 +215,7 @@ impl Inner {
 
     /// The runtime's bin dir a project resolves to (custom pin, then managed), else the
     /// newest managed install.
-    fn runtime_bin_for(&self, project_id: Option<&str>, id: &str) -> Option<PathBuf> {
+    pub(crate) fn runtime_bin_for(&self, project_id: Option<&str>, id: &str) -> Option<PathBuf> {
         if let Some(pid) = project_id {
             if let Some(detail) = self.project_detail(pid) {
                 if let Some(dir) = detail.resolved.iter().find(|r| r.id == id).and_then(|r| r.bin_dir.clone()) {
@@ -258,6 +260,7 @@ impl Inner {
                 enabled: d.enabled,
                 project_id: d.project_id.clone(),
                 has_app: d.app.is_some(),
+                group: site_group(&d, &projects).into(),
                 folder: site_folder(&d, &projects),
             })
             .collect()
@@ -615,11 +618,11 @@ impl Inner {
         };
         let mut cmd = if crate::editors::is_shim(&exe) {
             let mut c = std::process::Command::new("cmd.exe");
-            c.arg("/C").arg(&exe).arg(path);
+            c.arg("/C").arg(&exe).args(crate::editors::open_args(&exe, path));
             c
         } else {
             let mut c = std::process::Command::new(&exe);
-            c.arg(path);
+            c.args(crate::editors::open_args(&exe, path));
             c
         };
         crate::exec::hide_window(&mut cmd);
@@ -1094,6 +1097,23 @@ impl Inner {
             env
         };
 
+        // A project's own virtual environment "activates" for its commands: python and pip
+        // run from its Scripts folder with VIRTUAL_ENV set (§17).
+        if matches!(program, "python" | "python3" | "pip" | "pip3") {
+            if let Some((venv_dir, scripts)) = self.project_venv(project_id) {
+                let name = if program.starts_with("pip") { "pip" } else { "python" };
+                let exe = scripts.join(format!("{name}.exe"));
+                if exe.is_file() {
+                    return Ok(ResolvedProgram {
+                        executable: exe,
+                        pre_args: vec![],
+                        env: vec![("VIRTUAL_ENV".into(), venv_dir.display().to_string())],
+                        path_dirs: vec![scripts],
+                    });
+                }
+            }
+        }
+
         match program {
             "php" => {
                 let (exe, dir) = pick_php()?;
@@ -1110,7 +1130,7 @@ impl Inner {
                 env.push(("COMPOSER_NO_INTERACTION".into(), "1".into()));
                 Ok(ResolvedProgram { executable: exe, pre_args: vec![phar.display().to_string()], env, path_dirs: vec![dir] })
             }
-            "node" | "npm" | "npx" => {
+            "node" | "npm" | "npx" | "corepack" | "pnpm" | "pnpx" | "yarn" => {
                 let dir = project_id
                     .and_then(|p| self.project_detail(p))
                     .and_then(|d| d.resolved.into_iter().find(|r| r.id == "node").and_then(|r| r.bin_dir))
@@ -1121,7 +1141,13 @@ impl Inner {
                         crate::php::pick_version(&installed, wanted).and_then(|v| self.runtimes.bin_dir("node", &v))
                     })
                     .ok_or("Node.js is not installed. Install it from the Runtimes page.")?;
-                let file = crate::web::manager::find_executable(Some(&dir), program).ok_or_else(|| format!("{program} was not found in {}", dir.display()))?;
+                let file = crate::web::manager::find_executable(Some(&dir), program).ok_or_else(|| {
+                    if matches!(program, "pnpm" | "pnpx" | "yarn") {
+                        format!("{program} is not switched on for this Node.js. Enable it from the project's Node tools (corepack).")
+                    } else {
+                        format!("{program} was not found in {}", dir.display())
+                    }
+                })?;
                 Ok(shim(file, vec![dir]))
             }
             other => {
@@ -1344,7 +1370,7 @@ impl Inner {
         self.spawn_project_process(program, args, cwd, project_id, name.unwrap_or(line), line)
     }
 
-    fn spawn_project_process(&self, program: &str, args: &[String], cwd: Option<&str>, project_id: Option<&str>, name: &str, history_line: &str) -> Result<ProcessId, CoreError> {
+    pub(crate) fn spawn_project_process(&self, program: &str, args: &[String], cwd: Option<&str>, project_id: Option<&str>, name: &str, history_line: &str) -> Result<ProcessId, CoreError> {
         let mut values = BTreeMap::new();
         // Pin the resolved versions so `php`/`node` follow the project (§18–19).
         if let Some(detail) = project_id.and_then(|id| self.project_detail(id)) {
@@ -1543,6 +1569,45 @@ fn registry_run_value() -> Option<String> {
 #[cfg(not(windows))]
 fn set_start_with_windows(_enabled: bool) -> Result<(), String> {
     Err("start with the system is only implemented on Windows so far".into())
+}
+
+/// The "type of website" a site is listed under: "php", "nodejs", "python", "static", or
+/// "proxy" for anything else that is forwarded (Docker, another computer, unknown apps).
+/// A dev-server site is told apart by its start command, else by the linked project.
+fn site_group(d: &Domain, projects: &[crate::project::Project]) -> &'static str {
+    use crate::detection::Framework;
+    match &d.kind {
+        SiteKind::Php { .. } => "php",
+        SiteKind::Static => "static",
+        SiteKind::Proxy { upstream_host, .. } => {
+            if let Some(app) = &d.app {
+                let exe = Path::new(&app.executable).file_stem().and_then(|s| s.to_str()).unwrap_or(&app.executable).to_ascii_lowercase();
+                let runtime = app.runtime.as_deref().unwrap_or_default();
+                if runtime == "node" || matches!(exe.as_str(), "node" | "npm" | "npx" | "pnpm" | "yarn" | "bun" | "deno") {
+                    return "nodejs";
+                }
+                if runtime == "python" || matches!(exe.as_str(), "python" | "python3" | "py" | "uvicorn" | "gunicorn" | "flask" | "django-admin" | "hypercorn" | "poetry" | "pipenv") {
+                    return "python";
+                }
+                if runtime == "php" || exe == "php" {
+                    return "php";
+                }
+            }
+            // No start command, and it is this computer (not Docker / another machine):
+            // the linked project's framework says what is behind the port.
+            if upstream_host.is_none() {
+                let path = d.project_id.as_ref().and_then(|id| projects.iter().find(|p| &p.id == id)).map(|p| p.path.clone());
+                if let Some(path) = path {
+                    return match crate::detection::detect(Path::new(&path)).framework {
+                        Framework::Node => "nodejs",
+                        Framework::Django | Framework::Flask | Framework::FastApi | Framework::GenericPython => "python",
+                        _ => "proxy",
+                    };
+                }
+            }
+            "proxy"
+        }
+    }
 }
 
 fn site_folder(d: &Domain, projects: &[crate::project::Project]) -> String {

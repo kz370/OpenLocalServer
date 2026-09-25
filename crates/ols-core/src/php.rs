@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::paths::AppPaths;
 use crate::process::{ProcessId, ProcessSpec, ProcessSupervisor, RestartPolicy};
 use crate::runtime::RuntimeManager;
+use crate::xdebug::{XdebugReport, XdebugSettings};
 
 /// Extensions enabled when their DLL exists in the install's `ext/` folder — the set
 /// Laravel, Symfony and WordPress ask for on install (§154).
@@ -140,9 +141,15 @@ impl PhpPools {
         ini.push_str(&format!("SMTP = 127.0.0.1\nsmtp_port = {}\nsendmail_from = dev@localhost\n", crate::service::mailpit_smtp_port()));
         // Full paths: a bare name makes PHP guess the file name, which fails for DLLs
         // named like `php_foo_8.3.dll` and can't reach the ones we downloaded.
-        for ext in self.extensions(version).into_iter().filter(|e| e.enabled) {
+        let enabled: Vec<PhpExtension> = self.extensions(version).into_iter().filter(|e| e.enabled).collect();
+        for ext in &enabled {
             let directive = if ZEND_EXTENSIONS.contains(&ext.name.as_str()) { "zend_extension" } else { "extension" };
             ini.push_str(&format!("{directive}=\"{}\"\n", ext.dll.display().to_string().replace('\\', "/")));
+        }
+        if enabled.iter().any(|e| e.name == "xdebug") {
+            let output_dir = self.ini_dir(version).join("xdebug");
+            let _ = std::fs::create_dir_all(&output_dir);
+            ini.push_str(&self.xdebug_settings(version).ini_block(&output_dir));
         }
         let dir = self.ini_dir(version);
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -262,6 +269,36 @@ impl PhpPools {
         let mut map = self.overrides(version);
         map.insert(name.to_string(), enabled);
         self.save_overrides(version, &map)?;
+        self.restart(version)
+    }
+
+    // ---------------------------------------------------------------- xdebug (§13)
+
+    fn xdebug_file(&self, version: &str) -> PathBuf {
+        self.ini_dir(version).join("xdebug.json")
+    }
+
+    /// The saved Xdebug settings for `version`, or the defaults.
+    pub fn xdebug_settings(&self, version: &str) -> XdebugSettings {
+        std::fs::read_to_string(self.xdebug_file(version)).ok().and_then(|raw| serde_json::from_str(&raw).ok()).unwrap_or_default()
+    }
+
+    pub fn xdebug_report(&self, version: &str) -> XdebugReport {
+        let xdebug = self.extensions(version).into_iter().find(|e| e.name == "xdebug");
+        XdebugReport {
+            version: version.to_string(),
+            installed: xdebug.is_some(),
+            enabled: xdebug.is_some_and(|e| e.enabled),
+            settings: self.xdebug_settings(version),
+        }
+    }
+
+    /// Saves the settings and restarts the version's pool so they take effect.
+    pub fn set_xdebug_settings(&self, version: &str, settings: &XdebugSettings) -> Result<(), String> {
+        settings.validate()?;
+        std::fs::create_dir_all(self.ini_dir(version)).map_err(|e| e.to_string())?;
+        let raw = serde_json::to_string_pretty(settings).map_err(|e| e.to_string())?;
+        std::fs::write(self.xdebug_file(version), raw).map_err(|e| e.to_string())?;
         self.restart(version)
     }
 

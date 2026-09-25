@@ -80,7 +80,8 @@ Release 1.0   Stages 16–18  ██░░░░░░░░░░░░░░�
 | Request/traffic inspector and webhook tester | 110–111 | 14 |
 | Command palette and global search | 122–123 | 15 |
 | Automatic repair, explained diagnostics, `doctor` | 113–115 | 15 |
-| Git panel and resource controls | 125, 129 | 15 |
+| Git repository manager: clone, status, branches, commit, pull/push, diff, log, remotes (added 2026-09-26) | 125 | 15 |
+| Resource controls | 129 | 15 |
 
 ### Release 1.0
 

@@ -46,6 +46,15 @@ its release gate (the clean-VM Laravel flow) has not been run, and several Stage
 - **Reverse proxy to any host** (Docker, another computer) and a Reverse Proxy Quick App.
 - **Domain rename**, editor picker (VS Code default), log clearing, in-app confirmations, brand icons.
 
+- **Site config inside the domain edit dialog**: a "Web server config" tab beside the site's settings, with the same
+  editor, structured blocks, history and ownership controls as the Web config page (which stays as it is).
+
+### Added to the plan (2026-09-26)
+- **Git repository manager** (extends §125, Stage 15): manage a project's Git repository from inside the app —
+  clone into a new site, status, branches, stage/commit, pull/push, diff, log, remotes, and credentials kept in the
+  Secrets Manager. Uses an existing Git install or downloads a portable one through the Package Manager.
+  Can be pulled forward if wanted.
+
 ### Deviations from the plan
 - Product name *OpenLocalServer*; crates `ols-core` and `ols-helper` (no separate `platform`, `cli` or `catalog`
   crates yet).
@@ -314,7 +323,11 @@ registry), minijinja, clap, tauri-specta. UI: xterm.js, CodeMirror 6 (Stage 9).
 ### Stage 15 — Power UX + repair
 - Command palette (§122) and global search (§123).
 - Automatic repair (§114), explained diagnostics (§115), and `devforge doctor` (§113).
-- Git panel (§125) and resource controls (§129).
+- **Git repository manager** (§125, expanded 2026-09-26): per-project repo view inside the app. Clone into a new
+  site, status and changed files, branches (create/switch/delete), stage and commit, pull/push/fetch, diff, log,
+  remotes, stash, and `.gitignore` help. Credentials go through the Secrets Manager. Uses the system Git, or a
+  portable Git downloaded through the Package Manager when none is found.
+- Resource controls (§129).
 
 ---
 

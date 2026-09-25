@@ -1,6 +1,7 @@
 import { AlertTriangle, CheckCircle2, Code2, ExternalLink, Lock, Play, Rocket, XCircle } from 'lucide-react'
 import { useState } from 'react'
 
+import { DiagnosticsCard } from '@/components/DiagnosticsCard'
 import { ErrorCard } from '@/components/ErrorCard'
 import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
@@ -202,6 +203,8 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: Page) => void })
           </Card>
         </div>
       </div>
+      <DiagnosticsCard />
+
 
       <Card>
         <CardHeader className="pb-2">

@@ -40,7 +40,7 @@ const NAV_ITEMS: { id: Page; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'projects', label: 'Projects', icon: FolderKanban },
   { id: 'quickapps', label: 'Quick Apps', icon: Rocket },
   { id: 'commands', label: 'Commands', icon: Zap },
-  { id: 'domains', label: 'Domains & HTTPS', icon: Globe },
+  { id: 'domains', label: 'Sites', icon: Globe },
   { id: 'config', label: 'Web config', icon: FileCode2 },
   { id: 'databases', label: 'Databases', icon: HardDrive },
   { id: 'services', label: 'Services', icon: Database },

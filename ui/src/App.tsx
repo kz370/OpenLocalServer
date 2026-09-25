@@ -27,7 +27,7 @@ export default function App() {
         {page === 'projects' && <ProjectsPage />}
         {page === 'quickapps' && <QuickAppsPage onNavigate={setPage} />}
         {page === 'commands' && <CommandsPage />}
-        {page === 'domains' && <DomainsPage />}
+        {page === 'domains' && <DomainsPage onNavigate={setPage} />}
         {page === 'config' && <ConfigPage />}
         {page === 'databases' && <DatabasesPage />}
         {page === 'services' && <ServicesPage />}

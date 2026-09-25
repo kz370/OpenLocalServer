@@ -31,6 +31,7 @@ use crate::settings::SettingsService;
 use crate::sqlite::{IntegrityResult, SqliteInfo};
 use crate::web::manager::{ApplyReport, ConfigFile, ConfigPart, ConfigVersion, WebStatus};
 use crate::web::WebConfig;
+use crate::xdebug::{XdebugReport, XdebugSettings};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -212,6 +213,42 @@ pub enum CoreCommand {
     GetHelperService,
     InstallHelperService,
     UninstallHelperService,
+
+    // ---- Stage 11: runtime depth + diagnostics -----------------------------------
+    /// Xdebug state and settings for one PHP version (§13).
+    GetXdebug { version: String },
+    SetXdebug { version: String, settings: XdebugSettings },
+    /// IDE setup text for a project: `ide` is "vscode", "phpstorm" or "other".
+    XdebugIdeConfig { project_id: String, ide: String, version: String },
+    /// composer.json / composer.lock read for a project (§14).
+    GetComposerInfo { project_id: String },
+    /// One of the named Composer actions (see `composer::command_args`).
+    RunComposer { project_id: String, action: String, target: Option<String> },
+    /// Which Node package managers a project uses and can run (§15).
+    GetPackageManagers { project_id: String },
+    /// Switch on pnpm or yarn through corepack.
+    EnablePackageManager { project_id: String, manager: String },
+    /// Python virtual environment of a project (§17).
+    GetVenv { project_id: String },
+    CreateVenv { project_id: String, recreate: bool },
+    InstallVenvRequirements { project_id: String, what: String },
+    /// DiagnosticEngine v1 (§112).
+    RunDiagnostics,
+    IgnoreDiagnostic { id: String, ignore: bool },
+    RestartService { id: String },
+
+    // ---- .env editor (§103) ------------------------------------------------------
+    ListEnvFiles { project_id: String },
+    ReadEnvFile { project_id: String, file: String },
+    SaveEnvFile { project_id: String, file: String, content: String },
+    SetEnvValue { project_id: String, file: String, key: String, value: String },
+    DeleteEnvKey { project_id: String, file: String, key: String },
+    CompareEnvFiles { project_id: String, a: String, b: String },
+    /// `mode` is "merge" (keep this file's other keys) or "replace".
+    ImportEnvFile { project_id: String, file: String, source: String, mode: String },
+    ExportEnvFile { project_id: String, file: String, dest: String },
+    /// A new env file, copied from `from` when given (e.g. `.env` from `.env.example`).
+    CreateEnvFile { project_id: String, file: String, from: Option<String> },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -287,6 +324,14 @@ pub enum CoreResponse {
     MigrationSources { sources: Vec<crate::migrate::MigrationSource> },
     Migrated { results: Vec<crate::migrate::MigratedDb> },
     Editors { editors: Vec<crate::editors::EditorInfo> },
+    Xdebug { report: XdebugReport },
+    Composer { info: Box<crate::composer::ComposerInfo> },
+    PackageManagers { info: crate::nodepm::PackageManagerInfo },
+    Venv { info: crate::venv::VenvInfo },
+    Diagnostics { findings: Vec<crate::diagnostics::Finding> },
+    EnvFiles { files: Vec<crate::envfile::EnvFileInfo> },
+    EnvFile { view: Box<crate::envfile::EnvFileView> },
+    EnvCompare { rows: Vec<crate::envfile::EnvDiffRow> },
 }
 
 /// A cheap handle onto the shared application state. Cloning shares everything.
@@ -844,6 +889,62 @@ impl Core {
                 crate::elevate::uninstall_service().map_err(CoreError::ServiceError)?;
                 Ok(R::HelperService { installed: crate::elevate::service_available() })
             }
+
+            // ---- Stage 11
+            C::GetXdebug { version } => Ok(R::Xdebug { report: i.xdebug_report(&version) }),
+            C::SetXdebug { version, settings } => {
+                tracing::info!(command = "set_xdebug", version = %version);
+                i.php.set_xdebug_settings(&version, &settings).map_err(CoreError::ServiceError)?;
+                Ok(R::Xdebug { report: i.xdebug_report(&version) })
+            }
+            C::XdebugIdeConfig { project_id, ide, version } => Ok(R::Text { text: i.xdebug_ide_config(&project_id, &ide, &version)? }),
+            C::GetComposerInfo { project_id } => Ok(R::Composer { info: Box::new(i.composer_info(&project_id)?) }),
+            C::RunComposer { project_id, action, target } => {
+                Ok(R::ProcessStarted { id: i.run_composer(&project_id, &action, target.as_deref())? })
+            }
+            C::GetPackageManagers { project_id } => Ok(R::PackageManagers { info: i.package_managers(&project_id)? }),
+            C::EnablePackageManager { project_id, manager } => {
+                Ok(R::ProcessStarted { id: i.enable_package_manager(&project_id, &manager)? })
+            }
+            C::GetVenv { project_id } => Ok(R::Venv { info: i.venv_info(&project_id)? }),
+            C::CreateVenv { project_id, recreate } => Ok(R::ProcessStarted { id: i.create_venv(&project_id, recreate)? }),
+            C::InstallVenvRequirements { project_id, what } => {
+                Ok(R::ProcessStarted { id: i.install_venv_requirements(&project_id, &what)? })
+            }
+            C::RunDiagnostics => Ok(R::Diagnostics { findings: i.diagnose() }),
+            C::IgnoreDiagnostic { id, ignore } => {
+                i.set_diagnostic_ignored(&id, ignore)?;
+                Ok(R::Diagnostics { findings: i.diagnose() })
+            }
+            C::RestartService { id } => {
+                i.services.stop(&id);
+                // The old process needs a moment to release its port before the new one binds it.
+                std::thread::sleep(Duration::from_millis(800));
+                i.services.start(&id).map_err(CoreError::ServiceError)?;
+                Ok(R::Ok)
+            }
+
+            // ---- .env editor
+            C::ListEnvFiles { project_id } => Ok(R::EnvFiles { files: i.env_files(&project_id)? }),
+            C::ReadEnvFile { project_id, file } => Ok(R::EnvFile { view: Box::new(i.env_read(&project_id, &file)?) }),
+            C::SaveEnvFile { project_id, file, content } => {
+                tracing::info!(command = "save_env_file", file = %file);
+                Ok(R::EnvFile { view: Box::new(i.env_write(&project_id, &file, &content)?) })
+            }
+            C::SetEnvValue { project_id, file, key, value } => {
+                // The value is never logged: env files hold secrets (§141).
+                tracing::info!(command = "set_env_value", file = %file, key = %key);
+                Ok(R::EnvFile { view: Box::new(i.env_set(&project_id, &file, &key, &value)?) })
+            }
+            C::DeleteEnvKey { project_id, file, key } => Ok(R::EnvFile { view: Box::new(i.env_delete(&project_id, &file, &key)?) }),
+            C::CompareEnvFiles { project_id, a, b } => Ok(R::EnvCompare { rows: i.env_compare(&project_id, &a, &b)? }),
+            C::ImportEnvFile { project_id, file, source, mode } => Ok(R::EnvFile { view: Box::new(i.env_import(&project_id, &file, &source, &mode)?) }),
+            C::ExportEnvFile { project_id, file, dest } => {
+                i.env_export(&project_id, &file, &dest)?;
+                Ok(R::Ok)
+            }
+            C::CreateEnvFile { project_id, file, from } => Ok(R::EnvFile { view: Box::new(i.env_create(&project_id, &file, from.as_deref())?) }),
+
             C::GetStartupSettings => Ok(R::Startup { settings: i.startup_settings() }),
             C::SetStartupSettings { settings } => {
                 i.set_startup_settings(settings)?;
@@ -877,6 +978,139 @@ mod tests {
         (core, home)
     }
 
+    #[test]
+    fn sites_are_grouped_by_website_type() {
+        let (core, home) = test_core();
+        let root = home.paths.root().join("site");
+        std::fs::create_dir_all(&root).unwrap();
+        let make = |host: &str, kind: crate::domain::SiteKind, app: Option<(&str, Option<&str>)>| Domain {
+            hostname: host.into(),
+            project_id: None,
+            root: root.display().to_string(),
+            kind,
+            https: false,
+            redirect_https: false,
+            wildcard: false,
+            enabled: true,
+            ownership: Ownership::Managed,
+            app: app.map(|(exe, runtime)| crate::domain::AppSpec { executable: exe.into(), args: vec![], cwd: root.display().to_string(), runtime: runtime.map(str::to_string) }),
+            blocks: Default::default(),
+            generated_hashes: Default::default(),
+        };
+        let proxy = || crate::domain::SiteKind::Proxy { upstream_port: 3000, upstream_host: None, upstream_https: false };
+        let sites = [
+            make("a.test", crate::domain::SiteKind::Php { version: None }, None),
+            make("b.test", crate::domain::SiteKind::Static, None),
+            make("c.test", proxy(), Some(("npm", Some("node")))),
+            make("d.test", proxy(), Some(("uvicorn", None))),
+            make("e.test", proxy(), None),
+            make("f.test", crate::domain::SiteKind::Proxy { upstream_port: 80, upstream_host: Some("10.0.0.5".into()), upstream_https: false }, None),
+        ];
+        for s in sites {
+            core.dispatch(CoreCommand::AddDomain { domain: s }).unwrap();
+        }
+        let groups: std::collections::BTreeMap<String, String> = match core.dispatch(CoreCommand::ListDomains).unwrap() {
+            CoreResponse::Domains { domains } => domains.into_iter().map(|d| (d.hostname, d.group)).collect(),
+            _ => panic!("expected Domains"),
+        };
+        let expect = [("a.test", "php"), ("b.test", "static"), ("c.test", "nodejs"), ("d.test", "python"), ("e.test", "proxy"), ("f.test", "proxy")];
+        for (host, group) in expect {
+            assert_eq!(groups.get(host).map(String::as_str), Some(group), "{host}");
+        }
+    }
+
+    #[test]
+    fn env_files_round_trip_through_the_core_and_keep_a_backup() {
+        let (core, home) = test_core();
+        let dir = home.paths.root().join("laravel");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(".env"), "# keep me\nAPP_ENV=local\nDB_PASSWORD=old\n").unwrap();
+        std::fs::write(dir.join(".env.example"), "APP_ENV=example\nNEW_KEY=1\n").unwrap();
+        let pid = match core.dispatch(CoreCommand::RegisterProject { path: dir.display().to_string() }).unwrap() {
+            CoreResponse::Project { project } => project.id,
+            _ => panic!("expected Project"),
+        };
+        let view = |r: CoreResponse| match r {
+            CoreResponse::EnvFile { view } => *view,
+            _ => panic!("expected EnvFile"),
+        };
+        let v = view(core.dispatch(CoreCommand::SetEnvValue { project_id: pid.clone(), file: ".env".into(), key: "APP_ENV".into(), value: "production".into() }).unwrap());
+        assert!(v.content.starts_with("# keep me\nAPP_ENV=production\n"));
+        assert!(v.entries.iter().find(|e| e.key == "DB_PASSWORD").unwrap().secret);
+        let backups = home.paths.data_dir().join("env_backups").join(&pid);
+        assert_eq!(std::fs::read_dir(backups).unwrap().count(), 1, "the previous version is kept");
+
+        // A file with a broken line is refused and the good one stays.
+        assert!(core.dispatch(CoreCommand::SaveEnvFile { project_id: pid.clone(), file: ".env".into(), content: "oops no equals\n".into() }).is_err());
+        assert!(std::fs::read_to_string(dir.join(".env")).unwrap().contains("APP_ENV=production"));
+
+        // Names that could leave the project folder are refused.
+        assert!(core.dispatch(CoreCommand::ReadEnvFile { project_id: pid.clone(), file: "../secrets.txt".into() }).is_err());
+
+        match core.dispatch(CoreCommand::CompareEnvFiles { project_id: pid.clone(), a: ".env".into(), b: ".env.example".into() }).unwrap() {
+            CoreResponse::EnvCompare { rows } => assert!(rows.iter().any(|r| r.key == "NEW_KEY" && r.status == "only_b")),
+            _ => panic!("expected EnvCompare"),
+        }
+        let created = view(core.dispatch(CoreCommand::CreateEnvFile { project_id: pid.clone(), file: ".env.testing".into(), from: Some(".env.example".into()) }).unwrap());
+        assert_eq!(created.entries.len(), 2);
+        let v = view(core.dispatch(CoreCommand::DeleteEnvKey { project_id: pid, file: ".env.testing".into(), key: "NEW_KEY".into() }).unwrap());
+        assert_eq!(v.content, "APP_ENV=example\n");
+    }
+
+    #[test]
+    fn diagnostics_report_a_missing_site_folder_and_remember_ignores() {
+        let (core, home) = test_core();
+        let gone = home.paths.root().join("gone");
+        let domain = Domain {
+            hostname: "ghost.test".into(),
+            project_id: None,
+            root: gone.display().to_string(),
+            kind: crate::domain::SiteKind::Static,
+            https: false,
+            redirect_https: false,
+            wildcard: false,
+            enabled: true,
+            ownership: Ownership::Managed,
+            app: None,
+            blocks: Default::default(),
+            generated_hashes: Default::default(),
+        };
+        // Written straight to the store: AddDomain would reject a folder that doesn't exist.
+        core.inner().domains.lock().unwrap().add(domain).ok();
+        let findings = |core: &Core| match core.dispatch(CoreCommand::RunDiagnostics).unwrap() {
+            CoreResponse::Diagnostics { findings } => findings,
+            _ => panic!("expected Diagnostics"),
+        };
+        let found = findings(&core);
+        let f = found.iter().find(|f| f.id == "site_root_missing:ghost.test").expect("missing-folder finding");
+        assert!(!f.ignored && !f.problem.is_empty() && !f.cause.is_empty() && !f.fix.is_empty());
+
+        core.dispatch(CoreCommand::IgnoreDiagnostic { id: f.id.clone(), ignore: true }).unwrap();
+        assert!(findings(&core).iter().find(|x| x.id == f.id).unwrap().ignored);
+        core.dispatch(CoreCommand::IgnoreDiagnostic { id: f.id.clone(), ignore: false }).unwrap();
+        assert!(!findings(&core).iter().find(|x| x.id == f.id).unwrap().ignored);
+    }
+
+    #[test]
+    fn composer_and_venv_info_come_from_the_project_files() {
+        let (core, home) = test_core();
+        let dir = home.paths.root().join("app");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("composer.json"), r#"{"require":{"monolog/monolog":"^3.0"}}"#).unwrap();
+        let project = match core.dispatch(CoreCommand::RegisterProject { path: dir.display().to_string() }).unwrap() {
+            CoreResponse::Project { project } => project,
+            _ => panic!("expected Project"),
+        };
+        match core.dispatch(CoreCommand::GetComposerInfo { project_id: project.id.clone() }).unwrap() {
+            CoreResponse::Composer { info } => assert_eq!(info.packages.len(), 1),
+            _ => panic!("expected Composer"),
+        }
+        match core.dispatch(CoreCommand::GetVenv { project_id: project.id.clone() }).unwrap() {
+            CoreResponse::Venv { info } => assert!(!info.exists),
+            _ => panic!("expected Venv"),
+        }
+        assert!(core.dispatch(CoreCommand::RunComposer { project_id: project.id, action: "require".into(), target: Some("--evil".into()) }).is_err());
+    }
     #[test]
     fn renaming_a_domain_keeps_its_settings_and_refuses_taken_names() {
         let (core, home) = test_core();

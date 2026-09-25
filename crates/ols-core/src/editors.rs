@@ -18,7 +18,6 @@ pub struct EditorInfo {
 const KNOWN: &[(&str, &str, &str, &[&str], &str)] = &[
     ("vscode", "VS Code", "Code.exe", &["Microsoft VS Code"], "code"),
     ("cursor", "Cursor", "Cursor.exe", &["cursor", "Cursor"], "cursor"),
-    ("antigravity", "Antigravity", "Antigravity.exe", &["antigravity", "Antigravity"], "antigravity"),
     ("windsurf", "Windsurf", "Windsurf.exe", &["Windsurf", "windsurf"], "windsurf"),
     ("zed", "Zed", "Zed.exe", &["Zed", "zed"], "zed"),
     ("vscodium", "VSCodium", "VSCodium.exe", &["VSCodium"], "codium"),
@@ -58,7 +57,40 @@ pub fn resolve(chosen: Option<&str>, custom: Option<&str>) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+/// The arguments that open `path`. Notepad++ opens every file inside a plain folder
+/// argument, so a folder goes in as a workspace (its folder panel) instead.
+pub fn open_args(exe: &Path, path: &str) -> Vec<String> {
+    let notepadpp = exe.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.eq_ignore_ascii_case("notepad++.exe"));
+    if notepadpp && Path::new(path).is_dir() {
+        vec!["-openFoldersAsWorkspace".to_string(), path.to_string()]
+    } else {
+        vec![path.to_string()]
+    }
+}
+
 /// `true` for `.cmd`/`.bat` shims, which must run through `cmd.exe /C`.
 pub fn is_shim(exe: &Path) -> bool {
     exe.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("cmd") || e.eq_ignore_ascii_case("bat"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn notepadpp_gets_folders_as_a_workspace_and_files_as_plain_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().display().to_string();
+        let exe = Path::new(r"C:\Program Files\Notepad++\notepad++.exe");
+        assert_eq!(open_args(exe, &folder), vec!["-openFoldersAsWorkspace".to_string(), folder.clone()]);
+        let file = dir.path().join("a.php");
+        std::fs::write(&file, "").unwrap();
+        assert_eq!(open_args(exe, &file.display().to_string()), vec![file.display().to_string()]);
+        assert_eq!(open_args(Path::new(r"C:\Code\Code.exe"), &folder), vec![folder]);
+    }
+
+    #[test]
+    fn antigravity_is_not_offered() {
+        assert!(detect().iter().all(|e| e.id != "antigravity"));
+    }
 }

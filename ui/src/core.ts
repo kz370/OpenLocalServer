@@ -218,6 +218,8 @@ export interface DomainSummary {
   project_id: string | null
   has_app: boolean
   folder: string
+  /** Website type the site is listed under. */
+  group: 'php' | 'nodejs' | 'python' | 'static' | 'proxy'
 }
 
 export interface WebConfig {
@@ -617,6 +619,28 @@ export type CoreCommand =
   | { type: 'get_helper_service' }
   | { type: 'install_helper_service' }
   | { type: 'uninstall_helper_service' }
+  | { type: 'get_xdebug'; version: string }
+  | { type: 'set_xdebug'; version: string; settings: XdebugSettings }
+  | { type: 'xdebug_ide_config'; project_id: string; ide: string; version: string }
+  | { type: 'get_composer_info'; project_id: string }
+  | { type: 'run_composer'; project_id: string; action: string; target: string | null }
+  | { type: 'get_package_managers'; project_id: string }
+  | { type: 'enable_package_manager'; project_id: string; manager: string }
+  | { type: 'get_venv'; project_id: string }
+  | { type: 'create_venv'; project_id: string; recreate: boolean }
+  | { type: 'install_venv_requirements'; project_id: string; what: string }
+  | { type: 'run_diagnostics' }
+  | { type: 'ignore_diagnostic'; id: string; ignore: boolean }
+  | { type: 'restart_service'; id: string }
+  | { type: 'list_env_files'; project_id: string }
+  | { type: 'read_env_file'; project_id: string; file: string }
+  | { type: 'save_env_file'; project_id: string; file: string; content: string }
+  | { type: 'set_env_value'; project_id: string; file: string; key: string; value: string }
+  | { type: 'delete_env_key'; project_id: string; file: string; key: string }
+  | { type: 'compare_env_files'; project_id: string; a: string; b: string }
+  | { type: 'import_env_file'; project_id: string; file: string; source: string; mode: 'merge' | 'replace' }
+  | { type: 'export_env_file'; project_id: string; file: string; dest: string }
+  | { type: 'create_env_file'; project_id: string; file: string; from: string | null }
 
 export type CoreResponse =
   | { type: 'pong'; version: string }
@@ -676,6 +700,14 @@ export type CoreResponse =
   | { type: 'system_stats'; stats: SystemStats }
   | { type: 'migration_sources'; sources: MigrationSource[] }
   | { type: 'migrated'; results: MigratedDb[] }
+  | { type: 'xdebug'; report: XdebugReport }
+  | { type: 'composer'; info: ComposerInfo }
+  | { type: 'package_managers'; info: PackageManagerInfo }
+  | { type: 'venv'; info: VenvInfo }
+  | { type: 'diagnostics'; findings: Finding[] }
+  | { type: 'env_files'; files: EnvFileInfo[] }
+  | { type: 'env_file'; view: EnvFileView }
+  | { type: 'env_compare'; rows: EnvDiffRow[] }
 
 export interface MigrationSource {
   id: string
@@ -720,6 +752,104 @@ export interface EditorInfo {
   id: string
   name: string
   path: string | null
+}
+
+export interface XdebugSettings {
+  modes: string[]
+  start_with_request: 'yes' | 'trigger' | 'default' | 'no'
+  client_host: string
+  client_port: number
+  idekey: string
+}
+
+export interface XdebugReport {
+  version: string
+  installed: boolean
+  enabled: boolean
+  settings: XdebugSettings
+}
+
+export interface ComposerPackage {
+  name: string
+  constraint: string
+  locked: string | null
+  dev: boolean
+}
+
+export interface ComposerInfo {
+  has_composer_json: boolean
+  has_lock: boolean
+  vendor_installed: boolean
+  name: string | null
+  packages: ComposerPackage[]
+  scripts: string[]
+}
+
+export interface PackageManagerInfo {
+  detected: string | null
+  detected_from: string | null
+  pinned_version: string | null
+  npm: boolean
+  pnpm: boolean
+  yarn: boolean
+  corepack: boolean
+}
+
+export interface VenvInfo {
+  exists: boolean
+  dir_name: string | null
+  python_version: string | null
+  base_home: string | null
+  base_missing: boolean
+  requirements: string[]
+  has_pyproject: boolean
+  activate_command: string | null
+}
+
+export interface Finding {
+  id: string
+  severity: 'error' | 'warning' | 'info'
+  problem: string
+  cause: string
+  fix: string
+  /** Run this to apply the fix; null when only the user can. */
+  fix_command: CoreCommand | null
+  details: string[]
+  ignored: boolean
+}
+
+export interface EnvEntry {
+  key: string
+  value: string
+  line: number
+  secret: boolean
+}
+
+export interface EnvIssue {
+  line: number
+  severity: 'error' | 'warning'
+  message: string
+}
+
+export interface EnvFileView {
+  name: string
+  content: string
+  entries: EnvEntry[]
+  issues: EnvIssue[]
+}
+
+export interface EnvFileInfo {
+  name: string
+  size: number
+  entries: number
+}
+
+export interface EnvDiffRow {
+  key: string
+  a: string | null
+  b: string | null
+  status: 'same' | 'different' | 'only_a' | 'only_b'
+  secret: boolean
 }
 
 export interface PhpExtensions {

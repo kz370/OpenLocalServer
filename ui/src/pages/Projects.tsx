@@ -3,11 +3,12 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { Folder, FolderPlus, FolderSearch, Play, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
+import { ProjectTools } from '@/components/ProjectTools'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { type Diagnostic, type Project, type ProjectDetail, type ProcessEvent, runCommand } from '@/core'
+import { type CoreCommand, type Diagnostic, type Project, type ProjectDetail, type ProcessEvent, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -27,6 +28,7 @@ export function ProjectsPage() {
 
   const [runOutput, setRunOutput] = useState<string[]>([])
   const [runningProcessId, setRunningProcessId] = useState<number | null>(null)
+  const [toolsTick, setToolsTick] = useState(0)
 
   async function refreshProjects() {
     const res = await runCommand({ type: 'list_projects' })
@@ -52,6 +54,10 @@ export function ProjectsPage() {
       const e = event.payload
       if (runningProcessId !== null && e.id === runningProcessId && e.kind === 'output') {
         setRunOutput((prev) => [...prev.slice(-199), e.line])
+      }
+      // The tools panel re-reads the project's files once its command has finished.
+      if (runningProcessId !== null && e.id === runningProcessId && e.kind === 'state_changed' && ['stopped', 'crashed', 'failed'].includes(e.state)) {
+        setToolsTick((n) => n + 1)
       }
     })
     return () => {
@@ -115,6 +121,14 @@ Your project files are not deleted.`))) return
     } catch (err) {
       setError(err as Diagnostic)
     }
+  }
+
+  /** Runs a command that starts a process and follows its output in this page. */
+  async function startProcess(command: CoreCommand) {
+    setError(null)
+    setRunOutput([])
+    const res = await runCommand(command)
+    if (res.type === 'process_started') setRunningProcessId(res.id)
   }
 
   return (
@@ -249,6 +263,8 @@ Your project files are not deleted.`))) return
           </CardContent>
         </Card>
       </div>
+
+      {detail && <ProjectTools key={detail.project.id} detail={detail} start={startProcess} refreshKey={toolsTick} />}
 
       {error && (
         <Card className="border-destructive/40 bg-destructive/5">

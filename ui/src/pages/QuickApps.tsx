@@ -346,7 +346,7 @@ function ImportDialog({ open: isOpen, onClose, onDone }: { open: boolean; onClos
 
 type Phase = 'form' | 'review' | 'run'
 
-function Wizard({ id, onClose, onNavigate }: { id: string; onClose: () => void; onNavigate: (p: Page) => void }) {
+export function Wizard({ id, onClose, onNavigate }: { id: string; onClose: () => void; onNavigate: (p: Page) => void }) {
   const [detail, setDetail] = useState<QuickEntryDetail | null>(null)
   const [provided, setProvided] = useState<Record<string, string>>({})
   const [plan, setPlan] = useState<QuickPlanResult | null>(null)

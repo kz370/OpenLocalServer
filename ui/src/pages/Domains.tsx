@@ -12,6 +12,8 @@ import {
   Play,
   Plus,
   RefreshCw,
+  Rocket,
+  Search,
   ShieldCheck,
   Trash2,
 } from 'lucide-react'
@@ -20,13 +22,16 @@ import { useEffect, useState } from 'react'
 import { ErrorCard } from '@/components/ErrorCard'
 import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
-import { TechTile } from '@/components/TechIcon'
+import { TechIcon, TechTile } from '@/components/TechIcon'
+import type { Page } from '@/components/layout/Sidebar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog } from '@/components/ui/dialog'
 import { Field, Select, Tabs, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { SiteConfigTab } from '@/pages/Config'
+import { Wizard } from '@/pages/QuickApps'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import {
   type ApplyReport,
@@ -37,6 +42,7 @@ import {
   type DomainSummary,
   type HealthReport,
   type Project,
+  type QuickEntryView,
   type WebConfig,
   type WebStatus,
   runCommand,
@@ -72,7 +78,7 @@ function newDomain(): Domain {
   }
 }
 
-export function DomainsPage() {
+export function DomainsPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   const [tab, setTab] = useState<'sites' | 'certs'>('sites')
   const [status, setStatus] = useState<WebStatus | null>(null)
   const [cfg, setCfg] = useState<WebConfig | null>(null)
@@ -92,6 +98,9 @@ export function DomainsPage() {
   const [certDetail, setCertDetail] = useState<CertInfo | null>(null)
   const [dupOf, setDupOf] = useState<string | null>(null)
   const [dupName, setDupName] = useState('')
+  const [siteTab, setSiteTab] = useState<'all' | DomainSummary['group']>('all')
+  const [siteQuery, setSiteQuery] = useState('')
+  const [wizardId, setWizardId] = useState<string | null>(null)
 
   async function refresh() {
     const [s, c, d, k, a] = await Promise.all([
@@ -166,15 +175,30 @@ export function DomainsPage() {
     await apply()
   }
 
+  const q = siteQuery.trim().toLowerCase()
+  const siteMatches = domains.filter((d) => !q || `${d.hostname} ${projects.find((p) => p.id === d.project_id)?.name ?? ''} ${d.folder}`.toLowerCase().includes(q))
+  const typesPresent = SITE_GROUPS.filter((g) => domains.some((d) => d.group === g.id))
+  const activeSiteTab = siteTab === 'all' || typesPresent.some((g) => g.id === siteTab) ? siteTab : 'all'
+  const visibleSites = (activeSiteTab === 'all' ? siteMatches : siteMatches.filter((d) => d.group === activeSiteTab)).sort((a, b) => a.hostname.localeCompare(b.hostname))
+  const onSearch = (value: string) => {
+    setSiteQuery(value)
+    // A search covers every type: if the open tab has no hit, show all tabs' hits instead.
+    const term = value.trim().toLowerCase()
+    if (term && activeSiteTab !== 'all') {
+      const hit = domains.some((d) => d.group === activeSiteTab && `${d.hostname} ${projects.find((p) => p.id === d.project_id)?.name ?? ''} ${d.folder}`.toLowerCase().includes(term))
+      if (!hit) setSiteTab('all')
+    }
+  }
+
   const installedPhp = [...new Set([...catalog.filter((c) => c.id === 'php' && c.installed).map((c) => c.version), ...customPhp])]
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Domains &amp; HTTPS</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Sites</h1>
           <p className="text-sm text-muted-foreground">
-            Local domains, trusted certificates and the web server that serves them (§44–53).
+            Your local sites, their domains and HTTPS certificates, and the web server that serves them (§44–53).
           </p>
         </div>
         <div className="flex gap-2">
@@ -252,10 +276,29 @@ export function DomainsPage() {
           <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm">Sites</CardTitle>
             <Button size="sm" onClick={() => openEditor(null)}>
-              <Plus /> Add domain
+              <Plus /> Add site
             </Button>
           </CardHeader>
           <CardContent className="p-0">
+            <div className="flex flex-col gap-2 border-b border-border px-4 pb-2 pt-1">
+              <div className="relative max-w-sm">
+                <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input className="h-8 pl-9" value={siteQuery} onChange={(e) => onSearch(e.target.value)} placeholder="Search all sites by name, project or folder" />
+              </div>
+              <Tabs
+                tabs={[
+                  { id: 'all', label: 'All', badge: siteMatches.length },
+                  ...typesPresent.map((g) => ({
+                    id: g.id as 'all' | DomainSummary['group'],
+                    label: g.label,
+                    badge: siteMatches.filter((d) => d.group === g.id).length,
+                    icon: <TechIcon id={g.icon} className="size-3.5" />,
+                  })),
+                ]}
+                value={activeSiteTab}
+                onChange={setSiteTab}
+              />
+            </div>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -267,7 +310,7 @@ export function DomainsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {domains.map((d) => (
+                {visibleSites.map((d) => (
                   <TableRow key={d.hostname}>
                     <TableCell className="font-medium">
                       {d.hostname}
@@ -350,10 +393,10 @@ export function DomainsPage() {
                     </TableCell>
                   </TableRow>
                 ))}
-                {domains.length === 0 && (
+                {visibleSites.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={5} className="text-center text-sm text-muted-foreground">
-                      No domains yet. Add one, or create a project from Quick Apps.
+                      {domains.length === 0 ? 'No sites yet. Add one, or create a project from Quick Apps.' : q ? `No site matches "${siteQuery.trim()}".` : 'No sites of this type.'}
                     </TableCell>
                   </TableRow>
                 )}
@@ -500,10 +543,16 @@ export function DomainsPage() {
         </ul>
       </Dialog>
 
+      {wizardId && <Wizard id={wizardId} onClose={() => { setWizardId(null); void refresh() }} onNavigate={onNavigate} />}
+
       <DomainDialog
+        projects={projects}
+        onQuickApp={(id) => {
+          setEditing(null)
+          setWizardId(id)
+        }}
         domain={editing}
         isNew={editingIsNew}
-        projects={projects}
         installedPhp={installedPhp}
         onClose={() => setEditing(null)}
         onSave={(d) => run('save', () => saveDomain(d))}
@@ -670,31 +719,42 @@ function ServerPanel({
 }
 
 function DomainDialog({
+  projects,
+  onQuickApp,
   domain,
   isNew,
-  projects,
   installedPhp,
   onClose,
   onSave,
   busy,
 }: {
+  projects: Project[]
+  onQuickApp: (id: string) => void
   domain: Domain | null
   isNew: boolean
-  projects: Project[]
   installedPhp: string[]
   onClose: () => void
   onSave: (d: Domain) => void
   busy: boolean
 }) {
   const [d, setD] = useState<Domain | null>(domain)
-  const [template, setTemplate] = useState('{project}.test')
   const [appLine, setAppLine] = useState('')
+  const [template, setTemplate] = useState('{project}.test')
+  const [showApps, setShowApps] = useState(false)
+  const [quickApps, setQuickApps] = useState<QuickEntryView[]>([])
   const [err, setErr] = useState<string | null>(null)
+  const [view, setView] = useState<'settings' | 'config'>('settings')
   useEffect(() => {
     setD(domain)
     setErr(null)
+    setView('settings')
+    setShowApps(false)
     setAppLine(domain?.app ? [domain.app.executable, ...domain.app.args].join(' ') : '')
   }, [domain])
+  useEffect(() => {
+    if (!showApps) return
+    void runCommand({ type: 'list_quick_apps' }).then((r) => r.type === 'quick_apps' && setQuickApps(r.apps))
+  }, [showApps])
   if (!d) return <Dialog open={false} onClose={onClose} title="" children={null} />
 
   const set = (patch: Partial<Domain>) => setD({ ...d, ...patch })
@@ -709,7 +769,7 @@ function DomainDialog({
     if (detail.type === 'project_detail') {
       const fw = detail.detail.detection.framework
       const sub = detail.detail.detection.doc_root ?? (fw === 'laravel' || fw === 'symfony' ? 'public' : null)
-      if (sub) root = `${p.path}\\${sub}`
+      if (sub) root = `${p.path}\${sub}`
       if (fw === 'laravel' || fw === 'symfony' || fw === 'word_press' || fw === 'generic_php') kind = { type: 'php', version: null }
       else if (fw === 'node' || fw === 'fast_api' || fw === 'django' || fw === 'flask') kind = { type: 'proxy', upstream_port: 3000 }
     }
@@ -741,19 +801,50 @@ function DomainDialog({
     <Dialog
       open
       onClose={onClose}
-      title={isNew ? 'Add domain' : `Edit ${d.hostname}`}
-      description="Changes are applied to the web server as soon as you save."
+      title={isNew ? 'Add site' : `Edit ${d.hostname}`}
+      description={view === 'config' && !isNew ? 'The web server file for this site. It has its own Save button.' : 'Changes are applied to the web server as soon as you save.'}
+      wide={view === 'config' && !isNew}
       footer={
-        <>
+        view === 'config' && !isNew ? (
           <Button variant="ghost" onClick={onClose}>
-            Cancel
+            Close
           </Button>
-          <Button disabled={busy} onClick={submit}>
-            {isNew ? 'Add and apply' : 'Save and apply'}
-          </Button>
-        </>
+        ) : (
+          <>
+            <Button variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button disabled={busy} onClick={submit}>
+              {isNew ? 'Add and apply' : 'Save and apply'}
+            </Button>
+          </>
+        )
       }
     >
+      {!isNew && (
+        <div className="mb-4">
+          <Tabs
+            tabs={[
+              { id: 'settings', label: 'Settings' },
+              { id: 'config', label: 'Web server config', icon: <FileCode2 className="size-3.5" /> },
+            ]}
+            value={view}
+            onChange={(next) => {
+              setView(next)
+              // The config tab can change ownership and structured blocks; take those
+              // back so saving the settings doesn't overwrite them with stale values.
+              if (next === 'settings' && domain) {
+                runCommand({ type: 'get_domain', hostname: domain.hostname }).then((r) => {
+                  if (r.type === 'domain') setD((cur) => (cur ? { ...cur, ownership: r.domain.ownership, blocks: r.domain.blocks } : cur))
+                })
+              }
+            }}
+          />
+        </div>
+      )}
+      {view === 'config' && !isNew ? (
+        <SiteConfigTab hostname={domain?.hostname ?? d.hostname} />
+      ) : (
       <div className="flex flex-col gap-4">
         {err && <p className="text-sm text-destructive">{err}</p>}
         {isNew && (
@@ -775,6 +866,31 @@ function DomainDialog({
                 <option>{'admin.{project}.test'}</option>
               </Select>
             </Field>
+          </div>
+        )}
+        {isNew && (
+          <div className="flex flex-col gap-2">
+            <Button variant="secondary" className="self-start" onClick={() => setShowApps((v) => !v)}>
+              <Rocket /> {showApps ? 'Hide Quick Apps' : 'Create from a Quick App'}
+            </Button>
+            {showApps && (
+              <div className="grid max-h-56 gap-1.5 overflow-y-auto rounded-lg border border-border p-2 sm:grid-cols-2">
+                {quickApps.length === 0 && <p className="p-2 text-sm text-muted-foreground">No Quick Apps available.</p>}
+                {quickApps.map((a) => (
+                  <button
+                    key={a.id}
+                    onClick={() => onQuickApp(a.id)}
+                    className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent"
+                  >
+                    <TechTile id={a.category} />
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium">{a.name}</span>
+                      <span className="block truncate text-xs text-muted-foreground">{a.description}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
         <Field label="Domain" hint="Subdomains work too: api.shop.test routes independently of shop.test">
@@ -853,10 +969,11 @@ function DomainDialog({
         </div>
         {!isNew && (
           <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <FileCode2 className="size-3.5" /> Config ownership: <b>{d.ownership}</b>. Change it on the Web config page.
+            <FileCode2 className="size-3.5" /> Config ownership: <b>{d.ownership}</b>. Change it on the Web server config tab.
           </p>
         )}
       </div>
+      )}
     </Dialog>
   )
 }
@@ -892,3 +1009,12 @@ const SERVER_BLURB: Record<string, string> = {
   apache: 'Honours .htaccess files',
   caddy: 'Simple, HTTPS-first',
 }
+
+/** Website types in display order; a type with no sites is not listed. */
+const SITE_GROUPS: { id: DomainSummary['group']; label: string; icon: string }[] = [
+  { id: 'php', label: 'PHP', icon: 'php' },
+  { id: 'nodejs', label: 'Node.js', icon: 'node' },
+  { id: 'python', label: 'Python', icon: 'python' },
+  { id: 'static', label: 'Static HTML', icon: 'static' },
+  { id: 'proxy', label: 'Reverse proxy', icon: 'proxy' },
+]
