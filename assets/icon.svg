@@ -1,0 +1,23 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="64" y1="64" x2="960" y2="960" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#14B8A6"/>
+      <stop offset="1" stop-color="#059669"/>
+    </linearGradient>
+  </defs>
+
+  <!-- app tile: moderate corner radius, not a full squircle -->
+  <rect x="64" y="64" width="896" height="896" rx="140" fill="url(#bg)"/>
+
+  <!-- server rack: three stacked units, each with a status LED -->
+  <g>
+    <rect x="260" y="276" width="504" height="120" rx="26" fill="#FFFFFF"/>
+    <circle cx="322" cy="336" r="22" fill="#4ADE80"/>
+
+    <rect x="260" y="452" width="504" height="120" rx="26" fill="#FFFFFF"/>
+    <circle cx="322" cy="512" r="22" fill="#4ADE80"/>
+
+    <rect x="260" y="628" width="504" height="120" rx="26" fill="#FFFFFF"/>
+    <circle cx="322" cy="688" r="22" fill="#4ADE80"/>
+  </g>
+</svg>

@@ -1,0 +1,34 @@
+# Rust / Cargo
+/target/
+**/target/
+Cargo.lock.bak
+
+# Node / UI
+node_modules/
+ui/dist/
+ui/node_modules/.tmp/
+*.tsbuildinfo
+
+# Tauri build output
+src-tauri/gen/
+src-tauri/WixTools/
+
+# OpenLocalServer runtime data (never commit installed runtimes/services/logs/cache)
+.devforge-home/
+*.log
+*.log.*
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# Env / secrets — never commit real values
+.env
+.env.local
+.env.*.local
+
+# Claude Code local settings
+.claude/settings.local.json

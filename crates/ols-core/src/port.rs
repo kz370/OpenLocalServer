@@ -1,0 +1,134 @@
+//! Port Manager (§109 — Stage 2). Reports what owns a port instead of guessing; never
+//! kills anything (§75 — conflict detection must propose, not act).
+
+use std::net::{SocketAddr, TcpListener};
+
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum PortStatus {
+    Free,
+    InUse {
+        pid: Option<u32>,
+        process_name: Option<String>,
+    },
+}
+
+/// Check whether `port` is free on 127.0.0.1. If it's busy, best-effort identify the
+/// owning process (Windows: parse `netstat -ano` + `tasklist`) so the UI can show
+/// "Port 3306 is in use by mysqld.exe (PID 4821)" instead of a bare failure.
+pub fn check_port(port: u16) -> PortStatus {
+    let addr: SocketAddr = ([127, 0, 0, 1], port).into();
+    match TcpListener::bind(addr) {
+        Ok(listener) => {
+            drop(listener);
+            PortStatus::Free
+        }
+        Err(_) => {
+            let pid = find_owning_pid(port);
+            let process_name = pid.and_then(find_process_name);
+            PortStatus::InUse { pid, process_name }
+        }
+    }
+}
+
+#[cfg(windows)]
+fn find_owning_pid(port: u16) -> Option<u32> {
+    let output = std::process::Command::new("netstat").args(["-ano"]).output().ok()?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    let needle = format!(":{port}");
+
+    for line in text.lines() {
+        let cols: Vec<&str> = line.split_whitespace().collect();
+        // Expected shape: Proto  Local Address  Foreign Address  State  PID
+        if cols.len() < 5 {
+            continue;
+        }
+        if cols[0] != "TCP" || cols[3] != "LISTENING" {
+            continue;
+        }
+        if !cols[1].ends_with(&needle) {
+            continue;
+        }
+        if let Ok(pid) = cols[4].parse::<u32>() {
+            return Some(pid);
+        }
+    }
+    None
+}
+
+#[cfg(windows)]
+fn find_process_name(pid: u32) -> Option<String> {
+    let output = std::process::Command::new("tasklist")
+        .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    // CSV line: "name.exe","1234","Console","1","12,345 K"
+    let first_field = text.trim().split(',').next()?;
+    let name = first_field.trim_matches('"');
+    if name.is_empty() {
+        None
+    } else {
+        Some(name.to_string())
+    }
+}
+
+#[cfg(not(windows))]
+fn find_owning_pid(_port: u16) -> Option<u32> {
+    None
+}
+
+#[cfg(not(windows))]
+fn find_process_name(_pid: u32) -> Option<String> {
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reports_free_on_an_unused_high_port() {
+        // 127.0.0.1:0 asks the OS for any free port so this test can't collide with a
+        // real service; we then release it and check *that exact* port back as Free.
+        let probe = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = probe.local_addr().unwrap().port();
+        drop(probe);
+
+        match check_port(port) {
+            PortStatus::Free => {}
+            other => panic!("expected Free, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn reports_in_use_while_a_listener_holds_the_port() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        match check_port(port) {
+            PortStatus::InUse { .. } => {}
+            other => panic!("expected InUse, got {other:?}"),
+        }
+        drop(listener);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn identifies_the_current_process_as_the_owner() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let status = check_port(port);
+        drop(listener);
+
+        match status {
+            PortStatus::InUse { pid: Some(pid), .. } => {
+                assert_eq!(pid, std::process::id());
+            }
+            other => panic!("expected InUse with our own PID, got {other:?}"),
+        }
+    }
+}

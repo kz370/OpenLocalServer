@@ -1,0 +1,23 @@
+[package]
+name = "ols-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+tracing-appender = "0.2"
+directories = "5"
+tokio = { version = "1", features = ["rt-multi-thread", "process", "io-util", "sync", "time", "macros", "fs"] }
+reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls"] }
+sha2 = "0.10"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+futures-util = "0.3"
+serde_yaml_ng = "0.10"
+
+[dev-dependencies]
+tempfile = "3"
