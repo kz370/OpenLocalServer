@@ -7,10 +7,18 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog } from '@/components/ui/dialog'
-import { Field, Select } from '@/components/ui/form'
+import { Field, Select, Tabs } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { type HistoryEntry, type ProcessEvent, type Project, type QuickCommand, runCommand } from '@/core'
 import { timeAgo, useAction } from '@/lib/hooks'
+
+const CATEGORY_ORDER = ['laravel', 'php', 'node', 'python', 'tools']
+const CATEGORY_LABELS: Record<string, string> = { laravel: 'Laravel', php: 'PHP', node: 'Node', python: 'Python', tools: 'Tools', other: 'Other' }
+const categoryRank = (c: string) => {
+  const i = CATEGORY_ORDER.indexOf(c)
+  return i === -1 ? CATEGORY_ORDER.length : i
+}
+const categoryLabel = (c: string) => CATEGORY_LABELS[c] ?? c.charAt(0).toUpperCase() + c.slice(1)
 
 /** §89–93: reusable developer commands, a free-form runner, and what was run recently. */
 export function CommandsPage() {
@@ -27,6 +35,7 @@ export function CommandsPage() {
   const [saveId, setSaveId] = useState('')
   const [saveName, setSaveName] = useState('')
   const { busy, error, setError, run } = useAction()
+  const [tab, setTab] = useState('')
   const outRef = useRef<HTMLPreElement>(null)
 
   async function refresh() {
@@ -65,7 +74,11 @@ export function CommandsPage() {
   }, [output.length])
 
   const visible = commands.filter((c) => c.applies_to.length === 0 || c.applies_to.includes(framework))
-  const categories = Array.from(new Set(visible.map((c) => c.category)))
+  const categories = Array.from(new Set(visible.map((c) => c.category || 'other'))).sort(
+    (a, b) => categoryRank(a) - categoryRank(b) || a.localeCompare(b),
+  )
+  const activeTab = categories.includes(tab) ? tab : (categories[0] ?? '')
+  const shown = visible.filter((c) => (c.category || 'other') === activeTab)
 
   async function startProcess(res: Awaited<ReturnType<typeof runCommand>>, label: string) {
     if (res.type === 'process_started' || (res.type === 'maybe_process' && res.id !== null)) {
@@ -121,35 +134,36 @@ export function CommandsPage() {
             <CardTitle className="text-sm">Quick Commands</CardTitle>
             <CardDescription>{framework ? `Showing commands for ${framework.replace('_', ' ')} projects and general tools.` : 'Pick a project to see its commands.'}</CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            {categories.map((cat) => (
-              <div key={cat}>
-                <div className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">{cat}</div>
-                <div className="flex flex-col gap-1.5">
-                  {visible.filter((c) => c.category === cat).map((c) => (
-                    <div key={c.id} className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-medium">
-                          {c.name}
-                          {!c.builtin && <Badge variant="secondary" className="ml-2">yours</Badge>}
-                        </div>
-                        <div className="truncate text-xs text-muted-foreground">{c.description}</div>
-                      </div>
-                      <div className="flex shrink-0 gap-1">
-                        {!c.builtin && (
-                          <Button size="sm" variant="ghost" title="Delete" onClick={() => run('del', async () => { await runCommand({ type: 'delete_quick_command', id: c.id }); await refresh() })}>
-                            <Trash2 className="size-3.5" />
-                          </Button>
-                        )}
-                        <Button size="sm" variant="secondary" disabled={busy !== null || (c.applies_to.length > 0 && !projectId)} onClick={() => runQuick(c)}>
-                          <Play /> Run
-                        </Button>
-                      </div>
+          <CardContent className="flex flex-col gap-3">
+            <Tabs
+              tabs={categories.map((cat) => ({ id: cat, label: categoryLabel(cat), badge: visible.filter((c) => (c.category || 'other') === cat).length }))}
+              value={activeTab}
+              onChange={setTab}
+            />
+            <div className="flex flex-col gap-1.5">
+              {shown.map((c) => (
+                <div key={c.id} className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium">
+                      {c.name}
+                      {!c.builtin && <Badge variant="secondary" className="ml-2">yours</Badge>}
                     </div>
-                  ))}
+                    <div className="truncate text-xs text-muted-foreground">{c.description}</div>
+                  </div>
+                  <div className="flex shrink-0 gap-1">
+                    {!c.builtin && (
+                      <Button size="sm" variant="ghost" title="Delete" onClick={() => window.confirm(`Delete the command "${c.name}"?`) && run('del', async () => { await runCommand({ type: 'delete_quick_command', id: c.id }); await refresh() })}>
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    )}
+                    <Button size="sm" variant="secondary" disabled={busy !== null || (c.applies_to.length > 0 && !projectId)} onClick={() => runQuick(c)}>
+                      <Play /> Run
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+              {shown.length === 0 && <p className="text-sm text-muted-foreground">No commands here yet.</p>}
+            </div>
           </CardContent>
         </Card>
 

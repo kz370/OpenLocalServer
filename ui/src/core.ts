@@ -514,6 +514,7 @@ export type CoreCommand =
   | { type: 'set_custom_install'; id: string; label: string; path: string }
   | { type: 'remove_custom_install'; id: string; label: string }
   | { type: 'list_custom_installs' }
+  | { type: 'scan_php_folder'; dir: string }
   | { type: 'get_web_status' }
   | { type: 'get_web_config' }
   | { type: 'list_domains' }
@@ -619,6 +620,7 @@ export type CoreResponse =
   | { type: 'secret'; key: string; value: string | null }
   | { type: 'db_tools'; tools: DbTool[] }
   | { type: 'custom_installs'; entries: CustomInstall[] }
+  | { type: 'php_scan'; found: { version: string; php_exe: string }[] }
   | { type: 'web_status'; status: WebStatus }
   | { type: 'web_config'; config: WebConfig }
   | { type: 'domains'; domains: DomainSummary[] }

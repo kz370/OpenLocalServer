@@ -32,6 +32,7 @@ export function ServicesPage() {
   }, [])
 
   async function toggle(service: ServiceStatus) {
+    if (service.running && !window.confirm(`Stop ${service.name}? Anything connected to it will be disconnected.`)) return
     setError(null)
     setBusy(service.id)
     try {

@@ -93,6 +93,8 @@ pub enum CoreCommand {
     SetCustomInstall { id: String, label: String, path: String },
     RemoveCustomInstall { id: String, label: String },
     ListCustomInstalls,
+    /// Register every PHP install found under `dir` (see `php::scan_folder`).
+    ScanPhpFolder { dir: String },
 
     // ---- Stage 6: domains, HTTPS, web server -------------------------------------
     GetWebStatus,
@@ -218,6 +220,7 @@ pub enum CoreResponse {
     Secret { key: String, value: Option<String> },
     DbTools { tools: Vec<DbTool> },
     CustomInstalls { entries: Vec<CustomInstall> },
+    PhpScan { found: Vec<crate::php::ScannedPhp> },
 
     WebStatus { status: Box<WebStatus> },
     WebConfig { config: WebConfig },
@@ -481,11 +484,24 @@ impl Core {
 
             C::SetCustomInstall { id, label, path } => {
                 i.custom_installs.lock().unwrap().set(&id, &label, &path)?;
+                i.sync_php_external();
                 Ok(R::Ok)
             }
             C::RemoveCustomInstall { id, label } => {
                 i.custom_installs.lock().unwrap().remove(&id, &label)?;
+                i.sync_php_external();
                 Ok(R::Ok)
+            }
+            C::ScanPhpFolder { dir } => {
+                let found = crate::php::scan_folder(std::path::Path::new(&dir));
+                {
+                    let mut store = i.custom_installs.lock().unwrap();
+                    for f in &found {
+                        store.set("php", &f.version, &f.php_exe)?;
+                    }
+                }
+                i.sync_php_external();
+                Ok(R::PhpScan { found })
             }
             C::ListCustomInstalls => Ok(R::CustomInstalls { entries: i.custom_installs.lock().unwrap().list() }),
 

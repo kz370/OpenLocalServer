@@ -93,6 +93,10 @@ export function ProjectsPage() {
   }
 
   async function removeProject(id: string) {
+    const name = projects.find((p) => p.id === id)?.name ?? 'this project'
+    if (!window.confirm(`Remove ${name} from OpenLocalServer?
+
+Your project files are not deleted.`)) return
     await runCommand({ type: 'remove_project', id })
     if (selectedId === id) setSelectedId(null)
     await refreshProjects()

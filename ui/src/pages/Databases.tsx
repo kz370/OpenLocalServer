@@ -78,6 +78,7 @@ function ServiceBanner({ service, name }: { service?: ServiceStatus; name: strin
               size="sm"
               disabled={busy}
               onClick={() => {
+                if (service.running && !window.confirm(`Stop ${service.name}? Anything connected to it will be disconnected.`)) return
                 setBusy(true)
                 void run('svc', () => runCommand({ type: service.running ? 'stop_service' : 'start_service', id: service.id })).finally(() => setBusy(false))
               }}

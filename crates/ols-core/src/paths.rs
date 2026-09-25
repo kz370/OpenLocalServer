@@ -14,20 +14,77 @@ pub struct AppPaths {
 }
 
 impl AppPaths {
-    /// Resolve paths. If `OLS_HOME` is set, everything lives under that directory
-    /// (flat layout, convenient for tests). Otherwise use OS-convention dirs.
+    /// Resolve paths. Order:
+    /// 1. `OLS_HOME` (tests, CI): everything lives under that directory.
+    /// 2. Debug builds: `<repo>/data`, so `cargo clean` never wipes it.
+    /// 3. A `data` folder beside the executable (portable, like Laragon: reinstalling
+    ///    Windows loses nothing when the install lives on another drive).
+    /// 4. The OS app-data directory, only when the install folder isn't writable
+    ///    (for example under Program Files).
     pub fn resolve() -> Self {
         if let Ok(override_home) = std::env::var(HOME_ENV_VAR) {
-            return Self {
-                root: PathBuf::from(override_home),
-            };
+            return Self { root: PathBuf::from(override_home) };
         }
+        #[cfg(debug_assertions)]
+        {
+            let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("data");
+            if let Some(root) = writable_dir(&repo) {
+                return Self { root };
+            }
+        }
+        let beside_exe = std::env::current_exe().ok().and_then(|exe| exe.parent().map(|d| d.join("data")));
+        if let Some(root) = beside_exe.and_then(|d| writable_dir(&d)) {
+            return Self { root };
+        }
+        Self { root: Self::legacy_root().expect("could not determine a home directory for the current user") }
+    }
 
-        let dirs = ProjectDirs::from("dev", "OpenLocalServer", "OpenLocalServer")
-            .expect("could not determine a home directory for the current user");
-        Self {
-            root: dirs.data_dir().to_path_buf(),
+    /// Where earlier versions kept everything (the OS app-data directory).
+    pub fn legacy_root() -> Option<PathBuf> {
+        ProjectDirs::from("dev", "OpenLocalServer", "OpenLocalServer").map(|d| d.data_dir().to_path_buf())
+    }
+
+    /// One-time move of data left in the old app-data location into the current root, so
+    /// nothing has to be reinstalled. Only for the default (non-`OLS_HOME`) layout and only
+    /// while the new location is still empty. Downloaded archives (`cache`) stay behind,
+    /// since they can be fetched again. Returns notes for the log.
+    pub fn migrate_legacy(&self) -> Vec<String> {
+        let mut notes = Vec::new();
+        if std::env::var(HOME_ENV_VAR).is_ok() {
+            return notes;
         }
+        let Some(legacy) = Self::legacy_root() else { return notes };
+        if !legacy.is_dir() || same_path(&legacy, &self.root) {
+            return notes;
+        }
+        if ["settings.json", "domains.json", "runtimes"].iter().any(|n| self.root.join(n).exists()) {
+            return notes;
+        }
+        let entries: Vec<_> = match std::fs::read_dir(&legacy) {
+            Ok(rd) => rd.flatten().filter(|e| e.file_name() != "cache").collect(),
+            Err(_) => return notes,
+        };
+        if entries.is_empty() {
+            return notes;
+        }
+        let _ = std::fs::create_dir_all(&self.root);
+        notes.push(format!("moving data from {} to {}", legacy.display(), self.root.display()));
+        for entry in entries {
+            let from = entry.path();
+            let to = self.root.join(entry.file_name());
+            if std::fs::rename(&from, &to).is_ok() {
+                continue;
+            }
+            // Different drive: copy, and delete the original only once the copy is complete.
+            match copy_recursive(&from, &to) {
+                Ok(()) => {
+                    let _ = if from.is_dir() { std::fs::remove_dir_all(&from) } else { std::fs::remove_file(&from) };
+                }
+                Err(e) => notes.push(format!("could not move {}: {e} (left in place)", from.display())),
+            }
+        }
+        notes.push("data move finished".into());
+        notes
     }
 
     /// Paths rooted at an explicit directory — for tests that need a second, separate home.
@@ -95,6 +152,43 @@ impl AppPaths {
             std::fs::create_dir_all(dir)?;
         }
         Ok(())
+    }
+}
+
+/// `dir` (created if needed) when files can actually be written there.
+fn writable_dir(dir: &Path) -> Option<PathBuf> {
+    std::fs::create_dir_all(dir).ok()?;
+    let probe = dir.join(".write-test");
+    std::fs::write(&probe, b"").ok()?;
+    let _ = std::fs::remove_file(probe);
+    std::fs::canonicalize(dir).ok().map(strip_verbatim)
+}
+
+/// Drops the `\\?\` prefix canonicalize adds on Windows; nginx, Apache and PHP mishandle it.
+fn strip_verbatim(p: PathBuf) -> PathBuf {
+    match p.to_str().and_then(|s| s.strip_prefix(r"\\?\")) {
+        Some(rest) => PathBuf::from(rest),
+        None => p,
+    }
+}
+
+fn same_path(a: &Path, b: &Path) -> bool {
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
+    }
+}
+
+fn copy_recursive(from: &Path, to: &Path) -> std::io::Result<()> {
+    if from.is_dir() {
+        std::fs::create_dir_all(to)?;
+        for entry in std::fs::read_dir(from)? {
+            let entry = entry?;
+            copy_recursive(&entry.path(), &to.join(entry.file_name()))?;
+        }
+        Ok(())
+    } else {
+        std::fs::copy(from, to).map(|_| ())
     }
 }
 

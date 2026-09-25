@@ -127,7 +127,7 @@ impl Inner {
         let certs = Arc::new(CertificateManager::new(&paths));
         let php = Arc::new(PhpPools::new(paths.clone(), runtimes.clone(), supervisor.clone()));
         let web = Arc::new(WebManager::new(paths.clone(), runtimes.clone(), supervisor.clone(), certs.clone(), php.clone()));
-        Ok(Arc::new(Self {
+        let core = Arc::new(Self {
             settings: Mutex::new(settings),
             projects: Mutex::new(ProjectStore::load(&paths)?),
             custom_installs: Mutex::new(CustomInstallStore::load(&paths)?),
@@ -145,7 +145,24 @@ impl Inner {
             web,
             runs: RunManager::new(),
             paths,
-        }))
+        });
+        core.sync_php_external();
+        Ok(core)
+    }
+
+    /// Feeds the user-registered PHP installs (custom installs with id "php") to the pool
+    /// manager. Call after loading and after any custom-install change.
+    pub fn sync_php_external(&self) {
+        let entries = self
+            .custom_installs
+            .lock()
+            .unwrap()
+            .list()
+            .into_iter()
+            .filter(|c| c.id == "php" && !c.label.is_empty())
+            .map(|c| (c.label, PathBuf::from(c.path)))
+            .collect();
+        self.php.set_external(entries);
     }
 
     // ------------------------------------------------------------------- settings
@@ -567,7 +584,7 @@ impl Inner {
             });
         }
 
-        if self.runtimes.installed_versions("php").is_empty() {
+        if self.php.all_versions().is_empty() {
             items.push(item("php", "PHP", "warn", "no PHP version is installed".into(), Some("Install one from the Runtimes page.")));
         }
         for s in self.services.list().into_iter().filter(|s| s.installed) {

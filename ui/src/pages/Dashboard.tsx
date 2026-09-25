@@ -166,12 +166,13 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: Page) => void })
                         size="sm"
                         variant="ghost"
                         disabled={busy !== null}
-                        onClick={() =>
-                          run(s.id, async () => {
+                        onClick={() => {
+                          if (s.running && !window.confirm(`Stop ${s.name}? Anything connected to it will be disconnected.`)) return
+                          void run(s.id, async () => {
                             await runCommand({ type: s.running ? 'stop_service' : 'start_service', id: s.id })
                             await refresh()
                           })
-                        }
+                        }}
                       >
                         {s.running ? <StopIcon className="size-3.5" /> : <Play className="size-3.5" />}
                       </Button>

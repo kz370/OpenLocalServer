@@ -1,26 +1,53 @@
 import { listen } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
-import { Download, FolderSearch, Trash2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { ChevronDown, ChevronRight, Download, FolderSearch, Trash2 } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { type CatalogEntry, type CustomInstall, type Diagnostic, type RuntimeEvent, runCommand } from '@/core'
+import { formatBytes } from '@/lib/hooks'
 
-function formatBytes(bytes: number) {
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+/** Runtimes a user may already have somewhere else and want to point at. */
+const LOCATABLE = ['php', 'node', 'python']
+
+function versionKey(v: string): number[] {
+  return v.split('.').map((p) => parseInt(p, 10) || 0)
 }
 
-const RUNTIME_IDS = ['php', 'node', 'python']
+function compareVersionsDesc(a: string, b: string): number {
+  const ka = versionKey(a)
+  const kb = versionKey(b)
+  for (let i = 0; i < Math.max(ka.length, kb.length); i++) {
+    const d = (kb[i] ?? 0) - (ka[i] ?? 0)
+    if (d !== 0) return d
+  }
+  return 0
+}
+
+interface Row {
+  key: string
+  version: string
+  kind: 'managed' | 'custom'
+  entry?: CatalogEntry
+  custom?: CustomInstall
+}
+
+interface Group {
+  id: string
+  name: string
+  rows: Row[]
+}
 
 export function RuntimesPage() {
   const [catalog, setCatalog] = useState<CatalogEntry[]>([])
   const [progress, setProgress] = useState<Record<string, RuntimeEvent | undefined>>({})
   const [error, setError] = useState<Diagnostic | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
 
   const [customInstalls, setCustomInstalls] = useState<CustomInstall[]>([])
   const [customId, setCustomId] = useState('php')
@@ -33,183 +60,210 @@ export function RuntimesPage() {
     if (custom.type === 'custom_installs') setCustomInstalls(custom.entries)
   }
 
-  async function addCustomInstall() {
-    const picked = await open({
-      multiple: false,
-      directory: false,
-      title: `Locate ${customId}${customLabel ? ` ${customLabel}` : ''}`,
-      filters: [{ name: 'Executable', extensions: ['exe'] }],
-    })
-    if (!picked || Array.isArray(picked)) return
+  async function guarded(fn: () => Promise<void>) {
     setError(null)
+    setNotice(null)
     try {
+      await fn()
+    } catch (err) {
+      setError(err as Diagnostic)
+    }
+  }
+
+  const addCustomInstall = () =>
+    guarded(async () => {
+      const picked = await open({
+        multiple: false,
+        directory: false,
+        title: `Locate ${customId}${customLabel ? ` ${customLabel}` : ''}`,
+        filters: [{ name: 'Executable', extensions: ['exe'] }],
+      })
+      if (!picked || Array.isArray(picked)) return
       await runCommand({ type: 'set_custom_install', id: customId, label: customLabel, path: picked })
       setCustomLabel('')
       await refresh()
-    } catch (err) {
-      setError(err as Diagnostic)
-    }
-  }
+    })
 
-  async function removeCustomInstall(entry: CustomInstall) {
-    await runCommand({ type: 'remove_custom_install', id: entry.id, label: entry.label })
-    await refresh()
-  }
+  const scanPhpFolder = () =>
+    guarded(async () => {
+      const picked = await open({ directory: true, multiple: false, title: 'Folder containing your PHP versions' })
+      if (!picked || Array.isArray(picked)) return
+      const res = await runCommand({ type: 'scan_php_folder', dir: picked })
+      if (res.type === 'php_scan') {
+        setNotice(
+          res.found.length === 0
+            ? 'No PHP installs found there. A PHP folder needs both php.exe and php-cgi.exe.'
+            : `Added ${res.found.length} PHP version${res.found.length === 1 ? '' : 's'}: ${res.found.map((f) => f.version).join(', ')}`,
+        )
+      }
+      await refresh()
+    })
+
+  const removeCustomInstall = (entry: CustomInstall) =>
+    guarded(async () => {
+      const name = `${entry.id.toUpperCase()} ${entry.label || ''}`.trim()
+      if (!window.confirm(`Remove ${name} from the list?\n\nThe files at ${entry.path} are not deleted.`)) return
+      await runCommand({ type: 'remove_custom_install', id: entry.id, label: entry.label })
+      await refresh()
+    })
 
   useEffect(() => {
-    refresh()
+    void refresh()
     const unlisten = listen<RuntimeEvent>('runtime-event', (event) => {
       const e = event.payload
       setProgress((prev) => ({ ...prev, [`${e.id}@${e.version}`]: e }))
-      if (e.kind === 'installed' || e.kind === 'failed') refresh()
+      if (e.kind === 'installed' || e.kind === 'failed') void refresh()
     })
     return () => {
-      unlisten.then((f) => f())
+      void unlisten.then((f) => f())
     }
   }, [])
 
-  async function install(entry: CatalogEntry) {
-    setError(null)
-    try {
+  const install = (entry: CatalogEntry) =>
+    guarded(async () => {
       await runCommand({ type: 'install_runtime', id: entry.id, version: entry.version })
-    } catch (err) {
-      setError(err as Diagnostic)
+    })
+
+  const groups = useMemo<Group[]>(() => {
+    const byId = new Map<string, Group>()
+    for (const entry of catalog) {
+      const g = byId.get(entry.id) ?? { id: entry.id, name: entry.name, rows: [] }
+      g.rows.push({ key: `${entry.id}@${entry.version}`, version: entry.version, kind: 'managed', entry })
+      byId.set(entry.id, g)
     }
-  }
+    for (const c of customInstalls) {
+      const g = byId.get(c.id) ?? { id: c.id, name: c.id.toUpperCase(), rows: [] }
+      g.rows.push({ key: `custom:${c.id}:${c.label}`, version: c.label || 'custom', kind: 'custom', custom: c })
+      byId.set(c.id, g)
+    }
+    const list = [...byId.values()]
+    for (const g of list) g.rows.sort((a, b) => compareVersionsDesc(a.version, b.version))
+    // Groups with something installed first, then alphabetical.
+    const has = (g: Group) => g.rows.some((r) => r.kind === 'custom' || r.entry?.installed)
+    return list.sort((a, b) => Number(has(b)) - Number(has(a)) || a.name.localeCompare(b.name))
+  }, [catalog, customInstalls])
 
   return (
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Runtimes</h1>
         <p className="text-sm text-muted-foreground">
-          Downloaded once, verified by SHA-256, cached for every project (§20–21, §127).
+          Grouped by runtime. Downloaded once, verified by SHA-256 and cached (§20–21, §127), or point at versions you already have.
         </p>
       </div>
 
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm">Catalog</CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Version</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Detail</TableHead>
-                <TableHead className="text-right">Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {catalog.map((entry) => {
-                const key = `${entry.id}@${entry.version}`
-                const live = progress[key]
-                const isInstalling = live && live.kind === 'progress'
-
-                return (
-                  <TableRow key={key}>
-                    <TableCell className="font-medium">{entry.name}</TableCell>
-                    <TableCell className="text-muted-foreground">{entry.version}</TableCell>
-                    <TableCell>
-                      {entry.installed ? (
-                        <Badge variant="success">Installed</Badge>
-                      ) : isInstalling ? (
-                        <Badge variant="secondary" className="capitalize">
-                          {live.kind === 'progress' ? live.state : ''}
-                        </Badge>
-                      ) : live?.kind === 'failed' ? (
-                        <Badge variant="destructive">Failed</Badge>
-                      ) : (
-                        <Badge variant="outline">Not installed</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {live?.kind === 'progress' &&
-                        `${formatBytes(live.downloaded)}${live.total ? ` / ${formatBytes(live.total)}` : ''}`}
-                      {live?.kind === 'failed' && live.message}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {!entry.installed && !isInstalling && (
-                        <Button size="sm" variant="secondary" onClick={() => install(entry)}>
-                          <Download /> Install
-                        </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                )
-              })}
-              {catalog.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-center text-sm text-muted-foreground">
-                    No runtimes in the catalog for this platform yet.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm">Custom locations</CardTitle>
+          <CardTitle className="text-sm">Use versions you already have</CardTitle>
           <CardDescription>
-            Already have PHP, Node, or Python installed elsewhere? Point a project at it instead of downloading.
+            Point at a folder that holds many PHP versions and every one of them is added. They show up under PHP below and
+            can be chosen per site.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              value={customId}
-              onChange={(e) => setCustomId(e.target.value)}
-              className="h-9 rounded-lg border border-transparent bg-input/60 px-3 text-sm"
-            >
-              {RUNTIME_IDS.map((id) => (
-                <option key={id} value={id}>
-                  {id}
-                </option>
-              ))}
-            </select>
-            <Input
-              value={customLabel}
-              onChange={(e) => setCustomLabel(e.target.value)}
-              placeholder="version label, e.g. 8.1"
-              className="w-40"
-            />
-            <Button size="sm" variant="secondary" onClick={addCustomInstall}>
-              <FolderSearch /> Locate executable
-            </Button>
-          </div>
-
-          {customInstalls.length > 0 && (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Runtime</TableHead>
-                  <TableHead>Version</TableHead>
-                  <TableHead>Path</TableHead>
-                  <TableHead className="text-right">Action</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {customInstalls.map((c) => (
-                  <TableRow key={`${c.id}-${c.label}`}>
-                    <TableCell className="font-medium uppercase">{c.id}</TableCell>
-                    <TableCell>{c.label || '—'}</TableCell>
-                    <TableCell className="max-w-xs truncate text-xs text-muted-foreground">{c.path}</TableCell>
-                    <TableCell className="text-right">
-                      <Button size="sm" variant="ghost" onClick={() => removeCustomInstall(c)}>
-                        <Trash2 className="size-3.5" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
+        <CardContent className="flex flex-wrap items-center gap-2">
+          <Button size="sm" onClick={scanPhpFolder}>
+            <FolderSearch /> Add folder of PHP versions
+          </Button>
+          <span className="px-1 text-xs text-muted-foreground">or one executable:</span>
+          <select
+            value={customId}
+            onChange={(e) => setCustomId(e.target.value)}
+            className="h-9 rounded-lg border border-transparent bg-input/60 px-3 text-sm"
+          >
+            {LOCATABLE.map((id) => (
+              <option key={id} value={id}>
+                {id}
+              </option>
+            ))}
+          </select>
+          <Input
+            value={customLabel}
+            onChange={(e) => setCustomLabel(e.target.value)}
+            placeholder="version label, e.g. 8.1.2"
+            className="w-44"
+          />
+          <Button size="sm" variant="secondary" onClick={addCustomInstall}>
+            <FolderSearch /> Locate executable
+          </Button>
         </CardContent>
       </Card>
+
+      {notice && <p className="text-sm text-muted-foreground">{notice}</p>}
+
+      {groups.map((g) => {
+        const installed = g.rows.filter((r) => r.kind === 'custom' || r.entry?.installed).length
+        const isCollapsed = collapsed[g.id] ?? false
+        return (
+          <Card key={g.id}>
+            <CardHeader className="pb-2">
+              <button
+                className="flex items-center gap-2 text-left"
+                onClick={() => setCollapsed((c) => ({ ...c, [g.id]: !isCollapsed }))}
+              >
+                {isCollapsed ? <ChevronRight className="size-4" /> : <ChevronDown className="size-4" />}
+                <CardTitle className="text-sm">{g.name}</CardTitle>
+                <Badge variant={installed > 0 ? 'success' : 'outline'}>
+                  {installed > 0 ? `${installed} installed` : 'none installed'}
+                </Badge>
+                {g.rows.length > 1 && <span className="text-xs text-muted-foreground">{g.rows.length} versions</span>}
+              </button>
+            </CardHeader>
+            {!isCollapsed && (
+              <CardContent className="p-0">
+                <Table>
+                  <TableBody>
+                    {g.rows.map((row) => {
+                      const live = progress[row.key]
+                      const installing = live && live.kind === 'progress'
+                      return (
+                        <TableRow key={row.key}>
+                          <TableCell className="w-40 font-medium">{row.version}</TableCell>
+                          <TableCell className="w-36">
+                            {row.kind === 'custom' ? (
+                              <Badge variant="secondary">Your install</Badge>
+                            ) : row.entry?.installed ? (
+                              <Badge variant="success">Installed</Badge>
+                            ) : installing ? (
+                              <Badge variant="secondary" className="capitalize">
+                                {live.kind === 'progress' ? live.state : ''}
+                              </Badge>
+                            ) : live?.kind === 'failed' ? (
+                              <Badge variant="destructive">Failed</Badge>
+                            ) : (
+                              <Badge variant="outline">Not installed</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="max-w-md truncate text-xs text-muted-foreground">
+                            {row.kind === 'custom' && row.custom?.path}
+                            {live?.kind === 'progress' &&
+                              `${formatBytes(live.downloaded)}${live.total ? ` / ${formatBytes(live.total)}` : ''}`}
+                            {live?.kind === 'failed' && live.message}
+                            {row.kind === 'managed' && !row.entry?.installed && !live && row.entry?.system &&
+                              `Found on PATH: ${row.entry.system.version}`}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {row.kind === 'managed' && !row.entry?.installed && !installing && row.entry && (
+                              <Button size="sm" variant="secondary" onClick={() => install(row.entry!)}>
+                                <Download /> Install
+                              </Button>
+                            )}
+                            {row.kind === 'custom' && row.custom && (
+                              <Button size="sm" variant="ghost" title="Remove from list" onClick={() => removeCustomInstall(row.custom!)}>
+                                <Trash2 className="size-3.5" />
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            )}
+          </Card>
+        )
+      })}
+      {groups.length === 0 && <p className="text-sm text-muted-foreground">No runtimes in the catalog for this platform yet.</p>}
 
       {error && (
         <Card className="border-destructive/40 bg-destructive/5">

@@ -106,7 +106,11 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
 pub fn run() {
     let paths = AppPaths::resolve();
     paths.ensure_dirs().expect("failed to create app directories");
+    let migration_notes = paths.migrate_legacy();
     ols_core::logging::init(&paths.logs_dir());
+    for note in &migration_notes {
+        tracing::info!("{note}");
+    }
     tracing::info!(version = env!("CARGO_PKG_VERSION"), home = %paths.root().display(), "OpenLocalServer starting");
 
     let settings = SettingsService::load(&paths).expect("failed to load settings");
