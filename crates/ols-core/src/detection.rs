@@ -132,7 +132,7 @@ pub fn detect(project_path: &Path) -> DetectionResult {
     } else if exists(project_path, "wp-config.php") {
         markers.push("wp-config.php".to_string());
         Framework::WordPress
-    } else if composer.is_some() {
+    } else if composer.is_some() || exists(project_path, "index.php") || exists(project_path, "public/index.php") {
         Framework::GenericPhp
     } else if package_json.is_some() {
         Framework::Node
@@ -217,6 +217,18 @@ mod tests {
         assert_eq!(result.framework, Framework::GenericPhp);
         assert_eq!(result.requirements.php.as_deref(), Some("8.4"));
         assert_eq!(result.requirements.node.as_deref(), Some("24"));
+    }
+
+    #[test]
+    fn plain_php_folder_without_composer_is_generic_php() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("index.php"), "<?php echo 1;").unwrap();
+        assert_eq!(detect(tmp.path()).framework, Framework::GenericPhp);
+
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(tmp.path().join("public")).unwrap();
+        std::fs::write(tmp.path().join("public").join("index.php"), "<?php echo 1;").unwrap();
+        assert_eq!(detect(tmp.path()).framework, Framework::GenericPhp);
     }
 
     #[test]

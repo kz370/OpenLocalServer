@@ -206,9 +206,14 @@ fn body(site: &SiteSpec) -> String {
             // pool exists; Nginx and Caddy balance across all of them.
             let idx = site.hostname.bytes().fold(0usize, |h, b| h.wrapping_mul(31).wrapping_add(b as usize)) % ports.len().max(1);
             let port = ports[idx];
+            // On Windows mod_proxy_fcgi builds SCRIPT_FILENAME as "proxy:fcgi://host:port/C:/..",
+            // which php-cgi rejects ("No input file specified"); strip the prefix back off.
             out.push_str(&format!(
                 "    <FilesMatch \"\\.php$\">\n        SetHandler \"proxy:fcgi://127.0.0.1:{port}/\"\n    </FilesMatch>\n"
             ));
+            out.push_str(
+                "    ProxyFCGISetEnvIf \"reqenv('SCRIPT_FILENAME') =~ m#^proxy:fcgi://[^/]+/(.*)$#\" SCRIPT_FILENAME \"$1\"\n",
+            );
             out.push_str("    <IfModule rewrite_module>\n");
             out.push_str("        RewriteEngine On\n");
             // Front-controller frameworks: anything that isn't a real file goes to index.php.

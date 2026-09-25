@@ -290,8 +290,8 @@ impl WebManager {
         let mut site_pools: HashMap<String, (String, Vec<u16>)> = HashMap::new();
         let mut versions_in_use = Vec::new();
         for d in &enabled {
-            let SiteKind::Php { version } = &d.kind else { continue };
-            let wanted = version.clone().or_else(|| (ctx.php_for)(d));
+            let SiteKind::Php { version } = effective_kind(d) else { continue };
+            let wanted = version.or_else(|| (ctx.php_for)(d));
             let picked = self.php.pick_version(wanted.as_deref()).ok_or_else(|| {
                 werr(match &wanted {
                     Some(v) => format!("{} needs PHP {v}, which is not installed. Install it from the Runtimes page.", d.hostname),
@@ -310,7 +310,7 @@ impl WebManager {
         let mut rendered: Vec<(Domain, String)> = Vec::new();
         for d in &enabled {
             let tls = if d.https { Some(self.certs.ensure_for(d).map_err(werr)?) } else { None };
-            let backend = match &d.kind {
+            let backend = match &effective_kind(d) {
                 SiteKind::Php { .. } => {
                     let (pool, ports) = site_pools[&d.hostname].clone();
                     Backend::Php { pool, ports }
@@ -1014,6 +1014,33 @@ pub fn build_app_spec(hostname: &str, app: &AppSpec, port: Option<u16>, bin_dir:
 mod tests {
     use super::*;
 
+    fn static_domain(root: &Path) -> Domain {
+        Domain {
+            hostname: "x.test".into(),
+            project_id: None,
+            root: root.display().to_string(),
+            kind: SiteKind::Static,
+            https: false,
+            redirect_https: false,
+            wildcard: false,
+            enabled: true,
+            ownership: Ownership::Managed,
+            app: None,
+            blocks: Default::default(),
+            generated_hashes: Default::default(),
+        }
+    }
+
+    #[test]
+    fn static_site_with_an_index_php_is_served_as_php_not_downloaded() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(matches!(effective_kind(&static_domain(dir.path())), SiteKind::Static));
+        std::fs::write(dir.path().join("index.php"), "<?php").unwrap();
+        assert!(matches!(effective_kind(&static_domain(dir.path())), SiteKind::Php { version: None }));
+        std::fs::write(dir.path().join("index.html"), "hi").unwrap();
+        assert!(matches!(effective_kind(&static_domain(dir.path())), SiteKind::Static), "an explicit index.html wins");
+    }
+
     #[test]
     fn app_spec_puts_the_runtime_first_on_path_and_sets_port() {
         let dir = tempfile::tempdir().unwrap();
@@ -1054,4 +1081,18 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&existing).unwrap(), "old");
         assert!(!created.exists());
     }
+}
+
+/// A site saved as static whose folder is plainly PHP (an `index.php`, no `index.html`)
+/// would hand its source to the browser as a download. Serve it through PHP instead;
+/// the stored kind is left alone so the user's choice is never rewritten behind their back.
+fn effective_kind(d: &Domain) -> SiteKind {
+    if matches!(d.kind, SiteKind::Static) {
+        let root = std::path::Path::new(&d.root);
+        let has = |name: &str| root.join(name).is_file();
+        if has("index.php") && !has("index.html") && !has("index.htm") {
+            return SiteKind::Php { version: None };
+        }
+    }
+    d.kind.clone()
 }
