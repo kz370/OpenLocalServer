@@ -61,8 +61,14 @@ function SiteRow({ site, heaviest }: { site: SiteUsage; heaviest: number }) {
       </span>
       {site.measured ? (
         <>
-          <span className="w-14 text-right text-xs tabular-nums text-muted-foreground">{site.cpu_percent.toFixed(1)}%</span>
-          <span className="w-16 text-right text-xs tabular-nums">{formatBytes(site.memory)}</span>
+          <span className="w-20 text-right text-xs tabular-nums" title="CPU, share of the whole machine">
+            <span className="text-muted-foreground">CPU </span>
+            {site.cpu_percent.toFixed(1)}%
+          </span>
+          <span className="w-24 text-right text-xs tabular-nums" title="Memory (RAM) in use">
+            <span className="text-muted-foreground">RAM </span>
+            {formatBytes(site.memory)}
+          </span>
           <span className="hidden h-1 w-20 overflow-hidden rounded-full bg-muted sm:block">
             <span className="block h-full rounded-full bg-primary" style={{ width: `${(site.memory / heaviest) * 100}%` }} />
           </span>

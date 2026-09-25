@@ -205,7 +205,7 @@ export function ProcessesPage() {
                   <span className="text-xs text-muted-foreground">
                     {p.pid ? `PID ${p.pid}` : '—'}
                     {p.pid && stats?.processes[p.pid]?.count
-                      ? ` · ${stats.processes[p.pid].cpu_percent.toFixed(1)}% CPU · ${formatBytes(stats.processes[p.pid].memory)}${stats.processes[p.pid].count > 1 ? ` (${stats.processes[p.pid].count} processes)` : ''}`
+                      ? ` · CPU ${stats.processes[p.pid].cpu_percent.toFixed(1)}% · RAM ${formatBytes(stats.processes[p.pid].memory)}${stats.processes[p.pid].count > 1 ? ` (${stats.processes[p.pid].count} processes)` : ''}`
                       : ''}
                     {p.restarts > 0 && ` · ${p.restarts} restart${p.restarts > 1 ? 's' : ''}`}
                     {p.exit_code !== null && ` · exit ${p.exit_code}`}
