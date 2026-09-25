@@ -789,6 +789,11 @@ impl Inner {
             sites.push(crate::monitor::SiteUsage { hostname: d.hostname.clone(), via, cpu_percent: cpu, memory, shared_by, measured });
         }
         stats.sites = sites;
+
+        let mut places = vec![("OpenLocalServer data".to_string(), self.paths.root().to_path_buf())];
+        places.extend(self.string_list(PROJECT_ROOTS).into_iter().map(|r| ("Projects".to_string(), PathBuf::from(r))));
+        places.push(("Projects".to_string(), self.default_projects_dir()));
+        stats.disks = self.monitor.disks(&places);
         stats
     }
 
