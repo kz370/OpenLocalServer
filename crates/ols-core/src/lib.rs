@@ -1,25 +1,36 @@
 //! ols-core: the application core (§8.1). GUI, CLI, and the future local API are all
 //! front doors onto this crate — none of them talk to a manager directly.
 
+pub mod app;
 pub mod ca;
 pub mod catalog;
+pub mod certs;
 pub mod command;
 pub mod custom_install;
 pub mod dbtools;
 pub mod detection;
-pub mod hosts;
+pub mod dns;
+pub mod domain;
+pub mod elevate;
 pub mod error;
+pub mod exec;
+pub mod health;
+pub mod hosts;
 pub mod logging;
 pub mod manifest;
 pub mod paths;
+pub mod php;
 pub mod port;
 pub mod process;
 pub mod project;
+pub mod quickapp;
 pub mod resolver;
 pub mod runtime;
 pub mod secrets;
 pub mod service;
 pub mod settings;
+pub mod sqlite;
+pub mod web;
 #[cfg(test)]
 mod test_support;
 

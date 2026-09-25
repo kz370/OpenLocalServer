@@ -1,0 +1,87 @@
+id: custom-app
+name: Custom App
+description: Start from an empty folder and choose how it is served, with an optional start command for a dev server.
+category: custom
+
+variables:
+  - name: project_name
+    label: Project name
+    type: text
+    required: true
+    validation: "[A-Za-z][A-Za-z0-9_-]*"
+  - name: parent_dir
+    label: Create in
+    type: directory
+    default: "{{ default_projects_dir }}"
+  - name: kind
+    label: How it is served
+    type: select
+    options: [php, proxy, static]
+    default: static
+  - name: docroot
+    label: Document root inside the folder (blank = the folder itself)
+    type: text
+    default: ""
+    validation: "[A-Za-z0-9_./-]*"
+    show_if: "kind != proxy"
+  - name: start_command
+    label: Start command for the dev server
+    type: text
+    default: ""
+    show_if: "kind == proxy"
+  - name: runtime
+    label: Runtime for the start command
+    type: select
+    options: [node, python, none]
+    default: node
+    show_if: "kind == proxy"
+  - name: port
+    label: Dev server port
+    type: port
+    default: 4000
+    show_if: "kind == proxy"
+  - name: domain
+    label: Domain
+    type: domain
+    default: "{{ project_name | slug }}.test"
+  - name: https
+    label: HTTPS
+    type: boolean
+    default: true
+  - name: wildcard
+    label: Wildcard subdomains (*.domain)
+    type: boolean
+    default: false
+
+commands:
+  - name: Create the project folder
+    action: make_dir
+    with: { path: "{{ project_path }}" }
+
+files:
+  - path: index.html
+    if: "kind == static"
+    overwrite: false
+    content: |
+      <!doctype html>
+      <title>{{ project_name }}</title>
+      <h1>{{ project_name }}</h1>
+  - path: index.php
+    if: "kind == php"
+    overwrite: false
+    content: |
+      <?php echo '<h1>{{ project_name }}</h1>';
+
+domain:
+  hostname: "{{ domain }}"
+  kind: "{{ kind }}"
+  root: "{{ project_path }}/{{ docroot | default('') }}"
+  port: "{{ port | default(4000, true) }}"
+  app:
+    run: "{{ start_command }}"
+    runtime: "{{ runtime }}"
+    cwd: "{{ project_path }}"
+    if: "kind == proxy && start_command"
+
+environment:
+  https: true

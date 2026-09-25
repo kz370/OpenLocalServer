@@ -1,0 +1,103 @@
+# Built-in Quick Commands (§89). Placeholders: {{project_path}} {{project_name}} {{domain}}.
+- id: laravel-clear-cache
+  name: Clear Laravel Cache
+  description: Clears the config, route, view and application caches.
+  category: laravel
+  applies_to: [laravel]
+  working_directory: "{{project_path}}"
+  command: { executable: php, arguments: [artisan, optimize:clear] }
+
+- id: laravel-migrate
+  name: Run Laravel Migrations
+  description: Run database migrations for the current project.
+  category: laravel
+  applies_to: [laravel]
+  working_directory: "{{project_path}}"
+  command: { executable: php, arguments: [artisan, migrate] }
+
+- id: laravel-migrate-fresh
+  name: Fresh Migrations with Seed
+  description: Drops every table, re-runs all migrations and seeds the database.
+  category: laravel
+  applies_to: [laravel]
+  working_directory: "{{project_path}}"
+  command: { executable: php, arguments: [artisan, "migrate:fresh", "--seed"] }
+
+- id: laravel-queue-work
+  name: Start Queue Worker
+  description: Runs `php artisan queue:work` until stopped.
+  category: laravel
+  applies_to: [laravel]
+  working_directory: "{{project_path}}"
+  command: { executable: php, arguments: [artisan, "queue:work"] }
+
+- id: laravel-test
+  name: Run Tests
+  description: Runs the project's test suite with `php artisan test`.
+  category: laravel
+  applies_to: [laravel]
+  working_directory: "{{project_path}}"
+  command: { executable: php, arguments: [artisan, test] }
+
+- id: composer-install
+  name: Install Dependencies (Composer)
+  description: composer install
+  category: php
+  applies_to: [laravel, symfony, word_press, generic_php]
+  working_directory: "{{project_path}}"
+  command: { executable: composer, arguments: [install] }
+
+- id: npm-install
+  name: Install Dependencies (npm)
+  description: npm install
+  category: node
+  working_directory: "{{project_path}}"
+  command: { executable: npm, arguments: [install] }
+
+- id: npm-build
+  name: Build Frontend
+  description: npm run build
+  category: node
+  working_directory: "{{project_path}}"
+  command: { executable: npm, arguments: [run, build] }
+
+- id: npm-test
+  name: Run Tests (npm)
+  description: npm test
+  category: node
+  applies_to: [node]
+  working_directory: "{{project_path}}"
+  command: { executable: npm, arguments: [test] }
+
+- id: django-migrate
+  name: Run Django Migrations
+  description: python manage.py migrate
+  category: python
+  applies_to: [django]
+  working_directory: "{{project_path}}"
+  command: { executable: python, arguments: [manage.py, migrate] }
+
+- id: open-mailpit
+  name: Open Mailpit
+  description: Opens the Mailpit inbox in your browser.
+  category: tools
+  action: open_url
+  with: { url: "http://127.0.0.1:8025" }
+
+- id: open-site
+  name: Open Site
+  description: Opens the project's domain in your browser.
+  category: tools
+  action: open_site
+
+- id: open-web-config
+  name: Open Web Server Config
+  description: Opens the folder with the generated Nginx / Apache / Caddy config.
+  category: tools
+  action: open_web_config
+
+- id: restart-project
+  name: Restart Project
+  description: Restarts the project's app process and reloads the web server.
+  category: tools
+  action: restart_project

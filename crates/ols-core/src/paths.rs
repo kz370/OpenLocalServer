@@ -30,6 +30,11 @@ impl AppPaths {
         }
     }
 
+    /// Paths rooted at an explicit directory — for tests that need a second, separate home.
+    pub fn resolve_at(root: &Path) -> Self {
+        Self { root: root.to_path_buf() }
+    }
+
     pub fn root(&self) -> &Path {
         &self.root
     }
@@ -56,6 +61,20 @@ impl AppPaths {
         self.root.join("services")
     }
 
+    /// Root of everything the local CA and per-site leaf certs live in (§146).
+    pub fn certs_dir(&self) -> PathBuf {
+        self.root.join("certificates")
+    }
+
+    /// Generated + user-edited web-server config, its history, and per-server prefixes.
+    pub fn web_dir(&self) -> PathBuf {
+        self.root.join("web")
+    }
+
+    pub fn quick_apps_dir(&self) -> PathBuf {
+        self.root.join("quick-apps")
+    }
+
     pub fn settings_file(&self) -> PathBuf {
         self.data_dir().join("settings.json")
     }
@@ -69,6 +88,9 @@ impl AppPaths {
             self.cache_dir(),
             self.runtimes_dir(),
             self.services_dir(),
+            self.certs_dir(),
+            self.web_dir(),
+            self.quick_apps_dir(),
         ] {
             std::fs::create_dir_all(dir)?;
         }

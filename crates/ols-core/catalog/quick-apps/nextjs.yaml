@@ -1,0 +1,139 @@
+id: nextjs
+name: Next.js
+description: A Next.js (App Router, TypeScript) app on its dev server, proxied behind a trusted HTTPS domain.
+category: node
+
+requirements:
+  node: "24"
+
+variables:
+  - name: project_name
+    label: Project name
+    type: text
+    required: true
+    validation: "[A-Za-z][A-Za-z0-9_-]*"
+  - name: parent_dir
+    label: Create in
+    type: directory
+    default: "{{ default_projects_dir }}"
+  - name: node_version
+    label: Node
+    type: runtime-version
+    runtime: node
+    default: "24"
+  - name: port
+    label: Dev server port
+    type: port
+    default: 3000
+  - name: domain
+    label: Domain
+    type: domain
+    default: "{{ project_name | slug }}.test"
+  - name: https
+    label: HTTPS
+    type: boolean
+    default: true
+  - name: wildcard
+    label: Wildcard subdomains (*.domain)
+    type: boolean
+    default: false
+
+files:
+  - path: package.json
+    content: |
+      {
+        "name": "{{ project_slug }}",
+        "private": true,
+        "version": "0.1.0",
+        "scripts": {
+          "dev": "next dev",
+          "build": "next build",
+          "start": "next start"
+        },
+        "dependencies": {
+          "next": "^16.0.0",
+          "react": "^19.2.0",
+          "react-dom": "^19.2.0"
+        },
+        "devDependencies": {
+          "@types/node": "^24.0.0",
+          "@types/react": "^19.2.0",
+          "@types/react-dom": "^19.2.0",
+          "typescript": "~5.9.0"
+        }
+      }
+  - path: next.config.mjs
+    content: |
+      // Served through OpenLocalServer at {{ domain }}: allow that origin to reach the dev server.
+      /** @type {import('next').NextConfig} */
+      const nextConfig = {
+        allowedDevOrigins: ['{{ domain }}', '*.{{ domain }}'],
+      }
+
+      export default nextConfig
+  - path: tsconfig.json
+    content: |
+      {
+        "compilerOptions": {
+          "target": "ES2022",
+          "lib": ["dom", "dom.iterable", "esnext"],
+          "allowJs": true,
+          "skipLibCheck": true,
+          "strict": true,
+          "noEmit": true,
+          "esModuleInterop": true,
+          "module": "esnext",
+          "moduleResolution": "bundler",
+          "resolveJsonModule": true,
+          "isolatedModules": true,
+          "jsx": "react-jsx",
+          "incremental": true,
+          "plugins": [{ "name": "next" }]
+        },
+        "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+        "exclude": ["node_modules"]
+      }
+  - path: .gitignore
+    content: |
+      node_modules
+      .next
+      next-env.d.ts
+  - path: app/layout.tsx
+    content: |
+      export const metadata = { title: '{{ project_name }}' }
+
+      export default function RootLayout({ children }: { children: React.ReactNode }) {
+        return (
+          <html lang="en">
+            <body>{children}</body>
+          </html>
+        )
+      }
+  - path: app/page.tsx
+    content: |
+      export default function Home() {
+        return (
+          <main>
+            <h1>{{ project_name }}</h1>
+            <p>Running at {{ domain }} through OpenLocalServer.</p>
+          </main>
+        )
+      }
+
+install:
+  - name: Install dependencies
+    run: npm install
+    cwd: "{{ project_path }}"
+
+domain:
+  hostname: "{{ domain }}"
+  kind: proxy
+  port: "{{ port }}"
+  root: "{{ project_path }}"
+  app:
+    run: npm run dev -- --port {{ port }} --hostname 127.0.0.1
+    runtime: node
+    cwd: "{{ project_path }}"
+
+environment:
+  https: true

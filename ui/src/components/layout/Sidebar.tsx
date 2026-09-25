@@ -1,20 +1,56 @@
-import { Box, Database, FolderKanban, LayoutDashboard, Moon, Server, Sun, SunMoon, Terminal } from 'lucide-react'
+import {
+  Box,
+  Database,
+  FileCode2,
+  FolderKanban,
+  Globe,
+  HardDrive,
+  LayoutDashboard,
+  Moon,
+  Rocket,
+  ScrollText,
+  Server,
+  Settings,
+  Sun,
+  SunMoon,
+  Terminal,
+  Zap,
+} from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { useTheme } from '@/lib/theme'
 
-export type Page = 'dashboard' | 'processes' | 'runtimes' | 'projects' | 'services'
+export type Page =
+  | 'dashboard'
+  | 'projects'
+  | 'quickapps'
+  | 'commands'
+  | 'domains'
+  | 'config'
+  | 'databases'
+  | 'services'
+  | 'runtimes'
+  | 'logs'
+  | 'processes'
+  | 'settings'
 
 const NAV_ITEMS: { id: Page; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'projects', label: 'Projects', icon: FolderKanban },
-  { id: 'runtimes', label: 'Runtimes', icon: Box },
+  { id: 'quickapps', label: 'Quick Apps', icon: Rocket },
+  { id: 'commands', label: 'Commands', icon: Zap },
+  { id: 'domains', label: 'Domains & HTTPS', icon: Globe },
+  { id: 'config', label: 'Web config', icon: FileCode2 },
+  { id: 'databases', label: 'Databases', icon: HardDrive },
   { id: 'services', label: 'Services', icon: Database },
+  { id: 'runtimes', label: 'Runtimes', icon: Box },
+  { id: 'logs', label: 'Logs', icon: ScrollText },
   { id: 'processes', label: 'Processes', icon: Terminal },
+  { id: 'settings', label: 'Settings', icon: Settings },
 ]
 
-const SOON_ITEMS = ['Domains']
+const SOON_ITEMS = ['Tunnels', 'Profiles', 'Plugins']
 
 export function Sidebar({ page, onNavigate }: { page: Page; onNavigate: (p: Page) => void }) {
   const { theme, resolvedTheme, setTheme } = useTheme()

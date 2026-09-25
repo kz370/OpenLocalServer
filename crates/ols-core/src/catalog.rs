@@ -89,6 +89,93 @@ const CATALOG: &[PackageManifest] = &[
         archive_root: "nginx-1.28.3",
         binary: "nginx.exe",
     },
+    PackageManifest {
+        id: "php",
+        name: "PHP",
+        version: "8.1.34",
+        platform: "windows",
+        architecture: "x64",
+        url: "https://windows.php.net/downloads/releases/php-8.1.34-nts-Win32-vs16-x64.zip",
+        // From windows.php.net's own releases.json.
+        sha256: "9cfe246cb144076c16f5913a3ef88a474c3dd7e60f0f0c8bb95faf68674016cc",
+        archive_root: "",
+        binary: "php.exe",
+    },
+    PackageManifest {
+        id: "caddy",
+        name: "Caddy",
+        version: "2.11.4",
+        platform: "windows",
+        architecture: "x64",
+        url: "https://github.com/caddyserver/caddy/releases/download/v2.11.4/caddy_2.11.4_windows_amd64.zip",
+        // Caddy publishes SHA-512 sums; this SHA-256 was computed from a direct HTTPS
+        // download of that exact URL (same self-pinning as Mailpit).
+        sha256: "1708333f79e274c7697285afe6d592ab39314e0b131e9ec6bea08ad27df62ebf",
+        archive_root: "",
+        binary: "caddy.exe",
+    },
+    PackageManifest {
+        id: "apache",
+        name: "Apache HTTP Server",
+        version: "2.4.68",
+        platform: "windows",
+        architecture: "x64",
+        url: "https://www.apachelounge.com/download/VS18/binaries/httpd-2.4.68-260920-Win64-VS18.zip",
+        // Apache Lounge publishes PGP signatures only; SHA-256 self-pinned from a direct
+        // HTTPS download. (The host serves the zip only when a Referer is sent — see
+        // `download_referer`.)
+        sha256: "f6dcf17d08aa32721ae418cd818c157e4c521c9e889b758646fb64287f1d56e3",
+        archive_root: "Apache24",
+        binary: "bin/httpd.exe",
+    },
+    PackageManifest {
+        id: "mariadb",
+        name: "MariaDB",
+        version: "11.4.9",
+        platform: "windows",
+        architecture: "x64",
+        url: "https://archive.mariadb.org/mariadb-11.4.9/winx64-packages/mariadb-11.4.9-winx64.zip",
+        // From archive.mariadb.org's sha256sums.txt for this release.
+        sha256: "802f9f40a9dca774a3ba62f39c21093942954f178d6d7d458dc51453929bcdda",
+        archive_root: "mariadb-11.4.9-winx64",
+        binary: "bin/mariadbd.exe",
+    },
+    PackageManifest {
+        id: "mongodb",
+        name: "MongoDB",
+        version: "8.3.11",
+        platform: "windows",
+        architecture: "x64",
+        url: "https://fastdl.mongodb.org/windows/mongodb-windows-x86_64-8.3.11.zip",
+        // From MongoDB's downloads.mongodb.org/current.json feed.
+        sha256: "55574b06b41848207213a5e69575dd3487abf3cf07ecfe01b3aef1bab0084241",
+        archive_root: "mongodb-win32-x86_64-windows-8.3.11",
+        binary: "bin/mongod.exe",
+    },
+    PackageManifest {
+        id: "sqlite",
+        name: "SQLite",
+        version: "3.53.4",
+        platform: "windows",
+        architecture: "x64",
+        url: "https://www.sqlite.org/2026/sqlite-tools-win-x64-3530400.zip",
+        // sqlite.org lists SHA3-256; this SHA-256 is self-pinned from a direct download.
+        sha256: "f46ee2475de4cbe287e6e5f7d43c838796b14e7379cd216bdbb28d391429f9fc",
+        archive_root: "",
+        binary: "sqlite3.exe",
+    },
+    PackageManifest {
+        id: "composer",
+        name: "Composer",
+        version: "2.10.3",
+        platform: "windows",
+        architecture: "x64",
+        url: "https://getcomposer.org/download/2.10.3/composer.phar",
+        // From getcomposer.org's own composer.phar.sha256sum for this release.
+        sha256: "7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6",
+        archive_root: "",
+        binary: "composer.phar",
+    },
 ];
 
 fn current_platform() -> &'static str {
@@ -128,6 +215,18 @@ pub fn system_probe(id: &str) -> Option<(&'static str, &'static str)> {
         "php" => Some(("php.exe", "--version")),
         "python" => Some(("python.exe", "--version")),
         "mysql" => Some(("mysql.exe", "--version")),
+        "nginx" => Some(("nginx.exe", "-v")),
+        "caddy" => Some(("caddy.exe", "version")),
+        "apache" => Some(("httpd.exe", "-v")),
+        "mariadb" => Some(("mariadbd.exe", "--version")),
+        "mongodb" => Some(("mongod.exe", "--version")),
+        "sqlite" => Some(("sqlite3.exe", "--version")),
         _ => None,
     }
+}
+
+/// Hosts that only serve a download when the request carries a Referer from their own
+/// site (Apache Lounge). Returns the Referer to send, if any.
+pub fn download_referer(url: &str) -> Option<&'static str> {
+    url.contains("apachelounge.com").then_some("https://www.apachelounge.com/download/")
 }

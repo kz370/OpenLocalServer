@@ -181,6 +181,14 @@ impl ProcessSupervisor {
         });
     }
 
+    /// Is this process still doing something (starting, running, or waiting to restart)?
+    pub fn is_alive(&self, id: ProcessId) -> bool {
+        let guard = self.processes.lock().unwrap();
+        guard.get(&id.0).is_some_and(|r| {
+            matches!(r.info.state, ProcessState::Starting | ProcessState::Running | ProcessState::Restarting)
+        })
+    }
+
     pub fn snapshot(&self) -> Vec<ProcessInfo> {
         let guard = self.processes.lock().unwrap();
         let mut list: Vec<_> = guard.values().map(|r| r.info.clone()).collect();
@@ -212,6 +220,8 @@ impl ProcessSupervisor {
             let started = Instant::now();
             let mut cmd = Command::new(&executable_owned);
             cmd.args(&args_owned).stdout(Stdio::null()).stderr(Stdio::null());
+            #[cfg(windows)]
+            cmd.creation_flags(0x0800_0000);
             if let Some(cwd) = &cwd_owned {
                 cmd.current_dir(cwd);
             }
@@ -268,6 +278,8 @@ fn run_process_attempt(
     Box::pin(async move {
         let mut cmd = Command::new(&spec.executable);
         cmd.args(&spec.args).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
+        #[cfg(windows)]
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW — no console flash from a GUI app
         if let Some(cwd) = &spec.cwd {
             cmd.current_dir(cwd);
         }

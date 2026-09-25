@@ -6,7 +6,8 @@
 use std::path::{Path, PathBuf};
 
 use rcgen::{
-    BasicConstraints, CertificateParams, DistinguishedName, DnType, IsCa, Issuer, KeyPair, KeyUsagePurpose, SanType,
+    date_time_ymd, BasicConstraints, CertificateParams, DistinguishedName, DnType, ExtendedKeyUsagePurpose, IsCa, Issuer,
+    KeyPair, KeyUsagePurpose, SanType,
 };
 
 use crate::paths::AppPaths;
@@ -20,9 +21,33 @@ pub struct IssuedCert {
     pub key_pem: String,
 }
 
+/// Common name of the root CA — also how the Windows store is searched for it.
+pub const CA_COMMON_NAME: &str = "OpenLocalServer Local CA";
+
+/// Leaf certificates last 397 days — the longest Chrome/Safari accept without complaint.
+pub const LEAF_VALIDITY_DAYS: u64 = 397;
+
+pub fn unix_now() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// Unix seconds → (year, month, day) in UTC (Howard Hinnant's civil-from-days).
+fn ymd_from_unix(secs: u64) -> (i32, u8, u8) {
+    let days = (secs / 86_400) as i64 + 719_468;
+    let era = days.div_euclid(146_097);
+    let doe = days.rem_euclid(146_097);
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u8;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u8;
+    let y = (yoe + era * 400 + i64::from(m <= 2)) as i32;
+    (y, m, d)
+}
+
 impl LocalCa {
     pub fn new(paths: &AppPaths) -> Self {
-        Self { dir: paths.root().join("certificates") }
+        Self { dir: paths.certs_dir() }
     }
 
     fn ca_cert_path(&self) -> PathBuf {
@@ -48,9 +73,13 @@ impl LocalCa {
         params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
         params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
         let mut dn = DistinguishedName::new();
-        dn.push(DnType::CommonName, "OpenLocalServer Local CA");
+        dn.push(DnType::CommonName, CA_COMMON_NAME);
         dn.push(DnType::OrganizationName, "OpenLocalServer");
         params.distinguished_name = dn;
+        // Fixed dates keep `ca_params()` deterministic, which is what lets an `Issuer` be
+        // rebuilt after a restart without round-tripping the stored PEM.
+        params.not_before = date_time_ymd(2024, 1, 1);
+        params.not_after = date_time_ymd(2044, 1, 1);
         params
     }
 
@@ -73,6 +102,13 @@ impl LocalCa {
     /// Issues a leaf certificate for `domain`, signed by the local CA (§51). Returns PEM
     /// for both the certificate and its private key — caller decides where to store them.
     pub fn issue(&self, domain: &str) -> Result<IssuedCert, String> {
+        self.issue_for(&[domain.to_string()])
+    }
+
+    /// Issues one leaf covering every name in `names` (e.g. `shop.test` + `*.shop.test`,
+    /// §50). The first name becomes the common name.
+    pub fn issue_for(&self, names: &[String]) -> Result<IssuedCert, String> {
+        let first = names.first().ok_or("no names to issue a certificate for")?;
         self.ensure_created()?;
 
         let ca_key_pem = std::fs::read_to_string(self.ca_key_path()).map_err(|e| e.to_string())?;
@@ -80,11 +116,22 @@ impl LocalCa {
         let ca_params = Self::ca_params();
         let issuer = Issuer::from_params(&ca_params, ca_key_pair);
 
-        let mut leaf_params = CertificateParams::new(vec![domain.to_string()]).map_err(|e| e.to_string())?;
+        let mut leaf_params = CertificateParams::new(Vec::<String>::new()).map_err(|e| e.to_string())?;
         let mut dn = DistinguishedName::new();
-        dn.push(DnType::CommonName, domain);
+        dn.push(DnType::CommonName, first.as_str());
         leaf_params.distinguished_name = dn;
-        leaf_params.subject_alt_names = vec![SanType::DnsName(domain.try_into().map_err(|e| format!("{e:?}"))?)];
+        leaf_params.subject_alt_names = names
+            .iter()
+            .map(|n| n.as_str().try_into().map(SanType::DnsName).map_err(|e| format!("{e:?}")))
+            .collect::<Result<_, _>>()?;
+        leaf_params.key_usages = vec![KeyUsagePurpose::DigitalSignature, KeyUsagePurpose::KeyEncipherment];
+        leaf_params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
+
+        let now = unix_now();
+        let (y, m, d) = ymd_from_unix(now.saturating_sub(86_400));
+        leaf_params.not_before = date_time_ymd(y, m, d);
+        let (y, m, d) = ymd_from_unix(now + LEAF_VALIDITY_DAYS * 86_400);
+        leaf_params.not_after = date_time_ymd(y, m, d);
 
         let leaf_key = KeyPair::generate().map_err(|e| e.to_string())?;
         let leaf_cert = leaf_params.signed_by(&leaf_key, &issuer).map_err(|e| e.to_string())?;
@@ -97,10 +144,10 @@ impl LocalCa {
     #[cfg(windows)]
     pub fn trust_current_user(&self) -> Result<(), String> {
         self.ensure_created()?;
-        let output = std::process::Command::new("certutil")
-            .args(["-user", "-addstore", "Root", &self.ca_cert_path().display().to_string()])
-            .output()
-            .map_err(|e| e.to_string())?;
+        let mut cmd = std::process::Command::new("certutil");
+        cmd.args(["-user", "-addstore", "Root", &self.ca_cert_path().display().to_string()]);
+        crate::exec::hide_window(&mut cmd);
+        let output = cmd.output().map_err(|e| e.to_string())?;
         if output.status.success() {
             Ok(())
         } else {
@@ -109,15 +156,58 @@ impl LocalCa {
     }
 }
 
+impl LocalCa {
+    /// Is the CA currently in the CurrentUser Root store? (§51 trust check)
+    #[cfg(windows)]
+    pub fn is_trusted(&self) -> bool {
+        let mut cmd = std::process::Command::new("certutil");
+        cmd.args(["-user", "-store", "Root", CA_COMMON_NAME]);
+        crate::exec::hide_window(&mut cmd);
+        cmd.output().map(|o| o.status.success()).unwrap_or(false)
+    }
+
+    #[cfg(windows)]
+    pub fn untrust_current_user(&self) -> Result<(), String> {
+        let mut cmd = std::process::Command::new("certutil");
+        cmd.args(["-user", "-delstore", "Root", CA_COMMON_NAME]);
+        crate::exec::hide_window(&mut cmd);
+        let output = cmd.output().map_err(|e| e.to_string())?;
+        if output.status.success() {
+            Ok(())
+        } else {
+            Err(String::from_utf8_lossy(&output.stdout).to_string())
+        }
+    }
+
+    #[cfg(not(windows))]
+    pub fn is_trusted(&self) -> bool {
+        false
+    }
+    #[cfg(not(windows))]
+    pub fn trust_current_user(&self) -> Result<(), String> {
+        Err("trusting the CA is only implemented on Windows so far".into())
+    }
+    #[cfg(not(windows))]
+    pub fn untrust_current_user(&self) -> Result<(), String> {
+        Err("trusting the CA is only implemented on Windows so far".into())
+    }
+}
+
+/// Writes a private key with owner-only permissions (§142).
+pub fn write_key_restricted(path: &Path, data: &[u8]) -> Result<(), String> {
+    write_restricted(path, data)
+}
+
 #[cfg(windows)]
 fn write_restricted(path: &Path, data: &[u8]) -> Result<(), String> {
     std::fs::write(path, data).map_err(|e| e.to_string())?;
     // icacls: strip inherited permissions, grant only the current user. Best-effort —
     // the CA private key not existing at all is worse than it existing with default
     // (still user-profile-scoped) ACLs, so a failure here doesn't abort cert generation.
-    let _ = std::process::Command::new("icacls")
-        .args([&path.display().to_string(), "/inheritance:r", "/grant:r", &format!("{}:F", whoami())])
-        .output();
+    let mut icacls = std::process::Command::new("icacls");
+    icacls.args([&path.display().to_string(), "/inheritance:r", "/grant:r", &format!("{}:F", whoami())]);
+    crate::exec::hide_window(&mut icacls);
+    let _ = icacls.output();
     Ok(())
 }
 
@@ -152,6 +242,20 @@ mod tests {
         ca.ensure_created().unwrap();
         let cert_after = std::fs::read(ca.ca_cert_path()).unwrap();
         assert_eq!(cert_before, cert_after, "calling ensure_created twice must not regenerate the CA");
+    }
+
+    #[test]
+    fn ymd_conversion_matches_known_dates() {
+        assert_eq!(ymd_from_unix(0), (1970, 1, 1));
+        assert_eq!(ymd_from_unix(951_782_400), (2000, 2, 29));
+        assert_eq!(ymd_from_unix(1_798_761_600), (2027, 1, 1));
+    }
+
+    #[test]
+    fn issue_for_supports_wildcard_names() {
+        let (ca, _home) = test_ca();
+        let issued = ca.issue_for(&["shop.test".to_string(), "*.shop.test".to_string()]).unwrap();
+        assert!(issued.cert_pem.contains("BEGIN CERTIFICATE"));
     }
 
     #[test]

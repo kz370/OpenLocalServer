@@ -1,0 +1,17 @@
+[package]
+name = "ols-helper"
+description = "OpenLocalServer privileged helper: a closed set of validated system-file commands"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "ols-helper"
+path = "src/main.rs"
+
+[dependencies]
+# Reuses the tested hosts-block text transforms and hostname validation from the core.
+ols-core = { path = "../ols-core" }
+
+[dev-dependencies]
+tempfile = "3"

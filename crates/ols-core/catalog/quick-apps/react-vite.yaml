@@ -1,0 +1,160 @@
+id: react-vite
+name: React + Vite
+description: A React + TypeScript app on the Vite dev server, proxied behind a trusted HTTPS domain with hot reload.
+category: node
+
+requirements:
+  node: "24"
+
+variables:
+  - name: project_name
+    label: Project name
+    type: text
+    required: true
+    validation: "[A-Za-z][A-Za-z0-9_-]*"
+  - name: parent_dir
+    label: Create in
+    type: directory
+    default: "{{ default_projects_dir }}"
+  - name: node_version
+    label: Node
+    type: runtime-version
+    runtime: node
+    default: "24"
+  - name: port
+    label: Dev server port
+    type: port
+    default: 5173
+  - name: domain
+    label: Domain
+    type: domain
+    default: "{{ project_name | slug }}.test"
+  - name: https
+    label: HTTPS
+    type: boolean
+    default: true
+  - name: wildcard
+    label: Wildcard subdomains (*.domain)
+    type: boolean
+    default: false
+
+files:
+  - path: package.json
+    content: |
+      {
+        "name": "{{ project_slug }}",
+        "private": true,
+        "version": "0.0.0",
+        "type": "module",
+        "scripts": {
+          "dev": "vite",
+          "build": "tsc --noEmit && vite build",
+          "preview": "vite preview"
+        },
+        "dependencies": {
+          "react": "^19.2.0",
+          "react-dom": "^19.2.0"
+        },
+        "devDependencies": {
+          "@types/react": "^19.2.0",
+          "@types/react-dom": "^19.2.0",
+          "@vitejs/plugin-react": "^6.1.0",
+          "typescript": "~5.9.0",
+          "vite": "^8.3.0"
+        }
+      }
+  - path: tsconfig.json
+    content: |
+      {
+        "compilerOptions": {
+          "target": "ES2022",
+          "useDefineForClassFields": true,
+          "lib": ["ES2022", "DOM", "DOM.Iterable"],
+          "module": "ESNext",
+          "moduleResolution": "bundler",
+          "jsx": "react-jsx",
+          "strict": true,
+          "noEmit": true,
+          "skipLibCheck": true,
+          "isolatedModules": true,
+          "types": ["vite/client"]
+        },
+        "include": ["src", "vite.config.ts"]
+      }
+  - path: vite.config.ts
+    content: |
+      import { defineConfig } from 'vite'
+      import react from '@vitejs/plugin-react'
+
+      // Served through OpenLocalServer at {{ domain }}: Vite must accept that Host header,
+      // and the hot-reload socket must connect back through the proxy, not to the dev port.
+      export default defineConfig({
+        plugins: [react()],
+        server: {
+          host: '127.0.0.1',
+          port: {{ port }},
+          strictPort: true,
+          allowedHosts: ['{{ domain }}', '.{{ domain }}'],
+          hmr: { protocol: '{{ 'wss' if https else 'ws' }}', host: '{{ domain }}', clientPort: {{ site_port }} },
+        },
+      })
+  - path: index.html
+    content: |
+      <!doctype html>
+      <html lang="en">
+        <head>
+          <meta charset="UTF-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+          <title>{{ project_name }}</title>
+        </head>
+        <body>
+          <div id="root"></div>
+          <script type="module" src="/src/main.tsx"></script>
+        </body>
+      </html>
+  - path: src/main.tsx
+    content: |
+      import { StrictMode } from 'react'
+      import { createRoot } from 'react-dom/client'
+      import App from './App'
+
+      createRoot(document.getElementById('root')!).render(
+        <StrictMode>
+          <App />
+        </StrictMode>,
+      )
+  - path: src/App.tsx
+    content: |
+      import { useState } from 'react'
+
+      // (Avoids a double brace in JSX: this file is rendered as a template.)
+      const pageStyle = { fontFamily: 'system-ui', padding: '2rem' }
+
+      export default function App() {
+        const [count, setCount] = useState(0)
+        return (
+          <main style={pageStyle}>
+            <h1>{{ project_name }}</h1>
+            <p>Running at {{ domain }} through OpenLocalServer.</p>
+            <button onClick={() => setCount((c) => c + 1)}>count is {count}</button>
+          </main>
+        )
+      }
+
+install:
+  - name: Install dependencies
+    run: npm install
+    cwd: "{{ project_path }}"
+
+domain:
+  hostname: "{{ domain }}"
+  kind: proxy
+  port: "{{ port }}"
+  root: "{{ project_path }}"
+  app:
+    run: npm run dev
+    runtime: node
+    cwd: "{{ project_path }}"
+
+environment:
+  https: true

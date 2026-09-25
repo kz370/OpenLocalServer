@@ -1,116 +1,213 @@
-import { useEffect, useState } from 'react'
+import { AlertTriangle, CheckCircle2, ExternalLink, Globe, Play, Rocket, Square, XCircle } from 'lucide-react'
+import { useState } from 'react'
 
+import { ErrorCard } from '@/components/ErrorCard'
+import type { Page } from '@/components/layout/Sidebar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { type Diagnostic, runCommand } from '@/core'
+import { type DashboardData, type HealthItem, runCommand } from '@/core'
+import { useAction, usePoll } from '@/lib/hooks'
 
-export function DashboardPage() {
-  const [pingStatus, setPingStatus] = useState<'checking' | 'ok' | 'error'>('checking')
-  const [version, setVersion] = useState('')
-  const [error, setError] = useState<Diagnostic | null>(null)
+/** §173 / §116 / §101: what's running, what's wrong, and one-click ways to act on it. */
+export function DashboardPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
+  const [data, setData] = useState<DashboardData | null>(null)
+  const { busy, error, setError, run } = useAction()
 
-  const [settingKey, setSettingKey] = useState('editor')
-  const [settingValue, setSettingValue] = useState('vscode')
-  const [savedValue, setSavedValue] = useState<string | null>(null)
-
-  useEffect(() => {
-    runCommand({ type: 'ping' })
-      .then((res) => {
-        if (res.type === 'pong') {
-          setVersion(res.version)
-          setPingStatus('ok')
-        }
-      })
-      .catch((err: Diagnostic) => {
-        setError(err)
-        setPingStatus('error')
-      })
-  }, [])
-
-  async function handleSave() {
-    setError(null)
+  usePoll(async () => {
     try {
-      await runCommand({ type: 'set_setting', key: settingKey, value: settingValue })
-      const res = await runCommand({ type: 'get_setting', key: settingKey })
-      if (res.type === 'setting') {
-        setSavedValue(typeof res.value === 'string' ? res.value : JSON.stringify(res.value))
-      }
-    } catch (err) {
-      setError(err as Diagnostic)
+      const res = await runCommand({ type: 'get_dashboard' })
+      if (res.type === 'dashboard') setData(res.data)
+    } catch {
+      /* the core is busy or restarting; the next poll retries */
     }
+  }, 3000)
+
+  const refresh = async () => {
+    const res = await runCommand({ type: 'get_dashboard' })
+    if (res.type === 'dashboard') setData(res.data)
   }
+
+  const web = data?.web
+  const problems = data?.health.filter((h) => h.status !== 'ok') ?? []
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-        <p className="text-sm text-muted-foreground">
-          A free, open-source local development environment manager.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+          <p className="text-sm text-muted-foreground">Your local environment at a glance.</p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={() => onNavigate('quickapps')}>
+            <Rocket /> New from Quick App
+          </Button>
+          <Button
+            disabled={busy !== null}
+            onClick={() =>
+              run('apply', async () => {
+                await runCommand({ type: 'apply_web', overwrite: [] })
+                await refresh()
+              })
+            }
+          >
+            <Play /> {web?.running ? 'Re-apply web config' : 'Start web server'}
+          </Button>
+          {web?.running && (
+            <Button
+              variant="outline"
+              disabled={busy !== null}
+              onClick={() =>
+                run('stop', async () => {
+                  await runCommand({ type: 'stop_web' })
+                  await refresh()
+                })
+              }
+            >
+              <Square /> Stop
+            </Button>
+          )}
+        </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Card>
-          <CardHeader className="flex-row items-center justify-between space-y-0">
-            <CardTitle>Core connection</CardTitle>
-            {pingStatus === 'ok' && <Badge variant="success">● Online</Badge>}
-            {pingStatus === 'checking' && <Badge variant="secondary">Checking…</Badge>}
-            {pingStatus === 'error' && <Badge variant="destructive">● Offline</Badge>}
-          </CardHeader>
-          <CardContent>
-            <CardDescription>
-              {pingStatus === 'ok' && `ols-core v${version} responded to a ping over IPC.`}
-              {pingStatus === 'checking' && 'Waiting for the Rust core to respond…'}
-              {pingStatus === 'error' && 'Could not reach the core process.'}
-            </CardDescription>
-          </CardContent>
-        </Card>
+      <ErrorCard error={error} onDismiss={() => setError(null)} />
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Settings round-trip</CardTitle>
-            <CardDescription>Writes to disk, reads it back through the same command.</CardDescription>
+      {problems.length > 0 && (
+        <Card className="border-warning/40">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <AlertTriangle className="size-4 text-warning" /> Needs attention
+            </CardTitle>
           </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            <div className="flex gap-2">
-              <Input
-                value={settingKey}
-                onChange={(e) => setSettingKey(e.target.value)}
-                placeholder="key"
-                className="w-28"
-              />
-              <Input
-                value={settingValue}
-                onChange={(e) => setSettingValue(e.target.value)}
-                placeholder="value"
-              />
-              <Button onClick={handleSave} size="sm">
-                Save
-              </Button>
-            </div>
-            {savedValue !== null && (
-              <p className="text-sm text-muted-foreground">
-                Read back <code className="rounded bg-muted px-1 py-0.5">{settingKey}</code> ={' '}
-                <code className="rounded bg-muted px-1 py-0.5">{savedValue}</code>
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {error && (
-        <Card className="border-destructive/40 bg-destructive/5">
-          <CardHeader>
-            <CardTitle className="text-destructive">{error.problem}</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-1">
-            <p className="text-sm">{error.cause}</p>
-            {error.fix && <p className="text-sm text-success">{error.fix}</p>}
+          <CardContent className="flex flex-col gap-2">
+            {problems.map((h) => (
+              <HealthRow key={h.id + h.detail} item={h} />
+            ))}
           </CardContent>
         </Card>
       )}
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
+            <div>
+              <CardTitle className="text-sm">Sites</CardTitle>
+              <CardDescription>
+                {data ? `${data.domains.length} domain${data.domains.length === 1 ? '' : 's'}, ${data.project_count} project${data.project_count === 1 ? '' : 's'}` : 'Loading…'}
+              </CardDescription>
+            </div>
+            <Button size="sm" variant="ghost" onClick={() => onNavigate('domains')}>
+              Manage
+            </Button>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-1.5">
+            {data?.domains.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                No sites yet. Create one from a Quick App, or add a domain for an existing project.
+              </p>
+            )}
+            {data?.domains.map((d) => (
+              <div key={d.hostname} className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <Globe className="size-4 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium">{d.hostname}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {d.kind}
+                      {d.https && ' · HTTPS'}
+                      {d.has_app && ' · app process'}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {!d.enabled && <Badge variant="secondary">disabled</Badge>}
+                  <Button size="sm" variant="ghost" disabled={!d.enabled || !web?.running} onClick={() => run('open', () => runCommand({ type: 'open_url', url: d.url }))}>
+                    <ExternalLink className="size-3.5" /> Open
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+
+        <div className="flex flex-col gap-4">
+          <Card>
+            <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm">Web server</CardTitle>
+              {web?.running ? <Badge variant="success">● Running</Badge> : <Badge variant="secondary">Stopped</Badge>}
+            </CardHeader>
+            <CardContent className="flex flex-col gap-1 text-sm text-muted-foreground">
+              <div>
+                {web?.servers.find((s) => s.active)?.name ?? '…'} · ports {web?.http_port} / {web?.https_port}
+              </div>
+              {web?.php_pools.map((p) => (
+                <div key={p.version}>
+                  PHP {p.version} · {p.ports.length} worker{p.ports.length === 1 ? '' : 's'} {p.running ? '' : '(stopped)'}
+                </div>
+              ))}
+              {web?.dns_running && <div>Wildcard DNS on port {web.dns_port}</div>}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Services</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-1.5">
+              {data?.services
+                .filter((s) => s.installed)
+                .map((s) => (
+                  <div key={s.id} className="flex items-center justify-between text-sm">
+                    <span>{s.name}</span>
+                    <span className="flex items-center gap-2">
+                      {s.running ? <Badge variant="success">● Running</Badge> : <Badge variant="secondary">Stopped</Badge>}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={busy !== null}
+                        onClick={() =>
+                          run(s.id, async () => {
+                            await runCommand({ type: s.running ? 'stop_service' : 'start_service', id: s.id })
+                            await refresh()
+                          })
+                        }
+                      >
+                        {s.running ? <Square className="size-3.5" /> : <Play className="size-3.5" />}
+                      </Button>
+                    </span>
+                  </div>
+                ))}
+              {data && data.services.every((s) => !s.installed) && (
+                <p className="text-sm text-muted-foreground">No services installed. Add some from Runtimes.</p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">Environment health</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-1.5 md:grid-cols-2">
+          {data?.health.map((h) => <HealthRow key={h.id + h.detail} item={h} />)}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+function HealthRow({ item }: { item: HealthItem }) {
+  const Icon = item.status === 'ok' ? CheckCircle2 : item.status === 'warn' ? AlertTriangle : XCircle
+  const color = item.status === 'ok' ? 'text-success' : item.status === 'warn' ? 'text-warning' : 'text-destructive'
+  return (
+    <div className="flex items-start gap-2 text-sm">
+      <Icon className={`mt-0.5 size-4 shrink-0 ${color}`} />
+      <div>
+        <span className="font-medium">{item.label}</span>
+        <span className="text-muted-foreground"> · {item.detail}</span>
+        {item.fix && item.status !== 'ok' && <div className="text-xs text-muted-foreground">{item.fix}</div>}
+      </div>
     </div>
   )
 }

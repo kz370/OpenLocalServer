@@ -1,0 +1,51 @@
+id: plain-php
+name: Plain PHP
+description: A folder with an index.php, served by the PHP version you pick over trusted HTTPS.
+category: php
+
+requirements:
+  php: "8.4"
+
+variables:
+  - name: project_name
+    label: Project name
+    type: text
+    required: true
+    validation: "[A-Za-z][A-Za-z0-9_-]*"
+  - name: parent_dir
+    label: Create in
+    type: directory
+    default: "{{ default_projects_dir }}"
+  - name: php_version
+    label: PHP
+    type: runtime-version
+    runtime: php
+    default: "8.4"
+  - name: domain
+    label: Domain
+    type: domain
+    default: "{{ project_name | slug }}.test"
+  - name: https
+    label: HTTPS
+    type: boolean
+    default: true
+  - name: wildcard
+    label: Wildcard subdomains (*.domain)
+    type: boolean
+    default: false
+
+files:
+  - path: index.php
+    content: |
+      <?php
+      // {{ project_name }} - served by OpenLocalServer.
+      echo '<h1>{{ project_name }}</h1>';
+      echo '<p>PHP ' . PHP_VERSION . ' on ' . htmlspecialchars($_SERVER['HTTP_HOST']) . '</p>';
+
+domain:
+  hostname: "{{ domain }}"
+  kind: php
+  root: "{{ project_path }}"
+
+environment:
+  https: true

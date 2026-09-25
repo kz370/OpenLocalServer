@@ -1,0 +1,79 @@
+id: django
+name: Django
+description: A Django project in its own virtual environment, served by runserver behind a trusted HTTPS domain.
+category: python
+
+requirements:
+  python: true
+
+variables:
+  - name: project_name
+    label: Project name
+    type: text
+    required: true
+    validation: "[A-Za-z][A-Za-z0-9_-]*"
+  - name: parent_dir
+    label: Create in
+    type: directory
+    default: "{{ default_projects_dir }}"
+  - name: port
+    label: Dev server port
+    type: port
+    default: 8001
+  - name: domain
+    label: Domain
+    type: domain
+    default: "{{ project_name | slug }}.test"
+  - name: https
+    label: HTTPS
+    type: boolean
+    default: true
+  - name: wildcard
+    label: Wildcard subdomains (*.domain)
+    type: boolean
+    default: false
+
+commands:
+  - name: Create the project folder
+    action: make_dir
+    with: { path: "{{ project_path }}" }
+  - name: Create the virtual environment
+    run: python -m venv .venv
+    cwd: "{{ project_path }}"
+  - name: Install Django
+    run: '"{{ project_path }}/.venv/Scripts/python.exe" -m pip install django'
+    cwd: "{{ project_path }}"
+  - name: Start the Django project
+    run: '"{{ project_path }}/.venv/Scripts/python.exe" -m django startproject config .'
+    cwd: "{{ project_path }}"
+
+files:
+  - path: .gitignore
+    content: |
+      .venv
+      __pycache__
+      db.sqlite3
+
+post_create:
+  - name: Allow the local domain
+    action: replace_in_file
+    with:
+      file: "config/settings.py"
+      find: "ALLOWED_HOSTS = []"
+      replace: "ALLOWED_HOSTS = ['{{ domain }}', '.{{ domain }}', '127.0.0.1', 'localhost']\nCSRF_TRUSTED_ORIGINS = ['https://{{ domain }}', 'http://{{ domain }}']\nSECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')"
+  - name: Apply initial migrations
+    run: '"{{ project_path }}/.venv/Scripts/python.exe" manage.py migrate'
+    cwd: "{{ project_path }}"
+
+domain:
+  hostname: "{{ domain }}"
+  kind: proxy
+  port: "{{ port }}"
+  root: "{{ project_path }}"
+  app:
+    run: '"{{ project_path }}/.venv/Scripts/python.exe" manage.py runserver 127.0.0.1:{{ port }}'
+    runtime: python
+    cwd: "{{ project_path }}"
+
+environment:
+  https: true

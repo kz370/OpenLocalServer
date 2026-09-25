@@ -1,0 +1,59 @@
+id: static-html
+name: Static HTML
+description: A folder of plain HTML, CSS and JavaScript served over trusted HTTPS.
+category: static
+
+variables:
+  - name: project_name
+    label: Project name
+    type: text
+    required: true
+    validation: "[A-Za-z][A-Za-z0-9_-]*"
+  - name: parent_dir
+    label: Create in
+    type: directory
+    default: "{{ default_projects_dir }}"
+  - name: domain
+    label: Domain
+    type: domain
+    default: "{{ project_name | slug }}.test"
+  - name: https
+    label: HTTPS
+    type: boolean
+    default: true
+  - name: wildcard
+    label: Wildcard subdomains (*.domain)
+    type: boolean
+    default: false
+
+files:
+  - path: index.html
+    content: |
+      <!doctype html>
+      <html lang="en">
+        <head>
+          <meta charset="UTF-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+          <title>{{ project_name }}</title>
+          <link rel="stylesheet" href="style.css" />
+        </head>
+        <body>
+          <h1>{{ project_name }}</h1>
+          <p>Served by OpenLocalServer at {{ domain }}.</p>
+          <script src="main.js"></script>
+        </body>
+      </html>
+  - path: style.css
+    content: |
+      body { font-family: system-ui, sans-serif; margin: 2rem; }
+  - path: main.js
+    content: |
+      console.log('{{ project_name }} is running');
+
+domain:
+  hostname: "{{ domain }}"
+  kind: static
+  root: "{{ project_path }}"
+
+environment:
+  https: true

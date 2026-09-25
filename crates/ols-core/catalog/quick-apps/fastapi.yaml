@@ -1,0 +1,77 @@
+id: fastapi
+name: FastAPI
+description: A FastAPI app in its own virtual environment, served by uvicorn behind a trusted HTTPS domain.
+category: python
+
+requirements:
+  python: true
+
+variables:
+  - name: project_name
+    label: Project name
+    type: text
+    required: true
+    validation: "[A-Za-z][A-Za-z0-9_-]*"
+  - name: parent_dir
+    label: Create in
+    type: directory
+    default: "{{ default_projects_dir }}"
+  - name: port
+    label: API port
+    type: port
+    default: 8000
+  - name: domain
+    label: Domain
+    type: domain
+    default: "{{ project_name | slug }}.test"
+  - name: https
+    label: HTTPS
+    type: boolean
+    default: true
+  - name: wildcard
+    label: Wildcard subdomains (*.domain)
+    type: boolean
+    default: false
+
+files:
+  - path: main.py
+    content: |
+      from fastapi import FastAPI
+
+      app = FastAPI(title="{{ project_name }}")
+
+
+      @app.get("/")
+      def read_root():
+          return {"app": "{{ project_name }}", "status": "ok"}
+  - path: requirements.txt
+    content: |
+      fastapi
+      uvicorn[standard]
+  - path: .gitignore
+    content: |
+      .venv
+      __pycache__
+
+post_create:
+  - name: Create the virtual environment
+    run: python -m venv .venv
+    cwd: "{{ project_path }}"
+
+install:
+  - name: Install dependencies
+    run: '"{{ project_path }}/.venv/Scripts/python.exe" -m pip install -r requirements.txt'
+    cwd: "{{ project_path }}"
+
+domain:
+  hostname: "{{ domain }}"
+  kind: proxy
+  port: "{{ port }}"
+  root: "{{ project_path }}"
+  app:
+    run: '"{{ project_path }}/.venv/Scripts/python.exe" -m uvicorn main:app --host 127.0.0.1 --port {{ port }} --reload --proxy-headers'
+    runtime: python
+    cwd: "{{ project_path }}"
+
+environment:
+  https: true

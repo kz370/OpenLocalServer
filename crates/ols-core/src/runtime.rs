@@ -219,7 +219,11 @@ async fn install_one(
         });
     } else {
         // -- Download, hashing as we go so we never buffer the whole file in memory. --
-        let response = http.get(manifest.url).send().await.map_err(|e| e.to_string())?;
+        let mut request = http.get(manifest.url);
+        if let Some(referer) = crate::catalog::download_referer(manifest.url) {
+            request = request.header(reqwest::header::REFERER, referer);
+        }
+        let response = request.send().await.map_err(|e| e.to_string())?;
         if !response.status().is_success() {
             return Err(format!("download failed: HTTP {}", response.status()));
         }
@@ -280,8 +284,18 @@ async fn install_one(
     let archive_path_for_blocking = archive_path.clone();
     let scratch_dir_for_blocking = scratch_dir.clone();
     let archive_root = manifest.archive_root.to_string();
-    tokio::task::spawn_blocking(move || extract_zip(&archive_path_for_blocking, &scratch_dir_for_blocking, &archive_root))
-        .await
+    let single_file_name = (!manifest.url.ends_with(".zip"))
+        .then(|| manifest.binary.to_string());
+    tokio::task::spawn_blocking(move || match single_file_name {
+        // A non-archive download (e.g. composer.phar) is the runtime itself — "extract"
+        // just means copying it into place under its final name.
+        Some(name) => {
+            std::fs::create_dir_all(&scratch_dir_for_blocking)?;
+            std::fs::copy(&archive_path_for_blocking, scratch_dir_for_blocking.join(name)).map(|_| ())
+        }
+        None => extract_zip(&archive_path_for_blocking, &scratch_dir_for_blocking, &archive_root),
+    })
+    .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())?;
 
@@ -323,7 +337,7 @@ fn hash_file(path: &Path) -> Result<String, std::io::Error> {
 
 /// Extracts `archive_path` (a zip) into `dest_dir`, stripping the single top-level
 /// `archive_root` directory the vendor wrapped everything in.
-fn extract_zip(archive_path: &Path, dest_dir: &Path, archive_root: &str) -> std::io::Result<()> {
+pub(crate) fn extract_zip(archive_path: &Path, dest_dir: &Path, archive_root: &str) -> std::io::Result<()> {
     let file = std::fs::File::open(archive_path)?;
     let mut zip = zip::ZipArchive::new(file).map_err(std::io::Error::other)?;
 
@@ -336,6 +350,10 @@ fn extract_zip(archive_path: &Path, dest_dir: &Path, archive_root: &str) -> std:
         let relative = name.strip_prefix(&prefix).unwrap_or(&name);
         if relative.is_empty() {
             continue;
+        }
+        // Zip-slip guard: an entry may never climb out of the destination.
+        if relative.split('/').any(|c| c == "..") || relative.contains(':') || relative.starts_with('/') {
+            return Err(std::io::Error::other(format!("refusing unsafe path in archive: {relative}")));
         }
         let out_path = dest_dir.join(relative);
 

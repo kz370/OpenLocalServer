@@ -65,7 +65,61 @@ fn replace_block(existing: &str, new_block: Option<&str>) -> String {
     }
     let mut result = out.join("\n");
     result.push('\n');
+    // The Windows hosts file uses CRLF; keep it that way rather than rewriting every line ending.
+    if existing.contains("\r\n") {
+        result = result.replace('\n', "\r\n");
+    }
     result
+}
+
+/// The OS hosts file. `OLS_HOSTS_FILE` redirects it for tests (§161) — only honored by
+/// the unprivileged core, never by `ols-helper`, which always writes the real file.
+pub fn hosts_path() -> std::path::PathBuf {
+    if let Ok(over) = std::env::var("OLS_HOSTS_FILE") {
+        return over.into();
+    }
+    let root = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_string());
+    std::path::PathBuf::from(root).join("System32").join("drivers").join("etc").join("hosts")
+}
+
+/// Loopback entries for `hostnames` — DevForge never points a name anywhere else (§138).
+pub fn loopback_entries(hostnames: &[String]) -> Vec<(String, String)> {
+    hostnames.iter().map(|h| ("127.0.0.1".to_string(), h.clone())).collect()
+}
+
+/// True when the file already contains exactly `entries` in our block (so no privileged
+/// write — and no UAC prompt — is needed).
+pub fn is_in_sync(existing: &str, entries: &[(String, String)]) -> bool {
+    let normalise = |s: &str| s.replace("\r\n", "\n").trim_end().to_string();
+    if entries.is_empty() {
+        return !existing.contains(BEGIN_MARKER);
+    }
+    normalise(&apply_hosts_block(existing, entries)) == normalise(existing)
+}
+
+/// Brings the hosts file in line with `hostnames`. Writes directly when redirected for
+/// tests; otherwise goes through `ols-helper` (elevating only if the plain write is denied).
+/// Returns whether anything had to change.
+pub fn sync(hostnames: &[String]) -> Result<bool, String> {
+    let entries = loopback_entries(hostnames);
+    let path = hosts_path();
+    let existing = std::fs::read_to_string(&path).unwrap_or_default();
+    if is_in_sync(&existing, &entries) {
+        return Ok(false);
+    }
+    if std::env::var("OLS_HOSTS_FILE").is_ok() {
+        let updated =
+            if entries.is_empty() { remove_hosts_block(&existing) } else { apply_hosts_block(&existing, &entries) };
+        std::fs::write(&path, updated).map_err(|e| e.to_string())?;
+        return Ok(true);
+    }
+    let args: Vec<String> = if entries.is_empty() {
+        vec!["hosts-remove".to_string()]
+    } else {
+        std::iter::once("hosts-apply".to_string()).chain(entries.iter().map(|(ip, h)| format!("{ip}={h}"))).collect()
+    };
+    crate::elevate::run_helper(&args)?;
+    Ok(true)
 }
 
 #[cfg(test)]
@@ -120,6 +174,24 @@ mod tests {
         assert!(removed.contains("10.0.0.5 nas"));
         assert!(!removed.contains(BEGIN_MARKER));
         assert!(!removed.contains("shop.test"));
+    }
+
+    #[test]
+    fn crlf_hosts_files_stay_crlf() {
+        let original = "127.0.0.1 localhost\r\n";
+        let result = apply_hosts_block(original, &entries());
+        assert!(result.contains("\r\n"));
+        assert!(!result.replace("\r\n", "").contains('\n'), "no bare LF may remain in a CRLF file");
+    }
+
+    #[test]
+    fn is_in_sync_detects_matching_and_stale_blocks() {
+        let original = "127.0.0.1 localhost\n";
+        let synced = apply_hosts_block(original, &entries());
+        assert!(is_in_sync(&synced, &entries()));
+        assert!(!is_in_sync(original, &entries()));
+        assert!(is_in_sync(original, &[]), "nothing to write and no block present");
+        assert!(!is_in_sync(&synced, &[]), "an old block that should be removed is out of sync");
     }
 
     #[test]

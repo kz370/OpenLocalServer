@@ -1,0 +1,93 @@
+id: express-api
+name: Express API
+description: A minimal Express 5 JSON API behind a trusted HTTPS domain.
+category: node
+
+requirements:
+  node: "24"
+
+variables:
+  - name: project_name
+    label: Project name
+    type: text
+    required: true
+    validation: "[A-Za-z][A-Za-z0-9_-]*"
+  - name: parent_dir
+    label: Create in
+    type: directory
+    default: "{{ default_projects_dir }}"
+  - name: node_version
+    label: Node
+    type: runtime-version
+    runtime: node
+    default: "24"
+  - name: port
+    label: API port
+    type: port
+    default: 3001
+  - name: domain
+    label: Domain
+    type: domain
+    default: "api.{{ project_name | slug }}.test"
+  - name: https
+    label: HTTPS
+    type: boolean
+    default: true
+  - name: wildcard
+    label: Wildcard subdomains (*.domain)
+    type: boolean
+    default: false
+
+files:
+  - path: package.json
+    content: |
+      {
+        "name": "{{ project_slug }}",
+        "private": true,
+        "version": "0.1.0",
+        "main": "index.js",
+        "scripts": {
+          "dev": "node --watch index.js",
+          "start": "node index.js"
+        },
+        "dependencies": {
+          "express": "^5.1.0"
+        }
+      }
+  - path: index.js
+    content: |
+      const express = require('express')
+
+      const app = express()
+      const port = process.env.PORT || {{ port }}
+
+      app.use(express.json())
+
+      app.get('/', (req, res) => {
+        res.json({ app: '{{ project_name }}', status: 'ok' })
+      })
+
+      app.listen(port, '127.0.0.1', () => {
+        console.log('{{ project_name }} listening on http://127.0.0.1:' + port)
+      })
+  - path: .gitignore
+    content: |
+      node_modules
+
+install:
+  - name: Install dependencies
+    run: npm install
+    cwd: "{{ project_path }}"
+
+domain:
+  hostname: "{{ domain }}"
+  kind: proxy
+  port: "{{ port }}"
+  root: "{{ project_path }}"
+  app:
+    run: npm run dev
+    runtime: node
+    cwd: "{{ project_path }}"
+
+environment:
+  https: true

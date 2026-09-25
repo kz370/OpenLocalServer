@@ -1,0 +1,82 @@
+id: symfony
+name: Symfony
+description: A Symfony web application (skeleton + webapp pack) served over trusted HTTPS.
+category: php
+
+requirements:
+  php: "8.4"
+  composer: true
+  mysql: true
+  mariadb: true
+  mailpit: true
+
+variables:
+  - name: project_name
+    label: Project name
+    type: text
+    required: true
+    validation: "[A-Za-z][A-Za-z0-9_-]*"
+  - name: parent_dir
+    label: Create in
+    type: directory
+    default: "{{ default_projects_dir }}"
+  - name: php_version
+    label: PHP
+    type: runtime-version
+    runtime: php
+    default: "8.4"
+  - name: database
+    label: Database
+    type: select
+    options: [mysql, mariadb, none]
+    default: mysql
+  - name: db_name
+    label: Database name
+    type: text
+    default: "{{ project_name | slug | replace('-', '_') }}"
+    validation: "[A-Za-z0-9_]+"
+    show_if: "database != none"
+  - name: mailpit
+    label: Capture mail with Mailpit
+    type: boolean
+    default: true
+  - name: domain
+    label: Domain
+    type: domain
+    default: "{{ project_name | slug }}.test"
+  - name: https
+    label: HTTPS
+    type: boolean
+    default: true
+  - name: wildcard
+    label: Wildcard subdomains (*.domain)
+    type: boolean
+    default: false
+
+commands:
+  - name: Create the Symfony skeleton
+    run: composer create-project symfony/skeleton "{{ project_path }}" --no-interaction
+    cwd: "{{ parent_dir }}"
+  - name: Add the web application pack
+    run: composer require webapp --no-interaction
+    cwd: "{{ project_path }}"
+
+env_vars:
+  - { key: DATABASE_URL, value: "mysql://root@127.0.0.1:{{ 3306 if database == 'mysql' else 3307 }}/{{ db_name }}?charset=utf8mb4", if: "database != none" }
+  - { key: MAILER_DSN, value: "smtp://127.0.0.1:1025", if: mailpit }
+  - { key: APP_ENV, value: "dev" }
+
+post_create:
+  - name: Create the database
+    action: create_database
+    with: { engine: "{{ database }}", name: "{{ db_name }}" }
+    if: "database != none"
+
+domain:
+  hostname: "{{ domain }}"
+  kind: php
+  root: "{{ project_path }}/public"
+
+environment:
+  https: true
+  mailpit: true

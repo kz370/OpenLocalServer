@@ -19,6 +19,15 @@ pub enum CoreError {
 
     #[error("{0}")]
     ServiceError(String),
+
+    #[error("{0}")]
+    DomainError(String),
+
+    #[error("{0}")]
+    WebError(String),
+
+    #[error("{0}")]
+    QuickAppError(String),
 }
 
 /// The shape every error crosses the IPC boundary as, so the UI can render
@@ -55,6 +64,21 @@ impl From<&CoreError> for Diagnostic {
             },
             CoreError::ServiceError(msg) => Diagnostic {
                 problem: "That service operation failed.".into(),
+                cause: msg.clone(),
+                fix: None,
+            },
+            CoreError::DomainError(msg) => Diagnostic {
+                problem: "That domain change was rejected.".into(),
+                cause: msg.clone(),
+                fix: Some("Pick a different name, or edit the existing domain instead.".into()),
+            },
+            CoreError::WebError(msg) => Diagnostic {
+                problem: "The web server operation failed.".into(),
+                cause: msg.clone(),
+                fix: Some("Check the web-server log on the Logs page, fix the config, and apply again.".into()),
+            },
+            CoreError::QuickAppError(msg) => Diagnostic {
+                problem: "That Quick App or Quick Command couldn't be used.".into(),
                 cause: msg.clone(),
                 fix: None,
             },
