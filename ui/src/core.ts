@@ -162,7 +162,7 @@ export type RuntimeEvent =
 export type Ownership = 'managed' | 'advanced' | 'manual'
 export type SiteKind =
   | { type: 'php'; version: string | null }
-  | { type: 'proxy'; upstream_port: number }
+  | { type: 'proxy'; upstream_port: number; upstream_host?: string | null; upstream_https?: boolean }
   | { type: 'static' }
 
 export interface AppSpec {
@@ -217,6 +217,7 @@ export interface DomainSummary {
   enabled: boolean
   project_id: string | null
   has_app: boolean
+  folder: string
 }
 
 export interface WebConfig {
@@ -502,6 +503,7 @@ export type CoreCommand =
   | { type: 'register_project'; path: string }
   | { type: 'scan_and_register_projects'; path: string }
   | { type: 'list_projects' }
+  | { type: 'sync_auto_domains' }
   | { type: 'remove_project'; id: string }
   | { type: 'get_project_detail'; id: string }
   | { type: 'run_in_project'; project_id: string; runtime_id: string; args: string[] }
@@ -515,6 +517,10 @@ export type CoreCommand =
   | { type: 'remove_custom_install'; id: string; label: string }
   | { type: 'list_custom_installs' }
   | { type: 'scan_php_folder'; dir: string }
+  | { type: 'list_php_extensions'; version: string }
+  | { type: 'set_php_extension'; version: string; name: string; enabled: boolean }
+  | { type: 'install_php_extension'; version: string; name: string }
+  | { type: 'list_pecl_packages' }
   | { type: 'get_web_status' }
   | { type: 'get_web_config' }
   | { type: 'list_domains' }
@@ -524,6 +530,7 @@ export type CoreCommand =
   | { type: 'remove_domain'; hostname: string }
   | { type: 'set_domain_enabled'; hostname: string; enabled: boolean }
   | { type: 'duplicate_domain'; hostname: string; new_hostname: string }
+  | { type: 'rename_domain'; hostname: string; new_hostname: string }
   | { type: 'suggest_domain'; project_id: string; template: string }
   | { type: 'apply_web'; overwrite: string[] }
   | { type: 'stop_web' }
@@ -596,11 +603,20 @@ export type CoreCommand =
   | { type: 'list_log_sources' }
   | { type: 'read_log'; source: string; max_lines: number }
   | { type: 'export_log'; source: string; dest: string }
+  | { type: 'clear_log'; source: string }
   | { type: 'get_startup_settings' }
   | { type: 'set_startup_settings'; settings: StartupSettings }
   | { type: 'open_path'; path: string }
   | { type: 'open_url'; url: string }
   | { type: 'open_in_editor'; path: string }
+  | { type: 'list_editors' }
+  | { type: 'get_system_stats' }
+  | { type: 'list_migration_sources' }
+  | { type: 'list_foreign_databases'; source_id: string; password: string }
+  | { type: 'migrate_databases'; source_id: string; password: string; databases: string[]; target: string }
+  | { type: 'get_helper_service' }
+  | { type: 'install_helper_service' }
+  | { type: 'uninstall_helper_service' }
 
 export type CoreResponse =
   | { type: 'pong'; version: string }
@@ -621,6 +637,7 @@ export type CoreResponse =
   | { type: 'db_tools'; tools: DbTool[] }
   | { type: 'custom_installs'; entries: CustomInstall[] }
   | { type: 'php_scan'; found: { version: string; php_exe: string }[] }
+  | { type: 'php_extensions'; report: PhpExtensions }
   | { type: 'web_status'; status: WebStatus }
   | { type: 'web_config'; config: WebConfig }
   | { type: 'domains'; domains: DomainSummary[] }
@@ -653,6 +670,59 @@ export type CoreResponse =
   | { type: 'log_sources'; sources: LogSource[] }
   | { type: 'log_lines'; source: string; lines: string[] }
   | { type: 'startup'; settings: StartupSettings }
+  | { type: 'editors'; editors: EditorInfo[] }
+  | { type: 'count'; count: number }
+  | { type: 'helper_service'; installed: boolean }
+  | { type: 'system_stats'; stats: SystemStats }
+  | { type: 'migration_sources'; sources: MigrationSource[] }
+  | { type: 'migrated'; results: MigratedDb[] }
+
+export interface MigrationSource {
+  id: string
+  label: string
+  engine: string
+  bin_dir: string
+  data_dir: string
+  size_bytes: number
+  running_port: number | null
+}
+
+export interface MigratedDb {
+  name: string
+  ok: boolean
+  detail: string
+}
+
+export interface SystemStats {
+  cpu_percent: number
+  cpu_cores: number
+  memory_used: number
+  memory_total: number
+  /** Keyed by the managed process's PID; includes its child processes. */
+  processes: Record<number, { cpu_percent: number; memory: number; count: number }>
+  sites: SiteUsage[]
+}
+
+export interface SiteUsage {
+  hostname: string
+  via: string
+  cpu_percent: number
+  memory: number
+  shared_by: number
+  measured: boolean
+}
+
+export interface EditorInfo {
+  id: string
+  name: string
+  path: string | null
+}
+
+export interface PhpExtensions {
+  version: string
+  thread_safe: boolean
+  extensions: { name: string; enabled: boolean; downloaded: boolean }[]
+}
 
 export interface Diagnostic {
   problem: string

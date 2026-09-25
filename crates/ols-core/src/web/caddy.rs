@@ -116,6 +116,8 @@ impl WebServer for Caddy {
 fn body(site: &SiteSpec) -> String {
     let mut out = String::new();
     out.push_str(&format!("    root * \"{}\"\n", site.root.replace('\\', "/")));
+    // Dev sites always revalidate (see nginx), unless the app chose its own caching.
+    out.push_str("    header ?Cache-Control \"no-cache\"\n");
     for header in &site.blocks.headers {
         out.push_str(&format!("    header {} \"{}\"\n", header.name, header.value));
     }
@@ -138,8 +140,13 @@ fn body(site: &SiteSpec) -> String {
             out.push_str(&format!("    php_fastcgi {upstreams}\n"));
             out.push_str("    file_server\n");
         }
-        Backend::Proxy { upstream_port } => {
-            out.push_str(&format!("    reverse_proxy 127.0.0.1:{upstream_port}\n"));
+        Backend::Proxy { upstream } => {
+            out.push_str(&format!("    reverse_proxy {upstream}"));
+            // Local HTTPS targets (Docker images) usually have self-signed certificates.
+            if upstream.starts_with("https://") {
+                out.push_str(" {\n        transport http {\n            tls_insecure_skip_verify\n        }\n    }");
+            }
+            out.push('\n');
         }
         Backend::Static => out.push_str("    file_server\n"),
     }

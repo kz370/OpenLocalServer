@@ -50,6 +50,7 @@ pub struct Inner {
     pub services: Arc<ServiceManager>,
     pub certs: Arc<CertificateManager>,
     pub php: Arc<PhpPools>,
+    pub monitor: crate::monitor::Monitor,
     pub web: Arc<WebManager>,
     pub runs: RunManager,
 }
@@ -77,6 +78,9 @@ pub struct DomainSummary {
     pub enabled: bool,
     pub project_id: Option<String>,
     pub has_app: bool,
+    /// The folder to open in an editor: the linked project, else the site root without a
+    /// trailing `public`/`web` docroot.
+    pub folder: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -142,6 +146,7 @@ impl Inner {
             services,
             certs,
             php,
+            monitor: Default::default(),
             web,
             runs: RunManager::new(),
             paths,
@@ -234,6 +239,7 @@ impl Inner {
 
     pub fn domain_summaries(&self) -> Vec<DomainSummary> {
         let cfg = self.web_config();
+        let projects = self.projects.lock().unwrap().list();
         self.domains
             .lock()
             .unwrap()
@@ -252,6 +258,7 @@ impl Inner {
                 enabled: d.enabled,
                 project_id: d.project_id.clone(),
                 has_app: d.app.is_some(),
+                folder: site_folder(&d, &projects),
             })
             .collect()
     }
@@ -301,7 +308,10 @@ impl Inner {
         if !Path::new(&domain.root).is_absolute() {
             return Err(CoreError::DomainError("the document root must be a full folder path".into()));
         }
-        self.domains.lock().unwrap().add(domain)
+        let hostname = domain.hostname.clone();
+        let added = self.domains.lock().unwrap().add(domain)?;
+        self.edit_string_list(AUTO_SKIP, |list| list.retain(|h| h != &hostname))?;
+        Ok(added)
     }
 
     pub fn update_domain(&self, domain: Domain) -> Result<Domain, CoreError> {
@@ -311,10 +321,146 @@ impl Inner {
 
     pub fn remove_domain(&self, hostname: &str) -> Result<(), CoreError> {
         let mut domains = self.domains.lock().unwrap();
+        let was_auto = domains.get(hostname).is_some_and(|d| d.project_id.is_some());
         domains.remove(hostname)?;
+        if was_auto {
+            // Deleted on purpose: automatic domains must not bring it back.
+            self.edit_string_list(AUTO_SKIP, |list| list.push(hostname.to_string()))?;
+        }
         let _ = self.certs.revoke(hostname);
         self.web.restart_app(hostname);
         Ok(())
+    }
+
+    // ------------------------------------------------------- automatic domains
+
+    fn string_list(&self, key: &str) -> Vec<String> {
+        let s = self.settings.lock().unwrap();
+        s.get(key).and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()).unwrap_or_default()
+    }
+
+    fn edit_string_list(&self, key: &str, edit: impl FnOnce(&mut Vec<String>)) -> Result<(), CoreError> {
+        let mut list = self.string_list(key);
+        let before = list.clone();
+        edit(&mut list);
+        list.dedup();
+        if list != before {
+            self.settings.lock().unwrap().set(key, serde_json::json!(list))?;
+        }
+        Ok(())
+    }
+
+    /// Remembers a folder of projects (like Laragon's `www`) so new folders in it are
+    /// picked up automatically.
+    pub fn remember_projects_root(&self, root: &str) -> Result<(), CoreError> {
+        self.edit_string_list(PROJECT_ROOTS, |list| {
+            if !list.iter().any(|r| r.eq_ignore_ascii_case(root)) {
+                list.push(root.to_string());
+            }
+        })
+    }
+
+    /// Laragon-style automatic domains (setting `domains.auto`, on by default): every
+    /// folder in a remembered projects folder becomes a project, and every project that
+    /// can be served (PHP or plain HTML) gets `<folder>.test` over HTTPS. Domains the user
+    /// deleted stay deleted. Applies the web config when something was added and the
+    /// server is running. Returns how many domains were created.
+    pub fn sync_auto_domains(&self) -> Result<usize, CoreError> {
+        if !self.setting_bool("domains.auto", true) {
+            return Ok(0);
+        }
+        // Folders scanned before roots were remembered: adopt any parent holding 2+ projects.
+        if self.settings.lock().unwrap().get(PROJECT_ROOTS).is_none() {
+            let mut parents: std::collections::HashMap<String, usize> = Default::default();
+            for p in self.projects.lock().unwrap().list() {
+                if let Some(parent) = Path::new(&p.path).parent() {
+                    *parents.entry(parent.display().to_string()).or_default() += 1;
+                }
+            }
+            let roots: Vec<String> = parents.into_iter().filter(|(_, n)| *n >= 2).map(|(p, _)| p).collect();
+            self.settings.lock().unwrap().set(PROJECT_ROOTS, serde_json::json!(roots))?;
+        }
+        for root in self.string_list(PROJECT_ROOTS) {
+            let Ok(entries) = std::fs::read_dir(&root) else { continue };
+            let mut projects = self.projects.lock().unwrap();
+            for e in entries.flatten() {
+                let dir = e.path();
+                let hidden = e.file_name().to_string_lossy().starts_with('.');
+                if dir.is_dir() && !hidden && (crate::detection::looks_like_a_project(&dir) || has_index(&dir)) {
+                    let _ = projects.register(&dir.display().to_string());
+                }
+            }
+        }
+
+        let skip = self.string_list(AUTO_SKIP);
+        let projects = self.projects.lock().unwrap().list();
+        let mut created = 0;
+        for p in projects {
+            let path = Path::new(&p.path);
+            let (taken, linked) = {
+                let domains = self.domains.lock().unwrap();
+                let hostname = crate::domain::apply_template("{project}.test", &p.name);
+                (domains.get(&hostname).is_some() || skip.contains(&hostname), domains.list().iter().any(|d| d.project_id.as_deref() == Some(&p.id)))
+            };
+            if taken || linked || !path.is_dir() {
+                continue;
+            }
+            let Some((kind, root)) = auto_site(path) else { continue };
+            let domain = Domain {
+                hostname: crate::domain::apply_template("{project}.test", &p.name),
+                project_id: Some(p.id.clone()),
+                root: root.display().to_string(),
+                kind,
+                https: true,
+                redirect_https: true,
+                wildcard: false,
+                enabled: true,
+                ownership: Default::default(),
+                app: None,
+                blocks: Default::default(),
+                generated_hashes: Default::default(),
+            };
+            match self.add_domain(domain) {
+                Ok(d) => {
+                    tracing::info!(hostname = %d.hostname, project = %p.name, "created an automatic domain");
+                    created += 1;
+                }
+                Err(e) => tracing::warn!(project = %p.name, error = %e, "automatic domain skipped"),
+            }
+        }
+        if created > 0 && self.web.is_running() {
+            self.apply_web(&[])?;
+        }
+        Ok(created)
+    }
+
+    /// Gives a site a different name (any valid hostname, any ending). Its certificate is
+    /// reissued for the new name on the next apply, and its config files move with it.
+    pub fn rename_domain(&self, hostname: &str, new_hostname: &str) -> Result<Domain, CoreError> {
+        let new_hostname = new_hostname.trim().to_ascii_lowercase();
+        if new_hostname == hostname {
+            return self.domains.lock().unwrap().get(hostname).ok_or_else(|| CoreError::DomainError(format!("{hostname} is not a known domain")));
+        }
+        let mut domains = self.domains.lock().unwrap();
+        let original = domains.get(hostname).ok_or_else(|| CoreError::DomainError(format!("{hostname} is not a known domain")))?;
+        let mut renamed = original.clone();
+        renamed.hostname = new_hostname.clone();
+        renamed.generated_hashes.clear();
+        domains.remove(hostname)?;
+        let renamed = match domains.add(renamed) {
+            Ok(d) => d,
+            Err(e) => {
+                // Name taken or invalid: put the original back untouched.
+                domains.add(original)?;
+                return Err(e);
+            }
+        };
+        drop(domains);
+        self.web.rename_site_files(hostname, &renamed.hostname);
+        let _ = self.certs.revoke(hostname);
+        self.web.restart_app(hostname);
+        self.edit_string_list(AUTO_SKIP, |list| list.retain(|h| h != &renamed.hostname))?;
+        Ok(renamed)
     }
 
     pub fn duplicate_domain(&self, hostname: &str, new_hostname: &str) -> Result<Domain, CoreError> {
@@ -456,13 +602,18 @@ impl Inner {
 
     /// §94–99: the user's editor (setting `editor.command`), else VS Code if present, else Notepad.
     pub fn open_in_editor(&self, path: &str) -> Result<(), CoreError> {
-        let configured = self.settings.lock().unwrap().get("editor.command").and_then(|v| v.as_str()).map(str::to_string);
-        let exe: PathBuf = match configured.filter(|c| !c.trim().is_empty()) {
-            Some(c) => PathBuf::from(c),
-            None => crate::web::manager::find_executable(None, "code").unwrap_or_else(|| PathBuf::from("notepad.exe")),
+        let (chosen, custom) = {
+            let s = self.settings.lock().unwrap();
+            let text = |k: &str| s.get(k).and_then(|v| v.as_str()).map(str::to_string);
+            (text("editor"), text("editor.command"))
         };
-        let is_shim = exe.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("cmd") || e.eq_ignore_ascii_case("bat"));
-        let mut cmd = if is_shim {
+        let exe: PathBuf = match crate::editors::resolve(chosen.as_deref(), custom.as_deref()) {
+            Some(exe) => exe,
+            // No code editor at all: a folder opens in Explorer, a file in Notepad.
+            None if Path::new(path).is_dir() => PathBuf::from("explorer.exe"),
+            None => PathBuf::from("notepad.exe"),
+        };
+        let mut cmd = if crate::editors::is_shim(&exe) {
             let mut c = std::process::Command::new("cmd.exe");
             c.arg("/C").arg(&exe).arg(path);
             c
@@ -510,6 +661,15 @@ impl Inner {
     /// Runs what the user asked to have started with the app (§121). Failures are logged,
     /// never fatal — a service that won't start shouldn't stop the app opening.
     pub fn run_autostart(&self) {
+        if let Err(e) = self.sync_auto_domains() {
+            tracing::warn!(error = %e, "automatic domains could not be synced");
+        }
+        // Servers orphaned by a killed previous run would hold every port we need.
+        let orphans = crate::process::kill_orphans(&self.paths.runtimes_dir());
+        if orphans > 0 {
+            tracing::info!(orphans, "stopped servers left running by a previous session");
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        }
         let startup = self.startup_settings();
         for id in &startup.autostart_services {
             if let Err(e) = self.services.start(id) {
@@ -573,14 +733,14 @@ impl Inner {
             }
         }
 
-        let hostnames: Vec<String> = self.domains.lock().unwrap().list().into_iter().filter(|d| d.enabled).map(|d| d.hostname).collect();
-        if !hostnames.is_empty() {
+        let enabled: Vec<String> = self.domains.lock().unwrap().list().into_iter().filter(|d| d.enabled).map(|d| d.hostname).collect();
+        if !enabled.is_empty() {
             let existing = std::fs::read_to_string(crate::hosts::hosts_path()).unwrap_or_default();
-            let in_sync = crate::hosts::is_in_sync(&existing, &crate::hosts::loopback_entries(&hostnames));
-            items.push(if in_sync {
-                item("hosts", "Hosts file", "ok", "all domains are listed".into(), None)
+            let missing: Vec<&String> = enabled.iter().filter(|h| !self.web.dns_covers(h) && !crate::hosts::lists(&existing, h)).collect();
+            items.push(if missing.is_empty() {
+                item("hosts", "Domain names", "ok", "every domain resolves to this computer".into(), None)
             } else {
-                item("hosts", "Hosts file", "warn", "some domains are missing from the hosts file".into(), Some("Apply the web config to update it (Windows will ask for approval)."))
+                item("hosts", "Domain names", "warn", format!("not resolving yet: {}", missing.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")), Some("Apply the web config."))
             });
         }
 
@@ -595,6 +755,95 @@ impl Inner {
             });
         }
         items
+    }
+
+    // ------------------------------------------------------------- monitoring
+
+    /// Machine and process usage, plus what each enabled site costs. Shared processes (a
+    /// PHP version's workers, the web server) are reported whole, with how many sites
+    /// share them, rather than split by guesswork.
+    pub fn system_stats(&self) -> crate::monitor::SystemStats {
+        let procs = self.supervisor.snapshot();
+        let pid_of = |id: ProcessId| procs.iter().find(|p| p.id == id).and_then(|p| p.pid);
+        let mut stats = self.monitor.stats(&procs.iter().filter_map(|p| p.pid).collect::<Vec<_>>());
+        let plan = self.web.usage_plan();
+        let sum = |ids: &[ProcessId]| {
+            ids.iter().filter_map(|id| pid_of(*id)).filter_map(|pid| stats.processes.get(&pid)).fold((0.0f32, 0u64), |(c, m), s| (c + s.cpu_percent, m + s.memory))
+        };
+        let enabled: Vec<Domain> = self.domains.lock().unwrap().list().into_iter().filter(|d| d.enabled).collect();
+        let server = plan.server.map(|s| sum(&[s])).unwrap_or_default();
+        let static_sites = enabled.iter().filter(|d| !plan.apps.contains_key(&d.hostname) && !plan.site_php.contains_key(&d.hostname)).count();
+        let mut sites = Vec::new();
+        for d in &enabled {
+            let (via, (cpu, memory), shared_by, measured) = if let Some(app) = plan.apps.get(&d.hostname) {
+                ("App process".to_string(), sum(&[*app]), 1, true)
+            } else if let Some(version) = plan.site_php.get(&d.hostname) {
+                let workers = plan.pools.get(version).cloned().unwrap_or_default();
+                let sharing = plan.site_php.values().filter(|v| *v == version).count();
+                (format!("PHP {version} workers"), sum(&workers), sharing, true)
+            } else if let SiteKind::Proxy { upstream_host: Some(host), upstream_port, .. } = &d.kind {
+                (format!("Forwarded to {host}:{upstream_port}"), (0.0, 0), 1, false)
+            } else {
+                ("Web server".to_string(), server, static_sites.max(1), true)
+            };
+            sites.push(crate::monitor::SiteUsage { hostname: d.hostname.clone(), via, cpu_percent: cpu, memory, shared_by, measured });
+        }
+        stats.sites = sites;
+        stats
+    }
+
+    // --------------------------------------------------------- database migration
+
+    fn migration_source(&self, id: &str) -> Result<crate::migrate::MigrationSource, CoreError> {
+        crate::migrate::detect().into_iter().find(|s| s.id == id).ok_or_else(|| svc(format!("{id} is no longer there")))
+    }
+
+    /// Databases in an old Laragon/XAMPP/Wamp server (started on a copy if it isn't running).
+    pub fn foreign_databases(&self, source_id: &str, password: &str) -> Result<Vec<String>, CoreError> {
+        let source = self.migration_source(source_id)?;
+        let session = crate::migrate::Session::open(source, password, &self.paths.cache_dir()).map_err(svc)?;
+        session.databases().map_err(svc)
+    }
+
+    /// Copies databases from an old server into ours (`target`: "mysql" | "mariadb").
+    /// An empty `databases` list means all of them. Each database reports on its own, so
+    /// one failure doesn't stop the rest.
+    pub fn migrate_databases(&self, source_id: &str, password: &str, databases: &[String], target: &str) -> Result<Vec<crate::migrate::MigratedDb>, CoreError> {
+        let source = self.migration_source(source_id)?;
+        let (client, port) = self.services.sql_client(target).map_err(svc)?;
+        if source.running_port == Some(port) {
+            return Err(svc(format!(
+                "{} is running on port {port}, which our {target} needs. Stop it (in Laragon/XAMPP) and try again; its data is copied, not moved.",
+                source.label
+            )));
+        }
+        if !self.services.is_running(target) {
+            self.services.start(target).map_err(svc)?;
+        }
+        let started = std::time::Instant::now();
+        while std::net::TcpStream::connect_timeout(&([127, 0, 0, 1], port).into(), std::time::Duration::from_millis(300)).is_err() {
+            if started.elapsed() > std::time::Duration::from_secs(60) {
+                return Err(svc(format!("our {target} did not start")));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(300));
+        }
+
+        let work = self.paths.cache_dir();
+        std::fs::create_dir_all(&work)?;
+        let session = crate::migrate::Session::open(source, password, &work).map_err(svc)?;
+        let names = if databases.is_empty() { session.databases().map_err(svc)? } else { databases.to_vec() };
+        let mut results = Vec::new();
+        for db in names {
+            let file = work.join(format!("migrate-{}.sql", crate::domain::slugify(&db)));
+            let outcome = session.dump(&db, &file).and_then(|()| crate::migrate::import(&client, port, &file));
+            let _ = std::fs::remove_file(&file);
+            tracing::info!(database = %db, ok = outcome.is_ok(), "database migration");
+            results.push(match outcome {
+                Ok(()) => crate::migrate::MigratedDb { name: db, ok: true, detail: "copied".into() },
+                Err(e) => crate::migrate::MigratedDb { name: db, ok: false, detail: e },
+            });
+        }
+        Ok(results)
     }
 
     // --------------------------------------------------------------------- logs
@@ -650,6 +899,47 @@ impl Inner {
             }
             s if s.starts_with("run:") => {
                 Ok(tail(self.runs.get(&s[4..]).map(|r| r.log).unwrap_or_default()))
+            }
+            other => Err(svc(format!("unknown log source {other}"))),
+        }
+    }
+
+    /// Empties a log. Files are truncated in place rather than deleted: the server still
+    /// holds them open and keeps appending.
+    pub fn clear_log(&self, source: &str) -> Result<(), CoreError> {
+        let truncate = |p: &Path| -> Result<(), CoreError> {
+            if !p.exists() {
+                return Ok(());
+            }
+            std::fs::OpenOptions::new()
+                .write(true)
+                .open(p)
+                .and_then(|f| f.set_len(0))
+                .map_err(|e| svc(format!("could not clear {}: {e}", p.display())))
+        };
+        match source {
+            "app" => {
+                if let Ok(entries) = std::fs::read_dir(self.paths.logs_dir()) {
+                    for e in entries.flatten().filter(|e| e.path().is_file()) {
+                        truncate(&e.path())?;
+                    }
+                }
+                Ok(())
+            }
+            "web:error" | "web:access" => {
+                let cfg = self.web_config();
+                let server = crate::web::server_by_id(&cfg.server).ok_or_else(|| svc("unknown web server"))?;
+                let file = if source == "web:error" { "error.log" } else { "access.log" };
+                truncate(&self.paths.web_dir().join(server.id()).join("logs").join(file))
+            }
+            s if s.starts_with("process:") => {
+                let id: u64 = s[8..].parse().map_err(|_| svc("bad process id"))?;
+                self.supervisor.clear_output(ProcessId(id));
+                Ok(())
+            }
+            s if s.starts_with("run:") => {
+                self.runs.clear_log(&s[4..]);
+                Ok(())
             }
             other => Err(svc(format!("unknown log source {other}"))),
         }
@@ -895,6 +1185,8 @@ impl Inner {
                     "static" => SiteKind::Static,
                     "proxy" => SiteKind::Proxy {
                         upstream_port: with.get("port").and_then(|p| p.parse().ok()).ok_or("a proxy site needs a valid port")?,
+                        upstream_host: with.get("upstream_host").map(|h| h.trim().to_string()).filter(|h| !h.is_empty() && h != "127.0.0.1" && h != "localhost"),
+                        upstream_https: with.get("upstream_https").is_some_and(|v| v == "true"),
                     },
                     other => return Err(format!("unknown site kind {other}")),
                 };
@@ -1234,4 +1526,36 @@ fn registry_run_value() -> Option<String> {
 #[cfg(not(windows))]
 fn set_start_with_windows(_enabled: bool) -> Result<(), String> {
     Err("start with the system is only implemented on Windows so far".into())
+}
+
+fn site_folder(d: &Domain, projects: &[crate::project::Project]) -> String {
+    if let Some(p) = d.project_id.as_ref().and_then(|id| projects.iter().find(|p| &p.id == id)) {
+        return p.path.clone();
+    }
+    let root = Path::new(&d.root);
+    let docroot = root.file_name().and_then(|n| n.to_str()).is_some_and(|n| matches!(n.to_lowercase().as_str(), "public" | "web" | "public_html"));
+    match root.parent() {
+        Some(parent) if docroot => parent.display().to_string(),
+        _ => d.root.clone(),
+    }
+}
+
+const PROJECT_ROOTS: &str = "projects.roots";
+const AUTO_SKIP: &str = "domains.auto_skip";
+
+fn has_index(dir: &Path) -> bool {
+    ["index.php", "index.html", "index.htm"].iter().any(|f| dir.join(f).is_file())
+}
+
+/// How an automatic domain serves a project, or `None` when it needs a dev server
+/// (Node/Python) that a plain domain can't start.
+fn auto_site(path: &Path) -> Option<(SiteKind, PathBuf)> {
+    use crate::detection::Framework as F;
+    let detection = crate::detection::detect(path);
+    let root = detection.doc_root.as_ref().map(|d| path.join(d)).unwrap_or_else(|| path.to_path_buf());
+    match detection.framework {
+        F::Laravel | F::Symfony | F::WordPress | F::GenericPhp => Some((SiteKind::Php { version: None }, root)),
+        _ if has_index(&root) => Some((SiteKind::Static, root)),
+        _ => None,
+    }
 }

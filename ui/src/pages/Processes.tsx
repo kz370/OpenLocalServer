@@ -2,12 +2,16 @@ import { listen } from '@tauri-apps/api/event'
 import { Play } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
+import { Spinner } from '@/components/Spinner'
+import { SystemMonitor } from '@/components/SystemMonitor'
 import { StopIcon } from '@/components/StopIcon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { type Diagnostic, type PortStatus, type ProcessEvent, type ProcessInfo, runCommand } from '@/core'
+import { type Diagnostic, type PortStatus, type ProcessEvent, type ProcessInfo, type SystemStats, runCommand } from '@/core'
+import { formatBytes, usePoll } from '@/lib/hooks'
+import { waitForProcessExit } from '@/lib/wait'
 
 const STATE_VARIANT: Record<ProcessInfo['state'], 'success' | 'secondary' | 'destructive' | 'outline'> = {
   running: 'success',
@@ -30,6 +34,7 @@ export function ProcessesPage() {
   const [processes, setProcesses] = useState<ProcessInfo[]>([])
   const [outputs, setOutputs] = useState<Record<number, string[]>>({})
   const [selected, setSelected] = useState<number | null>(null)
+  const [stopping, setStopping] = useState<number | null>(null)
 
   const [name, setName] = useState('demo')
   const [executable, setExecutable] = useState('ping')
@@ -46,6 +51,12 @@ export function ProcessesPage() {
     const res = await runCommand({ type: 'list_processes' })
     if (res.type === 'processes') setProcesses(res.processes)
   }
+
+  const [stats, setStats] = useState<SystemStats | null>(null)
+  usePoll(async () => {
+    const r = await runCommand({ type: 'get_system_stats' }).catch(() => null)
+    if (r?.type === 'system_stats') setStats(r.stats)
+  }, 2000)
 
   useEffect(() => {
     refresh()
@@ -90,7 +101,15 @@ export function ProcessesPage() {
   }
 
   async function stopProcess(id: number) {
-    await runCommand({ type: 'stop_process', id })
+    setStopping(id)
+    try {
+      await runCommand({ type: 'stop_process', id })
+      await waitForProcessExit(id)
+    } catch (err) {
+      setError(err as Diagnostic)
+    } finally {
+      setStopping(null)
+    }
   }
 
   async function checkPort() {
@@ -113,6 +132,8 @@ export function ProcessesPage() {
           The Process Supervisor: start, stop, watch live output, and crash-restart (§107–108).
         </p>
       </div>
+
+      <SystemMonitor stats={stats} />
 
       <Card>
         <CardHeader>
@@ -183,23 +204,27 @@ export function ProcessesPage() {
                   <span className="font-medium">{p.name}</span>
                   <span className="text-xs text-muted-foreground">
                     {p.pid ? `PID ${p.pid}` : '—'}
+                    {p.pid && stats?.processes[p.pid]?.count
+                      ? ` · ${stats.processes[p.pid].cpu_percent.toFixed(1)}% CPU · ${formatBytes(stats.processes[p.pid].memory)}${stats.processes[p.pid].count > 1 ? ` (${stats.processes[p.pid].count} processes)` : ''}`
+                      : ''}
                     {p.restarts > 0 && ` · ${p.restarts} restart${p.restarts > 1 ? 's' : ''}`}
                     {p.exit_code !== null && ` · exit ${p.exit_code}`}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge variant={STATE_VARIANT[p.state]}>{p.state}</Badge>
-                  {(p.state === 'running' || p.state === 'starting') && (
+                  {(p.state === 'running' || p.state === 'starting' || stopping === p.id) && (
                     <Button
                       variant="ghost"
                       size="icon"
+                      disabled={stopping === p.id}
                       onClick={(e) => {
                         e.stopPropagation()
                         stopProcess(p.id)
                       }}
                       title="Stop"
                     >
-                      <StopIcon className="size-3.5" />
+                      {stopping === p.id ? <Spinner className="size-3.5" /> : <StopIcon className="size-3.5" />}
                     </Button>
                   )}
                 </div>

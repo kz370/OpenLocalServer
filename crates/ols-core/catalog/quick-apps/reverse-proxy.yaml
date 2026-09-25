@@ -1,0 +1,44 @@
+id: reverse-proxy
+name: Reverse Proxy
+description: Give anything already running (a Docker container, a service on another computer, a local tool) its own domain with HTTPS. No project folder is created.
+category: proxy
+
+variables:
+  - name: domain
+    label: Domain
+    type: domain
+    default: "myapp.test"
+  - name: target_host
+    label: Where it runs (127.0.0.1 = this computer; or an IP / hostname)
+    type: text
+    default: "127.0.0.1"
+    required: true
+    validation: "[A-Za-z0-9.-]+"
+  - name: target_port
+    label: Its port
+    type: port
+    default: 8080
+  - name: target_https
+    label: The target itself only speaks HTTPS
+    type: boolean
+    default: false
+  - name: https
+    label: HTTPS for the domain
+    type: boolean
+    default: true
+  - name: wildcard
+    label: Wildcard subdomains (*.domain)
+    type: boolean
+    default: false
+
+domain:
+  hostname: "{{ domain }}"
+  kind: proxy
+  # A proxy site serves nothing from disk; any existing folder satisfies the root.
+  root: "{{ default_projects_dir }}"
+  port: "{{ target_port }}"
+  host: "{{ target_host }}"
+  upstream_https: "{{ target_https }}"
+
+environment:
+  https: true

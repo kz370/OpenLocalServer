@@ -1,6 +1,8 @@
 import { open } from '@tauri-apps/plugin-dialog'
 import {
   Activity,
+  Check,
+  Code2,
   Copy,
   ExternalLink,
   FileCode2,
@@ -16,7 +18,9 @@ import {
 import { useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
+import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
+import { TechTile } from '@/components/TechIcon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -38,6 +42,8 @@ import {
   runCommand,
 } from '@/core'
 import { useAction, usePoll } from '@/lib/hooks'
+import { waitForWebStopped } from '@/lib/wait'
+import { confirmAction, confirmThen } from '@/lib/confirm'
 
 const emptyBlocks = { headers: [], redirects: [], mappings: [], upstreams: [], includes: [] }
 
@@ -75,6 +81,7 @@ export function DomainsPage() {
   const [ca, setCa] = useState<CaInfo | null>(null)
   const [projects, setProjects] = useState<Project[]>([])
   const [catalog, setCatalog] = useState<CatalogEntry[]>([])
+  const [customPhp, setCustomPhp] = useState<string[]>([])
   const { busy, error, setError, run } = useAction()
 
   const [report, setReport] = useState<ApplyReport | null>(null)
@@ -104,7 +111,17 @@ export function DomainsPage() {
   usePoll(() => refresh().catch(() => undefined), 4000)
   useEffect(() => {
     runCommand({ type: 'list_projects' }).then((r) => r.type === 'projects' && setProjects(r.projects))
+    // Laragon-style: new folders in your projects folder show up as <name>.test.
+    runCommand({ type: 'sync_auto_domains' })
+      .then((r) => {
+        if (r.type === 'count' && r.count > 0) void refresh()
+      })
+      .catch(() => undefined)
     runCommand({ type: 'list_runtime_catalog' }).then((r) => r.type === 'runtime_catalog' && setCatalog(r.entries))
+    // PHP versions registered from elsewhere (Laragon, XAMPP, ...) serve sites too.
+    runCommand({ type: 'list_custom_installs' }).then(
+      (r) => r.type === 'custom_installs' && setCustomPhp(r.entries.filter((c) => c.id === 'php' && c.label).map((c) => c.label)),
+    )
   }, [])
 
   async function apply(overwrite: string[] = []) {
@@ -140,12 +157,16 @@ export function DomainsPage() {
   }
 
   async function saveDomain(d: Domain) {
+    // Renaming first, so the update below finds the site under its new name.
+    if (!editingIsNew && editing && editing.hostname !== d.hostname) {
+      await runCommand({ type: 'rename_domain', hostname: editing.hostname, new_hostname: d.hostname })
+    }
     await runCommand({ type: editingIsNew ? 'add_domain' : 'update_domain', domain: d })
     setEditing(null)
     await apply()
   }
 
-  const installedPhp = catalog.filter((c) => c.id === 'php' && c.installed).map((c) => c.version)
+  const installedPhp = [...new Set([...catalog.filter((c) => c.id === 'php' && c.installed).map((c) => c.version), ...customPhp])]
 
   return (
     <div className="flex flex-col gap-6">
@@ -158,7 +179,7 @@ export function DomainsPage() {
         </div>
         <div className="flex gap-2">
           <Button disabled={busy !== null} onClick={() => run('apply', () => apply())}>
-            <Play /> {status?.running ? 'Apply changes' : 'Start web server'}
+            {busy === 'apply' ? <Spinner /> : <Play />} {busy === 'apply' ? (status?.running ? 'Applying…' : 'Starting…') : status?.running ? 'Apply changes' : 'Start web server'}
           </Button>
           {status?.running && (
             <Button
@@ -167,11 +188,12 @@ export function DomainsPage() {
               onClick={() =>
                 run('stop', async () => {
                   await runCommand({ type: 'stop_web' })
+                  await waitForWebStopped()
                   await refresh()
                 })
               }
             >
-              <StopIcon /> Stop
+              {busy === 'stop' ? <Spinner /> : <StopIcon />} {busy === 'stop' ? 'Stopping…' : 'Stop'}
             </Button>
           )}
         </div>
@@ -275,6 +297,9 @@ export function DomainsPage() {
                         >
                           <Activity className="size-3.5" />
                         </Button>
+                        <Button size="sm" variant="ghost" title={`Open ${d.folder} in your code editor`} onClick={() => run('code', () => runCommand({ type: 'open_in_editor', path: d.folder }))}>
+                          <Code2 className="size-3.5" />
+                        </Button>
                         <Button size="sm" variant="ghost" title="Edit" onClick={() => openEditor(d.hostname)}>
                           <Pencil className="size-3.5" />
                         </Button>
@@ -283,13 +308,13 @@ export function DomainsPage() {
                           variant="ghost"
                           title={d.enabled ? 'Disable' : 'Enable'}
                           onClick={() =>
-                            run('toggle', async () => {
+                            run(`toggle:${d.hostname}`, async () => {
                               await runCommand({ type: 'set_domain_enabled', hostname: d.hostname, enabled: !d.enabled })
                               await apply()
                             })
                           }
                         >
-                          {d.enabled ? <StopIcon className="size-3.5" /> : <Play className="size-3.5" />}
+                          {busy === `toggle:${d.hostname}` ? <Spinner className="size-3.5" /> : d.enabled ? <StopIcon className="size-3.5" /> : <Play className="size-3.5" />}
                         </Button>
                         {d.has_app && (
                           <Button size="sm" variant="ghost" title="Restart app process" onClick={() => run('restart', () => runCommand({ type: 'restart_site_app', hostname: d.hostname }))}>
@@ -311,8 +336,8 @@ export function DomainsPage() {
                           size="sm"
                           variant="ghost"
                           title="Delete"
-                          onClick={() => {
-                            if (!window.confirm(`Delete ${d.hostname}? Its certificate is revoked and its config removed.`)) return
+                          onClick={async () => {
+                            if (!(await confirmAction(`Delete ${d.hostname}? Its certificate is revoked and its config removed.`))) return
                             void run('delete', async () => {
                               await runCommand({ type: 'remove_domain', hostname: d.hostname })
                               await apply()
@@ -359,7 +384,7 @@ export function DomainsPage() {
                     size="sm"
                     variant="outline"
                     disabled={busy !== null}
-                    onClick={() => window.confirm('Remove the CA from the Windows trust store? HTTPS sites will show warnings.') && run('untrust', () => runCommand({ type: 'untrust_ca' }).then(refresh))}
+                    onClick={() => confirmThen('Remove the CA from the Windows trust store? HTTPS sites will show warnings.', () => run('untrust', () => runCommand({ type: 'untrust_ca' }).then(refresh)))}
                   >
                     Untrust
                   </Button>
@@ -410,7 +435,7 @@ export function DomainsPage() {
                             size="sm"
                             variant="ghost"
                             title="Revoke (delete)"
-                            onClick={() => window.confirm(`Revoke the certificate for ${c.hostname}? The site can't use HTTPS until a new one is generated.`) && run('revoke', () => runCommand({ type: 'revoke_certificate', hostname: c.hostname }).then(refresh))}
+                            onClick={() => confirmThen(`Revoke the certificate for ${c.hostname}? The site can't use HTTPS until a new one is generated.`, () => run('revoke', () => runCommand({ type: 'revoke_certificate', hostname: c.hostname }).then(refresh)))}
                           >
                             <Trash2 className="size-3.5" />
                           </Button>
@@ -583,17 +608,40 @@ function ServerPanel({
         {status.running ? <Badge variant="success">● Running</Badge> : <Badge variant="secondary">Stopped</Badge>}
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <div className="flex flex-wrap gap-2">
-          {status.servers.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => setDraft({ ...draft, server: s.id })}
-              className={`rounded-lg border px-4 py-2 text-left text-sm transition-colors ${draft.server === s.id ? 'border-primary bg-primary/10' : 'border-border hover:bg-accent'}`}
-            >
-              <div className="font-medium">{s.name}</div>
-              <div className="text-xs text-muted-foreground">{s.installed ? 'installed' : 'not installed (Runtimes page)'}</div>
-            </button>
-          ))}
+        <div className="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Web server">
+          {status.servers.map((s) => {
+            const selected = draft.server === s.id
+            const live = s.id === cfg.server && status.running
+            return (
+              <button
+                key={s.id}
+                role="radio"
+                aria-checked={selected}
+                disabled={!s.installed}
+                title={s.installed ? undefined : 'Install it from the Runtimes page first'}
+                onClick={() => setDraft({ ...draft, server: s.id })}
+                className={`relative flex items-center gap-3 rounded-xl border p-3 text-left transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
+                  selected ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border hover:border-foreground/20 hover:bg-accent/50'
+                }`}
+              >
+                <TechTile id={s.id} />
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-1.5 text-sm font-medium">
+                    {s.name}
+                    {live && <span className="size-1.5 rounded-full bg-emerald-500" title="Running" />}
+                  </span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {s.installed ? SERVER_BLURB[s.id] : 'Not installed'}
+                  </span>
+                </span>
+                {selected && (
+                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                    <Check className="size-3" />
+                  </span>
+                )}
+              </button>
+            )
+          })}
         </div>
         <div className="grid gap-3 sm:grid-cols-4">
           <Field label="HTTP port">
@@ -730,7 +778,7 @@ function DomainDialog({
           </div>
         )}
         <Field label="Domain" hint="Subdomains work too: api.shop.test routes independently of shop.test">
-          <Input value={d.hostname} disabled={!isNew} onChange={(e) => set({ hostname: e.target.value })} placeholder="shop.test" />
+          <Input value={d.hostname} onChange={(e) => set({ hostname: e.target.value })} placeholder="shop.test, myapp.local, api.company.dev…" />
         </Field>
         <div className="flex gap-2">
           <Field label="Site folder">
@@ -751,7 +799,7 @@ function DomainDialog({
             }}
           >
             <option value="php">PHP (FastCGI)</option>
-            <option value="proxy">A dev server (reverse proxy: Node, Python, …)</option>
+            <option value="proxy">Reverse proxy (dev server, Docker, another computer…)</option>
             <option value="static">Static files</option>
           </Select>
         </Field>
@@ -759,9 +807,9 @@ function DomainDialog({
           <Field label="PHP version" hint="“Project default” follows the project's own resolved version">
             <Select value={d.kind.version ?? ''} onChange={(e) => set({ kind: { type: 'php', version: e.target.value || null } })}>
               <option value="">Project default / newest</option>
-              {installedPhp.map((v) => (
-                <option key={v} value={v.split('.').slice(0, 2).join('.')}>
-                  PHP {v.split('.').slice(0, 2).join('.')}
+              {phpOptions(installedPhp, d.kind.version).map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
                 </option>
               ))}
             </Select>
@@ -769,12 +817,33 @@ function DomainDialog({
         )}
         {d.kind.type === 'proxy' && (
           <>
-            <Field label="Dev server port">
-              <Input type="number" value={d.kind.upstream_port} onChange={(e) => set({ kind: { type: 'proxy', upstream_port: Number(e.target.value) } })} className="w-40" />
-            </Field>
-            <Field label="Start command (optional)" hint="OpenLocalServer supervises it and passes PORT. Example: npm run dev">
-              <Input value={appLine} onChange={(e) => setAppLine(e.target.value)} placeholder="npm run dev" />
-            </Field>
+            <div className="grid gap-3 sm:grid-cols-[1fr_8rem]">
+              <Field label="Forward to" hint="Blank = this computer. Or a Docker host, another PC's IP, a hostname.">
+                <Input
+                  value={d.kind.upstream_host ?? ''}
+                  onChange={(e) => set({ kind: { ...d.kind, type: 'proxy', upstream_port: d.kind.type === 'proxy' ? d.kind.upstream_port : 3000, upstream_host: e.target.value.trim() || null } })}
+                  placeholder="127.0.0.1"
+                />
+              </Field>
+              <Field label="Port">
+                <Input
+                  type="number"
+                  value={d.kind.upstream_port}
+                  onChange={(e) => set({ kind: { ...d.kind, type: 'proxy', upstream_port: Number(e.target.value) } })}
+                />
+              </Field>
+            </div>
+            <Toggle
+              checked={!!d.kind.upstream_https}
+              onChange={(v) => set({ kind: { ...d.kind, type: 'proxy', upstream_port: d.kind.type === 'proxy' ? d.kind.upstream_port : 3000, upstream_https: v } })}
+              label="The target only speaks HTTPS"
+              hint="Self-signed certificates on the target are accepted."
+            />
+            {!d.kind.upstream_host && (
+              <Field label="Start command (optional)" hint="OpenLocalServer supervises it and passes PORT. Example: npm run dev">
+                <Input value={appLine} onChange={(e) => setAppLine(e.target.value)} placeholder="npm run dev" />
+              </Field>
+            )}
           </>
         )}
         <div className="flex flex-col gap-2.5">
@@ -790,4 +859,36 @@ function DomainDialog({
       </div>
     </Dialog>
   )
+}
+
+/**
+ * One "PHP 8.3" choice per minor version (the server picks the newest 8.3.x), plus each
+ * exact version when several share a minor, so a specific build can be pinned.
+ */
+function phpOptions(installed: string[], current: string | null): { value: string; label: string }[] {
+  const key = (v: string) => v.split('.').map((p) => parseInt(p, 10) || 0)
+  const desc = (a: string, b: string) => {
+    const [ka, kb] = [key(a), key(b)]
+    for (let i = 0; i < Math.max(ka.length, kb.length); i++) if ((kb[i] ?? 0) !== (ka[i] ?? 0)) return (kb[i] ?? 0) - (ka[i] ?? 0)
+    return 0
+  }
+  const byMinor = new Map<string, string[]>()
+  for (const v of [...installed].sort(desc)) {
+    const minor = v.split('.').slice(0, 2).join('.')
+    byMinor.set(minor, [...(byMinor.get(minor) ?? []), v])
+  }
+  const options: { value: string; label: string }[] = []
+  for (const [minor, versions] of byMinor) {
+    options.push({ value: minor, label: versions.length > 1 ? `PHP ${minor} (newest: ${versions[0]})` : `PHP ${minor} (${versions[0]})` })
+    if (versions.length > 1) for (const v of versions) options.push({ value: v, label: `  PHP ${v} exactly` })
+  }
+  // A saved version that's no longer installed still shows, instead of silently blanking.
+  if (current && !options.some((o) => o.value === current)) options.push({ value: current, label: `PHP ${current} (not installed)` })
+  return options
+}
+
+const SERVER_BLURB: Record<string, string> = {
+  nginx: 'Fast and light · default',
+  apache: 'Honours .htaccess files',
+  caddy: 'Simple, HTTPS-first',
 }

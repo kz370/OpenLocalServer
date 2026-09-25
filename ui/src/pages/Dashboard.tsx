@@ -1,14 +1,18 @@
-import { AlertTriangle, CheckCircle2, ExternalLink, Globe, Play, Rocket, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Code2, ExternalLink, Lock, Play, Rocket, XCircle } from 'lucide-react'
 import { useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
+import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
+import { TechIcon } from '@/components/TechIcon'
 import type { Page } from '@/components/layout/Sidebar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { type DashboardData, type HealthItem, runCommand } from '@/core'
 import { useAction, usePoll } from '@/lib/hooks'
+import { waitForService, waitForWebStopped } from '@/lib/wait'
+import { confirmAction } from '@/lib/confirm'
 
 /** §173 / §116 / §101: what's running, what's wrong, and one-click ways to act on it. */
 export function DashboardPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
@@ -52,7 +56,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: Page) => void })
               })
             }
           >
-            <Play /> {web?.running ? 'Re-apply web config' : 'Start web server'}
+            {busy === 'apply' ? <Spinner /> : <Play />} {busy === 'apply' ? (web?.running ? 'Applying…' : 'Starting…') : web?.running ? 'Re-apply web config' : 'Start web server'}
           </Button>
           {web?.running && (
             <Button
@@ -61,11 +65,12 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: Page) => void })
               onClick={() =>
                 run('stop', async () => {
                   await runCommand({ type: 'stop_web' })
+                  await waitForWebStopped()
                   await refresh()
                 })
               }
             >
-              <StopIcon /> Stop
+              {busy === 'stop' ? <Spinner /> : <StopIcon />} {busy === 'stop' ? 'Stopping…' : 'Stop'}
             </Button>
           )}
         </div>
@@ -101,33 +106,43 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: Page) => void })
               Manage
             </Button>
           </CardHeader>
-          <CardContent className="flex flex-col gap-1.5">
+          <CardContent className="flex flex-col">
             {data?.domains.length === 0 && (
               <p className="text-sm text-muted-foreground">
                 No sites yet. Create one from a Quick App, or add a domain for an existing project.
               </p>
             )}
-            {data?.domains.map((d) => (
-              <div key={d.hostname} className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
-                <div className="flex min-w-0 items-center gap-2.5">
-                  <Globe className="size-4 shrink-0 text-muted-foreground" />
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-medium">{d.hostname}</div>
-                    <div className="text-xs text-muted-foreground">
+            {!!data?.domains.length && (
+              <div className="max-h-96 divide-y divide-border overflow-y-auto rounded-lg border border-border">
+                {data.domains.map((d) => (
+                  <div key={d.hostname} className={`group flex h-9 items-center gap-2.5 px-3 text-sm ${d.enabled ? '' : 'opacity-50'}`}>
+                    <TechIcon id={d.kind} className="size-3.5" />
+                    {d.https ? <Lock className="size-3 shrink-0 text-success" /> : <span className="w-3" />}
+                    <button
+                      className="min-w-0 flex-1 truncate text-left font-medium hover:text-primary hover:underline disabled:pointer-events-none"
+                      disabled={!d.enabled || !web?.running}
+                      title={`Open ${d.url}`}
+                      onClick={() => run('open', () => runCommand({ type: 'open_url', url: d.url }))}
+                    >
+                      {d.hostname}
+                    </button>
+                    <span className="text-xs text-muted-foreground">
                       {d.kind}
-                      {d.https && ' · HTTPS'}
-                      {d.has_app && ' · app process'}
-                    </div>
+                      {d.has_app && ' + app'}
+                      {!d.enabled && ' · disabled'}
+                    </span>
+                    <span className="flex opacity-0 transition-opacity group-hover:opacity-100">
+                      <Button size="sm" variant="ghost" className="h-7 px-2" title="Open in your code editor" onClick={() => run('code', () => runCommand({ type: 'open_in_editor', path: d.folder }))}>
+                        <Code2 className="size-3.5" />
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-7 px-2" title="Open in browser" disabled={!d.enabled || !web?.running} onClick={() => run('open', () => runCommand({ type: 'open_url', url: d.url }))}>
+                        <ExternalLink className="size-3.5" />
+                      </Button>
+                    </span>
                   </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {!d.enabled && <Badge variant="secondary">disabled</Badge>}
-                  <Button size="sm" variant="ghost" disabled={!d.enabled || !web?.running} onClick={() => run('open', () => runCommand({ type: 'open_url', url: d.url }))}>
-                    <ExternalLink className="size-3.5" /> Open
-                  </Button>
-                </div>
+                ))}
               </div>
-            ))}
+            )}
           </CardContent>
         </Card>
 
@@ -166,15 +181,16 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: Page) => void })
                         size="sm"
                         variant="ghost"
                         disabled={busy !== null}
-                        onClick={() => {
-                          if (s.running && !window.confirm(`Stop ${s.name}? Anything connected to it will be disconnected.`)) return
+                        onClick={async () => {
+                          if (s.running && !(await confirmAction(`Stop ${s.name}? Anything connected to it will be disconnected.`))) return
                           void run(s.id, async () => {
                             await runCommand({ type: s.running ? 'stop_service' : 'start_service', id: s.id })
+                            await waitForService(s.id, s.running ? 'stopped' : 'running')
                             await refresh()
                           })
                         }}
                       >
-                        {s.running ? <StopIcon className="size-3.5" /> : <Play className="size-3.5" />}
+                        {busy === s.id ? <Spinner className="size-3.5" /> : s.running ? <StopIcon className="size-3.5" /> : <Play className="size-3.5" />}
                       </Button>
                     </span>
                   </div>

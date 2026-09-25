@@ -158,6 +158,9 @@ impl WebServer for Nginx {
 }
 
 /// Everything inside a `server { }` block after the listen/server_name lines.
+/// Files get `expires -1` (Cache-Control: no-cache): the browser must check back on every
+/// load instead of replaying a heuristically cached copy, which after a config fix would
+/// keep "downloading" the old wrong response. Unchanged files still come back as a 304.
 fn render_body(site: &SiteSpec) -> String {
     let mut out = String::new();
     let https = site.tls.is_some();
@@ -184,7 +187,7 @@ fn render_body(site: &SiteSpec) -> String {
 
     match &site.backend {
         Backend::Php { pool, .. } => {
-            out.push_str("    location / {\n        try_files $uri $uri/ /index.php?$query_string;\n    }\n");
+            out.push_str("    location / {\n        try_files $uri $uri/ /index.php?$query_string;\n        expires -1;\n    }\n");
             out.push_str("    location ~ \\.php(/|$) {\n");
             out.push_str("        fastcgi_split_path_info ^(.+?\\.php)(/.*)$;\n");
             out.push_str("        include fastcgi_params;\n");
@@ -198,13 +201,13 @@ fn render_body(site: &SiteSpec) -> String {
             out.push_str("    }\n");
             out.push_str("    location ~ /\\.(?!well-known) {\n        deny all;\n    }\n");
         }
-        Backend::Proxy { upstream_port } => {
+        Backend::Proxy { upstream } => {
             out.push_str("    location / {\n");
-            out.push_str(&proxy_directives(&format!("http://127.0.0.1:{upstream_port}"), "        "));
+            out.push_str(&proxy_directives(upstream, "        "));
             out.push_str("    }\n");
         }
         Backend::Static => {
-            out.push_str("    location / {\n        try_files $uri $uri/ =404;\n    }\n");
+            out.push_str("    location / {\n        try_files $uri $uri/ =404;\n        expires -1;\n    }\n");
         }
     }
     out
@@ -274,7 +277,7 @@ mod tests {
 
     #[test]
     fn proxy_site_forwards_with_websocket_upgrade() {
-        let cfg = Nginx.render_site(&site(Backend::Proxy { upstream_port: 5173 }, false, false), PORTS);
+        let cfg = Nginx.render_site(&site(Backend::Proxy { upstream: "http://127.0.0.1:5173".into() }, false, false), PORTS);
         assert!(cfg.contains("proxy_pass http://127.0.0.1:5173;"));
         assert!(cfg.contains("proxy_set_header Upgrade $http_upgrade;"));
         assert!(!cfg.contains("ssl_certificate"));

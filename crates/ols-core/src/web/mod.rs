@@ -49,7 +49,8 @@ impl WebConfig {
 pub enum Backend {
     /// FastCGI workers for one PHP version; `pool` is the upstream's name-safe id ("php_81").
     Php { pool: String, ports: Vec<u16> },
-    Proxy { upstream_port: u16 },
+    /// `upstream` is a full URL: `http://127.0.0.1:3000`, `https://192.168.1.20:8443`.
+    Proxy { upstream: String },
     Static,
 }
 

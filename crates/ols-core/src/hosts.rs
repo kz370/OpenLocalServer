@@ -82,6 +82,35 @@ pub fn hosts_path() -> std::path::PathBuf {
     std::path::PathBuf::from(root).join("System32").join("drivers").join("etc").join("hosts")
 }
 
+/// Whether `hostname` already points at this machine somewhere in the hosts file text.
+pub fn lists(text: &str, hostname: &str) -> bool {
+    listed_names(text).contains(&hostname.to_ascii_lowercase())
+}
+
+/// Every name mapped to a loopback address anywhere in the file.
+fn listed_names(text: &str) -> Vec<String> {
+    text.lines()
+        .map(|l| l.split('#').next().unwrap_or_default())
+        .filter_map(|l| {
+            let mut cols = l.split_whitespace();
+            let ip = cols.next()?;
+            (ip == "127.0.0.1" || ip == "::1").then(|| cols.map(|n| n.to_ascii_lowercase()).collect::<Vec<_>>())
+        })
+        .flatten()
+        .collect()
+}
+
+/// The names currently inside our own block.
+fn block_names(text: &str) -> Vec<String> {
+    let lines: Vec<&str> = text.lines().collect();
+    let begin = lines.iter().position(|l| l.trim() == BEGIN_MARKER);
+    let end = lines.iter().position(|l| l.trim() == END_MARKER);
+    match (begin, end) {
+        (Some(b), Some(e)) if b < e => listed_names(&lines[b + 1..e].join("\n")),
+        _ => Vec::new(),
+    }
+}
+
 /// Loopback entries for `hostnames` — DevForge never points a name anywhere else (§138).
 pub fn loopback_entries(hostnames: &[String]) -> Vec<(String, String)> {
     hostnames.iter().map(|h| ("127.0.0.1".to_string(), h.clone())).collect()
@@ -97,16 +126,24 @@ pub fn is_in_sync(existing: &str, entries: &[(String, String)]) -> bool {
     normalise(&apply_hosts_block(existing, entries)) == normalise(existing)
 }
 
-/// Brings the hosts file in line with `hostnames`. Writes directly when redirected for
-/// tests; otherwise goes through `ols-helper` (elevating only if the plain write is denied).
-/// Returns whether anything had to change.
-pub fn sync(hostnames: &[String]) -> Result<bool, String> {
-    let entries = loopback_entries(hostnames);
+/// Makes sure every name in `hostnames` resolves to this machine through the hosts file.
+/// Only *adds*: a name already listed anywhere in the file (our block or someone else's,
+/// like Laragon's) needs nothing, and entries for deleted sites are left in place, since
+/// removing them would cost an administrator prompt for no benefit (they only point at
+/// 127.0.0.1). Writes directly when redirected for tests; otherwise goes through
+/// `ols-helper`. Returns whether the file changed.
+pub fn ensure(hostnames: &[String]) -> Result<bool, String> {
     let path = hosts_path();
     let existing = std::fs::read_to_string(&path).unwrap_or_default();
-    if is_in_sync(&existing, &entries) {
+    let listed = listed_names(&existing);
+    if hostnames.iter().all(|h| listed.contains(&h.to_ascii_lowercase())) {
         return Ok(false);
     }
+    let mut wanted: Vec<String> = block_names(&existing);
+    wanted.extend(hostnames.iter().cloned());
+    wanted.sort();
+    wanted.dedup();
+    let entries = loopback_entries(&wanted);
     if std::env::var("OLS_HOSTS_FILE").is_ok() {
         let updated =
             if entries.is_empty() { remove_hosts_block(&existing) } else { apply_hosts_block(&existing, &entries) };
@@ -125,6 +162,19 @@ pub fn sync(hostnames: &[String]) -> Result<bool, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn names_listed_anywhere_count_and_our_block_is_read_back() {
+        let text = "127.0.0.1 localhost
+127.0.0.1     Shop.test   # laragon magic!
+# 127.0.0.1 commented.test
+";
+        let with_block = apply_hosts_block(text, &entries());
+        assert!(lists(&with_block, "shop.test"), "someone else's line (Laragon's) counts, case-insensitively");
+        assert!(lists(&with_block, "api.shop.test"));
+        assert!(!lists(&with_block, "commented.test"), "a commented-out line doesn't resolve anything");
+        assert_eq!(block_names(&with_block), vec!["shop.test".to_string(), "api.shop.test".to_string()]);
+    }
 
     fn entries() -> Vec<(String, String)> {
         vec![("127.0.0.1".to_string(), "shop.test".to_string()), ("127.0.0.1".to_string(), "api.shop.test".to_string())]

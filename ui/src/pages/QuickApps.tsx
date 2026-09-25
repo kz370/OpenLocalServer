@@ -18,6 +18,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { CodeEditor } from '@/components/CodeEditor'
+import { TechIcon, TechTile } from '@/components/TechIcon'
 import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
 import type { Page } from '@/components/layout/Sidebar'
 import { Badge } from '@/components/ui/badge'
@@ -37,8 +38,13 @@ import {
   runCommand,
 } from '@/core'
 import { useAction } from '@/lib/hooks'
+import { confirmThen } from '@/lib/confirm'
 
-const CATEGORIES = ['all', 'php', 'node', 'python', 'static', 'custom']
+const CATEGORIES = ['all', 'php', 'node', 'python', 'static', 'proxy', 'custom']
+/** Built-in recipes with their own brand mark; anything else shows its category's. */
+const BRANDED_APPS: Record<string, true> = Object.fromEntries(
+  ['laravel', 'symfony', 'wordpress', 'plain-php', 'static-html', 'react-vite', 'vue-vite', 'nextjs', 'express-api', 'django', 'fastapi', 'custom-app'].map((id) => [id, true]),
+)
 
 const NEW_APP_YAML = `id: my-recipe
 name: My Recipe
@@ -165,8 +171,8 @@ export function QuickAppsPage({ onNavigate }: { onNavigate: (p: Page) => void })
         <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search…" className="w-64" />
         <div className="flex gap-1">
           {CATEGORIES.map((c) => (
-            <Button key={c} size="sm" variant={category === c ? 'default' : 'ghost'} onClick={() => setCategory(c)} className="capitalize">
-              {c}
+            <Button key={c} size="sm" variant={category === c ? 'secondary' : 'ghost'} onClick={() => setCategory(c)} className="capitalize">
+              <TechIcon id={c} /> {c}
             </Button>
           ))}
         </div>
@@ -176,8 +182,9 @@ export function QuickAppsPage({ onNavigate }: { onNavigate: (p: Page) => void })
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {shown.map((a) => (
           <Card key={a.id} className="flex flex-col">
-            <CardHeader className="flex-row items-start justify-between space-y-0 pb-2">
-              <div className="min-w-0">
+            <CardHeader className="flex-row items-start justify-between gap-3 space-y-0 pb-2">
+              <TechTile id={a.id in BRANDED_APPS ? a.id : a.category} />
+              <div className="min-w-0 flex-1">
                 <CardTitle className="flex items-center gap-2 text-base">
                   {a.name}
                   {a.source === 'imported' && <Badge variant={a.trusted ? 'secondary' : 'warning'}>{a.trusted ? 'imported' : 'untrusted'}</Badge>}
@@ -209,7 +216,7 @@ export function QuickAppsPage({ onNavigate }: { onNavigate: (p: Page) => void })
                     size="sm"
                     variant="ghost"
                     title={a.overrides_builtin ? 'Revert to the built-in version' : 'Delete'}
-                    onClick={() => window.confirm(a.overrides_builtin ? 'Discard your changes and restore the built-in recipe?' : `Delete "${a.name}"?`) && run('delete', async () => { await runCommand({ type: 'delete_quick_app', id: a.id }); await refresh() })}
+                    onClick={() => confirmThen(a.overrides_builtin ? 'Discard your changes and restore the built-in recipe?' : `Delete "${a.name}"?`, () => run('delete', async () => { await runCommand({ type: 'delete_quick_app', id: a.id }); await refresh() }))}
                   >
                     <Trash2 className="size-3.5" />
                   </Button>

@@ -1,7 +1,9 @@
-//! Running `ols-helper` (§138). The helper is tried un-elevated first — if the hosts file
-//! is already writable (or the change is a no-op) nothing prompts. Only an "access
-//! denied" exit re-launches it through a single UAC prompt. Per-operation elevation, not a
-//! resident service, keeps the privileged surface as small as it can be.
+//! Running `ols-helper` (§138). Order of preference:
+//! 1. The `OpenLocalServerHelper` service, over its local pipe: no prompt at all.
+//! 2. The helper un-elevated: works when the change needs no rights (or the file is writable).
+//! 3. On "access denied": one UAC prompt that installs the service, then step 1 again, so
+//!    that prompt is the last one. If the service can't be installed, the single command
+//!    runs elevated instead.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -29,6 +31,9 @@ pub fn helper_path() -> Option<PathBuf> {
 }
 
 pub fn run_helper(args: &[String]) -> Result<(), String> {
+    if let Some(result) = via_service(args) {
+        return result;
+    }
     let helper = helper_path().ok_or("ols-helper was not found next to the application")?;
 
     let direct = crate::exec::run_capture(&helper, args, None, &[], Duration::from_secs(30));
@@ -38,7 +43,66 @@ pub fn run_helper(args: &[String]) -> Result<(), String> {
         _ => return Err(direct.combined()),
     }
 
-    elevated(&helper, args)
+    // One prompt to install the service; every later change goes through it silently.
+    match elevated(&helper, &["install-service".to_string()]) {
+        Ok(()) => {
+            for _ in 0..25 {
+                if let Some(result) = via_service(args) {
+                    return result;
+                }
+                std::thread::sleep(Duration::from_millis(200));
+            }
+            tracing::warn!("helper service installed but not answering; running this change elevated");
+            elevated(&helper, args)
+        }
+        Err(e) if e.contains("cancelled") => Err(e),
+        Err(e) => {
+            tracing::warn!(error = %e, "could not install the helper service; running this change elevated");
+            elevated(&helper, args)
+        }
+    }
+}
+
+pub const SERVICE_PIPE: &str = r"\\.\pipe\OpenLocalServerHelper";
+
+/// Installs the helper service (one UAC prompt). Afterwards nothing prompts again.
+pub fn install_service() -> Result<(), String> {
+    let helper = helper_path().ok_or("ols-helper was not found next to the application")?;
+    elevated(&helper, &["install-service".to_string()])
+}
+
+/// Removes the helper service (one UAC prompt); changes then prompt each time again.
+pub fn uninstall_service() -> Result<(), String> {
+    let helper = helper_path().ok_or("ols-helper was not found next to the application")?;
+    elevated(&helper, &["uninstall-service".to_string()])
+}
+
+/// Whether the helper service is installed and answering.
+pub fn service_available() -> bool {
+    via_service(&["version".to_string()]).is_some_and(|r| r.is_ok())
+}
+
+/// Sends one command to the helper service. `None` when the service isn't there.
+fn via_service(args: &[String]) -> Option<Result<(), String>> {
+    use std::io::{Read, Write};
+    let mut pipe = std::fs::OpenOptions::new().read(true).write(true).open(SERVICE_PIPE).ok()?;
+    let mut request = serde_json::to_vec(args).ok()?;
+    request.push(b'\n');
+    pipe.write_all(&request).ok()?;
+    // Read up to the newline: the service disconnects right after replying, which Windows
+    // reports as an error rather than a clean end of stream.
+    let mut reply = Vec::new();
+    let mut buf = [0u8; 4096];
+    while !reply.contains(&b'\n') {
+        match pipe.read(&mut buf) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => reply.extend_from_slice(&buf[..n]),
+        }
+    }
+    let v: serde_json::Value = serde_json::from_slice(reply.split(|b| *b == b'\n').next()?).ok()?;
+    let code = v.get("code").and_then(|c| c.as_i64()).unwrap_or(1);
+    let message = v.get("message").and_then(|m| m.as_str()).unwrap_or_default().to_string();
+    Some(if code == 0 { Ok(()) } else { Err(message) })
 }
 
 #[cfg(windows)]

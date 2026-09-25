@@ -517,6 +517,12 @@ pub fn build_plan(app: &QuickApp, values: BTreeMap<String, String>, ctx: &PlanCt
             if let Some(p) = &d.port {
                 with.insert("port".into(), render(p, &values, vars)?);
             }
+            if let Some(h) = &d.host {
+                with.insert("upstream_host".into(), render(h, &values, vars)?);
+            }
+            if let Some(s) = &d.upstream_https {
+                with.insert("upstream_https".into(), render(s, &values, vars)?);
+            }
             if let Some(php) = values.get("php_version").filter(|v| !v.is_empty()) {
                 with.insert("php_version".into(), php.clone());
             }

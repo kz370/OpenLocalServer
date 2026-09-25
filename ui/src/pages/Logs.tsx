@@ -1,5 +1,5 @@
 import { save } from '@tauri-apps/plugin-dialog'
-import { Clipboard, Download, Pause, Play } from 'lucide-react'
+import { Clipboard, Download, Eraser, Pause, Play } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
@@ -9,6 +9,7 @@ import { Select, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { type LogSource, runCommand } from '@/core'
 import { useAction } from '@/lib/hooks'
+import { confirmAction } from '@/lib/confirm'
 
 type Severity = 'error' | 'warn' | 'info' | 'debug'
 
@@ -73,6 +74,13 @@ export function LogsPage() {
     if (follow) box.current?.scrollTo({ top: box.current.scrollHeight })
   }, [shown.length, follow])
 
+  async function clearLog() {
+    const name = sources.find((s) => s.id === source)?.name ?? 'this log'
+    if (!(await confirmAction(`Clear ${name}? Its lines are deleted for good; export first if you need them.`))) return
+    await runCommand({ type: 'clear_log', source })
+    setLines([])
+  }
+
   async function exportLog() {
     const dest = await save({ title: 'Export log', defaultPath: `${source.replace(/[:]/g, '-')}.log` })
     if (dest) await runCommand({ type: 'export_log', source, dest })
@@ -112,6 +120,9 @@ export function LogsPage() {
             </Button>
             <Button size="sm" variant="ghost" title="Export" onClick={() => run('export', exportLog)}>
               <Download />
+            </Button>
+            <Button size="sm" variant="ghost" title="Clear this log" onClick={() => run('clear', clearLog)}>
+              <Eraser />
             </Button>
           </div>
         </CardContent>

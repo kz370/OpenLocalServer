@@ -28,9 +28,48 @@ pub enum Ownership {
 pub enum SiteKind {
     /// Served by a supervised `php-cgi` pool. `version: None` = the newest installed PHP.
     Php { version: Option<String> },
-    /// Reverse proxy to a dev server on `upstream_port` (Node/Python apps, §30).
-    Proxy { upstream_port: u16 },
+    /// Reverse proxy (§30): a dev server on this machine (Node/Python apps), or anything
+    /// else reachable — a Docker container, another computer — via `upstream_host`.
+    Proxy {
+        upstream_port: u16,
+        /// Where the target runs; `None` = this machine (127.0.0.1).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        upstream_host: Option<String>,
+        /// The target only speaks HTTPS.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        upstream_https: bool,
+    },
     Static,
+}
+
+/// A proxy target is pasted into server configs: a real port, and a hostname or IPv4
+/// address with nothing that could break out of a directive.
+fn validate_kind(kind: &SiteKind) -> Result<(), CoreError> {
+    if let SiteKind::Proxy { upstream_port, upstream_host, .. } = kind {
+        if *upstream_port == 0 {
+            return Err(CoreError::DomainError("upstream port must be between 1 and 65535".into()));
+        }
+        if let Some(h) = upstream_host {
+            if h.is_empty() || !h.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-') {
+                return Err(CoreError::DomainError(format!("\"{h}\" is not a valid target host")));
+            }
+        }
+    }
+    Ok(())
+}
+
+impl SiteKind {
+    /// The full upstream URL of a proxy site, e.g. `http://127.0.0.1:3000`.
+    pub fn upstream_url(&self) -> Option<String> {
+        match self {
+            SiteKind::Proxy { upstream_port, upstream_host, upstream_https } => Some(format!(
+                "{}://{}:{upstream_port}",
+                if *upstream_https { "https" } else { "http" },
+                upstream_host.as_deref().filter(|h| !h.is_empty()).unwrap_or("127.0.0.1")
+            )),
+            _ => None,
+        }
+    }
 }
 
 /// A supervised app dev-server behind a proxy site (`npm run dev`, `uvicorn`, ...).
@@ -154,11 +193,7 @@ impl DomainStore {
         if let Some(reason) = self.conflict(&domain.hostname, domain.wildcard, None) {
             return Err(CoreError::DomainError(reason));
         }
-        if let SiteKind::Proxy { upstream_port } = domain.kind {
-            if upstream_port == 0 {
-                return Err(CoreError::DomainError("upstream port must be between 1 and 65535".into()));
-            }
-        }
+        validate_kind(&domain.kind)?;
         self.domains.push(domain.clone());
         self.persist()?;
         Ok(domain)
@@ -166,6 +201,7 @@ impl DomainStore {
 
     /// Replaces an existing domain (same hostname) with edited settings.
     pub fn update(&mut self, domain: Domain) -> Result<Domain, CoreError> {
+        validate_kind(&domain.kind)?;
         let idx = self
             .domains
             .iter()

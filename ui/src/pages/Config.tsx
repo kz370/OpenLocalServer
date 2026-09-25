@@ -1,5 +1,5 @@
 import { save } from '@tauri-apps/plugin-dialog'
-import { AlertTriangle, Download, FolderOpen, Plus, Save, ShieldCheck, Trash2 } from 'lucide-react'
+import { AlertTriangle, Download, FolderOpen, History, Plus, RotateCcw, Save, ShieldCheck, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import { CodeEditor, DiffView, type EditorLanguage } from '@/components/CodeEditor'
@@ -12,6 +12,7 @@ import { Field, Select, Tabs } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { type ConfigFile, type ConfigVersion, type Domain, type Ownership, type SiteBlocks, type WebConfig, runCommand } from '@/core'
 import { useAction } from '@/lib/hooks'
+import { confirmThen } from '@/lib/confirm'
 
 const OWNERSHIP_INFO: Record<Ownership, { label: string; blurb: string }> = {
   managed: { label: 'Managed', blurb: 'OpenLocalServer writes this file from the site settings. Hand edits are reported as drift.' },
@@ -258,12 +259,17 @@ function FileRow({ f, active, onClick, label, indent }: { f: ConfigFile; active:
 function HistoryPanel({ hostname, current, language, onRestored, canRestore }: { hostname: string; current: string; language: EditorLanguage; onRestored: () => void; canRestore: boolean }) {
   const [versions, setVersions] = useState<ConfigVersion[]>([])
   const [pick, setPick] = useState<string | null>(null)
-  const [old, setOld] = useState('')
+  const [old, setOld] = useState<string | null>(null)
+  const [changes, setChanges] = useState<number | null>(null)
   const { busy, error, setError, run } = useAction()
 
   useEffect(() => {
-    setPick(null)
-    runCommand({ type: 'list_config_history', hostname }).then((r) => r.type === 'config_versions' && setVersions(r.versions))
+    runCommand({ type: 'list_config_history', hostname }).then((r) => {
+      if (r.type !== 'config_versions') return
+      setVersions(r.versions)
+      // Open on the most recent version: that's almost always the one to compare.
+      setPick(r.versions[0]?.id ?? null)
+    })
   }, [hostname])
 
   useEffect(() => {
@@ -271,46 +277,110 @@ function HistoryPanel({ hostname, current, language, onRestored, canRestore }: {
     runCommand({ type: 'read_config_history', hostname, id: pick }).then((r) => r.type === 'text' && setOld(r.text))
   }, [pick, hostname])
 
+  const picked = versions.find((v) => v.id === pick)
+  const groups = groupByDay(versions)
+
   return (
     <div className="flex flex-col gap-3">
       <ErrorCard error={error} onDismiss={() => setError(null)} />
-      <div className="grid gap-3 md:grid-cols-[16rem_1fr]">
-        <Card className="h-fit">
-          <CardContent className="flex flex-col gap-1 p-2">
-            {versions.map((v) => (
-              <button key={v.id} onClick={() => setPick(v.id)} className={`rounded-md px-2.5 py-1.5 text-left text-sm ${pick === v.id ? 'bg-accent' : 'hover:bg-accent/60'}`}>
-                <div>{new Date(v.timestamp_ms).toLocaleString()}</div>
-                <div className="text-xs text-muted-foreground">
-                  {v.part === 'custom' ? 'your snippet' : 'site file'} · {v.bytes} bytes
-                </div>
-              </button>
-            ))}
-            {versions.length === 0 && <p className="p-2 text-xs text-muted-foreground">Nothing has been replaced yet. Every change is archived here first.</p>}
+      {versions.length === 0 ? (
+        <Card>
+          <CardContent className="flex items-center gap-3 p-4 text-sm text-muted-foreground">
+            <History className="size-4" /> Nothing has been replaced yet. Every change to this site's config is archived here first.
           </CardContent>
         </Card>
-        <div className="flex flex-col gap-2">
-          {pick ? (
-            <>
-              <div className="flex items-center justify-between">
-                <p className="text-xs text-muted-foreground">Left: the archived version. Right: the file as it is now (including unsaved edits).</p>
-                <Button
-                  size="sm"
-                  disabled={!canRestore || busy !== null}
-                  title={canRestore ? '' : 'Only Manual site files and Advanced snippets can be restored'}
-                  onClick={() => window.confirm('Restore this version? The current file is archived first.') && run('restore', async () => { await runCommand({ type: 'restore_config_history', hostname, id: pick }); onRestored() })}
-                >
-                  Restore this version
-                </Button>
-              </div>
-              <DiffView original={old} modified={current} language={language} height="420px" />
-            </>
-          ) : (
-            <p className="text-sm text-muted-foreground">Pick a version to compare it with the current file.</p>
-          )}
+      ) : (
+        <div className="grid gap-3 md:grid-cols-[15rem_minmax(0,1fr)]">
+          <Card className="h-fit">
+            <CardContent className="flex max-h-[60vh] flex-col gap-3 overflow-y-auto p-2">
+              {groups.map(([day, items]) => (
+                <div key={day} className="flex flex-col gap-0.5">
+                  <div className="px-2 pb-1 pt-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{day}</div>
+                  {items.map((v) => (
+                    <button
+                      key={v.id}
+                      onClick={() => setPick(v.id)}
+                      className={`flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
+                        pick === v.id ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
+                      }`}
+                    >
+                      <span className="tabular-nums">{new Date(v.timestamp_ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {v.part === 'custom' ? 'snippet' : 'site'} · {formatSize(v.bytes)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          <div className="flex min-w-0 flex-col gap-2">
+            {picked && old !== null && (
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-sm">
+                    {changes === 0 ? (
+                      <Badge variant="secondary">Identical to the current file</Badge>
+                    ) : changes !== null ? (
+                      <Badge variant="outline">
+                        {changes} changed {changes === 1 ? 'block' : 'blocks'}
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={!canRestore || busy !== null || changes === 0}
+                    title={canRestore ? '' : 'Only Manual site files and Advanced snippets can be restored'}
+                    onClick={() =>
+                      confirmThen('Restore this version? The current file is archived first.', () => run('restore', async () => {
+                        await runCommand({ type: 'restore_config_history', hostname, id: picked.id })
+                        onRestored()
+                      }))
+                    }
+                  >
+                    <RotateCcw /> Restore this version
+                  </Button>
+                </div>
+                <DiffView
+                  original={old}
+                  modified={current}
+                  language={language}
+                  height="60vh"
+                  originalLabel={`Archived · ${new Date(picked.timestamp_ms).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`}
+                  modifiedLabel="Current file (with unsaved edits)"
+                  onChanges={setChanges}
+                />
+              </>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
+}
+
+/** Versions arrive newest first; keep that order within "Today", "Yesterday", dates. */
+function groupByDay(versions: ConfigVersion[]): [string, ConfigVersion[]][] {
+  const today = new Date()
+  const yesterday = new Date(today.getTime() - 86_400_000)
+  const label = (d: Date) =>
+    d.toDateString() === today.toDateString()
+      ? 'Today'
+      : d.toDateString() === yesterday.toDateString()
+        ? 'Yesterday'
+        : d.toLocaleDateString([], { dateStyle: 'medium' })
+  const groups = new Map<string, ConfigVersion[]>()
+  for (const v of versions) {
+    const key = label(new Date(v.timestamp_ms))
+    groups.set(key, [...(groups.get(key) ?? []), v])
+  }
+  return [...groups]
+}
+
+function formatSize(bytes: number): string {
+  return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`
 }
 
 /** §23: the common blocks as forms; raw editing stays in the Editor tab. */
@@ -430,7 +500,7 @@ function Row({ children, onRemove }: { children: React.ReactNode; onRemove: () =
   return (
     <div className="flex items-center gap-2">
       {children}
-      <Button size="sm" variant="ghost" onClick={onRemove} title="Remove">
+      <Button size="sm" variant="ghost" onClick={() => confirmThen('Remove this entry? It takes effect when you save.', () => onRemove())} title="Remove">
         <Trash2 className="size-3.5" />
       </Button>
     </div>

@@ -75,23 +75,24 @@ export function Tabs<T extends string>({
   value,
   onChange,
 }: {
-  tabs: { id: T; label: string; badge?: string | number }[]
+  tabs: { id: T; label: string; badge?: string | number; icon?: React.ReactNode }[]
   value: T
   onChange: (id: T) => void
 }) {
   return (
-    <div className="flex gap-1 border-b border-border">
+    <div className="flex gap-0.5 overflow-x-auto shadow-[inset_0_-1px_0_var(--border)] [scrollbar-width:none]">
       {tabs.map((t) => (
         <button
           key={t.id}
           onClick={() => onChange(t.id)}
           className={cn(
-            '-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors',
+            'flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-2.5 py-2 text-sm font-medium transition-colors',
             value === t.id ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground',
           )}
         >
+          {t.icon}
           {t.label}
-          {t.badge !== undefined && <span className="ml-1.5 rounded-full bg-muted px-1.5 text-[11px]">{t.badge}</span>}
+          {t.badge !== undefined && <span className="rounded-full bg-muted px-1.5 text-[11px]">{t.badge}</span>}
         </button>
       ))}
     </div>

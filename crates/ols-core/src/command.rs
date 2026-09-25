@@ -64,6 +64,8 @@ pub enum CoreCommand {
     /// which don't need to share a parent beyond that one scan point.
     ScanAndRegisterProjects { path: String },
     ListProjects,
+    /// Laragon-style: give every project in the remembered folders a `<name>.test` domain.
+    SyncAutoDomains,
     RemoveProject { id: String },
     GetProjectDetail { id: String },
     /// Runtime-aware terminal (§19): runs `runtime_id`'s resolved binary for this
@@ -95,6 +97,12 @@ pub enum CoreCommand {
     ListCustomInstalls,
     /// Register every PHP install found under `dir` (see `php::scan_folder`).
     ScanPhpFolder { dir: String },
+    /// Extensions for one installed PHP version (managed "8.4.26" or a custom label).
+    ListPhpExtensions { version: String },
+    SetPhpExtension { version: String, name: String, enabled: bool },
+    /// Download a PECL extension build matching that PHP and enable it.
+    InstallPhpExtension { version: String, name: String },
+    ListPeclPackages,
 
     // ---- Stage 6: domains, HTTPS, web server -------------------------------------
     GetWebStatus,
@@ -106,6 +114,7 @@ pub enum CoreCommand {
     RemoveDomain { hostname: String },
     SetDomainEnabled { hostname: String, enabled: bool },
     DuplicateDomain { hostname: String, new_hostname: String },
+    RenameDomain { hostname: String, new_hostname: String },
     /// §48 templates: `{project}.test`, `api.{project}.test`, ...
     SuggestDomain { project_id: String, template: String },
     /// §28 apply pipeline. `overwrite` lists hosts whose hand-edited file may be replaced (§27).
@@ -184,11 +193,25 @@ pub enum CoreCommand {
     ListLogSources,
     ReadLog { source: String, max_lines: usize },
     ExportLog { source: String, dest: String },
+    ClearLog { source: String },
     GetStartupSettings,
     SetStartupSettings { settings: StartupSettings },
     OpenPath { path: String },
     OpenUrl { url: String },
     OpenInEditor { path: String },
+    /// Known code editors and where each is installed (Settings picker).
+    ListEditors,
+    /// CPU / memory / disk for the machine and for every managed process tree.
+    GetSystemStats,
+    /// Old Laragon / XAMPP / WampServer database servers found on this PC.
+    ListMigrationSources,
+    ListForeignDatabases { source_id: String, password: String },
+    /// Copy databases (all when `databases` is empty) into our `target` engine.
+    MigrateDatabases { source_id: String, password: String, databases: Vec<String>, target: String },
+    /// The admin helper service: status, install (one UAC prompt), remove.
+    GetHelperService,
+    InstallHelperService,
+    UninstallHelperService,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -221,6 +244,7 @@ pub enum CoreResponse {
     DbTools { tools: Vec<DbTool> },
     CustomInstalls { entries: Vec<CustomInstall> },
     PhpScan { found: Vec<crate::php::ScannedPhp> },
+    PhpExtensions { report: crate::php::PhpExtensions },
 
     WebStatus { status: Box<WebStatus> },
     WebConfig { config: WebConfig },
@@ -257,6 +281,12 @@ pub enum CoreResponse {
     LogSources { sources: Vec<LogSource> },
     LogLines { source: String, lines: Vec<String> },
     Startup { settings: StartupSettings },
+    Count { count: usize },
+    HelperService { installed: bool },
+    SystemStats { stats: Box<crate::monitor::SystemStats> },
+    MigrationSources { sources: Vec<crate::migrate::MigrationSource> },
+    Migrated { results: Vec<crate::migrate::MigratedDb> },
+    Editors { editors: Vec<crate::editors::EditorInfo> },
 }
 
 /// A cheap handle onto the shared application state. Cloning shares everything.
@@ -347,7 +377,11 @@ impl Core {
 
             C::RegisterProject { path } => {
                 tracing::info!(command = "register_project", path = %path);
-                Ok(R::Project { project: i.projects.lock().unwrap().register(&path)? })
+                let project = i.projects.lock().unwrap().register(&path)?;
+                if let Err(e) = i.sync_auto_domains() {
+                    tracing::warn!(error = %e, "automatic domains could not be synced");
+                }
+                Ok(R::Project { project })
             }
             C::ScanAndRegisterProjects { path } => {
                 tracing::info!(command = "scan_and_register_projects", path = %path);
@@ -363,8 +397,14 @@ impl Core {
                         registered.push(projects.register(s)?);
                     }
                 }
+                drop(projects);
+                i.remember_projects_root(&path)?;
+                if let Err(e) = i.sync_auto_domains() {
+                    tracing::warn!(error = %e, "automatic domains could not be synced");
+                }
                 Ok(R::Projects { projects: registered })
             }
+            C::SyncAutoDomains => Ok(R::Count { count: i.sync_auto_domains()? }),
             C::ListProjects => Ok(R::Projects { projects: i.projects.lock().unwrap().list() }),
             C::RemoveProject { id } => {
                 i.projects.lock().unwrap().remove(&id)?;
@@ -503,6 +543,18 @@ impl Core {
                 i.sync_php_external();
                 Ok(R::PhpScan { found })
             }
+            C::ListPhpExtensions { version } => Ok(R::PhpExtensions { report: i.php.extensions_report(&version) }),
+            C::SetPhpExtension { version, name, enabled } => {
+                tracing::info!(command = "set_php_extension", version = %version, name = %name, enabled);
+                i.php.set_extension(&version, &name, enabled).map_err(CoreError::ServiceError)?;
+                Ok(R::PhpExtensions { report: i.php.extensions_report(&version) })
+            }
+            C::InstallPhpExtension { version, name } => {
+                tracing::info!(command = "install_php_extension", version = %version, name = %name);
+                i.php.install_extension(&version, &name).map_err(CoreError::ServiceError)?;
+                Ok(R::PhpExtensions { report: i.php.extensions_report(&version) })
+            }
+            C::ListPeclPackages => Ok(R::Names { names: i.php.pecl_packages().map_err(CoreError::ServiceError)? }),
             C::ListCustomInstalls => Ok(R::CustomInstalls { entries: i.custom_installs.lock().unwrap().list() }),
 
             // ---- Stage 6
@@ -526,6 +578,10 @@ impl Core {
                 i.set_domain_enabled(&hostname, enabled)?;
                 Ok(R::Ok)
             }
+            C::RenameDomain { hostname, new_hostname } => {
+                tracing::info!(command = "rename_domain", from = %hostname, to = %new_hostname);
+                Ok(R::Domain { domain: Box::new(i.rename_domain(&hostname, &new_hostname)?) })
+            }
             C::DuplicateDomain { hostname, new_hostname } => Ok(R::Domain { domain: Box::new(i.duplicate_domain(&hostname, &new_hostname)?) }),
             C::SuggestDomain { project_id, template } => {
                 let project = i.projects.lock().unwrap().get(&project_id).ok_or_else(|| CoreError::InvalidProjectPath(project_id.clone()))?;
@@ -546,8 +602,10 @@ impl Core {
                 Ok(R::Ok)
             }
             C::SyncHosts => {
-                let hostnames: Vec<String> = i.domains.lock().unwrap().list().into_iter().filter(|d| d.enabled).map(|d| d.hostname).collect();
-                let changed = crate::hosts::sync(&hostnames).map_err(CoreError::WebError)?;
+                // Names our local DNS already answers for don't need a hosts entry.
+                let hostnames: Vec<String> =
+                    i.domains.lock().unwrap().list().into_iter().filter(|d| d.enabled && !i.web.dns_covers(&d.hostname)).map(|d| d.hostname).collect();
+                let changed = crate::hosts::ensure(&hostnames).map_err(CoreError::WebError)?;
                 Ok(R::Text { text: if changed { "The hosts file was updated.".into() } else { "The hosts file was already up to date.".into() } })
             }
             C::GetCaInfo => Ok(R::CaInfo { info: i.certs.ca_info() }),
@@ -765,6 +823,27 @@ impl Core {
                 std::fs::write(&dest, lines.join("\n"))?;
                 Ok(R::Ok)
             }
+            C::ClearLog { source } => {
+                i.clear_log(&source)?;
+                Ok(R::Ok)
+            }
+            C::ListEditors => Ok(R::Editors { editors: crate::editors::detect() }),
+            C::GetSystemStats => Ok(R::SystemStats { stats: Box::new(i.system_stats()) }),
+            C::ListMigrationSources => Ok(R::MigrationSources { sources: crate::migrate::detect() }),
+            C::ListForeignDatabases { source_id, password } => Ok(R::Names { names: i.foreign_databases(&source_id, &password)? }),
+            C::MigrateDatabases { source_id, password, databases, target } => {
+                tracing::info!(command = "migrate_databases", source = %source_id, target = %target);
+                Ok(R::Migrated { results: i.migrate_databases(&source_id, &password, &databases, &target)? })
+            }
+            C::GetHelperService => Ok(R::HelperService { installed: crate::elevate::service_available() }),
+            C::InstallHelperService => {
+                crate::elevate::install_service().map_err(CoreError::ServiceError)?;
+                Ok(R::HelperService { installed: crate::elevate::service_available() })
+            }
+            C::UninstallHelperService => {
+                crate::elevate::uninstall_service().map_err(CoreError::ServiceError)?;
+                Ok(R::HelperService { installed: crate::elevate::service_available() })
+            }
             C::GetStartupSettings => Ok(R::Startup { settings: i.startup_settings() }),
             C::SetStartupSettings { settings } => {
                 i.set_startup_settings(settings)?;
@@ -796,6 +875,68 @@ mod tests {
         let settings = SettingsService::load(&home.paths).unwrap();
         let core = Core::new(settings, home.paths.clone());
         (core, home)
+    }
+
+    #[test]
+    fn renaming_a_domain_keeps_its_settings_and_refuses_taken_names() {
+        let (core, home) = test_core();
+        let root = home.paths.root().join("site");
+        std::fs::create_dir_all(&root).unwrap();
+        let domain = |host: &str| Domain {
+            hostname: host.into(),
+            project_id: None,
+            root: root.display().to_string(),
+            kind: crate::domain::SiteKind::Static,
+            https: false,
+            redirect_https: false,
+            wildcard: false,
+            enabled: true,
+            ownership: Ownership::Managed,
+            app: None,
+            blocks: Default::default(),
+            generated_hashes: Default::default(),
+        };
+        core.dispatch(CoreCommand::AddDomain { domain: domain("old.test") }).unwrap();
+        core.dispatch(CoreCommand::AddDomain { domain: domain("other.test") }).unwrap();
+
+        let renamed = core.dispatch(CoreCommand::RenameDomain { hostname: "old.test".into(), new_hostname: "My-Shop.Local".into() }).unwrap();
+        assert!(matches!(renamed, CoreResponse::Domain { domain } if domain.hostname == "my-shop.local" && domain.root == root.display().to_string()));
+        assert!(core.dispatch(CoreCommand::RenameDomain { hostname: "my-shop.local".into(), new_hostname: "other.test".into() }).is_err());
+        assert!(
+            matches!(core.dispatch(CoreCommand::GetDomain { hostname: "my-shop.local".into() }), Ok(CoreResponse::Domain { .. })),
+            "a failed rename leaves the site as it was"
+        );
+    }
+
+    /// Laragon-style: scanning a folder gives each servable project `<name>.test`, a
+    /// deleted automatic domain stays deleted, and new folders are picked up on the next sync.
+    #[test]
+    fn scanned_projects_get_automatic_domains() {
+        let (core, home) = test_core();
+        let www = home.paths.root().join("www");
+        for (dir, file) in [("Shop", "index.php"), ("site", "index.html"), ("api", "package.json")] {
+            std::fs::create_dir_all(www.join(dir)).unwrap();
+            std::fs::write(www.join(dir).join(file), "x").unwrap();
+        }
+        core.dispatch(CoreCommand::ScanAndRegisterProjects { path: www.display().to_string() }).unwrap();
+
+        let kinds = |core: &Core| -> Vec<(String, String)> {
+            match core.dispatch(CoreCommand::ListDomains).unwrap() {
+                CoreResponse::Domains { domains } => domains.into_iter().map(|d| (d.hostname, d.kind)).collect(),
+                _ => panic!("expected Domains"),
+            }
+        };
+        let mut found = kinds(&core);
+        found.sort();
+        assert_eq!(found, vec![("shop.test".to_string(), "php".to_string()), ("site.test".to_string(), "static".to_string())], "a Node project needs a dev server, so no automatic domain");
+
+        core.dispatch(CoreCommand::RemoveDomain { hostname: "shop.test".into() }).unwrap();
+        std::fs::create_dir_all(www.join("blog")).unwrap();
+        std::fs::write(www.join("blog").join("index.php"), "x").unwrap();
+        core.dispatch(CoreCommand::SyncAutoDomains).unwrap();
+        let hosts: Vec<String> = kinds(&core).into_iter().map(|(h, _)| h).collect();
+        assert!(hosts.contains(&"blog.test".to_string()), "a new folder is picked up");
+        assert!(!hosts.contains(&"shop.test".to_string()), "a deleted automatic domain is not recreated");
     }
 
     #[test]
@@ -892,6 +1033,24 @@ mod tests {
         let values = BTreeMap::from([("project_name".to_string(), "demo".to_string())]);
         let err = core.dispatch(CoreCommand::StartQuickApp { id: "theirs".into(), values, approval: None, allow_elevated: false }).unwrap_err();
         assert!(err.cause.contains("untrusted"), "{err:?}");
+    }
+
+    /// The Reverse Proxy Quick App points a domain at something running elsewhere.
+    #[test]
+    fn reverse_proxy_quick_app_plans_a_domain_to_another_host() {
+        let (core, _home) = test_core();
+        let values = BTreeMap::from([
+            ("domain".to_string(), "portainer.test".to_string()),
+            ("target_host".to_string(), "192.168.1.20".to_string()),
+            ("target_port".to_string(), "9443".to_string()),
+            ("target_https".to_string(), "true".to_string()),
+        ]);
+        let CoreResponse::QuickPlan { result } = core.dispatch(CoreCommand::PlanQuickApp { id: "reverse-proxy".into(), values }).unwrap() else { panic!() };
+        assert!(result.ok, "{:?}", result.errors);
+        let text = serde_json::to_string(&result).unwrap();
+        for want in ["create_domain", "portainer.test", "192.168.1.20", "9443"] {
+            assert!(text.contains(want), "plan is missing {want}: {text}");
+        }
     }
 
     #[test]

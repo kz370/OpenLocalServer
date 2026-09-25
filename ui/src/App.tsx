@@ -1,5 +1,6 @@
 import { useState } from 'react'
 
+import { ConfirmHost } from '@/components/ConfirmHost'
 import { type Page, Sidebar } from '@/components/layout/Sidebar'
 import { CommandsPage } from '@/pages/Commands'
 import { ConfigPage } from '@/pages/Config'
@@ -20,6 +21,7 @@ export default function App() {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
       <Sidebar page={page} onNavigate={setPage} />
+      <ConfirmHost />
       <main className="flex-1 overflow-y-auto p-6">
         {page === 'dashboard' && <DashboardPage onNavigate={setPage} />}
         {page === 'projects' && <ProjectsPage />}

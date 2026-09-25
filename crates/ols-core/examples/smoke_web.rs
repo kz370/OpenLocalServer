@@ -163,7 +163,7 @@ fn main() {
 
     dispatch(&core, CoreCommand::AddDomain { domain: domain("a.test", &a_dir, SiteKind::Php { version: Some("8.1".into()) }) });
     dispatch(&core, CoreCommand::AddDomain { domain: domain("b.test", &b_dir, SiteKind::Php { version: Some("8.4".into()) }) });
-    let mut c = domain("c.test", &c_dir, SiteKind::Proxy { upstream_port: 15173 });
+    let mut c = domain("c.test", &c_dir, SiteKind::Proxy { upstream_port: 15173, upstream_host: None, upstream_https: false });
     c.app = Some(AppSpec { executable: "node".into(), args: vec!["server.js".into()], cwd: c_dir.display().to_string(), runtime: Some("node".into()) });
     dispatch(&core, CoreCommand::AddDomain { domain: c });
 

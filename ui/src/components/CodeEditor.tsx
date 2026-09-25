@@ -46,8 +46,16 @@ function baseExtensions(lang: EditorLanguage, dark: boolean, readOnly: boolean):
       '&': { height: '100%', fontSize: '13px' },
       '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Consolas, monospace' },
     }),
+    appSurface,
   ]
 }
+
+/** Sit on the app's own card colour instead of One Dark's grey, in both themes. */
+const appSurface = EditorView.theme({
+  '&': { backgroundColor: 'var(--card)' },
+  '.cm-gutters': { backgroundColor: 'var(--card)', borderRight: '1px solid var(--border)', color: 'var(--muted-foreground)' },
+  '.cm-activeLineGutter': { backgroundColor: 'transparent' },
+})
 
 /** CodeMirror 6 editor (§25): syntax highlighting, search/replace, read-only mode. */
 export function CodeEditor({
@@ -99,33 +107,73 @@ export function CodeEditor({
   return <div ref={host} style={{ height }} className="overflow-hidden rounded-lg border border-border" />
 }
 
-/** Side-by-side diff of two versions (§25 diff, §29 history compare). */
+/** Side-by-side diff of two versions (§25 diff, §29 history compare). Long lines wrap
+ * so both panes always fit; `onChanges` reports how many changed blocks there are. */
 export function DiffView({
   original,
   modified,
   language = 'text',
   height = '420px',
+  originalLabel = 'Before',
+  modifiedLabel = 'After',
+  onChanges,
 }: {
   original: string
   modified: string
   language?: EditorLanguage
   height?: string
+  originalLabel?: string
+  modifiedLabel?: string
+  onChanges?: (count: number) => void
 }) {
   const host = useRef<HTMLDivElement>(null)
+  const onChangesRef = useRef(onChanges)
+  useEffect(() => {
+    onChangesRef.current = onChanges
+  })
   const { resolvedTheme } = useTheme()
   const dark = resolvedTheme === 'dark'
 
   useEffect(() => {
     if (!host.current) return
+    const pane = [...diffExtensions(language, dark)]
     const mv = new MergeView({
       parent: host.current,
-      a: { doc: original, extensions: baseExtensions(language, dark, true) },
-      b: { doc: modified, extensions: baseExtensions(language, dark, true) },
+      a: { doc: original, extensions: pane },
+      b: { doc: modified, extensions: pane },
       highlightChanges: true,
       gutter: true,
+      // Long unchanged runs fold away so the changes are what you see.
+      collapseUnchanged: { margin: 3, minSize: 8 },
     })
+    onChangesRef.current?.(mv.chunks.length)
     return () => mv.destroy()
   }, [original, modified, language, dark])
 
-  return <div ref={host} style={{ height }} className="overflow-auto rounded-lg border border-border" />
+  return (
+    <div className="flex flex-col overflow-hidden rounded-lg border border-border bg-card">
+      <div className="grid grid-cols-2 border-b border-border text-xs font-medium text-muted-foreground">
+        <div className="truncate px-3 py-1.5">{originalLabel}</div>
+        <div className="truncate border-l border-border px-3 py-1.5">{modifiedLabel}</div>
+      </div>
+      <div ref={host} style={{ maxHeight: height }} className="diff-host overflow-auto" />
+    </div>
+  )
+}
+
+function diffExtensions(lang: EditorLanguage, dark: boolean): Extension[] {
+  return [
+    lineNumbers(),
+    EditorView.lineWrapping,
+    languageExtension(lang),
+    syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+    ...(dark ? [oneDark] : []),
+    EditorState.readOnly.of(true),
+    EditorView.editable.of(false),
+    EditorView.theme({
+      '&': { fontSize: '12.5px' },
+      '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Consolas, monospace', lineHeight: '1.55' },
+    }),
+    appSurface,
+  ]
 }

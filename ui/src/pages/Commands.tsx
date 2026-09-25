@@ -2,15 +2,20 @@ import { listen } from '@tauri-apps/api/event'
 import { Clipboard, Pencil, Play, Save, Trash2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
+import { Spinner } from '@/components/Spinner'
+import { StopIcon } from '@/components/StopIcon'
 import { ErrorCard } from '@/components/ErrorCard'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog } from '@/components/ui/dialog'
+import { TechIcon } from '@/components/TechIcon'
 import { Field, Select, Tabs } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { type HistoryEntry, type ProcessEvent, type Project, type QuickCommand, runCommand } from '@/core'
 import { timeAgo, useAction } from '@/lib/hooks'
+import { waitForProcessExit } from '@/lib/wait'
+import { confirmThen } from '@/lib/confirm'
 
 const CATEGORY_ORDER = ['laravel', 'php', 'node', 'python', 'tools']
 const CATEGORY_LABELS: Record<string, string> = { laravel: 'Laravel', php: 'PHP', node: 'Node', python: 'Python', tools: 'Tools', other: 'Other' }
@@ -128,7 +133,7 @@ export function CommandsPage() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2 [&>*]:min-w-0">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">Quick Commands</CardTitle>
@@ -136,7 +141,7 @@ export function CommandsPage() {
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             <Tabs
-              tabs={categories.map((cat) => ({ id: cat, label: categoryLabel(cat), badge: visible.filter((c) => (c.category || 'other') === cat).length }))}
+              tabs={categories.map((cat) => ({ id: cat, label: categoryLabel(cat), icon: <TechIcon id={cat} />, badge: visible.filter((c) => (c.category || 'other') === cat).length }))}
               value={activeTab}
               onChange={setTab}
             />
@@ -152,7 +157,7 @@ export function CommandsPage() {
                   </div>
                   <div className="flex shrink-0 gap-1">
                     {!c.builtin && (
-                      <Button size="sm" variant="ghost" title="Delete" onClick={() => window.confirm(`Delete the command "${c.name}"?`) && run('del', async () => { await runCommand({ type: 'delete_quick_command', id: c.id }); await refresh() })}>
+                      <Button size="sm" variant="ghost" title="Delete" onClick={() => confirmThen(`Delete the command "${c.name}"?`, () => run('del', async () => { await runCommand({ type: 'delete_quick_command', id: c.id }); await refresh() }))}>
                         <Trash2 className="size-3.5" />
                       </Button>
                     )}
@@ -172,7 +177,14 @@ export function CommandsPage() {
             <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm">Output{title && `: ${title}`}</CardTitle>
               {processId !== null && (
-                <Button size="sm" variant="ghost" onClick={() => runCommand({ type: 'stop_process', id: processId })}>Stop</Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={busy === 'stop'}
+                  onClick={() => run('stop', async () => { await runCommand({ type: 'stop_process', id: processId }); await waitForProcessExit(processId) })}
+                >
+                  {busy === 'stop' ? <Spinner /> : <StopIcon />} {busy === 'stop' ? 'Stopping…' : 'Stop'}
+                </Button>
               )}
             </CardHeader>
             <CardContent>
@@ -184,7 +196,7 @@ export function CommandsPage() {
             <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm">Recent commands</CardTitle>
               {history.length > 0 && (
-                <Button size="sm" variant="ghost" onClick={() => run('clear', async () => { await runCommand({ type: 'clear_history' }); await refresh() })}>Clear</Button>
+                <Button size="sm" variant="ghost" onClick={() => confirmThen('Clear the whole command history?', () => run('clear', async () => { await runCommand({ type: 'clear_history' }); await refresh() }))}>Clear</Button>
               )}
             </CardHeader>
             <CardContent className="flex flex-col gap-1.5">
@@ -209,7 +221,7 @@ export function CommandsPage() {
                     <Button size="sm" variant="ghost" title="Copy" onClick={() => navigator.clipboard.writeText(h.line)}>
                       <Clipboard className="size-3.5" />
                     </Button>
-                    <Button size="sm" variant="ghost" title="Delete" onClick={() => run('delh', async () => { await runCommand({ type: 'delete_history', id: h.id }); await refresh() })}>
+                    <Button size="sm" variant="ghost" title="Delete" onClick={() => confirmThen(`Delete "${h.line}" from history?`, () => run('delh', async () => { await runCommand({ type: 'delete_history', id: h.id }); await refresh() }))}>
                       <Trash2 className="size-3.5" />
                     </Button>
                   </div>

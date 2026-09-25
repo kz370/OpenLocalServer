@@ -48,7 +48,8 @@ impl CustomInstallStore {
     }
 
     /// The resolution rule used wherever a custom install can satisfy a runtime request:
-    /// an exact label match wins; otherwise, if nothing specific was requested and
+    /// an exact label match wins; then the newest label the request is a prefix of
+    /// ("8.3" is satisfied by "8.3.30"); otherwise, if nothing specific was requested and
     /// exactly one custom install exists for `id`, that one is used (the common
     /// single-version-override case). Centralized here so every caller (Environment
     /// Resolver, the runtime-aware "terminal") agrees on the same rule.
@@ -56,6 +57,10 @@ impl CustomInstallStore {
         if let Some(v) = requested {
             if let Some(found) = self.find(id, v) {
                 return Some(found);
+            }
+            let labels: Vec<String> = self.entries.iter().filter(|e| e.id == id).map(|e| e.label.clone()).collect();
+            if let Some(best) = crate::php::pick_version(&labels, Some(v)) {
+                return self.find(id, &best);
             }
         }
         let mut matches = self.entries.iter().filter(|e| e.id == id);
@@ -130,6 +135,23 @@ mod tests {
 
         assert_eq!(store.resolve("php", Some("8.1")).unwrap().path, exe.to_str().unwrap());
         assert!(store.resolve("php", Some("8.3")).is_none());
+    }
+
+    /// A project asking for "8.3" must find a PHP registered under its full version.
+    #[test]
+    fn resolve_matches_a_minor_request_against_full_version_labels() {
+        let home = crate::test_support::isolated_home();
+        let old = home.paths.root().join("old.exe");
+        let new = home.paths.root().join("new.exe");
+        std::fs::write(&old, b"fake").unwrap();
+        std::fs::write(&new, b"fake").unwrap();
+        let mut store = CustomInstallStore::load(&home.paths).unwrap();
+        store.set("php", "8.3.9", old.to_str().unwrap()).unwrap();
+        store.set("php", "8.3.30", new.to_str().unwrap()).unwrap();
+
+        assert_eq!(store.resolve("php", Some("8.3")).unwrap().label, "8.3.30", "newest 8.3.x wins");
+        assert_eq!(store.resolve("php", Some("8.3.9")).unwrap().label, "8.3.9");
+        assert!(store.resolve("php", Some("8.4")).is_none());
     }
 
     #[test]

@@ -122,6 +122,16 @@ struct State {
     server: Option<Running>,
     apps: HashMap<String, ProcessId>,
     dns: Option<DnsServer>,
+    /// hostname -> the PHP version its requests go to (from the last apply).
+    site_php: HashMap<String, String>,
+}
+
+/// Which supervised processes do each site's work, for per-site resource usage.
+pub struct UsagePlan {
+    pub server: Option<ProcessId>,
+    pub apps: HashMap<String, ProcessId>,
+    pub site_php: HashMap<String, String>,
+    pub pools: HashMap<String, Vec<ProcessId>>,
 }
 
 pub struct WebManager {
@@ -161,7 +171,7 @@ impl WebManager {
             supervisor,
             certs,
             php,
-            state: Mutex::new(State { server: None, apps: HashMap::new(), dns: None }),
+            state: Mutex::new(State { server: None, apps: HashMap::new(), dns: None, site_php: HashMap::new() }),
         }
     }
 
@@ -264,6 +274,16 @@ impl WebManager {
         }
     }
 
+    pub fn usage_plan(&self) -> UsagePlan {
+        let st = self.state.lock().unwrap();
+        UsagePlan {
+            server: st.server.as_ref().map(|r| r.process),
+            apps: st.apps.clone(),
+            site_php: st.site_php.clone(),
+            pools: self.php.pool_processes(),
+        }
+    }
+
     pub fn is_running(&self) -> bool {
         let st = self.state.lock().unwrap();
         st.server.as_ref().is_some_and(|r| self.supervisor.is_alive(r.process))
@@ -289,6 +309,7 @@ impl WebManager {
         let mut pool_specs: BTreeMap<String, PoolSpec> = BTreeMap::new();
         let mut site_pools: HashMap<String, (String, Vec<u16>)> = HashMap::new();
         let mut versions_in_use = Vec::new();
+        let mut site_php: HashMap<String, String> = HashMap::new();
         for d in &enabled {
             let SiteKind::Php { version } = effective_kind(d) else { continue };
             let wanted = version.or_else(|| (ctx.php_for)(d));
@@ -302,9 +323,11 @@ impl WebManager {
             let pool_id = PhpPools::pool_id(&picked);
             pool_specs.entry(pool_id.clone()).or_insert(PoolSpec { id: pool_id.clone(), ports: ports_for_version.clone() });
             site_pools.insert(d.hostname.clone(), (pool_id, ports_for_version));
+            site_php.insert(d.hostname.clone(), picked.clone());
             versions_in_use.push(picked);
         }
         self.php.retain(&versions_in_use);
+        self.state.lock().unwrap().site_php = site_php;
 
         // 2. Certificates, then the rendered site files.
         let mut rendered: Vec<(Domain, String)> = Vec::new();
@@ -315,7 +338,7 @@ impl WebManager {
                     let (pool, ports) = site_pools[&d.hostname].clone();
                     Backend::Php { pool, ports }
                 }
-                SiteKind::Proxy { upstream_port } => Backend::Proxy { upstream_port: *upstream_port },
+                kind @ SiteKind::Proxy { .. } => Backend::Proxy { upstream: kind.upstream_url().unwrap_or_default() },
                 SiteKind::Static => Backend::Static,
             };
             let custom_snippet = (d.ownership == Ownership::Advanced).then(|| layout.custom_file(server.config_ext(), &d.hostname));
@@ -462,14 +485,19 @@ impl WebManager {
         // 6. Site app processes (npm run dev, uvicorn, ...).
         self.sync_apps(ctx, &enabled, &mut report);
 
-        // 7. Hosts file + wildcard DNS. Failures here don't invalidate the server config.
-        let mut hostnames: Vec<String> = enabled.iter().map(|d| d.hostname.clone()).collect();
+        // 7. Name resolution. Failures here don't invalidate the server config. Our local
+        // DNS answers for whole reserved TLDs (.test), so those names never need the
+        // admin-only hosts file; only names outside them are written there.
+        let covered = self.sync_dns(cfg, &enabled, &mut report);
+        let mut hostnames: Vec<String> =
+            enabled.iter().map(|d| d.hostname.clone()).filter(|h| !covered.contains(&tld_of(h))).collect();
         hostnames.sort();
-        match crate::hosts::sync(&hostnames) {
-            Ok(changed) => report.hosts_updated = changed,
-            Err(e) => report.warnings.push(format!("The hosts file was not updated: {e}")),
+        if !hostnames.is_empty() {
+            match crate::hosts::ensure(&hostnames) {
+                Ok(changed) => report.hosts_updated = changed,
+                Err(e) => report.warnings.push(format!("The hosts file was not updated: {e}")),
+            }
         }
-        self.sync_dns(cfg, &enabled, &mut report);
 
         Ok(report)
     }
@@ -613,7 +641,7 @@ impl WebManager {
             }
             let app = d.app.as_ref().expect("filtered above");
             let port = match d.kind {
-                SiteKind::Proxy { upstream_port } => Some(upstream_port),
+                SiteKind::Proxy { upstream_port, .. } => Some(upstream_port),
                 _ => None,
             };
             let bin_dir = app.runtime.as_deref().and_then(|rt| (ctx.runtime_bin)(d, rt));
@@ -636,10 +664,22 @@ impl WebManager {
 
     // ---------------------------------------------------------------- wildcard DNS (§46–47)
 
-    fn sync_dns(&self, cfg: &WebConfig, enabled: &[Domain], report: &mut ApplyReport) {
-        let suffixes: Vec<String> = enabled.iter().filter(|d| d.wildcard).map(|d| d.hostname.clone()).collect();
-        let mut st = self.state.lock().unwrap();
+    /// Local DNS (§46). The resolver answers every name under the reserved TLDs our domains
+    /// use (`.test`, ...) plus wildcard subdomains, and one Windows NRPT rule per suffix
+    /// routes those lookups to it. A TLD rule costs a single UAC prompt, ever: after that,
+    /// adding or deleting `.test` domains needs no administrator rights at all. TLD rules
+    /// are never removed automatically (that would prompt again, and routing a reserved TLD
+    /// to localhost is harmless). Returns the TLDs whose names are fully handled here.
+    fn sync_dns(&self, cfg: &WebConfig, enabled: &[Domain], report: &mut ApplyReport) -> Vec<String> {
+        let mut tlds: Vec<String> = enabled.iter().map(|d| tld_of(&d.hostname)).filter(|t| SAFE_TLDS.contains(&t.as_str())).collect();
+        tlds.sort();
+        tlds.dedup();
+        // Wildcards under a TLD we already answer for need nothing extra.
+        let wildcards: Vec<String> =
+            enabled.iter().filter(|d| d.wildcard && !tlds.contains(&tld_of(&d.hostname))).map(|d| d.hostname.clone()).collect();
+        let suffixes: Vec<String> = tlds.iter().chain(&wildcards).cloned().collect();
 
+        let mut st = self.state.lock().unwrap();
         if suffixes.is_empty() {
             st.dns = None;
         } else if let Some(dns) = &st.dns {
@@ -648,43 +688,73 @@ impl WebManager {
             match DnsServer::start(cfg.dns_port, suffixes.clone()) {
                 Ok(dns) => st.dns = Some(dns),
                 Err(e) => {
-                    report.warnings.push(format!("Wildcard DNS is not running: {e}"));
-                    return;
+                    report.warnings.push(format!("Local DNS is not running ({e}); using the hosts file instead."));
+                    return Vec::new();
                 }
             }
         }
         drop(st);
 
-        // Windows only sends a suffix to our resolver if an NRPT rule says so. Track which
-        // rules are installed so a rule costs one UAC prompt, once, not one per apply.
-        let file = self.paths.web_dir().join("nrpt.json");
-        let mut installed: Vec<String> =
-            std::fs::read_to_string(&file).ok().and_then(|r| serde_json::from_str(&r).ok()).unwrap_or_default();
-        let mut changed = false;
-        // The helper's NRPT rule can only target port 53; skip when a test/alternate port is in use.
-        if cfg.dns_port == 53 && std::env::var("OLS_HOSTS_FILE").is_err() {
-            for suffix in &suffixes {
-                if !installed.contains(suffix) {
-                    match crate::elevate::run_helper(&["nrpt-add".into(), format!(".{suffix}"), "127.0.0.1".into()]) {
-                        Ok(()) => {
-                            installed.push(suffix.clone());
-                            changed = true;
-                        }
-                        Err(e) => report.warnings.push(format!("Windows DNS rule for *.{suffix} was not added: {e}")),
-                    }
-                }
-            }
-            let gone: Vec<String> = installed.iter().filter(|s| !suffixes.contains(s)).cloned().collect();
-            for suffix in gone {
-                if crate::elevate::run_helper(&["nrpt-remove".into(), format!(".{suffix}")]).is_ok() {
-                    installed.retain(|s| *s != suffix);
-                    changed = true;
+        // NRPT rules can only target port 53, and tests use a redirected hosts file.
+        if cfg.dns_port != 53 || std::env::var("OLS_HOSTS_FILE").is_ok() {
+            return Vec::new();
+        }
+        let mut installed = self.nrpt_rules();
+        let before = installed.clone();
+        for suffix in &suffixes {
+            if !installed.contains(suffix) {
+                match crate::elevate::run_helper(&["nrpt-add".into(), format!(".{suffix}"), "127.0.0.1".into()]) {
+                    Ok(()) => installed.push(suffix.clone()),
+                    Err(e) => report.warnings.push(format!("Windows DNS rule for .{suffix} was not added: {e}")),
                 }
             }
         }
-        if changed {
-            let _ = std::fs::write(&file, serde_json::to_string_pretty(&installed).unwrap_or_default());
+        // Rules for single wildcard sites outside our TLDs point real-world names at this
+        // machine, so those are removed when their site goes.
+        let stale: Vec<String> = installed.iter().filter(|s| !suffixes.contains(s) && !SAFE_TLDS.contains(&s.as_str())).cloned().collect();
+        for suffix in stale {
+            if crate::elevate::run_helper(&["nrpt-remove".into(), format!(".{suffix}")]).is_ok() {
+                installed.retain(|s| *s != suffix);
+            }
         }
+        if installed != before {
+            let _ = std::fs::write(self.nrpt_file(), serde_json::to_string_pretty(&installed).unwrap_or_default());
+        }
+        tlds.into_iter().filter(|t| installed.contains(t)).collect()
+    }
+
+    /// Moves a site's own files (hand-edited Manual file, Advanced snippet, history) to its
+    /// new name, for every server. Generated files are simply rewritten on the next apply.
+    pub fn rename_site_files(&self, old: &str, new: &str) {
+        for id in SERVER_IDS {
+            let Some(server) = server_by_id(id) else { continue };
+            let root = self.paths.web_dir().join(id);
+            let ext = server.config_ext();
+            for dir in ["sites", "custom"] {
+                let from = root.join(dir).join(format!("{old}.{ext}"));
+                if from.is_file() {
+                    let _ = std::fs::rename(&from, root.join(dir).join(format!("{new}.{ext}")));
+                }
+            }
+            let history = self.history_dir(id, old);
+            if history.is_dir() {
+                let _ = std::fs::rename(&history, self.history_dir(id, new));
+            }
+        }
+    }
+
+    fn nrpt_file(&self) -> PathBuf {
+        self.paths.web_dir().join("nrpt.json")
+    }
+
+    fn nrpt_rules(&self) -> Vec<String> {
+        std::fs::read_to_string(self.nrpt_file()).ok().and_then(|r| serde_json::from_str(&r).ok()).unwrap_or_default()
+    }
+
+    /// Whether `hostname` resolves through our local DNS right now (no hosts entry needed).
+    pub fn dns_covers(&self, hostname: &str) -> bool {
+        let tld = tld_of(hostname);
+        self.state.lock().unwrap().dns.is_some() && SAFE_TLDS.contains(&tld.as_str()) && self.nrpt_rules().contains(&tld)
     }
 
     // ---------------------------------------------------------------- config files (§25–29)
@@ -1037,8 +1107,12 @@ mod tests {
         assert!(matches!(effective_kind(&static_domain(dir.path())), SiteKind::Static));
         std::fs::write(dir.path().join("index.html"), "hi").unwrap();
         assert!(matches!(effective_kind(&static_domain(dir.path())), SiteKind::Static), "plain HTML stays static");
-        std::fs::write(dir.path().join("Contact.PHP"), "<?php").unwrap();
-        assert!(matches!(effective_kind(&static_domain(dir.path())), SiteKind::Php { version: None }), "any top-level php file needs the PHP handler");
+        std::fs::create_dir_all(dir.path().join("node_modules").join("pkg")).unwrap();
+        std::fs::write(dir.path().join("node_modules").join("pkg").join("x.php"), "<?php").unwrap();
+        assert!(matches!(effective_kind(&static_domain(dir.path())), SiteKind::Static), "dependency folders don't count");
+        std::fs::create_dir_all(dir.path().join("contact")).unwrap();
+        std::fs::write(dir.path().join("contact").join("Send.PHP"), "<?php").unwrap();
+        assert!(matches!(effective_kind(&static_domain(dir.path())), SiteKind::Php { version: None }), "php in a subfolder needs the PHP handler too");
     }
 
     #[test]
@@ -1087,14 +1161,39 @@ mod tests {
 /// browser as downloads. Serve it through PHP instead (PHP serves plain files fine too);
 /// the stored kind is left alone so the user's choice is never rewritten behind their back.
 fn effective_kind(d: &Domain) -> SiteKind {
-    if matches!(d.kind, SiteKind::Static) && has_top_level_php(std::path::Path::new(&d.root)) {
+    if matches!(d.kind, SiteKind::Static) && has_php(std::path::Path::new(&d.root), 3) {
         return SiteKind::Php { version: None };
     }
     d.kind.clone()
 }
 
-fn has_top_level_php(root: &Path) -> bool {
-    std::fs::read_dir(root).is_ok_and(|rd| {
-        rd.flatten().any(|e| e.path().is_file() && e.path().extension().is_some_and(|x| x.eq_ignore_ascii_case("php")))
-    })
+/// Any `.php` file in `dir` or up to `depth` folders below it (`/contact/index.php`
+/// downloads just the same as a top-level one). Dependency and VCS folders are skipped:
+/// a `node_modules` package shipping a stray PHP file doesn't make the site PHP.
+fn has_php(dir: &Path, depth: u8) -> bool {
+    let Ok(rd) = std::fs::read_dir(dir) else { return false };
+    let mut subdirs = Vec::new();
+    for e in rd.flatten() {
+        let path = e.path();
+        let Ok(ft) = e.file_type() else { continue };
+        if ft.is_file() && path.extension().is_some_and(|x| x.eq_ignore_ascii_case("php")) {
+            return true;
+        }
+        if ft.is_dir() && depth > 0 {
+            let name = e.file_name().to_string_lossy().to_lowercase();
+            if !name.starts_with('.') && name != "node_modules" && name != "vendor" {
+                subdirs.push(path);
+            }
+        }
+    }
+    subdirs.iter().any(|d| has_php(d, depth - 1))
+}
+
+/// Top-level domains reserved for local use (RFC 2606 / 6761 / ICANN `.internal`): routing
+/// every name under them to this machine can't hijack a real website. `.local` is left
+/// out on purpose (mDNS and some company networks use it).
+const SAFE_TLDS: &[&str] = &["test", "localhost", "example", "invalid", "internal"];
+
+fn tld_of(hostname: &str) -> String {
+    hostname.trim_end_matches('.').rsplit('.').next().unwrap_or_default().to_ascii_lowercase()
 }

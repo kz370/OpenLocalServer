@@ -1,12 +1,14 @@
 import { listen } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
-import { FolderPlus, FolderSearch, Play, Trash2 } from 'lucide-react'
+import { Folder, FolderPlus, FolderSearch, Play, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import { type Diagnostic, type Project, type ProjectDetail, type ProcessEvent, runCommand } from '@/core'
+import { confirmAction } from '@/lib/confirm'
 
 const SOURCE_LABEL: Record<string, string> = {
   manifest: 'from .devforge/environment.yaml',
@@ -19,6 +21,7 @@ export function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([])
   const [scanMessage, setScanMessage] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [filter, setFilter] = useState('')
   const [detail, setDetail] = useState<ProjectDetail | null>(null)
   const [error, setError] = useState<Diagnostic | null>(null)
 
@@ -94,9 +97,9 @@ export function ProjectsPage() {
 
   async function removeProject(id: string) {
     const name = projects.find((p) => p.id === id)?.name ?? 'this project'
-    if (!window.confirm(`Remove ${name} from OpenLocalServer?
+    if (!(await confirmAction(`Remove ${name} from OpenLocalServer?
 
-Your project files are not deleted.`)) return
+Your project files are not deleted.`))) return
     await runCommand({ type: 'remove_project', id })
     if (selectedId === id) setSelectedId(null)
     await refreshProjects()
@@ -143,41 +146,47 @@ Your project files are not deleted.`)) return
 
       <div className="grid gap-4 lg:grid-cols-[1fr_1.6fr]">
         <Card>
-          <CardHeader>
-            <CardTitle>Registered</CardTitle>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Registered · {projects.length}</CardTitle>
           </CardHeader>
-          <CardContent className="flex flex-col gap-1">
+          <CardContent className="flex flex-col gap-2">
             {projects.length === 0 && <p className="text-sm text-muted-foreground">No projects yet.</p>}
-            {projects.map((p) => (
-              <div
-                key={p.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => setSelectedId(p.id)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') setSelectedId(p.id)
-                }}
-                className={`flex cursor-pointer items-center justify-between rounded-md border px-3 py-2 text-left text-sm transition-colors ${
-                  selectedId === p.id ? 'border-primary bg-accent' : 'border-border hover:bg-accent/50'
-                }`}
-              >
-                <div className="flex flex-col overflow-hidden">
-                  <span className="font-medium">{p.name}</span>
-                  <span className="truncate text-xs text-muted-foreground">{p.path}</span>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    removeProject(p.id)
-                  }}
-                  title="Remove"
-                >
-                  <Trash2 className="size-3.5" />
-                </Button>
-              </div>
-            ))}
+            {projects.length > 8 && <Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter projects" className="h-8" />}
+            <div className="max-h-[65vh] overflow-y-auto">
+              {projects
+                .filter((p) => `${p.name} ${p.path}`.toLowerCase().includes(filter.trim().toLowerCase()))
+                .map((p) => (
+                  <div
+                    key={p.id}
+                    role="button"
+                    tabIndex={0}
+                    title={p.path}
+                    onClick={() => setSelectedId(p.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') setSelectedId(p.id)
+                    }}
+                    className={`group flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-sm transition-colors ${
+                      selectedId === p.id ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
+                    }`}
+                  >
+                    <Folder className="size-3.5 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1 truncate font-medium">{p.name}</span>
+                    <span className="hidden max-w-[45%] truncate text-xs text-muted-foreground xl:inline">{p.path}</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        removeProject(p.id)
+                      }}
+                      title="Remove"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  </div>
+                ))}
+            </div>
           </CardContent>
         </Card>
 

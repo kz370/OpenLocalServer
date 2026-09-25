@@ -294,7 +294,8 @@ impl ServiceManager {
     // ------------------------------------------------------------- SQL clients (§32–33)
 
     /// Path + port of the command-line client for a SQL engine ("mysql" | "mariadb").
-    fn sql_client(&self, engine: &str) -> Result<(PathBuf, u16), String> {
+    /// The engine's own command-line client and the port it listens on.
+    pub fn sql_client(&self, engine: &str) -> Result<(PathBuf, u16), String> {
         let (exe, port) = match engine {
             "mysql" => ("mysql.exe", primary_port("mysql")),
             "mariadb" => ("mariadb.exe", primary_port("mariadb")),

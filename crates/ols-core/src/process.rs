@@ -201,6 +201,13 @@ impl ProcessSupervisor {
         guard.get(&id.0).map(|r| r.output.iter().cloned().collect()).unwrap_or_default()
     }
 
+    /// Empties a process's kept output (the Logs page "Clear"); the process keeps running.
+    pub fn clear_output(&self, id: ProcessId) {
+        if let Some(r) = self.processes.lock().unwrap().get_mut(&id.0) {
+            r.output.clear();
+        }
+    }
+
     // -- Command Runner (§90–91): run a one-shot command to completion, with a timeout. --
 
     /// Blocks the calling thread until the command finishes, is killed by the timeout,
@@ -390,6 +397,63 @@ fn spawn_line_reader<R>(
     });
 }
 
+/// Servers a previous run of the app started and never got to stop (it was killed with
+/// End task, or crashed). Nothing supervises them any more, yet they still hold their
+/// ports, so the web server and databases can't start again. Matches only our own
+/// copies: an executable inside `runtimes_dir`, or a PHP FastCGI worker bound to our
+/// pool port range (those may run from a user-registered PHP folder). Returns how many
+/// were stopped.
+#[cfg(windows)]
+pub fn kill_orphans(runtimes_dir: &std::path::Path) -> usize {
+    use std::os::windows::process::CommandExt;
+    const SERVERS: &[&str] = &["nginx.exe", "httpd.exe", "caddy.exe", "php-cgi.exe", "mysqld.exe", "mariadbd.exe", "mongod.exe", "mailpit.exe"];
+    let filter = SERVERS.iter().map(|n| format!("Name='{n}'")).collect::<Vec<_>>().join(" or ");
+    let script = format!(
+        "Get-CimInstance Win32_Process -Filter \"{filter}\" | ForEach-Object {{ \"$($_.ProcessId)|$($_.ExecutablePath)|$($_.CommandLine)\" }}"
+    );
+    let out = crate::exec::run_capture(
+        std::path::Path::new("powershell"),
+        &["-NoProfile".into(), "-NonInteractive".into(), "-Command".into(), script],
+        None,
+        &[],
+        Duration::from_secs(20),
+    );
+    let root = runtimes_dir.display().to_string().to_lowercase();
+    let mut killed = 0;
+    for line in out.stdout.lines() {
+        let mut cols = line.splitn(3, '|');
+        let (Some(pid), Some(exe), cmd) = (cols.next(), cols.next(), cols.next().unwrap_or("")) else { continue };
+        let Ok(pid) = pid.trim().parse::<u32>() else { continue };
+        let ours = !exe.is_empty() && exe.to_lowercase().starts_with(&root);
+        let our_php_worker = exe.to_lowercase().ends_with("php-cgi.exe") && is_pool_worker(cmd);
+        if ours || our_php_worker {
+            tracing::info!(pid, exe, "stopping a server left behind by a previous run");
+            let _ = std::process::Command::new("taskkill")
+                .args(["/PID", &pid.to_string(), "/T", "/F"])
+                .creation_flags(0x0800_0000)
+                .output();
+            killed += 1;
+        }
+    }
+    killed
+}
+
+#[cfg(not(windows))]
+pub fn kill_orphans(_runtimes_dir: &std::path::Path) -> usize {
+    0
+}
+
+/// `php-cgi.exe -b 127.0.0.1:108xx`: our pools use ports 10000–10999 (see `php.rs`).
+#[cfg_attr(not(windows), allow(dead_code))]
+fn is_pool_worker(command_line: &str) -> bool {
+    command_line
+        .split("127.0.0.1:")
+        .nth(1)
+        .and_then(|rest| rest.split(|c: char| !c.is_ascii_digit()).next())
+        .and_then(|p| p.parse::<u16>().ok())
+        .is_some_and(|p| (10_000..11_000).contains(&p))
+}
+
 #[cfg(windows)]
 async fn kill_tree(pid: u32) {
     // Pragmatic Stage 2 approach: shell out to `taskkill /T /F` to kill the whole process
@@ -411,6 +475,13 @@ async fn kill_tree(pid: u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_php_workers_on_our_pool_ports_count_as_ours() {
+        assert!(is_pool_worker(r#""C:\php\php-cgi.exe" -b 127.0.0.1:10840"#));
+        assert!(!is_pool_worker(r#""C:\laragon\php-cgi.exe" -b 127.0.0.1:9000"#));
+        assert!(!is_pool_worker("php-cgi.exe"));
+    }
 
     fn wait_for_state(sup: &ProcessSupervisor, id: ProcessId, want: ProcessState, timeout: Duration) -> bool {
         let start = Instant::now();

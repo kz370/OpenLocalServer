@@ -163,6 +163,29 @@ impl RuntimeManager {
         self.version_dir(id, version)
     }
 
+    /// Blocking HTTPS GET of a whole (small) body, for callers outside any async context.
+    /// Runs on this manager's own runtime, so it's safe from inside another runtime's
+    /// blocking thread too (where `block_on` would panic).
+    pub fn fetch(&self, url: &str) -> Result<Vec<u8>, String> {
+        let http = self.http.clone();
+        let url = url.to_string();
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.runtime.spawn(async move {
+            let get = async {
+                let response = http.get(&url).send().await.map_err(|e| e.to_string())?;
+                if !response.status().is_success() {
+                    return Err(format!("{url}: HTTP {}", response.status()));
+                }
+                response.bytes().await.map(|b| b.to_vec()).map_err(|e| e.to_string())
+            };
+            let result = tokio::time::timeout(std::time::Duration::from_secs(120), get)
+                .await
+                .unwrap_or_else(|_| Err(format!("{url}: timed out")));
+            let _ = tx.send(result);
+        });
+        rx.recv().map_err(|e| e.to_string())?
+    }
+
     fn version_dir(&self, id: &str, version: &str) -> PathBuf {
         self.paths.runtimes_dir().join(id).join(version)
     }

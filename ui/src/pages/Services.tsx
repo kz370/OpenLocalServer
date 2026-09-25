@@ -2,6 +2,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { ExternalLink, FolderSearch, Play } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
+import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -9,6 +10,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { type DbTool, type Diagnostic, type ServiceStatus, runCommand } from '@/core'
+import { waitForService } from '@/lib/wait'
+import { confirmAction } from '@/lib/confirm'
 
 export function ServicesPage() {
   const [services, setServices] = useState<ServiceStatus[]>([])
@@ -32,11 +35,12 @@ export function ServicesPage() {
   }, [])
 
   async function toggle(service: ServiceStatus) {
-    if (service.running && !window.confirm(`Stop ${service.name}? Anything connected to it will be disconnected.`)) return
+    if (service.running && !(await confirmAction(`Stop ${service.name}? Anything connected to it will be disconnected.`))) return
     setError(null)
     setBusy(service.id)
     try {
       await runCommand({ type: service.running ? 'stop_service' : 'start_service', id: service.id })
+      await waitForService(service.id, service.running ? 'stopped' : 'running')
       await refresh()
     } catch (err) {
       setError(err as Diagnostic)
@@ -133,7 +137,11 @@ export function ServicesPage() {
                       )}
                       {s.installed && (
                         <Button size="sm" variant="secondary" disabled={busy === s.id} onClick={() => toggle(s)}>
-                          {s.running ? (
+                          {busy === s.id ? (
+                            <>
+                              <Spinner /> {s.running ? 'Stopping…' : 'Starting…'}
+                            </>
+                          ) : s.running ? (
                             <>
                               <StopIcon /> Stop
                             </>

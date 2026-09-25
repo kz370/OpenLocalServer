@@ -211,6 +211,12 @@ pub struct DomainSpec {
     /// Upstream port for `proxy` sites, templated.
     #[serde(default)]
     pub port: Option<String>,
+    /// Upstream host for `proxy` sites (blank = this machine), templated.
+    #[serde(default)]
+    pub host: Option<String>,
+    /// "true" when the upstream only speaks HTTPS, templated.
+    #[serde(default)]
+    pub upstream_https: Option<String>,
     #[serde(default)]
     pub app: Option<AppCommand>,
     #[serde(default, rename = "if")]

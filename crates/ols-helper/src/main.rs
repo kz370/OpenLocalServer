@@ -9,6 +9,10 @@
 //!   nrpt-add <.suffix> 127.0.0.1    make Windows resolve `*.suffix` through our local DNS
 //!   nrpt-remove <.suffix>           undo that
 //!
+//! Resident mode (see `service.rs`): `install-service` / `uninstall-service` (run elevated,
+//! once) and `service` (started by Windows) serve the same commands over a local pipe, so
+//! the app stops needing an administrator prompt per change.
+//!
 //! Exit codes: 0 ok · 1 failed · 2 rejected arguments · 5 access denied (caller should
 //! retry elevated).
 
@@ -16,6 +20,9 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use ols_core::hosts::{apply_hosts_block, remove_hosts_block};
+
+#[cfg(windows)]
+mod service;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum HelperError {
@@ -125,6 +132,25 @@ fn powershell(script: &str) -> Result<(), HelperError> {
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    #[cfg(windows)]
+    {
+        let resident = match args.first().map(String::as_str) {
+            Some("service") => Some(service::run()),
+            Some("install-service") => Some(service::install()),
+            Some("uninstall-service") => Some(service::uninstall()),
+            _ => None,
+        };
+        if let Some(result) = resident {
+            return match result {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("{e}");
+                    // Installing needs elevation; report it the same way as a hosts write.
+                    ExitCode::from(if e.contains("Access is denied") || e.contains("os error 5") { 5 } else { 1 })
+                }
+            };
+        }
+    }
     match execute(&args, &hosts_file_path()) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {

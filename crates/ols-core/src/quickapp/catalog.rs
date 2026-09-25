@@ -30,6 +30,7 @@ const BUILTIN: &[(&str, &str)] = &[
     ("plain-php", include_str!("../../catalog/quick-apps/plain-php.yaml")),
     ("static-html", include_str!("../../catalog/quick-apps/static-html.yaml")),
     ("custom-app", include_str!("../../catalog/quick-apps/custom-app.yaml")),
+    ("reverse-proxy", include_str!("../../catalog/quick-apps/reverse-proxy.yaml")),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -341,17 +342,17 @@ mod tests {
     }
 
     #[test]
-    fn all_twelve_builtin_apps_parse_and_are_trusted() {
+    fn all_builtin_apps_parse_and_are_trusted() {
         let (cat, _h) = catalog();
         let list = cat.list();
         let ids: Vec<&str> = list.iter().map(|e| e.id.as_str()).collect();
         for want in [
             "laravel", "symfony", "wordpress", "react-vite", "vue-vite", "nextjs", "express-api", "fastapi", "django", "plain-php",
-            "static-html", "custom-app",
+            "static-html", "custom-app", "reverse-proxy",
         ] {
             assert!(ids.contains(&want), "missing built-in {want}: {ids:?}");
         }
-        assert_eq!(list.len(), 12);
+        assert_eq!(list.len(), 13);
         assert!(list.iter().all(|e| e.trusted && e.source == EntrySource::Builtin));
     }
 

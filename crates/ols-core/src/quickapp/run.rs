@@ -171,6 +171,12 @@ impl RunManager {
         self.runs.lock().unwrap().get(id).map(|r| r.view.lock().unwrap().clone())
     }
 
+    pub fn clear_log(&self, id: &str) {
+        if let Some(r) = self.runs.lock().unwrap().get(id) {
+            r.view.lock().unwrap().log.clear();
+        }
+    }
+
     pub fn list(&self) -> Vec<RunView> {
         let mut all: Vec<RunView> = self.runs.lock().unwrap().values().map(|r| r.view.lock().unwrap().clone()).collect();
         all.sort_by(|a, b| b.started_ms.cmp(&a.started_ms));

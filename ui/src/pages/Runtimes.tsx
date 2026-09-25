@@ -1,8 +1,9 @@
 import { listen } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
-import { Download, FolderSearch, Trash2 } from 'lucide-react'
+import { Download, FolderSearch, Puzzle, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
+import { PhpExtensionsDialog } from '@/components/PhpExtensionsDialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -10,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { type CatalogEntry, type CustomInstall, type Diagnostic, type RuntimeEvent, runCommand } from '@/core'
 import { formatBytes } from '@/lib/hooks'
+import { confirmAction } from '@/lib/confirm'
 
 /** Runtimes a user may already have somewhere else and want to point at. */
 const LOCATABLE = ['php', 'node', 'python']
@@ -51,6 +53,7 @@ export function RuntimesPage() {
   const [customInstalls, setCustomInstalls] = useState<CustomInstall[]>([])
   const [customId, setCustomId] = useState('php')
   const [customLabel, setCustomLabel] = useState('')
+  const [extVersion, setExtVersion] = useState<string | null>(null)
 
   async function refresh() {
     const res = await runCommand({ type: 'list_runtime_catalog' })
@@ -101,7 +104,7 @@ export function RuntimesPage() {
   const removeCustomInstall = (entry: CustomInstall) =>
     guarded(async () => {
       const name = `${entry.id.toUpperCase()} ${entry.label || ''}`.trim()
-      if (!window.confirm(`Remove ${name} from the list?\n\nThe files at ${entry.path} are not deleted.`)) return
+      if (!(await confirmAction(`Remove ${name} from the list?\n\nThe files at ${entry.path} are not deleted.`))) return
       await runCommand({ type: 'remove_custom_install', id: entry.id, label: entry.label })
       await refresh()
     })
@@ -227,7 +230,12 @@ export function RuntimesPage() {
                     {row.kind === 'managed' && !row.entry?.installed && !live && row.entry?.system &&
                       `Found on PATH: ${row.entry.system.version}`}
                   </TableCell>
-                  <TableCell className="w-28 py-1 text-right">
+                  <TableCell className="w-36 py-1 text-right">
+                    {g.id === 'php' && (row.kind === 'custom' ? !!row.custom?.label : row.entry?.installed) && (
+                      <Button size="sm" variant="ghost" className="h-7" title="Extensions" onClick={() => setExtVersion(row.version)}>
+                        <Puzzle className="size-3.5" /> Extensions
+                      </Button>
+                    )}
                     {row.kind === 'managed' && !row.entry?.installed && !installing && row.entry && (
                       <Button size="sm" variant="secondary" className="h-7" onClick={() => install(row.entry!)}>
                         <Download /> Install
@@ -246,6 +254,8 @@ export function RuntimesPage() {
         </TableBody>
       </Table>
       {groups.length === 0 && <p className="text-sm text-muted-foreground">No runtimes in the catalog for this platform yet.</p>}
+
+      <PhpExtensionsDialog key={extVersion ?? ''} version={extVersion} onClose={() => setExtVersion(null)} />
 
       {error && (
         <Card className="border-destructive/40 bg-destructive/5">

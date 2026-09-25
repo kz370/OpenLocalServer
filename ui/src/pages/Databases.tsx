@@ -1,8 +1,11 @@
 import { open, save } from '@tauri-apps/plugin-dialog'
-import { ExternalLink, FolderSearch, Plus, Trash2 } from 'lucide-react'
+import { ExternalLink, FolderSearch, Import, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
+import { Spinner } from '@/components/Spinner'
 import { ErrorCard } from '@/components/ErrorCard'
+import { MigrateDialog } from '@/components/MigrateDialog'
+import { TechIcon } from '@/components/TechIcon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -19,12 +22,15 @@ import {
   runCommand,
 } from '@/core'
 import { formatBytes, useAction, usePoll } from '@/lib/hooks'
+import { waitForService } from '@/lib/wait'
+import { confirmAction, confirmThen } from '@/lib/confirm'
 
 type Tab = 'mysql' | 'mariadb' | 'mongodb' | 'sqlite' | 'tools'
 
 /** §31–39, §102: SQL databases and users, MongoDB connection info, SQLite files, and external tools. */
 export function DatabasesPage() {
   const [tab, setTab] = useState<Tab>('mysql')
+  const [migrating, setMigrating] = useState(false)
   const [services, setServices] = useState<ServiceStatus[]>([])
   const { error, setError } = useAction()
 
@@ -35,18 +41,24 @@ export function DatabasesPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Databases</h1>
-        <p className="text-sm text-muted-foreground">Create databases and users, see connection details, and open them in your own tool.</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Databases</h1>
+          <p className="text-sm text-muted-foreground">Create databases and users, see connection details, and open them in your own tool.</p>
+        </div>
+        <Button variant="secondary" onClick={() => setMigrating(true)}>
+          <Import /> Import from Laragon / XAMPP / Wamp
+        </Button>
       </div>
+      <MigrateDialog open={migrating} onClose={() => setMigrating(false)} />
       <ErrorCard error={error} onDismiss={() => setError(null)} />
       <Tabs
         tabs={[
-          { id: 'mysql', label: 'MySQL' },
-          { id: 'mariadb', label: 'MariaDB' },
-          { id: 'mongodb', label: 'MongoDB' },
-          { id: 'sqlite', label: 'SQLite' },
-          { id: 'tools', label: 'External tools' },
+          { id: 'mysql', label: 'MySQL', icon: <TechIcon id="mysql" /> },
+          { id: 'mariadb', label: 'MariaDB', icon: <TechIcon id="mariadb" /> },
+          { id: 'mongodb', label: 'MongoDB', icon: <TechIcon id="mongodb" /> },
+          { id: 'sqlite', label: 'SQLite', icon: <TechIcon id="sqlite" /> },
+          { id: 'tools', label: 'External tools', icon: <TechIcon id="tools" /> },
         ]}
         value={tab}
         onChange={setTab}
@@ -77,13 +89,17 @@ function ServiceBanner({ service, name }: { service?: ServiceStatus; name: strin
             <Button
               size="sm"
               disabled={busy}
-              onClick={() => {
-                if (service.running && !window.confirm(`Stop ${service.name}? Anything connected to it will be disconnected.`)) return
+              onClick={async () => {
+                if (service.running && !(await confirmAction(`Stop ${service.name}? Anything connected to it will be disconnected.`))) return
                 setBusy(true)
-                void run('svc', () => runCommand({ type: service.running ? 'stop_service' : 'start_service', id: service.id })).finally(() => setBusy(false))
+                void run('svc', async () => {
+                  await runCommand({ type: service.running ? 'stop_service' : 'start_service', id: service.id })
+                  await waitForService(service.id, service.running ? 'stopped' : 'running')
+                }).finally(() => setBusy(false))
               }}
             >
-              {service.running ? 'Stop' : 'Start'}
+              {busy && <Spinner />}
+              {busy ? (service.running ? 'Stopping…' : 'Starting…') : service.running ? 'Stop' : 'Start'}
             </Button>
           )}
         </CardContent>
@@ -265,11 +281,11 @@ function Sqlite() {
               <div className="flex gap-1">
                 <Button size="sm" variant="ghost" onClick={() => run('check', async () => { const r = await runCommand({ type: 'check_sqlite', path: d.path }); if (r.type === 'integrity') setMsg(r.result.ok ? `${d.name}: integrity check passed.` : `${d.name}: ${r.result.detail}`) })}>Integrity</Button>
                 <Button size="sm" variant="ghost" onClick={() => run('backup', async () => { const r = await runCommand({ type: 'backup_sqlite', path: d.path }); if (r.type === 'text') setMsg(`Backed up to ${r.text}`); await refresh() })}>Backup</Button>
-                <Button size="sm" variant="ghost" disabled={d.backups.length === 0} onClick={() => run('restore', async () => { if (!window.confirm('Restore the newest backup? The current file is backed up first.')) return; const r = await runCommand({ type: 'restore_sqlite', path: d.path, backup: d.backups[0] }); if (r.type === 'text') setMsg(`Restored. Previous file saved as ${r.text || '(none)'}`); await refresh() })}>Restore</Button>
+                <Button size="sm" variant="ghost" disabled={d.backups.length === 0} onClick={() => run('restore', async () => { if (!(await confirmAction('Restore the newest backup? The current file is backed up first.'))) return; const r = await runCommand({ type: 'restore_sqlite', path: d.path, backup: d.backups[0] }); if (r.type === 'text') setMsg(`Restored. Previous file saved as ${r.text || '(none)'}`); await refresh() })}>Restore</Button>
                 <Button size="sm" variant="secondary" onClick={() => run('open', () => runCommand({ type: 'open_database', engine: 'sqlite', database: null, path: d.path, tool_id: null }))}>
                   <ExternalLink className="size-3.5" /> Open
                 </Button>
-                <Button size="sm" variant="ghost" title="Forget (the file stays on disk)" onClick={() => run('forget', async () => { await runCommand({ type: 'forget_sqlite', path: d.path }); await refresh() })}>
+                <Button size="sm" variant="ghost" title="Forget (the file stays on disk)" onClick={() => confirmThen(`Forget ${d.name}? The file stays on disk.`, () => run('forget', async () => { await runCommand({ type: 'forget_sqlite', path: d.path }); await refresh() }))}>
                   <Trash2 className="size-3.5" />
                 </Button>
               </div>
@@ -354,7 +370,7 @@ function Tools() {
                 <div className="font-medium">{t.name}</div>
                 <div className="font-mono text-xs text-muted-foreground">{t.engines.join(', ')} · {t.executable}</div>
               </div>
-              <Button size="sm" variant="ghost" onClick={() => run('rm', async () => { const r = await runCommand({ type: 'remove_external_tool', id: t.id }); if (r.type === 'external_tools') setTools(r.tools) })}>
+              <Button size="sm" variant="ghost" onClick={() => confirmThen(`Remove ${t.name} from the tool list? The program itself is not uninstalled.`, () => run('rm', async () => { const r = await runCommand({ type: 'remove_external_tool', id: t.id }); if (r.type === 'external_tools') setTools(r.tools) }))}>
                 <Trash2 className="size-3.5" />
               </Button>
             </div>

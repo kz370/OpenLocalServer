@@ -12,6 +12,18 @@ path = "src/main.rs"
 [dependencies]
 # Reuses the tested hosts-block text transforms and hostname validation from the core.
 ols-core = { path = "../ols-core" }
+serde_json = "1"
+
+[target.'cfg(windows)'.dependencies]
+windows-service = "0.8"
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Pipes",
+    "Win32_System_IO",
+] }
 
 [dev-dependencies]
 tempfile = "3"

@@ -177,6 +177,8 @@ fn body(site: &SiteSpec) -> String {
         "    <Directory \"{root}\">\n        Options Indexes FollowSymLinks\n        AllowOverride All\n        Require all granted\n    </Directory>\n"
     ));
     let https = site.tls.is_some();
+    // Dev sites always revalidate (see nginx), unless the app chose its own caching.
+    out.push_str("    <IfModule headers_module>\n        Header setifempty Cache-Control \"no-cache\"\n    </IfModule>\n");
 
     for header in &site.blocks.headers {
         out.push_str(&format!("    Header always set {} \"{}\"\n", header.name, header.value));
@@ -223,16 +225,20 @@ fn body(site: &SiteSpec) -> String {
             out.push_str("        RewriteRule ^ /index.php [L]\n");
             out.push_str("    </IfModule>\n");
         }
-        Backend::Proxy { upstream_port } => {
+        Backend::Proxy { upstream } => {
+            if upstream.starts_with("https://") {
+                out.push_str("    SSLProxyEngine On\n    SSLProxyVerify none\n    SSLProxyCheckPeerName off\n");
+            }
             out.push_str("    ProxyPreserveHost On\n");
             out.push_str("    RequestHeader set X-Forwarded-Proto \"");
             out.push_str(if https { "https" } else { "http" });
             out.push_str("\"\n");
             out.push_str("    RewriteEngine On\n");
             out.push_str("    RewriteCond %{HTTP:Upgrade} =websocket [NC]\n");
-            out.push_str(&format!("    RewriteRule ^/?(.*) ws://127.0.0.1:{upstream_port}/$1 [P,L]\n"));
-            out.push_str(&format!("    ProxyPass \"/\" \"http://127.0.0.1:{upstream_port}/\"\n"));
-            out.push_str(&format!("    ProxyPassReverse \"/\" \"http://127.0.0.1:{upstream_port}/\"\n"));
+            let ws = upstream.replacen("http", "ws", 1);
+            out.push_str(&format!("    RewriteRule ^/?(.*) {ws}/$1 [P,L]\n"));
+            out.push_str(&format!("    ProxyPass \"/\" \"{upstream}/\"\n"));
+            out.push_str(&format!("    ProxyPassReverse \"/\" \"{upstream}/\"\n"));
         }
         Backend::Static => {}
     }
@@ -274,7 +280,7 @@ mod tests {
 
     #[test]
     fn proxy_site_forwards_http_and_websockets() {
-        let cfg = Apache.render_site(&site(Backend::Proxy { upstream_port: 3000 }, false, false), PORTS);
+        let cfg = Apache.render_site(&site(Backend::Proxy { upstream: "http://127.0.0.1:3000".into() }, false, false), PORTS);
         assert!(cfg.contains("ProxyPass \"/\" \"http://127.0.0.1:3000/\""));
         assert!(cfg.contains("ws://127.0.0.1:3000/"));
         assert!(!cfg.contains("SSLEngine"));
