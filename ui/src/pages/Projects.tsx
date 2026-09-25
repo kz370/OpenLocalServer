@@ -240,7 +240,7 @@ Your project files are not deleted.`))) return
                 </div>
 
                 {runOutput.length > 0 && (
-                  <pre className="max-h-40 overflow-auto rounded-md bg-muted p-3 font-mono text-xs leading-relaxed">
+                  <pre className="max-h-40 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-all rounded-md bg-muted p-3 font-mono text-xs leading-relaxed">
                     {runOutput.join('\n')}
                   </pre>
                 )}

@@ -22,7 +22,7 @@ export default function App() {
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
       <Sidebar page={page} onNavigate={setPage} />
       <ConfirmHost />
-      <main className="flex-1 overflow-y-auto p-6">
+      <main className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-6">
         {page === 'dashboard' && <DashboardPage onNavigate={setPage} />}
         {page === 'projects' && <ProjectsPage />}
         {page === 'quickapps' && <QuickAppsPage onNavigate={setPage} />}

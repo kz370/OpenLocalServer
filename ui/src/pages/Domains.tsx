@@ -280,7 +280,7 @@ export function DomainsPage() {
                     <TableCell>{d.https ? <Badge variant="success">HTTPS</Badge> : <Badge variant="outline">HTTP</Badge>}</TableCell>
                     <TableCell>{d.enabled ? <Badge variant="secondary">enabled</Badge> : <Badge variant="warning">disabled</Badge>}</TableCell>
                     <TableCell>
-                      <div className="flex justify-end gap-0.5">
+                      <div className="flex flex-wrap justify-end gap-0.5">
                         <Button size="sm" variant="ghost" title="Open in browser" disabled={!d.enabled || !status?.running} onClick={() => run('open', () => runCommand({ type: 'open_url', url: d.url }))}>
                           <ExternalLink className="size-3.5" />
                         </Button>
@@ -424,7 +424,7 @@ export function DomainsPage() {
                         {c.status === 'expired' && <Badge variant="destructive">Expired</Badge>}
                       </TableCell>
                       <TableCell>
-                        <div className="flex justify-end gap-0.5">
+                        <div className="flex flex-wrap justify-end gap-0.5">
                           <Button size="sm" variant="ghost" title="Details" onClick={() => setCertDetail(c)}>
                             <Lock className="size-3.5" />
                           </Button>

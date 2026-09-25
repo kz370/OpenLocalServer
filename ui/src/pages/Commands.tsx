@@ -188,7 +188,7 @@ export function CommandsPage() {
               )}
             </CardHeader>
             <CardContent>
-              <pre ref={outRef} className="h-56 overflow-auto rounded-lg bg-muted/40 p-3 font-mono text-xs">{output.join('\n') || 'Run something to see its output here.'}</pre>
+              <pre ref={outRef} className="h-56 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-all rounded-lg bg-muted/40 p-3 font-mono text-xs">{output.join('\n') || 'Run something to see its output here.'}</pre>
             </CardContent>
           </Card>
 

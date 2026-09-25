@@ -704,7 +704,7 @@ function RunProgress({ runId, onClose, onNavigate }: { runId: string; onClose: (
             </li>
           ))}
         </ul>
-        <pre ref={logRef} className="max-h-72 overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-xs">
+        <pre ref={logRef} className="max-h-72 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-all rounded-lg border border-border bg-muted/40 p-3 font-mono text-xs">
           {run.log.slice(-400).join('\n')}
         </pre>
       </div>

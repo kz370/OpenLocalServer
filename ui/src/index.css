@@ -171,3 +171,9 @@
 ::-webkit-scrollbar-button {
   display: none;
 }
+
+/* Nothing in the app scrolls sideways: content wraps instead. */
+html,
+body {
+  overflow-x: hidden;
+}

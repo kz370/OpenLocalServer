@@ -128,7 +128,7 @@ export function LogsPage() {
         </CardContent>
       </Card>
 
-      <div ref={box} className="min-h-72 flex-1 overflow-auto rounded-xl border border-border bg-card p-3 font-mono text-xs leading-relaxed">
+      <div ref={box} className="min-h-72 flex-1 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-all rounded-xl border border-border bg-card p-3 font-mono text-xs leading-relaxed">
         {shown.length === 0 && <p className="text-muted-foreground">No log lines{query || level !== 'all' ? ' match the filter' : ' yet'}.</p>}
         {shown.map((l, i) => (
           <div key={i} className={`whitespace-pre-wrap break-all ${COLOR[l.sev]}`}>

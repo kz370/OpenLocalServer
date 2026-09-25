@@ -80,7 +80,7 @@ export function Tabs<T extends string>({
   onChange: (id: T) => void
 }) {
   return (
-    <div className="flex gap-0.5 overflow-x-auto shadow-[inset_0_-1px_0_var(--border)] [scrollbar-width:none]">
+    <div className="flex flex-wrap gap-0.5 shadow-[inset_0_-1px_0_var(--border)]">
       {tabs.map((t) => (
         <button
           key={t.id}

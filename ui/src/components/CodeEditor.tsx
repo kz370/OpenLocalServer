@@ -38,6 +38,8 @@ function baseExtensions(lang: EditorLanguage, dark: boolean, readOnly: boolean):
     search({ top: true }),
     keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
     languageExtension(lang),
+    // Long lines wrap: nothing in the app scrolls sideways.
+    EditorView.lineWrapping,
     syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
     ...(dark ? [oneDark] : []),
     EditorState.readOnly.of(readOnly),
@@ -156,7 +158,7 @@ export function DiffView({
         <div className="truncate px-3 py-1.5">{originalLabel}</div>
         <div className="truncate border-l border-border px-3 py-1.5">{modifiedLabel}</div>
       </div>
-      <div ref={host} style={{ maxHeight: height }} className="diff-host overflow-auto" />
+      <div ref={host} style={{ maxHeight: height }} className="diff-host overflow-y-auto overflow-x-hidden" />
     </div>
   )
 }

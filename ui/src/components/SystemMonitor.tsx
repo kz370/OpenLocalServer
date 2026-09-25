@@ -67,10 +67,25 @@ export function SystemMonitor({ stats }: { stats: SystemStats | null }) {
           {sites.length === 0 ? (
             <p className="text-sm text-muted-foreground">No sites are running.</p>
           ) : (
-            <div className="max-h-64 divide-y divide-border overflow-y-auto">
-              {sites.map((s) => (
-                <SiteRow key={s.hostname} site={s} heaviest={Math.max(1, sites[0]?.memory ?? 1)} />
-              ))}
+            // The header scrolls with the rows (sticky) so a scrollbar can't shift the columns.
+            <div className="max-h-72 overflow-y-auto">
+              <div className={`${SITE_GRID} sticky top-0 z-10 h-7 border-b border-border bg-card text-[11px] font-medium uppercase tracking-wide text-muted-foreground`}>
+                <span>Site</span>
+                <span className="text-right" title="Share of the whole machine's CPU">
+                  CPU
+                </span>
+                <span className="text-right" title="Memory in use">
+                  RAM
+                </span>
+                <span className="text-right" title="Size of the site's folder, counted every 10 minutes">
+                  Disk
+                </span>
+              </div>
+              <div className="divide-y divide-border">
+                {sites.map((s) => (
+                  <SiteRow key={s.hostname} site={s} />
+                ))}
+              </div>
             </div>
           )}
         </CardContent>
@@ -79,41 +94,34 @@ export function SystemMonitor({ stats }: { stats: SystemStats | null }) {
   )
 }
 
-/** One site; its bar is its memory relative to the heaviest site. */
-function SiteRow({ site, heaviest }: { site: SiteUsage; heaviest: number }) {
+/** Shared by the header and every row so the columns line up exactly. */
+const SITE_GRID = 'grid grid-cols-[minmax(0,1fr)_4.5rem_5.5rem_5.5rem] items-center gap-3 px-1'
+
+function SiteRow({ site }: { site: SiteUsage }) {
   const icon = site.via.startsWith('PHP') ? 'php' : site.via.startsWith('Web') ? 'static' : 'proxy'
   const shared = site.shared_by > 1 ? ` · shared by ${site.shared_by} sites` : ''
+  const num = 'text-right text-xs tabular-nums'
   return (
-    <div className="flex h-9 items-center gap-2.5 text-sm">
-      <TechIcon id={icon} className="size-3.5" />
-      <span className="min-w-0 flex-1 truncate">
-        <span className="font-medium">{site.hostname}</span>
-        <span className="ml-2 text-xs text-muted-foreground">
-          {site.via}
-          {shared}
+    <div className={`${SITE_GRID} h-9 text-sm`}>
+      <span className="flex min-w-0 items-center gap-2.5">
+        <TechIcon id={icon} className="size-3.5" />
+        <span className="truncate">
+          <span className="font-medium">{site.hostname}</span>
+          <span className="ml-2 text-xs text-muted-foreground">
+            {site.via}
+            {shared}
+          </span>
         </span>
       </span>
       {site.measured ? (
         <>
-          <span className="w-20 text-right text-xs tabular-nums" title="CPU, share of the whole machine">
-            <span className="text-muted-foreground">CPU </span>
-            {site.cpu_percent.toFixed(1)}%
-          </span>
-          <span className="w-24 text-right text-xs tabular-nums" title="Memory (RAM) in use">
-            <span className="text-muted-foreground">RAM </span>
-            {formatBytes(site.memory)}
-          </span>
-          <span className="w-24 text-right text-xs tabular-nums" title="Size of the site's folder (counted every 10 minutes)">
-            <span className="text-muted-foreground">Disk </span>
-            {site.disk === null ? '…' : formatBytes(site.disk)}
-          </span>
-          <span className="hidden h-1 w-20 overflow-hidden rounded-full bg-muted sm:block">
-            <span className="block h-full rounded-full" style={{ width: `${(site.memory / heaviest) * 100}%`, background: RAM_COLOR }} />
-          </span>
+          <span className={num}>{site.cpu_percent.toFixed(1)}%</span>
+          <span className={num}>{formatBytes(site.memory)}</span>
         </>
       ) : (
-        <span className="text-xs text-muted-foreground">not on this computer</span>
+        <span className="col-span-2 text-right text-xs text-muted-foreground">not on this computer</span>
       )}
+      <span className={num}>{site.disk === null ? '…' : formatBytes(site.disk)}</span>
     </div>
   )
 }
