@@ -327,7 +327,7 @@ function ProviderDialog({ initial, onClose, onSaved }: { initial: AiProvider; on
               {!models.some((m) => m.id === p.model) && <option value={p.model}>{p.model || 'Choose a model…'}</option>}
               {models.map((m) => (
                 <option key={m.id} value={m.id}>
-                  {m.id}
+                  {m.name}
                 </option>
               ))}
             </Select>

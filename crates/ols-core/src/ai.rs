@@ -688,7 +688,37 @@ fn per_million(v: &Value) -> Option<f64> {
     v.as_f64().or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok()))
 }
 
+/// LM Studio's own model list: every downloaded model, loaded or not. Its OpenAI-style `/v1/models` can list only what is
+/// loaded, which hides the rest from the picker. `None` when the server has no such endpoint (an older LM Studio).
+async fn lmstudio_models(p: &AiProvider, key: Option<&str>) -> Option<Vec<AiModel>> {
+    let mut url = reqwest::Url::parse(p.base_url.trim()).ok()?;
+    url.set_path("/api/v0/models");
+    let resp = authorize(client(p.local, Some(Duration::from_secs(10))).get(url), p, key).ok()?.send().await.ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    let v: Value = serde_json::from_str(&resp.text().await.ok()?).ok()?;
+    let mut models: Vec<AiModel> = v["data"]
+        .as_array()?
+        .iter()
+        // Embedding models can't chat.
+        .filter(|m| m["type"].as_str() != Some("embeddings"))
+        .filter_map(|m| {
+            let id = m["id"].as_str()?.to_string();
+            let name = if m["state"].as_str() == Some("loaded") { format!("{id} (loaded)") } else { id.clone() };
+            Some(AiModel { name, context: m["max_context_length"].as_u64(), prompt_per_m: None, completion_per_m: None, id })
+        })
+        .collect();
+    models.sort_by(|a, b| a.id.cmp(&b.id));
+    (!models.is_empty()).then_some(models)
+}
+
 async fn fetch_models(p: &AiProvider, key: Option<&str>) -> Result<Vec<AiModel>, String> {
+    if p.kind == "lmstudio" {
+        if let Some(models) = lmstudio_models(p, key).await {
+            return Ok(models);
+        }
+    }
     let rb = authorize(client(p.local, Some(Duration::from_secs(20))).get(endpoint(&p.base_url, "models")), p, key)?;
     let resp = rb.send().await.map_err(|e| if p.local { format!("Nothing answered at {}. Is the server running? ({e})", p.base_url) } else { format!("Couldn't reach {}: {e}", url_host(&p.base_url)) })?;
     let status = resp.status();
@@ -1647,6 +1677,28 @@ mod tests {
         let down_id = down.settings.providers.iter().find(|p| p.name == "Down").unwrap().id.clone();
         let r = i.ai_test(&down_id).unwrap();
         assert!(!r.ok && r.message.contains("Is the server running"), "{}", r.message);
+    }
+
+    #[test]
+    fn lm_studio_lists_every_downloaded_model_not_just_the_loaded_one() {
+        let mock = Mock::start(|path, _, _| {
+            if path == "/api/v0/models" {
+                json_reply(json!({"data":[{"id":"qwen-9b","type":"llm","state":"loaded","max_context_length":32768},{"id":"llama-8b","type":"llm","state":"not-loaded"},{"id":"nomic-embed","type":"embeddings","state":"not-loaded"}]}))
+            } else {
+                json_reply(json!({"data":[{"id":"qwen-9b"}]}))
+            }
+        });
+        let home = crate::test_support::isolated_home();
+        let core = Core::new(crate::settings::SettingsService::load(&home.paths).unwrap(), home.paths.clone());
+        let p = AiProvider { id: String::new(), name: "LM".into(), kind: "lmstudio".into(), base_url: mock.url(), model: String::new(), tools: true, local: true, has_key: false };
+        let r = core.inner().ai_probe(p.clone(), None).unwrap();
+        let ids: Vec<&str> = r.models.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(ids, ["llama-8b", "qwen-9b"], "embedding models are left out");
+        assert_eq!(r.models[1].context, Some(32768));
+        assert!(r.models[1].name.contains("loaded"));
+        // Any other kind keeps to the OpenAI-style list.
+        let other = core.inner().ai_probe(AiProvider { kind: "custom".into(), ..p }, None).unwrap();
+        assert_eq!(other.models.len(), 1);
     }
 
     #[test]
