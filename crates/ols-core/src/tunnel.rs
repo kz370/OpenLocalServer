@@ -60,7 +60,7 @@ pub struct TunnelConfig {
     #[serde(default)]
     pub project_id: Option<String>,
     pub name: String,
-    /// cloudflare, ngrok, localtunnel, tailscale.
+    /// cloudflare, ngrok, localtunnel.
     pub provider: String,
     /// The local site: "https://shop.test" or "http://127.0.0.1:8000".
     pub target: String,
@@ -307,39 +307,6 @@ impl TunnelProvider for LocalTunnel {
     }
 }
 
-struct Tailscale;
-impl TunnelProvider for Tailscale {
-    fn id(&self) -> &'static str {
-        "tailscale"
-    }
-    fn name(&self) -> &'static str {
-        "Tailscale Funnel"
-    }
-    fn program(&self) -> &'static str {
-        "tailscale"
-    }
-    fn install_hint(&self) -> &'static str {
-        "Install Tailscale, sign in, and turn on Funnel for your tailnet."
-    }
-    fn note(&self) -> &'static str {
-        "Uses your machine's ts.net name; Funnel must be allowed in the tailnet's policy."
-    }
-    fn command(
-        &self,
-        port: u16,
-        _token: Option<&str>,
-        _config: &TunnelConfig,
-    ) -> (Vec<String>, Vec<(String, String)>) {
-        (vec!["funnel".into(), port.to_string()], vec![])
-    }
-    fn find_url(&self, line: &str) -> Option<String> {
-        url_matching(line, ".ts.net")
-    }
-    fn known_paths(&self) -> Vec<PathBuf> {
-        vec![PathBuf::from(r"C:\Program Files\Tailscale\tailscale.exe")]
-    }
-}
-
 /// For tests: "connects" at once, with the inspector itself as the public URL.
 struct Mock;
 impl TunnelProvider for Mock {
@@ -369,12 +336,7 @@ impl TunnelProvider for Mock {
 }
 
 pub fn providers() -> Vec<Box<dyn TunnelProvider>> {
-    vec![
-        Box::new(Cloudflare),
-        Box::new(Ngrok),
-        Box::new(LocalTunnel),
-        Box::new(Tailscale),
-    ]
+    vec![Box::new(Cloudflare), Box::new(Ngrok), Box::new(LocalTunnel)]
 }
 
 fn provider(id: &str) -> Option<Box<dyn TunnelProvider>> {
@@ -1106,10 +1068,6 @@ mod tests {
         assert_eq!(
             LocalTunnel.find_url("your url is: https://silly-cat.loca.lt"),
             Some("https://silly-cat.loca.lt".into())
-        );
-        assert_eq!(
-            Tailscale.find_url("Available on the internet:\nhttps://pc.tail1234.ts.net/"),
-            Some("https://pc.tail1234.ts.net".into())
         );
     }
 

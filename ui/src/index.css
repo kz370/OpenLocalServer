@@ -139,6 +139,24 @@
       'Segoe UI',
       sans-serif;
   }
+  /* Desktop-app feel: chrome text isn't selectable (no more blue washes like
+     the screenshot). Copyable content opts back in via the allowlist below
+     or a data-selectable="true" attribute. */
+  body {
+    @apply select-none;
+    -webkit-user-select: none;
+  }
+  input,
+  textarea,
+  pre,
+  code,
+  [contenteditable='true'],
+  [data-selectable='true'],
+  .xterm,
+  .cm-editor {
+    @apply select-text;
+    -webkit-user-select: text;
+  }
 }
 
 /* Side-by-side diff: two equal panes that never push past the container. */

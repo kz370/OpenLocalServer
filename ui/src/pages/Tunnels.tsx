@@ -797,7 +797,7 @@ function Providers({ providers, onChanged }: { providers: TunnelProvider[]; onCh
   async function locate(p: TunnelProvider) {
     const picked = await open({ multiple: false, directory: false, title: `Locate ${p.name}`, filters: [{ name: 'Program', extensions: ['exe', 'cmd'] }] })
     if (!picked || Array.isArray(picked)) return
-    const program = { cloudflare: 'cloudflared', ngrok: 'ngrok', tailscale: 'tailscale', localtunnel: 'npx' }[p.id] ?? p.id
+    const program = { cloudflare: 'cloudflared', ngrok: 'ngrok', localtunnel: 'npx' }[p.id] ?? p.id
     await run(`locate:${p.id}`, async () => {
       await runCommand({ type: 'set_custom_install', id: program, label: '', path: picked })
       onChanged()

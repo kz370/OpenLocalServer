@@ -46,7 +46,7 @@ OpenLocalServer targets Windows; Linux comes last (release 2.0). macOS is not pl
 - **Command line:** `ols setup`, `ols doctor`, `ols repair`, `ols status`, `ols start|stop`, and `project`, `runtime`,
   `service`, `tunnel`, `worker`, `snapshot`, `quick-command`, `search`. It drives the open app, or starts a
   background daemon when the app is closed.
-- **Tunnels:** Cloudflare, ngrok, LocalTunnel and Tailscale Funnel with a first-exposure confirmation, optional
+- **Tunnels:** Cloudflare, ngrok and LocalTunnel with a first-exposure confirmation, optional
   password, a public badge and one-click stop; traffic inspector (secrets redacted), replay and webhook tester.
 - **Power tools:** command palette and global search (Ctrl+Shift+P / Ctrl+K), doctor, project repair, a Git
   manager (status, stage/commit, branches, pull/push, history, remotes, stash, clone), resource limits.
@@ -74,7 +74,7 @@ Everything planned for 0.3 is built (stages 12–15). Limits worth knowing:
 
 | Item | Notes |
 |---|---|
-| Tunnels | Provider programs (cloudflared, ngrok, tailscale) are found or located by hand, not downloaded. WebSockets and streamed responses don't pass through the traffic inspector yet |
+| Tunnels | Provider programs (cloudflared, ngrok) are found or located by hand, not downloaded. WebSockets and streamed responses don't pass through the traffic inspector yet |
 | Scheduler | Runs while the app or `ols daemon` is open; there is no system-level scheduled task |
 | Resource limits | Memory limits apply at the next service start; there is no CPU limit (Windows has no simple per-program cap) |
 | Control channel | Windows named pipe only until the Linux stage (20) |

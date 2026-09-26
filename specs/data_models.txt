@@ -8,7 +8,7 @@ Entities:
 - Database {engine, name, owner} + DbUser {name, host, password_ref}
 - WebConfig {id, project_id, server: nginx|apache|caddy, path, managed, hash, updated_at} + ConfigHistory {hostname, timestamp, content}
 - Certificate {hostname, cert.pem, key.pem, meta.json{sans, expiry}} + CaInfo {cn: OpenLocalServer Local CA, valid 2024-2044}
-- Tunnel {id, project_id, provider: cloudflare|ngrok|localtunnel|tailscale|mock, target, public_url, status, created_at}
+- Tunnel {id, project_id, provider: cloudflare|ngrok|localtunnel|mock, target, public_url, status, created_at}
 - QuickApp {id, name, source: Builtin|Local|Imported, version, definition_path, trusted, favorite} + QuickRun {id, app_id, status, logs[4000 cap]}
 - QuickCommand {id, name, command:{executable,arguments}|action, working_directory, source, trusted} + CommandHistory {line, exit_code, timestamp}
 - Plugin {id, name, version, permissions[], enabled, path} + CatalogSource {name, url, pubkey, last_verified}

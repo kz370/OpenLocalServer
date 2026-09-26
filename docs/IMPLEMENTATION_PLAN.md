@@ -32,7 +32,7 @@ have not been run, and the new screens have not all been checked in the running 
 | **11 Runtime depth + diagnostics** | **Built** | Xdebug, Composer, corepack, Python venv, `DiagnosticEngine` v1 and the `.env` editor exist; screens not yet checked in the running app |
 | 12 CLI, manifests, reproducible setup | Built | `ols` CLI over a per-user, per-install named pipe (auto-starts `ols daemon` when the app is closed); full manifest schema, lock file, setup plan / dry run / apply with rollback of safe changes, conflict detection. The 0.3 gate has not been run |
 | 13 Profiles, modes, workers, scheduler, snapshots | Built | 8 built-in profiles plus your own (import/export), 4 modes; queue workers; cron scheduler (runs while the app or daemon is open); snapshots, settings backups, environment import/export and cloning |
-| 14 Tunnels + traffic | Built | Cloudflare, ngrok, LocalTunnel, Tailscale Funnel; first-exposure confirmation, internal-port refusal, access control in our own proxy; traffic inspector with redaction, replay and a webhook tester. Real providers not yet exercised end to end (needs their programs installed) |
+| 14 Tunnels + traffic | Built | Cloudflare, ngrok, LocalTunnel; first-exposure confirmation, internal-port refusal, access control in our own proxy; traffic inspector with redaction, replay and a webhook tester. Real providers not yet exercised end to end (needs their programs installed) |
 | 15 Power UX + repair | Built | Command palette and global search (Ctrl+Shift+P / Ctrl+K), doctor, project diagnostics and repair, Git repository manager (portable Git in the catalog), resource limits |
 | 16 Plugins + catalogs | Built (2026-09-26) | Declarative plugins with permissions, 4 built-in runtime plugins (Go, Bun, Java, .NET), minisign-signed catalogs. Not done: WASM code plugins, DB/service/tool plugins, Ruby, a default catalog and key. See [PLUGINS.md](PLUGINS.md) |
 | 17 Release hardening | Built (2026-09-26) | Signed updater, localhost HTTP API, Explorer menu, offline indicator, support bundle, machine diagnostics, security review ([SECURITY_REVIEW.md](SECURITY_REVIEW.md)). Not done: update signing key, code-signed installer, 1.0 E2E on a clean VM |
@@ -332,7 +332,7 @@ registry), minijinja, clap, tauri-specta. UI: xterm.js, CodeMirror 6 (Stage 9).
   profiles (§132), and environment cloning (§158).
 
 ### Stage 14 — Tunnels + traffic
-- `TunnelProvider` trait (§56). Adapters: Cloudflare Tunnel, ngrok, LocalTunnel, and Tailscale Funnel, plus a mock for
+- `TunnelProvider` trait (§56). Adapters: Cloudflare Tunnel, ngrok and LocalTunnel, plus a mock for
   tests. Provider auth goes through the Secrets Manager. Optional access controls where the provider supports them.
 - Safety (§59, §140): explicit start, first-exposure warning, public badge, prominent stop, no DB or admin
   exposure, redacted tokens, and keys never uploaded (§142). Tunnel UI and health (§58, §60).

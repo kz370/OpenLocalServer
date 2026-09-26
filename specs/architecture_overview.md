@@ -52,7 +52,7 @@ Key patterns:
 - PhpPools (one php-cgi pool per version, auto extensions, opcache/xdebug zend).
 - CertificateManager + LocalCa (rcgen, 397-day leaves, <30d renewal, per-domain dirs).
 - DnsServer (UDP 127.0.0.1 wildcard A records) + NRPT rules + hosts-file managed block.
-- TunnelManager (cloudflare/ngrok/localtunnel/tailscale) + Inspector proxy (500 req cap, redacted).
+- TunnelManager (cloudflare/ngrok/localtunnel) + Inspector proxy (500 req cap, redacted).
 - Scheduler (1-min tick, cron/every_*, no overlap), Workers (max 16 copies), TerminalManager (portable-pty, max 8).
 - Control channel (named pipe + token in control.json), HTTP API (127.0.0.1:7420, bearer SHA256, read_only/operate).
 
