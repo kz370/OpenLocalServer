@@ -6,7 +6,7 @@ import { TechIcon } from '@/components/TechIcon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
-import { Field, Select, Toggle } from '@/components/ui/form'
+import { Field, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { type Diagnostic, type MigratedDb, type MigrationSource, runCommand } from '@/core'
 import { formatBytes } from '@/lib/hooks'
@@ -21,7 +21,6 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
   const [password, setPassword] = useState('')
   const [dbs, setDbs] = useState<string[] | null>(null)
   const [picked, setPicked] = useState<string[]>([])
-  const [target, setTarget] = useState('mysql')
   const [busy, setBusy] = useState<'scan' | 'import' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [results, setResults] = useState<MigratedDb[] | null>(null)
@@ -34,7 +33,6 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
       const first = r.sources[0]
       if (first) {
         setSourceId(first.id)
-        setTarget(first.engine)
       }
     })
   }, [open])
@@ -66,7 +64,7 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
 
   const migrate = () =>
     attempt('import', async () => {
-      const r = await runCommand({ type: 'migrate_databases', source_id: sourceId, password, databases: picked, target })
+      const r = await runCommand({ type: 'migrate_databases', source_id: sourceId, password, databases: picked, target: 'mariadb' })
       if (r.type === 'migrated') setResults(r.results)
     })
 
@@ -74,7 +72,6 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
     setSourceId(id)
     setDbs(null)
     setResults(null)
-    setTarget(sources?.find((s) => s.id === id)?.engine ?? 'mysql')
   }
 
   return (
@@ -91,7 +88,7 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
           </Button>
           {dbs && (
             <Button disabled={busy !== null || picked.length === 0} onClick={migrate}>
-              {busy === 'import' ? <Spinner /> : <Database />} Import {picked.length} database{picked.length === 1 ? '' : 's'} into {target === 'mariadb' ? 'MariaDB' : 'MySQL'}
+              {busy === 'import' ? <Spinner /> : <Database />} Import {picked.length} database{picked.length === 1 ? '' : 's'} into MariaDB
             </Button>
           )}
         </>
@@ -164,12 +161,7 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
                 )
               })}
             </div>
-            <Field label="Import into" hint="If a database with the same name already exists here, tables with the same names are replaced.">
-              <Select value={target} onChange={(e) => setTarget(e.target.value)} className="w-56">
-                <option value="mysql">MySQL</option>
-                <option value="mariadb">MariaDB</option>
-              </Select>
-            </Field>
+            <p className="text-xs text-muted-foreground">Imported into MariaDB. If a database with the same name already exists there, tables with the same names are replaced.</p>
           </div>
         )}
 

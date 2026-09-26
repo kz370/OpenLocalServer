@@ -7,7 +7,6 @@ requirements:
   php: "8.4"
   composer: true
   node: "24"
-  mysql: true
   mariadb: true
   mailpit: true
   redis: true
@@ -34,8 +33,8 @@ variables:
   - name: database
     label: Database
     type: select
-    options: [mysql, mariadb, none]
-    default: mysql
+    options: [mariadb, none]
+    default: mariadb
   - name: db_name
     label: Database name
     type: text
@@ -73,7 +72,7 @@ env_vars:
   - { key: APP_URL, value: "{{ 'https' if https else 'http' }}://{{ domain }}" }
   - { key: DB_CONNECTION, value: "{{ database }}", if: "database != none" }
   - { key: DB_HOST, value: "127.0.0.1", if: "database != none" }
-  - { key: DB_PORT, value: "{{ 3306 if database == 'mysql' else 3307 }}", if: "database != none" }
+  - { key: DB_PORT, value: "3306", if: "database != none" }
   - { key: DB_DATABASE, value: "{{ db_name }}", if: "database != none" }
   - { key: DB_USERNAME, value: "root", if: "database != none" }
   - { key: DB_PASSWORD, value: "", if: "database != none" }

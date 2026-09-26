@@ -377,7 +377,7 @@ pub fn build_plan(app: &QuickApp, values: BTreeMap<String, String>, ctx: &PlanCt
                     services_to_start.push("mailpit".into());
                 }
             }
-            "mysql" | "mariadb" | "postgres" | "mongodb" => {
+            "mariadb" | "postgres" | "mongodb" => {
                 // Only when the chosen database is this one (or the app has no `database` choice).
                 let chosen = values.get("database").map(|d| d == id).unwrap_or(true);
                 if chosen {
@@ -747,7 +747,7 @@ variables:
   - { name: domain, type: domain, default: "{{project_name}}.test" }
   - { name: https, type: boolean, default: true }
   - { name: port, type: port, default: 5173 }
-  - { name: database, type: select, options: [none, mysql], default: mysql }
+  - { name: database, type: select, options: [none, mariadb], default: mariadb }
 "#,
         )
         .unwrap();
@@ -775,13 +775,13 @@ variables:
 id: t
 name: T
 variables:
-  - { name: database, type: select, options: [none, mysql], default: none }
+  - { name: database, type: select, options: [none, mariadb], default: none }
   - { name: db_name, required: true, show_if: "database != none" }
 "#,
         )
         .unwrap();
         assert!(resolve_values(&app, &vals(&[]), &ctx()).is_ok(), "db_name isn't required when there's no database");
-        assert!(resolve_values(&app, &vals(&[("database", "mysql")]), &ctx()).is_err());
+        assert!(resolve_values(&app, &vals(&[("database", "mariadb")]), &ctx()).is_err());
     }
 
     #[test]
@@ -790,10 +790,10 @@ variables:
             r#"
 id: t
 name: T
-requirements: { php: "8.4", composer: true, mysql: "8.4", mailpit: true, redis: true }
+requirements: { php: "8.4", composer: true, mariadb: "11.4", mailpit: true, redis: true }
 variables:
   - { name: project_name, required: true }
-  - { name: database, type: select, options: [none, mysql], default: mysql }
+  - { name: database, type: select, options: [none, mariadb], default: mariadb }
   - { name: redis, type: boolean, default: true }
   - { name: mailpit, type: boolean, default: true }
   - { name: https, type: boolean, default: true }
@@ -803,10 +803,10 @@ pre_create:
 commands:
   - composer create-project laravel/laravel "{{ project_path }}"
 conditions:
-  - if: "database == mysql"
+  - if: "database == mariadb"
     commands:
       - action: create_database
-        with: { engine: mysql, name: "{{ project_name }}" }
+        with: { engine: mariadb, name: "{{ project_name }}" }
   - if: "database == none"
     commands: [ "echo never" ]
 files:
@@ -834,7 +834,7 @@ domain: { hostname: "{{ project_name }}.test", kind: php, root: "{{ project_path
         assert!(plan.steps.iter().any(|s| matches!(&s.body, StepBody::Action { action, .. } if action == "create_database")));
         assert_eq!(plan.hostname.as_deref(), Some("shop.test"));
         let ids: Vec<&str> = plan.requirements.iter().map(|r| r.id.as_str()).collect();
-        assert!(ids.contains(&"php") && ids.contains(&"composer") && ids.contains(&"mysql") && ids.contains(&"mailpit") && ids.contains(&"nginx") && ids.contains(&"redis"));
+        assert!(ids.contains(&"php") && ids.contains(&"composer") && ids.contains(&"mariadb") && ids.contains(&"mailpit") && ids.contains(&"nginx") && ids.contains(&"redis"));
         assert_eq!(ids.iter().filter(|i| **i == "php").count(), 1, "php requirement de-duplicated");
 
         let perm_ids: Vec<&str> = plan.permissions.iter().map(|p| p.id.as_str()).collect();

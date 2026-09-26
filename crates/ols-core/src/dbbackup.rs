@@ -1,4 +1,4 @@
-//! Backup and restore for the SQL servers we run (§32, §34): MySQL, MariaDB and PostgreSQL.
+//! Backup and restore for the SQL servers we run (§32, §34): MariaDB and PostgreSQL.
 //! Backups are plain SQL dumps made with the engine's own dump tool, kept under
 //! `backups/<engine>/<database>.<unix-secs>.sql`. Restoring first takes a safety backup of
 //! the current database so a restore can itself be undone (the same rule as SQLite, §36).
@@ -24,7 +24,7 @@ pub struct DbBackup {
 
 fn check_engine(engine: &str) -> Result<(), String> {
     match engine {
-        "mysql" | "mariadb" | "postgres" => Ok(()),
+        "mariadb" | "postgres" => Ok(()),
         other => Err(format!("{other} has no backup support here (SQL servers only)")),
     }
 }
@@ -36,7 +36,6 @@ pub fn backups_dir(paths: &AppPaths, engine: &str) -> PathBuf {
 /// The dump tool that sits beside the engine's command-line client.
 fn dump_tool(client: &Path, engine: &str) -> PathBuf {
     client.with_file_name(match engine {
-        "mysql" => "mysqldump.exe",
         "mariadb" => "mariadb-dump.exe",
         _ => "pg_dump.exe",
     })
@@ -196,14 +195,14 @@ mod tests {
     #[test]
     fn lists_newest_first_and_filters_by_database() {
         let home = crate::test_support::isolated_home();
-        let dir = backups_dir(&home.paths, "mysql");
+        let dir = backups_dir(&home.paths, "mariadb");
         std::fs::create_dir_all(&dir).unwrap();
         for name in ["a.100.sql", "a.300.sql", "b.200.sql", "notes.txt"] {
             std::fs::write(dir.join(name), "x").unwrap();
         }
-        let all = list(&home.paths, "mysql", None);
+        let all = list(&home.paths, "mariadb", None);
         assert_eq!(all.iter().map(|b| b.created).collect::<Vec<_>>(), vec![300, 200, 100]);
-        let only_a = list(&home.paths, "mysql", Some("a"));
+        let only_a = list(&home.paths, "mariadb", Some("a"));
         assert_eq!(only_a.len(), 2);
         assert!(list(&home.paths, "postgres", None).is_empty());
     }
@@ -211,16 +210,16 @@ mod tests {
     #[test]
     fn delete_only_touches_the_engines_backup_folder() {
         let home = crate::test_support::isolated_home();
-        let dir = backups_dir(&home.paths, "mysql");
+        let dir = backups_dir(&home.paths, "mariadb");
         std::fs::create_dir_all(&dir).unwrap();
         let inside = dir.join("a.1.sql");
         std::fs::write(&inside, "x").unwrap();
         let outside = home.paths.root().join("other.sql");
         std::fs::write(&outside, "x").unwrap();
 
-        assert!(delete(&home.paths, "mysql", &outside).is_err());
+        assert!(delete(&home.paths, "mariadb", &outside).is_err());
         assert!(outside.is_file());
-        assert!(delete(&home.paths, "mysql", &inside).is_ok());
+        assert!(delete(&home.paths, "mariadb", &inside).is_ok());
         assert!(!inside.exists());
         assert!(delete(&home.paths, "mongodb", &inside).is_err());
     }

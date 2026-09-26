@@ -392,10 +392,9 @@ mod tests {
         let plan = build_plan(&app, resolve_values(&app, &provided, &ctx).unwrap(), &ctx).unwrap();
 
         let ids: Vec<&str> = plan.requirements.iter().map(|r| r.id.as_str()).collect();
-        for want in ["php", "composer", "node", "mysql", "mailpit", "nginx"] {
+        for want in ["php", "composer", "node", "mariadb", "mailpit", "nginx"] {
             assert!(ids.contains(&want), "requirement {want} missing: {ids:?}");
         }
-        assert!(!ids.contains(&"mariadb"), "only the chosen database is required");
         assert_eq!(plan.hostname.as_deref(), Some("shop.test"));
         let names: Vec<&str> = plan.steps.iter().map(|s| s.name.as_str()).collect();
         for want in ["Create the database", "Create the Laravel project", "Run migrations", "Create shop.test", "Trust the local certificate authority", "Apply web server config", "Health checks"] {

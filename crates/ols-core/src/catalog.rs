@@ -64,20 +64,6 @@ const CATALOG: &[PackageManifest] = &[
         binary: "mailpit.exe",
     },
     PackageManifest {
-        id: "mysql",
-        name: "MySQL",
-        version: "26.7.0",
-        platform: "windows",
-        architecture: "x64",
-        url: "https://cdn.mysql.com//Downloads/MySQL-26.7/mysql-26.7.0-winx64.zip",
-        // MySQL's download page shows no static checksum file either (MD5/SHA256 are
-        // rendered client-side via JS on the download page) — same self-pinned approach
-        // as Mailpit above, hashed from a direct HTTPS download of this exact URL.
-        sha256: "e8d5b08f0d430555497679fa713a9649953ea067f952708a74cdcdf34f8e4b7d",
-        archive_root: "mysql-26.7.0-winx64",
-        binary: "bin/mysqld.exe",
-    },
-    PackageManifest {
         id: "nginx",
         name: "Nginx",
         version: "1.28.3",
@@ -240,7 +226,6 @@ pub fn system_probe(id: &str) -> Option<(&'static str, &'static str)> {
         "node" => Some(("node.exe", "--version")),
         "php" => Some(("php.exe", "--version")),
         "python" => Some(("python.exe", "--version")),
-        "mysql" => Some(("mysql.exe", "--version")),
         "nginx" => Some(("nginx.exe", "-v")),
         "caddy" => Some(("caddy.exe", "version")),
         "apache" => Some(("httpd.exe", "-v")),

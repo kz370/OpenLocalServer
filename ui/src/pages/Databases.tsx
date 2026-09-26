@@ -26,11 +26,11 @@ import { formatBytes, useAction, usePoll } from '@/lib/hooks'
 import { waitForService } from '@/lib/wait'
 import { confirmAction, confirmThen } from '@/lib/confirm'
 
-type Tab = 'mysql' | 'mariadb' | 'postgres' | 'mongodb' | 'redis' | 'sqlite' | 'tools'
+type Tab = 'mariadb' | 'postgres' | 'mongodb' | 'redis' | 'sqlite' | 'tools'
 
 /** §31–39, §102: SQL databases and users, MongoDB connection info, SQLite files, and external tools. */
 export function DatabasesPage() {
-  const [tab, setTab] = useState<Tab>('mysql')
+  const [tab, setTab] = useState<Tab>('mariadb')
   const [migrating, setMigrating] = useState(false)
   const [services, setServices] = useState<ServiceStatus[]>([])
   const { error, setError } = useAction()
@@ -55,7 +55,6 @@ export function DatabasesPage() {
       <ErrorCard error={error} onDismiss={() => setError(null)} />
       <Tabs
         tabs={[
-          { id: 'mysql', label: 'MySQL', icon: <TechIcon id="mysql" /> },
           { id: 'mariadb', label: 'MariaDB', icon: <TechIcon id="mariadb" /> },
           { id: 'postgres', label: 'PostgreSQL', icon: <TechIcon id="postgres" /> },
           { id: 'mongodb', label: 'MongoDB', icon: <TechIcon id="mongodb" /> },
@@ -66,7 +65,7 @@ export function DatabasesPage() {
         value={tab}
         onChange={setTab}
       />
-      {(tab === 'mysql' || tab === 'mariadb' || tab === 'postgres') && <SqlEngine key={tab} engine={tab} service={services.find((s) => s.id === tab)} />}
+      {(tab === 'mariadb' || tab === 'postgres') && <SqlEngine key={tab} engine={tab} service={services.find((s) => s.id === tab)} />}
       {tab === 'mongodb' && <Mongo service={services.find((s) => s.id === 'mongodb')} />}
       {tab === 'redis' && <Redis service={services.find((s) => s.id === 'redis')} />}
       {tab === 'sqlite' && <Sqlite />}
@@ -112,9 +111,9 @@ function ServiceBanner({ service, name }: { service?: ServiceStatus; name: strin
   )
 }
 
-const ENGINE_NAMES = { mysql: 'MySQL', mariadb: 'MariaDB', postgres: 'PostgreSQL' } as const
+const ENGINE_NAMES = { mariadb: 'MariaDB', postgres: 'PostgreSQL' } as const
 
-function SqlEngine({ engine, service }: { engine: 'mysql' | 'mariadb' | 'postgres'; service?: ServiceStatus }) {
+function SqlEngine({ engine, service }: { engine: 'mariadb' | 'postgres'; service?: ServiceStatus }) {
   const [dbs, setDbs] = useState<string[]>([])
   const [users, setUsers] = useState<DbUser[]>([])
   const [newDb, setNewDb] = useState('')
@@ -300,7 +299,7 @@ function Redis({ service }: { service?: ServiceStatus }) {
           </div>
           {info && <div className="rounded-lg bg-muted/40 p-3 font-mono text-xs">host {info.host} · port {info.port}<br />{info.uri}</div>}
           <p className="text-xs text-muted-foreground">
-            Redis has no official Windows build; this is the community redis-windows build. It listens on 127.0.0.1 only. Logs are on the Logs page (source: Redis).
+            Runs the Windows build of Redis from the Runtimes page (the community redis-windows project). It listens on 127.0.0.1 only. Logs are on the Logs page (source: Redis).
           </p>
         </CardContent>
       </Card>
@@ -395,7 +394,7 @@ function Tools() {
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">Register a tool</CardTitle>
           <CardDescription>
-            Used by "Open in tool". Arguments can use {'{host} {port} {user} {database} {path} {uri}'}. Without a registered tool, MySQL, MariaDB and SQLite open in HeidiSQL if it's installed.
+            Used by "Open in tool". Arguments can use {'{host} {port} {user} {database} {path} {uri}'}. Without a registered tool, MariaDB and SQLite open in HeidiSQL if it's installed.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 sm:grid-cols-2">
@@ -405,7 +404,7 @@ function Tools() {
           <Field label="Name">
             <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="MongoDB Compass" />
           </Field>
-          <Field label="Engines" hint="Comma separated: mysql, mariadb, sqlite, mongodb, postgres">
+          <Field label="Engines" hint="Comma separated: mariadb, sqlite, mongodb, postgres">
             <Input value={draft.engines} onChange={(e) => setDraft({ ...draft, engines: e.target.value })} />
           </Field>
           <Field label="Arguments (space separated)">

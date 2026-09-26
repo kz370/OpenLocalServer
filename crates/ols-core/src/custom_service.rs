@@ -282,7 +282,7 @@ mod tests {
         assert_eq!(CustomServiceStore::load(&home.paths).list().len(), 1);
 
         let mut not_custom = service(&exe);
-        not_custom.id = "mysql".into();
+        not_custom.id = "mariadb".into();
         assert!(store.save(not_custom).is_err());
     }
 

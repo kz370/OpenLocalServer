@@ -157,7 +157,7 @@ impl RuntimeManager {
             .collect()
     }
 
-    /// The root of an installed version — e.g. MySQL's `--basedir`, which needs the whole
+    /// The root of an installed version — e.g. MariaDB's `--basedir`, which needs the whole
     /// install tree (bin/, share/, ...), not just the directory holding the executable.
     pub fn install_dir(&self, id: &str, version: &str) -> PathBuf {
         self.version_dir(id, version)

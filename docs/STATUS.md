@@ -18,7 +18,7 @@ Release 1.0   Stages 16–18  ██░░░░░░░░░░░░░░�
 
 ## What works today
 
-- **Runtimes:** PHP, Node, Composer, MySQL, MariaDB, PostgreSQL, MongoDB, Redis, Mailpit, Nginx, Apache, Caddy, SQLite downloaded
+- **Runtimes:** PHP, Node, Composer, MariaDB, PostgreSQL, MongoDB, Redis, Mailpit, Nginx, Apache, Caddy, SQLite downloaded
   and SHA-256 verified; existing installs (Laragon, XAMPP) can be registered instead. PHP extensions per version,
   with PECL downloads.
 - **Projects:** register or scan folders, framework and version detection, per-project runtime resolution,
@@ -29,7 +29,7 @@ Release 1.0   Stages 16–18  ██░░░░░░░░░░░░░░�
   detection, history with diff and restore, structured editing of common blocks.
 - **Name resolution without repeated admin prompts:** built-in DNS for `.test` / `.localhost` / `.internal`, and
   an optional helper service for everything else.
-- **Databases:** create databases and users, connection details, backup and restore of MySQL / MariaDB /
+- **Databases:** create databases and users, connection details, backup and restore of MariaDB /
   PostgreSQL, SQLite management, external GUI tools
   (HeidiSQL, pgAdmin, custom), and import from Laragon / XAMPP / WampServer without an SQL file.
 - **Quick Apps and Quick Commands:** 13 built-in recipes (including Reverse Proxy), import/export with trust,
@@ -93,7 +93,7 @@ Xdebug, full Composer commands, pnpm/yarn through corepack, Python virtual envir
 - **Redis** is the community `redis-windows` build (there is no official Windows build).
 
 - **Helper service install:** the pipe protocol is tested; the one-time UAC install has not been run for real.
-- **Database import:** reading and dumping from real Laragon data is tested; loading into our MySQL/MariaDB is not.
+- **Database import:** reading and dumping from real Laragon data is tested; loading into our MariaDB is not.
 - **UI:** new screens (including the Stage 11 ones: Xdebug dialog, project tools, `.env` editor, diagnostics card)
   pass type-checking and lint but have not been checked visually in the running app.
 

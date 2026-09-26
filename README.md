@@ -8,8 +8,8 @@ editing your system by hand.
 
 ## Features
 
-- **Runtimes:** PHP (with extensions and Xdebug), Node, Composer, MySQL, MariaDB, MongoDB, Mailpit, Nginx, Apache,
-  Caddy and SQLite. Downloads are SHA-256 verified, or register an existing Laragon or XAMPP install.
+- **Runtimes:** PHP (with extensions and Xdebug), Node, Composer, MariaDB, PostgreSQL, MongoDB, Redis, Mailpit, Nginx,
+  Apache, Caddy and SQLite. Downloads are SHA-256 verified, or register an existing Laragon or XAMPP install.
 - **Sites:** any domain name, trusted local HTTPS, PHP version per site, static sites, reverse proxy, wildcard
   subdomains.
 - **Projects:** framework detection, `.env` editor, Composer, npm/pnpm/yarn and Python virtual environments.

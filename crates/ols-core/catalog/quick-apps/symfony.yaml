@@ -6,7 +6,6 @@ category: php
 requirements:
   php: "8.4"
   composer: true
-  mysql: true
   mariadb: true
   mailpit: true
 
@@ -28,8 +27,8 @@ variables:
   - name: database
     label: Database
     type: select
-    options: [mysql, mariadb, none]
-    default: mysql
+    options: [mariadb, none]
+    default: mariadb
   - name: db_name
     label: Database name
     type: text
@@ -62,7 +61,7 @@ commands:
     cwd: "{{ project_path }}"
 
 env_vars:
-  - { key: DATABASE_URL, value: "mysql://root@127.0.0.1:{{ 3306 if database == 'mysql' else 3307 }}/{{ db_name }}?charset=utf8mb4", if: "database != none" }
+  - { key: DATABASE_URL, value: "mysql://root@127.0.0.1:3306/{{ db_name }}?serverVersion=11.4.9-MariaDB&charset=utf8mb4", if: "database != none" }
   - { key: MAILER_DSN, value: "smtp://127.0.0.1:1025", if: mailpit }
   - { key: APP_ENV, value: "dev" }
 

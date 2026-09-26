@@ -54,7 +54,7 @@ export function ServicesPage() {
     setError(null)
     setMessage(null)
     try {
-      await runCommand({ type: 'create_mysql_database', name: dbName })
+      await runCommand({ type: 'create_database', engine: 'mariadb', name: dbName })
       setMessage(`Database "${dbName}" created (or already existed).`)
     } catch (err) {
       setError(err as Diagnostic)
@@ -87,7 +87,7 @@ export function ServicesPage() {
     }
   }
 
-  const mysql = services.find((s) => s.id === 'mysql')
+  const mariadb = services.find((s) => s.id === 'mariadb')
 
   return (
     <div className="flex flex-col gap-6">
@@ -171,10 +171,10 @@ export function ServicesPage() {
 
       <CustomServices onChanged={refresh} />
 
-      {mysql?.running && (
+      {mariadb?.running && (
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Create a MySQL database</CardTitle>
+            <CardTitle className="text-sm">Create a MariaDB database</CardTitle>
           </CardHeader>
           <CardContent className="flex items-center gap-2">
             <Input value={dbName} onChange={(e) => setDbName(e.target.value)} className="w-56" />

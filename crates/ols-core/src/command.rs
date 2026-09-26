@@ -82,7 +82,6 @@ pub enum CoreCommand {
     RemoveCustomService { id: String },
     StartService { id: String },
     StopService { id: String },
-    CreateMysqlDatabase { name: String },
 
     // Secrets Manager (§104, §141, Stage 5)
     SetSecret { key: String, value: String },
@@ -152,7 +151,7 @@ pub enum CoreCommand {
     CreateDbUser { engine: String, user: String, password: String, database: String },
     ListDbUsers { engine: String },
     GetConnectionInfo { engine: String, database: Option<String>, path: Option<String> },
-    /// SQL dump backups (§32, §34): MySQL, MariaDB and PostgreSQL.
+    /// SQL dump backups (§32, §34): MariaDB and PostgreSQL.
     BackupDatabase { engine: String, database: String },
     ListDbBackups { engine: String, database: Option<String> },
     /// Loads a backup into `database`, after a safety backup of what is there.
@@ -575,10 +574,6 @@ impl Core {
             }
             C::StopService { id } => {
                 i.services.stop(&id);
-                Ok(R::Ok)
-            }
-            C::CreateMysqlDatabase { name } => {
-                i.services.create_database("mysql", &name).map_err(CoreError::ServiceError)?;
                 Ok(R::Ok)
             }
 

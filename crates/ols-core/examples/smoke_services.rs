@@ -1,7 +1,7 @@
-//! Stage 5 smoke test: installs Mailpit + MySQL for real (reusing whatever's already
+//! Stage 5 smoke test: installs Mailpit + MariaDB for real (reusing whatever's already
 //! verified in cache/ — see §127), starts them as managed services, sends a real SMTP
 //! message and confirms Mailpit captured it via its own HTTP API, and creates a real
-//! MySQL database via the mysql client. All through `Core::dispatch`, same as the GUI.
+//! MariaDB database via the mariadb client. All through `Core::dispatch`, same as the GUI.
 //! `cargo run --release --example smoke_services -p ols-core`
 
 use std::io::{Read, Write};
@@ -94,7 +94,7 @@ fn main() {
     let settings = SettingsService::load(&paths).unwrap();
     let mut core = Core::new(settings, paths.clone());
 
-    for (id, version) in [("mailpit", "1.31.2"), ("mysql", "26.7.0")] {
+    for (id, version) in [("mailpit", "1.31.2"), ("mariadb", "11.4.9")] {
         let entries = match dispatch(&mut core, CoreCommand::ListRuntimeCatalog) {
             CoreResponse::RuntimeCatalog { entries } => entries,
             _ => unreachable!(),
@@ -124,17 +124,17 @@ fn main() {
     dispatch(&mut core, CoreCommand::StopService { id: "mailpit".into() });
     println!("[smoke] mailpit: SMTP -> capture -> API readback all verified, stopped");
 
-    // -- MySQL --
-    println!("[smoke] starting mysql (first start runs --initialize-insecure, can take a bit)...");
-    dispatch(&mut core, CoreCommand::StartService { id: "mysql".into() });
-    wait_port_open(3306, "MySQL");
-    // mysqld can accept TCP slightly before it's fully ready to authenticate; give it a beat.
+    // -- MariaDB --
+    println!("[smoke] starting mariadb (first start runs mariadb-install-db, can take a bit)...");
+    dispatch(&mut core, CoreCommand::StartService { id: "mariadb".into() });
+    wait_port_open(3306, "MariaDB");
+    // mariadbd can accept TCP slightly before it's fully ready to authenticate; give it a beat.
     sleep(Duration::from_secs(3));
 
-    dispatch(&mut core, CoreCommand::CreateMysqlDatabase { name: "smoke_test_db".into() });
+    dispatch(&mut core, CoreCommand::CreateDatabase { engine: "mariadb".into(), name: "smoke_test_db".into() });
     println!("[smoke] CREATE DATABASE smoke_test_db succeeded");
-    dispatch(&mut core, CoreCommand::StopService { id: "mysql".into() });
-    println!("[smoke] mysql: init -> start -> create database all verified, stopped");
+    dispatch(&mut core, CoreCommand::StopService { id: "mariadb".into() });
+    println!("[smoke] mariadb: init -> start -> create database all verified, stopped");
 
     println!("[smoke] ALL GOOD — Stage 5 service pipeline verified end-to-end against real app data.");
 }

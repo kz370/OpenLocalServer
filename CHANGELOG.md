@@ -5,10 +5,18 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- MariaDB is the only MySQL-compatible server and runs on the standard port 3306. MySQL is no longer offered:
+  Quick Apps, the Databases and Services pages, backups and imports all use MariaDB. Databases from Laragon,
+  XAMPP or WampServer MySQL can still be imported into it.
+
+### Fixed
+- MariaDB's first start failed with "Can't create data directory" when its services folder didn't exist yet.
+
 ### Added
 - PostgreSQL and Redis services (Redis from the community `redis-windows` build), with databases, users and
   connection details for PostgreSQL.
-- Backup and restore of MySQL, MariaDB and PostgreSQL databases, with a safety backup before every restore.
+- Backup and restore of MariaDB and PostgreSQL databases, with a safety backup before every restore.
 - Custom services: run any program with arguments, port and a health check.
 - Commands page lists every command a project offers (Artisan, Symfony Console, Composer, package.json scripts,
   Django), with a form built from each command's arguments and options, a live command-line preview, and
@@ -19,7 +27,7 @@ and the project follows [Semantic Versioning](https://semver.org/).
 - Interactive terminal in a project with its runtimes on PATH.
 - Operation journal: operations that were interrupted are reported on the next start.
 - Continuous integration on GitHub Actions and the repository documents.
-- Runtimes: PHP, Node, Composer, MySQL, MariaDB, MongoDB, Mailpit, Nginx, Apache, Caddy and SQLite, downloaded and
+- Runtimes: PHP, Node, Composer, MariaDB, MongoDB, Mailpit, Nginx, Apache, Caddy and SQLite, downloaded and
   SHA-256 verified. PHP extensions per version, including PECL downloads.
 - Projects: framework detection, per-project runtimes, `.env` editor, Composer and Node package manager commands
   (pnpm and yarn through corepack), Python virtual environments.

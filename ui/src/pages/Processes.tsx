@@ -128,7 +128,7 @@ export function ProcessesPage() {
       <Card>
         <CardHeader>
           <CardTitle>Start a managed process</CardTitle>
-          <CardDescription>Runs through the same supervisor that will run PHP-FPM, Nginx, MySQL, etc.</CardDescription>
+          <CardDescription>Runs through the same supervisor that runs PHP, Nginx, MariaDB, etc.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           <div className="flex flex-wrap gap-2">

@@ -544,7 +544,6 @@ export type CoreCommand =
   | { type: 'list_services' }
   | { type: 'start_service'; id: string }
   | { type: 'stop_service'; id: string }
-  | { type: 'create_mysql_database'; name: string }
   | { type: 'list_db_tools' }
   | { type: 'open_db_tool'; id: string }
   | { type: 'set_custom_install'; id: string; label: string; path: string }

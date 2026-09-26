@@ -62,7 +62,7 @@ use crate::service::ConnectionInfo;
 pub struct ExternalTool {
     pub id: String,
     pub name: String,
-    /// Engines this tool can open: "mysql" | "mariadb" | "sqlite" | "mongodb" | "postgres".
+    /// Engines this tool can open: "mariadb" | "sqlite" | "mongodb" | "postgres".
     pub engines: Vec<String>,
     pub executable: String,
     /// Arguments with placeholders: {host} {port} {user} {database} {path} {uri}.
@@ -149,7 +149,7 @@ pub fn expand_args(args: &[String], info: &ConnectionInfo) -> Vec<String> {
 /// only quotes on spaces, so these are passed verbatim.
 pub fn heidisql_args(info: &ConnectionInfo) -> Option<Vec<String>> {
     match info.engine.as_str() {
-        "mysql" | "mariadb" | "postgres" => {
+        "mariadb" | "postgres" => {
             // 0 = MariaDB/MySQL TCP/IP, 8 = PostgreSQL TCP/IP.
             let nettype = if info.engine == "postgres" { 8 } else { 0 };
             let mut args = vec![

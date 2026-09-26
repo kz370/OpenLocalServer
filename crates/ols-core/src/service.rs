@@ -1,5 +1,5 @@
 //! Service Manager (§22, §31–39, §61–68 — Stages 5 and 10): long-running background
-//! services (Mailpit, MySQL, MariaDB, MongoDB). Reuses the Runtime Manager's install
+//! services (Mailpit, MariaDB, PostgreSQL, MongoDB, Redis). Reuses the Runtime Manager's install
 //! pipeline (same download → verify → extract, §20–21) and the Process Supervisor's
 //! lifecycle (§107) — a service is just a process someone starts and expects to keep
 //! running, not a new concept.
@@ -23,7 +23,9 @@ use crate::port::port_is_free;
 use crate::process::{ProcessId, ProcessSpec, ProcessSupervisor};
 use crate::runtime::RuntimeManager;
 
-const KNOWN_SERVICES: &[&str] = &["mailpit", "mysql", "mariadb", "postgres", "mongodb", "redis"];
+/// In the order the pages list them. MariaDB is the MySQL-compatible server; MySQL itself
+/// is not offered.
+const KNOWN_SERVICES: &[&str] = &["mailpit", "mariadb", "postgres", "mongodb", "redis"];
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -225,7 +227,6 @@ impl ServiceManager {
 
         let process_id = match id {
             "mailpit" => self.start_mailpit(&version)?,
-            "mysql" => self.start_mysql(&version)?,
             "mariadb" => self.start_mariadb(&version)?,
             "postgres" => self.start_postgres(&version)?,
             "mongodb" => self.start_mongodb(&version)?,
@@ -265,56 +266,7 @@ impl ServiceManager {
         Ok(id)
     }
 
-    fn start_mysql(&self, version: &str) -> Result<ProcessId, String> {
-        let install_dir = self.runtimes.install_dir("mysql", version);
-        let mysqld = install_dir.join("bin").join("mysqld.exe");
-        if !mysqld.is_file() {
-            return Err("mysqld.exe missing on disk".into());
-        }
-        let data_dir = self.paths.services_dir().join("mysql").join("data");
-
-        // First run only: `mysqld --initialize-insecure` creates the data directory and a
-        // passwordless root user (fine for a local dev tool; never exposed by default —
-        // the server below binds loopback only, §138).
-        if !data_dir.exists() {
-            std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
-            let init = self.supervisor.run_to_completion(
-                &mysqld.display().to_string(),
-                &[
-                    "--initialize-insecure".to_string(),
-                    format!("--datadir={}", data_dir.display()),
-                    format!("--basedir={}", install_dir.display()),
-                ],
-                None,
-                Duration::from_secs(120),
-            );
-            if init.exit_code != Some(0) {
-                let _ = std::fs::remove_dir_all(&data_dir);
-                return Err(format!(
-                    "mysqld --initialize-insecure failed (exit code {:?}, timed_out={})",
-                    init.exit_code, init.timed_out
-                ));
-            }
-        }
-
-        let id = self.supervisor.start(ProcessSpec {
-            name: "MySQL".into(),
-            executable: mysqld.display().to_string(),
-            args: vec![
-                format!("--datadir={}", data_dir.display()),
-                format!("--basedir={}", install_dir.display()),
-                format!("--port={}", primary_port("mysql").unwrap()),
-                // Bound to loopback only — never exposed on the network by default (§138).
-                "--bind-address=127.0.0.1".to_string(),
-            ],
-            cwd: None,
-            env: vec![],
-            restart: None,
-        });
-        Ok(id)
-    }
-
-    /// MariaDB (§31, Stage 10). Runs on 3307 so it can sit beside MySQL on 3306.
+    /// MariaDB (§31, Stage 10): the MySQL-compatible server, on the standard 3306.
     fn start_mariadb(&self, version: &str) -> Result<ProcessId, String> {
         let install_dir = self.runtimes.install_dir("mariadb", version);
         let mariadbd = install_dir.join("bin").join("mariadbd.exe");
@@ -324,6 +276,8 @@ impl ServiceManager {
         let data_dir = self.paths.services_dir().join("mariadb").join("data");
 
         if !data_dir.exists() {
+            // The installer makes the data folder itself but not the folders above it.
+            std::fs::create_dir_all(data_dir.parent().unwrap()).map_err(|e| e.to_string())?;
             let installer = install_dir.join("bin").join("mariadb-install-db.exe");
             let init = run_capture(
                 &installer,
@@ -453,11 +407,10 @@ impl ServiceManager {
 
     // ------------------------------------------------------------- SQL clients (§32–33)
 
-    /// Path + port of the command-line client for a SQL engine ("mysql" | "mariadb").
+    /// Path + port of the command-line client for a SQL engine ("mariadb" | "postgres").
     /// The engine's own command-line client and the port it listens on.
     pub fn sql_client(&self, engine: &str) -> Result<(PathBuf, u16), String> {
         let (exe, port) = match engine {
-            "mysql" => ("mysql.exe", primary_port("mysql")),
             "mariadb" => ("mariadb.exe", primary_port("mariadb")),
             "postgres" => ("psql.exe", primary_port("postgres")),
             other => return Err(format!("{other} is not a SQL engine OpenLocalServer manages")),
@@ -499,11 +452,6 @@ impl ServiceManager {
         } else {
             Err(format!("{engine} client failed: {}", out.combined()))
         }
-    }
-
-    /// Kept for the Stage 5 command; MySQL only.
-    pub fn run_mysql_client(&self, sql: &str) -> Result<String, String> {
-        self.run_sql("mysql", sql).map(|_| "ok".to_string())
     }
 
     pub fn create_database(&self, engine: &str, name: &str) -> Result<(), String> {
@@ -587,7 +535,7 @@ impl ServiceManager {
     /// What an external tool needs to connect to `engine` (§102). `database` is optional.
     pub fn connection_info(&self, engine: &str, database: Option<&str>, sqlite_path: Option<&str>) -> Result<ConnectionInfo, String> {
         match engine {
-            "mysql" | "mariadb" => {
+            "mariadb" => {
                 let port = primary_port(engine).unwrap();
                 Ok(ConnectionInfo {
                     engine: engine.into(),
@@ -658,8 +606,7 @@ fn kind_of(id: &str) -> &'static str {
 fn primary_port(id: &str) -> Option<u16> {
     match id {
         "mailpit" => Some(8025),
-        "mysql" => Some(3306),
-        "mariadb" => Some(3307),
+        "mariadb" => Some(3306),
         "mongodb" => Some(27017),
         "postgres" => Some(5432),
         "redis" => Some(6379),
@@ -670,8 +617,7 @@ fn primary_port(id: &str) -> Option<u16> {
 fn connection_string(id: &str) -> Option<String> {
     match id {
         "mailpit" => Some(format!("SMTP 127.0.0.1:{} · UI http://127.0.0.1:8025", mailpit_smtp_port())),
-        "mysql" => Some("mysql://root@127.0.0.1:3306".into()),
-        "mariadb" => Some("mysql://root@127.0.0.1:3307".into()),
+        "mariadb" => Some("mysql://root@127.0.0.1:3306".into()),
         "mongodb" => Some("mongodb://127.0.0.1:27017".into()),
         "postgres" => Some("postgresql://postgres@127.0.0.1:5432".into()),
         "redis" => Some("redis://127.0.0.1:6379".into()),
@@ -714,8 +660,9 @@ mod tests {
         let mgr = ServiceManager::new(home.paths.clone(), runtimes, sup);
 
         let m = mgr.connection_info("mariadb", Some("shop"), None).unwrap();
-        assert_eq!(m.port, Some(3307));
-        assert_eq!(m.uri, "mysql://root@127.0.0.1:3307/shop");
+        assert_eq!(m.port, Some(3306));
+        assert_eq!(m.uri, "mysql://root@127.0.0.1:3306/shop");
+        assert!(mgr.connection_info("mysql", None, None).is_err(), "MySQL is not offered");
         assert_eq!(mgr.connection_info("mongodb", None, None).unwrap().uri, "mongodb://127.0.0.1:27017");
         assert!(mgr.connection_info("sqlite", None, None).is_err());
         assert_eq!(mgr.connection_info("sqlite", None, Some("C:\\db\\a.sqlite")).unwrap().uri, "sqlite:///C:/db/a.sqlite");

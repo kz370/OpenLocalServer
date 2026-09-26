@@ -555,7 +555,7 @@ impl Inner {
         let info = self.services.connection_info(engine, database, path).map_err(svc)?;
 
         // 1) an explicitly chosen registered tool, 2) the first registered for the engine,
-        // 3) HeidiSQL (mysql/mariadb/sqlite) or pgAdmin if detected.
+        // 3) HeidiSQL (mariadb/sqlite) or pgAdmin if detected.
         let registered = {
             let store = self.ext_tools.lock().unwrap();
             match tool_id {
@@ -572,7 +572,7 @@ impl Inner {
         let find = |id: &str| custom_path(id).or_else(|| detected.iter().find(|t| t.id == id).and_then(|t| t.found_path.clone()));
 
         match engine {
-            "mysql" | "mariadb" | "sqlite" => {
+            "mariadb" | "sqlite" => {
                 let exe = find("heidisql").ok_or_else(|| svc("HeidiSQL was not found. Install it, locate it, or register another tool for this engine."))?;
                 let args = dbtools::heidisql_args(&info).ok_or_else(|| svc("HeidiSQL can't open that database"))?;
                 dbtools::launch(&exe, &args, true).map_err(svc)
@@ -850,7 +850,7 @@ impl Inner {
         session.databases().map_err(svc)
     }
 
-    /// Copies databases from an old server into ours (`target`: "mysql" | "mariadb").
+    /// Copies databases from an old server (MySQL or MariaDB) into our MariaDB (`target`).
     /// An empty `databases` list means all of them. Each database reports on its own, so
     /// one failure doesn't stop the rest.
     pub fn migrate_databases(&self, source_id: &str, password: &str, databases: &[String], target: &str) -> Result<Vec<crate::migrate::MigratedDb>, CoreError> {
@@ -1214,7 +1214,7 @@ impl Inner {
                     self.services.start(id)?;
                 }
                 let port = self.services.status(id).port.ok_or("service has no port")?;
-                // MySQL/MariaDB initialise their data directory on first start — give them time.
+                // MariaDB initialises its data directory on first start — give them time.
                 let started = Instant::now();
                 while started.elapsed() < Duration::from_secs(120) {
                     if !self.services.is_running(id) {
