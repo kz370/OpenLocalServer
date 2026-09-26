@@ -229,14 +229,10 @@ fn body(site: &SiteSpec) -> String {
             out.push_str(
                 "    ProxyFCGISetEnvIf \"reqenv('SCRIPT_FILENAME') =~ m#^proxy:fcgi://[^/]+/(.*)$#\" SCRIPT_FILENAME \"$1\"\n",
             );
-            out.push_str("    <IfModule rewrite_module>\n");
-            out.push_str("        RewriteEngine On\n");
-            // Front-controller frameworks: anything that isn't a real file goes to index.php.
-            out.push_str("        RewriteCond %{REQUEST_FILENAME} !-f\n");
-            out.push_str("        RewriteCond %{REQUEST_FILENAME} !-d\n");
-            out.push_str("        RewriteCond %{REQUEST_URI} !^/index\\.php\n");
-            out.push_str("        RewriteRule ^ /index.php [L]\n");
-            out.push_str("    </IfModule>\n");
+            // In VirtualHost context REQUEST_FILENAME may still be the URL path, before
+            // Apache maps it to disk. FallbackResource preserves existing assets and sends
+            // only missing paths to the PHP front controller.
+            out.push_str("    FallbackResource /index.php\n");
         }
         Backend::Proxy { upstream } => {
             if upstream.starts_with("https://") {

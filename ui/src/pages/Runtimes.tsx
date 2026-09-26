@@ -20,6 +20,28 @@ import { confirmAction } from '@/lib/confirm'
 /** Runtimes a user may already have somewhere else and want to point at. */
 const LOCATABLE = ['php', 'node', 'python']
 const ONLINE_CATALOGS = new Set(['nginx', 'node', 'mariadb', 'php', 'apache', 'composer', 'mongodb', 'postgres', 'redis'])
+const ONLINE_CATALOG_CACHE_KEY = 'ols.runtime-catalogs'
+const ONLINE_CATALOG_CACHE_TTL = 24 * 60 * 60 * 1000
+
+interface CachedCatalog {
+  fetchedAt: number
+  versions: Array<{ name: string; version: string }>
+}
+
+type CatalogStatus = 'checking' | 'ready' | 'error'
+
+function readCatalogCache(): Record<string, CachedCatalog> {
+  try {
+    const raw = localStorage.getItem(ONLINE_CATALOG_CACHE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as Record<string, CachedCatalog>
+    return Object.fromEntries(Object.entries(parsed).filter(([, value]) =>
+      Number.isFinite(value?.fetchedAt) && value.fetchedAt <= Date.now() && Array.isArray(value.versions),
+    ))
+  } catch {
+    return {}
+  }
+}
 
 function versionKey(v: string): number[] {
   return v.split('.').map((p) => parseInt(p, 10) || 0)
@@ -56,6 +78,8 @@ export function RuntimesPage() {
   const [notice, setNotice] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [catalogRefreshing, setCatalogRefreshing] = useState(false)
+  const [catalogStatus, setCatalogStatus] = useState<Record<string, CatalogStatus>>({})
+  const [cachedCatalogIds, setCachedCatalogIds] = useState<Set<string>>(new Set())
 
   const [customInstalls, setCustomInstalls] = useState<CustomInstall[]>([])
   const [manageId, setManageId] = useState<string | null>(null)
@@ -72,6 +96,29 @@ export function RuntimesPage() {
     const custom = await runCommand({ type: 'list_custom_installs' })
     if (custom.type === 'custom_installs') setCustomInstalls(custom.entries)
     setLoading(false)
+  }
+
+  async function refreshOnlineCatalog(id: string) {
+    setCatalogStatus((prev) => ({ ...prev, [id]: 'checking' }))
+    try {
+      const res = await runCommand({ type: 'refresh_runtime_catalog', id })
+      if (res.type !== 'runtime_catalog') return
+      const entries = res.entries.filter((entry) => entry.id === id)
+      setCatalog((prev) => [...prev.filter((entry) => entry.id !== id), ...entries])
+      setCatalogStatus((prev) => ({ ...prev, [id]: 'ready' }))
+      setCachedCatalogIds((prev) => new Set([...prev, id]))
+      try {
+        const cache = readCatalogCache()
+        cache[id] = { fetchedAt: Date.now(), versions: entries.map(({ name, version }) => ({ name, version })) }
+        localStorage.setItem(ONLINE_CATALOG_CACHE_KEY, JSON.stringify(cache))
+      } catch {
+        // The current runtime list remains usable when browser storage is unavailable.
+      }
+      return entries
+    } catch (err) {
+      setCatalogStatus((prev) => ({ ...prev, [id]: 'error' }))
+      throw err
+    }
   }
 
   async function guarded(fn: () => Promise<void>) {
@@ -122,13 +169,41 @@ export function RuntimesPage() {
     })
 
   useEffect(() => {
-    void refresh().catch(() => setLoading(false))
+    let active = true
+    void (async () => {
+      try {
+        await refresh()
+        if (!active) return
+        const cached = readCatalogCache()
+        setCachedCatalogIds(new Set(Object.keys(cached)))
+        const cachedEntries = Object.entries(cached).flatMap(([id, value]) =>
+          value.versions.map(({ name, version }) => ({ id, name, version, installed: false, is_default: false, system: null })),
+        )
+        setCatalog((prev) => {
+          const known = new Set(prev.map((entry) => `${entry.id}@${entry.version}`))
+          return [...prev, ...cachedEntries.filter((entry) => !known.has(`${entry.id}@${entry.version}`))]
+        })
+        const staleIds = [...ONLINE_CATALOGS].filter((id) =>
+          !cached[id] || Date.now() - cached[id].fetchedAt >= ONLINE_CATALOG_CACHE_TTL,
+        )
+        setCatalogStatus(Object.fromEntries([...ONLINE_CATALOGS].map((id) => [
+          id,
+          staleIds.includes(id) ? 'checking' as const : 'ready' as const,
+        ])))
+        await Promise.all(staleIds.map(async (id) => {
+          try { await refreshOnlineCatalog(id) } catch { /* Keep cached or built-in versions visible offline. */ }
+        }))
+      } catch {
+        setLoading(false)
+      }
+    })()
     const unlisten = listen<RuntimeEvent>('runtime-event', (event) => {
       const e = event.payload
       setProgress((prev) => ({ ...prev, [`${e.id}@${e.version}`]: e }))
       if (e.kind === 'installed' || e.kind === 'failed') void refresh()
     })
     return () => {
+      active = false
       void unlisten.then((f) => f())
     }
   }, [])
@@ -170,13 +245,16 @@ export function RuntimesPage() {
       setCatalogRefreshing(false)
       return
     }
+    if (catalogStatus[group.id] === 'checking' || catalogStatus[group.id] === 'ready') {
+      setCatalogRefreshing(false)
+      return
+    }
     setCatalogRefreshing(true)
-    void runCommand({ type: 'refresh_runtime_catalog', id: group.id })
-      .then((res) => {
-        if (res.type !== 'runtime_catalog') return
-        setCatalog(res.entries)
-        const newest = res.entries
-          .filter((entry) => entry.id === group.id && !entry.installed)
+    void refreshOnlineCatalog(group.id)
+      .then((entries) => {
+        if (!entries) return
+        const newest = entries
+          .filter((entry) => !entry.installed)
           .sort((a, b) => compareVersionsDesc(a.version, b.version))[0]
         if (newest) setInstallChoices((prev) => ({ ...prev, [group.id]: newest.version }))
       })
@@ -327,7 +405,13 @@ export function RuntimesPage() {
                     </span>
                   )}
                 </TableCell>
-                <TableCell className="text-sm text-muted-foreground">{availableCount} available</TableCell>
+                <TableCell className="text-sm text-muted-foreground">
+                  {ONLINE_CATALOGS.has(g.id) && catalogStatus[g.id] === 'checking' && !cachedCatalogIds.has(g.id)
+                    ? 'Checking…'
+                    : ONLINE_CATALOGS.has(g.id) && catalogStatus[g.id] === 'error' && !cachedCatalogIds.has(g.id)
+                      ? 'Could not check'
+                      : <>{availableCount} available{ONLINE_CATALOGS.has(g.id) && catalogStatus[g.id] === 'checking' ? ' · refreshing' : ''}{ONLINE_CATALOGS.has(g.id) && catalogStatus[g.id] === 'error' ? ' · last check failed' : ''}</>}
+                </TableCell>
                 <TableCell className="text-right">
                   <Button size="sm" variant="secondary" onClick={() => openVersions(g)}>
                     <Settings2 className="size-3.5" /> Manage versions
@@ -344,7 +428,7 @@ export function RuntimesPage() {
         open={!!managedGroup}
         onClose={() => setManageId(null)}
         title={`${managedGroup?.name ?? 'Runtime'} versions`}
-        description="Version lists are refreshed from each runtime's release source when you open this manager. Search by version, choose one to install, or manage versions already on this computer."
+        description="Version lists refresh in the background and are checked again when needed. Search by version, choose one to install, or manage versions already on this computer."
       >
         {managedGroup && <div className="flex flex-col gap-5">
           <section className="rounded-lg border border-border p-4">
@@ -388,7 +472,7 @@ export function RuntimesPage() {
                 {installingChoice ? <Spinner /> : <Download />} {installingChoice ? 'Installing…' : 'Download and install'}
               </Button>
             </div>
-            {catalogRefreshing && <p className="mt-2 text-xs text-muted-foreground">Checking the vendor’s online version list…</p>}
+            {(catalogRefreshing || catalogStatus[managedGroup.id] === 'checking') && <p className="mt-2 text-xs text-muted-foreground">Checking the vendor’s online version list…</p>}
             {selectedInstall && progress[`${managedGroup.id}@${selectedInstall}`]?.kind === 'progress' && (() => {
               const live = progress[`${managedGroup.id}@${selectedInstall}`]
               return live?.kind === 'progress' ? <p className="mt-2 text-xs text-muted-foreground">{live.state}: {formatBytes(live.downloaded)}{live.total ? ` / ${formatBytes(live.total)}` : ''}</p> : null

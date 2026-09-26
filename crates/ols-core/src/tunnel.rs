@@ -31,6 +31,8 @@ use crate::process::{ProcessId, ProcessSpec, RestartPolicy};
 
 /// Ports that are never a tunnel target by default: databases, caches, mail, debuggers.
 const INTERNAL_PORTS: &[(u16, &str)] = &[(3306, "MariaDB"), (5432, "PostgreSQL"), (27017, "MongoDB"), (6379, "Redis"), (1025, "Mailpit SMTP"), (8025, "Mailpit"), (9003, "Xdebug"), (9000, "PHP-FPM")];
+const PUBLIC_ADDRESS_TIMEOUT_MS: u64 = 60_000;
+const PUBLIC_ADDRESS_TIMEOUT: &str = "The provider has not reported a public address after 60 seconds. Open Logs for details, then stop and try again.";
 
 fn err(msg: impl Into<String>) -> CoreError {
     CoreError::TunnelError(msg.into())
@@ -156,8 +158,8 @@ impl TunnelProvider for Cloudflare {
             Some(t) if config.public_hostname.as_deref().is_some_and(|h| !h.is_empty()) => {
                 (vec!["tunnel".into(), "--no-autoupdate".into(), "run".into()], vec![("TUNNEL_TOKEN".into(), t.into())])
             }
-            Some(t) => (vec!["tunnel".into(), "--no-autoupdate".into(), "run".into(), "--url".into(), url], vec![("TUNNEL_TOKEN".into(), t.into())]),
-            None => (vec!["tunnel".into(), "--no-autoupdate".into(), "--url".into(), url], vec![]),
+            // Quick tunnels use `tunnel --url`; `run` is only for a named tunnel.
+            _ => (vec!["tunnel".into(), "--no-autoupdate".into(), "--url".into(), url], vec![]),
         }
     }
     fn find_url(&self, line: &str) -> Option<String> {
@@ -578,6 +580,11 @@ impl Inner {
         let Some(p) = provider(&l.provider) else { return };
         if l.public_url.is_none() {
             l.public_url = self.supervisor.recent_output(pid).iter().rev().find_map(|line| p.find_url(line));
+            if l.public_url.is_some() && l.error.as_deref() == Some(PUBLIC_ADDRESS_TIMEOUT) {
+                l.error = None;
+            } else if l.public_url.is_none() && l.error.is_none() && now_ms().saturating_sub(l.started_ms) >= PUBLIC_ADDRESS_TIMEOUT_MS {
+                l.error = Some(PUBLIC_ADDRESS_TIMEOUT.into());
+            }
         }
         if !self.supervisor.is_alive(pid) && l.error.is_none() {
             let last = self.supervisor.recent_output(pid).into_iter().rev().find(|x| !x.trim().is_empty()).unwrap_or_default();
