@@ -1282,6 +1282,17 @@ fn wait_port_free_all(timeout: Duration) {
 
 /// Finds `exe` (with common Windows extensions) in `dir`, or on PATH when `dir` is None.
 pub fn find_executable(dir: Option<&Path>, exe: &str) -> Option<PathBuf> {
+    // Windows cannot spawn a bare Unix shell script (e.g. Node's extensionless `npx`/`npm`)
+    // via CreateProcess — that surfaces as os error 193. Prefer native launchers first so
+    // `shim()` routes `.cmd`/`.bat` through `cmd.exe /C`. Bare names stay last as fallback.
+    #[cfg(windows)]
+    let candidates = [
+        format!("{exe}.exe"),
+        format!("{exe}.cmd"),
+        format!("{exe}.bat"),
+        exe.to_string(),
+    ];
+    #[cfg(not(windows))]
     let candidates = [
         exe.to_string(),
         format!("{exe}.exe"),
@@ -1434,6 +1445,28 @@ mod tests {
         };
         let err = build_app_spec("c.test", &app, None, None).unwrap_err();
         assert!(err.contains("was not found"));
+    }
+
+    #[test]
+    fn resolver_prefers_native_launcher_over_bare_unix_script() {
+        // Node ships extensionless `npx`/`npm` shell scripts next to `npx.cmd`.
+        // On Windows the bare script cannot spawn (os error 193); the `.cmd` must win.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("npx"), "#!/bin/sh\nnode \"$@\"").unwrap();
+        std::fs::write(dir.path().join("npx.cmd"), "@echo off").unwrap();
+        let found = find_executable(Some(dir.path()), "npx").unwrap();
+        #[cfg(windows)]
+        assert_eq!(
+            found.file_name().and_then(|n| n.to_str()),
+            Some("npx.cmd"),
+            "bare Unix script must not shadow the .cmd shim on Windows"
+        );
+        #[cfg(not(windows))]
+        assert_eq!(
+            found.file_name().and_then(|n| n.to_str()),
+            Some("npx"),
+            "Unix keeps preferring the bare executable script"
+        );
     }
 
     #[test]

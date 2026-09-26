@@ -311,17 +311,19 @@ export function RuntimesPage() {
   const managedGroup = groups.find((g) => g.id === manageId) ?? null
   // Only backend-confirmed versions are installable. Cached-only entries render
   // in counts but can't install until a refresh verifies them.
-  const installable = managedGroup?.rows.filter((r) => r.kind === 'managed' && !r.entry?.installed && verifiedKeys.has(r.key)) ?? []
+  const verifiedManaged = managedGroup?.rows.filter((r) => r.kind === 'managed' && verifiedKeys.has(r.key)) ?? []
+  const installable = verifiedManaged.filter((r) => !r.entry?.installed)
   const unverifiedCount = managedGroup?.rows.filter((r) => r.kind === 'managed' && !r.entry?.installed && !verifiedKeys.has(r.key)).length ?? 0
+  const filteredOptions = verifiedManaged.filter((row) => row.version.toLowerCase().includes(versionSearch.trim().toLowerCase()))
+  const optionsByMajor = new Map<string, Row[]>()
+  for (const row of filteredOptions) {
+    const major = row.version.match(/^\d+/)?.[0] ?? 'Other'
+    const key = major === 'Other' ? major : `${major}.x`
+    optionsByMajor.set(key, [...(optionsByMajor.get(key) ?? []), row])
+  }
   const dialogChecking = !!managedGroup && (catalogRefreshing || catalogStatus[managedGroup.id] === 'checking')
   const dialogRefreshFailed = !!managedGroup && !dialogChecking && installable.length === 0 && unverifiedCount === 0 && catalogStatus[managedGroup.id] === 'error'
   const filteredInstallable = installable.filter((row) => row.version.toLowerCase().includes(versionSearch.trim().toLowerCase()))
-  const installableByMajor = new Map<string, Row[]>()
-  for (const row of filteredInstallable) {
-    const major = row.version.match(/^\d+/)?.[0] ?? 'Other'
-    const key = major === 'Other' ? major : `${major}.x`
-    installableByMajor.set(key, [...(installableByMajor.get(key) ?? []), row])
-  }
   const rememberedChoice = installChoices[manageId ?? '']
   const selectedInstall = rememberedChoice && installable.some((r) => r.version === rememberedChoice) ? rememberedChoice : installable[0]?.version ?? ''
   const selectedInstallVisible = filteredInstallable.some((r) => r.version === selectedInstall)
@@ -496,17 +498,20 @@ export function RuntimesPage() {
                 <select
                   aria-label={`Available ${managedGroup.name} versions`}
                   value={selectedInstall}
-                  disabled={installable.length === 0 || dialogChecking}
+                  disabled={filteredOptions.length === 0 || dialogChecking}
                   onChange={(e) => setInstallChoices((prev) => ({ ...prev, [managedGroup.id]: e.target.value }))}
                   className="h-9 w-full min-w-0 appearance-none rounded-md border border-border/60 bg-background py-1 pl-2.5 pr-8 text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                 >
-                  {installable.length === 0 && dialogChecking && <option value="">Checking vendor list…</option>}
-                  {installable.length === 0 && !dialogChecking && unverifiedCount > 0 && <option value="">Verifying cached versions…</option>}
-                  {installable.length === 0 && !dialogChecking && unverifiedCount === 0 && <option value="">All catalog versions are installed</option>}
-                  {filteredInstallable.length === 0 && installable.length > 0 && <option value="">No versions match your search</option>}
-                  {[...installableByMajor].map(([major, rows]) => (
+                  {filteredOptions.length === 0 && dialogChecking && <option value="">Checking vendor list…</option>}
+                  {filteredOptions.length === 0 && !dialogChecking && unverifiedCount > 0 && <option value="">Verifying cached versions…</option>}
+                  {filteredOptions.length === 0 && !dialogChecking && unverifiedCount === 0 && installable.length === 0 && <option value="">All catalog versions are installed</option>}
+                  {filteredOptions.length === 0 && !dialogChecking && versionSearch.trim() !== '' && verifiedManaged.length > 0 && <option value="">No versions match your search</option>}
+                  {[...optionsByMajor].map(([major, rows]) => (
                     <optgroup key={major} label={major === 'Other' ? major : `Major ${major}`}>
-                      {rows.map((row) => <option key={row.key} value={row.version}>{row.version}{progress[row.key]?.kind === 'progress' ? ' · Installing' : ''}</option>)}
+                      {rows.map((row) => {
+                        const installed = !!row.entry?.installed
+                        return <option key={row.key} value={row.version} disabled={installed}>{row.version}{installed ? ' · Installed' : progress[row.key]?.kind === 'progress' ? ' · Installing' : ''}</option>
+                      })}
                     </optgroup>
                   ))}
                 </select>
@@ -584,7 +589,7 @@ export function RuntimesPage() {
                       <Button size="sm" variant="ghost" className="h-7 px-2 text-xs font-normal text-muted-foreground hover:text-foreground" onClick={() => setExtVersion(row.version)}><Puzzle className="size-3.5 opacity-70" /> Extensions</Button>
                       <Button size="sm" variant="ghost" className="h-7 px-2 text-xs font-normal text-muted-foreground hover:text-foreground" onClick={() => setXdebugVersion(row.version)}><Bug className="size-3.5 opacity-70" /> Xdebug</Button>
                     </>}
-                    {row.kind === 'managed' && row.entry && !row.entry.is_default && <Button size="sm" variant="ghost" className="h-7 px-2 text-xs font-normal text-muted-foreground hover:text-foreground" onClick={() => void chooseDefault(row.entry!)} title="Set as default"><Check className="size-3.5 opacity-70" /> Use</Button>}
+                    {row.kind === 'managed' && row.entry && !row.entry.is_default && <Button size="sm" variant="secondary" className="h-7 px-2.5 text-xs font-normal" onClick={() => void chooseDefault(row.entry!)} title="Make this the default version for new projects and services"><Check className="size-3.5 opacity-70" /> Set default</Button>}
                     {row.kind === 'managed' && row.entry && <Button size="sm" variant="ghost" className="h-7 w-7 px-0 text-muted-foreground hover:text-foreground" onClick={() => void removeRuntime(row.entry!)} title={row.entry.is_default && managedInstalledCount > 1 ? 'Choose another default first' : 'Remove version'} disabled={row.entry.is_default && managedInstalledCount > 1}><Trash2 className="size-3.5 opacity-70" /></Button>}
                     {row.kind === 'custom' && row.custom && <Button size="sm" variant="ghost" className="h-7 w-7 px-0 text-muted-foreground hover:text-foreground" title="Remove from list" onClick={() => void removeCustomInstall(row.custom!)}><Trash2 className="size-3.5 opacity-70" /></Button>}
                   </div>
