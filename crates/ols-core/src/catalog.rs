@@ -1,5 +1,5 @@
 //! Runtime package catalog (§20 — Stage 3). Hand-curated for now; a signed remote catalog
-//! (Stage 17) will replace `builtin_catalog` without changing `PackageManifest`'s shape.
+//! (Stage 16) will replace `builtin_catalog` without changing `PackageManifest`'s shape.
 //!
 //! Every entry's `sha256` was pulled from the vendor's own published checksum file at the
 //! time it was added (e.g. `https://nodejs.org/dist/vX.Y.Z/SHASUMS256.txt`), never computed

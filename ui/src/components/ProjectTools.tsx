@@ -12,8 +12,7 @@ import { WorkersPanel } from '@/components/project/WorkersPanel'
 import { XdebugDialog } from '@/components/XdebugDialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Field, Select, Tabs } from '@/components/ui/form'
+import { Field, Select } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import {
   type ComposerInfo,
@@ -29,17 +28,31 @@ import {
 import { useAction } from '@/lib/hooks'
 import { confirmThen } from '@/lib/confirm'
 
-type ToolTab = 'environment' | 'terminal' | 'env' | 'git' | 'workers' | 'snapshots' | 'repair' | 'mail' | 'composer' | 'node' | 'python' | 'xdebug'
+export type ToolTab = 'environment' | 'terminal' | 'env' | 'git' | 'workers' | 'snapshots' | 'repair' | 'mail' | 'composer' | 'node' | 'python' | 'xdebug'
+
+/** The project tools, in the order the site detail view shows them. */
+export const TOOL_TABS: { id: ToolTab; label: string }[] = [
+  { id: 'environment', label: 'Environment' },
+  { id: 'terminal', label: 'Terminal' },
+  { id: 'env', label: '.env' },
+  { id: 'git', label: 'Git' },
+  { id: 'workers', label: 'Workers' },
+  { id: 'snapshots', label: 'Snapshots' },
+  { id: 'repair', label: 'Repair' },
+  { id: 'mail', label: 'Mail' },
+  { id: 'composer', label: 'Composer' },
+  { id: 'node', label: 'Node' },
+  { id: 'python', label: 'Python' },
+  { id: 'xdebug', label: 'Xdebug' },
+]
 
 /**
- * Composer, Node package managers, Python venv and Xdebug for one project (§13–17).
- * `start` runs a command that returns a process and shows its live output in the page.
- * `refreshKey` changes when that process finishes, so the panels re-read the project files.
+ * One project tool (the Sites detail view owns the tab row). `start` runs a command that
+ * returns a process and follows its output; `refreshKey` changes when that process ends,
+ * so the panels re-read the project's files.
  */
-export function ProjectTools({ detail, start, refreshKey, initialTab }: { detail: ProjectDetail; start: (cmd: CoreCommand) => Promise<void>; refreshKey: number; initialTab?: ToolTab }) {
+export function ProjectTools({ detail, start, refreshKey, tab }: { detail: ProjectDetail; start: (cmd: CoreCommand) => Promise<void>; refreshKey: number; tab: ToolTab }) {
   const id = detail.project.id
-  const markers = detail.detection.markers
-  const [tab, setTab] = useState<ToolTab>(initialTab ?? (markers.includes('composer.json') ? 'composer' : markers.includes('package.json') ? 'node' : 'composer'))
   const [composer, setComposer] = useState<ComposerInfo | null>(null)
   const [managers, setManagers] = useState<PackageManagerInfo | null>(null)
   const [venv, setVenv] = useState<VenvInfo | null>(null)
@@ -62,47 +75,28 @@ export function ProjectTools({ detail, start, refreshKey, initialTab }: { detail
 
   const go = (key: string, cmd: CoreCommand) => run(key, () => start(cmd))
 
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm">Tools</CardTitle>
-        <CardDescription>Set up the environment, manage Git, workers and snapshots, repair problems, and run Composer, pnpm / yarn, Python and Xdebug.</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <ErrorCard error={error} onDismiss={() => setError(null)} />
-        <Tabs
-          tabs={[
-            { id: 'environment', label: 'Environment' },
-            { id: 'terminal', label: 'Terminal' },
-            { id: 'env', label: '.env' },
-            { id: 'git', label: 'Git' },
-            { id: 'workers', label: 'Workers' },
-            { id: 'snapshots', label: 'Snapshots' },
-            { id: 'repair', label: 'Repair' },
-            { id: 'mail', label: 'Mail' },
-            { id: 'composer', label: 'Composer', badge: composer?.packages.length || undefined },
-            { id: 'node', label: 'Node' },
-            { id: 'python', label: 'Python' },
-            { id: 'xdebug', label: 'Xdebug' },
-          ]}
-          value={tab}
-          onChange={setTab}
-        />
+  const body = (
+    <>
+      {tab === 'environment' && <EnvironmentPanel projectId={id} />}
+      {tab === 'terminal' && <ProjectTerminal projectId={id} />}
+      {tab === 'git' && <GitPanel projectId={id} />}
+      {tab === 'workers' && <WorkersPanel projectId={id} />}
+      {tab === 'snapshots' && <SnapshotsPanel project={detail.project} />}
+      {tab === 'repair' && <RepairPanel projectId={id} />}
+      {tab === 'env' && <EnvEditor projectId={id} />}
+      {tab === 'mail' && <MailPanel projectId={id} />}
+      {tab === 'composer' && <ComposerPanel projectId={id} info={composer} busy={busy} go={go} />}
+      {tab === 'node' && <NodePanel projectId={id} info={managers} busy={busy} go={go} />}
+      {tab === 'python' && <PythonPanel projectId={id} info={venv} busy={busy} go={go} />}
+      {tab === 'xdebug' && <XdebugPanel detail={detail} />}
+    </>
+  )
 
-        {tab === 'environment' && <EnvironmentPanel projectId={id} />}
-        {tab === 'terminal' && <ProjectTerminal projectId={id} />}
-        {tab === 'git' && <GitPanel projectId={id} />}
-        {tab === 'workers' && <WorkersPanel projectId={id} />}
-        {tab === 'snapshots' && <SnapshotsPanel project={detail.project} />}
-        {tab === 'repair' && <RepairPanel projectId={id} />}
-        {tab === 'env' && <EnvEditor projectId={id} />}
-        {tab === 'mail' && <MailPanel projectId={id} />}
-        {tab === 'composer' && <ComposerPanel projectId={id} info={composer} busy={busy} go={go} />}
-        {tab === 'node' && <NodePanel projectId={id} info={managers} busy={busy} go={go} />}
-        {tab === 'python' && <PythonPanel projectId={id} info={venv} busy={busy} go={go} />}
-        {tab === 'xdebug' && <XdebugPanel detail={detail} />}
-      </CardContent>
-    </Card>
+  return (
+    <div className="flex flex-col gap-4">
+      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      {body}
+    </div>
   )
 }
 

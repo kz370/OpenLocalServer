@@ -13,11 +13,12 @@ released: the 0.1 gate (a clean Windows VM going from install to a Laravel site 
 Release 0.1   Stages 0–8    ██████████████████░░  built, not released
 Release 0.2   Stages 9–11   ████████████████████  built, not released
 Release 0.3   Stages 12–15  ████████████████████  built, not released
-Release 1.0   Stages 16–18  ██░░░░░░░░░░░░░░░░░░  one item done early (XAMPP/Laragon import)
-Release 1.1   Stage 19      ░░░░░░░░░░░░░░░░░░░░  k6 load testing, planned
+Release 1.0   Stages 16–17  ██░░░░░░░░░░░░░░░░░░  Windows; one item done early (XAMPP/Laragon import)
+Release 1.1   Stages 18–19  ░░░░░░░░░░░░░░░░░░░░  k6 load testing and the AI assistant, planned
+Release 2.0   Stage 20      ░░░░░░░░░░░░░░░░░░░░  Linux, last
 ```
 
-OpenLocalServer targets Windows, and Linux later. macOS is not planned.
+OpenLocalServer targets Windows; Linux comes last (release 2.0). macOS is not planned.
 
 ## What works today
 
@@ -76,25 +77,31 @@ Everything planned for 0.3 is built (stages 12–15). Limits worth knowing:
 | Tunnels | Provider programs (cloudflared, ngrok, tailscale) are found or located by hand, not downloaded. WebSockets and streamed responses don't pass through the traffic inspector yet |
 | Scheduler | Runs while the app or `ols daemon` is open; there is no system-level scheduled task |
 | Resource limits | Memory limits apply at the next service start; there is no CPU limit (Windows has no simple per-program cap) |
-| Control channel | Windows named pipe only until the Linux stage |
+| Control channel | Windows named pipe only until the Linux stage (20) |
 
-### Release 1.0
+### Release 1.0 (Windows)
 
 | Feature | § | Stage |
 |---|---|---|
-| Linux (helper, trust store, DNS, packages, CI matrix); macOS is not planned | — | 16 |
-| Plugins (declarative, then sandboxed WASM) and more runtimes (Go, Ruby, Java, Bun, .NET) | 9, 133–135 | 17 |
-| Signed remote catalogs and Git/company Quick App catalogs | 87–88 | 17 |
-| Signed auto-updater | 145 | 18 |
-| Local HTTP API with a token | 137 | 18 |
-| Explorer context menu, offline indicators, telemetry (off by default) | 124, 128, 143 | 18 |
-| Full docs and a security review against §138 | 138, 144 | 18 |
+| Plugins (declarative, then sandboxed WASM) and more runtimes (Go, Ruby, Java, Bun, .NET) | 9, 133–135 | 16 |
+| Signed remote catalogs and Git/company Quick App catalogs | 87–88 | 16 |
+| Signed auto-updater | 145 | 17 |
+| Local HTTP API with a token | 137 | 17 |
+| Explorer context menu, offline indicators, telemetry (off by default) | 124, 128, 143 | 17 |
+| Full docs and a security review against §138 | 138, 144 | 17 |
 
 ### Release 1.1
 
 | Feature | § | Stage |
 |---|---|---|
-| Load testing with k6: per-project scripts, live results, thresholds, CLI | 160–161 | 19 |
+| Load testing with k6: per-project scripts, live results, thresholds, CLI | 160–161 | 18 |
+| AI assistant: LM Studio (local), Hugging Face, OpenRouter or any OpenAI-compatible server; explains problems and proposes fixes you approve | 168 | 19 |
+
+### Release 2.0 (last)
+
+| Feature | § | Stage |
+|---|---|---|
+| Linux: helper, trust store, DNS, packages, control socket, CI; macOS is not planned | — | 20 |
 
 ## Built but not yet verified end to end
 

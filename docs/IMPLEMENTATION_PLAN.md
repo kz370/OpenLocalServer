@@ -34,14 +34,16 @@ have not been run, and the new screens have not all been checked in the running 
 | 13 Profiles, modes, workers, scheduler, snapshots | Built | 8 built-in profiles plus your own (import/export), 4 modes; queue workers; cron scheduler (runs while the app or daemon is open); snapshots, settings backups, environment import/export and cloning |
 | 14 Tunnels + traffic | Built | Cloudflare, ngrok, LocalTunnel, Tailscale Funnel; first-exposure confirmation, internal-port refusal, access control in our own proxy; traffic inspector with redaction, replay and a webhook tester. Real providers not yet exercised end to end (needs their programs installed) |
 | 15 Power UX + repair | Built | Command palette and global search (Ctrl+Shift+P / Ctrl+K), doctor, project diagnostics and repair, Git repository manager (portable Git in the catalog), resource limits |
-| 16–18 (release 1.0) | Not started | Except the items marked *done early* below |
+| 16–17 (release 1.0, Windows) | Not started | Except the items marked *done early* below |
+| 18–19 (release 1.1) | Not started | k6 load testing, AI assistant |
+| 20 (release 2.0, Linux) | Not started | Last |
 
 ### Done early or beyond the plan
 - **Resident helper service** (Risks: "UAC prompt fatigue"): `ols-helper install-service` installs a Windows
   service after one UAC prompt; the app then uses a local named pipe with the same validated command set.
 - **Local DNS for whole reserved TLDs**: `.test`, `.localhost`, `.internal` resolve through the built-in DNS and
   one NRPT rule, with no hosts-file writes.
-- **XAMPP / Laragon / WampServer database import** (§126, planned for Stage 18): dumps live or from a throwaway
+- **XAMPP / Laragon / WampServer database import** (§126, planned for Stage 17): dumps live or from a throwaway
   copy of the data folder, no `.sql` export needed.
 - **Laragon-style automatic domains** for every folder in a scanned projects folder.
 - **System monitor**: CPU and RAM rings, disks in use, and CPU / RAM / disk per site.
@@ -56,10 +58,16 @@ have not been run, and the new screens have not all been checked in the running 
 - **Git repository manager** (extends §125, Stage 15): built. Clone into a new site, status, branches,
   stage/commit, pull/push/fetch, diff, log, remotes, stash, `.gitignore` templates; HTTPS credentials in the
   Secrets Manager. Uses an existing Git or a portable MinGit from the Runtimes catalog.
-- **Load testing with k6** (Stage 19, below): performance tests for a project's sites from inside the app.
+- **Load testing with k6** (Stage 18, below): performance tests for a project's sites from inside the app.
+- **AI assistant** (Stage 19, below): opt-in, bring-your-own model: LM Studio (local), Hugging Face, OpenRouter,
+  or any OpenAI-compatible server. It explains problems and proposes fixes; the user approves every change.
+- **Projects and Sites are one page**: each site shows its project; one detail view holds the site's settings,
+  its web config and the project's tools.
 
 ### Changed (2026-09-26)
-- **No macOS.** OpenLocalServer targets Windows, and Linux later (Stage 16). macOS work is dropped from the plan.
+- **No macOS.** OpenLocalServer targets Windows, and Linux last (Stage 20). macOS work is dropped from the plan.
+- **Linux moved to the end**: stages after 15 are now 16 plugins, 17 hardening (Windows 1.0), 18 k6, 19 AI,
+  20 Linux (2.0).
 
 ### Deviations from the plan
 - Product name *OpenLocalServer*; crates `ols-core`, `ols-helper` and `ols-cli` (binary `ols`); no separate
@@ -83,10 +91,11 @@ that follow the SRS release train (§164 MVP 0.1 → §165 0.2 → §166 0.3 →
 Decisions taken:
 - Frontend: **React + TypeScript** (Vite, TanStack Query, Zustand, shadcn/ui + Tailwind).
 - Platform order: **Windows first**. Every OS-specific call sits behind a `platform` trait from day one;
-  macOS/Linux implementations come in Stage 16.
+  Linux implementations come last, in Stage 20 (macOS is not planned).
 - Scope: detailed stages for 0.1, coarser stages for 0.2 / 0.3 / 1.0.
 - **Excluded from this plan:** Docker integration, WSL integration, container orchestration, and the rest
-  of §168 "Future Features" (remote envs, cloud deploy, AI diagnostics). Nothing in the plan depends on them.
+  of §168 "Future Features" (remote envs, cloud deploy). Nothing in the plan depends on them. §168's AI
+  diagnostics were excluded at first and are now Stage 19 (added 2026-09-26).
 - **Added beyond SRS:** OpenLocalServer integrates **HeidiSQL** (MySQL/MariaDB/SQLite GUI) and **pgAdmin 4**
   (PostgreSQL GUI) and can open them already connected to a project database.
   - It **first detects** an existing install on the system.
@@ -339,25 +348,16 @@ registry), minijinja, clap, tauri-specta. UI: xterm.js, CodeMirror 6 (Stage 9).
 
 ---
 
-## RELEASE 1.0 (SRS §167)
+## RELEASE 1.0 — Windows (SRS §167)
 
-### Stage 16 — Linux
-macOS is out of scope (decided 2026-09-26).
-- Helper: polkit (pkexec) for the few privileged actions; an optional systemd service like the Windows helper.
-- Trust store: update-ca-certificates (and the Fedora/Arch equivalents) plus NSS for Firefox and Chromium.
-- DNS: a systemd-resolved drop-in for `.test`; the hosts file where resolved isn't used.
-- Control channel on a Unix socket; process groups instead of `taskkill /T`.
-- Linux package catalog (official tarballs with checksums); a DB GUI alternative to HeidiSQL (which is Windows-only; pgAdmin is cross-platform).
-- CI matrix on Windows and Linux. Packages: AppImage and .deb.
-
-### Stage 17 — Plugins + catalogs
+### Stage 16 — Plugins + catalogs
 - Plugin manifest (§135) with explicit permissions (§134).
   - Phase A: declarative plugins covering runtime, DB, service, tool, framework, detection, Quick App, and health check.
   - Phase B: sandboxed code plugins (WASM) for tunnel providers, diagnostics, and UI panels (§133).
 - Future runtimes (§9) are delivered as runtime plugins: Go, Ruby, Java, Bun, .NET.
 - Signed remote runtime/DB/service catalogs (minisign) and Git/company/community Quick App catalogs with trust (§87–88).
 
-### Stage 18 — Release hardening
+### Stage 17 — Release hardening → **ship 1.0 (Windows)**
 - Signed updater (§145), localhost HTTP API with a token (§137), and XAMPP/Laragon import (§126).
 - Explorer context menu (§124), offline indicators (§128), and telemetry off by default (§143).
 - Advanced diagnostics (§167) and full docs (§144).
@@ -365,7 +365,7 @@ macOS is out of scope (decided 2026-09-26).
 
 ## RELEASE 1.1
 
-### Stage 19 — Load testing with k6
+### Stage 18 — Load testing with k6
 Performance testing for a project's sites without leaving the app, using [k6](https://k6.io) (Grafana's open-source
 load tester, a single binary).
 - **k6 runtime** through the Package Manager (official release archive, checksum verified), or an existing install.
@@ -381,14 +381,74 @@ load tester, a single binary).
 - **Exit**: a Laravel project gets a generated smoke test, runs it from the Environment tab and the CLI, and a failed
   threshold shows as a failed run.
 
+### Stage 19 — AI assistant (bring your own model)
+Opt-in and off by default. OpenLocalServer ships no model and no account; the user points it at one.
+
+**Providers.** One `AiProvider` interface over the OpenAI chat-completions API (streaming, and tool calls where
+the model supports them), so every provider is the same code with a different base URL and key:
+- **LM Studio** (local, the default suggestion): `http://localhost:1234/v1`. Detected when running; models read
+  from `/v1/models`. Ollama (`http://localhost:11434/v1`) works the same way.
+- **Hugging Face**: the Inference Providers router (`https://router.huggingface.co/v1`) with an HF token, or a
+  self-hosted Text Generation Inference / Inference Endpoint URL.
+- **OpenRouter**: `https://openrouter.ai/api/v1` with an API key; model list and prices from its API, and the
+  cost of each answer shown.
+- **Custom OpenAI-compatible**: any base URL, key and model name (llama.cpp server, vLLM, LocalAI, a company
+  gateway, ...).
+Keys live in the Secrets Manager. Settings has a provider list with "Test connection" and a model picker, and
+per-feature choice of provider (for example a local model for logs, a larger one for config help).
+
+**Privacy and safety.**
+- Local-first: a provider that sends data off the computer is labelled as such everywhere it is used.
+- Everything sent goes through the same redaction as logs and the traffic inspector (`.env` values, passwords,
+  tokens, keys, cookies, signatures), and "Show what will be sent" previews the exact prompt.
+- Nothing is sent automatically: every request starts from a user action.
+- **The AI proposes, the core disposes.** Answers are text or a proposed plan of `CoreCommand`s, checked against an
+  allowlist and shown like a setup plan; nothing runs until the user approves it, destructive steps separately.
+  The model's tools are read-only core queries (list sites, read a log tail, read a config, read a manifest).
+  It never gets a shell.
+
+**Features, in order.**
+1. **Explain and fix**: an "Explain" button on diagnostics, failed setup steps, error log lines and failed
+   requests. The answer says what went wrong and why, and offers a fix as an approvable plan.
+2. **Write manifests and configs**: draft `.openlocalserver/environment.yaml` from a repository (reviewed through
+   the normal setup plan); explain a web-config block and propose edits as a diff.
+3. **Ask the logs**: questions across web, PHP, database, worker and app logs, with the lines it used quoted.
+4. **Traffic**: explain a captured webhook, and write a handler or a k6 script (Stage 18) from recorded requests.
+5. **Commit messages** from the staged diff in the Git tab.
+6. **Plain-language palette**: "a Laravel site with Redis called shop" becomes a Quick App or setup plan to confirm.
+
+**CLI**: `ols ai ask "..."`, `ols ai explain <finding>`.
+**Tests**: a mock OpenAI-compatible server; redaction and allowlist tests; no test calls a real provider.
+**Exit**: with LM Studio running a local model, a failing web-server start is explained and fixed after one
+approval; the same works with OpenRouter; with only local providers configured, nothing leaves the computer.
+
+---
+
+## RELEASE 2.0 — Linux (last)
+
+### Stage 20 — Linux
+macOS is out of scope, and Linux is deliberately last (decided 2026-09-26): it is the largest remaining
+stage, because almost every Windows-specific piece needs a Linux counterpart and Linux has no single set of
+official binaries for PHP, MariaDB and the rest. Everything before it keeps the `platform`-style seams
+(helper, trust store, DNS, control channel, process groups) so this stage adds implementations, not redesigns.
+- Helper: polkit (pkexec) for the few privileged actions; an optional systemd service like the Windows helper.
+- Trust store: update-ca-certificates (and the Fedora/Arch equivalents) plus NSS for Firefox and Chromium.
+- DNS: a systemd-resolved drop-in for `.test`; the hosts file where resolved isn't used.
+- Control channel on a Unix socket; process groups instead of `taskkill /T`.
+- Linux package catalog (official tarballs with checksums); a DB GUI alternative to HeidiSQL (which is Windows-only; pgAdmin is cross-platform).
+- CI matrix on Windows and Linux. Packages: AppImage and .deb.
+- Linux package sources per runtime: official tarballs with checksums where they exist (Node, Caddy, MariaDB,
+  PostgreSQL, Redis, Mailpit), and a documented choice for PHP (static builds or the distro's packages).
+- **Exit**: the 0.1 Laravel flow and `git clone && ols setup` pass on Ubuntu LTS and Fedora.
+
 ---
 
 ## SRS coverage map
 | SRS § | Stage |
 |---|---|
 | 1–8 vision, goals, architecture | Architecture decisions, Stage 0–1 |
-| 9–19 runtimes, PHP/Node/Python, resolution, terminal | 3, 4, 11 (future runtimes → 17) |
-| 20–21, 127 catalog, integrity, cache | 3, 17 |
+| 9–19 runtimes, PHP/Node/Python, resolution, terminal | 3, 4, 11 (future runtimes → 16) |
+| 20–21, 127 catalog, integrity, cache | 3, 16 |
 | 22–30 web servers, config, proxy | 6, 9, 10 |
 | 31–39 databases | 5, 10 (+ HeidiSQL/pgAdmin in 5) |
 | 40–43, 154 projects, detection | 4 |
@@ -403,24 +463,26 @@ load tester, a single binary).
 | 103–104, 141–142 env vars, secrets | 4, 5 |
 | 105–106 workers, scheduler | 13 |
 | 107–109 supervisor, ports | 2 |
-| 112–116 diagnostics, repair, health | 8, 11, 15, 18 |
+| 112–116 diagnostics, repair, health | 8, 11, 15, 17, AI → 19 |
 | 117–121 logs, notifications, tray, startup | 1, 8 |
-| 122–125 palette, search, context menu, git | 15, 18 |
-| 126, 128–132 import, offline, resources, backup | 5, 13, 15, 18 |
-| 133–135 plugins | 17 |
-| 136–137 CLI, API | 12, 18 |
-| 138–140, 143 security, telemetry | throughout, 7, 14, 18 |
-| 144–151 OSS, updater, layout, arch, schema | 0, 1, 18, decision 8 |
+| 122–125 palette, search, context menu, git | 15, 17 |
+| 126, 128–132 import, offline, resources, backup | 5, 13, 15, 17 |
+| 133–135 plugins | 16 |
+| 136–137 CLI, API | 12, 17 |
+| 138–140, 143 security, telemetry | throughout, 7, 14, 17 |
+| 144–151 OSS, updater, layout, arch, schema | 0, 1, 17, decision 8 |
 | 155–158 examples, cloning | 7, 8, 13 |
-| 160–163 testing, perf, reliability | decisions 5–7, every stage; k6 load testing → 19 |
+| 160–163 testing, perf, reliability | decisions 5–7, every stage; k6 load testing → 18 |
 | 164–167 releases | stage grouping |
-| 168 future | **excluded** (Docker, WSL, orchestration, etc.) |
+| 168 future | **excluded** (Docker, WSL, orchestration, etc.), except AI diagnostics → 19 |
 
 ## Risks / open items
 - **Redis on Windows**: there is no official build. Choose between the Memurai dev edition and a maintained community port in Stage 5.
 - **pgAdmin silent per-user install**: verify the installer flags. If a per-user install isn't possible, use a one-time
   UAC install through the helper, still only after the user confirms.
 - **Firefox trust**: NSS store needs separate handling.
+- **AI answers**: models can be wrong. Nothing an answer proposes runs without approval, and proposals are limited
+  to allowlisted commands; small local models may be too weak for config help (per-feature provider choice).
 - **Tunnel providers**: the adapters parse each provider's output for the public address; a provider changing its
   output format breaks detection (the tunnel still runs; the address shows in its log).
 - **UAC prompt fatigue**: per-operation helper in 0.1. Consider an optional installed helper service later.
@@ -435,4 +497,5 @@ load tester, a single binary).
 - Release gates:
   - 0.1: §155 Laravel flow on a clean Windows VM.
   - 0.3: `git clone && ols setup`.
-  - 1.0: full §160 E2E on Windows and Linux.
+  - 1.0: full §160 E2E on Windows.
+  - 2.0: the same on Linux (Ubuntu LTS, Fedora).
