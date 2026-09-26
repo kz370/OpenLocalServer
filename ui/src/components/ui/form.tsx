@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { ChevronDown } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 
@@ -9,9 +10,12 @@ const fieldBase =
 
 export const Select = React.forwardRef<HTMLSelectElement, React.SelectHTMLAttributes<HTMLSelectElement>>(
   ({ className, children, ...props }, ref) => (
-    <select ref={ref} className={cn(fieldBase, 'h-9 py-1', className)} {...props}>
-      {children}
-    </select>
+    <div className={cn('relative min-w-0 w-full', className)}>
+      <select ref={ref} className={cn(fieldBase, 'h-9 appearance-none py-1 pr-10', className)} {...props}>
+        {children}
+      </select>
+      <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+    </div>
   ),
 )
 Select.displayName = 'Select'

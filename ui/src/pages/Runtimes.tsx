@@ -1,6 +1,6 @@
 import { listen } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
-import { Bug, Download, FolderSearch, Puzzle, Trash2 } from 'lucide-react'
+import { Bug, ChevronDown, Download, FolderSearch, Puzzle, Trash2 } from 'lucide-react'
 import { Fragment, useEffect, useMemo, useState } from 'react'
 
 import { Spinner } from '@/components/Spinner'
@@ -160,32 +160,52 @@ export function RuntimesPage() {
         </p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border px-3 py-2">
-        <span className="text-sm font-medium">Use versions you already have</span>
-        <Button size="sm" onClick={scanPhpFolder} title="Adds every PHP version found in the folder you pick">
-          <FolderSearch /> Add folder of PHP versions
-        </Button>
-        <span className="px-1 text-xs text-muted-foreground">or one executable:</span>
-        <select
-          value={customId}
-          onChange={(e) => setCustomId(e.target.value)}
-          className="h-8 rounded-lg border border-transparent bg-input/60 px-2 text-sm"
-        >
-          {LOCATABLE.map((id) => (
-            <option key={id} value={id}>
-              {id}
-            </option>
-          ))}
-        </select>
-        <Input
-          value={customLabel}
-          onChange={(e) => setCustomLabel(e.target.value)}
-          placeholder="version, e.g. 8.1.2"
-          className="h-8 w-36"
-        />
-        <Button size="sm" variant="secondary" onClick={addCustomInstall}>
-          <FolderSearch /> Locate
-        </Button>
+      <div className="rounded-xl border border-border p-4">
+        <div>
+          <h2 className="text-sm font-semibold">Use versions you already have</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">Add all versions from a folder, or register one executable.</p>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-[minmax(220px,0.85fr)_minmax(0,1.5fr)]">
+          <div className="flex flex-col justify-center gap-2">
+            <Button className="h-10 w-full justify-center" onClick={scanPhpFolder} title="Adds every PHP version found in the folder you pick">
+              <FolderSearch /> Add folder of PHP versions
+            </Button>
+            <p className="text-center text-xs text-muted-foreground">Finds every PHP install in the selected folder.</p>
+          </div>
+          <div className="min-w-0 rounded-lg border border-border/70 bg-background/40 p-3">
+            <div className="mb-2.5">
+              <p className="text-xs font-medium">Or add one executable</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">Choose its runtime and version, then locate the file.</p>
+            </div>
+            <div className="flex min-w-0 flex-wrap gap-2 sm:flex-nowrap">
+              <div className="relative w-28 shrink-0">
+                <select
+                  aria-label="Executable runtime"
+                  value={customId}
+                  onChange={(e) => setCustomId(e.target.value)}
+                  className="h-10 w-full appearance-none rounded-lg border border-transparent bg-input/60 py-1 pl-3 pr-10 text-sm focus-visible:border-ring focus-visible:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                >
+                  {LOCATABLE.map((id) => (
+                    <option key={id} value={id}>
+                      {id}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              </div>
+              <Input
+                aria-label="Executable version"
+                value={customLabel}
+                onChange={(e) => setCustomLabel(e.target.value)}
+                placeholder="Version (e.g. 8.1.2)"
+                className="h-10 min-w-32 flex-1"
+              />
+              <Button size="default" variant="secondary" className="h-10 shrink-0" onClick={addCustomInstall}>
+                <FolderSearch /> Locate
+              </Button>
+            </div>
+          </div>
+        </div>
       </div>
 
       {notice && <p className="text-sm text-muted-foreground">{notice}</p>}
