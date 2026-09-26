@@ -46,6 +46,39 @@ export function Toggle({
   )
 }
 
+/** One setting in a settings card: title and hint on the left, its control on the right. */
+export function SettingRow({
+  title,
+  hint,
+  children,
+  stacked,
+}: {
+  title: string
+  hint?: string
+  children: React.ReactNode
+  /** Put the control under the text instead of beside it (wide controls such as paths). */
+  stacked?: boolean
+}) {
+  return (
+    <div className={cn('flex gap-4 border-b border-border py-3.5 first:pt-0 last:border-b-0 last:pb-0', stacked ? 'flex-col' : 'items-center justify-between')}>
+      <div className="min-w-0">
+        <div className="text-sm font-medium">{title}</div>
+        {hint && <div className="mt-0.5 text-xs text-muted-foreground">{hint}</div>}
+      </div>
+      <div className={cn(stacked ? 'w-full' : 'shrink-0')}>{children}</div>
+    </div>
+  )
+}
+
+/** A switch as a settings row. */
+export function SwitchRow({ checked, onChange, title, hint, disabled }: { checked: boolean; onChange: (v: boolean) => void; title: string; hint?: string; disabled?: boolean }) {
+  return (
+    <SettingRow title={title} hint={hint}>
+      <Switch checked={checked} onChange={onChange} disabled={disabled} label={title} />
+    </SettingRow>
+  )
+}
+
 export function Field({
   label,
   hint,
