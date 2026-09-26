@@ -2,6 +2,8 @@ import * as React from 'react'
 
 import { cn } from '@/lib/utils'
 
+import { Switch } from './switch'
+
 const fieldBase =
   'flex w-full rounded-lg border border-transparent bg-input/60 px-3.5 text-sm transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50'
 
@@ -19,7 +21,7 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, React.TextareaHTML
 )
 Textarea.displayName = 'Textarea'
 
-/** A labelled on/off switch as a checkbox — accessible and simple. */
+/** A labelled on/off setting: text on the left, a switch on the right. */
 export function Toggle({
   checked,
   onChange,
@@ -34,18 +36,12 @@ export function Toggle({
   disabled?: boolean
 }) {
   return (
-    <label className={cn('flex cursor-pointer items-start gap-2.5 text-sm', disabled && 'cursor-not-allowed opacity-50')}>
-      <input
-        type="checkbox"
-        checked={checked}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.checked)}
-        className="mt-0.5 size-4 accent-[var(--primary)]"
-      />
-      <span>
+    <label className={cn('flex cursor-pointer items-start justify-between gap-4 text-sm', disabled && 'cursor-not-allowed opacity-50')}>
+      <span className="min-w-0">
         {label}
         {hint && <span className="block text-xs text-muted-foreground">{hint}</span>}
       </span>
+      <Switch checked={checked} onChange={onChange} disabled={disabled} label={label} className="mt-0.5" />
     </label>
   )
 }

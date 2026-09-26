@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Dialog } from '@/components/ui/dialog'
 import { Field } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/form'
 import { type CatalogView, type PluginInfo, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
@@ -234,7 +235,7 @@ export function PluginsPage() {
             </ul>
             <div className="text-xs text-muted-foreground">Adds: {adds(review).join(', ') || 'nothing yet'}.{review.folder ? ` Installed in ${review.folder}.` : ''}</div>
             <label className="flex items-center gap-2">
-              <input type="checkbox" checked={allowed} onChange={(e) => setAllowed(e.target.checked)} />
+              <Switch size="sm" checked={allowed} onChange={setAllowed} label="I allow these" />
               I allow these
             </label>
           </div>

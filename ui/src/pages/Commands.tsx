@@ -12,6 +12,7 @@ import { Dialog } from '@/components/ui/dialog'
 import { TechIcon } from '@/components/TechIcon'
 import { Field, Select, Tabs, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { type CommandSource, type DiscoveredCommand, type HistoryEntry, type ProcessEvent, type ProcessState, type Project, type QuickCommand, runCommand } from '@/core'
 import { timeAgo, useAction } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
@@ -803,12 +804,11 @@ export function CommandForm({
                   >
                     <div className="flex items-center gap-2">
                       {!o.value_required && (
-                        <input
-                          type="checkbox"
-                          title={`Pass ${o.name} without a value`}
+                        <Switch
+                          size="sm"
+                          label={`Pass ${o.name} without a value`}
                           checked={!!flags[o.name]}
-                          onChange={(e) => setFlags({ ...flags, [o.name]: e.target.checked })}
-                          className="size-4 shrink-0 accent-[var(--primary)]"
+                          onChange={(on) => setFlags({ ...flags, [o.name]: on })}
                         />
                       )}
                       <Input value={values[o.name] ?? ''} placeholder={o.default ?? ''} onChange={(e) => setValues({ ...values, [o.name]: e.target.value })} />

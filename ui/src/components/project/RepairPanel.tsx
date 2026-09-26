@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { ErrorCard } from '@/components/ErrorCard'
 import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
 import { type RepairPlan, type RepairReport, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
@@ -116,13 +117,12 @@ export function RepairPanel({ projectId }: { projectId: string }) {
             <div className="flex shrink-0 flex-col items-end gap-1">
               {action ? (
                 <label className="flex cursor-pointer items-center gap-1.5 text-xs">
-                  <input
-                    type="checkbox"
-                    className="size-4 accent-[var(--primary)]"
+                  <Checkbox
+                    label={`Fix ${f.id}`}
                     checked={chosen.has(f.id)}
-                    onChange={(e) => {
+                    onChange={(on) => {
                       const next = new Set(chosen)
-                      if (e.target.checked) next.add(f.id)
+                      if (on) next.add(f.id)
                       else next.delete(f.id)
                       setChosen(next)
                     }}

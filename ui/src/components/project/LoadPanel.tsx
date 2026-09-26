@@ -6,11 +6,13 @@ import { ErrorCard } from '@/components/ErrorCard'
 import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
 import { TechIcon } from '@/components/TechIcon'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
 import { Select, Textarea } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { type LoadOverview, type LoadProfile, type LoadRun, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
 import { timeAgo, useAction, usePoll } from '@/lib/hooks'
@@ -438,7 +440,7 @@ export function LoadPanel({ projectId }: { projectId: string }) {
                 <Input className="h-8 font-mono text-sm uppercase" value={v.name} placeholder="TOKEN" onChange={(e) => setVariable(i, { name: e.target.value.replace(/[^A-Za-z0-9_]/g, '').toUpperCase() })} />
                 <Input className="h-8 font-mono text-sm" type={v.secret && !showSecrets ? 'password' : 'text'} value={v.value} placeholder="value" autoComplete="off" onChange={(e) => setVariable(i, { value: e.target.value })} />
                 <label className="flex items-center gap-1 text-[11px] text-muted-foreground" title="Secret values are kept in the system keyring, not in the saved test or the script">
-                  <input type="checkbox" checked={v.secret} onChange={(e) => setVariable(i, { secret: e.target.checked })} /> secret
+                  <Switch size="sm" checked={v.secret} onChange={(on) => setVariable(i, { secret: on })} label="secret" /> secret
                 </label>
                 <Button size="icon" variant="ghost" className="size-8" title="Remove variable" onClick={() => change({ variables: draft.variables.filter((_, j) => j !== i) })}>
                   <X />
@@ -568,7 +570,7 @@ export function LoadPanel({ projectId }: { projectId: string }) {
                 {runs.map((r) => (
                   <tr key={r.id} className="border-t border-border">
                     <td className="py-1 pr-2">
-                      <input type="checkbox" title="Compare" checked={compare.includes(r.id)} onChange={(e) => setCompare(e.target.checked ? [...compare, r.id].slice(-2) : compare.filter((x) => x !== r.id))} />
+                      <Checkbox label="Compare" checked={compare.includes(r.id)} onChange={(on) => setCompare(on ? [...compare, r.id].slice(-2) : compare.filter((x) => x !== r.id))} />
                     </td>
                     <td className="pr-3">
                       <button className="hover:underline" onClick={() => setRun(r)}>

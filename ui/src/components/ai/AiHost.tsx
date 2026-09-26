@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { ErrorCard } from '@/components/ErrorCard'
 import type { Page } from '@/components/layout/Sidebar'
 import { Spinner } from '@/components/Spinner'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
@@ -257,11 +258,11 @@ export function AiHost({ onNavigate }: { onNavigate: (p: Page) => void }) {
                 <p className="font-medium">Proposed steps — nothing has run</p>
                 {answer.actions.map((a, i) => (
                   <label key={i} className="flex cursor-pointer items-start gap-2">
-                    <input
-                      type="checkbox"
-                      className="mt-0.5 size-4 accent-[var(--primary)]"
+                    <Checkbox
+                      className="mt-0.5"
+                      label={a.label}
                       checked={picked.includes(i)}
-                      onChange={(e) => setPicked(e.target.checked ? [...picked, i] : picked.filter((n) => n !== i))}
+                      onChange={(on) => setPicked(on ? [...picked, i] : picked.filter((n) => n !== i))}
                     />
                     <span className="min-w-0">
                       {a.label} {a.destructive && <Badge variant="warning">replaces or removes something</Badge>}
