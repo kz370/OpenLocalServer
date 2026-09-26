@@ -1,13 +1,13 @@
 import { listen } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
-import { Folder, FolderPlus, FolderSearch, Play, Trash2 } from 'lucide-react'
+import { ChevronRight, Folder, FolderPlus, FolderSearch, Play, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { ProjectShortcuts } from '@/components/OpenWithMenu'
 import { ProjectTools } from '@/components/ProjectTools'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { type CoreCommand, type Diagnostic, type Project, type ProjectDetail, type ProcessEvent, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
@@ -41,13 +41,16 @@ export function ProjectsPage() {
   }, [])
 
   useEffect(() => {
-    if (!selectedId) {
-      setDetail(null)
-      return
-    }
+    setDetail(null)
+    setRunOutput([])
+    if (!selectedId) return
+    let current = true
     runCommand({ type: 'get_project_detail', id: selectedId }).then((res) => {
-      if (res.type === 'project_detail') setDetail(res.detail)
+      if (current && res.type === 'project_detail') setDetail(res.detail)
     })
+    return () => {
+      current = false
+    }
   }, [selectedId])
 
   useEffect(() => {
@@ -132,142 +135,27 @@ Your project files are not deleted.`))) return
     if (res.type === 'process_started') setRunningProcessId(res.id)
   }
 
-  return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
-        <p className="text-sm text-muted-foreground">
-          Register a folder; DevForge detects its framework and resolves its runtime versions (§18, §42).
-        </p>
-      </div>
+  const shown = projects.filter((p) => `${p.name} ${p.path}`.toLowerCase().includes(filter.trim().toLowerCase()))
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Add projects</CardTitle>
-          <CardDescription>
-            Pick one project folder, or a workspace folder holding several separate projects side by side.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-wrap items-center gap-2">
-          <Button size="sm" onClick={browseAndRegisterOne}>
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
+          <p className="text-sm text-muted-foreground">
+            Register a folder; DevForge detects its framework and resolves its runtime versions (§18, §42).
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {scanMessage && <span className="text-sm text-muted-foreground">{scanMessage}</span>}
+          <Button size="sm" onClick={browseAndRegisterOne} title="Pick one project folder">
             <FolderPlus /> Add a project
           </Button>
-          <Button size="sm" variant="secondary" onClick={browseAndScanFolder}>
-            <FolderSearch /> Scan a folder for projects
+          <Button size="sm" variant="secondary" onClick={browseAndScanFolder} title="Pick a workspace folder holding several projects side by side">
+            <FolderSearch /> Scan a folder
           </Button>
-          {scanMessage && <span className="text-sm text-muted-foreground">{scanMessage}</span>}
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-4 lg:grid-cols-[1fr_1.6fr]">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Registered · {projects.length}</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-2">
-            {projects.length === 0 && <p className="text-sm text-muted-foreground">No projects yet.</p>}
-            {projects.length > 8 && <Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter projects" className="h-8" />}
-            <div className="max-h-[65vh] overflow-y-auto">
-              {projects
-                .filter((p) => `${p.name} ${p.path}`.toLowerCase().includes(filter.trim().toLowerCase()))
-                .map((p) => (
-                  <div
-                    key={p.id}
-                    role="button"
-                    tabIndex={0}
-                    title={p.path}
-                    onClick={() => setSelectedId(p.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') setSelectedId(p.id)
-                    }}
-                    className={`group flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-sm transition-colors ${
-                      selectedId === p.id ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
-                    }`}
-                  >
-                    <Folder className="size-3.5 shrink-0 text-muted-foreground" />
-                    <span className="min-w-0 flex-1 truncate font-medium">{p.name}</span>
-                    <span className="hidden max-w-[45%] truncate text-xs text-muted-foreground xl:inline">{p.path}</span>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        removeProject(p.id)
-                      }}
-                      title="Remove"
-                    >
-                      <Trash2 className="size-3.5" />
-                    </Button>
-                  </div>
-                ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>{detail ? detail.project.name : 'Select a project'}</CardTitle>
-            {detail && <CardDescription>{detail.detection.framework.replace(/_/g, ' ')}</CardDescription>}
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            {!detail && <p className="text-sm text-muted-foreground">Pick a project on the left.</p>}
-            {detail && (
-              <>
-                {detail.detection.markers.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {detail.detection.markers.map((m) => (
-                      <Badge key={m} variant="secondary">
-                        {m}
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-
-                <div className="flex flex-col gap-2">
-                  {detail.resolved
-                    .filter((r) => r.requested_version || r.installed_version)
-                    .map((r) => (
-                      <div key={r.id} className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm">
-                        <div className="flex flex-col">
-                          <span className="font-medium uppercase">{r.id}</span>
-                          <span className="text-xs text-muted-foreground">
-                            wants {r.requested_version ?? '?'} · {SOURCE_LABEL[r.source]}
-                          </span>
-                        </div>
-                        {r.installed_version ? (
-                          <div className="flex items-center gap-2">
-                            <Badge variant="success">{r.installed_version} installed</Badge>
-                            <Button size="sm" variant="secondary" onClick={() => runResolved(r.id, ['--version'])}>
-                              <Play /> --version
-                            </Button>
-                          </div>
-                        ) : (
-                          <Badge variant="destructive">not installed</Badge>
-                        )}
-                      </div>
-                    ))}
-                  {detail.resolved.every((r) => !r.requested_version && !r.installed_version) && (
-                    <p className="text-sm text-muted-foreground">
-                      No runtime requirement detected and no manifest present.
-                    </p>
-                  )}
-                </div>
-
-                <ProjectShortcuts key={detail.project.id} projectId={detail.project.id} />
-
-                {runOutput.length > 0 && (
-                  <pre className="max-h-40 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-all rounded-md bg-muted p-3 font-mono text-xs leading-relaxed">
-                    {runOutput.join('\n')}
-                  </pre>
-                )}
-              </>
-            )}
-          </CardContent>
-        </Card>
+        </div>
       </div>
-
-      {detail && <ProjectTools key={detail.project.id} detail={detail} start={startProcess} refreshKey={toolsTick} />}
 
       {error && (
         <Card className="border-destructive/40 bg-destructive/5">
@@ -279,6 +167,113 @@ Your project files are not deleted.`))) return
           </CardContent>
         </Card>
       )}
+
+      <Card>
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle className="text-sm">Registered · {projects.length}</CardTitle>
+            {projects.length > 8 && <Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter projects" className="h-8 max-w-64" />}
+          </div>
+        </CardHeader>
+        <CardContent className="flex flex-col">
+          {projects.length === 0 && <p className="text-sm text-muted-foreground">No projects yet.</p>}
+          {shown.map((p) => {
+            const expanded = selectedId === p.id
+            const ready = expanded && detail?.project.id === p.id ? detail : null
+            return (
+              <div key={p.id} className="border-b border-border last:border-b-0">
+                <div
+                  role="button"
+                  tabIndex={0}
+                  aria-expanded={expanded}
+                  title={p.path}
+                  onClick={() => setSelectedId(expanded ? null : p.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      setSelectedId(expanded ? null : p.id)
+                    }
+                  }}
+                  className={`group flex h-10 cursor-pointer items-center gap-2 rounded-md px-2 text-sm transition-colors ${expanded ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'}`}
+                >
+                  <ChevronRight className={`size-4 shrink-0 text-muted-foreground transition-transform ${expanded ? 'rotate-90' : ''}`} />
+                  <Folder className="size-3.5 shrink-0 text-muted-foreground" />
+                  <span className="shrink-0 font-medium">{p.name}</span>
+                  <span className="min-w-0 flex-1 truncate text-right text-xs text-muted-foreground">{p.path}</span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      removeProject(p.id)
+                    }}
+                    title="Remove"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                </div>
+
+                {expanded && (
+                  <div className="mb-2 ml-3 flex flex-col gap-4 border-l-2 border-border py-3 pl-4">
+                    {!ready && <p className="text-sm text-muted-foreground">Reading the project…</p>}
+                    {ready && (
+                      <>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <Badge>{ready.detection.framework.replace(/_/g, ' ')}</Badge>
+                          {ready.detection.markers.map((m) => (
+                            <Badge key={m} variant="secondary">
+                              {m}
+                            </Badge>
+                          ))}
+                        </div>
+
+                        <div className="flex flex-col gap-2">
+                          {ready.resolved
+                            .filter((r) => r.requested_version || r.installed_version)
+                            .map((r) => (
+                              <div key={r.id} className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm">
+                                <div className="flex flex-col">
+                                  <span className="font-medium uppercase">{r.id}</span>
+                                  <span className="text-xs text-muted-foreground">
+                                    wants {r.requested_version ?? '?'} · {SOURCE_LABEL[r.source]}
+                                  </span>
+                                </div>
+                                {r.installed_version ? (
+                                  <div className="flex items-center gap-2">
+                                    <Badge variant="success">{r.installed_version} installed</Badge>
+                                    <Button size="sm" variant="secondary" onClick={() => runResolved(r.id, ['--version'])}>
+                                      <Play /> --version
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <Badge variant="destructive">not installed</Badge>
+                                )}
+                              </div>
+                            ))}
+                          {ready.resolved.every((r) => !r.requested_version && !r.installed_version) && (
+                            <p className="text-sm text-muted-foreground">No runtime requirement detected and no manifest present.</p>
+                          )}
+                        </div>
+
+                        <ProjectShortcuts key={ready.project.id} projectId={ready.project.id} />
+
+                        {runOutput.length > 0 && (
+                          <pre className="max-h-40 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-all rounded-md bg-muted p-3 font-mono text-xs leading-relaxed">
+                            {runOutput.join('\n')}
+                          </pre>
+                        )}
+
+                        <ProjectTools key={ready.project.id} detail={ready} start={startProcess} refreshKey={toolsTick} />
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </CardContent>
+      </Card>
     </div>
   )
 }
