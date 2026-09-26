@@ -4,9 +4,9 @@ use std::time::Duration;
 use ols_core::process::{ProcessEvent, ProcessState};
 use ols_core::runtime::RuntimeEvent;
 use ols_core::{AppPaths, Core, CoreCommand, CoreResponse, Diagnostic, ProcessSupervisor, RuntimeManager, SettingsService};
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, WindowEvent, Wry};
 use tauri_plugin_notification::NotificationExt;
 
 /// The single front door from the UI into the application core (architecture decision 1).
@@ -56,16 +56,79 @@ fn shutdown(core: &Core) {
     }
 }
 
-fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
-    let open = MenuItem::with_id(app, "open", "Open OpenLocalServer", true, None::<&str>)?;
-    let apply = MenuItem::with_id(app, "web_start", "Start / apply web server", true, None::<&str>)?;
-    let stop = MenuItem::with_id(app, "web_stop", "Stop web server", true, None::<&str>)?;
-    let mailpit = MenuItem::with_id(app, "mailpit", "Open Mailpit", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-    let sep1 = PredefinedMenuItem::separator(app)?;
-    let sep2 = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&open, &sep1, &apply, &stop, &mailpit, &sep2, &quit])?;
+fn navigate(app: &AppHandle, route: &str) {
+    show_main_window(app);
+    let _ = app.emit("ols:navigate", route);
+}
 
+fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
+    let open = MenuItem::with_id(app, "open", "Open OpenLocalServer", true, None::<&str>)?;
+    let start_all = MenuItem::with_id(app, "start_all", "Start all", true, None::<&str>)?;
+    let stop_all = MenuItem::with_id(app, "stop_all", "Stop all", true, None::<&str>)?;
+    let separator = PredefinedMenuItem::separator(app)?;
+
+    let mut site_items: Vec<Box<dyn tauri::menu::IsMenuItem<Wry>>> = Vec::new();
+    for site in core.inner().domains.lock().unwrap().list() {
+        site_items.push(Box::new(MenuItem::with_id(app, &format!("site:{}", site.hostname), &site.hostname, true, None::<&str>)?));
+    }
+    site_items.push(Box::new(MenuItem::with_id(app, "sites_folder", "Open sites folder", true, None::<&str>)?));
+    site_items.push(Box::new(MenuItem::with_id(app, "site_add", "Add site...", true, None::<&str>)?));
+    let site_refs: Vec<&dyn tauri::menu::IsMenuItem<Wry>> = site_items.iter().map(|item| item.as_ref()).collect();
+    let sites = Submenu::with_items(app, "Sites", true, &site_refs)?;
+
+    let web_start = MenuItem::with_id(app, "web_start", "Start / reload", true, None::<&str>)?;
+    let web_stop = MenuItem::with_id(app, "web_stop", "Stop", true, None::<&str>)?;
+    let active_server = core.inner().web_config().server;
+    let mut server_items = Vec::new();
+    for server in ["nginx", "apache", "caddy"] {
+        server_items.push(CheckMenuItem::with_id(app, &format!("server:{server}"), server, true, active_server == server, None::<&str>)?);
+    }
+    let server_refs: Vec<&dyn tauri::menu::IsMenuItem<Wry>> = server_items.iter().map(|item| item as &dyn tauri::menu::IsMenuItem<Wry>).collect();
+    let server_switch = Submenu::with_items(app, "Server", true, &server_refs)?;
+    let web_config = MenuItem::with_id(app, "web_config", "Open config folder", true, None::<&str>)?;
+    let web = Submenu::with_items(app, "Web server", true, &[&web_start, &web_stop, &server_switch, &web_config])?;
+
+    let php_versions = core.inner().runtimes.installed_versions("php");
+    let php = MenuItem::with_id(app, "php_page", if php_versions.is_empty() { "PHP (none installed)" } else { "PHP" }, true, None::<&str>)?;
+
+    let mut database_items: Vec<Box<dyn tauri::menu::IsMenuItem<Wry>>> = Vec::new();
+    for service in core.services().list().into_iter().filter(|service| service.kind == "sql" || service.kind == "document") {
+        let label = format!("{} ({})", service.name, if service.running { "stop" } else { "start" });
+        database_items.push(Box::new(MenuItem::with_id(app, &format!("db:{}", service.id), label, true, None::<&str>)?));
+    }
+    database_items.push(Box::new(MenuItem::with_id(app, "databases_page", "Open databases", true, None::<&str>)?));
+    let database_refs: Vec<&dyn tauri::menu::IsMenuItem<Wry>> = database_items.iter().map(|item| item.as_ref()).collect();
+    let databases = Submenu::with_items(app, "Databases", true, &database_refs)?;
+
+    let mut service_items: Vec<Box<dyn tauri::menu::IsMenuItem<Wry>>> = Vec::new();
+    for service in core.services().list().into_iter().filter(|service| service.kind == "mail" || service.kind == "cache") {
+        let label = format!("{} ({})", service.name, if service.running { "stop" } else { "start" });
+        service_items.push(Box::new(MenuItem::with_id(app, &format!("service:{}", service.id), label, true, None::<&str>)?));
+    }
+    service_items.push(Box::new(MenuItem::with_id(app, "mailpit", "Open Mailpit", true, None::<&str>)?));
+    let service_refs: Vec<&dyn tauri::menu::IsMenuItem<Wry>> = service_items.iter().map(|item| item.as_ref()).collect();
+    let services = Submenu::with_items(app, "Services", true, &service_refs)?;
+
+    let quick_apps = MenuItem::with_id(app, "quick_apps", "Recipes", true, None::<&str>)?;
+    let quick = Submenu::with_items(app, "Quick App", true, &[&quick_apps])?;
+    let terminal = MenuItem::with_id(app, "terminal", "Terminal", true, None::<&str>)?;
+    let doctor = MenuItem::with_id(app, "doctor", "Run doctor", true, None::<&str>)?;
+    let data = MenuItem::with_id(app, "data_folder", "Data folder", true, None::<&str>)?;
+    let tools = Submenu::with_items(app, "Tools", true, &[&terminal, &doctor, &data])?;
+    let preferences = MenuItem::with_id(app, "preferences", "Preferences...", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+
+    Menu::with_items(app, &[&open, &start_all, &stop_all, &separator, &sites, &web, &php, &databases, &services, &quick, &tools, &preferences, &separator, &quit])
+}
+
+fn refresh_tray(app: &AppHandle, core: &Core) {
+    if let (Some(tray), Ok(menu)) = (app.tray_by_id("main"), tray_menu(app, core)) {
+        let _ = tray.set_menu(Some(menu));
+    }
+}
+
+fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
+    let menu = tray_menu(app, &core)?;
     let mut builder = TrayIconBuilder::with_id("main")
         .tooltip("OpenLocalServer")
         .menu(&menu)
@@ -74,23 +137,59 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
             let core = core.clone();
             match event.id.as_ref() {
                 "open" => show_main_window(app),
-                "web_start" => {
+                "start_all" | "web_start" => {
                     let handle = app.clone();
-                    std::thread::spawn(move || match core.inner().apply_web(&[]) {
-                        Ok(_) => notify(&handle, &core, "Web server", "Sites are up to date."),
-                        Err(e) => notify(&handle, &core, "Web server failed", &e.to_string()),
+                    std::thread::spawn(move || {
+                        match core.inner().apply_web(&[]) {
+                            Ok(_) => notify(&handle, &core, "Web server", "Sites are up to date."),
+                            Err(e) => notify(&handle, &core, "Web server failed", &e.to_string()),
+                        }
+                        if event.id.as_ref() == "start_all" {
+                            for service in core.services().list().into_iter().filter(|service| !service.running) {
+                                let _ = core.services().start(&service.id);
+                            }
+                        }
+                        refresh_tray(&handle, &core);
                     });
                 }
-                "web_stop" => {
+                "stop_all" => {
                     core.inner().web.stop();
+                    for service in core.services().list().into_iter().filter(|service| service.running) {
+                        core.services().stop(&service.id);
+                    }
+                    refresh_tray(app, &core);
                 }
-                "mailpit" => {
-                    let _ = core.inner().open_url("http://127.0.0.1:8025");
+                "web_stop" => { core.inner().web.stop(); refresh_tray(app, &core); }
+                "mailpit" => { let _ = core.inner().open_url("http://127.0.0.1:8025"); }
+                "sites_folder" => { let _ = core.inner().open_path(&core.inner().paths.root().join("sites").display().to_string()); }
+                "web_config" => { let _ = core.inner().open_path(&core.inner().paths.web_dir().display().to_string()); }
+                "data_folder" => { let _ = core.inner().open_path(&core.inner().paths.data_dir().display().to_string()); }
+                "preferences" => navigate(app, "settings"),
+                "databases_page" => navigate(app, "databases"),
+                "php_page" => navigate(app, "runtimes"),
+                "quick_apps" => navigate(app, "quick-apps"),
+                "terminal" => navigate(app, "terminal"),
+                "doctor" => navigate(app, "diagnostics"),
+                "site_add" => navigate(app, "sites"),
+                id if id.starts_with("site:") => {
+                    if let Some(site) = core.inner().domains.lock().unwrap().get(&id[5..]) {
+                        let _ = core.inner().open_url(&format!("{}://{}", if site.https { "https" } else { "http" }, site.hostname));
+                    }
                 }
-                "quit" => {
-                    shutdown(&core);
-                    app.exit(0);
+                id if id.starts_with("service:") || id.starts_with("db:") => {
+                    let service_id = id.split_once(':').map(|(_, value)| value).unwrap_or_default();
+                    if core.services().list().into_iter().find(|service| service.id == service_id).map(|service| service.running).unwrap_or(false) {
+                        core.services().stop(service_id);
+                    } else {
+                        let _ = core.services().start(service_id);
+                    }
+                    refresh_tray(app, &core);
                 }
+                id if id.starts_with("server:") => {
+                    let _ = core.dispatch(CoreCommand::SetSetting { key: "web.server".into(), value: serde_json::Value::String(id[7..].into()) });
+                    refresh_tray(app, &core);
+                }
+                "quit" => { shutdown(&core); app.exit(0); }
                 _ => {}
             }
         })

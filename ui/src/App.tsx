@@ -1,4 +1,5 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { listen } from '@tauri-apps/api/event'
 
 import { AiHost } from '@/components/ai/AiHost'
 import { CommandPalette } from '@/components/CommandPalette'
@@ -25,6 +26,21 @@ export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
   const [doctor, setDoctor] = useState(false)
   const openDoctor = useCallback(() => setDoctor(true), [])
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined
+    void listen<string>('ols:navigate', (event) => {
+      if (event.payload === 'diagnostics') {
+        setDoctor(true)
+        return
+      }
+      const route = event.payload === 'quick-apps' ? 'quickapps' : event.payload === 'terminal' ? 'processes' : event.payload
+      if (['dashboard', 'sites', 'quickapps', 'commands', 'webserver', 'config', 'tunnels', 'databases', 'services', 'runtimes', 'profiles', 'plugins', 'logs', 'processes', 'settings'].includes(route)) {
+        setPage(route as Page)
+      }
+    }).then((cleanup) => { unlisten = cleanup })
+    return () => unlisten?.()
+  }, [])
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
