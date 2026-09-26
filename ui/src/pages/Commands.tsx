@@ -35,7 +35,7 @@ const categoryRank = (c: string) => {
 const categoryLabel = (c: string) => CATEGORY_LABELS[c] ?? c.charAt(0).toUpperCase() + c.slice(1)
 
 /** Brand icon for each discovered source. */
-const SOURCE_ICON: Record<string, string> = {
+export const SOURCE_ICON: Record<string, string> = {
   artisan: 'laravel',
   console: 'symfony',
   composer: 'composer',
@@ -52,15 +52,15 @@ const SOURCE_CATEGORY: Record<string, string> = {
 const FRAMEWORKS = ['laravel', 'symfony', 'wordpress', 'generic_php', 'node', 'django', 'flask', 'fast_api', 'generic_python']
 
 /** Discovery runs the project's tools, which takes a second or two: keep it for the session. */
-const sourceCache = new Map<string, CommandSource[]>()
+export const sourceCache = new Map<string, CommandSource[]>()
 
 /** Quotes one argument the way the backend's command-line splitter reads it back. */
-function quote(arg: string): string {
+export function quote(arg: string): string {
   return arg === '' || /[\s"']/.test(arg) ? `"${arg.replace(/"/g, '\\"')}"` : arg
 }
 
 /** The inverse of `quote` for a whole line: whitespace splits, "..." and '...' group. */
-function splitLine(line: string): string[] {
+export function splitLine(line: string): string[] {
   const out: string[] = []
   let cur = ''
   let q: string | null = null
@@ -91,7 +91,7 @@ const slug = (s: string) =>
     .replace(/^-+|-+$/g, '')
     .slice(0, 48) || 'command'
 
-const commandLine = (c: QuickCommand) => (c.command?.executable ? [c.command.executable, ...c.command.arguments].map(quote).join(' ') : '')
+export const commandLine = (c: QuickCommand) => (c.command?.executable ? [c.command.executable, ...c.command.arguments].map(quote).join(' ') : '')
 
 /** "make:model" is in "make"; commands without a colon are grouped as general. */
 const namespaceOf = (name: string) => (name.includes(':') ? name.slice(0, name.indexOf(':')) : '')
@@ -573,7 +573,7 @@ export function CommandsPage() {
   )
 }
 
-function StateBadge({ state }: { state: ProcessState }) {
+export function StateBadge({ state }: { state: ProcessState }) {
   const label: Record<string, string> = {
     starting: 'starting',
     running: 'running',
@@ -628,7 +628,7 @@ function SourceList({ source, commands, selected, onSelect }: { source: CommandS
  * Why a source's list is missing or second-best. The backend puts plain-words paragraphs
  * first and the tool's own output last; that last part is tucked away.
  */
-function SourceProblem({ tone, title, text }: { tone: 'error' | 'warning'; title?: string; text: string }) {
+export function SourceProblem({ tone, title, text }: { tone: 'error' | 'warning'; title?: string; text: string }) {
   const parts = text.split('\n\n')
   const raw = parts.length > 1 ? parts.pop() : null
   return (
@@ -692,7 +692,7 @@ function CommandPreview({ text }: { text: string }) {
 }
 
 /** A form built from a command's definition: arguments, options, anything extra — and the exact line it makes. */
-function CommandForm({
+export function CommandForm({
   source,
   command,
   busy,
@@ -700,14 +700,18 @@ function CommandForm({
   onRun,
   onEdit,
   onSave,
+  hidePrefix,
 }: {
   source: CommandSource
   command: DiscoveredCommand
   busy: boolean
   needsProject: boolean
   onRun: (line: string) => void
+  /** Gets the line as shown: without the tool's prefix when `hidePrefix` is set. */
   onEdit: (line: string) => void
   onSave: (line: string) => void
+  /** Show the line without "php artisan" / "composer" / "npm run"; it is still run with it. */
+  hidePrefix?: boolean
 }) {
   const [args, setArgs] = useState<Record<string, string>>({})
   const [flags, setFlags] = useState<Record<string, boolean>>({})
@@ -732,6 +736,7 @@ function CommandForm({
   const extraWords = words(extra)
   if (extraWords.length) tokens.push(...(source.id === 'scripts' && source.prefix[0] === 'npm' ? ['--', ...extraWords] : extraWords))
   const line = tokens.map(quote).join(' ')
+  const shownLine = hidePrefix ? tokens.slice(source.prefix.length).map(quote).join(' ') : line
   const missing = command.arguments.filter((a) => a.required && !args[a.name]?.trim()).map((a) => a.name)
 
   const f = optionFilter.trim().toLowerCase()
@@ -821,7 +826,7 @@ function CommandForm({
         </Field>
 
         <div className="flex flex-col gap-3">
-          <CommandPreview text={line} />
+          <CommandPreview text={shownLine} />
           <div className="flex flex-wrap items-center gap-2">
             <Button disabled={busy || missing.length > 0 || needsProject} onClick={submit}>
               <Play /> Run
@@ -829,7 +834,7 @@ function CommandForm({
             <Button variant="secondary" onClick={() => onSave(line)}>
               <Save /> Save as custom command
             </Button>
-            <Button variant="ghost" onClick={() => onEdit(line)}>
+            <Button variant="ghost" onClick={() => onEdit(shownLine)}>
               <Pencil /> Edit as text
             </Button>
             {missing.length > 0 && <span className="text-xs text-muted-foreground">Needs: {missing.join(', ')}</span>}

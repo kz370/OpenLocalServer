@@ -11,10 +11,10 @@ import { type LogSource, runCommand } from '@/core'
 import { useAction } from '@/lib/hooks'
 import { confirmAction } from '@/lib/confirm'
 
-type Severity = 'error' | 'warn' | 'info' | 'debug'
+export type Severity = 'error' | 'warn' | 'info' | 'debug'
 
 /** Best-effort severity from JSON logs (`"level":"WARN"`) and plain text (`[error]`, `ERROR:`). */
-function severityOf(line: string): Severity {
+export function severityOf(line: string): Severity {
   const l = line.toLowerCase()
   if (/"level":"(error|fatal)"|\[(emerg|alert|crit|error)\]|\berror\b|✗|failed|fatal/.test(l)) return 'error'
   if (/"level":"warn|\[warn\]|\bwarn(ing)?\b/.test(l)) return 'warn'
@@ -22,7 +22,7 @@ function severityOf(line: string): Severity {
   return 'info'
 }
 
-const COLOR: Record<Severity, string> = {
+export const SEVERITY_COLOR: Record<Severity, string> = {
   error: 'text-destructive',
   warn: 'text-warning',
   info: '',
@@ -131,7 +131,7 @@ export function LogsPage() {
       <div ref={box} className="min-h-72 flex-1 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-all rounded-xl border border-border bg-card p-3 font-mono text-xs leading-relaxed">
         {shown.length === 0 && <p className="text-muted-foreground">No log lines{query || level !== 'all' ? ' match the filter' : ' yet'}.</p>}
         {shown.map((l, i) => (
-          <div key={i} className={`whitespace-pre-wrap break-all ${COLOR[l.sev]}`}>
+          <div key={i} className={`whitespace-pre-wrap break-all ${SEVERITY_COLOR[l.sev]}`}>
             {l.text}
           </div>
         ))}

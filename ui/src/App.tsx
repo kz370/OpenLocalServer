@@ -8,11 +8,11 @@ import { CommandsPage } from '@/pages/Commands'
 import { ConfigPage } from '@/pages/Config'
 import { DashboardPage } from '@/pages/Dashboard'
 import { DatabasesPage } from '@/pages/Databases'
-import { DomainsPage } from '@/pages/Domains'
+import { WebServerPage } from '@/pages/WebServer'
 import { LogsPage } from '@/pages/Logs'
 import { ProcessesPage } from '@/pages/Processes'
 import { ProfilesPage } from '@/pages/Profiles'
-import { ProjectsPage } from '@/pages/Projects'
+import { SitesPage } from '@/pages/Sites'
 import { QuickAppsPage } from '@/pages/QuickApps'
 import { RuntimesPage } from '@/pages/Runtimes'
 import { ServicesPage } from '@/pages/Services'
@@ -32,10 +32,10 @@ export default function App() {
       <DoctorDialog open={doctor} onClose={() => setDoctor(false)} />
       <main className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-6">
         {page === 'dashboard' && <DashboardPage onNavigate={setPage} />}
-        {page === 'projects' && <ProjectsPage />}
+        {page === 'sites' && <SitesPage onNavigate={setPage} />}
         {page === 'quickapps' && <QuickAppsPage onNavigate={setPage} />}
         {page === 'commands' && <CommandsPage />}
-        {page === 'domains' && <DomainsPage onNavigate={setPage} />}
+        {page === 'webserver' && <WebServerPage />}
         {page === 'config' && <ConfigPage />}
         {page === 'tunnels' && <TunnelsPage />}
         {page === 'databases' && <DatabasesPage />}

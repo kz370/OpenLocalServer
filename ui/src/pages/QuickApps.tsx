@@ -738,7 +738,7 @@ function RunProgress({ runId, onClose, onNavigate }: { runId: string; onClose: (
         ) : (
           <>
             {run.project_id && (
-              <Button variant="secondary" onClick={() => { onClose(); onNavigate('projects') }}>Go to Projects</Button>
+              <Button variant="secondary" onClick={() => { onClose(); onNavigate('sites') }}>Go to Sites</Button>
             )}
             {run.open_url && run.state === 'succeeded' && (
               <Button onClick={() => runCommand({ type: 'open_url', url: run.open_url! })}>

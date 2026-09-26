@@ -18,10 +18,10 @@ interface Action {
 
 const PAGES: [Page, string][] = [
   ['dashboard', 'Dashboard'],
-  ['projects', 'Projects'],
+  ['sites', 'Sites'],
   ['quickapps', 'Quick Apps'],
   ['commands', 'Commands'],
-  ['domains', 'Sites'],
+  ['webserver', 'Web server'],
   ['config', 'Web config'],
   ['tunnels', 'Tunnels'],
   ['databases', 'Databases'],
@@ -46,9 +46,9 @@ const KIND_LABEL: Record<SearchHit['kind'], string> = {
 }
 
 const KIND_PAGE: Record<SearchHit['kind'], Page> = {
-  project: 'projects',
+  project: 'sites',
   service: 'services',
-  site: 'domains',
+  site: 'sites',
   quick_app: 'quickapps',
   quick_command: 'commands',
   runtime: 'runtimes',
@@ -141,12 +141,12 @@ export function CommandPalette({ onNavigate, onDoctor }: { onNavigate: (p: Page)
       ]
       if (projects.type === 'projects') {
         for (const p of projects.projects) {
-          a.push({ id: `open:${p.id}`, label: `Open ${p.name}`, group: 'Projects', hint: p.path, run: () => { openProject({ id: p.id }); onNavigate('projects'); setOpen(false) } })
-          a.push({ id: `setup:${p.id}`, label: `Start ${p.name}`, group: 'Projects', hint: 'Plan and apply its environment', run: () => { openProject({ id: p.id, tab: 'environment' }); onNavigate('projects'); setOpen(false) } })
-          a.push({ id: `diag:${p.id}`, label: `Diagnose ${p.name}`, group: 'Projects', run: () => { openProject({ id: p.id, tab: 'repair' }); onNavigate('projects'); setOpen(false) } })
-          a.push({ id: `git:${p.id}`, label: `Git: ${p.name}`, group: 'Projects', run: () => { openProject({ id: p.id, tab: 'git' }); onNavigate('projects'); setOpen(false) } })
+          a.push({ id: `open:${p.id}`, label: `Open ${p.name}`, group: 'Projects', hint: p.path, run: () => { openProject({ id: p.id }); onNavigate('sites'); setOpen(false) } })
+          a.push({ id: `setup:${p.id}`, label: `Start ${p.name}`, group: 'Projects', hint: 'Plan and apply its environment', run: () => { openProject({ id: p.id, tab: 'environment' }); onNavigate('sites'); setOpen(false) } })
+          a.push({ id: `diag:${p.id}`, label: `Diagnose ${p.name}`, group: 'Projects', run: () => { openProject({ id: p.id, tab: 'repair' }); onNavigate('sites'); setOpen(false) } })
+          a.push({ id: `git:${p.id}`, label: `Git: ${p.name}`, group: 'Projects', run: () => { openProject({ id: p.id, tab: 'git' }); onNavigate('sites'); setOpen(false) } })
           a.push({ id: `workers:${p.id}`, label: `Start ${p.name} workers`, group: 'Projects', run: () => exec(`Start ${p.name} workers`, { type: 'start_project_workers', project_id: p.id }) })
-          a.push({ id: `terminal:${p.id}`, label: `Open terminal in ${p.name}`, group: 'Projects', run: () => { openProject({ id: p.id, tab: 'terminal' }); onNavigate('projects'); setOpen(false) } })
+          a.push({ id: `terminal:${p.id}`, label: `Open terminal in ${p.name}`, group: 'Projects', run: () => { openProject({ id: p.id, tab: 'terminal' }); onNavigate('sites'); setOpen(false) } })
         }
       }
       if (services.type === 'services') {
@@ -213,6 +213,7 @@ export function CommandPalette({ onNavigate, onDoctor }: { onNavigate: (p: Page)
       group: `Search · ${KIND_LABEL[h.kind]}`,
       run: () => {
         if (h.kind === 'project') openProject({ id: h.target })
+        if (h.kind === 'site') openProject({ id: '', site: h.target })
         onNavigate(KIND_PAGE[h.kind])
         setOpen(false)
       },

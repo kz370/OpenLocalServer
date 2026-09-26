@@ -30,7 +30,7 @@ import { confirmThen } from '@/lib/confirm'
 
 export type ToolTab = 'environment' | 'terminal' | 'env' | 'git' | 'workers' | 'snapshots' | 'repair' | 'mail' | 'composer' | 'node' | 'python' | 'xdebug'
 
-/** The project tools, in the order the site detail view shows them. */
+/** The project tools, in the order the site dialog lists them. */
 export const TOOL_TABS: { id: ToolTab; label: string }[] = [
   { id: 'environment', label: 'Environment' },
   { id: 'terminal', label: 'Terminal' },
@@ -47,7 +47,7 @@ export const TOOL_TABS: { id: ToolTab; label: string }[] = [
 ]
 
 /**
- * One project tool (the Sites detail view owns the tab row). `start` runs a command that
+ * One project tool (the site dialog owns the side menu). `start` runs a command that
  * returns a process and follows its output; `refreshKey` changes when that process ends,
  * so the panels re-read the project's files.
  */

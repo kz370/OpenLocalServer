@@ -133,4 +133,4 @@ Everything planned for 0.3 is built (stages 12–15). Limits worth knowing:
 
 1. Look at every new screen in the running app; try a tunnel with cloudflared and `ols setup` on a real project.
 2. Choose the license, verify the installer (bundle `ols.exe` beside the app), run the clean-VM gate, and release 0.1.
-3. Merge the Projects and Sites pages (one list, one detail view), then release 1.0 work: Linux, plugins, updater.
+3. Release 1.0 work: plugins, updater, Linux. (The Sites page now holds projects too, aaPanel style, built 2026-09-26 and only type-checked; the web server and certificates moved to a "Web server" page.)

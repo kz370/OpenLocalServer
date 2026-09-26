@@ -61,8 +61,7 @@ have not been run, and the new screens have not all been checked in the running 
 - **Load testing with k6** (Stage 18, below): performance tests for a project's sites from inside the app.
 - **AI assistant** (Stage 19, below): opt-in, bring-your-own model: LM Studio (local), Hugging Face, OpenRouter,
   or any OpenAI-compatible server. It explains problems and proposes fixes; the user approves every change.
-- **Projects and Sites are one page**: each site shows its project; one detail view holds the site's settings,
-  its web config and the project's tools.
+- **Projects and Sites are one page** (built 2026-09-26, aaPanel style): the Sites page is one table, a row per site plus projects that have no domain yet. Each row's Settings button opens a large dialog with a side menu: site settings, web server config and Servers (start, stop or restart the web server, PHP, the site's app and services), then the project's overview and tools (environment, terminal, commands such as artisan, .env, Git, workers, snapshots, repair, mail, Composer, Node, Python, Xdebug). The web server and certificates are on a separate Web server page.
 
 ### Changed (2026-09-26)
 - **No macOS.** OpenLocalServer targets Windows, and Linux last (Stage 20). macOS work is dropped from the plan.

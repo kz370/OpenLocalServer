@@ -103,7 +103,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: Page) => void })
                 {data ? `${data.domains.length} domain${data.domains.length === 1 ? '' : 's'}, ${data.project_count} project${data.project_count === 1 ? '' : 's'}` : 'Loading…'}
               </CardDescription>
             </div>
-            <Button size="sm" variant="ghost" onClick={() => onNavigate('domains')}>
+            <Button size="sm" variant="ghost" onClick={() => onNavigate('sites')}>
               Manage
             </Button>
           </CardHeader>

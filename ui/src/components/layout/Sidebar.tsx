@@ -2,7 +2,6 @@ import {
   Box,
   Database,
   FileCode2,
-  FolderKanban,
   Globe,
   Globe2,
   HardDrive,
@@ -13,6 +12,7 @@ import {
   ScrollText,
   Search,
   Server,
+  ServerCog,
   Settings,
   Sun,
   SunMoon,
@@ -30,10 +30,10 @@ import { useTheme } from '@/lib/theme'
 
 export type Page =
   | 'dashboard'
-  | 'projects'
+  | 'sites'
   | 'quickapps'
   | 'commands'
-  | 'domains'
+  | 'webserver'
   | 'config'
   | 'tunnels'
   | 'profiles'
@@ -46,10 +46,10 @@ export type Page =
 
 const NAV_ITEMS: { id: Page; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'projects', label: 'Projects', icon: FolderKanban },
+  { id: 'sites', label: 'Sites', icon: Globe },
   { id: 'quickapps', label: 'Quick Apps', icon: Rocket },
   { id: 'commands', label: 'Commands', icon: Zap },
-  { id: 'domains', label: 'Sites', icon: Globe },
+  { id: 'webserver', label: 'Web server', icon: ServerCog },
   { id: 'config', label: 'Web config', icon: FileCode2 },
   { id: 'tunnels', label: 'Tunnels', icon: Globe2 },
   { id: 'databases', label: 'Databases', icon: HardDrive },
