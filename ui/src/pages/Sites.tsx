@@ -274,16 +274,16 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
               onChange={setGroup}
             />
           </div>
-          <Table wrapperClassName="rounded-b-lg">
+          <Table wrapperClassName="rounded-b-lg" className="min-w-[840px]">
             <TableHeader>
               <TableRow>
                 <TableHead>Site</TableHead>
-                <TableHead>Serves</TableHead>
+                <TableHead className="whitespace-nowrap">Serves</TableHead>
                 <TableHead>Folder</TableHead>
-                <TableHead>HTTPS</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Domain</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead className="whitespace-nowrap">HTTPS</TableHead>
+                <TableHead className="whitespace-nowrap">Status</TableHead>
+                <TableHead className="min-w-44">Domain</TableHead>
+                <TableHead className="whitespace-nowrap text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -299,7 +299,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                         {!d && <span className="text-xs text-muted-foreground">no domain yet</span>}
                       </button>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">
+                    <TableCell className="whitespace-nowrap text-muted-foreground">
                       {d ? (
                         <span className="flex items-center gap-1.5">
                           <TechIcon id={GROUPS.find((g) => g.id === d.group)?.icon ?? 'static'} className="size-3.5" />
@@ -317,7 +317,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                     <TableCell>
                       <StatusDot site={d} running={!!status?.running} />
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="min-w-44">
                       {d && (
                         <div className="flex min-w-0 items-center gap-1 rounded-md bg-muted/40 py-0.5 pl-2 pr-1">
                           <button
@@ -346,7 +346,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                         </div>
                       )}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1">
                         <Button size="sm" variant="ghost" className="h-8 w-8 cursor-pointer px-0" onClick={openSettings} title="Settings" aria-label={`Settings for ${d?.hostname ?? p?.name}`}>
                           <Settings2 className="size-3.5" />
@@ -359,7 +359,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
               })}
               {visible.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-sm text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center text-sm text-muted-foreground">
                     {rows.length === 0 ? 'No sites yet. Add one, add a project folder, or create one from Quick Apps.' : q ? `No site matches "${query.trim()}".` : 'No sites of this type.'}
                   </TableCell>
                 </TableRow>
