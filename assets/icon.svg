@@ -9,15 +9,26 @@
   <!-- app tile: moderate corner radius, not a full squircle -->
   <rect x="64" y="64" width="896" height="896" rx="140" fill="url(#bg)"/>
 
-  <!-- server rack: three stacked units, each with a status LED -->
-  <g>
-    <rect x="260" y="276" width="504" height="120" rx="26" fill="#FFFFFF"/>
-    <circle cx="322" cy="336" r="22" fill="#4ADE80"/>
+  <!-- three isometric layers (the local stack), bottom first; drawn with fat, simple shapes so it holds up at 16px -->
+  <g stroke-linejoin="round">
+    <!-- bottom layer -->
+    <path d="M212 650 L512 800 L512 840 L212 690 Z" fill="#6FCBB6"/>
+    <path d="M812 650 L512 800 L512 840 L812 690 Z" fill="#48B39B"/>
+    <path d="M212 650 L512 500 L812 650 L512 800 Z" fill="#9EE6D6"/>
+    <!-- middle layer -->
+    <path d="M212 520 L512 670 L512 710 L212 560 Z" fill="#8ED9C8"/>
+    <path d="M812 520 L512 670 L512 710 L812 560 Z" fill="#63C4AE"/>
+    <path d="M212 520 L512 370 L812 520 L512 670 Z" fill="#CFF5EC"/>
+    <!-- top layer -->
+    <path d="M212 390 L512 540 L512 580 L212 430 Z" fill="#A7E3D5"/>
+    <path d="M812 390 L512 540 L512 580 L812 430 Z" fill="#7FD3C0"/>
+    <path d="M212 390 L512 240 L812 390 L512 540 Z" fill="#FFFFFF"/>
+  </g>
 
-    <rect x="260" y="452" width="504" height="120" rx="26" fill="#FFFFFF"/>
-    <circle cx="322" cy="512" r="22" fill="#4ADE80"/>
-
-    <rect x="260" y="628" width="504" height="120" rx="26" fill="#FFFFFF"/>
-    <circle cx="322" cy="688" r="22" fill="#4ADE80"/>
+  <!-- "localhost" accent: a small globe in the brand lime -->
+  <circle cx="512" cy="390" r="70" fill="#4ADE80"/>
+  <g fill="none" stroke="#047857" stroke-width="12" stroke-linecap="round">
+    <ellipse cx="512" cy="390" rx="30" ry="70"/>
+    <path d="M442 390 H582"/>
   </g>
 </svg>

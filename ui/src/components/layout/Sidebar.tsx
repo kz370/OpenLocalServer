@@ -13,7 +13,6 @@ import {
   Rocket,
   ScrollText,
   Search,
-  Server,
   ServerCog,
   Settings,
   Sun,
@@ -161,9 +160,7 @@ export function Sidebar({ page, onNavigate }: { page: Page; onNavigate: (p: Page
   return (
     <aside className="flex h-full w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
       <div className="flex items-center gap-2 px-4 py-4">
-        <div className="flex size-8 items-center justify-center rounded-lg bg-gradient-to-br from-teal-500 to-emerald-600 text-white shadow-sm shadow-teal-500/30">
-          <Server className="size-4" />
-        </div>
+        <img src="/favicon.svg" alt="" className="size-8 rounded-lg shadow-sm shadow-teal-500/30" />
         <span className="text-sm font-semibold tracking-tight">OpenLocalServer</span>
       </div>
 
