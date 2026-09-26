@@ -506,8 +506,8 @@ export function RuntimesPage() {
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     {managedGroup.id === 'php' && (row.entry?.installed || row.kind === 'custom') && <>
-                      <Button size="sm" variant="ghost" className="h-8" onClick={() => { setExtVersion(row.version); setManageId(null) }}><Puzzle className="size-3.5" /> Extensions</Button>
-                      <Button size="sm" variant="ghost" className="h-8" onClick={() => { setXdebugVersion(row.version); setManageId(null) }}><Bug className="size-3.5" /> Xdebug</Button>
+                      <Button size="sm" variant="ghost" className="h-8" onClick={() => setExtVersion(row.version)}><Puzzle className="size-3.5" /> Extensions</Button>
+                      <Button size="sm" variant="ghost" className="h-8" onClick={() => setXdebugVersion(row.version)}><Bug className="size-3.5" /> Xdebug</Button>
                     </>}
                     {row.kind === 'managed' && row.entry && !row.entry.is_default && <Button size="sm" variant="ghost" className="h-8" onClick={() => void chooseDefault(row.entry!)} title="Set as default"><Check className="size-3.5" /> Use</Button>}
                     {row.kind === 'managed' && row.entry && <Button size="sm" variant="ghost" className="h-8" onClick={() => void removeRuntime(row.entry!)} title={row.entry.is_default && managedInstalledCount > 1 ? 'Choose another default first' : 'Remove version'} disabled={row.entry.is_default && managedInstalledCount > 1}><Trash2 className="size-3.5" /></Button>}
