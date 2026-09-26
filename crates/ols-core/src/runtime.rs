@@ -73,7 +73,7 @@ fn probe_version(exe: &std::path::Path, flag: &str) -> Option<String> {
     let err = out.try_clone().ok()?;
     let spawned = std::process::Command::new(exe).arg(flag).stdin(Stdio::null()).stdout(out).stderr(err).spawn();
     let text = spawned.ok().and_then(|mut child| {
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(4);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
         loop {
             match child.try_wait().ok()? {
                 Some(_) => break,
