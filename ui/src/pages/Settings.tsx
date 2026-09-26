@@ -1,5 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Archive, ExternalLink, FolderSearch, Gauge, Globe, Power, Settings2, ShieldCheck, Sparkles } from 'lucide-react'
+import { Archive, ExternalLink, FolderPlus, FolderSearch, FolderTree, Gauge, Globe, Power, Settings2, ShieldCheck, Sparkles, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { AiCard } from '@/components/ai/AiSettings'
@@ -17,10 +17,11 @@ import { confirmThen } from '@/lib/confirm'
 import { useAction } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 
-type Section = 'general' | 'sites' | 'startup' | 'ai' | 'resources' | 'backups'
+type Section = 'general' | 'sites' | 'roots' | 'startup' | 'ai' | 'resources' | 'backups'
 const SECTIONS: { id: Section; label: string; icon: typeof Globe }[] = [
   { id: 'general', label: 'General', icon: Settings2 },
   { id: 'sites', label: 'Sites & domains', icon: Globe },
+  { id: 'roots', label: 'Root folders', icon: FolderTree },
   { id: 'startup', label: 'Startup & tray', icon: Power },
   { id: 'ai', label: 'AI', icon: Sparkles },
   { id: 'resources', label: 'Resources', icon: Gauge },
@@ -30,6 +31,11 @@ const SECTIONS: { id: Section; label: string; icon: typeof Globe }[] = [
 async function getString(key: string): Promise<string> {
   const r = await runCommand({ type: 'get_setting', key })
   return r.type === 'setting' && typeof r.value === 'string' ? r.value : ''
+}
+
+async function getStringList(key: string): Promise<string[]> {
+  const r = await runCommand({ type: 'get_setting', key })
+  return r.type === 'setting' && Array.isArray(r.value) ? r.value.filter((value): value is string => typeof value === 'string') : []
 }
 
 /** §119–121 startup, tray and notification behavior, plus the everyday defaults. */
@@ -43,6 +49,7 @@ export function SettingsPage() {
   const [autoDomains, setAutoDomains] = useState(true)
   const [watchSites, setWatchSites] = useState(true)
   const [sitesDir, setSitesDir] = useState('')
+  const [rootFolders, setRootFolders] = useState<string[]>([])
   const [helper, setHelper] = useState<boolean | null>(null)
   const [version, setVersion] = useState('')
   const [saved, setSaved] = useState<string | null>(null)
@@ -61,6 +68,7 @@ export function SettingsPage() {
     })
     void getString('quickapps.projects_dir').then(setProjectsDir)
     void getString('paths.sites_dir').then(setSitesDir)
+    void getStringList('projects.roots').then(setRootFolders)
     void runCommand({ type: 'get_setting', key: 'projects.watch' }).then((r) => r.type === 'setting' && setWatchSites(r.value !== false))
     void runCommand({ type: 'get_setting', key: 'domains.auto' }).then((r) => r.type === 'setting' && setAutoDomains(r.value !== false))
   }, [])
@@ -77,6 +85,27 @@ export function SettingsPage() {
     if (autoDomains) await runCommand({ type: 'sync_auto_domains' })
     setSaved('Saved.')
     setTimeout(() => setSaved(null), 2500)
+  }
+
+  async function addRootFolder() {
+    const picked = await open({ directory: true, title: 'Select a root projects folder' })
+    if (!picked || Array.isArray(picked) || rootFolders.some((root) => root.toLowerCase() === picked.toLowerCase())) return
+    const next = [...rootFolders, picked]
+    await run('add root folder', async () => {
+      const result = await runCommand({ type: 'set_setting', key: 'projects.roots', value: next })
+      if (result.type === 'ok') {
+        setRootFolders(next)
+        if (autoDomains) await runCommand({ type: 'sync_auto_domains' })
+      }
+    })
+  }
+
+  async function removeRootFolder(root: string) {
+    const next = rootFolders.filter((folder) => folder !== root)
+    await run('remove root folder', async () => {
+      const result = await runCommand({ type: 'set_setting', key: 'projects.roots', value: next })
+      if (result.type === 'ok') setRootFolders(next)
+    })
   }
 
   if (!startup) return null
@@ -220,6 +249,35 @@ export function SettingsPage() {
                   hint="Like Laragon: every folder in a scanned projects folder gets <folder>.test with HTTPS. Domains you delete stay deleted."
                 />
                 <SwitchRow checked={watchSites} onChange={setWatchSites} title="Watch sites folder" hint="New and removed project folders are detected automatically." />
+              </CardContent>
+            </Card>
+          )}
+
+          {section === 'roots' && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Root folders</CardTitle>
+                <CardDescription>Only these folders are watched for immediate child project folders. Projects inside them are detected automatically.</CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-3">
+                <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">Default sites folder</p>
+                    <p className="truncate text-xs text-muted-foreground">{sitesDir}</p>
+                  </div>
+                  <Badge variant="secondary">Default</Badge>
+                </div>
+                {rootFolders.filter((root) => root.toLowerCase() !== sitesDir.toLowerCase()).map((root) => (
+                  <div key={root} className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
+                    <p className="min-w-0 truncate text-sm">{root}</p>
+                    <Button size="icon" variant="ghost" title="Remove root folder" aria-label={`Remove ${root}`} onClick={() => removeRootFolder(root)}>
+                      <Trash2 />
+                    </Button>
+                  </div>
+                ))}
+                <Button variant="secondary" className="self-start" onClick={addRootFolder}>
+                  <FolderPlus /> Add root folder
+                </Button>
               </CardContent>
             </Card>
           )}

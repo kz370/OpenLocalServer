@@ -260,17 +260,38 @@ impl Inner {
         std::thread::spawn(move || {
             let (events_tx, events_rx) = std::sync::mpsc::channel();
             let Ok(mut debouncer) = new_debouncer(std::time::Duration::from_millis(1500), events_tx) else { return };
+            let mut watched = std::collections::HashSet::new();
             for root in roots {
                 let path = PathBuf::from(root);
                 if path.is_dir() {
-                    let _ = debouncer.watcher().watch(&path, RecursiveMode::NonRecursive);
+                    if debouncer.watcher().watch(&path, RecursiveMode::NonRecursive).is_ok() {
+                        watched.insert(path);
+                    }
                 }
             }
-            while events_rx.recv().is_ok() {
-                if let Err(error) = core.sync_auto_domains() {
-                    tracing::warn!(%error, "automatic domains could not be synced after a project change");
+            loop {
+                match events_rx.recv_timeout(Duration::from_millis(500)) {
+                    Ok(_) => {
+                        if let Err(error) = core.sync_auto_domains() {
+                            tracing::warn!(%error, "automatic domains could not be synced after a project change");
+                        }
+                        let _ = core.project_events.send(());
+                    }
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
                 }
-                let _ = core.project_events.send(());
+                let desired: std::collections::HashSet<PathBuf> = core.string_list(PROJECT_ROOTS).into_iter().map(PathBuf::from).collect();
+                for path in watched.clone() {
+                    if !desired.contains(&path) {
+                        let _ = debouncer.watcher().unwatch(&path);
+                        watched.remove(&path);
+                    }
+                }
+                for path in desired {
+                    if path.is_dir() && !watched.contains(&path) && debouncer.watcher().watch(&path, RecursiveMode::NonRecursive).is_ok() {
+                        watched.insert(path);
+                    }
+                }
             }
         });
     }
