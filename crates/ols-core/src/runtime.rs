@@ -62,28 +62,32 @@ fn probe_system_install(id: &str) -> Option<SystemInstall> {
     Some(SystemInstall { path: exe_path.display().to_string(), version })
 }
 
-/// First line of `<exe> <flag>`. Some tools (an old Windows Redis) never exit on their version flag,
-/// so the probe is killed after a few seconds instead of hanging the catalog and leaking a process.
+/// First line of `<exe> <flag>`. Some tools (an old Windows Redis) never exit on their version flag, or
+/// leave a child holding the output pipe open, so the answer goes to a temp file instead of a pipe and
+/// the probe is killed after a few seconds. Nothing here can block the catalog for long.
 fn probe_version(exe: &std::path::Path, flag: &str) -> Option<String> {
     use std::process::Stdio;
-    let mut child = std::process::Command::new(exe).arg(flag).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().ok()?;
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(4);
-    loop {
-        match child.try_wait().ok()? {
-            Some(_) => break,
-            None if std::time::Instant::now() >= deadline => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return None;
+    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+    let out_path = std::env::temp_dir().join(format!("ols-probe-{}-{nanos}.txt", std::process::id()));
+    let out = std::fs::File::create(&out_path).ok()?;
+    let err = out.try_clone().ok()?;
+    let spawned = std::process::Command::new(exe).arg(flag).stdin(Stdio::null()).stdout(out).stderr(err).spawn();
+    let text = spawned.ok().and_then(|mut child| {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(4);
+        loop {
+            match child.try_wait().ok()? {
+                Some(_) => break,
+                None if std::time::Instant::now() >= deadline => {
+                    let _ = child.kill();
+                    return None;
+                }
+                None => std::thread::sleep(std::time::Duration::from_millis(20)),
             }
-            None => std::thread::sleep(std::time::Duration::from_millis(20)),
         }
-    }
-    let output = child.wait_with_output().ok()?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let text = if stdout.trim().is_empty() { stderr } else { stdout };
-    Some(text.lines().next().unwrap_or("unknown version").trim().to_string())
+        std::fs::read_to_string(&out_path).ok()
+    });
+    let _ = std::fs::remove_file(&out_path);
+    text.map(|t| t.lines().find(|l| !l.trim().is_empty()).unwrap_or("unknown version").trim().to_string())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
