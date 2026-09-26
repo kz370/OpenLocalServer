@@ -6,6 +6,7 @@ import { CommandPalette } from '@/components/CommandPalette'
 import { ConfirmHost } from '@/components/ConfirmHost'
 import { DoctorDialog } from '@/components/DoctorDialog'
 import { type Page, Sidebar } from '@/components/layout/Sidebar'
+import { Titlebar } from '@/components/layout/Titlebar'
 import { CommandsPage } from '@/pages/Commands'
 import { DashboardPage } from '@/pages/Dashboard'
 import { DatabasesPage } from '@/pages/Databases'
@@ -53,13 +54,15 @@ export default function App() {
   }, [navigate])
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
-      <Sidebar page={page} onNavigate={navigate} />
-      <ConfirmHost />
-      <AiHost onNavigate={navigate} />
-      <CommandPalette onNavigate={navigate} onDoctor={openDoctor} />
-      <DoctorDialog open={doctor} onClose={() => setDoctor(false)} />
-      <main className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-6">
+    <div className="flex h-screen w-screen flex-col overflow-hidden rounded-xl border border-border bg-background text-foreground">
+      <Titlebar />
+      <div className="flex min-h-0 flex-1">
+        <Sidebar page={page} onNavigate={navigate} />
+        <ConfirmHost />
+        <AiHost onNavigate={navigate} />
+        <CommandPalette onNavigate={navigate} onDoctor={openDoctor} />
+        <DoctorDialog open={doctor} onClose={() => setDoctor(false)} />
+        <main className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-6">
         {page === 'dashboard' && <DashboardPage onNavigate={setPage} />}
         {page === 'sites' && <SitesPage onNavigate={setPage} />}
         {page === 'quickapps' && <QuickAppsPage onNavigate={setPage} />}
@@ -75,6 +78,7 @@ export default function App() {
         {page === 'processes' && <ProcessesPage />}
         {page === 'settings' && <SettingsPage />}
       </main>
+      </div>
     </div>
   )
 }
