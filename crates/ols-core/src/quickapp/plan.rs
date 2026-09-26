@@ -350,7 +350,7 @@ fn req_wanted(id: &str, r: &Requirement, values: &BTreeMap<String, String>) -> b
 pub fn build_plan(app: &QuickApp, values: BTreeMap<String, String>, ctx: &PlanCtx) -> Result<RunPlan, String> {
     let vars = &app.variables;
     let mut steps: Vec<PlannedStep> = Vec::new();
-    let mut warnings: Vec<String> = Vec::new();
+    let warnings: Vec<String> = Vec::new();
     let mut requirements: Vec<ReqSpec> = Vec::new();
 
     let flag = |name: &str, fallback: Option<bool>| -> bool {
