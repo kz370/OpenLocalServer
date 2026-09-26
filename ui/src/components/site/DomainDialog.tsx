@@ -1,5 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { FileCode2, FolderSearch, Rocket } from 'lucide-react'
+import { ArrowLeftRight, Braces, FileCode2, FileText, FolderSearch, Rocket } from 'lucide-react'
 import { type ReactNode, useEffect, useState } from 'react'
 
 import { TechTile } from '@/components/TechIcon'
@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
 import { Field, Select, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { cn } from '@/lib/utils'
 import { type Domain, type Project, type QuickEntryView, runCommand } from '@/core'
 
 const emptyBlocks = { headers: [], redirects: [], mappings: [], upstreams: [], includes: [] }
@@ -52,7 +53,7 @@ export function DomainDialog({
 }) {
   if (!domain) return null
   return (
-    <Dialog open onClose={onClose} title="Add site" description="Changes are applied to the web server as soon as you save.">
+    <Dialog open wide onClose={onClose} title="Add site" description="Changes are applied to the web server as soon as you save.">
       <DomainSettings
         {...rest}
         domain={domain}
@@ -153,129 +154,167 @@ export function DomainSettings({
     onSave(out)
   }
 
+  const kinds: { id: 'php' | 'proxy' | 'static'; title: string; hint: string; icon: ReactNode }[] = [
+    { id: 'php', title: 'PHP', hint: 'Laravel, WordPress, plain PHP (FastCGI)', icon: <Braces className="size-5" /> },
+    { id: 'proxy', title: 'Reverse proxy', hint: 'Dev server, Docker, another computer', icon: <ArrowLeftRight className="size-5" /> },
+    { id: 'static', title: 'Static files', hint: 'HTML, CSS and JS served as they are', icon: <FileText className="size-5" /> },
+  ]
+  const host = d.hostname.trim().toLowerCase()
+  const localTld = /\.(test|local|localhost|dev\.test)$/.test(host)
+
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
       {err && <p className="text-sm text-destructive">{err}</p>}
+
       {isNew && (
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Project (optional)">
-            <Select value={d.project_id ?? ''} onChange={(e) => pickProject(e.target.value)}>
-              <option value="">— none —</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Name template (§48)">
-            <Select value={template} onChange={(e) => setTemplate(e.target.value)}>
-              <option>{'{project}.test'}</option>
-              <option>{'api.{project}.test'}</option>
-              <option>{'admin.{project}.test'}</option>
-            </Select>
-          </Field>
-        </div>
-      )}
-      {isNew && onQuickApp && (
-        <div className="flex flex-col gap-2">
-          <Button variant="secondary" className="self-start" onClick={() => setShowApps((v) => !v)}>
-            <Rocket /> {showApps ? 'Hide Quick Apps' : 'Create from a Quick App'}
-          </Button>
-          {showApps && (
-            <div className="grid max-h-56 gap-1.5 overflow-y-auto rounded-lg border border-border p-2 sm:grid-cols-2">
-              {quickApps.length === 0 && <p className="p-2 text-sm text-muted-foreground">No Quick Apps available.</p>}
-              {quickApps.map((a) => (
-                <button
-                  key={a.id}
-                  onClick={() => onQuickApp(a.id)}
-                  className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent"
-                >
-                  <TechTile id={a.category} />
-                  <span className="min-w-0">
-                    <span className="block truncate font-medium">{a.name}</span>
-                    <span className="block truncate text-xs text-muted-foreground">{a.description}</span>
-                  </span>
-                </button>
-              ))}
+        <FormSection title="Source" hint="Start from a project you already have, or create a new app.">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Project (optional)">
+              <Select value={d.project_id ?? ''} onChange={(e) => pickProject(e.target.value)}>
+                <option value="">— none —</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Name template (§48)">
+              <Select value={template} onChange={(e) => setTemplate(e.target.value)}>
+                <option>{'{project}.test'}</option>
+                <option>{'api.{project}.test'}</option>
+                <option>{'admin.{project}.test'}</option>
+              </Select>
+            </Field>
+          </div>
+          {onQuickApp && (
+            <div className="flex flex-col gap-2">
+              <Button variant="secondary" className="self-start" onClick={() => setShowApps((v) => !v)}>
+                <Rocket /> {showApps ? 'Hide Quick Apps' : 'Create from a Quick App'}
+              </Button>
+              {showApps && (
+                <div className="grid max-h-56 gap-1.5 overflow-y-auto rounded-lg border border-border p-2 sm:grid-cols-2">
+                  {quickApps.length === 0 && <p className="p-2 text-sm text-muted-foreground">No Quick Apps available.</p>}
+                  {quickApps.map((a) => (
+                    <button
+                      key={a.id}
+                      onClick={() => onQuickApp(a.id)}
+                      className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent"
+                    >
+                      <TechTile id={a.category} />
+                      <span className="min-w-0">
+                        <span className="block truncate font-medium">{a.name}</span>
+                        <span className="block truncate text-xs text-muted-foreground">{a.description}</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
-        </div>
+        </FormSection>
       )}
-      <Field label="Domain" hint="Subdomains work too: api.shop.test routes independently of shop.test">
-        <Input value={d.hostname} onChange={(e) => set({ hostname: e.target.value })} placeholder="shop.test, myapp.local, api.company.dev…" />
-      </Field>
-      <div className="flex gap-2">
+
+      <FormSection title="Address">
+        <Field
+          label="Domain"
+          hint={
+            host
+              ? `Opens at ${d.https ? 'https' : 'http'}://${host}${localTld ? '' : ' — use .test, .local or .localhost so it never clashes with a real website'}`
+              : 'Subdomains work too: api.shop.test routes independently of shop.test'
+          }
+        >
+          <Input value={d.hostname} onChange={(e) => set({ hostname: e.target.value })} placeholder="shop.test, myapp.local, api.company.dev…" />
+        </Field>
         <Field label="Site folder">
           <div className="flex gap-2">
-            <Input value={d.root} onChange={(e) => set({ root: e.target.value })} placeholder="C:\Sites\shop\public" className="w-96" />
+            <Input value={d.root} onChange={(e) => set({ root: e.target.value })} placeholder="C:\Sites\shop\public" className="min-w-0 flex-1" />
             <Button variant="secondary" onClick={browseRoot}>
               <FolderSearch /> Browse
             </Button>
           </div>
         </Field>
-      </div>
-      <Field label="Serves">
-        <Select
-          value={kindType}
-          onChange={(e) => {
-            const t = e.target.value
-            set({ kind: t === 'php' ? { type: 'php', version: null } : t === 'proxy' ? { type: 'proxy', upstream_port: 3000 } : { type: 'static' } })
-          }}
-        >
-          <option value="php">PHP (FastCGI)</option>
-          <option value="proxy">Reverse proxy (dev server, Docker, another computer…)</option>
-          <option value="static">Static files</option>
-        </Select>
-      </Field>
-      {d.kind.type === 'php' && (
-        <Field label="PHP version" hint="“Project default” follows the project's own resolved version">
-          <Select value={d.kind.version ?? ''} onChange={(e) => set({ kind: { type: 'php', version: e.target.value || null } })}>
-            <option value="">Project default / newest</option>
-            {phpOptions(installedPhp, d.kind.version).map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </Select>
-        </Field>
-      )}
-      {d.kind.type === 'proxy' && (
-        <>
-          <div className="grid gap-3 sm:grid-cols-[1fr_8rem]">
-            <Field label="Forward to" hint="Blank = this computer. Or a Docker host, another PC's IP, a hostname.">
-              <Input
-                value={d.kind.upstream_host ?? ''}
-                onChange={(e) => set({ kind: { ...d.kind, type: 'proxy', upstream_port: d.kind.type === 'proxy' ? d.kind.upstream_port : 3000, upstream_host: e.target.value.trim() || null } })}
-                placeholder="127.0.0.1"
-              />
-            </Field>
-            <Field label="Port">
-              <Input
-                type="number"
-                value={d.kind.upstream_port}
-                onChange={(e) => set({ kind: { ...d.kind, type: 'proxy', upstream_port: Number(e.target.value) } })}
-              />
-            </Field>
+      </FormSection>
+
+      <FormSection title="Serves">
+        <div className="grid gap-3 sm:grid-cols-3" role="radiogroup" aria-label="What the site serves">
+          {kinds.map((k) => (
+            <button
+              key={k.id}
+              type="button"
+              role="radio"
+              aria-checked={kindType === k.id}
+              onClick={() => set({ kind: k.id === 'php' ? { type: 'php', version: null } : k.id === 'proxy' ? { type: 'proxy', upstream_port: 3000 } : { type: 'static' } })}
+              className={cn(
+                'flex flex-col items-start gap-1.5 rounded-lg border p-3 text-left transition-colors',
+                kindType === k.id ? 'border-primary bg-accent text-accent-foreground' : 'border-border hover:bg-accent/40',
+              )}
+            >
+              {k.icon}
+              <span className="text-sm font-medium">{k.title}</span>
+              <span className="text-xs text-muted-foreground">{k.hint}</span>
+            </button>
+          ))}
+        </div>
+        {d.kind.type === 'php' && (
+          <Field label="PHP version" hint="“Project default” follows the project's own resolved version">
+            <Select value={d.kind.version ?? ''} onChange={(e) => set({ kind: { type: 'php', version: e.target.value || null } })}>
+              <option value="">Project default / newest</option>
+              {phpOptions(installedPhp, d.kind.version).map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
+        {d.kind.type === 'proxy' && (
+          <>
+            <div className="grid gap-3 sm:grid-cols-[1fr_8rem]">
+              <Field label="Forward to" hint="Blank = this computer. Or a Docker host, another PC's IP, a hostname.">
+                <Input
+                  value={d.kind.upstream_host ?? ''}
+                  onChange={(e) => set({ kind: { ...d.kind, type: 'proxy', upstream_port: d.kind.type === 'proxy' ? d.kind.upstream_port : 3000, upstream_host: e.target.value.trim() || null } })}
+                  placeholder="127.0.0.1"
+                />
+              </Field>
+              <Field label="Port">
+                <Input
+                  type="number"
+                  value={d.kind.upstream_port}
+                  onChange={(e) => set({ kind: { ...d.kind, type: 'proxy', upstream_port: Number(e.target.value) } })}
+                />
+              </Field>
+            </div>
+            <Toggle
+              checked={!!d.kind.upstream_https}
+              onChange={(v) => set({ kind: { ...d.kind, type: 'proxy', upstream_port: d.kind.type === 'proxy' ? d.kind.upstream_port : 3000, upstream_https: v } })}
+              label="The target only speaks HTTPS"
+              hint="Self-signed certificates on the target are accepted."
+            />
+            {!d.kind.upstream_host && (
+              <Field label="Start command (optional)" hint="OpenLocalServer supervises it and passes PORT. Example: npm run dev">
+                <Input value={appLine} onChange={(e) => setAppLine(e.target.value)} placeholder="npm run dev" />
+              </Field>
+            )}
+          </>
+        )}
+      </FormSection>
+
+      <FormSection title="Options">
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="rounded-lg border border-border p-3">
+            <Toggle checked={d.https} onChange={(v) => set({ https: v, redirect_https: v ? d.redirect_https : false })} label="HTTPS" hint="A certificate from the local CA is created for this domain." />
           </div>
-          <Toggle
-            checked={!!d.kind.upstream_https}
-            onChange={(v) => set({ kind: { ...d.kind, type: 'proxy', upstream_port: d.kind.type === 'proxy' ? d.kind.upstream_port : 3000, upstream_https: v } })}
-            label="The target only speaks HTTPS"
-            hint="Self-signed certificates on the target are accepted."
-          />
-          {!d.kind.upstream_host && (
-            <Field label="Start command (optional)" hint="OpenLocalServer supervises it and passes PORT. Example: npm run dev">
-              <Input value={appLine} onChange={(e) => setAppLine(e.target.value)} placeholder="npm run dev" />
-            </Field>
-          )}
-        </>
-      )}
-      <div className="flex flex-col gap-2.5">
-        <Toggle checked={d.https} onChange={(v) => set({ https: v, redirect_https: v ? d.redirect_https : false })} label="HTTPS" hint="A certificate from the local CA is created for this domain." />
-        <Toggle checked={d.redirect_https} disabled={!d.https} onChange={(v) => set({ redirect_https: v })} label="Redirect HTTP to HTTPS" hint="Turn off for projects that need plain HTTP." />
-        <Toggle checked={d.wildcard} onChange={(v) => set({ wildcard: v })} label={`Wildcard (*.${d.hostname || 'domain'})`} hint="Answers every subdomain; needs a one-time Windows DNS rule (you'll be asked to approve it)." />
-      </div>
+          <div className="rounded-lg border border-border p-3">
+            <Toggle checked={d.redirect_https} disabled={!d.https} onChange={(v) => set({ redirect_https: v })} label="Redirect to HTTPS" hint="Turn off for projects that need plain HTTP." />
+          </div>
+          <div className="rounded-lg border border-border p-3">
+            <Toggle checked={d.wildcard} onChange={(v) => set({ wildcard: v })} label="Wildcard" hint={`Answers *.${host || 'domain'}; needs a one-time Windows DNS rule (you'll be asked to approve it).`} />
+          </div>
+        </div>
+      </FormSection>
+
       {!isNew && (
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <FileCode2 className="size-3.5" /> Config ownership: <b>{d.ownership}</b>. Change it on the Web server config tab.
@@ -283,6 +322,19 @@ export function DomainSettings({
       )}
       <div className="flex justify-end gap-2 border-t border-border pt-3">{actions(submit, busy)}</div>
     </div>
+  )
+}
+
+/** A titled group of fields inside a dialog form. */
+function FormSection({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
+  return (
+    <section className="flex flex-col gap-3">
+      <div>
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</h3>
+        {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
+      </div>
+      {children}
+    </section>
   )
 }
 
