@@ -2,11 +2,11 @@ import { CheckCircle2, Database, Search, XCircle } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { Spinner } from '@/components/Spinner'
-import { TechIcon } from '@/components/TechIcon'
+import { TechTile } from '@/components/TechIcon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
-import { Field, Toggle } from '@/components/ui/form'
+import { Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { type Diagnostic, type MigratedDb, type MigrationSource, runCommand } from '@/core'
 import { formatBytes } from '@/lib/hooks'
@@ -113,9 +113,9 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
                   s.id === sourceId ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border hover:bg-accent/50'
                 }`}
               >
-                <TechIcon id={s.engine} className="size-5" />
+                <TechTile id={s.engine} className="size-9" />
                 <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-medium">{s.label}</span>
+                  <span className="block truncate text-sm font-medium">{s.label}</span>
                   <span className="block truncate text-xs text-muted-foreground" title={s.data_dir}>
                     {formatBytes(s.size_bytes)} · {s.data_dir}
                   </span>
@@ -127,13 +127,26 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
         )}
 
         {source && (
-          <div className="flex flex-wrap items-end gap-3">
-            <Field label="Its root password" hint="Blank for Laragon and XAMPP defaults.">
-              <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-56" autoComplete="off" />
-            </Field>
-            <Button variant="secondary" disabled={busy !== null} onClick={scan}>
-              {busy === 'scan' ? <Spinner /> : <Search />} {busy === 'scan' ? (source.running_port ? 'Reading…' : 'Starting a copy…') : 'Find databases'}
-            </Button>
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="migrate-password" className="text-xs font-medium text-muted-foreground">
+              {source.label} root password
+            </label>
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                id="migrate-password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && busy === null && scan()}
+                placeholder="Leave blank if none"
+                className="min-w-0 flex-1 sm:max-w-72"
+                autoComplete="off"
+              />
+              <Button variant="secondary" disabled={busy !== null} onClick={scan}>
+                {busy === 'scan' ? <Spinner /> : <Search />} {busy === 'scan' ? (source.running_port ? 'Reading…' : 'Starting a copy…') : 'Find databases'}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">Laragon and XAMPP use a blank root password by default.</p>
           </div>
         )}
 
