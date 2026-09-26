@@ -59,7 +59,7 @@ impl WebServer for Apache {
         layout.prefix.join("conf").join("httpd.conf")
     }
 
-    fn render_main(&self, layout: &ServerLayout, ports: Ports, _pools: &[PoolSpec]) -> String {
+    fn render_main(&self, layout: &ServerLayout, ports: Ports, pools: &[PoolSpec]) -> String {
         let install = cfg_path(&layout.install_dir);
         let mut out = String::new();
         out.push_str(MANAGED_HEADER);
@@ -93,6 +93,17 @@ impl WebServer for Apache {
 
         // Deny by default, then each site opens its own docroot.
         out.push_str("<Directory />\n    AllowOverride None\n    Require all denied\n</Directory>\n\n");
+
+        // PHP FastCGI pools: one balancer per PHP version so every site uses all
+        // workers of its version. Windows php-cgi serves one request at a time
+        // per process, so balancing across N workers gives N-way concurrency.
+        for pool in pools {
+            out.push_str(&format!("<Proxy balancer://ols_{}>\n", pool.id));
+            for port in &pool.ports {
+                out.push_str(&format!("    BalancerMember fcgi://127.0.0.1:{port}\n"));
+            }
+            out.push_str("</Proxy>\n\n");
+        }
 
         // A request for an unknown name must not silently land on the first site.
         out.push_str(&format!(
@@ -211,23 +222,20 @@ fn body(site: &SiteSpec) -> String {
     }
 
     match &site.backend {
-        Backend::Php { ports, .. } => {
+        Backend::Php { pool, .. } => {
             if https {
                 out.push_str("    SetEnv HTTPS on\n");
             }
-            // mod_proxy_balancer can't sit behind SetHandler for FastCGI, so each site is
-            // pinned to one php-cgi worker of its version (spread across sites by name).
-            // Windows php-cgi serves one request at a time per process, which is why the
-            // pool exists; Nginx and Caddy balance across all of them.
-            let idx = site.hostname.bytes().fold(0usize, |h, b| h.wrapping_mul(31).wrapping_add(b as usize)) % ports.len().max(1);
-            let port = ports[idx];
-            // On Windows mod_proxy_fcgi builds SCRIPT_FILENAME as "proxy:fcgi://host:port/C:/..",
-            // which php-cgi rejects ("No input file specified"); strip the prefix back off.
+            // Balanced across all php-cgi workers of this version via the
+            // <Proxy balancer://...> block in the main config.
             out.push_str(&format!(
-                "    <FilesMatch \"\\.php$\">\n        SetHandler \"proxy:fcgi://127.0.0.1:{port}/\"\n    </FilesMatch>\n"
+                "    <FilesMatch \"\\.php$\">\n        SetHandler \"proxy:balancer://ols_{pool}/\"\n    </FilesMatch>\n"
             ));
+            // On Windows mod_proxy_fcgi builds SCRIPT_FILENAME as "proxy:fcgi://host:port/C:/.."
+            // (or "proxy:balancer://.../C:/.." when balanced), which php-cgi rejects
+            // ("No input file specified"); strip the prefix back off.
             out.push_str(
-                "    ProxyFCGISetEnvIf \"reqenv('SCRIPT_FILENAME') =~ m#^proxy:fcgi://[^/]+/(.*)$#\" SCRIPT_FILENAME \"$1\"\n",
+                "    ProxyFCGISetEnvIf \"reqenv('SCRIPT_FILENAME') =~ m#^proxy:(?:fcgi|balancer)://[^/]+/(.*)$#\" SCRIPT_FILENAME \"$1\"\n",
             );
             // In VirtualHost context REQUEST_FILENAME may still be the URL path, before
             // Apache maps it to disk. FallbackResource preserves existing assets and sends
@@ -285,7 +293,7 @@ mod tests {
         assert!(cfg.contains("ServerAlias *.shop.test"));
         assert!(cfg.contains("RewriteRule ^ https://%{SERVER_NAME}%{REQUEST_URI} [R=301,L]"));
         assert!(cfg.contains("SSLCertificateFile \"C:/c/cert.pem\""));
-        assert!(cfg.contains("SetHandler \"proxy:fcgi://127.0.0.1:10840/\""));
+        assert!(cfg.contains("SetHandler \"proxy:balancer://ols_php_84/\""));
         assert!(cfg.contains("DocumentRoot \"C:/sites/shop\""));
     }
 
@@ -310,5 +318,8 @@ mod tests {
         let cfg = Apache.render_main(&layout, PORTS, &[PoolSpec { id: "php_84".into(), ports: vec![10840, 10841] }]);
         assert!(cfg.contains("LoadModule ssl_module"));
         assert!(cfg.contains("IncludeOptional \"C:/ols/web/apache/sites/*.conf\""));
+        assert!(cfg.contains("<Proxy balancer://ols_php_84>"));
+        assert!(cfg.contains("BalancerMember fcgi://127.0.0.1:10840"));
+        assert!(cfg.contains("BalancerMember fcgi://127.0.0.1:10841"));
     }
 }
