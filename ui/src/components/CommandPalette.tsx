@@ -6,6 +6,7 @@ import { Spinner } from '@/components/Spinner'
 import { type CoreCommand, type SearchHit, runCommand } from '@/core'
 import { asDiagnostic } from '@/components/ErrorCard'
 import { askAi } from '@/lib/ai'
+import { usePresence } from '@/lib/hooks'
 import { openProject } from '@/lib/nav'
 import { cn } from '@/lib/utils'
 
@@ -75,6 +76,7 @@ function matches(query: string, text: string) {
  */
 export function CommandPalette({ onNavigate, onDoctor }: { onNavigate: (p: Page) => void; onDoctor: () => void }) {
   const [open, setOpen] = useState(false)
+  const { mounted, state } = usePresence(open)
   const [query, setQuery] = useState('')
   const [actions, setActions] = useState<Action[]>([])
   const [hits, setHits] = useState<SearchHit[]>([])
@@ -234,12 +236,12 @@ export function CommandPalette({ onNavigate, onDoctor }: { onNavigate: (p: Page)
     list.current?.querySelector(`[data-index="${active}"]`)?.scrollIntoView({ block: 'nearest' })
   }, [active])
 
-  if (!open) return null
+  if (!mounted) return null
   let lastGroup = ''
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-[12vh]">
-      <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
-      <div role="dialog" aria-modal="true" aria-label="Command palette" className="relative flex max-h-[70vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
+      <div data-state={state} className="modal-backdrop absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
+      <div data-state={state} role="dialog" aria-modal="true" aria-label="Command palette" className="modal-panel relative flex max-h-[70vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
         <div className="flex items-center gap-2 border-b border-border px-4">
           <Search className="size-4 shrink-0 text-muted-foreground" />
           <input

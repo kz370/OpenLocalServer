@@ -1,6 +1,7 @@
 import { X } from 'lucide-react'
 import { type ReactNode, useEffect } from 'react'
 
+import { usePresence } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 
 /** A plain modal: dimmed backdrop, Escape / backdrop click closes, content scrolls. */
@@ -28,16 +29,18 @@ export function Dialog({
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])
 
-  if (!open) return null
+  const { mounted, state } = usePresence(open)
+  if (!mounted) return null
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-[1px]" onClick={onClose} />
+      <div data-state={state} className="modal-backdrop absolute inset-0 bg-black/50" onClick={onClose} />
       <div
+        data-state={state}
         role="dialog"
         aria-modal="true"
         aria-label={title}
         className={cn(
-          'relative flex max-h-[90vh] w-full flex-col rounded-xl border border-border bg-card text-card-foreground shadow-2xl',
+          'modal-panel relative flex max-h-[90vh] w-full flex-col rounded-xl border border-border bg-card text-card-foreground shadow-2xl',
           wide ? 'max-w-4xl' : 'max-w-xl',
         )}
       >

@@ -29,6 +29,7 @@ import { TechIcon } from '@/components/TechIcon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { type CoreCommand, type Domain, type ProcessEvent, type ProjectDetail, runCommand } from '@/core'
+import { useAnimatedClose } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 import type { Web } from '@/lib/web'
 import { ProjectCommands } from '@/components/project/ProjectCommands'
@@ -78,7 +79,8 @@ const SOURCE_LABEL: Record<string, string> = {
  * aaPanel-style site settings: one large dialog with a side menu. The site's own settings and
  * web server config come first, then everything the project behind it offers.
  */
-export function SiteDialog({ target, web, onClose, onSaved }: { target: SiteTarget; web: Web; onClose: () => void; onSaved: (hostname: string) => void }) {
+export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target: SiteTarget; web: Web; onClose: () => void; onSaved: (hostname: string) => void }) {
+  const { state, close: onClose } = useAnimatedClose(closeNow)
   const { projects, installedPhp, run, apply, busy, error, setError } = web
   const [tab, setTab] = useState<SiteTab>(target.tab ?? (target.hostname ? 'settings' : 'overview'))
   const [domain, setDomain] = useState<Domain | null>(null)
@@ -169,8 +171,8 @@ export function SiteDialog({ target, web, onClose, onSaved }: { target: SiteTarg
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-[1px]" onClick={onClose} />
-      <div role="dialog" aria-modal="true" aria-label={`Settings for ${title}`} className="relative flex h-[88vh] w-full max-w-6xl flex-col rounded-xl border border-border bg-card text-card-foreground shadow-2xl">
+      <div data-state={state} className="modal-backdrop absolute inset-0 bg-black/50" onClick={onClose} />
+      <div data-state={state} role="dialog" aria-modal="true" aria-label={`Settings for ${title}`} className="modal-panel relative flex h-[88vh] w-full max-w-6xl flex-col rounded-xl border border-border bg-card text-card-foreground shadow-2xl">
         <div className="flex items-center justify-between gap-4 border-b border-border px-5 py-3">
           <div className="flex min-w-0 items-center gap-2">
             <Globe className="size-4 shrink-0 text-muted-foreground" />

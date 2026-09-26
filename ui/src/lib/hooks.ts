@@ -54,3 +54,34 @@ export function formatBytes(n: number): string {
   if (n < 1024 ** 3) return `${(n / 1024 / 1024).toFixed(1)} MB`
   return `${(n / 1024 ** 3).toFixed(1)} GB`
 }
+
+/** Exit animation length shared with the `.modal-*` rules in index.css. */
+export const MODAL_MS = 160
+
+/** Keeps a modal mounted while its exit animation plays. `state` drives `data-state`. */
+export function usePresence(open: boolean, ms = MODAL_MS) {
+  const [mounted, setMounted] = useState(open)
+  useEffect(() => {
+    if (open) {
+      setMounted(true)
+      return
+    }
+    const id = setTimeout(() => setMounted(false), ms)
+    return () => clearTimeout(id)
+  }, [open, ms])
+  return { mounted: open || mounted, state: open ? ('open' as const) : ('closed' as const) }
+}
+
+/** For modals the parent unmounts on close: plays the exit animation, then calls `onClose`. */
+export function useAnimatedClose(onClose: () => void, ms = MODAL_MS) {
+  const [closing, setClosing] = useState(false)
+  const ref = useRef(onClose)
+  ref.current = onClose
+  const close = useCallback(() => {
+    setClosing((c) => {
+      if (!c) setTimeout(() => ref.current(), ms)
+      return true
+    })
+  }, [ms])
+  return { state: closing ? ('closed' as const) : ('open' as const), close }
+}
