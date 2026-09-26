@@ -645,6 +645,24 @@ impl RuntimeManager {
             .into_iter()
             .find(|m| m.id == id && m.version == version)
             .map(owned_manifest);
+        // online_versions lives only in daemon memory: a restart wipes it while the
+        // UI's localStorage cache still lists those versions. Heal on demand with one
+        // refresh before rejecting, otherwise every cached version fails with
+        // "not in the current online or built-in version list".
+        let mut refresh_note = String::new();
+        if static_manifest.is_none()
+            && !self
+                .online_versions
+                .read()
+                .unwrap()
+                .get(id)
+                .is_some_and(|vs| vs.iter().any(|v| v == version))
+        {
+            match self.refresh_online_catalog(id) {
+                Ok(()) => {}
+                Err(e) => refresh_note = format!(" Online refresh failed: {e}"),
+            }
+        }
         if static_manifest.is_none()
             && !self
                 .online_versions
@@ -656,7 +674,9 @@ impl RuntimeManager {
             let _ = self.events_tx.send(RuntimeEvent::Failed {
                 id: id.to_string(),
                 version: version.to_string(),
-                message: "not in the current online or built-in version list".into(),
+                message: format!(
+                    "{version} is not in the current online or built-in version list.{refresh_note}"
+                ),
             });
             return;
         }
@@ -1173,6 +1193,51 @@ async fn resolve_online_manifest(
     })
 }
 
+/// Coalesces high-frequency download progress. The download loop used to emit one
+/// `RuntimeEvent::Progress` per HTTP chunk — thousands per second on large archives
+/// (Node) — and every emit crossed Tauri into a React `setState`, freezing the
+/// Runtimes page mid-install. Emits the first chunk, then at most every 200ms or
+/// per 256 KiB advanced; terminal states (Verifying/Extracting/Installed/Failed)
+/// are sent unconditionally by the caller.
+struct ProgressThrottle {
+    last_emit: std::time::Instant,
+    last_bytes: u64,
+    emitted_any: bool,
+}
+
+impl ProgressThrottle {
+    fn new() -> Self {
+        Self {
+            last_emit: std::time::Instant::now(),
+            last_bytes: 0,
+            emitted_any: false,
+        }
+    }
+
+    fn should_emit(&mut self, downloaded: u64, total: Option<u64>) -> bool {
+        if !self.emitted_any {
+            self.emitted_any = true;
+            self.last_emit = std::time::Instant::now();
+            self.last_bytes = downloaded;
+            return true;
+        }
+        // Final chunk always goes out so the bar reaches 100%.
+        if total.is_some_and(|t| t > 0 && downloaded >= t) {
+            self.last_emit = std::time::Instant::now();
+            self.last_bytes = downloaded;
+            return true;
+        }
+        if downloaded.saturating_sub(self.last_bytes) >= 256 * 1024
+            || self.last_emit.elapsed() >= std::time::Duration::from_millis(200)
+        {
+            self.last_emit = std::time::Instant::now();
+            self.last_bytes = downloaded;
+            return true;
+        }
+        false
+    }
+}
+
 async fn install_one(
     manifest: OwnedManifest,
     paths: AppPaths,
@@ -1238,12 +1303,16 @@ async fn install_one(
         let mut file = std::fs::File::create(&archive_path).map_err(|e| e.to_string())?;
         let mut hasher = Sha256::new();
         let mut stream = response.bytes_stream();
+        let mut throttle = ProgressThrottle::new();
 
         while let Some(chunk) = stream.next().await {
             let chunk = chunk.map_err(|e| e.to_string())?;
             file.write_all(&chunk).map_err(|e| e.to_string())?;
             hasher.update(&chunk);
             downloaded += chunk.len() as u64;
+            if !throttle.should_emit(downloaded, total) {
+                continue;
+            }
             let _ = events_tx.send(RuntimeEvent::Progress {
                 id: manifest.id.to_string(),
                 version: manifest.version.to_string(),
@@ -1486,6 +1555,21 @@ mod tests {
         let extracted = dest.join("bin").join("tool.txt");
         assert!(extracted.exists());
         assert_eq!(std::fs::read_to_string(extracted).unwrap(), "hello");
+    }
+
+    #[test]
+    fn progress_throttle_coalesces_chunk_flood() {
+        let mut t = ProgressThrottle::new();
+        // First chunk always emits so the bar appears instantly.
+        assert!(t.should_emit(8192, Some(30_000_000)));
+        // Immediate small follow-ups are suppressed (the old code emitted all of
+        // these — thousands/sec — freezing the Runtimes page).
+        assert!(!t.should_emit(16_384, Some(30_000_000)));
+        assert!(!t.should_emit(24_576, Some(30_000_000)));
+        // A 256 KiB advance always emits.
+        assert!(t.should_emit(24_576 + 256 * 1024, Some(30_000_000)));
+        // The final chunk always emits so the bar reaches 100%.
+        assert!(t.should_emit(30_000_000, Some(30_000_000)));
     }
 
     #[test]

@@ -1,7 +1,7 @@
 import { listen } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
 import { Bug, Check, ChevronDown, Download, FolderSearch, Puzzle, Settings2, Trash2 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { Spinner } from '@/components/Spinner'
 import { PhpExtensionsDialog } from '@/components/PhpExtensionsDialog'
@@ -80,6 +80,13 @@ export function RuntimesPage() {
   const [catalogRefreshing, setCatalogRefreshing] = useState(false)
   const [catalogStatus, setCatalogStatus] = useState<Record<string, CatalogStatus>>({})
   const [cachedCatalogIds, setCachedCatalogIds] = useState<Set<string>>(new Set())
+  // Versions the backend actually listed (builtin + online). localStorage cache
+  // entries are display-only until a refresh confirms them — installing a stale
+  // cached version fails with "not in the current online or built-in version list".
+  const [verifiedKeys, setVerifiedKeys] = useState<Set<string>>(new Set())
+  // Install failure for the open dialog. Kept in dedicated state (not derived
+  // from the progress map) so a catalog refresh can't wipe it mid-read.
+  const [installError, setInstallError] = useState<{ id: string; version: string; message: string } | null>(null)
 
   const [customInstalls, setCustomInstalls] = useState<CustomInstall[]>([])
   const [manageId, setManageId] = useState<string | null>(null)
@@ -89,10 +96,16 @@ export function RuntimesPage() {
   const [customLabel, setCustomLabel] = useState('')
   const [extVersion, setExtVersion] = useState<string | null>(null)
   const [xdebugVersion, setXdebugVersion] = useState<string | null>(null)
+  // Render guard: coalesces progress bursts so a flooded event stream can't
+  // lock the page. Backend already throttles emits; this caps re-renders ~4/s.
+  const lastProgressPaint = useRef(0)
 
   async function refresh() {
     const res = await runCommand({ type: 'list_runtime_catalog' })
-    if (res.type === 'runtime_catalog') setCatalog(res.entries)
+    if (res.type === 'runtime_catalog') {
+      setCatalog(res.entries)
+      setVerifiedKeys(new Set(res.entries.map((e) => `${e.id}@${e.version}`)))
+    }
     const custom = await runCommand({ type: 'list_custom_installs' })
     if (custom.type === 'custom_installs') setCustomInstalls(custom.entries)
     setLoading(false)
@@ -105,6 +118,7 @@ export function RuntimesPage() {
       if (res.type !== 'runtime_catalog') return
       const entries = res.entries.filter((entry) => entry.id === id)
       setCatalog((prev) => [...prev.filter((entry) => entry.id !== id), ...entries])
+      setVerifiedKeys((prev) => new Set([...prev, ...entries.map((e) => `${e.id}@${e.version}`)]))
       setCatalogStatus((prev) => ({ ...prev, [id]: 'ready' }))
       setCachedCatalogIds((prev) => new Set([...prev, id]))
       try {
@@ -199,7 +213,15 @@ export function RuntimesPage() {
     })()
     const unlisten = listen<RuntimeEvent>('runtime-event', (event) => {
       const e = event.payload
+      // Terminal states always paint. Progress paints at most every 250ms.
+      if (e.kind === 'progress') {
+        const now = Date.now()
+        if (now - lastProgressPaint.current < 250) return
+        lastProgressPaint.current = now
+      }
       setProgress((prev) => ({ ...prev, [`${e.id}@${e.version}`]: e }))
+      if (e.kind === 'failed') setInstallError({ id: e.id, version: e.version, message: e.message })
+      if (e.kind === 'installed') setInstallError(null)
       if (e.kind === 'installed' || e.kind === 'failed') void refresh()
     })
     return () => {
@@ -210,6 +232,7 @@ export function RuntimesPage() {
 
   const install = (entry: CatalogEntry) =>
     guarded(async () => {
+      setInstallError(null)
       await runCommand({ type: 'install_runtime', id: entry.id, version: entry.version })
     })
 
@@ -238,6 +261,7 @@ export function RuntimesPage() {
   const openVersions = (group: Group) => {
     setError(null)
     setNotice(null)
+    setInstallError(null)
     setManageId(group.id)
     setVersionSearch('')
     setInstallChoices((prev) => ({ ...prev, [group.id]: group.rows.find((r) => r.kind === 'managed' && !r.entry?.installed)?.version ?? '' }))
@@ -245,7 +269,10 @@ export function RuntimesPage() {
       setCatalogRefreshing(false)
       return
     }
-    if (catalogStatus[group.id] === 'checking' || catalogStatus[group.id] === 'ready') {
+    // Always verify against the vendor list on open: the localStorage cache
+    // survives daemon restarts but the backend's online list does not, so a
+    // cached-only choice would fail validation at install time.
+    if (catalogStatus[group.id] === 'checking') {
       setCatalogRefreshing(false)
       return
     }
@@ -282,7 +309,12 @@ export function RuntimesPage() {
   }, [catalog, customInstalls])
 
   const managedGroup = groups.find((g) => g.id === manageId) ?? null
-  const installable = managedGroup?.rows.filter((r) => r.kind === 'managed' && !r.entry?.installed) ?? []
+  // Only backend-confirmed versions are installable. Cached-only entries render
+  // in counts but can't install until a refresh verifies them.
+  const installable = managedGroup?.rows.filter((r) => r.kind === 'managed' && !r.entry?.installed && verifiedKeys.has(r.key)) ?? []
+  const unverifiedCount = managedGroup?.rows.filter((r) => r.kind === 'managed' && !r.entry?.installed && !verifiedKeys.has(r.key)).length ?? 0
+  const dialogChecking = !!managedGroup && (catalogRefreshing || catalogStatus[managedGroup.id] === 'checking')
+  const dialogRefreshFailed = !!managedGroup && !dialogChecking && installable.length === 0 && unverifiedCount === 0 && catalogStatus[managedGroup.id] === 'error'
   const filteredInstallable = installable.filter((row) => row.version.toLowerCase().includes(versionSearch.trim().toLowerCase()))
   const installableByMajor = new Map<string, Row[]>()
   for (const row of filteredInstallable) {
@@ -436,7 +468,7 @@ export function RuntimesPage() {
 
       <Dialog
         open={!!managedGroup}
-        onClose={() => setManageId(null)}
+        onClose={() => { setManageId(null); setInstallError(null); setVersionSearch('') }}
         wide
         title={`${managedGroup?.name ?? 'Runtime'} versions`}
         description="Version lists refresh in the background and are checked again when needed. Search by version, choose one to install, or manage versions already on this computer."
@@ -464,11 +496,13 @@ export function RuntimesPage() {
                 <select
                   aria-label={`Available ${managedGroup.name} versions`}
                   value={selectedInstall}
-                  disabled={installable.length === 0}
+                  disabled={installable.length === 0 || dialogChecking}
                   onChange={(e) => setInstallChoices((prev) => ({ ...prev, [managedGroup.id]: e.target.value }))}
                   className="h-9 w-full min-w-0 appearance-none rounded-md border border-border/60 bg-background py-1 pl-2.5 pr-8 text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                 >
-                  {installable.length === 0 && <option value="">All catalog versions are installed</option>}
+                  {installable.length === 0 && dialogChecking && <option value="">Checking vendor list…</option>}
+                  {installable.length === 0 && !dialogChecking && unverifiedCount > 0 && <option value="">Verifying cached versions…</option>}
+                  {installable.length === 0 && !dialogChecking && unverifiedCount === 0 && <option value="">All catalog versions are installed</option>}
                   {filteredInstallable.length === 0 && installable.length > 0 && <option value="">No versions match your search</option>}
                   {[...installableByMajor].map(([major, rows]) => (
                     <optgroup key={major} label={major === 'Other' ? major : `Major ${major}`}>
@@ -480,19 +514,42 @@ export function RuntimesPage() {
               </div>
               <Button
                 className="h-9 shrink-0 px-3.5 text-[13px]"
-                disabled={!selectedInstall || !selectedInstallVisible || installingChoice || installable.length === 0}
+                disabled={!selectedInstall || !selectedInstallVisible || installingChoice || installable.length === 0 || dialogChecking}
                 onClick={() => { const row = installable.find((r) => r.version === selectedInstall); if (row?.entry) void install(row.entry) }}
               >
                 {installingChoice ? <Spinner /> : <Download />} {installingChoice ? 'Installing…' : 'Download and install'}
               </Button>
             </div>
-            {(catalogRefreshing || catalogStatus[managedGroup.id] === 'checking') && <p className="mt-2 text-xs text-muted-foreground">Checking the vendor’s online version list…</p>}
+            {dialogChecking && <p className="mt-2 text-xs text-muted-foreground">Checking the vendor’s online version list…</p>}
+            {dialogRefreshFailed && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Last check failed —{" "}
+                <button
+                  className="underline underline-offset-2 hover:text-foreground"
+                  onClick={() => {
+                    setCatalogRefreshing(true)
+                    void refreshOnlineCatalog(managedGroup.id)
+                      .then((entries) => {
+                        if (!entries) return
+                        const newest = entries
+                          .filter((entry) => !entry.installed)
+                          .sort((a, b) => compareVersionsDesc(a.version, b.version))[0]
+                        if (newest) setInstallChoices((prev) => ({ ...prev, [managedGroup!.id]: newest.version }))
+                      })
+                      .catch((err) => setError(err as Diagnostic))
+                      .finally(() => setCatalogRefreshing(false))
+                  }}
+                >
+                  retry
+                </button>
+              </p>
+            )}
             {selectedInstall && progress[`${managedGroup.id}@${selectedInstall}`]?.kind === 'progress' && (() => {
               const live = progress[`${managedGroup.id}@${selectedInstall}`]
               return live?.kind === 'progress' ? <p className="mt-2 text-xs text-muted-foreground">{live.state}: {formatBytes(live.downloaded)}{live.total ? ` / ${formatBytes(live.total)}` : ''}</p> : null
             })()}
-            {selectedInstallEvent?.kind === 'failed' && (
-              <p className="mt-2 text-sm text-destructive">{selectedInstallEvent.message}</p>
+            {installError && installError.id === managedGroup.id && (
+              <p className="mt-2 text-sm text-destructive">{installError.version}: {installError.message}</p>
             )}
           </section>
 
