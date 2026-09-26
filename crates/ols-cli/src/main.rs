@@ -276,6 +276,9 @@ enum TestCmd {
         /// The site's hostname, when the project has several.
         #[arg(long)]
         site: Option<String>,
+        /// A ready-made or saved test plan (smoke, load, stress, spike, soak, ...) to write as the script when there is none.
+        #[arg(long, default_value = "smoke")]
+        profile: String,
         /// Allow testing a public tunnel address.
         #[arg(long)]
         public: bool,
@@ -707,7 +710,7 @@ fn run(ctx: &Ctx, cmd: Cmd) -> R<()> {
                 }
             }
         }
-        Cmd::Test(TestCmd::Load { project, script, site, public }) => load_test(ctx, project, script, site, public)?,
+        Cmd::Test(TestCmd::Load { project, script, site, profile, public }) => load_test(ctx, project, script, site, profile, public)?,
         // @@cli-arms
     }
     Ok(())
@@ -1187,7 +1190,7 @@ Install it with: ols update install", update.downloaded.unwrap_or_default());
     }
     Ok(())
 }
-fn load_test(ctx: &Ctx, project: Option<String>, script: Option<String>, site: Option<String>, public: bool) -> R<()> {
+fn load_test(ctx: &Ctx, project: Option<String>, script: Option<String>, site: Option<String>, profile: String, public: bool) -> R<()> {
     let id = match project {
         Some(p) => ctx.project_id(&p)?,
         None => ctx.project_for_path(Path::new("."))?.0,
@@ -1200,8 +1203,10 @@ fn load_test(ctx: &Ctx, project: Option<String>, script: Option<String>, site: O
         Some(s) => s,
         None => match overview.scripts.as_slice() {
             [] => {
-                let CoreResponse::Text { text } = ctx.call(CoreCommand::LoadGenerate { project_id: id.clone(), kind: "smoke".into(), paths: vec!["/".into()] })? else { return Err("unexpected reply".into()) };
-                println!("No script yet; wrote a smoke test: .openlocalserver/k6/{text}");
+                let CoreResponse::LoadProfiles { profiles } = ctx.call(CoreCommand::LoadListProfiles)? else { return Err("unexpected reply".into()) };
+                let plan = profiles.into_iter().find(|p| p.id == profile).ok_or_else(|| format!("no test plan named {profile}"))?;
+                let CoreResponse::Text { text } = ctx.call(CoreCommand::LoadGenerate { project_id: id.clone(), profile: plan, name: None })? else { return Err("unexpected reply".into()) };
+                println!("No script yet; wrote the {profile} test: .openlocalserver/k6/{text}");
                 text
             }
             [only] => only.name.clone(),

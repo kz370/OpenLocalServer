@@ -165,24 +165,156 @@ fn script_name_ok(name: &str) -> bool {
     !name.is_empty() && name.len() <= 80 && name.ends_with(".js") && !name.contains(['/', '\\', ':']) && !name.starts_with('.') && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
 }
 
-/// A first script for a site: `smoke`, `load` (ramping VUs) or `spike`.
-pub fn generate_script(kind: &str, paths: &[String]) -> Result<String, String> {
-    let (options, note) = match kind {
-        "smoke" => ("vus: 1,\n  duration: '30s',", "One user for 30 seconds: does every page answer?"),
-        "load" => ("stages: [\n    { duration: '30s', target: 10 },\n    { duration: '1m', target: 10 },\n    { duration: '30s', target: 0 },\n  ],", "Ramp to 10 users, hold, ramp down."),
-        "spike" => ("stages: [\n    { duration: '10s', target: 5 },\n    { duration: '10s', target: 50 },\n    { duration: '30s', target: 50 },\n    { duration: '10s', target: 5 },\n    { duration: '10s', target: 0 },\n  ],", "A sudden jump to 50 users, then back."),
-        other => return Err(format!("unknown kind '{other}' (smoke, load or spike)")),
-    };
-    let list = if paths.is_empty() { vec!["/".to_string()] } else { paths.to_vec() };
-    for p in &list {
-        if !p.starts_with('/') || !p.chars().all(|c| c.is_ascii_alphanumeric() || "/_-.?=&%~:@+,#".contains(c)) {
-            return Err(format!("'{p}' isn't a usable path: start with / and use plain URL characters"));
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Stage {
+    pub duration_s: u32,
+    /// Users at the end of the stage; k6 ramps to it.
+    pub target: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PlannedRequest {
+    pub method: String,
+    pub path: String,
+}
+
+/// Pass criteria; a blank one isn't checked.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Thresholds {
+    #[serde(default)]
+    pub p95_ms: Option<u32>,
+    #[serde(default)]
+    pub p99_ms: Option<u32>,
+    #[serde(default)]
+    pub error_rate_pct: Option<f64>,
+}
+
+/// A test plan as a form: how many users, when, what they request, and what counts as passing.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LoadProfile {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub builtin: bool,
+    /// A name the UI maps to an icon: smoke, load, stress, spike, soak or custom.
+    #[serde(default)]
+    pub icon: String,
+    pub stages: Vec<Stage>,
+    pub think_time_s: f64,
+    pub requests: Vec<PlannedRequest>,
+    #[serde(default)]
+    pub thresholds: Thresholds,
+}
+
+const METHODS: &[&str] = &["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"];
+
+fn path_ok(p: &str) -> bool {
+    p.starts_with('/') && p.len() <= 300 && p.chars().all(|c| c.is_ascii_alphanumeric() || "/_-.?=&%~:@+,#".contains(c))
+}
+
+impl LoadProfile {
+    /// What is wrong with the plan. Every number is bounded, and paths and methods are plain data, so a script
+    /// made from a valid profile contains nothing but those values.
+    pub fn validate(&self, max_vus: u32) -> Result<(), String> {
+        if self.name.trim().is_empty() || self.name.len() > 60 {
+            return Err("give the test a name of up to 60 characters".into());
         }
+        if self.stages.is_empty() || self.stages.len() > 20 {
+            return Err("a test needs 1 to 20 stages".into());
+        }
+        let mut total = 0u64;
+        for (i, s) in self.stages.iter().enumerate() {
+            if s.duration_s == 0 || s.duration_s > 14_400 {
+                return Err(format!("stage {}: the duration must be 1 second to 4 hours", i + 1));
+            }
+            if s.target > max_vus {
+                return Err(format!("stage {}: {} users is over the limit of {max_vus} in Settings → Resources", i + 1, s.target));
+            }
+            total += s.duration_s as u64;
+        }
+        if total > 43_200 {
+            return Err("a test can last at most 12 hours".into());
+        }
+        if self.stages.iter().all(|s| s.target == 0) {
+            return Err("at least one stage needs users".into());
+        }
+        if !(0.0..=60.0).contains(&self.think_time_s) {
+            return Err("the pause between requests is 0 to 60 seconds".into());
+        }
+        if self.requests.is_empty() || self.requests.len() > 20 {
+            return Err("a test needs 1 to 20 requests".into());
+        }
+        for r in &self.requests {
+            if !METHODS.contains(&r.method.as_str()) {
+                return Err(format!("'{}' isn't a request method (GET, HEAD, POST, PUT, PATCH, DELETE)", r.method));
+            }
+            if !path_ok(&r.path) {
+                return Err(format!("'{}' isn't a usable path: start with / and use plain URL characters", r.path));
+            }
+        }
+        let t = &self.thresholds;
+        if t.p95_ms.is_some_and(|v| v == 0 || v > 600_000) || t.p99_ms.is_some_and(|v| v == 0 || v > 600_000) {
+            return Err("a latency limit is 1 ms to 10 minutes".into());
+        }
+        if t.error_rate_pct.is_some_and(|v| !(0.0..=100.0).contains(&v)) {
+            return Err("the error limit is 0 to 100 percent".into());
+        }
+        Ok(())
     }
-    let quoted = list.iter().map(|p| format!("'{p}'")).collect::<Vec<_>>().join(", ");
-    Ok(format!(
-        "// {note}\n// Generated by OpenLocalServer. Edit freely; BASE_URL is set to the site you run it against.\nimport http from 'k6/http';\nimport {{ check, sleep }} from 'k6';\n\nexport const options = {{\n  {options}\n  thresholds: {{\n    http_req_failed: ['rate<0.01'],\n    http_req_duration: ['p(95)<1000'],\n  }},\n}};\n\nconst BASE = __ENV.BASE_URL;\nconst PATHS = [{quoted}];\n\nexport default function () {{\n  for (const path of PATHS) {{\n    const res = http.get(`${{BASE}}${{path}}`);\n    check(res, {{ 'status is 2xx or 3xx': (r) => r.status >= 200 && r.status < 400 }});\n  }}\n  sleep(1);\n}}\n"
-    ))
+
+    /// The k6 script for this plan.
+    pub fn script(&self) -> String {
+        let stages = self.stages.iter().map(|s| format!("    {{ duration: '{}s', target: {} }},", s.duration_s, s.target)).collect::<Vec<_>>().join("\n");
+        let mut thresholds = Vec::new();
+        if let Some(e) = self.thresholds.error_rate_pct {
+            thresholds.push(format!("    http_req_failed: ['rate<{}'],", e / 100.0));
+        }
+        let mut latency = Vec::new();
+        if let Some(v) = self.thresholds.p95_ms {
+            latency.push(format!("'p(95)<{v}'"));
+        }
+        if let Some(v) = self.thresholds.p99_ms {
+            latency.push(format!("'p(99)<{v}'"));
+        }
+        if !latency.is_empty() {
+            thresholds.push(format!("    http_req_duration: [{}],", latency.join(", ")));
+        }
+        let requests = self.requests.iter().map(|r| format!("  ['{}', '{}'],", r.method, r.path)).collect::<Vec<_>>().join("\n");
+        let thresholds = thresholds.join("\n");
+        format!(
+            "// {name}: {desc}\n// Made by OpenLocalServer from the test form. You can edit it; BASE_URL is the site you run it against.\nimport http from 'k6/http';\nimport {{ check, sleep }} from 'k6';\n\nexport const options = {{\n  stages: [\n{stages}\n  ],\n  thresholds: {{\n{thresholds}\n  }},\n}};\n\nconst BASE = __ENV.BASE_URL;\nconst REQUESTS = [\n{requests}\n];\n\nexport default function () {{\n  for (const [method, path] of REQUESTS) {{\n    const res = http.request(method, `${{BASE}}${{path}}`);\n    check(res, {{ 'status is 2xx or 3xx': (r) => r.status >= 200 && r.status < 400 }});\n  }}\n  sleep({think});\n}}\n",
+            name = self.name.replace(['\n', '\r'], " "),
+            desc = self.description.replace(['\n', '\r'], " "),
+            think = self.think_time_s,
+        )
+    }
+}
+
+fn profile(id: &str, name: &str, icon: &str, description: &str, stages: &[(u32, u32)], think: f64, p95: u32, err: f64) -> LoadProfile {
+    LoadProfile {
+        id: id.into(),
+        name: name.into(),
+        description: description.into(),
+        builtin: true,
+        icon: icon.into(),
+        stages: stages.iter().map(|&(duration_s, target)| Stage { duration_s, target }).collect(),
+        think_time_s: think,
+        requests: vec![PlannedRequest { method: "GET".into(), path: "/".into() }],
+        thresholds: Thresholds { p95_ms: Some(p95), p99_ms: None, error_rate_pct: Some(err) },
+    }
+}
+
+/// The ready-made plans. A copy can be changed and saved under a new name.
+pub fn builtin_profiles() -> Vec<LoadProfile> {
+    vec![
+        profile("smoke", "Smoke", "smoke", "One user for 30 seconds. Does every page answer at all?", &[(1, 1), (29, 1)], 1.0, 1000, 1.0),
+        profile("load", "Load", "load", "Ramp to 10 users, hold for a minute, ramp down. Everyday traffic.", &[(30, 10), (60, 10), (30, 0)], 1.0, 1000, 1.0),
+        profile("stress", "Stress", "stress", "Step up to 50 users to find where the site starts to slow down.", &[(30, 10), (60, 10), (30, 25), (60, 25), (30, 50), (60, 50), (30, 0)], 1.0, 2000, 5.0),
+        profile("spike", "Spike", "spike", "A sudden jump from 5 to 50 users, then back. Does it recover?", &[(10, 5), (10, 50), (30, 50), (10, 5), (10, 0)], 0.5, 2000, 5.0),
+        profile("soak", "Soak", "soak", "10 users for 10 minutes. Looks for slow leaks and things that degrade over time.", &[(60, 10), (600, 10), (60, 0)], 1.0, 1000, 1.0),
+    ]
 }
 
 /// Applies one line of k6's `--out json` stream. Unknown lines are ignored.
@@ -341,17 +473,57 @@ impl Inner {
         Ok(())
     }
 
-    /// Writes a first script for the project; returns its file name.
-    pub fn load_generate(&self, project_id: &str, kind: &str, paths: &[String]) -> Result<String, CoreError> {
-        let text = generate_script(kind, paths).map_err(fail)?;
-        let mut name = format!("{kind}.js");
-        let mut n = 2;
-        while self.script_path(project_id, &name)?.exists() {
-            name = format!("{kind}-{n}.js");
-            n += 1;
+    fn profiles_file(&self) -> PathBuf {
+        self.paths.data_dir().join("loadtest_profiles.json")
+    }
+
+    fn custom_profiles(&self) -> Vec<LoadProfile> {
+        std::fs::read_to_string(self.profiles_file()).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+    }
+
+    /// The ready-made plans, then the user's own.
+    pub fn load_profiles(&self) -> Vec<LoadProfile> {
+        let mut all = builtin_profiles();
+        all.extend(self.custom_profiles());
+        all
+    }
+
+    pub fn load_save_profile(&self, mut profile: LoadProfile) -> Result<Vec<LoadProfile>, CoreError> {
+        profile.validate(self.load_max_vus()).map_err(fail)?;
+        profile.builtin = false;
+        if profile.icon.is_empty() || builtin_profiles().iter().all(|b| b.icon != profile.icon) {
+            profile.icon = "custom".into();
         }
-        self.load_save_script(project_id, &name, &text)?;
-        Ok(name)
+        let id = crate::domain::slugify(if profile.id.is_empty() { &profile.name } else { &profile.id });
+        if id.is_empty() {
+            return Err(fail("give the test a name"));
+        }
+        if builtin_profiles().iter().any(|b| b.id == id) {
+            return Err(fail(format!("'{id}' is a ready-made test; save yours under another name")));
+        }
+        profile.id = id.clone();
+        let mut custom = self.custom_profiles();
+        custom.retain(|p| p.id != id);
+        custom.push(profile);
+        std::fs::create_dir_all(self.paths.data_dir())?;
+        std::fs::write(self.profiles_file(), serde_json::to_string_pretty(&custom)?)?;
+        Ok(self.load_profiles())
+    }
+
+    pub fn load_delete_profile(&self, id: &str) -> Result<Vec<LoadProfile>, CoreError> {
+        let mut custom = self.custom_profiles();
+        custom.retain(|p| p.id != id);
+        std::fs::write(self.profiles_file(), serde_json::to_string_pretty(&custom)?)?;
+        Ok(self.load_profiles())
+    }
+
+    /// Writes the script for a test plan into the project (replacing one of the same name); returns its file name.
+    pub fn load_generate(&self, project_id: &str, profile: &LoadProfile, name: Option<&str>) -> Result<String, CoreError> {
+        profile.validate(self.load_max_vus()).map_err(fail)?;
+        let base = crate::domain::slugify(name.unwrap_or(if profile.id.is_empty() { &profile.name } else { &profile.id }));
+        let file = format!("{}.js", if base.is_empty() { "test".to_string() } else { base });
+        self.load_save_script(project_id, &file, &profile.script())?;
+        Ok(file)
     }
 
     /// Starts k6 against a site of the project. Returns the run (still running).
@@ -576,17 +748,55 @@ mod tests {
         assert!(check_script("{ preAllocatedVUs: 101 }", &[], 100).is_err());
     }
 
+    fn plan() -> LoadProfile {
+        builtin_profiles().remove(1)
+    }
+
     #[test]
-    fn generated_scripts_use_the_base_url_and_pass_their_own_checks() {
-        for kind in ["smoke", "load", "spike"] {
-            let s = generate_script(kind, &["/".into(), "/login".into()]).unwrap();
-            assert!(s.contains("__ENV.BASE_URL") && s.contains("'/login'") && s.contains("thresholds"), "{kind}");
-            assert!(check_script(&s, &[], DEFAULT_MAX_VUS).is_ok(), "{kind} must pass the safety scan");
+    fn every_ready_made_plan_is_valid_and_its_script_passes_the_safety_scan() {
+        for p in builtin_profiles() {
+            p.validate(DEFAULT_MAX_VUS).unwrap_or_else(|e| panic!("{}: {e}", p.id));
+            let s = p.script();
+            assert!(s.contains("__ENV.BASE_URL") && s.contains("stages:") && s.contains("thresholds"), "{}", p.id);
+            assert!(check_script(&s, &[], DEFAULT_MAX_VUS).is_ok(), "{} must pass the safety scan", p.id);
         }
-        assert!(generate_script("chaos", &[]).is_err());
-        // A path can't break out of its string.
-        assert!(generate_script("smoke", &["/a');evil('".into()]).is_err());
-        assert!(generate_script("smoke", &["login".into()]).is_err());
+    }
+
+    #[test]
+    fn a_form_becomes_the_matching_script() {
+        let mut p = plan();
+        p.stages = vec![Stage { duration_s: 20, target: 7 }, Stage { duration_s: 90, target: 7 }];
+        p.requests = vec![PlannedRequest { method: "GET".into(), path: "/".into() }, PlannedRequest { method: "POST".into(), path: "/api/orders?x=1".into() }];
+        p.think_time_s = 2.5;
+        p.thresholds = Thresholds { p95_ms: Some(800), p99_ms: Some(1500), error_rate_pct: Some(2.0) };
+        let s = p.script();
+        for wanted in ["{ duration: '20s', target: 7 }", "{ duration: '90s', target: 7 }", "['POST', '/api/orders?x=1']", "sleep(2.5)", "'p(95)<800', 'p(99)<1500'", "rate<0.02"] {
+            assert!(s.contains(wanted), "missing {wanted} in\n{s}");
+        }
+        p.thresholds = Thresholds::default();
+        assert!(!p.script().contains("http_req_duration"));
+    }
+
+    #[test]
+    fn bad_plans_are_refused() {
+        let ok = plan();
+        let bad = |f: &dyn Fn(&mut LoadProfile)| {
+            let mut p = ok.clone();
+            f(&mut p);
+            p.validate(100).is_err()
+        };
+        assert!(bad(&|p| p.stages.clear()));
+        assert!(bad(&|p| p.stages[0].target = 101), "over the user limit");
+        assert!(bad(&|p| p.stages[0].duration_s = 0));
+        assert!(bad(&|p| p.stages.iter_mut().for_each(|s| s.target = 0)));
+        assert!(bad(&|p| p.requests.clear()));
+        assert!(bad(&|p| p.requests[0].path = "login".into()));
+        assert!(bad(&|p| p.requests[0].path = "/a');evil('".into()));
+        assert!(bad(&|p| p.requests[0].method = "TRACE".into()));
+        assert!(bad(&|p| p.think_time_s = 120.0));
+        assert!(bad(&|p| p.thresholds.error_rate_pct = Some(150.0)));
+        assert!(bad(&|p| p.name = " ".into()));
+        assert!(ok.validate(100).is_ok());
     }
 
     #[test]

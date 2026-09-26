@@ -835,7 +835,10 @@ export type CoreCommand =
   | { type: 'load_read_script'; project_id: string; name: string }
   | { type: 'load_save_script'; project_id: string; name: string; content: string }
   | { type: 'load_delete_script'; project_id: string; name: string }
-  | { type: 'load_generate'; project_id: string; kind: 'smoke' | 'load' | 'spike'; paths: string[] }
+  | { type: 'load_list_profiles' }
+  | { type: 'load_save_profile'; profile: LoadProfile }
+  | { type: 'load_delete_profile'; id: string }
+  | { type: 'load_generate'; project_id: string; profile: LoadProfile; name: string | null }
   | { type: 'load_run'; project_id: string; script: string; target: string | null; confirm_public: boolean }
   | { type: 'load_status'; run_id: string }
   | { type: 'load_stop'; run_id: string }
@@ -967,6 +970,7 @@ export type CoreResponse =
   | { type: 'load_overview'; overview: LoadOverview }
   | { type: 'load_run'; run: LoadRun }
   | { type: 'load_runs'; runs: LoadRun[] }
+  | { type: 'load_profiles'; profiles: LoadProfile[] }
   // @@ts-responses-end
 
 export interface MigrationSource {
@@ -1643,6 +1647,18 @@ export interface LoadOverview {
   scripts: { name: string; size: number }[]
   sites: { host: string; url: string; public: boolean }[]
   max_vus: number
+}
+
+export interface LoadProfile {
+  id: string
+  name: string
+  description: string
+  builtin: boolean
+  icon: string
+  stages: { duration_s: number; target: number }[]
+  think_time_s: number
+  requests: { method: string; path: string }[]
+  thresholds: { p95_ms: number | null; p99_ms: number | null; error_rate_pct: number | null }
 }
 
 export interface LoadMetrics {

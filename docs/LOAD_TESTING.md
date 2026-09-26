@@ -1,8 +1,9 @@
 # Load testing with k6
 
-Project tab **Load testing** (site dialog), or `ols test load [project] [script] [--site host] [--public]`.
+Project tab **Load testing** (site dialog), or `ols test load [project] [script] [--profile smoke|load|stress|spike|soak|<yours>] [--site host] [--public]`.
 
-- Scripts live in `.openlocalserver/k6/*.js` and are committed with the project. **smoke**, **load** and **spike** write a first script from the site.
+- A test is set up from a form: users at peak, stages (seconds and users), the paths to visit (method and path, as many as you need), the pause between rounds, and pass criteria (p95, p99, failed-request percent). Ready-made tests: **Smoke**, **Load**, **Stress**, **Spike**, **Soak**. Change one and **Save as my test** to keep your own; your tests are stored in `loadtest_profiles.json` in the data folder.
+- Running a test writes its script to `.openlocalserver/k6/<name>.js` (committed with the project). You can also add your own k6 scripts there, start a new one from the form (**New script**), and edit the code in the app; they run against the same sites with the same guard rails.
 - k6 comes from Runtimes (`ols runtime install k6`, SHA-256 verified) or an existing install on PATH.
 - A run targets one of the project's own sites and gets `BASE_URL` set. A script that names any other host is refused.
 - A tunnel's public address needs explicit confirmation (`--public` on the CLI): it sends real traffic through the provider.

@@ -432,7 +432,11 @@ pub enum CoreCommand {
     LoadSaveScript { project_id: String, name: String, content: String },
     LoadDeleteScript { project_id: String, name: String },
     /// `kind`: smoke, load or spike. Returns the new script's file name.
-    LoadGenerate { project_id: String, kind: String, paths: Vec<String> },
+    LoadListProfiles,
+    LoadSaveProfile { profile: crate::loadtest::LoadProfile },
+    LoadDeleteProfile { id: String },
+    /// Writes the plan's script into the project (`name` defaults to the plan's id); returns the file name.
+    LoadGenerate { project_id: String, profile: crate::loadtest::LoadProfile, name: Option<String> },
     /// `target` is a site's hostname (default: the project's first site). A public tunnel needs `confirm_public`.
     LoadRun { project_id: String, script: String, target: Option<String>, confirm_public: bool },
     LoadStatus { run_id: String },
@@ -586,6 +590,7 @@ pub enum CoreResponse {
     LoadOverview { overview: Box<crate::loadtest::LoadOverview> },
     LoadRun { run: Box<crate::loadtest::LoadRun> },
     LoadRuns { runs: Vec<crate::loadtest::LoadRun> },
+    LoadProfiles { profiles: Vec<crate::loadtest::LoadProfile> },
     // @@responses-end
 }
 
@@ -1569,7 +1574,10 @@ impl Core {
                 i.load_delete_script(&project_id, &name)?;
                 Ok(R::Ok)
             }
-            C::LoadGenerate { project_id, kind, paths } => Ok(R::Text { text: i.load_generate(&project_id, &kind, &paths)? }),
+            C::LoadListProfiles => Ok(R::LoadProfiles { profiles: i.load_profiles() }),
+            C::LoadSaveProfile { profile } => Ok(R::LoadProfiles { profiles: i.load_save_profile(profile)? }),
+            C::LoadDeleteProfile { id } => Ok(R::LoadProfiles { profiles: i.load_delete_profile(&id)? }),
+            C::LoadGenerate { project_id, profile, name } => Ok(R::Text { text: i.load_generate(&project_id, &profile, name.as_deref())? }),
             C::LoadRun { project_id, script, target, confirm_public } => {
                 tracing::info!(command = "load_run", project = %project_id, script = %script, public = confirm_public);
                 Ok(R::LoadRun { run: Box::new(i.load_run(&project_id, &script, target.as_deref(), confirm_public)?) })
