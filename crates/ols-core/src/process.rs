@@ -573,6 +573,25 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
+    fn stop_all_and_wait_waits_for_managed_processes() {
+        let sup = ProcessSupervisor::new();
+        let spec = ProcessSpec {
+            name: "shutdown-test".into(),
+            executable: "ping".into(),
+            args: vec!["127.0.0.1".into(), "-n".into(), "6".into()],
+            cwd: None,
+            env: vec![],
+            restart: None,
+        };
+        let id = sup.start(spec);
+        assert!(wait_for_state(&sup, id, ProcessState::Running, Duration::from_secs(3)));
+
+        assert!(sup.stop_all_and_wait(Duration::from_secs(5)));
+        assert!(wait_for_state(&sup, id, ProcessState::Stopped, Duration::from_millis(100)));
+    }
+
+    #[cfg(windows)]
+    #[test]
     fn crash_triggers_restart_policy() {
         let sup = ProcessSupervisor::new();
         let spec = ProcessSpec {

@@ -105,7 +105,7 @@ export function useWeb() {
     setReport,
     driftOpen,
     setDriftOpen,
-    refresh,
+    refresh: () => refresh(),
     refreshProjects,
     apply,
   }

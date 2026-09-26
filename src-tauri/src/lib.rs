@@ -85,11 +85,17 @@ fn begin_shutdown(app: &AppHandle, core: Core) {
     set_stopping_tray(app);
     let app = app.clone();
     std::thread::spawn(move || {
-        if shutdown(&core) {
-            app.exit(0);
-        } else {
-            SHUTDOWN_IN_PROGRESS.store(false, Ordering::SeqCst);
-            notify(&app, &core, "Still stopping", "Some managed processes are still running. The red tray icon will remain until they stop.");
+        let mut notified = false;
+        loop {
+            if shutdown(&core) {
+                app.exit(0);
+                return;
+            }
+            if !notified {
+                notify(&app, &core, "Still stopping", "OpenLocalServer will keep waiting and exit when its managed processes stop.");
+                notified = true;
+            }
+            std::thread::sleep(Duration::from_secs(2));
         }
     });
 }
