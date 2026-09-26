@@ -16,8 +16,10 @@ import {
   siNginx,
   siNodedotjs,
   siPhp,
+  siPostgresql,
   siPython,
   siReact,
+  siRedis,
   siSqlite,
   siSymfony,
   siVuedotjs,
@@ -51,6 +53,8 @@ const BRANDS: Record<string, SimpleIcon> = {
   mysql: siMysql,
   mariadb: siMariadb,
   mongodb: siMongodb,
+  postgres: siPostgresql,
+  redis: siRedis,
   sqlite: siSqlite,
 }
 

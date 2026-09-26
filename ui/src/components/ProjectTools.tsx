@@ -1,7 +1,8 @@
-import { Bug, Copy, PackageCheck, Play, RefreshCw, Trash2 } from 'lucide-react'
+import { Bug, Check, Copy, PackageCheck, Play, RefreshCw, Send, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
+import { ProjectTerminal } from '@/components/Terminal'
 import { EnvEditor } from '@/components/EnvEditor'
 import { XdebugDialog } from '@/components/XdebugDialog'
 import { Badge } from '@/components/ui/badge'
@@ -12,6 +13,8 @@ import { Input } from '@/components/ui/input'
 import {
   type ComposerInfo,
   type CoreCommand,
+  type MailCheck,
+  type MailEnvPlan,
   type PackageManagerInfo,
   type ProjectDetail,
   type VenvInfo,
@@ -21,7 +24,7 @@ import {
 import { useAction } from '@/lib/hooks'
 import { confirmThen } from '@/lib/confirm'
 
-type ToolTab = 'env' | 'composer' | 'node' | 'python' | 'xdebug'
+type ToolTab = 'terminal' | 'env' | 'mail' | 'composer' | 'node' | 'python' | 'xdebug'
 
 /**
  * Composer, Node package managers, Python venv and Xdebug for one project (§13–17).
@@ -64,7 +67,9 @@ export function ProjectTools({ detail, start, refreshKey }: { detail: ProjectDet
         <ErrorCard error={error} onDismiss={() => setError(null)} />
         <Tabs
           tabs={[
+            { id: 'terminal', label: 'Terminal' },
             { id: 'env', label: '.env' },
+            { id: 'mail', label: 'Mail' },
             { id: 'composer', label: 'Composer', badge: composer?.packages.length || undefined },
             { id: 'node', label: 'Node' },
             { id: 'python', label: 'Python' },
@@ -74,7 +79,9 @@ export function ProjectTools({ detail, start, refreshKey }: { detail: ProjectDet
           onChange={setTab}
         />
 
+        {tab === 'terminal' && <ProjectTerminal projectId={id} />}
         {tab === 'env' && <EnvEditor projectId={id} />}
+        {tab === 'mail' && <MailPanel projectId={id} />}
         {tab === 'composer' && <ComposerPanel projectId={id} info={composer} busy={busy} go={go} />}
         {tab === 'node' && <NodePanel projectId={id} info={managers} busy={busy} go={go} />}
         {tab === 'python' && <PythonPanel projectId={id} info={venv} busy={busy} go={go} />}
@@ -85,6 +92,119 @@ export function ProjectTools({ detail, start, refreshKey }: { detail: ProjectDet
 }
 
 type Go = (key: string, cmd: CoreCommand) => Promise<unknown>
+
+/** §63, §66: point the project's .env at Mailpit after showing the change, check the mail path, send a test. */
+function MailPanel({ projectId }: { projectId: string }) {
+  const [plan, setPlan] = useState<MailEnvPlan | null>(null)
+  const [checks, setChecks] = useState<MailCheck[]>([])
+  const [to, setTo] = useState('dev@example.test')
+  const [message, setMessage] = useState<string | null>(null)
+  const { busy, error, setError, run } = useAction()
+
+  const load = useCallback(async () => {
+    const [p, c] = await Promise.all([
+      runCommand({ type: 'mailpit_env_plan', project_id: projectId, file: '.env' }).catch(() => null),
+      runCommand({ type: 'mail_diagnostics', project_id: projectId }),
+    ])
+    if (p?.type === 'mail_env_plan') setPlan(p.plan)
+    if (c.type === 'mail_checks') setChecks(c.checks)
+  }, [projectId])
+
+  useEffect(() => {
+    load().catch((e) => setError(e))
+  }, [load, setError])
+
+  const changed = plan?.changes.filter((c) => c.changed) ?? []
+
+  return (
+    <div className="flex flex-col gap-4">
+      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-medium">Checklist</h3>
+          <Button size="sm" variant="ghost" onClick={() => run('check', load)}>
+            <RefreshCw className="size-3.5" /> Check again
+          </Button>
+        </div>
+        {checks.map((c) => (
+          <div key={c.id} className="flex items-start gap-2 rounded-lg border border-border px-3 py-1.5 text-sm">
+            {c.ok ? <Check className="mt-0.5 size-4 text-success" /> : <X className="mt-0.5 size-4 text-destructive" />}
+            <div>
+              <div>{c.label}</div>
+              <div className="text-xs text-muted-foreground">{c.detail}</div>
+              {!c.ok && c.fix && <div className="text-xs text-warning">{c.fix}</div>}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {plan && (
+        <div className="flex flex-col gap-2">
+          <h3 className="text-sm font-medium">Point .env at Mailpit</h3>
+          {plan.note && <p className="text-sm text-muted-foreground">{plan.note}</p>}
+          {plan.changes.length > 0 && (
+            <div className="rounded-lg border border-border">
+              {plan.changes.map((c) => (
+                <div key={c.key} className="flex items-center justify-between gap-3 border-b border-border px-3 py-1.5 font-mono text-xs last:border-b-0">
+                  <span>{c.key}</span>
+                  <span className={c.changed ? '' : 'text-muted-foreground'}>
+                    {c.changed ? (
+                      <>
+                        <span className="text-destructive line-through">{c.current ?? '(not set)'}</span> → <span className="text-success">{c.new}</span>
+                      </>
+                    ) : (
+                      c.new
+                    )}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          {plan.changes.length > 0 && (
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                disabled={plan.up_to_date || busy !== null}
+                onClick={() =>
+                  run('apply', async () => {
+                    const r = await runCommand({ type: 'apply_mailpit_env', project_id: projectId, file: '.env' })
+                    if (r.type === 'mail_env_plan') setPlan(r.plan)
+                    setMessage('.env updated. The previous version is kept in the .env editor’s history.')
+                    await load()
+                  })
+                }
+              >
+                {plan.up_to_date ? 'Already pointing at Mailpit' : `Apply ${changed.length} change${changed.length === 1 ? '' : 's'}`}
+              </Button>
+              <span className="text-xs text-muted-foreground">Only the lines above are touched.</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="flex flex-col gap-2">
+        <h3 className="text-sm font-medium">Send a test message</h3>
+        <div className="flex items-center gap-2">
+          <Input className="w-64" value={to} onChange={(e) => setTo(e.target.value)} placeholder="dev@example.test" />
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={!to || busy !== null}
+            onClick={() =>
+              run('send', async () => {
+                const r = await runCommand({ type: 'send_test_mail', to })
+                if (r.type === 'text') setMessage(r.text)
+              })
+            }
+          >
+            <Send className="size-3.5" /> Send
+          </Button>
+        </div>
+      </div>
+      {message && <p className="text-sm text-success">{message}</p>}
+    </div>
+  )
+}
 
 function ComposerPanel({ projectId, info, busy, go }: { projectId: string; info: ComposerInfo | null; busy: string | null; go: Go }) {
   const [pkg, setPkg] = useState('')

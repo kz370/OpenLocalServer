@@ -26,6 +26,7 @@ minijinja = "2"
 regex = "1"
 sha1 = "0.10"
 getrandom = "0.3"
+portable-pty = "0.9"
 sysinfo = { version = "0.39", default-features = false, features = ["system", "disk"] }
 
 [dev-dependencies]

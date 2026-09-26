@@ -2,6 +2,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { ExternalLink, FolderSearch, Play } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
+import { CustomServices } from '@/components/CustomServices'
 import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
 import { Badge } from '@/components/ui/badge'
@@ -167,6 +168,8 @@ export function ServicesPage() {
           </Table>
         </CardContent>
       </Card>
+
+      <CustomServices onChanged={refresh} />
 
       {mysql?.running && (
         <Card>

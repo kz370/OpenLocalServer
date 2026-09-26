@@ -149,12 +149,14 @@ pub fn expand_args(args: &[String], info: &ConnectionInfo) -> Vec<String> {
 /// only quotes on spaces, so these are passed verbatim.
 pub fn heidisql_args(info: &ConnectionInfo) -> Option<Vec<String>> {
     match info.engine.as_str() {
-        "mysql" | "mariadb" => {
+        "mysql" | "mariadb" | "postgres" => {
+            // 0 = MariaDB/MySQL TCP/IP, 8 = PostgreSQL TCP/IP.
+            let nettype = if info.engine == "postgres" { 8 } else { 0 };
             let mut args = vec![
-                "--nettype=0".to_string(),
+                format!("--nettype={nettype}"),
                 format!("--host=\"{}\"", info.host),
                 format!("--port={}", info.port?),
-                format!("--user={}", info.user.as_deref().unwrap_or("root")),
+                format!("--user={}", info.user.as_deref().unwrap_or(if nettype == 8 { "postgres" } else { "root" })),
             ];
             if let Some(db) = &info.database {
                 args.push(format!("--databases=\"{db}\""));

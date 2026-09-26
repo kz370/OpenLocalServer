@@ -132,6 +132,11 @@ impl AppPaths {
         self.root.join("quick-apps")
     }
 
+    /// Database dumps, one folder per engine (§32, §34).
+    pub fn backups_dir(&self) -> PathBuf {
+        self.root.join("backups")
+    }
+
     pub fn settings_file(&self) -> PathBuf {
         self.data_dir().join("settings.json")
     }
@@ -148,6 +153,7 @@ impl AppPaths {
             self.certs_dir(),
             self.web_dir(),
             self.quick_apps_dir(),
+            self.backups_dir(),
         ] {
             std::fs::create_dir_all(dir)?;
         }

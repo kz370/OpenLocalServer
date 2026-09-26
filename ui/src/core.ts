@@ -115,6 +115,38 @@ export interface ProjectDetail {
   resolved: ResolvedRuntime[]
 }
 
+export type CustomHealthCheck = { kind: 'none' } | { kind: 'tcp' } | { kind: 'http'; path: string }
+
+/** A program the user runs as a service (§67). `id` is empty when creating. */
+export interface CustomServiceDef {
+  id: string
+  name: string
+  executable: string
+  args: string[]
+  cwd: string | null
+  env: [string, string][]
+  port: number | null
+  health: CustomHealthCheck
+  restart_on_crash: boolean
+}
+
+export type TerminalEvent = { kind: 'output'; id: number; data: string } | { kind: 'exit'; id: number }
+
+export interface Shortcut {
+  id: string
+  label: string
+  path: string
+  is_dir: boolean
+}
+
+export interface DbBackup {
+  file: string
+  database: string
+  /** Unix seconds. */
+  created: number
+  size: number
+}
+
 export type PortStatusLite = 'free' | 'in_use'
 
 export interface ServiceStatus {
@@ -556,6 +588,13 @@ export type CoreCommand =
   | { type: 'export_web_config'; hostname: string; part: ConfigPart; dest: string }
   | { type: 'create_database'; engine: string; name: string }
   | { type: 'list_databases'; engine: string }
+  | { type: 'list_custom_services' }
+  | { type: 'save_custom_service'; service: CustomServiceDef }
+  | { type: 'remove_custom_service'; id: string }
+  | { type: 'backup_database'; engine: string; database: string }
+  | { type: 'list_db_backups'; engine: string; database: string | null }
+  | { type: 'restore_database'; engine: string; database: string; file: string }
+  | { type: 'delete_db_backup'; engine: string; file: string }
   | { type: 'create_db_user'; engine: string; user: string; password: string; database: string }
   | { type: 'list_db_users'; engine: string }
   | { type: 'get_connection_info'; engine: string; database: string | null; path: string | null }
@@ -611,6 +650,12 @@ export type CoreCommand =
   | { type: 'open_path'; path: string }
   | { type: 'open_url'; url: string }
   | { type: 'open_in_editor'; path: string }
+  | { type: 'open_with'; path: string; app: string }
+  | { type: 'open_terminal'; project_id: string | null; shell: string | null; rows: number; cols: number }
+  | { type: 'terminal_input'; id: number; data: string }
+  | { type: 'resize_terminal'; id: number; rows: number; cols: number }
+  | { type: 'close_terminal'; id: number }
+  | { type: 'list_project_shortcuts'; project_id: string }
   | { type: 'list_editors' }
   | { type: 'get_system_stats' }
   | { type: 'list_migration_sources' }
@@ -641,6 +686,12 @@ export type CoreCommand =
   | { type: 'import_env_file'; project_id: string; file: string; source: string; mode: 'merge' | 'replace' }
   | { type: 'export_env_file'; project_id: string; file: string; dest: string }
   | { type: 'create_env_file'; project_id: string; file: string; from: string | null }
+  | { type: 'list_operations' }
+  | { type: 'dismiss_operation'; id: number }
+  | { type: 'mailpit_env_plan'; project_id: string; file: string }
+  | { type: 'apply_mailpit_env'; project_id: string; file: string }
+  | { type: 'mail_diagnostics'; project_id: string | null }
+  | { type: 'send_test_mail'; to: string }
 
 export type CoreResponse =
   | { type: 'pong'; version: string }
@@ -657,6 +708,11 @@ export type CoreResponse =
   | { type: 'projects'; projects: Project[] }
   | { type: 'project_detail'; detail: ProjectDetail }
   | { type: 'services'; services: ServiceStatus[] }
+  | { type: 'db_backups'; backups: DbBackup[] }
+  | { type: 'shortcuts'; shortcuts: Shortcut[] }
+  | { type: 'terminal'; id: number }
+  | { type: 'custom_services'; services: CustomServiceDef[] }
+  | { type: 'custom_service'; service: CustomServiceDef }
   | { type: 'secret'; key: string; value: string | null }
   | { type: 'db_tools'; tools: DbTool[] }
   | { type: 'custom_installs'; entries: CustomInstall[] }
@@ -708,6 +764,9 @@ export type CoreResponse =
   | { type: 'env_files'; files: EnvFileInfo[] }
   | { type: 'env_file'; view: EnvFileView }
   | { type: 'env_compare'; rows: EnvDiffRow[] }
+  | { type: 'mail_env_plan'; plan: MailEnvPlan }
+  | { type: 'mail_checks'; checks: MailCheck[] }
+  | { type: 'operations'; operations: Operation[] }
 
 export interface MigrationSource {
   id: string
@@ -842,6 +901,40 @@ export interface EnvFileInfo {
   name: string
   size: number
   entries: number
+}
+
+export interface Operation {
+  id: number
+  kind: string
+  title: string
+  started_ms: number
+  finished_ms: number | null
+  status: 'running' | 'done' | 'failed' | 'interrupted'
+  detail: string | null
+  undo: string | null
+}
+
+export interface MailChange {
+  key: string
+  current: string | null
+  new: string
+  changed: boolean
+}
+
+export interface MailEnvPlan {
+  file: string
+  framework: string
+  changes: MailChange[]
+  up_to_date: boolean
+  note: string | null
+}
+
+export interface MailCheck {
+  id: string
+  label: string
+  ok: boolean
+  detail: string
+  fix: string | null
 }
 
 export interface EnvDiffRow {

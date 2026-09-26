@@ -5,8 +5,8 @@
 //! running, not a new concept.
 //!
 //! Simplified vs. the full plan: dependency-ordered startup (§68) isn't implemented yet —
-//! each service is started independently. PostgreSQL and Redis follow the same
-//! `start_*` pattern once they're in the catalog (Redis has no official Windows build).
+//! each service is started independently. Redis has no official Windows build, so the
+//! community `redis-windows` build is used.
 
 use std::collections::HashMap;
 use std::net::TcpStream;
@@ -16,13 +16,14 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
+use crate::custom_service::{self, CustomService, CustomServiceStore};
 use crate::exec::{run_capture, Captured};
 use crate::paths::AppPaths;
 use crate::port::port_is_free;
 use crate::process::{ProcessId, ProcessSpec, ProcessSupervisor};
 use crate::runtime::RuntimeManager;
 
-const KNOWN_SERVICES: &[&str] = &["mailpit", "mysql", "mariadb", "mongodb"];
+const KNOWN_SERVICES: &[&str] = &["mailpit", "mysql", "mariadb", "postgres", "mongodb", "redis"];
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -77,12 +78,18 @@ pub struct ServiceManager {
     runtimes: Arc<RuntimeManager>,
     supervisor: Arc<ProcessSupervisor>,
     running: Mutex<HashMap<String, ProcessId>>,
+    custom: Mutex<CustomServiceStore>,
 }
 
 /// Names that go into SQL as identifiers can't be bound as parameters, so only plain
 /// names are accepted at all.
 pub fn is_safe_identifier(name: &str) -> bool {
     !name.is_empty() && name.len() <= 64 && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// Single-quoted literal for PostgreSQL, where backslashes are ordinary characters.
+fn pg_string(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
 }
 
 /// Escapes a value for a single-quoted SQL string literal.
@@ -92,11 +99,63 @@ fn sql_string(value: &str) -> String {
 
 impl ServiceManager {
     pub fn new(paths: AppPaths, runtimes: Arc<RuntimeManager>, supervisor: Arc<ProcessSupervisor>) -> Self {
-        Self { paths, runtimes, supervisor, running: Mutex::new(HashMap::new()) }
+        let custom = Mutex::new(CustomServiceStore::load(&paths));
+        Self { paths, runtimes, supervisor, running: Mutex::new(HashMap::new()), custom }
     }
 
+    /// The built-in services, then the user's own (§67).
     pub fn list(&self) -> Vec<ServiceStatus> {
-        KNOWN_SERVICES.iter().map(|&id| self.status(id)).collect()
+        let custom: Vec<String> = self.custom.lock().unwrap().list().into_iter().map(|s| s.id).collect();
+        KNOWN_SERVICES.iter().map(|s| s.to_string()).chain(custom).map(|id| self.status(&id)).collect()
+    }
+
+    // ------------------------------------------------------------ custom services (§67)
+
+    pub fn list_custom(&self) -> Vec<CustomService> {
+        self.custom.lock().unwrap().list()
+    }
+
+    pub fn save_custom(&self, service: CustomService) -> Result<CustomService, String> {
+        self.custom.lock().unwrap().save(service)
+    }
+
+    /// Stops the service if it is running, then forgets its definition.
+    pub fn remove_custom(&self, id: &str) -> Result<(), String> {
+        self.stop(id);
+        self.custom.lock().unwrap().remove(id)
+    }
+
+    fn custom_status(&self, def: CustomService) -> ServiceStatus {
+        let running = self.is_running(&def.id);
+        ServiceStatus {
+            installed: std::path::Path::new(&def.executable).is_file(),
+            running,
+            port: def.port,
+            port_status: def.port.map(|p| if port_is_free(p) { PortStatusLite::Free } else { PortStatusLite::InUse }),
+            kind: "custom".into(),
+            connection: def.port.map(|p| format!("127.0.0.1:{p}")),
+            healthy: if running { def.port.and_then(|p| custom_service::probe(p, &def.health)) } else { None },
+            version: None,
+            id: def.id,
+            name: def.name,
+        }
+    }
+
+    fn start_custom(&self, def: &CustomService) -> Result<ProcessId, String> {
+        if !std::path::Path::new(&def.executable).is_file() {
+            return Err(format!("{} no longer exists", def.executable));
+        }
+        if let Some(port) = def.port.filter(|p| !port_is_free(*p)) {
+            return Err(format!("port {port} is already in use, so {} can't start", def.name));
+        }
+        Ok(self.supervisor.start(ProcessSpec {
+            name: def.name.clone(),
+            executable: def.executable.clone(),
+            args: def.args.clone(),
+            cwd: def.cwd.clone().filter(|c| !c.is_empty()),
+            env: def.env.clone(),
+            restart: def.restart_on_crash.then_some(crate::process::RestartPolicy { max_retries: 3, delay_ms: 2000 }),
+        }))
     }
 
     pub fn is_running(&self, id: &str) -> bool {
@@ -105,6 +164,24 @@ impl ServiceManager {
     }
 
     pub fn status(&self, id: &str) -> ServiceStatus {
+        if custom_service::is_custom_id(id) {
+            let def = self.custom.lock().unwrap().get(id);
+            return match def {
+                Some(def) => self.custom_status(def),
+                None => ServiceStatus {
+                    id: id.to_string(),
+                    name: id.to_string(),
+                    installed: false,
+                    running: false,
+                    port: None,
+                    port_status: None,
+                    kind: "custom".into(),
+                    connection: None,
+                    healthy: None,
+                    version: None,
+                },
+            };
+        }
         let versions = self.runtimes.installed_versions(id);
         let installed = !versions.is_empty();
         let running = self.is_running(id);
@@ -133,6 +210,12 @@ impl ServiceManager {
         if self.is_running(id) {
             return Err(format!("{id} is already running"));
         }
+        if custom_service::is_custom_id(id) {
+            let def = self.custom.lock().unwrap().get(id).ok_or_else(|| format!("unknown service: {id}"))?;
+            let process_id = self.start_custom(&def)?;
+            self.running.lock().unwrap().insert(id.to_string(), process_id);
+            return Ok(process_id);
+        }
         let version = self
             .runtimes
             .installed_versions(id)
@@ -144,7 +227,9 @@ impl ServiceManager {
             "mailpit" => self.start_mailpit(&version)?,
             "mysql" => self.start_mysql(&version)?,
             "mariadb" => self.start_mariadb(&version)?,
+            "postgres" => self.start_postgres(&version)?,
             "mongodb" => self.start_mongodb(&version)?,
+            "redis" => self.start_redis(&version)?,
             other => return Err(format!("unknown service: {other}")),
         };
         self.running.lock().unwrap().insert(id.to_string(), process_id);
@@ -291,6 +376,81 @@ impl ServiceManager {
         }))
     }
 
+    /// PostgreSQL (§31, Stage 5). Trust authentication on loopback only: fine for a local dev
+    /// tool, and the server never listens on another interface (§138).
+    fn start_postgres(&self, version: &str) -> Result<ProcessId, String> {
+        let install_dir = self.runtimes.install_dir("postgres", version);
+        let bin = install_dir.join("bin");
+        let postgres = bin.join("postgres.exe");
+        if !postgres.is_file() {
+            return Err("postgres.exe missing on disk".into());
+        }
+        let data_dir = self.paths.services_dir().join("postgres").join("data");
+
+        // First run only: `initdb` creates the cluster and a `postgres` superuser.
+        if !data_dir.join("PG_VERSION").is_file() {
+            std::fs::create_dir_all(data_dir.parent().unwrap()).map_err(|e| e.to_string())?;
+            let init = run_capture(
+                &bin.join("initdb.exe"),
+                &[
+                    "-D".to_string(),
+                    data_dir.display().to_string(),
+                    "-U".to_string(),
+                    "postgres".to_string(),
+                    "-A".to_string(),
+                    "trust".to_string(),
+                    "-E".to_string(),
+                    "UTF8".to_string(),
+                ],
+                Some(&install_dir),
+                &[],
+                Duration::from_secs(180),
+            );
+            if !init.success() {
+                let _ = std::fs::remove_dir_all(&data_dir);
+                return Err(format!("initdb failed: {}", init.combined()));
+            }
+        }
+
+        Ok(self.supervisor.start(ProcessSpec {
+            name: "PostgreSQL".into(),
+            executable: postgres.display().to_string(),
+            args: vec![
+                "-D".into(),
+                data_dir.display().to_string(),
+                "-p".into(),
+                primary_port("postgres").unwrap().to_string(),
+                "-c".into(),
+                "listen_addresses=127.0.0.1".into(),
+            ],
+            cwd: Some(install_dir.display().to_string()),
+            env: vec![],
+            restart: None,
+        }))
+    }
+
+    /// Redis (§31, Stage 5), from the community Windows build. Loopback only, snapshots go to
+    /// the service's own data directory (the process's working directory).
+    fn start_redis(&self, version: &str) -> Result<ProcessId, String> {
+        let server = self.runtimes.binary_path("redis", version).ok_or("redis-server.exe missing on disk")?;
+        let data_dir = self.paths.services_dir().join("redis").join("data");
+        std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
+
+        Ok(self.supervisor.start(ProcessSpec {
+            name: "Redis".into(),
+            executable: server.display().to_string(),
+            args: vec![
+                "--port".into(),
+                primary_port("redis").unwrap().to_string(),
+                "--bind".into(),
+                "127.0.0.1".into(),
+            ],
+            cwd: Some(data_dir.display().to_string()),
+            env: vec![],
+            restart: None,
+        }))
+    }
+
     // ------------------------------------------------------------- SQL clients (§32–33)
 
     /// Path + port of the command-line client for a SQL engine ("mysql" | "mariadb").
@@ -299,6 +459,7 @@ impl ServiceManager {
         let (exe, port) = match engine {
             "mysql" => ("mysql.exe", primary_port("mysql")),
             "mariadb" => ("mariadb.exe", primary_port("mariadb")),
+            "postgres" => ("psql.exe", primary_port("postgres")),
             other => return Err(format!("{other} is not a SQL engine OpenLocalServer manages")),
         };
         let version = self
@@ -317,24 +478,20 @@ impl ServiceManager {
     /// Runs SQL as root against the local engine and returns its tab-separated output.
     pub fn run_sql(&self, engine: &str, sql: &str) -> Result<String, String> {
         let (client, port) = self.sql_client(engine)?;
-        let out: Captured = run_capture(
-            &client,
-            &[
-                "-u".into(),
-                "root".into(),
-                "-h".into(),
-                "127.0.0.1".into(),
-                "-P".into(),
-                port.to_string(),
-                "--batch".into(),
-                "--skip-column-names".into(),
-                "-e".into(),
-                sql.into(),
-            ],
-            None,
-            &[],
-            Duration::from_secs(20),
-        );
+        let port_s = port.to_string();
+        let args: Vec<String> = if engine == "postgres" {
+            // Unaligned, tuples-only, tab-separated: the same shape the MySQL client gives.
+            ["-U", "postgres", "-h", "127.0.0.1", "-p", port_s.as_str(), "-X", "-A", "-t", "-F", "\t", "-v", "ON_ERROR_STOP=1", "-c", sql]
+                .iter()
+                .map(|a| a.to_string())
+                .collect()
+        } else {
+            ["-u", "root", "-h", "127.0.0.1", "-P", port_s.as_str(), "--batch", "--skip-column-names", "-e", sql]
+                .iter()
+                .map(|a| a.to_string())
+                .collect()
+        };
+        let out: Captured = run_capture(&client, &args, None, &[], Duration::from_secs(20));
         if out.success() {
             Ok(out.stdout)
         } else if out.exit_code.is_none() && !out.timed_out {
@@ -353,12 +510,23 @@ impl ServiceManager {
         if !is_safe_identifier(name) {
             return Err("database name must be alphanumeric/underscore only".into());
         }
+        if engine == "postgres" {
+            // PostgreSQL has no `IF NOT EXISTS` for databases.
+            if self.list_databases(engine)?.iter().any(|d| d == name) {
+                return Ok(());
+            }
+            return self.run_sql(engine, &format!("CREATE DATABASE \"{name}\"")).map(|_| ());
+        }
         self.run_sql(engine, &format!("CREATE DATABASE IF NOT EXISTS `{name}`")).map(|_| ())
     }
 
     pub fn list_databases(&self, engine: &str) -> Result<Vec<String>, String> {
-        let text = self.run_sql(engine, "SHOW DATABASES")?;
-        const SYSTEM: &[&str] = &["information_schema", "mysql", "performance_schema", "sys"];
+        let text = if engine == "postgres" {
+            self.run_sql(engine, "SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY datname")?
+        } else {
+            self.run_sql(engine, "SHOW DATABASES")?
+        };
+        const SYSTEM: &[&str] = &["information_schema", "mysql", "performance_schema", "sys", "postgres"];
         Ok(text.lines().map(str::trim).filter(|l| !l.is_empty() && !SYSTEM.contains(l)).map(str::to_string).collect())
     }
 
@@ -375,6 +543,18 @@ impl ServiceManager {
             return Err("a password is required".into());
         }
         let u = sql_string(user);
+        if engine == "postgres" {
+            let exists = !self.run_sql(engine, &format!("SELECT 1 FROM pg_roles WHERE rolname = {}", pg_string(user)))?.trim().is_empty();
+            let verb = if exists { "ALTER" } else { "CREATE" };
+            self.run_sql(engine, &format!("{verb} ROLE \"{user}\" LOGIN PASSWORD {}", pg_string(password)))?;
+            self.create_database(engine, database)?;
+            self.run_sql(engine, &format!("GRANT ALL PRIVILEGES ON DATABASE \"{database}\" TO \"{user}\""))?;
+            // PostgreSQL 15+ no longer lets ordinary users create tables in `public`; owning the
+            // database fixes that.
+            self.run_sql(engine, &format!("ALTER DATABASE \"{database}\" OWNER TO \"{user}\""))?;
+            let _ = crate::secrets::set_secret(&format!("db.{engine}.{user}"), password);
+            return Ok(());
+        }
         let sql = format!(
             "CREATE DATABASE IF NOT EXISTS `{database}`; \
              CREATE USER IF NOT EXISTS {u}@'localhost' IDENTIFIED BY {p}; \
@@ -390,7 +570,11 @@ impl ServiceManager {
     }
 
     pub fn list_users(&self, engine: &str) -> Result<Vec<DbUser>, String> {
-        let text = self.run_sql(engine, "SELECT user, host FROM mysql.user ORDER BY user")?;
+        let text = if engine == "postgres" {
+            self.run_sql(engine, "SELECT rolname, 'localhost' FROM pg_roles WHERE rolname NOT LIKE 'pg\\_%' ORDER BY rolname")?
+        } else {
+            self.run_sql(engine, "SELECT user, host FROM mysql.user ORDER BY user")?
+        };
         Ok(text
             .lines()
             .filter_map(|l| {
@@ -415,6 +599,27 @@ impl ServiceManager {
                     uri: format!("mysql://root@127.0.0.1:{port}/{}", database.unwrap_or("")),
                 })
             }
+            "postgres" => {
+                let port = primary_port("postgres").unwrap();
+                Ok(ConnectionInfo {
+                    engine: "postgres".into(),
+                    host: "127.0.0.1".into(),
+                    port: Some(port),
+                    user: Some("postgres".into()),
+                    database: database.map(str::to_string),
+                    path: None,
+                    uri: format!("postgresql://postgres@127.0.0.1:{port}/{}", database.unwrap_or("postgres")),
+                })
+            }
+            "redis" => Ok(ConnectionInfo {
+                engine: "redis".into(),
+                host: "127.0.0.1".into(),
+                port: primary_port("redis"),
+                user: None,
+                database: None,
+                path: None,
+                uri: format!("redis://127.0.0.1:{}", primary_port("redis").unwrap()),
+            }),
             "mongodb" => Ok(ConnectionInfo {
                 engine: "mongodb".into(),
                 host: "127.0.0.1".into(),
@@ -445,6 +650,7 @@ fn kind_of(id: &str) -> &'static str {
     match id {
         "mailpit" => "mail",
         "mongodb" => "document",
+        "redis" => "cache",
         _ => "sql",
     }
 }
@@ -455,6 +661,8 @@ fn primary_port(id: &str) -> Option<u16> {
         "mysql" => Some(3306),
         "mariadb" => Some(3307),
         "mongodb" => Some(27017),
+        "postgres" => Some(5432),
+        "redis" => Some(6379),
         _ => None,
     }
 }
@@ -465,6 +673,8 @@ fn connection_string(id: &str) -> Option<String> {
         "mysql" => Some("mysql://root@127.0.0.1:3306".into()),
         "mariadb" => Some("mysql://root@127.0.0.1:3307".into()),
         "mongodb" => Some("mongodb://127.0.0.1:27017".into()),
+        "postgres" => Some("postgresql://postgres@127.0.0.1:5432".into()),
+        "redis" => Some("redis://127.0.0.1:6379".into()),
         _ => None,
     }
 }
@@ -509,6 +719,8 @@ mod tests {
         assert_eq!(mgr.connection_info("mongodb", None, None).unwrap().uri, "mongodb://127.0.0.1:27017");
         assert!(mgr.connection_info("sqlite", None, None).is_err());
         assert_eq!(mgr.connection_info("sqlite", None, Some("C:\\db\\a.sqlite")).unwrap().uri, "sqlite:///C:/db/a.sqlite");
+        assert_eq!(mgr.connection_info("postgres", Some("shop"), None).unwrap().uri, "postgresql://postgres@127.0.0.1:5432/shop");
+        assert_eq!(mgr.connection_info("redis", None, None).unwrap().uri, "redis://127.0.0.1:6379");
         assert!(mgr.connection_info("oracle", None, None).is_err());
     }
 }

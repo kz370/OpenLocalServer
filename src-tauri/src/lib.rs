@@ -44,6 +44,7 @@ fn show_main_window(app: &AppHandle) {
 
 /// Stops everything DevForge started so nothing is left running after "Quit".
 fn shutdown(core: &Core) {
+    core.inner().terminals.close_all();
     core.inner().web.stop();
     for s in core.services().list() {
         if s.running {
@@ -144,6 +145,15 @@ pub fn run() {
                         let name = process_core.supervisor().snapshot().into_iter().find(|p| p.id == *id).map(|p| p.name).unwrap_or_default();
                         notify(&process_handle, &process_core, "A process stopped unexpectedly", &name);
                     }
+                }
+            });
+
+            // Terminal output goes straight to the webview (xterm.js draws it).
+            let terminal_handle = app.handle().clone();
+            let mut terminal_events = core.inner().terminals.subscribe();
+            tauri::async_runtime::spawn(async move {
+                while let Some(event) = ols_core::terminal::next_event(&mut terminal_events).await {
+                    let _ = terminal_handle.emit("terminal-event", &event);
                 }
             });
 

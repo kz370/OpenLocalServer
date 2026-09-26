@@ -368,7 +368,8 @@ pub fn build_plan(app: &QuickApp, values: BTreeMap<String, String>, ctx: &PlanCt
         }
         match id.as_str() {
             "redis" => {
-                warnings.push("Redis has no official Windows build yet, so it was skipped.".to_string());
+                requirements.push(ReqSpec { id: "redis".into(), wanted: None });
+                services_to_start.push("redis".into());
             }
             "mailpit" => {
                 if mailpit_wanted || !values.contains_key("mailpit") {
@@ -376,7 +377,7 @@ pub fn build_plan(app: &QuickApp, values: BTreeMap<String, String>, ctx: &PlanCt
                     services_to_start.push("mailpit".into());
                 }
             }
-            "mysql" | "mariadb" | "mongodb" => {
+            "mysql" | "mariadb" | "postgres" | "mongodb" => {
                 // Only when the chosen database is this one (or the app has no `database` choice).
                 let chosen = values.get("database").map(|d| d == id).unwrap_or(true);
                 if chosen {
@@ -832,9 +833,8 @@ domain: { hostname: "{{ project_name }}.test", kind: php, root: "{{ project_path
         assert!(!plan.steps.iter().any(|s| s.display.contains("never")), "false condition must be skipped");
         assert!(plan.steps.iter().any(|s| matches!(&s.body, StepBody::Action { action, .. } if action == "create_database")));
         assert_eq!(plan.hostname.as_deref(), Some("shop.test"));
-        assert!(plan.warnings.iter().any(|w| w.contains("Redis")));
         let ids: Vec<&str> = plan.requirements.iter().map(|r| r.id.as_str()).collect();
-        assert!(ids.contains(&"php") && ids.contains(&"composer") && ids.contains(&"mysql") && ids.contains(&"mailpit") && ids.contains(&"nginx"));
+        assert!(ids.contains(&"php") && ids.contains(&"composer") && ids.contains(&"mysql") && ids.contains(&"mailpit") && ids.contains(&"nginx") && ids.contains(&"redis"));
         assert_eq!(ids.iter().filter(|i| **i == "php").count(), 1, "php requirement de-duplicated");
 
         let perm_ids: Vec<&str> = plan.permissions.iter().map(|p| p.id.as_str()).collect();

@@ -153,6 +153,32 @@ const CATALOG: &[PackageManifest] = &[
         binary: "bin/mongod.exe",
     },
     PackageManifest {
+        id: "postgres",
+        name: "PostgreSQL",
+        version: "17.6",
+        platform: "windows",
+        architecture: "x64",
+        url: "https://get.enterprisedb.com/postgresql/postgresql-17.6-1-windows-x64-binaries.zip",
+        // EnterpriseDB's binaries zip (the official Windows distribution) publishes no checksum
+        // file; SHA-256 self-pinned from a direct HTTPS download of this exact URL.
+        sha256: "d378882abd001a186735acd6f6ba716bca6ccd192e800412d4fd15ed25376b3e",
+        archive_root: "pgsql",
+        binary: "bin/postgres.exe",
+    },
+    PackageManifest {
+        id: "redis",
+        name: "Redis",
+        version: "8.10.2",
+        platform: "windows",
+        architecture: "x64",
+        url: "https://github.com/redis-windows/redis-windows/releases/download/8.10.2/Redis-8.10.2-Windows-x64-cygwin.zip",
+        // Redis has no official Windows build; this is the community redis-windows build of the
+        // upstream source. It publishes no checksum file, so the SHA-256 is self-pinned.
+        sha256: "6de5cc7f5adbf97b5928b13766383d4ad424626ef3d8b313ffff12d820ec6fc1",
+        archive_root: "Redis-8.10.2-Windows-x64-cygwin",
+        binary: "redis-server.exe",
+    },
+    PackageManifest {
         id: "sqlite",
         name: "SQLite",
         version: "3.53.4",
@@ -220,6 +246,8 @@ pub fn system_probe(id: &str) -> Option<(&'static str, &'static str)> {
         "apache" => Some(("httpd.exe", "-v")),
         "mariadb" => Some(("mariadbd.exe", "--version")),
         "mongodb" => Some(("mongod.exe", "--version")),
+        "postgres" => Some(("postgres.exe", "--version")),
+        "redis" => Some(("redis-server.exe", "--version")),
         "sqlite" => Some(("sqlite3.exe", "--version")),
         _ => None,
     }

@@ -154,7 +154,7 @@ impl Inner {
         envfile::path_of(Path::new(&project.path), file).map_err(err)
     }
 
-    fn env_content(&self, project_id: &str, file: &str) -> Result<String, CoreError> {
+    pub(crate) fn env_content(&self, project_id: &str, file: &str) -> Result<String, CoreError> {
         let path = self.env_path(project_id, file)?;
         match std::fs::read_to_string(&path) {
             Ok(c) => Ok(c),

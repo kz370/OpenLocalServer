@@ -65,6 +65,7 @@ impl Inner {
         self.check_services(&mut b);
         self.check_projects(&mut b);
         self.check_php(&mut b);
+        self.check_journal(&mut b);
 
         let ignored = self.ignored_diagnostics();
         for f in &mut b.findings {
@@ -242,6 +243,25 @@ impl Inner {
                     );
                 }
             }
+        }
+    }
+
+    /// §163: operations that were running when the app last stopped.
+    fn check_journal(&self, b: &mut Builder) {
+        for op in self.journal.lock().unwrap().interrupted() {
+            let mut details = vec![format!("Started at {} ms since 1970", op.started_ms)];
+            if let Some(undo) = &op.undo {
+                details.push(format!("To undo it: {undo}"));
+            }
+            b.add(
+                format!("operation_interrupted:{}", op.id),
+                Severity::Warning,
+                format!("\"{}\" did not finish", op.title),
+                "OpenLocalServer stopped or crashed while this was running, so it may have been applied only in part.",
+                if op.retry.is_some() { "Run it again to finish the job." } else { "Check the result, and do it again if something is missing." },
+                op.retry.clone(),
+                details,
+            );
         }
     }
 

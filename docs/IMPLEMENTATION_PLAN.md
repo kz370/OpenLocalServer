@@ -13,7 +13,7 @@ This file has two parts:
 
 The full list of missing features is in [STATUS.md](STATUS.md).
 
-**Current stage: 11 — Runtime depth + diagnostics (in progress).** Release 0.1 features are largely built but
+**Current stage: 11 — Runtime depth + diagnostics (built, not checked visually).** Release 0.1 features are largely built but
 its release gate (the clean-VM Laravel flow) has not been run, and several Stage 0–5 items are still open.
 
 | Stage | Status | Open items |
@@ -22,14 +22,14 @@ its release gate (the clean-VM Laravel flow) has not been run, and several Stage
 | 1 Core skeleton | Mostly done | Settings, stores and data are JSON files, not SQLite with migrations; no operation journal (decision 5) |
 | 2 Supervisor, runner, ports | Done | Process trees are killed with `taskkill /T`, not Job Objects |
 | 3 Packages + runtimes | Done | — |
-| 4 Projects, detection, terminal, env, editors | Partial | `.env` editor (§103); interactive terminal (portable-pty + xterm.js, §19); Open With menu and file shortcuts (§97, §100) |
-| 5 Services, databases, secrets, DB tools | Partial | PostgreSQL; Redis; custom services UI (§67); MySQL/MariaDB backup and restore (§32, §34); Mailpit `.env` integration with diff (§63) |
+| 4 Projects, detection, terminal, env, editors | Built | Interactive terminal, Open With menu and file shortcuts written 2026-09-26, not yet compiled or run |
+| 5 Services, databases, secrets, DB tools | Built | PostgreSQL, Redis, custom services, SQL backup and restore, Mailpit `.env` integration and mail checks written 2026-09-26, not yet compiled or run |
 | 6 Domains, CA, HTTPS, Nginx, app servers | Done | — |
 | 7 Quick Apps + Quick Commands | Done | — |
 | 8 Dashboard, logs, tray, packaging | Built, not verified | Installer and E2E (tauri-driver) not exercised; clean-VM release gate not run |
 | 9 Web config, reverse proxy, wildcards | Done | — |
 | 10 More servers and databases | Done | — |
-| **11 Runtime depth + diagnostics** | **In progress** | Done: PHP extensions per version with PECL downloads. Open: Xdebug (§13), full Composer commands (§14), corepack pnpm/yarn (§15), Python venv (§17), `DiagnosticEngine` v1 (§112) |
+| **11 Runtime depth + diagnostics** | **Built** | Xdebug, Composer, corepack, Python venv, `DiagnosticEngine` v1 and the `.env` editor exist; screens not yet checked in the running app |
 | 12–15 (release 0.3) | Not started | — |
 | 16–18 (release 1.0) | Not started | Except the items marked *done early* below |
 

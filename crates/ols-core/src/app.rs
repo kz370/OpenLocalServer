@@ -53,6 +53,8 @@ pub struct Inner {
     pub monitor: crate::monitor::Monitor,
     pub web: Arc<WebManager>,
     pub runs: RunManager,
+    pub terminals: Arc<crate::terminal::TerminalManager>,
+    pub journal: Mutex<crate::journal::Journal>,
 }
 
 fn svc(msg: impl Into<String>) -> CoreError {
@@ -151,10 +153,25 @@ impl Inner {
             monitor: Default::default(),
             web,
             runs: RunManager::new(),
+            terminals: Arc::new(crate::terminal::TerminalManager::new()),
+            journal: Mutex::new(crate::journal::Journal::load(&paths)),
             paths,
         });
         core.sync_php_external();
         Ok(core)
+    }
+
+    /// Runs `f` between a "started" and an "ended" line in the operation journal (§78, §163), so an
+    /// operation the app dies in the middle of is found and reported on the next start.
+    pub fn journaled<T>(&self, kind: &str, title: &str, undo: Option<&str>, retry: Option<crate::command::CoreCommand>, f: impl FnOnce() -> Result<T, CoreError>) -> Result<T, CoreError> {
+        let id = self.journal.lock().unwrap().begin(kind, title, undo, retry);
+        let result = f();
+        let outcome = match &result {
+            Ok(_) => Ok(()),
+            Err(e) => Err(e.to_string()),
+        };
+        self.journal.lock().unwrap().finish(id, &outcome);
+        result
     }
 
     /// Feeds the user-registered PHP installs (custom installs with id "php") to the pool
@@ -561,7 +578,10 @@ impl Inner {
                 dbtools::launch(&exe, &args, true).map_err(svc)
             }
             "postgres" => {
-                let exe = find("pgadmin").ok_or_else(|| svc("pgAdmin was not found. Install it or locate it."))?;
+                if let (Some(exe), Some(args)) = (find("heidisql"), dbtools::heidisql_args(&info)) {
+                    return dbtools::launch(&exe, &args, true).map_err(svc);
+                }
+                let exe = find("pgadmin").ok_or_else(|| svc("Neither HeidiSQL nor pgAdmin was found. Install one, locate it, or register another tool for this engine."))?;
                 dbtools::launch(&exe, &[], false).map_err(svc)
             }
             other => Err(svc(format!("No tool is registered for {other}. Add one under External tools."))),
@@ -616,13 +636,18 @@ impl Inner {
             None if Path::new(path).is_dir() => PathBuf::from("explorer.exe"),
             None => PathBuf::from("notepad.exe"),
         };
-        let mut cmd = if crate::editors::is_shim(&exe) {
+        self.launch_editor(&exe, path)
+    }
+
+    /// Starts `exe` on `path`, detached. Editor shims (`code.cmd`) go through `cmd.exe`.
+    pub(crate) fn launch_editor(&self, exe: &Path, path: &str) -> Result<(), CoreError> {
+        let mut cmd = if crate::editors::is_shim(exe) {
             let mut c = std::process::Command::new("cmd.exe");
-            c.arg("/C").arg(&exe).args(crate::editors::open_args(&exe, path));
+            c.arg("/C").arg(exe).args(crate::editors::open_args(exe, path));
             c
         } else {
-            let mut c = std::process::Command::new(&exe);
-            c.args(crate::editors::open_args(&exe, path));
+            let mut c = std::process::Command::new(exe);
+            c.args(crate::editors::open_args(exe, path));
             c
         };
         crate::exec::hide_window(&mut cmd);
@@ -1065,7 +1090,7 @@ impl Inner {
         Ok(format!("{name} {version}"))
     }
 
-    fn quick_resolve_program(&self, program: &str, values: &BTreeMap<String, String>, project_id: Option<&str>) -> Result<ResolvedProgram, String> {
+    pub(crate) fn quick_resolve_program(&self, program: &str, values: &BTreeMap<String, String>, project_id: Option<&str>) -> Result<ResolvedProgram, String> {
         let is_path = program.contains('/') || program.contains('\\') || Path::new(program).is_absolute();
         if is_path {
             return Ok(ResolvedProgram { executable: PathBuf::from(program), ..Default::default() });

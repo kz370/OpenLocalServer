@@ -406,7 +406,7 @@ fn spawn_line_reader<R>(
 #[cfg(windows)]
 pub fn kill_orphans(runtimes_dir: &std::path::Path) -> usize {
     use std::os::windows::process::CommandExt;
-    const SERVERS: &[&str] = &["nginx.exe", "httpd.exe", "caddy.exe", "php-cgi.exe", "mysqld.exe", "mariadbd.exe", "mongod.exe", "mailpit.exe"];
+    const SERVERS: &[&str] = &["nginx.exe", "httpd.exe", "caddy.exe", "php-cgi.exe", "mysqld.exe", "mariadbd.exe", "mongod.exe", "mailpit.exe", "postgres.exe", "redis-server.exe"];
     let filter = SERVERS.iter().map(|n| format!("Name='{n}'")).collect::<Vec<_>>().join(" or ");
     let script = format!(
         "Get-CimInstance Win32_Process -Filter \"{filter}\" | ForEach-Object {{ \"$($_.ProcessId)|$($_.ExecutablePath)|$($_.CommandLine)\" }}"

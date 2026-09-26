@@ -43,7 +43,7 @@ variables:
     validation: "[A-Za-z0-9_]+"
     show_if: "database != none"
   - name: redis
-    label: Redis (not available on Windows yet)
+    label: Redis (start it from Services)
     type: boolean
     default: false
   - name: mailpit
@@ -77,6 +77,8 @@ env_vars:
   - { key: DB_DATABASE, value: "{{ db_name }}", if: "database != none" }
   - { key: DB_USERNAME, value: "root", if: "database != none" }
   - { key: DB_PASSWORD, value: "", if: "database != none" }
+  - { key: REDIS_HOST, value: "127.0.0.1", if: redis }
+  - { key: REDIS_PORT, value: "6379", if: redis }
   - { key: MAIL_MAILER, value: "smtp", if: mailpit }
   - { key: MAIL_HOST, value: "127.0.0.1", if: mailpit }
   - { key: MAIL_PORT, value: "1025", if: mailpit }

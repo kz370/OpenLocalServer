@@ -5,20 +5,20 @@ refer to [DevForge_Master_SRS_v4.md](../DevForge_Master_SRS_v4.md).
 
 ## Where we are
 
-**Stage 11 of 18, in release 0.2.** The features of release 0.1 and most of 0.2 are built, but 0.1 has not been
-released: its gate (a clean Windows VM going from install to a Laravel site over trusted HTTPS) has not been run,
+**Stage 11 of 18 is built, so release 0.2 is feature-complete.** The features of releases 0.1 and 0.2 are built,
+but 0.1 has not been released: its gate (a clean Windows VM going from install to a Laravel site over trusted HTTPS) has not been run,
 and some 0.1 items are still missing (listed below).
 
 ```
 Release 0.1   Stages 0–8    ██████████████████░░  built, not released
-Release 0.2   Stages 9–11   ████████████████░░░░  9–10 done, 11 in progress
+Release 0.2   Stages 9–11   ████████████████████  built, not released
 Release 0.3   Stages 12–15  ░░░░░░░░░░░░░░░░░░░░  not started
 Release 1.0   Stages 16–18  ██░░░░░░░░░░░░░░░░░░  one item done early (XAMPP/Laragon import)
 ```
 
 ## What works today
 
-- **Runtimes:** PHP, Node, Composer, MySQL, MariaDB, MongoDB, Mailpit, Nginx, Apache, Caddy, SQLite downloaded
+- **Runtimes:** PHP, Node, Composer, MySQL, MariaDB, PostgreSQL, MongoDB, Redis, Mailpit, Nginx, Apache, Caddy, SQLite downloaded
   and SHA-256 verified; existing installs (Laragon, XAMPP) can be registered instead. PHP extensions per version,
   with PECL downloads.
 - **Projects:** register or scan folders, framework and version detection, per-project runtime resolution,
@@ -29,7 +29,8 @@ Release 1.0   Stages 16–18  ██░░░░░░░░░░░░░░�
   detection, history with diff and restore, structured editing of common blocks.
 - **Name resolution without repeated admin prompts:** built-in DNS for `.test` / `.localhost` / `.internal`, and
   an optional helper service for everything else.
-- **Databases:** create databases and users, connection details, SQLite management, external GUI tools
+- **Databases:** create databases and users, connection details, backup and restore of MySQL / MariaDB /
+  PostgreSQL, SQLite management, external GUI tools
   (HeidiSQL, pgAdmin, custom), and import from Laragon / XAMPP / WampServer without an SQL file.
 - **Quick Apps and Quick Commands:** 13 built-in recipes (including Reverse Proxy), import/export with trust,
   command history.
@@ -40,31 +41,18 @@ Release 1.0   Stages 16–18  ██░░░░░░░░░░░░░░�
 
 ### Release 0.1 gaps (should come first)
 
-| Feature | § | Stage | Notes |
-|---|---|---|---|
-| README, LICENSE, CONTRIBUTING, CODE_OF_CONDUCT, SECURITY, CHANGELOG | 144 | 0 | License still to be chosen |
-| CI on GitHub Actions (build, tests, clippy, lint) | 144 | 0 | Tests exist and pass locally only |
-| `.env` editor: add/edit/delete, import/export/compare, hidden secrets, validation | 103 | 4 | |
-| Interactive terminal with the project's runtimes on PATH | 19 | 4 | Today: one-shot commands with streamed output |
-| "Open with" menu and file shortcuts (project, public/, config/, .env, logs, server configs) | 97, 100 | 4 | "Open folder in editor" exists |
-| PostgreSQL service | 31 | 5 | pgAdmin detection exists; the database server does not |
-| Redis service | 31 | 5 | Needs a Windows build choice (Memurai vs community port) |
-| Custom services UI: name, exe, args, port, health check | 67 | 5 | |
-| MySQL / MariaDB backup and restore | 32, 34 | 5 | SQLite backup/restore exists |
-| Mailpit `.env` integration (write `MAIL_*` after showing a diff) | 63 | 5 | Laravel Quick App sets it on create only |
-| Mail diagnostics checklist and test send | 66 | 5 | |
-| Operation journal: rollback and interrupted-operation detection | 78, 163 | 1 | |
-| Installer (NSIS/MSI) verified, E2E tests, clean-VM release gate | 155, 160 | 8 | Bundling is configured but untested |
+Everything else in release 0.1 is now written. What is left needs a person or a machine, not more code:
 
-### Release 0.2 — Stage 11 (current)
-
-| Feature | § | Notes |
+| Item | § | Notes |
 |---|---|---|
-| Xdebug: modes, port, client host, IDE config, per project | 13 | The extension can already be downloaded and enabled |
-| Full Composer commands | 14 | Common ones exist as Quick Commands |
-| pnpm / yarn through corepack | 15 | |
-| Python virtual environments: create, detect, activate, recreate, install | 17 | Python runtime itself not managed yet |
-| `DiagnosticEngine` v1: Problem / Cause / Fix / [Fix] / [Ignore] / [Details] | 112 | Errors already carry problem/cause/fix text |
+| LICENSE file | 144 | The workspace says MIT, but the copyright holder and the final choice are yours to make |
+| Installer (NSIS/MSI) verified, E2E tests, clean-VM release gate | 155, 160 | Bundling is configured but never run |
+| Full rollback of operations | 78 | The journal finds interrupted operations and offers to run them again; undoing an operation is a written hint, not a button |
+
+### Release 0.2 — Stage 11 (built)
+
+Xdebug, full Composer commands, pnpm/yarn through corepack, Python virtual environments, the `.env` editor and
+`DiagnosticEngine` v1 are built. The Python runtime itself is not managed yet, only venvs.
 
 ### Release 0.3
 
@@ -97,9 +85,17 @@ Release 1.0   Stages 16–18  ██░░░░░░░░░░░░░░�
 
 ## Built but not yet verified end to end
 
+- **Everything added on 2026-09-26 after Stage 11** was written without compiling or running anything: PostgreSQL
+  and Redis services, database backup and restore, custom services, Mailpit `.env` integration and mail
+  checks, "Open with" and file shortcuts, the interactive terminal, and the operation journal. Expect a round of
+  compile fixes. The UI needs `npm install` (new packages: `@xterm/xterm`, `@xterm/addon-fit`) and the core
+  needs `cargo build` (new crate: `portable-pty`) before the lock files are current.
+- **Redis** is the community `redis-windows` build (there is no official Windows build).
+
 - **Helper service install:** the pipe protocol is tested; the one-time UAC install has not been run for real.
 - **Database import:** reading and dumping from real Laragon data is tested; loading into our MySQL/MariaDB is not.
-- **UI:** new screens pass type-checking and lint but have not been checked visually in the running app.
+- **UI:** new screens (including the Stage 11 ones: Xdebug dialog, project tools, `.env` editor, diagnostics card)
+  pass type-checking and lint but have not been checked visually in the running app.
 
 ## Technical debt
 
@@ -110,7 +106,6 @@ Release 1.0   Stages 16–18  ██░░░░░░░░░░░░░░�
 
 ## Suggested order from here
 
-1. Close the 0.1 gaps that block a release: repo files and CI, installer check, clean-VM run.
-2. Finish Stage 11 (Xdebug, venv, corepack, DiagnosticEngine).
-3. The remaining 0.1 features (`.env` editor, terminal, PostgreSQL, Redis, custom services, DB backup).
-4. Then release 0.3, starting with the CLI and manifests.
+1. Build, fix compile errors, run the tests, and look at every new screen in the running app.
+2. Choose the license, verify the installer, run the clean-VM gate, and release 0.1.
+3. Then release 0.3, starting with the CLI and manifests.

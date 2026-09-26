@@ -1,5 +1,5 @@
 import { open, save } from '@tauri-apps/plugin-dialog'
-import { ExternalLink, FolderSearch, Import, Plus, Trash2 } from 'lucide-react'
+import { Archive, ExternalLink, FolderSearch, Import, Plus, RotateCcw, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { Spinner } from '@/components/Spinner'
@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import {
   type ConnectionInfo,
+  type DbBackup,
   type DbUser,
   type ExternalTool,
   type Project,
@@ -25,7 +26,7 @@ import { formatBytes, useAction, usePoll } from '@/lib/hooks'
 import { waitForService } from '@/lib/wait'
 import { confirmAction, confirmThen } from '@/lib/confirm'
 
-type Tab = 'mysql' | 'mariadb' | 'mongodb' | 'sqlite' | 'tools'
+type Tab = 'mysql' | 'mariadb' | 'postgres' | 'mongodb' | 'redis' | 'sqlite' | 'tools'
 
 /** §31–39, §102: SQL databases and users, MongoDB connection info, SQLite files, and external tools. */
 export function DatabasesPage() {
@@ -56,15 +57,18 @@ export function DatabasesPage() {
         tabs={[
           { id: 'mysql', label: 'MySQL', icon: <TechIcon id="mysql" /> },
           { id: 'mariadb', label: 'MariaDB', icon: <TechIcon id="mariadb" /> },
+          { id: 'postgres', label: 'PostgreSQL', icon: <TechIcon id="postgres" /> },
           { id: 'mongodb', label: 'MongoDB', icon: <TechIcon id="mongodb" /> },
+          { id: 'redis', label: 'Redis', icon: <TechIcon id="redis" /> },
           { id: 'sqlite', label: 'SQLite', icon: <TechIcon id="sqlite" /> },
           { id: 'tools', label: 'External tools', icon: <TechIcon id="tools" /> },
         ]}
         value={tab}
         onChange={setTab}
       />
-      {(tab === 'mysql' || tab === 'mariadb') && <SqlEngine key={tab} engine={tab} service={services.find((s) => s.id === tab)} />}
+      {(tab === 'mysql' || tab === 'mariadb' || tab === 'postgres') && <SqlEngine key={tab} engine={tab} service={services.find((s) => s.id === tab)} />}
       {tab === 'mongodb' && <Mongo service={services.find((s) => s.id === 'mongodb')} />}
+      {tab === 'redis' && <Redis service={services.find((s) => s.id === 'redis')} />}
       {tab === 'sqlite' && <Sqlite />}
       {tab === 'tools' && <Tools />}
     </div>
@@ -108,12 +112,16 @@ function ServiceBanner({ service, name }: { service?: ServiceStatus; name: strin
   )
 }
 
-function SqlEngine({ engine, service }: { engine: 'mysql' | 'mariadb'; service?: ServiceStatus }) {
+const ENGINE_NAMES = { mysql: 'MySQL', mariadb: 'MariaDB', postgres: 'PostgreSQL' } as const
+
+function SqlEngine({ engine, service }: { engine: 'mysql' | 'mariadb' | 'postgres'; service?: ServiceStatus }) {
   const [dbs, setDbs] = useState<string[]>([])
   const [users, setUsers] = useState<DbUser[]>([])
   const [newDb, setNewDb] = useState('')
   const [user, setUser] = useState({ user: '', password: '', database: '' })
   const [info, setInfo] = useState<ConnectionInfo | null>(null)
+  const [backups, setBackups] = useState<DbBackup[]>([])
+  const [note, setNote] = useState<string | null>(null)
   const { busy, error, setError, run } = useAction()
   const running = !!service?.running
 
@@ -122,6 +130,8 @@ function SqlEngine({ engine, service }: { engine: 'mysql' | 'mariadb'; service?:
     const [d, u] = await Promise.all([runCommand({ type: 'list_databases', engine }), runCommand({ type: 'list_db_users', engine })])
     if (d.type === 'names') setDbs(d.names)
     if (u.type === 'db_users') setUsers(u.users)
+    const b = await runCommand({ type: 'list_db_backups', engine, database: null })
+    if (b.type === 'db_backups') setBackups(b.backups)
   }
   useEffect(() => {
     refresh().catch((e) => setError(e))
@@ -130,7 +140,7 @@ function SqlEngine({ engine, service }: { engine: 'mysql' | 'mariadb'; service?:
 
   return (
     <div className="flex flex-col gap-4">
-      <ServiceBanner service={service} name={engine === 'mysql' ? 'MySQL' : 'MariaDB'} />
+      <ServiceBanner service={service} name={ENGINE_NAMES[engine]} />
       <ErrorCard error={error} onDismiss={() => setError(null)} />
       {running && (
         <div className="grid gap-4 lg:grid-cols-2">
@@ -149,6 +159,9 @@ function SqlEngine({ engine, service }: { engine: 'mysql' | 'mariadb'; service?:
                 <div key={d} className="flex items-center justify-between rounded-lg border border-border px-3 py-1.5 text-sm">
                   {d}
                   <span className="flex gap-1">
+                    <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => run('backup', async () => { const r = await runCommand({ type: 'backup_database', engine, database: d }); if (r.type === 'text') setNote(`Backup saved to ${r.text}`); await refresh() })}>
+                      {busy === 'backup' ? <Spinner /> : <Archive className="size-3.5" />} Back up
+                    </Button>
                     <Button size="sm" variant="ghost" onClick={() => run('info', async () => { const r = await runCommand({ type: 'get_connection_info', engine, database: d, path: null }); if (r.type === 'connection') setInfo(r.info) })}>Connection</Button>
                     <Button size="sm" variant="secondary" onClick={() => run('open', () => runCommand({ type: 'open_database', engine, database: d, path: null, tool_id: null }))}>
                       <ExternalLink className="size-3.5" /> Open in tool
@@ -164,6 +177,46 @@ function SqlEngine({ engine, service }: { engine: 'mysql' | 'mariadb'; service?:
                   {info.uri}
                 </div>
               )}
+            </CardContent>
+          </Card>
+          <Card className="lg:order-last lg:col-span-2">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Backups</CardTitle>
+              <CardDescription>SQL dumps kept by OpenLocalServer. Restoring first saves the current database as a new backup, so it can be undone.</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-2">
+              {note && <p className="text-xs text-success">{note}</p>}
+              {backups.map((b) => (
+                <div key={b.file} className="flex items-center justify-between rounded-lg border border-border px-3 py-1.5 text-sm">
+                  <span>
+                    <span className="font-medium">{b.database}</span>{' '}
+                    <span className="text-muted-foreground">
+                      {new Date(b.created * 1000).toLocaleString()} · {formatBytes(b.size)}
+                    </span>
+                  </span>
+                  <span className="flex gap-1">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={busy !== null}
+                      onClick={async () => {
+                        if (!(await confirmAction(`Restore "${b.database}" from this backup? The tables in it are replaced. The current data is backed up first.`))) return
+                        void run('restore', async () => {
+                          const r = await runCommand({ type: 'restore_database', engine, database: b.database, file: b.file })
+                          setNote(r.type === 'text' && r.text ? `Restored. The previous data is saved at ${r.text}` : 'Restored.')
+                          await refresh()
+                        })
+                      }}
+                    >
+                      {busy === 'restore' ? <Spinner /> : <RotateCcw className="size-3.5" />} Restore
+                    </Button>
+                    <Button size="sm" variant="ghost" title="Delete this backup" disabled={busy !== null} onClick={() => confirmThen('Delete this backup file?', () => run('delete', async () => { await runCommand({ type: 'delete_db_backup', engine, file: b.file }); await refresh() }))}>
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  </span>
+                </div>
+              ))}
+              {backups.length === 0 && <p className="text-sm text-muted-foreground">No backups yet. Use “Back up” next to a database.</p>}
             </CardContent>
           </Card>
           <Card>
@@ -221,6 +274,34 @@ function Mongo({ service }: { service?: ServiceStatus }) {
           <Button size="sm" variant="secondary" onClick={() => run('open', () => runCommand({ type: 'open_database', engine: 'mongodb', database: null, path: null, tool_id: null }))}>
             <ExternalLink /> Open in tool
           </Button>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+function Redis({ service }: { service?: ServiceStatus }) {
+  const [info, setInfo] = useState<ConnectionInfo | null>(null)
+  const { error, setError } = useAction()
+  useEffect(() => {
+    runCommand({ type: 'get_connection_info', engine: 'redis', database: null, path: null })
+      .then((r) => r.type === 'connection' && setInfo(r.info))
+      .catch((e) => setError(e))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  return (
+    <div className="flex flex-col gap-4">
+      <ServiceBanner service={service} name="Redis" />
+      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <Card>
+        <CardContent className="flex flex-col gap-2 pt-4 text-sm">
+          <div>
+            Health: {service?.running ? (service.healthy ? <Badge variant="success">answering</Badge> : <Badge variant="warning">not answering</Badge>) : <Badge variant="secondary">stopped</Badge>}
+          </div>
+          {info && <div className="rounded-lg bg-muted/40 p-3 font-mono text-xs">host {info.host} · port {info.port}<br />{info.uri}</div>}
+          <p className="text-xs text-muted-foreground">
+            Redis has no official Windows build; this is the community redis-windows build. It listens on 127.0.0.1 only. Logs are on the Logs page (source: Redis).
+          </p>
         </CardContent>
       </Card>
     </div>

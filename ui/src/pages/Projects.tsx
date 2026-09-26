@@ -3,6 +3,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { Folder, FolderPlus, FolderSearch, Play, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
+import { ProjectShortcuts } from '@/components/OpenWithMenu'
 import { ProjectTools } from '@/components/ProjectTools'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -252,6 +253,8 @@ Your project files are not deleted.`))) return
                     </p>
                   )}
                 </div>
+
+                <ProjectShortcuts key={detail.project.id} projectId={detail.project.id} />
 
                 {runOutput.length > 0 && (
                   <pre className="max-h-40 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-all rounded-md bg-muted p-3 font-mono text-xs leading-relaxed">

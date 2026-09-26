@@ -76,6 +76,10 @@ pub enum CoreCommand {
 
     // Service Manager (§22, §31, §61–68, Stage 5)
     ListServices,
+    /// Custom services (§67): the user's own programs, managed like the built-in ones.
+    ListCustomServices,
+    SaveCustomService { service: crate::custom_service::CustomService },
+    RemoveCustomService { id: String },
     StartService { id: String },
     StopService { id: String },
     CreateMysqlDatabase { name: String },
@@ -148,6 +152,12 @@ pub enum CoreCommand {
     CreateDbUser { engine: String, user: String, password: String, database: String },
     ListDbUsers { engine: String },
     GetConnectionInfo { engine: String, database: Option<String>, path: Option<String> },
+    /// SQL dump backups (§32, §34): MySQL, MariaDB and PostgreSQL.
+    BackupDatabase { engine: String, database: String },
+    ListDbBackups { engine: String, database: Option<String> },
+    /// Loads a backup into `database`, after a safety backup of what is there.
+    RestoreDatabase { engine: String, database: String, file: String },
+    DeleteDbBackup { engine: String, file: String },
     ListSqlite,
     DetectSqlite { project_id: String },
     CreateSqlite { path: String, project_id: Option<String> },
@@ -200,6 +210,17 @@ pub enum CoreCommand {
     OpenPath { path: String },
     OpenUrl { url: String },
     OpenInEditor { path: String },
+    /// "Open with" (§97): `app` is `editor`, an editor id like `vscode`, `explorer`, `terminal` or `default`.
+    OpenWith { path: String, app: String },
+    /// The project's usual places: folder, public/, config/, .env, logs, site server config (§100).
+    ListProjectShortcuts { project_id: String },
+
+    // ---- Interactive terminal (§19) ------------------------------------------------
+    /// A shell in the project's folder with its runtimes on PATH. `shell`: `powershell` or `cmd`.
+    OpenTerminal { project_id: Option<String>, shell: Option<String>, rows: u16, cols: u16 },
+    TerminalInput { id: u32, data: String },
+    ResizeTerminal { id: u32, rows: u16, cols: u16 },
+    CloseTerminal { id: u32 },
     /// Known code editors and where each is installed (Settings picker).
     ListEditors,
     /// CPU / memory / disk for the machine and for every managed process tree.
@@ -249,6 +270,19 @@ pub enum CoreCommand {
     ExportEnvFile { project_id: String, file: String, dest: String },
     /// A new env file, copied from `from` when given (e.g. `.env` from `.env.example`).
     CreateEnvFile { project_id: String, file: String, from: Option<String> },
+
+    // ---- Operation journal (§78, §163) ---------------------------------------------
+    ListOperations,
+    /// Forget an interrupted operation once it has been dealt with.
+    DismissOperation { id: u64 },
+
+    // ---- Mailpit integration (§63, §66) ------------------------------------------
+    /// What pointing `file` at Mailpit would change, before anything is written.
+    MailpitEnvPlan { project_id: String, file: String },
+    ApplyMailpitEnv { project_id: String, file: String },
+    /// The mail checklist; with a project it also checks that project's `.env`.
+    MailDiagnostics { project_id: Option<String> },
+    SendTestMail { to: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -277,6 +311,8 @@ pub enum CoreResponse {
     Projects { projects: Vec<Project> },
     ProjectDetail { detail: Box<ProjectDetail> },
     Services { services: Vec<ServiceStatus> },
+    CustomServices { services: Vec<crate::custom_service::CustomService> },
+    CustomService { service: Box<crate::custom_service::CustomService> },
     Secret { key: String, value: Option<String> },
     DbTools { tools: Vec<DbTool> },
     CustomInstalls { entries: Vec<CustomInstall> },
@@ -298,6 +334,7 @@ pub enum CoreResponse {
     Names { names: Vec<String> },
     DbUsers { users: Vec<DbUser> },
     Connection { info: ConnectionInfo },
+    DbBackups { backups: Vec<crate::dbbackup::DbBackup> },
     SqliteList { databases: Vec<SqliteInfo> },
     SqliteInfo { info: SqliteInfo },
     Integrity { result: IntegrityResult },
@@ -317,6 +354,8 @@ pub enum CoreResponse {
     EnvironmentHealth { items: Vec<HealthItem> },
     LogSources { sources: Vec<LogSource> },
     LogLines { source: String, lines: Vec<String> },
+    Shortcuts { shortcuts: Vec<crate::shortcuts::Shortcut> },
+    Terminal { id: u32 },
     Startup { settings: StartupSettings },
     Count { count: usize },
     HelperService { installed: bool },
@@ -332,6 +371,9 @@ pub enum CoreResponse {
     EnvFiles { files: Vec<crate::envfile::EnvFileInfo> },
     EnvFile { view: Box<crate::envfile::EnvFileView> },
     EnvCompare { rows: Vec<crate::envfile::EnvDiffRow> },
+    MailEnvPlan { plan: Box<crate::mail::MailEnvPlan> },
+    Operations { operations: Vec<crate::journal::Operation> },
+    MailChecks { checks: Vec<crate::mail::MailCheck> },
 }
 
 /// A cheap handle onto the shared application state. Cloning shares everything.
@@ -513,6 +555,15 @@ impl Core {
             }
 
             C::ListServices => Ok(R::Services { services: i.services.list() }),
+            C::ListCustomServices => Ok(R::CustomServices { services: i.services.list_custom() }),
+            C::SaveCustomService { service } => {
+                tracing::info!(command = "save_custom_service", name = %service.name);
+                Ok(R::CustomService { service: Box::new(i.services.save_custom(service).map_err(CoreError::ServiceError)?) })
+            }
+            C::RemoveCustomService { id } => {
+                i.services.remove_custom(&id).map_err(CoreError::ServiceError)?;
+                Ok(R::Ok)
+            }
             C::StartService { id } => {
                 tracing::info!(command = "start_service", id = %id);
                 i.services.start(&id).map_err(CoreError::ServiceError)?;
@@ -634,7 +685,9 @@ impl Core {
             }
             C::ApplyWeb { overwrite } => {
                 tracing::info!(command = "apply_web");
-                Ok(R::Applied { report: Box::new(i.apply_web(&overwrite)?) })
+                let retry = CoreCommand::ApplyWeb { overwrite: vec![] };
+                let report = i.journaled("apply_web", "Apply the web configuration", Some("Restore the previous config from a site's history on the Config page."), Some(retry), || i.apply_web(&overwrite))?;
+                Ok(R::Applied { report: Box::new(report) })
             }
             C::StopWeb => {
                 i.web.stop();
@@ -731,6 +784,26 @@ impl Core {
             C::AssociateSqlite { path, project_id } => Ok(R::SqliteInfo { info: i.sqlite.lock().unwrap().associate(&path, project_id)? }),
             C::ForgetSqlite { path } => {
                 i.sqlite.lock().unwrap().forget(&path)?;
+                Ok(R::Ok)
+            }
+            C::BackupDatabase { engine, database } => {
+                tracing::info!(command = "backup_database", engine = %engine, database = %database);
+                let dest = crate::dbbackup::backup(&i.services, &i.paths, &engine, &database).map_err(CoreError::ServiceError)?;
+                Ok(R::Text { text: dest.display().to_string() })
+            }
+            C::ListDbBackups { engine, database } => {
+                Ok(R::DbBackups { backups: crate::dbbackup::list(&i.paths, &engine, database.as_deref()) })
+            }
+            C::RestoreDatabase { engine, database, file } => {
+                tracing::info!(command = "restore_database", engine = %engine, database = %database);
+                let title = format!("Restore {database} ({engine})");
+                let safety = i.journaled("restore_database", &title, Some("The database as it was before is saved as a new backup on the Databases page."), None, || {
+                    crate::dbbackup::restore(&i.services, &i.paths, &engine, &database, std::path::Path::new(&file)).map_err(CoreError::ServiceError)
+                })?;
+                Ok(R::Text { text: safety.map(|p| p.display().to_string()).unwrap_or_default() })
+            }
+            C::DeleteDbBackup { engine, file } => {
+                crate::dbbackup::delete(&i.paths, &engine, std::path::Path::new(&file)).map_err(CoreError::ServiceError)?;
                 Ok(R::Ok)
             }
             C::BackupSqlite { path } => {
@@ -878,7 +951,9 @@ impl Core {
             C::ListForeignDatabases { source_id, password } => Ok(R::Names { names: i.foreign_databases(&source_id, &password)? }),
             C::MigrateDatabases { source_id, password, databases, target } => {
                 tracing::info!(command = "migrate_databases", source = %source_id, target = %target);
-                Ok(R::Migrated { results: i.migrate_databases(&source_id, &password, &databases, &target)? })
+                let title = format!("Import databases into {target}");
+                let results = i.journaled("migrate_databases", &title, Some("Imported databases can be dropped from the Databases page; the source was not changed."), None, || i.migrate_databases(&source_id, &password, &databases, &target))?;
+                Ok(R::Migrated { results })
             }
             C::GetHelperService => Ok(R::HelperService { installed: crate::elevate::service_available() }),
             C::InstallHelperService => {
@@ -943,6 +1018,21 @@ impl Core {
                 i.env_export(&project_id, &file, &dest)?;
                 Ok(R::Ok)
             }
+            C::ListOperations => Ok(R::Operations { operations: i.journal.lock().unwrap().list() }),
+            C::DismissOperation { id } => {
+                i.journal.lock().unwrap().dismiss(id);
+                Ok(R::Ok)
+            }
+            C::MailpitEnvPlan { project_id, file } => Ok(R::MailEnvPlan { plan: Box::new(i.mailpit_env_plan(&project_id, &file)?) }),
+            C::ApplyMailpitEnv { project_id, file } => {
+                tracing::info!(command = "apply_mailpit_env", file = %file);
+                Ok(R::MailEnvPlan { plan: Box::new(i.apply_mailpit_env(&project_id, &file)?) })
+            }
+            C::MailDiagnostics { project_id } => Ok(R::MailChecks { checks: i.mail_diagnostics(project_id.as_deref()) }),
+            C::SendTestMail { to } => {
+                crate::mail::send_test_mail(crate::service::mailpit_smtp_port(), to.trim()).map_err(CoreError::ServiceError)?;
+                Ok(R::Text { text: format!("Test message sent to {}. Open Mailpit to see it.", to.trim()) })
+            }
             C::CreateEnvFile { project_id, file, from } => Ok(R::EnvFile { view: Box::new(i.env_create(&project_id, &file, from.as_deref())?) }),
 
             C::GetStartupSettings => Ok(R::Startup { settings: i.startup_settings() }),
@@ -962,6 +1052,27 @@ impl Core {
                 i.open_in_editor(&path)?;
                 Ok(R::Ok)
             }
+            C::OpenWith { path, app } => {
+                i.open_with(&path, &app)?;
+                Ok(R::Ok)
+            }
+            C::OpenTerminal { project_id, shell, rows, cols } => {
+                tracing::info!(command = "open_terminal");
+                Ok(R::Terminal { id: i.open_terminal(project_id.as_deref(), shell, rows, cols)? })
+            }
+            C::TerminalInput { id, data } => {
+                i.terminals.write(id, &data).map_err(CoreError::ServiceError)?;
+                Ok(R::Ok)
+            }
+            C::ResizeTerminal { id, rows, cols } => {
+                i.terminals.resize(id, rows, cols).map_err(CoreError::ServiceError)?;
+                Ok(R::Ok)
+            }
+            C::CloseTerminal { id } => {
+                i.terminals.close(id);
+                Ok(R::Ok)
+            }
+            C::ListProjectShortcuts { project_id } => Ok(R::Shortcuts { shortcuts: i.project_shortcuts(&project_id)? }),
         }
     }
 }
