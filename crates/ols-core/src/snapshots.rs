@@ -1059,6 +1059,8 @@ mod tests {
             app: None,
             blocks: Default::default(),
             generated_hashes: Default::default(),
+            public_domain: None,
+            tunnel_id: None,
         };
         // Registering already gave it shop.test (automatic domains); make it ours either way.
         if core.inner().domains.lock().unwrap().get("shop.test").is_some() {

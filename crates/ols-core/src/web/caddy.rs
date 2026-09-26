@@ -83,6 +83,17 @@ impl WebServer for Caddy {
             out.push_str(&body(site));
             out.push_str("}\n");
         }
+        if let Some(host) = site.public_domain.as_deref() {
+            let mut public = site.clone();
+            public.hostname = host.to_string();
+            public.wildcard = false;
+            public.tls = None;
+            public.redirect_https = false;
+            public.forwarded_tls = true;
+            out.push_str(&format!("\nhttp://{host}:{} {{\n", ports.http));
+            out.push_str(&body(&public));
+            out.push_str("}\n");
+        }
         out
     }
 
@@ -143,8 +154,11 @@ fn body(site: &SiteSpec) -> String {
         Backend::Proxy { upstream } => {
             out.push_str(&format!("    reverse_proxy {upstream}"));
             // Local HTTPS targets (Docker images) usually have self-signed certificates.
-            if upstream.starts_with("https://") {
-                out.push_str(" {\n        transport http {\n            tls_insecure_skip_verify\n        }\n    }");
+            if upstream.starts_with("https://") || site.forwarded_tls {
+                out.push_str(" {\n");
+                if upstream.starts_with("https://") { out.push_str("        transport http {\n            tls_insecure_skip_verify\n        }\n"); }
+                if site.forwarded_tls { out.push_str("        header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}\n"); }
+                out.push_str("    }");
             }
             out.push('\n');
         }
@@ -169,6 +183,8 @@ mod tests {
             redirect_https: redirect,
             blocks: SiteBlocks::default(),
             custom_snippet: None,
+            public_domain: None,
+            forwarded_tls: false,
         }
     }
 

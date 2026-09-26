@@ -53,6 +53,7 @@ const EMPTY: TunnelConfig = {
   allow_internal: false,
   public_hostname: null,
   acknowledged: false,
+  autostart: false,
 }
 
 const STATE_BADGE: Record<TunnelStatus['state'], { label: string; variant: 'success' | 'warning' | 'destructive' | 'secondary' }> = {
@@ -763,6 +764,7 @@ function TunnelEditor({
             <Input value={t.public_hostname ?? ''} onChange={(e) => set({ public_hostname: e.target.value || null })} placeholder="dev.example.com" />
           </Field>
         )}
+        {t.provider === 'cloudflare' && !!t.public_hostname && <Toggle checked={!!t.autostart} onChange={(v) => set({ autostart: v })} label="Reconnect automatically" hint="Restart the named tunnel after a network interruption or process exit." />}
         <div className="flex flex-col gap-3 rounded-lg border border-border p-3">
           <Toggle checked={protect} onChange={setProtect} label="Ask visitors for a username and password" hint="Checked by OpenLocalServer itself, so it works with every provider." />
           {protect && (

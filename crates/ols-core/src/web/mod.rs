@@ -67,6 +67,8 @@ pub struct SiteSpec {
     pub blocks: SiteBlocks,
     /// Advanced ownership: a user-owned snippet included inside the site.
     pub custom_snippet: Option<PathBuf>,
+    pub public_domain: Option<String>,
+    pub forwarded_tls: bool,
 }
 
 impl SiteSpec {

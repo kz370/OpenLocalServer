@@ -278,6 +278,9 @@ pub struct AiAnswer {
     pub rejected: Vec<String>,
     /// A drafted `environment.yaml` that parses.
     pub manifest: Option<String>,
+    /// A complete file draft, shown for review before the editor uses it.
+    #[serde(default)]
+    pub file: Option<String>,
     /// A drafted k6 script that passes the load-test safety scan.
     pub script: Option<String>,
     pub commit_message: Option<String>,
@@ -842,6 +845,11 @@ impl Inner {
                 }
                 (MANIFEST_INSTRUCTIONS.to_string(), req.question.clone().unwrap_or_else(|| "Draft the environment manifest for this project.".into()))
             }
+            "config" if req.kind == "htaccess" => {
+                let block = req.text.as_deref().unwrap_or("");
+                attachments.push(("Current .htaccess".into(), block.to_string()));
+                ("Suggest a complete Apache .htaccess file. Return the complete file in one ```apache fenced block, then briefly explain the changes. Do not apply it; the user will review it.".to_string(), req.question.clone().unwrap_or_else(|| "Improve this .htaccess file for this PHP site.".into()))
+            }
             "config" => {
                 let block = need(&req.text, "the config to look at")?;
                 attachments.push((req.title.clone().unwrap_or_else(|| "The config".into()), block.to_string()));
@@ -1269,7 +1277,11 @@ async fn run_chat(inner: Arc<Inner>, provider: AiProvider, key: Option<String>, 
     let plan_blocks: Vec<&Fence> = all.iter().filter(|f| f.lang == "ols-plan").collect();
     let (actions, mut rejected) = off_runtime(|| inner.ai_check_plan(&final_text)).unwrap_or_default();
     let mut answer = AiAnswer { provider: provider.name.clone(), model: provider.model.clone(), local: provider.local, actions, used, tokens_in: counted.then_some(tokens_in), tokens_out: counted.then_some(tokens_out), ..Default::default() };
-    let mut text = without_fences(&final_text, &plan_blocks);
+    let mut hidden_blocks = plan_blocks.clone();
+    if req.feature == "config" && req.kind == "htaccess" {
+        hidden_blocks.extend(all.iter().rev().find(|f| matches!(f.lang.as_str(), "apache" | "htaccess")));
+    }
+    let mut text = without_fences(&final_text, &hidden_blocks);
 
     match (req.feature.as_str(), req.kind.as_str()) {
         ("config", "manifest") => {
@@ -1278,6 +1290,12 @@ async fn run_chat(inner: Arc<Inner>, provider: AiProvider, key: Option<String>, 
                     Ok(_) => answer.manifest = Some(format!("{}\n", f.body.trim_end())),
                     Err(e) => rejected.push(format!("The drafted manifest doesn't read as an environment.yaml ({e}), so it can't be saved.")),
                 }
+            }
+        }
+        ("config", "htaccess") => {
+            if let Some(f) = all.iter().rev().find(|f| matches!(f.lang.as_str(), "apache" | "htaccess")) {
+                if f.body.len() <= 256 * 1024 { answer.file = Some(format!("{}\n", f.body.trim_end())); }
+                else { rejected.push("The drafted .htaccess file is larger than 256 KB and was not offered.".into()); }
             }
         }
         ("traffic", "k6") => {

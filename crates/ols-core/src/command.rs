@@ -299,6 +299,10 @@ pub enum CoreCommand {
     /// §73; `dry_run` changes nothing (§77).
     ApplySetup { project_id: String, dry_run: bool },
     GetSetupProgress,
+    /// Preview or import a project's Procfile/Procfile.dev.
+    ImportProcfile { project_id: String, dry_run: bool },
+    ReadSiteFile { hostname: String, name: String },
+    WriteSiteFile { hostname: String, name: String, content: String },
 
     // ---- Stage 13: profiles, modes, workers, scheduler, snapshots ------------------
     ListProfiles,
@@ -563,6 +567,7 @@ pub enum CoreResponse {
     SetupPlan { plan: Box<crate::setup::EnvironmentPlan> },
     Setup { report: Box<crate::setup::SetupReport> },
     SetupProgress { report: Option<Box<crate::setup::SetupReport>> },
+    Procfile { preview: Box<crate::procfile::ProcfilePreview> },
     Profiles { profiles: Vec<crate::profiles::Profile> },
     Profile { profile: Box<crate::profiles::Profile> },
     Modes { view: crate::profiles::ModesView },
@@ -1341,6 +1346,12 @@ impl Core {
                 Ok(R::Setup { report: Box::new(i.apply_setup(&project_id, dry_run)?) })
             }
             C::GetSetupProgress => Ok(R::SetupProgress { report: i.setup_progress().map(Box::new) }),
+            C::ImportProcfile { project_id, dry_run } => {
+                let preview = if dry_run { i.procfile_preview(&project_id)? } else { i.import_procfile(&project_id)? };
+                Ok(R::Procfile { preview: Box::new(preview) })
+            }
+            C::ReadSiteFile { hostname, name } => Ok(R::Text { text: i.read_site_file(&hostname, &name)? }),
+            C::WriteSiteFile { hostname, name, content } => Ok(R::Text { text: i.write_site_file(&hostname, &name, &content)? }),
 
             // ---- Stage 13
             C::ListProfiles => Ok(R::Profiles { profiles: i.profiles.list() }),
@@ -1677,6 +1688,8 @@ mod tests {
             app: app.map(|(exe, runtime)| crate::domain::AppSpec { executable: exe.into(), args: vec![], cwd: root.display().to_string(), runtime: runtime.map(str::to_string) }),
             blocks: Default::default(),
             generated_hashes: Default::default(),
+            public_domain: None,
+            tunnel_id: None,
         };
         let proxy = || crate::domain::SiteKind::Proxy { upstream_port: 3000, upstream_host: None, upstream_https: false };
         let sites = [
@@ -1755,6 +1768,8 @@ mod tests {
             app: None,
             blocks: Default::default(),
             generated_hashes: Default::default(),
+            public_domain: None,
+            tunnel_id: None,
         };
         // Written straight to the store: AddDomain would reject a folder that doesn't exist.
         core.inner().domains.lock().unwrap().add(domain).ok();
@@ -1832,6 +1847,8 @@ mod tests {
             app: None,
             blocks: Default::default(),
             generated_hashes: Default::default(),
+            public_domain: None,
+            tunnel_id: None,
         };
         core.dispatch(CoreCommand::AddDomain { domain: domain("old.test") }).unwrap();
         core.dispatch(CoreCommand::AddDomain { domain: domain("other.test") }).unwrap();
@@ -1941,6 +1958,8 @@ mod tests {
             app: None,
             blocks: SiteBlocks::default(),
             generated_hashes: Default::default(),
+            public_domain: None,
+            tunnel_id: None,
         };
         domain.blocks.headers.push(HeaderRule { name: "X-Test".into(), value: "a\"; } server { listen 1; ".into() });
         assert!(core.dispatch(CoreCommand::AddDomain { domain: domain.clone() }).is_err(), "a header value must not break out of its directive");

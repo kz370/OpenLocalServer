@@ -156,7 +156,7 @@ export function RuntimesPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Runtimes</h1>
         <p className="text-sm text-muted-foreground">
-          Versions are grouped by runtime. Downloads are verified by SHA-256 and cached (§20–21, §127).
+          Multiple versions are grouped by runtime. Downloads are verified by SHA-256 and cached (§20–21, §127).
         </p>
       </div>
 
@@ -241,25 +241,35 @@ export function RuntimesPage() {
           {!loading &&
             groups.map((g) => {
               const installed = g.rows.filter((r) => r.kind === 'custom' || r.entry?.installed).length
+              const grouped = g.rows.length > 1
               return (
                 <Fragment key={g.id}>
-                  <TableRow className="border-b border-border bg-muted/40 hover:bg-muted/40">
-                    <TableCell colSpan={5} className="py-1.5">
-                      <span className="flex items-center gap-2 font-medium">
-                        <TechIcon id={g.id} className="size-4" />
-                        {g.name}
-                        <span className="text-xs font-normal text-muted-foreground">
-                          {installed}/{g.rows.length} installed
+                  {grouped && (
+                    <TableRow className="border-b border-border bg-muted/40 hover:bg-muted/40">
+                      <TableCell colSpan={5} className="py-1.5">
+                        <span className="flex items-center gap-2 font-medium">
+                          <TechIcon id={g.id} className="size-4" />
+                          {g.name}
+                          <span className="text-xs font-normal text-muted-foreground">
+                            {installed}/{g.rows.length} installed
+                          </span>
                         </span>
-                      </span>
-                    </TableCell>
-                  </TableRow>
+                      </TableCell>
+                    </TableRow>
+                  )}
                   {g.rows.map((row) => {
                     const live = progress[row.key]
                     const installing = live && live.kind === 'progress'
                     return (
                       <TableRow key={row.key}>
-                        <TableCell className="w-44 py-1.5" />
+                        <TableCell className="w-44 py-1.5">
+                          {!grouped && (
+                            <span className="flex items-center gap-2 font-medium">
+                              <TechIcon id={g.id} className="size-4" />
+                              {g.name}
+                            </span>
+                          )}
+                        </TableCell>
                         <TableCell className="w-32 py-1.5">{row.version}</TableCell>
                         <TableCell className="w-32 py-1.5">
                           {row.kind === 'custom' ? (

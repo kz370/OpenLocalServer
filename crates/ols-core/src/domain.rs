@@ -152,6 +152,12 @@ pub struct Domain {
     /// detection (§26). Keyed by server because each server has its own file.
     #[serde(default)]
     pub generated_hashes: BTreeMap<String, String>,
+    /// Public hostname routed through a named Cloudflare tunnel.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub public_domain: Option<String>,
+    /// Saved tunnel configuration used to expose this site.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tunnel_id: Option<String>,
 }
 
 fn yes() -> bool {
@@ -190,6 +196,14 @@ impl DomainStore {
     pub fn add(&mut self, mut domain: Domain) -> Result<Domain, CoreError> {
         domain.hostname = domain.hostname.trim().to_ascii_lowercase();
         validate_hostname(&domain.hostname)?;
+        if let Some(host) = domain.public_domain.as_mut() {
+            *host = host.trim().to_ascii_lowercase();
+            validate_hostname(host)?;
+            validate_public_hostname(host)?;
+        }
+        if let Some(other) = self.domains.iter().find(|d| d.hostname == domain.hostname || d.public_domain.as_deref() == Some(domain.hostname.as_str()) || domain.public_domain.as_deref().is_some_and(|host| d.hostname == host || d.public_domain.as_deref() == Some(host))) {
+            return Err(CoreError::DomainError(format!("{} overlaps the existing site or public hostname {}", domain.hostname, other.hostname)));
+        }
         if let Some(reason) = self.conflict(&domain.hostname, domain.wildcard, None) {
             return Err(CoreError::DomainError(reason));
         }
@@ -200,8 +214,16 @@ impl DomainStore {
     }
 
     /// Replaces an existing domain (same hostname) with edited settings.
-    pub fn update(&mut self, domain: Domain) -> Result<Domain, CoreError> {
+    pub fn update(&mut self, mut domain: Domain) -> Result<Domain, CoreError> {
         validate_kind(&domain.kind)?;
+        if let Some(host) = domain.public_domain.as_mut() {
+            *host = host.trim().to_ascii_lowercase();
+            validate_hostname(host)?;
+            validate_public_hostname(host)?;
+        }
+        if let Some(other) = self.domains.iter().filter(|d| d.hostname != domain.hostname).find(|d| d.hostname == domain.hostname || d.public_domain.as_deref() == Some(domain.hostname.as_str()) || domain.public_domain.as_deref().is_some_and(|host| d.hostname == host || d.public_domain.as_deref() == Some(host))) {
+            return Err(CoreError::DomainError(format!("{} overlaps the existing site or public hostname {}", domain.hostname, other.hostname)));
+        }
         let idx = self
             .domains
             .iter()
@@ -242,6 +264,13 @@ impl DomainStore {
         std::fs::rename(&tmp, &self.file)?;
         Ok(())
     }
+}
+
+fn validate_public_hostname(host: &str) -> Result<(), CoreError> {
+    if ["test", "local", "localhost"].iter().any(|suffix| host == *suffix || host.ends_with(&format!(".{suffix}"))) {
+        return Err(CoreError::DomainError("a public domain must use a real DNS hostname, not a local development suffix".into()));
+    }
+    Ok(())
 }
 
 /// RFC-1123 hostname with at least two labels. Strict on purpose: the name lands in a
@@ -308,6 +337,8 @@ mod tests {
             app: None,
             blocks: SiteBlocks::default(),
             generated_hashes: BTreeMap::new(),
+            public_domain: None,
+            tunnel_id: None,
         }
     }
 

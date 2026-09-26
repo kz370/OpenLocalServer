@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
 import { Field, Select, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
-import { type ScheduledTask, type TaskStatus, type Worker, type WorkerPreset, type WorkerStatus, runCommand } from '@/core'
+import { type ProcfilePreview, type ScheduledTask, type TaskStatus, type Worker, type WorkerPreset, type WorkerStatus, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
 import { timeAgo, useAction, usePoll } from '@/lib/hooks'
 
@@ -37,6 +37,8 @@ export function WorkersPanel({ projectId }: { projectId: string }) {
   const [presets, setPresets] = useState<WorkerPreset[]>([])
   const [editWorker, setEditWorker] = useState<Worker | null>(null)
   const [editTask, setEditTask] = useState<ScheduledTask | null>(null)
+  const [procfile, setProcfile] = useState<ProcfilePreview | null>(null)
+  const [procfileOpen, setProcfileOpen] = useState(false)
   const { busy, error, setError, run } = useAction()
 
   const load = useCallback(async () => {
@@ -48,6 +50,9 @@ export function WorkersPanel({ projectId }: { projectId: string }) {
   useEffect(() => {
     runCommand({ type: 'list_worker_presets' }).then((r) => r.type === 'worker_presets' && setPresets(r.presets))
   }, [])
+  useEffect(() => {
+    runCommand({ type: 'import_procfile', project_id: projectId, dry_run: true }).then((r) => r.type === 'procfile' && setProcfile(r.preview)).catch(() => {})
+  }, [projectId])
 
   const act = (key: string, fn: () => Promise<unknown>) => run(key, async () => {
     await fn()
@@ -61,6 +66,12 @@ export function WorkersPanel({ projectId }: { projectId: string }) {
       <ErrorCard error={error} onDismiss={() => setError(null)} />
 
       <section className="flex flex-col gap-2">
+        {procfile && (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
+            <p className="text-sm"><span className="font-medium">{procfile.source} found</span><span className="text-muted-foreground"> · Import its processes into OpenLocalServer</span></p>
+            <Button size="sm" variant="secondary" onClick={() => setProcfileOpen(true)}>Preview import</Button>
+          </div>
+        )}
         <div className="flex items-center justify-between gap-2">
           <h3 className="flex items-center gap-2 text-sm font-medium">
             <Cog className="size-4" /> Queue workers
@@ -127,6 +138,17 @@ export function WorkersPanel({ projectId }: { projectId: string }) {
           </div>
         ))}
       </section>
+
+      {procfileOpen && procfile && (
+        <Dialog open={procfileOpen} onClose={() => setProcfileOpen(false)} title={`Import ${procfile.source}`} description="Review the processes before adding them to this project.">
+          <div className="flex flex-col gap-3 text-sm">
+            {procfile.web && <p><span className="font-medium">Web · port {procfile.web_port}</span><span className="block font-mono text-xs text-muted-foreground">{[procfile.web.executable, ...procfile.web.args].join(' ')}</span></p>}
+            {procfile.workers.map((w) => <p key={w.id}><span className="font-medium">{w.name}</span><span className="block font-mono text-xs text-muted-foreground">{w.command}</span></p>)}
+            {procfile.warnings.map((warning) => <p key={warning} className="text-amber-700 dark:text-amber-300">{warning}</p>)}
+            <div className="flex justify-end gap-2"><Button variant="ghost" onClick={() => setProcfileOpen(false)}>Cancel</Button><Button disabled={busy !== null} onClick={() => run('procfile', async () => { await runCommand({ type: 'import_procfile', project_id: projectId, dry_run: false }); setProcfileOpen(false); setProcfile(null); await load() })}>Import processes</Button></div>
+          </div>
+        </Dialog>
+      )}
 
       <section className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-2">

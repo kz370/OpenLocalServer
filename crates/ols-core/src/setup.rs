@@ -298,11 +298,21 @@ impl Inner {
         let detail = self.project_detail(project_id).ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
         let path = PathBuf::from(&detail.project.path);
         let mut conflicts = Vec::new();
-        let (manifest, manifest_found) = match manifest::read_manifest(&path) {
+        let (mut manifest, manifest_found) = match manifest::read_manifest(&path) {
             Ok(Some(m)) => (m, true),
             Ok(None) => (self.derive_manifest(project_id)?, false),
             Err(e) => return Err(CoreError::EnvError(format!("the manifest could not be read: {e}"))),
         };
+        if manifest.workers.is_empty() {
+            if let Some((_, text)) = crate::procfile::project_file(&path) {
+                match crate::procfile::parse(&text) {
+                    Ok(entries) => for entry in entries.into_iter().filter(|e| e.name != "web") {
+                        manifest.workers.insert(entry.name, WorkerEntry::Custom(crate::manifest::WorkerManifest { command: entry.command, count: 1, timeout_secs: None, memory_mb: None }));
+                    },
+                    Err(e) => conflicts.push(Conflict { kind: "manifest".into(), blocking: false, message: format!("Procfile was not imported: {e}"), resolution: "Correct its process lines, then plan setup again.".into() }),
+                }
+            }
+        }
         let (lock, lock_found) = match manifest::read_lock(&path) {
             Ok(Some(l)) => (l, true),
             Ok(None) => (LockFile::new(), false),
@@ -941,6 +951,8 @@ impl Planner<'_> {
             app: None::<AppSpec>,
             blocks: Default::default(),
             generated_hashes: Default::default(),
+            public_domain: None,
+            tunnel_id: None,
         };
         match existing {
             Some(d) if d.project_id.as_deref().is_some_and(|p| p != project_id) => {

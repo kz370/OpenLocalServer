@@ -223,6 +223,8 @@ mod tests {
             app: None,
             blocks: SiteBlocks::default(),
             generated_hashes: Default::default(),
+            public_domain: None,
+            tunnel_id: None,
         }
     }
 

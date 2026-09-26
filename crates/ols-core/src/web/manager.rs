@@ -351,6 +351,8 @@ impl WebManager {
                 redirect_https: d.https && d.redirect_https,
                 blocks: d.blocks.clone(),
                 custom_snippet,
+                public_domain: d.public_domain.clone(),
+                forwarded_tls: false,
             };
             rendered.push((d.clone(), server.render_site(&spec, ports)));
         }
@@ -1098,6 +1100,8 @@ mod tests {
             app: None,
             blocks: Default::default(),
             generated_hashes: Default::default(),
+            public_domain: None,
+            tunnel_id: None,
         }
     }
 

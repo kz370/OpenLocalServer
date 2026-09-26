@@ -8,6 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
+import { DiffView } from '@/components/CodeEditor'
 import { Textarea, Toggle } from '@/components/ui/form'
 import { type AiAnswer, type AiJobView, type AiPrompt, type AiRequest, runCommand } from '@/core'
 import { type AskAi, registerAiHost, useAiState } from '@/lib/ai'
@@ -243,6 +244,13 @@ export function AiHost({ onNavigate }: { onNavigate: (p: Page) => void }) {
 
             {answer.manifest && (
               <Draft title="Drafted environment.yaml" text={answer.manifest} action={ask?.onManifest ? { label: 'Use this draft', run: () => { ask.onManifest!(answer.manifest!); setAsk(null) } } : undefined} />
+            )}
+            {answer.file && (
+              <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Suggested file · review before applying</p>
+                <DiffView original={ask?.request.text ?? ''} modified={answer.file} language="apache" height="300px" originalLabel="Current .htaccess" modifiedLabel="Suggestion" />
+                {ask?.onFile && <Button className="self-start" onClick={() => { ask.onFile!(answer.file!); setAsk(null) }}><Check /> Apply to editor</Button>}
+              </div>
             )}
             {answer.script && (
               <Draft title="Drafted k6 script (passed the safety scan)" text={answer.script} action={ask?.onScript ? { label: 'Save as a script', run: () => { ask.onScript!(answer.script!); setAsk(null) } } : undefined} />

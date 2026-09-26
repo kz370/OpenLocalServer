@@ -8,7 +8,7 @@ import { Dialog } from '@/components/ui/dialog'
 import { Field, Select, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
-import { type Domain, type Project, type QuickEntryView, runCommand } from '@/core'
+import { type Domain, type Project, type QuickEntryView, type TunnelStatus, runCommand } from '@/core'
 
 const emptyBlocks = { headers: [], redirects: [], mappings: [], upstreams: [], includes: [] }
 
@@ -94,10 +94,13 @@ export function DomainSettings({
   actions: (submit: () => void, busy: boolean) => ReactNode
 }) {
   const [d, setD] = useState<Domain>(domain)
+  const kindType = d.kind.type
   const [appLine, setAppLine] = useState('')
   const [template, setTemplate] = useState('{project}.test')
   const [showApps, setShowApps] = useState(false)
   const [quickApps, setQuickApps] = useState<QuickEntryView[]>([])
+  const [tunnels, setTunnels] = useState<TunnelStatus[]>([])
+  const [httpPort, setHttpPort] = useState(80)
   const [err, setErr] = useState<string | null>(null)
   useEffect(() => {
     setD(domain)
@@ -109,6 +112,10 @@ export function DomainSettings({
     if (!showApps) return
     void runCommand({ type: 'list_quick_apps' }).then((r) => r.type === 'quick_apps' && setQuickApps(r.apps))
   }, [showApps])
+  useEffect(() => {
+    void runCommand({ type: 'list_tunnels' }).then((r) => r.type === 'tunnels' && setTunnels(r.tunnels.map((t) => t)))
+    void runCommand({ type: 'get_web_config' }).then((r) => r.type === 'web_config' && setHttpPort(r.config.http_port))
+  }, [])
   async function pickProject(id: string) {
     const p = projects.find((x) => x.id === id)
     if (!p) return setD((cur) => ({ ...cur, project_id: null }))
@@ -133,7 +140,6 @@ export function DomainSettings({
   }, [domain])
 
   const set = (patch: Partial<Domain>) => setD({ ...d, ...patch })
-  const kindType = d.kind.type
 
   async function browseRoot() {
     const picked = await open({ directory: true, title: 'Document root' })
@@ -151,6 +157,7 @@ export function DomainSettings({
     if (!out.https) out.redirect_https = false
     if (!out.hostname) return setErr('Enter a domain like shop.test')
     if (!out.root) return setErr('Choose the site folder')
+    if (out.public_domain && !out.tunnel_id) return setErr('Choose a saved named Cloudflare tunnel for the public domain')
     onSave(out)
   }
 
@@ -234,6 +241,18 @@ export function DomainSettings({
             </Button>
           </div>
         </Field>
+      </FormSection>
+
+      <FormSection title="Public domain" hint={`In the Cloudflare dashboard, route the public hostname to http://localhost:${httpPort} and set HTTP Host Header to the public hostname. TLS ends at Cloudflare; the local origin stays HTTP.`}>
+        <Field label="Hostname">
+          <Input value={d.public_domain ?? ''} onChange={(e) => set(e.target.value.trim() ? { public_domain: e.target.value.trim() } : { public_domain: null, tunnel_id: null })} placeholder="dev.example.com" />
+        </Field>
+        {d.public_domain && <Field label="Named Cloudflare tunnel" hint={tunnels.some((t) => t.config.provider === 'cloudflare' && !!t.config.public_hostname) ? `Select a saved tunnel; it reconnects after exit. For Laravel, set APP_URL=https://${d.public_domain} and trust Cloudflare's proxy headers.` : 'Create a named tunnel in the Cloudflare dashboard, save its token in Tunnels → Providers, then add it on the Tunnels page.'}>
+          <Select value={d.tunnel_id ?? ''} onChange={(e) => set({ tunnel_id: e.target.value || null })}>
+            <option value="">Choose a tunnel…</option>
+            {tunnels.filter((t) => t.config.provider === 'cloudflare' && !!t.config.public_hostname).map((t) => <option key={t.config.id} value={t.config.id}>{t.config.name} · {t.config.public_hostname}</option>)}
+          </Select>
+        </Field>}
       </FormSection>
 
       <FormSection title="Serves">

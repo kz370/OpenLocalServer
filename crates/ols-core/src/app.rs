@@ -106,6 +106,7 @@ pub struct DomainSummary {
     pub folder: String,
     /// Website type it is listed under: "php", "nodejs", "python", "static" or "proxy".
     pub group: String,
+    pub public_domain: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -139,6 +140,56 @@ const REG_RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
 const REG_VALUE: &str = "OpenLocalServer";
 
 impl Inner {
+    /// Site files are intentionally allowlisted; names never become arbitrary paths.
+    pub fn read_site_file(&self, hostname: &str, name: &str) -> Result<String, CoreError> {
+        if name != ".htaccess" { return Err(CoreError::DomainError("only .htaccess can be edited here".into())); }
+        let domain = self.domains.lock().unwrap().get(hostname).ok_or_else(|| CoreError::DomainError(format!("{hostname} is not a known site")))?;
+        if !matches!(domain.kind, crate::domain::SiteKind::Php { .. }) { return Err(CoreError::DomainError(".htaccess editing is available for PHP sites".into())); }
+        let root = std::fs::canonicalize(&domain.root).map_err(|e| CoreError::DomainError(format!("site document root is unavailable: {e}")))?;
+        let path = root.join(name);
+        let metadata = match std::fs::symlink_metadata(&path) { Ok(m) => m, Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(String::new()), Err(e) => return Err(CoreError::DomainError(e.to_string())) };
+        if !metadata.is_file() || metadata.file_type().is_symlink() { return Err(CoreError::DomainError(".htaccess must be a regular file in this site's document root".into())); }
+        let actual = std::fs::canonicalize(&path).map_err(|e| CoreError::DomainError(e.to_string()))?;
+        if actual.parent() != Some(root.as_path()) { return Err(CoreError::DomainError(".htaccess must be in this site's document root".into())); }
+        std::fs::read_to_string(actual).map_err(|e| CoreError::DomainError(format!("could not read .htaccess: {e}")))
+    }
+
+    pub fn write_site_file(&self, hostname: &str, name: &str, content: &str) -> Result<String, CoreError> {
+        if name != ".htaccess" { return Err(CoreError::DomainError("only .htaccess can be edited here".into())); }
+        if content.len() > 256 * 1024 { return Err(CoreError::DomainError(".htaccess is limited to 256 KB".into())); }
+        let domain = self.domains.lock().unwrap().get(hostname).ok_or_else(|| CoreError::DomainError(format!("{hostname} is not a known site")))?;
+        if !matches!(domain.kind, crate::domain::SiteKind::Php { .. }) { return Err(CoreError::DomainError(".htaccess editing is available for PHP sites".into())); }
+        let root = std::fs::canonicalize(&domain.root).map_err(|e| CoreError::DomainError(format!("site document root is unavailable: {e}")))?;
+        let path = root.join(".htaccess");
+        let old = match std::fs::symlink_metadata(&path) {
+            Ok(meta) => {
+                if !meta.is_file() || meta.file_type().is_symlink() { return Err(CoreError::DomainError(".htaccess must be a regular file in this site's document root".into())); }
+                let actual = std::fs::canonicalize(&path).map_err(|e| CoreError::DomainError(e.to_string()))?;
+                if actual.parent() != Some(root.as_path()) { return Err(CoreError::DomainError(".htaccess must be in this site's document root".into())); }
+                Some(std::fs::read(&actual)?)
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => return Err(CoreError::DomainError(e.to_string())),
+        };
+        if let Some(old) = &old {
+                let history = self.paths.web_dir().join("site-files").join(hostname);
+                std::fs::create_dir_all(&history)?;
+                let mut stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
+                while history.join(format!("{stamp}.htaccess")).exists() { stamp += 1; }
+                std::fs::write(history.join(format!("{stamp}.htaccess")), old)?;
+        }
+        let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
+        let temp = root.join(format!(".htaccess-{}-{stamp}.tmp", std::process::id()));
+        std::fs::write(&temp, content)?;
+        if old.is_some() { std::fs::remove_file(&path)?; }
+        if let Err(e) = std::fs::rename(&temp, &path) {
+            let _ = std::fs::remove_file(&temp);
+            if let Some(old) = old { let _ = std::fs::write(&path, old); }
+            return Err(CoreError::DomainError(format!("could not save .htaccess: {e}")));
+        }
+        Ok(path.display().to_string())
+    }
+
     pub fn new(settings: SettingsService, paths: AppPaths) -> Result<Arc<Self>, CoreError> {
         paths.ensure_dirs()?;
         let supervisor = Arc::new(ProcessSupervisor::new());
@@ -375,6 +426,7 @@ impl Inner {
                 has_app: d.app.is_some(),
                 group: site_group(&d, &projects).into(),
                 folder: site_folder(&d, &projects),
+                public_domain: d.public_domain.clone(),
             })
             .collect()
     }
@@ -542,6 +594,8 @@ impl Inner {
                 app: None,
                 blocks: Default::default(),
                 generated_hashes: Default::default(),
+                public_domain: None,
+                tunnel_id: None,
             };
             match self.add_domain(domain) {
                 Ok(d) => {
@@ -835,6 +889,15 @@ impl Inner {
         if startup.autostart_web {
             if let Err(e) = self.apply_web(&[]) {
                 tracing::warn!(error = %e, "autostart: web server did not start");
+            }
+        }
+        let tunnels: Vec<_> = self.list_tunnels().into_iter().filter(|t| t.config.autostart && t.config.acknowledged && t.config.provider == "cloudflare" && t.config.public_hostname.is_some()).collect();
+        if !tunnels.is_empty() && !startup.autostart_web {
+            if let Err(e) = self.apply_web(&[]) { tracing::warn!(error = %e, "autostart: web server for public domains did not start"); }
+        }
+        for t in tunnels {
+            if let Err(e) = self.start_tunnel(&t.config.id, true) {
+                tracing::warn!(tunnel = %t.config.name, error = %e, "autostart: named Cloudflare tunnel did not start");
             }
         }
     }
@@ -1444,6 +1507,8 @@ impl Inner {
                     app,
                     blocks: SiteBlocks::default(),
                     generated_hashes: BTreeMap::new(),
+                    public_domain: None,
+                    tunnel_id: None,
                 };
                 let cfg = self.web_config();
                 let url = self.site_url(&domain, &cfg);

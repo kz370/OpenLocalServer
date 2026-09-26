@@ -16,6 +16,7 @@ export interface AskAi {
   placeholder?: string
   /** Offered on the answer when the model drafted one that passed the core's checks. */
   onManifest?: (yaml: string) => void
+  onFile?: (content: string) => void
   onScript?: (js: string) => void
   onCommit?: (message: string) => void
 }

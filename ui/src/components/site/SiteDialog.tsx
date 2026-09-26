@@ -34,13 +34,14 @@ import { cn } from '@/lib/utils'
 import type { Web } from '@/lib/web'
 import { ProjectCommands } from '@/components/project/ProjectCommands'
 import { SiteConfigTab } from '@/pages/Config'
+import { HtaccessEditor } from './HtaccessEditor'
 import { DomainSettings, newDomain } from './DomainDialog'
 import { ServersPanel } from './ServersPanel'
 import { SiteLogs } from './SiteLogs'
 
-export type SiteTab = 'settings' | 'config' | 'servers' | 'logs' | 'overview' | 'commands' | ToolTab
+export type SiteTab = 'settings' | 'config' | 'htaccess' | 'servers' | 'logs' | 'overview' | 'commands' | ToolTab
 
-const TAB_ICON: Record<Exclude<SiteTab, 'settings' | 'config' | 'servers' | 'logs'>, ReactNode> = {
+const TAB_ICON: Record<Exclude<SiteTab, 'settings' | 'config' | 'htaccess' | 'servers' | 'logs'>, ReactNode> = {
   overview: <LayoutDashboard />,
   environment: <Layers />,
   terminal: <SquareTerminal />,
@@ -59,7 +60,7 @@ const TAB_ICON: Record<Exclude<SiteTab, 'settings' | 'config' | 'servers' | 'log
 }
 
 /** Tabs that belong to the project, not the site. */
-const SITE_TABS: SiteTab[] = ['settings', 'config', 'servers', 'logs']
+const SITE_TABS: SiteTab[] = ['settings', 'config', 'htaccess', 'servers', 'logs']
 
 /** What the site dialog shows: a site, a project without a site yet, or a site and its project. */
 export interface SiteTarget {
@@ -148,9 +149,23 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
   }
 
   async function save(d: Domain) {
+    d = { ...d, public_domain: d.public_domain?.trim().toLowerCase() || null }
     const old = target.hostname
     if (old && old !== d.hostname) await runCommand({ type: 'rename_domain', hostname: old, new_hostname: d.hostname })
     await runCommand({ type: old ? 'update_domain' : 'add_domain', domain: d })
+    if (d.public_domain && d.tunnel_id) {
+      const listed = await runCommand({ type: 'list_tunnels' })
+      const existing = listed.type === 'tunnels' ? listed.tunnels.find((t) => t.config.id === d.tunnel_id)?.config : undefined
+      if (existing) await runCommand({ type: 'save_tunnel', tunnel: { ...existing, target: `http://${d.hostname}`, public_hostname: d.public_domain, autostart: true } })
+    }
+    if (domain?.tunnel_id && domain.tunnel_id !== d.tunnel_id) {
+      const listed = await runCommand({ type: 'list_tunnels' })
+      const previous = listed.type === 'tunnels' ? listed.tunnels.find((t) => t.config.id === domain.tunnel_id)?.config : undefined
+      if (previous) {
+        await runCommand({ type: 'stop_tunnel', id: previous.id })
+        await runCommand({ type: 'save_tunnel', tunnel: { ...previous, public_hostname: null, autostart: false } })
+      }
+    }
     await apply()
     onSaved(d.hostname)
   }
@@ -158,6 +173,7 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
   const siteItems: { id: SiteTab; label: string; icon: ReactNode }[] = [
     { id: 'settings', label: target.hostname ? 'Site settings' : 'Add a domain', icon: <Settings2 /> },
     ...(target.hostname ? [{ id: 'config' as SiteTab, label: 'Web server config', icon: <FileCode2 /> }] : []),
+    ...(target.hostname && domain?.kind.type === 'php' ? [{ id: 'htaccess' as SiteTab, label: '.htaccess', icon: <FileCode2 /> }] : []),
     { id: 'servers', label: 'Servers', icon: <ServerCog /> },
     { id: 'logs', label: 'Logs & issues', icon: <ScrollText /> },
   ]
@@ -232,6 +248,7 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
               ))}
 
             {tab === 'config' && target.hostname && <SiteConfigTab hostname={target.hostname} />}
+            {tab === 'htaccess' && target.hostname && <HtaccessEditor hostname={target.hostname} />}
             {tab === 'servers' && <ServersPanel web={web} hostname={target.hostname} />}
             {tab === 'logs' && <SiteLogs hostname={target.hostname} projectId={projectId} projectName={project?.name ?? null} />}
 

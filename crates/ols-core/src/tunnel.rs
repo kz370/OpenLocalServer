@@ -27,7 +27,7 @@ use crate::app::Inner;
 use crate::error::CoreError;
 use crate::inspector::{Inspector, RecordedRequest, Target};
 use crate::paths::AppPaths;
-use crate::process::{ProcessId, ProcessSpec};
+use crate::process::{ProcessId, ProcessSpec, RestartPolicy};
 
 /// Ports that are never a tunnel target by default: databases, caches, mail, debuggers.
 const INTERNAL_PORTS: &[(u16, &str)] = &[(3306, "MariaDB"), (5432, "PostgreSQL"), (27017, "MongoDB"), (6379, "Redis"), (1025, "Mailpit SMTP"), (8025, "Mailpit"), (9003, "Xdebug"), (9000, "PHP-FPM")];
@@ -62,6 +62,9 @@ pub struct TunnelConfig {
     /// Set once the user confirmed that this tunnel makes the site public.
     #[serde(default)]
     pub acknowledged: bool,
+    /// Reconnect a named Cloudflare tunnel after the supervised process exits.
+    #[serde(default)]
+    pub autostart: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -146,10 +149,13 @@ impl TunnelProvider for Cloudflare {
     fn note(&self) -> &'static str {
         "No account needed: a random trycloudflare.com address. Save a tunnel token for a named tunnel with your own hostname."
     }
-    fn command(&self, port: u16, token: Option<&str>, _config: &TunnelConfig) -> (Vec<String>, Vec<(String, String)>) {
+    fn command(&self, port: u16, token: Option<&str>, config: &TunnelConfig) -> (Vec<String>, Vec<(String, String)>) {
         let url = format!("http://127.0.0.1:{port}");
         match token {
             // A named tunnel: its token goes in TUNNEL_TOKEN, never on the command line.
+            Some(t) if config.public_hostname.as_deref().is_some_and(|h| !h.is_empty()) => {
+                (vec!["tunnel".into(), "--no-autoupdate".into(), "run".into()], vec![("TUNNEL_TOKEN".into(), t.into())])
+            }
             Some(t) => (vec!["tunnel".into(), "--no-autoupdate".into(), "run".into(), "--url".into(), url], vec![("TUNNEL_TOKEN".into(), t.into())]),
             None => (vec!["tunnel".into(), "--no-autoupdate".into(), "--url".into(), url], vec![]),
         }
@@ -507,9 +513,10 @@ impl Inner {
         let cfg = self.web_config();
         let ours = self.domains.lock().unwrap().get(&host).is_some();
         let resolve = ours.then(|| std::net::SocketAddr::from(([127, 0, 0, 1], if url.scheme() == "https" { cfg.https_port } else { cfg.http_port })));
-        let base = if ours { format!("{}://{host}", url.scheme()) } else { c.target.trim_end_matches('/').to_string() };
+        let routed_host = c.public_hostname.as_deref().filter(|h| !h.is_empty()).unwrap_or(&host);
+        let base = if ours { format!("{}://{routed_host}", url.scheme()) } else { c.target.trim_end_matches('/').to_string() };
         let ca = std::fs::read(self.certs.ca_info().cert_path).ok();
-        let mut inspector = Inspector::start(self.tunnels.runtime.clone(), Target { base, host }, resolve, ca).map_err(err)?;
+        let mut inspector = Inspector::start(self.tunnels.runtime.clone(), Target { base, host: routed_host.to_string() }, resolve, ca).map_err(err)?;
         let password = crate::secrets::get_secret(&password_key(id)).ok().flatten();
         let mut secrets = Vec::new();
         if let (Some(user), Some(pass)) = (c.auth_user.as_deref().filter(|u| !u.is_empty()), password.as_deref()) {
@@ -518,6 +525,9 @@ impl Inner {
         }
 
         let token = if p.uses_token() { crate::secrets::get_secret(&token_key(p.id())).map_err(err)? } else { None };
+        if c.provider == "cloudflare" && c.public_hostname.as_deref().is_some_and(|h| !h.is_empty()) && token.is_none() {
+            return Err(err("a named Cloudflare tunnel needs its saved tunnel token. Add it in Tunnels → Providers."));
+        }
         if c.provider == "ngrok" && token.is_none() {
             return Err(err("ngrok needs your authtoken. Save it in the tunnel's provider settings first."));
         }
@@ -536,7 +546,7 @@ impl Inner {
                 (exe, args, Vec::new())
             };
             env_all.extend(env);
-            Some(self.supervisor.start(ProcessSpec { name: format!("Tunnel: {} ({})", c.name, p.name()), executable: exe.display().to_string(), args, cwd: None, env: env_all, restart: None }))
+            Some(self.supervisor.start(ProcessSpec { name: format!("Tunnel: {} ({})", c.name, p.name()), executable: exe.display().to_string(), args, cwd: None, env: env_all, restart: (c.autostart && c.provider == "cloudflare" && c.public_hostname.is_some()).then_some(RestartPolicy { max_retries: 10, delay_ms: 5000 }) }))
         };
         let public_url = if c.provider == "mock" { Some(format!("http://127.0.0.1:{}", inspector.port)) } else { c.public_hostname.clone().filter(|h| !h.is_empty() && token.is_some()).map(|h| format!("https://{h}")) };
         tracing::info!(tunnel = %c.name, provider = %c.provider, target = %c.target, "tunnel started");
@@ -689,6 +699,7 @@ impl Inner {
                 allow_internal: false,
                 public_hostname: None,
                 acknowledged: false,
+                autostart: false,
             })?,
         };
         self.start_tunnel(&c.id, confirm)
@@ -707,7 +718,7 @@ mod tests {
     }
 
     fn config(target: &str) -> TunnelConfig {
-        TunnelConfig { id: String::new(), project_id: None, name: "t".into(), provider: "mock".into(), target: target.into(), auth_user: None, allow_internal: false, public_hostname: None, acknowledged: false }
+        TunnelConfig { id: String::new(), project_id: None, name: "t".into(), provider: "mock".into(), target: target.into(), auth_user: None, allow_internal: false, public_hostname: None, acknowledged: false, autostart: false }
     }
 
     #[test]

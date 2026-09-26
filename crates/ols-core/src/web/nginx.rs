@@ -58,6 +58,7 @@ impl WebServer for Nginx {
         out.push_str("    client_max_body_size 128m;\n");
         out.push_str("    server_names_hash_bucket_size 128;\n");
         out.push_str("    map $http_upgrade $connection_upgrade {\n        default upgrade;\n        '' close;\n    }\n\n");
+        out.push_str("    map $http_x_forwarded_proto $ols_forwarded_proto { default $http_x_forwarded_proto; '' $scheme; }\n\n");
 
         for pool in pools {
             out.push_str(&format!("    upstream ols_{} {{\n", pool.id));
@@ -118,6 +119,19 @@ impl WebServer for Nginx {
             out.push_str(&body);
             out.push_str("}\n");
         }
+        if let Some(host) = site.public_domain.as_deref() {
+            let mut public = site.clone();
+            public.hostname = host.to_string();
+            public.wildcard = false;
+            public.tls = None;
+            public.redirect_https = false;
+            public.forwarded_tls = true;
+            out.push_str("\nserver {\n");
+            out.push_str(&format!("    listen 127.0.0.1:{};\n", ports.http));
+            out.push_str(&format!("    server_name {host};\n"));
+            out.push_str(&render_body(&public));
+            out.push_str("}\n");
+        }
         out
     }
 
@@ -163,7 +177,7 @@ impl WebServer for Nginx {
 /// keep "downloading" the old wrong response. Unchanged files still come back as a 304.
 fn render_body(site: &SiteSpec) -> String {
     let mut out = String::new();
-    let https = site.tls.is_some();
+    let https = site.tls.is_some() || site.forwarded_tls;
     out.push_str(&format!("    root \"{}\";\n", site.root.replace('\\', "/")));
     out.push_str("    index index.php index.html index.htm;\n");
 
@@ -181,7 +195,7 @@ fn render_body(site: &SiteSpec) -> String {
     }
     for mapping in &site.blocks.mappings {
         out.push_str(&format!("    location {} {{\n", mapping.path));
-        out.push_str(&proxy_directives(&mapping.upstream, "        "));
+        out.push_str(&proxy_directives(&mapping.upstream, "        ", site.forwarded_tls));
         out.push_str("    }\n");
     }
 
@@ -193,6 +207,7 @@ fn render_body(site: &SiteSpec) -> String {
             out.push_str("        include fastcgi_params;\n");
             out.push_str("        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;\n");
             out.push_str("        fastcgi_param PATH_INFO $fastcgi_path_info;\n");
+            out.push_str("        fastcgi_param HTTP_X_FORWARDED_PROTO $ols_forwarded_proto;\n");
             if https {
                 out.push_str("        fastcgi_param HTTPS on;\n");
             }
@@ -203,7 +218,7 @@ fn render_body(site: &SiteSpec) -> String {
         }
         Backend::Proxy { upstream } => {
             out.push_str("    location / {\n");
-            out.push_str(&proxy_directives(upstream, "        "));
+            out.push_str(&proxy_directives(upstream, "        ", site.forwarded_tls));
             out.push_str("    }\n");
         }
         Backend::Static => {
@@ -213,14 +228,14 @@ fn render_body(site: &SiteSpec) -> String {
     out
 }
 
-fn proxy_directives(upstream: &str, indent: &str) -> String {
+fn proxy_directives(upstream: &str, indent: &str, forwarded_tls: bool) -> String {
     let mut out = String::new();
     out.push_str(&format!("{indent}proxy_pass {upstream};\n"));
     out.push_str(&format!("{indent}proxy_http_version 1.1;\n"));
     out.push_str(&format!("{indent}proxy_set_header Host $host;\n"));
     out.push_str(&format!("{indent}proxy_set_header X-Real-IP $remote_addr;\n"));
     out.push_str(&format!("{indent}proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n"));
-    out.push_str(&format!("{indent}proxy_set_header X-Forwarded-Proto $scheme;\n"));
+    out.push_str(&format!("{indent}proxy_set_header X-Forwarded-Proto {};\n", if forwarded_tls { "$ols_forwarded_proto" } else { "$scheme" }));
     // WebSocket upgrade — Vite/Next HMR needs it.
     out.push_str(&format!("{indent}proxy_set_header Upgrade $http_upgrade;\n"));
     out.push_str(&format!("{indent}proxy_set_header Connection $connection_upgrade;\n"));
@@ -244,6 +259,8 @@ mod tests {
             redirect_https: redirect,
             blocks: SiteBlocks::default(),
             custom_snippet: None,
+            public_domain: None,
+            forwarded_tls: false,
         }
     }
 

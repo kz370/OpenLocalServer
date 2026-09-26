@@ -311,7 +311,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                     <TableCell className="max-w-72 truncate text-xs text-muted-foreground" title={d?.folder ?? p?.path}>
                       {d?.folder ?? p?.path}
                     </TableCell>
-                    <TableCell>{d ? d.https ? <Badge variant="success">HTTPS</Badge> : <Badge variant="outline">HTTP</Badge> : null}</TableCell>
+                    <TableCell>{d && <div className="flex flex-wrap gap-1">{d.https ? <Badge variant="success">HTTPS</Badge> : <Badge variant="outline">HTTP</Badge>}{d.public_domain && <Badge variant="warning" title={`Public through Cloudflare: ${d.public_domain}`}>Public · {d.public_domain}</Badge>}</div>}</TableCell>
                     <TableCell>
                       <StatusDot site={d} running={!!status?.running} />
                     </TableCell>

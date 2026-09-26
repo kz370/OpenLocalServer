@@ -44,6 +44,7 @@ pub mod plugin;
 pub mod port;
 pub mod process;
 pub mod profiles;
+pub mod procfile;
 pub mod project;
 pub mod project_tools;
 pub mod quickapp;

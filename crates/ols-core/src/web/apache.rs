@@ -131,6 +131,19 @@ impl WebServer for Apache {
             out.push_str(&body(site));
             out.push_str("</VirtualHost>\n");
         }
+        if let Some(host) = site.public_domain.as_deref() {
+            let mut public = site.clone();
+            public.hostname = host.to_string();
+            public.wildcard = false;
+            public.tls = None;
+            public.redirect_https = false;
+            public.public_domain = None;
+            public.forwarded_tls = true;
+            out.push_str(&format!("\n<VirtualHost 127.0.0.1:{}>\n", ports.http));
+            out.push_str(&head(&public));
+            out.push_str(&body(&public));
+            out.push_str("    RequestHeader set X-Forwarded-Proto \"https\"\n</VirtualHost>\n");
+        }
         out
     }
 
@@ -261,6 +274,8 @@ mod tests {
             redirect_https: redirect,
             blocks: SiteBlocks::default(),
             custom_snippet: None,
+            public_domain: None,
+            forwarded_tls: false,
         }
     }
 

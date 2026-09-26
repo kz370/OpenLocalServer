@@ -267,6 +267,16 @@ export interface Domain {
   app: AppSpec | null
   blocks: SiteBlocks
   generated_hashes: Record<string, string>
+  public_domain?: string | null
+  tunnel_id?: string | null
+}
+
+export interface ProcfilePreview {
+  source: string
+  workers: Worker[]
+  web: AppSpec | null
+  web_port: number | null
+  warnings: string[]
 }
 export interface DomainSummary {
   hostname: string
@@ -279,6 +289,7 @@ export interface DomainSummary {
   folder: string
   /** Website type the site is listed under. */
   group: 'php' | 'nodejs' | 'python' | 'static' | 'proxy'
+  public_domain?: string | null
 }
 
 export interface WebConfig {
@@ -727,6 +738,9 @@ export type CoreCommand =
   | { type: 'plan_setup'; project_id: string }
   | { type: 'apply_setup'; project_id: string; dry_run: boolean }
   | { type: 'get_setup_progress' }
+  | { type: 'import_procfile'; project_id: string; dry_run: boolean }
+  | { type: 'read_site_file'; hostname: string; name: '.htaccess' }
+  | { type: 'write_site_file'; hostname: string; name: '.htaccess'; content: string }
   // Stage 13
   | { type: 'list_profiles' }
   | { type: 'save_profile'; profile: Profile }
@@ -940,6 +954,7 @@ export type CoreResponse =
   | { type: 'setup_plan'; plan: EnvironmentPlan }
   | { type: 'setup'; report: SetupReport }
   | { type: 'setup_progress'; report: SetupReport | null }
+  | { type: 'procfile'; preview: ProcfilePreview }
   | { type: 'profiles'; profiles: Profile[] }
   | { type: 'profile'; profile: Profile }
   | { type: 'modes'; view: ModesView }
@@ -1428,6 +1443,7 @@ export interface TunnelConfig {
   allow_internal: boolean
   public_hostname: string | null
   acknowledged: boolean
+  autostart?: boolean
 }
 
 export interface TunnelProvider {
@@ -1793,6 +1809,7 @@ export interface AiAnswer {
   actions: AiAction[]
   rejected: string[]
   manifest: string | null
+  file: string | null
   script: string | null
   commit_message: string | null
   provider: string
