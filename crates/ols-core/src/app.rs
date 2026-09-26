@@ -651,6 +651,29 @@ impl Inner {
     pub fn open_database(&self, engine: &str, database: Option<&str>, path: Option<&str>, tool_id: Option<&str>) -> Result<(), CoreError> {
         let info = self.services.connection_info(engine, database, path).map_err(svc)?;
 
+        let detected = dbtools::detect_db_tools();
+        let custom_path = |id: &str| self.custom_installs.lock().unwrap().resolve(id, None).map(|c| c.path.clone());
+        let find = |id: &str| custom_path(id).or_else(|| detected.iter().find(|t| t.id == id).and_then(|t| t.found_path.clone()));
+
+        if let Some(id) = tool_id {
+            if id == "heidisql" {
+                let exe = find(id).ok_or_else(|| svc("HeidiSQL was not found. Install it or locate it from Services."))?;
+                let args = dbtools::heidisql_args(&info).ok_or_else(|| svc("HeidiSQL can't open that database"))?;
+                return dbtools::launch(&exe, &args, true).map_err(svc);
+            }
+            if id == "pgadmin" {
+                let exe = find(id).ok_or_else(|| svc("pgAdmin 4 was not found. Install it or locate it from Services."))?;
+                return dbtools::launch(&exe, &[], false).map_err(svc);
+            }
+            if id == "nosqlbooster" {
+                if engine != "mongodb" {
+                    return Err(svc("NoSQLBooster only supports MongoDB"));
+                }
+                let exe = find(id).ok_or_else(|| svc("NoSQLBooster was not found. Install it or locate it from Services."))?;
+                return dbtools::launch(&exe, &[], false).map_err(svc);
+            }
+        }
+
         // 1) an explicitly chosen registered tool, 2) the first registered for the engine,
         // 3) HeidiSQL (mariadb/sqlite) or pgAdmin if detected.
         let registered = {
@@ -664,10 +687,6 @@ impl Inner {
             let args = dbtools::expand_args(&tool.args, &info);
             return dbtools::launch(&tool.executable, &args, false).map_err(svc);
         }
-        let custom_path = |id: &str| self.custom_installs.lock().unwrap().resolve(id, None).map(|c| c.path.clone());
-        let detected = dbtools::detect_db_tools();
-        let find = |id: &str| custom_path(id).or_else(|| detected.iter().find(|t| t.id == id).and_then(|t| t.found_path.clone()));
-
         match engine {
             "mariadb" | "sqlite" => {
                 let exe = find("heidisql").ok_or_else(|| svc("HeidiSQL was not found. Install it, locate it, or register another tool for this engine."))?;
@@ -679,6 +698,10 @@ impl Inner {
                     return dbtools::launch(&exe, &args, true).map_err(svc);
                 }
                 let exe = find("pgadmin").ok_or_else(|| svc("Neither HeidiSQL nor pgAdmin was found. Install one, locate it, or register another tool for this engine."))?;
+                dbtools::launch(&exe, &[], false).map_err(svc)
+            }
+            "mongodb" => {
+                let exe = find("nosqlbooster").ok_or_else(|| svc("NoSQLBooster was not found. Install it or locate it from Services."))?;
                 dbtools::launch(&exe, &[], false).map_err(svc)
             }
             other => Err(svc(format!("No tool is registered for {other}. Add one under External tools."))),

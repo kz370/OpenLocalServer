@@ -192,6 +192,7 @@ export interface DbTool {
   id: string
   name: string
   found_path: string | null
+  engines: string[]
 }
 
 export interface CustomInstall {

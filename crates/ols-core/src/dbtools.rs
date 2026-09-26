@@ -11,12 +11,14 @@ pub struct DbTool {
     pub id: String,
     pub name: String,
     pub found_path: Option<String>,
+    pub engines: Vec<String>,
 }
 
 pub fn detect_db_tools() -> Vec<DbTool> {
     vec![
-        DbTool { id: "heidisql".into(), name: "HeidiSQL".into(), found_path: find_heidisql() },
-        DbTool { id: "pgadmin".into(), name: "pgAdmin 4".into(), found_path: find_pgadmin() },
+        DbTool { id: "heidisql".into(), name: "HeidiSQL".into(), found_path: find_heidisql(), engines: vec!["mariadb".into(), "postgres".into(), "sqlite".into()] },
+        DbTool { id: "pgadmin".into(), name: "pgAdmin 4".into(), found_path: find_pgadmin(), engines: vec!["postgres".into()] },
+        DbTool { id: "nosqlbooster".into(), name: "NoSQLBooster for MongoDB".into(), found_path: find_nosqlbooster(), engines: vec!["mongodb".into()] },
     ]
 }
 
@@ -48,6 +50,27 @@ fn find_pgadmin() -> Option<String> {
         }
     }
     find_on_path("pgAdmin4.exe")
+}
+
+fn find_nosqlbooster() -> Option<String> {
+    let exe = "NoSQLBooster for MongoDB.exe";
+    if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
+        let candidate = PathBuf::from(local_app_data).join("Programs").join("nosqlbooster4mongo").join(exe);
+        if candidate.is_file() {
+            return Some(candidate.display().to_string());
+        }
+    }
+    for base in [
+        PathBuf::from(r"C:\Program Files\nosqlbooster4mongo"),
+        PathBuf::from(r"C:\Program Files\NoSQLBooster for MongoDB"),
+        PathBuf::from(r"C:\Program Files (x86)\nosqlbooster4mongo"),
+    ] {
+        let candidate = base.join(exe);
+        if candidate.is_file() {
+            return Some(candidate.display().to_string());
+        }
+    }
+    find_on_path(exe)
 }
 
 // ---------------------------------------------------------------------------------------

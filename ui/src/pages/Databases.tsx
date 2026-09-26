@@ -15,6 +15,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import {
   type ConnectionInfo,
   type DbBackup,
+  type DbTool,
+  type Diagnostic,
   type DbUser,
   type ExternalTool,
   type Project,
@@ -27,13 +29,57 @@ import { waitForService } from '@/lib/wait'
 import { confirmAction, confirmThen } from '@/lib/confirm'
 
 type Tab = 'mariadb' | 'postgres' | 'mongodb' | 'redis' | 'sqlite' | 'tools'
+type DatabaseToolProps = {
+  dbTools: DbTool[]
+  externalTools: ExternalTool[]
+  defaultTools: Record<string, string>
+  setDefaultTool: (engine: string, id: string) => Promise<void>
+}
 
 /** §31–39, §102: SQL databases and users, MongoDB connection info, SQLite files, and external tools. */
 export function DatabasesPage() {
   const [tab, setTab] = useState<Tab>('mariadb')
   const [migrating, setMigrating] = useState(false)
   const [services, setServices] = useState<ServiceStatus[]>([])
+  const [dbTools, setDbTools] = useState<DbTool[]>([])
+  const [externalTools, setExternalTools] = useState<ExternalTool[]>([])
+  const [defaultTools, setDefaultTools] = useState<Record<string, string>>({})
   const { error, setError } = useAction()
+
+  useEffect(() => {
+    Promise.all([
+      runCommand({ type: 'list_db_tools' }),
+      runCommand({ type: 'list_external_tools' }),
+      ...['mariadb', 'postgres', 'mongodb', 'sqlite'].map((engine) => runCommand({ type: 'get_setting', key: `database.default_tool.${engine}` })),
+    ]).then(([detected, external, ...settings]) => {
+      if (detected.type === 'db_tools') setDbTools(detected.tools)
+      if (external.type === 'external_tools') setExternalTools(external.tools)
+      const defaults: Record<string, string> = {}
+      const configured = new Set<string>()
+      settings.forEach((setting, index) => {
+        const engine = ['mariadb', 'postgres', 'mongodb', 'sqlite'][index]
+        if (setting.type === 'setting' && typeof setting.value === 'string') {
+          defaults[engine] = setting.value
+          configured.add(engine)
+        }
+      })
+      const builtinTools = detected.type === 'db_tools' ? detected.tools : []
+      const registeredTools = external.type === 'external_tools' ? external.tools : []
+      for (const [engine, preferred] of Object.entries({ mariadb: 'heidisql', postgres: 'heidisql', mongodb: 'nosqlbooster', sqlite: 'heidisql' })) {
+        if (configured.has(engine)) continue
+        const available = builtinTools.some((tool) => tool.id === preferred && tool.found_path) || registeredTools.some((tool) => tool.id === preferred && tool.engines.includes(engine))
+        if (available) defaults[engine] = preferred
+        else if (engine === 'postgres' && builtinTools.some((tool) => tool.id === 'pgadmin' && tool.found_path)) defaults[engine] = 'pgadmin'
+        else defaults[engine] = registeredTools.find((tool) => tool.engines.includes(engine))?.id ?? ''
+      }
+      setDefaultTools(defaults)
+    }).catch((e) => setError(e as Diagnostic))
+  }, [])
+
+  async function setDefaultTool(engine: string, id: string) {
+    setDefaultTools((current) => ({ ...current, [engine]: id }))
+    await runCommand({ type: 'set_setting', key: `database.default_tool.${engine}`, value: id })
+  }
 
   usePoll(async () => {
     const r = await runCommand({ type: 'list_services' })
@@ -65,10 +111,10 @@ export function DatabasesPage() {
         value={tab}
         onChange={setTab}
       />
-      {(tab === 'mariadb' || tab === 'postgres') && <SqlEngine key={tab} engine={tab} service={services.find((s) => s.id === tab)} />}
-      {tab === 'mongodb' && <Mongo service={services.find((s) => s.id === 'mongodb')} />}
+      {(tab === 'mariadb' || tab === 'postgres') && <SqlEngine key={tab} engine={tab} service={services.find((s) => s.id === tab)} dbTools={dbTools} externalTools={externalTools} defaultTools={defaultTools} setDefaultTool={setDefaultTool} />}
+      {tab === 'mongodb' && <Mongo service={services.find((s) => s.id === 'mongodb')} dbTools={dbTools} externalTools={externalTools} defaultTools={defaultTools} setDefaultTool={setDefaultTool} />}
       {tab === 'redis' && <Redis service={services.find((s) => s.id === 'redis')} />}
-      {tab === 'sqlite' && <Sqlite />}
+      {tab === 'sqlite' && <Sqlite dbTools={dbTools} externalTools={externalTools} defaultTools={defaultTools} setDefaultTool={setDefaultTool} />}
       {tab === 'tools' && <Tools />}
     </div>
   )
@@ -111,9 +157,49 @@ function ServiceBanner({ service, name }: { service?: ServiceStatus; name: strin
   )
 }
 
+function OpenDatabaseButton({ engine, database = null, path = null, dbTools, externalTools, defaultTools, setDefaultTool }: DatabaseToolProps & { engine: string; database?: string | null; path?: string | null }) {
+  const [note, setNote] = useState<string | null>(null)
+  const { busy, error, setError, run } = useAction()
+  const choices = [
+    ...dbTools.filter((tool) => tool.engines.includes(engine) && tool.found_path),
+    ...externalTools.filter((tool) => tool.engines.includes(engine)).map((tool) => ({ id: tool.id, name: tool.name, found_path: tool.executable, engines: tool.engines })),
+  ]
+  const selectedTool = defaultTools[engine] ?? ''
+
+  return (
+    <span className="inline-flex flex-col items-end gap-1">
+      <span className="inline-flex items-center gap-1">
+        <Select aria-label={`Default ${engine} database tool`} className="h-8 w-36 text-xs" value={selectedTool} onChange={(event) => { void setDefaultTool(engine, event.target.value).catch((e) => setError(e as Diagnostic)) }}>
+          <option value="">Automatic tool</option>
+          {choices.map((tool) => <option key={tool.id} value={tool.id}>{tool.name}</option>)}
+        </Select>
+        <Button size="sm" variant="secondary" disabled={busy !== null} onClick={() => run('open', async () => {
+          setNote(null)
+          if (engine === 'mongodb' && selectedTool === 'nosqlbooster') {
+            const connection = await runCommand({ type: 'get_connection_info', engine, database, path })
+            if (connection.type === 'connection') {
+              try {
+                await navigator.clipboard.writeText(connection.info.uri)
+              } catch {
+                setNote(`Opened NoSQLBooster. Connect → From URI: ${connection.info.uri}`)
+              }
+            }
+          }
+          await runCommand({ type: 'open_database', engine, database, path, tool_id: selectedTool || null })
+          if (engine === 'mongodb' && selectedTool === 'nosqlbooster') setNote((current) => current ?? 'MongoDB connection URI copied. In NoSQLBooster, choose Connect → From URI and paste.')
+        })}>
+          <ExternalLink className="size-3.5" /> Open in
+        </Button>
+      </span>
+      {note && <span className="max-w-80 text-right text-xs text-muted-foreground">{note}</span>}
+      {error && <span className="text-xs text-destructive">{error.problem}</span>}
+    </span>
+  )
+}
+
 const ENGINE_NAMES = { mariadb: 'MariaDB', postgres: 'PostgreSQL' } as const
 
-function SqlEngine({ engine, service }: { engine: 'mariadb' | 'postgres'; service?: ServiceStatus }) {
+function SqlEngine({ engine, service, ...toolProps }: { engine: 'mariadb' | 'postgres'; service?: ServiceStatus } & DatabaseToolProps) {
   const [dbs, setDbs] = useState<string[]>([])
   const [users, setUsers] = useState<DbUser[]>([])
   const [newDb, setNewDb] = useState('')
@@ -172,9 +258,7 @@ function SqlEngine({ engine, service }: { engine: 'mariadb' | 'postgres'; servic
                               {busy === 'backup' ? <Spinner /> : <Archive className="size-3.5" />} Back up
                             </Button>
                             <Button size="sm" variant="ghost" onClick={() => run('info', async () => { const r = await runCommand({ type: 'get_connection_info', engine, database: d, path: null }); if (r.type === 'connection') setInfo(r.info) })}>Connection</Button>
-                            <Button size="sm" variant="secondary" onClick={() => run('open', () => runCommand({ type: 'open_database', engine, database: d, path: null, tool_id: null }))}>
-                              <ExternalLink className="size-3.5" /> Open in tool
-                            </Button>
+                            <OpenDatabaseButton engine={engine} database={d} {...toolProps} />
                           </span>
                         </TableCell>
                       </TableRow>
@@ -285,21 +369,17 @@ function SqlEngine({ engine, service }: { engine: 'mariadb' | 'postgres'; servic
   )
 }
 
-function Mongo({ service }: { service?: ServiceStatus }) {
-  const { run, error, setError } = useAction()
+function Mongo({ service, ...toolProps }: { service?: ServiceStatus } & DatabaseToolProps) {
   return (
     <div className="flex flex-col gap-4">
       <ServiceBanner service={service} name="MongoDB" />
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
       <Card>
         <CardContent className="flex items-center justify-between gap-3 pt-4 text-sm">
           <div>
             Health: {service?.running ? (service.healthy ? <Badge variant="success">answering</Badge> : <Badge variant="warning">not answering</Badge>) : <Badge variant="secondary">stopped</Badge>}
             <div className="mt-1 text-xs text-muted-foreground">Logs are on the Logs page (source: MongoDB).</div>
           </div>
-          <Button size="sm" variant="secondary" onClick={() => run('open', () => runCommand({ type: 'open_database', engine: 'mongodb', database: null, path: null, tool_id: null }))}>
-            <ExternalLink /> Open in tool
-          </Button>
+          <OpenDatabaseButton engine="mongodb" {...toolProps} />
         </CardContent>
       </Card>
     </div>
@@ -334,7 +414,7 @@ function Redis({ service }: { service?: ServiceStatus }) {
   )
 }
 
-function Sqlite() {
+function Sqlite(toolProps: DatabaseToolProps) {
   const [dbs, setDbs] = useState<SqliteInfo[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [projectId, setProjectId] = useState('')
@@ -389,9 +469,7 @@ function Sqlite() {
                 <Button size="sm" variant="ghost" onClick={() => run('check', async () => { const r = await runCommand({ type: 'check_sqlite', path: d.path }); if (r.type === 'integrity') setMsg(r.result.ok ? `${d.name}: integrity check passed.` : `${d.name}: ${r.result.detail}`) })}>Integrity</Button>
                 <Button size="sm" variant="ghost" onClick={() => run('backup', async () => { const r = await runCommand({ type: 'backup_sqlite', path: d.path }); if (r.type === 'text') setMsg(`Backed up to ${r.text}`); await refresh() })}>Backup</Button>
                 <Button size="sm" variant="ghost" disabled={d.backups.length === 0} onClick={() => run('restore', async () => { if (!(await confirmAction('Restore the newest backup? The current file is backed up first.'))) return; const r = await runCommand({ type: 'restore_sqlite', path: d.path, backup: d.backups[0] }); if (r.type === 'text') setMsg(`Restored. Previous file saved as ${r.text || '(none)'}`); await refresh() })}>Restore</Button>
-                <Button size="sm" variant="secondary" onClick={() => run('open', () => runCommand({ type: 'open_database', engine: 'sqlite', database: null, path: d.path, tool_id: null }))}>
-                  <ExternalLink className="size-3.5" /> Open
-                </Button>
+                <OpenDatabaseButton engine="sqlite" path={d.path} {...toolProps} />
                 <Button size="sm" variant="ghost" title="Forget (the file stays on disk)" onClick={() => confirmThen(`Forget ${d.name}? The file stays on disk.`, () => run('forget', async () => { await runCommand({ type: 'forget_sqlite', path: d.path }); await refresh() }))}>
                   <Trash2 className="size-3.5" />
                 </Button>
