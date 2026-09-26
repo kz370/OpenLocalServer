@@ -19,7 +19,7 @@ import { confirmAction } from '@/lib/confirm'
 
 /** Runtimes a user may already have somewhere else and want to point at. */
 const LOCATABLE = ['php', 'node', 'python']
-const ONLINE_CATALOGS = new Set(['nginx', 'node', 'mariadb', 'php'])
+const ONLINE_CATALOGS = new Set(['nginx', 'node', 'mariadb', 'php', 'apache', 'composer', 'mongodb', 'postgres', 'redis'])
 
 function versionKey(v: string): number[] {
   return v.split('.').map((p) => parseInt(p, 10) || 0)
@@ -60,6 +60,7 @@ export function RuntimesPage() {
   const [customInstalls, setCustomInstalls] = useState<CustomInstall[]>([])
   const [manageId, setManageId] = useState<string | null>(null)
   const [installChoices, setInstallChoices] = useState<Record<string, string>>({})
+  const [versionSearch, setVersionSearch] = useState('')
   const [customId, setCustomId] = useState('php')
   const [customLabel, setCustomLabel] = useState('')
   const [extVersion, setExtVersion] = useState<string | null>(null)
@@ -163,6 +164,7 @@ export function RuntimesPage() {
     setError(null)
     setNotice(null)
     setManageId(group.id)
+    setVersionSearch('')
     setInstallChoices((prev) => ({ ...prev, [group.id]: group.rows.find((r) => r.kind === 'managed' && !r.entry?.installed)?.version ?? '' }))
     if (!ONLINE_CATALOGS.has(group.id)) {
       setCatalogRefreshing(false)
@@ -203,8 +205,16 @@ export function RuntimesPage() {
 
   const managedGroup = groups.find((g) => g.id === manageId) ?? null
   const installable = managedGroup?.rows.filter((r) => r.kind === 'managed' && !r.entry?.installed) ?? []
+  const filteredInstallable = installable.filter((row) => row.version.toLowerCase().includes(versionSearch.trim().toLowerCase()))
+  const installableByMajor = new Map<string, Row[]>()
+  for (const row of filteredInstallable) {
+    const major = row.version.match(/^\d+/)?.[0] ?? 'Other'
+    const key = major === 'Other' ? major : `${major}.x`
+    installableByMajor.set(key, [...(installableByMajor.get(key) ?? []), row])
+  }
   const rememberedChoice = installChoices[manageId ?? '']
   const selectedInstall = rememberedChoice && installable.some((r) => r.version === rememberedChoice) ? rememberedChoice : installable[0]?.version ?? ''
+  const selectedInstallVisible = filteredInstallable.some((r) => r.version === selectedInstall)
   const selectedInstallEvent = progress[`${manageId}@${selectedInstall}`]
   const installingChoice = selectedInstallEvent?.kind === 'progress'
   const installedRows = managedGroup?.rows.filter((r) => r.kind === 'custom' || r.entry?.installed) ?? []
@@ -334,7 +344,7 @@ export function RuntimesPage() {
         open={!!managedGroup}
         onClose={() => setManageId(null)}
         title={`${managedGroup?.name ?? 'Runtime'} versions`}
-        description="PHP, Node.js, Nginx, and MariaDB versions are refreshed online when you open this manager. Choose a version to download, then manage the versions installed on this computer."
+        description="Version lists are refreshed from each runtime's release source when you open this manager. Search by version, choose one to install, or manage versions already on this computer."
       >
         {managedGroup && <div className="flex flex-col gap-5">
           <section className="rounded-lg border border-border p-4">
@@ -342,20 +352,37 @@ export function RuntimesPage() {
               <h3 className="text-sm font-semibold">Install a version</h3>
               <p className="mt-0.5 text-xs text-muted-foreground">Vendor SHA-256 checksums are verified when published. Nginx archives come directly from nginx.org over HTTPS.</p>
             </div>
-            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+              <Input
+                aria-label={`Search ${managedGroup.name} versions`}
+                value={versionSearch}
+                onChange={(e) => {
+                  const query = e.target.value
+                  setVersionSearch(query)
+                  const firstMatch = installable.find((row) => row.version.toLowerCase().includes(query.trim().toLowerCase()))
+                  if (firstMatch) setInstallChoices((prev) => ({ ...prev, [managedGroup!.id]: firstMatch.version }))
+                }}
+                placeholder="Search versions…"
+                className="h-10"
+              />
               <select
                 aria-label={`Available ${managedGroup.name} versions`}
                 value={selectedInstall}
                 disabled={installable.length === 0}
                 onChange={(e) => setInstallChoices((prev) => ({ ...prev, [managedGroup.id]: e.target.value }))}
-                className="h-10 min-w-0 flex-1 rounded-lg border border-border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                className="h-10 min-w-0 rounded-lg border border-border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 sm:col-start-1"
               >
                 {installable.length === 0 && <option value="">All catalog versions are installed</option>}
-                {installable.map((row) => <option key={row.key} value={row.version}>{row.version}{progress[row.key]?.kind === 'progress' ? ' · Installing' : ''}</option>)}
+                {filteredInstallable.length === 0 && installable.length > 0 && <option value="">No versions match your search</option>}
+                {[...installableByMajor].map(([major, rows]) => (
+                  <optgroup key={major} label={major === 'Other' ? major : `Major ${major}`}>
+                    {rows.map((row) => <option key={row.key} value={row.version}>{row.version}{progress[row.key]?.kind === 'progress' ? ' · Installing' : ''}</option>)}
+                  </optgroup>
+                ))}
               </select>
               <Button
-                className="h-10 shrink-0"
-                disabled={!selectedInstall || installingChoice || installable.length === 0}
+                className="h-10 shrink-0 sm:col-start-2 sm:row-span-2 sm:row-start-1"
+                disabled={!selectedInstall || !selectedInstallVisible || installingChoice || installable.length === 0}
                 onClick={() => { const row = installable.find((r) => r.version === selectedInstall); if (row?.entry) void install(row.entry) }}
               >
                 {installingChoice ? <Spinner /> : <Download />} {installingChoice ? 'Installing…' : 'Download and install'}
@@ -391,7 +418,7 @@ export function RuntimesPage() {
                     {row.custom?.path && <p className="mt-0.5 truncate text-xs text-muted-foreground">{row.custom.path}</p>}
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
-                    {managedGroup.id === 'php' && row.entry?.installed && <>
+                    {managedGroup.id === 'php' && (row.entry?.installed || row.kind === 'custom') && <>
                       <Button size="sm" variant="ghost" className="h-8" onClick={() => { setExtVersion(row.version); setManageId(null) }}><Puzzle className="size-3.5" /> Extensions</Button>
                       <Button size="sm" variant="ghost" className="h-8" onClick={() => { setXdebugVersion(row.version); setManageId(null) }}><Bug className="size-3.5" /> Xdebug</Button>
                     </>}

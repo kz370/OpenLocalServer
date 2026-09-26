@@ -141,7 +141,7 @@ impl RuntimeManager {
         Self {
             runtime,
             paths,
-            http: reqwest::Client::new(),
+            http: reqwest::Client::builder().user_agent("OpenLocalServer").build().expect("failed to build runtime HTTP client"),
             events_tx,
             state: Arc::new(Mutex::new(HashMap::new())),
             preferred: RwLock::new(preferred),
@@ -184,7 +184,7 @@ impl RuntimeManager {
                 if !known.contains(version) { known.push(version.clone()); }
             }
         }
-        for id in ["node", "php", "nginx", "mariadb"] {
+        for id in ["node", "php", "nginx", "mariadb", "apache", "composer", "mongodb", "postgres", "redis"] {
             if let Ok(dirs) = std::fs::read_dir(self.paths.runtimes_dir().join(id)) {
                 let known = all_versions.entry(id.to_string()).or_default();
                 for dir in dirs.flatten().filter(|d| d.path().is_dir()) {
@@ -256,6 +256,37 @@ impl RuntimeManager {
             "nginx" => {
                 let page = String::from_utf8(self.fetch("https://nginx.org/en/download.html")?).map_err(|_| "Nginx release page is not UTF-8".to_string())?;
                 nginx_versions(&page)
+            }
+            "apache" => {
+                let page = String::from_utf8(self.fetch("https://www.apachelounge.com/download/")?).map_err(|_| "Apache Lounge download page is not UTF-8".to_string())?;
+                extract_numeric_filename_versions(&page, "httpd-")
+            }
+            "composer" => {
+                let page = String::from_utf8(self.fetch("https://getcomposer.org/download/")?).map_err(|_| "Composer download page is not UTF-8".to_string())?;
+                extract_versions(&page, "/download/", "/composer.phar")
+            }
+            "mongodb" => {
+                let bytes = self.fetch("https://downloads.mongodb.org/current.json")?;
+                let releases: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| format!("MongoDB release list is invalid: {e}"))?;
+                let mut versions = Vec::new();
+                collect_mongodb_versions(&releases, &mut versions);
+                versions.sort_by(|a,b| compare_versions(b,a));
+                versions.dedup();
+                versions
+            }
+            "postgres" => {
+                let page = String::from_utf8(self.fetch("https://www.enterprisedb.com/download-postgresql-binaries")?).map_err(|_| "PostgreSQL download page is not UTF-8".to_string())?;
+                extract_versions(&page, "Binaries from installer Version ", "<")
+            }
+            "redis" => {
+                let bytes = self.fetch("https://api.github.com/repos/redis-windows/redis-windows/releases?per_page=100")?;
+                let releases: Vec<serde_json::Value> = serde_json::from_slice(&bytes).map_err(|e| format!("Redis release list is invalid: {e}"))?;
+                releases.into_iter().filter_map(|release| {
+                    let assets = release.get("assets")?.as_array()?;
+                    let has_windows_zip = assets.iter().any(|asset| asset.get("name").and_then(|n| n.as_str()).is_some_and(|n| n.starts_with("Redis-") && n.contains("Windows-x64") && n.ends_with(".zip")));
+                    if !has_windows_zip { return None; }
+                    release.get("tag_name")?.as_str().map(|tag| tag.strip_prefix('v').unwrap_or(tag).to_string())
+                }).collect()
             }
             "mariadb" => {
                 let bytes = self.fetch("https://downloads.mariadb.org/rest-api/mariadb/")?;
@@ -463,13 +494,20 @@ fn runtime_binary(id: &str) -> Option<&'static str> {
         "php" => Some("php.exe"),
         "nginx" => Some("nginx.exe"),
         "mariadb" => Some("bin/mariadbd.exe"),
+        "apache" => Some("bin/httpd.exe"),
+        "composer" => Some("composer.phar"),
+        "mongodb" => Some("bin/mongod.exe"),
+        "postgres" => Some("bin/postgres.exe"),
+        "redis" => Some("redis-server.exe"),
         _ => None,
     }
 }
 
 fn runtime_name(id: &str, manifests: &[PackageManifest]) -> String {
     manifests.iter().find(|m| m.id == id).map(|m| m.name.to_string()).unwrap_or_else(|| match id {
-        "node" => "Node.js".into(), "php" => "PHP".into(), "nginx" => "Nginx".into(), "mariadb" => "MariaDB".into(), _ => id.into(),
+        "node" => "Node.js".into(), "php" => "PHP".into(), "nginx" => "Nginx".into(), "mariadb" => "MariaDB".into(),
+        "apache" => "Apache HTTP Server".into(), "composer" => "Composer".into(), "mongodb" => "MongoDB".into(),
+        "postgres" => "PostgreSQL".into(), "redis" => "Redis".into(), _ => id.into(),
     })
 }
 
@@ -484,6 +522,106 @@ fn nginx_versions(page: &str) -> Vec<String> {
     found.sort_by(|a, b| compare_versions(b, a));
     found.dedup();
     found
+}
+
+fn extract_versions(text: &str, start: &str, end: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    for segment in text.split(start).skip(1) {
+        let Some(candidate) = segment.split(end).next() else { continue };
+        let candidate = candidate.trim().trim_matches(['\'', '"', '`', ' ']);
+        if !candidate.is_empty() && candidate.split('.').all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit())) { found.push(candidate.to_string()); }
+    }
+    found.sort_by(|a,b| compare_versions(b,a));
+    found.dedup();
+    found
+}
+
+fn extract_numeric_filename_versions(text: &str, prefix: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    for segment in text.split(prefix).skip(1) {
+        let version: String = segment.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
+        if !version.is_empty() && version.split('.').all(|p| !p.is_empty()) { found.push(version); }
+    }
+    found.sort_by(|a,b| compare_versions(b,a));
+    found.dedup();
+    found
+}
+
+fn collect_mongodb_versions(value: &serde_json::Value, versions: &mut Vec<String>) {
+    match value {
+        serde_json::Value::Array(items) => items.iter().for_each(|item| collect_mongodb_versions(item, versions)),
+        serde_json::Value::Object(fields) => {
+            if let Some(version) = fields.get("version").and_then(|v| v.as_str()) {
+                if mongodb_archive(value).is_some() { versions.push(version.trim_start_matches('v').to_string()); }
+            }
+            fields.values().for_each(|item| collect_mongodb_versions(item, versions));
+        }
+        _ => {}
+    }
+}
+
+fn mongodb_archive(value: &serde_json::Value) -> Option<(String, String)> {
+    match value {
+        serde_json::Value::Array(items) => items.iter().find_map(mongodb_archive),
+        serde_json::Value::Object(fields) => {
+            let url = fields.get("url").and_then(|v| v.as_str());
+            let sha = fields.get("sha256").and_then(|v| v.as_str());
+            if let (Some(url), Some(sha)) = (url, sha) {
+                if url.contains("windows") && url.contains(".zip") && sha.len() == 64 && sha.chars().all(|c| c.is_ascii_hexdigit()) {
+                    return Some((url.to_string(), sha.to_string()));
+                }
+            }
+            fields.values().find_map(mongodb_archive)
+        }
+        _ => None,
+    }
+}
+
+fn mongodb_asset(value: &serde_json::Value, version: &str) -> Option<(String, String)> {
+    match value {
+        serde_json::Value::Array(items) => items.iter().find_map(|item| mongodb_asset(item, version)),
+        serde_json::Value::Object(fields) => {
+            if fields.get("version").and_then(|v| v.as_str()).is_some_and(|v| v.trim_start_matches('v') == version) {
+                return mongodb_archive(value);
+            }
+            fields.values().find_map(|item| mongodb_asset(item, version))
+        }
+        _ => None,
+    }
+}
+
+fn linked_download_url(page: &str, filename_prefix: &str, version: &str) -> Option<String> {
+    for segment in page.split(filename_prefix).skip(1) {
+        let Some(end) = segment.find(".zip") else { continue };
+        let filename = format!("{}{}.zip", filename_prefix, &segment[..end]);
+        if !filename.contains(version) { continue; }
+        let position = page.find(&filename)?;
+        let before = &page[..position];
+        let href_at = before.rfind("href=")? + 5;
+        let quote = before[href_at..].chars().next()?;
+        if quote != '\'' && quote != '"' { continue; }
+        let href = before[href_at + 1..].split(quote).next()?;
+        if href.starts_with("http://") || href.starts_with("https://") { return Some(href.to_string()); }
+        if href.starts_with('/') { return Some(format!("https://www.apachelounge.com{href}")); }
+        return Some(format!("https://www.apachelounge.com/download/{href}"));
+    }
+    None
+}
+
+fn edb_archive_link(page: &str, version: &str) -> Option<String> {
+    let marker = format!("Binaries from installer Version {version}");
+    let start = page.find(&marker)?;
+    let tail = &page[start + marker.len()..];
+    let end = tail.find("Binaries from installer Version").unwrap_or(tail.len());
+    let section = &tail[..end];
+    let at = section.find("getfile.jsp")?;
+    let before = &section[..at];
+    let href_at = before.rfind("href=")? + 5;
+    let quote = before[href_at..].chars().next()?;
+    if quote != '\'' && quote != '"' { return None; }
+    let from = href_at + 1;
+    let to = section[from..].find(quote)? + from;
+    Some(format!("https://www.enterprisedb.com{}", &section[from..to]))
 }
 
 fn owned_manifest(m: PackageManifest) -> OwnedManifest {
@@ -541,6 +679,41 @@ async fn resolve_online_manifest(http: &reqwest::Client, id: &str, version: &str
             let sha = file.pointer("/checksum/sha256sum").and_then(|v| v.as_str()).filter(|s| s.len() == 64)
                 .ok_or_else(|| format!("MariaDB {version} has no published SHA-256"))?;
             (format!("https://archive.mariadb.org/mariadb-{version}/winx64-packages/mariadb-{version}-winx64.zip"), sha.to_string(), format!("mariadb-{version}-winx64"), "bin/mariadbd.exe")
+        }
+        "apache" => {
+            let page = fetch_text(http, "https://www.apachelounge.com/download/").await?;
+            let url = linked_download_url(&page, "httpd-", version).ok_or_else(|| format!("Apache Lounge no longer lists a Windows archive for {version}"))?;
+            (url, String::new(), "Apache24".into(), "bin/httpd.exe")
+        }
+        "composer" => {
+            let checksum_url = format!("https://getcomposer.org/download/{version}/composer.phar.sha256sum");
+            let checksum = fetch_text(http, &checksum_url).await?;
+            let sha = checksum.split_whitespace().next().filter(|s| s.len() == 64).ok_or_else(|| format!("Composer did not publish a SHA-256 for {version}"))?;
+            (format!("https://getcomposer.org/download/{version}/composer.phar"), sha.to_string(), String::new(), "composer.phar")
+        }
+        "mongodb" => {
+            let bytes = http.get("https://downloads.mongodb.org/current.json").send().await.map_err(|e| e.to_string())?.error_for_status().map_err(|e| e.to_string())?.bytes().await.map_err(|e| e.to_string())?;
+            let releases: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+            let (url, sha) = mongodb_asset(&releases, version).ok_or_else(|| format!("MongoDB {version} has no Windows x64 ZIP with a published checksum"))?;
+            (url, sha, format!("mongodb-win32-x86_64-windows-{version}"), "bin/mongod.exe")
+        }
+        "postgres" => {
+            let page = fetch_text(http, "https://www.enterprisedb.com/download-postgresql-binaries").await?;
+            let link = edb_archive_link(&page, version).ok_or_else(|| format!("EDB no longer lists the PostgreSQL {version} Windows binaries"))?;
+            let response = http.get(&link).header(reqwest::header::RANGE, "bytes=0-0").send().await.map_err(|e| e.to_string())?.error_for_status().map_err(|e| e.to_string())?;
+            (response.url().to_string(), String::new(), "pgsql".into(), "bin/postgres.exe")
+        }
+        "redis" => {
+            let api = format!("https://api.github.com/repos/redis-windows/redis-windows/releases/tags/{version}");
+            let bytes = http.get(&api).send().await.map_err(|e| e.to_string())?.error_for_status().map_err(|e| e.to_string())?.bytes().await.map_err(|e| e.to_string())?;
+            let release: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+            let (url, archive_root) = release.get("assets").and_then(|v| v.as_array()).into_iter().flatten().find_map(|asset| {
+                let name = asset.get("name")?.as_str()?;
+                if name.starts_with("Redis-") && name.contains("Windows-x64") && name.ends_with(".zip") {
+                    Some((asset.get("browser_download_url")?.as_str()?.to_string(), name.trim_end_matches(".zip").to_string()))
+                } else { None }
+            }).ok_or_else(|| format!("Redis Windows release {version} has no x64 archive"))?;
+            (url, String::new(), archive_root, "redis-server.exe")
         }
         "nginx" => (format!("https://nginx.org/download/nginx-{version}.zip"), String::new(), format!("nginx-{version}"), "nginx.exe"),
         _ => return Err(format!("Online installs are not supported for {id}.")),

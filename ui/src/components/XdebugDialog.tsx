@@ -55,6 +55,7 @@ export function XdebugDialog({ version, onClose }: { version: string | null; onC
   return (
     <Dialog
       open
+      layer="top"
       onClose={onClose}
       title={`Xdebug for PHP ${version}`}
       description="Settings apply to every site on this PHP version. The PHP workers restart when you save."

@@ -13,6 +13,7 @@ export function Dialog({
   children,
   footer,
   wide,
+  layer,
 }: {
   open: boolean
   onClose: () => void
@@ -21,6 +22,8 @@ export function Dialog({
   children: ReactNode
   footer?: ReactNode
   wide?: boolean
+  /** Use for a dialog opened from another dialog so it renders above its parent. */
+  layer?: 'default' | 'top'
 }) {
   useEffect(() => {
     if (!open) return
@@ -32,7 +35,7 @@ export function Dialog({
   const { mounted, state } = usePresence(open)
   if (!mounted) return null
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className={cn('fixed inset-0 flex items-center justify-center p-4', layer === 'top' ? 'z-[60]' : 'z-50')}>
       <div data-state={state} className="modal-backdrop absolute inset-0 bg-black/50" onClick={onClose} />
       <div
         data-state={state}

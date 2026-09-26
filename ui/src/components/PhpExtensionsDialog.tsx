@@ -66,6 +66,7 @@ export function PhpExtensionsDialog({ version, onClose }: { version: string | nu
   return (
     <Dialog
       open={version !== null}
+      layer="top"
       onClose={onClose}
       title={`PHP ${version ?? ''} extensions`}
       description={
