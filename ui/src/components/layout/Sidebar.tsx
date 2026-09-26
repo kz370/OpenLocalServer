@@ -1,5 +1,6 @@
 import {
   Box,
+  ChevronDown,
   Database,
   FileCode2,
   Globe,
@@ -47,23 +48,67 @@ export type Page =
   | 'processes'
   | 'settings'
 
-const NAV_ITEMS: { id: Page; label: string; icon: typeof LayoutDashboard }[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'sites', label: 'Sites', icon: Globe },
-  { id: 'quickapps', label: 'Quick Apps', icon: Rocket },
-  { id: 'commands', label: 'Commands', icon: Zap },
-  { id: 'webserver', label: 'Web server', icon: ServerCog },
-  { id: 'config', label: 'Web config', icon: FileCode2 },
-  { id: 'tunnels', label: 'Tunnels', icon: Globe2 },
-  { id: 'databases', label: 'Databases', icon: HardDrive },
-  { id: 'services', label: 'Services', icon: Database },
-  { id: 'runtimes', label: 'Runtimes', icon: Box },
-  { id: 'profiles', label: 'Profiles', icon: Layers },
-  { id: 'plugins', label: 'Plugins', icon: Plug },
-  { id: 'logs', label: 'Logs', icon: ScrollText },
-  { id: 'processes', label: 'Processes', icon: Terminal },
-  { id: 'settings', label: 'Settings', icon: Settings },
+type NavItem = { id: Page; label: string; icon: typeof LayoutDashboard }
+
+const DASHBOARD: NavItem = { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard }
+const SETTINGS: NavItem = { id: 'settings', label: 'Settings', icon: Settings }
+
+const NAV_GROUPS: { id: string; label: string; items: NavItem[] }[] = [
+  {
+    id: 'sites',
+    label: 'Sites',
+    items: [
+      { id: 'sites', label: 'Sites', icon: Globe },
+      { id: 'quickapps', label: 'Quick Apps', icon: Rocket },
+      { id: 'commands', label: 'Commands', icon: Zap },
+      { id: 'tunnels', label: 'Tunnels', icon: Globe2 },
+    ],
+  },
+  {
+    id: 'web',
+    label: 'Web',
+    items: [
+      { id: 'webserver', label: 'Web server', icon: ServerCog },
+      { id: 'config', label: 'Web config', icon: FileCode2 },
+    ],
+  },
+  {
+    id: 'data',
+    label: 'Data & services',
+    items: [
+      { id: 'databases', label: 'Databases', icon: HardDrive },
+      { id: 'services', label: 'Services', icon: Database },
+      { id: 'runtimes', label: 'Runtimes', icon: Box },
+    ],
+  },
+  {
+    id: 'environment',
+    label: 'Environment',
+    items: [
+      { id: 'profiles', label: 'Profiles', icon: Layers },
+      { id: 'plugins', label: 'Plugins', icon: Plug },
+    ],
+  },
+  {
+    id: 'monitor',
+    label: 'Monitor',
+    items: [
+      { id: 'logs', label: 'Logs', icon: ScrollText },
+      { id: 'processes', label: 'Processes', icon: Terminal },
+    ],
+  },
 ]
+
+const COLLAPSED_KEY = 'ols.sidebar.collapsed'
+
+function loadCollapsed(): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? '[]')
+    return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
 
 const SOON_ITEMS: string[] = []
 
@@ -72,6 +117,36 @@ export function Sidebar({ page, onNavigate }: { page: Page; onNavigate: (p: Page
   // §59: always visible when something is public.
   const [publicCount, setPublicCount] = useState(0)
   const network = useOnline()
+  const [collapsed, setCollapsed] = useState<string[]>(loadCollapsed)
+
+  function toggleGroup(id: string) {
+    const next = collapsed.includes(id) ? collapsed.filter((g) => g !== id) : [...collapsed, id]
+    setCollapsed(next)
+    try {
+      localStorage.setItem(COLLAPSED_KEY, JSON.stringify(next))
+    } catch {
+      // Storage can be unavailable; the groups just won't be remembered.
+    }
+  }
+
+  const navButton = ({ id, label, icon: Icon }: NavItem) => (
+    <button
+      key={id}
+      onClick={() => onNavigate(id)}
+      className={cn(
+        'flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+        page === id ? 'bg-sidebar-accent text-sidebar-accent-foreground' : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground',
+      )}
+    >
+      <Icon className="size-4" />
+      {label}
+      {id === 'tunnels' && publicCount > 0 && (
+        <Badge variant="destructive" className="ml-auto text-[10px]" title="A site is public through a tunnel">
+          public
+        </Badge>
+      )}
+    </button>
+  )
   usePoll(async () => {
     const r = await runCommand({ type: 'list_tunnels' }).catch(() => null)
     if (r?.type === 'tunnels') setPublicCount(r.tunnels.filter((t) => t.state === 'connected' || t.state === 'starting').length)
@@ -103,26 +178,25 @@ export function Sidebar({ page, onNavigate }: { page: Page; onNavigate: (p: Page
       </button>
 
       <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2">
-        {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            onClick={() => onNavigate(id)}
-            className={cn(
-              'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-              page === id
-                ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground',
-            )}
-          >
-            <Icon className="size-4" />
-            {label}
-            {id === 'tunnels' && publicCount > 0 && (
-              <Badge variant="destructive" className="ml-auto text-[10px]" title="A site is public through a tunnel">
-                public
-              </Badge>
-            )}
-          </button>
-        ))}
+        {navButton(DASHBOARD)}
+        {NAV_GROUPS.map((g) => {
+          const closed = collapsed.includes(g.id)
+          // A collapsed group still shows the page you are on, so you never lose your place.
+          const shown = closed ? g.items.filter((i) => i.id === page) : g.items
+          return (
+            <div key={g.id} className="mt-2 flex flex-col gap-0.5">
+              <button
+                onClick={() => toggleGroup(g.id)}
+                aria-expanded={!closed}
+                className="flex items-center justify-between rounded-md px-3 py-1 text-[11px] font-medium uppercase tracking-wider text-sidebar-foreground/45 transition-colors hover:text-sidebar-foreground/80"
+              >
+                {g.label}
+                <ChevronDown className={cn('size-3 transition-transform', closed && '-rotate-90')} />
+              </button>
+              {shown.map(navButton)}
+            </div>
+          )
+        })}
 
         {SOON_ITEMS.length > 0 && (
           <div className="mt-4 px-3 text-[11px] font-medium uppercase tracking-wider text-sidebar-foreground/40">
@@ -142,10 +216,11 @@ export function Sidebar({ page, onNavigate }: { page: Page; onNavigate: (p: Page
         ))}
       </nav>
 
+      <div className="flex flex-col gap-0.5 border-t border-sidebar-border px-2 pt-2">{navButton(SETTINGS)}</div>
       <OfflineNotice status={network} />
       <button
         onClick={cycleTheme}
-        className="mx-2 mb-3 flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+        className="mx-2 mb-3 mt-0.5 flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
         title={`Theme: ${theme}`}
       >
         <ThemeIcon className="size-4" />
