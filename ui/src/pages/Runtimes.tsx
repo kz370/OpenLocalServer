@@ -1,7 +1,7 @@
 import { listen } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
-import { Bug, ChevronDown, Download, FolderSearch, Puzzle, Trash2 } from 'lucide-react'
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Bug, Check, ChevronDown, Download, FolderSearch, Puzzle, Settings2, Trash2 } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { Spinner } from '@/components/Spinner'
 import { PhpExtensionsDialog } from '@/components/PhpExtensionsDialog'
@@ -9,6 +9,7 @@ import { XdebugDialog } from '@/components/XdebugDialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { TechIcon } from '@/components/TechIcon'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -18,6 +19,7 @@ import { confirmAction } from '@/lib/confirm'
 
 /** Runtimes a user may already have somewhere else and want to point at. */
 const LOCATABLE = ['php', 'node', 'python']
+const ONLINE_CATALOGS = new Set(['nginx', 'node', 'mariadb', 'php'])
 
 function versionKey(v: string): number[] {
   return v.split('.').map((p) => parseInt(p, 10) || 0)
@@ -53,8 +55,11 @@ export function RuntimesPage() {
   const [error, setError] = useState<Diagnostic | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [catalogRefreshing, setCatalogRefreshing] = useState(false)
 
   const [customInstalls, setCustomInstalls] = useState<CustomInstall[]>([])
+  const [manageId, setManageId] = useState<string | null>(null)
+  const [installChoices, setInstallChoices] = useState<Record<string, string>>({})
   const [customId, setCustomId] = useState('php')
   const [customLabel, setCustomLabel] = useState('')
   const [extVersion, setExtVersion] = useState<string | null>(null)
@@ -132,6 +137,51 @@ export function RuntimesPage() {
       await runCommand({ type: 'install_runtime', id: entry.id, version: entry.version })
     })
 
+  const chooseDefault = (entry: CatalogEntry) =>
+    guarded(async () => {
+      await runCommand({ type: 'set_setting', key: `runtime.${entry.id}.global`, value: entry.version })
+      await refresh()
+      setNotice(entry.id === 'mariadb'
+        ? `MariaDB ${entry.version} is now the default. Each MariaDB series uses a separate data folder, so its databases are separate.`
+        : ['nginx', 'apache', 'caddy'].includes(entry.id)
+          ? `${entry.name} ${entry.version} will be used when you next start the web server.`
+          : entry.id === 'php'
+            ? `PHP ${entry.version} is now the default. Site/project pins still take precedence; apply web config to update unpinned PHP sites.`
+            : ['node', 'python'].includes(entry.id)
+              ? `${entry.name} ${entry.version} is now the default. A project's pinned version still takes precedence.`
+            : `${entry.name} ${entry.version} will be used the next time its service starts.`)
+    })
+
+  const removeRuntime = (entry: CatalogEntry) =>
+    guarded(async () => {
+      if (!(await confirmAction(`Remove the managed ${entry.name} ${entry.version} files? Projects or sites pinned to this version will need another version selected or this version reinstalled. Project files and MariaDB data stay in place.`, 'Remove version'))) return
+      await runCommand({ type: 'remove_runtime', id: entry.id, version: entry.version })
+      await refresh()
+    })
+
+  const openVersions = (group: Group) => {
+    setError(null)
+    setNotice(null)
+    setManageId(group.id)
+    setInstallChoices((prev) => ({ ...prev, [group.id]: group.rows.find((r) => r.kind === 'managed' && !r.entry?.installed)?.version ?? '' }))
+    if (!ONLINE_CATALOGS.has(group.id)) {
+      setCatalogRefreshing(false)
+      return
+    }
+    setCatalogRefreshing(true)
+    void runCommand({ type: 'refresh_runtime_catalog', id: group.id })
+      .then((res) => {
+        if (res.type !== 'runtime_catalog') return
+        setCatalog(res.entries)
+        const newest = res.entries
+          .filter((entry) => entry.id === group.id && !entry.installed)
+          .sort((a, b) => compareVersionsDesc(a.version, b.version))[0]
+        if (newest) setInstallChoices((prev) => ({ ...prev, [group.id]: newest.version }))
+      })
+      .catch((err) => setError(err as Diagnostic))
+      .finally(() => setCatalogRefreshing(false))
+  }
+
   const groups = useMemo<Group[]>(() => {
     const byId = new Map<string, Group>()
     for (const entry of catalog) {
@@ -151,12 +201,21 @@ export function RuntimesPage() {
     return list.sort((a, b) => Number(has(b)) - Number(has(a)) || a.name.localeCompare(b.name))
   }, [catalog, customInstalls])
 
+  const managedGroup = groups.find((g) => g.id === manageId) ?? null
+  const installable = managedGroup?.rows.filter((r) => r.kind === 'managed' && !r.entry?.installed) ?? []
+  const rememberedChoice = installChoices[manageId ?? '']
+  const selectedInstall = rememberedChoice && installable.some((r) => r.version === rememberedChoice) ? rememberedChoice : installable[0]?.version ?? ''
+  const selectedInstallEvent = progress[`${manageId}@${selectedInstall}`]
+  const installingChoice = selectedInstallEvent?.kind === 'progress'
+  const installedRows = managedGroup?.rows.filter((r) => r.kind === 'custom' || r.entry?.installed) ?? []
+  const managedInstalledCount = managedGroup?.rows.filter((r) => r.kind === 'managed' && r.entry?.installed).length ?? 0
+
   return (
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Runtimes</h1>
         <p className="text-sm text-muted-foreground">
-          Multiple versions are grouped by runtime. Downloads are verified by SHA-256 and cached (§20–21, §127).
+            Install versions side by side, then choose a default for new projects and services. Vendor SHA-256 checksums are verified when published.
         </p>
       </div>
 
@@ -166,11 +225,14 @@ export function RuntimesPage() {
           <p className="mt-0.5 text-xs text-muted-foreground">Add all versions from a folder, or register one executable.</p>
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-[minmax(220px,0.85fr)_minmax(0,1.5fr)]">
-          <div className="flex flex-col justify-center gap-2">
-            <Button className="h-10 w-full justify-center" onClick={scanPhpFolder} title="Adds every PHP version found in the folder you pick">
-              <FolderSearch /> Add folder of PHP versions
+          <div className="flex min-w-0 items-center justify-between gap-3 rounded-lg border border-border/70 bg-background/40 p-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">Add existing PHP versions</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">Scan a folder for PHP installs.</p>
+            </div>
+            <Button size="sm" variant="secondary" className="h-8 shrink-0" onClick={scanPhpFolder} title="Adds every PHP version found in the folder you pick">
+              <FolderSearch /> Add folder
             </Button>
-            <p className="text-center text-xs text-muted-foreground">Finds every PHP install in the selected folder.</p>
           </div>
           <div className="min-w-0 rounded-lg border border-border/70 bg-background/40 p-3">
             <div className="mb-2.5">
@@ -208,128 +270,148 @@ export function RuntimesPage() {
         </div>
       </div>
 
-      {notice && <p className="text-sm text-muted-foreground">{notice}</p>}
+      {notice && !managedGroup && <p className="text-sm text-muted-foreground">{notice}</p>}
 
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead className="w-44">Runtime</TableHead>
-            <TableHead className="w-32">Version</TableHead>
-            <TableHead className="w-32">Status</TableHead>
-            <TableHead>Details</TableHead>
-            <TableHead className="w-56 text-right">Actions</TableHead>
+            <TableHead>Runtime</TableHead>
+            <TableHead>Installed versions</TableHead>
+            <TableHead>Available</TableHead>
+            <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {loading &&
             Array.from({ length: 6 }, (_, i) => (
               <TableRow key={i} className="hover:bg-transparent">
-                {[0, 1, 2, 3, 4].map((c) => (
+                {[0, 1, 2, 3].map((c) => (
                   <TableCell key={c}>
-                    <div className="h-4 animate-pulse rounded bg-muted" style={{ width: c === 3 ? '70%' : '60%' }} />
+                    <div className="h-4 animate-pulse rounded bg-muted" style={{ width: '60%' }} />
                   </TableCell>
                 ))}
               </TableRow>
             ))}
           {loading && (
             <TableRow className="hover:bg-transparent">
-              <TableCell colSpan={5} className="text-center text-xs text-muted-foreground">
+              <TableCell colSpan={4} className="text-center text-xs text-muted-foreground">
                 <Spinner className="mr-1.5 inline size-3.5 align-text-bottom" /> Looking for runtimes on this computer…
               </TableCell>
             </TableRow>
           )}
-          {!loading &&
-            groups.map((g) => {
-              const installed = g.rows.filter((r) => r.kind === 'custom' || r.entry?.installed).length
-              const grouped = g.rows.length > 1
-              return (
-                <Fragment key={g.id}>
-                  {grouped && (
-                    <TableRow className="border-b border-border bg-muted/40 hover:bg-muted/40">
-                      <TableCell colSpan={5} className="py-1.5">
-                        <span className="flex items-center gap-2 font-medium">
-                          <TechIcon id={g.id} className="size-4" />
-                          {g.name}
-                          <span className="text-xs font-normal text-muted-foreground">
-                            {installed}/{g.rows.length} installed
-                          </span>
-                        </span>
-                      </TableCell>
-                    </TableRow>
+          {!loading && groups.map((g) => {
+            const managedInstalled = g.rows.filter((r) => r.kind === 'managed' && r.entry?.installed)
+            const customInstalled = g.rows.filter((r) => r.kind === 'custom')
+            const defaultVersion = managedInstalled.find((r) => r.entry?.is_default)?.version
+            const availableCount = g.rows.filter((r) => r.kind === 'managed' && !r.entry?.installed).length
+            return (
+              <TableRow key={g.id}>
+                <TableCell>
+                  <span className="flex items-center gap-2 font-medium"><TechIcon id={g.id} className="size-4" />{g.name}</span>
+                </TableCell>
+                <TableCell>
+                  {managedInstalled.length + customInstalled.length === 0 ? <span className="text-muted-foreground">None</span> : (
+                    <span className="flex flex-wrap items-center gap-1.5">
+                      {defaultVersion && <Badge variant="outline">Default {defaultVersion}</Badge>}
+                      <span className="text-xs text-muted-foreground">{managedInstalled.length + customInstalled.length} installed</span>
+                    </span>
                   )}
-                  {g.rows.map((row) => {
-                    const live = progress[row.key]
-                    const installing = live && live.kind === 'progress'
-                    return (
-                      <TableRow key={row.key}>
-                        <TableCell className="w-44 py-1.5">
-                          {!grouped && (
-                            <span className="flex items-center gap-2 font-medium">
-                              <TechIcon id={g.id} className="size-4" />
-                              {g.name}
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell className="w-32 py-1.5">{row.version}</TableCell>
-                        <TableCell className="w-32 py-1.5">
-                          {row.kind === 'custom' ? (
-                            <Badge variant="secondary">Yours</Badge>
-                          ) : row.entry?.installed ? (
-                            <Badge variant="success">Installed</Badge>
-                          ) : installing ? (
-                            <Badge variant="secondary" className="capitalize">
-                              {live.kind === 'progress' ? live.state : ''}
-                            </Badge>
-                          ) : live?.kind === 'failed' ? (
-                            <Badge variant="destructive">Failed</Badge>
-                          ) : (
-                            <Badge variant="outline">Not installed</Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="max-w-0 truncate py-1.5 text-xs text-muted-foreground">
-                          {row.kind === 'custom' && row.custom?.path}
-                          {live?.kind === 'progress' &&
-                            `${formatBytes(live.downloaded)}${live.total ? ` / ${formatBytes(live.total)}` : ''}`}
-                          {live?.kind === 'failed' && live.message}
-                          {row.kind === 'managed' && !row.entry?.installed && !live && row.entry?.system &&
-                            `Found on PATH: ${row.entry.system.version}`}
-                        </TableCell>
-                        <TableCell className="w-56 whitespace-nowrap py-1.5 text-right">
-                          {g.id === 'php' && (row.kind === 'custom' ? !!row.custom?.label : row.entry?.installed) && (
-                            <Button size="sm" variant="ghost" className="h-7" title="Extensions" onClick={() => setExtVersion(row.version)}>
-                              <Puzzle className="size-3.5" /> Extensions
-                            </Button>
-                          )}
-                          {g.id === 'php' && (row.kind === 'custom' ? !!row.custom?.label : row.entry?.installed) && (
-                            <Button size="sm" variant="ghost" className="h-7" title="Xdebug" onClick={() => setXdebugVersion(row.version)}>
-                              <Bug className="size-3.5" /> Xdebug
-                            </Button>
-                          )}
-                          {row.kind === 'managed' && !row.entry?.installed && !installing && row.entry && (
-                            <Button size="sm" variant="secondary" className="h-7" onClick={() => install(row.entry!)}>
-                              <Download /> Install
-                            </Button>
-                          )}
-                          {row.kind === 'custom' && row.custom && (
-                            <Button size="sm" variant="ghost" className="h-7" title="Remove from list" onClick={() => removeCustomInstall(row.custom!)}>
-                              <Trash2 className="size-3.5" />
-                            </Button>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })}
-                </Fragment>
-              )
-            })}
+                </TableCell>
+                <TableCell className="text-sm text-muted-foreground">{availableCount} available</TableCell>
+                <TableCell className="text-right">
+                  <Button size="sm" variant="secondary" onClick={() => openVersions(g)}>
+                    <Settings2 className="size-3.5" /> Manage versions
+                  </Button>
+                </TableCell>
+              </TableRow>
+            )
+          })}
         </TableBody>
       </Table>
       {!loading && groups.length === 0 && <p className="text-sm text-muted-foreground">No runtimes in the catalog for this platform yet.</p>}
 
+      <Dialog
+        open={!!managedGroup}
+        onClose={() => setManageId(null)}
+        title={`${managedGroup?.name ?? 'Runtime'} versions`}
+        description="PHP, Node.js, Nginx, and MariaDB versions are refreshed online when you open this manager. Choose a version to download, then manage the versions installed on this computer."
+      >
+        {managedGroup && <div className="flex flex-col gap-5">
+          <section className="rounded-lg border border-border p-4">
+            <div>
+              <h3 className="text-sm font-semibold">Install a version</h3>
+              <p className="mt-0.5 text-xs text-muted-foreground">Vendor SHA-256 checksums are verified when published. Nginx archives come directly from nginx.org over HTTPS.</p>
+            </div>
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+              <select
+                aria-label={`Available ${managedGroup.name} versions`}
+                value={selectedInstall}
+                disabled={installable.length === 0}
+                onChange={(e) => setInstallChoices((prev) => ({ ...prev, [managedGroup.id]: e.target.value }))}
+                className="h-10 min-w-0 flex-1 rounded-lg border border-border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+              >
+                {installable.length === 0 && <option value="">All catalog versions are installed</option>}
+                {installable.map((row) => <option key={row.key} value={row.version}>{row.version}{progress[row.key]?.kind === 'progress' ? ' · Installing' : ''}</option>)}
+              </select>
+              <Button
+                className="h-10 shrink-0"
+                disabled={!selectedInstall || installingChoice || installable.length === 0}
+                onClick={() => { const row = installable.find((r) => r.version === selectedInstall); if (row?.entry) void install(row.entry) }}
+              >
+                {installingChoice ? <Spinner /> : <Download />} {installingChoice ? 'Installing…' : 'Download and install'}
+              </Button>
+            </div>
+            {catalogRefreshing && <p className="mt-2 text-xs text-muted-foreground">Checking the vendor’s online version list…</p>}
+            {selectedInstall && progress[`${managedGroup.id}@${selectedInstall}`]?.kind === 'progress' && (() => {
+              const live = progress[`${managedGroup.id}@${selectedInstall}`]
+              return live?.kind === 'progress' ? <p className="mt-2 text-xs text-muted-foreground">{live.state}: {formatBytes(live.downloaded)}{live.total ? ` / ${formatBytes(live.total)}` : ''}</p> : null
+            })()}
+            {selectedInstallEvent?.kind === 'failed' && (
+              <p className="mt-2 text-sm text-destructive">{selectedInstallEvent.message}</p>
+            )}
+          </section>
+
+          <section>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold">Installed versions</h3>
+                <p className="mt-0.5 text-xs text-muted-foreground">The default is used unless a project or site pins another version.</p>
+              </div>
+              <Badge variant="secondary">{installedRows.length}</Badge>
+            </div>
+            <div className="overflow-hidden rounded-lg border border-border">
+              {installedRows.length === 0 ? <p className="px-3 py-4 text-center text-sm text-muted-foreground">No versions installed.</p> : installedRows.map((row) => (
+                <div key={row.key} className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-3 py-2.5 last:border-b-0">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
+                      {row.version}
+                      {row.entry?.is_default && <Badge variant="outline">Default</Badge>}
+                      {row.kind === 'custom' && <Badge variant="secondary">Yours</Badge>}
+                    </div>
+                    {row.custom?.path && <p className="mt-0.5 truncate text-xs text-muted-foreground">{row.custom.path}</p>}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    {managedGroup.id === 'php' && row.entry?.installed && <>
+                      <Button size="sm" variant="ghost" className="h-8" onClick={() => { setExtVersion(row.version); setManageId(null) }}><Puzzle className="size-3.5" /> Extensions</Button>
+                      <Button size="sm" variant="ghost" className="h-8" onClick={() => { setXdebugVersion(row.version); setManageId(null) }}><Bug className="size-3.5" /> Xdebug</Button>
+                    </>}
+                    {row.kind === 'managed' && row.entry && !row.entry.is_default && <Button size="sm" variant="ghost" className="h-8" onClick={() => void chooseDefault(row.entry!)} title="Set as default"><Check className="size-3.5" /> Use</Button>}
+                    {row.kind === 'managed' && row.entry && <Button size="sm" variant="ghost" className="h-8" onClick={() => void removeRuntime(row.entry!)} title={row.entry.is_default && managedInstalledCount > 1 ? 'Choose another default first' : 'Remove version'} disabled={row.entry.is_default && managedInstalledCount > 1}><Trash2 className="size-3.5" /></Button>}
+                    {row.kind === 'custom' && row.custom && <Button size="sm" variant="ghost" className="h-8" title="Remove from list" onClick={() => void removeCustomInstall(row.custom!)}><Trash2 className="size-3.5" /></Button>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+          {notice && <p className="text-sm text-muted-foreground">{notice}</p>}
+          {error && <Card className="border-destructive/40 bg-destructive/5"><CardContent className="pt-4"><p className="font-medium text-destructive">{error.problem}</p><p className="mt-1 text-sm">{error.cause}</p></CardContent></Card>}
+        </div>}
+      </Dialog>
+
       <PhpExtensionsDialog key={extVersion ?? ''} version={extVersion} onClose={() => setExtVersion(null)} />
       <XdebugDialog key={'x' + (xdebugVersion ?? '')} version={xdebugVersion} onClose={() => setXdebugVersion(null)} />
 
-      {error && (
+      {error && !managedGroup && (
         <Card className="border-destructive/40 bg-destructive/5">
           <CardHeader>
             <CardTitle className="text-destructive">{error.problem}</CardTitle>

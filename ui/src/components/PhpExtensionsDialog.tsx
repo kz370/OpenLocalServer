@@ -4,8 +4,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
-import { Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { type Diagnostic, type PhpExtensions, runCommand } from '@/core'
 
 /** Turn a PHP version's extensions on/off and download new ones from PECL. */
@@ -105,14 +105,26 @@ export function PhpExtensionsDialog({ version, onClose }: { version: string | nu
         <Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter extensions" className="h-8" />
         <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
           {shown.map((e) => (
-            <div key={e.name} className="flex items-center gap-1.5">
-              <Toggle checked={e.enabled} disabled={busy !== null} onChange={(v) => void toggle(e.name, v)} label={e.name} />
-              {e.downloaded && (
-                <Badge variant="secondary" className="h-4 px-1 text-[10px]">
-                  PECL
-                </Badge>
-              )}
-              {busy === e.name && <Loader2 className="size-3 animate-spin text-muted-foreground" />}
+            <div key={e.name} className="flex min-w-0 items-center justify-between gap-2 rounded-md py-0.5">
+              <span className="flex min-w-0 items-center gap-1.5 truncate text-sm" title={e.name}>
+                <span className="truncate">{e.name}</span>
+                {e.downloaded && (
+                  <Badge variant="secondary" className="h-4 shrink-0 px-1 text-[10px]">
+                    PECL
+                  </Badge>
+                )}
+              </span>
+              <span className="flex shrink-0 items-center gap-1.5">
+                <Switch
+                  checked={e.enabled}
+                  disabled={busy !== null}
+                  onChange={(v) => void toggle(e.name, v)}
+                  label={e.name}
+                />
+                <span className="flex size-3 items-center justify-center">
+                  {busy === e.name && <Loader2 className="size-3 animate-spin text-muted-foreground" />}
+                </span>
+              </span>
             </div>
           ))}
         </div>

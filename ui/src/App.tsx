@@ -7,7 +7,6 @@ import { ConfirmHost } from '@/components/ConfirmHost'
 import { DoctorDialog } from '@/components/DoctorDialog'
 import { type Page, Sidebar } from '@/components/layout/Sidebar'
 import { CommandsPage } from '@/pages/Commands'
-import { ConfigPage } from '@/pages/Config'
 import { DashboardPage } from '@/pages/Dashboard'
 import { DatabasesPage } from '@/pages/Databases'
 import { WebServerPage } from '@/pages/WebServer'
@@ -24,8 +23,19 @@ import { TunnelsPage } from '@/pages/Tunnels'
 
 export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
+  const [webServerTab, setWebServerTab] = useState<'server' | 'config' | 'certs'>('server')
   const [doctor, setDoctor] = useState(false)
   const openDoctor = useCallback(() => setDoctor(true), [])
+
+  const navigate = useCallback((target: Page) => {
+    if (target === 'config') {
+      setWebServerTab('config')
+      setPage('webserver')
+      return
+    }
+    if (target === 'webserver') setWebServerTab('server')
+    setPage(target)
+  }, [])
 
   useEffect(() => {
     let unlisten: (() => void) | undefined
@@ -36,26 +46,25 @@ export default function App() {
       }
       const route = event.payload === 'quick-apps' ? 'quickapps' : event.payload === 'terminal' ? 'processes' : event.payload
       if (['dashboard', 'sites', 'quickapps', 'commands', 'webserver', 'config', 'tunnels', 'databases', 'services', 'runtimes', 'profiles', 'plugins', 'logs', 'processes', 'settings'].includes(route)) {
-        setPage(route as Page)
+        navigate(route as Page)
       }
     }).then((cleanup) => { unlisten = cleanup })
     return () => unlisten?.()
-  }, [])
+  }, [navigate])
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
-      <Sidebar page={page} onNavigate={setPage} />
+      <Sidebar page={page} onNavigate={navigate} />
       <ConfirmHost />
-      <AiHost onNavigate={setPage} />
-      <CommandPalette onNavigate={setPage} onDoctor={openDoctor} />
+      <AiHost onNavigate={navigate} />
+      <CommandPalette onNavigate={navigate} onDoctor={openDoctor} />
       <DoctorDialog open={doctor} onClose={() => setDoctor(false)} />
       <main className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-6">
         {page === 'dashboard' && <DashboardPage onNavigate={setPage} />}
         {page === 'sites' && <SitesPage onNavigate={setPage} />}
         {page === 'quickapps' && <QuickAppsPage onNavigate={setPage} />}
         {page === 'commands' && <CommandsPage />}
-        {page === 'webserver' && <WebServerPage />}
-        {page === 'config' && <ConfigPage />}
+        {page === 'webserver' && <WebServerPage initialTab={webServerTab} />}
         {page === 'tunnels' && <TunnelsPage />}
         {page === 'databases' && <DatabasesPage />}
         {page === 'services' && <ServicesPage />}

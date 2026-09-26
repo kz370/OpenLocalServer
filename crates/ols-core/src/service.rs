@@ -283,7 +283,17 @@ impl ServiceManager {
         if !mariadbd.is_file() {
             return Err("mariadbd.exe missing on disk".into());
         }
-        let data_dir = self.paths.services_dir().join("mariadb").join("data");
+        let mariadb_dir = self.paths.services_dir().join("mariadb");
+        // Keep the pre-version-manager 11.4 data directory in place. New major/minor
+        // versions get isolated stores because MariaDB data files are not safe to share
+        // across arbitrary version switches.
+        let legacy_data = mariadb_dir.join("data");
+        let series = version.split('.').take(2).collect::<Vec<_>>().join(".");
+        let data_dir = if version.starts_with("11.4.") && legacy_data.exists() {
+            legacy_data
+        } else {
+            mariadb_dir.join(series).join("data")
+        };
 
         if !data_dir.exists() {
             // The installer makes the data folder itself but not the folders above it.

@@ -70,7 +70,7 @@ const NEVER: &[&str] = &[
 ];
 
 /// Prefixes of commands that only look.
-const READ_PREFIXES: &[&str] = &["list_", "get_", "check_", "diagnose", "plan_", "health", "search", "global_search", "doctor", "ping", "git_status", "git_log", "git_diff", "git_show", "git_branches", "plugin_detect", "tunnel_log", "network_"];
+const READ_PREFIXES: &[&str] = &["list_", "get_", "check_", "diagnose", "plan_", "health", "search", "global_search", "doctor", "ping", "git_status", "git_log", "git_diff", "git_show", "git_branches", "plugin_detect", "tunnel_log", "network_", "refresh_runtime_catalog"];
 
 /// What `operate` adds to the read-only set. A list, not a deny list: a new command is unreachable until added here.
 const OPERATE: &[&str] = &[

@@ -17,11 +17,12 @@ import { type CertInfo, type WebConfig, type WebStatus, runCommand } from '@/cor
 import { confirmThen } from '@/lib/confirm'
 import { useWeb } from '@/lib/web'
 import { waitForWebStopped } from '@/lib/wait'
+import { ConfigPage } from '@/pages/Config'
 
-export function WebServerPage() {
+export function WebServerPage({ initialTab = 'server' }: { initialTab?: 'server' | 'config' | 'certs' }) {
   const web = useWeb()
   const { status, cfg, certs, ca, projects, busy, error, setError, run, refresh, apply } = web
-  const [tab, setTab] = useState<'server' | 'certs'>('server')
+  const [tab, setTab] = useState<'server' | 'config' | 'certs'>(initialTab)
   const [certDetail, setCertDetail] = useState<CertInfo | null>(null)
 
   async function saveSettings(next: WebConfig, serverChanged: boolean) {
@@ -82,6 +83,7 @@ export function WebServerPage() {
       <Tabs
         tabs={[
           { id: 'server', label: 'Server' },
+          { id: 'config', label: 'Web config' },
           { id: 'certs', label: 'Certificates', badge: certs.length },
         ]}
         value={tab}
@@ -89,6 +91,8 @@ export function WebServerPage() {
       />
 
       {tab === 'server' && cfg && status && <ServerPanel cfg={cfg} status={status} onSave={(c, changed) => run('settings', () => saveSettings(c, changed))} busy={busy !== null} />}
+
+      {tab === 'config' && <ConfigPage />}
 
       {tab === 'certs' && (
         <div className="flex flex-col gap-4">

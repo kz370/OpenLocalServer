@@ -56,7 +56,9 @@ pub enum CoreCommand {
 
     // Runtime Manager (§9–10, §20–21, Stage 3)
     ListRuntimeCatalog,
+    RefreshRuntimeCatalog { id: String },
     InstallRuntime { id: String, version: String },
+    RemoveRuntime { id: String, version: String },
 
     // Project Manager + Environment Resolver (§18, §40, §42–43, Stage 4)
     RegisterProject { path: String },
@@ -695,7 +697,23 @@ impl Core {
                 // Redact before it ever reaches the log, per §141 — settings can hold secrets.
                 let logged_value = crate::logging::redact_value(&key, &value.to_string());
                 tracing::info!(command = "set_setting", key = %key, value = %logged_value);
-                i.settings.lock().unwrap().set(key, value)?;
+                if let Some(id) = key.strip_prefix("runtime.").and_then(|k| k.strip_suffix(".global")) {
+                    if matches!(id, "nginx" | "apache" | "caddy") && i.web.is_running() {
+                        return Err(CoreError::ServiceError("Stop the web server before changing its runtime version.".into()));
+                    }
+                    if matches!(id, "mariadb" | "postgres" | "mongodb" | "redis" | "mailpit") && i.services.is_running(id) {
+                        return Err(CoreError::ServiceError(format!("Stop {id} before changing its runtime version.")));
+                    }
+                }
+                i.settings.lock().unwrap().set(key.clone(), value.clone())?;
+                if let (Some(id), Some(version)) = (
+                    key.strip_prefix("runtime.").and_then(|k| k.strip_suffix(".global")),
+                    value.as_str(),
+                ) {
+                    // Keep unmanaged/custom PHP and Node preferences in settings, while only
+                    // applying managed catalog versions to the runtime manager.
+                    let _ = i.runtimes.set_preferred(id, version);
+                }
                 Ok(R::Ok)
             }
 
@@ -720,9 +738,44 @@ impl Core {
             C::CheckPort { port: p } => Ok(R::Port { port: p, status: port::check_port(p) }),
 
             C::ListRuntimeCatalog => Ok(R::RuntimeCatalog { entries: i.runtimes.catalog() }),
+            C::RefreshRuntimeCatalog { id } => {
+                i.runtimes.refresh_online_catalog(&id).map_err(CoreError::ServiceError)?;
+                Ok(R::RuntimeCatalog { entries: i.runtimes.catalog() })
+            }
             C::InstallRuntime { id, version } => {
                 tracing::info!(command = "install_runtime", id = %id, version = %version);
                 i.runtimes.install(&id, &version);
+                Ok(R::Ok)
+            }
+            C::RemoveRuntime { id, version } => {
+                if i.services.is_running(&id) {
+                    return Err(CoreError::ServiceError(format!("Stop {id} before removing a version.")));
+                }
+                if matches!(id.as_str(), "nginx" | "apache" | "caddy") && i.web.is_running() {
+                    return Err(CoreError::ServiceError("Stop the web server before removing a server version.".into()));
+                }
+                if id == "php" && i.web.is_running() {
+                    return Err(CoreError::ServiceError("Stop the web server before removing a PHP version.".into()));
+                }
+                let was_default = i.runtimes.catalog().iter().any(|entry| entry.id == id && entry.version == version && entry.is_default);
+                let last_version = i.runtimes.installed_versions(&id).len() == 1;
+                let pref_key = format!("runtime.{id}.global");
+                let old_pref = if was_default && last_version {
+                    let mut settings = i.settings.lock().unwrap();
+                    let old = settings.get(&pref_key).cloned();
+                    settings.set(pref_key.clone(), serde_json::Value::Null)?;
+                    old
+                } else {
+                    None
+                };
+                if let Err(error) = i.runtimes.remove(&id, &version) {
+                    if was_default && last_version {
+                        let mut settings = i.settings.lock().unwrap();
+                        if let Some(old) = old_pref { let _ = settings.set(pref_key, old); }
+                        else { let _ = settings.set(pref_key, serde_json::Value::Null); }
+                    }
+                    return Err(CoreError::ServiceError(error));
+                }
                 Ok(R::Ok)
             }
 

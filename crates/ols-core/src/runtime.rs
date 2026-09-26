@@ -5,14 +5,14 @@
 use std::collections::HashMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::sync::broadcast;
 
-use crate::catalog::{builtin_catalog, PackageManifest};
+use crate::catalog::{builtin_catalog, OwnedManifest, PackageManifest};
 use crate::paths::AppPaths;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,6 +22,8 @@ pub struct CatalogEntry {
     pub version: String,
     /// A OpenLocalServer-managed copy is installed under `runtimes/<id>/<version>/`.
     pub installed: bool,
+    /// The version newly-created projects and services will use by default.
+    pub is_default: bool,
     /// An unmanaged install found on PATH — same runtime family, not necessarily the
     /// same version, and not usable for per-project version selection (§126).
     pub system: Option<SystemInstall>,
@@ -114,6 +116,8 @@ pub struct RuntimeManager {
     http: reqwest::Client,
     events_tx: broadcast::Sender<RuntimeEvent>,
     state: Arc<Mutex<HashMap<String, InstallState>>>,
+    preferred: RwLock<HashMap<String, String>>,
+    online_versions: RwLock<HashMap<String, Vec<String>>>,
 }
 
 impl RuntimeManager {
@@ -124,12 +128,24 @@ impl RuntimeManager {
             .build()
             .expect("failed to start runtime manager runtime");
         let (events_tx, _rx) = broadcast::channel(256);
+        let preferred = std::fs::read_to_string(paths.settings_file())
+            .ok()
+            .and_then(|raw| serde_json::from_str::<HashMap<String, serde_json::Value>>(&raw).ok())
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|(key, value)| {
+                let id = key.strip_prefix("runtime.")?.strip_suffix(".global")?;
+                Some((id.to_string(), value.as_str()?.to_string()))
+            })
+            .collect();
         Self {
             runtime,
             paths,
             http: reqwest::Client::new(),
             events_tx,
             state: Arc::new(Mutex::new(HashMap::new())),
+            preferred: RwLock::new(preferred),
+            online_versions: RwLock::new(HashMap::new()),
         }
     }
 
@@ -137,28 +153,136 @@ impl RuntimeManager {
         self.events_tx.subscribe()
     }
 
+    fn preferred_versions(&self) -> HashMap<String, String> {
+        let values = std::fs::read_to_string(self.paths.settings_file())
+            .ok()
+            .and_then(|raw| serde_json::from_str::<HashMap<String, serde_json::Value>>(&raw).ok())
+            .unwrap_or_default();
+        let preferred = values
+            .into_iter()
+            .filter_map(|(key, value)| {
+                let id = key.strip_prefix("runtime.")?.strip_suffix(".global")?;
+                Some((id.to_string(), value.as_str()?.to_string()))
+            })
+            .collect::<HashMap<_, _>>();
+        *self.preferred.write().unwrap() = preferred.clone();
+        preferred
+    }
+
     /// The catalog for this machine's OS/arch, each entry flagged with whether it's
     /// already installed (§127 — no unnecessary repeated downloads).
     pub fn catalog(&self) -> Vec<CatalogEntry> {
         let manifests = builtin_catalog();
+        let online = self.online_versions.read().unwrap().clone();
+        let mut all_versions: HashMap<String, Vec<String>> = HashMap::new();
+        for m in &manifests {
+            all_versions.entry(m.id.to_string()).or_default().push(m.version.to_string());
+        }
+        for (id, versions) in &online {
+            let known = all_versions.entry(id.clone()).or_default();
+            for version in versions {
+                if !known.contains(version) { known.push(version.clone()); }
+            }
+        }
+        for id in ["node", "php", "nginx", "mariadb"] {
+            if let Ok(dirs) = std::fs::read_dir(self.paths.runtimes_dir().join(id)) {
+                let known = all_versions.entry(id.to_string()).or_default();
+                for dir in dirs.flatten().filter(|d| d.path().is_dir()) {
+                    let Some(version) = dir.file_name().to_str().map(str::to_string) else { continue };
+                    if !known.contains(&version) && self.is_installed(id, &version) { known.push(version); }
+                }
+            }
+        }
+        let mut ids: Vec<String> = all_versions.keys().cloned().collect();
+        ids.sort();
         // Each probe spawns `<tool> --version`; run one per runtime id side by side instead of in turn.
-        let mut ids: Vec<&str> = manifests.iter().map(|m| m.id).collect();
-        ids.sort_unstable();
-        ids.dedup();
-        let detected: HashMap<&str, Option<SystemInstall>> = std::thread::scope(|scope| {
-            let handles: Vec<_> = ids.iter().map(|id| (*id, scope.spawn(move || detect_system_install(id)))).collect();
+        let detected: HashMap<String, Option<SystemInstall>> = std::thread::scope(|scope| {
+            let handles: Vec<_> = ids.iter().map(|id| (id.clone(), scope.spawn(move || detect_system_install(id)))).collect();
             handles.into_iter().map(|(id, h)| (id, h.join().unwrap_or(None))).collect()
         });
-        manifests
-            .into_iter()
-            .map(|m| CatalogEntry {
-                id: m.id.to_string(),
-                name: m.name.to_string(),
-                version: m.version.to_string(),
-                installed: self.version_dir(m.id, m.version).join(m.binary).exists(),
-                system: detected.get(m.id).cloned().flatten(),
+        let preferred = self.preferred_versions();
+        let defaults: HashMap<String, String> = all_versions.iter().filter_map(|(id, versions)| {
+            let installed: Vec<String> = versions.iter().filter(|v| self.is_installed(id, v)).cloned().collect();
+            preferred.get(id).filter(|v| installed.contains(v)).cloned()
+                .or_else(|| installed.into_iter().max_by(|a,b| compare_versions(a,b)))
+                .map(|version| (id.clone(), version))
+        }).collect();
+        all_versions.into_iter().flat_map(|(id, versions)| {
+            versions.into_iter().map({
+                let id = id.clone();
+                let name = runtime_name(&id, &manifests);
+                let default = defaults.get(&id).cloned();
+                let system = detected.get(&id).cloned().flatten();
+                move |version| CatalogEntry {
+                    id: id.clone(), name: name.clone(),
+                    installed: self.is_installed(&id, &version),
+                    is_default: default.as_deref() == Some(version.as_str()),
+                    system: system.clone(), version,
+                }
             })
-            .collect()
+        }).collect()
+    }
+
+    fn is_installed(&self, id: &str, version: &str) -> bool {
+        let binary = builtin_catalog().into_iter().find(|m| m.id == id && m.version == version).map(|m| m.binary)
+            .or_else(|| runtime_binary(id));
+        binary.is_some_and(|binary| self.version_dir(id, version).join(binary).exists())
+    }
+
+    /// Fetch current release versions from each supported vendor's public feed. The feeds
+    /// contain metadata only; the package is still resolved and SHA-256 checked on install.
+    pub fn refresh_online_catalog(&self, id: &str) -> Result<(), String> {
+        let versions = match id {
+            "node" => {
+                let bytes = self.fetch("https://nodejs.org/dist/index.json")?;
+                let releases: Vec<serde_json::Value> = serde_json::from_slice(&bytes).map_err(|e| format!("Node.js release list is invalid: {e}"))?;
+                releases.into_iter().filter_map(|r| {
+                    let has_zip = r.get("files")?.as_array()?.iter().any(|f| f.as_str() == Some("win-x64-zip"));
+                    if has_zip { r.get("version")?.as_str()?.strip_prefix('v').map(str::to_string) } else { None }
+                }).collect()
+            }
+            "php" => {
+                let bytes = self.fetch("https://downloads.php.net/~windows/releases/releases.json")?;
+                let releases: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| format!("PHP release list is invalid: {e}"))?;
+                let mut versions: Vec<String> = releases.as_object().into_iter().flat_map(|branches| branches.values()).filter_map(|release| {
+                    let version = release.get("version")?.as_str()?;
+                    let x64_nts = release.as_object()?.iter().any(|(key, build)| key.starts_with("nts-vs") && key.ends_with("-x64") && build.pointer("/zip/sha256").and_then(|v| v.as_str()).is_some());
+                    x64_nts.then(|| version.to_string())
+                }).collect();
+                versions.sort_by(|a,b| compare_versions(b,a));
+                versions.dedup();
+                versions
+            }
+            "nginx" => {
+                let page = String::from_utf8(self.fetch("https://nginx.org/en/download.html")?).map_err(|_| "Nginx release page is not UTF-8".to_string())?;
+                nginx_versions(&page)
+            }
+            "mariadb" => {
+                let bytes = self.fetch("https://downloads.mariadb.org/rest-api/mariadb/")?;
+                let majors: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| format!("MariaDB release list is invalid: {e}"))?;
+                let mut versions = Vec::new();
+                for major in majors.get("major_releases").and_then(|v| v.as_array()).into_iter().flatten() {
+                    let Some(branch) = major.get("release_id").and_then(|v| v.as_str()) else { continue };
+                    let url = format!("https://downloads.mariadb.org/rest-api/mariadb/{branch}/");
+                    let Ok(bytes) = self.fetch(&url) else { continue };
+                    let Ok(data) = serde_json::from_slice::<serde_json::Value>(&bytes) else { continue };
+                    for (version, release) in data.get("releases").and_then(|v| v.as_object()).into_iter().flatten() {
+                        let has_windows_zip = release.get("files").and_then(|v| v.as_array()).into_iter().flatten().any(|f| {
+                            f.get("file_name").and_then(|v| v.as_str()).is_some_and(|name| name.ends_with("-winx64.zip") && !name.contains("debugsymbols"))
+                                && f.pointer("/checksum/sha256sum").and_then(|v| v.as_str()).is_some_and(|sum| sum.len() == 64)
+                        });
+                        if has_windows_zip { versions.push(version.clone()); }
+                    }
+                }
+                versions.sort_by(|a,b| compare_versions(b,a));
+                versions.dedup();
+                versions
+            }
+            _ => return Err(format!("Online version lists are not available for {id}.")),
+        };
+        if versions.is_empty() { return Err(format!("No downloadable {id} versions were found online.")); }
+        self.online_versions.write().unwrap().insert(id.to_string(), versions);
+        Ok(())
     }
 
     /// Display name of `id` from the built-in catalog — no filesystem or process probing.
@@ -167,8 +291,8 @@ impl RuntimeManager {
     }
 
     pub fn binary_path(&self, id: &str, version: &str) -> Option<PathBuf> {
-        let manifest = builtin_catalog().into_iter().find(|m| m.id == id && m.version == version)?;
-        let path = self.version_dir(id, version).join(manifest.binary);
+        let binary = builtin_catalog().into_iter().find(|m| m.id == id && m.version == version).map(|m| m.binary).or_else(|| runtime_binary(id))?;
+        let path = self.version_dir(id, version).join(binary);
         path.exists().then_some(path)
     }
 
@@ -179,15 +303,71 @@ impl RuntimeManager {
         self.binary_path(id, version).and_then(|p| p.parent().map(|d| d.to_path_buf()))
     }
 
-    /// Every OpenLocalServer-managed version of `id` that's actually installed (has its binary
-    /// on disk), newest-looking first isn't guaranteed — callers sort if order matters.
+    /// Installed versions for `id`, with a configured default first and the remaining versions
+    /// in catalog order.
     pub fn installed_versions(&self, id: &str) -> Vec<String> {
-        builtin_catalog()
-            .into_iter()
-            .filter(|m| m.id == id)
-            .filter(|m| self.version_dir(m.id, m.version).join(m.binary).exists())
-            .map(|m| m.version.to_string())
-            .collect()
+        let mut versions = Vec::new();
+        if let Some(binary) = runtime_binary(id) {
+            if let Ok(dirs) = std::fs::read_dir(self.paths.runtimes_dir().join(id)) {
+                for dir in dirs.flatten().filter(|d| d.path().is_dir()) {
+                    if let (Some(version), true) = (dir.file_name().to_str().map(str::to_string), dir.path().join(binary).exists()) {
+                        if !versions.contains(&version) { versions.push(version); }
+                    }
+                }
+            }
+        }
+        for m in builtin_catalog().into_iter().filter(|m| m.id == id) {
+            if self.version_dir(m.id, m.version).join(m.binary).exists() && !versions.iter().any(|v| v == m.version) {
+                versions.push(m.version.to_string());
+            }
+        }
+        versions.sort_by(|a, b| compare_versions(b, a));
+        if let Some(preferred) = self.preferred_versions().get(id) {
+            if let Some(index) = versions.iter().position(|v| v == preferred) {
+                versions.swap(0, index);
+            }
+        }
+        versions
+    }
+
+    /// Record an installed managed version as the family default. Project pins still take
+    /// precedence over this preference.
+    pub fn set_preferred(&self, id: &str, version: &str) -> Result<(), String> {
+        if self.binary_path(id, version).is_none() {
+            return Err(format!("{id} {version} is not installed"));
+        }
+        self.preferred.write().unwrap().insert(id.to_string(), version.to_string());
+        Ok(())
+    }
+
+    /// Remove only the managed program files. Data directories (for example MariaDB's
+    /// databases) live outside the runtime tree and are never touched here.
+    pub fn remove(&self, id: &str, version: &str) -> Result<(), String> {
+        if !self.catalog().iter().any(|e| e.id == id && e.version == version) { return Err(format!("{id} {version} is not in the runtime catalog")); }
+        let versions = self.installed_versions(id);
+        let configured_default = self.preferred_versions().get(id).cloned();
+        let selected = configured_default
+            .as_deref()
+            .map(|v| v == version)
+            .unwrap_or_else(|| versions.first().is_some_and(|v| v == version));
+        if selected && versions.len() > 1 {
+            return Err("Choose another installed version as the default before removing this one.".into());
+        }
+        let key = format!("{id}@{version}");
+        if self.state.lock().unwrap().get(&key).is_some_and(|s| matches!(s, InstallState::Downloading | InstallState::Verifying | InstallState::Extracting)) {
+            return Err(format!("{id} {version} is currently being installed"));
+        }
+        let dir = self.version_dir(id, version);
+        let binary = builtin_catalog().into_iter().find(|m| m.id == id && m.version == version).map(|m| m.binary).or_else(|| runtime_binary(id))
+            .ok_or_else(|| format!("{id} {version} is not in the runtime catalog"))?;
+        if !dir.join(binary).exists() {
+            return Err(format!("{id} {version} is not installed"));
+        }
+        std::fs::remove_dir_all(&dir).map_err(|e| format!("could not remove {id} {version}: {e}"))?;
+        if selected {
+            self.preferred.write().unwrap().remove(id);
+        }
+        Ok(())
     }
 
     /// The root of an installed version — e.g. MariaDB's `--basedir`, which needs the whole
@@ -226,14 +406,11 @@ impl RuntimeManager {
     /// §21: download over HTTPS, verify SHA-256, and only then extract. Any failure aborts
     /// and leaves no partial install behind (temp dir is never renamed into place).
     pub fn install(&self, id: &str, version: &str) {
-        let Some(manifest) = builtin_catalog().into_iter().find(|m| m.id == id && m.version == version) else {
-            let _ = self.events_tx.send(RuntimeEvent::Failed {
-                id: id.to_string(),
-                version: version.to_string(),
-                message: "not in the catalog for this platform".into(),
-            });
+        let static_manifest = builtin_catalog().into_iter().find(|m| m.id == id && m.version == version).map(owned_manifest);
+        if static_manifest.is_none() && !self.online_versions.read().unwrap().get(id).is_some_and(|vs| vs.iter().any(|v| v == version)) {
+            let _ = self.events_tx.send(RuntimeEvent::Failed { id: id.to_string(), version: version.to_string(), message: "not in the current online or built-in version list".into() });
             return;
-        };
+        }
 
         {
             let mut s = self.state.lock().unwrap();
@@ -244,14 +421,24 @@ impl RuntimeManager {
         let http = self.http.clone();
         let events_tx = self.events_tx.clone();
         let state = self.state.clone();
+        let manifest_id = id.to_string();
+        let manifest_version = version.to_string();
 
         self.runtime.spawn(async move {
-            if let Err(e) = install_one(manifest, paths, http, events_tx.clone(), state.clone()).await {
-                tracing::warn!(id = manifest.id, version = manifest.version, error = %e, "runtime install failed");
-                state.lock().unwrap().insert(format!("{}@{}", manifest.id, manifest.version), InstallState::Failed);
+            let manifest = match static_manifest {
+                Some(manifest) => Ok(manifest),
+                None => resolve_online_manifest(&http, &manifest_id, &manifest_version).await,
+            };
+            let result = match manifest {
+                Ok(manifest) => install_one(manifest, paths, http, events_tx.clone(), state.clone()).await,
+                Err(e) => Err(e),
+            };
+            if let Err(e) = result {
+                tracing::warn!(id = %manifest_id, version = %manifest_version, error = %e, "runtime install failed");
+                state.lock().unwrap().insert(format!("{}@{}", manifest_id, manifest_version), InstallState::Failed);
                 let _ = events_tx.send(RuntimeEvent::Failed {
-                    id: manifest.id.to_string(),
-                    version: manifest.version.to_string(),
+                    id: manifest_id,
+                    version: manifest_version,
                     message: e,
                 });
             }
@@ -259,8 +446,113 @@ impl RuntimeManager {
     }
 }
 
+fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
+    let parts = |v: &str| v.split('.').map(|p| p.parse::<u64>().unwrap_or(0)).collect::<Vec<_>>();
+    let (a, b) = (parts(a), parts(b));
+    for i in 0..a.len().max(b.len()) {
+        match a.get(i).copied().unwrap_or(0).cmp(&b.get(i).copied().unwrap_or(0)) {
+            std::cmp::Ordering::Equal => {}, other => return other,
+        }
+    }
+    std::cmp::Ordering::Equal
+}
+
+fn runtime_binary(id: &str) -> Option<&'static str> {
+    match id {
+        "node" => Some("node.exe"),
+        "php" => Some("php.exe"),
+        "nginx" => Some("nginx.exe"),
+        "mariadb" => Some("bin/mariadbd.exe"),
+        _ => None,
+    }
+}
+
+fn runtime_name(id: &str, manifests: &[PackageManifest]) -> String {
+    manifests.iter().find(|m| m.id == id).map(|m| m.name.to_string()).unwrap_or_else(|| match id {
+        "node" => "Node.js".into(), "php" => "PHP".into(), "nginx" => "Nginx".into(), "mariadb" => "MariaDB".into(), _ => id.into(),
+    })
+}
+
+fn nginx_versions(page: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    for part in page.split("nginx-").skip(1) {
+        let Some(version) = part.split(".zip").next() else { continue };
+        if !version.is_empty() && version.split('.').all(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit())) {
+            found.push(version.to_string());
+        }
+    }
+    found.sort_by(|a, b| compare_versions(b, a));
+    found.dedup();
+    found
+}
+
+fn owned_manifest(m: PackageManifest) -> OwnedManifest {
+    OwnedManifest {
+        id: m.id.into(), name: m.name.into(), version: m.version.into(),
+        platform: m.platform.into(), architecture: m.architecture.into(),
+        url: m.url.into(), sha256: m.sha256.into(), archive_root: m.archive_root.into(),
+        binary: m.binary.into(), probe: None,
+    }
+}
+
+async fn fetch_text(http: &reqwest::Client, url: &str) -> Result<String, String> {
+    let response = http.get(url).send().await.map_err(|e| e.to_string())?;
+    if !response.status().is_success() { return Err(format!("{url}: HTTP {}", response.status())); }
+    response.text().await.map_err(|e| e.to_string())
+}
+
+async fn resolve_online_manifest(http: &reqwest::Client, id: &str, version: &str) -> Result<OwnedManifest, String> {
+    let (url, sha256, archive_root, binary) = match id {
+        "node" => {
+            let filename = format!("node-v{version}-win-x64.zip");
+            let sums_url = format!("https://nodejs.org/dist/v{version}/SHASUMS256.txt");
+            let sums = fetch_text(http, &sums_url).await?;
+            let sha = sums.lines().find_map(|line| {
+                let mut words = line.split_whitespace();
+                let sum = words.next()?;
+                let name = words.next()?.trim_start_matches('*');
+                (name == filename && sum.len() == 64).then(|| sum.to_string())
+            }).ok_or_else(|| format!("Node.js does not publish a SHA-256 for {filename}"))?;
+            (format!("https://nodejs.org/dist/v{version}/{filename}"), sha, format!("node-v{version}-win-x64"), "node.exe")
+        }
+        "php" => {
+            let bytes = http.get("https://downloads.php.net/~windows/releases/releases.json").send().await.map_err(|e| e.to_string())?
+                .error_for_status().map_err(|e| e.to_string())?.bytes().await.map_err(|e| e.to_string())?;
+            let releases: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+            let release = releases.as_object().into_iter().flat_map(|o| o.values()).find(|r| r.get("version").and_then(|v| v.as_str()) == Some(version))
+                .ok_or_else(|| format!("PHP {version} is no longer in the Windows release feed"))?;
+            let (path, sha) = release.as_object().into_iter().flat_map(|o| o.iter())
+                .filter(|(key, _)| key.starts_with("nts-vs") && key.ends_with("-x64"))
+                .find_map(|(_, build)| {
+                    let zip = build.get("zip")?;
+                    Some((zip.get("path")?.as_str()?.to_string(), zip.get("sha256")?.as_str()?.to_string()))
+                }).ok_or_else(|| format!("PHP {version} has no non-thread-safe x64 Windows archive"))?;
+            (format!("https://downloads.php.net/~windows/releases/{path}"), sha, String::new(), "php.exe")
+        }
+        "mariadb" => {
+            let api = format!("https://downloads.mariadb.org/rest-api/mariadb/{version}/");
+            let bytes = http.get(&api).send().await.map_err(|e| e.to_string())?.error_for_status().map_err(|e| e.to_string())?
+                .bytes().await.map_err(|e| e.to_string())?;
+            let data: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+            let release = data.get("releases").and_then(|v| v.get(version)).ok_or_else(|| format!("MariaDB {version} is unavailable"))?;
+            let file = release.get("files").and_then(|v| v.as_array()).into_iter().flatten().find(|f| {
+                f.get("file_name").and_then(|v| v.as_str()).is_some_and(|name| name == format!("mariadb-{version}-winx64.zip"))
+            }).ok_or_else(|| format!("MariaDB {version} has no Windows x64 ZIP"))?;
+            let sha = file.pointer("/checksum/sha256sum").and_then(|v| v.as_str()).filter(|s| s.len() == 64)
+                .ok_or_else(|| format!("MariaDB {version} has no published SHA-256"))?;
+            (format!("https://archive.mariadb.org/mariadb-{version}/winx64-packages/mariadb-{version}-winx64.zip"), sha.to_string(), format!("mariadb-{version}-winx64"), "bin/mariadbd.exe")
+        }
+        "nginx" => (format!("https://nginx.org/download/nginx-{version}.zip"), String::new(), format!("nginx-{version}"), "nginx.exe"),
+        _ => return Err(format!("Online installs are not supported for {id}.")),
+    };
+    Ok(OwnedManifest {
+        id: id.to_string(), name: runtime_name(id, &builtin_catalog()), version: version.to_string(),
+        platform: "windows".into(), architecture: "x64".into(), url, sha256, archive_root, binary: binary.into(), probe: None,
+    })
+}
+
 async fn install_one(
-    manifest: PackageManifest,
+    manifest: OwnedManifest,
     paths: AppPaths,
     http: reqwest::Client,
     events_tx: broadcast::Sender<RuntimeEvent>,
@@ -278,7 +570,7 @@ async fn install_one(
         let path = archive_path.clone();
         tokio::task::spawn_blocking(move || hash_file(&path)).await.map_err(|e| e.to_string())?.ok()
     };
-    let already_cached = cached_digest.as_deref() == Some(manifest.sha256);
+    let already_cached = if manifest.sha256.is_empty() { cached_digest.is_some() } else { cached_digest.as_deref() == Some(manifest.sha256.as_str()) };
 
     let mut downloaded: u64;
     let total: Option<u64>;
@@ -296,8 +588,8 @@ async fn install_one(
         });
     } else {
         // -- Download, hashing as we go so we never buffer the whole file in memory. --
-        let mut request = http.get(manifest.url);
-        if let Some(referer) = crate::catalog::download_referer(manifest.url) {
+        let mut request = http.get(&manifest.url);
+        if let Some(referer) = crate::catalog::download_referer(&manifest.url) {
             request = request.header(reqwest::header::REFERER, referer);
         }
         let response = request.send().await.map_err(|e| e.to_string())?;
@@ -335,7 +627,10 @@ async fn install_one(
             total,
         });
         let digest = format!("{:x}", hasher.finalize());
-        if digest != manifest.sha256 {
+        // Nginx does not publish a SHA-256 sidecar. For those releases, calculate and
+        // retain the digest of the HTTPS download; vendors that publish hashes are checked
+        // against their published value above.
+        if !manifest.sha256.is_empty() && digest != manifest.sha256 {
             let _ = tokio::fs::remove_file(&archive_path).await;
             return Err(format!(
                 "checksum mismatch: expected {}, got {digest} — refusing to install an unverified binary",
@@ -354,8 +649,8 @@ async fn install_one(
         total,
     });
 
-    let runtime_family_dir = paths.runtimes_dir().join(manifest.id);
-    let final_dir = runtime_family_dir.join(manifest.version);
+    let runtime_family_dir = paths.runtimes_dir().join(&manifest.id);
+    let final_dir = runtime_family_dir.join(&manifest.version);
     let scratch_dir = runtime_family_dir.join(format!(".install-{}", manifest.version));
 
     let archive_path_for_blocking = archive_path.clone();
@@ -385,7 +680,7 @@ async fn install_one(
     tokio::fs::rename(&scratch_dir, &final_dir).await.map_err(|e| e.to_string())?;
 
     state.lock().unwrap().insert(key, InstallState::Installed);
-    tracing::info!(id = manifest.id, version = manifest.version, path = %final_dir.display(), "runtime installed");
+    tracing::info!(id = %manifest.id, version = %manifest.version, path = %final_dir.display(), "runtime installed");
     let _ = events_tx.send(RuntimeEvent::Installed {
         id: manifest.id.to_string(),
         version: manifest.version.to_string(),

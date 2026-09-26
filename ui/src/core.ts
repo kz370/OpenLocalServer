@@ -206,6 +206,7 @@ export interface CatalogEntry {
   name: string
   version: string
   installed: boolean
+  is_default: boolean
   system: SystemInstall | null
 }
 
@@ -571,7 +572,9 @@ export type CoreCommand =
   | { type: 'list_command_history' }
   | { type: 'check_port'; port: number }
   | { type: 'list_runtime_catalog' }
+  | { type: 'refresh_runtime_catalog'; id: string }
   | { type: 'install_runtime'; id: string; version: string }
+  | { type: 'remove_runtime'; id: string; version: string }
   | { type: 'register_project'; path: string }
   | { type: 'scan_and_register_projects'; path: string }
   | { type: 'list_projects' }

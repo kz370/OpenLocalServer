@@ -2,7 +2,6 @@ import {
   Box,
   ChevronDown,
   Database,
-  FileCode2,
   Globe,
   Globe2,
   HardDrive,
@@ -68,7 +67,6 @@ const NAV_GROUPS: { id: string; label: string; items: NavItem[] }[] = [
     label: 'Web',
     items: [
       { id: 'webserver', label: 'Web server', icon: ServerCog },
-      { id: 'config', label: 'Web config', icon: FileCode2 },
     ],
   },
   {

@@ -42,6 +42,18 @@ const CATALOG: &[PackageManifest] = &[
         binary: "node.exe",
     },
     PackageManifest {
+        id: "node",
+        name: "Node.js",
+        version: "22.23.0",
+        platform: "windows",
+        architecture: "x64",
+        url: "https://nodejs.org/download/release/v22.23.0/node-v22.23.0-win-x64.zip",
+        // From Node.js' SHASUMS256.txt for this release.
+        sha256: "425a5bd68cc95e8eb16bcccd0a75081b48983fc6a26f67126bd4d6c7198231e8",
+        archive_root: "node-v22.23.0-win-x64",
+        binary: "node.exe",
+    },
+    PackageManifest {
         id: "php",
         name: "PHP",
         version: "8.4.26",
@@ -51,6 +63,18 @@ const CATALOG: &[PackageManifest] = &[
         sha256: "da68394f9193b7f6b89d0c76861a4034ae10efee7fd55a7255d8118c2acf70d7",
         // PHP's Windows zips are flat (no wrapping top-level directory), unlike Node's —
         // an empty archive_root means "strip nothing", which extract_zip handles natively.
+        archive_root: "",
+        binary: "php.exe",
+    },
+    PackageManifest {
+        id: "php",
+        name: "PHP",
+        version: "8.3.35",
+        platform: "windows",
+        architecture: "x64",
+        url: "https://downloads.php.net/~windows/releases/php-8.3.35-nts-Win32-vs16-x64.zip",
+        // Published on PHP's Windows download page for this NTS x64 build.
+        sha256: "25a8e2ac9ff30f1d768d1447c09a600617fa6e6082729f6e95f008b59c91fe45",
         archive_root: "",
         binary: "php.exe",
     },
@@ -79,6 +103,18 @@ const CATALOG: &[PackageManifest] = &[
         // nginx.org publishes no checksum sidecar either — same self-pinned approach.
         sha256: "aad7bf75d669ece7671688bfdf35f1093d6a30d2e62469405f4d55d8d82d5fd3",
         archive_root: "nginx-1.28.3",
+        binary: "nginx.exe",
+    },
+    PackageManifest {
+        id: "nginx",
+        name: "Nginx",
+        version: "1.30.5",
+        platform: "windows",
+        architecture: "x64",
+        url: "https://nginx.org/download/nginx-1.30.5.zip",
+        // SHA-256 pinned from the exact official Windows archive.
+        sha256: "e5afe28b6a50bec92c478bfe1a4d3758206b80fb77159277bc5c4e88955c2a35",
+        archive_root: "nginx-1.30.5",
         binary: "nginx.exe",
     },
     PackageManifest {
@@ -130,6 +166,18 @@ const CATALOG: &[PackageManifest] = &[
         // From archive.mariadb.org's sha256sums.txt for this release.
         sha256: "802f9f40a9dca774a3ba62f39c21093942954f178d6d7d458dc51453929bcdda",
         archive_root: "mariadb-11.4.9-winx64",
+        binary: "bin/mariadbd.exe",
+    },
+    PackageManifest {
+        id: "mariadb",
+        name: "MariaDB",
+        version: "11.8.5",
+        platform: "windows",
+        architecture: "x64",
+        url: "https://archive.mariadb.org/mariadb-11.8.5/winx64-packages/mariadb-11.8.5-winx64.zip",
+        // From archive.mariadb.org's sha256sums.txt for this release.
+        sha256: "75332dc1f437d9ecee253c2d751d02a69628b109ddd031006f8a8d9ba59dbe0d",
+        archive_root: "mariadb-11.8.5-winx64",
         binary: "bin/mariadbd.exe",
     },
     PackageManifest {
