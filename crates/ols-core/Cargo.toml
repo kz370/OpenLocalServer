@@ -12,7 +12,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 tracing-appender = "0.2"
 directories = "5"
-tokio = { version = "1", features = ["rt-multi-thread", "process", "io-util", "sync", "time", "macros", "fs"] }
+tokio = { version = "1", features = ["rt-multi-thread", "process", "io-util", "sync", "time", "macros", "fs", "net"] }
 reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls"] }
 sha2 = "0.10"
 zip = { version = "2", default-features = false, features = ["deflate"] }
@@ -28,6 +28,11 @@ sha1 = "0.10"
 getrandom = "0.3"
 portable-pty = "0.9"
 sysinfo = { version = "0.39", default-features = false, features = ["system", "disk"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+bytes = "1"
 
 [dev-dependencies]
 tempfile = "3"

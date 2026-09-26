@@ -4,11 +4,14 @@ import {
   FileCode2,
   FolderKanban,
   Globe,
+  Globe2,
   HardDrive,
+  Layers,
   LayoutDashboard,
   Moon,
   Rocket,
   ScrollText,
+  Search,
   Server,
   Settings,
   Sun,
@@ -17,7 +20,11 @@ import {
   Zap,
 } from 'lucide-react'
 
+import { useState } from 'react'
+
 import { Badge } from '@/components/ui/badge'
+import { runCommand } from '@/core'
+import { usePoll } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 import { useTheme } from '@/lib/theme'
 
@@ -28,6 +35,8 @@ export type Page =
   | 'commands'
   | 'domains'
   | 'config'
+  | 'tunnels'
+  | 'profiles'
   | 'databases'
   | 'services'
   | 'runtimes'
@@ -42,18 +51,26 @@ const NAV_ITEMS: { id: Page; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'commands', label: 'Commands', icon: Zap },
   { id: 'domains', label: 'Sites', icon: Globe },
   { id: 'config', label: 'Web config', icon: FileCode2 },
+  { id: 'tunnels', label: 'Tunnels', icon: Globe2 },
   { id: 'databases', label: 'Databases', icon: HardDrive },
   { id: 'services', label: 'Services', icon: Database },
   { id: 'runtimes', label: 'Runtimes', icon: Box },
+  { id: 'profiles', label: 'Profiles', icon: Layers },
   { id: 'logs', label: 'Logs', icon: ScrollText },
   { id: 'processes', label: 'Processes', icon: Terminal },
   { id: 'settings', label: 'Settings', icon: Settings },
 ]
 
-const SOON_ITEMS = ['Tunnels', 'Profiles', 'Plugins']
+const SOON_ITEMS = ['Plugins']
 
 export function Sidebar({ page, onNavigate }: { page: Page; onNavigate: (p: Page) => void }) {
   const { theme, resolvedTheme, setTheme } = useTheme()
+  // §59: always visible when something is public.
+  const [publicCount, setPublicCount] = useState(0)
+  usePoll(async () => {
+    const r = await runCommand({ type: 'list_tunnels' }).catch(() => null)
+    if (r?.type === 'tunnels') setPublicCount(r.tunnels.filter((t) => t.state === 'connected' || t.state === 'starting').length)
+  }, 5000)
 
   function cycleTheme() {
     setTheme(theme === 'system' ? 'light' : theme === 'light' ? 'dark' : 'system')
@@ -70,7 +87,17 @@ export function Sidebar({ page, onNavigate }: { page: Page; onNavigate: (p: Page
         <span className="text-sm font-semibold tracking-tight">OpenLocalServer</span>
       </div>
 
-      <nav className="flex flex-1 flex-col gap-0.5 px-2">
+      <button
+        onClick={() => window.dispatchEvent(new Event('ols:palette'))}
+        className="mx-2 mb-2 flex items-center gap-2 rounded-md border border-sidebar-border px-3 py-1.5 text-sm text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+        title="Commands and search (Ctrl+Shift+P or Ctrl+K)"
+      >
+        <Search className="size-4" />
+        <span className="flex-1 text-left">Search…</span>
+        <kbd className="rounded bg-sidebar-accent px-1.5 text-[10px]">Ctrl K</kbd>
+      </button>
+
+      <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2">
         {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
@@ -84,6 +111,11 @@ export function Sidebar({ page, onNavigate }: { page: Page; onNavigate: (p: Page
           >
             <Icon className="size-4" />
             {label}
+            {id === 'tunnels' && publicCount > 0 && (
+              <Badge variant="destructive" className="ml-auto text-[10px]" title="A site is public through a tunnel">
+                public
+              </Badge>
+            )}
           </button>
         ))}
 

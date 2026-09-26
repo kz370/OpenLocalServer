@@ -1,5 +1,5 @@
-//! Project Manager (§40 — Stage 4). A project is a folder DevForge knows about, plus
-//! whatever DevForge can read from it. Registering a project never writes into it.
+//! Project Manager (§40 — Stage 4). A project is a folder OpenLocalServer knows about, plus
+//! whatever OpenLocalServer can read from it. Registering a project never writes into it.
 
 use std::path::PathBuf;
 
@@ -92,6 +92,15 @@ impl ProjectStore {
         self.projects.push(project.clone());
         self.persist()?;
         Ok(project)
+    }
+
+    /// A display name other than the folder's (clones and imports choose their own).
+    pub fn rename(&mut self, id: &str, name: &str) -> Result<Project, CoreError> {
+        let p = self.projects.iter_mut().find(|p| p.id == id).ok_or_else(|| CoreError::InvalidProjectPath(id.to_string()))?;
+        p.name = name.to_string();
+        let out = p.clone();
+        self.persist()?;
+        Ok(out)
     }
 
     pub fn remove(&mut self, id: &str) -> Result<(), CoreError> {
@@ -232,9 +241,9 @@ mod tests {
         let project_dir = home.paths.root().join("shop");
         std::fs::create_dir_all(&project_dir).unwrap();
         std::fs::write(project_dir.join("composer.json"), r#"{"require":{"php":"^8.1"}}"#).unwrap();
-        let devforge_dir = project_dir.join(".devforge");
-        std::fs::create_dir_all(&devforge_dir).unwrap();
-        std::fs::write(devforge_dir.join("environment.yaml"), "runtime:\n  php: \"8.3\"\n").unwrap();
+        let manifest_dir = project_dir.join(".openlocalserver");
+        std::fs::create_dir_all(&manifest_dir).unwrap();
+        std::fs::write(manifest_dir.join("environment.yaml"), "runtime:\n  php: \"8.3\"\n").unwrap();
 
         let mut store = ProjectStore::load(&home.paths).unwrap();
         let project = store.register(project_dir.to_str().unwrap()).unwrap();
@@ -257,9 +266,9 @@ mod tests {
         let home = crate::test_support::isolated_home();
         let project_dir = home.paths.root().join("shop");
         std::fs::create_dir_all(&project_dir).unwrap();
-        let devforge_dir = project_dir.join(".devforge");
-        std::fs::create_dir_all(&devforge_dir).unwrap();
-        std::fs::write(devforge_dir.join("environment.yaml"), "runtime:\n  php: \"8.1\"\n").unwrap();
+        let manifest_dir = project_dir.join(".openlocalserver");
+        std::fs::create_dir_all(&manifest_dir).unwrap();
+        std::fs::write(manifest_dir.join("environment.yaml"), "runtime:\n  php: \"8.1\"\n").unwrap();
 
         let custom_php = home.paths.root().join("custom-php.exe");
         std::fs::write(&custom_php, b"fake").unwrap();

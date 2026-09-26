@@ -1,0 +1,16 @@
+[package]
+name = "ols-cli"
+description = "OpenLocalServer command line: drives the running app (or a background daemon)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "ols"
+path = "src/main.rs"
+
+[dependencies]
+ols-core = { path = "../ols-core" }
+clap = { version = "4", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"

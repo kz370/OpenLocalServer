@@ -3,6 +3,7 @@ import { FolderSearch, ShieldCheck } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
+import { ResourcesCard, SettingsBackupsCard } from '@/components/SettingsExtras'
 import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -177,6 +178,9 @@ export function SettingsPage() {
         <Button disabled={busy !== null} onClick={() => run('save', saveAll)}>Save settings</Button>
         {saved && <span className="text-sm text-success">{saved}</span>}
       </div>
+
+      <ResourcesCard />
+      <SettingsBackupsCard />
     </div>
   )
 }

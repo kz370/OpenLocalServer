@@ -1,8 +1,8 @@
-# DevForge --- Master Software Requirements Specification
+# OpenLocalServer --- Master Software Requirements Specification
 
 **Document Version:** 4.0\
 **Status:** Final Consolidated Master SRS\
-**Product:** DevForge\
+**Product:** OpenLocalServer\
 **Product Type:** Free, open-source, cross-platform local development
 environment platform\
 **Target Platforms:** Windows, macOS, Linux\
@@ -13,11 +13,11 @@ React/Vue/Svelte + SQLite
 
 # 1. Executive Summary
 
-DevForge is a free and open-source desktop development environment
+OpenLocalServer is a free and open-source desktop development environment
 manager inspired by tools such as XAMPP and Laragon, but designed as a
 much broader and more extensible platform.
 
-DevForge provides one place to install, configure, run, diagnose, and
+OpenLocalServer provides one place to install, configure, run, diagnose, and
 reproduce complete local development environments.
 
 It manages:
@@ -75,19 +75,19 @@ It manages:
 
 The central product principle is:
 
-> **A project declares the environment it needs, and DevForge makes that
+> **A project declares the environment it needs, and OpenLocalServer makes that
 > environment available locally.**
 
 ------------------------------------------------------------------------
 
 # 2. Vision
 
-DevForge should make this workflow simple:
+OpenLocalServer should make this workflow simple:
 
 ``` text
 Clone Project
       ↓
-Open in DevForge
+Open in OpenLocalServer
       ↓
 Detect Requirements
       ↓
@@ -127,7 +127,7 @@ manually.
 
 # 3. Product Goals
 
-DevForge shall:
+OpenLocalServer shall:
 
 1.  Be free to use.
 2.  Be open source.
@@ -169,7 +169,7 @@ DevForge shall:
 
 # 4. Non-Goals
 
-DevForge is not intended to:
+OpenLocalServer is not intended to:
 
 -   Replace a full IDE.
 -   Replace Git.
@@ -295,7 +295,7 @@ Xdebug
 # 7. Architecture
 
 ``` text
-                         DevForge
+                         OpenLocalServer
                             │
                ┌────────────┴────────────┐
                │                         │
@@ -379,7 +379,7 @@ Sensitive operations should use a dedicated privileged helper.
 
 # 9. Runtime Management
 
-Runtime management is a core DevForge feature.
+Runtime management is a core OpenLocalServer feature.
 
 Supported initial runtimes:
 
@@ -600,7 +600,7 @@ PHP 8.3
 
 # 19. Runtime-Aware Terminal
 
-A terminal opened from a DevForge project must expose the project's
+A terminal opened from a OpenLocalServer project must expose the project's
 selected runtime.
 
 Example:
@@ -702,7 +702,7 @@ Each should support:
 
 # 23. Web-Server Site Configuration
 
-DevForge must expose project-specific web-server configuration as a
+OpenLocalServer must expose project-specific web-server configuration as a
 first-class feature.
 
 For Nginx:
@@ -746,7 +746,7 @@ routing
 
 # 24. Site Enable / Disable
 
-DevForge should provide a GUI equivalent to traditional
+OpenLocalServer should provide a GUI equivalent to traditional
 site-enable/site-disable workflows.
 
 Example:
@@ -799,7 +799,7 @@ Editor capabilities:
 
 # 26. Generated vs Manual Configuration
 
-DevForge must track whether a configuration is:
+OpenLocalServer must track whether a configuration is:
 
 ``` text
 Managed
@@ -809,15 +809,15 @@ Manual
 
 ### Managed
 
-DevForge owns the configuration.
+OpenLocalServer owns the configuration.
 
 ### Advanced
 
-DevForge generates the base configuration but permits manual changes.
+OpenLocalServer generates the base configuration but permits manual changes.
 
 ### Manual
 
-The user owns the configuration and DevForge must not overwrite it
+The user owns the configuration and OpenLocalServer must not overwrite it
 without explicit confirmation.
 
 ------------------------------------------------------------------------
@@ -836,7 +836,7 @@ Regenerating it may overwrite those changes.
 [Cancel]
 ```
 
-DevForge must not silently destroy manual configuration.
+OpenLocalServer must not silently destroy manual configuration.
 
 ------------------------------------------------------------------------
 
@@ -870,7 +870,7 @@ Caddy should use its native validation mechanism.
 
 # 29. Configuration History
 
-DevForge should optionally retain configuration versions.
+OpenLocalServer should optionally retain configuration versions.
 
 Example:
 
@@ -1047,7 +1047,7 @@ Project C → PostgreSQL 17
 Project D → MongoDB 8
 ```
 
-If instances cannot safely share a port/data directory, DevForge must
+If instances cannot safely share a port/data directory, OpenLocalServer must
 create separate instances.
 
 ------------------------------------------------------------------------
@@ -1250,7 +1250,7 @@ Simple mode:
 Advanced mode:
 
 -   Local DNS resolver
--   Dynamic DevForge domains
+-   Dynamic OpenLocalServer domains
 -   Wildcard resolution
 
 ------------------------------------------------------------------------
@@ -1291,10 +1291,10 @@ https://admin.shop.test
 
 # 50. Local Certificate Authority
 
-DevForge should provide a local development CA.
+OpenLocalServer should provide a local development CA.
 
 ``` text
-DevForge Local CA
+OpenLocalServer Local CA
        │
        ├── shop.test
        ├── *.shop.test
@@ -1380,7 +1380,7 @@ Example:
 ``` text
 https://shop.test
        ↓
-DevForge Tunnel
+OpenLocalServer Tunnel
        ↓
 Public Internet
        ↓
@@ -1402,7 +1402,7 @@ Use cases:
 
 # 55. Tunnel Provider Architecture
 
-DevForge must use a provider abstraction.
+OpenLocalServer must use a provider abstraction.
 
 Potential adapters may support services such as:
 
@@ -1486,7 +1486,7 @@ https://public-example.example
 
 # 59. Tunnel Security
 
-DevForge must:
+OpenLocalServer must:
 
 -   Clearly show when a project is public.
 -   Show the public URL.
@@ -1533,9 +1533,9 @@ Last request:
 
 # 61. Mail Development --- Mailpit
 
-Mailpit is a mandatory first-class DevForge service.
+Mailpit is a mandatory first-class OpenLocalServer service.
 
-DevForge should manage Mailpit like other local services.
+OpenLocalServer should manage Mailpit like other local services.
 
 ------------------------------------------------------------------------
 
@@ -1575,7 +1575,7 @@ mail:
   enabled: true
 ```
 
-DevForge may automatically configure framework variables such as:
+OpenLocalServer may automatically configure framework variables such as:
 
 ``` text
 MAIL_HOST=127.0.0.1
@@ -1678,7 +1678,7 @@ Application
 └── Mailpit
 ```
 
-DevForge should calculate startup order and wait for dependencies to
+OpenLocalServer should calculate startup order and wait for dependencies to
 become healthy.
 
 ------------------------------------------------------------------------
@@ -1731,7 +1731,7 @@ Start queue workers
 Projects may contain:
 
 ``` text
-.devforge/
+.openlocalserver/
     environment.yaml
     services.yaml
     commands.yaml
@@ -1778,7 +1778,7 @@ tunnel:
 Support:
 
 ``` text
-.devforge/environment.lock
+.openlocalserver/environment.lock
 ```
 
 Example:
@@ -1799,7 +1799,7 @@ This improves reproducibility.
 Command:
 
 ``` text
-devforge setup
+ols setup
 ```
 
 must be able to:
@@ -1856,7 +1856,7 @@ Tunnel
 
 # 75. Conflict Detection
 
-DevForge must detect:
+OpenLocalServer must detect:
 
 -   Port conflicts
 -   Runtime conflicts
@@ -1912,7 +1912,7 @@ Tunnel:
 Support:
 
 ``` text
-devforge setup --dry-run
+ols setup --dry-run
 ```
 
 No changes should be applied.
@@ -2185,7 +2185,7 @@ Community catalog
 
 # 88. Quick App Catalog Sources
 
-DevForge should support:
+OpenLocalServer should support:
 
 ``` text
 Built-in Catalog
@@ -2286,7 +2286,7 @@ php artisan migrate
 npm install
 composer install
 npm run build
-devforge tunnel start
+ols tunnel start
 ```
 
 Users can:
@@ -2303,7 +2303,7 @@ Delete History Entry
 
 # 94. External Editor Integration
 
-DevForge should **not embed a full code editor such as Notepad++ inside
+OpenLocalServer should **not embed a full code editor such as Notepad++ inside
 the application**.
 
 Instead, it should integrate with editors installed on the user's
@@ -2330,7 +2330,7 @@ The system should remain extensible.
 
 # 96. Notepad++ Integration
 
-On Windows, DevForge should detect an installed Notepad++ executable.
+On Windows, OpenLocalServer should detect an installed Notepad++ executable.
 
 The user can choose:
 
@@ -2341,7 +2341,7 @@ Settings
 → Notepad++
 ```
 
-DevForge should not require a fixed installation path.
+OpenLocalServer should not require a fixed installation path.
 
 Possible installation locations must be detected.
 
@@ -2395,7 +2395,7 @@ editor:
     - "{{file}}"
 ```
 
-DevForge should support placeholders such as:
+OpenLocalServer should support placeholders such as:
 
 ``` text
 {{file}}
@@ -2454,7 +2454,7 @@ Open Logs
 
 # 102. Database GUI Integration
 
-DevForge does not need to become a full database IDE.
+OpenLocalServer does not need to become a full database IDE.
 
 Instead, it should support external database tools.
 
@@ -2612,7 +2612,7 @@ Display:
 8025     Mailpit UI
 ```
 
-DevForge must detect conflicts before starting services.
+OpenLocalServer must detect conflicts before starting services.
 
 It must not automatically kill unrelated processes.
 
@@ -2644,7 +2644,7 @@ Sensitive values must be redacted.
 
 # 111. Webhook Tester
 
-Because DevForge includes tunneling, it should provide a webhook
+Because OpenLocalServer includes tunneling, it should provide a webhook
 workflow:
 
 ``` text
@@ -2702,13 +2702,13 @@ Suggested Fix
 CLI:
 
 ``` text
-devforge doctor
+ols doctor
 ```
 
 Example:
 
 ``` text
-DevForge Doctor
+OpenLocalServer Doctor
 
 ✓ Operating system supported
 ✓ PHP available
@@ -2740,7 +2740,7 @@ A project should have:
 [Repair Environment]
 ```
 
-DevForge should:
+OpenLocalServer should:
 
 1.  Diagnose.
 2.  Explain detected issues.
@@ -2773,7 +2773,7 @@ Detected process:
 Options:
 
 [Inspect Process]
-[Change DevForge HTTPS Port]
+[Change OpenLocalServer HTTPS Port]
 [Retry]
 ```
 
@@ -2804,7 +2804,7 @@ Health must represent technical state, not a subjective score.
 
 Centralized logs:
 
--   DevForge
+-   OpenLocalServer
 -   Nginx
 -   Apache
 -   Caddy
@@ -2873,7 +2873,7 @@ Notify users about:
 Example:
 
 ``` text
-DevForge
+OpenLocalServer
 
 ● Nginx
 ● MySQL
@@ -2896,7 +2896,7 @@ Exit
 Settings:
 
 ``` text
-[x] Start DevForge with system
+[x] Start OpenLocalServer with system
 [x] Start selected services
 [x] Minimize to tray
 ```
@@ -2953,8 +2953,8 @@ Where supported by the OS:
 ``` text
 Right-click project folder
 
-Open with DevForge
-Create DevForge Environment
+Open with OpenLocalServer
+Create OpenLocalServer Environment
 Start Project
 Open Terminal
 ```
@@ -2977,13 +2977,13 @@ Basic features:
 -   Branch list
 -   Open repository
 
-DevForge should not replace Git clients for advanced Git workflows.
+OpenLocalServer should not replace Git clients for advanced Git workflows.
 
 ------------------------------------------------------------------------
 
 # 126. Import Existing Environments
 
-DevForge should eventually detect and import environments from:
+OpenLocalServer should eventually detect and import environments from:
 
 ``` text
 XAMPP
@@ -3000,11 +3000,11 @@ The user should be offered:
 
 ``` text
 Register Existing Installation
-Use DevForge Managed Installation
+Use OpenLocalServer Managed Installation
 Ignore
 ```
 
-DevForge must not modify an existing installation without confirmation.
+OpenLocalServer must not modify an existing installation without confirmation.
 
 ------------------------------------------------------------------------
 
@@ -3028,7 +3028,7 @@ No unnecessary repeated downloads.
 
 # 128. Offline Mode
 
-Once components are cached, DevForge should support as much offline
+Once components are cached, OpenLocalServer should support as much offline
 operation as practical.
 
 Offline capabilities may include:
@@ -3074,7 +3074,7 @@ Support:
 -   Configuration backups
 -   Environment backups
 -   Certificate metadata backups
--   DevForge settings backups
+-   OpenLocalServer settings backups
 
 Destructive operations should offer backup opportunities.
 
@@ -3184,36 +3184,36 @@ Example:
 Examples:
 
 ``` text
-devforge start
-devforge stop
-devforge restart
+ols start
+ols stop
+ols restart
 
-devforge project list
-devforge project create shop
-devforge project start shop
-devforge project stop shop
+ols project list
+ols project create shop
+ols project start shop
+ols project stop shop
 
-devforge runtime list
-devforge runtime install php 8.4
-devforge php use 8.4
+ols runtime list
+ols runtime install php 8.4
+ols php use 8.4
 
-devforge service list
-devforge service logs nginx
+ols service list
+ols service logs nginx
 
-devforge domain list
-devforge certificate list
+ols domain list
+ols certificate list
 
-devforge tunnel list
-devforge tunnel start shop
-devforge tunnel stop shop
+ols tunnel list
+ols tunnel start shop
+ols tunnel stop shop
 
-devforge quick-app list
-devforge quick-app create
-devforge quick-command run migrate
+ols quick-app list
+ols quick-app create
+ols quick-command run migrate
 
-devforge doctor
-devforge repair shop
-devforge setup
+ols doctor
+ols repair shop
+ols setup
 ```
 
 ------------------------------------------------------------------------
@@ -3248,7 +3248,7 @@ State-changing operations must require authorization.
 
 # 138. Security
 
-DevForge controls:
+OpenLocalServer controls:
 
 -   Processes
 -   Files
@@ -3436,7 +3436,7 @@ Runtime/service updates remain independently controlled.
 Conceptual:
 
 ``` text
-DevForge/
+OpenLocalServer/
 ├── app/
 ├── runtimes/
 │   ├── php/
@@ -3803,7 +3803,7 @@ Redis
 Mailpit
 ```
 
-DevForge should detect and satisfy these automatically where possible.
+OpenLocalServer should detect and satisfy these automatically where possible.
 
 ------------------------------------------------------------------------
 
@@ -3927,7 +3927,7 @@ Clone Environment
 Project B
 ```
 
-DevForge should adjust:
+OpenLocalServer should adjust:
 
 -   Project name
 -   Paths
@@ -3945,7 +3945,7 @@ as necessary.
 A repository can contain:
 
 ``` text
-.devforge/
+.openlocalserver/
 ├── environment.yaml
 ├── environment.lock
 ├── services.yaml
@@ -3957,10 +3957,10 @@ New developer:
 ``` text
 git clone ...
 cd project
-devforge setup
+ols setup
 ```
 
-DevForge reconstructs the environment.
+OpenLocalServer reconstructs the environment.
 
 ------------------------------------------------------------------------
 
@@ -4005,7 +4005,7 @@ Test:
 ## End-to-End
 
 ``` text
-Install DevForge
+Install OpenLocalServer
  ↓
 Create Quick App
  ↓
@@ -4060,7 +4060,7 @@ Use:
 
 # 162. Performance Requirements
 
-DevForge should:
+OpenLocalServer should:
 
 -   Start quickly.
 -   Remain responsive.
@@ -4075,7 +4075,7 @@ DevForge should:
 
 # 163. Reliability Requirements
 
-DevForge should:
+OpenLocalServer should:
 
 -   Recover from service crashes.
 -   Preserve valid previous configuration.
@@ -4221,7 +4221,7 @@ Potential future capabilities:
 
 # 169. Product Differentiation
 
-DevForge differentiates itself through:
+OpenLocalServer differentiates itself through:
 
 1.  Per-project runtime versions.
 2.  Multiple PHP versions simultaneously.
@@ -4261,7 +4261,7 @@ DevForge differentiates itself through:
 
 # 170. Critical Product Principle
 
-DevForge must not become:
+OpenLocalServer must not become:
 
 ``` text
 A GUI that launches random shell scripts.
@@ -4270,7 +4270,7 @@ A GUI that launches random shell scripts.
 It must be:
 
 ``` text
-                         DevForge
+                         OpenLocalServer
                             │
                  ┌──────────┴──────────┐
                  │                     │
@@ -4385,7 +4385,7 @@ Mailpit
 The ideal workflow:
 
 ``` text
-Install DevForge
+Install OpenLocalServer
         ↓
 Open existing project
         ↓
@@ -4428,7 +4428,7 @@ Optionally start public tunnel
 
 ``` text
 ┌──────────────────────────────────────────────────────────────┐
-│ DevForge                                                     │
+│ OpenLocalServer                                                     │
 ├──────────────────────────────────────────────────────────────┤
 │ Environment: HEALTHY                                         │
 │                                                              │
@@ -4466,7 +4466,7 @@ Optionally start public tunnel
 
 # 174. Definition of Success
 
-DevForge is successful when a developer can take a new or existing
+OpenLocalServer is successful when a developer can take a new or existing
 project and go from:
 
 ``` text
@@ -4495,5 +4495,5 @@ The system must remain:
 -   Developer-focused
 -   Maintainable
 
-DevForge should feel like a complete local development operating
+OpenLocalServer should feel like a complete local development operating
 environment rather than a simple collection of local web servers.

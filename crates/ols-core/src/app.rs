@@ -55,6 +55,16 @@ pub struct Inner {
     pub runs: RunManager,
     pub terminals: Arc<crate::terminal::TerminalManager>,
     pub journal: Mutex<crate::journal::Journal>,
+    /// Where a database scan or import from Laragon/XAMPP/Wamp is up to.
+    pub migration: crate::migrate::Progress,
+    /// The running (or last) environment setup, for the UI to follow (§73).
+    pub setup: Mutex<Option<crate::setup::SetupReport>>,
+    pub workers: Mutex<crate::workers::WorkerStore>,
+    pub worker_procs: crate::workers::WorkerProcesses,
+    pub schedules: Mutex<crate::scheduler::ScheduleStore>,
+    pub task_runs: crate::scheduler::TaskRuns,
+    pub profiles: crate::profiles::ProfileStore,
+    pub tunnels: crate::tunnel::TunnelManager,
 }
 
 fn svc(msg: impl Into<String>) -> CoreError {
@@ -155,9 +165,18 @@ impl Inner {
             runs: RunManager::new(),
             terminals: Arc::new(crate::terminal::TerminalManager::new()),
             journal: Mutex::new(crate::journal::Journal::load(&paths)),
+            migration: Default::default(),
+            setup: Mutex::new(None),
+            workers: Mutex::new(crate::workers::WorkerStore::load(&paths)),
+            worker_procs: Default::default(),
+            schedules: Mutex::new(crate::scheduler::ScheduleStore::load(&paths)),
+            task_runs: Default::default(),
+            profiles: crate::profiles::ProfileStore::new(&paths),
+            tunnels: crate::tunnel::TunnelManager::new(&paths),
             paths,
         });
         core.sync_php_external();
+        core.services.set_limits(core.resource_limits());
         Ok(core)
     }
 
@@ -846,14 +865,27 @@ impl Inner {
     /// Databases in an old Laragon/XAMPP/Wamp server (started on a copy if it isn't running).
     pub fn foreign_databases(&self, source_id: &str, password: &str) -> Result<Vec<String>, CoreError> {
         let source = self.migration_source(source_id)?;
-        let session = crate::migrate::Session::open(source, password, &self.paths.cache_dir()).map_err(svc)?;
-        session.databases().map_err(svc)
+        self.migration.begin("scan");
+        let result = crate::migrate::Session::open(source, password, &self.paths.cache_dir(), &self.migration).and_then(|session| {
+            self.migration.step("Reading the list of databases", None);
+            session.databases()
+        });
+        self.migration.end();
+        result.map_err(svc)
     }
 
     /// Copies databases from an old server (MySQL or MariaDB) into our MariaDB (`target`).
     /// An empty `databases` list means all of them. Each database reports on its own, so
     /// one failure doesn't stop the rest.
     pub fn migrate_databases(&self, source_id: &str, password: &str, databases: &[String], target: &str) -> Result<Vec<crate::migrate::MigratedDb>, CoreError> {
+        self.migration.begin("import");
+        let result = self.migrate_databases_inner(source_id, password, databases, target);
+        self.migration.end();
+        result
+    }
+
+    fn migrate_databases_inner(&self, source_id: &str, password: &str, databases: &[String], target: &str) -> Result<Vec<crate::migrate::MigratedDb>, CoreError> {
+        let progress = &self.migration;
         let source = self.migration_source(source_id)?;
         let (client, port) = self.services.sql_client(target).map_err(svc)?;
         if source.running_port == Some(port) {
@@ -862,6 +894,7 @@ impl Inner {
                 source.label
             )));
         }
+        progress.step(format!("Starting our {target}"), None);
         if !self.services.is_running(target) {
             self.services.start(target).map_err(svc)?;
         }
@@ -875,19 +908,31 @@ impl Inner {
 
         let work = self.paths.cache_dir();
         std::fs::create_dir_all(&work)?;
-        let session = crate::migrate::Session::open(source, password, &work).map_err(svc)?;
+        let session = crate::migrate::Session::open(source, password, &work, progress).map_err(svc)?;
         let names = if databases.is_empty() { session.databases().map_err(svc)? } else { databases.to_vec() };
+        progress.step("Measuring the databases", None);
+        let sizes = session.sizes();
         let mut results = Vec::new();
-        for db in names {
+        let total = names.len();
+        for (index, db) in names.into_iter().enumerate() {
+            progress.database(index + 1, total, &db);
             let file = work.join(format!("migrate-{}.sql", crate::domain::slugify(&db)));
-            let outcome = session.dump(&db, &file).and_then(|()| crate::migrate::import(&client, port, &file));
+            progress.step(format!("Exporting {db}"), sizes.get(&db).copied().filter(|s| *s > 0));
+            let outcome = session.dump(&db, &file, progress).and_then(|()| {
+                progress.step(format!("Importing {db} into {target}"), std::fs::metadata(&file).ok().map(|m| m.len()));
+                crate::migrate::import(&client, port, &file, progress)
+            });
             let _ = std::fs::remove_file(&file);
             tracing::info!(database = %db, ok = outcome.is_ok(), "database migration");
-            results.push(match outcome {
+            let result = match outcome {
                 Ok(()) => crate::migrate::MigratedDb { name: db, ok: true, detail: "copied".into() },
                 Err(e) => crate::migrate::MigratedDb { name: db, ok: false, detail: e },
-            });
+            };
+            progress.finished(result.clone());
+            results.push(result);
         }
+        progress.step("Cleaning up the temporary copy", None);
+        drop(session);
         Ok(results)
     }
 
@@ -1067,6 +1112,31 @@ impl Inner {
         }
     }
 
+    /// Starts a service (when it isn't running) and waits until its port answers.
+    pub(crate) fn start_service_and_wait(&self, id: &str, log: &mut dyn FnMut(&str)) -> Result<(), String> {
+        if !self.services.is_running(id) {
+            log(&format!("Starting {id}"));
+            self.services.start(id)?;
+        }
+        let Some(port) = self.services.status(id).port else { return Ok(()) };
+        // MariaDB initialises its data directory on first start — give them time.
+        let started = Instant::now();
+        while started.elapsed() < Duration::from_secs(120) {
+            if !self.services.is_running(id) {
+                return Err(format!("{id} stopped right after starting. See its output on the Processes page."));
+            }
+            if std::net::TcpStream::connect_timeout(&([127, 0, 0, 1], port).into(), Duration::from_millis(300)).is_ok() {
+                return Ok(());
+            }
+            std::thread::sleep(Duration::from_millis(400));
+        }
+        Err(format!("{id} did not open port {port} in time"))
+    }
+
+    pub(crate) fn install_runtime_blocking(&self, id: &str, version: &str, log: &mut dyn FnMut(&str)) -> Result<(), String> {
+        self.install_blocking(id, version, log)
+    }
+
     fn quick_ensure_runtime(&self, id: &str, wanted: Option<&str>, log: &mut dyn FnMut(&str)) -> Result<String, String> {
         if id == "python" {
             return crate::runtime::detect_system_install("python")
@@ -1208,24 +1278,8 @@ impl Inner {
                 Ok(ActionOutcome::default())
             }
             "start_service" => {
-                let id = get("id")?;
-                if !self.services.is_running(id) {
-                    log(&format!("Starting {id}"));
-                    self.services.start(id)?;
-                }
-                let port = self.services.status(id).port.ok_or("service has no port")?;
-                // MariaDB initialises its data directory on first start — give them time.
-                let started = Instant::now();
-                while started.elapsed() < Duration::from_secs(120) {
-                    if !self.services.is_running(id) {
-                        return Err(format!("{id} stopped right after starting. See its output on the Processes page."));
-                    }
-                    if std::net::TcpStream::connect_timeout(&([127, 0, 0, 1], port).into(), Duration::from_millis(300)).is_ok() {
-                        return Ok(ActionOutcome::default());
-                    }
-                    std::thread::sleep(Duration::from_millis(400));
-                }
-                Err(format!("{id} did not open port {port} in time"))
+                self.start_service_and_wait(get("id")?, log)?;
+                Ok(ActionOutcome::default())
             }
             "create_database" => {
                 let (engine, name) = (get("engine")?, get("name")?);
@@ -1427,6 +1481,12 @@ impl Inner {
         let mut full_args = resolved.pre_args.clone();
         full_args.extend(args.iter().cloned());
         let mut env = resolved.env.clone();
+        // §129: Node's heap limit for every project command (Node ignores it otherwise).
+        if let Some(mb) = self.resource_limits().node_max_old_space_mb {
+            if !env.iter().any(|(k, _)| k == "NODE_OPTIONS") {
+                env.push(("NODE_OPTIONS".into(), format!("--max-old-space-size={mb}")));
+            }
+        }
         if !resolved.path_dirs.is_empty() {
             let mut dirs: Vec<String> = resolved.path_dirs.iter().map(|d| d.display().to_string()).collect();
             dirs.push(std::env::var("PATH").unwrap_or_default());

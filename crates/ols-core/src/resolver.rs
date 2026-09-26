@@ -8,7 +8,7 @@ use crate::runtime::RuntimeManager;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ResolutionSource {
-    /// From `.devforge/environment.yaml` — an explicit choice, never overridden (§11).
+    /// From `.openlocalserver/environment.yaml` — an explicit choice, never overridden (§11).
     Manifest,
     /// Guessed from a marker file (composer.json, package.json, ...) — a hint, not a promise.
     Detected,

@@ -1,4 +1,4 @@
-//! Domain Manager (§44–48, §30 — Stages 6 and 9): the local domains DevForge serves, how
+//! Domain Manager (§44–48, §30 — Stages 6 and 9): the local domains OpenLocalServer serves, how
 //! each is routed (PHP / reverse proxy / static), and who owns its web-server config.
 //! Pure data + validation — turning a `Domain` into server config lives in `web/`.
 
@@ -14,12 +14,12 @@ use crate::paths::AppPaths;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum Ownership {
-    /// DevForge generates the whole file from the site's settings; hand edits are drift.
+    /// OpenLocalServer generates the whole file from the site's settings; hand edits are drift.
     #[default]
     Managed,
-    /// DevForge generates the file and includes a user-owned snippet inside the server block.
+    /// OpenLocalServer generates the file and includes a user-owned snippet inside the server block.
     Advanced,
-    /// The user owns the whole file. DevForge validates and reloads it, never rewrites it.
+    /// The user owns the whole file. OpenLocalServer validates and reloads it, never rewrites it.
     Manual,
 }
 
@@ -148,7 +148,7 @@ pub struct Domain {
     pub app: Option<AppSpec>,
     #[serde(default)]
     pub blocks: SiteBlocks,
-    /// SHA-256 of the config file DevForge last wrote, per web server id — drift
+    /// SHA-256 of the config file OpenLocalServer last wrote, per web server id — drift
     /// detection (§26). Keyed by server because each server has its own file.
     #[serde(default)]
     pub generated_hashes: BTreeMap<String, String>,

@@ -1,11 +1,10 @@
-# OpenLocalServer (DevForge) — Implementation Plan
+# OpenLocalServer — Implementation Plan
 
 This file has two parts:
 
 1. **Progress** — where the build stands, kept up to date as work lands.
-2. **The original plan** — the staged plan the project started from, unchanged. It still uses the working name
-   *DevForge* (`devforge-core`, `devforge-helper`); the code ships as *OpenLocalServer* (`ols-core`,
-   `ols-helper`).
+2. **The original plan** — the staged plan the project started from. Crate names match the code
+   (`ols-core`, `ols-helper`, `ols-cli`); the CLI is `ols`, and project manifests live in `.openlocalserver/`.
 
 ---
 
@@ -13,8 +12,9 @@ This file has two parts:
 
 The full list of missing features is in [STATUS.md](STATUS.md).
 
-**Current stage: 11 — Runtime depth + diagnostics (built, not checked visually).** Release 0.1 features are largely built but
-its release gate (the clean-VM Laravel flow) has not been run, and several Stage 0–5 items are still open.
+**Current stage: 15 — Power UX + repair (built, 2026-09-26).** Releases 0.1–0.3 are feature-complete. None is
+released: the 0.1 gate (the clean-VM Laravel flow) and the 0.3 gate (`git clone && ols setup` on a clean machine)
+have not been run, and the new screens have not all been checked in the running app.
 
 | Stage | Status | Open items |
 |---|---|---|
@@ -30,7 +30,10 @@ its release gate (the clean-VM Laravel flow) has not been run, and several Stage
 | 9 Web config, reverse proxy, wildcards | Done | — |
 | 10 More servers and databases | Done | — |
 | **11 Runtime depth + diagnostics** | **Built** | Xdebug, Composer, corepack, Python venv, `DiagnosticEngine` v1 and the `.env` editor exist; screens not yet checked in the running app |
-| 12–15 (release 0.3) | Not started | — |
+| 12 CLI, manifests, reproducible setup | Built | `ols` CLI over a per-user, per-install named pipe (auto-starts `ols daemon` when the app is closed); full manifest schema, lock file, setup plan / dry run / apply with rollback of safe changes, conflict detection. The 0.3 gate has not been run |
+| 13 Profiles, modes, workers, scheduler, snapshots | Built | 8 built-in profiles plus your own (import/export), 4 modes; queue workers; cron scheduler (runs while the app or daemon is open); snapshots, settings backups, environment import/export and cloning |
+| 14 Tunnels + traffic | Built | Cloudflare, ngrok, LocalTunnel, Tailscale Funnel; first-exposure confirmation, internal-port refusal, access control in our own proxy; traffic inspector with redaction, replay and a webhook tester. Real providers not yet exercised end to end (needs their programs installed) |
+| 15 Power UX + repair | Built | Command palette and global search (Ctrl+Shift+P / Ctrl+K), doctor, project diagnostics and repair, Git repository manager (portable Git in the catalog), resource limits |
 | 16–18 (release 1.0) | Not started | Except the items marked *done early* below |
 
 ### Done early or beyond the plan
@@ -50,14 +53,19 @@ its release gate (the clean-VM Laravel flow) has not been run, and several Stage
   editor, structured blocks, history and ownership controls as the Web config page (which stays as it is).
 
 ### Added to the plan (2026-09-26)
-- **Git repository manager** (extends §125, Stage 15): manage a project's Git repository from inside the app —
-  clone into a new site, status, branches, stage/commit, pull/push, diff, log, remotes, and credentials kept in the
-  Secrets Manager. Uses an existing Git install or downloads a portable one through the Package Manager.
-  Can be pulled forward if wanted.
+- **Git repository manager** (extends §125, Stage 15): built. Clone into a new site, status, branches,
+  stage/commit, pull/push/fetch, diff, log, remotes, stash, `.gitignore` templates; HTTPS credentials in the
+  Secrets Manager. Uses an existing Git or a portable MinGit from the Runtimes catalog.
+- **Load testing with k6** (Stage 19, below): performance tests for a project's sites from inside the app.
+
+### Changed (2026-09-26)
+- **No macOS.** OpenLocalServer targets Windows, and Linux later (Stage 16). macOS work is dropped from the plan.
 
 ### Deviations from the plan
-- Product name *OpenLocalServer*; crates `ols-core` and `ols-helper` (no separate `platform`, `cli` or `catalog`
-  crates yet).
+- Product name *OpenLocalServer*; crates `ols-core`, `ols-helper` and `ols-cli` (binary `ols`); no separate
+  `platform` or `catalog` crates yet. Project manifests live in `.openlocalserver/`.
+- The CLI talks to the app over a named pipe with a per-session token in `control.json`; when the app is closed,
+  the CLI starts `ols daemon`, which hands over to the app when the app starts.
 - Persistent state is JSON files under the data directory rather than SQLite + migrations.
 - The data directory is portable: `data/` beside the executable (or the repo in debug builds).
 
@@ -67,7 +75,7 @@ its release gate (the clean-VM Laravel flow) has not been run, and several Stage
 
 ## Context
 
-`I:\Development\devforge` holds only `DevForge_Master_SRS_v4.md` (174 sections): a free, open-source,
+`I:\Development\OpenLocalServer` holds only `OpenLocalServer_Master_SRS_v4.md` (174 sections): a free, open-source,
 cross-platform local dev environment manager (XAMPP/Laragon successor) built on Tauri 2 + Rust +
 TypeScript + SQLite. Nothing is implemented yet. This plan turns the SRS into ordered, shippable stages
 that follow the SRS release train (§164 MVP 0.1 → §165 0.2 → §166 0.3 → §167 1.0).
@@ -79,7 +87,7 @@ Decisions taken:
 - Scope: detailed stages for 0.1, coarser stages for 0.2 / 0.3 / 1.0.
 - **Excluded from this plan:** Docker integration, WSL integration, container orchestration, and the rest
   of §168 "Future Features" (remote envs, cloud deploy, AI diagnostics). Nothing in the plan depends on them.
-- **Added beyond SRS:** DevForge integrates **HeidiSQL** (MySQL/MariaDB/SQLite GUI) and **pgAdmin 4**
+- **Added beyond SRS:** OpenLocalServer integrates **HeidiSQL** (MySQL/MariaDB/SQLite GUI) and **pgAdmin 4**
   (PostgreSQL GUI) and can open them already connected to a project database.
   - It **first detects** an existing install on the system.
   - It downloads a tool only when the tool is missing **and** the user confirms.
@@ -91,12 +99,12 @@ Deliverable on approval: copy this plan into the repo as `docs/IMPLEMENTATION_PL
 ## Architecture decisions (fixed before Stage 1)
 
 1. **One core, many front doors (§8.1, §170).** All operations are a serializable `CoreCommand` enum
-   handled by one dispatcher in `devforge-core`. Tauri `invoke`, the CLI, and the local HTTP API all route to
+   handled by one dispatcher in `ols-core`. Tauri `invoke`, the CLI, and the local HTTP API all route to
    it. The UI never spawns processes (§8.2).
 2. **Single process owner.** The Tauri app hosts the core and the Process Supervisor. It opens a local control
    channel (Windows named pipe; Unix socket later) that requires a per-session token. The CLI talks to it, or
-   starts a headless core (`devforge daemon`) when the GUI isn't running.
-3. **Privilege separation (§8.5, §138).** `devforge-helper` accepts a small, closed JSON command set
+   starts a headless core (`ols daemon`) when the GUI isn't running.
+3. **Privilege separation (§8.5, §138).** `ols-helper` accepts a small, closed JSON command set
    (hosts block, NRPT DNS rule, later service install). On Windows it is launched per operation via
    `ShellExecute runas` (UAC). The main app never runs elevated.
 4. **Declarative definitions (§8.3).** Runtimes, services, tools, Quick Apps, and Quick Commands are YAML/JSON
@@ -105,19 +113,19 @@ Deliverable on approval: copy this plan into the repo as `docs/IMPLEMENTATION_PL
    gives rollback, crash-interrupted operation detection on next start, and progress UI.
 6. **Event-driven, not polling (§162).** The supervisor waits on process handles for exit. CPU/mem samples
    run only while a view that needs them is open. Log tail uses file-change notifications.
-7. **Test isolation (§161).** `DEVFORGE_HOME` overrides every path, and tests use a reserved port range.
+7. **Test isolation (§161).** `OLS_HOME` overrides every path, and tests use a reserved port range.
 8. **Schema grows per stage.** Each stage adds migrations for its §150 tables (e.g. Stage 9 adds
    `web_config_history`, Stage 13 adds `profiles/snapshots/backups`, Stage 14 adds `tunnels`).
 
 ### Cargo workspace layout
 ```
-devforge/
+openlocalserver/
 ├── crates/
-│   ├── devforge-core/      # domain + managers (§147 modules, §149 services)
-│   ├── devforge-platform/  # traits + windows/ impl (macos/, linux/ later)
-│   ├── devforge-helper/    # privileged helper binary
-│   ├── devforge-cli/       # clap CLI (Stage 12)
-│   └── devforge-catalog/   # package/service/tool/quick-app schema + built-in catalog data
+│   ├── ols-core/      # domain + managers (§147 modules, §149 services)
+│   ├── ols-platform/  # traits + windows/ impl (macos/, linux/ later)
+│   ├── ols-helper/    # privileged helper binary
+│   ├── ols-cli/       # clap CLI (Stage 12)
+│   └── ols-catalog/   # package/service/tool/quick-app schema + built-in catalog data
 ├── src-tauri/              # Tauri 2 shell: IPC bindings, tray, windows
 ├── ui/                     # React app (§148 feature folders)
 └── docs/
@@ -139,7 +147,7 @@ registry), minijinja, clap, tauri-specta. UI: xterm.js, CodeMirror 6 (Stage 9).
 - **Exit:** empty Tauri window builds and launches; CI green.
 
 ### Stage 1 — Core skeleton
-- `AppPaths` (§146, OS conventions, `DEVFORGE_HOME` override). SQLite + migrations for 0.1 tables.
+- `AppPaths` (§146, OS conventions, `OLS_HOME` override). SQLite + migrations for 0.1 tables.
 - Settings service. Error model with a user-facing `Diagnostic { problem, cause, fix }` shape (§112, §115).
 - Structured logging (§118) with a secret-redaction layer (§141) and per-component files.
 - Event bus (core → UI) and the operation journal (decision 5), including detection of interrupted operations on startup.
@@ -175,7 +183,7 @@ registry), minijinja, clap, tauri-specta. UI: xterm.js, CodeMirror 6 (Stage 9).
   - Node: `engines`/.nvmrc and package manager from the lockfile (npm/pnpm/yarn).
   - Python: `requires-python`, requirements.txt, existing `.venv`.
   - DB engine from `.env` / framework config.
-- `.devforge/environment.yaml` parser (§71). Resolution goes project → profile → global (§18). The profile
+- `.openlocalserver/environment.yaml` parser (§71). Resolution goes project → profile → global (§18). The profile
   layer is a stub until Stage 13. Global never overrides project (§11).
 - Runtime-aware terminal (§19): portable-pty + xterm.js, with the resolved runtimes on PATH.
 - **Environment variables editor (§103):**
@@ -212,7 +220,7 @@ registry), minijinja, clap, tauri-specta. UI: xterm.js, CodeMirror 6 (Stage 9).
      - Default dirs (`Program Files\HeidiSQL`, `Program Files\pgAdmin 4`) and PATH.
      - Scoop, Chocolatey, and winget install locations.
      - A user-chosen path in Settings.
-  2. **Found:** register that install as the tool and use it. DevForge never modifies it (§126).
+  2. **Found:** register that install as the tool and use it. OpenLocalServer never modifies it (§126).
   3. **Not found:** show "HeidiSQL not installed" with **[Download & Install]**, **[Locate manually]**, and
      **[Skip]**. Nothing downloads without that click.
   4. **Download path:** the catalog entry goes through the Package Manager (HTTPS + SHA-256 verify).
@@ -221,7 +229,7 @@ registry), minijinja, clap, tauri-specta. UI: xterm.js, CodeMirror 6 (Stage 9).
   5. Detection re-runs on app start and from a "Rescan" button. A missing tool shows as unavailable instead of
      triggering a download.
   - **Connect without exposing passwords:**
-    - HeidiSQL: DevForge writes a session entry to HeidiSQL's settings.
+    - HeidiSQL: OpenLocalServer writes a session entry to HeidiSQL's settings.
     - pgAdmin: servers go in through a `servers.json` import plus a passfile.
   - Project/database actions: "Open in HeidiSQL" and "Open in pgAdmin", already connected to that database.
   - Tool definitions carry detection rules (registry keys, paths, exe name), so plugins can add more tools later.
@@ -235,7 +243,7 @@ registry), minijinja, clap, tauri-specta. UI: xterm.js, CodeMirror 6 (Stage 9).
   - After the user confirms the download, the tool installs and opens connected to a test DB.
 
 ### Stage 6 — Domains, hosts, Local CA, HTTPS, Nginx, app servers
-- `devforge-helper` v1: delimited DevForge block in the hosts file. Closed command set with validated input.
+- `ols-helper` v1: delimited OpenLocalServer block in the hosts file. Closed command set with validated input.
 - `DomainManager` (§44–48): templates, subdomains, port mappings, and conflict detection.
 - Local CA (§50): key protected by restrictive ACLs (§142). Trusted in the Windows CurrentUser Root store after user confirmation.
 - `CertificateManager` (§51): generate/renew/revoke/regenerate, expiry and trust checks, and the full detail view
@@ -303,8 +311,8 @@ registry), minijinja, clap, tauri-specta. UI: xterm.js, CodeMirror 6 (Stage 9).
 ## RELEASE 0.3 (SRS §166)
 
 ### Stage 12 — CLI, manifests, reproducible setup
-- `devforge-cli` (§136) over the control channel.
-- Manifests (§71): environment, services, and commands. Lock file (§72), `devforge setup` (§73, §159),
+- `ols-cli` (§136) over the control channel.
+- Manifests (§71): environment, services, and commands. Lock file (§72), `ols setup` (§73, §159),
   `--dry-run` (§77), Environment Plan preview (§76), and rollback (§78).
 - Environment Resolver pipeline (§74) and full conflict detection (§75), including file ownership.
 
@@ -322,7 +330,7 @@ registry), minijinja, clap, tauri-specta. UI: xterm.js, CodeMirror 6 (Stage 9).
 
 ### Stage 15 — Power UX + repair
 - Command palette (§122) and global search (§123).
-- Automatic repair (§114), explained diagnostics (§115), and `devforge doctor` (§113).
+- Automatic repair (§114), explained diagnostics (§115), and `ols doctor` (§113).
 - **Git repository manager** (§125, expanded 2026-09-26): per-project repo view inside the app. Clone into a new
   site, status and changed files, branches (create/switch/delete), stage and commit, pull/push/fetch, diff, log,
   remotes, stash, and `.gitignore` help. Credentials go through the Secrets Manager. Uses the system Git, or a
@@ -333,12 +341,14 @@ registry), minijinja, clap, tauri-specta. UI: xterm.js, CodeMirror 6 (Stage 9).
 
 ## RELEASE 1.0 (SRS §167)
 
-### Stage 16 — macOS + Linux
-- Helper: launchd on macOS, polkit on Linux.
-- Trust store: macOS `security`, Linux update-ca-certificates, plus NSS on both.
-- DNS: `/etc/resolver` on macOS, systemd-resolved on Linux.
-- Process groups; per-OS package catalogs; HeidiSQL alternative on macOS/Linux (HeidiSQL is Windows-only; pgAdmin is cross-platform).
-- CI matrix on all three OSes. Packages: .dmg, AppImage, .deb.
+### Stage 16 — Linux
+macOS is out of scope (decided 2026-09-26).
+- Helper: polkit (pkexec) for the few privileged actions; an optional systemd service like the Windows helper.
+- Trust store: update-ca-certificates (and the Fedora/Arch equivalents) plus NSS for Firefox and Chromium.
+- DNS: a systemd-resolved drop-in for `.test`; the hosts file where resolved isn't used.
+- Control channel on a Unix socket; process groups instead of `taskkill /T`.
+- Linux package catalog (official tarballs with checksums); a DB GUI alternative to HeidiSQL (which is Windows-only; pgAdmin is cross-platform).
+- CI matrix on Windows and Linux. Packages: AppImage and .deb.
 
 ### Stage 17 — Plugins + catalogs
 - Plugin manifest (§135) with explicit permissions (§134).
@@ -352,6 +362,24 @@ registry), minijinja, clap, tauri-specta. UI: xterm.js, CodeMirror 6 (Stage 9).
 - Explorer context menu (§124), offline indicators (§128), and telemetry off by default (§143).
 - Advanced diagnostics (§167) and full docs (§144).
 - Security review against the §138 checklist.
+
+## RELEASE 1.1
+
+### Stage 19 — Load testing with k6
+Performance testing for a project's sites without leaving the app, using [k6](https://k6.io) (Grafana's open-source
+load tester, a single binary).
+- **k6 runtime** through the Package Manager (official release archive, checksum verified), or an existing install.
+- **Test scripts per project** in `.openlocalserver/k6/*.js`, committed with the project. A wizard writes a first
+  script from the project's site and routes (a smoke test, a load test with ramping VUs, a spike test).
+- **Run against the local site** (trusted HTTPS through the local CA via `SSL_CERT_FILE` / k6's own TLS options)
+  or, deliberately, against a running tunnel's public URL. Refuse hosts that aren't the project's own sites.
+- **Live results**: k6's JSON output streamed into the UI (requests/s, p50/p95/p99 latency, error rate, VUs,
+  checks), thresholds as pass/fail, and each run kept with its summary so runs can be compared.
+- **Quick Command and CLI**: `ols test load [project] [script]`, exit code from the thresholds, so CI can use it.
+- **Safety**: CPU/VU limits from Settings → Resources, a stop button, and a warning before pointing k6 at a
+  public tunnel (that sends real traffic through the provider).
+- **Exit**: a Laravel project gets a generated smoke test, runs it from the Environment tab and the CLI, and a failed
+  threshold shows as a failed run.
 
 ---
 
@@ -384,7 +412,7 @@ registry), minijinja, clap, tauri-specta. UI: xterm.js, CodeMirror 6 (Stage 9).
 | 138–140, 143 security, telemetry | throughout, 7, 14, 18 |
 | 144–151 OSS, updater, layout, arch, schema | 0, 1, 18, decision 8 |
 | 155–158 examples, cloning | 7, 8, 13 |
-| 160–163 testing, perf, reliability | decisions 5–7, every stage |
+| 160–163 testing, perf, reliability | decisions 5–7, every stage; k6 load testing → 19 |
 | 164–167 releases | stage grouping |
 | 168 future | **excluded** (Docker, WSL, orchestration, etc.) |
 
@@ -393,10 +421,12 @@ registry), minijinja, clap, tauri-specta. UI: xterm.js, CodeMirror 6 (Stage 9).
 - **pgAdmin silent per-user install**: verify the installer flags. If a per-user install isn't possible, use a one-time
   UAC install through the helper, still only after the user confirms.
 - **Firefox trust**: NSS store needs separate handling.
+- **Tunnel providers**: the adapters parse each provider's output for the public address; a provider changing its
+  output format breaks detection (the tunnel still runs; the address shows in its log).
 - **UAC prompt fatigue**: per-operation helper in 0.1. Consider an optional installed helper service later.
 - **Ports 80/443** may be taken by IIS or Skype. The PortManager reports the owner and offers alternate ports.
 - **License**: pick at Stage 0. HeidiSQL (GPL) and pgAdmin (PostgreSQL licence) are downloaded, not bundled, so
-  DevForge's own license is unaffected.
+  OpenLocalServer's own license is unaffected.
 
 ## Verification (per stage)
 - `cargo test --workspace`, `cargo test --features integration` (real binaries, temp home, test ports),
@@ -404,5 +434,5 @@ registry), minijinja, clap, tauri-specta. UI: xterm.js, CodeMirror 6 (Stage 9).
 - Each stage's **Exit** criterion must pass before the next stage starts.
 - Release gates:
   - 0.1: §155 Laravel flow on a clean Windows VM.
-  - 0.3: `git clone && devforge setup`.
-  - 1.0: full §160 E2E on all three OSes.
+  - 0.3: `git clone && ols setup`.
+  - 1.0: full §160 E2E on Windows and Linux.

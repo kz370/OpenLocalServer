@@ -1,20 +1,23 @@
 # OpenLocalServer — Status and Missing Features
 
 As of 2026-09-26. The staged plan is in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md); section numbers (§)
-refer to [DevForge_Master_SRS_v4.md](../DevForge_Master_SRS_v4.md).
+refer to [OpenLocalServer_Master_SRS_v4.md](../OpenLocalServer_Master_SRS_v4.md).
 
 ## Where we are
 
-**Stage 11 of 18 is built, so release 0.2 is feature-complete.** The features of releases 0.1 and 0.2 are built,
-but 0.1 has not been released: its gate (a clean Windows VM going from install to a Laravel site over trusted HTTPS) has not been run,
-and some 0.1 items are still missing (listed below).
+**Stage 15 of 18 is built, so release 0.3 is feature-complete.** Releases 0.1–0.3 are built, but none is
+released: the 0.1 gate (a clean Windows VM going from install to a Laravel site over trusted HTTPS) and the 0.3 gate
+(`git clone && ols setup` on a clean machine) have not been run, and some 0.1 items are still missing (listed below).
 
 ```
 Release 0.1   Stages 0–8    ██████████████████░░  built, not released
 Release 0.2   Stages 9–11   ████████████████████  built, not released
-Release 0.3   Stages 12–15  ░░░░░░░░░░░░░░░░░░░░  not started
+Release 0.3   Stages 12–15  ████████████████████  built, not released
 Release 1.0   Stages 16–18  ██░░░░░░░░░░░░░░░░░░  one item done early (XAMPP/Laragon import)
+Release 1.1   Stage 19      ░░░░░░░░░░░░░░░░░░░░  k6 load testing, planned
 ```
+
+OpenLocalServer targets Windows, and Linux later. macOS is not planned.
 
 ## What works today
 
@@ -36,6 +39,16 @@ Release 1.0   Stages 16–18  ██░░░░░░░░░░░░░░�
   command history.
 - **Everyday:** dashboard, environment health, logs (search, filter, export, clear), processes with CPU/RAM,
   system monitor with per-site usage, tray, notifications, start with Windows, leftover-server cleanup.
+- **Reproducible environments (0.3):** `.openlocalserver/` manifests (environment, services, commands, lock file),
+  a setup plan with conflicts, dry run and apply with rollback, profiles, modes (Development / Testing / Debugging /
+  Demo), queue workers, a scheduler, snapshots, settings backups, environment export/import and cloning.
+- **Command line:** `ols setup`, `ols doctor`, `ols repair`, `ols status`, `ols start|stop`, and `project`, `runtime`,
+  `service`, `tunnel`, `worker`, `snapshot`, `quick-command`, `search`. It drives the open app, or starts a
+  background daemon when the app is closed.
+- **Tunnels:** Cloudflare, ngrok, LocalTunnel and Tailscale Funnel with a first-exposure confirmation, optional
+  password, a public badge and one-click stop; traffic inspector (secrets redacted), replay and webhook tester.
+- **Power tools:** command palette and global search (Ctrl+Shift+P / Ctrl+K), doctor, project repair, a Git
+  manager (status, stage/commit, branches, pull/push, history, remotes, stash, clone), resource limits.
 
 ## Missing features
 
@@ -54,34 +67,34 @@ Everything else in release 0.1 is now written. What is left needs a person or a 
 Xdebug, full Composer commands, pnpm/yarn through corepack, Python virtual environments, the `.env` editor and
 `DiagnosticEngine` v1 are built. The Python runtime itself is not managed yet, only venvs.
 
-### Release 0.3
+### Release 0.3 (built 2026-09-26)
 
-| Feature | § | Stage |
-|---|---|---|
-| Command-line tool over the app's control channel | 136 | 12 |
-| Project manifests, lock file, `setup`, `--dry-run`, plan preview, rollback | 71–78, 159 | 12 |
-| Full conflict detection including file ownership | 75 | 12 |
-| Profiles and project modes | 69–70 | 13 |
-| Queue workers and a GUI scheduler | 105–106 | 13 |
-| Snapshots, backups, import/export, environment cloning | 130–132, 158 | 13 |
-| Tunnels (Cloudflare, ngrok, LocalTunnel, Tailscale) with safety rails | 54–60, 140 | 14 |
-| Request/traffic inspector and webhook tester | 110–111 | 14 |
-| Command palette and global search | 122–123 | 15 |
-| Automatic repair, explained diagnostics, `doctor` | 113–115 | 15 |
-| Git repository manager: clone, status, branches, commit, pull/push, diff, log, remotes (added 2026-09-26) | 125 | 15 |
-| Resource controls | 129 | 15 |
+Everything planned for 0.3 is built (stages 12–15). Limits worth knowing:
+
+| Item | Notes |
+|---|---|
+| Tunnels | Provider programs (cloudflared, ngrok, tailscale) are found or located by hand, not downloaded. WebSockets and streamed responses don't pass through the traffic inspector yet |
+| Scheduler | Runs while the app or `ols daemon` is open; there is no system-level scheduled task |
+| Resource limits | Memory limits apply at the next service start; there is no CPU limit (Windows has no simple per-program cap) |
+| Control channel | Windows named pipe only until the Linux stage |
 
 ### Release 1.0
 
 | Feature | § | Stage |
 |---|---|---|
-| macOS and Linux (helper, trust store, DNS, packages, CI matrix) | — | 16 |
+| Linux (helper, trust store, DNS, packages, CI matrix); macOS is not planned | — | 16 |
 | Plugins (declarative, then sandboxed WASM) and more runtimes (Go, Ruby, Java, Bun, .NET) | 9, 133–135 | 17 |
 | Signed remote catalogs and Git/company Quick App catalogs | 87–88 | 17 |
 | Signed auto-updater | 145 | 18 |
 | Local HTTP API with a token | 137 | 18 |
 | Explorer context menu, offline indicators, telemetry (off by default) | 124, 128, 143 | 18 |
 | Full docs and a security review against §138 | 138, 144 | 18 |
+
+### Release 1.1
+
+| Feature | § | Stage |
+|---|---|---|
+| Load testing with k6: per-project scripts, live results, thresholds, CLI | 160–161 | 19 |
 
 ## Built but not yet verified end to end
 
@@ -96,16 +109,21 @@ Xdebug, full Composer commands, pnpm/yarn through corepack, Python virtual envir
 - **Database import:** reading and dumping from real Laragon data is tested; loading into our MariaDB is not.
 - **UI:** new screens (including the Stage 11 ones: Xdebug dialog, project tools, `.env` editor, diagnostics card)
   pass type-checking and lint but have not been checked visually in the running app.
+- **Stages 12–15:** 268 core tests pass (setup plans and rollback, snapshots and clones, cron parsing, the
+  inspector proxy end to end, tunnel safety, repair, a real-git round trip, the control channel). The CLI was run
+  against a temporary home. The new screens (Environment, Git, Workers, Snapshots, Repair tabs; Tunnels and
+  Profiles pages; command palette; doctor) pass type-checking but haven't been checked visually. Real tunnel
+  providers, `ols daemon` hand-over to the app, and a setup that installs runtimes have not been run end to end.
 
 ## Technical debt
 
 - State is stored as JSON files rather than SQLite with migrations (plan decision 1).
 - Process trees are stopped with `taskkill /T` instead of Windows Job Objects, so children of a killed app survive
   until the next start cleans them up.
-- The plan's separate `platform`, `cli` and `catalog` crates don't exist yet; that code lives in `ols-core`.
+- The plan's separate `platform` and `catalog` crates don't exist yet; that code lives in `ols-core`.
 
 ## Suggested order from here
 
-1. Build, fix compile errors, run the tests, and look at every new screen in the running app.
-2. Choose the license, verify the installer, run the clean-VM gate, and release 0.1.
-3. Then release 0.3, starting with the CLI and manifests.
+1. Look at every new screen in the running app; try a tunnel with cloudflared and `ols setup` on a real project.
+2. Choose the license, verify the installer (bundle `ols.exe` beside the app), run the clean-VM gate, and release 0.1.
+3. Merge the Projects and Sites pages (one list, one detail view), then release 1.0 work: Linux, plugins, updater.

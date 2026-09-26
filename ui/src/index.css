@@ -177,3 +177,13 @@ html,
 body {
   overflow-x: hidden;
 }
+
+/* A bar for work whose size isn't known yet: a segment sweeping across. */
+@keyframes indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}

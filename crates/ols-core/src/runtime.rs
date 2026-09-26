@@ -20,7 +20,7 @@ pub struct CatalogEntry {
     pub id: String,
     pub name: String,
     pub version: String,
-    /// A DevForge-managed copy is installed under `runtimes/<id>/<version>/`.
+    /// A OpenLocalServer-managed copy is installed under `runtimes/<id>/<version>/`.
     pub installed: bool,
     /// An unmanaged install found on PATH — same runtime family, not necessarily the
     /// same version, and not usable for per-project version selection (§126).
@@ -146,7 +146,7 @@ impl RuntimeManager {
         self.binary_path(id, version).and_then(|p| p.parent().map(|d| d.to_path_buf()))
     }
 
-    /// Every DevForge-managed version of `id` that's actually installed (has its binary
+    /// Every OpenLocalServer-managed version of `id` that's actually installed (has its binary
     /// on disk), newest-looking first isn't guaranteed — callers sort if order matters.
     pub fn installed_versions(&self, id: &str) -> Vec<String> {
         builtin_catalog()

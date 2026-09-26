@@ -188,6 +188,18 @@ const CATALOG: &[PackageManifest] = &[
         archive_root: "",
         binary: "composer.phar",
     },
+    PackageManifest {
+        id: "git",
+        name: "Git (portable)",
+        version: "2.55.0.5",
+        platform: "windows",
+        architecture: "x64",
+        url: "https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.5/MinGit-2.55.0.5-64-bit.zip",
+        // From the SHA-256 table in the Git for Windows v2.55.0.windows.5 release notes.
+        sha256: "56d7b226b7693196cfc71fef26568f536c4a021ab6c37ff2db4287bed908e96e",
+        archive_root: "",
+        binary: "cmd/git.exe",
+    },
 ];
 
 fn current_platform() -> &'static str {
@@ -210,7 +222,7 @@ fn current_arch() -> &'static str {
     }
 }
 
-/// Entries matching the machine DevForge is actually running on.
+/// Entries matching the machine OpenLocalServer is actually running on.
 pub fn builtin_catalog() -> Vec<PackageManifest> {
     CATALOG
         .iter()

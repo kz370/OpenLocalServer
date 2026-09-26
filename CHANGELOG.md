@@ -6,6 +6,9 @@ and the project follows [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
+- The app is OpenLocalServer everywhere: the documents no longer use the working name DevForge.
+- The Sites list shows only Open and Settings per site; the other actions are in a menu.
+- The import dialog's password field sits beside its button.
 - MariaDB is the only MySQL-compatible server and runs on the standard port 3306. MySQL is no longer offered:
   Quick Apps, the Databases and Services pages, backups and imports all use MariaDB. Databases from Laragon,
   XAMPP or WampServer MySQL can still be imported into it.
@@ -14,6 +17,20 @@ and the project follows [Semantic Versioning](https://semver.org/).
 - MariaDB's first start failed with "Can't create data directory" when its services folder didn't exist yet.
 
 ### Added
+- Release 0.3 features (stages 12–15):
+  - Project manifests in `.openlocalserver/` (environment, services, commands and a lock file), and an
+    environment setup with a plan, conflict detection, a dry run and rollback of safe changes on failure.
+  - `ols` command line (`setup`, `doctor`, `repair`, `status`, `start`, `stop`, `project`, `runtime`, `service`,
+    `tunnel`, `worker`, `snapshot`, `search`, ...). It drives the open app, or a background daemon.
+  - Profiles (eight built in, plus your own with import and export) and project modes.
+  - Queue workers and a scheduler with cron expressions.
+  - Project snapshots, settings backups, environment export / import, and environment cloning.
+  - Public tunnels through Cloudflare, ngrok, LocalTunnel or Tailscale Funnel, with a first-exposure
+    confirmation, an optional password, a traffic inspector (secrets redacted), replay and a webhook tester.
+  - Command palette and global search (Ctrl+Shift+P / Ctrl+K), a doctor, project repair, a Git repository
+    manager, and resource limits for databases, Node and workers.
+- Database import from Laragon, XAMPP or WampServer shows its progress: the current step, bytes copied,
+  exported or imported, and which database it is on.
 - PostgreSQL and Redis services (Redis from the community `redis-windows` build), with databases, users and
   connection details for PostgreSQL.
 - Backup and restore of MariaDB and PostgreSQL databases, with a safety backup before every restore.

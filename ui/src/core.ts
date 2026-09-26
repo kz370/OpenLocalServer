@@ -87,9 +87,35 @@ export interface DetectionResult {
   doc_root: string | null
 }
 
+export type ServiceToggle = boolean | { enabled: boolean }
+export interface WorkerManifest {
+  command: string
+  count: number
+  timeout_secs?: number | null
+  memory_mb?: number | null
+}
+export interface ModeManifest {
+  xdebug?: boolean | null
+  services?: string[]
+  workers?: boolean | null
+  scheduler?: boolean | null
+  env?: Record<string, string>
+}
+/** `.openlocalserver/environment.yaml` (§71). */
 export interface EnvironmentManifest {
-  name: string | null
-  runtime: RuntimeRequirement
+  name?: string | null
+  profile?: string | null
+  runtime: { php?: string | null; node?: string | null; python?: string | null }
+  extensions?: string[]
+  package_manager?: string | null
+  web?: { server?: string | null } | null
+  domain?: { hostname: string; https: boolean; wildcard: boolean; root?: string | null; port?: number | null } | null
+  database?: { engine: string; version?: string | null; name?: string | null } | null
+  services?: Record<string, ServiceToggle>
+  workers?: Record<string, boolean | WorkerManifest>
+  scheduler?: boolean | { name: string; schedule: string; command: string }[] | null
+  tunnel?: { enabled: boolean; provider?: string | null; target?: string | null; autostart: boolean } | null
+  modes?: Record<string, ModeManifest>
 }
 
 export type ResolutionSource = 'manifest' | 'detected' | 'global' | 'none' | 'custom'
@@ -660,6 +686,7 @@ export type CoreCommand =
   | { type: 'list_migration_sources' }
   | { type: 'list_foreign_databases'; source_id: string; password: string }
   | { type: 'migrate_databases'; source_id: string; password: string; databases: string[]; target: string }
+  | { type: 'get_migration_progress' }
   | { type: 'get_helper_service' }
   | { type: 'install_helper_service' }
   | { type: 'uninstall_helper_service' }
@@ -692,6 +719,94 @@ export type CoreCommand =
   | { type: 'apply_mailpit_env'; project_id: string; file: string }
   | { type: 'mail_diagnostics'; project_id: string | null }
   | { type: 'send_test_mail'; to: string }
+  // Stage 12
+  | { type: 'get_manifest'; project_id: string }
+  | { type: 'save_manifest'; project_id: string; manifest: EnvironmentManifest | null }
+  | { type: 'save_manifest_text'; project_id: string; text: string }
+  | { type: 'plan_setup'; project_id: string }
+  | { type: 'apply_setup'; project_id: string; dry_run: boolean }
+  | { type: 'get_setup_progress' }
+  // Stage 13
+  | { type: 'list_profiles' }
+  | { type: 'save_profile'; profile: Profile }
+  | { type: 'delete_profile'; id: string }
+  | { type: 'export_profile'; id: string; dest: string }
+  | { type: 'read_profile_file'; source: string }
+  | { type: 'import_profile'; source: string }
+  | { type: 'apply_profile'; project_id: string; profile_id: string }
+  | { type: 'profile_from_project'; project_id: string; name: string }
+  | { type: 'profile_yaml'; id: string }
+  | { type: 'save_profile_yaml'; yaml: string }
+  | { type: 'get_project_modes'; project_id: string }
+  | { type: 'set_project_mode'; project_id: string; mode: string }
+  | { type: 'list_workers'; project_id: string | null }
+  | { type: 'list_worker_presets' }
+  | { type: 'save_worker'; worker: Worker }
+  | { type: 'remove_worker'; id: string }
+  | { type: 'start_worker'; id: string }
+  | { type: 'stop_worker'; id: string }
+  | { type: 'restart_worker'; id: string }
+  | { type: 'start_project_workers'; project_id: string }
+  | { type: 'stop_project_workers'; project_id: string }
+  | { type: 'list_schedules'; project_id: string | null }
+  | { type: 'save_schedule'; task: ScheduledTask }
+  | { type: 'remove_schedule'; id: string }
+  | { type: 'run_schedule_now'; id: string }
+  | { type: 'describe_schedule'; schedule: string }
+  | { type: 'list_snapshots'; project_id: string }
+  | { type: 'create_snapshot'; project_id: string; label: string; options: SnapshotOptions }
+  | { type: 'delete_snapshot'; project_id: string; id: string }
+  | { type: 'restore_snapshot'; project_id: string; id: string; options: RestoreOptions }
+  | { type: 'export_snapshot'; project_id: string; id: string; dest: string }
+  | { type: 'preview_import'; source: string }
+  | { type: 'import_environment'; source: string; target: string; name: string }
+  | { type: 'clone_environment'; project_id: string; target: string; name: string; what: 'full' | 'infrastructure' | 'configuration' }
+  | { type: 'backup_settings' }
+  | { type: 'list_settings_backups' }
+  | { type: 'restore_settings'; id: string }
+  | { type: 'get_resource_limits' }
+  | { type: 'set_resource_limits'; limits: ResourceLimits }
+  // Stage 14
+  | { type: 'list_tunnel_providers' }
+  | { type: 'list_tunnels' }
+  | { type: 'save_tunnel'; tunnel: TunnelConfig }
+  | { type: 'remove_tunnel'; id: string }
+  | { type: 'start_tunnel'; id: string; confirm_exposure: boolean }
+  | { type: 'stop_tunnel'; id: string }
+  | { type: 'check_tunnel'; id: string }
+  | { type: 'tunnel_log'; id: string }
+  | { type: 'set_tunnel_token'; provider: string; token: string | null }
+  | { type: 'set_tunnel_password'; id: string; password: string | null }
+  | { type: 'list_tunnel_requests'; id: string }
+  | { type: 'clear_tunnel_requests'; id: string }
+  | { type: 'replay_tunnel_request'; id: string; request_id: number }
+  | { type: 'send_tunnel_test_request'; id: string; method: string; path: string; headers: [string, string][]; body: string }
+  // Stage 15
+  | { type: 'global_search'; query: string }
+  | { type: 'doctor' }
+  | { type: 'diagnose_project'; project_id: string }
+  | { type: 'plan_repair'; project_id: string | null }
+  | { type: 'apply_repair'; project_id: string | null; ids: string[]; confirm_destructive: boolean }
+  | { type: 'git_status'; project_id: string }
+  | { type: 'git_init'; project_id: string }
+  | { type: 'git_branches'; project_id: string }
+  | { type: 'git_create_branch'; project_id: string; name: string; checkout: boolean }
+  | { type: 'git_switch_branch'; project_id: string; name: string }
+  | { type: 'git_delete_branch'; project_id: string; name: string; force: boolean }
+  | { type: 'git_stage'; project_id: string; paths: string[] }
+  | { type: 'git_unstage'; project_id: string; paths: string[] }
+  | { type: 'git_discard'; project_id: string; paths: string[] }
+  | { type: 'git_commit'; project_id: string; message: string; amend: boolean }
+  | { type: 'git_sync'; project_id: string; action: 'pull' | 'push' | 'fetch'; remote: string | null }
+  | { type: 'git_diff'; project_id: string; path: string; staged: boolean }
+  | { type: 'git_log'; project_id: string; limit: number }
+  | { type: 'git_show'; project_id: string; hash: string }
+  | { type: 'git_add_remote'; project_id: string; name: string; url: string }
+  | { type: 'git_remove_remote'; project_id: string; name: string }
+  | { type: 'git_stash'; project_id: string; action: 'push' | 'pop' | 'apply' | 'drop'; message: string | null; index: number | null }
+  | { type: 'git_add_ignore'; project_id: string; template: string }
+  | { type: 'git_set_credentials'; host: string; username: string; token: string | null }
+  | { type: 'git_clone'; url: string; target: string; branch: string | null }
 
 export type CoreResponse =
   | { type: 'pong'; version: string }
@@ -756,6 +871,7 @@ export type CoreResponse =
   | { type: 'system_stats'; stats: SystemStats }
   | { type: 'migration_sources'; sources: MigrationSource[] }
   | { type: 'migrated'; results: MigratedDb[] }
+  | { type: 'migration_progress'; progress: MigrationProgress }
   | { type: 'xdebug'; report: XdebugReport }
   | { type: 'composer'; info: ComposerInfo }
   | { type: 'package_managers'; info: PackageManagerInfo }
@@ -767,6 +883,42 @@ export type CoreResponse =
   | { type: 'env_compare'; rows: EnvDiffRow[] }
   | { type: 'mail_env_plan'; plan: MailEnvPlan }
   | { type: 'mail_checks'; checks: MailCheck[] }
+  | { type: 'manifest_info'; info: ManifestInfo }
+  | { type: 'manifest'; manifest: EnvironmentManifest }
+  | { type: 'setup_plan'; plan: EnvironmentPlan }
+  | { type: 'setup'; report: SetupReport }
+  | { type: 'setup_progress'; report: SetupReport | null }
+  | { type: 'profiles'; profiles: Profile[] }
+  | { type: 'profile'; profile: Profile }
+  | { type: 'modes'; view: ModesView }
+  | { type: 'mode_result'; result: ModeResult }
+  | { type: 'workers'; workers: WorkerStatus[] }
+  | { type: 'worker_presets'; presets: WorkerPreset[] }
+  | { type: 'schedules'; tasks: TaskStatus[] }
+  | { type: 'task_run'; run: TaskRun }
+  | { type: 'snapshots'; snapshots: SnapshotInfo[] }
+  | { type: 'snapshot'; snapshot: SnapshotInfo }
+  | { type: 'restored'; result: RestoreResult }
+  | { type: 'import_preview'; preview: ImportPreview }
+  | { type: 'cloned'; result: CloneResult }
+  | { type: 'settings_backups'; backups: SettingsBackup[] }
+  | { type: 'settings_backup'; backup: SettingsBackup }
+  | { type: 'resources'; limits: ResourceLimits }
+  | { type: 'tunnel_providers'; providers: TunnelProvider[] }
+  | { type: 'tunnels'; tunnels: TunnelStatus[] }
+  | { type: 'tunnel'; tunnel: TunnelStatus }
+  | { type: 'lines'; lines: string[] }
+  | { type: 'tunnel_requests'; requests: RecordedRequest[] }
+  | { type: 'tunnel_request'; request: RecordedRequest }
+  | { type: 'search_results'; hits: SearchHit[] }
+  | { type: 'doctor_report'; report: DoctorReport }
+  | { type: 'repair_plan'; plan: RepairPlan }
+  | { type: 'repair_report'; report: RepairReport }
+  | { type: 'git_status'; status: GitStatus }
+  | { type: 'git_branches'; branches: GitBranch[] }
+  | { type: 'git_commits'; commits: GitCommit[] }
+  | { type: 'git_commit'; commit: GitCommit }
+  | { type: 'git_result'; result: { ok: boolean; output: string } }
   | { type: 'operations'; operations: Operation[] }
 
 export interface MigrationSource {
@@ -777,6 +929,19 @@ export interface MigrationSource {
   data_dir: string
   size_bytes: number
   running_port: number | null
+}
+
+export interface MigrationProgress {
+  running: boolean
+  kind: 'scan' | 'import' | ''
+  step: string
+  db_index: number
+  db_total: number
+  current_db: string | null
+  bytes: number
+  bytes_total: number | null
+  done: MigratedDb[]
+  started_ms: number
 }
 
 export interface MigratedDb {
@@ -983,6 +1148,332 @@ export interface PhpExtensions {
   version: string
   thread_safe: boolean
   extensions: { name: string; enabled: boolean; downloaded: boolean }[]
+}
+
+// ---- Stage 12: manifests and setup ------------------------------------------------
+
+export interface ManifestInfo {
+  path: string
+  found: boolean
+  text: string | null
+  manifest: EnvironmentManifest | null
+  error: string | null
+  derived: EnvironmentManifest
+  lock: Record<string, string> | null
+  has_commands: boolean
+  has_services: boolean
+}
+
+export interface PlanStep {
+  group: 'install' | 'create' | 'configure' | 'start' | 'tunnel' | 'check'
+  label: string
+  action: { kind: string }
+  done: boolean
+  note: string | null
+}
+
+export interface SetupConflict {
+  kind: string
+  blocking: boolean
+  message: string
+  resolution: string
+}
+
+export interface EnvironmentPlan {
+  project_id: string
+  project_name: string
+  project_path: string
+  manifest_found: boolean
+  manifest: EnvironmentManifest
+  lock_found: boolean
+  steps: PlanStep[]
+  conflicts: SetupConflict[]
+  ok: boolean
+}
+
+export type SetupStepStatus = 'pending' | 'running' | 'done' | 'skipped' | 'failed' | 'rolled_back' | 'not_run'
+
+export interface SetupReport {
+  project_id: string
+  running: boolean
+  dry_run: boolean
+  ok: boolean
+  steps: { group: string; label: string; status: SetupStepStatus; detail: string | null }[]
+  conflicts: SetupConflict[]
+  rolled_back: string[]
+  lock_written: string | null
+  health: HealthReport | null
+  error: string | null
+}
+
+// ---- Stage 13: profiles, modes, workers, scheduler, snapshots ------------------------
+
+export interface Profile {
+  id: string
+  name: string
+  description: string
+  environment: EnvironmentManifest
+  builtin: boolean
+}
+
+export interface ModesView {
+  current: string | null
+  modes: { name: string; mode: ModeManifest; custom: boolean }[]
+}
+
+export interface ModeResult {
+  mode: string
+  changes: string[]
+  problems: string[]
+}
+
+export interface Worker {
+  id: string
+  project_id: string
+  name: string
+  command: string
+  count: number
+  timeout_secs: number | null
+  memory_mb: number | null
+  max_retries: number
+  restart: boolean
+  autostart: boolean
+}
+
+export interface WorkerStatus {
+  worker: Worker
+  running: number
+  processes: number[]
+  command_line: string
+}
+
+export interface WorkerPreset {
+  id: string
+  label: string
+  command: string
+}
+
+export interface ScheduledTask {
+  id: string
+  project_id: string | null
+  name: string
+  schedule: string
+  command: string
+  enabled: boolean
+}
+
+export interface TaskRun {
+  started_ms: number
+  process: number | null
+  exit_code: number | null
+  skipped: boolean
+  error: string | null
+}
+
+export interface TaskStatus {
+  task: ScheduledTask
+  description: string
+  next_run_ms: number | null
+  last_run: TaskRun | null
+  running: boolean
+}
+
+export interface SnapshotOptions {
+  env: boolean
+  databases: boolean
+  files: boolean
+}
+
+export interface RestoreOptions {
+  config: boolean
+  env: boolean
+  databases: boolean
+  files: boolean
+}
+
+export interface SnapshotInfo {
+  id: string
+  project_id: string
+  project_name: string
+  label: string
+  created_ms: number
+  size_bytes: number
+  options: SnapshotOptions
+  path: string
+  summary: string[]
+}
+
+export interface RestoreResult {
+  safety_snapshot: string | null
+  restored: string[]
+  problems: string[]
+}
+
+export interface ImportPreview {
+  source: string
+  summary: string[]
+  suggested_name: string
+  adjustments: string[]
+  conflicts: string[]
+  content: { project: Project; label: string; created_ms: number; options: SnapshotOptions; file_count: number }
+}
+
+export interface CloneResult {
+  project: Project
+  changes: string[]
+  problems: string[]
+}
+
+export interface SettingsBackup {
+  id: string
+  path: string
+  created_ms: number
+  size_bytes: number
+}
+
+export interface ResourceLimits {
+  mariadb_buffer_pool_mb: number | null
+  postgres_shared_buffers_mb: number | null
+  redis_maxmemory_mb: number | null
+  mongodb_cache_mb: number | null
+  node_max_old_space_mb: number | null
+  max_worker_count: number | null
+  max_processes: number | null
+}
+
+// ---- Stage 14: tunnels and traffic ---------------------------------------------------
+
+export interface TunnelConfig {
+  id: string
+  project_id: string | null
+  name: string
+  provider: string
+  target: string
+  auth_user: string | null
+  allow_internal: boolean
+  public_hostname: string | null
+  acknowledged: boolean
+}
+
+export interface TunnelProvider {
+  id: string
+  name: string
+  path: string | null
+  install_hint: string
+  uses_token: boolean
+  token_saved: boolean
+  note: string
+}
+
+export interface TunnelStatus {
+  config: TunnelConfig
+  state: 'stopped' | 'needs_confirmation' | 'starting' | 'connected' | 'failed'
+  public_url: string | null
+  started_ms: number | null
+  requests: number
+  last_request_ms: number | null
+  latency_ms: number | null
+  error: string | null
+  inspector_port: number | null
+  has_password: boolean
+  exposure: string
+}
+
+export interface RecordedRequest {
+  id: number
+  time_ms: number
+  method: string
+  path: string
+  status: number
+  duration_ms: number
+  request_headers: [string, string][]
+  response_headers: [string, string][]
+  request_size: number
+  response_size: number
+  request_body: string | null
+  response_body: string | null
+  client: string | null
+  replay: boolean
+  error: string | null
+}
+
+// ---- Stage 15: search, doctor, repair, Git -------------------------------------------
+
+export interface SearchHit {
+  kind: 'project' | 'service' | 'site' | 'quick_app' | 'quick_command' | 'runtime' | 'tunnel' | 'config' | 'log'
+  target: string
+  title: string
+  subtitle: string
+  excerpt: string | null
+}
+
+export interface DoctorReport {
+  checks: { label: string; status: 'ok' | 'warning' | 'error' | 'info'; detail: string }[]
+  findings: Finding[]
+  warnings: number
+  errors: number
+}
+
+export interface RepairPlan {
+  project_id: string | null
+  findings: Finding[]
+  actions: { finding_id: string; label: string; command: CoreCommand; destructive: boolean }[]
+  manual: string[]
+}
+
+export interface RepairReport {
+  steps: { label: string; ok: boolean; detail: string }[]
+  after: Finding[]
+  fixed: number
+}
+
+export interface GitFile {
+  path: string
+  from: string | null
+  index: string
+  worktree: string
+  staged: boolean
+  unstaged: boolean
+  untracked: boolean
+  conflicted: boolean
+  kind: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked' | 'conflicted'
+}
+
+export interface GitCommit {
+  hash: string
+  short: string
+  author: string
+  email: string
+  time: number
+  subject: string
+}
+
+export interface GitBranch {
+  name: string
+  current: boolean
+  remote: boolean
+  upstream: string | null
+  commit: string
+  subject: string
+  time: number
+}
+
+export interface GitStatus {
+  available: boolean
+  git_path: string | null
+  version: string | null
+  is_repo: boolean
+  branch: string | null
+  detached: boolean
+  upstream: string | null
+  ahead: number
+  behind: number
+  files: GitFile[]
+  last_commit: GitCommit | null
+  remotes: { name: string; url: string; has_credentials: boolean }[]
+  stashes: string[]
+  has_gitignore: boolean
+  operation: string | null
 }
 
 export interface Diagnostic {

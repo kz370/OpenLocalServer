@@ -1,5 +1,5 @@
 //! User-pinned custom install locations (Stage 5 addition, user-requested): when
-//! DevForge can't find or doesn't manage a tool/runtime, the user points straight at
+//! OpenLocalServer can't find or doesn't manage a tool/runtime, the user points straight at
 //! where it already lives instead of only ever being offered a download. Always wins
 //! over auto-detection — it's an explicit choice (same precedent as manifest > detected
 //! in the Environment Resolver, §18).

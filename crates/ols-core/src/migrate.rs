@@ -38,6 +38,89 @@ pub struct MigratedDb {
 
 const SYSTEM_DBS: &[&str] = &["information_schema", "mysql", "performance_schema", "sys"];
 
+// ------------------------------------------------------------------------- progress
+
+/// What a scan or import is doing right now, for the UI to poll while the (blocking)
+/// command runs. Byte counts are real where we move the bytes ourselves (copying the data
+/// folder, feeding a dump to our server) and a growing file size while `mysqldump` writes.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct MigrationProgress {
+    pub running: bool,
+    /// "scan" or "import".
+    pub kind: String,
+    /// What is happening now, in words: "Copying the data folder", "Exporting shop", ...
+    pub step: String,
+    /// The database being worked on (1-based) and how many there are; 0 before they are known.
+    pub db_index: usize,
+    pub db_total: usize,
+    /// The database being worked on.
+    pub current_db: Option<String>,
+    /// Progress through the current step.
+    pub bytes: u64,
+    /// Size of the current step when known (an estimate for exports).
+    pub bytes_total: Option<u64>,
+    /// Databases finished so far.
+    pub done: Vec<MigratedDb>,
+    pub started_ms: u64,
+    /// A file `mysqldump` is writing; its size is read on each poll.
+    #[serde(skip)]
+    watch_file: Option<PathBuf>,
+}
+
+#[derive(Default)]
+pub struct Progress(std::sync::Mutex<MigrationProgress>);
+
+impl Progress {
+    pub fn begin(&self, kind: &str) {
+        let started_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+        *self.0.lock().unwrap() = MigrationProgress { running: true, kind: kind.into(), started_ms, ..Default::default() };
+    }
+
+    pub fn end(&self) {
+        let mut p = self.0.lock().unwrap();
+        p.running = false;
+        p.watch_file = None;
+    }
+
+    /// Starts a new step; its byte counter resets.
+    pub fn step(&self, step: impl Into<String>, bytes_total: Option<u64>) {
+        let mut p = self.0.lock().unwrap();
+        p.step = step.into();
+        p.bytes = 0;
+        p.bytes_total = bytes_total;
+        p.watch_file = None;
+    }
+
+    pub fn database(&self, index: usize, total: usize, name: &str) {
+        let mut p = self.0.lock().unwrap();
+        p.db_index = index;
+        p.db_total = total;
+        p.current_db = Some(name.to_string());
+    }
+
+    pub fn add_bytes(&self, n: u64) {
+        self.0.lock().unwrap().bytes += n;
+    }
+
+    fn watch(&self, file: &Path) {
+        self.0.lock().unwrap().watch_file = Some(file.to_path_buf());
+    }
+
+    pub fn finished(&self, db: MigratedDb) {
+        let mut p = self.0.lock().unwrap();
+        p.current_db = None;
+        p.done.push(db);
+    }
+
+    pub fn snapshot(&self) -> MigrationProgress {
+        let mut p = self.0.lock().unwrap().clone();
+        if let Some(file) = &p.watch_file {
+            p.bytes = std::fs::metadata(file).map(|m| m.len()).unwrap_or(0);
+        }
+        p
+    }
+}
+
 // ------------------------------------------------------------------------ discovery
 
 /// Finds Laragon, XAMPP and WampServer MySQL/MariaDB data folders on every drive.
@@ -180,13 +263,16 @@ pub struct Session {
 }
 
 impl Session {
-    pub fn open(source: MigrationSource, password: &str, work_dir: &Path) -> Result<Self, String> {
+    pub fn open(source: MigrationSource, password: &str, work_dir: &Path, progress: &Progress) -> Result<Self, String> {
         if let Some(port) = source.running_port {
+            progress.step(format!("Connecting to the running {}", source.label), None);
             return Ok(Self { source, port, password: password.to_string(), temp: None });
         }
         let copy = work_dir.join(format!("migrate-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&copy);
-        copy_data(Path::new(&source.data_dir), &copy).map_err(|e| format!("could not copy {}: {e}", source.data_dir))?;
+        progress.step("Copying the data folder (the original is not touched)", Some(source.size_bytes));
+        copy_data(Path::new(&source.data_dir), &copy, &|n| progress.add_bytes(n)).map_err(|e| format!("could not copy {}: {e}", source.data_dir))?;
+        progress.step(format!("Starting a temporary copy of {}", source.label), None);
         let port = free_port().ok_or("no free port for the temporary server")?;
         let bin = PathBuf::from(&source.bin_dir);
         let mut cmd = Command::new(bin.join("mysqld.exe"));
@@ -246,8 +332,27 @@ impl Session {
         Ok(out.stdout.lines().map(str::trim).filter(|l| !l.is_empty() && !SYSTEM_DBS.contains(l)).map(str::to_string).collect())
     }
 
+    /// Approximate size of each database (data + indexes), for export progress.
+    pub fn sizes(&self) -> std::collections::HashMap<String, u64> {
+        let mut args = self.conn_args();
+        let sql = "SELECT table_schema, COALESCE(SUM(data_length + index_length), 0) FROM information_schema.tables GROUP BY table_schema";
+        args.extend(["--batch".into(), "--skip-column-names".into(), "-e".into(), sql.into()]);
+        let out = run_capture(&PathBuf::from(&self.source.bin_dir).join("mysql.exe"), &args, None, &self.env(), Duration::from_secs(30));
+        if !out.success() {
+            return Default::default();
+        }
+        out.stdout
+            .lines()
+            .filter_map(|l| {
+                let (name, size) = l.split_once('\t')?;
+                Some((name.to_string(), size.trim().parse().ok()?))
+            })
+            .collect()
+    }
+
     /// Dumps one database to `file` (with routines, triggers and events).
-    pub fn dump(&self, db: &str, file: &Path) -> Result<(), String> {
+    pub fn dump(&self, db: &str, file: &Path, progress: &Progress) -> Result<(), String> {
+        progress.watch(file);
         let mut args = self.conn_args();
         args.extend([
             "--single-transaction".into(),
@@ -304,8 +409,8 @@ fn access_hint(err: &str) -> String {
 }
 
 /// Copies a data folder, leaving out binary logs, error logs and pid files: they can be
-/// large and the temporary server doesn't need them.
-fn copy_data(from: &Path, to: &Path) -> std::io::Result<()> {
+/// large and the temporary server doesn't need them. `on_bytes` hears every chunk copied.
+fn copy_data(from: &Path, to: &Path, on_bytes: &dyn Fn(u64)) -> std::io::Result<()> {
     std::fs::create_dir_all(to)?;
     for e in std::fs::read_dir(from)?.flatten() {
         let name = e.file_name().to_string_lossy().to_ascii_lowercase();
@@ -320,10 +425,27 @@ fn copy_data(from: &Path, to: &Path) -> std::io::Result<()> {
         }
         let target = to.join(e.file_name());
         if e.file_type()?.is_dir() {
-            copy_data(&e.path(), &target)?;
+            copy_data(&e.path(), &target, on_bytes)?;
         } else {
-            std::fs::copy(e.path(), target)?;
+            copy_file(&e.path(), &target, on_bytes)?;
         }
+    }
+    Ok(())
+}
+
+/// `std::fs::copy` in 1 MB chunks, so progress moves during a multi-gigabyte `ibdata1`.
+fn copy_file(from: &Path, to: &Path, on_bytes: &dyn Fn(u64)) -> std::io::Result<()> {
+    use std::io::{Read, Write};
+    let mut input = std::fs::File::open(from)?;
+    let mut output = std::fs::File::create(to)?;
+    let mut buf = vec![0u8; 1 << 20];
+    loop {
+        let n = input.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        output.write_all(&buf[..n])?;
+        on_bytes(n as u64);
     }
     Ok(())
 }
@@ -332,13 +454,42 @@ fn free_port() -> Option<u16> {
     std::net::TcpListener::bind(("127.0.0.1", 0)).ok()?.local_addr().ok().map(|a| a.port())
 }
 
-/// Loads a dump into our server through its own client.
-pub fn import(client: &Path, port: u16, file: &Path) -> Result<(), String> {
-    let source = format!("source {}", file.display().to_string().replace('\\', "/"));
-    let args: Vec<String> =
-        vec!["-h".into(), "127.0.0.1".into(), "-P".into(), port.to_string(), "-u".into(), "root".into(), "--default-character-set=utf8mb4".into(), "-e".into(), source];
-    let out = run_capture(client, &args, None, &[], Duration::from_secs(3600));
-    if out.success() { Ok(()) } else { Err(out.combined().trim().to_string()) }
+/// Loads a dump into our server through its own client. We feed the file through stdin
+/// ourselves, so every byte the server has taken shows up in `progress`.
+pub fn import(client: &Path, port: u16, file: &Path, progress: &Progress) -> Result<(), String> {
+    use std::io::{Read, Write};
+    let mut input = std::fs::File::open(file).map_err(|e| format!("could not read {}: {e}", file.display()))?;
+    let mut cmd = Command::new(client);
+    cmd.args(["-h", "127.0.0.1", "-P", &port.to_string(), "-u", "root", "--default-character-set=utf8mb4"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+    crate::exec::hide_window(&mut cmd);
+    let mut child = cmd.spawn().map_err(|e| format!("could not start {}: {e}", client.display()))?;
+    // Read stderr on its own thread: a client that fills that pipe would otherwise stall.
+    let mut stderr = child.stderr.take().expect("stderr is piped");
+    let errors = std::thread::spawn(move || {
+        let mut text = String::new();
+        let _ = stderr.read_to_string(&mut text);
+        text
+    });
+    let mut stdin = child.stdin.take().expect("stdin is piped");
+    let mut buf = vec![0u8; 256 * 1024];
+    loop {
+        let n = input.read(&mut buf).map_err(|e| e.to_string())?;
+        if n == 0 {
+            break;
+        }
+        // A write error means the client quit early; its exit status and stderr say why.
+        if stdin.write_all(&buf[..n]).is_err() {
+            break;
+        }
+        progress.add_bytes(n as u64);
+    }
+    drop(stdin);
+    let status = child.wait().map_err(|e| e.to_string())?;
+    let err = errors.join().unwrap_or_default();
+    if status.success() { Ok(()) } else { Err(err.trim().to_string()) }
 }
 
 #[cfg(test)]
@@ -378,7 +529,9 @@ mod tests {
         std::fs::create_dir_all(from.path().join("shop")).unwrap();
         std::fs::write(from.path().join("shop").join("orders.ibd"), "x").unwrap();
         let to = tempfile::tempdir().unwrap();
-        copy_data(from.path(), to.path()).unwrap();
+        let copied = std::cell::Cell::new(0u64);
+        copy_data(from.path(), to.path(), &|n| copied.set(copied.get() + n)).unwrap();
+        assert_eq!(copied.get(), 4,"only the kept files count toward progress");
         for kept in ["ibdata1", "ib_logfile0", "aria_log.00000001", "shop/orders.ibd"] {
             assert!(to.path().join(kept).exists(), "{kept} must be copied");
         }

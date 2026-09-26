@@ -14,7 +14,7 @@ src-tauri/gen/
 src-tauri/WixTools/
 
 # OpenLocalServer runtime data (never commit installed runtimes/services/logs/cache)
-.devforge-home/
+.ols-home/
 *.log
 *.log.*
 

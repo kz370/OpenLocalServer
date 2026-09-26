@@ -81,6 +81,8 @@ pub struct ServiceManager {
     supervisor: Arc<ProcessSupervisor>,
     running: Mutex<HashMap<String, ProcessId>>,
     custom: Mutex<CustomServiceStore>,
+    /// Memory limits from Settings → Resources (§129), applied at start.
+    limits: Mutex<crate::resources::ResourceLimits>,
 }
 
 /// Names that go into SQL as identifiers can't be bound as parameters, so only plain
@@ -102,7 +104,15 @@ fn sql_string(value: &str) -> String {
 impl ServiceManager {
     pub fn new(paths: AppPaths, runtimes: Arc<RuntimeManager>, supervisor: Arc<ProcessSupervisor>) -> Self {
         let custom = Mutex::new(CustomServiceStore::load(&paths));
-        Self { paths, runtimes, supervisor, running: Mutex::new(HashMap::new()), custom }
+        Self { paths, runtimes, supervisor, running: Mutex::new(HashMap::new()), custom, limits: Mutex::new(Default::default()) }
+    }
+
+    pub fn set_limits(&self, limits: crate::resources::ResourceLimits) {
+        *self.limits.lock().unwrap() = limits;
+    }
+
+    fn limit_args(&self, id: &str) -> Vec<String> {
+        self.limits.lock().unwrap().service_args(id)
     }
 
     /// The built-in services, then the user's own (§67).
@@ -300,7 +310,10 @@ impl ServiceManager {
                 format!("--port={}", primary_port("mariadb").unwrap()),
                 "--bind-address=127.0.0.1".to_string(),
                 "--console".to_string(),
-            ],
+            ]
+            .into_iter()
+            .chain(self.limit_args("mariadb"))
+            .collect(),
             cwd: Some(install_dir.display().to_string()),
             env: vec![],
             restart: None,
@@ -323,7 +336,10 @@ impl ServiceManager {
                 "127.0.0.1".into(),
                 "--port".into(),
                 primary_port("mongodb").unwrap().to_string(),
-            ],
+            ]
+            .into_iter()
+            .chain(self.limit_args("mongodb"))
+            .collect(),
             cwd: None,
             env: vec![],
             restart: None,
@@ -376,7 +392,10 @@ impl ServiceManager {
                 primary_port("postgres").unwrap().to_string(),
                 "-c".into(),
                 "listen_addresses=127.0.0.1".into(),
-            ],
+            ]
+            .into_iter()
+            .chain(self.limit_args("postgres"))
+            .collect(),
             cwd: Some(install_dir.display().to_string()),
             env: vec![],
             restart: None,
@@ -398,7 +417,10 @@ impl ServiceManager {
                 primary_port("redis").unwrap().to_string(),
                 "--bind".into(),
                 "127.0.0.1".into(),
-            ],
+            ]
+            .into_iter()
+            .chain(self.limit_args("redis"))
+            .collect(),
             cwd: Some(data_dir.display().to_string()),
             env: vec![],
             restart: None,

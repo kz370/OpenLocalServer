@@ -1,6 +1,6 @@
 //! Hosts-file block management (§44–47 — Stage 6). Pure text transforms only — fully
 //! testable without touching the real, admin-protected hosts file. The actual privileged
-//! write happens in a separate `devforge-helper` binary (not yet wired up: writing to
+//! write happens in a separate `ols-helper` binary (not yet wired up: writing to
 //! `C:\Windows\System32\drivers\etc\hosts` needs elevation, and this session can't click
 //! through a live UAC prompt — see module docs in the plan). These functions are exactly
 //! what that helper will call once it exists; nothing here needs to change.
@@ -10,7 +10,7 @@ const END_MARKER: &str = "# END OpenLocalServer";
 
 /// Replaces (or appends) the OpenLocalServer-managed block in `existing` hosts-file
 /// content. Idempotent — calling this again with the same `entries` reproduces the same
-/// output. Never touches anything outside its own delimited block (§75: DevForge must
+/// output. Never touches anything outside its own delimited block (§75: OpenLocalServer must
 /// not clobber a user's other hosts entries).
 pub fn apply_hosts_block(existing: &str, entries: &[(String, String)]) -> String {
     let block = render_block(entries);
@@ -111,7 +111,7 @@ fn block_names(text: &str) -> Vec<String> {
     }
 }
 
-/// Loopback entries for `hostnames` — DevForge never points a name anywhere else (§138).
+/// Loopback entries for `hostnames` — OpenLocalServer never points a name anywhere else (§138).
 pub fn loopback_entries(hostnames: &[String]) -> Vec<(String, String)> {
     hostnames.iter().map(|h| ("127.0.0.1".to_string(), h.clone())).collect()
 }

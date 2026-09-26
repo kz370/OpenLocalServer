@@ -4,6 +4,11 @@ import { useCallback, useEffect, useState } from 'react'
 import { ErrorCard } from '@/components/ErrorCard'
 import { ProjectTerminal } from '@/components/Terminal'
 import { EnvEditor } from '@/components/EnvEditor'
+import { EnvironmentPanel } from '@/components/project/EnvironmentPanel'
+import { GitPanel } from '@/components/project/GitPanel'
+import { RepairPanel } from '@/components/project/RepairPanel'
+import { SnapshotsPanel } from '@/components/project/SnapshotsPanel'
+import { WorkersPanel } from '@/components/project/WorkersPanel'
 import { XdebugDialog } from '@/components/XdebugDialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -24,17 +29,17 @@ import {
 import { useAction } from '@/lib/hooks'
 import { confirmThen } from '@/lib/confirm'
 
-type ToolTab = 'terminal' | 'env' | 'mail' | 'composer' | 'node' | 'python' | 'xdebug'
+type ToolTab = 'environment' | 'terminal' | 'env' | 'git' | 'workers' | 'snapshots' | 'repair' | 'mail' | 'composer' | 'node' | 'python' | 'xdebug'
 
 /**
  * Composer, Node package managers, Python venv and Xdebug for one project (§13–17).
  * `start` runs a command that returns a process and shows its live output in the page.
  * `refreshKey` changes when that process finishes, so the panels re-read the project files.
  */
-export function ProjectTools({ detail, start, refreshKey }: { detail: ProjectDetail; start: (cmd: CoreCommand) => Promise<void>; refreshKey: number }) {
+export function ProjectTools({ detail, start, refreshKey, initialTab }: { detail: ProjectDetail; start: (cmd: CoreCommand) => Promise<void>; refreshKey: number; initialTab?: ToolTab }) {
   const id = detail.project.id
   const markers = detail.detection.markers
-  const [tab, setTab] = useState<ToolTab>(markers.includes('composer.json') ? 'composer' : markers.includes('package.json') ? 'node' : 'composer')
+  const [tab, setTab] = useState<ToolTab>(initialTab ?? (markers.includes('composer.json') ? 'composer' : markers.includes('package.json') ? 'node' : 'composer'))
   const [composer, setComposer] = useState<ComposerInfo | null>(null)
   const [managers, setManagers] = useState<PackageManagerInfo | null>(null)
   const [venv, setVenv] = useState<VenvInfo | null>(null)
@@ -61,14 +66,19 @@ export function ProjectTools({ detail, start, refreshKey }: { detail: ProjectDet
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm">Tools</CardTitle>
-        <CardDescription>Run Composer, pnpm / yarn, Python environments and Xdebug for this project.</CardDescription>
+        <CardDescription>Set up the environment, manage Git, workers and snapshots, repair problems, and run Composer, pnpm / yarn, Python and Xdebug.</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <ErrorCard error={error} onDismiss={() => setError(null)} />
         <Tabs
           tabs={[
+            { id: 'environment', label: 'Environment' },
             { id: 'terminal', label: 'Terminal' },
             { id: 'env', label: '.env' },
+            { id: 'git', label: 'Git' },
+            { id: 'workers', label: 'Workers' },
+            { id: 'snapshots', label: 'Snapshots' },
+            { id: 'repair', label: 'Repair' },
             { id: 'mail', label: 'Mail' },
             { id: 'composer', label: 'Composer', badge: composer?.packages.length || undefined },
             { id: 'node', label: 'Node' },
@@ -79,7 +89,12 @@ export function ProjectTools({ detail, start, refreshKey }: { detail: ProjectDet
           onChange={setTab}
         />
 
+        {tab === 'environment' && <EnvironmentPanel projectId={id} />}
         {tab === 'terminal' && <ProjectTerminal projectId={id} />}
+        {tab === 'git' && <GitPanel projectId={id} />}
+        {tab === 'workers' && <WorkersPanel projectId={id} />}
+        {tab === 'snapshots' && <SnapshotsPanel project={detail.project} />}
+        {tab === 'repair' && <RepairPanel projectId={id} />}
         {tab === 'env' && <EnvEditor projectId={id} />}
         {tab === 'mail' && <MailPanel projectId={id} />}
         {tab === 'composer' && <ComposerPanel projectId={id} info={composer} busy={busy} go={go} />}

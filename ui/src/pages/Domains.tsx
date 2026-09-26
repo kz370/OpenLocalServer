@@ -8,12 +8,12 @@ import {
   FileCode2,
   FolderSearch,
   Lock,
-  Pencil,
   Play,
   Plus,
   RefreshCw,
   Rocket,
   Search,
+  Settings2,
   ShieldCheck,
   Trash2,
 } from 'lucide-react'
@@ -30,6 +30,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Dialog } from '@/components/ui/dialog'
 import { Field, Select, Tabs, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { ActionMenu } from '@/components/ui/menu'
 import { SiteConfigTab } from '@/pages/Config'
 import { Wizard } from '@/pages/QuickApps'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -323,72 +324,72 @@ export function DomainsPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                     <TableCell>{d.https ? <Badge variant="success">HTTPS</Badge> : <Badge variant="outline">HTTP</Badge>}</TableCell>
                     <TableCell>{d.enabled ? <Badge variant="secondary">enabled</Badge> : <Badge variant="warning">disabled</Badge>}</TableCell>
                     <TableCell>
-                      <div className="flex flex-wrap justify-end gap-0.5">
-                        <Button size="sm" variant="ghost" title="Open in browser" disabled={!d.enabled || !status?.running} onClick={() => run('open', () => runCommand({ type: 'open_url', url: d.url }))}>
-                          <ExternalLink className="size-3.5" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          title="Health check (DNS → TCP → TLS → certificate → trust → HTTP)"
-                          onClick={() =>
-                            run('health', async () => {
-                              const r = await runCommand({ type: 'health_check', hostname: d.hostname })
-                              if (r.type === 'health') setHealth(r.report)
-                            })
-                          }
-                        >
-                          <Activity className="size-3.5" />
-                        </Button>
-                        <Button size="sm" variant="ghost" title={`Open ${d.folder} in your code editor`} onClick={() => run('code', () => runCommand({ type: 'open_in_editor', path: d.folder }))}>
-                          <Code2 className="size-3.5" />
-                        </Button>
-                        <Button size="sm" variant="ghost" title="Edit" onClick={() => openEditor(d.hostname)}>
-                          <Pencil className="size-3.5" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          title={d.enabled ? 'Disable' : 'Enable'}
-                          onClick={() =>
-                            run(`toggle:${d.hostname}`, async () => {
-                              await runCommand({ type: 'set_domain_enabled', hostname: d.hostname, enabled: !d.enabled })
-                              await apply()
-                            })
-                          }
-                        >
-                          {busy === `toggle:${d.hostname}` ? <Spinner className="size-3.5" /> : d.enabled ? <StopIcon className="size-3.5" /> : <Play className="size-3.5" />}
-                        </Button>
-                        {d.has_app && (
-                          <Button size="sm" variant="ghost" title="Restart app process" onClick={() => run('restart', () => runCommand({ type: 'restart_site_app', hostname: d.hostname }))}>
-                            <RefreshCw className="size-3.5" />
+                      <div className="flex items-center justify-end gap-1">
+                        {/* The span keeps the tooltip working while the button is disabled. */}
+                        <span title={!d.enabled ? 'The site is disabled' : !status?.running ? 'Start the web server first' : `Open ${d.url}`}>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 w-8 px-0"
+                            aria-label={`Open ${d.url}`}
+                            disabled={!d.enabled || !status?.running}
+                            onClick={() => run('open', () => runCommand({ type: 'open_url', url: d.url }))}
+                          >
+                            <ExternalLink className="size-3.5" />
                           </Button>
-                        )}
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          title="Duplicate"
-                          onClick={() => {
-                            setDupOf(d.hostname)
-                            setDupName(`copy.${d.hostname}`)
-                          }}
-                        >
-                          <Copy className="size-3.5" />
+                        </span>
+                        <Button size="sm" variant="ghost" className="h-8 w-8 px-0" title="Site settings" aria-label={`Settings for ${d.hostname}`} onClick={() => openEditor(d.hostname)}>
+                          <Settings2 className="size-3.5" />
                         </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          title="Delete"
-                          onClick={async () => {
-                            if (!(await confirmAction(`Delete ${d.hostname}? Its certificate is revoked and its config removed.`))) return
-                            void run('delete', async () => {
-                              await runCommand({ type: 'remove_domain', hostname: d.hostname })
-                              await apply()
-                            })
-                          }}
-                        >
-                          <Trash2 className="size-3.5" />
-                        </Button>
+                        <ActionMenu
+                          label={`More actions for ${d.hostname}`}
+                          items={[
+                            { label: 'Open folder in code editor', icon: <Code2 />, hint: d.folder, onSelect: () => void run('code', () => runCommand({ type: 'open_in_editor', path: d.folder })) },
+                            {
+                              label: 'Health check',
+                              icon: <Activity />,
+                              hint: 'DNS → TCP → TLS → certificate → trust → HTTP',
+                              onSelect: () =>
+                                void run('health', async () => {
+                                  const r = await runCommand({ type: 'health_check', hostname: d.hostname })
+                                  if (r.type === 'health') setHealth(r.report)
+                                }),
+                            },
+                            ...(d.has_app ? [{ label: 'Restart app process', icon: <RefreshCw />, onSelect: () => void run('restart', () => runCommand({ type: 'restart_site_app', hostname: d.hostname })) }] : []),
+                            'separator',
+                            {
+                              label: d.enabled ? 'Disable' : 'Enable',
+                              icon: d.enabled ? <StopIcon /> : <Play />,
+                              disabled: busy === `toggle:${d.hostname}`,
+                              onSelect: () =>
+                                void run(`toggle:${d.hostname}`, async () => {
+                                  await runCommand({ type: 'set_domain_enabled', hostname: d.hostname, enabled: !d.enabled })
+                                  await apply()
+                                }),
+                            },
+                            {
+                              label: 'Duplicate',
+                              icon: <Copy />,
+                              onSelect: () => {
+                                setDupOf(d.hostname)
+                                setDupName(`copy.${d.hostname}`)
+                              },
+                            },
+                            'separator',
+                            {
+                              label: 'Delete',
+                              icon: <Trash2 />,
+                              danger: true,
+                              onSelect: async () => {
+                                if (!(await confirmAction(`Delete ${d.hostname}? Its certificate is revoked and its config removed.`))) return
+                                void run('delete', async () => {
+                                  await runCommand({ type: 'remove_domain', hostname: d.hostname })
+                                  await apply()
+                                })
+                              },
+                            },
+                          ]}
+                        />
                       </div>
                     </TableCell>
                   </TableRow>

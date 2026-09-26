@@ -4,6 +4,7 @@ import { ChevronRight, Folder, FolderPlus, FolderSearch, Play, Trash2 } from 'lu
 import { useEffect, useState } from 'react'
 
 import { ProjectShortcuts } from '@/components/OpenWithMenu'
+import { GitCloneButton, ImportEnvironmentButton } from '@/components/project/ProjectImports'
 import { ProjectTools } from '@/components/ProjectTools'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -11,9 +12,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { type CoreCommand, type Diagnostic, type Project, type ProjectDetail, type ProcessEvent, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
+import { type ProjectTab, onOpenProject, takePendingProject } from '@/lib/nav'
 
 const SOURCE_LABEL: Record<string, string> = {
-  manifest: 'from .devforge/environment.yaml',
+  manifest: 'from .openlocalserver/environment.yaml',
   detected: 'detected from project files',
   global: 'global default',
   none: 'not resolved',
@@ -30,6 +32,18 @@ export function ProjectsPage() {
   const [runOutput, setRunOutput] = useState<string[]>([])
   const [runningProcessId, setRunningProcessId] = useState<number | null>(null)
   const [toolsTick, setToolsTick] = useState(0)
+  const [toolsTab, setToolsTab] = useState<ProjectTab | undefined>(undefined)
+
+  // The command palette and search open a project (and a tab) from anywhere.
+  useEffect(() => {
+    const show = (p: { id: string; tab?: ProjectTab }) => {
+      setSelectedId(p.id)
+      setToolsTab(p.tab)
+    }
+    const pending = takePendingProject()
+    if (pending) show(pending)
+    return onOpenProject(show)
+  }, [])
 
   async function refreshProjects() {
     const res = await runCommand({ type: 'list_projects' })
@@ -135,6 +149,14 @@ Your project files are not deleted.`))) return
     if (res.type === 'process_started') setRunningProcessId(res.id)
   }
 
+  // New projects from Git or an environment file go beside the existing ones by default.
+  const projectsParent = projects[0]?.path.replace(/[\\/][^\\/]+$/, '') ?? ''
+  async function adopt(p: Project) {
+    await refreshProjects()
+    setSelectedId(p.id)
+    setToolsTab('environment')
+  }
+
   const shown = projects.filter((p) => `${p.name} ${p.path}`.toLowerCase().includes(filter.trim().toLowerCase()))
 
   return (
@@ -143,7 +165,7 @@ Your project files are not deleted.`))) return
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
           <p className="text-sm text-muted-foreground">
-            Register a folder; DevForge detects its framework and resolves its runtime versions (§18, §42).
+            Register a folder, clone one from Git or import an environment. OpenLocalServer detects the framework and resolves its runtime versions.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -154,6 +176,8 @@ Your project files are not deleted.`))) return
           <Button size="sm" variant="secondary" onClick={browseAndScanFolder} title="Pick a workspace folder holding several projects side by side">
             <FolderSearch /> Scan a folder
           </Button>
+          <GitCloneButton defaultParent={projectsParent} onDone={adopt} />
+          <ImportEnvironmentButton defaultParent={projectsParent} onDone={adopt} />
         </div>
       </div>
 
@@ -264,7 +288,7 @@ Your project files are not deleted.`))) return
                           </pre>
                         )}
 
-                        <ProjectTools key={ready.project.id} detail={ready} start={startProcess} refreshKey={toolsTick} />
+                        <ProjectTools key={`${ready.project.id}:${toolsTab ?? ''}`} detail={ready} start={startProcess} refreshKey={toolsTick} initialTab={toolsTab} />
                       </>
                     )}
                   </div>

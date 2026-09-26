@@ -28,6 +28,16 @@ pub enum CoreError {
 
     #[error("{0}")]
     QuickAppError(String),
+
+    /// Manifests, setup, profiles, snapshots (§69–78, §130–132).
+    #[error("{0}")]
+    EnvError(String),
+
+    #[error("{0}")]
+    GitError(String),
+
+    #[error("{0}")]
+    TunnelError(String),
 }
 
 /// The shape every error crosses the IPC boundary as, so the UI can render
@@ -81,6 +91,17 @@ impl From<&CoreError> for Diagnostic {
                 problem: "That Quick App or Quick Command couldn't be used.".into(),
                 cause: msg.clone(),
                 fix: None,
+            },
+            CoreError::EnvError(msg) => Diagnostic {
+                problem: "The project environment couldn't be set up.".into(),
+                cause: msg.clone(),
+                fix: Some("Check the project's .openlocalserver files, or review the plan's conflicts.".into()),
+            },
+            CoreError::GitError(msg) => Diagnostic { problem: "Git reported a problem.".into(), cause: msg.clone(), fix: None },
+            CoreError::TunnelError(msg) => Diagnostic {
+                problem: "The tunnel operation failed.".into(),
+                cause: msg.clone(),
+                fix: Some("Check the tunnel's log on the Tunnels page.".into()),
             },
         }
     }

@@ -70,7 +70,7 @@ pub struct ConfigFile {
     pub part: ConfigPart,
     pub path: String,
     pub ownership: Option<Ownership>,
-    /// The file on disk no longer matches what DevForge last wrote (§26).
+    /// The file on disk no longer matches what OpenLocalServer last wrote (§26).
     pub drifted: bool,
     pub editable: bool,
 }
@@ -885,7 +885,7 @@ impl WebManager {
             if let Ok(layout) = self.layout(server.as_ref()) {
                 let ext = server.config_ext();
                 let site = layout.site_file(ext, hostname);
-                // Whatever the file held is about to stop being DevForge's to regenerate —
+                // Whatever the file held is about to stop being OpenLocalServer's to regenerate —
                 // or is about to be regenerated over. Either way keep a copy.
                 if let Ok(old) = std::fs::read_to_string(&site) {
                     self.archive(server.id(), hostname, ConfigPart::Site, ext, &old);

@@ -42,8 +42,11 @@ fn show_main_window(app: &AppHandle) {
     }
 }
 
-/// Stops everything DevForge started so nothing is left running after "Quit".
+/// Stops everything OpenLocalServer started so nothing is left running after "Quit".
 fn shutdown(core: &Core) {
+    ols_core::control::close(&core.inner().paths);
+    core.inner().stop_all_tunnels();
+    core.inner().stop_all_workers();
     core.inner().terminals.close_all();
     core.inner().web.stop();
     for s in core.services().list() {
@@ -114,12 +117,18 @@ pub fn run() {
     }
     tracing::info!(version = env!("CARGO_PKG_VERSION"), home = %paths.root().display(), "OpenLocalServer starting");
 
+    // One owner of the core at a time: a background `ols daemon` hands over to the app.
+    ols_core::control::take_over_from_daemon(&paths);
     let settings = SettingsService::load(&paths).expect("failed to load settings");
     // Supervisor/runtimes are shared with `Core` so the setup hook below can subscribe to
     // their events and forward them to the webview — the UI shouldn't have to poll.
     let supervisor = Arc::new(ProcessSupervisor::new());
     let runtimes = Arc::new(RuntimeManager::new(paths.clone()));
-    let core = Core::with_parts(settings, paths, supervisor.clone(), runtimes.clone());
+    let core = Core::with_parts(settings, paths.clone(), supervisor.clone(), runtimes.clone());
+    // §136: the `ols` command line talks to the app through this.
+    if let Err(e) = ols_core::control::serve(core.clone(), &paths, "app") {
+        tracing::warn!(error = %e, "the command-line control channel is not available");
+    }
     let start_hidden = std::env::args().any(|a| a == "--minimized") && core.inner().setting_bool("startup.minimized", true);
 
     let setup_core = core.clone();
@@ -191,6 +200,8 @@ pub fn run() {
             });
 
             build_tray(app.handle(), core.clone())?;
+            // §106: scheduled tasks run while the app is open.
+            ols_core::scheduler::start_clock(core.inner());
 
             if start_hidden {
                 if let Some(w) = app.get_webview_window("main") {

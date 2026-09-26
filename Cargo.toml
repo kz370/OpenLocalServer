@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/ols-core",
     "crates/ols-helper",
+    "crates/ols-cli",
     "src-tauri",
 ]
 
