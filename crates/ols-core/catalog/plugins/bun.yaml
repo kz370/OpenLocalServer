@@ -1,0 +1,21 @@
+id: bun
+name: Bun
+version: 1.0.0
+description: The Bun JavaScript runtime and package manager. Installs under Runtimes.
+author: OpenLocalServer
+permissions: [download, read_projects]
+contributes:
+  runtimes:
+    - id: bun
+      name: Bun
+      version: "1.4.2"
+      url: https://github.com/oven-sh/bun/releases/download/bun-v1.4.2/bun-windows-x64.zip
+      # From SHASUMS256.txt published with the bun-v1.4.2 release.
+      sha256: ce4c17497b2f29712a99d3d53f028de28cd42e3bacb8589599e7f000e49b6405
+      archive_root: bun-windows-x64
+      binary: bun.exe
+      probe: { exe: bun.exe, arg: --version }
+  detections:
+    - id: bun-project
+      name: Bun
+      markers: [bun.lockb, bun.lock, bunfig.toml]

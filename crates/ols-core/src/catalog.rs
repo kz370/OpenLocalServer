@@ -1,9 +1,15 @@
-//! Runtime package catalog (§20 — Stage 3). Hand-curated for now; a signed remote catalog
-//! (Stage 16) will replace `builtin_catalog` without changing `PackageManifest`'s shape.
+//! Runtime package catalog (§20 — Stage 3). The built-in entries are hand-curated; enabled
+//! plugins and verified signed catalogs (Stage 16) add more through `set_extra`, without
+//! changing `PackageManifest`'s shape.
 //!
 //! Every entry's `sha256` was pulled from the vendor's own published checksum file at the
 //! time it was added (e.g. `https://nodejs.org/dist/vX.Y.Z/SHASUMS256.txt`), never computed
 //! locally — that's the whole point of §21 package integrity.
+
+use std::collections::HashSet;
+use std::sync::{Mutex, RwLock};
+
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy)]
 pub struct PackageManifest {
@@ -200,6 +206,18 @@ const CATALOG: &[PackageManifest] = &[
         archive_root: "",
         binary: "cmd/git.exe",
     },
+    PackageManifest {
+        id: "k6",
+        name: "k6 (load testing)",
+        version: "2.3.0",
+        platform: "windows",
+        architecture: "x64",
+        url: "https://github.com/grafana/k6/releases/download/v2.3.0/k6-v2.3.0-windows-amd64.zip",
+        // From the k6-v2.3.0-checksums.txt published with the release.
+        sha256: "112276d495e5741c968e2bc09ea6196099c1275bd6db9ee0875d173c7148ce43",
+        archive_root: "k6-v2.3.0-windows-amd64",
+        binary: "k6.exe",
+    },
 ];
 
 fn current_platform() -> &'static str {
@@ -222,10 +240,124 @@ fn current_arch() -> &'static str {
     }
 }
 
+/// A catalog entry as plugins and remote catalogs describe it (owned strings).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OwnedManifest {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    #[serde(default = "default_platform")]
+    pub platform: String,
+    #[serde(default = "default_arch")]
+    pub architecture: String,
+    pub url: String,
+    pub sha256: String,
+    #[serde(default)]
+    pub archive_root: String,
+    pub binary: String,
+    /// How to look for an existing install: the executable and its version flag.
+    #[serde(default)]
+    pub probe: Option<Probe>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Probe {
+    pub exe: String,
+    pub arg: String,
+}
+
+fn default_platform() -> String {
+    "windows".into()
+}
+fn default_arch() -> String {
+    "x64".into()
+}
+
+impl OwnedManifest {
+    /// What is wrong with this entry, for a plugin or catalog to be refused. A download needs
+    /// HTTPS and a full SHA-256 (§21), and nothing may reach outside the install folder.
+    pub fn check(&self) -> Result<(), String> {
+        let id_ok = |s: &str| !s.is_empty() && s.len() <= 40 && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+        if !id_ok(&self.id) {
+            return Err(format!("runtime id '{}' may only hold letters, digits, '-' and '_'", self.id));
+        }
+        if self.version.is_empty() || self.version.len() > 40 || !self.version.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '+')) {
+            return Err(format!("{}: the version '{}' is not usable as a folder name", self.id, self.version));
+        }
+        if !self.url.starts_with("https://") {
+            return Err(format!("{} {}: downloads must use HTTPS", self.id, self.version));
+        }
+        if self.sha256.len() != 64 || !self.sha256.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(format!("{} {}: needs a 64-character SHA-256", self.id, self.version));
+        }
+        for (what, p) in [("binary", self.binary.as_str()), ("archive_root", self.archive_root.as_str())] {
+            if p.contains("..") || p.starts_with('/') || p.starts_with('\\') || p.contains(':') {
+                return Err(format!("{} {}: the {what} path '{p}' must stay inside the install folder", self.id, self.version));
+            }
+        }
+        if self.binary.is_empty() {
+            return Err(format!("{} {}: no binary named", self.id, self.version));
+        }
+        Ok(())
+    }
+}
+
+static EXTRA: RwLock<Vec<PackageManifest>> = RwLock::new(Vec::new());
+static EXTRA_PROBES: RwLock<Vec<(&'static str, &'static str, &'static str)>> = RwLock::new(Vec::new());
+static INTERNED: Mutex<Option<HashSet<&'static str>>> = Mutex::new(None);
+
+/// One leaked copy per distinct string, so replacing the extras on every plugin change
+/// doesn't grow memory (the catalog hands out `&'static str`).
+fn intern(s: &str) -> &'static str {
+    let mut guard = INTERNED.lock().unwrap();
+    let set = guard.get_or_insert_with(HashSet::new);
+    if let Some(found) = set.get(s) {
+        return found;
+    }
+    let leaked: &'static str = Box::leak(s.to_string().into_boxed_str());
+    set.insert(leaked);
+    leaked
+}
+
+/// Replaces the entries contributed by plugins and catalogs. Built-in entries always win
+/// for the same id and version, and invalid entries are skipped.
+pub fn set_extra(entries: &[OwnedManifest]) {
+    let mut out: Vec<PackageManifest> = Vec::new();
+    let mut probes = Vec::new();
+    for e in entries {
+        if e.check().is_err() {
+            continue;
+        }
+        if CATALOG.iter().any(|m| m.id == e.id && m.version == e.version) || out.iter().any(|m| m.id == e.id && m.version == e.version) {
+            continue;
+        }
+        out.push(PackageManifest {
+            id: intern(&e.id),
+            name: intern(&e.name),
+            version: intern(&e.version),
+            platform: intern(&e.platform),
+            architecture: intern(&e.architecture),
+            url: intern(&e.url),
+            sha256: intern(&e.sha256.to_ascii_lowercase()),
+            archive_root: intern(&e.archive_root),
+            binary: intern(&e.binary),
+        });
+        if let Some(p) = &e.probe {
+            if !probes.iter().any(|(id, _, _)| *id == e.id) {
+                probes.push((intern(&e.id), intern(&p.exe), intern(&p.arg)));
+            }
+        }
+    }
+    *EXTRA.write().unwrap() = out;
+    *EXTRA_PROBES.write().unwrap() = probes;
+}
+
 /// Entries matching the machine OpenLocalServer is actually running on.
 pub fn builtin_catalog() -> Vec<PackageManifest> {
+    let extra = EXTRA.read().unwrap();
     CATALOG
         .iter()
+        .chain(extra.iter())
         .copied()
         .filter(|m| m.platform == current_platform() && m.architecture == current_arch())
         .collect()
@@ -246,7 +378,8 @@ pub fn system_probe(id: &str) -> Option<(&'static str, &'static str)> {
         "postgres" => Some(("postgres.exe", "--version")),
         "redis" => Some(("redis-server.exe", "--version")),
         "sqlite" => Some(("sqlite3.exe", "--version")),
-        _ => None,
+        "k6" => Some(("k6.exe", "version")),
+        _ => EXTRA_PROBES.read().unwrap().iter().find(|(pid, _, _)| *pid == id).map(|(_, exe, arg)| (*exe, *arg)),
     }
 }
 

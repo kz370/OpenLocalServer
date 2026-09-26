@@ -3,6 +3,7 @@ import { FolderSearch, ShieldCheck } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
+import { ApiCard, SystemCard, UpdatesCard } from '@/components/ReleaseCards'
 import { ResourcesCard, SettingsBackupsCard } from '@/components/SettingsExtras'
 import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
@@ -181,6 +182,9 @@ export function SettingsPage() {
 
       <ResourcesCard />
       <SettingsBackupsCard />
+      <UpdatesCard />
+      <ApiCard />
+      <SystemCard />
     </div>
   )
 }

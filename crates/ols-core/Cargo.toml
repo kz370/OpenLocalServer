@@ -33,7 +33,11 @@ hyper = { version = "1", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 http-body-util = "0.1"
 bytes = "1"
+minisign-verify = "0.3.0"
 
 [dev-dependencies]
+base64 = "0.23.1"
+blake2 = "0.11.0"
+ed25519-dalek = "3.0.0"
 tempfile = "3"
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }

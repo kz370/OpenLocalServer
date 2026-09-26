@@ -11,6 +11,7 @@ import { DatabasesPage } from '@/pages/Databases'
 import { WebServerPage } from '@/pages/WebServer'
 import { LogsPage } from '@/pages/Logs'
 import { ProcessesPage } from '@/pages/Processes'
+import { PluginsPage } from '@/pages/Plugins'
 import { ProfilesPage } from '@/pages/Profiles'
 import { SitesPage } from '@/pages/Sites'
 import { QuickAppsPage } from '@/pages/QuickApps'
@@ -42,6 +43,7 @@ export default function App() {
         {page === 'services' && <ServicesPage />}
         {page === 'runtimes' && <RuntimesPage />}
         {page === 'profiles' && <ProfilesPage />}
+        {page === 'plugins' && <PluginsPage />}
         {page === 'logs' && <LogsPage />}
         {page === 'processes' && <ProcessesPage />}
         {page === 'settings' && <SettingsPage />}

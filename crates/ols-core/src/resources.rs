@@ -33,6 +33,9 @@ pub struct ResourceLimits {
     /// Processes the app itself may run at once (services, sites, workers, commands).
     #[serde(default)]
     pub max_processes: Option<u32>,
+    /// The most virtual users a load-test script may ask for (default 200).
+    #[serde(default)]
+    pub k6_max_vus: Option<u32>,
 }
 
 impl ResourceLimits {
@@ -48,6 +51,7 @@ impl ResourceLimits {
         check(self.node_max_old_space_mb, 64, 65536, "Node memory (MB)")?;
         check(self.max_worker_count, 1, crate::workers::MAX_COUNT, "Copies per worker")?;
         check(self.max_processes, 4, 1000, "The process limit")?;
+        check(self.k6_max_vus, 1, 5000, "The load-test virtual users")?;
         Ok(())
     }
 

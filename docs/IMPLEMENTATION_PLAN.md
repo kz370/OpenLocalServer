@@ -34,8 +34,10 @@ have not been run, and the new screens have not all been checked in the running 
 | 13 Profiles, modes, workers, scheduler, snapshots | Built | 8 built-in profiles plus your own (import/export), 4 modes; queue workers; cron scheduler (runs while the app or daemon is open); snapshots, settings backups, environment import/export and cloning |
 | 14 Tunnels + traffic | Built | Cloudflare, ngrok, LocalTunnel, Tailscale Funnel; first-exposure confirmation, internal-port refusal, access control in our own proxy; traffic inspector with redaction, replay and a webhook tester. Real providers not yet exercised end to end (needs their programs installed) |
 | 15 Power UX + repair | Built | Command palette and global search (Ctrl+Shift+P / Ctrl+K), doctor, project diagnostics and repair, Git repository manager (portable Git in the catalog), resource limits |
-| 16–17 (release 1.0, Windows) | Not started | Except the items marked *done early* below |
-| 18–19 (release 1.1) | Not started | k6 load testing, AI assistant |
+| 16 Plugins + catalogs | Built (2026-09-26) | Declarative plugins with permissions, 4 built-in runtime plugins (Go, Bun, Java, .NET), minisign-signed catalogs. Not done: WASM code plugins, DB/service/tool plugins, Ruby, a default catalog and key. See [PLUGINS.md](PLUGINS.md) |
+| 17 Release hardening | Built (2026-09-26) | Signed updater, localhost HTTP API, Explorer menu, offline indicator, support bundle, machine diagnostics, security review ([SECURITY_REVIEW.md](SECURITY_REVIEW.md)). Not done: update signing key, code-signed installer, 1.0 E2E on a clean VM |
+| 18 Load testing with k6 | Built (2026-09-26) | k6 in the catalog, scripts, generator, live results, saved runs, `ols test load`. Not done: Quick Command entry, CPU cap, run against a real site in the app. See [LOAD_TESTING.md](LOAD_TESTING.md) |
+| 19 AI assistant | Not started | `redact.rs` (text redaction) exists and is shared with the support bundle |
 | 20 (release 2.0, Linux) | Not started | Last |
 
 ### Done early or beyond the plan

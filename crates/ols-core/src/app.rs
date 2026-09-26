@@ -65,6 +65,8 @@ pub struct Inner {
     pub task_runs: crate::scheduler::TaskRuns,
     pub profiles: crate::profiles::ProfileStore,
     pub tunnels: crate::tunnel::TunnelManager,
+    pub api: crate::api::ApiState,
+    pub loadtests: crate::loadtest::LoadRuns,
 }
 
 fn svc(msg: impl Into<String>) -> CoreError {
@@ -173,10 +175,13 @@ impl Inner {
             task_runs: Default::default(),
             profiles: crate::profiles::ProfileStore::new(&paths),
             tunnels: crate::tunnel::TunnelManager::new(&paths),
+            api: Default::default(),
+            loadtests: Default::default(),
             paths,
         });
         core.sync_php_external();
         core.services.set_limits(core.resource_limits());
+        core.apply_plugins();
         Ok(core)
     }
 
@@ -801,6 +806,7 @@ impl Inner {
                 (false, _) => item(&format!("svc_{}", s.id), &s.name, "ok", "stopped".into(), None),
             });
         }
+        items.extend(self.plugin_health());
         items
     }
 

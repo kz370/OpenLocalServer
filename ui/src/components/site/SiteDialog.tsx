@@ -54,6 +54,7 @@ const TAB_ICON: Record<Exclude<SiteTab, 'settings' | 'config' | 'servers' | 'log
   node: <TechIcon id="node" />,
   python: <TechIcon id="python" />,
   xdebug: <Bug />,
+  load: <TechIcon id="k6" />,
 }
 
 /** Tabs that belong to the project, not the site. */

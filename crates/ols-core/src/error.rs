@@ -38,6 +38,19 @@ pub enum CoreError {
 
     #[error("{0}")]
     TunnelError(String),
+
+    /// Plugins, catalogs, updates, load tests and the AI assistant: says what was being done.
+    #[error("{problem}: {cause}")]
+    Failed { problem: String, cause: String, fix: Option<String> },
+}
+
+impl CoreError {
+    pub fn failed(problem: impl Into<String>, cause: impl Into<String>) -> Self {
+        CoreError::Failed { problem: problem.into(), cause: cause.into(), fix: None }
+    }
+    pub fn failed_fix(problem: impl Into<String>, cause: impl Into<String>, fix: impl Into<String>) -> Self {
+        CoreError::Failed { problem: problem.into(), cause: cause.into(), fix: Some(fix.into()) }
+    }
 }
 
 /// The shape every error crosses the IPC boundary as, so the UI can render
@@ -103,6 +116,7 @@ impl From<&CoreError> for Diagnostic {
                 cause: msg.clone(),
                 fix: Some("Check the tunnel's log on the Tunnels page.".into()),
             },
+            CoreError::Failed { problem, cause, fix } => Diagnostic { problem: problem.clone(), cause: cause.clone(), fix: fix.clone() },
         }
     }
 }

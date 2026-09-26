@@ -6,6 +6,7 @@ import { ProjectTerminal } from '@/components/Terminal'
 import { EnvEditor } from '@/components/EnvEditor'
 import { EnvironmentPanel } from '@/components/project/EnvironmentPanel'
 import { GitPanel } from '@/components/project/GitPanel'
+import { LoadPanel } from '@/components/project/LoadPanel'
 import { RepairPanel } from '@/components/project/RepairPanel'
 import { SnapshotsPanel } from '@/components/project/SnapshotsPanel'
 import { WorkersPanel } from '@/components/project/WorkersPanel'
@@ -28,7 +29,7 @@ import {
 import { useAction } from '@/lib/hooks'
 import { confirmThen } from '@/lib/confirm'
 
-export type ToolTab = 'environment' | 'terminal' | 'env' | 'git' | 'workers' | 'snapshots' | 'repair' | 'mail' | 'composer' | 'node' | 'python' | 'xdebug'
+export type ToolTab = 'environment' | 'terminal' | 'env' | 'git' | 'workers' | 'snapshots' | 'repair' | 'mail' | 'composer' | 'node' | 'python' | 'xdebug' | 'load'
 
 /** The project tools, in the order the site dialog lists them. */
 export const TOOL_TABS: { id: ToolTab; label: string }[] = [
@@ -44,6 +45,7 @@ export const TOOL_TABS: { id: ToolTab; label: string }[] = [
   { id: 'node', label: 'Node' },
   { id: 'python', label: 'Python' },
   { id: 'xdebug', label: 'Xdebug' },
+  { id: 'load', label: 'Load testing' },
 ]
 
 /**
@@ -89,6 +91,7 @@ export function ProjectTools({ detail, start, refreshKey, tab }: { detail: Proje
       {tab === 'node' && <NodePanel projectId={id} info={managers} busy={busy} go={go} />}
       {tab === 'python' && <PythonPanel projectId={id} info={venv} busy={busy} go={go} />}
       {tab === 'xdebug' && <XdebugPanel detail={detail} />}
+      {tab === 'load' && <LoadPanel projectId={id} />}
     </>
   )
 

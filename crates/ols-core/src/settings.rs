@@ -32,6 +32,11 @@ impl SettingsService {
         self.values.get(key)
     }
 
+    /// Every setting, for the support bundle.
+    pub fn snapshot(&self) -> BTreeMap<String, Value> {
+        self.values.clone()
+    }
+
     pub fn set(&mut self, key: impl Into<String>, value: Value) -> Result<(), CoreError> {
         self.values.insert(key.into(), value);
         self.persist()

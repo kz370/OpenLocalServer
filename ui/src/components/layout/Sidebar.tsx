@@ -8,6 +8,7 @@ import {
   Layers,
   LayoutDashboard,
   Moon,
+  Plug,
   Rocket,
   ScrollText,
   Search,
@@ -22,6 +23,7 @@ import {
 
 import { useState } from 'react'
 
+import { OfflineNotice, useOnline } from '@/components/ReleaseCards'
 import { Badge } from '@/components/ui/badge'
 import { runCommand } from '@/core'
 import { usePoll } from '@/lib/hooks'
@@ -37,6 +39,7 @@ export type Page =
   | 'config'
   | 'tunnels'
   | 'profiles'
+  | 'plugins'
   | 'databases'
   | 'services'
   | 'runtimes'
@@ -56,17 +59,19 @@ const NAV_ITEMS: { id: Page; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'services', label: 'Services', icon: Database },
   { id: 'runtimes', label: 'Runtimes', icon: Box },
   { id: 'profiles', label: 'Profiles', icon: Layers },
+  { id: 'plugins', label: 'Plugins', icon: Plug },
   { id: 'logs', label: 'Logs', icon: ScrollText },
   { id: 'processes', label: 'Processes', icon: Terminal },
   { id: 'settings', label: 'Settings', icon: Settings },
 ]
 
-const SOON_ITEMS = ['Plugins']
+const SOON_ITEMS: string[] = []
 
 export function Sidebar({ page, onNavigate }: { page: Page; onNavigate: (p: Page) => void }) {
   const { theme, resolvedTheme, setTheme } = useTheme()
   // §59: always visible when something is public.
   const [publicCount, setPublicCount] = useState(0)
+  const network = useOnline()
   usePoll(async () => {
     const r = await runCommand({ type: 'list_tunnels' }).catch(() => null)
     if (r?.type === 'tunnels') setPublicCount(r.tunnels.filter((t) => t.state === 'connected' || t.state === 'starting').length)
@@ -119,9 +124,11 @@ export function Sidebar({ page, onNavigate }: { page: Page; onNavigate: (p: Page
           </button>
         ))}
 
-        <div className="mt-4 px-3 text-[11px] font-medium uppercase tracking-wider text-sidebar-foreground/40">
-          Roadmap
-        </div>
+        {SOON_ITEMS.length > 0 && (
+          <div className="mt-4 px-3 text-[11px] font-medium uppercase tracking-wider text-sidebar-foreground/40">
+            Roadmap
+          </div>
+        )}
         {SOON_ITEMS.map((label) => (
           <div
             key={label}
@@ -135,6 +142,7 @@ export function Sidebar({ page, onNavigate }: { page: Page; onNavigate: (p: Page
         ))}
       </nav>
 
+      <OfflineNotice status={network} />
       <button
         onClick={cycleTheme}
         className="mx-2 mb-3 flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"

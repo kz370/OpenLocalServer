@@ -1,0 +1,21 @@
+id: dotnet
+name: .NET SDK
+version: 1.0.0
+description: The .NET 10 SDK (current release), from Microsoft. A large download; installs under Runtimes.
+author: OpenLocalServer
+permissions: [download, read_projects]
+contributes:
+  runtimes:
+    - id: dotnet
+      name: .NET SDK
+      version: "10.0.401"
+      url: https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.401/dotnet-sdk-10.0.401-win-x64.zip
+      # Microsoft publishes SHA-512 only; this SHA-256 was computed from a direct HTTPS download.
+      sha256: c1b96dea223e1ab2af8a51187e0cc96338d14c68834be1656136be18953cea09
+      archive_root: ""
+      binary: dotnet.exe
+      probe: { exe: dotnet.exe, arg: --version }
+  detections:
+    - id: dotnet-project
+      name: .NET
+      markers: [global.json, Directory.Build.props]

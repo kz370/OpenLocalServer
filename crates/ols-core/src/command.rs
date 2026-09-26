@@ -394,6 +394,52 @@ pub enum CoreCommand {
     /// Saves (or with no token, forgets) HTTPS credentials for a Git host.
     GitSetCredentials { host: String, username: String, token: Option<String> },
     GitClone { url: String, target: String, branch: Option<String> },
+
+    // ---- Stage 16: plugins and signed catalogs (§133–135, §87–88) ----------------------
+    ListPlugins,
+    /// From a folder or a .zip. It arrives switched off.
+    InstallPlugin { source: String },
+    /// Turning on needs `approve` to list exactly the permissions the plugin declares.
+    SetPluginEnabled { id: String, enabled: bool, approve: Vec<String> },
+    RemovePlugin { id: String },
+    PluginDetect { project_id: String },
+    ListCatalogSources,
+    AddCatalogSource { name: String, url: String, public_key: String },
+    RemoveCatalogSource { id: String },
+    RefreshCatalogs { id: Option<String> },
+    InstallCatalogPlugin { source_id: String, plugin_id: String },
+
+    // ---- Stage 17: release hardening (§124, §128, §137, §145, diagnostics) ---------------
+    GetApiStatus,
+    SetApiSettings { enabled: bool, port: u16, mode: String },
+    /// Returns the new token once; only its hash is kept.
+    RotateApiToken,
+    ClearApiToken,
+    GetUpdaterStatus,
+    SetUpdaterSettings { endpoint: String, public_key: String },
+    CheckUpdate,
+    DownloadUpdate,
+    InstallUpdate,
+    GetShellMenu,
+    InstallShellMenu,
+    RemoveShellMenu,
+    CheckNetwork { force: bool },
+    ExportSupportBundle { dest: String },
+
+    // ---- Stage 18: load testing with k6 ----------------------------------------------
+    LoadOverview { project_id: String },
+    LoadReadScript { project_id: String, name: String },
+    LoadSaveScript { project_id: String, name: String, content: String },
+    LoadDeleteScript { project_id: String, name: String },
+    /// `kind`: smoke, load or spike. Returns the new script's file name.
+    LoadGenerate { project_id: String, kind: String, paths: Vec<String> },
+    /// `target` is a site's hostname (default: the project's first site). A public tunnel needs `confirm_public`.
+    LoadRun { project_id: String, script: String, target: Option<String>, confirm_public: bool },
+    LoadStatus { run_id: String },
+    LoadStop { run_id: String },
+    LoadRuns { project_id: String },
+    LoadDeleteRun { project_id: String, run_id: String },
+    // @@commands-end
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -525,6 +571,22 @@ pub enum CoreResponse {
     GitCommits { commits: Vec<crate::git::Commit> },
     GitCommit { commit: crate::git::Commit },
     GitResult { result: crate::git::GitResult },
+
+    Plugins { plugins: Vec<crate::plugin::PluginInfo> },
+    Plugin { plugin: Box<crate::plugin::PluginInfo> },
+    PluginDetections { detections: Vec<crate::plugin::PluginDetection> },
+    CatalogSources { catalogs: Vec<crate::catalogs::CatalogView> },
+
+    ApiStatus { status: Box<crate::api::ApiStatus> },
+    UpdaterStatus { status: Box<crate::updater::UpdaterStatus> },
+    Update { update: Box<crate::updater::UpdateInfo> },
+    ShellMenu { status: crate::shell_menu::ShellMenuStatus },
+    Network { status: Box<crate::network::NetworkStatus> },
+
+    LoadOverview { overview: Box<crate::loadtest::LoadOverview> },
+    LoadRun { run: Box<crate::loadtest::LoadRun> },
+    LoadRuns { runs: Vec<crate::loadtest::LoadRun> },
+    // @@responses-end
 }
 
 /// A cheap handle onto the shared application state. Cloning shares everything.
@@ -535,7 +597,9 @@ pub struct Core {
 
 impl Core {
     pub fn new(settings: SettingsService, paths: AppPaths) -> Self {
-        Self { inner: Inner::new(settings, paths).expect("failed to start the application core") }
+        let inner = Inner::new(settings, paths).expect("failed to start the application core");
+        inner.apply_api();
+        Self { inner }
     }
 
     /// Used by the Tauri shell so it can share the supervisor/runtime managers it forwards
@@ -546,7 +610,14 @@ impl Core {
         supervisor: Arc<ProcessSupervisor>,
         runtimes: Arc<RuntimeManager>,
     ) -> Self {
-        Self { inner: Inner::with_parts(settings, paths, supervisor, runtimes).expect("failed to start the application core") }
+        let inner = Inner::with_parts(settings, paths, supervisor, runtimes).expect("failed to start the application core");
+        inner.apply_api();
+        Self { inner }
+    }
+
+    /// A handle onto an existing core, for the local API's server thread.
+    pub fn from_inner(inner: Arc<Inner>) -> Self {
+        Self { inner }
     }
 
     pub fn inner(&self) -> &Arc<Inner> {
@@ -1430,6 +1501,87 @@ impl Core {
                 tracing::info!(command = "git_clone", target = %target);
                 Ok(R::Project { project: i.git_clone(&url, &target, branch.as_deref())? })
             }
+
+            C::ListPlugins => Ok(R::Plugins { plugins: i.list_plugins() }),
+            C::InstallPlugin { source } => {
+                tracing::info!(command = "install_plugin", source = %source);
+                Ok(R::Plugin { plugin: Box::new(i.install_plugin(&source)?) })
+            }
+            C::SetPluginEnabled { id, enabled, approve } => {
+                tracing::info!(command = "set_plugin_enabled", id = %id, enabled);
+                Ok(R::Plugin { plugin: Box::new(i.set_plugin_enabled(&id, enabled, &approve)?) })
+            }
+            C::RemovePlugin { id } => {
+                i.remove_plugin(&id)?;
+                Ok(R::Ok)
+            }
+            C::PluginDetect { project_id } => Ok(R::PluginDetections { detections: i.plugin_detect(&project_id)? }),
+            C::ListCatalogSources => Ok(R::CatalogSources { catalogs: i.catalog_views() }),
+            C::AddCatalogSource { name, url, public_key } => {
+                i.add_catalog_source(&name, &url, &public_key)?;
+                Ok(R::CatalogSources { catalogs: i.catalog_views() })
+            }
+            C::RemoveCatalogSource { id } => {
+                i.remove_catalog_source(&id)?;
+                Ok(R::CatalogSources { catalogs: i.catalog_views() })
+            }
+            C::RefreshCatalogs { id } => Ok(R::CatalogSources { catalogs: i.refresh_catalogs(id.as_deref()) }),
+            C::InstallCatalogPlugin { source_id, plugin_id } => {
+                tracing::info!(command = "install_catalog_plugin", source = %source_id, plugin = %plugin_id);
+                Ok(R::Plugin { plugin: Box::new(i.install_catalog_plugin(&source_id, &plugin_id)?) })
+            }
+
+            C::GetApiStatus => Ok(R::ApiStatus { status: Box::new(i.api_status()) }),
+            C::SetApiSettings { enabled, port, mode } => {
+                tracing::info!(command = "set_api_settings", enabled, port, mode = %mode);
+                Ok(R::ApiStatus { status: Box::new(i.set_api_settings(enabled, port, &mode)?) })
+            }
+            C::RotateApiToken => {
+                tracing::info!(command = "rotate_api_token");
+                Ok(R::Text { text: i.rotate_api_token()? })
+            }
+            C::ClearApiToken => {
+                i.clear_api_token()?;
+                Ok(R::ApiStatus { status: Box::new(i.api_status()) })
+            }
+            C::GetUpdaterStatus => Ok(R::UpdaterStatus { status: Box::new(i.updater_status()) }),
+            C::SetUpdaterSettings { endpoint, public_key } => Ok(R::UpdaterStatus { status: Box::new(i.set_updater_settings(&endpoint, &public_key)?) }),
+            C::CheckUpdate => Ok(R::Update { update: Box::new(i.check_update()?) }),
+            C::DownloadUpdate => Ok(R::Update { update: Box::new(i.download_update()?) }),
+            C::InstallUpdate => {
+                tracing::info!(command = "install_update");
+                i.install_update()?;
+                Ok(R::Ok)
+            }
+            C::GetShellMenu => Ok(R::ShellMenu { status: i.shell_menu_status() }),
+            C::InstallShellMenu => Ok(R::ShellMenu { status: i.install_shell_menu()? }),
+            C::RemoveShellMenu => Ok(R::ShellMenu { status: i.remove_shell_menu()? }),
+            C::CheckNetwork { force } => Ok(R::Network { status: Box::new(i.network_status(force)) }),
+            C::ExportSupportBundle { dest } => Ok(R::Lines { lines: i.export_support_bundle(&dest)? }),
+
+            C::LoadOverview { project_id } => Ok(R::LoadOverview { overview: Box::new(i.load_overview(&project_id)?) }),
+            C::LoadReadScript { project_id, name } => Ok(R::Text { text: i.load_read_script(&project_id, &name)? }),
+            C::LoadSaveScript { project_id, name, content } => {
+                i.load_save_script(&project_id, &name, &content)?;
+                Ok(R::Ok)
+            }
+            C::LoadDeleteScript { project_id, name } => {
+                i.load_delete_script(&project_id, &name)?;
+                Ok(R::Ok)
+            }
+            C::LoadGenerate { project_id, kind, paths } => Ok(R::Text { text: i.load_generate(&project_id, &kind, &paths)? }),
+            C::LoadRun { project_id, script, target, confirm_public } => {
+                tracing::info!(command = "load_run", project = %project_id, script = %script, public = confirm_public);
+                Ok(R::LoadRun { run: Box::new(i.load_run(&project_id, &script, target.as_deref(), confirm_public)?) })
+            }
+            C::LoadStatus { run_id } => Ok(R::LoadRun { run: Box::new(i.load_status(&run_id)?) }),
+            C::LoadStop { run_id } => Ok(R::LoadRun { run: Box::new(i.load_stop(&run_id)?) }),
+            C::LoadRuns { project_id } => Ok(R::LoadRuns { runs: i.load_runs(&project_id) }),
+            C::LoadDeleteRun { project_id, run_id } => {
+                i.load_delete_run(&project_id, &run_id)?;
+                Ok(R::Ok)
+            }
+            // @@arms-end
         }
     }
 }

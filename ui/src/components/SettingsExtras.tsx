@@ -19,6 +19,7 @@ const LIMITS: { key: keyof ResourceLimits; label: string; hint: string; unit: st
   { key: 'node_max_old_space_mb', label: 'Node memory', hint: 'heap limit for every project command', unit: 'MB' },
   { key: 'max_worker_count', label: 'Copies per worker', hint: 'upper limit for queue workers', unit: '' },
   { key: 'max_processes', label: 'Process limit', hint: 'processes the app may run at once', unit: '' },
+  { key: 'k6_max_vus', label: 'Load-test users', hint: 'most virtual users a k6 script may ask for (default 200)', unit: '' },
 ]
 
 /** §129: optional memory and process limits. Blank means the program's own default. */

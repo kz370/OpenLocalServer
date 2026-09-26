@@ -320,6 +320,42 @@ impl QuickCatalog {
         Ok(ids)
     }
 
+    /// Removes every recipe an enabled plugin put here (Stage 16); they are re-added from the
+    /// plugins that are still on.
+    pub fn clear_plugin_sources(&mut self) {
+        if let Ok(dirs) = std::fs::read_dir(self.imported_dir()) {
+            for d in dirs.flatten() {
+                if d.file_name().to_string_lossy().starts_with("plugin-") {
+                    let _ = std::fs::remove_dir_all(d.path());
+                }
+            }
+        }
+        self.meta.origins.retain(|k, _| !k.starts_with("plugin-"));
+        self.meta.trusted_sources.retain(|o| !o.starts_with("plugin:"));
+    }
+
+    /// A plugin's recipes: imported like any other source, and trusted because the user approved
+    /// the plugin's `quick_apps` permission (each recipe still shows its review before it runs).
+    pub fn import_plugin(&mut self, plugin_id: &str, dir: &Path) -> Result<Vec<String>, CoreError> {
+        let folder = format!("plugin-{plugin_id}");
+        let origin = format!("plugin:{plugin_id}");
+        let dest = self.imported_dir().join(&folder);
+        std::fs::create_dir_all(&dest)?;
+        let mut ids = Vec::new();
+        for (app, yaml, _) in Self::read_dir_defs(dir) {
+            std::fs::write(dest.join(format!("{}.yaml", app.id)), yaml)?;
+            ids.push(app.id);
+        }
+        if ids.is_empty() {
+            let _ = std::fs::remove_dir_all(&dest);
+            return Ok(ids);
+        }
+        self.meta.origins.insert(folder, origin.clone());
+        self.meta.trusted_sources.insert(origin);
+        self.persist()?;
+        Ok(ids)
+    }
+
     /// §88 "Trust Source": approves every recipe that came from `origin`.
     pub fn trust_source(&mut self, origin: &str) -> Result<(), CoreError> {
         self.meta.trusted_sources.insert(origin.to_string());

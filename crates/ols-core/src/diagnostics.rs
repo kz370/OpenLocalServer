@@ -66,6 +66,7 @@ impl Inner {
         self.check_projects(&mut b);
         self.check_php(&mut b);
         self.check_journal(&mut b);
+        self.check_machine(&mut b);
 
         let ignored = self.ignored_diagnostics();
         for f in &mut b.findings {
@@ -335,6 +336,55 @@ impl Inner {
                     "Set start_with_request to \"trigger\" in the Xdebug settings, or turn Xdebug off when you are not debugging.",
                     None,
                     vec![],
+                );
+            }
+        }
+    }
+
+    /// Facts about the computer that break local development quietly (Stage 17).
+    fn check_machine(&self, b: &mut Builder) {
+        let root = self.paths.root().display().to_string();
+
+        // Windows programs (and PHP, Node, Composer) misbehave with very long paths.
+        if root.len() > 90 {
+            b.add(
+                "data_path_long",
+                Severity::Warning,
+                "The data folder's path is very long",
+                format!("It is {} characters, and Windows tools often fail past 260 characters once a project's own folders are added.", root.len()),
+                "Move OpenLocalServer to a shorter folder such as C:\\OpenLocalServer.",
+                None,
+                vec![root.clone()],
+            );
+        }
+
+        // Cloud-synced folders lock and rewrite files while servers run.
+        let lower = root.to_ascii_lowercase();
+        if ["onedrive", "dropbox", "google drive", "googledrive", "icloud"].iter().any(|m| lower.contains(m)) {
+            b.add(
+                "data_in_synced_folder",
+                Severity::Warning,
+                "The data folder is inside a synced folder",
+                "Sync clients lock files that databases and servers keep open, which causes corruption and slow starts.",
+                "Move OpenLocalServer out of the synced folder, or pause syncing for it.",
+                None,
+                vec![root.clone()],
+            );
+        }
+
+        // A full disk stops databases first.
+        let stats = self.monitor.disks(&[("OpenLocalServer data".to_string(), self.paths.root().to_path_buf())]);
+        for d in stats {
+            let free = d.total.saturating_sub(d.used);
+            if d.total > 0 && free < 2 * 1024 * 1024 * 1024 {
+                b.add(
+                    format!("disk_low:{}", d.mount),
+                    if free < 512 * 1024 * 1024 { Severity::Error } else { Severity::Warning },
+                    format!("Drive {} is almost full", d.mount),
+                    format!("{} MB are free, and databases, logs and downloads all write here.", free / (1024 * 1024)),
+                    "Free some space, or move the data folder to another drive.",
+                    None,
+                    d.holds.clone(),
                 );
             }
         }

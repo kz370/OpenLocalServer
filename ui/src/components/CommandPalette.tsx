@@ -28,6 +28,7 @@ const PAGES: [Page, string][] = [
   ['services', 'Services'],
   ['runtimes', 'Runtimes'],
   ['profiles', 'Profiles'],
+  ['plugins', 'Plugins'],
   ['logs', 'Logs'],
   ['processes', 'Processes'],
   ['settings', 'Settings'],

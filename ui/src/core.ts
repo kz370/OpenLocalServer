@@ -807,6 +807,41 @@ export type CoreCommand =
   | { type: 'git_add_ignore'; project_id: string; template: string }
   | { type: 'git_set_credentials'; host: string; username: string; token: string | null }
   | { type: 'git_clone'; url: string; target: string; branch: string | null }
+  | { type: 'list_plugins' }
+  | { type: 'install_plugin'; source: string }
+  | { type: 'set_plugin_enabled'; id: string; enabled: boolean; approve: string[] }
+  | { type: 'remove_plugin'; id: string }
+  | { type: 'plugin_detect'; project_id: string }
+  | { type: 'list_catalog_sources' }
+  | { type: 'add_catalog_source'; name: string; url: string; public_key: string }
+  | { type: 'remove_catalog_source'; id: string }
+  | { type: 'refresh_catalogs'; id: string | null }
+  | { type: 'install_catalog_plugin'; source_id: string; plugin_id: string }
+  | { type: 'get_api_status' }
+  | { type: 'set_api_settings'; enabled: boolean; port: number; mode: 'read_only' | 'operate' }
+  | { type: 'rotate_api_token' }
+  | { type: 'clear_api_token' }
+  | { type: 'get_updater_status' }
+  | { type: 'set_updater_settings'; endpoint: string; public_key: string }
+  | { type: 'check_update' }
+  | { type: 'download_update' }
+  | { type: 'install_update' }
+  | { type: 'get_shell_menu' }
+  | { type: 'install_shell_menu' }
+  | { type: 'remove_shell_menu' }
+  | { type: 'check_network'; force: boolean }
+  | { type: 'export_support_bundle'; dest: string }
+  | { type: 'load_overview'; project_id: string }
+  | { type: 'load_read_script'; project_id: string; name: string }
+  | { type: 'load_save_script'; project_id: string; name: string; content: string }
+  | { type: 'load_delete_script'; project_id: string; name: string }
+  | { type: 'load_generate'; project_id: string; kind: 'smoke' | 'load' | 'spike'; paths: string[] }
+  | { type: 'load_run'; project_id: string; script: string; target: string | null; confirm_public: boolean }
+  | { type: 'load_status'; run_id: string }
+  | { type: 'load_stop'; run_id: string }
+  | { type: 'load_runs'; project_id: string }
+  | { type: 'load_delete_run'; project_id: string; run_id: string }
+  // @@ts-commands-end
 
 export type CoreResponse =
   | { type: 'pong'; version: string }
@@ -920,6 +955,19 @@ export type CoreResponse =
   | { type: 'git_commit'; commit: GitCommit }
   | { type: 'git_result'; result: { ok: boolean; output: string } }
   | { type: 'operations'; operations: Operation[] }
+  | { type: 'plugins'; plugins: PluginInfo[] }
+  | { type: 'plugin'; plugin: PluginInfo }
+  | { type: 'plugin_detections'; detections: PluginDetection[] }
+  | { type: 'catalog_sources'; catalogs: CatalogView[] }
+  | { type: 'api_status'; status: ApiStatus }
+  | { type: 'updater_status'; status: UpdaterStatus }
+  | { type: 'update'; update: UpdateInfo }
+  | { type: 'shell_menu'; status: ShellMenuStatus }
+  | { type: 'network'; status: NetworkStatus }
+  | { type: 'load_overview'; overview: LoadOverview }
+  | { type: 'load_run'; run: LoadRun }
+  | { type: 'load_runs'; runs: LoadRun[] }
+  // @@ts-responses-end
 
 export interface MigrationSource {
   id: string
@@ -1339,6 +1387,7 @@ export interface ResourceLimits {
   node_max_old_space_mb: number | null
   max_worker_count: number | null
   max_processes: number | null
+  k6_max_vus: number | null
 }
 
 // ---- Stage 14: tunnels and traffic ---------------------------------------------------
@@ -1490,3 +1539,140 @@ export async function runCommand(command: CoreCommand): Promise<CoreResponse> {
     throw err as Diagnostic
   }
 }
+
+
+// ---- Stage 16: plugins and signed catalogs ---------------------------------------------
+
+export interface PluginManifest {
+  id: string
+  name: string
+  version: string
+  description: string
+  author: string
+  homepage: string
+  kind: 'declarative' | 'wasm'
+  permissions: string[]
+  contributes: {
+    runtimes: { id: string; name: string; version: string }[]
+    quick_apps: string | null
+    detections: { id: string; name: string; markers: string[] }[]
+    health_checks: { id: string; name: string; kind: string; target: string }[]
+  }
+}
+
+export interface PluginInfo {
+  manifest: PluginManifest
+  builtin: boolean
+  enabled: boolean
+  approved: boolean
+  permissions: { id: string; description: string; used: boolean }[]
+  problem: string | null
+  runtimes: number
+  quick_apps: number
+  detections: number
+  health_checks: number
+  folder: string | null
+}
+
+export interface PluginDetection {
+  plugin: string
+  id: string
+  name: string
+  matched: string[]
+}
+
+export interface CatalogView {
+  source: { id: string; name: string; url: string; public_key: string }
+  verified: boolean
+  note: string | null
+  refreshed_ms: number | null
+  doc: {
+    name: string
+    runtimes: { id: string; name: string; version: string }[]
+    plugins: { id: string; name: string; version: string; description: string; url: string; sha256: string }[]
+    quick_app_sources: { name: string; url: string; description: string }[]
+  } | null
+  error: string | null
+}
+
+// ---- Stage 17: release hardening --------------------------------------------------------
+
+export interface ApiStatus {
+  settings: { enabled: boolean; port: number; mode: 'read_only' | 'operate' }
+  token_set: boolean
+  running: boolean
+  error: string | null
+  url: string
+}
+
+export interface UpdateInfo {
+  current: string
+  latest: string
+  available: boolean
+  notes: string
+  date: string
+  url: string
+  sha256: string
+  size: number
+  downloaded: string | null
+}
+
+export interface UpdaterStatus {
+  settings: { endpoint: string; public_key: string }
+  current: string
+  key_configured: boolean
+  last: UpdateInfo | null
+}
+
+export interface ShellMenuStatus {
+  installed: boolean
+  cli_path: string | null
+  supported: boolean
+}
+
+export interface NetworkStatus {
+  online: boolean
+  probes: { name: string; ok: boolean; ms: number | null }[]
+  needs_internet: string[]
+}
+
+// ---- Stage 18: load testing with k6 -----------------------------------------------------
+
+export interface LoadOverview {
+  k6: { installed: boolean; path: string | null; version: string | null; managed: boolean }
+  scripts: { name: string; size: number }[]
+  sites: { host: string; url: string; public: boolean }[]
+  max_vus: number
+}
+
+export interface LoadMetrics {
+  requests: number
+  failed: number
+  error_rate: number
+  rps: number
+  avg_ms: number
+  p50_ms: number
+  p95_ms: number
+  p99_ms: number
+  max_ms: number
+  vus: number
+  checks_passed: number
+  checks_failed: number
+  iterations: number
+}
+
+export interface LoadRun {
+  id: string
+  project_id: string
+  script: string
+  target: string
+  state: 'running' | 'passed' | 'failed' | 'error' | 'stopped'
+  started_ms: number
+  finished_ms: number | null
+  exit_code: number | null
+  metrics: LoadMetrics
+  series: { t: number; rps: number; p95_ms: number; vus: number; errors: number }[]
+  output: string[]
+  message: string | null
+}
+// @@ts-types
