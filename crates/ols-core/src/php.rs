@@ -13,10 +13,10 @@ use crate::process::{ProcessId, ProcessSpec, ProcessSupervisor, RestartPolicy};
 use crate::runtime::RuntimeManager;
 use crate::xdebug::{XdebugReport, XdebugSettings};
 
-/// Extensions enabled when their DLL exists in the install's `ext/` folder — the set
-/// Laravel, Symfony and WordPress ask for on install (§154).
+/// Extensions enabled when their DLL exists in the install's `ext/` folder — framework
+/// requirements plus OPcache for faster PHP request handling (§154).
 const EXTENSIONS: &[&str] = &[
-    "curl", "fileinfo", "gd", "intl", "mbstring", "exif", "mysqli", "openssl", "pdo_mysql", "pdo_sqlite", "sqlite3",
+    "curl", "fileinfo", "gd", "intl", "mbstring", "exif", "mysqli", "openssl", "opcache", "pdo_mysql", "pdo_sqlite", "sqlite3",
     "zip", "sodium", "bcmath", "soap", "gettext",
 ];
 
@@ -145,6 +145,11 @@ impl PhpPools {
         for ext in &enabled {
             let directive = if ZEND_EXTENSIONS.contains(&ext.name.as_str()) { "zend_extension" } else { "extension" };
             ini.push_str(&format!("{directive}=\"{}\"\n", ext.dll.display().to_string().replace('\\', "/")));
+        }
+        if enabled.iter().any(|e| e.name == "opcache") {
+            // Keep the shared bytecode cache useful for Laravel's large dependency tree,
+            // while checking files on every request so edits show up immediately.
+            ini.push_str("opcache.memory_consumption=128\nopcache.max_accelerated_files=20000\nopcache.validate_timestamps=1\nopcache.revalidate_freq=0\n");
         }
         if enabled.iter().any(|e| e.name == "xdebug") {
             let output_dir = self.ini_dir(version).join("xdebug");

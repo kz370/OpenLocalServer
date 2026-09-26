@@ -449,21 +449,24 @@ export function RuntimesPage() {
                 placeholder="Search versions…"
                 className="h-10"
               />
-              <select
-                aria-label={`Available ${managedGroup.name} versions`}
-                value={selectedInstall}
-                disabled={installable.length === 0}
-                onChange={(e) => setInstallChoices((prev) => ({ ...prev, [managedGroup.id]: e.target.value }))}
-                className="h-10 min-w-0 rounded-lg border border-border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 sm:col-start-1"
-              >
-                {installable.length === 0 && <option value="">All catalog versions are installed</option>}
-                {filteredInstallable.length === 0 && installable.length > 0 && <option value="">No versions match your search</option>}
-                {[...installableByMajor].map(([major, rows]) => (
-                  <optgroup key={major} label={major === 'Other' ? major : `Major ${major}`}>
-                    {rows.map((row) => <option key={row.key} value={row.version}>{row.version}{progress[row.key]?.kind === 'progress' ? ' · Installing' : ''}</option>)}
-                  </optgroup>
-                ))}
-              </select>
+              <div className="relative min-w-0 sm:col-start-1">
+                <select
+                  aria-label={`Available ${managedGroup.name} versions`}
+                  value={selectedInstall}
+                  disabled={installable.length === 0}
+                  onChange={(e) => setInstallChoices((prev) => ({ ...prev, [managedGroup.id]: e.target.value }))}
+                  className="h-10 w-full min-w-0 appearance-none rounded-lg border border-border bg-background py-1 pl-3 pr-10 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                >
+                  {installable.length === 0 && <option value="">All catalog versions are installed</option>}
+                  {filteredInstallable.length === 0 && installable.length > 0 && <option value="">No versions match your search</option>}
+                  {[...installableByMajor].map(([major, rows]) => (
+                    <optgroup key={major} label={major === 'Other' ? major : `Major ${major}`}>
+                      {rows.map((row) => <option key={row.key} value={row.version}>{row.version}{progress[row.key]?.kind === 'progress' ? ' · Installing' : ''}</option>)}
+                    </optgroup>
+                  ))}
+                </select>
+                <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              </div>
               <Button
                 className="h-10 shrink-0 sm:col-start-2 sm:row-span-2 sm:row-start-1"
                 disabled={!selectedInstall || !selectedInstallVisible || installingChoice || installable.length === 0}
