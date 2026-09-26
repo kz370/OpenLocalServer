@@ -1,0 +1,61 @@
+UI | uses | Tauri run_command
+Tauri run_command | uses | Core::dispatch
+Core::dispatch | uses | Inner managers
+Inner | uses | ProcessSupervisor
+Inner | uses | RuntimeManager
+Inner | uses | ServiceManager
+Inner | uses | WebManager
+Inner | uses | DomainStore
+Inner | uses | CertificateManager
+Inner | uses | ProjectStore
+WebManager | uses | DomainStore
+WebManager | uses | CertificateManager
+WebManager | uses | PhpPools
+WebManager | uses | DnsServer
+WebManager | uses | RuntimeManager
+WebManager | uses | ProcessSupervisor
+WebManager | depends_on | ols-helper (hosts/NRPT via elevate)
+PhpPools | uses | RuntimeManager
+PhpPools | uses | ProcessSupervisor
+PhpPools | uses | XdebugConfig
+ServiceManager | uses | RuntimeManager
+ServiceManager | uses | ProcessSupervisor
+ServiceManager | uses | PortChecker
+ServiceManager | uses | CustomServiceStore
+SetupPlanner | uses | Detector
+SetupPlanner | uses | Manifest
+SetupPlanner | uses | Resolver
+SetupPlanner | uses | DomainStore
+SetupPlanner | uses | WorkerStore
+SetupPlanner | uses | ScheduleStore
+SetupPlanner | uses | Journal
+QuickApp Run | uses | QuickApp Plan
+QuickApp Plan | uses | QuickApp Schema
+TunnelManager | uses | Inspector
+TunnelManager | uses | ProcessSupervisor
+MailPlanner | uses | Detector
+MailPlanner | uses | EnvFile
+WorkerStore | uses | ProcessSupervisor
+ScheduleStore | uses | Inner ticker
+TerminalManager | uses | ProcessSupervisor
+Cli (ols) | uses | ControlChannel
+ControlChannel | uses | Core::dispatch
+HttpApi | uses | Core::dispatch
+DiagnosticsEngine | uses | Inner
+RepairPlanner | uses | DiagnosticsEngine
+SupportBundle | uses | RepairPlanner
+SupportBundle | uses | Redactor
+Migrator | uses | ExecCapture
+DbBackup | uses | ExecCapture
+SqliteStore | uses | ExecCapture
+GitTools | uses | ExecCapture
+Updater | uses | CatalogSources
+PluginManager | uses | Catalog
+SitesPage | uses | UseWeb hook
+SiteDialog | uses | CoreClient
+TerminalComp | uses | TerminalManager
+EnvEditor | uses | EnvFile (via Core)
+LoadTestRunner | uses | ProcessSupervisor
+DaemonRunner | uses | ScheduleStore ticker
+HelperService | uses | HelperMain execute
+TauriApp | depends_on | ols-helper (install/service)

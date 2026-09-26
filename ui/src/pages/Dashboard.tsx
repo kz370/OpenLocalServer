@@ -18,6 +18,7 @@ import { confirmAction } from '@/lib/confirm'
 /** §173 / §116 / §101: what's running, what's wrong, and one-click ways to act on it. */
 export function DashboardPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   const [data, setData] = useState<DashboardData | null>(null)
+  const [diagToken, setDiagToken] = useState(0)
   const { busy, error, setError, run } = useAction()
 
   usePoll(async () => {
@@ -46,55 +47,62 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: Page) => void })
           <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
           <p className="text-sm text-muted-foreground">Your local environment at a glance.</p>
         </div>
-        <div className="flex flex-wrap justify-end gap-2">
-          <Button variant="secondary" onClick={() => onNavigate('quickapps')}>
+        <div className="flex flex-wrap items-center justify-end gap-1 rounded-lg border border-border bg-card/50 p-1 shadow-sm">
+          <Button variant="secondary" size="sm" className="h-8 rounded-md px-3 text-[13px] font-medium [&_svg]:size-3.5" onClick={() => onNavigate('quickapps')}>
             <Rocket /> New from Quick App
           </Button>
+          <div aria-hidden className="mx-1 h-5 w-px bg-border" />
           <Button
-            variant="outline"
-            disabled={busy !== null || !hasRunningProcesses}
-            onClick={() =>
-              run('stop-all', async () => {
-                await Promise.all([
-                  ...(web?.running ? [runCommand({ type: 'stop_web' })] : []),
-                  ...runningServices.map((service) => runCommand({ type: 'stop_service', id: service.id })),
-                ])
-                await Promise.all([
-                  ...(web?.running ? [waitForWebStopped()] : []),
-                  ...runningServices.map((service) => waitForService(service.id, 'stopped')),
-                ])
-                await refresh()
-              })
-            }
-          >
-            {busy === 'stop-all' ? <Spinner /> : <StopIcon />} {busy === 'stop-all' ? 'Stopping all…' : 'Stop all'}
-          </Button>
-          <Button
+            variant="secondary"
+            size="sm"
+            className="h-8 rounded-md px-3 text-[13px] font-medium [&_svg]:size-3.5"
             disabled={busy !== null}
             onClick={() =>
               run('apply', async () => {
                 await runCommand({ type: 'apply_web', overwrite: [] })
                 await refresh()
+                setDiagToken((t) => t + 1)
               })
             }
           >
             {busy === 'apply' ? <Spinner /> : <Play />} {busy === 'apply' ? (web?.running ? 'Applying…' : 'Starting…') : web?.running ? 'Re-apply web config' : 'Start web server'}
           </Button>
-          {web?.running && (
-            <Button
-              variant="outline"
-              disabled={busy !== null}
-              onClick={() =>
-                run('stop', async () => {
-                  await runCommand({ type: 'stop_web' })
-                  await waitForWebStopped()
-                  await refresh()
-                })
-              }
-            >
-              {busy === 'stop' ? <Spinner /> : <StopIcon />} {busy === 'stop' ? 'Stopping…' : 'Stop'}
-            </Button>
-          )}
+          <Button
+            variant={hasRunningProcesses ? 'secondary' : 'default'}
+            size="sm"
+            className="h-8 min-w-28 rounded-md px-3 text-[13px] font-medium [&_svg]:size-3.5"
+            disabled={busy !== null || (!hasRunningProcesses && (data?.services.filter((s) => s.installed) ?? []).length === 0 && !data?.web)}
+            onClick={() =>
+              hasRunningProcesses
+                ? run('stop-all', async () => {
+                    await Promise.all([
+                      ...(web?.running ? [runCommand({ type: 'stop_web' })] : []),
+                      ...runningServices.map((service) => runCommand({ type: 'stop_service', id: service.id })),
+                    ])
+                    await Promise.all([
+                      ...(web?.running ? [waitForWebStopped()] : []),
+                      ...runningServices.map((service) => waitForService(service.id, 'stopped')),
+                    ])
+                    await refresh()
+                  })
+                : run('start-all', async () => {
+                    const stopped = (data?.services ?? []).filter((s) => s.installed && !s.running)
+                    await runCommand({ type: 'apply_web', overwrite: [] })
+                    await Promise.all(stopped.map((service) => runCommand({ type: 'start_service', id: service.id })))
+                    await Promise.all(stopped.map((service) => waitForService(service.id, 'running')))
+                    await refresh()
+                  })
+            }
+          >
+            {busy === 'stop-all' || busy === 'start-all' ? (
+              <Spinner />
+            ) : hasRunningProcesses ? (
+              <StopIcon />
+            ) : (
+              <Play />
+            )}{' '}
+            {busy === 'stop-all' ? 'Stopping all…' : busy === 'start-all' ? 'Starting all…' : hasRunningProcesses ? 'Stop all' : 'Start all'}
+          </Button>
         </div>
       </div>
 

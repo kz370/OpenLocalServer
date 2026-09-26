@@ -1,0 +1,51 @@
+classDiagram
+  class Core {
+    +dispatch(cmd: CoreCommand) CoreResponse
+  }
+  class Inner {
+    +supervisor: ProcessSupervisor
+    +runtimes: RuntimeManager
+    +services: ServiceManager
+    +web: WebManager
+    +projects: ProjectStore
+  }
+  class ProcessSupervisor {
+    +start(spec) ProcessId
+    +stop(id)
+    +output(id) lines
+  }
+  class RuntimeManager {
+    +install(entry)
+    +remove(id, version)
+    +resolve(req) ResolvedRuntime
+  }
+  class WebManager {
+    +apply(ctx) ApplyReport
+    +validate() bool
+    +rollback()
+  }
+  class DomainStore {
+    +add(domain)
+    +update(id, patch)
+  }
+  class CertificateManager {
+    +ensure_for(host) CertPaths
+    +revoke(host)
+  }
+  class ServiceManager {
+    +start(id)
+    +stop(id)
+    +status(id) ServiceStatus
+  }
+  class SetupPlanner {
+    +plan() PlanStep[]
+    +apply() SetupReport
+  }
+  Core --> Inner
+  Inner --> ProcessSupervisor
+  Inner --> RuntimeManager
+  Inner --> ServiceManager
+  Inner --> WebManager
+  WebManager --> DomainStore
+  WebManager --> CertificateManager
+  Inner --> SetupPlanner

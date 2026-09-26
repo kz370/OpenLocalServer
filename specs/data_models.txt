@@ -1,0 +1,42 @@
+Data models (JSON files under data/ today; SQL tables planned).
+
+Entities:
+- Project {id: sha256(path)[..16], name, path, framework, created_at, updated_at}
+- Domain {id, project_id, hostname, root, kind: Php{version}|Proxy{host,port,https}|Static, https, redirect_https, wildcard, enabled, ownership: Managed|Advanced|Manual, app:{executable,args,cwd,runtime}, blocks:{headers,redirects,mappings,upstreams,includes}, generated_hashes, public_domain, tunnel_id}
+- Runtime {id, type: php|node|python|composer|mariadb|postgres|mongo|redis|mailpit|nginx|apache|caddy|sqlite|git|k6, version, path, arch, installed_at}
+- DatabaseInstance {id, engine, version, host, port, data_path, status}
+- Database {engine, name, owner} + DbUser {name, host, password_ref}
+- WebConfig {id, project_id, server: nginx|apache|caddy, path, managed, hash, updated_at} + ConfigHistory {hostname, timestamp, content}
+- Certificate {hostname, cert.pem, key.pem, meta.json{sans, expiry}} + CaInfo {cn: OpenLocalServer Local CA, valid 2024-2044}
+- Tunnel {id, project_id, provider: cloudflare|ngrok|localtunnel|tailscale|mock, target, public_url, status, created_at}
+- QuickApp {id, name, source: Builtin|Local|Imported, version, definition_path, trusted, favorite} + QuickRun {id, app_id, status, logs[4000 cap]}
+- QuickCommand {id, name, command:{executable,arguments}|action, working_directory, source, trusted} + CommandHistory {line, exit_code, timestamp}
+- Plugin {id, name, version, permissions[], enabled, path} + CatalogSource {name, url, pubkey, last_verified}
+- Profile {id, name, environment, builtin} + EnvironmentManifest {runtime, web, domain, database, services, workers, scheduler, tunnel}
+- Worker {id, project_id, command, count[1..16], timeout, memory} + WorkerStatus {pid, state}
+- ScheduledTask {id, project_id|global, cron|every_*, command, last_run, next_run}
+- ServiceStatus {id: mailpit|mariadb|postgres|mongodb|redis, state, port, pid} + ConnectionInfo {host, port, user, password_ref}
+- ProcessInfo {id, pid, exe, args, cwd, env, state: Starting|Running|Stopping|Stopped|Crashed|Restarting|Failed, cpu, mem, exit_code}
+- Settings (key-value JSON): runtime.php.global, runtime.node.global, paths.sites_dir, projects.roots, domains.auto, web.*, database.default_tool.*, diagnostics.auto_fix, startup.*, notifications.enabled, api.*, updater.*
+- Secrets (OS keyring, never files): tunnel tokens, db passwords, api bearer hash, git per-host creds.
+- Operation journal: Operation {id, kind, CoreCommand JSON, status: Running|Done|Interrupted, retry_hint}
+- Snapshot zip: manifests + sites + cert meta + workers + schedules (+ optional .env/dumps/files; skips node_modules/vendor/.venv).
+
+Manifest (.openlocalserver/):
+- runtime.yaml {php, node, python, composer}
+- web.yaml {server}
+- domain.yaml {hostname, https, wildcard}
+- database.yaml {engine, version, host, port, database, username}
+- services.yaml {redis, mailpit}
+- environment.yaml (merged) + environment.lock {resolved versions}
+- commands.yaml (merged QuickCommands)
+
+Plugin (plugin.yaml):
+- {id, name, version, description, author, kind: declarative, permissions[], contributes:{runtimes[], quick_apps dir, detections[], health_checks[]}}
+
+QuickApp recipe YAML:
+- {id, name, description, category, requirements{}, variables[]{id,label,type,required,default,validation,options,show_if,runtime}, steps[]{if, run/cwd/allow_failure | action + with}, files[], env_vars[], post_create[], install[], domain{}, environment{}}
+- Variable types: text, number, boolean, select, multiselect, path, directory, file, password, secret, port, domain, runtime-version, database-version.
+
+Schemas/interfaces (TypeScript core.ts mirrors Rust):
+- CoreCommand (tagged union, ~200 variants), CoreResponse, Diagnostic{problem,cause,fix}, DashboardData, DomainSummary, HealthItem, WebStatus, CertInfo, ServiceStatus, ProjectDetail.

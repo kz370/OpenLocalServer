@@ -1,0 +1,21 @@
+sequenceDiagram
+  participant U as UI
+  participant T as Tauri IPC
+  participant C as Core dispatch
+  participant W as WebManager
+  participant H as ols-helper
+  participant S as Server binary
+  U->>T: run_command AddDomain
+  T->>C: dispatch AddDomain
+  C->>W: validate + store domain
+  W->>H: hosts-apply 127.0.0.1=app.test
+  H-->>W: ok
+  U->>T: run_command ApplyWeb
+  T->>C: dispatch ApplyWeb
+  C->>W: render + validate + backup + reload
+  W->>S: nginx -t / reload
+  S-->>W: ok
+  W-->>U: ApplyReport via CoreResponse
+  U->>T: run_command HealthCheck
+  T->>C: dispatch HealthCheck
+  C-->>U: DNS TCP TLS HTTP steps

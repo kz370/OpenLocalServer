@@ -1,0 +1,21 @@
+graph TB
+  UI[React UI] --> IPC[Tauri run_command]
+  CLI[ols CLI] --> PIPE[Control Pipe]
+  API[HTTP API 127.0.0.1:7420] --> CORE[Core dispatch]
+  IPC --> CORE
+  PIPE --> CORE
+  CORE --> INNER[Inner shared state]
+  INNER --> PROC[ProcessSupervisor]
+  INNER --> RT[RuntimeManager]
+  INNER --> SVC[ServiceManager]
+  INNER --> WEB[WebManager]
+  INNER --> PROJ[ProjectStore]
+  INNER --> CERT[CertificateManager]
+  WEB --> DOM[DomainStore]
+  WEB --> PHP[PhpPools]
+  WEB --> DNS[DnsServer]
+  WEB --> HELP[ols-helper]
+  SVC --> RT
+  SVC --> PROC
+  PROJ --> SETUP[SetupPlanner]
+  SETUP --> JOUR[Journal]

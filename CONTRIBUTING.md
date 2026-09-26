@@ -31,6 +31,16 @@ cd ui && npm run lint && npm run build
 
 CI runs the same checks.
 
+## Specs-sync mandate (binding)
+
+`specs/` is the single source of truth. Any code change MUST update specs in the same PR:
+
+- Rust (`crates/`, `src-tauri/`): `specs/full_documentation.md`, `specs/architecture_overview.md` (if layers change), `specs/catalog.txt`, `specs/relationships.txt`, `specs/data_models.txt` (if types change), `specs/api_reference.md` (if `CoreCommand` changes), `specs/diagrams/*.mmd` as needed.
+- UI (`ui/src/`): `specs/full_documentation.md`, `specs/catalog.txt`, `specs/relationships.txt`, `specs/api_reference.md` (if IPC changes).
+- Config / catalogs / plugins / quick-apps: `specs/data_models.txt` + `specs/full_documentation.md`.
+- Then append log line to `specs/runtime.md` under `## Log`.
+- If no spec update needed, state why in PR description. Behavior change without spec update gets rejected. See `AGENTS.md`.
+
 ## Guidelines
 
 - Keep a change focused. One feature or fix per pull request.

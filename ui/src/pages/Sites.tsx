@@ -1,5 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Activity, Check, Code2, Copy, ExternalLink, FolderMinus, FolderPlus, FolderSearch, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2 } from 'lucide-react'
+import { Activity, Check, Code2, Copy, ExternalLink, FolderMinus, FolderOpen, FolderPlus, FolderSearch, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
@@ -159,6 +159,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   function menuFor({ site: d, project: p }: Row): MenuItem[] {
     const items: MenuItem[] = []
     const folder = d?.folder ?? p?.path
+    if (folder) items.push({ label: 'Open project folder', icon: <FolderOpen />, hint: folder, onSelect: () => void run('open', () => runCommand({ type: 'open_path', path: folder })) })
     if (folder) items.push({ label: 'Open folder in code editor', icon: <Code2 />, hint: folder, onSelect: () => void run('code', () => runCommand({ type: 'open_in_editor', path: folder })) })
     if (p) items.push({ label: 'Terminal', icon: <SquareTerminal />, onSelect: () => setTarget({ hostname: d?.hostname ?? null, projectId: p.id, tab: 'terminal' }) })
     if (d) {

@@ -26,7 +26,7 @@ const ICON = { error: XCircle, warning: AlertTriangle, info: Info }
 const COLOR = { error: 'text-destructive', warning: 'text-warning', info: 'text-muted-foreground' }
 
 /** §112: Problem / Cause / Fix, with [Fix], [Ignore] and [Details] on each finding. */
-export function DiagnosticsCard() {
+export function DiagnosticsCard({ refreshToken = 0 }: { refreshToken?: number }) {
   const [findings, setFindings] = useState<Finding[] | null>(null)
   const [open, setOpen] = useState<string | null>(null)
   const [showIgnored, setShowIgnored] = useState(false)
@@ -40,7 +40,7 @@ export function DiagnosticsCard() {
 
   useEffect(() => {
     scan().catch(() => setFindings([]))
-  }, [scan])
+  }, [scan, refreshToken])
 
   const active = findings?.filter((f) => !f.ignored) ?? []
   const ignored = findings?.filter((f) => f.ignored) ?? []

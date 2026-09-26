@@ -1,0 +1,121 @@
+Functions / Classes / Modules / Components catalog (one-line each).
+
+--- RUST ols-core ---
+Core | Central dispatcher facade over Inner.
+CoreCommand | Enum (~150 variants) covering all UI/CLI/API operations.
+CoreResponse | Tagged response enum for every command.
+CoreError/Diagnostic | User-facing error shape {problem,cause,fix}.
+Inner | Arc-shared state holding all managers.
+AppPaths | OLS_HOME-aware path resolver (certs/data/settings).
+SettingsService | Atomic JSON key-value store (settings.json).
+Secrets | OS keyring wrapper (set/get/delete).
+ProcessSupervisor | Owns child processes, tree-kill, output ring, restart policy.
+ProcessSpec/ProcessInfo/ProcessEvent | Process spawn descriptor, status, broadcast event.
+PortChecker | Bind-probe + netstat/tasklist conflict reporter.
+ExecCapture | Sync run-and-capture with timeout + CREATE_NO_WINDOW.
+Logger | JSON daily rolling log with redaction.
+Redactor | Regex secret scrubber (PEM/Bearer/URL creds/keys/cookies).
+DiagnosticsEngine | Read-only findings with runnable fix_commands.
+RepairPlanner | Doctor report + safe auto-repair planner.
+GlobalSearch | Cross-entity prefix/word/substring search.
+SupportBundle | Redacted zip exporter (summary/doctor/logs).
+NetworkProbe | Parallel TCP 443 online check with cache.
+Journal | Crash-safe operation log with retry/undo hints.
+ResourceLimits | Optional memory caps applied next start.
+ElevateRunner | Privileged ols-helper invoker with UAC fallback.
+Catalog | Built-in runtime pins (URL+SHA256, HTTPS enforced).
+CatalogSources | Signed remote catalogs (minisign, re-verified each load).
+RuntimeManager | Download-verify-extract + version probe + events.
+PhpPools | Per-version php-cgi FastCGI pools + extension management.
+NodePm | Lockfile/packageManager detector + corepack switch.
+ComposerReader | composer.json/lock merger, vendor/scripts reporter.
+VenvTools | Python venv finder + create-args builder.
+CustomInstallStore | User-pinned exe paths winning over detection.
+Resolver | Version precedence manifest>detected>global.
+Detector | Marker-file framework detection + workspace scan.
+PluginManager | Declarative plugin.yaml installer/validator.
+Updater | Minisign-signed self-updater (latest.json + SHA check).
+ServiceManager | DB/cache/mail lifecycle + TCP health.
+CustomServiceStore | User programs as supervised services (custom- prefix).
+DbTools | External GUI tools detect + launch.
+MailPlanner | Per-framework .env Mailpit planner with diff preview.
+Monitor | sysinfo CPU/mem/disk + per-PID rollup + site cost.
+WorkerStore/WorkerProcesses | Queue workers registry + PID map.
+ScheduleStore/TaskRuns | Cron tasks + 1-min ticker, no overlap.
+WebServer trait | render_main/render_site/validate/start/reload/stop.
+WebManager | Render-write-validate-reload pipeline with rollback + drift detect.
+Nginx/Apache/Caddy | Server renderers + invocation builders.
+DomainStore | Domain data + validation (no rendering).
+LocalCa | Deterministic root CA (2024-2044) + leaf issuance.
+CertificateManager | Per-domain cert lifecycle (reuse unless SAN change/<30d).
+HostsBlock | Idempotent BEGIN/END block transform.
+DnsServer | UDP wildcard A->127.0.0.1 for suffix list.
+HealthChecker | DNS->TCP->TLS->Cert->HTTP chain.
+TunnelManager | Provider abstraction (cf/ngrok/lt/tailscale) + confirm gate.
+Inspector | Forwarding proxy + redacted traffic log (500 cap).
+DbBackup | mysqldump/pg_dump backup/restore with safety copy.
+SqliteStore | WAL-safe sqlite3 .backup + integrity_check registry.
+Migrator | Laragon/XAMPP/Wamp scanner + live-dump importer.
+ProjectStore | Folder registry, ID=SHA256(path)[..16].
+ProjectTools | Composer/npm/venv/xdebug thin wrappers.
+Manifest | .openlocalserver/*.yaml strict schema.
+ProfileStore | Reusable env templates (laravel/node-api/python-api/full).
+SetupPlanner | 14-step resolve-plan-apply with rollback + lock file.
+SnapshotManager | Zip snapshots (manifests+sites+certs meta) + clone/import.
+EnvFile | Lossless .env line editor preserving comments/order/CRLF.
+CommandCatalog | Symfony/artisan/npm script discovery + signature parser.
+GitTools | Real-binary git via PATH/portable + ASK_PASS creds.
+Shortcuts | Jump-to places + open-with guard.
+EditorRegistry | VSCode/Cursor/Zed/etc detect + resolve.
+TerminalManager | portable-pty shells with runtime PATH-first (max 8).
+ShellMenu | HKCU Directory\\shell right-click installer.
+ProcfileImporter | Procfile.dev>Procfile web/worker splitter.
+LoadTestRunner | k6 scripts runner with VU cap + JSON metrics.
+XdebugConfig | Per-PHP ini block + IDE validator.
+QuickApp Schema/Plan/Catalog/Run/Commands | Recipe validate->plan(review)->run(execute) + history.
+
+--- CLI / HELPER / TAURI ---
+OlsCli | clap CLI sending CoreCommand over control pipe, auto-spawns daemon.
+DaemonRunner | Background core + scheduler clock + graceful stop.
+HelperMain | Elevated closed command set (hosts/nrpt/service).
+HelperService | LocalSystem resident pipe server (SDDL locked).
+TauriApp | Window+tray+single IPC run_command + event emits.
+
+--- FRONTEND pages ---
+DashboardPage | Overview with health filter + stop-all.
+SitesPage | Domains+projects merged table, group/search/duplicate.
+QuickAppsPage/Wizard | Recipe CRUD + 3-phase plan/run wizard.
+CommandsPage | Discovered+custom commands runner with output ring.
+WebServerPage | Server/ports/certs tabs + settings save-apply.
+ConfigPage | Config files + history diff/restore + ownership.
+TunnelsPage | Tunnel CRUD + inspector + webhook tester.
+DatabasesPage | Per-engine DB/users/backups + external tools.
+ServicesPage | Mail/DB services + CustomServices child.
+RuntimesPage | Side-by-side versions + PHP dialogs.
+ProfilesPage | Env template CRUD + yaml editor.
+PluginsPage | Plugins + signed catalog sources.
+LogsPage | Unified logs with severity regex + AI ask.
+ProcessesPage | Raw process manager + system stats.
+SettingsPage | General/sites/startup/AI/API/resources/backups.
+
+--- FRONTEND components/lib ---
+CoreClient (core.ts) | Single invoke('run_command') wrapper + all types.
+UseWeb | Shared web state hook (4s poll).
+AiBus/AiHost/AiButton | Global AI dialog bus + runner + gate.
+ConfirmBus/ConfirmHost | Global confirm modal bus.
+WaitHelpers | Poll-until-real (service/web/process).
+NavBus | Cross-page openProject event bus.
+ThemeProvider | system/light/dark with localStorage.
+CommandPalette | Ctrl+K fuzzy global_search palette.
+SiteDialog | Tabbed project editor (env/terminal/git/workers/snapshots/...).
+TerminalComp | xterm.js bridge to TerminalManager.
+EnvEditor | .env table editor with diff.
+CodeEditor/DiffView | CodeMirror yaml/nginx/apache + diff restore.
+DiagnosticsCard/DoctorDialog | Findings list + doctor runner.
+ReleaseCards | API/updater/shell-menu cards.
+SettingsExtras | Resource limits + settings backup cards.
+CustomServices | Custom service CRUD table.
+PhpExtensionsDialog/XdebugDialog | PHP extension toggles + xdebug form.
+MigrateDialog | Foreign DB scan + import progress.
+SystemMonitor | CPU/mem/disk + process rollup display.
+Ui primitives | button/card/dialog/input/form/table/menu/switch/badge/checkbox (Tailwind/Radix, no IPC).
