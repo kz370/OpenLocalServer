@@ -119,10 +119,14 @@ pub fn execute(args: &[String], hosts_file: &Path) -> Result<(), HelperError> {
 }
 
 fn powershell(script: &str) -> Result<(), HelperError> {
-    let output = std::process::Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", script])
-        .output()
-        .map_err(|e| HelperError::Failed(e.to_string()))?;
+    let mut cmd = std::process::Command::new("powershell");
+    cmd.args(["-NoProfile", "-NonInteractive", "-Command", script]);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
+    let output = cmd.output().map_err(|e| HelperError::Failed(e.to_string()))?;
     if output.status.success() {
         Ok(())
     } else {

@@ -459,12 +459,10 @@ async fn kill_tree(pid: u32) {
     // Pragmatic Stage 2 approach: shell out to `taskkill /T /F` to kill the whole process
     // tree. A proper Windows Job Object (so children are killed even if `taskkill` itself
     // can't enumerate them) is planned but not yet wired in (see module docs).
-    let _ = tokio::process::Command::new("taskkill")
-        .args(["/PID", &pid.to_string(), "/T", "/F"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .await;
+    let mut cmd = tokio::process::Command::new("taskkill");
+    cmd.args(["/PID", &pid.to_string(), "/T", "/F"]).stdout(Stdio::null()).stderr(Stdio::null());
+    crate::exec::hide_window(cmd.as_std_mut());
+    let _ = cmd.status().await;
 }
 
 #[cfg(not(windows))]
