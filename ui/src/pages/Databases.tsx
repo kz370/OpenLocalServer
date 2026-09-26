@@ -142,7 +142,7 @@ function SqlEngine({ engine, service }: { engine: 'mariadb' | 'postgres'; servic
       <ServiceBanner service={service} name={ENGINE_NAMES[engine]} />
       <ErrorCard error={error} onDismiss={() => setError(null)} />
       {running && (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid items-start gap-4 lg:grid-cols-2">
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm">Databases</CardTitle>
@@ -154,20 +154,34 @@ function SqlEngine({ engine, service }: { engine: 'mariadb' | 'postgres'; servic
                   <Plus /> Create
                 </Button>
               </div>
-              {dbs.map((d) => (
-                <div key={d} className="flex items-center justify-between rounded-lg border border-border px-3 py-1.5 text-sm">
-                  {d}
-                  <span className="flex gap-1">
-                    <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => run('backup', async () => { const r = await runCommand({ type: 'backup_database', engine, database: d }); if (r.type === 'text') setNote(`Backup saved to ${r.text}`); await refresh() })}>
-                      {busy === 'backup' ? <Spinner /> : <Archive className="size-3.5" />} Back up
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => run('info', async () => { const r = await runCommand({ type: 'get_connection_info', engine, database: d, path: null }); if (r.type === 'connection') setInfo(r.info) })}>Connection</Button>
-                    <Button size="sm" variant="secondary" onClick={() => run('open', () => runCommand({ type: 'open_database', engine, database: d, path: null, tool_id: null }))}>
-                      <ExternalLink className="size-3.5" /> Open in tool
-                    </Button>
-                  </span>
-                </div>
-              ))}
+              {dbs.length > 0 && (
+                <Table>
+                  <TableHeader>
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead>Database</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {dbs.map((d) => (
+                      <TableRow key={d}>
+                        <TableCell className="py-1.5 font-medium">{d}</TableCell>
+                        <TableCell className="py-1.5 text-right">
+                          <span className="inline-flex flex-wrap justify-end gap-1">
+                            <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => run('backup', async () => { const r = await runCommand({ type: 'backup_database', engine, database: d }); if (r.type === 'text') setNote(`Backup saved to ${r.text}`); await refresh() })}>
+                              {busy === 'backup' ? <Spinner /> : <Archive className="size-3.5" />} Back up
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => run('info', async () => { const r = await runCommand({ type: 'get_connection_info', engine, database: d, path: null }); if (r.type === 'connection') setInfo(r.info) })}>Connection</Button>
+                            <Button size="sm" variant="secondary" onClick={() => run('open', () => runCommand({ type: 'open_database', engine, database: d, path: null, tool_id: null }))}>
+                              <ExternalLink className="size-3.5" /> Open in tool
+                            </Button>
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
               {dbs.length === 0 && <p className="text-sm text-muted-foreground">No databases yet.</p>}
               {info && (
                 <div className="rounded-lg bg-muted/40 p-3 font-mono text-xs">
@@ -185,36 +199,49 @@ function SqlEngine({ engine, service }: { engine: 'mariadb' | 'postgres'; servic
             </CardHeader>
             <CardContent className="flex flex-col gap-2">
               {note && <p className="text-xs text-success">{note}</p>}
-              {backups.map((b) => (
-                <div key={b.file} className="flex items-center justify-between rounded-lg border border-border px-3 py-1.5 text-sm">
-                  <span>
-                    <span className="font-medium">{b.database}</span>{' '}
-                    <span className="text-muted-foreground">
-                      {new Date(b.created * 1000).toLocaleString()} · {formatBytes(b.size)}
-                    </span>
-                  </span>
-                  <span className="flex gap-1">
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      disabled={busy !== null}
-                      onClick={async () => {
-                        if (!(await confirmAction(`Restore "${b.database}" from this backup? The tables in it are replaced. The current data is backed up first.`))) return
-                        void run('restore', async () => {
-                          const r = await runCommand({ type: 'restore_database', engine, database: b.database, file: b.file })
-                          setNote(r.type === 'text' && r.text ? `Restored. The previous data is saved at ${r.text}` : 'Restored.')
-                          await refresh()
-                        })
-                      }}
-                    >
-                      {busy === 'restore' ? <Spinner /> : <RotateCcw className="size-3.5" />} Restore
-                    </Button>
-                    <Button size="sm" variant="ghost" title="Delete this backup" disabled={busy !== null} onClick={() => confirmThen('Delete this backup file?', () => run('delete', async () => { await runCommand({ type: 'delete_db_backup', engine, file: b.file }); await refresh() }))}>
-                      <Trash2 className="size-3.5" />
-                    </Button>
-                  </span>
-                </div>
-              ))}
+              {backups.length > 0 && (
+                <Table>
+                  <TableHeader>
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead>Database</TableHead>
+                      <TableHead>Created</TableHead>
+                      <TableHead>Size</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {backups.map((b) => (
+                      <TableRow key={b.file}>
+                        <TableCell className="py-1.5 font-medium">{b.database}</TableCell>
+                        <TableCell className="py-1.5 text-muted-foreground">{new Date(b.created * 1000).toLocaleString()}</TableCell>
+                        <TableCell className="py-1.5 text-muted-foreground">{formatBytes(b.size)}</TableCell>
+                        <TableCell className="py-1.5 text-right">
+                          <span className="inline-flex flex-wrap justify-end gap-1">
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              disabled={busy !== null}
+                              onClick={async () => {
+                                if (!(await confirmAction(`Restore "${b.database}" from this backup? The tables in it are replaced. The current data is backed up first.`))) return
+                                void run('restore', async () => {
+                                  const r = await runCommand({ type: 'restore_database', engine, database: b.database, file: b.file })
+                                  setNote(r.type === 'text' && r.text ? `Restored. The previous data is saved at ${r.text}` : 'Restored.')
+                                  await refresh()
+                                })
+                              }}
+                            >
+                              {busy === 'restore' ? <Spinner /> : <RotateCcw className="size-3.5" />} Restore
+                            </Button>
+                            <Button size="sm" variant="ghost" title="Delete this backup" disabled={busy !== null} onClick={() => confirmThen('Delete this backup file?', () => run('delete', async () => { await runCommand({ type: 'delete_db_backup', engine, file: b.file }); await refresh() }))}>
+                              <Trash2 className="size-3.5" />
+                            </Button>
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
               {backups.length === 0 && <p className="text-sm text-muted-foreground">No backups yet. Use “Back up” next to a database.</p>}
             </CardContent>
           </Card>
