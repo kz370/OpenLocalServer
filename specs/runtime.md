@@ -53,6 +53,7 @@ All 202 files listed above processed via 4 parallel analysis agents (rust-core, 
 - [2026-09-27] fix: check_port names Windows excluded port ranges (Hyper-V/Docker netsh) so busy-port-with-no-listener reports cause, not ghost holder
 - [2026-09-27] fix: netstat owner parse accepts localized/non-LISTENING 5-col TCP rows (LISTENING preferred, fallback otherwise) so holders show on non-English Windows
 - [2026-09-27] feat: Redis one-click — Tiny RDM auto-detect (Program Files/LOCALAPPDATA/PATH) + Open in button on Databases Redis tab with URI copy; RedisInsight excluded per request
+- [2026-09-27] fix: open_database routes tinyrdm (explicit + redis fallback) to detected Tiny RDM exe — was falling through to "No tool is registered for redis"
 
 Status: Completed 100%
 

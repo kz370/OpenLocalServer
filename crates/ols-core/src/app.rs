@@ -1007,6 +1007,15 @@ impl Inner {
                 })?;
                 return dbtools::launch(&exe, &[], false).map_err(svc);
             }
+            if id == "tinyrdm" {
+                if engine != "redis" {
+                    return Err(svc("Tiny RDM only supports Redis"));
+                }
+                let exe = find(id).ok_or_else(|| {
+                    svc("Tiny RDM was not found. Install it or register it under External tools.")
+                })?;
+                return dbtools::launch(&exe, &[], false).map_err(svc);
+            }
         }
 
         // 1) an explicitly chosen registered tool, 2) the first registered for the engine,
@@ -1041,6 +1050,12 @@ impl Inner {
             "mongodb" => {
                 let exe = find("nosqlbooster").ok_or_else(|| {
                     svc("NoSQLBooster was not found. Install it or locate it from Services.")
+                })?;
+                dbtools::launch(&exe, &[], false).map_err(svc)
+            }
+            "redis" => {
+                let exe = find("tinyrdm").ok_or_else(|| {
+                    svc("Tiny RDM was not found. Install it or register another tool for this engine.")
                 })?;
                 dbtools::launch(&exe, &[], false).map_err(svc)
             }
