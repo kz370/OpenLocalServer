@@ -658,7 +658,7 @@ impl Inner {
         if let Some(id) = tool_id {
             if id == "heidisql" {
                 let exe = find(id).ok_or_else(|| svc("HeidiSQL was not found. Install it or locate it from Services."))?;
-                let args = dbtools::heidisql_args(&info).ok_or_else(|| svc("HeidiSQL can't open that database"))?;
+                let args = dbtools::heidisql_args_for_executable(&info, &exe).ok_or_else(|| svc("HeidiSQL can't open that database or its PostgreSQL libpq library was not found"))?;
                 return dbtools::launch(&exe, &args, true).map_err(svc);
             }
             if id == "pgadmin" {
@@ -690,12 +690,14 @@ impl Inner {
         match engine {
             "mariadb" | "sqlite" => {
                 let exe = find("heidisql").ok_or_else(|| svc("HeidiSQL was not found. Install it, locate it, or register another tool for this engine."))?;
-                let args = dbtools::heidisql_args(&info).ok_or_else(|| svc("HeidiSQL can't open that database"))?;
+                let args = dbtools::heidisql_args_for_executable(&info, &exe).ok_or_else(|| svc("HeidiSQL can't open that database"))?;
                 dbtools::launch(&exe, &args, true).map_err(svc)
             }
             "postgres" => {
-                if let (Some(exe), Some(args)) = (find("heidisql"), dbtools::heidisql_args(&info)) {
-                    return dbtools::launch(&exe, &args, true).map_err(svc);
+                if let Some(exe) = find("heidisql") {
+                    if let Some(args) = dbtools::heidisql_args_for_executable(&info, &exe) {
+                        return dbtools::launch(&exe, &args, true).map_err(svc);
+                    }
                 }
                 let exe = find("pgadmin").ok_or_else(|| svc("Neither HeidiSQL nor pgAdmin was found. Install one, locate it, or register another tool for this engine."))?;
                 dbtools::launch(&exe, &[], false).map_err(svc)

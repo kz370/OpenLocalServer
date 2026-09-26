@@ -182,13 +182,43 @@ pub fn heidisql_args(info: &ConnectionInfo) -> Option<Vec<String>> {
                 format!("--user={}", info.user.as_deref().unwrap_or(if nettype == 8 { "postgres" } else { "root" })),
             ];
             if let Some(db) = &info.database {
-                args.push(format!("--databases=\"{db}\""));
+                let value = if info.engine == "postgres" && !db.contains(' ') && !db.contains('.') && !db.contains(';') {
+                    db.clone()
+                } else {
+                    format!("\"{db}\"")
+                };
+                args.push(format!("--databases={value}"));
             }
             Some(args)
         }
         "sqlite" => Some(vec!["--nettype=10".to_string(), format!("--host=\"{}\"", info.path.as_deref()?)]),
         _ => None,
     }
+}
+
+pub fn heidisql_args_for_executable(info: &ConnectionInfo, executable: &str) -> Option<Vec<String>> {
+    let mut args = heidisql_args(info)?;
+    if info.engine == "postgres" {
+        let directory = PathBuf::from(executable).parent()?.to_path_buf();
+        let mut libraries = std::fs::read_dir(&directory)
+            .ok()?
+            .flatten()
+            .filter_map(|entry| {
+                let path = entry.path();
+                let name = path.file_name()?.to_str()?;
+                let suffix = name.strip_prefix("libpq-")?.strip_suffix(".dll")?;
+                Some((suffix.parse::<u32>().ok(), name.to_string()))
+            })
+            .collect::<Vec<_>>();
+        let library = if directory.join("libpq.dll").is_file() {
+            "libpq.dll".to_string()
+        } else {
+            libraries.sort_by_key(|(version, _)| *version);
+            libraries.pop()?.1
+        };
+        args.push(format!("--library={library}"));
+    }
+    Some(args)
 }
 
 /// Starts a GUI tool detached: not supervised, because the user drives it and closing
