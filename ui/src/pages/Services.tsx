@@ -126,15 +126,17 @@ export function ServicesPage() {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-2">
-                      {s.id === 'mailpit' && s.running && (
-                        <a
-                          href={`http://127.0.0.1:${s.port}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                      {s.id === 'mailpit' && s.running && s.port !== null && (
+                        <button
+                          type="button"
+                          className="inline-flex cursor-pointer items-center gap-1 text-xs text-primary hover:underline"
+                          title={`Open Mailpit at http://127.0.0.1:${s.port}`}
+                          onClick={() =>
+                            runCommand({ type: 'open_url', url: `http://127.0.0.1:${s.port}` }).catch((e) => setError(e as Diagnostic))
+                          }
                         >
                           Open <ExternalLink className="size-3" />
-                        </a>
+                        </button>
                       )}
                       {s.installed && (
                         <Button size="sm" variant="secondary" disabled={busy === s.id} onClick={() => toggle(s)}>

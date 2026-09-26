@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { type Finding, runCommand } from '@/core'
 import type { AskAi } from '@/lib/ai'
-import { useAction } from '@/lib/hooks'
+import { useAction, usePoll } from '@/lib/hooks'
 import { confirmAction } from '@/lib/confirm'
 
 /** What the assistant is asked to explain for one finding. */
@@ -41,6 +41,10 @@ export function DiagnosticsCard({ refreshToken = 0 }: { refreshToken?: number })
   useEffect(() => {
     scan().catch(() => setFindings([]))
   }, [scan, refreshToken])
+
+  // Dashboard polls get_dashboard every 3s; findings must follow too.
+  // Without this, starting services clears health but leaves old diagnostics on screen.
+  usePoll(() => scan().catch(() => undefined), 8000)
 
   const active = findings?.filter((f) => !f.ignored) ?? []
   const ignored = findings?.filter((f) => f.ignored) ?? []
