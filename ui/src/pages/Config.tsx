@@ -31,9 +31,11 @@ export function ConfigPage() {
   const [files, setFiles] = useState<ConfigFile[]>([])
   const [cfg, setCfg] = useState<WebConfig | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
+  const [historyTick, setHistoryTick] = useState(0)
   const { error, setError } = useAction()
 
   const file = useMemo(() => files.find((f) => fileKey(f) === selected) ?? null, [files, selected])
+  const history = useConfigHistory(file?.hostname ?? null)
 
   async function refreshList(keep?: string) {
     const [l, c] = await Promise.all([runCommand({ type: 'list_web_configs' }), runCommand({ type: 'get_web_config' })])
@@ -63,6 +65,7 @@ export function ConfigPage() {
       <ErrorCard error={error} onDismiss={() => setError(null)} />
 
       <div className="grid gap-4 lg:grid-cols-[16rem_1fr]">
+        <div className="flex min-w-0 flex-col gap-4">
         <Card className="h-fit">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">Files</CardTitle>
@@ -81,9 +84,41 @@ export function ConfigPage() {
           </CardContent>
         </Card>
 
+        {file?.hostname && (
+          <Card className="h-fit">
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-1.5 text-sm">
+                <History className="size-3.5" /> Timeline
+              </CardTitle>
+              <CardDescription className="truncate">{file.hostname}</CardDescription>
+            </CardHeader>
+            <CardContent className="p-2 pt-0">
+              <Timeline
+                versions={history.versions}
+                pick={history.pick}
+                onPick={(id) => {
+                  history.setPick(id)
+                  setHistoryTick((t) => t + 1)
+                }}
+              />
+            </CardContent>
+          </Card>
+        )}
+        </div>
+
         <div className="flex min-w-0 flex-col gap-3">
           {file ? (
-            <ConfigFilePane key={selected} file={file} server={cfg?.server ?? 'nginx'} onChanged={() => refreshList(selected ?? undefined)} />
+            <ConfigFilePane
+              key={selected}
+              file={file}
+              server={cfg?.server ?? 'nginx'}
+              history={history}
+              openHistoryTick={historyTick}
+              onChanged={async () => {
+                await refreshList(selected ?? undefined)
+                history.reload()
+              }}
+            />
           ) : (
             <Card>
               <CardContent className="pt-4 text-sm text-muted-foreground">Select a file.</CardContent>
@@ -100,13 +135,32 @@ export function ConfigPage() {
  * Used by the Web config page and inside a domain's edit dialog, so both edit the same way.
  * Remount it (`key`) to switch files.
  */
-export function ConfigFilePane({ file, server, onChanged }: { file: ConfigFile; server: string; onChanged: () => void | Promise<void> }) {
+export function ConfigFilePane({
+  file,
+  server,
+  onChanged,
+  history,
+  openHistoryTick,
+}: {
+  file: ConfigFile
+  server: string
+  onChanged: () => void | Promise<void>
+  /** Version history owned by the page (shown as its Timeline). Without it the History tab lists versions itself. */
+  history?: ConfigHistory
+  openHistoryTick?: number
+}) {
   const [tab, setTab] = useState<'editor' | 'structured' | 'history'>('editor')
   const [text, setText] = useState('')
   const [saved, setSaved] = useState('')
   const [notice, setNotice] = useState<string | null>(null)
   const [pendingOwnership, setPendingOwnership] = useState<Ownership | null>(null)
   const { busy, error, setError, run } = useAction()
+  const ownHistory = useConfigHistory(history ? null : file.hostname)
+  const hist = history ?? ownHistory
+
+  useEffect(() => {
+    if (openHistoryTick) setTab('history')
+  }, [openHistoryTick])
 
   const dirty = text !== saved
   const editable = !!file.editable
@@ -243,10 +297,13 @@ export function ConfigFilePane({ file, server, onChanged }: { file: ConfigFile; 
       {tab === 'history' && file.hostname && (
         <HistoryPanel
           hostname={file.hostname}
+          history={hist}
+          listed={!history}
           current={text}
           language={languageFor(server)}
           canRestore={editable}
           onRestored={() => {
+            hist.reload()
             void onChanged()
             void load()
           }}
@@ -344,107 +401,158 @@ function FileRow({ f, active, onClick, label, indent }: { f: ConfigFile; active:
   )
 }
 
-function HistoryPanel({ hostname, current, language, onRestored, canRestore }: { hostname: string; current: string; language: EditorLanguage; onRestored: () => void; canRestore: boolean }) {
+export interface ConfigHistory {
+  versions: ConfigVersion[]
+  pick: string | null
+  setPick: (id: string | null) => void
+  old: string | null
+  reload: () => void
+}
+
+/** A site's archived config versions, with the picked one's text. Pass null to stay idle. */
+function useConfigHistory(hostname: string | null): ConfigHistory {
   const [versions, setVersions] = useState<ConfigVersion[]>([])
   const [pick, setPick] = useState<string | null>(null)
   const [old, setOld] = useState<string | null>(null)
-  const [changes, setChanges] = useState<number | null>(null)
-  const { busy, error, setError, run } = useAction()
+  const [tick, setTick] = useState(0)
 
   useEffect(() => {
+    if (!hostname) return
+    let alive = true
     runCommand({ type: 'list_config_history', hostname }).then((r) => {
-      if (r.type !== 'config_versions') return
+      if (!alive || r.type !== 'config_versions') return
       setVersions(r.versions)
-      // Open on the most recent version: that's almost always the one to compare.
-      setPick(r.versions[0]?.id ?? null)
+      // Open on the most recent version, unless the one being looked at is still there.
+      setPick((cur) => (cur && r.versions.some((v) => v.id === cur) ? cur : (r.versions[0]?.id ?? null)))
     })
-  }, [hostname])
+    return () => {
+      alive = false
+    }
+  }, [hostname, tick])
 
   useEffect(() => {
-    if (!pick) return
-    runCommand({ type: 'read_config_history', hostname, id: pick }).then((r) => r.type === 'text' && setOld(r.text))
+    if (!hostname || !pick) return
+    let alive = true
+    runCommand({ type: 'read_config_history', hostname, id: pick }).then((r) => alive && r.type === 'text' && setOld(r.text))
+    return () => {
+      alive = false
+    }
   }, [pick, hostname])
 
+  return { versions: hostname ? versions : [], pick, setPick, old, reload: () => setTick((t) => t + 1) }
+}
+
+/** The list of archived versions grouped by day, like VS Code's Timeline view. */
+function Timeline({ versions, pick, onPick }: { versions: ConfigVersion[]; pick: string | null; onPick: (id: string) => void }) {
+  if (versions.length === 0) return <p className="px-2 py-3 text-xs text-muted-foreground">Nothing has been replaced yet. Every change to this site's config is archived here first.</p>
+  return (
+    <div className="flex max-h-[45vh] flex-col gap-3 overflow-y-auto">
+      {groupByDay(versions).map(([day, items]) => (
+        <div key={day} className="flex flex-col gap-0.5">
+          <div className="px-2 pb-1 pt-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{day}</div>
+          {items.map((v) => (
+            <button
+              key={v.id}
+              onClick={() => onPick(v.id)}
+              className={`flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors ${pick === v.id ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'}`}
+            >
+              <span className="tabular-nums">{new Date(v.timestamp_ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })}</span>
+              <span className="text-xs text-muted-foreground">
+                {v.part === 'custom' ? 'snippet' : 'site'} · {formatSize(v.bytes)}
+              </span>
+            </button>
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** Restore bar plus the diff, full width. `listed` also shows the version list beside it (inside a site's dialog). */
+function HistoryPanel({
+  hostname,
+  history,
+  listed,
+  current,
+  language,
+  onRestored,
+  canRestore,
+}: {
+  hostname: string
+  history: ConfigHistory
+  listed: boolean
+  current: string
+  language: EditorLanguage
+  onRestored: () => void
+  canRestore: boolean
+}) {
+  const { versions, pick, setPick, old } = history
+  const [changes, setChanges] = useState<number | null>(null)
+  const { busy, error, setError, run } = useAction()
   const picked = versions.find((v) => v.id === pick)
-  const groups = groupByDay(versions)
+
+  if (versions.length === 0) {
+    return (
+      <Card>
+        <CardContent className="flex items-center gap-3 p-4 text-sm text-muted-foreground">
+          <History className="size-4" /> Nothing has been replaced yet. Every change to this site's config is archived here first.
+        </CardContent>
+      </Card>
+    )
+  }
 
   return (
     <div className="flex flex-col gap-3">
       <ErrorCard error={error} onDismiss={() => setError(null)} />
-      {versions.length === 0 ? (
-        <Card>
-          <CardContent className="flex items-center gap-3 p-4 text-sm text-muted-foreground">
-            <History className="size-4" /> Nothing has been replaced yet. Every change to this site's config is archived here first.
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid gap-3 md:grid-cols-[15rem_minmax(0,1fr)]">
+      <div className={listed ? 'grid gap-3 md:grid-cols-[15rem_minmax(0,1fr)]' : ''}>
+        {listed && (
           <Card className="h-fit">
-            <CardContent className="flex max-h-[60vh] flex-col gap-3 overflow-y-auto p-2">
-              {groups.map(([day, items]) => (
-                <div key={day} className="flex flex-col gap-0.5">
-                  <div className="px-2 pb-1 pt-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{day}</div>
-                  {items.map((v) => (
-                    <button
-                      key={v.id}
-                      onClick={() => setPick(v.id)}
-                      className={`flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
-                        pick === v.id ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
-                      }`}
-                    >
-                      <span className="tabular-nums">{new Date(v.timestamp_ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {v.part === 'custom' ? 'snippet' : 'site'} · {formatSize(v.bytes)}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              ))}
+            <CardContent className="p-2">
+              <Timeline versions={versions} pick={pick} onPick={setPick} />
             </CardContent>
           </Card>
-
-          <div className="flex min-w-0 flex-col gap-2">
-            {picked && old !== null && (
-              <>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 text-sm">
-                    {changes === 0 ? (
-                      <Badge variant="secondary">Identical to the current file</Badge>
-                    ) : changes !== null ? (
-                      <Badge variant="outline">
-                        {changes} changed {changes === 1 ? 'block' : 'blocks'}
-                      </Badge>
-                    ) : null}
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    disabled={!canRestore || busy !== null || changes === 0}
-                    title={canRestore ? '' : 'Only Manual site files and Advanced snippets can be restored'}
-                    onClick={() =>
-                      confirmThen('Restore this version? The current file is archived first.', () => run('restore', async () => {
-                        await runCommand({ type: 'restore_config_history', hostname, id: picked.id })
-                        onRestored()
-                      }))
-                    }
-                  >
-                    <RotateCcw /> Restore this version
-                  </Button>
+        )}
+        <div className="flex min-w-0 flex-col gap-2">
+          {picked && old !== null && (
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-sm">
+                  {changes === 0 ? (
+                    <Badge variant="secondary">Identical to the current file</Badge>
+                  ) : changes !== null ? (
+                    <Badge variant="outline">
+                      {changes} changed {changes === 1 ? 'block' : 'blocks'}
+                    </Badge>
+                  ) : null}
                 </div>
-                <DiffView
-                  original={old}
-                  modified={current}
-                  language={language}
-                  height="60vh"
-                  originalLabel={`Archived · ${new Date(picked.timestamp_ms).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`}
-                  modifiedLabel="Current file (with unsaved edits)"
-                  onChanges={setChanges}
-                />
-              </>
-            )}
-          </div>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={!canRestore || busy !== null || changes === 0}
+                  title={canRestore ? '' : 'Only Manual site files and Advanced snippets can be restored'}
+                  onClick={() =>
+                    confirmThen('Restore this version? The current file is archived first.', () => run('restore', async () => {
+                      await runCommand({ type: 'restore_config_history', hostname, id: picked.id })
+                      onRestored()
+                    }))
+                  }
+                >
+                  <RotateCcw /> Restore this version
+                </Button>
+              </div>
+              <DiffView
+                original={old}
+                modified={current}
+                language={language}
+                height="60vh"
+                originalLabel={`Archived · ${new Date(picked.timestamp_ms).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`}
+                modifiedLabel="Current file (with unsaved edits)"
+                onChanges={setChanges}
+              />
+            </>
+          )}
         </div>
-      )}
+      </div>
     </div>
   )
 }
