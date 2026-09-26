@@ -851,6 +851,7 @@ export type CoreCommand =
   | { type: 'ai_detect_local' }
   | { type: 'ai_test'; provider_id: string }
   | { type: 'ai_models'; provider_id: string }
+  | { type: 'ai_probe'; provider: AiProvider; api_key: string | null }
   | { type: 'ai_preview'; request: AiRequest }
   | { type: 'ai_start'; request: AiRequest; confirm_remote: boolean }
   | { type: 'ai_job'; job_id: string }

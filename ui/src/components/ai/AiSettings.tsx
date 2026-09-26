@@ -1,5 +1,5 @@
 import { CircleCheck, CircleX, Pencil, Plus, Radar, Sparkles, Trash2 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
 import { Spinner } from '@/components/Spinner'
@@ -213,6 +213,40 @@ function ProviderDialog({ initial, onClose, onSaved }: { initial: AiProvider; on
   const { busy, error, setError, run } = useAction()
   const preset = PRESETS[p.kind]
   const isNew = !initial.id
+  const [loading, setLoading] = useState(false)
+
+  // Fetch the model list by itself when the dialog opens and when the address or key changes, so the picker is
+  // already filled. Only the model list is requested; nothing about the user's projects is sent.
+  const { id: pid, base_url: pUrl, kind: pKind, model: pModel, has_key: pHasKey } = p
+  useEffect(() => {
+    let url: URL
+    try {
+      url = new URL(pUrl.trim())
+    } catch {
+      return
+    }
+    if (!/^https?:$/.test(url.protocol)) return
+    const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+    // A hosted provider that needs a key is only asked once there is one.
+    if (!local && PRESETS[pKind].key && !apiKey && !pHasKey) return
+    let alive = true
+    const t = setTimeout(() => {
+      setLoading(true)
+      runCommand({ type: 'ai_probe', provider: { ...EMPTY, id: pid, kind: pKind, base_url: pUrl, name: 'probe' }, api_key: apiKey || null })
+        .then((r) => {
+          if (!alive || r.type !== 'ai_test') return
+          setModels(r.result.models)
+          setMessage({ ok: r.result.ok, text: r.result.message })
+          if (r.result.ok && !pModel && r.result.models.length > 0) setP((cur) => (cur.model ? cur : { ...cur, model: r.result.models[0].id }))
+        })
+        .catch(() => undefined)
+        .finally(() => alive && setLoading(false))
+    }, 600)
+    return () => {
+      alive = false
+      clearTimeout(t)
+    }
+  }, [pid, pUrl, pKind, pHasKey, apiKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Saves, and returns the provider as stored (a new one gets its id from the core). */
   async function save(): Promise<AiProvider> {
@@ -287,15 +321,19 @@ function ProviderDialog({ initial, onClose, onSaved }: { initial: AiProvider; on
             )}
           </div>
         </Field>
-        <Field label="Model" hint={chosen ? priceText(chosen) : models.length ? `${models.length} models available. Pick one or type its name.` : '“Save and test” lists the models this server has.'}>
-          <Input value={p.model} onChange={(e) => setP({ ...p, model: e.target.value })} list="ai-models" placeholder="model name" />
-          <datalist id="ai-models">
-            {models.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </datalist>
+        <Field label="Model" hint={loading ? 'Looking for models…' : chosen ? priceText(chosen) : models.length ? `${models.length} models available. Pick one or type its name.` : 'No models found yet. Check the address (and key), or type a model name.'}>
+          {models.length > 0 ? (
+            <Select value={p.model} onChange={(e) => setP({ ...p, model: e.target.value })}>
+              {!models.some((m) => m.id === p.model) && <option value={p.model}>{p.model || 'Choose a model…'}</option>}
+              {models.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.id}
+                </option>
+              ))}
+            </Select>
+          ) : (
+            <Input value={p.model} onChange={(e) => setP({ ...p, model: e.target.value })} placeholder="model name" />
+          )}
         </Field>
         <Toggle checked={p.tools} onChange={(v) => setP({ ...p, tools: v })} label="Let the model read through tools" hint="It can look up logs, configs and findings itself (read-only). Turn off for small local models that can't use tools." />
         {message && (

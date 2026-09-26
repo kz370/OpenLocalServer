@@ -453,6 +453,8 @@ pub enum CoreCommand {
     AiDetectLocal,
     AiTest { provider_id: String },
     AiModels { provider_id: String },
+    /// The models a provider as typed in the form offers (not saved yet); no prompt is sent.
+    AiProbe { provider: crate::ai::AiProvider, api_key: Option<String> },
     /// "Show what will be sent": the redacted prompt; nothing is sent.
     AiPreview { request: crate::ai::AiRequest },
     /// Starts a request. A provider outside this computer needs `confirm_remote`.
@@ -1626,6 +1628,7 @@ impl Core {
             C::AiRemoveProvider { id } => Ok(R::AiState { state: Box::new(i.ai_remove_provider(&id)?) }),
             C::AiDetectLocal => Ok(R::AiDetected { servers: i.ai_detect_local() }),
             C::AiTest { provider_id } => Ok(R::AiTest { result: i.ai_test(&provider_id)? }),
+            C::AiProbe { provider, api_key } => Ok(R::AiTest { result: i.ai_probe(provider, api_key)? }),
             C::AiModels { provider_id } => Ok(R::AiModels { models: i.ai_models(&provider_id)? }),
             C::AiPreview { request } => Ok(R::AiPrompt { prompt: Box::new(i.ai_prompt(&request)?) }),
             C::AiStart { request, confirm_remote } => {

@@ -580,10 +580,41 @@ impl Inner {
 
     pub fn ai_test(&self, provider_id: &str) -> Result<AiTestResult, CoreError> {
         let p = self.ai_provider(provider_id)?;
+        Ok(test_provider(&p, get_key(&p.id).as_deref()))
+    }
+
+    /// Lists the models of a provider that is not saved yet (the form as typed), so the model picker fills itself.
+    /// `api_key` none uses the stored key of an existing provider. Only the model list is requested; no prompt is sent.
+    pub fn ai_probe(&self, mut provider: AiProvider, api_key: Option<String>) -> Result<AiTestResult, CoreError> {
+        match reqwest::Url::parse(provider.base_url.trim()) {
+            Ok(u) if matches!(u.scheme(), "http" | "https") && u.host_str().is_some() => {}
+            _ => return Err(fail("the address must be a URL like http://localhost:1234/v1")),
+        }
+        provider.base_url = provider.base_url.trim().trim_end_matches('/').to_string();
+        provider.local = is_local_url(&provider.base_url);
+        let key = api_key.filter(|k| !k.is_empty()).or_else(|| get_key(&provider.id));
+        Ok(test_provider(&provider, key.as_deref()))
+    }
+
+    /// Looks for LM Studio and Ollama on this computer (nothing leaves it).
+    pub fn ai_detect_local(&self) -> Vec<AiDetected> {
+        let candidates = [("lmstudio", "LM Studio", "http://localhost:1234/v1"), ("ollama", "Ollama", "http://localhost:11434/v1")];
+        block_on(async {
+            let probes = candidates.iter().map(|(kind, name, url)| async move {
+                let p = AiProvider { id: String::new(), name: name.to_string(), kind: kind.to_string(), base_url: url.to_string(), model: String::new(), tools: true, local: true, has_key: false };
+                tokio::time::timeout(Duration::from_millis(1200), fetch_models(&p, None)).await.ok().and_then(Result::ok).map(|models| AiDetected { kind: kind.to_string(), name: name.to_string(), base_url: url.to_string(), models: models.into_iter().map(|m| m.id).collect() })
+            });
+            futures_util::future::join_all(probes).await.into_iter().flatten().collect()
+        })
+    }
+}
+
+fn test_provider(p: &AiProvider, key: Option<&str>) -> AiTestResult {
+    {
         let started = Instant::now();
-        let result = block_on(async { fetch_models(&p, get_key(&p.id).as_deref()).await });
+        let result = block_on(async { fetch_models(p, key).await });
         let ms = started.elapsed().as_millis() as u64;
-        Ok(match result {
+        match result {
             Ok(models) if models.is_empty() => AiTestResult {
                 ok: true,
                 message: if p.kind == "lmstudio" { "Connected, but LM Studio reports no model. Download or load one there.".into() } else { "Connected, but the server lists no models.".into() },
@@ -601,19 +632,7 @@ impl Inner {
                 AiTestResult { ok: true, message: format!("Connected: {} models. {note}", models.len()), ms, models }
             }
             Err(e) => AiTestResult { ok: false, message: e, ms, models: vec![] },
-        })
-    }
-
-    /// Looks for LM Studio and Ollama on this computer (nothing leaves it).
-    pub fn ai_detect_local(&self) -> Vec<AiDetected> {
-        let candidates = [("lmstudio", "LM Studio", "http://localhost:1234/v1"), ("ollama", "Ollama", "http://localhost:11434/v1")];
-        block_on(async {
-            let probes = candidates.iter().map(|(kind, name, url)| async move {
-                let p = AiProvider { id: String::new(), name: name.to_string(), kind: kind.to_string(), base_url: url.to_string(), model: String::new(), tools: true, local: true, has_key: false };
-                tokio::time::timeout(Duration::from_millis(1200), fetch_models(&p, None)).await.ok().and_then(Result::ok).map(|models| AiDetected { kind: kind.to_string(), name: name.to_string(), base_url: url.to_string(), models: models.into_iter().map(|m| m.id).collect() })
-            });
-            futures_util::future::join_all(probes).await.into_iter().flatten().collect()
-        })
+        }
     }
 }
 
