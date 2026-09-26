@@ -1,5 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Archive, ExternalLink, FolderPlus, FolderSearch, FolderTree, Gauge, Globe, Power, Settings2, ShieldCheck, Sparkles, Trash2 } from 'lucide-react'
+import { Archive, ExternalLink, FolderPlus, FolderSearch, FolderTree, Gauge, Globe, Power, Settings2, ShieldCheck, Sparkles, Stethoscope, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { AiCard } from '@/components/ai/AiSettings'
@@ -17,12 +17,13 @@ import { confirmThen } from '@/lib/confirm'
 import { useAction } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 
-type Section = 'general' | 'sites' | 'roots' | 'startup' | 'ai' | 'resources' | 'backups'
+type Section = 'general' | 'sites' | 'roots' | 'startup' | 'diagnostics' | 'ai' | 'resources' | 'backups'
 const SECTIONS: { id: Section; label: string; icon: typeof Globe }[] = [
   { id: 'general', label: 'General', icon: Settings2 },
   { id: 'sites', label: 'Sites & domains', icon: Globe },
   { id: 'roots', label: 'Root folders', icon: FolderTree },
   { id: 'startup', label: 'Startup & tray', icon: Power },
+  { id: 'diagnostics', label: 'Diagnostics', icon: Stethoscope },
   { id: 'ai', label: 'AI', icon: Sparkles },
   { id: 'resources', label: 'Resources', icon: Gauge },
   { id: 'backups', label: 'Backups', icon: Archive },
@@ -48,6 +49,7 @@ export function SettingsPage() {
   const [projectsDir, setProjectsDir] = useState('')
   const [autoDomains, setAutoDomains] = useState(true)
   const [watchSites, setWatchSites] = useState(true)
+  const [autoFixDiagnostics, setAutoFixDiagnostics] = useState(true)
   const [sitesDir, setSitesDir] = useState('')
   const [rootFolders, setRootFolders] = useState<string[]>([])
   const [helper, setHelper] = useState<boolean | null>(null)
@@ -71,6 +73,7 @@ export function SettingsPage() {
     void getStringList('projects.roots').then(setRootFolders)
     void runCommand({ type: 'get_setting', key: 'projects.watch' }).then((r) => r.type === 'setting' && setWatchSites(r.value !== false))
     void runCommand({ type: 'get_setting', key: 'domains.auto' }).then((r) => r.type === 'setting' && setAutoDomains(r.value !== false))
+    void runCommand({ type: 'get_setting', key: 'diagnostics.auto_fix' }).then((r) => r.type === 'setting' && setAutoFixDiagnostics(r.value !== false))
   }, [])
 
   async function saveAll() {
@@ -302,6 +305,26 @@ export function SettingsPage() {
                     {services.every((s) => !s.installed) && <span className="text-sm text-muted-foreground">No services installed yet.</span>}
                   </div>
                 </SettingRow>
+              </CardContent>
+            </Card>
+          )}
+
+          {section === 'diagnostics' && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Diagnostics</CardTitle>
+                <CardDescription>Automatically apply safe fixes when a problem is found.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <SwitchRow
+                  checked={autoFixDiagnostics}
+                  onChange={(value) => {
+                    setAutoFixDiagnostics(value)
+                    void run('auto-fix', async () => { await runCommand({ type: 'set_setting', key: 'diagnostics.auto_fix', value }) })
+                  }}
+                  title="Automatically fix safe problems"
+                  hint="Runs at startup and every five minutes. Fixes that may replace or remove data always ask first."
+                />
               </CardContent>
             </Card>
           )}

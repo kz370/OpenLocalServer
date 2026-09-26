@@ -1145,6 +1145,7 @@ export interface Finding {
   fix: string
   /** Run this to apply the fix; null when only the user can. */
   fix_command: CoreCommand | null
+  auto_fixable: boolean
   details: string[]
   ignored: boolean
 }

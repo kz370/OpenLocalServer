@@ -6,7 +6,7 @@
 //! `projects` and `custom_installs` are only ever held briefly and never while waiting on
 //! anything slow (a process, the network, another lock).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -71,6 +71,10 @@ pub struct Inner {
     pub api: crate::api::ApiState,
     pub loadtests: crate::loadtest::LoadRuns,
     pub ai: crate::ai::AiJobs,
+    /// Finding ids already attempted by automatic diagnostics during this app session.
+    pub auto_fix_attempted: Mutex<HashSet<String>>,
+    /// Last automatic-fix failures, shown in the corresponding diagnostic's details.
+    pub auto_fix_failures: Mutex<HashMap<String, String>>,
     project_events: broadcast::Sender<()>,
 }
 
@@ -184,6 +188,8 @@ impl Inner {
             api: Default::default(),
             loadtests: Default::default(),
             ai: Default::default(),
+            auto_fix_attempted: Mutex::new(HashSet::new()),
+            auto_fix_failures: Mutex::new(HashMap::new()),
             project_events,
             paths,
         });

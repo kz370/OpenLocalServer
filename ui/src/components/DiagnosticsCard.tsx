@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { type Finding, runCommand } from '@/core'
 import type { AskAi } from '@/lib/ai'
 import { useAction } from '@/lib/hooks'
+import { confirmAction } from '@/lib/confirm'
 
 /** What the assistant is asked to explain for one finding. */
 export function explainFinding(f: Finding): AskAi {
@@ -47,8 +48,15 @@ export function DiagnosticsCard() {
 
   async function fix(f: Finding) {
     if (!f.fix_command) return
-    const res = await runCommand(f.fix_command)
-    setNotice(res.type === 'process_started' ? 'Started. Follow its output on the Processes page.' : `Applied: ${f.fix}`)
+    if (!f.auto_fixable && !(await confirmAction('This fix may replace or remove something. Apply it?'))) return
+    const res = await runCommand({ type: 'apply_repair', project_id: null, ids: [f.id], confirm_destructive: !f.auto_fixable })
+    if (res.type === 'repair_report') setNotice(res.report.steps[0]?.ok ? `Applied: ${f.fix}` : res.report.steps[0]?.detail ?? 'Could not apply this fix.')
+    await scan()
+  }
+
+  async function fixAll() {
+    const res = await runCommand({ type: 'apply_repair', project_id: null, ids: [], confirm_destructive: false })
+    if (res.type === 'repair_report') setNotice(`${res.report.fixed} issue(s) fixed. Destructive fixes still need confirmation.`)
     await scan()
   }
 
@@ -61,9 +69,14 @@ export function DiagnosticsCard() {
             {findings === null ? 'Checking…' : active.length === 0 ? 'No problems found.' : `${active.length} thing${active.length === 1 ? '' : 's'} to look at.`}
           </CardDescription>
         </div>
-        <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => run('scan', scan)} title="Check again">
-          {busy === 'scan' ? <Spinner className="size-3.5" /> : <RefreshCw className="size-3.5" />}
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button size="sm" variant="secondary" disabled={busy !== null || !active.some((f) => f.auto_fixable)} onClick={() => run('fix-all', fixAll)}>
+            {busy === 'fix-all' ? <Spinner className="size-3.5" /> : <Wrench />} Fix all
+          </Button>
+          <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => run('scan', scan)} title="Check again">
+            {busy === 'scan' ? <Spinner className="size-3.5" /> : <RefreshCw className="size-3.5" />}
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-2">
         <ErrorCard error={error} onDismiss={() => setError(null)} />

@@ -79,7 +79,16 @@ pub fn is_destructive(cmd: &CoreCommand) -> bool {
 }
 
 fn finding(id: String, severity: Severity, problem: String, cause: &str, fix: &str, fix_command: Option<CoreCommand>, details: Vec<String>) -> Finding {
-    Finding { id, severity, problem, cause: cause.into(), fix: fix.into(), fix_command, details, ignored: false }
+    let auto_fixable = fix_command.as_ref().is_some_and(|cmd| !is_destructive(cmd));
+    Finding { id, severity, problem, cause: cause.into(), fix: fix.into(), fix_command, auto_fixable, details, ignored: false }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AutoFixResult {
+    pub id: String,
+    pub problem: String,
+    pub ok: bool,
+    pub detail: String,
 }
 
 fn env_value(project: &Path, file: &str, key: &str) -> Option<String> {
@@ -290,6 +299,36 @@ impl Inner {
 }
 
 impl Core {
+    /// Apply newly discovered, safe diagnostic fixes at most once per finding per session.
+    /// A failed attempt is retained on the finding so periodic scans do not retry in a loop.
+    pub fn auto_fix_diagnostics(&self) -> Vec<AutoFixResult> {
+        if !self.inner().setting_bool("diagnostics.auto_fix", true) {
+            return Vec::new();
+        }
+        let findings = self.inner().diagnose();
+        let mut results = Vec::new();
+        for f in findings.into_iter().filter(|f| !f.ignored && f.auto_fixable) {
+            {
+                let mut attempted = self.inner().auto_fix_attempted.lock().unwrap();
+                if !attempted.insert(f.id.clone()) {
+                    continue;
+                }
+            }
+            let Some(command) = f.fix_command.as_ref() else { continue };
+            match self.run_fix(command) {
+                Ok(detail) => {
+                    self.inner().auto_fix_failures.lock().unwrap().remove(&f.id);
+                    results.push(AutoFixResult { id: f.id, problem: f.problem, ok: true, detail });
+                }
+                Err(detail) => {
+                    self.inner().auto_fix_failures.lock().unwrap().insert(f.id.clone(), detail.clone());
+                    results.push(AutoFixResult { id: f.id, problem: f.problem, ok: false, detail });
+                }
+            }
+        }
+        results
+    }
+
     /// Runs one fix command through the dispatcher and waits for what it starts, so the caller can
     /// diagnose again straight after. Shared by repairs and by the AI assistant's approved plans.
     pub(crate) fn run_fix(&self, command: &CoreCommand) -> Result<String, String> {
@@ -326,7 +365,10 @@ impl Core {
             }
             let result = self.run_fix(&a.command);
             match result {
-                Ok(d) => steps.push(RepairStep { label: a.label.clone(), ok: true, detail: d }),
+                Ok(d) => {
+                    i.auto_fix_failures.lock().unwrap().remove(&a.finding_id);
+                    steps.push(RepairStep { label: a.label.clone(), ok: true, detail: d });
+                }
                 Err(e) => steps.push(RepairStep { label: a.label.clone(), ok: false, detail: e }),
             }
         }

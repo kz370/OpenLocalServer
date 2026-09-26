@@ -10,6 +10,7 @@ import { Dialog } from '@/components/ui/dialog'
 import { type DoctorReport, type RepairReport, runCommand } from '@/core'
 import { useAction } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
+import { confirmAction } from '@/lib/confirm'
 
 const MARK = {
   ok: { icon: Check, className: 'text-success' },
@@ -39,7 +40,7 @@ export function DoctorDialog({ open, onClose }: { open: boolean; onClose: () => 
     }
   }, [open, check])
 
-  const fixable = report?.findings.filter((f) => f.fix_command).length ?? 0
+  const fixable = report?.findings.filter((f) => f.auto_fixable && !f.ignored).length ?? 0
 
   return (
     <Dialog
@@ -64,7 +65,7 @@ export function DoctorDialog({ open, onClose }: { open: boolean; onClose: () => 
               })
             }
           >
-            {busy === 'repair' ? <Spinner /> : <Wrench />} Repair what is safe {fixable > 0 && `(${fixable})`}
+            {busy === 'repair' ? <Spinner /> : <Wrench />} Fix all safe issues {fixable > 0 && `(${fixable})`}
           </Button>
         </>
       }
@@ -115,9 +116,18 @@ export function DoctorDialog({ open, onClose }: { open: boolean; onClose: () => 
                         <p className="text-xs text-muted-foreground">{f.cause}</p>
                         <p className="text-xs">
                           {f.fix}
-                          {f.fix_command && <span className="text-success"> (automatic)</span>}
+                          {f.fix_command && <span className="text-success"> ({f.auto_fixable ? 'safe to fix' : 'confirmation required'})</span>}
                         </p>
                       </div>
+                      {f.fix_command && !f.ignored && (
+                        <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => run(`fix:${f.id}`, async () => {
+                          if (!f.auto_fixable && !(await confirmAction('This fix may replace or remove something. Apply it?'))) return
+                          const fixed = await runCommand({ type: 'apply_repair', project_id: null, ids: [f.id], confirm_destructive: !f.auto_fixable })
+                          if (fixed.type === 'repair_report') setRepair(fixed.report)
+                          const refreshed = await runCommand({ type: 'doctor' })
+                          if (refreshed.type === 'doctor_report') setReport(refreshed.report)
+                        })}><Wrench /> Fix</Button>
+                      )}
                     </div>
                   )
                 })}

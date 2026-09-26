@@ -317,7 +317,18 @@ pub fn run() {
             }
             // §121: start what the user asked to have started with the app.
             let autostart_core = core.clone();
-            std::thread::spawn(move || autostart_core.inner().run_autostart());
+            let auto_fix_app = app.handle().clone();
+            std::thread::spawn(move || {
+                autostart_core.inner().run_autostart();
+                loop {
+                    for result in autostart_core.auto_fix_diagnostics() {
+                        if result.ok {
+                            notify(&auto_fix_app, &autostart_core, "Diagnostics", &format!("Fixed: {}", result.problem));
+                        }
+                    }
+                    std::thread::sleep(Duration::from_secs(300));
+                }
+            });
             Ok(())
         })
         .on_window_event(move |window, event| {

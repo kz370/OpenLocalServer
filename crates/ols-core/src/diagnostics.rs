@@ -31,6 +31,8 @@ pub struct Finding {
     pub fix: String,
     /// The command the [Fix] button runs; `None` when the fix is something only the user can do.
     pub fix_command: Option<CoreCommand>,
+    /// Whether this fix may run automatically without replacing or removing user data.
+    pub auto_fixable: bool,
     /// Extra facts behind the finding, for [Details].
     pub details: Vec<String>,
     pub ignored: bool,
@@ -48,6 +50,7 @@ impl Builder {
             problem: problem.into(),
             cause: cause.into(),
             fix: fix.into(),
+            auto_fixable: fix_command.as_ref().is_some_and(|cmd| !crate::repair::is_destructive(cmd)),
             fix_command,
             details,
             ignored: false,
@@ -71,6 +74,9 @@ impl Inner {
         let ignored = self.ignored_diagnostics();
         for f in &mut b.findings {
             f.ignored = ignored.contains(&f.id);
+            if let Some(detail) = self.auto_fix_failures.lock().unwrap().get(&f.id) {
+                f.details.push(format!("Auto-fix failed: {detail}"));
+            }
         }
         let rank = |s: Severity| match s {
             Severity::Error => 0,
