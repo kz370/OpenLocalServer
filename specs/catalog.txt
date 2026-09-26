@@ -108,6 +108,7 @@ NavBus | Cross-page openProject event bus.
 ThemeProvider | system/light/dark with localStorage.
 CommandPalette | Ctrl+K fuzzy global_search palette.
 SiteDialog | Tabbed project editor (env/terminal/git/workers/snapshots/...).
+DomainDialog/DomainSettings | Add-site modal (Source/Address/Serves/Options) sharing FormSection + form-size Dialog with QuickApps Wizard; footer via Dialog prop, submitRef.
 TerminalComp | xterm.js bridge to TerminalManager.
 EnvEditor | .env table editor with diff.
 CodeEditor/DiffView | CodeMirror yaml/nginx/apache + diff restore.
@@ -118,4 +119,4 @@ CustomServices | Custom service CRUD table.
 PhpExtensionsDialog/XdebugDialog | PHP extension toggles + xdebug form.
 MigrateDialog | Foreign DB scan + import progress.
 SystemMonitor | CPU/mem/disk + process rollup display.
-Ui primitives | button/card/dialog/input/form/table/menu/switch/badge/checkbox (Tailwind/Radix, no IPC).
+Ui primitives | button/card/dialog/input/form/table/menu/switch/badge/checkbox (Tailwind/Radix, no IPC). Dialog sizes default/form(max-w-2xl shared form-modal)/wide; FormSection shared headers; Field errors with icon, hint swap no-shift.

@@ -299,41 +299,41 @@ export function RuntimesPage() {
   const managedInstalledCount = managedGroup?.rows.filter((r) => r.kind === 'managed' && r.entry?.installed).length ?? 0
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Runtimes</h1>
-        <p className="text-sm text-muted-foreground">
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-1">
+        <h1 className="text-xl font-semibold tracking-tight">Runtimes</h1>
+        <p className="max-w-2xl text-[13px] leading-relaxed text-muted-foreground">
             Install versions side by side, then choose a default for new projects and services. Vendor SHA-256 checksums are verified when published.
         </p>
       </div>
 
-      <div className="rounded-xl border border-border p-4">
-        <div>
-          <h2 className="text-sm font-semibold">Use versions you already have</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">Add all versions from a folder, or register one executable.</p>
+      <div className="rounded-xl border border-border/60 bg-card/40 p-4">
+        <div className="flex flex-col gap-0.5">
+          <h2 className="text-sm font-semibold leading-none">Add a runtime</h2>
+          <p className="text-xs text-muted-foreground">Use an existing installation or register a custom executable.</p>
         </div>
-        <div className="mt-4 grid gap-3 md:grid-cols-[minmax(220px,0.85fr)_minmax(0,1.5fr)]">
-          <div className="flex min-w-0 items-center justify-between gap-3 rounded-lg border border-border/70 bg-background/40 p-3">
+        <div className="mt-3.5 grid gap-3 lg:grid-cols-2">
+          <div className="flex min-w-0 flex-col justify-between gap-3 rounded-lg border border-border/60 bg-background/40 p-3.5 sm:flex-row sm:items-center">
             <div className="min-w-0">
-              <p className="text-sm font-medium">Add existing PHP versions</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">Scan a folder for PHP installs.</p>
+              <p className="text-[13px] font-medium leading-none">Add existing versions</p>
+              <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">Scan a folder for installed runtimes.</p>
             </div>
-            <Button size="sm" variant="secondary" className="h-8 shrink-0" onClick={scanPhpFolder} title="Adds every PHP version found in the folder you pick">
+            <Button size="sm" variant="secondary" className="h-8 shrink-0 text-xs" onClick={scanPhpFolder} title="Adds every PHP version found in the folder you pick">
               <FolderSearch /> Add folder
             </Button>
           </div>
-          <div className="min-w-0 rounded-lg border border-border/70 bg-background/40 p-3">
-            <div className="mb-2.5">
-              <p className="text-xs font-medium">Or add one executable</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">Choose its runtime and version, then locate the file.</p>
+          <div className="flex min-w-0 flex-col justify-center gap-2.5 rounded-lg border border-border/60 bg-background/40 p-3.5">
+            <div className="min-w-0">
+              <p className="text-[13px] font-medium leading-none">Add one executable</p>
+              <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">Choose its runtime and version, then locate the file.</p>
             </div>
-            <div className="flex min-w-0 flex-wrap gap-2 sm:flex-nowrap">
-              <div className="relative w-28 shrink-0">
+            <div className="flex min-w-0 flex-wrap items-center gap-2 sm:flex-nowrap">
+              <div className="relative w-24 shrink-0">
                 <select
                   aria-label="Executable runtime"
                   value={customId}
                   onChange={(e) => setCustomId(e.target.value)}
-                  className="h-10 w-full appearance-none rounded-lg border border-transparent bg-input/60 py-1 pl-3 pr-10 text-sm focus-visible:border-ring focus-visible:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                  className="h-8 w-full appearance-none rounded-md border border-transparent bg-input/60 py-1 pl-2.5 pr-8 text-[13px] focus-visible:border-ring focus-visible:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                 >
                   {LOCATABLE.map((id) => (
                     <option key={id} value={id}>
@@ -341,16 +341,16 @@ export function RuntimesPage() {
                     </option>
                   ))}
                 </select>
-                <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
               </div>
               <Input
                 aria-label="Executable version"
                 value={customLabel}
                 onChange={(e) => setCustomLabel(e.target.value)}
                 placeholder="Version (e.g. 8.1.2)"
-                className="h-10 min-w-32 flex-1"
+                className="h-8 min-w-28 flex-1 text-[13px]"
               />
-              <Button size="default" variant="secondary" className="h-10 shrink-0" onClick={addCustomInstall}>
+              <Button size="sm" variant="secondary" className="h-8 shrink-0 text-xs" onClick={addCustomInstall}>
                 <FolderSearch /> Locate
               </Button>
             </div>
@@ -360,13 +360,13 @@ export function RuntimesPage() {
 
       {notice && !managedGroup && <p className="text-sm text-muted-foreground">{notice}</p>}
 
-      <Table>
+      <Table wrapperClassName="rounded-xl border-border/60">
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead>Runtime</TableHead>
-            <TableHead>Installed versions</TableHead>
-            <TableHead>Available</TableHead>
-            <TableHead className="text-right">Actions</TableHead>
+            <TableHead className="h-8 text-[11px] font-medium uppercase tracking-wider">Runtime</TableHead>
+            <TableHead className="h-8 text-[11px] font-medium uppercase tracking-wider">Installed</TableHead>
+            <TableHead className="h-8 text-[11px] font-medium uppercase tracking-wider">Status</TableHead>
+            <TableHead className="h-8 text-right text-[11px] font-medium uppercase tracking-wider">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -392,29 +392,39 @@ export function RuntimesPage() {
             const customInstalled = g.rows.filter((r) => r.kind === 'custom')
             const defaultVersion = managedInstalled.find((r) => r.entry?.is_default)?.version
             const availableCount = g.rows.filter((r) => r.kind === 'managed' && !r.entry?.installed).length
+            const isChecking = ONLINE_CATALOGS.has(g.id) && catalogStatus[g.id] === 'checking'
+            const isError = ONLINE_CATALOGS.has(g.id) && catalogStatus[g.id] === 'error' && !cachedCatalogIds.has(g.id)
+            const hasUpdate = !isError && availableCount > 0
             return (
-              <TableRow key={g.id}>
-                <TableCell>
-                  <span className="flex items-center gap-2 font-medium"><TechIcon id={g.id} className="size-4" />{g.name}</span>
+              <TableRow key={g.id} className="hover:bg-muted/30">
+                <TableCell className="py-2.5">
+                  <span className="flex items-center gap-2 text-[13px] font-medium"><TechIcon id={g.id} className="size-4 opacity-90" />{g.name}</span>
                 </TableCell>
-                <TableCell>
-                  {managedInstalled.length + customInstalled.length === 0 ? <span className="text-muted-foreground">None</span> : (
-                    <span className="flex flex-wrap items-center gap-1.5">
-                      {defaultVersion && <Badge variant="outline">Default {defaultVersion}</Badge>}
+                <TableCell className="py-2.5">
+                  {managedInstalled.length + customInstalled.length === 0 ? <span className="text-xs text-muted-foreground">None</span> : (
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      {defaultVersion && <>
+                        <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{defaultVersion}</code>
+                        <Badge variant="secondary" className="px-1.5 text-[11px] font-normal">Default</Badge>
+                      </>}
                       <span className="text-xs text-muted-foreground">{managedInstalled.length + customInstalled.length} installed</span>
                     </span>
                   )}
                 </TableCell>
-                <TableCell className="text-sm text-muted-foreground">
-                  {ONLINE_CATALOGS.has(g.id) && catalogStatus[g.id] === 'checking' && !cachedCatalogIds.has(g.id)
-                    ? 'Checking…'
-                    : ONLINE_CATALOGS.has(g.id) && catalogStatus[g.id] === 'error' && !cachedCatalogIds.has(g.id)
-                      ? 'Could not check'
-                      : <>{availableCount} available{ONLINE_CATALOGS.has(g.id) && catalogStatus[g.id] === 'checking' ? ' · refreshing' : ''}{ONLINE_CATALOGS.has(g.id) && catalogStatus[g.id] === 'error' ? ' · last check failed' : ''}</>}
+                <TableCell className="py-2.5">
+                  <span className="flex items-center gap-1.5 text-xs">
+                    {isChecking && !cachedCatalogIds.has(g.id)
+                      ? <><span className="size-1.5 animate-pulse rounded-full bg-muted-foreground" /><span className="text-muted-foreground">Checking…</span></>
+                      : isError
+                        ? <><span className="size-1.5 rounded-full bg-muted-foreground/60" /><span className="text-muted-foreground">Could not check</span></>
+                        : hasUpdate
+                          ? <><span className="size-1.5 rounded-full bg-sky-400" /><span className="text-sky-400"> {availableCount} available</span>{isChecking && <span className="text-muted-foreground">· refreshing</span>}</>
+                          : <><span className="size-1.5 rounded-full bg-emerald-500/80" /><span className="text-muted-foreground">Up to date</span></>}
+                  </span>
                 </TableCell>
-                <TableCell className="text-right">
-                  <Button size="sm" variant="secondary" onClick={() => openVersions(g)}>
-                    <Settings2 className="size-3.5" /> Manage versions
+                <TableCell className="py-2.5 text-right">
+                  <Button size="sm" variant="secondary" className="h-7 px-2.5 text-xs font-normal" onClick={() => openVersions(g)}>
+                    <Settings2 className="size-3.5 opacity-70" /> Manage
                   </Button>
                 </TableCell>
               </TableRow>
@@ -427,16 +437,17 @@ export function RuntimesPage() {
       <Dialog
         open={!!managedGroup}
         onClose={() => setManageId(null)}
+        wide
         title={`${managedGroup?.name ?? 'Runtime'} versions`}
         description="Version lists refresh in the background and are checked again when needed. Search by version, choose one to install, or manage versions already on this computer."
       >
-        {managedGroup && <div className="flex flex-col gap-5">
-          <section className="rounded-lg border border-border p-4">
-            <div>
-              <h3 className="text-sm font-semibold">Install a version</h3>
-              <p className="mt-0.5 text-xs text-muted-foreground">Vendor SHA-256 checksums are verified when published. Nginx archives come directly from nginx.org over HTTPS.</p>
+        {managedGroup && <div className="flex flex-col gap-4">
+          <section className="rounded-lg border border-border/60 bg-background/40 p-3.5">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h3 className="text-[13px] font-semibold leading-none">Install a version</h3>
             </div>
-            <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+              <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">Vendor SHA-256 checksums are verified when published. {managedGroup.name} archives come directly from the vendor over HTTPS.</p>
+            <div className="mt-3 grid gap-2 lg:grid-cols-[minmax(0,1fr)_170px_auto]">
               <Input
                 aria-label={`Search ${managedGroup.name} versions`}
                 value={versionSearch}
@@ -447,15 +458,15 @@ export function RuntimesPage() {
                   if (firstMatch) setInstallChoices((prev) => ({ ...prev, [managedGroup!.id]: firstMatch.version }))
                 }}
                 placeholder="Search versions…"
-                className="h-10"
+                className="h-9 text-[13px]"
               />
-              <div className="relative min-w-0 sm:col-start-1">
+              <div className="relative min-w-0">
                 <select
                   aria-label={`Available ${managedGroup.name} versions`}
                   value={selectedInstall}
                   disabled={installable.length === 0}
                   onChange={(e) => setInstallChoices((prev) => ({ ...prev, [managedGroup.id]: e.target.value }))}
-                  className="h-10 w-full min-w-0 appearance-none rounded-lg border border-border bg-background py-1 pl-3 pr-10 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                  className="h-9 w-full min-w-0 appearance-none rounded-md border border-border/60 bg-background py-1 pl-2.5 pr-8 text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                 >
                   {installable.length === 0 && <option value="">All catalog versions are installed</option>}
                   {filteredInstallable.length === 0 && installable.length > 0 && <option value="">No versions match your search</option>}
@@ -465,10 +476,10 @@ export function RuntimesPage() {
                     </optgroup>
                   ))}
                 </select>
-                <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
               </div>
               <Button
-                className="h-10 shrink-0 sm:col-start-2 sm:row-span-2 sm:row-start-1"
+                className="h-9 shrink-0 px-3.5 text-[13px]"
                 disabled={!selectedInstall || !selectedInstallVisible || installingChoice || installable.length === 0}
                 onClick={() => { const row = installable.find((r) => r.version === selectedInstall); if (row?.entry) void install(row.entry) }}
               >
@@ -487,34 +498,42 @@ export function RuntimesPage() {
 
           <section>
             <div className="mb-2 flex items-center justify-between gap-3">
-              <div>
-                <h3 className="text-sm font-semibold">Installed versions</h3>
-                <p className="mt-0.5 text-xs text-muted-foreground">The default is used unless a project or site pins another version.</p>
+              <div className="flex flex-col gap-0.5">
+                <h3 className="text-[13px] font-semibold leading-none">Installed versions</h3>
+                <p className="text-xs text-muted-foreground">The default is used unless a project or site pins another version.</p>
               </div>
-              <Badge variant="secondary">{installedRows.length}</Badge>
+              <Badge variant="secondary" className="shrink-0 rounded-full px-2 text-[11px] font-normal text-muted-foreground">{installedRows.length} versions</Badge>
             </div>
-            <div className="overflow-hidden rounded-lg border border-border">
-              {installedRows.length === 0 ? <p className="px-3 py-4 text-center text-sm text-muted-foreground">No versions installed.</p> : installedRows.map((row) => (
-                <div key={row.key} className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-3 py-2.5 last:border-b-0">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
-                      {row.version}
-                      {row.entry?.is_default && <Badge variant="outline">Default</Badge>}
-                      {row.kind === 'custom' && <Badge variant="secondary">Yours</Badge>}
+            <div className="overflow-hidden rounded-lg border border-border/60">
+              {installedRows.length === 0 ? <p className="px-3 py-4 text-center text-[13px] text-muted-foreground">No versions installed.</p> : installedRows.map((row) => {
+                const isDefault = !!row.entry?.is_default
+                return (
+                <div key={row.key} className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border/60 px-3 py-2 last:border-b-0 ${isDefault ? 'bg-primary/[0.06]' : ''}`}>
+                  <div className="flex min-w-0 items-center gap-2">
+                    {isDefault && <span aria-hidden="true" className="h-8 w-0.5 shrink-0 rounded-full bg-primary/70" />}
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5 text-[13px] font-medium tabular-nums">
+                        <span className="font-mono">{row.version}</span>
+                        {isDefault && <Badge variant="secondary" className="px-1.5 text-[11px] font-normal">Default</Badge>}
+                        {row.kind === 'custom' && <Badge variant="outline" className="px-1.5 text-[11px] font-normal text-muted-foreground">Yours</Badge>}
+                      </div>
+                      {row.custom?.path
+                        ? <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">{row.custom.path}</p>
+                        : row.entry?.installed && <p className="mt-0.5 text-[11px] text-muted-foreground">Managed install</p>}
                     </div>
-                    {row.custom?.path && <p className="mt-0.5 truncate text-xs text-muted-foreground">{row.custom.path}</p>}
                   </div>
-                  <div className="flex shrink-0 items-center gap-1">
+                  <div className="flex shrink-0 items-center gap-0.5">
                     {managedGroup.id === 'php' && (row.entry?.installed || row.kind === 'custom') && <>
-                      <Button size="sm" variant="ghost" className="h-8" onClick={() => setExtVersion(row.version)}><Puzzle className="size-3.5" /> Extensions</Button>
-                      <Button size="sm" variant="ghost" className="h-8" onClick={() => setXdebugVersion(row.version)}><Bug className="size-3.5" /> Xdebug</Button>
+                      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs font-normal text-muted-foreground hover:text-foreground" onClick={() => setExtVersion(row.version)}><Puzzle className="size-3.5 opacity-70" /> Extensions</Button>
+                      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs font-normal text-muted-foreground hover:text-foreground" onClick={() => setXdebugVersion(row.version)}><Bug className="size-3.5 opacity-70" /> Xdebug</Button>
                     </>}
-                    {row.kind === 'managed' && row.entry && !row.entry.is_default && <Button size="sm" variant="ghost" className="h-8" onClick={() => void chooseDefault(row.entry!)} title="Set as default"><Check className="size-3.5" /> Use</Button>}
-                    {row.kind === 'managed' && row.entry && <Button size="sm" variant="ghost" className="h-8" onClick={() => void removeRuntime(row.entry!)} title={row.entry.is_default && managedInstalledCount > 1 ? 'Choose another default first' : 'Remove version'} disabled={row.entry.is_default && managedInstalledCount > 1}><Trash2 className="size-3.5" /></Button>}
-                    {row.kind === 'custom' && row.custom && <Button size="sm" variant="ghost" className="h-8" title="Remove from list" onClick={() => void removeCustomInstall(row.custom!)}><Trash2 className="size-3.5" /></Button>}
+                    {row.kind === 'managed' && row.entry && !row.entry.is_default && <Button size="sm" variant="ghost" className="h-7 px-2 text-xs font-normal text-muted-foreground hover:text-foreground" onClick={() => void chooseDefault(row.entry!)} title="Set as default"><Check className="size-3.5 opacity-70" /> Use</Button>}
+                    {row.kind === 'managed' && row.entry && <Button size="sm" variant="ghost" className="h-7 w-7 px-0 text-muted-foreground hover:text-foreground" onClick={() => void removeRuntime(row.entry!)} title={row.entry.is_default && managedInstalledCount > 1 ? 'Choose another default first' : 'Remove version'} disabled={row.entry.is_default && managedInstalledCount > 1}><Trash2 className="size-3.5 opacity-70" /></Button>}
+                    {row.kind === 'custom' && row.custom && <Button size="sm" variant="ghost" className="h-7 w-7 px-0 text-muted-foreground hover:text-foreground" title="Remove from list" onClick={() => void removeCustomInstall(row.custom!)}><Trash2 className="size-3.5 opacity-70" /></Button>}
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           </section>
           {notice && <p className="text-sm text-muted-foreground">{notice}</p>}

@@ -25,7 +25,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog } from '@/components/ui/dialog'
-import { Field, Select, Toggle } from '@/components/ui/form'
+import { Field, FormSection, Select, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import {
   type CatalogEntry,
@@ -403,9 +403,10 @@ export function Wizard({ id, onClose, onNavigate }: { id: string; onClose: () =>
 
   return (
     <Dialog
-      wide
+      size="form"
       open
       onClose={phase === 'run' ? onClose : onClose}
+      icon={app ? <TechTile id={app.id in BRANDED_APPS ? app.id : app.category} className="size-10 rounded-lg [&_svg]:size-5" /> : undefined}
       title={app ? `Create ${app.name}` : 'Loading…'}
       description={phase === 'form' ? app?.description : phase === 'review' ? 'Review exactly what will happen before anything runs.' : 'Creating your project…'}
       footer={
@@ -424,23 +425,25 @@ export function Wizard({ id, onClose, onNavigate }: { id: string; onClose: () =>
         ) : null
       }
     >
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-5">
         <ErrorCard error={error} onDismiss={() => setError(null)} />
 
         {phase === 'form' && app && (
-          <div className="grid gap-4 sm:grid-cols-2">
-            {shown.map((v) => (
-              <VariableField
-                key={v.name}
-                v={v}
-                value={valueOf(v.name)}
-                touched={provided[v.name] !== undefined}
-                error={errorFor(v.name)}
-                catalog={catalog}
-                onChange={(val) => setProvided((p) => ({ ...p, [v.name]: val }))}
-              />
-            ))}
-          </div>
+          <FormSection title="Details">
+            <div className="grid gap-3 sm:grid-cols-2">
+              {shown.map((v) => (
+                <VariableField
+                  key={v.name}
+                  v={v}
+                  value={valueOf(v.name)}
+                  touched={provided[v.name] !== undefined}
+                  error={errorFor(v.name)}
+                  catalog={catalog}
+                  onChange={(val) => setProvided((p) => ({ ...p, [v.name]: val }))}
+                />
+              ))}
+            </div>
+          </FormSection>
         )}
 
         {phase === 'review' && plan?.plan && (
@@ -537,6 +540,7 @@ function VariableField({
           {isPicker && (
             <Button
               variant="secondary"
+              className="shrink-0"
               onClick={async () => {
                 const p = await open({ directory: v.type !== 'file', multiple: false })
                 if (p && !Array.isArray(p)) onChange(p)

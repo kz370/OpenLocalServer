@@ -54,6 +54,8 @@ All 202 files listed above processed via 4 parallel analysis agents (rust-core, 
 - [2026-09-27] fix: netstat owner parse accepts localized/non-LISTENING 5-col TCP rows (LISTENING preferred, fallback otherwise) so holders show on non-English Windows
 - [2026-09-27] feat: Redis one-click — Tiny RDM auto-detect (Program Files/LOCALAPPDATA/PATH) + Open in button on Databases Redis tab with URI copy; RedisInsight excluded per request
 - [2026-09-27] fix: open_database routes tinyrdm (explicit + redis fallback) to detected Tiny RDM exe — was falling through to "No tool is registered for redis"
+- [2026-09-27] style: Runtimes list + Version Manager visual refine only (hierarchy, spacing, status dots, compact Manage, balanced Add cards, default highlight, ghost secondary actions); no behavior / IPC change; Files Processed still 202
+- [2026-09-27] style: Add Site / Quick Apps / Create Quick App one design system — shared form modal width (max-w-2xl), shared FormSection, gap-5 sections + gap-3 grids, compact Quick App cards, equal Serves/Options cards, h-9 Browse shrink-0, footer via Dialog prop, icon errors; no behavior / IPC / order change; Files Processed still 202
 
 Status: Completed 100%
 

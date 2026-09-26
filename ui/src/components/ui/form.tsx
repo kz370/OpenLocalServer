@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, CircleAlert } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 
@@ -95,11 +95,30 @@ export function Field({
   children: React.ReactNode
 }) {
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex min-w-0 flex-col gap-1.5">
       <label className="text-xs font-medium text-muted-foreground">{label}</label>
       {children}
-      {error ? <p className="text-xs text-destructive">{error}</p> : hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      {error ? (
+        <p role="alert" className="flex items-center gap-1 text-xs text-destructive">
+          <CircleAlert className="size-3.5 shrink-0" /> {error}
+        </p>
+      ) : (
+        hint && <p className="text-xs leading-relaxed text-muted-foreground">{hint}</p>
+      )}
     </div>
+  )
+}
+
+/** A titled group of fields inside a dialog form. Shared by Add site and Quick App wizards so section headers, label rhythm and vertical spacing stay on one grid. */
+export function FormSection({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <section className="flex flex-col gap-3">
+      <div>
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</h3>
+        {hint && <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{hint}</p>}
+      </div>
+      {children}
+    </section>
   )
 }
 

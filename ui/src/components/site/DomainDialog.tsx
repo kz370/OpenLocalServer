@@ -1,11 +1,11 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { ArrowLeftRight, Braces, FileCode2, FileText, FolderSearch, Rocket } from 'lucide-react'
-import { type ReactNode, useEffect, useState } from 'react'
+import { ArrowLeftRight, Braces, CircleAlert, FileCode2, FileText, FolderSearch, Rocket } from 'lucide-react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 
 import { TechTile } from '@/components/TechIcon'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
-import { Field, Select, Toggle } from '@/components/ui/form'
+import { Field, FormSection, Select, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { type Domain, type Project, type QuickEntryView, type TunnelStatus, runCommand } from '@/core'
@@ -41,7 +41,11 @@ export function newDomain(): Domain {
 export function DomainDialog({
   domain,
   onClose,
-  ...rest
+  onSave,
+  busy,
+  projects,
+  onQuickApp,
+  installedPhp,
 }: {
   projects: Project[]
   onQuickApp: (id: string) => void
@@ -53,27 +57,69 @@ export function DomainDialog({
 }) {
   if (!domain) return null
   return (
-    <Dialog open wide onClose={onClose} title="Add site" description="Changes are applied to the web server as soon as you save.">
+    <AddSiteDialogBody
+      projects={projects}
+      onQuickApp={onQuickApp}
+      domain={domain}
+      installedPhp={installedPhp}
+      onClose={onClose}
+      onSave={onSave}
+      busy={busy}
+    />
+  )
+}
+
+function AddSiteDialogBody({
+  projects,
+  onQuickApp,
+  domain,
+  installedPhp,
+  onSave,
+  busy,
+  onClose,
+}: {
+  projects: Project[]
+  onQuickApp?: (id: string) => void
+  domain: Domain
+  installedPhp: string[]
+  onSave: (d: Domain) => void
+  busy: boolean
+  onClose: () => void
+}) {
+  const submitRef = useRef<(() => void) | null>(null)
+  return (
+    <Dialog
+      open
+      size="form"
+      onClose={onClose}
+      title="Add site"
+      description="Changes are applied to the web server as soon as you save."
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button disabled={busy} onClick={() => submitRef.current?.()}>
+            Add and apply
+          </Button>
+        </>
+      }
+    >
       <DomainSettings
-        {...rest}
+        projects={projects}
+        onQuickApp={onQuickApp}
         domain={domain}
         isNew
-        actions={(submit, busy) => (
-          <>
-            <Button variant="ghost" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button disabled={busy} onClick={submit}>
-              Add and apply
-            </Button>
-          </>
-        )}
+        installedPhp={installedPhp}
+        onSave={onSave}
+        busy={busy}
+        submitRef={submitRef}
       />
     </Dialog>
   )
 }
 
-/** A site's domain, folder, type and HTTPS settings. `actions` renders the buttons under the form. */
+/** A site's domain, folder, type and HTTPS settings. `actions` renders the buttons under the form (used by the Settings tab); the Add site modal renders them in the dialog footer instead. */
 export function DomainSettings({
   projects,
   onQuickApp,
@@ -83,6 +129,7 @@ export function DomainSettings({
   onSave,
   busy,
   actions,
+  submitRef,
 }: {
   projects: Project[]
   onQuickApp?: (id: string) => void
@@ -91,7 +138,8 @@ export function DomainSettings({
   installedPhp: string[]
   onSave: (d: Domain) => void
   busy: boolean
-  actions: (submit: () => void, busy: boolean) => ReactNode
+  actions?: (submit: () => void, busy: boolean) => ReactNode
+  submitRef?: { current: (() => void) | null }
 }) {
   const [d, setD] = useState<Domain>(domain)
   const kindType = d.kind.type
@@ -160,6 +208,9 @@ export function DomainSettings({
     if (out.public_domain && !out.tunnel_id) return setErr('Choose a saved named Cloudflare tunnel for the public domain')
     onSave(out)
   }
+  useEffect(() => {
+    if (submitRef) submitRef.current = submit
+  })
 
   const kinds: { id: 'php' | 'proxy' | 'static'; title: string; hint: string; icon: ReactNode }[] = [
     { id: 'php', title: 'PHP', hint: 'Laravel, WordPress, plain PHP (FastCGI)', icon: <Braces className="size-5" /> },
@@ -170,8 +221,12 @@ export function DomainSettings({
   const localTld = /\.(test|local|localhost|dev\.test)$/.test(host)
 
   return (
-    <div className="flex flex-col gap-6">
-      {err && <p className="text-sm text-destructive">{err}</p>}
+    <div className="flex flex-col gap-5">
+      {err && (
+        <p role="alert" className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-[13px] text-destructive">
+          <CircleAlert className="mt-0.5 size-4 shrink-0" /> {err}
+        </p>
+      )}
 
       {isNew && (
         <FormSection title="Source" hint="Start from a project you already have, or create a new app.">
@@ -196,21 +251,21 @@ export function DomainSettings({
           </div>
           {onQuickApp && (
             <div className="flex flex-col gap-2">
-              <Button variant="secondary" className="self-start" onClick={() => setShowApps((v) => !v)}>
+              <Button variant="secondary" size="sm" className="self-start" onClick={() => setShowApps((v) => !v)}>
                 <Rocket /> {showApps ? 'Hide Quick Apps' : 'Create from a Quick App'}
               </Button>
               {showApps && (
-                <div className="grid max-h-56 gap-1.5 overflow-y-auto rounded-lg border border-border p-2 sm:grid-cols-2">
+                <div className="grid max-h-60 gap-2 overflow-y-auto rounded-lg border border-border p-2 sm:grid-cols-2">
                   {quickApps.length === 0 && <p className="p-2 text-sm text-muted-foreground">No Quick Apps available.</p>}
                   {quickApps.map((a) => (
                     <button
                       key={a.id}
                       onClick={() => onQuickApp(a.id)}
-                      className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent"
+                      className="flex min-h-14 items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm transition-colors hover:bg-accent"
                     >
-                      <TechTile id={a.category} />
-                      <span className="min-w-0">
-                        <span className="block truncate font-medium">{a.name}</span>
+                      <TechTile id={a.category} className="size-8 rounded-md [&_svg]:size-4" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[13px] font-medium">{a.name}</span>
                         <span className="block truncate text-xs text-muted-foreground">{a.description}</span>
                       </span>
                     </button>
@@ -236,7 +291,7 @@ export function DomainSettings({
         <Field label="Site folder">
           <div className="flex gap-2">
             <Input value={d.root} onChange={(e) => set({ root: e.target.value })} placeholder="C:\Sites\shop\public" className="min-w-0 flex-1" />
-            <Button variant="secondary" onClick={browseRoot}>
+            <Button variant="secondary" onClick={browseRoot} className="shrink-0">
               <FolderSearch /> Browse
             </Button>
           </div>
@@ -256,7 +311,7 @@ export function DomainSettings({
       </FormSection>
 
       <FormSection title="Serves">
-        <div className="grid gap-3 sm:grid-cols-3" role="radiogroup" aria-label="What the site serves">
+        <div className="grid gap-2.5 sm:grid-cols-3" role="radiogroup" aria-label="What the site serves">
           {kinds.map((k) => (
             <button
               key={k.id}
@@ -265,13 +320,13 @@ export function DomainSettings({
               aria-checked={kindType === k.id}
               onClick={() => set({ kind: k.id === 'php' ? { type: 'php', version: null } : k.id === 'proxy' ? { type: 'proxy', upstream_port: 3000 } : { type: 'static' } })}
               className={cn(
-                'flex flex-col items-start gap-1.5 rounded-lg border p-3 text-left transition-colors',
-                kindType === k.id ? 'border-primary bg-accent text-accent-foreground' : 'border-border hover:bg-accent/40',
+                'flex min-h-28 flex-col items-start gap-1.5 rounded-lg border p-3 text-left transition-colors',
+                kindType === k.id ? 'border-primary bg-accent text-accent-foreground ring-1 ring-primary/30' : 'border-border hover:bg-accent/40',
               )}
             >
               {k.icon}
-              <span className="text-sm font-medium">{k.title}</span>
-              <span className="text-xs text-muted-foreground">{k.hint}</span>
+              <span className="text-[13px] font-medium">{k.title}</span>
+              <span className="text-xs leading-relaxed text-muted-foreground">{k.hint}</span>
             </button>
           ))}
         </div>
@@ -289,7 +344,7 @@ export function DomainSettings({
         )}
         {d.kind.type === 'proxy' && (
           <>
-            <div className="grid gap-3 sm:grid-cols-[1fr_8rem]">
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_7rem]">
               <Field label="Forward to" hint="Blank = this computer. Or a Docker host, another PC's IP, a hostname.">
                 <Input
                   value={d.kind.upstream_host ?? ''}
@@ -321,7 +376,7 @@ export function DomainSettings({
       </FormSection>
 
       <FormSection title="Options">
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid gap-2.5 sm:grid-cols-3">
           <div className="rounded-lg border border-border p-3">
             <Toggle checked={d.https} onChange={(v) => set({ https: v, redirect_https: v ? d.redirect_https : false })} label="HTTPS" hint="A certificate from the local CA is created for this domain." />
           </div>
@@ -339,21 +394,8 @@ export function DomainSettings({
           <FileCode2 className="size-3.5" /> Config ownership: <b>{d.ownership}</b>. Change it on the Web server config tab.
         </p>
       )}
-      <div className="flex justify-end gap-2 border-t border-border pt-3">{actions(submit, busy)}</div>
+      {actions && <div className="flex justify-end gap-2 border-t border-border pt-3">{actions(submit, busy)}</div>}
     </div>
-  )
-}
-
-/** A titled group of fields inside a dialog form. */
-function FormSection({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
-  return (
-    <section className="flex flex-col gap-3">
-      <div>
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</h3>
-        {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
-      </div>
-      {children}
-    </section>
   )
 }
 
