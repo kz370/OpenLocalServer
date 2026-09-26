@@ -57,13 +57,33 @@ fn probe_system_install(id: &str) -> Option<SystemInstall> {
     let path_var = std::env::var_os("PATH")?;
     let exe_path = std::env::split_paths(&path_var).map(|dir| dir.join(exe_name)).find(|p| p.is_file())?;
 
-    let output = std::process::Command::new(&exe_path).arg(version_flag).output().ok()?;
+    let version = probe_version(&exe_path, version_flag).unwrap_or_else(|| "unknown version".to_string());
+
+    Some(SystemInstall { path: exe_path.display().to_string(), version })
+}
+
+/// First line of `<exe> <flag>`. Some tools (an old Windows Redis) never exit on their version flag,
+/// so the probe is killed after a few seconds instead of hanging the catalog and leaking a process.
+fn probe_version(exe: &std::path::Path, flag: &str) -> Option<String> {
+    use std::process::Stdio;
+    let mut child = std::process::Command::new(exe).arg(flag).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().ok()?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(4);
+    loop {
+        match child.try_wait().ok()? {
+            Some(_) => break,
+            None if std::time::Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+            None => std::thread::sleep(std::time::Duration::from_millis(20)),
+        }
+    }
+    let output = child.wait_with_output().ok()?;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     let text = if stdout.trim().is_empty() { stderr } else { stdout };
-    let version = text.lines().next().unwrap_or("unknown version").trim().to_string();
-
-    Some(SystemInstall { path: exe_path.display().to_string(), version })
+    Some(text.lines().next().unwrap_or("unknown version").trim().to_string())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
