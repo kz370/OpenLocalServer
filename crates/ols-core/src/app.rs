@@ -33,6 +33,9 @@ use crate::settings::SettingsService;
 use crate::sqlite::SqliteStore;
 use crate::web::manager::{ApplyContext, ApplyReport, WebManager};
 use crate::web::WebConfig;
+use notify::RecursiveMode;
+use notify_debouncer_mini::new_debouncer;
+use tokio::sync::broadcast;
 
 pub struct Inner {
     pub paths: AppPaths,
@@ -68,6 +71,7 @@ pub struct Inner {
     pub api: crate::api::ApiState,
     pub loadtests: crate::loadtest::LoadRuns,
     pub ai: crate::ai::AiJobs,
+    project_events: broadcast::Sender<()>,
 }
 
 fn svc(msg: impl Into<String>) -> CoreError {
@@ -148,6 +152,7 @@ impl Inner {
         let certs = Arc::new(CertificateManager::new(&paths));
         let php = Arc::new(PhpPools::new(paths.clone(), runtimes.clone(), supervisor.clone()));
         let web = Arc::new(WebManager::new(paths.clone(), runtimes.clone(), supervisor.clone(), certs.clone(), php.clone()));
+        let (project_events, _) = broadcast::channel(16);
         let core = Arc::new(Self {
             settings: Mutex::new(settings),
             projects: Mutex::new(ProjectStore::load(&paths)?),
@@ -179,8 +184,10 @@ impl Inner {
             api: Default::default(),
             loadtests: Default::default(),
             ai: Default::default(),
+            project_events,
             paths,
         });
+        core.start_projects_watcher();
         core.sync_php_external();
         core.services.set_limits(core.resource_limits());
         core.apply_plugins();
@@ -229,7 +236,43 @@ impl Inner {
         if let Some(dir) = self.settings.lock().unwrap().get("quickapps.projects_dir").and_then(|v| v.as_str()) {
             return PathBuf::from(dir);
         }
-        directories::UserDirs::new().map(|d| d.home_dir().join("Sites")).unwrap_or_else(|| self.paths.root().join("Sites"))
+        self.paths.sites_dir()
+    }
+
+    pub fn sites_dir(&self) -> PathBuf {
+        self.paths.sites_dir()
+    }
+
+    pub fn subscribe_project_events(&self) -> broadcast::Receiver<()> {
+        self.project_events.subscribe()
+    }
+
+    fn start_projects_watcher(self: &Arc<Self>) {
+        if !self.setting_bool("projects.watch", true) {
+            return;
+        }
+        let mut roots = self.string_list(PROJECT_ROOTS);
+        let default_root = self.paths.sites_dir().display().to_string();
+        if !roots.iter().any(|root| root.eq_ignore_ascii_case(&default_root)) {
+            roots.push(default_root);
+        }
+        let core = Arc::clone(self);
+        std::thread::spawn(move || {
+            let (events_tx, events_rx) = std::sync::mpsc::channel();
+            let Ok(mut debouncer) = new_debouncer(std::time::Duration::from_millis(1500), events_tx) else { return };
+            for root in roots {
+                let path = PathBuf::from(root);
+                if path.is_dir() {
+                    let _ = debouncer.watcher().watch(&path, RecursiveMode::NonRecursive);
+                }
+            }
+            while events_rx.recv().is_ok() {
+                if let Err(error) = core.sync_auto_domains() {
+                    tracing::warn!(%error, "automatic domains could not be synced after a project change");
+                }
+                let _ = core.project_events.send(());
+            }
+        });
     }
 
     pub fn plan_ctx(&self) -> PlanCtx {
@@ -382,7 +425,14 @@ impl Inner {
 
     fn string_list(&self, key: &str) -> Vec<String> {
         let s = self.settings.lock().unwrap();
-        s.get(key).and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()).unwrap_or_default()
+        let mut roots: Vec<String> = s.get(key).and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()).unwrap_or_default();
+        if key == PROJECT_ROOTS {
+            let default_root = self.paths.sites_dir().display().to_string();
+            if !roots.iter().any(|root| root.eq_ignore_ascii_case(&default_root)) {
+                roots.push(default_root);
+            }
+        }
+        roots
     }
 
     fn edit_string_list(&self, key: &str, edit: impl FnOnce(&mut Vec<String>)) -> Result<(), CoreError> {

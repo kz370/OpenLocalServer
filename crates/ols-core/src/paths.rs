@@ -132,6 +132,25 @@ impl AppPaths {
         self.root.join("quick-apps")
     }
 
+    pub fn sites_dir(&self) -> PathBuf {
+        if std::env::var(HOME_ENV_VAR).is_ok() {
+            return self.root.join("sites");
+        }
+        #[cfg(debug_assertions)]
+        {
+            return self.root.join("sites");
+        }
+        #[cfg(not(debug_assertions))]
+        {
+            let beside_exe = std::env::current_exe().ok().and_then(|exe| exe.parent().map(|d| d.join("sites")));
+            beside_exe.and_then(|dir| writable_dir(&dir)).unwrap_or_else(|| {
+                ProjectDirs::from("dev", "OpenLocalServer", "OpenLocalServer")
+                    .map(|d| d.data_dir().join("Sites"))
+                    .unwrap_or_else(|| self.root.join("Sites"))
+            })
+        }
+    }
+
     /// Database dumps, one folder per engine (§32, §34).
     pub fn backups_dir(&self) -> PathBuf {
         self.root.join("backups")
@@ -154,6 +173,7 @@ impl AppPaths {
             self.web_dir(),
             self.quick_apps_dir(),
             self.backups_dir(),
+            self.sites_dir(),
         ] {
             std::fs::create_dir_all(dir)?;
         }
@@ -214,5 +234,6 @@ mod tests {
         home.paths.ensure_dirs().unwrap();
         assert!(home.paths.logs_dir().is_dir());
         assert!(home.paths.data_dir().is_dir());
+        assert!(home.paths.sites_dir().is_dir());
     }
 }

@@ -679,7 +679,11 @@ impl Core {
         match command {
             C::Ping => Ok(R::Pong { version: env!("CARGO_PKG_VERSION").to_string() }),
             C::GetSetting { key } => {
-                let value = i.settings.lock().unwrap().get(&key).cloned();
+                let value = if key == "paths.sites_dir" {
+                    Some(serde_json::Value::String(i.sites_dir().display().to_string()))
+                } else {
+                    i.settings.lock().unwrap().get(&key).cloned()
+                };
                 Ok(R::Setting { value, key })
             }
             C::SetSetting { key, value } => {

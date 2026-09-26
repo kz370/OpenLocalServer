@@ -1,5 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Archive, FolderSearch, Gauge, Globe, Power, Settings2, ShieldCheck, Sparkles } from 'lucide-react'
+import { Archive, ExternalLink, FolderSearch, Gauge, Globe, Power, Settings2, ShieldCheck, Sparkles } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { AiCard } from '@/components/ai/AiSettings'
@@ -41,6 +41,8 @@ export function SettingsPage() {
   const [editors, setEditors] = useState<EditorInfo[]>([])
   const [projectsDir, setProjectsDir] = useState('')
   const [autoDomains, setAutoDomains] = useState(true)
+  const [watchSites, setWatchSites] = useState(true)
+  const [sitesDir, setSitesDir] = useState('')
   const [helper, setHelper] = useState<boolean | null>(null)
   const [version, setVersion] = useState('')
   const [saved, setSaved] = useState<string | null>(null)
@@ -58,6 +60,8 @@ export function SettingsPage() {
       setEditorId(cmd ? 'custom' : id || 'vscode')
     })
     void getString('quickapps.projects_dir').then(setProjectsDir)
+    void getString('paths.sites_dir').then(setSitesDir)
+    void runCommand({ type: 'get_setting', key: 'projects.watch' }).then((r) => r.type === 'setting' && setWatchSites(r.value !== false))
     void runCommand({ type: 'get_setting', key: 'domains.auto' }).then((r) => r.type === 'setting' && setAutoDomains(r.value !== false))
   }, [])
 
@@ -69,6 +73,7 @@ export function SettingsPage() {
     await runCommand({ type: 'set_setting', key: 'editor.command', value: editorId === 'custom' ? editor : '' })
     await runCommand({ type: 'set_setting', key: 'quickapps.projects_dir', value: projectsDir })
     await runCommand({ type: 'set_setting', key: 'domains.auto', value: autoDomains })
+    await runCommand({ type: 'set_setting', key: 'projects.watch', value: watchSites })
     if (autoDomains) await runCommand({ type: 'sync_auto_domains' })
     setSaved('Saved.')
     setTimeout(() => setSaved(null), 2500)
@@ -192,6 +197,14 @@ export function SettingsPage() {
                 <CardTitle className="text-sm">Sites and domains</CardTitle>
               </CardHeader>
               <CardContent>
+                <SettingRow stacked title="Default sites folder" hint="New projects use this folder when no custom location is set.">
+                  <div className="flex gap-2">
+                    <Input value={sitesDir} readOnly />
+                    <Button variant="secondary" onClick={() => run('open', () => runCommand({ type: 'open_path', path: sitesDir }))}>
+                      <ExternalLink /> Open
+                    </Button>
+                  </div>
+                </SettingRow>
                 <SettingRow stacked title="Where new projects are created" hint="Quick Apps default to this folder. Leave blank for Sites in your user folder.">
                   <div className="flex gap-2">
                     <Input value={projectsDir} onChange={(e) => setProjectsDir(e.target.value)} placeholder="C:\Users\you\Sites" />
@@ -206,6 +219,7 @@ export function SettingsPage() {
                   title="Create domains automatically"
                   hint="Like Laragon: every folder in a scanned projects folder gets <folder>.test with HTTPS. Domains you delete stay deleted."
                 />
+                <SwitchRow checked={watchSites} onChange={setWatchSites} title="Watch sites folder" hint="New and removed project folders are detected automatically." />
               </CardContent>
             </Card>
           )}

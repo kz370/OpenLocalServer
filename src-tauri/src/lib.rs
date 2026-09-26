@@ -279,6 +279,14 @@ pub fn run() {
                 }
             });
 
+            let projects_handle = app.handle().clone();
+            let mut project_events = core.inner().subscribe_project_events();
+            tauri::async_runtime::spawn(async move {
+                while project_events.recv().await.is_ok() {
+                    let _ = projects_handle.emit("projects-changed", ());
+                }
+            });
+
             // Quick App runs: notify once when each finishes.
             let run_handle = app.handle().clone();
             let run_core = core.clone();

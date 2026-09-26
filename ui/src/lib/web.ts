@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { listen } from '@tauri-apps/api/event'
 
 import {
   type ApplyReport,
@@ -52,6 +53,16 @@ export function useWeb() {
 
   usePoll(() => refresh().catch(() => undefined), 4000)
   useEffect(() => {
+    let alive = true
+    let unlisten: (() => void) | undefined
+    void listen('projects-changed', () => {
+      if (!alive) return
+      void refreshProjects()
+      void refresh()
+    }).then((dispose) => {
+      if (alive) unlisten = dispose
+      else dispose()
+    })
     void refreshProjects()
     // Laragon-style: new folders in your projects folder show up as <name>.test.
     runCommand({ type: 'sync_auto_domains' })
@@ -64,6 +75,10 @@ export function useWeb() {
     runCommand({ type: 'list_custom_installs' }).then(
       (r) => r.type === 'custom_installs' && setCustomPhp(r.entries.filter((c) => c.id === 'php' && c.label).map((c) => c.label)),
     )
+    return () => {
+      alive = false
+      unlisten?.()
+    }
   }, [])
 
   async function apply(overwrite: string[] = []) {

@@ -34,6 +34,8 @@ hyper-util = { version = "0.1", features = ["tokio"] }
 http-body-util = "0.1"
 bytes = "1"
 minisign-verify = "0.3.0"
+notify = "8"
+notify-debouncer-mini = "0.7"
 
 [dev-dependencies]
 base64 = "0.23.1"
