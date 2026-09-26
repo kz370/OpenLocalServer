@@ -279,6 +279,9 @@ enum TestCmd {
         /// A ready-made or saved test plan (smoke, load, stress, spike, soak, ...) to write as the script when there is none.
         #[arg(long, default_value = "smoke")]
         profile: String,
+        /// A variable for the script, NAME=VALUE (repeat for more). Read in the script as __ENV.NAME.
+        #[arg(long = "var")]
+        vars: Vec<String>,
         /// Allow testing a public tunnel address.
         #[arg(long)]
         public: bool,
@@ -710,7 +713,7 @@ fn run(ctx: &Ctx, cmd: Cmd) -> R<()> {
                 }
             }
         }
-        Cmd::Test(TestCmd::Load { project, script, site, profile, public }) => load_test(ctx, project, script, site, profile, public)?,
+        Cmd::Test(TestCmd::Load { project, script, site, profile, vars, public }) => load_test(ctx, project, script, site, profile, vars, public)?,
         // @@cli-arms
     }
     Ok(())
@@ -1190,7 +1193,7 @@ Install it with: ols update install", update.downloaded.unwrap_or_default());
     }
     Ok(())
 }
-fn load_test(ctx: &Ctx, project: Option<String>, script: Option<String>, site: Option<String>, profile: String, public: bool) -> R<()> {
+fn load_test(ctx: &Ctx, project: Option<String>, script: Option<String>, site: Option<String>, profile: String, vars: Vec<String>, public: bool) -> R<()> {
     let id = match project {
         Some(p) => ctx.project_id(&p)?,
         None => ctx.project_for_path(Path::new("."))?.0,
@@ -1199,12 +1202,22 @@ fn load_test(ctx: &Ctx, project: Option<String>, script: Option<String>, site: O
     if !overview.k6.installed {
         return Err("k6 isn't installed: run `ols runtime install k6`".into());
     }
+    let mut env: Vec<(String, String)> = Vec::new();
+    for v in &vars {
+        let (k, val) = v.split_once('=').ok_or_else(|| format!("--var wants NAME=VALUE, not {v}"))?;
+        env.push((k.to_string(), val.to_string()));
+    }
     let script = match script {
         Some(s) => s,
         None => match overview.scripts.as_slice() {
             [] => {
                 let CoreResponse::LoadProfiles { profiles } = ctx.call(CoreCommand::LoadListProfiles)? else { return Err("unexpected reply".into()) };
                 let plan = profiles.into_iter().find(|p| p.id == profile).ok_or_else(|| format!("no test plan named {profile}"))?;
+                for v in plan.variables.iter().filter(|v| !v.value.is_empty()) {
+                    if !env.iter().any(|(k, _)| *k == v.name) {
+                        env.push((v.name.clone(), v.value.clone()));
+                    }
+                }
                 let CoreResponse::Text { text } = ctx.call(CoreCommand::LoadGenerate { project_id: id.clone(), profile: plan, name: None })? else { return Err("unexpected reply".into()) };
                 println!("No script yet; wrote the {profile} test: .openlocalserver/k6/{text}");
                 text
@@ -1213,7 +1226,7 @@ fn load_test(ctx: &Ctx, project: Option<String>, script: Option<String>, site: O
             many => return Err(format!("choose a script: {}", many.iter().map(|s| s.name.as_str()).collect::<Vec<_>>().join(", "))),
         },
     };
-    let CoreResponse::LoadRun { run } = ctx.call(CoreCommand::LoadRun { project_id: id, script: script.clone(), target: site, confirm_public: public })? else { return Err("unexpected reply".into()) };
+    let CoreResponse::LoadRun { run } = ctx.call(CoreCommand::LoadRun { project_id: id, script: script.clone(), target: site, confirm_public: public, env })? else { return Err("unexpected reply".into()) };
     println!("Running {script} against {} ...", run.target);
     let run_id = run.id;
     let last = loop {

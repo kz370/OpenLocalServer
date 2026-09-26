@@ -438,7 +438,7 @@ pub enum CoreCommand {
     /// Writes the plan's script into the project (`name` defaults to the plan's id); returns the file name.
     LoadGenerate { project_id: String, profile: crate::loadtest::LoadProfile, name: Option<String> },
     /// `target` is a site's hostname (default: the project's first site). A public tunnel needs `confirm_public`.
-    LoadRun { project_id: String, script: String, target: Option<String>, confirm_public: bool },
+    LoadRun { project_id: String, script: String, target: Option<String>, confirm_public: bool, env: Vec<(String, String)> },
     LoadStatus { run_id: String },
     LoadStop { run_id: String },
     LoadRuns { project_id: String },
@@ -1578,9 +1578,9 @@ impl Core {
             C::LoadSaveProfile { profile } => Ok(R::LoadProfiles { profiles: i.load_save_profile(profile)? }),
             C::LoadDeleteProfile { id } => Ok(R::LoadProfiles { profiles: i.load_delete_profile(&id)? }),
             C::LoadGenerate { project_id, profile, name } => Ok(R::Text { text: i.load_generate(&project_id, &profile, name.as_deref())? }),
-            C::LoadRun { project_id, script, target, confirm_public } => {
+            C::LoadRun { project_id, script, target, confirm_public, env } => {
                 tracing::info!(command = "load_run", project = %project_id, script = %script, public = confirm_public);
-                Ok(R::LoadRun { run: Box::new(i.load_run(&project_id, &script, target.as_deref(), confirm_public)?) })
+                Ok(R::LoadRun { run: Box::new(i.load_run(&project_id, &script, target.as_deref(), confirm_public, &env)?) })
             }
             C::LoadStatus { run_id } => Ok(R::LoadRun { run: Box::new(i.load_status(&run_id)?) }),
             C::LoadStop { run_id } => Ok(R::LoadRun { run: Box::new(i.load_stop(&run_id)?) }),

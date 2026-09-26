@@ -1,4 +1,4 @@
-import { Activity, FileCode2, Flame, Play, Plus, SlidersHorizontal, Timer, Trash2, TrendingUp, X, Zap } from 'lucide-react'
+import { Activity, Braces, Eye, EyeOff, FileCode2, Flame, Play, Plus, SlidersHorizontal, Timer, Trash2, TrendingUp, X, Zap } from 'lucide-react'
 import { type ReactNode, useCallback, useEffect, useState } from 'react'
 
 import { CodeEditor } from '@/components/CodeEditor'
@@ -9,7 +9,7 @@ import { TechIcon } from '@/components/TechIcon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
-import { Select } from '@/components/ui/form'
+import { Select, Textarea } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { type LoadOverview, type LoadProfile, type LoadRun, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
@@ -80,7 +80,7 @@ function NumberInput({ value, onChange, min = 0, max, step = 1, placeholder, cla
       step={step}
       value={value ?? ''}
       placeholder={placeholder}
-      className={cn('h-9 tabular-nums', className)}
+      className={cn('h-8 tabular-nums', className)}
       onChange={(e) => onChange(e.target.value === '' ? null : num(e.target.value))}
     />
   )
@@ -152,6 +152,8 @@ export function LoadPanel({ projectId }: { projectId: string }) {
   const [content, setContent] = useState('')
   const [dirty, setDirty] = useState(false)
   const [newScript, setNewScript] = useState<string | null>(null)
+  const [bodyOpen, setBodyOpen] = useState<number[]>([])
+  const [showSecrets, setShowSecrets] = useState(false)
   const { busy, error, setError, run: act } = useAction()
 
   const load = useCallback(async () => {
@@ -199,12 +201,16 @@ export function LoadPanel({ projectId }: { projectId: string }) {
   const running = run?.state === 'running'
   const chosen = overview?.sites.find((s) => s.host === site)
   const peak = draft ? peakOf(draft) : 0
+  // Values go to k6 when the test runs; they are never written into a script.
+  const env: [string, string][] = (draft?.variables ?? []).filter((v) => v.name.trim() && v.value).map((v) => [v.name.trim(), v.value])
   const sameAsBuiltin = draft ? profiles.some((p) => p.builtin && p.id === draft.id && p.name === draft.name) : false
 
   const change = (patch: Partial<LoadProfile>) => setDraft((d) => (d ? { ...d, ...patch } : d))
   const setStage = (i: number, patch: Partial<LoadProfile['stages'][number]>) => draft && change({ stages: draft.stages.map((s, j) => (j === i ? { ...s, ...patch } : s)) })
   const setRequest = (i: number, patch: Partial<LoadProfile['requests'][number]>) => draft && change({ requests: draft.requests.map((r, j) => (j === i ? { ...r, ...patch } : r)) })
   // Changing the peak scales every stage, so the shape stays the same.
+  const setHeader = (i: number, patch: Partial<LoadProfile['headers'][number]>) => draft && change({ headers: draft.headers.map((h, j) => (j === i ? { ...h, ...patch } : h)) })
+  const setVariable = (i: number, patch: Partial<LoadProfile['variables'][number]>) => draft && change({ variables: draft.variables.map((v, j) => (j === i ? { ...v, ...patch } : v)) })
   const setPeak = (n: number | null) => {
     if (!draft || n === null) return
     const now = Math.max(1, peakOf(draft))
@@ -222,7 +228,7 @@ export function LoadPanel({ projectId }: { projectId: string }) {
     await act('run', async () => {
       const name = await runCommand({ type: 'load_generate', project_id: projectId, profile: draft, name: null })
       if (name.type !== 'text') return
-      const r = await runCommand({ type: 'load_run', project_id: projectId, script: name.text, target: chosen.host, confirm_public: chosen.public })
+      const r = await runCommand({ type: 'load_run', project_id: projectId, script: name.text, target: chosen.host, confirm_public: chosen.public, env })
       if (r.type === 'load_run') setRun(r.run)
       await load()
     })
@@ -234,7 +240,7 @@ export function LoadPanel({ projectId }: { projectId: string }) {
     await act('runscript', async () => {
       if (dirty) await runCommand({ type: 'load_save_script', project_id: projectId, name: script, content })
       setDirty(false)
-      const r = await runCommand({ type: 'load_run', project_id: projectId, script, target: chosen.host, confirm_public: chosen.public })
+      const r = await runCommand({ type: 'load_run', project_id: projectId, script, target: chosen.host, confirm_public: chosen.public, env })
       if (r.type === 'load_run') setRun(r.run)
     })
   }
@@ -245,8 +251,8 @@ export function LoadPanel({ projectId }: { projectId: string }) {
   const [a, b] = picked
   const delta = (x: number, y: number, unit = '') => `${y - x >= 0 ? '+' : ''}${unit === 'ms' ? (y - x).toFixed(0) : (y - x).toFixed(2)}${unit ? ' ' + unit : ''}`
   const siteSelect = (
-    <L label="Run against" className="w-64">
-      <Select value={site} onChange={(e) => setSite(e.target.value)} className="h-9">
+    <L label="Run against">
+      <Select value={site} onChange={(e) => setSite(e.target.value)} className="h-8">
         {overview.sites.map((s) => (
           <option key={s.host} value={s.host}>
             {s.host}
@@ -257,13 +263,13 @@ export function LoadPanel({ projectId }: { projectId: string }) {
     </L>
   )
   const stopButton = running ? (
-    <Button className="h-9" variant="destructive" onClick={() => runCommand({ type: 'load_stop', run_id: run!.id }).then((r) => r.type === 'load_run' && setRun(r.run))}>
+    <Button className="h-8" variant="destructive" onClick={() => runCommand({ type: 'load_stop', run_id: run!.id }).then((r) => r.type === 'load_run' && setRun(r.run))}>
       <StopIcon /> Stop
     </Button>
   ) : null
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       <ErrorCard error={error} onDismiss={() => setError(null)} />
       <div className="flex flex-wrap items-center gap-2">
         <TechIcon id="k6" className="size-5" />
@@ -273,38 +279,32 @@ export function LoadPanel({ projectId }: { projectId: string }) {
       {!overview.k6.installed && <p className="text-sm text-muted-foreground">Install k6 from the Runtimes page (or `ols runtime install k6`), then come back.</p>}
       {overview.sites.length === 0 && <p className="text-sm text-muted-foreground">This project has no site yet. Give it a domain on the Sites page; a load test only runs against the project's own sites.</p>}
 
-      <section className="flex flex-col gap-3">
+      <section className="flex flex-col gap-2">
         <h4 className="text-sm font-semibold">Choose a test</h4>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
           {profiles.map((p) => {
             const selected = draft.id === p.id && draft.builtin === p.builtin
             return (
-              <div key={p.id} className={cn('group relative rounded-lg border p-3 transition-colors', selected ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40 hover:bg-accent/40')}>
-                <button className="flex w-full flex-col gap-2 text-left" onClick={() => setDraft(structuredClone(p))}>
-                  <div className="flex items-center gap-2">
-                    <span className="flex size-8 items-center justify-center rounded-md bg-muted text-muted-foreground [&>svg]:size-4">{ICONS[p.icon] ?? ICONS.custom}</span>
-                    <span className="font-medium">{p.name}</span>
-                    {!p.builtin && <Badge variant="outline">yours</Badge>}
+              <div key={p.id} className={cn('group relative rounded-md border px-2.5 py-2 transition-colors', selected ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40 hover:bg-accent/40')}>
+                <button className="flex w-full flex-col gap-1 text-left" title={p.description || 'Your own test plan.'} onClick={() => setDraft(structuredClone(p))}>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-muted-foreground [&>svg]:size-3.5">{ICONS[p.icon] ?? ICONS.custom}</span>
+                    <span className="truncate text-sm font-medium">{p.name}</span>
                   </div>
-                  <p className="line-clamp-2 min-h-[2.5rem] text-xs text-muted-foreground">{p.description || 'Your own test plan.'}</p>
-                  <Shape profile={p} className={selected ? 'text-primary' : 'text-muted-foreground'} />
-                  <div className="flex gap-3 text-xs text-muted-foreground">
-                    <span>up to {peakOf(p)} users</span>
-                    <span>{nice(totalOf(p))}</span>
-                    <span>
-                      {p.requests.length} path{p.requests.length === 1 ? '' : 's'}
-                    </span>
+                  <Shape profile={p} className={cn('h-6', selected ? 'text-primary' : 'text-muted-foreground')} />
+                  <div className="truncate text-[11px] text-muted-foreground">
+                    {peakOf(p)} users · {nice(totalOf(p))} · {p.requests.length} path{p.requests.length === 1 ? '' : 's'}
                   </div>
                 </button>
                 {!p.builtin && (
                   <button
-                    className="absolute right-2 top-2 rounded p-1 text-muted-foreground opacity-0 hover:bg-accent hover:text-destructive group-hover:opacity-100"
+                    className="absolute right-1 top-1 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-accent hover:text-destructive group-hover:opacity-100"
                     title="Delete this test"
                     onClick={async () => {
                       if (await confirmAction(`Delete the test "${p.name}"?`, 'Delete test')) await act('delp', async () => { const r = await runCommand({ type: 'load_delete_profile', id: p.id }); if (r.type === 'load_profiles') setProfiles(r.profiles) })
                     }}
                   >
-                    <Trash2 className="size-4" />
+                    <Trash2 className="size-3.5" />
                   </button>
                 )}
               </div>
@@ -313,91 +313,156 @@ export function LoadPanel({ projectId }: { projectId: string }) {
         </div>
       </section>
 
-      <section className="flex flex-col gap-5 rounded-lg border border-border p-4">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <L label="Name" className="sm:col-span-2">
-            <Input className="h-9" value={draft.name} onChange={(e) => change({ name: e.target.value })} />
+      <section className="flex flex-col gap-3 rounded-lg border border-border p-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_repeat(3,minmax(0,1fr))]">
+          <L label="Name">
+            <Input className="h-8" value={draft.name} onChange={(e) => change({ name: e.target.value })} />
           </L>
           <L label="Users at peak" hint={`max ${cap}`}>
             <NumberInput value={peak} min={1} max={cap} onChange={setPeak} />
           </L>
-          <L label="Pause between rounds" hint="seconds">
+          <L label="Pause between rounds" hint="sec">
             <NumberInput value={draft.think_time_s} step={0.5} max={60} onChange={(v) => change({ think_time_s: v ?? 0 })} />
           </L>
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">Stages: users ramp to each target over its duration</span>
-            <Button size="sm" variant="ghost" disabled={draft.stages.length >= 20} onClick={() => change({ stages: [...draft.stages, { duration_s: 30, target: peak || 10 }] })}>
-              <Plus /> Add stage
-            </Button>
-          </div>
-          {draft.stages.map((s, i) => (
-            <div key={i} className="grid grid-cols-[1.5rem_1fr_1fr_2.25rem] items-center gap-2">
-              <span className="text-xs text-muted-foreground">{i + 1}</span>
-              <div className="flex items-center gap-2">
-                <NumberInput value={s.duration_s} min={1} max={14400} onChange={(v) => setStage(i, { duration_s: Math.max(1, v ?? 1) })} />
-                <span className="text-xs text-muted-foreground">sec</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <NumberInput value={s.target} max={cap} onChange={(v) => setStage(i, { target: Math.min(v ?? 0, cap) })} />
-                <span className="text-xs text-muted-foreground">users</span>
-              </div>
-              <Button size="icon" variant="ghost" className="size-9" disabled={draft.stages.length <= 1} title="Remove stage" onClick={() => change({ stages: draft.stages.filter((_, j) => j !== i) })}>
-                <X />
-              </Button>
-            </div>
-          ))}
-          <Shape profile={draft} className="text-primary" />
-          <span className="text-xs text-muted-foreground">
-            {nice(totalOf(draft))} in total, up to {peak} users.
-          </span>
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">Paths to test: each user visits them in order</span>
-            <Button size="sm" variant="ghost" disabled={draft.requests.length >= 20} onClick={() => change({ requests: [...draft.requests, { method: 'GET', path: '/' }] })}>
-              <Plus /> Add path
-            </Button>
-          </div>
-          {draft.requests.map((r, i) => (
-            <div key={i} className="grid grid-cols-[6rem_1fr_2.25rem] items-center gap-2">
-              <Select className="h-9" value={r.method} onChange={(e) => setRequest(i, { method: e.target.value })}>
-                {METHODS.map((m) => (
-                  <option key={m}>{m}</option>
-                ))}
-              </Select>
-              <Input className="h-9 font-mono text-sm" value={r.path} placeholder="/checkout" onChange={(e) => setRequest(i, { path: e.target.value.startsWith('/') || e.target.value === '' ? e.target.value : `/${e.target.value}` })} />
-              <Button size="icon" variant="ghost" className="size-9" disabled={draft.requests.length <= 1} title="Remove path" onClick={() => change({ requests: draft.requests.filter((_, j) => j !== i) })}>
-                <X />
-              </Button>
-            </div>
-          ))}
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <span className="text-xs font-medium text-muted-foreground">The test passes when… (leave a box empty to skip that check)</span>
-          <div className="grid gap-4 sm:grid-cols-3">
-            <L label="p95 response under" hint="ms">
-              <NumberInput value={draft.thresholds.p95_ms} min={1} placeholder="off" onChange={(v) => change({ thresholds: { ...draft.thresholds, p95_ms: v } })} />
-            </L>
-            <L label="p99 response under" hint="ms">
-              <NumberInput value={draft.thresholds.p99_ms} min={1} placeholder="off" onChange={(v) => change({ thresholds: { ...draft.thresholds, p99_ms: v } })} />
-            </L>
-            <L label="Failed requests under" hint="percent">
-              <NumberInput value={draft.thresholds.error_rate_pct} step={0.5} max={100} placeholder="off" onChange={(v) => change({ thresholds: { ...draft.thresholds, error_rate_pct: v } })} />
-            </L>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-end justify-between gap-3 border-t border-border pt-4">
           {siteSelect}
-          <div className="flex flex-wrap items-center gap-2">
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-muted-foreground">Stages · ramp to each target</span>
+              <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" disabled={draft.stages.length >= 20} onClick={() => change({ stages: [...draft.stages, { duration_s: 30, target: peak || 10 }] })}>
+                <Plus /> Add
+              </Button>
+            </div>
+            {draft.stages.map((s, i) => (
+              <div key={i} className="grid grid-cols-[1rem_1fr_1fr_2rem] items-center gap-1.5">
+                <span className="text-[11px] text-muted-foreground">{i + 1}</span>
+                <div className="flex items-center gap-1.5">
+                  <NumberInput value={s.duration_s} min={1} max={14400} onChange={(v) => setStage(i, { duration_s: Math.max(1, v ?? 1) })} />
+                  <span className="text-[11px] text-muted-foreground">s</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <NumberInput value={s.target} max={cap} onChange={(v) => setStage(i, { target: Math.min(v ?? 0, cap) })} />
+                  <span className="text-[11px] text-muted-foreground">users</span>
+                </div>
+                <Button size="icon" variant="ghost" className="size-8" disabled={draft.stages.length <= 1} title="Remove stage" onClick={() => change({ stages: draft.stages.filter((_, j) => j !== i) })}>
+                  <X />
+                </Button>
+              </div>
+            ))}
+            <div className="flex items-center gap-2">
+              <Shape profile={draft} className="h-8 flex-1 text-primary" />
+              <span className="shrink-0 text-[11px] text-muted-foreground">
+                {nice(totalOf(draft))} · up to {peak}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-muted-foreground">Paths · each user visits them in order</span>
+              <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" disabled={draft.requests.length >= 20} onClick={() => change({ requests: [...draft.requests, { method: 'GET', path: '/', body: null }] })}>
+                <Plus /> Add
+              </Button>
+            </div>
+            {draft.requests.map((r, i) => {
+              const canBody = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(r.method)
+              return (
+                <div key={i} className="flex flex-col gap-1">
+                  <div className="grid grid-cols-[5.5rem_1fr_2rem_2rem] items-center gap-1.5">
+                    <Select className="h-8" value={r.method} onChange={(e) => setRequest(i, { method: e.target.value, body: ['POST', 'PUT', 'PATCH', 'DELETE'].includes(e.target.value) ? r.body : null })}>
+                      {METHODS.map((m) => (
+                        <option key={m}>{m}</option>
+                      ))}
+                    </Select>
+                    <Input className="h-8 font-mono text-sm" value={r.path} placeholder="/checkout" onChange={(e) => setRequest(i, { path: e.target.value.startsWith('/') || e.target.value === '' ? e.target.value : `/${e.target.value}` })} />
+                    <Button
+                      size="icon"
+                      variant={r.body ? 'secondary' : 'ghost'}
+                      className="size-8"
+                      disabled={!canBody}
+                      title={canBody ? 'Request body' : 'Only POST, PUT, PATCH and DELETE carry a body'}
+                      onClick={() => setBodyOpen(bodyOpen.includes(i) ? bodyOpen.filter((x) => x !== i) : [...bodyOpen, i])}
+                    >
+                      <Braces />
+                    </Button>
+                    <Button size="icon" variant="ghost" className="size-8" disabled={draft.requests.length <= 1} title="Remove path" onClick={() => { change({ requests: draft.requests.filter((_, j) => j !== i) }); setBodyOpen([]) }}>
+                      <X />
+                    </Button>
+                  </div>
+                  {canBody && (bodyOpen.includes(i) || !!r.body) && (
+                    <Textarea rows={2} className="font-mono text-xs" placeholder={'{"email": "a@b.test", "token": "{{TOKEN}}"}'} value={r.body ?? ''} onChange={(e) => setRequest(i, { body: e.target.value || null })} />
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-muted-foreground">Headers · sent with every request</span>
+              <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" disabled={draft.headers.length >= 30} onClick={() => change({ headers: [...draft.headers, { name: '', value: '' }] })}>
+                <Plus /> Add
+              </Button>
+            </div>
+            {draft.headers.length === 0 && <p className="text-[11px] text-muted-foreground">None. Add Authorization, Accept, a cookie…</p>}
+            {draft.headers.map((h, i) => (
+              <div key={i} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)_2rem] items-center gap-1.5">
+                <Input className="h-8 text-sm" value={h.name} placeholder="Authorization" onChange={(e) => setHeader(i, { name: e.target.value })} />
+                <Input className="h-8 font-mono text-sm" value={h.value} placeholder="Bearer {{TOKEN}}" onChange={(e) => setHeader(i, { value: e.target.value })} />
+                <Button size="icon" variant="ghost" className="size-8" title="Remove header" onClick={() => change({ headers: draft.headers.filter((_, j) => j !== i) })}>
+                  <X />
+                </Button>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-muted-foreground">Variables · use as {'{{NAME}}'} in a header or body</span>
+              <div className="flex items-center">
+                <Button size="icon" variant="ghost" className="size-6" title={showSecrets ? 'Hide secret values' : 'Show secret values'} onClick={() => setShowSecrets(!showSecrets)}>
+                  {showSecrets ? <EyeOff /> : <Eye />}
+                </Button>
+                <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" disabled={draft.variables.length >= 30} onClick={() => change({ variables: [...draft.variables, { name: '', value: '', secret: true }] })}>
+                  <Plus /> Add
+                </Button>
+              </div>
+            </div>
+            {draft.variables.length === 0 && <p className="text-[11px] text-muted-foreground">None. Add TOKEN (a secret) to keep a token out of the script.</p>}
+            {draft.variables.map((v, i) => (
+              <div key={i} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)_auto_2rem] items-center gap-1.5">
+                <Input className="h-8 font-mono text-sm uppercase" value={v.name} placeholder="TOKEN" onChange={(e) => setVariable(i, { name: e.target.value.replace(/[^A-Za-z0-9_]/g, '').toUpperCase() })} />
+                <Input className="h-8 font-mono text-sm" type={v.secret && !showSecrets ? 'password' : 'text'} value={v.value} placeholder="value" autoComplete="off" onChange={(e) => setVariable(i, { value: e.target.value })} />
+                <label className="flex items-center gap-1 text-[11px] text-muted-foreground" title="Secret values are kept in the system keyring, not in the saved test or the script">
+                  <input type="checkbox" checked={v.secret} onChange={(e) => setVariable(i, { secret: e.target.checked })} /> secret
+                </label>
+                <Button size="icon" variant="ghost" className="size-8" title="Remove variable" onClick={() => change({ variables: draft.variables.filter((_, j) => j !== i) })}>
+                  <X />
+                </Button>
+              </div>
+            ))}
+            {draft.variables.length > 0 && <p className="text-[11px] text-muted-foreground">Handed to k6 when the test runs; never written into the script. Custom scripts read them as __ENV.NAME.</p>}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-3 border-t border-border pt-3">
+          <L label="Pass if p95 under" hint="ms" className="w-28">
+            <NumberInput value={draft.thresholds.p95_ms} min={1} placeholder="off" onChange={(v) => change({ thresholds: { ...draft.thresholds, p95_ms: v } })} />
+          </L>
+          <L label="p99 under" hint="ms" className="w-28">
+            <NumberInput value={draft.thresholds.p99_ms} min={1} placeholder="off" onChange={(v) => change({ thresholds: { ...draft.thresholds, p99_ms: v } })} />
+          </L>
+          <L label="Failed under" hint="%" className="w-28">
+            <NumberInput value={draft.thresholds.error_rate_pct} step={0.5} max={100} placeholder="off" onChange={(v) => change({ thresholds: { ...draft.thresholds, error_rate_pct: v } })} />
+          </L>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
             <Button
               variant="secondary"
-              className="h-9"
+              className="h-8"
               disabled={busy !== null || sameAsBuiltin || !draft.name.trim()}
               title={sameAsBuiltin ? 'Change the name to save your own copy' : 'Keep this test in your list'}
               onClick={() =>
@@ -414,17 +479,19 @@ export function LoadPanel({ projectId }: { projectId: string }) {
             </Button>
             {stopButton}
             {!running && (
-              <Button className="h-9" disabled={busy !== null || !overview.k6.installed || !chosen} onClick={runTest}>
+              <Button className="h-8" disabled={busy !== null || !overview.k6.installed || !chosen} onClick={runTest}>
                 {busy === 'run' ? <Spinner /> : <Play />} Run test
               </Button>
             )}
           </div>
         </div>
-        {sameAsBuiltin && <p className="-mt-3 text-xs text-muted-foreground">Change the name to save your own copy of this ready-made test.</p>}
+        <p className="-mt-1 text-[11px] text-muted-foreground">
+          Leave a limit empty to skip that check.{sameAsBuiltin ? ' Change the name to save your own copy of this ready-made test.' : ''}
+        </p>
       </section>
 
       {run && (
-        <section className="flex flex-col gap-2 rounded-lg border border-border p-4">
+        <section className="flex flex-col gap-2 rounded-lg border border-border p-3">
           <div className="flex items-center gap-2 text-sm">
             <Badge variant={STATE[run.state]?.variant ?? 'outline'}>{STATE[run.state]?.label ?? run.state}</Badge>
             <span className="text-muted-foreground">
@@ -435,7 +502,7 @@ export function LoadPanel({ projectId }: { projectId: string }) {
         </section>
       )}
 
-      <section className="flex flex-col gap-3">
+      <section className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h4 className="text-sm font-semibold">Your scripts</h4>
@@ -460,15 +527,15 @@ export function LoadPanel({ projectId }: { projectId: string }) {
               <div className="flex flex-wrap items-end justify-between gap-3">
                 {siteSelect}
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button variant="ghost" className="h-9" disabled={busy !== null || !dirty} onClick={() => act('save', async () => { await runCommand({ type: 'load_save_script', project_id: projectId, name: script, content }); setDirty(false) })}>
+                  <Button variant="ghost" className="h-8" disabled={busy !== null || !dirty} onClick={() => act('save', async () => { await runCommand({ type: 'load_save_script', project_id: projectId, name: script, content }); setDirty(false) })}>
                     Save
                   </Button>
-                  <Button variant="ghost" className="h-9" disabled={busy !== null} onClick={async () => { if (await confirmAction(`Delete ${script}?`, 'Delete script')) await act('del', async () => { await runCommand({ type: 'load_delete_script', project_id: projectId, name: script }); setScript(null); await load() }) }}>
+                  <Button variant="ghost" className="h-8" disabled={busy !== null} onClick={async () => { if (await confirmAction(`Delete ${script}?`, 'Delete script')) await act('del', async () => { await runCommand({ type: 'load_delete_script', project_id: projectId, name: script }); setScript(null); await load() }) }}>
                     <Trash2 /> Delete
                   </Button>
                   {stopButton}
                   {!running && (
-                    <Button className="h-9" disabled={busy !== null || !overview.k6.installed || !chosen} onClick={runScript}>
+                    <Button className="h-8" disabled={busy !== null || !overview.k6.installed || !chosen} onClick={runScript}>
                       {busy === 'runscript' ? <Spinner /> : <Play />} Run script
                     </Button>
                   )}
@@ -569,7 +636,7 @@ export function LoadPanel({ projectId }: { projectId: string }) {
         }
       >
         <L label="Script name">
-          <Input className="h-9" value={newScript ?? ''} onChange={(e) => setNewScript(e.target.value)} autoFocus />
+          <Input className="h-8" value={newScript ?? ''} onChange={(e) => setNewScript(e.target.value)} autoFocus />
         </L>
       </Dialog>
     </div>

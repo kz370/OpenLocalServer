@@ -30,6 +30,10 @@ use crate::error::CoreError;
 
 pub const DEFAULT_MAX_VUS: u32 = 200;
 
+fn secret_key(profile: &str, name: &str) -> String {
+    format!("loadtest:{profile}:{name}")
+}
+
 fn fail(msg: impl Into<String>) -> CoreError {
     CoreError::failed("The load test couldn't run.", msg)
 }
@@ -176,6 +180,26 @@ pub struct Stage {
 pub struct PlannedRequest {
     pub method: String,
     pub path: String,
+    /// Sent as the request body (POST, PUT, PATCH, DELETE). May use `{{NAME}}` variables.
+    #[serde(default)]
+    pub body: Option<String>,
+}
+
+/// A header sent with every request. The value may use `{{NAME}}` variables, e.g. `Bearer {{TOKEN}}`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Header {
+    pub name: String,
+    pub value: String,
+}
+
+/// A value the script reads with `__ENV.NAME`. It is handed to k6 when the test runs and is never written into the
+/// script; a secret one (a token, a password) is kept in the system keyring rather than in the plan's file.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Variable {
+    pub name: String,
+    pub value: String,
+    #[serde(default)]
+    pub secret: bool,
 }
 
 /// Pass criteria; a blank one isn't checked.
@@ -205,7 +229,42 @@ pub struct LoadProfile {
     pub think_time_s: f64,
     pub requests: Vec<PlannedRequest>,
     #[serde(default)]
+    pub headers: Vec<Header>,
+    #[serde(default)]
+    pub variables: Vec<Variable>,
+    #[serde(default)]
     pub thresholds: Thresholds,
+}
+
+fn var_name_ok(n: &str) -> bool {
+    !n.is_empty() && n.len() <= 40 && n.chars().enumerate().all(|(i, c)| c == '_' || c.is_ascii_alphabetic() || (i > 0 && c.is_ascii_digit()))
+}
+
+fn header_name_ok(n: &str) -> bool {
+    !n.is_empty() && n.len() <= 60 && n.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') && !["host", "content-length", "connection", "transfer-encoding"].contains(&n.to_ascii_lowercase().as_str())
+}
+
+fn placeholders() -> &'static Regex {
+    static R: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+    R.get_or_init(|| Regex::new(r"\{\{([^{}]*)\}\}").unwrap())
+}
+
+/// A JavaScript expression for text that may hold `{{NAME}}`: literal parts as strings, names as `__ENV.NAME`.
+fn js_value(text: &str) -> String {
+    let mut parts = Vec::new();
+    let mut last = 0;
+    for m in placeholders().captures_iter(text) {
+        let whole = m.get(0).unwrap();
+        if whole.start() > last {
+            parts.push(serde_json::to_string(&text[last..whole.start()]).unwrap_or_default());
+        }
+        parts.push(format!("__ENV.{}", m[1].trim()));
+        last = whole.end();
+    }
+    if last < text.len() || parts.is_empty() {
+        parts.push(serde_json::to_string(&text[last..]).unwrap_or_default());
+    }
+    parts.join(" + ")
 }
 
 const METHODS: &[&str] = &["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"];
@@ -254,6 +313,50 @@ impl LoadProfile {
                 return Err(format!("'{}' isn't a usable path: start with / and use plain URL characters", r.path));
             }
         }
+        let mut seen = std::collections::HashSet::new();
+        if self.variables.len() > 30 {
+            return Err("at most 30 variables".into());
+        }
+        for v in &self.variables {
+            if !var_name_ok(&v.name) || v.name == "BASE_URL" || !seen.insert(v.name.as_str()) {
+                return Err(format!("variable '{}': use letters, digits and _, not starting with a digit, once each (BASE_URL is taken)", v.name));
+            }
+            if v.value.len() > 4000 || v.value.contains(['\r', '\n', '\0']) {
+                return Err(format!("variable '{}': the value must be one line of up to 4000 characters", v.name));
+            }
+        }
+        let refs_ok = |text: &str, what: &str| -> Result<(), String> {
+            for m in placeholders().captures_iter(text) {
+                let n = m[1].trim();
+                if !self.variables.iter().any(|v| v.name == n) {
+                    return Err(format!("{what} uses {{{{{n}}}}}, which isn't one of the variables"));
+                }
+            }
+            Ok(())
+        };
+        if self.headers.len() > 30 {
+            return Err("at most 30 headers".into());
+        }
+        for h in &self.headers {
+            if !header_name_ok(&h.name) {
+                return Err(format!("'{}' isn't a header name you can set (letters, digits and -; not Host or Content-Length)", h.name));
+            }
+            if h.value.len() > 2000 || h.value.contains(['\r', '\n', '\0']) {
+                return Err(format!("header {}: the value must be one line of up to 2000 characters", h.name));
+            }
+            refs_ok(&h.value, &format!("header {}", h.name))?;
+        }
+        for r in &self.requests {
+            if let Some(b) = &r.body {
+                if b.len() > 20_000 {
+                    return Err(format!("{}: the body is limited to 20000 characters", r.path));
+                }
+                if !b.is_empty() && !["POST", "PUT", "PATCH", "DELETE"].contains(&r.method.as_str()) {
+                    return Err(format!("{} {}: only POST, PUT, PATCH and DELETE carry a body", r.method, r.path));
+                }
+                refs_ok(b, &format!("the body of {}", r.path))?;
+            }
+        }
         let t = &self.thresholds;
         if t.p95_ms.is_some_and(|v| v == 0 || v > 600_000) || t.p99_ms.is_some_and(|v| v == 0 || v > 600_000) {
             return Err("a latency limit is 1 ms to 10 minutes".into());
@@ -281,10 +384,23 @@ impl LoadProfile {
         if !latency.is_empty() {
             thresholds.push(format!("    http_req_duration: [{}],", latency.join(", ")));
         }
-        let requests = self.requests.iter().map(|r| format!("  ['{}', '{}'],", r.method, r.path)).collect::<Vec<_>>().join("\n");
+        let requests = self
+            .requests
+            .iter()
+            .map(|r| format!("  {{ method: '{}', path: '{}', body: {} }},", r.method, r.path, r.body.as_deref().filter(|b| !b.is_empty()).map(js_value).unwrap_or_else(|| "null".into())))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let mut headers: Vec<String> = self.headers.iter().map(|h| format!("  {}: {},", serde_json::to_string(&h.name).unwrap_or_default(), js_value(&h.value))).collect();
+        if !self.headers.iter().any(|h| h.name.eq_ignore_ascii_case("content-type")) {
+            if let Some(body) = self.requests.iter().filter_map(|r| r.body.as_deref()).find(|b| !b.is_empty()) {
+                let kind = if matches!(body.trim_start().chars().next(), Some('{' | '[')) { "application/json" } else { "text/plain" };
+                headers.push(format!("  \"Content-Type\": \"{kind}\","));
+            }
+        }
+        let headers = headers.join("\n");
         let thresholds = thresholds.join("\n");
         format!(
-            "// {name}: {desc}\n// Made by OpenLocalServer from the test form. You can edit it; BASE_URL is the site you run it against.\nimport http from 'k6/http';\nimport {{ check, sleep }} from 'k6';\n\nexport const options = {{\n  stages: [\n{stages}\n  ],\n  thresholds: {{\n{thresholds}\n  }},\n}};\n\nconst BASE = __ENV.BASE_URL;\nconst REQUESTS = [\n{requests}\n];\n\nexport default function () {{\n  for (const [method, path] of REQUESTS) {{\n    const res = http.request(method, `${{BASE}}${{path}}`);\n    check(res, {{ 'status is 2xx or 3xx': (r) => r.status >= 200 && r.status < 400 }});\n  }}\n  sleep({think});\n}}\n",
+            "// {name}: {desc}\n// Made by OpenLocalServer from the test form. You can edit it; BASE_URL is the site you run it against, and variables come from __ENV.\nimport http from 'k6/http';\nimport {{ check, sleep }} from 'k6';\n\nexport const options = {{\n  stages: [\n{stages}\n  ],\n  thresholds: {{\n{thresholds}\n  }},\n}};\n\nconst BASE = __ENV.BASE_URL;\nconst HEADERS = {{\n{headers}\n}};\nconst REQUESTS = [\n{requests}\n];\n\nexport default function () {{\n  for (const r of REQUESTS) {{\n    const res = http.request(r.method, `${{BASE}}${{r.path}}`, r.body, {{ headers: HEADERS }});\n    check(res, {{ 'status is 2xx or 3xx': (r) => r.status >= 200 && r.status < 400 }});\n  }}\n  sleep({think});\n}}\n",
             name = self.name.replace(['\n', '\r'], " "),
             desc = self.description.replace(['\n', '\r'], " "),
             think = self.think_time_s,
@@ -301,7 +417,9 @@ fn profile(id: &str, name: &str, icon: &str, description: &str, stages: &[(u32, 
         icon: icon.into(),
         stages: stages.iter().map(|&(duration_s, target)| Stage { duration_s, target }).collect(),
         think_time_s: think,
-        requests: vec![PlannedRequest { method: "GET".into(), path: "/".into() }],
+        requests: vec![PlannedRequest { method: "GET".into(), path: "/".into(), body: None }],
+        headers: vec![],
+        variables: vec![],
         thresholds: Thresholds { p95_ms: Some(p95), p99_ms: None, error_rate_pct: Some(err) },
     }
 }
@@ -484,7 +602,13 @@ impl Inner {
     /// The ready-made plans, then the user's own.
     pub fn load_profiles(&self) -> Vec<LoadProfile> {
         let mut all = builtin_profiles();
-        all.extend(self.custom_profiles());
+        for mut p in self.custom_profiles() {
+            // Secret values live in the keyring; they are read back for the form and never stored in the file.
+            for v in p.variables.iter_mut().filter(|v| v.secret) {
+                v.value = crate::secrets::get_secret(&secret_key(&p.id, &v.name)).ok().flatten().unwrap_or_default();
+            }
+            all.push(p);
+        }
         all
     }
 
@@ -502,9 +626,19 @@ impl Inner {
             return Err(fail(format!("'{id}' is a ready-made test; save yours under another name")));
         }
         profile.id = id.clone();
+        let mut stored = profile.clone();
+        for v in stored.variables.iter_mut().filter(|v| v.secret) {
+            let key = secret_key(&id, &v.name);
+            if v.value.is_empty() {
+                let _ = crate::secrets::delete_secret(&key);
+            } else {
+                crate::secrets::set_secret(&key, &v.value).map_err(|e| fail(format!("the secret couldn't be stored: {e}")))?;
+            }
+            v.value.clear();
+        }
         let mut custom = self.custom_profiles();
         custom.retain(|p| p.id != id);
-        custom.push(profile);
+        custom.push(stored);
         std::fs::create_dir_all(self.paths.data_dir())?;
         std::fs::write(self.profiles_file(), serde_json::to_string_pretty(&custom)?)?;
         Ok(self.load_profiles())
@@ -512,6 +646,11 @@ impl Inner {
 
     pub fn load_delete_profile(&self, id: &str) -> Result<Vec<LoadProfile>, CoreError> {
         let mut custom = self.custom_profiles();
+        for p in custom.iter().filter(|p| p.id == id) {
+            for v in p.variables.iter().filter(|v| v.secret) {
+                let _ = crate::secrets::delete_secret(&secret_key(&p.id, &v.name));
+            }
+        }
         custom.retain(|p| p.id != id);
         std::fs::write(self.profiles_file(), serde_json::to_string_pretty(&custom)?)?;
         Ok(self.load_profiles())
@@ -527,7 +666,7 @@ impl Inner {
     }
 
     /// Starts k6 against a site of the project. Returns the run (still running).
-    pub fn load_run(&self, project_id: &str, script: &str, target: Option<&str>, confirm_public: bool) -> Result<LoadRun, CoreError> {
+    pub fn load_run(&self, project_id: &str, script: &str, target: Option<&str>, confirm_public: bool, env: &[(String, String)]) -> Result<LoadRun, CoreError> {
         let (k6, _, _) = self.k6_binary().ok_or_else(|| CoreError::failed_fix("k6 isn't installed.", "Load tests run with k6.", "Install k6 from the Runtimes page."))?;
         let path = self.script_path(project_id, script)?;
         let text = std::fs::read_to_string(&path).map_err(|_| fail(format!("{script} doesn't exist")))?;
@@ -543,6 +682,11 @@ impl Inner {
         }
         let allowed: Vec<String> = sites.iter().filter(|s| site.public || !s.public).map(|s| s.host.clone()).collect();
         check_script(&text, &allowed, self.load_max_vus()).map_err(fail)?;
+        for (k, v) in env {
+            if !var_name_ok(k) || k == "BASE_URL" || v.len() > 4000 || v.contains(['\0', '\r', '\n']) {
+                return Err(fail(format!("'{k}' isn't a usable variable")));
+            }
+        }
         if self.load_runs_active(project_id) {
             return Err(fail("a test is already running for this project. Stop it first."));
         }
@@ -565,6 +709,9 @@ impl Inner {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        for (k, v) in env {
+            cmd.arg("--env").arg(format!("{k}={v}"));
+        }
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
@@ -766,15 +913,48 @@ mod tests {
     fn a_form_becomes_the_matching_script() {
         let mut p = plan();
         p.stages = vec![Stage { duration_s: 20, target: 7 }, Stage { duration_s: 90, target: 7 }];
-        p.requests = vec![PlannedRequest { method: "GET".into(), path: "/".into() }, PlannedRequest { method: "POST".into(), path: "/api/orders?x=1".into() }];
+        p.requests = vec![PlannedRequest { method: "GET".into(), path: "/".into(), body: None }, PlannedRequest { method: "POST".into(), path: "/api/orders?x=1".into(), body: None }];
         p.think_time_s = 2.5;
         p.thresholds = Thresholds { p95_ms: Some(800), p99_ms: Some(1500), error_rate_pct: Some(2.0) };
         let s = p.script();
-        for wanted in ["{ duration: '20s', target: 7 }", "{ duration: '90s', target: 7 }", "['POST', '/api/orders?x=1']", "sleep(2.5)", "'p(95)<800', 'p(99)<1500'", "rate<0.02"] {
+        for wanted in ["{ duration: '20s', target: 7 }", "{ duration: '90s', target: 7 }", "{ method: 'POST', path: '/api/orders?x=1', body: null }", "sleep(2.5)", "'p(95)<800', 'p(99)<1500'", "rate<0.02"] {
             assert!(s.contains(wanted), "missing {wanted} in\n{s}");
         }
         p.thresholds = Thresholds::default();
         assert!(!p.script().contains("http_req_duration"));
+    }
+
+    #[test]
+    fn headers_bodies_and_variables_reach_the_script_without_their_values() {
+        let mut p = plan();
+        p.variables = vec![Variable { name: "TOKEN".into(), value: "s3cret-token".into(), secret: true }];
+        p.headers = vec![Header { name: "Authorization".into(), value: "Bearer {{TOKEN}}".into() }, Header { name: "X-Client".into(), value: "ols".into() }];
+        p.requests = vec![PlannedRequest { method: "POST".into(), path: "/api/login".into(), body: Some("{\"user\":\"a\",\"t\":\"{{TOKEN}}\"}".into()) }];
+        p.validate(100).unwrap();
+        let s = p.script();
+        assert!(s.contains("\"Authorization\": \"Bearer \" + __ENV.TOKEN"), "{s}");
+        assert!(s.contains("\"X-Client\": \"ols\""));
+        assert!(s.contains("__ENV.TOKEN"), "the body reads the variable");
+        assert!(s.contains("\"Content-Type\": \"application/json\""), "{s}");
+        assert!(!s.contains("s3cret-token"), "the value must never be written into the script");
+        assert!(check_script(&s, &[], 100).is_ok());
+    }
+
+    #[test]
+    fn unsafe_headers_variables_and_bodies_are_refused() {
+        let ok = plan();
+        let bad = |f: &dyn Fn(&mut LoadProfile)| {
+            let mut p = ok.clone();
+            f(&mut p);
+            p.validate(100).is_err()
+        };
+        assert!(bad(&|p| p.headers = vec![Header { name: "Host".into(), value: "evil.example".into() }]));
+        assert!(bad(&|p| p.headers = vec![Header { name: "X-A".into(), value: "a\r\nX-B: 1".into() }]));
+        assert!(bad(&|p| p.headers = vec![Header { name: "X-A".into(), value: "{{MISSING}}".into() }]));
+        assert!(bad(&|p| p.variables = vec![Variable { name: "1BAD".into(), value: "x".into(), secret: false }]));
+        assert!(bad(&|p| p.variables = vec![Variable { name: "BASE_URL".into(), value: "x".into(), secret: false }]));
+        assert!(bad(&|p| p.requests[0].body = Some("x".into())), "GET can't carry a body");
+        assert!(js_value("plain \"quoted\"").starts_with('"'), "literals are JSON-escaped");
     }
 
     #[test]

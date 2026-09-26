@@ -839,7 +839,7 @@ export type CoreCommand =
   | { type: 'load_save_profile'; profile: LoadProfile }
   | { type: 'load_delete_profile'; id: string }
   | { type: 'load_generate'; project_id: string; profile: LoadProfile; name: string | null }
-  | { type: 'load_run'; project_id: string; script: string; target: string | null; confirm_public: boolean }
+  | { type: 'load_run'; project_id: string; script: string; target: string | null; confirm_public: boolean; env: [string, string][] }
   | { type: 'load_status'; run_id: string }
   | { type: 'load_stop'; run_id: string }
   | { type: 'load_runs'; project_id: string }
@@ -1657,7 +1657,9 @@ export interface LoadProfile {
   icon: string
   stages: { duration_s: number; target: number }[]
   think_time_s: number
-  requests: { method: string; path: string }[]
+  requests: { method: string; path: string; body: string | null }[]
+  headers: { name: string; value: string }[]
+  variables: { name: string; value: string; secret: boolean }[]
   thresholds: { p95_ms: number | null; p99_ms: number | null; error_rate_pct: number | null }
 }
 
