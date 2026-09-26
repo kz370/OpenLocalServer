@@ -305,7 +305,7 @@ impl Core {
         if !self.inner().setting_bool("diagnostics.auto_fix", true) {
             return Vec::new();
         }
-        let findings = self.inner().diagnose();
+        let findings = auto_fix_findings(self.inner());
         let mut results = Vec::new();
         for f in findings.into_iter().filter(|f| !f.ignored && f.auto_fixable) {
             {
@@ -379,6 +379,18 @@ impl Core {
     }
 }
 
+fn auto_fix_findings(inner: &Inner) -> Vec<Finding> {
+    let mut findings = inner.diagnose();
+    let projects = inner.projects.lock().unwrap().list();
+    for project in projects {
+        match inner.diagnose_project(&project.id) {
+            Ok(project_findings) => findings.extend(project_findings),
+            Err(error) => tracing::warn!(project = %project.id, %error, "could not diagnose project for automatic fixes"),
+        }
+    }
+    findings
+}
+
 /// `ols doctor` as text.
 pub fn doctor_text(r: &DoctorReport) -> String {
     let mut out = String::from("OpenLocalServer Doctor\n\n");
@@ -447,6 +459,19 @@ mod tests {
         assert!(dir.join(".env").is_file());
         assert!(!report.after.iter().any(|f| f.id == env.finding_id), "the re-check no longer finds it");
         assert!(report.fixed >= 1);
+    }
+
+    #[test]
+    fn automatic_fix_candidates_include_registered_project_findings() {
+        let (core, home) = core();
+        let dir = home.paths.root().join("shop");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(".env.example"), "APP_NAME=shop\n").unwrap();
+        let CoreResponse::Project { project } = core.dispatch(CoreCommand::RegisterProject { path: dir.display().to_string() }).unwrap() else { panic!() };
+
+        let findings = auto_fix_findings(core.inner());
+        let missing_env = findings.iter().find(|f| f.id == format!("env_missing:{}", project.id)).expect("project .env finding is scanned");
+        assert!(missing_env.auto_fixable);
     }
 
     #[test]

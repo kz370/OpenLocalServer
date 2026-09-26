@@ -8,7 +8,7 @@
 //! in-memory ring buffer rather than the `command_history` SQLite table (Stage 1 hasn't
 //! landed SQLite yet). Both are drop-in upgrades later — the public API doesn't change.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
 use std::process::Stdio;
@@ -179,6 +179,38 @@ impl ProcessSupervisor {
         self.runtime.spawn(async move {
             kill_tree(pid).await;
         });
+    }
+
+    /// Requests every active process to stop and waits for the supervisor to observe exit.
+    /// Processes still starting are stopped again once they have a PID.
+    pub fn stop_all_and_wait(&self, timeout: Duration) {
+        let deadline = Instant::now() + timeout;
+        let mut requested_without_pid = HashSet::new();
+        let mut killed = HashSet::new();
+        loop {
+            let active: Vec<_> = self
+                .snapshot()
+                .into_iter()
+                .filter(|p| matches!(p.state, ProcessState::Starting | ProcessState::Running | ProcessState::Stopping | ProcessState::Restarting))
+                .collect();
+            if active.is_empty() {
+                return;
+            }
+            for process in &active {
+                if let Some(pid) = process.pid {
+                    if killed.insert((process.id, pid)) {
+                        self.stop(process.id);
+                    }
+                } else if requested_without_pid.insert(process.id) {
+                    self.stop(process.id);
+                }
+            }
+            if Instant::now() >= deadline {
+                tracing::warn!(processes = ?active.iter().map(|p| &p.name).collect::<Vec<_>>(), "processes did not stop before shutdown timeout");
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
     }
 
     /// Is this process still doing something (starting, running, or waiting to restart)?

@@ -54,6 +54,7 @@ fn shutdown(core: &Core) {
             core.services().stop(&s.id);
         }
     }
+    core.supervisor().stop_all_and_wait(Duration::from_secs(10));
 }
 
 fn navigate(app: &AppHandle, route: &str) {
@@ -327,6 +328,8 @@ pub fn run() {
                     for result in autostart_core.auto_fix_diagnostics() {
                         if result.ok {
                             notify(&auto_fix_app, &autostart_core, "Diagnostics", &format!("Fixed: {}", result.problem));
+                        } else {
+                            notify(&auto_fix_app, &autostart_core, "Automatic fix failed", &format!("{}: {}", result.problem, result.detail));
                         }
                     }
                     std::thread::sleep(Duration::from_secs(300));

@@ -31,7 +31,7 @@ export function useWeb() {
   const [driftOpen, setDriftOpen] = useState(false)
   const action = useAction()
 
-  async function refresh() {
+  async function refresh(updateConfig = false) {
     const [s, c, d, k, a] = await Promise.all([
       runCommand({ type: 'get_web_status' }),
       runCommand({ type: 'get_web_config' }),
@@ -40,7 +40,7 @@ export function useWeb() {
       runCommand({ type: 'get_ca_info' }),
     ])
     if (s.type === 'web_status') setStatus(s.status)
-    if (c.type === 'web_config') setCfg((prev) => prev ?? c.config)
+    if (c.type === 'web_config') setCfg((prev) => (updateConfig || prev === null ? c.config : prev))
     if (d.type === 'domains') setDomains(d.domains)
     if (k.type === 'certificates') setCerts(k.certs)
     if (a.type === 'ca_info') setCa(a.info)
@@ -87,7 +87,7 @@ export function useWeb() {
       setReport(res.report)
       if (res.report.drifted.length > 0) setDriftOpen(true)
     }
-    await refresh()
+    await refresh(true)
   }
 
   const installedPhp = [...new Set([...catalog.filter((c) => c.id === 'php' && c.installed).map((c) => c.version), ...customPhp])]

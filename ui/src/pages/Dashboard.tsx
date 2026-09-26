@@ -35,6 +35,8 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: Page) => void })
   }
 
   const web = data?.web
+  const runningServices = data?.services.filter((s) => s.running) ?? []
+  const hasRunningProcesses = !!web?.running || runningServices.length > 0
   const problems = data?.health.filter((h) => h.status !== 'ok') ?? []
 
   return (
@@ -44,9 +46,28 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: Page) => void })
           <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
           <p className="text-sm text-muted-foreground">Your local environment at a glance.</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap justify-end gap-2">
           <Button variant="secondary" onClick={() => onNavigate('quickapps')}>
             <Rocket /> New from Quick App
+          </Button>
+          <Button
+            variant="outline"
+            disabled={busy !== null || !hasRunningProcesses}
+            onClick={() =>
+              run('stop-all', async () => {
+                await Promise.all([
+                  ...(web?.running ? [runCommand({ type: 'stop_web' })] : []),
+                  ...runningServices.map((service) => runCommand({ type: 'stop_service', id: service.id })),
+                ])
+                await Promise.all([
+                  ...(web?.running ? [waitForWebStopped()] : []),
+                  ...runningServices.map((service) => waitForService(service.id, 'stopped')),
+                ])
+                await refresh()
+              })
+            }
+          >
+            {busy === 'stop-all' ? <Spinner /> : <StopIcon />} {busy === 'stop-all' ? 'Stopping all…' : 'Stop all'}
           </Button>
           <Button
             disabled={busy !== null}
