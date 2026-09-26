@@ -844,6 +844,18 @@ export type CoreCommand =
   | { type: 'load_stop'; run_id: string }
   | { type: 'load_runs'; project_id: string }
   | { type: 'load_delete_run'; project_id: string; run_id: string }
+  | { type: 'ai_get_state' }
+  | { type: 'ai_save_settings'; enabled: boolean; features: Record<string, string> }
+  | { type: 'ai_save_provider'; provider: AiProvider; api_key: string | null }
+  | { type: 'ai_remove_provider'; id: string }
+  | { type: 'ai_detect_local' }
+  | { type: 'ai_test'; provider_id: string }
+  | { type: 'ai_models'; provider_id: string }
+  | { type: 'ai_preview'; request: AiRequest }
+  | { type: 'ai_start'; request: AiRequest; confirm_remote: boolean }
+  | { type: 'ai_job'; job_id: string }
+  | { type: 'ai_cancel'; job_id: string }
+  | { type: 'ai_apply'; actions: CoreCommand[]; confirm_destructive: boolean }
   // @@ts-commands-end
 
 export type CoreResponse =
@@ -971,6 +983,13 @@ export type CoreResponse =
   | { type: 'load_run'; run: LoadRun }
   | { type: 'load_runs'; runs: LoadRun[] }
   | { type: 'load_profiles'; profiles: LoadProfile[] }
+  | { type: 'ai_state'; state: AiState }
+  | { type: 'ai_detected'; servers: AiDetected[] }
+  | { type: 'ai_test'; result: AiTestResult }
+  | { type: 'ai_models'; models: AiModel[] }
+  | { type: 'ai_prompt'; prompt: AiPrompt }
+  | { type: 'ai_job'; job: AiJobView }
+  | { type: 'ai_applied'; steps: { label: string; ok: boolean; detail: string }[] }
   // @@ts-responses-end
 
 export interface MigrationSource {
@@ -1693,4 +1712,105 @@ export interface LoadRun {
   output: string[]
   message: string | null
 }
+// ---- Stage 19: AI assistant ---------------------------------------------------------------
+
+export type AiKind = 'lmstudio' | 'ollama' | 'huggingface' | 'openrouter' | 'custom'
+
+export interface AiProvider {
+  id: string
+  name: string
+  kind: AiKind
+  base_url: string
+  model: string
+  tools: boolean
+  /** Runs on this computer. Computed by the core. */
+  local: boolean
+  /** A key is stored for it. Computed by the core. */
+  has_key: boolean
+}
+
+export interface AiState {
+  settings: { enabled: boolean; providers: AiProvider[]; features: Record<string, string> }
+  features: { id: string; label: string }[]
+}
+
+export interface AiModel {
+  id: string
+  name: string
+  context: number | null
+  prompt_per_m: number | null
+  completion_per_m: number | null
+}
+
+export interface AiTestResult {
+  ok: boolean
+  message: string
+  ms: number
+  models: AiModel[]
+}
+
+export interface AiDetected {
+  kind: AiKind
+  name: string
+  base_url: string
+  models: string[]
+}
+
+export interface AiRequest {
+  feature: 'explain' | 'config' | 'logs' | 'traffic' | 'commit' | 'palette'
+  kind?: string
+  project_id?: string | null
+  question?: string | null
+  title?: string | null
+  text?: string | null
+  tunnel_id?: string | null
+  request_ids?: number[]
+  log_sources?: string[]
+}
+
+export interface AiPrompt {
+  provider_id: string
+  provider_name: string
+  model: string
+  local: boolean
+  host: string
+  messages: { role: string; content: string }[]
+  attachments: string[]
+  tools: string[]
+}
+
+export interface AiAction {
+  label: string
+  command: CoreCommand
+  destructive: boolean
+}
+
+export interface AiAnswer {
+  text: string
+  actions: AiAction[]
+  rejected: string[]
+  manifest: string | null
+  script: string | null
+  commit_message: string | null
+  provider: string
+  model: string
+  local: boolean
+  tokens_in: number | null
+  tokens_out: number | null
+  cost_usd: number | null
+  used: string[]
+}
+
+export interface AiJobView {
+  id: string
+  feature: string
+  state: 'running' | 'done' | 'failed' | 'cancelled'
+  partial: string
+  activity: string[]
+  answer: AiAnswer | null
+  error: string | null
+  provider: string
+  local: boolean
+}
+
 // @@ts-types

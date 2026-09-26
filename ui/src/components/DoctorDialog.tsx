@@ -1,6 +1,8 @@
 import { AlertTriangle, Check, Info, Stethoscope, Wrench, X } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
+import { AiButton } from '@/components/ai/AiButton'
+import { explainFinding } from '@/components/DiagnosticsCard'
 import { ErrorCard } from '@/components/ErrorCard'
 import { Spinner } from '@/components/Spinner'
 import { Button } from '@/components/ui/button'
@@ -107,7 +109,9 @@ export function DoctorDialog({ open, onClose }: { open: boolean; onClose: () => 
                     <div key={f.id} className="flex gap-2 rounded-lg border border-border p-2.5 text-sm">
                       <m.icon className={cn('mt-0.5 size-4 shrink-0', m.className)} />
                       <div className="min-w-0">
-                        <p className="font-medium">{f.problem}</p>
+                        <p className="flex items-center gap-2 font-medium">
+                          {f.problem} <AiButton ask={() => explainFinding(f)} />
+                        </p>
                         <p className="text-xs text-muted-foreground">{f.cause}</p>
                         <p className="text-xs">
                           {f.fix}

@@ -290,6 +290,28 @@ impl Inner {
 }
 
 impl Core {
+    /// Runs one fix command through the dispatcher and waits for what it starts, so the caller can
+    /// diagnose again straight after. Shared by repairs and by the AI assistant's approved plans.
+    pub(crate) fn run_fix(&self, command: &CoreCommand) -> Result<String, String> {
+        let i = self.inner();
+        let outcome = self.dispatch(command.clone());
+        // Fixes that start a process (composer install, key:generate) are waited for.
+        let result = match outcome {
+            Ok(crate::command::CoreResponse::ProcessStarted { id }) => i.wait_process(id, std::time::Duration::from_secs(900)).map(|d| d.unwrap_or_else(|| "done".into())).map_err(|e| e.to_string()),
+            Ok(crate::command::CoreResponse::Setup { report }) if !report.ok => Err(report.error.clone().unwrap_or_else(|| "setup failed".into())),
+            Ok(_) => Ok("done".to_string()),
+            Err(d) => Err(format!("{} {}", d.problem, d.cause)),
+        };
+        if let (CoreCommand::InstallRuntime { id, version }, true) = (command, result.is_ok()) {
+            // Installs run in the background; wait for them so the re-check sees them.
+            let started = std::time::Instant::now();
+            while !i.runtimes.installed_versions(id).contains(version) && started.elapsed() < std::time::Duration::from_secs(1800) {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            }
+        }
+        result
+    }
+
     /// §114 steps 4–6: applies the chosen fixes (destructive ones only with `confirm_destructive`),
     /// then diagnoses again.
     pub fn apply_repair(&self, project_id: Option<&str>, ids: &[String], confirm_destructive: bool) -> Result<RepairReport, CoreError> {
@@ -302,23 +324,7 @@ impl Core {
                 steps.push(RepairStep { label: a.label.clone(), ok: false, detail: "skipped: this fix replaces or removes something; confirm it separately".into() });
                 continue;
             }
-            let outcome = self.dispatch(a.command.clone());
-            // Fixes that start a process (composer install, key:generate) are waited for.
-            let result = match outcome {
-                Ok(crate::command::CoreResponse::ProcessStarted { id }) => i.wait_process(id, std::time::Duration::from_secs(900)).map(|d| d.unwrap_or_else(|| "done".into())).map_err(|e| e.to_string()),
-                Ok(crate::command::CoreResponse::Setup { report }) if !report.ok => Err(report.error.clone().unwrap_or_else(|| "setup failed".into())),
-                Ok(_) => Ok("done".to_string()),
-                Err(d) => Err(format!("{} {}", d.problem, d.cause)),
-            };
-            if matches!(a.command, CoreCommand::InstallRuntime { .. }) && result.is_ok() {
-                // Installs run in the background; wait for them so the re-check sees them.
-                if let CoreCommand::InstallRuntime { id, version } = &a.command {
-                    let started = std::time::Instant::now();
-                    while !i.runtimes.installed_versions(id).contains(version) && started.elapsed() < std::time::Duration::from_secs(1800) {
-                        std::thread::sleep(std::time::Duration::from_millis(500));
-                    }
-                }
-            }
+            let result = self.run_fix(&a.command);
             match result {
                 Ok(d) => steps.push(RepairStep { label: a.label.clone(), ok: true, detail: d }),
                 Err(e) => steps.push(RepairStep { label: a.label.clone(), ok: false, detail: e }),

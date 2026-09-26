@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useState } from 'react'
 
+import { AiButton } from '@/components/ai/AiButton'
 import { ErrorCard } from '@/components/ErrorCard'
 import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
@@ -475,6 +476,7 @@ function Inspector({ tunnel }: { tunnel: TunnelStatus }) {
             {detail ? (
               <RequestDetail
                 r={detail}
+                tunnel={tunnel}
                 busy={busy === 'replay'}
                 onReplay={() =>
                   run('replay', async () => {
@@ -505,7 +507,10 @@ function Inspector({ tunnel }: { tunnel: TunnelStatus }) {
   )
 }
 
-function RequestDetail({ r, busy, onReplay }: { r: RecordedRequest; busy: boolean; onReplay: () => void }) {
+function RequestDetail({ r, tunnel, busy, onReplay }: { r: RecordedRequest; tunnel: TunnelStatus; busy: boolean; onReplay: () => void }) {
+  const [saved, setSaved] = useState<string | null>(null)
+  const project = tunnel.config.project_id
+  const base = { feature: 'traffic' as const, tunnel_id: tunnel.config.id, request_ids: [r.id] }
   return (
     <div className="flex min-w-0 flex-col gap-3 rounded-lg border border-border p-3 text-xs">
       <div className="flex items-start justify-between gap-2">
@@ -522,6 +527,30 @@ function RequestDetail({ r, busy, onReplay }: { r: RecordedRequest; busy: boolea
           {busy ? <Spinner /> : <RotateCcw />} Replay
         </Button>
       </div>
+      <div className="flex flex-wrap gap-1">
+        <AiButton label="Explain" variant="secondary" ask={{ title: 'Explain this request', description: 'Sends this request as recorded (secrets already hidden).', request: { ...base, kind: 'explain' }, question: 'optional' }} />
+        <AiButton
+          label="Write a handler"
+          variant="secondary"
+          ask={{ title: 'Write a handler for this webhook', request: { ...base, kind: 'handler' }, question: 'optional', placeholder: 'Language or framework, e.g. Laravel, Express, Flask (default: PHP)' }}
+        />
+        {project && (
+          <AiButton
+            label="Write a k6 script"
+            variant="secondary"
+            ask={{
+              title: 'Write a k6 load test from this request',
+              request: { ...base, kind: 'k6', project_id: project },
+              question: 'optional',
+              onScript: (content) =>
+                void runCommand({ type: 'load_save_script', project_id: project, name: 'from-traffic.js', content })
+                  .then(() => setSaved('Saved as .openlocalserver/k6/from-traffic.js. Run it from the project\'s Load tab.'))
+                  .catch(() => setSaved('The script could not be saved.')),
+            }}
+          />
+        )}
+      </div>
+      {saved && <p className="text-success">{saved}</p>}
       {r.error && <p className="text-destructive">{r.error}</p>}
       <Section title="Request headers" rows={r.request_headers} />
       {r.request_body && <Body title="Request body" text={r.request_body} />}

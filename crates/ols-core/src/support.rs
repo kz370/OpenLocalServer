@@ -12,7 +12,7 @@ use crate::redact::redact_text;
 
 const LOG_LINES: usize = 500;
 
-fn mask_home(text: &str) -> String {
+pub(crate) fn mask_home(text: &str) -> String {
     let mut out = text.to_string();
     for var in ["USERPROFILE", "HOME"] {
         if let Ok(home) = std::env::var(var) {

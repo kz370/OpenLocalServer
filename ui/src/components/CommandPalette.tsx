@@ -5,6 +5,7 @@ import type { Page } from '@/components/layout/Sidebar'
 import { Spinner } from '@/components/Spinner'
 import { type CoreCommand, type SearchHit, runCommand } from '@/core'
 import { asDiagnostic } from '@/components/ErrorCard'
+import { askAi } from '@/lib/ai'
 import { openProject } from '@/lib/nav'
 import { cn } from '@/lib/utils'
 
@@ -133,6 +134,7 @@ export function CommandPalette({ onNavigate, onDoctor }: { onNavigate: (p: Page)
       ])
       const a: Action[] = [
         { id: 'doctor', label: 'Run the doctor', group: 'Environment', hint: 'Check everything', run: () => { setOpen(false); onDoctor() } },
+        { id: 'ask-ai', label: 'Ask the AI assistant…', group: 'Environment', hint: 'Describe what you want, or ask about a problem', run: () => { setOpen(false); askAi({ title: 'Ask the AI assistant', description: 'Describe what you want set up. It proposes steps you confirm.', request: { feature: 'palette' }, question: 'required', placeholder: 'e.g. a Laravel site with Redis called shop' }) } },
         { id: 'repair', label: 'Repair environment', group: 'Environment', hint: 'Fix what is safe', run: () => { setOpen(false); onDoctor() } },
         { id: 'apply-web', label: 'Apply web config and start the web server', group: 'Environment', run: () => exec('Apply web config', { type: 'apply_web', overwrite: [] }) },
         { id: 'stop-web', label: 'Stop the web server', group: 'Environment', run: () => exec('Stop web server', { type: 'stop_web' }) },

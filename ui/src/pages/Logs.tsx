@@ -2,6 +2,7 @@ import { save } from '@tauri-apps/plugin-dialog'
 import { Clipboard, Download, Eraser, Pause, Play } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { AiButton } from '@/components/ai/AiButton'
 import { ErrorCard } from '@/components/ErrorCard'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -112,6 +113,17 @@ export function LogsPage() {
           </Select>
           <Toggle checked={follow} onChange={setFollow} label="Follow" />
           <div className="ml-auto flex gap-1">
+            <AiButton
+              label="Ask AI"
+              variant="secondary"
+              ask={() => ({
+                title: 'Ask the logs',
+                description: `Reads the last lines of ${sources.find((s) => s.id === source)?.name ?? source}, secrets hidden.`,
+                request: { feature: 'logs', log_sources: [source] },
+                question: 'required',
+                placeholder: 'e.g. Why does shop.test return a 502?',
+              })}
+            />
             <Button size="sm" variant="secondary" onClick={() => setLive(!live)}>
               {live ? <Pause /> : <Play />} {live ? 'Live' : 'Paused'}
             </Button>

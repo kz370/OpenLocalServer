@@ -18,7 +18,7 @@
 
 ## The command line
 `ols status`, `ols start`, `ols stop`, `ols doctor`, `ols repair`, `ols setup`, `ols project …`, `ols service …`,
-`ols plugin …`, `ols catalog …`, `ols test load`, `ols api …`, `ols update …`, `ols support-bundle`.
+`ols plugin …`, `ols catalog …`, `ols test load`, `ols ai …`, `ols api …`, `ols update …`, `ols support-bundle`.
 `ols <command> --help` explains each. The CLI talks to the app when it is open and starts a background core otherwise.
 
 ## When something is wrong
@@ -28,6 +28,14 @@ integration, support and privacy → Save bundle** writes a redacted zip for a b
 ## Privacy
 OpenLocalServer sends nothing anywhere on its own: no telemetry, no analytics. It contacts the internet only when you
 install or update something, refresh a catalog, check for updates, start a tunnel, or use an AI provider you configured.
+
+## AI assistant (optional)
+Off by default. **Settings → AI assistant** turns it on and points it at a model you already have: LM Studio or Ollama
+on this computer, or Hugging Face, OpenRouter or another OpenAI-compatible server with your own key. Once on, an
+**Explain** / **Ask AI** button appears on diagnostics, failed setups, logs, web configs, tunnel traffic, the Git
+commit box and the manifest editor, and the command palette gets **Ask the AI assistant…**. Each request shows where it
+goes (on this computer, or off it) and can show the exact text first, with secrets hidden. Anything it proposes is a
+list of steps you tick and approve; it never runs a command by itself. Details: [AI_ASSISTANT.md](AI_ASSISTANT.md).
 
 ## Updates
 Settings → Updates checks a signed manifest; the installer is verified before it can be started. A build only trusts

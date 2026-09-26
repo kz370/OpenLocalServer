@@ -542,6 +542,12 @@ impl Inner {
         Ok(text)
     }
 
+    /// Everything that is staged, as one diff (for suggesting a commit message).
+    pub fn git_staged_diff(&self, project_id: &str) -> Result<String, CoreError> {
+        let dir = self.project_dir(project_id)?;
+        self.git_ok(&dir, &["diff", "--cached", "--no-color", "--stat", "--patch"])
+    }
+
     pub fn git_log(&self, project_id: &str, limit: usize) -> Result<Vec<Commit>, CoreError> {
         let dir = self.project_dir(project_id)?;
         let n = limit.clamp(1, 500).to_string();

@@ -14,7 +14,7 @@ Release 0.1   Stages 0–8    ████████████████�
 Release 0.2   Stages 9–11   ████████████████████  built, not released
 Release 0.3   Stages 12–15  ████████████████████  built, not released
 Release 1.0   Stages 16–17  ██░░░░░░░░░░░░░░░░░░  Windows; one item done early (XAMPP/Laragon import)
-Release 1.1   Stages 18–19  ░░░░░░░░░░░░░░░░░░░░  k6 load testing and the AI assistant, planned
+Release 1.1   Stages 18–19  ████████████████████  k6 load testing and the AI assistant, built, not released
 Release 2.0   Stage 20      ░░░░░░░░░░░░░░░░░░░░  Linux, last
 ```
 
@@ -95,7 +95,7 @@ Everything planned for 0.3 is built (stages 12–15). Limits worth knowing:
 | Feature | § | Stage |
 |---|---|---|
 | Load testing with k6: per-project scripts, live results, thresholds, CLI | 160–161 | 18 |
-| AI assistant: LM Studio (local), Hugging Face, OpenRouter or any OpenAI-compatible server; explains problems and proposes fixes you approve | 168 | 19 |
+| AI assistant: LM Studio (local), Hugging Face, OpenRouter or any OpenAI-compatible server; explains problems and proposes fixes you approve ([AI_ASSISTANT.md](AI_ASSISTANT.md)) | 168 | 19 (built; never run against a real model) |
 
 ### Release 2.0 (last)
 

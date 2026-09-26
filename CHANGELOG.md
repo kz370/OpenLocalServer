@@ -17,6 +17,12 @@ and the project follows [Semantic Versioning](https://semver.org/).
 - MariaDB's first start failed with "Can't create data directory" when its services folder didn't exist yet.
 
 ### Added
+- AI assistant (stage 19), off by default and bring your own model: LM Studio, Ollama, Hugging Face, OpenRouter or any
+  OpenAI-compatible server, with keys in the credential store. Explain and fix problems, draft a manifest or a k6 script,
+  ask the logs, explain a webhook and write a handler, suggest commit messages, and describe a setup in plain words.
+  Secrets are hidden before anything is sent, a prompt preview shows what goes out, a provider outside this computer needs
+  a confirmation per request, and proposed steps are limited to an allowlist and run only after you approve them.
+  `ols ai status|on|off|test|ask|explain`.
 - Release 0.3 features (stages 12–15):
   - Project manifests in `.openlocalserver/` (environment, services, commands and a lock file), and an
     environment setup with a plan, conflict detection, a dry run and rollback of safe changes on failure.

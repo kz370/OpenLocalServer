@@ -569,6 +569,12 @@ impl Inner {
         Ok(self.load_project_dir(project_id)?.join(name))
     }
 
+    /// Whether `script` passes the same safety scan a run applies (only this project's own sites, limited VUs).
+    pub fn load_check_script(&self, project_id: &str, script: &str) -> Result<(), String> {
+        let hosts: Vec<String> = self.load_sites(project_id).into_iter().map(|s| s.host).collect();
+        check_script(script, &hosts, self.load_max_vus())
+    }
+
     pub fn load_read_script(&self, project_id: &str, name: &str) -> Result<String, CoreError> {
         Ok(std::fs::read_to_string(self.script_path(project_id, name)?)?)
     }

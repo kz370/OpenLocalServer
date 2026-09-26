@@ -1,6 +1,7 @@
 import { AlertTriangle, Check, CircleDashed, FileCode2, Layers, ListChecks, Play, RotateCcw, Save, Sparkles, X } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
+import { AiButton } from '@/components/ai/AiButton'
 import { CodeEditor } from '@/components/CodeEditor'
 import { ErrorCard } from '@/components/ErrorCard'
 import { Spinner } from '@/components/Spinner'
@@ -142,6 +143,26 @@ export function EnvironmentPanel({ projectId }: { projectId: string }) {
                 <Sparkles /> Create from what was detected
               </Button>
             )}
+            <AiButton
+              label="Draft with AI"
+              variant="secondary"
+              ask={{
+                title: 'Draft the environment manifest',
+                description: 'Reads the project files (not .env values) and proposes .openlocalserver/environment.yaml. You review it before anything is set up.',
+                request: { feature: 'config', kind: 'manifest', project_id: projectId },
+                question: 'optional',
+                placeholder: 'Anything it should know? e.g. needs Redis, PHP 8.3',
+                onManifest: (yaml) =>
+                  void run('draft', async () => {
+                    if (!info?.found) {
+                      await runCommand({ type: 'save_manifest_text', project_id: projectId, text: yaml })
+                      await load()
+                    }
+                    setText(yaml)
+                    setEditing(true)
+                  }),
+              }}
+            />
             {info?.found && (
               <Button size="sm" variant="ghost" onClick={() => setEditing(!editing)}>
                 <FileCode2 /> {editing ? 'Close editor' : 'Edit'}
@@ -379,7 +400,23 @@ export function EnvironmentPanel({ projectId }: { projectId: string }) {
             ) : report.ok ? (
               <p className="font-medium text-success">The environment is set up.</p>
             ) : (
-              <p className="font-medium text-destructive">{report.error}</p>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="font-medium text-destructive">{report.error}</p>
+                <AiButton
+                  label="Explain and fix"
+                  variant="secondary"
+                  ask={{
+                    title: 'Explain this failed setup',
+                    request: {
+                      feature: 'explain',
+                      project_id: projectId,
+                      title: 'The environment setup failed',
+                      text: [report.error ?? '', ...report.steps.filter((s) => s.status === 'failed').map((s) => `${s.label}: ${s.detail ?? ''}`)].join('\n'),
+                    },
+                    question: 'optional',
+                  }}
+                />
+              </div>
             )}
             {report.rolled_back.length > 0 && (
               <div className="mt-2 text-xs">

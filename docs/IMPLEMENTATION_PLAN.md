@@ -37,7 +37,7 @@ have not been run, and the new screens have not all been checked in the running 
 | 16 Plugins + catalogs | Built (2026-09-26) | Declarative plugins with permissions, 4 built-in runtime plugins (Go, Bun, Java, .NET), minisign-signed catalogs. Not done: WASM code plugins, DB/service/tool plugins, Ruby, a default catalog and key. See [PLUGINS.md](PLUGINS.md) |
 | 17 Release hardening | Built (2026-09-26) | Signed updater, localhost HTTP API, Explorer menu, offline indicator, support bundle, machine diagnostics, security review ([SECURITY_REVIEW.md](SECURITY_REVIEW.md)). Not done: update signing key, code-signed installer, 1.0 E2E on a clean VM |
 | 18 Load testing with k6 | Built (2026-09-26) | k6 in the catalog, scripts, generator, live results, saved runs, `ols test load`. Not done: Quick Command entry, CPU cap, run against a real site in the app. See [LOAD_TESTING.md](LOAD_TESTING.md) |
-| 19 AI assistant | Not started | `redact.rs` (text redaction) exists and is shared with the support bundle |
+| 19 AI assistant | Built (2026-09-26) | OpenAI-compatible providers (LM Studio, Ollama, Hugging Face, OpenRouter, custom) with streaming, read-only tools, redaction, a prompt preview, an allowlisted approve-to-run plan, all six features, `ols ai`. Not done: run against a real model, per-answer cost for providers other than OpenRouter, rendering the answer as Markdown. See [AI_ASSISTANT.md](AI_ASSISTANT.md) |
 | 20 (release 2.0, Linux) | Not started | Last |
 
 ### Done early or beyond the plan

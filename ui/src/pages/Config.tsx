@@ -2,6 +2,7 @@ import { save } from '@tauri-apps/plugin-dialog'
 import { AlertTriangle, Download, FolderOpen, History, Plus, RotateCcw, Save, ShieldCheck, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
+import { AiButton } from '@/components/ai/AiButton'
 import { CodeEditor, DiffView, type EditorLanguage } from '@/components/CodeEditor'
 import { ErrorCard } from '@/components/ErrorCard'
 import { Badge } from '@/components/ui/badge'
@@ -177,6 +178,17 @@ export function ConfigFilePane({ file, server, onChanged }: { file: ConfigFile; 
                 <Download />
               </Button>
             )}
+            <AiButton
+              label="Ask AI"
+              variant="secondary"
+              ask={() => ({
+                title: 'Explain or change this config',
+                description: 'Reads the text in the editor. A suggested change comes back as a diff for you to apply by hand.',
+                request: { feature: 'config', kind: 'web', title: `${file.hostname ?? 'Main'} ${server} config`, text },
+                question: 'optional',
+                placeholder: 'What do you want? e.g. redirect www to non-www, add gzip',
+              })}
+            />
             <Button
               size="sm"
               variant="secondary"

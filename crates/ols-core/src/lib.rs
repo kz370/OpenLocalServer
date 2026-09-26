@@ -1,6 +1,7 @@
 //! ols-core: the application core (§8.1). GUI, CLI, and the future local API are all
 //! front doors onto this crate — none of them talk to a manager directly.
 
+pub mod ai;
 pub mod api;
 pub mod app;
 pub mod ca;

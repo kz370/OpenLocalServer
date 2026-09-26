@@ -443,6 +443,24 @@ pub enum CoreCommand {
     LoadStop { run_id: String },
     LoadRuns { project_id: String },
     LoadDeleteRun { project_id: String, run_id: String },
+
+    // ---- Stage 19: AI assistant (bring your own model) ---------------------------------
+    AiGetState,
+    AiSaveSettings { enabled: bool, features: BTreeMap<String, String> },
+    /// `api_key`: none keeps the stored key, an empty string removes it. The key goes to the Secrets Manager.
+    AiSaveProvider { provider: crate::ai::AiProvider, api_key: Option<String> },
+    AiRemoveProvider { id: String },
+    AiDetectLocal,
+    AiTest { provider_id: String },
+    AiModels { provider_id: String },
+    /// "Show what will be sent": the redacted prompt; nothing is sent.
+    AiPreview { request: crate::ai::AiRequest },
+    /// Starts a request. A provider outside this computer needs `confirm_remote`.
+    AiStart { request: crate::ai::AiRequest, confirm_remote: bool },
+    AiJob { job_id: String },
+    AiCancel { job_id: String },
+    /// Runs the steps of a plan the user approved (each re-checked against the allowlist).
+    AiApply { actions: Vec<CoreCommand>, confirm_destructive: bool },
     // @@commands-end
 }
 
@@ -591,6 +609,14 @@ pub enum CoreResponse {
     LoadRun { run: Box<crate::loadtest::LoadRun> },
     LoadRuns { runs: Vec<crate::loadtest::LoadRun> },
     LoadProfiles { profiles: Vec<crate::loadtest::LoadProfile> },
+
+    AiState { state: Box<crate::ai::AiState> },
+    AiDetected { servers: Vec<crate::ai::AiDetected> },
+    AiTest { result: crate::ai::AiTestResult },
+    AiModels { models: Vec<crate::ai::AiModel> },
+    AiPrompt { prompt: Box<crate::ai::AiPrompt> },
+    AiJob { job: Box<crate::ai::AiJobView> },
+    AiApplied { steps: Vec<crate::repair::RepairStep> },
     // @@responses-end
 }
 
@@ -1589,6 +1615,26 @@ impl Core {
                 i.load_delete_run(&project_id, &run_id)?;
                 Ok(R::Ok)
             }
+
+            C::AiGetState => Ok(R::AiState { state: Box::new(i.ai_state()) }),
+            C::AiSaveSettings { enabled, features } => Ok(R::AiState { state: Box::new(i.ai_save_settings(enabled, features)?) }),
+            C::AiSaveProvider { provider, api_key } => {
+                // Only that a provider was saved, never its key (§141).
+                tracing::info!(command = "ai_save_provider", provider = %provider.name, key_changed = api_key.is_some());
+                Ok(R::AiState { state: Box::new(i.ai_save_provider(provider, api_key)?) })
+            }
+            C::AiRemoveProvider { id } => Ok(R::AiState { state: Box::new(i.ai_remove_provider(&id)?) }),
+            C::AiDetectLocal => Ok(R::AiDetected { servers: i.ai_detect_local() }),
+            C::AiTest { provider_id } => Ok(R::AiTest { result: i.ai_test(&provider_id)? }),
+            C::AiModels { provider_id } => Ok(R::AiModels { models: i.ai_models(&provider_id)? }),
+            C::AiPreview { request } => Ok(R::AiPrompt { prompt: Box::new(i.ai_prompt(&request)?) }),
+            C::AiStart { request, confirm_remote } => {
+                tracing::info!(command = "ai_start", feature = %request.feature, confirm_remote);
+                Ok(R::AiJob { job: Box::new(i.ai_start(request, confirm_remote)?) })
+            }
+            C::AiJob { job_id } => Ok(R::AiJob { job: Box::new(i.ai_job(&job_id)?) }),
+            C::AiCancel { job_id } => Ok(R::AiJob { job: Box::new(i.ai_cancel(&job_id)?) }),
+            C::AiApply { actions, confirm_destructive } => Ok(R::AiApplied { steps: self.ai_apply(actions, confirm_destructive) }),
             // @@arms-end
         }
     }

@@ -67,6 +67,7 @@ pub struct Inner {
     pub tunnels: crate::tunnel::TunnelManager,
     pub api: crate::api::ApiState,
     pub loadtests: crate::loadtest::LoadRuns,
+    pub ai: crate::ai::AiJobs,
 }
 
 fn svc(msg: impl Into<String>) -> CoreError {
@@ -177,6 +178,7 @@ impl Inner {
             tunnels: crate::tunnel::TunnelManager::new(&paths),
             api: Default::default(),
             loadtests: Default::default(),
+            ai: Default::default(),
             paths,
         });
         core.sync_php_external();

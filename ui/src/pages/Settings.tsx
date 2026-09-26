@@ -2,6 +2,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { FolderSearch, ShieldCheck } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
+import { AiCard } from '@/components/ai/AiSettings'
 import { ErrorCard } from '@/components/ErrorCard'
 import { ApiCard, SystemCard, UpdatesCard } from '@/components/ReleaseCards'
 import { ResourcesCard, SettingsBackupsCard } from '@/components/SettingsExtras'
@@ -180,6 +181,7 @@ export function SettingsPage() {
         {saved && <span className="text-sm text-success">{saved}</span>}
       </div>
 
+      <AiCard />
       <ResourcesCard />
       <SettingsBackupsCard />
       <UpdatesCard />

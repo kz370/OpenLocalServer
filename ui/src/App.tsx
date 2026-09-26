@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react'
 
+import { AiHost } from '@/components/ai/AiHost'
 import { CommandPalette } from '@/components/CommandPalette'
 import { ConfirmHost } from '@/components/ConfirmHost'
 import { DoctorDialog } from '@/components/DoctorDialog'
@@ -29,6 +30,7 @@ export default function App() {
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
       <Sidebar page={page} onNavigate={setPage} />
       <ConfirmHost />
+      <AiHost onNavigate={setPage} />
       <CommandPalette onNavigate={setPage} onDoctor={openDoctor} />
       <DoctorDialog open={doctor} onClose={() => setDoctor(false)} />
       <main className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-6">
