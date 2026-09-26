@@ -236,6 +236,9 @@ pub fn run() {
     // (JSON, redacted, to disk — §118/§141). tauri-plugin-log would try to install a
     // second global logger and panic on startup, so it is intentionally not used here.
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            show_main_window(app);
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .manage(core)

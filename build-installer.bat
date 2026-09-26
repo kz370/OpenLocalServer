@@ -98,12 +98,12 @@ echo       portable exe: "%DIST%\%APPNAME%.exe"
 
 echo [3/4] Looking for Inno Setup...
 set "ISCC="
-for %%p in ("%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" "%ProgramFiles%\Inno Setup 6\ISCC.exe" "%LocalAppData%\Programs\Inno Setup 6\ISCC.exe") do (
+for %%p in ("%ProgramFiles%\Inno Setup 7\ISCC.exe" "%ProgramFiles(x86)%\Inno Setup 7\ISCC.exe" "%LocalAppData%\Programs\Inno Setup 7\ISCC.exe") do (
   if not defined ISCC if exist "%%~p" set "ISCC=%%~p"
 )
 if not defined ISCC for /f "delims=" %%p in ('where iscc 2^>nul') do if not defined ISCC set "ISCC=%%p"
 if not defined ISCC (
-  echo [!] Inno Setup 6 not found, so no setup file was made.
+  echo [!] Inno Setup 7 not found, so no setup file was made.
   echo     Install it from https://jrsoftware.org/isdl.php and run this again,
   echo     The portable executable is still available in release\.
   goto :done
@@ -111,7 +111,7 @@ if not defined ISCC (
 
 
 echo [4/4] Creating installer...
-"%ISCC%" /Q "/DAppVersion=%VERSION%" "/DSourceExe=%EXE%" "/DLibDir=%ROOT%src-tauri\target\release" "/DOutputDir=%DIST%" "%ROOT%installer\open-local-server.iss"
+"%ISCC%" /Q "/DAppVersion=%VERSION%" "/DSourceExe=%EXE%" "/DLibDir=%TARGET%" "/DOutputDir=%DIST%" "%ROOT%installer\open-local-server.iss"
 if errorlevel 1 (
   echo [x] Inno Setup failed.
   goto :fail

@@ -34,4 +34,5 @@ Thumbs.db
 .claude/settings.local.json
 
 # Portable app data used by debug builds
-/data/
+/data/*
+release/*
