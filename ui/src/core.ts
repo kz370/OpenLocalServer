@@ -667,6 +667,7 @@ export type CoreCommand =
   | { type: 'get_xdebug'; version: string }
   | { type: 'set_xdebug'; version: string; settings: XdebugSettings }
   | { type: 'xdebug_ide_config'; project_id: string; ide: string; version: string }
+  | { type: 'discover_commands'; project_id: string }
   | { type: 'get_composer_info'; project_id: string }
   | { type: 'run_composer'; project_id: string; action: string; target: string | null }
   | { type: 'get_package_managers'; project_id: string }
@@ -759,6 +760,7 @@ export type CoreResponse =
   | { type: 'xdebug'; report: XdebugReport }
   | { type: 'composer'; info: ComposerInfo }
   | { type: 'package_managers'; info: PackageManagerInfo }
+  | { type: 'command_sources'; sources: CommandSource[] }
   | { type: 'venv'; info: VenvInfo }
   | { type: 'diagnostics'; findings: Finding[] }
   | { type: 'env_files'; files: EnvFileInfo[] }
@@ -842,6 +844,39 @@ export interface ComposerInfo {
   name: string | null
   packages: ComposerPackage[]
   scripts: string[]
+}
+
+export interface CommandArgument {
+  name: string
+  description: string
+  required: boolean
+  multiple: boolean
+  default: string | null
+}
+export interface CommandOption {
+  name: string
+  shortcut: string | null
+  description: string
+  accepts_value: boolean
+  value_required: boolean
+  multiple: boolean
+  default: string | null
+}
+export interface DiscoveredCommand {
+  name: string
+  description: string
+  help: string
+  arguments: CommandArgument[]
+  options: CommandOption[]
+}
+export interface CommandSource {
+  id: string
+  label: string
+  prefix: string[]
+  commands: DiscoveredCommand[]
+  error: string | null
+  /** The tool failed; the list was read from source files instead. Says why. */
+  warning: string | null
 }
 
 export interface PackageManagerInfo {

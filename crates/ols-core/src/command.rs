@@ -241,6 +241,9 @@ pub enum CoreCommand {
     SetXdebug { version: String, settings: XdebugSettings },
     /// IDE setup text for a project: `ide` is "vscode", "phpstorm" or "other".
     XdebugIdeConfig { project_id: String, ide: String, version: String },
+    /// Every command the project's artisan / bin/console / composer / package.json /
+    /// manage.py offers, with arguments and options where the tool describes them.
+    DiscoverCommands { project_id: String },
     /// composer.json / composer.lock read for a project (§14).
     GetComposerInfo { project_id: String },
     /// One of the named Composer actions (see `composer::command_args`).
@@ -366,6 +369,7 @@ pub enum CoreResponse {
     Xdebug { report: XdebugReport },
     Composer { info: Box<crate::composer::ComposerInfo> },
     PackageManagers { info: crate::nodepm::PackageManagerInfo },
+    CommandSources { sources: Vec<crate::command_catalog::CommandSource> },
     Venv { info: crate::venv::VenvInfo },
     Diagnostics { findings: Vec<crate::diagnostics::Finding> },
     EnvFiles { files: Vec<crate::envfile::EnvFileInfo> },
@@ -973,6 +977,7 @@ impl Core {
                 Ok(R::Xdebug { report: i.xdebug_report(&version) })
             }
             C::XdebugIdeConfig { project_id, ide, version } => Ok(R::Text { text: i.xdebug_ide_config(&project_id, &ide, &version)? }),
+            C::DiscoverCommands { project_id } => Ok(R::CommandSources { sources: i.discover_commands(&project_id)? }),
             C::GetComposerInfo { project_id } => Ok(R::Composer { info: Box::new(i.composer_info(&project_id)?) }),
             C::RunComposer { project_id, action, target } => {
                 Ok(R::ProcessStarted { id: i.run_composer(&project_id, &action, target.as_deref())? })
@@ -1222,6 +1227,28 @@ mod tests {
         }
         assert!(core.dispatch(CoreCommand::RunComposer { project_id: project.id, action: "require".into(), target: Some("--evil".into()) }).is_err());
     }
+
+    #[test]
+    fn discovered_commands_include_package_scripts_with_the_projects_manager() {
+        let (core, home) = test_core();
+        let dir = home.paths.root().join("web");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("package.json"), r#"{"scripts":{"dev":"vite","build":"vite build"}}"#).unwrap();
+        std::fs::write(dir.join("pnpm-lock.yaml"), "").unwrap();
+        let project = match core.dispatch(CoreCommand::RegisterProject { path: dir.display().to_string() }).unwrap() {
+            CoreResponse::Project { project } => project,
+            _ => panic!("expected Project"),
+        };
+        match core.dispatch(CoreCommand::DiscoverCommands { project_id: project.id }).unwrap() {
+            CoreResponse::CommandSources { sources } => {
+                assert_eq!(sources.len(), 1, "no artisan / composer / manage.py here");
+                assert_eq!(sources[0].prefix, ["pnpm", "run"]);
+                assert_eq!(sources[0].commands.len(), 2);
+            }
+            _ => panic!("expected CommandSources"),
+        }
+    }
+
     #[test]
     fn renaming_a_domain_keeps_its_settings_and_refuses_taken_names() {
         let (core, home) = test_core();

@@ -10,6 +10,10 @@ and the project follows [Semantic Versioning](https://semver.org/).
   connection details for PostgreSQL.
 - Backup and restore of MySQL, MariaDB and PostgreSQL databases, with a safety backup before every restore.
 - Custom services: run any program with arguments, port and a health check.
+- Commands page lists every command a project offers (Artisan, Symfony Console, Composer, package.json scripts,
+  Django), with a form built from each command's arguments and options, a live command-line preview, and
+  custom commands you can create, edit and save from any command. When a Laravel app can't boot, its
+  commands are read from the source files and the page explains why the app failed to start.
 - Mailpit: point a project's `.env` at Mailpit after seeing the change, a mail checklist, and a test message.
 - "Open with" menu and shortcuts to a project's folder, public/, config/, `.env`, logs and site config.
 - Interactive terminal in a project with its runtimes on PATH.

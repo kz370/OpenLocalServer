@@ -3,7 +3,9 @@ import type { ReactNode } from 'react'
 import {
   type SimpleIcon,
   siApache,
+  siBun,
   siCaddy,
+  siComposer,
   siDjango,
   siExpress,
   siFastapi,
@@ -15,7 +17,9 @@ import {
   siNextdotjs,
   siNginx,
   siNodedotjs,
+  siNpm,
   siPhp,
+  siPnpm,
   siPostgresql,
   siPython,
   siReact,
@@ -24,6 +28,7 @@ import {
   siSymfony,
   siVuedotjs,
   siWordpress,
+  siYarn,
 } from 'simple-icons'
 
 import { cn } from '@/lib/utils'
@@ -36,6 +41,11 @@ const BRANDS: Record<string, SimpleIcon> = {
   php: siPhp,
   'plain-php': siPhp,
   node: siNodedotjs,
+  npm: siNpm,
+  pnpm: siPnpm,
+  yarn: siYarn,
+  bun: siBun,
+  composer: siComposer,
   'express-api': siExpress,
   react: siReact,
   'react-vite': siReact,

@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::app::Inner;
+use crate::command_catalog::{self, CommandSource};
 use crate::composer::{self, ComposerInfo};
 use crate::error::CoreError;
 use crate::nodepm::{self, PackageManagerInfo};
@@ -17,6 +18,18 @@ use crate::xdebug::{self, XdebugReport};
 
 fn err(msg: impl Into<String>) -> CoreError {
     CoreError::ServiceError(msg.into())
+}
+
+/// The start of a failed tool's output: enough to say why without a wall of stack trace,
+/// after a plain-words reason when it's a common one.
+fn first_lines(text: &str) -> String {
+    let text = command_catalog::strip_ansi(text);
+    let lines: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).take(4).collect();
+    let detail = if lines.is_empty() { "the tool printed nothing".to_string() } else { lines.join("\n") };
+    match command_catalog::boot_failure_hint(&text) {
+        Some(hint) => format!("{hint}\n\n{detail}"),
+        None => detail,
+    }
 }
 
 impl Inner {
@@ -117,6 +130,84 @@ impl Inner {
         let project = self.projects.lock().unwrap().get(project_id?)?;
         let dir = venv::find_dir(Path::new(&project.path))?;
         venv::python_exe(&dir).is_file().then(|| (dir.clone(), venv::scripts_dir(&dir)))
+    }
+
+    // ------------------------------------------------------ command catalog (§89)
+
+    /// Every command the project's own tools offer, one source per tool. The tools that
+    /// print their list (artisan, bin/console, composer, manage.py) run side by side; a tool
+    /// that fails gives its source an `error` instead of failing the whole call.
+    pub fn discover_commands(&self, project_id: &str) -> Result<Vec<CommandSource>, CoreError> {
+        let project = self.project(project_id)?;
+        let root = Path::new(&project.path);
+        let has = |f: &str| root.join(f).is_file();
+
+        // (id, label, prefix, how to list them)
+        let mut listed: Vec<(&str, &str, Vec<&str>, Vec<&str>)> = Vec::new();
+        if has("artisan") {
+            listed.push(("artisan", "Artisan", vec!["php", "artisan"], vec!["list", "--format=json"]));
+        }
+        if has("bin/console") {
+            listed.push(("console", "Symfony Console", vec!["php", "bin/console"], vec!["list", "--format=json"]));
+        }
+        if has("composer.json") {
+            listed.push(("composer", "Composer", vec!["composer"], vec!["list", "--format=json"]));
+        }
+        if has("manage.py") {
+            listed.push(("django", "Django", vec!["python", "manage.py"], vec!["help", "--commands"]));
+        }
+
+        let mut sources: Vec<CommandSource> = std::thread::scope(|s| {
+            let handles: Vec<_> = listed
+                .iter()
+                .map(|(id, label, prefix, list_args)| {
+                    s.spawn(move || {
+                        let mut source = CommandSource { id: id.to_string(), label: label.to_string(), prefix: prefix.iter().map(|p| p.to_string()).collect(), ..Default::default() };
+                        let args: Vec<String> = prefix[1..].iter().chain(list_args).map(|a| a.to_string()).collect();
+                        let result = self.project_program(prefix[0], &args, Some(project_id)).map_err(|e| e.to_string()).and_then(|(exe, args, env)| {
+                            let out = crate::exec::run_capture(&exe, &args, Some(root), &env, Duration::from_secs(45));
+                            if out.timed_out {
+                                return Err("listing the commands took too long".to_string());
+                            }
+                            if *id == "django" {
+                                let found = command_catalog::parse_name_list(&out.stdout);
+                                return if found.is_empty() { Err(first_lines(&out.combined())) } else { Ok(found) };
+                            }
+                            command_catalog::parse_symfony_list(&out.stdout).map_err(|e| if out.success() { e } else { first_lines(&out.combined()) })
+                        });
+                        match result {
+                            Ok(commands) => source.commands = commands,
+                            // An app that can't boot (no database, missing driver, ...) can't
+                            // list itself; its command classes still say what it offers.
+                            Err(e) if *id == "artisan" => {
+                                let found = command_catalog::scan_command_sources(&command_catalog::laravel_command_dirs(root));
+                                if found.is_empty() {
+                                    source.error = Some(e);
+                                } else {
+                                    source.commands = found;
+                                    source.warning = Some(format!(
+                                        "Laravel could not start, so this list was read from the source files and may miss some options. Running these commands fails the same way until that is fixed.\n\n{e}"
+                                    ));
+                                }
+                            }
+                            Err(e) => source.error = Some(e),
+                        }
+                        source
+                    })
+                })
+                .collect();
+            handles.into_iter().map(|h| h.join().expect("command listing thread")).collect()
+        });
+
+        if let Ok(raw) = std::fs::read_to_string(root.join("package.json")) {
+            let commands = command_catalog::package_scripts(&raw);
+            if !commands.is_empty() {
+                let prefix = command_catalog::script_prefix(nodepm::detect(root).0.as_deref());
+                let label = format!("{} scripts", prefix[0]);
+                sources.push(CommandSource { id: "scripts".into(), label, prefix, commands, ..Default::default() });
+            }
+        }
+        Ok(sources)
     }
 
     // ---------------------------------------------------------------- xdebug (§13)

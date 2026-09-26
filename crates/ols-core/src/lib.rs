@@ -6,6 +6,7 @@ pub mod ca;
 pub mod catalog;
 pub mod certs;
 pub mod command;
+pub mod command_catalog;
 pub mod composer;
 pub mod custom_install;
 pub mod custom_service;

@@ -1396,6 +1396,24 @@ impl Inner {
     }
 
     pub(crate) fn spawn_project_process(&self, program: &str, args: &[String], cwd: Option<&str>, project_id: Option<&str>, name: &str, history_line: &str) -> Result<ProcessId, CoreError> {
+        let (executable, full_args, env) = self.project_program(program, args, project_id)?;
+        let cwd_owned = cwd.map(str::to_string).or_else(|| project_id.and_then(|id| self.projects.lock().unwrap().get(id)).map(|p| p.path));
+        let id = self.supervisor.start(ProcessSpec {
+            name: name.to_string(),
+            executable: executable.display().to_string(),
+            args: full_args,
+            cwd: cwd_owned.clone(),
+            env,
+            restart: None,
+        });
+        let _ = self.history.lock().unwrap().record(history_line, cwd_owned.as_deref(), project_id);
+        Ok(id)
+    }
+
+    /// `program args` resolved the way a project's commands run: its own PHP / Node /
+    /// Python, with their folders first on PATH. Returns the executable, all arguments and
+    /// the extra environment.
+    pub(crate) fn project_program(&self, program: &str, args: &[String], project_id: Option<&str>) -> Result<ProjectProgram, CoreError> {
         let mut values = BTreeMap::new();
         // Pin the resolved versions so `php`/`node` follow the project (§18–19).
         if let Some(detail) = project_id.and_then(|id| self.project_detail(id)) {
@@ -1414,17 +1432,7 @@ impl Inner {
             dirs.push(std::env::var("PATH").unwrap_or_default());
             env.push(("PATH".into(), dirs.join(";")));
         }
-        let cwd_owned = cwd.map(str::to_string).or_else(|| project_id.and_then(|id| self.projects.lock().unwrap().get(id)).map(|p| p.path));
-        let id = self.supervisor.start(ProcessSpec {
-            name: name.to_string(),
-            executable: resolved.executable.display().to_string(),
-            args: full_args,
-            cwd: cwd_owned.clone(),
-            env,
-            restart: None,
-        });
-        let _ = self.history.lock().unwrap().record(history_line, cwd_owned.as_deref(), project_id);
-        Ok(id)
+        Ok((resolved.executable, full_args, env))
     }
 
     pub fn run_quick_command(&self, id: &str, project_id: Option<&str>) -> Result<Option<ProcessId>, CoreError> {
@@ -1518,6 +1526,9 @@ impl crate::quickapp::EntryView {
 }
 
 /// `.cmd` / `.bat` shims (npm, npx) can't be launched directly — run them through cmd.exe.
+/// Executable, full arguments and extra environment of a resolved project command.
+pub(crate) type ProjectProgram = (PathBuf, Vec<String>, Vec<(String, String)>);
+
 fn shim(file: PathBuf, path_dirs: Vec<PathBuf>) -> ResolvedProgram {
     let is_shim = file.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("cmd") || e.eq_ignore_ascii_case("bat"));
     if is_shim {
