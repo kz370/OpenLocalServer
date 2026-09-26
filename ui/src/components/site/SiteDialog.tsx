@@ -179,7 +179,13 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
   ]
   // Commands sit right after the terminal: both run things in the project.
   const toolItems = TOOL_TABS.flatMap((t) => (t.id === 'terminal' ? [t, { id: 'commands' as SiteTab, label: 'Commands' }] : [t]))
-  const projectItems: { id: SiteTab; label: string }[] = projectId ? [{ id: 'overview', label: 'Overview' }, ...toolItems] : []
+  // Tooling (mail, runtimes, testing) lives under its own heading: it is not project setup.
+  const PROJECT_TOOL_IDS: SiteTab[] = ['environment', 'terminal', 'commands', 'env', 'git', 'workers', 'snapshots', 'repair']
+  const DEV_TOOL_IDS: SiteTab[] = ['mail', 'composer', 'node', 'python', 'xdebug', 'load']
+  const projectItems: { id: SiteTab; label: string }[] = projectId
+    ? [{ id: 'overview', label: 'Overview' }, ...toolItems.filter((t) => PROJECT_TOOL_IDS.includes(t.id as SiteTab))]
+    : []
+  const devItems: { id: SiteTab; label: string }[] = projectId ? toolItems.filter((t) => DEV_TOOL_IDS.includes(t.id as SiteTab)) : []
   const isProjectTab = !SITE_TABS.includes(tab)
 
   const title = target.hostname ?? project?.name ?? 'Site'
@@ -202,25 +208,42 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
         </div>
 
         <div className="flex min-h-0 flex-1">
-          <nav className="flex w-48 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border p-2" aria-label="Site settings sections">
+          <nav className="flex w-52 shrink-0 flex-col overflow-y-auto border-r border-border px-0 py-2" aria-label="Site settings sections">
             <NavHeading>Site</NavHeading>
-            {siteItems.map((i) => (
-              <NavItem key={i.id} active={tab === i.id} onClick={() => setTab(i.id)}>
-                {i.icon}
-                {i.label}
-              </NavItem>
-            ))}
+            <div className="flex flex-col gap-[3px]">
+              {siteItems.map((i) => (
+                <NavItem key={i.id} active={tab === i.id} onClick={() => setTab(i.id)}>
+                  {i.icon}
+                  {i.label}
+                </NavItem>
+              ))}
+            </div>
             {projectItems.length > 0 && (
               <>
                 <NavHeading>
                   <FolderKanban className="size-3" /> Project
                 </NavHeading>
-                {projectItems.map((i) => (
-                  <NavItem key={i.id} active={tab === i.id} onClick={() => setTab(i.id)}>
-                    {TAB_ICON[i.id as keyof typeof TAB_ICON]}
-                    {i.label}
-                  </NavItem>
-                ))}
+                <div className="flex flex-col gap-[3px]">
+                  {projectItems.map((i) => (
+                    <NavItem key={i.id} active={tab === i.id} onClick={() => setTab(i.id)}>
+                      {TAB_ICON[i.id as keyof typeof TAB_ICON]}
+                      {i.label}
+                    </NavItem>
+                  ))}
+                </div>
+              </>
+            )}
+            {devItems.length > 0 && (
+              <>
+                <NavHeading>Tools</NavHeading>
+                <div className="flex flex-col gap-[3px]">
+                  {devItems.map((i) => (
+                    <NavItem key={i.id} active={tab === i.id} onClick={() => setTab(i.id)}>
+                      {TAB_ICON[i.id as keyof typeof TAB_ICON]}
+                      {i.label}
+                    </NavItem>
+                  ))}
+                </div>
               </>
             )}
           </nav>
@@ -272,7 +295,7 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
 }
 
 function NavHeading({ children }: { children: ReactNode }) {
-  return <div className="mt-2 flex items-center gap-1 px-3 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground first:mt-0">{children}</div>
+  return <div className="mb-2 mt-5 flex items-center gap-1 px-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70 first:mt-1">{children}</div>
 }
 
 function NavItem({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
@@ -281,8 +304,10 @@ function NavItem({ active, onClick, children }: { active: boolean; onClick: () =
       onClick={onClick}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'flex items-center gap-2 rounded-md px-3 py-1.5 text-left text-sm transition-colors [&_svg]:size-4 [&_svg]:shrink-0 [&>span]:size-4',
-        active ? 'bg-accent font-medium text-accent-foreground' : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
+        'flex items-center gap-2 px-4 py-1.5 text-left text-sm transition-colors [&_svg]:size-4 [&_svg]:shrink-0 [&>span]:size-4',
+        active
+          ? 'bg-accent font-medium text-accent-foreground'
+          : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
       )}
     >
       {children}

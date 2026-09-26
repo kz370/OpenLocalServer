@@ -11,7 +11,6 @@ import { ApplyReportCard, DriftDialog } from '@/components/site/WebApply'
 import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
 import { TechIcon } from '@/components/TechIcon'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog } from '@/components/ui/dialog'
@@ -46,18 +45,19 @@ const GROUPS: { id: Group; label: string; icon: string }[] = [
 
 const groupOf = (r: Row): Group => r.site?.group ?? 'none'
 
-/** A coloured dot; what it means shows on hover. */
+/** Compact status: coloured dot + short label; full meaning shows on hover. */
 function StatusDot({ site, running }: { site: DomainSummary | null; running: boolean }) {
-  const [label, color] = !site
-    ? ['Project only: no domain yet', 'border border-muted-foreground/60 bg-transparent']
+  const [label, color, text] = !site
+    ? ['Project only: no domain yet', 'border border-muted-foreground/60 bg-transparent', 'No domain']
     : !site.enabled
-      ? ['Disabled', 'bg-warning']
+      ? ['Disabled', 'bg-warning', 'Disabled']
       : running
-        ? ['Running', 'bg-emerald-500 shadow-[0_0_0_3px] shadow-emerald-500/20']
-        : ['Stopped: the web server is not running', 'bg-muted-foreground/50']
+        ? ['Running', 'bg-emerald-500 shadow-[0_0_0_3px] shadow-emerald-500/20', site.https ? 'HTTPS' : 'HTTP']
+        : ['Stopped: the web server is not running', 'bg-muted-foreground/50', site.https ? 'HTTPS' : 'HTTP']
   return (
-    <span className="inline-flex size-6 items-center justify-center" title={label} aria-label={label} role="img">
-      <span className={`size-2.5 rounded-full ${color}`} />
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground" title={label} aria-label={label} role="img">
+      <span className={`size-2.5 shrink-0 rounded-full ${color}`} />
+      {text}
     </span>
   )
 }
@@ -274,75 +274,81 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
               onChange={setGroup}
             />
           </div>
-          <Table wrapperClassName="rounded-b-lg" className="min-w-[840px]">
+          <Table wrapperClassName="rounded-b-lg">
             <TableHeader>
               <TableRow>
-                <TableHead>Site</TableHead>
-                <TableHead className="whitespace-nowrap">Serves</TableHead>
-                <TableHead>Folder</TableHead>
-                <TableHead className="whitespace-nowrap">HTTPS</TableHead>
+                <TableHead>Domain</TableHead>
                 <TableHead className="whitespace-nowrap">Status</TableHead>
-                <TableHead className="min-w-44">Domain</TableHead>
-                <TableHead className="whitespace-nowrap text-right">Actions</TableHead>
+                <TableHead className="w-24 whitespace-nowrap text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {visible.map((r) => {
                 const { site: d, project: p } = r
                 const openSettings = () => setTarget({ hostname: d?.hostname ?? null, projectId: p?.id ?? null })
+                const folder = d?.folder ?? p?.path
                 return (
                   <TableRow key={r.key}>
-                    <TableCell>
-                      <button className="flex cursor-pointer flex-col text-left hover:underline" onClick={openSettings}>
-                        <span className="font-medium">{d?.hostname ?? p?.name}</span>
-                        {d && p && <span className="text-xs text-muted-foreground">{p.name}</span>}
-                        {!d && <span className="text-xs text-muted-foreground">no domain yet</span>}
-                      </button>
+                    <TableCell className="min-w-0">
+                      <div className="flex min-w-0 items-center gap-1">
+                        <button className="min-w-0 flex-1 cursor-pointer truncate text-left font-medium hover:underline" onClick={openSettings} title={d?.hostname ?? p?.name}>
+                          {d?.hostname ?? p?.name}
+                        </button>
+                        {d && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 w-7 shrink-0 cursor-pointer px-0"
+                              title={!d.enabled ? 'The site is disabled' : !status?.running ? 'Start the web server first' : `Open ${d.hostname}`}
+                              aria-label={`Open ${d.hostname}`}
+                              disabled={!d.enabled || !status?.running}
+                              onClick={() => run('open', () => runCommand({ type: 'open_url', url: d.url }))}
+                            >
+                              <ExternalLink className="size-3.5" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 w-7 shrink-0 cursor-pointer px-0"
+                              title={copiedUrl === d.url ? 'Copied' : 'Copy domain'}
+                              aria-label={copiedUrl === d.url ? 'Domain copied' : `Copy ${d.hostname}`}
+                              onClick={async () => {
+                                await navigator.clipboard.writeText(d.hostname)
+                                setCopiedUrl(d.url)
+                                window.setTimeout(() => setCopiedUrl((current) => (current === d.url ? null : current)), 1500)
+                              }}
+                            >
+                              {copiedUrl === d.url ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                      <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                        {d ? (
+                          <>
+                            <TechIcon id={GROUPS.find((g) => g.id === d.group)?.icon ?? 'static'} className="size-3.5 shrink-0" />
+                            <span className="shrink-0">
+                              {d.kind}
+                              {d.has_app && ' + app'}
+                            </span>
+                            {d && p && p.name !== d.hostname && <span className="shrink-0">{p.name}</span>}
+                            <span className="min-w-0 flex-1 truncate" title={folder}>
+                              {folder}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="truncate" title={folder}>
+                            no domain yet · {folder}
+                          </span>
+                        )}
+                      </div>
                     </TableCell>
-                    <TableCell className="whitespace-nowrap text-muted-foreground">
-                      {d ? (
-                        <span className="flex items-center gap-1.5">
-                          <TechIcon id={GROUPS.find((g) => g.id === d.group)?.icon ?? 'static'} className="size-3.5" />
-                          {d.kind}
-                          {d.has_app && ' + app'}
-                        </span>
-                      ) : (
-                        '—'
-                      )}
-                    </TableCell>
-                    <TableCell className="max-w-72 truncate text-xs text-muted-foreground" title={d?.folder ?? p?.path}>
-                      {d?.folder ?? p?.path}
-                    </TableCell>
-                    <TableCell>{d && <div className="flex flex-wrap gap-1">{d.https ? <Badge variant="success">HTTPS</Badge> : <Badge variant="outline">HTTP</Badge>}{d.public_domain && <Badge variant="warning" title={`Public through Cloudflare: ${d.public_domain}`}>Public · {d.public_domain}</Badge>}</div>}</TableCell>
-                    <TableCell>
+                    <TableCell className="whitespace-nowrap">
                       <StatusDot site={d} running={!!status?.running} />
-                    </TableCell>
-                    <TableCell className="min-w-44">
-                      {d && (
-                        <div className="flex min-w-0 items-center gap-1 rounded-md bg-muted/40 py-0.5 pl-2 pr-1">
-                          <button
-                            className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left font-mono text-xs text-muted-foreground hover:text-foreground hover:underline disabled:cursor-not-allowed disabled:opacity-50"
-                            title={!d.enabled ? 'The site is disabled' : !status?.running ? 'Start the web server first' : `Open ${d.hostname}`}
-                            disabled={!d.enabled || !status?.running}
-                            onClick={() => run('open', () => runCommand({ type: 'open_url', url: d.url }))}
-                          >
-                            <ExternalLink className="size-4 shrink-0" />
-                            <span className="truncate">{d.hostname}</span>
-                          </button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 w-7 shrink-0 cursor-pointer px-0"
-                            title={copiedUrl === d.url ? 'Copied' : 'Copy domain'}
-                            aria-label={copiedUrl === d.url ? 'Domain copied' : `Copy ${d.hostname}`}
-                            onClick={async () => {
-                              await navigator.clipboard.writeText(d.hostname)
-                              setCopiedUrl(d.url)
-                              window.setTimeout(() => setCopiedUrl((current) => (current === d.url ? null : current)), 1500)
-                            }}
-                          >
-                            {copiedUrl === d.url ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-                          </Button>
+                      {d?.public_domain && (
+                        <div className="mt-0.5 text-[11px] text-warning" title={`Public through Cloudflare: ${d.public_domain}`}>
+                          Public
                         </div>
                       )}
                     </TableCell>
@@ -359,7 +365,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
               })}
               {visible.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-sm text-muted-foreground">
+                  <TableCell colSpan={3} className="text-center text-sm text-muted-foreground">
                     {rows.length === 0 ? 'No sites yet. Add one, add a project folder, or create one from Quick Apps.' : q ? `No site matches "${query.trim()}".` : 'No sites of this type.'}
                   </TableCell>
                 </TableRow>
