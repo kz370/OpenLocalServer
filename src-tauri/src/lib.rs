@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -42,8 +43,28 @@ fn show_main_window(app: &AppHandle) {
     }
 }
 
-/// Stops everything OpenLocalServer started so nothing is left running after "Quit".
-fn shutdown(core: &Core) {
+static SHUTDOWN_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+
+fn set_stopping_tray(app: &AppHandle) {
+    if let Some(tray) = app.tray_by_id("main") {
+        if let Some(icon) = app.default_window_icon() {
+            let mut rgba = icon.rgba().to_vec();
+            for pixel in rgba.chunks_exact_mut(4) {
+                if pixel[3] > 0 {
+                    pixel[0] = 220;
+                    pixel[1] = 38;
+                    pixel[2] = 55;
+                }
+            }
+            let red_icon = tauri::image::Image::new_owned(rgba, icon.width(), icon.height());
+            let _ = tray.set_icon(Some(red_icon));
+        }
+        let _ = tray.set_tooltip(Some("OpenLocalServer is stopping"));
+    }
+}
+
+/// Stops everything OpenLocalServer started and waits before allowing the app to exit.
+fn shutdown(core: &Core) -> bool {
     ols_core::control::close(&core.inner().paths);
     core.inner().stop_all_tunnels();
     core.inner().stop_all_workers();
@@ -54,7 +75,23 @@ fn shutdown(core: &Core) {
             core.services().stop(&s.id);
         }
     }
-    core.supervisor().stop_all_and_wait(Duration::from_secs(10));
+    core.supervisor().stop_all_and_wait(Duration::from_secs(30))
+}
+
+fn begin_shutdown(app: &AppHandle, core: Core) {
+    if SHUTDOWN_IN_PROGRESS.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    set_stopping_tray(app);
+    let app = app.clone();
+    std::thread::spawn(move || {
+        if shutdown(&core) {
+            app.exit(0);
+        } else {
+            SHUTDOWN_IN_PROGRESS.store(false, Ordering::SeqCst);
+            notify(&app, &core, "Still stopping", "Some managed processes are still running. The red tray icon will remain until they stop.");
+        }
+    });
 }
 
 fn navigate(app: &AppHandle, route: &str) {
@@ -190,7 +227,7 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
                     let _ = core.dispatch(CoreCommand::SetSetting { key: "web.server".into(), value: serde_json::Value::String(id[7..].into()) });
                     refresh_tray(app, &core);
                 }
-                "quit" => { shutdown(&core); app.exit(0); }
+                "quit" => begin_shutdown(app, core.clone()),
                 _ => {}
             }
         })
@@ -343,6 +380,9 @@ pub fn run() {
                 if window_core.inner().setting_bool("startup.close_to_tray", true) {
                     api.prevent_close();
                     let _ = window.hide();
+                } else {
+                    api.prevent_close();
+                    begin_shutdown(&window.app_handle(), window_core.clone());
                 }
             }
         })

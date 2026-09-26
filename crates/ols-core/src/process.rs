@@ -183,7 +183,7 @@ impl ProcessSupervisor {
 
     /// Requests every active process to stop and waits for the supervisor to observe exit.
     /// Processes still starting are stopped again once they have a PID.
-    pub fn stop_all_and_wait(&self, timeout: Duration) {
+    pub fn stop_all_and_wait(&self, timeout: Duration) -> bool {
         let deadline = Instant::now() + timeout;
         let mut requested_without_pid = HashSet::new();
         let mut killed = HashSet::new();
@@ -194,7 +194,7 @@ impl ProcessSupervisor {
                 .filter(|p| matches!(p.state, ProcessState::Starting | ProcessState::Running | ProcessState::Stopping | ProcessState::Restarting))
                 .collect();
             if active.is_empty() {
-                return;
+                return true;
             }
             for process in &active {
                 if let Some(pid) = process.pid {
@@ -207,7 +207,7 @@ impl ProcessSupervisor {
             }
             if Instant::now() >= deadline {
                 tracing::warn!(processes = ?active.iter().map(|p| &p.name).collect::<Vec<_>>(), "processes did not stop before shutdown timeout");
-                return;
+                return false;
             }
             std::thread::sleep(Duration::from_millis(25));
         }
