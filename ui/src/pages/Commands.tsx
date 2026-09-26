@@ -1,5 +1,5 @@
 import { listen } from '@tauri-apps/api/event'
-import { Clipboard, Pencil, Play, Plus, RefreshCw, Save, Search, SquareTerminal, Trash2 } from 'lucide-react'
+import { Clipboard, FileText, History as HistoryIcon, Pencil, Play, Plus, RefreshCw, Save, Search, SquareTerminal, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { Spinner } from '@/components/Spinner'
@@ -13,6 +13,7 @@ import { TechIcon } from '@/components/TechIcon'
 import { Field, Select, Tabs, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { type CommandSource, type DiscoveredCommand, type HistoryEntry, type ProcessEvent, type ProcessState, type Project, type QuickCommand, runCommand } from '@/core'
 import { timeAgo, useAction } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
@@ -94,8 +95,18 @@ const slug = (s: string) =>
 
 export const commandLine = (c: QuickCommand) => (c.command?.executable ? [c.command.executable, ...c.command.arguments].map(quote).join(' ') : '')
 
-/** "make:model" is in "make"; commands without a colon are grouped as general. */
-const namespaceOf = (name: string) => (name.includes(':') ? name.slice(0, name.indexOf(':')) : '')
+type DialogTab = 'run' | 'details' | 'history'
+
+interface CmdRow {
+  key: string
+  name: string
+  source: string
+  icon: string
+  description: string
+  mono: boolean
+  lastRun: number | null
+  selection: NonNullable<Selection>
+}
 
 type Selection = { kind: 'discovered'; source: string; name: string } | { kind: 'quick'; id: string } | null
 
@@ -117,6 +128,9 @@ export function CommandsPage() {
   const [processId, setProcessId] = useState<number | null>(null)
   const [processState, setProcessState] = useState<ProcessState | null>(null)
   const [editing, setEditing] = useState<QuickCommand | null>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [dialogTab, setDialogTab] = useState<DialogTab>('run')
+  const outputCard = useRef<HTMLDivElement>(null)
   const { busy, error, setError, run } = useAction()
   const outRef = useRef<HTMLPreElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
@@ -151,6 +165,7 @@ export function CommandsPage() {
     if (id === projectId) return
     setProjectId(id)
     setSelected(null)
+    setDialogOpen(false)
     setFramework('')
     setSources(id ? (sourceCache.get(id) ?? []) : [])
     if (!id) return
@@ -238,6 +253,7 @@ export function CommandsPage() {
       setTitle(label)
       setProcessState('starting')
       setProcessId(id)
+      setTimeout(() => outputCard.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50)
     }
     await refresh()
   }
@@ -265,6 +281,58 @@ export function CommandsPage() {
         text,
       ),
     )
+
+  // The newest run of every command line, so each row can say when it last ran.
+  const lastRunByLine = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const h of history) m.set(h.line, Math.max(m.get(h.line) ?? 0, h.timestamp_ms))
+    return m
+  }, [history])
+  const lastRunOf = (prefix: string): number | null => {
+    if (!prefix) return null
+    let best: number | null = null
+    for (const [l, at] of lastRunByLine) if ((l === prefix || l.startsWith(prefix + ' ')) && (best === null || at > best)) best = at
+    return best
+  }
+
+  const rows: CmdRow[] = useMemo(() => {
+    if (activeSource) {
+      return sourceShown(activeSource).map((c) => ({
+        key: `${activeSource.id}:${c.name}`,
+        name: c.name,
+        source: activeSource.label,
+        icon: SOURCE_ICON[activeSource.id] ?? activeSource.prefix[0],
+        description: c.description,
+        mono: activeSource.id === 'scripts',
+        lastRun: lastRunOf([...activeSource.prefix, c.name].join(' ')),
+        selection: { kind: 'discovered', source: activeSource.id, name: c.name },
+      }))
+    }
+    if (activeTab === 'custom') {
+      return [...quickShown]
+        .sort((a, b) => categoryRank(a.builtin ? a.category : 'custom') - categoryRank(b.builtin ? b.category : 'custom') || a.name.localeCompare(b.name))
+        .map((c) => ({
+          key: `quick:${c.id}`,
+          name: c.name,
+          source: c.builtin ? categoryLabel(c.category || 'other') : 'Yours',
+          icon: c.builtin ? c.category || 'other' : 'custom',
+          description: c.description || commandLine(c),
+          mono: false,
+          lastRun: lastRunOf(commandLine(c)),
+          selection: { kind: 'quick', id: c.id },
+        }))
+    }
+    return []
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSource, activeTab, sources, commands, history, query, framework])
+
+  const openRow = (sel: NonNullable<Selection>) => {
+    setSelected(sel)
+    setDialogTab('run')
+    setDialogOpen(true)
+  }
+  const dialogPrefix = selectedDiscovered ? [...selectedDiscovered.source.prefix, selectedDiscovered.command.name].join(' ') : selectedQuick ? commandLine(selectedQuick) : ''
+  const dialogHistory = dialogPrefix ? history.filter((h) => h.line === dialogPrefix || h.line.startsWith(dialogPrefix + ' ')) : []
 
   const running = processId !== null && (processState === 'starting' || processState === 'running' || processState === 'stopping')
 
@@ -306,6 +374,9 @@ export function CommandsPage() {
           <Button variant="ghost" size="icon" title="Re-read the project's commands" disabled={!projectId || loadingSources} onClick={() => run('discover', () => loadSources(projectId, true))}>
             {loadingSources ? <Spinner /> : <RefreshCw />}
           </Button>
+          <Button variant="secondary" onClick={() => setEditing(newCustom('', '', 'custom', []))}>
+            <Plus /> New custom command
+          </Button>
         </div>
       </div>
 
@@ -331,226 +402,369 @@ export function CommandsPage() {
         </CardContent>
       </Card>
 
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-        <Card className="min-w-0">
-          <CardContent className="flex flex-col gap-3 pt-4">
-            <Tabs tabs={tabs} value={activeTab} onChange={(t) => setTab(t)} />
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input ref={searchRef} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search commands   ( / )" className="pl-9" />
-            </div>
+      <Card className="min-w-0">
+        <CardContent className="flex flex-col gap-3 pt-4">
+          <Tabs tabs={tabs} value={activeTab} onChange={(t) => setTab(t)} />
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input ref={searchRef} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search commands   ( / )" className="pl-9" />
+          </div>
 
-            <div className="-mx-1 max-h-[62vh] overflow-y-auto px-1">
-              {activeSource && (
-                <SourceList
-                  source={activeSource}
-                  commands={sourceShown(activeSource)}
-                  selected={selectedDiscovered?.command.name ?? null}
-                  onSelect={(name) =>
-                    setSelected({
-                      kind: 'discovered',
-                      source: activeSource.id,
-                      name,
-                    })
-                  }
-                />
-              )}
+          {activeSource?.error && <SourceProblem tone="error" title={`Could not read the ${activeSource.label} commands.`} text={activeSource.error} />}
+          {activeSource?.warning && <SourceProblem tone="warning" text={activeSource.warning} />}
 
-              {activeTab === 'custom' && (
-                <QuickList commands={quickShown} selected={selectedQuick?.id ?? null} onSelect={(id) => setSelected({ kind: 'quick', id })} onNew={() => setEditing(newCustom('', '', 'custom', []))} />
-              )}
-
-              {activeTab === 'recent' && (
-                <div className="flex flex-col gap-1.5">
-                  {history.length > 0 && (
-                    <div className="flex justify-end">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() =>
-                          confirmThen('Clear the whole command history?', () =>
-                            run('clear', async () => {
-                              await runCommand({ type: 'clear_history' })
-                              await refresh()
-                            }),
-                          )
-                        }
-                      >
-                        Clear history
-                      </Button>
-                    </div>
-                  )}
-                  {historyShown.slice(0, 100).map((h) => (
-                    <div key={h.id} className="group flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-1.5">
-                      <div className="min-w-0">
-                        <code className="block truncate text-xs">{h.line}</code>
-                        <span className="text-[11px] text-muted-foreground">
-                          {timeAgo(h.timestamp_ms)}
-                          {h.project_id && ` · ${projects.find((p) => p.id === h.project_id)?.name ?? ''}`}
-                        </span>
-                      </div>
-                      <div className="flex shrink-0">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          title="Run again"
-                          onClick={() => {
-                            pickProject(h.project_id ?? '')
-                            void runLine(h.line, h.project_id ?? '')
-                          }}
-                        >
-                          <Play className="size-3.5" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          title="Edit in the command line"
-                          onClick={() => {
-                            setLine(h.line)
-                            lineRef.current?.focus()
-                          }}
-                        >
-                          <Pencil className="size-3.5" />
-                        </Button>
-                        <Button size="sm" variant="ghost" title="Save as a custom command" onClick={() => setEditing(newCustom(h.line, h.line.slice(0, 40)))}>
-                          <Save className="size-3.5" />
-                        </Button>
-                        <Button size="sm" variant="ghost" title="Copy" onClick={() => navigator.clipboard.writeText(h.line)}>
-                          <Clipboard className="size-3.5" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          title="Delete"
-                          onClick={() =>
-                            confirmThen(`Delete "${h.line}" from history?`, () =>
-                              run('delh', async () => {
-                                await runCommand({
-                                  type: 'delete_history',
-                                  id: h.id,
-                                })
-                                await refresh()
-                              }),
-                            )
-                          }
-                        >
-                          <Trash2 className="size-3.5" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                  {historyShown.length === 0 && <p className="py-6 text-center text-sm text-muted-foreground">{q ? 'Nothing in the history matches.' : 'Commands you run appear here.'}</p>}
-                </div>
-              )}
-
-              {!projectId && activeTab === 'custom' && <p className="pt-3 text-xs text-muted-foreground">Pick a project to also see its artisan, composer, package.json and manage.py commands.</p>}
-              {projectId && loadingSources && sources.length === 0 && (
-                <p className="flex items-center gap-2 pt-3 text-xs text-muted-foreground">
-                  <Spinner /> Reading the project's commands…
-                </p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        <div className="flex min-w-0 flex-col gap-4">
-          {selectedDiscovered ? (
-            <CommandForm
-              key={`${selectedDiscovered.source.id}:${selectedDiscovered.command.name}`}
-              source={selectedDiscovered.source}
-              command={selectedDiscovered.command}
-              busy={busy !== null}
-              needsProject={!projectId}
-              onRun={(text) => runLine(text)}
-              onEdit={(text) => {
-                setLine(text)
-                lineRef.current?.focus()
-              }}
-              onSave={(text) =>
-                setEditing(
-                  newCustom(
-                    text,
-                    selectedDiscovered.command.name,
-                    SOURCE_CATEGORY[selectedDiscovered.source.id] ?? 'custom',
-                    framework && selectedDiscovered.source.id !== 'scripts' ? [framework] : [],
-                  ),
-                )
-              }
-            />
-          ) : selectedQuick ? (
-            <QuickDetail
-              command={selectedQuick}
-              busy={busy !== null}
-              needsProject={selectedQuick.applies_to.length > 0 && !projectId}
-              onRun={() => runQuick(selectedQuick)}
-              onEdit={() => setEditing(selectedQuick)}
-              onDelete={() =>
-                confirmThen(
-                  commands.some((c) => c.id === selectedQuick.id && !c.builtin)
-                    ? `Delete "${selectedQuick.name}"? A built-in command with the same id comes back as it was.`
-                    : `Delete "${selectedQuick.name}"?`,
-                  () =>
-                    run('del', async () => {
-                      await runCommand({
-                        type: 'delete_quick_command',
-                        id: selectedQuick.id,
-                      })
-                      setSelected(null)
-                      await refresh()
-                    }),
-                )
-              }
-            />
-          ) : (
-            <Card>
-              <CardContent className="flex flex-col items-center gap-2 py-10 text-center">
-                <SquareTerminal className="size-8 text-muted-foreground" />
-                <p className="text-sm font-medium">Pick a command on the left</p>
-                <p className="max-w-sm text-xs text-muted-foreground">Its arguments and options turn into a form here, with the exact command line shown before you run it.</p>
-              </CardContent>
-            </Card>
-          )}
-
-          <Card>
-            <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="flex min-w-0 items-center gap-2 text-sm">
-                <span className="truncate">Output{title && `: ${title}`}</span>
-                {processState && <StateBadge state={processState} />}
-              </CardTitle>
-              <div className="flex shrink-0 gap-1">
-                {output.length > 0 && (
-                  <Button size="sm" variant="ghost" title="Copy output" onClick={() => navigator.clipboard.writeText(output.join('\n'))}>
-                    <Clipboard className="size-3.5" />
-                  </Button>
-                )}
-                {running && processId !== null && (
+          {activeTab === 'recent' ? (
+            <div className="flex flex-col gap-2">
+              {history.length > 0 && (
+                <div className="flex justify-end">
                   <Button
                     size="sm"
                     variant="ghost"
-                    disabled={busy === 'stop'}
                     onClick={() =>
-                      run('stop', async () => {
-                        await runCommand({
-                          type: 'stop_process',
-                          id: processId,
-                        })
-                        await waitForProcessExit(processId)
-                      })
+                      confirmThen('Clear the whole command history?', () =>
+                        run('clear', async () => {
+                          await runCommand({ type: 'clear_history' })
+                          await refresh()
+                        }),
+                      )
                     }
                   >
-                    {busy === 'stop' ? <Spinner /> : <StopIcon />} {busy === 'stop' ? 'Stopping…' : 'Stop'}
+                    Clear history
                   </Button>
+                </div>
+              )}
+              {historyShown.length > 0 ? (
+                <div className="max-h-[52vh] overflow-y-auto rounded-lg">
+                  <Table>
+                    <TableHeader className="sticky top-0 z-10 bg-muted">
+                      <TableRow className="hover:bg-transparent">
+                        <TableHead>Command</TableHead>
+                        <TableHead className="w-40">Project</TableHead>
+                        <TableHead className="w-28">When</TableHead>
+                        <TableHead className="w-52 text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {historyShown.slice(0, 100).map((h) => (
+                        <TableRow key={h.id}>
+                          <TableCell className="py-1.5">
+                            <code className="block truncate text-xs">{h.line}</code>
+                          </TableCell>
+                          <TableCell className="py-1.5 text-xs text-muted-foreground">{projects.find((p) => p.id === h.project_id)?.name ?? '—'}</TableCell>
+                          <TableCell className="py-1.5 text-xs text-muted-foreground">{timeAgo(h.timestamp_ms)}</TableCell>
+                          <TableCell className="py-1.5 text-right">
+                            <span className="inline-flex justify-end">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                title="Run again"
+                                onClick={() => {
+                                  pickProject(h.project_id ?? '')
+                                  void runLine(h.line, h.project_id ?? '')
+                                }}
+                              >
+                                <Play className="size-3.5" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                title="Edit in the command line"
+                                onClick={() => {
+                                  setLine(h.line)
+                                  lineRef.current?.focus()
+                                }}
+                              >
+                                <Pencil className="size-3.5" />
+                              </Button>
+                              <Button size="sm" variant="ghost" title="Save as a custom command" onClick={() => setEditing(newCustom(h.line, h.line.slice(0, 40)))}>
+                                <Save className="size-3.5" />
+                              </Button>
+                              <Button size="sm" variant="ghost" title="Copy" onClick={() => navigator.clipboard.writeText(h.line)}>
+                                <Clipboard className="size-3.5" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                title="Delete"
+                                onClick={() =>
+                                  confirmThen(`Delete "${h.line}" from history?`, () =>
+                                    run('delh', async () => {
+                                      await runCommand({ type: 'delete_history', id: h.id })
+                                      await refresh()
+                                    }),
+                                  )
+                                }
+                              >
+                                <Trash2 className="size-3.5" />
+                              </Button>
+                            </span>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <p className="py-6 text-center text-sm text-muted-foreground">{q ? 'Nothing in the history matches.' : 'Commands you run appear here.'}</p>
+              )}
+            </div>
+          ) : (
+            <>
+              {rows.length > 0 ? (
+                <div className="max-h-[52vh] overflow-y-auto rounded-lg">
+                  <Table>
+                    <TableHeader className="sticky top-0 z-10 bg-muted">
+                      <TableRow className="hover:bg-transparent">
+                        <TableHead className="w-[26%]">Command</TableHead>
+                        <TableHead className="w-32">Source</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead className="w-28">Last run</TableHead>
+                        <TableHead className="w-24 text-right">Run</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {rows.map((r) => (
+                        <TableRow key={r.key} className="cursor-pointer" onClick={() => openRow(r.selection)}>
+                          <TableCell className="py-1.5 font-mono text-[13px]">{r.name}</TableCell>
+                          <TableCell className="py-1.5">
+                            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                              <TechIcon id={r.icon} className="size-3.5" /> {r.source}
+                            </span>
+                          </TableCell>
+                          <TableCell className={cn('max-w-0 truncate py-1.5 text-xs text-muted-foreground', r.mono && 'font-mono')}>{r.description}</TableCell>
+                          <TableCell className="py-1.5 text-xs text-muted-foreground">{r.lastRun ? timeAgo(r.lastRun) : '—'}</TableCell>
+                          <TableCell className="py-1.5 text-right">
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              className="h-7"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                openRow(r.selection)
+                              }}
+                            >
+                              <Play className="size-3.5" /> Run
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                !loadingSources && <p className="py-6 text-center text-sm text-muted-foreground">No command matches.</p>
+              )}
+              {!projectId && activeTab === 'custom' && <p className="text-xs text-muted-foreground">Pick a project to also see its artisan, composer, package.json and manage.py commands.</p>}
+              {projectId && loadingSources && sources.length === 0 && (
+                <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Spinner /> Reading the project's commands…
+                </p>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <div ref={outputCard}>
+        <Card>
+          <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="flex min-w-0 items-center gap-2 text-sm">
+              <span className="truncate">Output{title && `: ${title}`}</span>
+              {processState && <StateBadge state={processState} />}
+            </CardTitle>
+            <div className="flex shrink-0 gap-1">
+              {output.length > 0 && (
+                <Button size="sm" variant="ghost" title="Copy output" onClick={() => navigator.clipboard.writeText(output.join('\n'))}>
+                  <Clipboard className="size-3.5" />
+                </Button>
+              )}
+              {running && processId !== null && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={busy === 'stop'}
+                  onClick={() =>
+                    run('stop', async () => {
+                      await runCommand({ type: 'stop_process', id: processId })
+                      await waitForProcessExit(processId)
+                    })
+                  }
+                >
+                  {busy === 'stop' ? <Spinner /> : <StopIcon />} {busy === 'stop' ? 'Stopping…' : 'Stop'}
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            <pre ref={outRef} className="h-72 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-all rounded-lg bg-muted/40 p-3 font-mono text-xs">
+              {output.join('\n') || 'Run something to see its output here.'}
+            </pre>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Dialog
+        open={dialogOpen}
+        wide
+        onClose={() => setDialogOpen(false)}
+        title={selectedDiscovered?.command.name ?? selectedQuick?.name ?? 'Command'}
+        description={selectedDiscovered ? `${selectedDiscovered.source.label} command` : selectedQuick ? (selectedQuick.builtin ? 'Built-in command' : 'Your command') : undefined}
+      >
+        <div className="flex min-h-[26rem] flex-col gap-4 md:flex-row">
+          <nav className="flex shrink-0 gap-0.5 md:w-36 md:flex-col" aria-label="Command sections">
+            {(
+              [
+                { id: 'run', label: 'Run', icon: <Play className="size-4" /> },
+                { id: 'details', label: 'Details', icon: <FileText className="size-4" /> },
+                { id: 'history', label: 'History', icon: <HistoryIcon className="size-4" /> },
+              ] as { id: DialogTab; label: string; icon: React.ReactNode }[]
+            ).map((i) => (
+              <button
+                key={i.id}
+                onClick={() => setDialogTab(i.id)}
+                className={cn(
+                  'flex items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors',
+                  dialogTab === i.id ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
+                )}
+              >
+                {i.icon}
+                {i.label}
+              </button>
+            ))}
+          </nav>
+          <div className="min-w-0 flex-1">
+            {dialogTab === 'run' && selectedDiscovered && (
+              <CommandForm
+                key={`${selectedDiscovered.source.id}:${selectedDiscovered.command.name}`}
+                className="border-0 shadow-none"
+                source={selectedDiscovered.source}
+                command={selectedDiscovered.command}
+                busy={busy !== null}
+                needsProject={!projectId}
+                onRun={(text) => {
+                  setDialogOpen(false)
+                  void runLine(text)
+                }}
+                onEdit={(text) => {
+                  setDialogOpen(false)
+                  setLine(text)
+                  lineRef.current?.focus()
+                }}
+                onSave={(text) =>
+                  setEditing(
+                    newCustom(
+                      text,
+                      selectedDiscovered.command.name,
+                      SOURCE_CATEGORY[selectedDiscovered.source.id] ?? 'custom',
+                      framework && selectedDiscovered.source.id !== 'scripts' ? [framework] : [],
+                    ),
+                  )
+                }
+              />
+            )}
+            {dialogTab === 'run' && selectedQuick && (
+              <QuickDetail
+                className="border-0 shadow-none"
+                command={selectedQuick}
+                busy={busy !== null}
+                needsProject={selectedQuick.applies_to.length > 0 && !projectId}
+                onRun={() => {
+                  setDialogOpen(false)
+                  void runQuick(selectedQuick)
+                }}
+                onEdit={() => setEditing(selectedQuick)}
+                onDelete={() =>
+                  confirmThen(
+                    commands.some((c) => c.id === selectedQuick.id && !c.builtin)
+                      ? `Delete "${selectedQuick.name}"? A built-in command with the same id comes back as it was.`
+                      : `Delete "${selectedQuick.name}"?`,
+                    () =>
+                      run('del', async () => {
+                        await runCommand({ type: 'delete_quick_command', id: selectedQuick.id })
+                        setDialogOpen(false)
+                        setSelected(null)
+                        await refresh()
+                      }),
+                  )
+                }
+              />
+            )}
+            {dialogTab === 'details' && (selectedDiscovered || selectedQuick) && (
+              <div className="flex flex-col gap-4 text-sm">
+                {selectedDiscovered && (
+                  <>
+                    <CommandPreview text={[...selectedDiscovered.source.prefix, selectedDiscovered.command.name].map(quote).join(' ')} />
+                    {selectedDiscovered.command.description && <p>{selectedDiscovered.command.description}</p>}
+                    {selectedDiscovered.command.help && selectedDiscovered.command.help !== selectedDiscovered.command.description && (
+                      <pre className="max-h-56 overflow-y-auto whitespace-pre-wrap rounded-lg bg-muted/40 p-3 font-sans text-xs">{selectedDiscovered.command.help}</pre>
+                    )}
+                    {selectedDiscovered.command.arguments.length > 0 && (
+                      <div>
+                        <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Arguments</h3>
+                        <ul className="flex flex-col gap-1 text-xs">
+                          {selectedDiscovered.command.arguments.map((a) => (
+                            <li key={a.name}>
+                              <code>{a.name}</code>
+                              {a.required && ' (required)'} <span className="text-muted-foreground">{a.description}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {selectedDiscovered.command.options.length > 0 && (
+                      <div>
+                        <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Options</h3>
+                        <ul className="flex max-h-56 flex-col gap-1 overflow-y-auto text-xs">
+                          {selectedDiscovered.command.options.map((o) => (
+                            <li key={o.name}>
+                              <code>{o.name}</code> <span className="text-muted-foreground">{o.description}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </>
+                )}
+                {selectedQuick && (
+                  <>
+                    {commandLine(selectedQuick) ? <CommandPreview text={commandLine(selectedQuick)} /> : <p className="text-xs text-muted-foreground">Built-in action: {selectedQuick.action?.replace(/_/g, ' ')}</p>}
+                    {selectedQuick.description && <p>{selectedQuick.description}</p>}
+                    <p className="text-xs text-muted-foreground">
+                      Category: {categoryLabel(selectedQuick.builtin ? selectedQuick.category || 'other' : 'custom')}. Runs in{' '}
+                      {selectedQuick.working_directory === '{{project_path}}' || selectedQuick.working_directory === null ? "the project's folder" : selectedQuick.working_directory}.
+                      {selectedQuick.applies_to.length > 0 && ` For ${selectedQuick.applies_to.map((f) => f.replace(/_/g, ' ')).join(', ')} projects.`}
+                    </p>
+                  </>
                 )}
               </div>
-            </CardHeader>
-            <CardContent>
-              <pre ref={outRef} className="h-72 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-all rounded-lg bg-muted/40 p-3 font-mono text-xs">
-                {output.join('\n') || 'Run something to see its output here.'}
-              </pre>
-            </CardContent>
-          </Card>
+            )}
+            {dialogTab === 'history' && (
+              <div className="flex flex-col gap-1.5">
+                {dialogHistory.length === 0 && <p className="py-6 text-center text-sm text-muted-foreground">This command has not been run yet.</p>}
+                {dialogHistory.slice(0, 30).map((h) => (
+                  <div key={h.id} className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-1.5">
+                    <div className="min-w-0">
+                      <code className="block truncate text-xs">{h.line}</code>
+                      <span className="text-[11px] text-muted-foreground">{timeAgo(h.timestamp_ms)}</span>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      title="Run again"
+                      onClick={() => {
+                        setDialogOpen(false)
+                        void runLine(h.line, h.project_id ?? projectId)
+                      }}
+                    >
+                      <Play className="size-3.5" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      </Dialog>
 
       {editing && (
         <CustomCommandDialog
@@ -591,40 +805,6 @@ export function StateBadge({ state }: { state: ProcessState }) {
   )
 }
 
-/** One source's commands, grouped by namespace ("make", "migrate", ...). */
-function SourceList({ source, commands, selected, onSelect }: { source: CommandSource; commands: DiscoveredCommand[]; selected: string | null; onSelect: (name: string) => void }) {
-  if (source.error) return <SourceProblem tone="error" title={`Could not read the ${source.label} commands.`} text={source.error} />
-  const groups = new Map<string, DiscoveredCommand[]>()
-  for (const c of commands) {
-    const ns = source.id === 'scripts' ? '' : namespaceOf(c.name)
-    groups.set(ns, [...(groups.get(ns) ?? []), c])
-  }
-  const ordered = [...groups.entries()].sort(([a], [b]) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b)))
-  return (
-    <div className="flex flex-col gap-3">
-      {source.warning && <SourceProblem tone="warning" text={source.warning} />}
-      {commands.length === 0 && <p className="py-6 text-center text-sm text-muted-foreground">No command matches.</p>}
-      {ordered.map(([ns, list]) => (
-        <div key={ns || '_'}>
-          {ordered.length > 1 && <div className="sticky top-0 z-10 bg-card py-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{ns || 'general'}</div>}
-          <div className="flex flex-col">
-            {list.map((c) => (
-              <button
-                key={c.name}
-                onClick={() => onSelect(c.name)}
-                className={cn('flex min-w-0 flex-col rounded-md px-2.5 py-1.5 text-left transition-colors hover:bg-muted', selected === c.name && 'bg-primary/10 hover:bg-primary/15')}
-              >
-                <span className="truncate font-mono text-[13px]">{c.name}</span>
-                {c.description && <span className={cn('truncate text-xs text-muted-foreground', source.id === 'scripts' && 'font-mono')}>{c.description}</span>}
-              </button>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
 /**
  * Why a source's list is missing or second-best. The backend puts plain-words paragraphs
  * first and the tool's own output last; that last part is tucked away.
@@ -650,37 +830,6 @@ export function SourceProblem({ tone, title, text }: { tone: 'error' | 'warning'
   )
 }
 
-function QuickList({ commands, selected, onSelect, onNew }: { commands: QuickCommand[]; selected: string | null; onSelect: (id: string) => void; onNew: () => void }) {
-  const categories = Array.from(new Set(commands.map((c) => (c.builtin ? c.category || 'other' : 'custom')))).sort((a, b) => categoryRank(a) - categoryRank(b) || a.localeCompare(b))
-  return (
-    <div className="flex flex-col gap-3">
-      <Button size="sm" variant="secondary" className="self-start" onClick={onNew}>
-        <Plus /> New custom command
-      </Button>
-      {categories.map((cat) => (
-        <div key={cat}>
-          <div className="sticky top-0 z-10 flex items-center gap-1.5 bg-card py-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-            <TechIcon id={cat} className="size-3" /> {categoryLabel(cat)}
-          </div>
-          {commands
-            .filter((c) => (c.builtin ? c.category || 'other' : 'custom') === cat)
-            .map((c) => (
-              <button
-                key={c.id}
-                onClick={() => onSelect(c.id)}
-                className={cn('flex w-full min-w-0 flex-col rounded-md px-2.5 py-1.5 text-left transition-colors hover:bg-muted', selected === c.id && 'bg-primary/10 hover:bg-primary/15')}
-              >
-                <span className="truncate text-[13px] font-medium">{c.name}</span>
-                <span className="truncate text-xs text-muted-foreground">{c.description || commandLine(c)}</span>
-              </button>
-            ))}
-        </div>
-      ))}
-      {commands.length === 0 && <p className="py-6 text-center text-sm text-muted-foreground">No command matches.</p>}
-    </div>
-  )
-}
-
 function CommandPreview({ text }: { text: string }) {
   return (
     <div className="flex items-start gap-2 rounded-lg bg-muted/60 px-3 py-2">
@@ -702,6 +851,7 @@ export function CommandForm({
   onEdit,
   onSave,
   hidePrefix,
+  className,
 }: {
   source: CommandSource
   command: DiscoveredCommand
@@ -713,6 +863,7 @@ export function CommandForm({
   onSave: (line: string) => void
   /** Show the line without "php artisan" / "composer" / "npm run"; it is still run with it. */
   hidePrefix?: boolean
+  className?: string
 }) {
   const [args, setArgs] = useState<Record<string, string>>({})
   const [flags, setFlags] = useState<Record<string, boolean>>({})
@@ -748,7 +899,7 @@ export function CommandForm({
   const submit = () => !busy && missing.length === 0 && !needsProject && onRun(line)
 
   return (
-    <Card>
+    <Card className={className}>
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 font-mono text-base">
           <TechIcon id={SOURCE_ICON[source.id] ?? source.prefix[0]} />
@@ -852,6 +1003,7 @@ function QuickDetail({
   onRun,
   onEdit,
   onDelete,
+  className,
 }: {
   command: QuickCommand
   busy: boolean
@@ -859,10 +1011,11 @@ function QuickDetail({
   onRun: () => void
   onEdit: () => void
   onDelete: () => void
+  className?: string
 }) {
   const text = commandLine(command)
   return (
-    <Card>
+    <Card className={className}>
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
           <TechIcon id={command.builtin ? command.category || 'other' : 'custom'} />
