@@ -50,7 +50,10 @@ pub fn check_port(port: u16) -> PortStatus {
 
 #[cfg(windows)]
 fn find_owning_pid(port: u16) -> Option<u32> {
-    let output = std::process::Command::new("netstat").args(["-ano"]).output().ok()?;
+    let mut cmd = std::process::Command::new("netstat");
+    cmd.args(["-ano"]);
+    crate::exec::hide_window(&mut cmd);
+    let output = cmd.output().ok()?;
     let text = String::from_utf8_lossy(&output.stdout);
     let needle = format!(":{port}");
 
@@ -75,10 +78,10 @@ fn find_owning_pid(port: u16) -> Option<u32> {
 
 #[cfg(windows)]
 fn find_process_name(pid: u32) -> Option<String> {
-    let output = std::process::Command::new("tasklist")
-        .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
-        .output()
-        .ok()?;
+    let mut cmd = std::process::Command::new("tasklist");
+    cmd.args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"]);
+    crate::exec::hide_window(&mut cmd);
+    let output = cmd.output().ok()?;
     let text = String::from_utf8_lossy(&output.stdout);
     // CSV line: "name.exe","1234","Console","1","12,345 K"
     let first_field = text.trim().split(',').next()?;

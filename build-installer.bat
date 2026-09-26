@@ -8,6 +8,7 @@ set "BINNAME=openlocalserver"
 set "UI=%ROOT%ui"
 set "TARGET=%ROOT%target\release"
 set "EXE=%TARGET%\%BINNAME%.exe"
+set "HELPER_EXE=%TARGET%\ols-helper.exe"
 set "DIST=%ROOT%release"
 
 for /f "tokens=2 delims==" %%v in ('findstr /b /c:"version = " "%ROOT%Cargo.toml"') do if not defined VERSION set "VERSION=%%~v"
@@ -75,9 +76,9 @@ if not exist "%UI%\dist\index.html" (
   goto :fail
 )
 
-echo [2/4] Building release exe (%JOBS% build jobs)...
+echo [2/4] Building release executables (%JOBS% build jobs)...
 pushd "%ROOT%"
-cargo build -p openlocalserver --release --jobs %JOBS%
+cargo build -p openlocalserver -p ols-helper --release --jobs %JOBS%
 set "BUILD_ERR=%ERRORLEVEL%"
 popd
 if not "%BUILD_ERR%"=="0" (
@@ -88,9 +89,14 @@ if not exist "%EXE%" (
   echo [x] Build finished but %BINNAME%.exe is missing from target\release.
   goto :fail
 )
+if not exist "%HELPER_EXE%" (
+  echo [x] Build finished but ols-helper.exe is missing from target\release.
+  goto :fail
+)
 
 if not exist "%DIST%" mkdir "%DIST%"
 copy /y "%EXE%" "%DIST%\%APPNAME%.exe" >nul
+copy /y "%HELPER_EXE%" "%DIST%\ols-helper.exe" >nul
 for %%d in ("%TARGET%\*.dll") do if exist "%%~d" (
   copy /y "%%~d" "%DIST%\" >nul
 )

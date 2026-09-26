@@ -30,6 +30,7 @@ WizardStyle=modern
 
 [Files]
 Source: "{#SourceExe}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#LibDir}\ols-helper.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#LibDir}\*.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "..\src-tauri\icons\icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 

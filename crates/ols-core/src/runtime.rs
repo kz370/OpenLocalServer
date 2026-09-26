@@ -73,7 +73,10 @@ fn probe_version(exe: &std::path::Path, flag: &str) -> Option<String> {
     let out_path = std::env::temp_dir().join(format!("ols-probe-{}-{nanos}.txt", std::process::id()));
     let out = std::fs::File::create(&out_path).ok()?;
     let err = out.try_clone().ok()?;
-    let spawned = std::process::Command::new(exe).arg(flag).stdin(Stdio::null()).stdout(out).stderr(err).spawn();
+    let mut cmd = std::process::Command::new(exe);
+    cmd.arg(flag).stdin(Stdio::null()).stdout(out).stderr(err);
+    crate::exec::hide_window(&mut cmd);
+    let spawned = cmd.spawn();
     let text = spawned.ok().and_then(|mut child| {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
         loop {
