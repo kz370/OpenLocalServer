@@ -1,5 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Activity, Code2, Copy, ExternalLink, FolderMinus, FolderPlus, FolderSearch, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2 } from 'lucide-react'
+import { Activity, Check, Code2, Copy, ExternalLink, FolderMinus, FolderPlus, FolderSearch, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
@@ -75,6 +75,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   const [query, setQuery] = useState('')
   const [group, setGroup] = useState<'all' | Group>('all')
   const [message, setMessage] = useState<string | null>(null)
+  const [copiedUrl, setCopiedUrl] = useState<string | null>(null)
 
   // The command palette and search open a project or a site (and a section) from anywhere.
   useEffect(() => {
@@ -273,7 +274,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
               onChange={setGroup}
             />
           </div>
-          <Table>
+          <Table wrapperClassName="rounded-b-lg">
             <TableHeader>
               <TableRow>
                 <TableHead>Site</TableHead>
@@ -281,6 +282,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                 <TableHead>Folder</TableHead>
                 <TableHead>HTTPS</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Domain</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -291,7 +293,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                 return (
                   <TableRow key={r.key}>
                     <TableCell>
-                      <button className="flex flex-col text-left hover:underline" onClick={openSettings}>
+                      <button className="flex cursor-pointer flex-col text-left hover:underline" onClick={openSettings}>
                         <span className="font-medium">{d?.hostname ?? p?.name}</span>
                         {d && p && <span className="text-xs text-muted-foreground">{p.name}</span>}
                         {!d && <span className="text-xs text-muted-foreground">no domain yet</span>}
@@ -316,23 +318,37 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                       <StatusDot site={d} running={!!status?.running} />
                     </TableCell>
                     <TableCell>
+                      {d && (
+                        <div className="flex min-w-0 items-center gap-1 rounded-md bg-muted/40 py-0.5 pl-2 pr-1">
+                          <button
+                            className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left font-mono text-xs text-muted-foreground hover:text-foreground hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                            title={!d.enabled ? 'The site is disabled' : !status?.running ? 'Start the web server first' : `Open ${d.hostname}`}
+                            disabled={!d.enabled || !status?.running}
+                            onClick={() => run('open', () => runCommand({ type: 'open_url', url: d.url }))}
+                          >
+                            <ExternalLink className="size-4 shrink-0" />
+                            <span className="truncate">{d.hostname}</span>
+                          </button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 shrink-0 cursor-pointer px-0"
+                            title={copiedUrl === d.url ? 'Copied' : 'Copy domain'}
+                            aria-label={copiedUrl === d.url ? 'Domain copied' : `Copy ${d.hostname}`}
+                            onClick={async () => {
+                              await navigator.clipboard.writeText(d.hostname)
+                              setCopiedUrl(d.url)
+                              window.setTimeout(() => setCopiedUrl((current) => (current === d.url ? null : current)), 1500)
+                            }}
+                          >
+                            {copiedUrl === d.url ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                          </Button>
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell>
                       <div className="flex items-center justify-end gap-1">
-                        {d && (
-                          // The span keeps the tooltip working while the button is disabled.
-                          <span title={!d.enabled ? 'The site is disabled' : !status?.running ? 'Start the web server first' : `Open ${d.url}`}>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-8 w-8 px-0"
-                              aria-label={`Open ${d.url}`}
-                              disabled={!d.enabled || !status?.running}
-                              onClick={() => run('open', () => runCommand({ type: 'open_url', url: d.url }))}
-                            >
-                              <ExternalLink className="size-3.5" />
-                            </Button>
-                          </span>
-                        )}
-                        <Button size="sm" variant="ghost" className="h-8 w-8 px-0" onClick={openSettings} title="Settings" aria-label={`Settings for ${d?.hostname ?? p?.name}`}>
+                        <Button size="sm" variant="ghost" className="h-8 w-8 cursor-pointer px-0" onClick={openSettings} title="Settings" aria-label={`Settings for ${d?.hostname ?? p?.name}`}>
                           <Settings2 className="size-3.5" />
                         </Button>
                         <ActionMenu label={`More actions for ${d?.hostname ?? p?.name}`} items={menuFor(r)} />

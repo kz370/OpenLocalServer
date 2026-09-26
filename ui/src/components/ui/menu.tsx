@@ -53,7 +53,7 @@ export function ActionMenu({ items, label = 'More actions' }: { items: MenuItem[
 
   return (
     <>
-      <Button ref={button} size="sm" variant="ghost" className="h-8 w-8 px-0" title={label} aria-label={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <Button ref={button} size="sm" variant="ghost" className="h-8 w-8 cursor-pointer px-0" title={label} aria-label={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         <MoreHorizontal className="size-4" />
       </Button>
       {open && (
@@ -77,7 +77,7 @@ export function ActionMenu({ items, label = 'More actions' }: { items: MenuItem[
                   item.onSelect()
                 }}
                 className={cn(
-                  'flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-3.5 [&_svg]:shrink-0',
+                  'flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-left transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-3.5 [&_svg]:shrink-0',
                   item.danger ? 'text-destructive hover:bg-destructive/10' : '',
                 )}
               >
