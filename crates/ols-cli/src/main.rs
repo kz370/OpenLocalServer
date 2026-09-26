@@ -902,7 +902,7 @@ fn project(ctx: &Ctx, cmd: ProjectCmd) -> R<()> {
         ProjectCmd::Clone { url, path } => {
             let target = if path.is_absolute() { path } else { std::env::current_dir().map_err(|e| e.to_string())?.join(path) };
             println!("Cloning {url}…");
-            if let CoreResponse::Project { project } = ctx.call(CoreCommand::GitClone { url, target: target.display().to_string(), branch: None })? {
+            if let CoreResponse::Project { project } = ctx.call(CoreCommand::GitClone { url, target: target.display().to_string(), branch: None, auth: None })? {
                 println!("{} is ready at {}. Next: cd there and run `ols setup`.", project.name, project.path);
             }
         }

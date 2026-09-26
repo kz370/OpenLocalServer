@@ -95,6 +95,13 @@ pub struct GitResult {
     pub output: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum GitAuth {
+    Https { username: String, password: String, remember: bool },
+    Ssh { key_path: String, remember: bool, passphrase: Option<String> },
+}
+
 // ------------------------------------------------------------------------ parsing
 
 fn kind_of(x: char, y: char) -> &'static str {
@@ -181,8 +188,15 @@ fn safe_name(name: &str, what: &str) -> Result<String, CoreError> {
 
 /// Host of an https remote, for looking up saved credentials.
 pub fn remote_host(url: &str) -> Option<String> {
-    let rest = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://"))?;
-    let host = rest.split('/').next()?.rsplit('@').next()?;
+    let url = url.trim();
+    let host = if let Some(rest) = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://").or_else(|| url.strip_prefix("ssh://"))) {
+        rest.split(['/', ':']).next()?.rsplit('@').next()?
+    } else {
+        // SCP-style SSH remotes: [user@]host:path
+        let (authority, _) = url.split_once(':')?;
+        if authority.contains('/') { return None; }
+        authority.rsplit('@').next()?
+    };
     (!host.is_empty()).then(|| host.to_ascii_lowercase())
 }
 
@@ -192,6 +206,10 @@ fn secret_user(host: &str) -> String {
 
 fn secret_token(host: &str) -> String {
     format!("git.{host}.token")
+}
+
+fn secret_ssh_passphrase(host: &str) -> String {
+    format!("git.{host}.ssh_passphrase")
 }
 
 /// Ready-made `.gitignore` sections.
@@ -260,11 +278,48 @@ impl Inner {
         Ok(file)
     }
 
+    fn ssh_askpass_script(&self) -> Result<PathBuf, CoreError> {
+        let file = self.paths.data_dir().join("git-ssh-askpass.cmd");
+        let body = "@echo off\r\necho %OLS_SSH_PASSPHRASE%\r\n";
+        if std::fs::read_to_string(&file).ok().as_deref() != Some(body) {
+            std::fs::write(&file, body)?;
+        }
+        Ok(file)
+    }
+
+    fn ssh_key_setting(&self, host: &str) -> Option<String> {
+        self.settings.lock().unwrap().get(&format!("git.ssh_key.{host}"))?.as_str().map(str::to_string)
+    }
+
+    fn ssh_command(key_path: &str) -> Result<String, CoreError> {
+        let path = if key_path.trim().is_empty() || key_path.trim() == "~/.ssh/id_ed25519" {
+            let default = directories::UserDirs::new().map(|u| u.home_dir().join(".ssh").join("id_ed25519"));
+            default.filter(|p| p.is_file()).ok_or_else(|| err("choose an SSH private key file; ~/.ssh/id_ed25519 was not found"))?.display().to_string()
+        } else {
+            key_path.trim().to_string()
+        };
+        if path.contains(['"', '\r', '\n', '\0']) {
+            return Err(err("choose a valid SSH private key file"));
+        }
+        let canonical = std::fs::canonicalize(&path).map_err(|_| err(format!("SSH private key file was not found: {path}")))?;
+        Ok(format!("ssh -i \"{}\" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new", canonical.display().to_string().replace('\\', "/")))
+    }
+
     /// Environment for a network command: saved credentials for the remote's host, if any.
     fn git_env(&self, url: Option<&str>) -> Result<GitEnv, CoreError> {
         let mut env = vec![("GIT_TERMINAL_PROMPT".to_string(), "0".to_string())];
         let mut pre = Vec::new();
         if let Some(host) = url.and_then(remote_host) {
+            if url.is_some_and(|u| u.starts_with("ssh://") || (!u.starts_with("http://") && !u.starts_with("https://") && u.contains(':'))) {
+                if let Some(key_path) = self.ssh_key_setting(&host) {
+                    env.push(("GIT_SSH_COMMAND".into(), Self::ssh_command(&key_path)?));
+                    if let Some(passphrase) = crate::secrets::get_secret(&secret_ssh_passphrase(&host)).map_err(err)? {
+                        env.push(("SSH_ASKPASS".into(), self.ssh_askpass_script()?.display().to_string()));
+                        env.push(("SSH_ASKPASS_REQUIRE".into(), "force".into()));
+                        env.push(("OLS_SSH_PASSPHRASE".into(), passphrase));
+                    }
+                }
+            }
             let user = crate::secrets::get_secret(&secret_user(&host)).ok().flatten();
             let token = crate::secrets::get_secret(&secret_token(&host)).ok().flatten();
             if let Some(token) = token {
@@ -633,7 +688,7 @@ impl Inner {
     }
 
     /// Clones into `target` and registers it as a project (and gives it its automatic site).
-    pub fn git_clone(&self, url: &str, target: &str, branch: Option<&str>) -> Result<crate::project::Project, CoreError> {
+    pub fn git_clone(&self, url: &str, target: &str, branch: Option<&str>, auth: Option<GitAuth>) -> Result<crate::project::Project, CoreError> {
         let url = url.trim();
         if url.is_empty() || url.starts_with('-') {
             return Err(err("enter the repository's address"));
@@ -647,7 +702,53 @@ impl Inner {
         }
         let parent = target.parent().ok_or_else(|| err("choose a folder inside another folder"))?;
         std::fs::create_dir_all(parent)?;
-        let (env, pre) = self.git_env(Some(url))?;
+        let (mut env, mut pre) = self.git_env(Some(url))?;
+        if let Some(auth) = auth {
+            let host = remote_host(url).ok_or_else(|| err("enter a valid HTTPS or SSH repository address"))?;
+            match auth {
+                GitAuth::Https { username, password, remember } => {
+                    if !url.starts_with("https://") {
+                        return Err(err("username and password authentication requires an HTTPS repository address"));
+                    }
+                    if username.trim().is_empty() || password.is_empty() {
+                        return Err(err("enter both a username and password or access token"));
+                    }
+                    if remember { self.git_set_credentials(&host, &username, Some(&password))?; }
+                    env.retain(|(k, _)| k != "GIT_ASKPASS" && k != "OLS_GIT_USER" && k != "OLS_GIT_TOKEN");
+                    env.push(("GIT_ASKPASS".into(), self.askpass_script()?.display().to_string()));
+                    env.push(("OLS_GIT_USER".into(), username));
+                    env.push(("OLS_GIT_TOKEN".into(), password));
+                    if !pre.iter().any(|x| x == "credential.helper=") {
+                        pre.extend(["-c".into(), "credential.helper=".into()]);
+                    }
+                }
+                GitAuth::Ssh { key_path, remember, passphrase } => {
+                    if !(url.starts_with("ssh://") || (!url.starts_with("http://") && !url.starts_with("https://") && url.contains(':'))) {
+                        return Err(err("SSH key authentication requires an SSH repository address"));
+                    }
+                    let ssh_command = Self::ssh_command(&key_path)?;
+                    if remember {
+                        let effective_key = if key_path.trim().is_empty() || key_path.trim() == "~/.ssh/id_ed25519" {
+                            directories::UserDirs::new().map(|u| u.home_dir().join(".ssh").join("id_ed25519")).ok_or_else(|| err("could not locate the home folder"))?
+                        } else { PathBuf::from(key_path.clone()) };
+                        let effective_key = std::fs::canonicalize(effective_key).map_err(|_| err("SSH private key file was not found"))?;
+                        self.settings.lock().unwrap().set(format!("git.ssh_key.{host}"), serde_json::Value::String(effective_key.display().to_string()))?;
+                        match passphrase.as_deref().filter(|p| !p.is_empty()) {
+                            Some(value) => crate::secrets::set_secret(&secret_ssh_passphrase(&host), value).map_err(err)?,
+                            None => crate::secrets::delete_secret(&secret_ssh_passphrase(&host)).map_err(err)?,
+                        }
+                    }
+                    env.retain(|(k, _)| k != "GIT_SSH_COMMAND");
+                    env.retain(|(k, _)| k != "SSH_ASKPASS" && k != "SSH_ASKPASS_REQUIRE" && k != "OLS_SSH_PASSPHRASE");
+                    env.push(("GIT_SSH_COMMAND".into(), ssh_command));
+                    if let Some(passphrase) = passphrase.filter(|p| !p.is_empty()) {
+                        env.push(("SSH_ASKPASS".into(), self.ssh_askpass_script()?.display().to_string()));
+                        env.push(("SSH_ASKPASS_REQUIRE".into(), "force".into()));
+                        env.push(("OLS_SSH_PASSPHRASE".into(), passphrase));
+                    }
+                }
+            }
+        }
         let target_s = target.display().to_string();
         let mut args = vec!["clone", "--progress"];
         let branch = branch.map(|b| safe_name(b, "branch")).transpose()?;

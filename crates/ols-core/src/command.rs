@@ -393,7 +393,7 @@ pub enum CoreCommand {
     GitAddIgnore { project_id: String, template: String },
     /// Saves (or with no token, forgets) HTTPS credentials for a Git host.
     GitSetCredentials { host: String, username: String, token: Option<String> },
-    GitClone { url: String, target: String, branch: Option<String> },
+    GitClone { url: String, target: String, branch: Option<String>, auth: Option<crate::git::GitAuth> },
 
     // ---- Stage 16: plugins and signed catalogs (§133–135, §87–88) ----------------------
     ListPlugins,
@@ -1534,9 +1534,9 @@ impl Core {
                 i.git_set_credentials(&host, &username, token.as_deref())?;
                 Ok(R::Ok)
             }
-            C::GitClone { url, target, branch } => {
+            C::GitClone { url, target, branch, auth } => {
                 tracing::info!(command = "git_clone", target = %target);
-                Ok(R::Project { project: i.git_clone(&url, &target, branch.as_deref())? })
+                Ok(R::Project { project: i.git_clone(&url, &target, branch.as_deref(), auth)? })
             }
 
             C::ListPlugins => Ok(R::Plugins { plugins: i.list_plugins() }),

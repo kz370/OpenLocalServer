@@ -1,12 +1,12 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { FileUp, GitBranch } from 'lucide-react'
+import { FileKey, FileUp, GitBranch } from 'lucide-react'
 import { useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
 import { Spinner } from '@/components/Spinner'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
-import { Field } from '@/components/ui/form'
+import { Field, Select, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { type CloneResult, type ImportPreview, type Project, runCommand } from '@/core'
 import { useAction } from '@/lib/hooks'
@@ -34,6 +34,12 @@ export function GitCloneButton({ defaultParent, onDone }: { defaultParent: strin
   const [url, setUrl] = useState('')
   const [branch, setBranch] = useState('')
   const [target, setTarget] = useState('')
+  const [authMode, setAuthMode] = useState<'none' | 'https' | 'ssh'>('none')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [remember, setRemember] = useState(false)
+  const [keyPath, setKeyPath] = useState('')
+  const [passphrase, setPassphrase] = useState('')
   const { busy, error, setError, run } = useAction()
   const repoName = url.trim().replace(/\.git$/, '').split(/[/:]/).pop() ?? ''
 
@@ -46,22 +52,29 @@ export function GitCloneButton({ defaultParent, onDone }: { defaultParent: strin
         open={openDialog}
         onClose={() => busy === null && setOpen(false)}
         title="Clone a repository"
-        description="Clones into a new folder and adds it as a project. HTTPS credentials saved for the host (Git tab → Remotes) are used."
+        description="Clones into a new folder and adds it as a project. You can use saved HTTPS credentials or enter credentials for this clone."
         footer={
           <>
-            <Button variant="ghost" onClick={() => setOpen(false)} disabled={busy !== null}>
+            <Button variant="ghost" onClick={() => { setPassword(''); setPassphrase(''); setOpen(false) }} disabled={busy !== null}>
               Cancel
             </Button>
             <Button
-              disabled={busy !== null || !url.trim() || !(target || defaultParent)}
+              disabled={busy !== null || !url.trim() || !(target || defaultParent) || (authMode === 'https' && (!username.trim() || !password))}
               onClick={() =>
                 run('clone', async () => {
                   const dest = target || `${defaultParent}\\${repoName}`
-                  const r = await runCommand({ type: 'git_clone', url: url.trim(), target: dest, branch: branch.trim() || null })
+                  const auth = authMode === 'https'
+                    ? { type: 'https' as const, username, password, remember }
+                    : authMode === 'ssh'
+                      ? { type: 'ssh' as const, key_path: keyPath, remember, passphrase: passphrase || null }
+                      : null
+                  const r = await runCommand({ type: 'git_clone', url: url.trim(), target: dest, branch: branch.trim() || null, auth })
                   if (r.type === 'project') {
                     setOpen(false)
                     setUrl('')
                     setTarget('')
+                    setPassword('')
+                    setPassphrase('')
                     onDone(r.project)
                   }
                 })
@@ -75,8 +88,37 @@ export function GitCloneButton({ defaultParent, onDone }: { defaultParent: strin
         <div className="flex flex-col gap-4">
           <ErrorCard error={error} onDismiss={() => setError(null)} />
           <Field label="Repository address">
-            <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://github.com/you/shop.git" className="font-mono" autoFocus />
+            <Input value={url} onChange={(e) => {
+              const value = e.target.value
+              setUrl(value)
+              if (/^(git@|ssh:\/\/)/i.test(value.trim())) setAuthMode('ssh')
+            }} placeholder="https://github.com/you/shop.git" className="font-mono" autoFocus />
           </Field>
+          <Field label="Authentication" hint="Saved HTTPS credentials are used automatically when available.">
+            <Select value={authMode} onChange={(e) => setAuthMode(e.target.value as typeof authMode)}>
+              <option value="none">None / saved credentials</option>
+              <option value="https">Username + password or token</option>
+              <option value="ssh">SSH key</option>
+            </Select>
+          </Field>
+          {authMode === 'https' && <>
+            <Field label="Username"><Input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" /></Field>
+            <Field label="Password or access token"><Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" /></Field>
+            <Toggle checked={remember} onChange={setRemember} label="Remember for this host" hint="Stores the username and token in the system credential store." />
+          </>}
+          {authMode === 'ssh' && <>
+            <Field label="Private key file" hint="Defaults to ~/.ssh/id_ed25519 when present.">
+              <div className="flex gap-2">
+                <Input value={keyPath} onChange={(e) => setKeyPath(e.target.value)} className="min-w-0 flex-1 font-mono text-xs" placeholder="~/.ssh/id_ed25519" />
+                <Button variant="secondary" onClick={async () => {
+                  const p = await open({ multiple: false, title: 'Choose SSH private key' })
+                  if (p && !Array.isArray(p)) setKeyPath(p)
+                }}><FileKey /> Browse</Button>
+              </div>
+            </Field>
+            <Field label="Key passphrase" hint="Used for this clone only; it is not saved."><Input type="password" value={passphrase} onChange={(e) => setPassphrase(e.target.value)} autoComplete="new-password" /></Field>
+            <Toggle checked={remember} onChange={setRemember} label="Remember SSH key for this host" hint="Applies this key to later Git pull and push operations. Any passphrase is stored securely in the system credential store." />
+          </>}
           <Field label="Branch" hint="Blank for the repository's default branch.">
             <Input value={branch} onChange={(e) => setBranch(e.target.value)} className="font-mono" />
           </Field>
