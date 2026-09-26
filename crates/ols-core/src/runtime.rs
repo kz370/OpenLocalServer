@@ -116,14 +116,23 @@ impl RuntimeManager {
     /// The catalog for this machine's OS/arch, each entry flagged with whether it's
     /// already installed (§127 — no unnecessary repeated downloads).
     pub fn catalog(&self) -> Vec<CatalogEntry> {
-        builtin_catalog()
+        let manifests = builtin_catalog();
+        // Each probe spawns `<tool> --version`; run one per runtime id side by side instead of in turn.
+        let mut ids: Vec<&str> = manifests.iter().map(|m| m.id).collect();
+        ids.sort_unstable();
+        ids.dedup();
+        let detected: HashMap<&str, Option<SystemInstall>> = std::thread::scope(|scope| {
+            let handles: Vec<_> = ids.iter().map(|id| (*id, scope.spawn(move || detect_system_install(id)))).collect();
+            handles.into_iter().map(|(id, h)| (id, h.join().unwrap_or(None))).collect()
+        });
+        manifests
             .into_iter()
             .map(|m| CatalogEntry {
                 id: m.id.to_string(),
                 name: m.name.to_string(),
                 version: m.version.to_string(),
                 installed: self.version_dir(m.id, m.version).join(m.binary).exists(),
-                system: detect_system_install(m.id),
+                system: detected.get(m.id).cloned().flatten(),
             })
             .collect()
     }
