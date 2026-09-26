@@ -48,7 +48,10 @@ pub fn run_capture(
     timeout: Duration,
 ) -> Captured {
     let mut cmd = Command::new(executable);
-    cmd.args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd.args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     if let Some(cwd) = cwd {
         cmd.current_dir(cwd);
     }
@@ -60,7 +63,12 @@ pub fn run_capture(
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
-            return Captured { exit_code: None, stdout: String::new(), stderr: e.to_string(), timed_out: false };
+            return Captured {
+                exit_code: None,
+                stdout: String::new(),
+                stderr: e.to_string(),
+                timed_out: false,
+            };
         }
     };
 
@@ -124,7 +132,10 @@ pub fn run_streaming(
     use std::sync::mpsc;
 
     let mut cmd = Command::new(executable);
-    cmd.args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd.args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     if let Some(cwd) = cwd {
         cmd.current_dir(cwd);
     }
@@ -136,7 +147,12 @@ pub fn run_streaming(
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
-            return Captured { exit_code: None, stdout: String::new(), stderr: e.to_string(), timed_out: false };
+            return Captured {
+                exit_code: None,
+                stdout: String::new(),
+                stderr: e.to_string(),
+                timed_out: false,
+            };
         }
     };
 
@@ -146,7 +162,11 @@ pub fn run_streaming(
         let tx = tx.clone();
         readers.push(std::thread::spawn(move || {
             for line in std::io::BufReader::new(out).split(b'\n').flatten() {
-                let _ = tx.send(String::from_utf8_lossy(&line).trim_end_matches('\r').to_string());
+                let _ = tx.send(
+                    String::from_utf8_lossy(&line)
+                        .trim_end_matches('\r')
+                        .to_string(),
+                );
             }
         }));
     }
@@ -154,7 +174,11 @@ pub fn run_streaming(
         let tx = tx.clone();
         readers.push(std::thread::spawn(move || {
             for line in std::io::BufReader::new(err).split(b'\n').flatten() {
-                let _ = tx.send(String::from_utf8_lossy(&line).trim_end_matches('\r').to_string());
+                let _ = tx.send(
+                    String::from_utf8_lossy(&line)
+                        .trim_end_matches('\r')
+                        .to_string(),
+                );
             }
         }));
     }
@@ -198,7 +222,16 @@ pub fn run_streaming(
         collected.push_str(&line);
         collected.push('\n');
     }
-    Captured { exit_code, stdout: collected, stderr: if cancelled { "cancelled".into() } else { String::new() }, timed_out }
+    Captured {
+        exit_code,
+        stdout: collected,
+        stderr: if cancelled {
+            "cancelled".into()
+        } else {
+            String::new()
+        },
+        timed_out,
+    }
 }
 
 /// Kills a process and everything it started (`npm` spawns `node`, `composer` spawns `php`).
@@ -206,7 +239,9 @@ pub fn kill_tree_blocking(pid: u32) {
     #[cfg(windows)]
     {
         let mut cmd = Command::new("taskkill");
-        cmd.args(["/PID", &pid.to_string(), "/T", "/F"]).stdout(Stdio::null()).stderr(Stdio::null());
+        cmd.args(["/PID", &pid.to_string(), "/T", "/F"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
         hide_window(&mut cmd);
         let _ = cmd.status();
     }
@@ -270,13 +305,22 @@ mod tests {
             &cancel,
             |_| {},
         );
-        assert!(started.elapsed() < Duration::from_secs(10), "cancel must not wait for the command");
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "cancel must not wait for the command"
+        );
         assert!(!r.success());
     }
 
     #[test]
     fn missing_executable_reports_error_not_panic() {
-        let r = run_capture(Path::new("definitely-not-a-real-binary-xyz"), &[], None, &[], Duration::from_secs(2));
+        let r = run_capture(
+            Path::new("definitely-not-a-real-binary-xyz"),
+            &[],
+            None,
+            &[],
+            Duration::from_secs(2),
+        );
         assert!(r.exit_code.is_none());
         assert!(!r.stderr.is_empty());
     }

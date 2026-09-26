@@ -12,12 +12,15 @@ use std::time::Duration;
 use ols_core::{AppPaths, Core, CoreCommand, CoreResponse, SettingsService};
 
 fn dispatch(core: &mut Core, cmd: CoreCommand) -> CoreResponse {
-    core.dispatch(cmd).unwrap_or_else(|d| panic!("command failed: {} — {}", d.problem, d.cause))
+    core.dispatch(cmd)
+        .unwrap_or_else(|d| panic!("command failed: {} — {}", d.problem, d.cause))
 }
 
 fn wait_installed(core: &mut Core, id: &str) {
     for _ in 0..180 {
-        if let CoreResponse::RuntimeCatalog { entries } = dispatch(core, CoreCommand::ListRuntimeCatalog) {
+        if let CoreResponse::RuntimeCatalog { entries } =
+            dispatch(core, CoreCommand::ListRuntimeCatalog)
+        {
             if entries.iter().any(|e| e.id == id && e.installed) {
                 println!("[smoke] {id} installed");
                 return;
@@ -54,7 +57,9 @@ fn send_test_email(port: u16) {
     }
     macro_rules! send {
         ($line:expr) => {{
-            stream.write_all(format!("{}\r\n", $line).as_bytes()).unwrap();
+            stream
+                .write_all(format!("{}\r\n", $line).as_bytes())
+                .unwrap();
         }};
     }
 
@@ -75,14 +80,20 @@ fn send_test_email(port: u16) {
 
 fn mailpit_message_count(http_port: u16) -> usize {
     let body = http_get(&format!("http://127.0.0.1:{http_port}/api/v1/messages"));
-    let json: serde_json::Value = serde_json::from_str(&body).expect("mailpit API returned valid JSON");
+    let json: serde_json::Value =
+        serde_json::from_str(&body).expect("mailpit API returned valid JSON");
     json["messages_count"].as_u64().unwrap_or(0) as usize
 }
 
 fn http_get(url: &str) -> String {
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
-        reqwest::get(url).await.expect("GET to mailpit API").text().await.expect("read mailpit API body")
+        reqwest::get(url)
+            .await
+            .expect("GET to mailpit API")
+            .text()
+            .await
+            .expect("read mailpit API body")
     })
 }
 
@@ -103,14 +114,25 @@ fn main() {
             println!("[smoke] {id} already installed, skipping download");
         } else {
             println!("[smoke] installing {id} {version} (reusing cache if present)...");
-            dispatch(&mut core, CoreCommand::InstallRuntime { id: id.into(), version: version.into() });
+            dispatch(
+                &mut core,
+                CoreCommand::InstallRuntime {
+                    id: id.into(),
+                    version: version.into(),
+                },
+            );
             wait_installed(&mut core, id);
         }
     }
 
     // -- Mailpit --
     println!("[smoke] starting mailpit...");
-    dispatch(&mut core, CoreCommand::StartService { id: "mailpit".into() });
+    dispatch(
+        &mut core,
+        CoreCommand::StartService {
+            id: "mailpit".into(),
+        },
+    );
     wait_port_open(8025, "Mailpit web UI");
     wait_port_open(1025, "Mailpit SMTP");
 
@@ -120,21 +142,48 @@ fn main() {
     sleep(Duration::from_millis(500));
     let after = mailpit_message_count(8025);
     println!("[smoke] mailpit message count after send: {after}");
-    assert_eq!(after, before + 1, "mailpit did not capture the test message");
-    dispatch(&mut core, CoreCommand::StopService { id: "mailpit".into() });
+    assert_eq!(
+        after,
+        before + 1,
+        "mailpit did not capture the test message"
+    );
+    dispatch(
+        &mut core,
+        CoreCommand::StopService {
+            id: "mailpit".into(),
+        },
+    );
     println!("[smoke] mailpit: SMTP -> capture -> API readback all verified, stopped");
 
     // -- MariaDB --
     println!("[smoke] starting mariadb (first start runs mariadb-install-db, can take a bit)...");
-    dispatch(&mut core, CoreCommand::StartService { id: "mariadb".into() });
+    dispatch(
+        &mut core,
+        CoreCommand::StartService {
+            id: "mariadb".into(),
+        },
+    );
     wait_port_open(3306, "MariaDB");
     // mariadbd can accept TCP slightly before it's fully ready to authenticate; give it a beat.
     sleep(Duration::from_secs(3));
 
-    dispatch(&mut core, CoreCommand::CreateDatabase { engine: "mariadb".into(), name: "smoke_test_db".into() });
+    dispatch(
+        &mut core,
+        CoreCommand::CreateDatabase {
+            engine: "mariadb".into(),
+            name: "smoke_test_db".into(),
+        },
+    );
     println!("[smoke] CREATE DATABASE smoke_test_db succeeded");
-    dispatch(&mut core, CoreCommand::StopService { id: "mariadb".into() });
+    dispatch(
+        &mut core,
+        CoreCommand::StopService {
+            id: "mariadb".into(),
+        },
+    );
     println!("[smoke] mariadb: init -> start -> create database all verified, stopped");
 
-    println!("[smoke] ALL GOOD — Stage 5 service pipeline verified end-to-end against real app data.");
+    println!(
+        "[smoke] ALL GOOD — Stage 5 service pipeline verified end-to-end against real app data."
+    );
 }

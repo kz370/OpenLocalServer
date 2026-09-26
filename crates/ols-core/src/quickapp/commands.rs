@@ -33,7 +33,9 @@ fn yes() -> bool {
 
 impl Default for CommandEnvironment {
     fn default() -> Self {
-        Self { use_project_runtime: true }
+        Self {
+            use_project_runtime: true,
+        }
     }
 }
 
@@ -67,7 +69,10 @@ pub struct QuickCommand {
 impl QuickCommand {
     pub fn validate(&self) -> Result<(), String> {
         if !valid_id(&self.id) {
-            return Err(format!("id \"{}\" must be lowercase letters, digits and dashes", self.id));
+            return Err(format!(
+                "id \"{}\" must be lowercase letters, digits and dashes",
+                self.id
+            ));
         }
         if self.name.trim().is_empty() {
             return Err("name is required".into());
@@ -75,7 +80,10 @@ impl QuickCommand {
         match (&self.command, &self.action) {
             (Some(c), None) if !c.executable.trim().is_empty() => Ok(()),
             (None, Some(_)) => Ok(()),
-            _ => Err("a Quick Command needs exactly one of `command` (with an executable) or `action`".into()),
+            _ => Err(
+                "a Quick Command needs exactly one of `command` (with an executable) or `action`"
+                    .into(),
+            ),
         }
     }
 
@@ -96,7 +104,8 @@ impl QuickCommandStore {
     }
 
     fn builtin() -> Vec<QuickCommand> {
-        let mut list: Vec<QuickCommand> = serde_yaml_ng::from_str(BUILTIN_YAML).expect("built-in quick-commands.yaml is valid");
+        let mut list: Vec<QuickCommand> =
+            serde_yaml_ng::from_str(BUILTIN_YAML).expect("built-in quick-commands.yaml is valid");
         for c in &mut list {
             c.builtin = true;
         }
@@ -104,14 +113,19 @@ impl QuickCommandStore {
     }
 
     pub fn list(&self) -> Vec<QuickCommand> {
-        let mut by_id: BTreeMap<String, QuickCommand> = Self::builtin().into_iter().map(|c| (c.id.clone(), c)).collect();
+        let mut by_id: BTreeMap<String, QuickCommand> = Self::builtin()
+            .into_iter()
+            .map(|c| (c.id.clone(), c))
+            .collect();
         if let Ok(entries) = std::fs::read_dir(&self.dir) {
             for e in entries.flatten() {
                 let path = e.path();
                 if path.extension().and_then(|x| x.to_str()) != Some("yaml") {
                     continue;
                 }
-                let Ok(raw) = std::fs::read_to_string(&path) else { continue };
+                let Ok(raw) = std::fs::read_to_string(&path) else {
+                    continue;
+                };
                 if let Ok(cmd) = serde_yaml_ng::from_str::<QuickCommand>(&raw) {
                     if cmd.validate().is_ok() {
                         by_id.insert(cmd.id.clone(), cmd);
@@ -128,7 +142,8 @@ impl QuickCommandStore {
 
     pub fn save(&self, cmd: QuickCommand) -> Result<QuickCommand, CoreError> {
         cmd.validate().map_err(CoreError::QuickAppError)?;
-        let raw = serde_yaml_ng::to_string(&cmd).map_err(|e| CoreError::QuickAppError(e.to_string()))?;
+        let raw =
+            serde_yaml_ng::to_string(&cmd).map_err(|e| CoreError::QuickAppError(e.to_string()))?;
         std::fs::write(self.dir.join(format!("{}.yaml", cmd.id)), raw)?;
         Ok(self.get(&cmd.id).unwrap_or(cmd))
     }
@@ -136,7 +151,9 @@ impl QuickCommandStore {
     pub fn delete(&self, id: &str) -> Result<(), CoreError> {
         let path = self.dir.join(format!("{id}.yaml"));
         if !path.is_file() {
-            return Err(CoreError::QuickAppError("only your own Quick Commands can be deleted".into()));
+            return Err(CoreError::QuickAppError(
+                "only your own Quick Commands can be deleted".into(),
+            ));
         }
         std::fs::remove_file(path)?;
         Ok(())
@@ -166,7 +183,10 @@ impl CommandHistory {
     pub fn load(paths: &AppPaths) -> Result<Self, CoreError> {
         paths.ensure_dirs()?;
         let file = paths.data_dir().join("command_history.json");
-        let entries = std::fs::read_to_string(&file).ok().and_then(|r| serde_json::from_str(&r).ok()).unwrap_or_default();
+        let entries = std::fs::read_to_string(&file)
+            .ok()
+            .and_then(|r| serde_json::from_str(&r).ok())
+            .unwrap_or_default();
         Ok(Self { file, entries })
     }
 
@@ -181,9 +201,19 @@ impl CommandHistory {
 
     /// Records a run. Running the identical command again in the same place moves it to the
     /// top instead of piling up duplicates.
-    pub fn record(&mut self, line: &str, cwd: Option<&str>, project_id: Option<&str>) -> Result<HistoryEntry, CoreError> {
-        self.entries.retain(|e| !(e.line == line && e.cwd.as_deref() == cwd && e.project_id.as_deref() == project_id));
-        let mut id = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+    pub fn record(
+        &mut self,
+        line: &str,
+        cwd: Option<&str>,
+        project_id: Option<&str>,
+    ) -> Result<HistoryEntry, CoreError> {
+        self.entries.retain(|e| {
+            !(e.line == line && e.cwd.as_deref() == cwd && e.project_id.as_deref() == project_id)
+        });
+        let mut id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
         while self.entries.iter().any(|e| e.id == id) {
             id += 1;
         }
@@ -223,7 +253,12 @@ impl CommandHistory {
 }
 
 /// §93 "Save as Quick Command": a history line becomes a reusable command.
-pub fn quick_command_from_line(id: &str, name: &str, line: &str, cwd: Option<&str>) -> Result<QuickCommand, String> {
+pub fn quick_command_from_line(
+    id: &str,
+    name: &str,
+    line: &str,
+    cwd: Option<&str>,
+) -> Result<QuickCommand, String> {
     let tokens = super::plan::split_command_line(line);
     let (exe, args) = tokens.split_first().ok_or("that command line is empty")?;
     let cmd = QuickCommand {
@@ -233,7 +268,10 @@ pub fn quick_command_from_line(id: &str, name: &str, line: &str, cwd: Option<&st
         category: "custom".into(),
         applies_to: vec![],
         working_directory: cwd.map(str::to_string),
-        command: Some(CommandSpec { executable: exe.clone(), arguments: args.to_vec() }),
+        command: Some(CommandSpec {
+            executable: exe.clone(),
+            arguments: args.to_vec(),
+        }),
         environment: CommandEnvironment::default(),
         action: None,
         with: BTreeMap::new(),
@@ -254,11 +292,22 @@ mod tests {
         let list = store.list();
         assert!(list.iter().all(|c| c.builtin && c.validate().is_ok()));
         let names: Vec<&str> = list.iter().map(|c| c.name.as_str()).collect();
-        for want in ["Run Laravel Migrations", "Clear Laravel Cache", "Install Dependencies (Composer)", "Run Tests", "Build Frontend", "Open Mailpit", "Restart Project"] {
+        for want in [
+            "Run Laravel Migrations",
+            "Clear Laravel Cache",
+            "Install Dependencies (Composer)",
+            "Run Tests",
+            "Build Frontend",
+            "Open Mailpit",
+            "Restart Project",
+        ] {
             assert!(names.contains(&want), "missing {want}");
         }
         let migrate = store.get("laravel-migrate").unwrap();
-        assert_eq!(migrate.command.as_ref().unwrap().arguments, ["artisan", "migrate"]);
+        assert_eq!(
+            migrate.command.as_ref().unwrap().arguments,
+            ["artisan", "migrate"]
+        );
         assert!(migrate.applies_to_framework("laravel") && !migrate.applies_to_framework("node"));
     }
 
@@ -266,7 +315,8 @@ mod tests {
     fn user_commands_save_list_and_delete_but_builtins_cannot_be_deleted() {
         let home = crate::test_support::isolated_home();
         let store = QuickCommandStore::load(&home.paths).unwrap();
-        let cmd = quick_command_from_line("say-hi", "Say hi", "echo \"hello world\"", Some("C:/x")).unwrap();
+        let cmd = quick_command_from_line("say-hi", "Say hi", "echo \"hello world\"", Some("C:/x"))
+            .unwrap();
         store.save(cmd).unwrap();
         let got = store.get("say-hi").unwrap();
         assert_eq!(got.command.unwrap().arguments, ["hello world"]);
@@ -287,16 +337,19 @@ mod tests {
     fn history_dedupes_moves_to_top_caps_and_deletes() {
         let home = crate::test_support::isolated_home();
         let mut h = CommandHistory::load(&home.paths).unwrap();
-        h.record("php artisan migrate", Some("C:/a"), Some("p1")).unwrap();
+        h.record("php artisan migrate", Some("C:/a"), Some("p1"))
+            .unwrap();
         h.record("npm install", Some("C:/a"), Some("p1")).unwrap();
-        h.record("php artisan migrate", Some("C:/a"), Some("p1")).unwrap();
+        h.record("php artisan migrate", Some("C:/a"), Some("p1"))
+            .unwrap();
 
         let list = h.list();
         assert_eq!(list.len(), 2, "same command in the same place is one entry");
         assert_eq!(list[0].line, "php artisan migrate", "newest first");
 
         // Different folder = different entry.
-        h.record("php artisan migrate", Some("C:/b"), Some("p2")).unwrap();
+        h.record("php artisan migrate", Some("C:/b"), Some("p2"))
+            .unwrap();
         assert_eq!(h.list().len(), 3);
 
         let id = h.list()[1].id;

@@ -56,14 +56,26 @@ impl SqliteStore {
     }
 
     /// Registers (or re-associates) a database file with an optional project (§36 associate).
-    pub fn associate(&mut self, path: &str, project_id: Option<String>) -> Result<SqliteInfo, CoreError> {
+    pub fn associate(
+        &mut self,
+        path: &str,
+        project_id: Option<String>,
+    ) -> Result<SqliteInfo, CoreError> {
         let normalized = normalize(path);
         match self.entries.iter_mut().find(|e| e.path == normalized) {
             Some(existing) => existing.project_id = project_id,
-            None => self.entries.push(SqliteEntry { path: normalized.clone(), project_id }),
+            None => self.entries.push(SqliteEntry {
+                path: normalized.clone(),
+                project_id,
+            }),
         }
         self.persist()?;
-        Ok(info_for(self.entries.iter().find(|e| e.path == normalized).expect("just inserted")))
+        Ok(info_for(
+            self.entries
+                .iter()
+                .find(|e| e.path == normalized)
+                .expect("just inserted"),
+        ))
     }
 
     pub fn forget(&mut self, path: &str) -> Result<(), CoreError> {
@@ -89,7 +101,11 @@ fn info_for(entry: &SqliteEntry) -> SqliteInfo {
     let path = PathBuf::from(&entry.path);
     let meta = std::fs::metadata(&path).ok();
     SqliteInfo {
-        name: path.file_name().and_then(|n| n.to_str()).unwrap_or("database").to_string(),
+        name: path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("database")
+            .to_string(),
         path: entry.path.clone(),
         project_id: entry.project_id.clone(),
         exists: meta.is_some(),
@@ -102,12 +118,25 @@ fn info_for(entry: &SqliteEntry) -> SqliteInfo {
 /// descends deeper than 3 levels, so scanning a big project stays instant.
 pub fn detect_in_project(project: &Path) -> Vec<PathBuf> {
     fn walk(dir: &Path, depth: u32, out: &mut Vec<PathBuf>) {
-        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
         for e in entries.flatten() {
             let path = e.path();
             let name = e.file_name().to_string_lossy().to_string();
             if path.is_dir() {
-                if depth < 3 && !matches!(name.as_str(), "node_modules" | "vendor" | ".git" | "target" | "dist" | "build" | "storage") {
+                if depth < 3
+                    && !matches!(
+                        name.as_str(),
+                        "node_modules"
+                            | "vendor"
+                            | ".git"
+                            | "target"
+                            | "dist"
+                            | "build"
+                            | "storage"
+                    )
+                {
                     walk(&path, depth + 1, out);
                 }
             } else if is_sqlite_name(&name) && has_sqlite_header(&path) {
@@ -124,7 +153,9 @@ pub fn detect_in_project(project: &Path) -> Vec<PathBuf> {
 
 fn is_sqlite_name(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
-    [".sqlite", ".sqlite3", ".db", ".db3", ".s3db"].iter().any(|ext| lower.ends_with(ext))
+    [".sqlite", ".sqlite3", ".db", ".db3", ".s3db"]
+        .iter()
+        .any(|ext| lower.ends_with(ext))
 }
 
 /// Every SQLite file starts with this 16-byte magic; checking it keeps unrelated `.db`
@@ -132,7 +163,10 @@ fn is_sqlite_name(name: &str) -> bool {
 fn has_sqlite_header(path: &Path) -> bool {
     use std::io::Read;
     let mut buf = [0u8; 16];
-    std::fs::File::open(path).and_then(|mut f| f.read_exact(&mut buf)).is_ok() && &buf == b"SQLite format 3\0"
+    std::fs::File::open(path)
+        .and_then(|mut f| f.read_exact(&mut buf))
+        .is_ok()
+        && &buf == b"SQLite format 3\0"
 }
 
 fn timeout() -> Duration {
@@ -150,7 +184,10 @@ pub fn create(sqlite3: &Path, path: &Path) -> Result<(), String> {
     // Setting a non-default pragma forces SQLite to write the file header.
     let out = run_capture(
         sqlite3,
-        &[path.display().to_string(), "PRAGMA user_version = 1; PRAGMA user_version = 0;".into()],
+        &[
+            path.display().to_string(),
+            "PRAGMA user_version = 1; PRAGMA user_version = 0;".into(),
+        ],
         None,
         &[],
         timeout(),
@@ -169,18 +206,34 @@ pub fn integrity_check(sqlite3: &Path, path: &Path) -> Result<IntegrityResult, S
     if !path.is_file() {
         return Err(format!("{} does not exist", path.display()));
     }
-    let out = run_capture(sqlite3, &[path.display().to_string(), "PRAGMA integrity_check;".into()], None, &[], timeout());
+    let out = run_capture(
+        sqlite3,
+        &[path.display().to_string(), "PRAGMA integrity_check;".into()],
+        None,
+        &[],
+        timeout(),
+    );
     if out.exit_code.is_none() {
         return Err(out.combined());
     }
     let text = out.stdout.trim().to_string();
-    Ok(IntegrityResult { ok: out.success() && text == "ok", detail: if text.is_empty() { out.combined() } else { text } })
+    Ok(IntegrityResult {
+        ok: out.success() && text == "ok",
+        detail: if text.is_empty() {
+            out.combined()
+        } else {
+            text
+        },
+    })
 }
 
 /// Backups sit beside the database as `name.<unix-secs>.bak`.
 fn backup_path(path: &Path) -> PathBuf {
     let secs = crate::ca::unix_now();
-    let mut name = path.file_name().map(|n| n.to_os_string()).unwrap_or_default();
+    let mut name = path
+        .file_name()
+        .map(|n| n.to_os_string())
+        .unwrap_or_default();
     name.push(format!(".{secs}.bak"));
     path.with_file_name(name)
 }
@@ -198,8 +251,17 @@ pub fn backup(sqlite3: &Path, path: &Path) -> Result<PathBuf, String> {
         n.push("x");
         dest = dest.with_file_name(n);
     }
-    let cmd = format!(".backup '{}'", dest.display().to_string().replace('\'', "''"));
-    let out = run_capture(sqlite3, &[path.display().to_string(), cmd], None, &[], timeout());
+    let cmd = format!(
+        ".backup '{}'",
+        dest.display().to_string().replace('\'', "''")
+    );
+    let out = run_capture(
+        sqlite3,
+        &[path.display().to_string(), cmd],
+        None,
+        &[],
+        timeout(),
+    );
     if !out.success() || !dest.is_file() {
         return Err(format!("backup failed: {}", out.combined()));
     }
@@ -207,8 +269,12 @@ pub fn backup(sqlite3: &Path, path: &Path) -> Result<PathBuf, String> {
 }
 
 pub fn list_backups(path: &Path) -> Vec<String> {
-    let Some(dir) = path.parent() else { return Vec::new() };
-    let Some(name) = path.file_name().and_then(|n| n.to_str()) else { return Vec::new() };
+    let Some(dir) = path.parent() else {
+        return Vec::new();
+    };
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return Vec::new();
+    };
     let prefix = format!("{name}.");
     let mut found: Vec<String> = std::fs::read_dir(dir)
         .into_iter()
@@ -231,9 +297,16 @@ pub fn restore(sqlite3: &Path, path: &Path, backup_file: &Path) -> Result<Option
     // A backup that isn't a healthy database must never replace a working one.
     let check = integrity_check(sqlite3, backup_file)?;
     if !check.ok {
-        return Err(format!("that backup is damaged ({}), so it was not restored", check.detail));
+        return Err(format!(
+            "that backup is damaged ({}), so it was not restored",
+            check.detail
+        ));
     }
-    let safety = if path.is_file() { Some(backup(sqlite3, path)?) } else { None };
+    let safety = if path.is_file() {
+        Some(backup(sqlite3, path)?)
+    } else {
+        None
+    };
     // Stale WAL/SHM sidecars would corrupt the restored file.
     for ext in ["-wal", "-shm"] {
         let mut sidecar = path.as_os_str().to_os_string();
@@ -262,7 +335,9 @@ mod tests {
             }
         }
         let path = std::env::var_os("PATH")?;
-        std::env::split_paths(&path).map(|d| d.join("sqlite3.exe")).find(|p| p.is_file())
+        std::env::split_paths(&path)
+            .map(|d| d.join("sqlite3.exe"))
+            .find(|p| p.is_file())
     }
 
     #[test]
@@ -287,8 +362,12 @@ mod tests {
     fn store_associates_persists_and_forgets() {
         let home = crate::test_support::isolated_home();
         let mut store = SqliteStore::load(&home.paths).unwrap();
-        store.associate("C:/proj/db.sqlite", Some("p1".into())).unwrap();
-        store.associate("C:\\proj\\db.sqlite", Some("p2".into())).unwrap(); // same file, re-associated
+        store
+            .associate("C:/proj/db.sqlite", Some("p1".into()))
+            .unwrap();
+        store
+            .associate("C:\\proj\\db.sqlite", Some("p2".into()))
+            .unwrap(); // same file, re-associated
         assert_eq!(store.list().len(), 1);
         assert_eq!(store.list()[0].project_id.as_deref(), Some("p2"));
 
@@ -302,28 +381,57 @@ mod tests {
     #[test]
     fn create_backup_integrity_and_restore_round_trip_with_real_sqlite3() {
         let Some(exe) = sqlite3() else {
-            eprintln!("skipping: sqlite3.exe is not installed (run the stage-10 smoke example first)");
+            eprintln!(
+                "skipping: sqlite3.exe is not installed (run the stage-10 smoke example first)"
+            );
             return;
         };
         let dir = tempfile::tempdir().unwrap();
         let db = dir.path().join("app.sqlite");
 
         create(&exe, &db).unwrap();
-        assert!(has_sqlite_header(&db), "create must produce a real SQLite file");
+        assert!(
+            has_sqlite_header(&db),
+            "create must produce a real SQLite file"
+        );
         assert!(create(&exe, &db).is_err(), "must not overwrite");
 
         // Put real data in, back it up, wreck the original, restore.
-        let out = run_capture(&exe, &[db.display().to_string(), "CREATE TABLE t(x); INSERT INTO t VALUES (42);".into()], None, &[], timeout());
+        let out = run_capture(
+            &exe,
+            &[
+                db.display().to_string(),
+                "CREATE TABLE t(x); INSERT INTO t VALUES (42);".into(),
+            ],
+            None,
+            &[],
+            timeout(),
+        );
         assert!(out.success(), "{}", out.combined());
         assert!(integrity_check(&exe, &db).unwrap().ok);
 
         let bak = backup(&exe, &db).unwrap();
         assert_eq!(list_backups(&db).len(), 1);
-        run_capture(&exe, &[db.display().to_string(), "DELETE FROM t;".into()], None, &[], timeout());
+        run_capture(
+            &exe,
+            &[db.display().to_string(), "DELETE FROM t;".into()],
+            None,
+            &[],
+            timeout(),
+        );
 
         let safety = restore(&exe, &db, &bak).unwrap();
-        assert!(safety.is_some(), "restore must keep a safety copy of what it replaced");
-        let out = run_capture(&exe, &[db.display().to_string(), "SELECT x FROM t;".into()], None, &[], timeout());
+        assert!(
+            safety.is_some(),
+            "restore must keep a safety copy of what it replaced"
+        );
+        let out = run_capture(
+            &exe,
+            &[db.display().to_string(), "SELECT x FROM t;".into()],
+            None,
+            &[],
+            timeout(),
+        );
         assert_eq!(out.stdout.trim(), "42");
     }
 
@@ -334,7 +442,11 @@ mod tests {
         let db = dir.path().join("app.sqlite");
         create(&exe, &db).unwrap();
         let bad = dir.path().join("app.sqlite.1.bak");
-        std::fs::write(&bad, b"garbage that is not a database, definitely not, padding padding padding").unwrap();
+        std::fs::write(
+            &bad,
+            b"garbage that is not a database, definitely not, padding padding padding",
+        )
+        .unwrap();
         assert!(restore(&exe, &db, &bad).is_err());
     }
 }

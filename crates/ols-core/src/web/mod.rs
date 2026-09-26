@@ -32,9 +32,18 @@ pub struct WebConfig {
 
 impl WebConfig {
     pub fn from_settings(settings: &SettingsService) -> Self {
-        let num = |key: &str, default: u64| settings.get(key).and_then(|v| v.as_u64()).unwrap_or(default);
+        let num = |key: &str, default: u64| {
+            settings
+                .get(key)
+                .and_then(|v| v.as_u64())
+                .unwrap_or(default)
+        };
         Self {
-            server: settings.get("web.server").and_then(|v| v.as_str()).unwrap_or("nginx").to_string(),
+            server: settings
+                .get("web.server")
+                .and_then(|v| v.as_str())
+                .unwrap_or("nginx")
+                .to_string(),
             http_port: num("web.http_port", 80) as u16,
             https_port: num("web.https_port", 443) as u16,
             php_workers: num("web.php_workers", 3).clamp(1, 16) as u16,
@@ -48,9 +57,14 @@ impl WebConfig {
 #[derive(Debug, Clone)]
 pub enum Backend {
     /// FastCGI workers for one PHP version; `pool` is the upstream's name-safe id ("php_81").
-    Php { pool: String, ports: Vec<u16> },
+    Php {
+        pool: String,
+        ports: Vec<u16>,
+    },
     /// `upstream` is a full URL: `http://127.0.0.1:3000`, `https://192.168.1.20:8443`.
-    Proxy { upstream: String },
+    Proxy {
+        upstream: String,
+    },
     Static,
 }
 

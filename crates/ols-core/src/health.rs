@@ -29,11 +29,21 @@ pub struct HealthReport {
 }
 
 fn step(name: &str, ok: bool, detail: impl Into<String>) -> HealthStep {
-    HealthStep { name: name.to_string(), ok, skipped: false, detail: detail.into() }
+    HealthStep {
+        name: name.to_string(),
+        ok,
+        skipped: false,
+        detail: detail.into(),
+    }
 }
 
 fn skipped(name: &str, why: &str) -> HealthStep {
-    HealthStep { name: name.to_string(), ok: true, skipped: true, detail: why.to_string() }
+    HealthStep {
+        name: name.to_string(),
+        ok: true,
+        skipped: true,
+        detail: why.to_string(),
+    }
 }
 
 pub struct HealthTarget<'a> {
@@ -47,7 +57,11 @@ pub struct HealthTarget<'a> {
 }
 
 pub fn check_site(target: &HealthTarget) -> HealthReport {
-    let port = if target.https { target.https_port } else { target.http_port };
+    let port = if target.https {
+        target.https_port
+    } else {
+        target.http_port
+    };
     let mut steps = Vec::new();
 
     steps.push(check_dns(target.hostname, port));
@@ -56,7 +70,11 @@ pub fn check_site(target: &HealthTarget) -> HealthReport {
     let tcp = TcpStream::connect_timeout(&addr, Duration::from_secs(3));
     steps.push(match &tcp {
         Ok(_) => step("TCP", true, format!("connected to {addr}")),
-        Err(e) => step("TCP", false, format!("nothing is listening on {addr}: {e}. Start the web server.")),
+        Err(e) => step(
+            "TCP",
+            false,
+            format!("nothing is listening on {addr}: {e}. Start the web server."),
+        ),
     });
     drop(tcp);
     let tcp_ok = steps.last().is_some_and(|s| s.ok);
@@ -64,7 +82,14 @@ pub fn check_site(target: &HealthTarget) -> HealthReport {
     if target.https {
         let (tls_step, http_step) = if tcp_ok {
             match tls_get(target.hostname, addr, target.ca_pem) {
-                Ok(status_line) => (step("TLS", true, "handshake succeeded against the OpenLocalServer CA"), Some(status_line)),
+                Ok(status_line) => (
+                    step(
+                        "TLS",
+                        true,
+                        "handshake succeeded against the OpenLocalServer CA",
+                    ),
+                    Some(status_line),
+                ),
                 Err(e) => (step("TLS", false, e), None),
             }
         } else {
@@ -73,9 +98,17 @@ pub fn check_site(target: &HealthTarget) -> HealthReport {
         steps.push(tls_step);
         steps.push(check_cert(target.cert));
         steps.push(if target.ca_trusted {
-            step("Trust", true, "the CA is trusted by Windows (Edge and Chrome will accept it)")
+            step(
+                "Trust",
+                true,
+                "the CA is trusted by Windows (Edge and Chrome will accept it)",
+            )
         } else {
-            step("Trust", false, "the CA is not trusted yet. Trust it from the Certificates page.")
+            step(
+                "Trust",
+                false,
+                "the CA is not trusted yet. Trust it from the Certificates page.",
+            )
         });
         steps.push(match http_step {
             Some(line) => http_result(&line),
@@ -96,7 +129,11 @@ pub fn check_site(target: &HealthTarget) -> HealthReport {
     }
 
     let ok = steps.iter().all(|s| s.ok);
-    HealthReport { hostname: target.hostname.to_string(), ok, steps }
+    HealthReport {
+        hostname: target.hostname.to_string(),
+        ok,
+        steps,
+    }
 }
 
 fn check_dns(hostname: &str, port: u16) -> HealthStep {
@@ -104,34 +141,79 @@ fn check_dns(hostname: &str, port: u16) -> HealthStep {
         Ok(addrs) => {
             let ips: Vec<IpAddr> = addrs.map(|a| a.ip()).collect();
             if ips.iter().any(|ip| ip.is_loopback()) {
-                step("DNS", true, format!("{hostname} resolves to {}", ips.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(", ")))
+                step(
+                    "DNS",
+                    true,
+                    format!(
+                        "{hostname} resolves to {}",
+                        ips.iter()
+                            .map(|i| i.to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                )
             } else {
-                step("DNS", false, format!("{hostname} resolves to {ips:?}, not 127.0.0.1"))
+                step(
+                    "DNS",
+                    false,
+                    format!("{hostname} resolves to {ips:?}, not 127.0.0.1"),
+                )
             }
         }
-        Err(_) => step("DNS", false, format!("{hostname} does not resolve. Sync the hosts file from the Domains page.")),
+        Err(_) => step(
+            "DNS",
+            false,
+            format!("{hostname} does not resolve. Sync the hosts file from the Domains page."),
+        ),
     }
 }
 
 fn check_cert(cert: Option<&CertInfo>) -> HealthStep {
     match cert {
-        None => step("Certificate", false, "no certificate has been generated for this site"),
+        None => step(
+            "Certificate",
+            false,
+            "no certificate has been generated for this site",
+        ),
         Some(c) => match c.status {
-            CertStatus::Valid => step("Certificate", true, format!("valid for {} more days", c.days_left)),
-            CertStatus::Expiring => step("Certificate", true, format!("expires in {} days. It renews on the next apply.", c.days_left)),
-            CertStatus::Expired => step("Certificate", false, "the certificate has expired. Regenerate it."),
+            CertStatus::Valid => step(
+                "Certificate",
+                true,
+                format!("valid for {} more days", c.days_left),
+            ),
+            CertStatus::Expiring => step(
+                "Certificate",
+                true,
+                format!(
+                    "expires in {} days. It renews on the next apply.",
+                    c.days_left
+                ),
+            ),
+            CertStatus::Expired => step(
+                "Certificate",
+                false,
+                "the certificate has expired. Regenerate it.",
+            ),
         },
     }
 }
 
 fn http_result(status_line: &str) -> HealthStep {
     // "HTTP/1.1 200 OK" → 200
-    let code: u16 = status_line.split_whitespace().nth(1).and_then(|c| c.parse().ok()).unwrap_or(0);
+    let code: u16 = status_line
+        .split_whitespace()
+        .nth(1)
+        .and_then(|c| c.parse().ok())
+        .unwrap_or(0);
     // A 4xx still proves the whole chain works; a 5xx means the app behind it is broken.
     if (100..500).contains(&code) {
         step("HTTP", true, status_line.trim().to_string())
     } else {
-        step("HTTP", false, format!("the site answered {}", status_line.trim()))
+        step(
+            "HTTP",
+            false,
+            format!("the site answered {}", status_line.trim()),
+        )
     }
 }
 
@@ -164,28 +246,40 @@ fn first_line(mut reader: impl Read) -> Result<String, String> {
 }
 
 fn plain_get(hostname: &str, addr: SocketAddr) -> Result<String, String> {
-    let mut stream = TcpStream::connect_timeout(&addr, Duration::from_secs(3)).map_err(|e| e.to_string())?;
+    let mut stream =
+        TcpStream::connect_timeout(&addr, Duration::from_secs(3)).map_err(|e| e.to_string())?;
     stream.set_read_timeout(Some(Duration::from_secs(15))).ok();
-    stream.write_all(request(hostname).as_bytes()).map_err(|e| e.to_string())?;
+    stream
+        .write_all(request(hostname).as_bytes())
+        .map_err(|e| e.to_string())?;
     first_line(stream)
 }
 
 fn tls_get(hostname: &str, addr: SocketAddr, ca_pem: &Path) -> Result<String, String> {
-    let pem = std::fs::read(ca_pem).map_err(|e| format!("could not read the CA certificate: {e}"))?;
+    let pem =
+        std::fs::read(ca_pem).map_err(|e| format!("could not read the CA certificate: {e}"))?;
     let mut roots = rustls::RootCertStore::empty();
     for cert in rustls_pemfile::certs(&mut pem.as_slice()) {
-        roots.add(cert.map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+        roots
+            .add(cert.map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
     }
-    let config = rustls::ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
-        .with_safe_default_protocol_versions()
-        .map_err(|e| e.to_string())?
-        .with_root_certificates(roots)
-        .with_no_client_auth();
+    let config = rustls::ClientConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .map_err(|e| e.to_string())?
+    .with_root_certificates(roots)
+    .with_no_client_auth();
 
-    let server_name: rustls::pki_types::ServerName<'static> =
-        hostname.to_string().try_into().map_err(|_| format!("{hostname} is not a valid TLS name"))?;
-    let conn = rustls::ClientConnection::new(Arc::new(config), server_name).map_err(|e| e.to_string())?;
-    let socket = TcpStream::connect_timeout(&addr, Duration::from_secs(3)).map_err(|e| e.to_string())?;
+    let server_name: rustls::pki_types::ServerName<'static> = hostname
+        .to_string()
+        .try_into()
+        .map_err(|_| format!("{hostname} is not a valid TLS name"))?;
+    let conn =
+        rustls::ClientConnection::new(Arc::new(config), server_name).map_err(|e| e.to_string())?;
+    let socket =
+        TcpStream::connect_timeout(&addr, Duration::from_secs(3)).map_err(|e| e.to_string())?;
     socket.set_read_timeout(Some(Duration::from_secs(15))).ok();
     socket.set_write_timeout(Some(Duration::from_secs(5))).ok();
     let mut tls = rustls::StreamOwned::new(conn, socket);
@@ -204,15 +298,21 @@ mod tests {
     /// One-shot HTTPS server on an ephemeral port using a cert from `ca` for `host`.
     fn https_server(ca: &LocalCa, host: &str) -> u16 {
         let issued = ca.issue(host).unwrap();
-        let certs: Vec<_> = rustls_pemfile::certs(&mut issued.cert_pem.as_bytes()).collect::<Result<_, _>>().unwrap();
-        let key = rustls_pemfile::private_key(&mut issued.key_pem.as_bytes()).unwrap().unwrap();
+        let certs: Vec<_> = rustls_pemfile::certs(&mut issued.cert_pem.as_bytes())
+            .collect::<Result<_, _>>()
+            .unwrap();
+        let key = rustls_pemfile::private_key(&mut issued.key_pem.as_bytes())
+            .unwrap()
+            .unwrap();
         let config = Arc::new(
-            rustls::ServerConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
-                .with_safe_default_protocol_versions()
-                .unwrap()
-                .with_no_client_auth()
-                .with_single_cert(certs, key)
-                .unwrap(),
+            rustls::ServerConfig::builder_with_provider(Arc::new(
+                rustls::crypto::ring::default_provider(),
+            ))
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_no_client_auth()
+            .with_single_cert(certs, key)
+            .unwrap(),
         );
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -223,7 +323,9 @@ mod tests {
                 let mut tls = rustls::Stream::new(&mut conn, &mut stream);
                 let mut buf = [0u8; 1024];
                 if tls.read(&mut buf).is_ok() {
-                    let _ = tls.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok");
+                    let _ = tls.write_all(
+                        b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok",
+                    );
                     tls.conn.send_close_notify();
                     let _ = tls.flush();
                 }
@@ -261,7 +363,14 @@ mod tests {
         });
         let failed: Vec<_> = report.steps.iter().filter(|s| !s.ok).collect();
         assert!(report.ok, "steps failed: {failed:?}");
-        assert_eq!(report.steps.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(), ["DNS", "TCP", "TLS", "Certificate", "Trust", "HTTP"]);
+        assert_eq!(
+            report
+                .steps
+                .iter()
+                .map(|s| s.name.as_str())
+                .collect::<Vec<_>>(),
+            ["DNS", "TCP", "TLS", "Certificate", "Trust", "HTTP"]
+        );
     }
 
     #[test]
@@ -270,7 +379,11 @@ mod tests {
         let ca = LocalCa::new(&home.paths);
         ca.ensure_created().unwrap();
         // Grab a free port then close it.
-        let port = TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        let port = TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
         let report = check_site(&HealthTarget {
             hostname: "localhost",
             https: true,
@@ -282,7 +395,10 @@ mod tests {
         });
         assert!(!report.ok);
         assert!(!report.steps[1].ok, "TCP must fail");
-        assert!(report.steps[2].skipped, "TLS is skipped without a TCP connection");
+        assert!(
+            report.steps[2].skipped,
+            "TLS is skipped without a TCP connection"
+        );
         assert!(report.steps[5].skipped);
     }
 
@@ -335,7 +451,11 @@ mod tests {
             ca_trusted: false,
             cert: None,
         });
-        assert!(report.ok, "a 404 still proves the chain: {:?}", report.steps);
+        assert!(
+            report.ok,
+            "a 404 still proves the chain: {:?}",
+            report.steps
+        );
         assert!(report.steps[2].skipped);
     }
 }

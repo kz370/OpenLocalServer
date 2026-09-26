@@ -325,22 +325,51 @@ impl OwnedManifest {
     /// What is wrong with this entry, for a plugin or catalog to be refused. A download needs
     /// HTTPS and a full SHA-256 (§21), and nothing may reach outside the install folder.
     pub fn check(&self) -> Result<(), String> {
-        let id_ok = |s: &str| !s.is_empty() && s.len() <= 40 && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+        let id_ok = |s: &str| {
+            !s.is_empty()
+                && s.len() <= 40
+                && s.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        };
         if !id_ok(&self.id) {
-            return Err(format!("runtime id '{}' may only hold letters, digits, '-' and '_'", self.id));
+            return Err(format!(
+                "runtime id '{}' may only hold letters, digits, '-' and '_'",
+                self.id
+            ));
         }
-        if self.version.is_empty() || self.version.len() > 40 || !self.version.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '+')) {
-            return Err(format!("{}: the version '{}' is not usable as a folder name", self.id, self.version));
+        if self.version.is_empty()
+            || self.version.len() > 40
+            || !self
+                .version
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '+'))
+        {
+            return Err(format!(
+                "{}: the version '{}' is not usable as a folder name",
+                self.id, self.version
+            ));
         }
         if !self.url.starts_with("https://") {
-            return Err(format!("{} {}: downloads must use HTTPS", self.id, self.version));
+            return Err(format!(
+                "{} {}: downloads must use HTTPS",
+                self.id, self.version
+            ));
         }
         if self.sha256.len() != 64 || !self.sha256.chars().all(|c| c.is_ascii_hexdigit()) {
-            return Err(format!("{} {}: needs a 64-character SHA-256", self.id, self.version));
+            return Err(format!(
+                "{} {}: needs a 64-character SHA-256",
+                self.id, self.version
+            ));
         }
-        for (what, p) in [("binary", self.binary.as_str()), ("archive_root", self.archive_root.as_str())] {
+        for (what, p) in [
+            ("binary", self.binary.as_str()),
+            ("archive_root", self.archive_root.as_str()),
+        ] {
             if p.contains("..") || p.starts_with('/') || p.starts_with('\\') || p.contains(':') {
-                return Err(format!("{} {}: the {what} path '{p}' must stay inside the install folder", self.id, self.version));
+                return Err(format!(
+                    "{} {}: the {what} path '{p}' must stay inside the install folder",
+                    self.id, self.version
+                ));
             }
         }
         if self.binary.is_empty() {
@@ -351,7 +380,8 @@ impl OwnedManifest {
 }
 
 static EXTRA: RwLock<Vec<PackageManifest>> = RwLock::new(Vec::new());
-static EXTRA_PROBES: RwLock<Vec<(&'static str, &'static str, &'static str)>> = RwLock::new(Vec::new());
+static EXTRA_PROBES: RwLock<Vec<(&'static str, &'static str, &'static str)>> =
+    RwLock::new(Vec::new());
 static INTERNED: Mutex<Option<HashSet<&'static str>>> = Mutex::new(None);
 
 /// One leaked copy per distinct string, so replacing the extras on every plugin change
@@ -376,7 +406,11 @@ pub fn set_extra(entries: &[OwnedManifest]) {
         if e.check().is_err() {
             continue;
         }
-        if CATALOG.iter().any(|m| m.id == e.id && m.version == e.version) || out.iter().any(|m| m.id == e.id && m.version == e.version) {
+        if CATALOG
+            .iter()
+            .any(|m| m.id == e.id && m.version == e.version)
+            || out.iter().any(|m| m.id == e.id && m.version == e.version)
+        {
             continue;
         }
         out.push(PackageManifest {
@@ -427,12 +461,18 @@ pub fn system_probe(id: &str) -> Option<(&'static str, &'static str)> {
         "redis" => Some(("redis-server.exe", "--version")),
         "sqlite" => Some(("sqlite3.exe", "--version")),
         "k6" => Some(("k6.exe", "version")),
-        _ => EXTRA_PROBES.read().unwrap().iter().find(|(pid, _, _)| *pid == id).map(|(_, exe, arg)| (*exe, *arg)),
+        _ => EXTRA_PROBES
+            .read()
+            .unwrap()
+            .iter()
+            .find(|(pid, _, _)| *pid == id)
+            .map(|(_, exe, arg)| (*exe, *arg)),
     }
 }
 
 /// Hosts that only serve a download when the request carries a Referer from their own
 /// site (Apache Lounge). Returns the Referer to send, if any.
 pub fn download_referer(url: &str) -> Option<&'static str> {
-    url.contains("apachelounge.com").then_some("https://www.apachelounge.com/download/")
+    url.contains("apachelounge.com")
+        .then_some("https://www.apachelounge.com/download/")
 }

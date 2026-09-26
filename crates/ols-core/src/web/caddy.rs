@@ -5,8 +5,8 @@
 use std::path::PathBuf;
 
 use super::{
-    cfg_path, https_redirect_port_suffix, Backend, Invocation, PoolSpec, Ports, ServerLayout, SiteSpec, WebServer,
-    MANAGED_HEADER,
+    cfg_path, https_redirect_port_suffix, Backend, Invocation, PoolSpec, Ports, ServerLayout,
+    SiteSpec, WebServer, MANAGED_HEADER,
 };
 
 pub struct Caddy;
@@ -23,7 +23,10 @@ impl Caddy {
             "--adapter".to_string(),
             "caddyfile".to_string(),
         ]);
-        Invocation { args, cwd: layout.prefix.clone() }
+        Invocation {
+            args,
+            cwd: layout.prefix.clone(),
+        }
     }
 }
 
@@ -55,7 +58,10 @@ impl WebServer for Caddy {
             cfg_path(&layout.logs_dir.join("error.log"))
         ));
         out.push_str("}\n\n");
-        out.push_str(&format!("import \"{}/*.caddy\"\n", cfg_path(&layout.sites_dir)));
+        out.push_str(&format!(
+            "import \"{}/*.caddy\"\n",
+            cfg_path(&layout.sites_dir)
+        ));
         out
     }
 
@@ -66,12 +72,19 @@ impl WebServer for Caddy {
 
         let names = site.server_names();
         let addrs = |scheme: &str, port: u16| {
-            names.iter().map(|n| format!("{scheme}://{n}:{port}")).collect::<Vec<_>>().join(", ")
+            names
+                .iter()
+                .map(|n| format!("{scheme}://{n}:{port}"))
+                .collect::<Vec<_>>()
+                .join(", ")
         };
 
         out.push_str(&format!("{} {{\n", addrs("http", ports.http)));
         if site.tls.is_some() && site.redirect_https {
-            out.push_str(&format!("    redir https://{{host}}{}{{uri}} permanent\n", https_redirect_port_suffix(ports)));
+            out.push_str(&format!(
+                "    redir https://{{host}}{}{{uri}} permanent\n",
+                https_redirect_port_suffix(ports)
+            ));
         } else {
             out.push_str(&body(site));
         }
@@ -79,7 +92,11 @@ impl WebServer for Caddy {
 
         if let Some(tls) = &site.tls {
             out.push_str(&format!("\n{} {{\n", addrs("https", ports.https)));
-            out.push_str(&format!("    tls \"{}\" \"{}\"\n", cfg_path(&tls.cert), cfg_path(&tls.key)));
+            out.push_str(&format!(
+                "    tls \"{}\" \"{}\"\n",
+                cfg_path(&tls.cert),
+                cfg_path(&tls.key)
+            ));
             out.push_str(&body(site));
             out.push_str("}\n");
         }
@@ -113,11 +130,19 @@ impl WebServer for Caddy {
     }
     fn reload(&self, layout: &ServerLayout) -> Option<Invocation> {
         let mut inv = Self::invocation(layout, &["reload"]);
-        inv.args.extend(["--address".to_string(), ADMIN_ADDR.to_string()]);
+        inv.args
+            .extend(["--address".to_string(), ADMIN_ADDR.to_string()]);
         Some(inv)
     }
     fn stop(&self, _layout: &ServerLayout) -> Option<Invocation> {
-        Some(Invocation { args: vec!["stop".to_string(), "--address".to_string(), ADMIN_ADDR.to_string()], cwd: PathBuf::from(".") })
+        Some(Invocation {
+            args: vec![
+                "stop".to_string(),
+                "--address".to_string(),
+                ADMIN_ADDR.to_string(),
+            ],
+            cwd: PathBuf::from("."),
+        })
     }
     fn error_log(&self, layout: &ServerLayout) -> PathBuf {
         layout.logs_dir.join("error.log")
@@ -126,11 +151,17 @@ impl WebServer for Caddy {
 
 fn body(site: &SiteSpec) -> String {
     let mut out = String::new();
-    out.push_str(&format!("    root * \"{}\"\n", site.root.replace('\\', "/")));
+    out.push_str(&format!(
+        "    root * \"{}\"\n",
+        site.root.replace('\\', "/")
+    ));
     // Dev sites always revalidate (see nginx), unless the app chose its own caching.
     out.push_str("    header ?Cache-Control \"no-cache\"\n");
     for header in &site.blocks.headers {
-        out.push_str(&format!("    header {} \"{}\"\n", header.name, header.value));
+        out.push_str(&format!(
+            "    header {} \"{}\"\n",
+            header.name, header.value
+        ));
     }
     for include in &site.blocks.includes {
         out.push_str(&format!("    import \"{}\"\n", include.replace('\\', "/")));
@@ -139,15 +170,25 @@ fn body(site: &SiteSpec) -> String {
         out.push_str(&format!("    import \"{}\"\n", cfg_path(snippet)));
     }
     for redirect in &site.blocks.redirects {
-        out.push_str(&format!("    redir {} {} {}\n", redirect.from, redirect.to, redirect.code));
+        out.push_str(&format!(
+            "    redir {} {} {}\n",
+            redirect.from, redirect.to, redirect.code
+        ));
     }
     for mapping in &site.blocks.mappings {
         let matcher = format!("{}*", mapping.path.trim_end_matches('*'));
-        out.push_str(&format!("    reverse_proxy {matcher} {}\n", mapping.upstream));
+        out.push_str(&format!(
+            "    reverse_proxy {matcher} {}\n",
+            mapping.upstream
+        ));
     }
     match &site.backend {
         Backend::Php { ports, .. } => {
-            let upstreams = ports.iter().map(|p| format!("127.0.0.1:{p}")).collect::<Vec<_>>().join(" ");
+            let upstreams = ports
+                .iter()
+                .map(|p| format!("127.0.0.1:{p}"))
+                .collect::<Vec<_>>()
+                .join(" ");
             out.push_str(&format!("    php_fastcgi {upstreams}\n"));
             out.push_str("    file_server\n");
         }
@@ -156,8 +197,12 @@ fn body(site: &SiteSpec) -> String {
             // Local HTTPS targets (Docker images) usually have self-signed certificates.
             if upstream.starts_with("https://") || site.forwarded_tls {
                 out.push_str(" {\n");
-                if upstream.starts_with("https://") { out.push_str("        transport http {\n            tls_insecure_skip_verify\n        }\n"); }
-                if site.forwarded_tls { out.push_str("        header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}\n"); }
+                if upstream.starts_with("https://") {
+                    out.push_str("        transport http {\n            tls_insecure_skip_verify\n        }\n");
+                }
+                if site.forwarded_tls {
+                    out.push_str("        header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}\n");
+                }
                 out.push_str("    }");
             }
             out.push('\n');
@@ -179,7 +224,10 @@ mod tests {
             wildcard: false,
             root: "C:\\sites\\shop".into(),
             backend,
-            tls: tls.then(|| CertPaths { cert: "C:/c/cert.pem".into(), key: "C:/c/key.pem".into() }),
+            tls: tls.then(|| CertPaths {
+                cert: "C:/c/cert.pem".into(),
+                key: "C:/c/key.pem".into(),
+            }),
             redirect_https: redirect,
             blocks: SiteBlocks::default(),
             custom_snippet: None,
@@ -191,8 +239,18 @@ mod tests {
     #[test]
     fn php_https_site_uses_php_fastcgi_and_explicit_tls() {
         let cfg = Caddy.render_site(
-            &site(Backend::Php { pool: "php_82".into(), ports: vec![10820, 10821] }, true, true),
-            Ports { http: 80, https: 443 },
+            &site(
+                Backend::Php {
+                    pool: "php_82".into(),
+                    ports: vec![10820, 10821],
+                },
+                true,
+                true,
+            ),
+            Ports {
+                http: 80,
+                https: 443,
+            },
         );
         assert!(cfg.contains("http://shop.test:80 {"));
         assert!(cfg.contains("redir https://{host}{uri} permanent"));
@@ -212,7 +270,14 @@ mod tests {
             logs_dir: "C:/ols/web/caddy/logs".into(),
             binary: "C:/caddy/caddy.exe".into(),
         };
-        let cfg = Caddy.render_main(&layout, Ports { http: 8080, https: 8443 }, &[]);
+        let cfg = Caddy.render_main(
+            &layout,
+            Ports {
+                http: 8080,
+                https: 8443,
+            },
+            &[],
+        );
         assert!(cfg.contains("auto_https off"));
         assert!(cfg.contains("default_bind 127.0.0.1"));
         assert!(cfg.contains("http_port 8080"));

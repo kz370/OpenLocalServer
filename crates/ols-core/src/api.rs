@@ -70,7 +70,27 @@ const NEVER: &[&str] = &[
 ];
 
 /// Prefixes of commands that only look.
-const READ_PREFIXES: &[&str] = &["list_", "get_", "check_", "diagnose", "plan_", "health", "search", "global_search", "doctor", "ping", "git_status", "git_log", "git_diff", "git_show", "git_branches", "plugin_detect", "tunnel_log", "network_", "refresh_runtime_catalog"];
+const READ_PREFIXES: &[&str] = &[
+    "list_",
+    "get_",
+    "check_",
+    "diagnose",
+    "plan_",
+    "health",
+    "search",
+    "global_search",
+    "doctor",
+    "ping",
+    "git_status",
+    "git_log",
+    "git_diff",
+    "git_show",
+    "git_branches",
+    "plugin_detect",
+    "tunnel_log",
+    "network_",
+    "refresh_runtime_catalog",
+];
 
 /// What `operate` adds to the read-only set. A list, not a deny list: a new command is unreachable until added here.
 const OPERATE: &[&str] = &[
@@ -104,7 +124,11 @@ pub struct ApiSettings {
 
 impl Default for ApiSettings {
     fn default() -> Self {
-        Self { enabled: false, port: DEFAULT_PORT, mode: "read_only".into() }
+        Self {
+            enabled: false,
+            port: DEFAULT_PORT,
+            mode: "read_only".into(),
+        }
     }
 }
 
@@ -137,89 +161,182 @@ pub fn allowed(tag: &str, mode: &str) -> bool {
 }
 
 fn hash_token(token: &str) -> String {
-    Sha256::digest(token.as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
+    Sha256::digest(token.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 fn same(a: &str, b: &str) -> bool {
-    a.len() == b.len() && a.bytes().zip(b.bytes()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+    a.len() == b.len()
+        && a.bytes()
+            .zip(b.bytes())
+            .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+            == 0
 }
 
 fn reply(status: StatusCode, body: Value) -> Response<Full<Bytes>> {
     let mut r = Response::new(Full::new(Bytes::from(body.to_string())));
     *r.status_mut() = status;
-    r.headers_mut().insert(hyper::header::CONTENT_TYPE, "application/json".parse().unwrap());
-    r.headers_mut().insert("cache-control", "no-store".parse().unwrap());
+    r.headers_mut().insert(
+        hyper::header::CONTENT_TYPE,
+        "application/json".parse().unwrap(),
+    );
+    r.headers_mut()
+        .insert("cache-control", "no-store".parse().unwrap());
     r
 }
 
 fn error(status: StatusCode, problem: &str, cause: &str) -> Response<Full<Bytes>> {
-    reply(status, json!({ "ok": false, "error": { "problem": problem, "cause": cause, "fix": null } }))
+    reply(
+        status,
+        json!({ "ok": false, "error": { "problem": problem, "cause": cause, "fix": null } }),
+    )
 }
 
-async fn handle(req: Request<hyper::body::Incoming>, core: Core, port: u16) -> Result<Response<Full<Bytes>>, Infallible> {
+async fn handle(
+    req: Request<hyper::body::Incoming>,
+    core: Core,
+    port: u16,
+) -> Result<Response<Full<Bytes>>, Infallible> {
     // Browsers send Origin; scripts don't. Refusing it keeps web pages out.
     if req.headers().contains_key(hyper::header::ORIGIN) {
-        return Ok(error(StatusCode::FORBIDDEN, "Not allowed.", "Requests from web pages are refused."));
+        return Ok(error(
+            StatusCode::FORBIDDEN,
+            "Not allowed.",
+            "Requests from web pages are refused.",
+        ));
     }
-    let host_ok = req.headers().get(hyper::header::HOST).and_then(|h| h.to_str().ok()).is_some_and(|h| {
-        let h = h.to_ascii_lowercase();
-        [format!("127.0.0.1:{port}"), format!("localhost:{port}"), format!("[::1]:{port}")].contains(&h)
-    });
+    let host_ok = req
+        .headers()
+        .get(hyper::header::HOST)
+        .and_then(|h| h.to_str().ok())
+        .is_some_and(|h| {
+            let h = h.to_ascii_lowercase();
+            [
+                format!("127.0.0.1:{port}"),
+                format!("localhost:{port}"),
+                format!("[::1]:{port}"),
+            ]
+            .contains(&h)
+        });
     if !host_ok {
-        return Ok(error(StatusCode::FORBIDDEN, "Not allowed.", "The Host header must be 127.0.0.1 or localhost with this port."));
+        return Ok(error(
+            StatusCode::FORBIDDEN,
+            "Not allowed.",
+            "The Host header must be 127.0.0.1 or localhost with this port.",
+        ));
     }
     let inner = core.inner().clone();
     let settings = inner.api_settings();
     let expected = inner.api_token_hash();
-    let given = req.headers().get(hyper::header::AUTHORIZATION).and_then(|v| v.to_str().ok()).and_then(|v| v.strip_prefix("Bearer ")).map(str::trim);
+    let given = req
+        .headers()
+        .get(hyper::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .map(str::trim);
     let authorised = match (given, expected) {
         (Some(t), Some(h)) => same(&hash_token(t), &h),
         _ => false,
     };
     if !authorised {
         tokio::time::sleep(Duration::from_millis(300)).await;
-        return Ok(error(StatusCode::UNAUTHORIZED, "Not signed in.", "Send the API token as `Authorization: Bearer <token>`."));
+        return Ok(error(
+            StatusCode::UNAUTHORIZED,
+            "Not signed in.",
+            "Send the API token as `Authorization: Bearer <token>`.",
+        ));
     }
     let path = req.uri().path().to_string();
     match (req.method().clone(), path.as_str()) {
-        (Method::GET, "/v1/ping") => Ok(reply(StatusCode::OK, json!({ "ok": true, "result": { "type": "pong", "version": env!("CARGO_PKG_VERSION") }, "mode": settings.mode }))),
+        (Method::GET, "/v1/ping") => Ok(reply(
+            StatusCode::OK,
+            json!({ "ok": true, "result": { "type": "pong", "version": env!("CARGO_PKG_VERSION") }, "mode": settings.mode }),
+        )),
         (Method::POST, "/v1/command") => {
-            let content_ok = req.headers().get(hyper::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).is_some_and(|v| v.starts_with("application/json"));
+            let content_ok = req
+                .headers()
+                .get(hyper::header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+                .is_some_and(|v| v.starts_with("application/json"));
             if !content_ok {
-                return Ok(error(StatusCode::UNSUPPORTED_MEDIA_TYPE, "That request couldn't be read.", "Send Content-Type: application/json."));
+                return Ok(error(
+                    StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                    "That request couldn't be read.",
+                    "Send Content-Type: application/json.",
+                ));
             }
             let body = match Limited::new(req.into_body(), MAX_BODY).collect().await {
                 Ok(b) => b.to_bytes(),
-                Err(_) => return Ok(error(StatusCode::PAYLOAD_TOO_LARGE, "That request couldn't be read.", "The body is larger than 1 MB.")),
+                Err(_) => {
+                    return Ok(error(
+                        StatusCode::PAYLOAD_TOO_LARGE,
+                        "That request couldn't be read.",
+                        "The body is larger than 1 MB.",
+                    ))
+                }
             };
             let value: Value = match serde_json::from_slice(&body) {
                 Ok(v) => v,
-                Err(e) => return Ok(error(StatusCode::BAD_REQUEST, "That request couldn't be read.", &e.to_string())),
+                Err(e) => {
+                    return Ok(error(
+                        StatusCode::BAD_REQUEST,
+                        "That request couldn't be read.",
+                        &e.to_string(),
+                    ))
+                }
             };
-            let tag = value.get("type").and_then(|t| t.as_str()).unwrap_or("").to_string();
+            let tag = value
+                .get("type")
+                .and_then(|t| t.as_str())
+                .unwrap_or("")
+                .to_string();
             if !allowed(&tag, &settings.mode) {
-                let why = if NEVER.contains(&tag.as_str()) { "This command isn't available over the API." } else { "The API is read-only. Switch it to operate mode in Settings to allow this." };
+                let why = if NEVER.contains(&tag.as_str()) {
+                    "This command isn't available over the API."
+                } else {
+                    "The API is read-only. Switch it to operate mode in Settings to allow this."
+                };
                 return Ok(error(StatusCode::FORBIDDEN, "Not allowed.", why));
             }
             let command: CoreCommand = match serde_json::from_value(value) {
                 Ok(c) => c,
-                Err(e) => return Ok(error(StatusCode::BAD_REQUEST, "That command isn't valid.", &e.to_string())),
+                Err(e) => {
+                    return Ok(error(
+                        StatusCode::BAD_REQUEST,
+                        "That command isn't valid.",
+                        &e.to_string(),
+                    ))
+                }
             };
             tracing::info!(command = %tag, "api command");
             let result = tokio::task::spawn_blocking(move || core.dispatch(command)).await;
             Ok(match result {
                 Ok(Ok(r)) => reply(StatusCode::OK, json!({ "ok": true, "result": r })),
-                Ok(Err(d)) => reply(StatusCode::UNPROCESSABLE_ENTITY, json!({ "ok": false, "error": d })),
-                Err(e) => error(StatusCode::INTERNAL_SERVER_ERROR, "The command crashed.", &e.to_string()),
+                Ok(Err(d)) => reply(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    json!({ "ok": false, "error": d }),
+                ),
+                Err(e) => error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "The command crashed.",
+                    &e.to_string(),
+                ),
             })
         }
-        _ => Ok(error(StatusCode::NOT_FOUND, "Not found.", "Use GET /v1/ping or POST /v1/command.")),
+        _ => Ok(error(
+            StatusCode::NOT_FOUND,
+            "Not found.",
+            "Use GET /v1/ping or POST /v1/command.",
+        )),
     }
 }
 
 /// Binds and serves on a thread of its own; returns the port and a handle whose drop stops it.
 fn serve(core: Core, addr: SocketAddr) -> Result<(u16, Handle), String> {
-    let listener = std::net::TcpListener::bind(addr).map_err(|e| format!("port {} isn't available: {e}", addr.port()))?;
+    let listener = std::net::TcpListener::bind(addr)
+        .map_err(|e| format!("port {} isn't available: {e}", addr.port()))?;
     listener.set_nonblocking(true).map_err(|e| e.to_string())?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
     let (tx, mut rx) = tokio::sync::oneshot::channel::<()>();
@@ -251,16 +368,33 @@ fn serve(core: Core, addr: SocketAddr) -> Result<(u16, Handle), String> {
 
 impl Inner {
     pub fn api_settings(&self) -> ApiSettings {
-        self.settings.lock().unwrap().get(KEY).and_then(|v| serde_json::from_value(v.get("settings")?.clone()).ok()).unwrap_or_default()
+        self.settings
+            .lock()
+            .unwrap()
+            .get(KEY)
+            .and_then(|v| serde_json::from_value(v.get("settings")?.clone()).ok())
+            .unwrap_or_default()
     }
 
     fn api_token_hash(&self) -> Option<String> {
-        self.settings.lock().unwrap().get(KEY).and_then(|v| v.get("token_hash")?.as_str().map(str::to_string)).filter(|h| !h.is_empty())
+        self.settings
+            .lock()
+            .unwrap()
+            .get(KEY)
+            .and_then(|v| v.get("token_hash")?.as_str().map(str::to_string))
+            .filter(|h| !h.is_empty())
     }
 
-    fn save_api(&self, settings: &ApiSettings, token_hash: Option<String>) -> Result<(), CoreError> {
+    fn save_api(
+        &self,
+        settings: &ApiSettings,
+        token_hash: Option<String>,
+    ) -> Result<(), CoreError> {
         let mut s = self.settings.lock().unwrap();
-        s.set(KEY.to_string(), json!({ "settings": settings, "token_hash": token_hash.unwrap_or_default() }))
+        s.set(
+            KEY.to_string(),
+            json!({ "settings": settings, "token_hash": token_hash.unwrap_or_default() }),
+        )
     }
 
     pub fn api_status(&self) -> ApiStatus {
@@ -286,7 +420,10 @@ impl Inner {
             *self.api.error.lock().unwrap() = Some("Generate an API token first.".into());
             return;
         }
-        match serve(Core::from_inner(self.clone()), SocketAddr::from(([127, 0, 0, 1], settings.port))) {
+        match serve(
+            Core::from_inner(self.clone()),
+            SocketAddr::from(([127, 0, 0, 1], settings.port)),
+        ) {
             Ok((_, handle)) => {
                 *self.api.handle.lock().unwrap() = Some(handle);
                 tracing::info!(port = settings.port, mode = %settings.mode, "local API listening");
@@ -295,14 +432,32 @@ impl Inner {
         }
     }
 
-    pub fn set_api_settings(self: &Arc<Self>, enabled: bool, port: u16, mode: &str) -> Result<ApiStatus, CoreError> {
+    pub fn set_api_settings(
+        self: &Arc<Self>,
+        enabled: bool,
+        port: u16,
+        mode: &str,
+    ) -> Result<ApiStatus, CoreError> {
         if port < 1024 {
-            return Err(CoreError::failed("The API port wasn't changed.", "Use a port from 1024 up."));
+            return Err(CoreError::failed(
+                "The API port wasn't changed.",
+                "Use a port from 1024 up.",
+            ));
         }
         if !matches!(mode, "read_only" | "operate") {
-            return Err(CoreError::failed("The API mode wasn't changed.", "The mode is read_only or operate."));
+            return Err(CoreError::failed(
+                "The API mode wasn't changed.",
+                "The mode is read_only or operate.",
+            ));
         }
-        self.save_api(&ApiSettings { enabled, port, mode: mode.into() }, self.api_token_hash())?;
+        self.save_api(
+            &ApiSettings {
+                enabled,
+                port,
+                mode: mode.into(),
+            },
+            self.api_token_hash(),
+        )?;
         self.apply_api();
         Ok(self.api_status())
     }
@@ -310,8 +465,12 @@ impl Inner {
     /// A new token. Only its hash is kept, so this is the one time it can be read.
     pub fn rotate_api_token(self: &Arc<Self>) -> Result<String, CoreError> {
         let mut bytes = [0u8; 32];
-        getrandom::fill(&mut bytes).map_err(|e| CoreError::failed("No token was made.", e.to_string()))?;
-        let token = format!("ols_{}", bytes.iter().map(|b| format!("{b:02x}")).collect::<String>());
+        getrandom::fill(&mut bytes)
+            .map_err(|e| CoreError::failed("No token was made.", e.to_string()))?;
+        let token = format!(
+            "ols_{}",
+            bytes.iter().map(|b| format!("{b:02x}")).collect::<String>()
+        );
         self.save_api(&self.api_settings(), Some(hash_token(&token)))?;
         self.apply_api();
         Ok(token)
@@ -332,10 +491,19 @@ mod tests {
     fn request(port: u16, head: &str, body: &str) -> (u16, String) {
         let mut s = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
         s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-        write!(s, "{head}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+        write!(
+            s,
+            "{head}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        )
+        .unwrap();
         let mut out = String::new();
         let _ = s.read_to_string(&mut out);
-        let status = out.split_whitespace().nth(1).and_then(|c| c.parse().ok()).unwrap_or(0);
+        let status = out
+            .split_whitespace()
+            .nth(1)
+            .and_then(|c| c.parse().ok())
+            .unwrap_or(0);
         (status, out)
     }
 
@@ -345,7 +513,20 @@ mod tests {
         assert!(!allowed("stop_web", "read_only"));
         assert!(allowed("stop_web", "operate"));
         // Anything that runs code, changes settings or reads secrets stays out, even in operate mode.
-        for tag in ["get_secret", "run_command", "set_setting", "rotate_api_token", "run_in_project", "open_terminal", "save_schedule", "run_quick_command", "apply_setup", "start_tunnel", "get_connection_info", "read_env_file"] {
+        for tag in [
+            "get_secret",
+            "run_command",
+            "set_setting",
+            "rotate_api_token",
+            "run_in_project",
+            "open_terminal",
+            "save_schedule",
+            "run_quick_command",
+            "apply_setup",
+            "start_tunnel",
+            "get_connection_info",
+            "read_env_file",
+        ] {
             assert!(!allowed(tag, "operate"), "{tag}");
         }
     }
@@ -353,7 +534,10 @@ mod tests {
     #[test]
     fn the_server_checks_token_host_origin_and_mode() {
         let home = crate::test_support::isolated_home();
-        let core = Core::new(crate::settings::SettingsService::load(&home.paths).unwrap(), home.paths.clone());
+        let core = Core::new(
+            crate::settings::SettingsService::load(&home.paths).unwrap(),
+            home.paths.clone(),
+        );
         let inner = core.inner().clone();
         let token = inner.rotate_api_token().unwrap();
         let (port, _handle) = serve(core.clone(), SocketAddr::from(([127, 0, 0, 1], 0))).unwrap();
@@ -363,26 +547,58 @@ mod tests {
 
         let (status, _) = request(port, &format!("GET /v1/ping HTTP/1.1\r\n{host}"), "");
         assert_eq!(status, 401, "no token");
-        let (status, _) = request(port, &format!("GET /v1/ping HTTP/1.1\r\n{host}\r\nAuthorization: Bearer wrong"), "");
+        let (status, _) = request(
+            port,
+            &format!("GET /v1/ping HTTP/1.1\r\n{host}\r\nAuthorization: Bearer wrong"),
+            "",
+        );
         assert_eq!(status, 401, "wrong token");
-        let (status, body) = request(port, &format!("GET /v1/ping HTTP/1.1\r\n{host}\r\n{auth}"), "");
+        let (status, body) = request(
+            port,
+            &format!("GET /v1/ping HTTP/1.1\r\n{host}\r\n{auth}"),
+            "",
+        );
         assert_eq!(status, 200);
         assert!(body.contains("pong"));
-        let (status, _) = request(port, &format!("GET /v1/ping HTTP/1.1\r\nHost: evil.example:{port}\r\n{auth}"), "");
+        let (status, _) = request(
+            port,
+            &format!("GET /v1/ping HTTP/1.1\r\nHost: evil.example:{port}\r\n{auth}"),
+            "",
+        );
         assert_eq!(status, 403, "rebinding");
-        let (status, _) = request(port, &format!("GET /v1/ping HTTP/1.1\r\n{host}\r\n{auth}\r\nOrigin: https://evil.example"), "");
+        let (status, _) = request(
+            port,
+            &format!("GET /v1/ping HTTP/1.1\r\n{host}\r\n{auth}\r\nOrigin: https://evil.example"),
+            "",
+        );
         assert_eq!(status, 403, "browser");
 
-        let (status, body) = request(port, &format!("POST /v1/command HTTP/1.1\r\n{host}\r\n{auth}\r\n{json}"), r#"{"type":"list_projects"}"#);
+        let (status, body) = request(
+            port,
+            &format!("POST /v1/command HTTP/1.1\r\n{host}\r\n{auth}\r\n{json}"),
+            r#"{"type":"list_projects"}"#,
+        );
         assert_eq!(status, 200, "{body}");
-        let (status, _) = request(port, &format!("POST /v1/command HTTP/1.1\r\n{host}\r\n{auth}\r\n{json}"), r#"{"type":"stop_web"}"#);
+        let (status, _) = request(
+            port,
+            &format!("POST /v1/command HTTP/1.1\r\n{host}\r\n{auth}\r\n{json}"),
+            r#"{"type":"stop_web"}"#,
+        );
         assert_eq!(status, 403, "read-only");
-        let (status, _) = request(port, &format!("POST /v1/command HTTP/1.1\r\n{host}\r\n{auth}\r\n{json}"), r#"{"type":"get_secret","key":"x"}"#);
+        let (status, _) = request(
+            port,
+            &format!("POST /v1/command HTTP/1.1\r\n{host}\r\n{auth}\r\n{json}"),
+            r#"{"type":"get_secret","key":"x"}"#,
+        );
         assert_eq!(status, 403, "never");
 
         // A new token revokes the old one at once.
         let _new = inner.rotate_api_token().unwrap();
-        let (status, _) = request(port, &format!("GET /v1/ping HTTP/1.1\r\n{host}\r\n{auth}"), "");
+        let (status, _) = request(
+            port,
+            &format!("GET /v1/ping HTTP/1.1\r\n{host}\r\n{auth}"),
+            "",
+        );
         assert_eq!(status, 401);
     }
 }

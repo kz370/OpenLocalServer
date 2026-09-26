@@ -18,8 +18,11 @@ pub struct DnsServer {
 impl DnsServer {
     /// Binds `127.0.0.1:port` (0 = any free port; tests use that) and serves until dropped.
     pub fn start(port: u16, suffixes: Vec<String>) -> Result<Self, String> {
-        let socket = UdpSocket::bind(("127.0.0.1", port)).map_err(|e| format!("could not bind DNS port {port}: {e}"))?;
-        socket.set_read_timeout(Some(Duration::from_millis(200))).map_err(|e| e.to_string())?;
+        let socket = UdpSocket::bind(("127.0.0.1", port))
+            .map_err(|e| format!("could not bind DNS port {port}: {e}"))?;
+        socket
+            .set_read_timeout(Some(Duration::from_millis(200)))
+            .map_err(|e| e.to_string())?;
         let port = socket.local_addr().map_err(|e| e.to_string())?.port();
 
         let stop = Arc::new(AtomicBool::new(false));
@@ -28,14 +31,21 @@ impl DnsServer {
         let thread = std::thread::spawn(move || {
             let mut buf = [0u8; 512];
             while !stop_t.load(Ordering::Relaxed) {
-                let Ok((len, from)) = socket.recv_from(&mut buf) else { continue };
+                let Ok((len, from)) = socket.recv_from(&mut buf) else {
+                    continue;
+                };
                 let names = suffixes_t.lock().unwrap().clone();
                 if let Some(reply) = answer(&buf[..len], &names) {
                     let _ = socket.send_to(&reply, from);
                 }
             }
         });
-        Ok(Self { stop, suffixes, thread: Some(thread), port })
+        Ok(Self {
+            stop,
+            suffixes,
+            thread: Some(thread),
+            port,
+        })
     }
 
     pub fn port(&self) -> u16 {
@@ -64,7 +74,9 @@ impl Drop for DnsServer {
 /// ("shop.test"): both the domain itself and anything beneath it match.
 fn covered(name: &str, suffixes: &[String]) -> bool {
     let name = name.trim_end_matches('.').to_ascii_lowercase();
-    suffixes.iter().any(|s| name == *s || name.ends_with(&format!(".{s}")))
+    suffixes
+        .iter()
+        .any(|s| name == *s || name.ends_with(&format!(".{s}")))
 }
 
 /// Builds the reply to one query, or `None` if it isn't a well-formed standard query.
@@ -91,7 +103,11 @@ fn answer(query: &[u8], suffixes: &[String]) -> Option<Vec<u8>> {
         if len & 0xC0 != 0 {
             return None; // compression pointers never appear in a question we generate replies for
         }
-        labels.push(std::str::from_utf8(query.get(pos + 1..pos + 1 + len)?).ok()?.to_string());
+        labels.push(
+            std::str::from_utf8(query.get(pos + 1..pos + 1 + len)?)
+                .ok()?
+                .to_string(),
+        );
         pos += 1 + len;
     }
     let qtype = u16::from_be_bytes([*query.get(pos)?, *query.get(pos + 1)?]);
@@ -104,7 +120,7 @@ fn answer(query: &[u8], suffixes: &[String]) -> Option<Vec<u8>> {
 
     let mut reply = Vec::with_capacity(question_end + 16);
     reply.extend_from_slice(&query[0..2]); // id
-    // QR=1, RD copied, RA=1; RCODE: 0 = ok, 3 = NXDOMAIN for names that aren't ours.
+                                           // QR=1, RD copied, RA=1; RCODE: 0 = ok, 3 = NXDOMAIN for names that aren't ours.
     let rcode: u16 = if ours { 0 } else { 3 };
     let out_flags: u16 = 0x8000 | (flags & 0x0100) | 0x0080 | rcode;
     reply.extend_from_slice(&out_flags.to_be_bytes());
@@ -142,7 +158,9 @@ mod tests {
 
     fn ask(server: &DnsServer, q: &[u8]) -> Vec<u8> {
         let client = UdpSocket::bind("127.0.0.1:0").unwrap();
-        client.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
         client.send_to(q, server.local_addr()).unwrap();
         let mut buf = [0u8; 512];
         let (n, _) = client.recv_from(&mut buf).unwrap();

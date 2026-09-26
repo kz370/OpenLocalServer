@@ -122,22 +122,36 @@ enum ListOnly {
 enum ProjectCmd {
     List,
     /// Register a folder as a project.
-    Add { path: PathBuf },
+    Add {
+        path: PathBuf,
+    },
     /// Forget a project (its files are not touched).
-    Remove { name: String },
+    Remove {
+        name: String,
+    },
     /// Set it up and start its services and workers.
-    Start { name: String },
+    Start {
+        name: String,
+    },
     /// Stop its workers.
-    Stop { name: String },
+    Stop {
+        name: String,
+    },
     /// Clone a Git repository into a new project.
-    Clone { url: String, path: PathBuf },
+    Clone {
+        url: String,
+        path: PathBuf,
+    },
 }
 
 #[derive(Subcommand)]
 enum RuntimeCmd {
     List,
     /// Install a runtime or service; the newest available version when none is given.
-    Install { id: String, version: Option<String> },
+    Install {
+        id: String,
+        version: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -149,9 +163,15 @@ enum PhpCmd {
 #[derive(Subcommand)]
 enum ServiceCmd {
     List,
-    Start { id: String },
-    Stop { id: String },
-    Restart { id: String },
+    Start {
+        id: String,
+    },
+    Stop {
+        id: String,
+    },
+    Restart {
+        id: String,
+    },
     /// The service's recent output.
     Logs {
         id: String,
@@ -170,7 +190,9 @@ enum TunnelCmd {
         #[arg(short, long)]
         yes: bool,
     },
-    Stop { name: String },
+    Stop {
+        name: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -192,7 +214,9 @@ enum WorkerCmd {
 
 #[derive(Subcommand)]
 enum SnapshotCmd {
-    List { project: String },
+    List {
+        project: String,
+    },
     Create {
         project: String,
         #[arg(long, default_value = "From the command line")]
@@ -213,7 +237,9 @@ enum SnapshotCmd {
 enum PluginCmd {
     List,
     /// Install from a folder or a .zip. It stays off until you enable it.
-    Install { source: PathBuf },
+    Install {
+        source: PathBuf,
+    },
     /// Turn a plugin on after reviewing the permissions it asks for.
     Enable {
         id: String,
@@ -221,20 +247,35 @@ enum PluginCmd {
         #[arg(short, long)]
         yes: bool,
     },
-    Disable { id: String },
-    Remove { id: String },
+    Disable {
+        id: String,
+    },
+    Remove {
+        id: String,
+    },
 }
 
 #[derive(Subcommand)]
 enum CatalogCmd {
     List,
     /// Add a catalog with its publisher's minisign public key.
-    Add { name: String, url: String, public_key: String },
-    Remove { id: String },
+    Add {
+        name: String,
+        url: String,
+        public_key: String,
+    },
+    Remove {
+        id: String,
+    },
     /// Download and verify one catalog, or all.
-    Refresh { id: Option<String> },
+    Refresh {
+        id: Option<String>,
+    },
     /// Install a plugin a catalog lists (it stays off until enabled).
-    Install { catalog: String, plugin: String },
+    Install {
+        catalog: String,
+        plugin: String,
+    },
 }
 #[derive(Subcommand)]
 enum ApiCmd {
@@ -298,7 +339,9 @@ enum AiCmd {
     On,
     Off,
     /// Check that a provider answers and list its models.
-    Test { provider: Option<String> },
+    Test {
+        provider: Option<String>,
+    },
     /// Ask a question about the logs, or with --feature palette, describe what you want set up.
     Ask {
         question: Vec<String>,
@@ -386,11 +429,16 @@ impl Ctx {
                 let started = Instant::now();
                 while control::is_running(&self.paths).is_none() {
                     if started.elapsed() > Duration::from_secs(30) {
-                        return Err("the background service did not start (see the log in the data folder)".into());
+                        return Err(
+                            "the background service did not start (see the log in the data folder)"
+                                .into(),
+                        );
                     }
                     std::thread::sleep(Duration::from_millis(200));
                 }
-                control::send(&self.paths, cmd).map_err(|e| e.to_string())?.map_err(diag)
+                control::send(&self.paths, cmd)
+                    .map_err(|e| e.to_string())?
+                    .map_err(diag)
             }
             Err(e) => Err(e.to_string()),
         }
@@ -404,7 +452,9 @@ impl Ctx {
     }
 
     fn project_id(&self, name: &str) -> R<String> {
-        let CoreResponse::Projects { projects } = self.call(CoreCommand::ListProjects)? else { return Err("unexpected reply".into()) };
+        let CoreResponse::Projects { projects } = self.call(CoreCommand::ListProjects)? else {
+            return Err("unexpected reply".into());
+        };
         projects
             .iter()
             .find(|p| p.id == name || p.name.eq_ignore_ascii_case(name))
@@ -417,7 +467,9 @@ impl Ctx {
         let full = std::fs::canonicalize(path).map_err(|e| format!("{}: {e}", path.display()))?;
         let full = full.display().to_string();
         let full = full.strip_prefix(r"\\?\").unwrap_or(&full).to_string();
-        let CoreResponse::Projects { projects } = self.call(CoreCommand::ListProjects)? else { return Err("unexpected reply".into()) };
+        let CoreResponse::Projects { projects } = self.call(CoreCommand::ListProjects)? else {
+            return Err("unexpected reply".into());
+        };
         if let Some(p) = projects.iter().find(|p| p.path.eq_ignore_ascii_case(&full)) {
             return Ok((p.id.clone(), p.name.clone()));
         }
@@ -438,7 +490,8 @@ fn confirm(question: &str) -> bool {
     print!("{question} [y/N] ");
     let _ = std::io::stdout().flush();
     let mut answer = String::new();
-    std::io::stdin().read_line(&mut answer).is_ok() && matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes")
+    std::io::stdin().read_line(&mut answer).is_ok()
+        && matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes")
 }
 
 fn table(rows: Vec<Vec<String>>) {
@@ -446,9 +499,26 @@ fn table(rows: Vec<Vec<String>>) {
         return;
     }
     let cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
-    let widths: Vec<usize> = (0..cols).map(|c| rows.iter().map(|r| r.get(c).map(|s| s.chars().count()).unwrap_or(0)).max().unwrap_or(0)).collect();
+    let widths: Vec<usize> = (0..cols)
+        .map(|c| {
+            rows.iter()
+                .map(|r| r.get(c).map(|s| s.chars().count()).unwrap_or(0))
+                .max()
+                .unwrap_or(0)
+        })
+        .collect();
     for r in rows {
-        let line: Vec<String> = r.iter().enumerate().map(|(i, s)| if i + 1 == r.len() { s.clone() } else { format!("{s:<w$}", w = widths[i]) }).collect();
+        let line: Vec<String> = r
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                if i + 1 == r.len() {
+                    s.clone()
+                } else {
+                    format!("{s:<w$}", w = widths[i])
+                }
+            })
+            .collect();
         println!("{}", line.join("  ").trim_end());
     }
 }
@@ -463,7 +533,10 @@ fn main() -> ExitCode {
     if let Cmd::Daemon { stop } = &cli.cmd {
         return daemon(&paths, *stop);
     }
-    let ctx = Ctx { paths, json: cli.json };
+    let ctx = Ctx {
+        paths,
+        json: cli.json,
+    };
     match run(&ctx, cli.cmd) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
@@ -480,13 +553,18 @@ fn daemon(paths: &AppPaths, stop: bool) -> ExitCode {
                 control::take_over_from_daemon(paths);
                 println!("The background service stopped.");
             }
-            Some(_) => println!("The desktop app is running; there is no background service to stop."),
+            Some(_) => {
+                println!("The desktop app is running; there is no background service to stop.")
+            }
             None => println!("Nothing is running."),
         }
         return ExitCode::SUCCESS;
     }
     if let Some(i) = control::is_running(paths) {
-        eprintln!("OpenLocalServer is already running ({}, process {}).", i.kind, i.pid);
+        eprintln!(
+            "OpenLocalServer is already running ({}, process {}).",
+            i.kind, i.pid
+        );
         return ExitCode::FAILURE;
     }
     ols_core::logging::init(&paths.logs_dir());
@@ -552,41 +630,93 @@ fn run(ctx: &Ctx, cmd: Cmd) -> R<()> {
             if ctx.print_json(&r) {
                 return Ok(());
             }
-            let CoreResponse::Dashboard { data } = r else { return Ok(()) };
-            println!("Web server: {} ({})", if data.web.running { "running" } else { "stopped" }, data.web.server);
+            let CoreResponse::Dashboard { data } = r else {
+                return Ok(());
+            };
+            println!(
+                "Web server: {} ({})",
+                if data.web.running {
+                    "running"
+                } else {
+                    "stopped"
+                },
+                data.web.server
+            );
             let mut rows = vec![vec!["SERVICE".into(), "STATE".into(), "PORT".into()]];
             for s in data.services.iter().filter(|s| s.installed) {
-                rows.push(vec![s.name.clone(), if s.running { "running".into() } else { "stopped".into() }, s.port.map(|p| p.to_string()).unwrap_or_default()]);
+                rows.push(vec![
+                    s.name.clone(),
+                    if s.running {
+                        "running".into()
+                    } else {
+                        "stopped".into()
+                    },
+                    s.port.map(|p| p.to_string()).unwrap_or_default(),
+                ]);
             }
             table(rows);
-            println!("{} project(s), {} site(s)", data.project_count, data.domains.len());
+            println!(
+                "{} project(s), {} site(s)",
+                data.project_count,
+                data.domains.len()
+            );
             if let CoreResponse::Tunnels { tunnels } = ctx.call(CoreCommand::ListTunnels)? {
-                for t in tunnels.iter().filter(|t| t.state == "connected" || t.state == "starting") {
-                    println!("PUBLIC: {} → {}", t.config.target, t.public_url.clone().unwrap_or_else(|| "connecting…".into()));
+                for t in tunnels
+                    .iter()
+                    .filter(|t| t.state == "connected" || t.state == "starting")
+                {
+                    println!(
+                        "PUBLIC: {} → {}",
+                        t.config.target,
+                        t.public_url.clone().unwrap_or_else(|| "connecting…".into())
+                    );
                 }
             }
         }
-        Cmd::Setup { dry_run, path, yes } => setup(ctx, path.unwrap_or_else(|| PathBuf::from(".")), dry_run, yes)?,
+        Cmd::Setup { dry_run, path, yes } => setup(
+            ctx,
+            path.unwrap_or_else(|| PathBuf::from(".")),
+            dry_run,
+            yes,
+        )?,
         Cmd::Doctor => {
             let r = ctx.call(CoreCommand::Doctor)?;
             if !ctx.print_json(&r) {
                 if let CoreResponse::DoctorReport { report } = r {
                     print!("{}", ols_core::repair::doctor_text(&report));
                     if report.errors > 0 {
-                        return Err(format!("{} error(s) found; `ols repair` fixes what it safely can", report.errors));
+                        return Err(format!(
+                            "{} error(s) found; `ols repair` fixes what it safely can",
+                            report.errors
+                        ));
                     }
                 }
             }
         }
         Cmd::Repair { project, yes } => {
             let pid = project.map(|p| ctx.project_id(&p)).transpose()?;
-            let CoreResponse::RepairPlan { plan } = ctx.call(CoreCommand::PlanRepair { project_id: pid.clone() })? else { return Ok(()) };
+            let CoreResponse::RepairPlan { plan } = ctx.call(CoreCommand::PlanRepair {
+                project_id: pid.clone(),
+            })?
+            else {
+                return Ok(());
+            };
             if plan.findings.is_empty() {
                 println!("Nothing to repair.");
                 return Ok(());
             }
             for f in &plan.findings {
-                println!("• {}\n    Cause: {}\n    Fix: {}{}", f.problem, f.cause, f.fix, if f.fix_command.is_some() { " (automatic)" } else { "" });
+                println!(
+                    "• {}\n    Cause: {}\n    Fix: {}{}",
+                    f.problem,
+                    f.cause,
+                    f.fix,
+                    if f.fix_command.is_some() {
+                        " (automatic)"
+                    } else {
+                        ""
+                    }
+                );
             }
             let safe = plan.actions.iter().filter(|a| !a.destructive).count();
             if safe == 0 {
@@ -597,24 +727,43 @@ fn run(ctx: &Ctx, cmd: Cmd) -> R<()> {
                 println!("Nothing changed. Run with --yes to apply.");
                 return Ok(());
             }
-            let r = ctx.call(CoreCommand::ApplyRepair { project_id: pid, ids: vec![], confirm_destructive: false })?;
+            let r = ctx.call(CoreCommand::ApplyRepair {
+                project_id: pid,
+                ids: vec![],
+                confirm_destructive: false,
+            })?;
             if !ctx.print_json(&r) {
                 if let CoreResponse::RepairReport { report } = r {
                     for s in report.steps {
-                        println!("{} {}{}", if s.ok { "✓" } else { "✗" }, s.label, if s.ok { String::new() } else { format!(" ({})", s.detail) });
+                        println!(
+                            "{} {}{}",
+                            if s.ok { "✓" } else { "✗" },
+                            s.label,
+                            if s.ok {
+                                String::new()
+                            } else {
+                                format!(" ({})", s.detail)
+                            }
+                        );
                     }
                     println!("{} fixed, {} left.", report.fixed, report.after.len());
                 }
             }
         }
         Cmd::Search { query } => {
-            let r = ctx.call(CoreCommand::GlobalSearch { query: query.join(" ") })?;
+            let r = ctx.call(CoreCommand::GlobalSearch {
+                query: query.join(" "),
+            })?;
             if !ctx.print_json(&r) {
                 if let CoreResponse::SearchResults { hits } = r {
                     if hits.is_empty() {
                         println!("Nothing found.");
                     }
-                    table(hits.into_iter().map(|h| vec![h.kind, h.title, h.excerpt.unwrap_or(h.subtitle)]).collect());
+                    table(
+                        hits.into_iter()
+                            .map(|h| vec![h.kind, h.title, h.excerpt.unwrap_or(h.subtitle)])
+                            .collect(),
+                    );
                 }
             }
         }
@@ -623,15 +772,34 @@ fn run(ctx: &Ctx, cmd: Cmd) -> R<()> {
             let r = ctx.call(CoreCommand::ListRuntimeCatalog)?;
             if !ctx.print_json(&r) {
                 if let CoreResponse::RuntimeCatalog { entries } = r {
-                    let mut rows = vec![vec!["ID".into(), "NAME".into(), "VERSION".into(), "STATE".into()]];
-                    rows.extend(entries.into_iter().map(|e| vec![e.id, e.name, e.version, if e.installed { "installed".into() } else { "available".into() }]));
+                    let mut rows = vec![vec![
+                        "ID".into(),
+                        "NAME".into(),
+                        "VERSION".into(),
+                        "STATE".into(),
+                    ]];
+                    rows.extend(entries.into_iter().map(|e| {
+                        vec![
+                            e.id,
+                            e.name,
+                            e.version,
+                            if e.installed {
+                                "installed".into()
+                            } else {
+                                "available".into()
+                            },
+                        ]
+                    }));
                     table(rows);
                 }
             }
         }
         Cmd::Runtime(RuntimeCmd::Install { id, version }) => install(ctx, &id, version.as_deref())?,
         Cmd::Php(PhpCmd::Use { version }) => {
-            ctx.call(CoreCommand::SetSetting { key: "runtime.php.global".into(), value: serde_json::json!(version) })?;
+            ctx.call(CoreCommand::SetSetting {
+                key: "runtime.php.global".into(),
+                value: serde_json::json!(version),
+            })?;
             println!("PHP {version} is now the default for projects that don't ask for a version.");
         }
         Cmd::Service(s) => service(ctx, s)?,
@@ -639,8 +807,24 @@ fn run(ctx: &Ctx, cmd: Cmd) -> R<()> {
             let r = ctx.call(CoreCommand::ListDomains)?;
             if !ctx.print_json(&r) {
                 if let CoreResponse::Domains { domains } = r {
-                    let mut rows = vec![vec!["SITE".into(), "TYPE".into(), "STATE".into(), "FOLDER".into()]];
-                    rows.extend(domains.into_iter().map(|d| vec![d.url, d.group, if d.enabled { "enabled".into() } else { "disabled".into() }, d.folder]));
+                    let mut rows = vec![vec![
+                        "SITE".into(),
+                        "TYPE".into(),
+                        "STATE".into(),
+                        "FOLDER".into(),
+                    ]];
+                    rows.extend(domains.into_iter().map(|d| {
+                        vec![
+                            d.url,
+                            d.group,
+                            if d.enabled {
+                                "enabled".into()
+                            } else {
+                                "disabled".into()
+                            },
+                            d.folder,
+                        ]
+                    }));
                     table(rows);
                 }
             }
@@ -650,7 +834,11 @@ fn run(ctx: &Ctx, cmd: Cmd) -> R<()> {
             if !ctx.print_json(&r) {
                 if let CoreResponse::Certificates { certs } = r {
                     let mut rows = vec![vec!["HOST".into(), "DAYS LEFT".into(), "NAMES".into()]];
-                    rows.extend(certs.into_iter().map(|c| vec![c.hostname, c.days_left.to_string(), c.sans.join(", ")]));
+                    rows.extend(
+                        certs
+                            .into_iter()
+                            .map(|c| vec![c.hostname, c.days_left.to_string(), c.sans.join(", ")]),
+                    );
                     table(rows);
                 }
             }
@@ -660,7 +848,11 @@ fn run(ctx: &Ctx, cmd: Cmd) -> R<()> {
             let r = ctx.call(CoreCommand::ListQuickApps)?;
             if !ctx.print_json(&r) {
                 if let CoreResponse::QuickApps { apps } = r {
-                    table(apps.into_iter().map(|a| vec![a.id, a.name, a.description]).collect());
+                    table(
+                        apps.into_iter()
+                            .map(|a| vec![a.id, a.name, a.description])
+                            .collect(),
+                    );
                 }
             }
         }
@@ -668,7 +860,12 @@ fn run(ctx: &Ctx, cmd: Cmd) -> R<()> {
             let r = ctx.call(CoreCommand::ListQuickCommands)?;
             if !ctx.print_json(&r) {
                 if let CoreResponse::QuickCommands { commands } = r {
-                    table(commands.into_iter().map(|c| vec![c.id, c.name, c.description]).collect());
+                    table(
+                        commands
+                            .into_iter()
+                            .map(|c| vec![c.id, c.name, c.description])
+                            .collect(),
+                    );
                 }
             }
         }
@@ -677,46 +874,79 @@ fn run(ctx: &Ctx, cmd: Cmd) -> R<()> {
                 Some(p) => Some(ctx.project_id(&p)?),
                 None => ctx.project_for_path(Path::new(".")).ok().map(|(id, _)| id),
             };
-            match ctx.call(CoreCommand::RunQuickCommand { id: id.clone(), project_id: pid })? {
+            match ctx.call(CoreCommand::RunQuickCommand {
+                id: id.clone(),
+                project_id: pid,
+            })? {
                 CoreResponse::MaybeProcess { id: Some(process) } => follow(ctx, process)?,
                 _ => println!("Done."),
             }
         }
-        Cmd::Worker(w) => {
-            match w {
-                WorkerCmd::List => {
-                    let r = ctx.call(CoreCommand::ListWorkers { project_id: None })?;
-                    if !ctx.print_json(&r) {
-                        if let CoreResponse::Workers { workers } = r {
-                            table(workers.into_iter().map(|w| vec![w.worker.name, format!("{}/{}", w.running, w.worker.count), w.command_line]).collect());
-                        }
+        Cmd::Worker(w) => match w {
+            WorkerCmd::List => {
+                let r = ctx.call(CoreCommand::ListWorkers { project_id: None })?;
+                if !ctx.print_json(&r) {
+                    if let CoreResponse::Workers { workers } = r {
+                        table(
+                            workers
+                                .into_iter()
+                                .map(|w| {
+                                    vec![
+                                        w.worker.name,
+                                        format!("{}/{}", w.running, w.worker.count),
+                                        w.command_line,
+                                    ]
+                                })
+                                .collect(),
+                        );
                     }
-                }
-                WorkerCmd::Start { project } => {
-                    let id = ctx.project_id(&project)?;
-                    if let CoreResponse::Count { count } = ctx.call(CoreCommand::StartProjectWorkers { project_id: id })? {
-                        println!("{count} worker process(es) running.");
-                    }
-                }
-                WorkerCmd::Stop { project } => {
-                    let id = ctx.project_id(&project)?;
-                    ctx.call(CoreCommand::StopProjectWorkers { project_id: id })?;
-                    println!("Workers stopped.");
                 }
             }
-        }
+            WorkerCmd::Start { project } => {
+                let id = ctx.project_id(&project)?;
+                if let CoreResponse::Count { count } =
+                    ctx.call(CoreCommand::StartProjectWorkers { project_id: id })?
+                {
+                    println!("{count} worker process(es) running.");
+                }
+            }
+            WorkerCmd::Stop { project } => {
+                let id = ctx.project_id(&project)?;
+                ctx.call(CoreCommand::StopProjectWorkers { project_id: id })?;
+                println!("Workers stopped.");
+            }
+        },
         Cmd::Snapshot(SnapshotCmd::List { project }) => {
             let id = ctx.project_id(&project)?;
             let r = ctx.call(CoreCommand::ListSnapshots { project_id: id })?;
             if !ctx.print_json(&r) {
                 if let CoreResponse::Snapshots { snapshots } = r {
-                    table(snapshots.into_iter().map(|s| vec![s.id, s.label, s.summary.join(" · ")]).collect());
+                    table(
+                        snapshots
+                            .into_iter()
+                            .map(|s| vec![s.id, s.label, s.summary.join(" · ")])
+                            .collect(),
+                    );
                 }
             }
         }
-        Cmd::Snapshot(SnapshotCmd::Create { project, label, env, databases, files }) => {
+        Cmd::Snapshot(SnapshotCmd::Create {
+            project,
+            label,
+            env,
+            databases,
+            files,
+        }) => {
             let id = ctx.project_id(&project)?;
-            let r = ctx.call(CoreCommand::CreateSnapshot { project_id: id, label, options: ols_core::snapshots::SnapshotOptions { env, databases, files } })?;
+            let r = ctx.call(CoreCommand::CreateSnapshot {
+                project_id: id,
+                label,
+                options: ols_core::snapshots::SnapshotOptions {
+                    env,
+                    databases,
+                    files,
+                },
+            })?;
             if !ctx.print_json(&r) {
                 if let CoreResponse::Snapshot { snapshot } = r {
                     println!("Snapshot saved: {}", snapshot.path);
@@ -735,12 +965,21 @@ fn run(ctx: &Ctx, cmd: Cmd) -> R<()> {
             })?;
             if !ctx.print_json(&r) {
                 if let CoreResponse::ShellMenu { status } = r {
-                    println!("The Explorer menu is {}.", if status.installed { "installed" } else { "not installed" });
+                    println!(
+                        "The Explorer menu is {}.",
+                        if status.installed {
+                            "installed"
+                        } else {
+                            "not installed"
+                        }
+                    );
                 }
             }
         }
         Cmd::SupportBundle { dest } => {
-            let r = ctx.call(CoreCommand::ExportSupportBundle { dest: dest.display().to_string() })?;
+            let r = ctx.call(CoreCommand::ExportSupportBundle {
+                dest: dest.display().to_string(),
+            })?;
             if !ctx.print_json(&r) {
                 if let CoreResponse::Lines { lines } = r {
                     println!("Wrote {} with: {}", dest.display(), lines.join(", "));
@@ -752,14 +991,28 @@ fn run(ctx: &Ctx, cmd: Cmd) -> R<()> {
             let r = ctx.call(CoreCommand::CheckNetwork { force: true })?;
             if !ctx.print_json(&r) {
                 if let CoreResponse::Network { status } = r {
-                    println!("{}", if status.online { "Online." } else { "Offline: downloads, tunnels and updates won't work." });
+                    println!(
+                        "{}",
+                        if status.online {
+                            "Online."
+                        } else {
+                            "Offline: downloads, tunnels and updates won't work."
+                        }
+                    );
                     for p in status.probes {
                         println!("  {} {}", if p.ok { "✓" } else { "✗" }, p.name);
                     }
                 }
             }
         }
-        Cmd::Test(TestCmd::Load { project, script, site, profile, vars, public }) => load_test(ctx, project, script, site, profile, vars, public)?,
+        Cmd::Test(TestCmd::Load {
+            project,
+            script,
+            site,
+            profile,
+            vars,
+            public,
+        }) => load_test(ctx, project, script, site, profile, vars, public)?,
         Cmd::Ai(c) => ai_cmd(ctx, c)?,
         // @@cli-arms
     }
@@ -790,10 +1043,17 @@ fn stop_everything(ctx: &Ctx) -> R<()> {
 
 fn setup(ctx: &Ctx, path: PathBuf, dry_run: bool, yes: bool) -> R<()> {
     let (id, _) = ctx.project_for_path(&path)?;
-    let r = ctx.call(CoreCommand::PlanSetup { project_id: id.clone() })?;
-    let CoreResponse::SetupPlan { plan } = r else { return Err("unexpected reply".into()) };
+    let r = ctx.call(CoreCommand::PlanSetup {
+        project_id: id.clone(),
+    })?;
+    let CoreResponse::SetupPlan { plan } = r else {
+        return Err("unexpected reply".into());
+    };
     if ctx.json && dry_run {
-        println!("{}", serde_json::to_string_pretty(&plan).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&plan).unwrap_or_default()
+        );
         return Ok(());
     }
     print!("{}", ols_core::setup::plan_text(&plan));
@@ -822,8 +1082,14 @@ fn setup(ctx: &Ctx, path: PathBuf, dry_run: bool, yes: bool) -> R<()> {
         std::thread::spawn(move || {
             let mut shown = std::collections::HashSet::new();
             while !done.load(std::sync::atomic::Ordering::Relaxed) {
-                if let Ok(Ok(CoreResponse::SetupProgress { report: Some(r) })) = control::send(&paths, CoreCommand::GetSetupProgress) {
-                    for s in r.steps.iter().filter(|s| matches!(s.status, ols_core::setup::StepStatus::Running)) {
+                if let Ok(Ok(CoreResponse::SetupProgress { report: Some(r) })) =
+                    control::send(&paths, CoreCommand::GetSetupProgress)
+                {
+                    for s in r
+                        .steps
+                        .iter()
+                        .filter(|s| matches!(s.status, ols_core::setup::StepStatus::Running))
+                    {
                         if shown.insert(s.label.clone()) {
                             println!("  … {}", s.label);
                         }
@@ -833,14 +1099,19 @@ fn setup(ctx: &Ctx, path: PathBuf, dry_run: bool, yes: bool) -> R<()> {
             }
         })
     };
-    let result = ctx.call(CoreCommand::ApplySetup { project_id: id, dry_run: false });
+    let result = ctx.call(CoreCommand::ApplySetup {
+        project_id: id,
+        dry_run: false,
+    });
     done.store(true, std::sync::atomic::Ordering::Relaxed);
     let _ = watcher.join();
     let r = result?;
     if ctx.print_json(&r) {
         return Ok(());
     }
-    let CoreResponse::Setup { report } = r else { return Ok(()) };
+    let CoreResponse::Setup { report } = r else {
+        return Ok(());
+    };
     println!();
     for s in &report.steps {
         use ols_core::setup::StepStatus as S;
@@ -850,7 +1121,14 @@ fn setup(ctx: &Ctx, path: PathBuf, dry_run: bool, yes: bool) -> R<()> {
             S::RolledBack => "↺",
             _ => "·",
         };
-        println!("{mark} {}{}", s.label, s.detail.as_ref().map(|d| format!(" ({d})")).unwrap_or_default());
+        println!(
+            "{mark} {}{}",
+            s.label,
+            s.detail
+                .as_ref()
+                .map(|d| format!(" ({d})"))
+                .unwrap_or_default()
+        );
     }
     for r in &report.rolled_back {
         println!("undone: {r}");
@@ -858,7 +1136,13 @@ fn setup(ctx: &Ctx, path: PathBuf, dry_run: bool, yes: bool) -> R<()> {
     match report.error {
         Some(e) => Err(e),
         None => {
-            println!("\nThe environment is set up.{}", report.lock_written.map(|l| format!(" Wrote {l}.")).unwrap_or_default());
+            println!(
+                "\nThe environment is set up.{}",
+                report
+                    .lock_written
+                    .map(|l| format!(" Wrote {l}."))
+                    .unwrap_or_default()
+            );
             Ok(())
         }
     }
@@ -885,10 +1169,18 @@ fn project(ctx: &Ctx, cmd: ProjectCmd) -> R<()> {
         }
         ProjectCmd::Start { name } => {
             let id = ctx.project_id(&name)?;
-            let CoreResponse::Projects { projects } = ctx.call(CoreCommand::ListProjects)? else { return Ok(()) };
-            let path = projects.into_iter().find(|p| p.id == id).map(|p| PathBuf::from(p.path)).unwrap_or_default();
+            let CoreResponse::Projects { projects } = ctx.call(CoreCommand::ListProjects)? else {
+                return Ok(());
+            };
+            let path = projects
+                .into_iter()
+                .find(|p| p.id == id)
+                .map(|p| PathBuf::from(p.path))
+                .unwrap_or_default();
             setup(ctx, path, false, true)?;
-            if let CoreResponse::Count { count } = ctx.call(CoreCommand::StartProjectWorkers { project_id: id })? {
+            if let CoreResponse::Count { count } =
+                ctx.call(CoreCommand::StartProjectWorkers { project_id: id })?
+            {
                 if count > 0 {
                     println!("{count} worker process(es) running.");
                 }
@@ -900,10 +1192,24 @@ fn project(ctx: &Ctx, cmd: ProjectCmd) -> R<()> {
             println!("{name}'s workers are stopped.");
         }
         ProjectCmd::Clone { url, path } => {
-            let target = if path.is_absolute() { path } else { std::env::current_dir().map_err(|e| e.to_string())?.join(path) };
+            let target = if path.is_absolute() {
+                path
+            } else {
+                std::env::current_dir()
+                    .map_err(|e| e.to_string())?
+                    .join(path)
+            };
             println!("Cloning {url}…");
-            if let CoreResponse::Project { project } = ctx.call(CoreCommand::GitClone { url, target: target.display().to_string(), branch: None, auth: None })? {
-                println!("{} is ready at {}. Next: cd there and run `ols setup`.", project.name, project.path);
+            if let CoreResponse::Project { project } = ctx.call(CoreCommand::GitClone {
+                url,
+                target: target.display().to_string(),
+                branch: None,
+                auth: None,
+            })? {
+                println!(
+                    "{} is ready at {}. Next: cd there and run `ols setup`.",
+                    project.name, project.path
+                );
             }
         }
     }
@@ -911,26 +1217,55 @@ fn project(ctx: &Ctx, cmd: ProjectCmd) -> R<()> {
 }
 
 fn install(ctx: &Ctx, id: &str, version: Option<&str>) -> R<()> {
-    let CoreResponse::RuntimeCatalog { entries } = ctx.call(CoreCommand::ListRuntimeCatalog)? else { return Err("unexpected reply".into()) };
-    let candidates: Vec<_> = entries.iter().filter(|e| e.id == id && version.is_none_or(|v| e.version == v || e.version.starts_with(&format!("{v}.")))).collect();
+    let CoreResponse::RuntimeCatalog { entries } = ctx.call(CoreCommand::ListRuntimeCatalog)?
+    else {
+        return Err("unexpected reply".into());
+    };
+    let candidates: Vec<_> = entries
+        .iter()
+        .filter(|e| {
+            e.id == id
+                && version.is_none_or(|v| e.version == v || e.version.starts_with(&format!("{v}.")))
+        })
+        .collect();
     let entry = candidates.last().ok_or_else(|| {
-        let have: Vec<String> = entries.iter().filter(|e| e.id == id).map(|e| e.version.clone()).collect();
-        if have.is_empty() { format!("\"{id}\" is not in the catalog (see `ols runtime list`)") } else { format!("{id} {} is not available; available: {}", version.unwrap_or(""), have.join(", ")) }
+        let have: Vec<String> = entries
+            .iter()
+            .filter(|e| e.id == id)
+            .map(|e| e.version.clone())
+            .collect();
+        if have.is_empty() {
+            format!("\"{id}\" is not in the catalog (see `ols runtime list`)")
+        } else {
+            format!(
+                "{id} {} is not available; available: {}",
+                version.unwrap_or(""),
+                have.join(", ")
+            )
+        }
     })?;
     if entry.installed {
         println!("{} {} is already installed.", entry.name, entry.version);
         return Ok(());
     }
     let (name, v) = (entry.name.clone(), entry.version.clone());
-    ctx.call(CoreCommand::InstallRuntime { id: id.into(), version: v.clone() })?;
+    ctx.call(CoreCommand::InstallRuntime {
+        id: id.into(),
+        version: v.clone(),
+    })?;
     print!("Installing {name} {v}");
     let started = Instant::now();
     loop {
         std::thread::sleep(Duration::from_secs(2));
         print!(".");
         let _ = std::io::stdout().flush();
-        if let CoreResponse::RuntimeCatalog { entries } = ctx.call(CoreCommand::ListRuntimeCatalog)? {
-            if entries.iter().any(|e| e.id == id && e.version == v && e.installed) {
+        if let CoreResponse::RuntimeCatalog { entries } =
+            ctx.call(CoreCommand::ListRuntimeCatalog)?
+        {
+            if entries
+                .iter()
+                .any(|e| e.id == id && e.version == v && e.installed)
+            {
                 println!(" done.");
                 return Ok(());
             }
@@ -948,10 +1283,26 @@ fn service(ctx: &Ctx, cmd: ServiceCmd) -> R<()> {
             let r = ctx.call(CoreCommand::ListServices)?;
             if !ctx.print_json(&r) {
                 if let CoreResponse::Services { services } = r {
-                    let mut rows = vec![vec!["ID".into(), "NAME".into(), "STATE".into(), "PORT".into()]];
+                    let mut rows = vec![vec![
+                        "ID".into(),
+                        "NAME".into(),
+                        "STATE".into(),
+                        "PORT".into(),
+                    ]];
                     rows.extend(services.into_iter().map(|s| {
-                        let state = if !s.installed { "not installed" } else if s.running { "running" } else { "stopped" };
-                        vec![s.id, s.name, state.into(), s.port.map(|p| p.to_string()).unwrap_or_default()]
+                        let state = if !s.installed {
+                            "not installed"
+                        } else if s.running {
+                            "running"
+                        } else {
+                            "stopped"
+                        };
+                        vec![
+                            s.id,
+                            s.name,
+                            state.into(),
+                            s.port.map(|p| p.to_string()).unwrap_or_default(),
+                        ]
                     }));
                     table(rows);
                 }
@@ -970,15 +1321,33 @@ fn service(ctx: &Ctx, cmd: ServiceCmd) -> R<()> {
             println!("Restarted {id}.");
         }
         ServiceCmd::Logs { id, lines } => {
-            let CoreResponse::LogSources { sources } = ctx.call(CoreCommand::ListLogSources)? else { return Ok(()) };
-            let CoreResponse::Services { services } = ctx.call(CoreCommand::ListServices)? else { return Ok(()) };
-            let name = services.iter().find(|s| s.id == id).map(|s| s.name.clone()).unwrap_or(id.clone());
+            let CoreResponse::LogSources { sources } = ctx.call(CoreCommand::ListLogSources)?
+            else {
+                return Ok(());
+            };
+            let CoreResponse::Services { services } = ctx.call(CoreCommand::ListServices)? else {
+                return Ok(());
+            };
+            let name = services
+                .iter()
+                .find(|s| s.id == id)
+                .map(|s| s.name.clone())
+                .unwrap_or(id.clone());
             let source = sources
                 .iter()
                 .rfind(|s| s.kind == "process" && s.name.eq_ignore_ascii_case(&name))
-                .or_else(|| sources.iter().find(|s| s.id == id || (id.starts_with("web") && s.id == "web:error")))
-                .ok_or_else(|| format!("{name} has no log yet (it hasn't run since the app started)"))?;
-            if let CoreResponse::LogLines { lines, .. } = ctx.call(CoreCommand::ReadLog { source: source.id.clone(), max_lines: lines })? {
+                .or_else(|| {
+                    sources
+                        .iter()
+                        .find(|s| s.id == id || (id.starts_with("web") && s.id == "web:error"))
+                })
+                .ok_or_else(|| {
+                    format!("{name} has no log yet (it hasn't run since the app started)")
+                })?;
+            if let CoreResponse::LogLines { lines, .. } = ctx.call(CoreCommand::ReadLog {
+                source: source.id.clone(),
+                max_lines: lines,
+            })? {
                 for l in lines {
                     println!("{l}");
                 }
@@ -989,24 +1358,47 @@ fn service(ctx: &Ctx, cmd: ServiceCmd) -> R<()> {
 }
 
 fn tunnel(ctx: &Ctx, cmd: TunnelCmd) -> R<()> {
-    let CoreResponse::Tunnels { tunnels } = ctx.call(CoreCommand::ListTunnels)? else { return Err("unexpected reply".into()) };
+    let CoreResponse::Tunnels { tunnels } = ctx.call(CoreCommand::ListTunnels)? else {
+        return Err("unexpected reply".into());
+    };
     let find = |name: &str| -> R<ols_core::tunnel::TunnelStatus> {
         let pid = ctx.project_id(name).ok();
         tunnels
             .iter()
-            .find(|t| t.config.id == name || t.config.name.eq_ignore_ascii_case(name) || (pid.is_some() && t.config.project_id == pid))
+            .find(|t| {
+                t.config.id == name
+                    || t.config.name.eq_ignore_ascii_case(name)
+                    || (pid.is_some() && t.config.project_id == pid)
+            })
             .cloned()
             .ok_or_else(|| format!("no tunnel named \"{name}\"; create one on the Tunnels page"))
     };
     match cmd {
         TunnelCmd::List => {
-            let mut rows = vec![vec!["NAME".into(), "PROVIDER".into(), "STATE".into(), "TARGET".into(), "PUBLIC URL".into()]];
-            rows.extend(tunnels.iter().map(|t| vec![t.config.name.clone(), t.config.provider.clone(), t.state.clone(), t.config.target.clone(), t.public_url.clone().unwrap_or_default()]));
+            let mut rows = vec![vec![
+                "NAME".into(),
+                "PROVIDER".into(),
+                "STATE".into(),
+                "TARGET".into(),
+                "PUBLIC URL".into(),
+            ]];
+            rows.extend(tunnels.iter().map(|t| {
+                vec![
+                    t.config.name.clone(),
+                    t.config.provider.clone(),
+                    t.state.clone(),
+                    t.config.target.clone(),
+                    t.public_url.clone().unwrap_or_default(),
+                ]
+            }));
             table(rows);
         }
         TunnelCmd::Start { name, yes } => {
             let t = find(&name)?;
-            let mut r = ctx.call(CoreCommand::StartTunnel { id: t.config.id.clone(), confirm_exposure: false })?;
+            let mut r = ctx.call(CoreCommand::StartTunnel {
+                id: t.config.id.clone(),
+                confirm_exposure: false,
+            })?;
             if let CoreResponse::Tunnel { tunnel } = &r {
                 if tunnel.state == "needs_confirmation" {
                     println!("{}", tunnel.exposure);
@@ -1014,7 +1406,10 @@ fn tunnel(ctx: &Ctx, cmd: TunnelCmd) -> R<()> {
                         println!("Not started.");
                         return Ok(());
                     }
-                    r = ctx.call(CoreCommand::StartTunnel { id: t.config.id.clone(), confirm_exposure: true })?;
+                    r = ctx.call(CoreCommand::StartTunnel {
+                        id: t.config.id.clone(),
+                        confirm_exposure: true,
+                    })?;
                 }
             }
             // Wait briefly for the provider's address.
@@ -1022,7 +1417,10 @@ fn tunnel(ctx: &Ctx, cmd: TunnelCmd) -> R<()> {
                 if let CoreResponse::Tunnels { tunnels } = ctx.call(CoreCommand::ListTunnels)? {
                     if let Some(s) = tunnels.into_iter().find(|x| x.config.id == t.config.id) {
                         if let Some(url) = s.public_url {
-                            println!("PUBLIC: {url} → {}\nStop it with: ols tunnel stop {}", s.config.target, s.config.name);
+                            println!(
+                                "PUBLIC: {url} → {}\nStop it with: ols tunnel stop {}",
+                                s.config.target, s.config.name
+                            );
                             return Ok(());
                         }
                         if let Some(e) = s.error {
@@ -1033,7 +1431,9 @@ fn tunnel(ctx: &Ctx, cmd: TunnelCmd) -> R<()> {
                 std::thread::sleep(Duration::from_millis(500));
             }
             let _ = r;
-            println!("Started; the provider hasn't given an address yet. Check with `ols tunnel list`.");
+            println!(
+                "Started; the provider hasn't given an address yet. Check with `ols tunnel list`."
+            );
         }
         TunnelCmd::Stop { name } => {
             let t = find(&name)?;
@@ -1047,7 +1447,9 @@ fn tunnel(ctx: &Ctx, cmd: TunnelCmd) -> R<()> {
 /// Prints a process's output until it exits.
 fn follow(ctx: &Ctx, id: ols_core::process::ProcessId) -> R<()> {
     let mut printed = 0usize;
-    while let CoreResponse::ProcessOutput { lines, .. } = ctx.call(CoreCommand::GetProcessOutput { id })? {
+    while let CoreResponse::ProcessOutput { lines, .. } =
+        ctx.call(CoreCommand::GetProcessOutput { id })?
+    {
         if lines.len() < printed {
             printed = 0;
         }
@@ -1055,9 +1457,19 @@ fn follow(ctx: &Ctx, id: ols_core::process::ProcessId) -> R<()> {
             println!("{l}");
         }
         printed = lines.len();
-        let CoreResponse::Processes { processes } = ctx.call(CoreCommand::ListProcesses)? else { break };
+        let CoreResponse::Processes { processes } = ctx.call(CoreCommand::ListProcesses)? else {
+            break;
+        };
         match processes.into_iter().find(|p| p.id == id) {
-            Some(p) if matches!(p.state, ols_core::process::ProcessState::Running | ols_core::process::ProcessState::Starting) => std::thread::sleep(Duration::from_millis(400)),
+            Some(p)
+                if matches!(
+                    p.state,
+                    ols_core::process::ProcessState::Running
+                        | ols_core::process::ProcessState::Starting
+                ) =>
+            {
+                std::thread::sleep(Duration::from_millis(400))
+            }
             Some(p) => {
                 return match p.exit_code {
                     Some(0) | None => Ok(()),
@@ -1080,30 +1492,65 @@ fn plugin(ctx: &Ctx, cmd: PluginCmd) -> R<()> {
     match cmd {
         PluginCmd::List => {
             let plugins = list(ctx)?;
-            let mut rows = vec![vec!["ID".into(), "NAME".into(), "VERSION".into(), "STATE".into(), "ADDS".into()]];
+            let mut rows = vec![vec![
+                "ID".into(),
+                "NAME".into(),
+                "VERSION".into(),
+                "STATE".into(),
+                "ADDS".into(),
+            ]];
             rows.extend(plugins.iter().map(|p| {
-                let state = if p.problem.is_some() { "unusable" } else if p.enabled { "on" } else { "off" };
+                let state = if p.problem.is_some() {
+                    "unusable"
+                } else if p.enabled {
+                    "on"
+                } else {
+                    "off"
+                };
                 let mut adds = Vec::new();
-                for (n, what) in [(p.runtimes, "runtimes"), (p.quick_apps, "quick apps"), (p.detections, "detections"), (p.health_checks, "health checks")] {
+                for (n, what) in [
+                    (p.runtimes, "runtimes"),
+                    (p.quick_apps, "quick apps"),
+                    (p.detections, "detections"),
+                    (p.health_checks, "health checks"),
+                ] {
                     if n > 0 {
                         adds.push(format!("{n} {what}"));
                     }
                 }
-                vec![p.manifest.id.clone(), p.manifest.name.clone(), p.manifest.version.clone(), state.into(), adds.join(", ")]
+                vec![
+                    p.manifest.id.clone(),
+                    p.manifest.name.clone(),
+                    p.manifest.version.clone(),
+                    state.into(),
+                    adds.join(", "),
+                ]
             }));
             table(rows);
         }
         PluginCmd::Install { source } => {
             let abs = std::fs::canonicalize(&source).unwrap_or(source);
-            let r = ctx.call(CoreCommand::InstallPlugin { source: abs.display().to_string().trim_start_matches(r"\\?\").to_string() })?;
+            let r = ctx.call(CoreCommand::InstallPlugin {
+                source: abs
+                    .display()
+                    .to_string()
+                    .trim_start_matches(r"\\?\")
+                    .to_string(),
+            })?;
             if !ctx.print_json(&r) {
                 if let CoreResponse::Plugin { plugin } = r {
-                    println!("Installed {} {}. It is off; turn it on with: ols plugin enable {}", plugin.manifest.name, plugin.manifest.version, plugin.manifest.id);
+                    println!(
+                        "Installed {} {}. It is off; turn it on with: ols plugin enable {}",
+                        plugin.manifest.name, plugin.manifest.version, plugin.manifest.id
+                    );
                 }
             }
         }
         PluginCmd::Enable { id, yes } => {
-            let plugin = list(ctx)?.into_iter().find(|p| p.manifest.id == id).ok_or_else(|| format!("no plugin named {id}"))?;
+            let plugin = list(ctx)?
+                .into_iter()
+                .find(|p| p.manifest.id == id)
+                .ok_or_else(|| format!("no plugin named {id}"))?;
             if let Some(problem) = &plugin.problem {
                 return Err(problem.clone());
             }
@@ -1116,11 +1563,19 @@ fn plugin(ctx: &Ctx, cmd: PluginCmd) -> R<()> {
                 return Ok(());
             }
             let approve = plugin.manifest.permissions.clone();
-            ctx.call(CoreCommand::SetPluginEnabled { id: id.clone(), enabled: true, approve })?;
+            ctx.call(CoreCommand::SetPluginEnabled {
+                id: id.clone(),
+                enabled: true,
+                approve,
+            })?;
             println!("{id} is on.");
         }
         PluginCmd::Disable { id } => {
-            ctx.call(CoreCommand::SetPluginEnabled { id: id.clone(), enabled: false, approve: vec![] })?;
+            ctx.call(CoreCommand::SetPluginEnabled {
+                id: id.clone(),
+                enabled: false,
+                approve: vec![],
+            })?;
             println!("{id} is off.");
         }
         PluginCmd::Remove { id } => {
@@ -1137,15 +1592,41 @@ fn catalog(ctx: &Ctx, cmd: CatalogCmd) -> R<()> {
             return;
         }
         if let CoreResponse::CatalogSources { catalogs } = r {
-            let mut rows = vec![vec!["ID".into(), "NAME".into(), "SIGNATURE".into(), "RUNTIMES".into(), "PLUGINS".into(), "NOTE".into()]];
+            let mut rows = vec![vec![
+                "ID".into(),
+                "NAME".into(),
+                "SIGNATURE".into(),
+                "RUNTIMES".into(),
+                "PLUGINS".into(),
+                "NOTE".into(),
+            ]];
             rows.extend(catalogs.iter().map(|c| {
                 vec![
                     c.source.id.clone(),
                     c.source.name.clone(),
-                    if c.verified { "verified".into() } else { "not verified".into() },
-                    c.doc.as_ref().map(|d| d.runtimes.len().to_string()).unwrap_or_default(),
-                    c.doc.as_ref().map(|d| d.plugins.iter().map(|p| p.id.clone()).collect::<Vec<_>>().join(", ")).unwrap_or_default(),
-                    c.error.clone().or_else(|| c.note.clone()).unwrap_or_default(),
+                    if c.verified {
+                        "verified".into()
+                    } else {
+                        "not verified".into()
+                    },
+                    c.doc
+                        .as_ref()
+                        .map(|d| d.runtimes.len().to_string())
+                        .unwrap_or_default(),
+                    c.doc
+                        .as_ref()
+                        .map(|d| {
+                            d.plugins
+                                .iter()
+                                .map(|p| p.id.clone())
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        })
+                        .unwrap_or_default(),
+                    c.error
+                        .clone()
+                        .or_else(|| c.note.clone())
+                        .unwrap_or_default(),
                 ]
             }));
             table(rows);
@@ -1153,15 +1634,26 @@ fn catalog(ctx: &Ctx, cmd: CatalogCmd) -> R<()> {
     };
     match cmd {
         CatalogCmd::List => show(ctx, ctx.call(CoreCommand::ListCatalogSources)?),
-        CatalogCmd::Add { name, url, public_key } => {
-            let r = ctx.call(CoreCommand::AddCatalogSource { name, url, public_key })?;
+        CatalogCmd::Add {
+            name,
+            url,
+            public_key,
+        } => {
+            let r = ctx.call(CoreCommand::AddCatalogSource {
+                name,
+                url,
+                public_key,
+            })?;
             show(ctx, r);
             println!("Added. Run `ols catalog refresh` to download it.");
         }
         CatalogCmd::Remove { id } => show(ctx, ctx.call(CoreCommand::RemoveCatalogSource { id })?),
         CatalogCmd::Refresh { id } => show(ctx, ctx.call(CoreCommand::RefreshCatalogs { id })?),
         CatalogCmd::Install { catalog, plugin } => {
-            ctx.call(CoreCommand::InstallCatalogPlugin { source_id: catalog, plugin_id: plugin.clone() })?;
+            ctx.call(CoreCommand::InstallCatalogPlugin {
+                source_id: catalog,
+                plugin_id: plugin.clone(),
+            })?;
             println!("Installed {plugin}. It is off; turn it on with: ols plugin enable {plugin}");
         }
     }
@@ -1173,8 +1665,20 @@ fn api(ctx: &Ctx, cmd: ApiCmd) -> R<()> {
             return;
         }
         if let CoreResponse::ApiStatus { status } = r {
-            println!("API: {} ({} mode) at {}", if status.running { "running" } else { "off" }, status.settings.mode, status.url);
-            println!("Token: {}", if status.token_set { "set" } else { "not set (ols api token)" });
+            println!(
+                "API: {} ({} mode) at {}",
+                if status.running { "running" } else { "off" },
+                status.settings.mode,
+                status.url
+            );
+            println!(
+                "Token: {}",
+                if status.token_set {
+                    "set"
+                } else {
+                    "not set (ols api token)"
+                }
+            );
             if let Some(e) = status.error {
                 println!("Problem: {e}");
             }
@@ -1183,22 +1687,42 @@ fn api(ctx: &Ctx, cmd: ApiCmd) -> R<()> {
     match cmd {
         ApiCmd::Status => show(ctx, ctx.call(CoreCommand::GetApiStatus)?),
         ApiCmd::Enable { port, operate } => {
-            let CoreResponse::ApiStatus { status } = ctx.call(CoreCommand::GetApiStatus)? else { return Err("unexpected reply".into()) };
+            let CoreResponse::ApiStatus { status } = ctx.call(CoreCommand::GetApiStatus)? else {
+                return Err("unexpected reply".into());
+            };
             if !status.token_set {
                 if let CoreResponse::Text { text } = ctx.call(CoreCommand::RotateApiToken)? {
                     println!("New API token (shown once): {text}");
                 }
             }
-            show(ctx, ctx.call(CoreCommand::SetApiSettings { enabled: true, port, mode: if operate { "operate" } else { "read_only" }.into() })?);
+            show(
+                ctx,
+                ctx.call(CoreCommand::SetApiSettings {
+                    enabled: true,
+                    port,
+                    mode: if operate { "operate" } else { "read_only" }.into(),
+                })?,
+            );
         }
         ApiCmd::Disable => {
-            let CoreResponse::ApiStatus { status } = ctx.call(CoreCommand::GetApiStatus)? else { return Err("unexpected reply".into()) };
-            show(ctx, ctx.call(CoreCommand::SetApiSettings { enabled: false, port: status.settings.port, mode: status.settings.mode })?);
+            let CoreResponse::ApiStatus { status } = ctx.call(CoreCommand::GetApiStatus)? else {
+                return Err("unexpected reply".into());
+            };
+            show(
+                ctx,
+                ctx.call(CoreCommand::SetApiSettings {
+                    enabled: false,
+                    port: status.settings.port,
+                    mode: status.settings.mode,
+                })?,
+            );
         }
         ApiCmd::Token => {
             if let CoreResponse::Text { text } = ctx.call(CoreCommand::RotateApiToken)? {
-                println!("New API token (shown once; the old one no longer works):
-{text}");
+                println!(
+                    "New API token (shown once; the old one no longer works):
+{text}"
+                );
             }
         }
     }
@@ -1212,8 +1736,11 @@ fn update(ctx: &Ctx, cmd: UpdateCmd) -> R<()> {
             if !ctx.print_json(&r) {
                 if let CoreResponse::Update { update } = r {
                     if update.available {
-                        println!("Version {} is available (you have {}). Signature verified.
-{}", update.latest, update.current, update.notes);
+                        println!(
+                            "Version {} is available (you have {}). Signature verified.
+{}",
+                            update.latest, update.current, update.notes
+                        );
                         println!("Download it with: ols update download");
                     } else {
                         println!("You are up to date ({}).", update.current);
@@ -1225,8 +1752,11 @@ fn update(ctx: &Ctx, cmd: UpdateCmd) -> R<()> {
             let r = ctx.call(CoreCommand::DownloadUpdate)?;
             if !ctx.print_json(&r) {
                 if let CoreResponse::Update { update } = r {
-                    println!("Downloaded and verified: {}
-Install it with: ols update install", update.downloaded.unwrap_or_default());
+                    println!(
+                        "Downloaded and verified: {}
+Install it with: ols update install",
+                        update.downloaded.unwrap_or_default()
+                    );
                 }
             }
         }
@@ -1240,63 +1770,134 @@ Install it with: ols update install", update.downloaded.unwrap_or_default());
     }
     Ok(())
 }
-fn load_test(ctx: &Ctx, project: Option<String>, script: Option<String>, site: Option<String>, profile: String, vars: Vec<String>, public: bool) -> R<()> {
+fn load_test(
+    ctx: &Ctx,
+    project: Option<String>,
+    script: Option<String>,
+    site: Option<String>,
+    profile: String,
+    vars: Vec<String>,
+    public: bool,
+) -> R<()> {
     let id = match project {
         Some(p) => ctx.project_id(&p)?,
         None => ctx.project_for_path(Path::new("."))?.0,
     };
-    let CoreResponse::LoadOverview { overview } = ctx.call(CoreCommand::LoadOverview { project_id: id.clone() })? else { return Err("unexpected reply".into()) };
+    let CoreResponse::LoadOverview { overview } = ctx.call(CoreCommand::LoadOverview {
+        project_id: id.clone(),
+    })?
+    else {
+        return Err("unexpected reply".into());
+    };
     if !overview.k6.installed {
         return Err("k6 isn't installed: run `ols runtime install k6`".into());
     }
     let mut env: Vec<(String, String)> = Vec::new();
     for v in &vars {
-        let (k, val) = v.split_once('=').ok_or_else(|| format!("--var wants NAME=VALUE, not {v}"))?;
+        let (k, val) = v
+            .split_once('=')
+            .ok_or_else(|| format!("--var wants NAME=VALUE, not {v}"))?;
         env.push((k.to_string(), val.to_string()));
     }
     let script = match script {
         Some(s) => s,
         None => match overview.scripts.as_slice() {
             [] => {
-                let CoreResponse::LoadProfiles { profiles } = ctx.call(CoreCommand::LoadListProfiles)? else { return Err("unexpected reply".into()) };
-                let plan = profiles.into_iter().find(|p| p.id == profile).ok_or_else(|| format!("no test plan named {profile}"))?;
+                let CoreResponse::LoadProfiles { profiles } =
+                    ctx.call(CoreCommand::LoadListProfiles)?
+                else {
+                    return Err("unexpected reply".into());
+                };
+                let plan = profiles
+                    .into_iter()
+                    .find(|p| p.id == profile)
+                    .ok_or_else(|| format!("no test plan named {profile}"))?;
                 for v in plan.variables.iter().filter(|v| !v.value.is_empty()) {
                     if !env.iter().any(|(k, _)| *k == v.name) {
                         env.push((v.name.clone(), v.value.clone()));
                     }
                 }
-                let CoreResponse::Text { text } = ctx.call(CoreCommand::LoadGenerate { project_id: id.clone(), profile: plan, name: None })? else { return Err("unexpected reply".into()) };
+                let CoreResponse::Text { text } = ctx.call(CoreCommand::LoadGenerate {
+                    project_id: id.clone(),
+                    profile: plan,
+                    name: None,
+                })?
+                else {
+                    return Err("unexpected reply".into());
+                };
                 println!("No script yet; wrote the {profile} test: .openlocalserver/k6/{text}");
                 text
             }
             [only] => only.name.clone(),
-            many => return Err(format!("choose a script: {}", many.iter().map(|s| s.name.as_str()).collect::<Vec<_>>().join(", "))),
+            many => {
+                return Err(format!(
+                    "choose a script: {}",
+                    many.iter()
+                        .map(|s| s.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ))
+            }
         },
     };
-    let CoreResponse::LoadRun { run } = ctx.call(CoreCommand::LoadRun { project_id: id, script: script.clone(), target: site, confirm_public: public, env })? else { return Err("unexpected reply".into()) };
+    let CoreResponse::LoadRun { run } = ctx.call(CoreCommand::LoadRun {
+        project_id: id,
+        script: script.clone(),
+        target: site,
+        confirm_public: public,
+        env,
+    })?
+    else {
+        return Err("unexpected reply".into());
+    };
     println!("Running {script} against {} ...", run.target);
     let run_id = run.id;
     let last = loop {
         std::thread::sleep(Duration::from_secs(2));
-        let CoreResponse::LoadRun { run } = ctx.call(CoreCommand::LoadStatus { run_id: run_id.clone() })? else { return Err("unexpected reply".into()) };
+        let CoreResponse::LoadRun { run } = ctx.call(CoreCommand::LoadStatus {
+            run_id: run_id.clone(),
+        })?
+        else {
+            return Err("unexpected reply".into());
+        };
         let m = &run.metrics;
         if !ctx.json {
-            println!("  {} requests, {:.1}/s, p95 {:.0} ms, errors {:.1}%, {} users", m.requests, m.rps, m.p95_ms, m.error_rate * 100.0, m.vus);
+            println!(
+                "  {} requests, {:.1}/s, p95 {:.0} ms, errors {:.1}%, {} users",
+                m.requests,
+                m.rps,
+                m.p95_ms,
+                m.error_rate * 100.0,
+                m.vus
+            );
         }
         if run.state != "running" {
             break run;
         }
     };
     if ctx.json {
-        println!("{}", serde_json::to_string_pretty(&last).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&last).unwrap_or_default()
+        );
     } else {
         let m = &last.metrics;
-        println!("
-{}: {} requests, p50 {:.0} ms, p95 {:.0} ms, p99 {:.0} ms, errors {:.2}%", last.state.to_uppercase(), m.requests, m.p50_ms, m.p95_ms, m.p99_ms, m.error_rate * 100.0);
+        println!(
+            "
+{}: {} requests, p50 {:.0} ms, p95 {:.0} ms, p99 {:.0} ms, errors {:.2}%",
+            last.state.to_uppercase(),
+            m.requests,
+            m.p50_ms,
+            m.p95_ms,
+            m.p99_ms,
+            m.error_rate * 100.0
+        );
     }
     match last.state.as_str() {
         "passed" => Ok(()),
-        _ => Err(last.message.unwrap_or_else(|| "the test didn't pass".into())),
+        _ => Err(last
+            .message
+            .unwrap_or_else(|| "the test didn't pass".into())),
     }
 }
 fn ai_cmd(ctx: &Ctx, cmd: AiCmd) -> R<()> {
@@ -1313,12 +1914,34 @@ fn ai_cmd(ctx: &Ctx, cmd: AiCmd) -> R<()> {
                 println!("{}", serde_json::to_string_pretty(&st).unwrap_or_default());
                 return Ok(());
             }
-            println!("AI assistant: {}", if st.settings.enabled { "on" } else { "off (turn it on with `ols ai on`)" });
+            println!(
+                "AI assistant: {}",
+                if st.settings.enabled {
+                    "on"
+                } else {
+                    "off (turn it on with `ols ai on`)"
+                }
+            );
             if st.settings.providers.is_empty() {
                 println!("No provider yet. Add LM Studio, Hugging Face, OpenRouter or another server in Settings → AI assistant.");
             }
             for p in &st.settings.providers {
-                println!("  {} [{}] {} model {} {}", p.id, p.kind, p.base_url, if p.model.is_empty() { "(none chosen)" } else { &p.model }, if p.local { "(on this computer)" } else { "(sends data off this computer)" });
+                println!(
+                    "  {} [{}] {} model {} {}",
+                    p.id,
+                    p.kind,
+                    p.base_url,
+                    if p.model.is_empty() {
+                        "(none chosen)"
+                    } else {
+                        &p.model
+                    },
+                    if p.local {
+                        "(on this computer)"
+                    } else {
+                        "(sends data off this computer)"
+                    }
+                );
             }
             for f in &st.features {
                 if let Some(p) = st.settings.features.get(&f.id) {
@@ -1329,16 +1952,31 @@ fn ai_cmd(ctx: &Ctx, cmd: AiCmd) -> R<()> {
         AiCmd::On | AiCmd::Off => {
             let enabled = matches!(cmd, AiCmd::On);
             let st = state()?;
-            ctx.call(CoreCommand::AiSaveSettings { enabled, features: st.settings.features })?;
-            println!("The AI assistant is {}.", if enabled { "on" } else { "off" });
+            ctx.call(CoreCommand::AiSaveSettings {
+                enabled,
+                features: st.settings.features,
+            })?;
+            println!(
+                "The AI assistant is {}.",
+                if enabled { "on" } else { "off" }
+            );
         }
         AiCmd::Test { provider } => {
             let st = state()?;
             let id = match provider {
                 Some(p) => p,
-                None => st.settings.providers.first().map(|p| p.id.clone()).ok_or("no provider is set up")?,
+                None => st
+                    .settings
+                    .providers
+                    .first()
+                    .map(|p| p.id.clone())
+                    .ok_or("no provider is set up")?,
             };
-            let CoreResponse::AiTest { result } = ctx.call(CoreCommand::AiTest { provider_id: id })? else { return Err("unexpected reply".into()) };
+            let CoreResponse::AiTest { result } =
+                ctx.call(CoreCommand::AiTest { provider_id: id })?
+            else {
+                return Err("unexpected reply".into());
+            };
             println!("{} ({} ms)", result.message, result.ms);
             for m in result.models.iter().take(30) {
                 println!("  {}", m.id);
@@ -1347,27 +1985,86 @@ fn ai_cmd(ctx: &Ctx, cmd: AiCmd) -> R<()> {
                 return Err("the provider didn't answer".into());
             }
         }
-        AiCmd::Ask { question, feature, logs, run } => {
+        AiCmd::Ask {
+            question,
+            feature,
+            logs,
+            run,
+        } => {
             let question = question.join(" ");
             if question.trim().is_empty() {
-                return Err("ask a question, for example: ols ai ask \"why does shop.test return 502?\"".into());
+                return Err(
+                    "ask a question, for example: ols ai ask \"why does shop.test return 502?\""
+                        .into(),
+                );
             }
             if !matches!(feature.as_str(), "logs" | "palette") {
                 return Err("--feature is logs or palette".into());
             }
-            ai_run(ctx, ols_core::ai::AiRequest { feature, question: Some(question), log_sources: logs, ..Default::default() }, run)?;
+            ai_run(
+                ctx,
+                ols_core::ai::AiRequest {
+                    feature,
+                    question: Some(question),
+                    log_sources: logs,
+                    ..Default::default()
+                },
+                run,
+            )?;
         }
         AiCmd::Explain { finding, run } => {
-            let CoreResponse::Diagnostics { findings } = ctx.call(CoreCommand::RunDiagnostics)? else { return Err("unexpected reply".into()) };
+            let CoreResponse::Diagnostics { findings } = ctx.call(CoreCommand::RunDiagnostics)?
+            else {
+                return Err("unexpected reply".into());
+            };
             let needle = finding.to_lowercase();
-            let hits: Vec<_> = findings.iter().filter(|f| f.id.to_lowercase() == needle || f.id.to_lowercase().contains(&needle) || f.problem.to_lowercase().contains(&needle)).collect();
+            let hits: Vec<_> = findings
+                .iter()
+                .filter(|f| {
+                    f.id.to_lowercase() == needle
+                        || f.id.to_lowercase().contains(&needle)
+                        || f.problem.to_lowercase().contains(&needle)
+                })
+                .collect();
             let f = match hits.as_slice() {
                 [one] => *one,
-                [] => return Err(format!("no finding matches '{finding}'. Findings: {}", findings.iter().map(|f| f.id.as_str()).collect::<Vec<_>>().join(", "))),
-                many => return Err(format!("'{finding}' matches several findings: {}", many.iter().map(|f| f.id.as_str()).collect::<Vec<_>>().join(", "))),
+                [] => {
+                    return Err(format!(
+                        "no finding matches '{finding}'. Findings: {}",
+                        findings
+                            .iter()
+                            .map(|f| f.id.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ))
+                }
+                many => {
+                    return Err(format!(
+                        "'{finding}' matches several findings: {}",
+                        many.iter()
+                            .map(|f| f.id.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ))
+                }
             };
-            let text = format!("{}\nCause: {}\nSuggested fix: {}\n{}", f.problem, f.cause, f.fix, f.details.join("\n"));
-            ai_run(ctx, ols_core::ai::AiRequest { feature: "explain".into(), title: Some(f.problem.clone()), text: Some(text), ..Default::default() }, run)?;
+            let text = format!(
+                "{}\nCause: {}\nSuggested fix: {}\n{}",
+                f.problem,
+                f.cause,
+                f.fix,
+                f.details.join("\n")
+            );
+            ai_run(
+                ctx,
+                ols_core::ai::AiRequest {
+                    feature: "explain".into(),
+                    title: Some(f.problem.clone()),
+                    text: Some(text),
+                    ..Default::default()
+                },
+                run,
+            )?;
         }
     }
     Ok(())
@@ -1377,21 +2074,58 @@ fn ai_cmd(ctx: &Ctx, cmd: AiCmd) -> R<()> {
 fn ai_run(ctx: &Ctx, request: ols_core::ai::AiRequest, run: AiRun) -> R<()> {
     use std::io::{IsTerminal, Write};
     if run.preview {
-        let CoreResponse::AiPrompt { prompt } = ctx.call(CoreCommand::AiPreview { request })? else { return Err("unexpected reply".into()) };
-        println!("To {} ({}), model {}, {}:\n", prompt.provider_name, prompt.host, prompt.model, if prompt.local { "on this computer" } else { "OUTSIDE this computer" });
+        let CoreResponse::AiPrompt { prompt } = ctx.call(CoreCommand::AiPreview { request })?
+        else {
+            return Err("unexpected reply".into());
+        };
+        println!(
+            "To {} ({}), model {}, {}:\n",
+            prompt.provider_name,
+            prompt.host,
+            prompt.model,
+            if prompt.local {
+                "on this computer"
+            } else {
+                "OUTSIDE this computer"
+            }
+        );
         for m in &prompt.messages {
             println!("--- {} ---\n{}\n", m.role, m.content);
         }
-        println!("Tools the model may call (read-only): {}", if prompt.tools.is_empty() { "none".to_string() } else { prompt.tools.join(", ") });
+        println!(
+            "Tools the model may call (read-only): {}",
+            if prompt.tools.is_empty() {
+                "none".to_string()
+            } else {
+                prompt.tools.join(", ")
+            }
+        );
         return Ok(());
     }
-    let CoreResponse::AiJob { job } = ctx.call(CoreCommand::AiStart { request, confirm_remote: run.yes }).map_err(|e| if e.contains("outside this computer") { format!("{e} (pass --yes to send it)") } else { e })? else { return Err("unexpected reply".into()) };
+    let CoreResponse::AiJob { job } = ctx
+        .call(CoreCommand::AiStart {
+            request,
+            confirm_remote: run.yes,
+        })
+        .map_err(|e| {
+            if e.contains("outside this computer") {
+                format!("{e} (pass --yes to send it)")
+            } else {
+                e
+            }
+        })?
+    else {
+        return Err("unexpected reply".into());
+    };
     let (id, mut shown, mut seen_activity) = (job.id, 0usize, 0usize);
     if !ctx.json && !job.local {
         eprintln!("Sending to {} (outside this computer).", job.provider);
     }
     let last = loop {
-        let CoreResponse::AiJob { job } = ctx.call(CoreCommand::AiJob { job_id: id.clone() })? else { return Err("unexpected reply".into()) };
+        let CoreResponse::AiJob { job } = ctx.call(CoreCommand::AiJob { job_id: id.clone() })?
+        else {
+            return Err("unexpected reply".into());
+        };
         if !ctx.json {
             for line in job.activity.iter().skip(seen_activity) {
                 eprintln!("  {line}");
@@ -1409,10 +2143,15 @@ fn ai_run(ctx: &Ctx, request: ols_core::ai::AiRequest, run: AiRun) -> R<()> {
         std::thread::sleep(Duration::from_millis(300));
     };
     if ctx.json {
-        println!("{}", serde_json::to_string_pretty(&last).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&last).unwrap_or_default()
+        );
     }
     if last.state != "done" {
-        return Err(last.error.unwrap_or_else(|| format!("the request {}", last.state)));
+        return Err(last
+            .error
+            .unwrap_or_else(|| format!("the request {}", last.state)));
     }
     let a = last.answer.ok_or("the model gave no answer")?;
     if ctx.json {
@@ -1426,13 +2165,29 @@ fn ai_run(ctx: &Ctx, request: ols_core::ai::AiRequest, run: AiRun) -> R<()> {
         (Some(i), Some(o)) => format!("{i} in, {o} out"),
         _ => "tokens not reported".into(),
     };
-    println!("\n[{} · {} · {tokens}{}]", a.provider, a.model, a.cost_usd.map(|c| format!(" · ${c:.4}")).unwrap_or_default());
+    println!(
+        "\n[{} · {} · {tokens}{}]",
+        a.provider,
+        a.model,
+        a.cost_usd
+            .map(|c| format!(" · ${c:.4}"))
+            .unwrap_or_default()
+    );
     if a.actions.is_empty() {
         return Ok(());
     }
     println!("\nProposed steps (nothing has run):");
     for (n, s) in a.actions.iter().enumerate() {
-        println!("  {}. {}{}", n + 1, s.label, if s.destructive { "  [replaces or removes something]" } else { "" });
+        println!(
+            "  {}. {}{}",
+            n + 1,
+            s.label,
+            if s.destructive {
+                "  [replaces or removes something]"
+            } else {
+                ""
+            }
+        );
     }
     let ask = |q: &str| -> bool {
         if !std::io::stdin().is_terminal() {
@@ -1441,7 +2196,8 @@ fn ai_run(ctx: &Ctx, request: ols_core::ai::AiRequest, run: AiRun) -> R<()> {
         print!("{q} [y/N] ");
         let _ = std::io::stdout().flush();
         let mut line = String::new();
-        std::io::stdin().read_line(&mut line).is_ok() && matches!(line.trim().to_lowercase().as_str(), "y" | "yes")
+        std::io::stdin().read_line(&mut line).is_ok()
+            && matches!(line.trim().to_lowercase().as_str(), "y" | "yes")
     };
     let has_destructive = a.actions.iter().any(|s| s.destructive);
     let go = run.apply || ask("Run these steps?");
@@ -1449,12 +2205,24 @@ fn ai_run(ctx: &Ctx, request: ols_core::ai::AiRequest, run: AiRun) -> R<()> {
         println!("Not run. Use --apply to run them.");
         return Ok(());
     }
-    let confirm_destructive = has_destructive && (run.destructive || ask("Some steps replace or remove something. Run those too?"));
-    let CoreResponse::AiApplied { steps } = ctx.call(CoreCommand::AiApply { actions: a.actions.iter().map(|s| s.command.clone()).collect(), confirm_destructive })? else { return Err("unexpected reply".into()) };
+    let confirm_destructive = has_destructive
+        && (run.destructive || ask("Some steps replace or remove something. Run those too?"));
+    let CoreResponse::AiApplied { steps } = ctx.call(CoreCommand::AiApply {
+        actions: a.actions.iter().map(|s| s.command.clone()).collect(),
+        confirm_destructive,
+    })?
+    else {
+        return Err("unexpected reply".into());
+    };
     let mut failed = false;
     for s in steps {
         failed |= !s.ok;
-        println!("  {} {}: {}", if s.ok { "✓" } else { "✗" }, s.label, s.detail);
+        println!(
+            "  {} {}: {}",
+            if s.ok { "✓" } else { "✗" },
+            s.label,
+            s.detail
+        );
     }
     if failed {
         return Err("some steps didn't run".into());

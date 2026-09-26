@@ -4,8 +4,8 @@
 use std::path::PathBuf;
 
 use super::{
-    cfg_path, https_redirect_port_suffix, Backend, Invocation, PoolSpec, Ports, ServerLayout, SiteSpec, WebServer,
-    MANAGED_HEADER,
+    cfg_path, https_redirect_port_suffix, Backend, Invocation, PoolSpec, Ports, ServerLayout,
+    SiteSpec, WebServer, MANAGED_HEADER,
 };
 
 pub struct Nginx;
@@ -23,7 +23,10 @@ impl Nginx {
     fn invocation(layout: &ServerLayout, extra: &[&str]) -> Invocation {
         let mut args = Self::common_args(layout);
         args.extend(extra.iter().map(|s| s.to_string()));
-        Invocation { args, cwd: layout.prefix.clone() }
+        Invocation {
+            args,
+            cwd: layout.prefix.clone(),
+        }
     }
 }
 
@@ -45,13 +48,22 @@ impl WebServer for Nginx {
         let mut out = String::new();
         out.push_str(MANAGED_HEADER);
         out.push_str("worker_processes 1;\n");
-        out.push_str(&format!("error_log \"{}\";\n", cfg_path(&layout.logs_dir.join("error.log"))));
-        out.push_str(&format!("pid \"{}\";\n\n", cfg_path(&layout.logs_dir.join("nginx.pid"))));
+        out.push_str(&format!(
+            "error_log \"{}\";\n",
+            cfg_path(&layout.logs_dir.join("error.log"))
+        ));
+        out.push_str(&format!(
+            "pid \"{}\";\n\n",
+            cfg_path(&layout.logs_dir.join("nginx.pid"))
+        ));
         out.push_str("events {\n    worker_connections 1024;\n}\n\n");
         out.push_str("http {\n");
         out.push_str("    include mime.types;\n");
         out.push_str("    default_type application/octet-stream;\n");
-        out.push_str(&format!("    access_log \"{}\";\n", cfg_path(&layout.logs_dir.join("access.log"))));
+        out.push_str(&format!(
+            "    access_log \"{}\";\n",
+            cfg_path(&layout.logs_dir.join("access.log"))
+        ));
         // sendfile holds files open on Windows, which blocks editors saving a served file.
         out.push_str("    sendfile off;\n");
         out.push_str("    keepalive_timeout 30;\n");
@@ -73,7 +85,10 @@ impl WebServer for Nginx {
             "    server {{\n        listen 127.0.0.1:{} default_server;\n        server_name _;\n        return 404;\n    }}\n\n",
             ports.http
         ));
-        out.push_str(&format!("    include \"{}/*.conf\";\n", cfg_path(&layout.sites_dir)));
+        out.push_str(&format!(
+            "    include \"{}/*.conf\";\n",
+            cfg_path(&layout.sites_dir)
+        ));
         out.push_str("}\n");
         out
     }
@@ -113,8 +128,14 @@ impl WebServer for Nginx {
             out.push_str(&format!("    listen 127.0.0.1:{} ssl;\n", ports.https));
             out.push_str("    http2 on;\n");
             out.push_str(&format!("    server_name {names};\n"));
-            out.push_str(&format!("    ssl_certificate \"{}\";\n", cfg_path(&tls.cert)));
-            out.push_str(&format!("    ssl_certificate_key \"{}\";\n", cfg_path(&tls.key)));
+            out.push_str(&format!(
+                "    ssl_certificate \"{}\";\n",
+                cfg_path(&tls.cert)
+            ));
+            out.push_str(&format!(
+                "    ssl_certificate_key \"{}\";\n",
+                cfg_path(&tls.key)
+            ));
             out.push_str("    ssl_protocols TLSv1.2 TLSv1.3;\n");
             out.push_str(&body);
             out.push_str("}\n");
@@ -149,7 +170,10 @@ impl WebServer for Nginx {
         // Stock fastcgi_params, extended with what PHP frameworks expect.
         let fastcgi = layout.prefix.join("conf").join("fastcgi_params");
         if !fastcgi.exists() {
-            std::fs::copy(layout.install_dir.join("conf").join("fastcgi_params"), fastcgi)?;
+            std::fs::copy(
+                layout.install_dir.join("conf").join("fastcgi_params"),
+                fastcgi,
+            )?;
         }
         Ok(())
     }
@@ -182,20 +206,33 @@ fn render_body(site: &SiteSpec) -> String {
     out.push_str("    index index.php index.html index.htm;\n");
 
     for header in &site.blocks.headers {
-        out.push_str(&format!("    add_header {} \"{}\" always;\n", header.name, header.value));
+        out.push_str(&format!(
+            "    add_header {} \"{}\" always;\n",
+            header.name, header.value
+        ));
     }
     for include in &site.blocks.includes {
-        out.push_str(&format!("    include \"{}\";\n", include.replace('\\', "/")));
+        out.push_str(&format!(
+            "    include \"{}\";\n",
+            include.replace('\\', "/")
+        ));
     }
     if let Some(snippet) = &site.custom_snippet {
         out.push_str(&format!("    include \"{}\";\n", cfg_path(snippet)));
     }
     for redirect in &site.blocks.redirects {
-        out.push_str(&format!("    location = {} {{\n        return {} {};\n    }}\n", redirect.from, redirect.code, redirect.to));
+        out.push_str(&format!(
+            "    location = {} {{\n        return {} {};\n    }}\n",
+            redirect.from, redirect.code, redirect.to
+        ));
     }
     for mapping in &site.blocks.mappings {
         out.push_str(&format!("    location {} {{\n", mapping.path));
-        out.push_str(&proxy_directives(&mapping.upstream, "        ", site.forwarded_tls));
+        out.push_str(&proxy_directives(
+            &mapping.upstream,
+            "        ",
+            site.forwarded_tls,
+        ));
         out.push_str("    }\n");
     }
 
@@ -205,7 +242,9 @@ fn render_body(site: &SiteSpec) -> String {
             out.push_str("    location ~ \\.php(/|$) {\n");
             out.push_str("        fastcgi_split_path_info ^(.+?\\.php)(/.*)$;\n");
             out.push_str("        include fastcgi_params;\n");
-            out.push_str("        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;\n");
+            out.push_str(
+                "        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;\n",
+            );
             out.push_str("        fastcgi_param PATH_INFO $fastcgi_path_info;\n");
             out.push_str("        fastcgi_param HTTP_X_FORWARDED_PROTO $ols_forwarded_proto;\n");
             if https {
@@ -233,12 +272,27 @@ fn proxy_directives(upstream: &str, indent: &str, forwarded_tls: bool) -> String
     out.push_str(&format!("{indent}proxy_pass {upstream};\n"));
     out.push_str(&format!("{indent}proxy_http_version 1.1;\n"));
     out.push_str(&format!("{indent}proxy_set_header Host $host;\n"));
-    out.push_str(&format!("{indent}proxy_set_header X-Real-IP $remote_addr;\n"));
-    out.push_str(&format!("{indent}proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n"));
-    out.push_str(&format!("{indent}proxy_set_header X-Forwarded-Proto {};\n", if forwarded_tls { "$ols_forwarded_proto" } else { "$scheme" }));
+    out.push_str(&format!(
+        "{indent}proxy_set_header X-Real-IP $remote_addr;\n"
+    ));
+    out.push_str(&format!(
+        "{indent}proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n"
+    ));
+    out.push_str(&format!(
+        "{indent}proxy_set_header X-Forwarded-Proto {};\n",
+        if forwarded_tls {
+            "$ols_forwarded_proto"
+        } else {
+            "$scheme"
+        }
+    ));
     // WebSocket upgrade — Vite/Next HMR needs it.
-    out.push_str(&format!("{indent}proxy_set_header Upgrade $http_upgrade;\n"));
-    out.push_str(&format!("{indent}proxy_set_header Connection $connection_upgrade;\n"));
+    out.push_str(&format!(
+        "{indent}proxy_set_header Upgrade $http_upgrade;\n"
+    ));
+    out.push_str(&format!(
+        "{indent}proxy_set_header Connection $connection_upgrade;\n"
+    ));
     out.push_str(&format!("{indent}proxy_read_timeout 300;\n"));
     out
 }
@@ -255,7 +309,10 @@ mod tests {
             wildcard: false,
             root: "C:\\sites\\shop\\public".into(),
             backend,
-            tls: tls.then(|| CertPaths { cert: "C:/c/cert.pem".into(), key: "C:/c/key.pem".into() }),
+            tls: tls.then(|| CertPaths {
+                cert: "C:/c/cert.pem".into(),
+                key: "C:/c/key.pem".into(),
+            }),
             redirect_https: redirect,
             blocks: SiteBlocks::default(),
             custom_snippet: None,
@@ -264,37 +321,78 @@ mod tests {
         }
     }
 
-    const PORTS: Ports = Ports { http: 80, https: 443 };
+    const PORTS: Ports = Ports {
+        http: 80,
+        https: 443,
+    };
 
     #[test]
     fn php_site_routes_php_to_its_pool_over_https() {
-        let cfg = Nginx.render_site(&site(Backend::Php { pool: "php_81".into(), ports: vec![10810] }, true, true), PORTS);
+        let cfg = Nginx.render_site(
+            &site(
+                Backend::Php {
+                    pool: "php_81".into(),
+                    ports: vec![10810],
+                },
+                true,
+                true,
+            ),
+            PORTS,
+        );
         assert!(cfg.contains("server_name shop.test;"));
-        assert!(cfg.contains("return 301 https://$host$request_uri;"), "http server must redirect");
+        assert!(
+            cfg.contains("return 301 https://$host$request_uri;"),
+            "http server must redirect"
+        );
         assert!(cfg.contains("listen 127.0.0.1:443 ssl;"));
         assert!(cfg.contains("ssl_certificate \"C:/c/cert.pem\";"));
         assert!(cfg.contains("fastcgi_pass ols_php_81;"));
         assert!(cfg.contains("fastcgi_param HTTPS on;"));
-        assert!(cfg.contains("root \"C:/sites/shop/public\";"), "backslashes must become forward slashes");
+        assert!(
+            cfg.contains("root \"C:/sites/shop/public\";"),
+            "backslashes must become forward slashes"
+        );
     }
 
     #[test]
     fn redirect_toggle_off_serves_plain_http_directly() {
         let cfg = Nginx.render_site(&site(Backend::Static, true, false), PORTS);
-        assert!(!cfg.contains("return 301"), "redirect disabled must not redirect (§52)");
-        assert_eq!(cfg.matches("try_files $uri $uri/ =404;").count(), 2, "both http and https serve the site");
+        assert!(
+            !cfg.contains("return 301"),
+            "redirect disabled must not redirect (§52)"
+        );
+        assert_eq!(
+            cfg.matches("try_files $uri $uri/ =404;").count(),
+            2,
+            "both http and https serve the site"
+        );
     }
 
     #[test]
     fn redirect_includes_a_non_default_https_port() {
-        let cfg = Nginx.render_site(&site(Backend::Static, true, true), Ports { http: 8080, https: 8443 });
+        let cfg = Nginx.render_site(
+            &site(Backend::Static, true, true),
+            Ports {
+                http: 8080,
+                https: 8443,
+            },
+        );
         assert!(cfg.contains("return 301 https://$host:8443$request_uri;"));
         assert!(cfg.contains("listen 127.0.0.1:8080;"));
     }
 
     #[test]
     fn proxy_site_forwards_with_websocket_upgrade() {
-        let cfg = Nginx.render_site(&site(Backend::Proxy { upstream: "http://127.0.0.1:5173".into() }, false, false), PORTS);
+        let cfg = Nginx.render_site(
+            &site(
+                Backend::Proxy {
+                    upstream: "http://127.0.0.1:5173".into(),
+                },
+                false,
+                false,
+            ),
+            PORTS,
+        );
         assert!(cfg.contains("proxy_pass http://127.0.0.1:5173;"));
         assert!(cfg.contains("proxy_set_header Upgrade $http_upgrade;"));
         assert!(!cfg.contains("ssl_certificate"));
@@ -304,17 +402,32 @@ mod tests {
     fn wildcard_adds_a_wildcard_server_name() {
         let mut s = site(Backend::Static, false, false);
         s.wildcard = true;
-        assert!(Nginx.render_site(&s, PORTS).contains("server_name shop.test *.shop.test;"));
+        assert!(Nginx
+            .render_site(&s, PORTS)
+            .contains("server_name shop.test *.shop.test;"));
     }
 
     #[test]
     fn structured_blocks_render_headers_redirects_mappings_upstreams() {
         let mut s = site(Backend::Static, false, false);
         s.blocks = SiteBlocks {
-            headers: vec![HeaderRule { name: "X-Frame-Options".into(), value: "DENY".into() }],
-            redirects: vec![RedirectRule { from: "/old".into(), to: "/new".into(), code: 301 }],
-            mappings: vec![ProxyMapping { path: "/api/".into(), upstream: "http://127.0.0.1:8000".into() }],
-            upstreams: vec![UpstreamGroup { name: "backend".into(), servers: vec!["127.0.0.1:9001".into()] }],
+            headers: vec![HeaderRule {
+                name: "X-Frame-Options".into(),
+                value: "DENY".into(),
+            }],
+            redirects: vec![RedirectRule {
+                from: "/old".into(),
+                to: "/new".into(),
+                code: 301,
+            }],
+            mappings: vec![ProxyMapping {
+                path: "/api/".into(),
+                upstream: "http://127.0.0.1:8000".into(),
+            }],
+            upstreams: vec![UpstreamGroup {
+                name: "backend".into(),
+                servers: vec!["127.0.0.1:9001".into()],
+            }],
             includes: vec!["C:\\extra\\more.conf".into()],
         };
         s.custom_snippet = Some("C:/custom/shop.test.conf".into());
@@ -339,7 +452,14 @@ mod tests {
             logs_dir: "C:/ols/web/nginx/logs".into(),
             binary: "C:/nginx/nginx.exe".into(),
         };
-        let cfg = Nginx.render_main(&layout, PORTS, &[PoolSpec { id: "php_81".into(), ports: vec![10810, 10811] }]);
+        let cfg = Nginx.render_main(
+            &layout,
+            PORTS,
+            &[PoolSpec {
+                id: "php_81".into(),
+                ports: vec![10810, 10811],
+            }],
+        );
         assert!(cfg.contains("upstream ols_php_81 {"));
         assert!(cfg.contains("server 127.0.0.1:10811;"));
         assert!(cfg.contains("include \"C:/ols/web/nginx/sites/*.conf\";"));

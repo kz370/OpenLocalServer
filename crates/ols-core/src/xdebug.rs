@@ -11,7 +11,9 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 /// Xdebug 3 modes; `off` is the only one that can't be combined with the others.
-pub const MODES: &[&str] = &["off", "develop", "coverage", "debug", "gcstats", "profile", "trace"];
+pub const MODES: &[&str] = &[
+    "off", "develop", "coverage", "debug", "gcstats", "profile", "trace",
+];
 const START_MODES: &[&str] = &["yes", "trigger", "default", "no"];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -52,12 +54,19 @@ impl XdebugSettings {
             return Err("\"off\" can't be combined with other modes.".into());
         }
         if !START_MODES.contains(&self.start_with_request.as_str()) {
-            return Err(format!("\"{}\" is not a valid start_with_request value.", self.start_with_request));
+            return Err(format!(
+                "\"{}\" is not a valid start_with_request value.",
+                self.start_with_request
+            ));
         }
         if self.client_port == 0 {
             return Err("The client port must be between 1 and 65535.".into());
         }
-        let plain = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | ':'));
+        let plain = |s: &str| {
+            !s.is_empty()
+                && s.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | ':'))
+        };
         if !plain(&self.client_host) {
             return Err("The client host can only contain letters, digits and . - _ :".into());
         }
@@ -97,7 +106,12 @@ pub struct XdebugReport {
 
 /// IDE setup text for one project. `ide` is "vscode", "phpstorm" or anything else for the
 /// generic checklist.
-pub fn ide_config(ide: &str, project_path: &str, site_root: &str, settings: &XdebugSettings) -> String {
+pub fn ide_config(
+    ide: &str,
+    project_path: &str,
+    site_root: &str,
+    settings: &XdebugSettings,
+) -> String {
     let port = settings.client_port;
     match ide {
         "vscode" => format!(
@@ -150,10 +164,16 @@ mod tests {
 
     #[test]
     fn defaults_are_valid_and_render_in_a_stable_order() {
-        let s = XdebugSettings { modes: vec!["trace".into(), "debug".into(), "develop".into()], ..Default::default() };
+        let s = XdebugSettings {
+            modes: vec!["trace".into(), "debug".into(), "develop".into()],
+            ..Default::default()
+        };
         assert!(s.validate().is_ok());
         let block = s.ini_block(Path::new(r"C:\data\xdebug"));
-        assert!(block.contains("xdebug.mode=develop,debug,trace\n"), "{block}");
+        assert!(
+            block.contains("xdebug.mode=develop,debug,trace\n"),
+            "{block}"
+        );
         assert!(block.contains("xdebug.client_port=9003\n"));
         assert!(block.contains("xdebug.output_dir=\"C:/data/xdebug\"\n"));
     }
@@ -178,11 +198,19 @@ mod tests {
 
     #[test]
     fn ide_snippets_carry_the_port_and_project_path() {
-        let s = XdebugSettings { client_port: 9100, ..Default::default() };
+        let s = XdebugSettings {
+            client_port: 9100,
+            ..Default::default()
+        };
         let code = ide_config("vscode", r"C:\Sites\shop", r"C:\Sites\shop\public", &s);
         assert!(code.contains("\"port\": 9100"));
         assert!(code.contains("\"C:/Sites/shop\": \"${workspaceFolder}\""));
-        assert!(ide_config("phpstorm", r"C:\Sites\shop", r"C:\Sites\shop\public", &s).contains("9100"));
-        assert!(ide_config("other", r"C:\Sites\shop", r"C:\Sites\shop\public", &s).contains("XDEBUG_TRIGGER"));
+        assert!(
+            ide_config("phpstorm", r"C:\Sites\shop", r"C:\Sites\shop\public", &s).contains("9100")
+        );
+        assert!(
+            ide_config("other", r"C:\Sites\shop", r"C:\Sites\shop\public", &s)
+                .contains("XDEBUG_TRIGGER")
+        );
     }
 }

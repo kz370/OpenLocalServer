@@ -71,13 +71,21 @@ pub struct WorkerPreset {
 pub fn presets() -> Vec<WorkerPreset> {
     [
         ("laravel", "Laravel queue", "php artisan queue:work"),
-        ("symfony", "Symfony Messenger", "php bin/console messenger:consume async"),
+        (
+            "symfony",
+            "Symfony Messenger",
+            "php bin/console messenger:consume async",
+        ),
         ("celery", "Celery", "celery -A app worker --loglevel=info"),
         ("bullmq", "BullMQ (Node script)", "node worker.js"),
         ("custom", "Custom worker", ""),
     ]
     .into_iter()
-    .map(|(id, label, command)| WorkerPreset { id: id.into(), label: label.into(), command: command.into() })
+    .map(|(id, label, command)| WorkerPreset {
+        id: id.into(),
+        label: label.into(),
+        command: command.into(),
+    })
     .collect()
 }
 
@@ -86,7 +94,9 @@ pub fn default_command(framework: &Framework) -> Option<&'static str> {
     match framework {
         Framework::Laravel => Some("php artisan queue:work"),
         Framework::Symfony => Some("php bin/console messenger:consume async"),
-        Framework::Django | Framework::Flask | Framework::FastApi => Some("celery -A app worker --loglevel=info"),
+        Framework::Django | Framework::Flask | Framework::FastApi => {
+            Some("celery -A app worker --loglevel=info")
+        }
         _ => None,
     }
 }
@@ -134,7 +144,10 @@ pub struct WorkerStore {
 impl WorkerStore {
     pub fn load(paths: &AppPaths) -> Self {
         let file = paths.data_dir().join("workers.json");
-        let workers = std::fs::read_to_string(&file).ok().and_then(|raw| serde_json::from_str(&raw).ok()).unwrap_or_default();
+        let workers = std::fs::read_to_string(&file)
+            .ok()
+            .and_then(|raw| serde_json::from_str(&raw).ok())
+            .unwrap_or_default();
         Self { file, workers }
     }
 
@@ -173,7 +186,13 @@ pub struct WorkerProcesses(std::sync::Mutex<HashMap<String, Vec<ProcessId>>>);
 
 impl Inner {
     pub fn workers_for(&self, project_id: &str) -> Vec<Worker> {
-        self.workers.lock().unwrap().list().into_iter().filter(|w| w.project_id == project_id).collect()
+        self.workers
+            .lock()
+            .unwrap()
+            .list()
+            .into_iter()
+            .filter(|w| w.project_id == project_id)
+            .collect()
     }
 
     pub fn worker_statuses(&self, project_id: Option<&str>) -> Vec<WorkerStatus> {
@@ -185,8 +204,19 @@ impl Inner {
             .into_iter()
             .filter(|w| project_id.is_none_or(|p| w.project_id == p))
             .map(|w| {
-                let processes: Vec<ProcessId> = procs.get(&w.id).cloned().unwrap_or_default().into_iter().filter(|p| self.supervisor.is_alive(*p)).collect();
-                WorkerStatus { running: processes.len(), processes, command_line: command_line(&w), worker: w }
+                let processes: Vec<ProcessId> = procs
+                    .get(&w.id)
+                    .cloned()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|p| self.supervisor.is_alive(*p))
+                    .collect();
+                WorkerStatus {
+                    running: processes.len(),
+                    processes,
+                    command_line: command_line(&w),
+                    worker: w,
+                }
             })
             .collect()
     }
@@ -204,7 +234,10 @@ impl Inner {
         if w.id.is_empty() {
             w.id = worker_id(&w.project_id, &w.name);
         }
-        w.count = w.count.clamp(1, MAX_COUNT.min(self.resource_limits().max_worker_count.unwrap_or(MAX_COUNT)));
+        w.count = w.count.clamp(
+            1,
+            MAX_COUNT.min(self.resource_limits().max_worker_count.unwrap_or(MAX_COUNT)),
+        );
         self.workers.lock().unwrap().save(w.clone())?;
         Ok(w)
     }
@@ -216,11 +249,19 @@ impl Inner {
 
     /// Starts the copies that aren't running yet. Returns how many are running afterwards.
     pub fn start_worker(&self, id: &str) -> Result<usize, CoreError> {
-        let w = self.workers.lock().unwrap().get(id).ok_or_else(|| CoreError::ServiceError(format!("no worker \"{id}\"")))?;
+        let w = self
+            .workers
+            .lock()
+            .unwrap()
+            .get(id)
+            .ok_or_else(|| CoreError::ServiceError(format!("no worker \"{id}\"")))?;
         let line = command_line(&w);
         let tokens = crate::quickapp::plan::split_command_line(&line);
-        let (program, args) = tokens.split_first().ok_or_else(|| CoreError::ServiceError("the worker's command is empty".into()))?;
-        let (executable, mut full_args, mut env) = self.project_program(program, args, Some(&w.project_id))?;
+        let (program, args) = tokens
+            .split_first()
+            .ok_or_else(|| CoreError::ServiceError("the worker's command is empty".into()))?;
+        let (executable, mut full_args, mut env) =
+            self.project_program(program, args, Some(&w.project_id))?;
         if let Some(mb) = w.memory_mb {
             // Node takes its heap limit from NODE_OPTIONS; PHP from -d memory_limit.
             if program == "node" || program.ends_with("node.exe") {
@@ -231,23 +272,42 @@ impl Inner {
                 full_args.insert(0, "-d".into());
             }
         }
-        let project = self.projects.lock().unwrap().get(&w.project_id).ok_or_else(|| CoreError::InvalidProjectPath(w.project_id.clone()))?;
+        let project = self
+            .projects
+            .lock()
+            .unwrap()
+            .get(&w.project_id)
+            .ok_or_else(|| CoreError::InvalidProjectPath(w.project_id.clone()))?;
 
         let mut procs = self.worker_procs.0.lock().unwrap();
         let list = procs.entry(w.id.clone()).or_default();
         list.retain(|p| self.supervisor.is_alive(*p));
         while (list.len() as u32) < w.count {
             if !self.process_slot_free() {
-                return Err(CoreError::ServiceError("the process limit in Settings → Resources is reached".into()));
+                return Err(CoreError::ServiceError(
+                    "the process limit in Settings → Resources is reached".into(),
+                ));
             }
             let n = list.len() + 1;
             let id = self.supervisor.start(ProcessSpec {
-                name: format!("{} worker: {}{}", project.name, w.name, if w.count > 1 { format!(" #{n}") } else { String::new() }),
+                name: format!(
+                    "{} worker: {}{}",
+                    project.name,
+                    w.name,
+                    if w.count > 1 {
+                        format!(" #{n}")
+                    } else {
+                        String::new()
+                    }
+                ),
                 executable: executable.display().to_string(),
                 args: full_args.clone(),
                 cwd: Some(project.path.clone()),
                 env: env.clone(),
-                restart: w.restart.then_some(RestartPolicy { max_retries: w.max_retries, delay_ms: 3000 }),
+                restart: w.restart.then_some(RestartPolicy {
+                    max_retries: w.max_retries,
+                    delay_ms: 3000,
+                }),
             });
             list.push(id);
         }
@@ -271,7 +331,11 @@ impl Inner {
     /// Starts every autostart worker of a project. Returns the number of running copies.
     pub fn start_project_workers(&self, project_id: &str) -> Result<usize, CoreError> {
         let mut total = 0;
-        for w in self.workers_for(project_id).into_iter().filter(|w| w.autostart) {
+        for w in self
+            .workers_for(project_id)
+            .into_iter()
+            .filter(|w| w.autostart)
+        {
             total += self.start_worker(&w.id)?;
         }
         Ok(total)
@@ -284,7 +348,14 @@ impl Inner {
     }
 
     pub fn stop_all_workers(&self) {
-        let ids: Vec<String> = self.worker_procs.0.lock().unwrap().keys().cloned().collect();
+        let ids: Vec<String> = self
+            .worker_procs
+            .0
+            .lock()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect();
         for id in ids {
             self.stop_worker(&id);
         }
@@ -296,16 +367,42 @@ mod tests {
     use super::*;
 
     fn w(command: &str) -> Worker {
-        Worker { id: "x".into(), project_id: "p".into(), name: "q".into(), command: command.into(), count: 1, timeout_secs: Some(90), memory_mb: Some(256), max_retries: 5, restart: true, autostart: true }
+        Worker {
+            id: "x".into(),
+            project_id: "p".into(),
+            name: "q".into(),
+            command: command.into(),
+            count: 1,
+            timeout_secs: Some(90),
+            memory_mb: Some(256),
+            max_retries: 5,
+            restart: true,
+            autostart: true,
+        }
     }
 
     #[test]
     fn timeout_and_memory_become_the_frameworks_own_flags() {
-        assert_eq!(command_line(&w("php artisan queue:work")), "php artisan queue:work --timeout=90 --memory=256");
-        assert_eq!(command_line(&w("php artisan queue:work --timeout=5")), "php artisan queue:work --timeout=5 --memory=256", "the user's own flag wins");
-        assert_eq!(command_line(&w("php bin/console messenger:consume async")), "php bin/console messenger:consume async --time-limit=90 --memory-limit=256M");
-        assert!(command_line(&w("celery -A app worker")).ends_with("--time-limit=90 --max-memory-per-child=262144"));
-        assert_eq!(command_line(&w("node worker.js")), "node worker.js", "unknown workers are run as written");
+        assert_eq!(
+            command_line(&w("php artisan queue:work")),
+            "php artisan queue:work --timeout=90 --memory=256"
+        );
+        assert_eq!(
+            command_line(&w("php artisan queue:work --timeout=5")),
+            "php artisan queue:work --timeout=5 --memory=256",
+            "the user's own flag wins"
+        );
+        assert_eq!(
+            command_line(&w("php bin/console messenger:consume async")),
+            "php bin/console messenger:consume async --time-limit=90 --memory-limit=256M"
+        );
+        assert!(command_line(&w("celery -A app worker"))
+            .ends_with("--time-limit=90 --max-memory-per-child=262144"));
+        assert_eq!(
+            command_line(&w("node worker.js")),
+            "node worker.js",
+            "unknown workers are run as written"
+        );
     }
 
     #[test]

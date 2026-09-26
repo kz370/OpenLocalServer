@@ -7,7 +7,7 @@ OpenLocalServer is a local development environment manager for Windows. Successo
 - **Backend:** Rust (edition 2021, stable), Tokio full runtime, tracing + tracing-appender, serde / serde_json / serde_yaml, reqwest (rustls), sha2/sha1, zip, minijinja, regex, rcgen + rustls, portable-pty, sysinfo, chrono, hyper, minisign-verify, notify, keyring, directories, clap 4.
 - **Desktop shell:** Tauri 2.11.6, tauri-plugin-dialog, tauri-plugin-notification, tauri-plugin-single-instance, tray-icon.
 - **Frontend:** TypeScript, React 19, Vite 8, Tailwind CSS 4, shadcn/ui (Radix), CodeMirror 6, xterm.js 5 + fit addon, lucide-react, Tauri API 2.11.
-- **Managed runtimes:** PHP NTS 8.1–8.5 + Xdebug + Composer, Node 22/24 + corepack (npm/pnpm/yarn), Python venv, MariaDB 11.4, PostgreSQL, MongoDB, Redis (redis-windows), Mailpit, Nginx 1.28, Apache 2.4, Caddy 2.11, SQLite, k6, portable Git, HeidiSQL / pgAdmin / NoSQLBooster.
+- **Managed runtimes:** PHP NTS 8.1–8.5 + Xdebug + Composer, Node 22/24 + corepack (npm/pnpm/yarn), Python venv, MariaDB 11.4, PostgreSQL, MongoDB, Redis (redis-windows), Mailpit, Nginx 1.28, Apache 2.4, Caddy 2.11, SQLite, k6, portable Git, HeidiSQL / pgAdmin / NoSQLBooster / Tiny RDM (Redis one-click).
 - **Storage:** JSON files under portable `data/` directory today; SQLite migration planned. `OLS_HOME` env overrides all paths.
 
 ## Architecture Pattern

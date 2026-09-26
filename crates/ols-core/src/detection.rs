@@ -95,7 +95,9 @@ fn read_text(root: &Path, name: &str) -> Option<String> {
 /// as `"8.2"`. Deliberately not a full semver-range parser — good enough to show the
 /// user "this project wants roughly PHP 8.2", which they can always override manually.
 fn strip_constraint_prefix(raw: &str) -> String {
-    raw.trim_start_matches(['^', '~', '>', '<', '=', ' ']).trim().to_string()
+    raw.trim_start_matches(['^', '~', '>', '<', '=', ' '])
+        .trim()
+        .to_string()
 }
 
 pub fn detect(project_path: &Path) -> DetectionResult {
@@ -135,7 +137,10 @@ pub fn detect(project_path: &Path) -> DetectionResult {
     } else if exists(project_path, "wp-config.php") {
         markers.push("wp-config.php".to_string());
         Framework::WordPress
-    } else if composer.is_some() || exists(project_path, "index.php") || exists(project_path, "public/index.php") {
+    } else if composer.is_some()
+        || exists(project_path, "index.php")
+        || exists(project_path, "public/index.php")
+    {
         Framework::GenericPhp
     } else if package_json.is_some() {
         Framework::Node
@@ -143,7 +148,11 @@ pub fn detect(project_path: &Path) -> DetectionResult {
         markers.push("manage.py".to_string());
         Framework::Django
     } else if exists(project_path, "pyproject.toml") || exists(project_path, "requirements.txt") {
-        let marker = if exists(project_path, "pyproject.toml") { "pyproject.toml" } else { "requirements.txt" };
+        let marker = if exists(project_path, "pyproject.toml") {
+            "pyproject.toml"
+        } else {
+            "requirements.txt"
+        };
         markers.push(marker.to_string());
         let text = read_text(project_path, "pyproject.toml")
             .or_else(|| read_text(project_path, "requirements.txt"))
@@ -162,17 +171,31 @@ pub fn detect(project_path: &Path) -> DetectionResult {
 
     // -- Python version hint, independent of which Python framework was matched. --
     if let Some(pyproject) = read_text(project_path, "pyproject.toml") {
-        if let Some(line) = pyproject.lines().find(|l| l.trim_start().starts_with("requires-python")) {
+        if let Some(line) = pyproject
+            .lines()
+            .find(|l| l.trim_start().starts_with("requires-python"))
+        {
             if let Some(value) = line.split('=').nth(1) {
                 requirements.python = Some(strip_constraint_prefix(value.trim().trim_matches('"')));
             }
         }
     }
 
-    let php_family = matches!(framework, Framework::Laravel | Framework::Symfony | Framework::GenericPhp);
-    let doc_root = (php_family && !exists(project_path, "index.php") && exists(project_path, "public/index.php")).then(|| "public".to_string());
+    let php_family = matches!(
+        framework,
+        Framework::Laravel | Framework::Symfony | Framework::GenericPhp
+    );
+    let doc_root = (php_family
+        && !exists(project_path, "index.php")
+        && exists(project_path, "public/index.php"))
+    .then(|| "public".to_string());
 
-    DetectionResult { framework, markers, requirements, doc_root }
+    DetectionResult {
+        framework,
+        markers,
+        requirements,
+        doc_root,
+    }
 }
 
 #[cfg(test)]
@@ -183,7 +206,11 @@ mod tests {
     fn detects_laravel_via_artisan() {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(tmp.path().join("artisan"), "#!/usr/bin/env php").unwrap();
-        std::fs::write(tmp.path().join("composer.json"), r#"{"require":{"php":"^8.2"}}"#).unwrap();
+        std::fs::write(
+            tmp.path().join("composer.json"),
+            r#"{"require":{"php":"^8.2"}}"#,
+        )
+        .unwrap();
 
         let result = detect(tmp.path());
         assert_eq!(result.framework, Framework::Laravel);
@@ -194,7 +221,11 @@ mod tests {
     #[test]
     fn detects_node_and_its_engine_constraint() {
         let tmp = tempfile::tempdir().unwrap();
-        std::fs::write(tmp.path().join("package.json"), r#"{"engines":{"node":">=22"}}"#).unwrap();
+        std::fs::write(
+            tmp.path().join("package.json"),
+            r#"{"engines":{"node":">=22"}}"#,
+        )
+        .unwrap();
 
         let result = detect(tmp.path());
         assert_eq!(result.framework, Framework::Node);
@@ -216,8 +247,16 @@ mod tests {
     #[test]
     fn detects_both_php_and_node_requirements_when_both_marker_files_present() {
         let tmp = tempfile::tempdir().unwrap();
-        std::fs::write(tmp.path().join("composer.json"), r#"{"require":{"php":"^8.4"}}"#).unwrap();
-        std::fs::write(tmp.path().join("package.json"), r#"{"engines":{"node":"24"}}"#).unwrap();
+        std::fs::write(
+            tmp.path().join("composer.json"),
+            r#"{"require":{"php":"^8.4"}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            tmp.path().join("package.json"),
+            r#"{"engines":{"node":"24"}}"#,
+        )
+        .unwrap();
 
         let result = detect(tmp.path());
         assert_eq!(result.framework, Framework::GenericPhp);

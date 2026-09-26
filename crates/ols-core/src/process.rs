@@ -75,8 +75,15 @@ pub struct ProcessInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ProcessEvent {
-    StateChanged { id: ProcessId, state: ProcessState },
-    Output { id: ProcessId, stream: OutputStream, line: String },
+    StateChanged {
+        id: ProcessId,
+        state: ProcessState,
+    },
+    Output {
+        id: ProcessId,
+        stream: OutputStream,
+        line: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -152,7 +159,10 @@ impl ProcessSupervisor {
             stop_requested: false,
         };
         self.processes.lock().unwrap().insert(id.0, record);
-        let _ = self.events_tx.send(ProcessEvent::StateChanged { id, state: ProcessState::Starting });
+        let _ = self.events_tx.send(ProcessEvent::StateChanged {
+            id,
+            state: ProcessState::Starting,
+        });
 
         self.runtime.spawn(run_process_attempt(
             id,
@@ -168,12 +178,17 @@ impl ProcessSupervisor {
     pub fn stop(&self, id: ProcessId) {
         let pid = {
             let mut guard = self.processes.lock().unwrap();
-            let Some(rec) = guard.get_mut(&id.0) else { return };
+            let Some(rec) = guard.get_mut(&id.0) else {
+                return;
+            };
             rec.stop_requested = true;
             rec.info.state = ProcessState::Stopping;
             rec.info.pid
         };
-        let _ = self.events_tx.send(ProcessEvent::StateChanged { id, state: ProcessState::Stopping });
+        let _ = self.events_tx.send(ProcessEvent::StateChanged {
+            id,
+            state: ProcessState::Stopping,
+        });
 
         let Some(pid) = pid else { return };
         self.runtime.spawn(async move {
@@ -191,7 +206,15 @@ impl ProcessSupervisor {
             let active: Vec<_> = self
                 .snapshot()
                 .into_iter()
-                .filter(|p| matches!(p.state, ProcessState::Starting | ProcessState::Running | ProcessState::Stopping | ProcessState::Restarting))
+                .filter(|p| {
+                    matches!(
+                        p.state,
+                        ProcessState::Starting
+                            | ProcessState::Running
+                            | ProcessState::Stopping
+                            | ProcessState::Restarting
+                    )
+                })
                 .collect();
             if active.is_empty() {
                 return true;
@@ -217,7 +240,10 @@ impl ProcessSupervisor {
     pub fn is_alive(&self, id: ProcessId) -> bool {
         let guard = self.processes.lock().unwrap();
         guard.get(&id.0).is_some_and(|r| {
-            matches!(r.info.state, ProcessState::Starting | ProcessState::Running | ProcessState::Restarting)
+            matches!(
+                r.info.state,
+                ProcessState::Starting | ProcessState::Running | ProcessState::Restarting
+            )
         })
     }
 
@@ -230,7 +256,10 @@ impl ProcessSupervisor {
 
     pub fn recent_output(&self, id: ProcessId) -> Vec<String> {
         let guard = self.processes.lock().unwrap();
-        guard.get(&id.0).map(|r| r.output.iter().cloned().collect()).unwrap_or_default()
+        guard
+            .get(&id.0)
+            .map(|r| r.output.iter().cloned().collect())
+            .unwrap_or_default()
     }
 
     /// Empties a process's kept output (the Logs page "Clear"); the process keeps running.
@@ -258,7 +287,9 @@ impl ProcessSupervisor {
         let result = self.runtime.block_on(async move {
             let started = Instant::now();
             let mut cmd = Command::new(&executable_owned);
-            cmd.args(&args_owned).stdout(Stdio::null()).stderr(Stdio::null());
+            cmd.args(&args_owned)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
             #[cfg(windows)]
             cmd.creation_flags(0x0800_0000);
             if let Some(cwd) = &cwd_owned {
@@ -316,7 +347,10 @@ fn run_process_attempt(
 ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async move {
         let mut cmd = Command::new(&spec.executable);
-        cmd.args(&spec.args).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
+        cmd.args(&spec.args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true);
         #[cfg(windows)]
         cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW — no console flash from a GUI app
         if let Some(cwd) = &spec.cwd {
@@ -331,7 +365,10 @@ fn run_process_attempt(
             Err(e) => {
                 tracing::warn!(process = %spec.name, error = %e, "failed to spawn process");
                 set_state(&processes, id, ProcessState::Failed, None);
-                let _ = events_tx.send(ProcessEvent::StateChanged { id, state: ProcessState::Failed });
+                let _ = events_tx.send(ProcessEvent::StateChanged {
+                    id,
+                    state: ProcessState::Failed,
+                });
                 return;
             }
         };
@@ -339,13 +376,28 @@ fn run_process_attempt(
         let pid = child.id();
         set_state(&processes, id, ProcessState::Running, pid);
         tracing::info!(process = %spec.name, pid = ?pid, "process running");
-        let _ = events_tx.send(ProcessEvent::StateChanged { id, state: ProcessState::Running });
+        let _ = events_tx.send(ProcessEvent::StateChanged {
+            id,
+            state: ProcessState::Running,
+        });
 
         if let Some(stdout) = child.stdout.take() {
-            spawn_line_reader(id, OutputStream::Stdout, stdout, processes.clone(), events_tx.clone());
+            spawn_line_reader(
+                id,
+                OutputStream::Stdout,
+                stdout,
+                processes.clone(),
+                events_tx.clone(),
+            );
         }
         if let Some(stderr) = child.stderr.take() {
-            spawn_line_reader(id, OutputStream::Stderr, stderr, processes.clone(), events_tx.clone());
+            spawn_line_reader(
+                id,
+                OutputStream::Stderr,
+                stderr,
+                processes.clone(),
+                events_tx.clone(),
+            );
         }
 
         let exit = child.wait().await;
@@ -353,11 +405,18 @@ fn run_process_attempt(
         let (stop_requested, restart_policy) = {
             let guard = processes.lock().unwrap();
             let rec = guard.get(&id.0);
-            (rec.map(|r| r.stop_requested).unwrap_or(true), rec.and_then(|r| r.spec.restart))
+            (
+                rec.map(|r| r.stop_requested).unwrap_or(true),
+                rec.and_then(|r| r.spec.restart),
+            )
         };
         let exit_code = exit.ok().and_then(|s| s.code());
         let crashed = !stop_requested && exit_code != Some(0);
-        let final_state = if crashed { ProcessState::Crashed } else { ProcessState::Stopped };
+        let final_state = if crashed {
+            ProcessState::Crashed
+        } else {
+            ProcessState::Stopped
+        };
 
         {
             let mut guard = processes.lock().unwrap();
@@ -366,7 +425,10 @@ fn run_process_attempt(
                 rec.info.exit_code = exit_code;
             }
         }
-        let _ = events_tx.send(ProcessEvent::StateChanged { id, state: final_state });
+        let _ = events_tx.send(ProcessEvent::StateChanged {
+            id,
+            state: final_state,
+        });
         tracing::info!(process = %spec.name, ?exit_code, ?final_state, "process exited");
 
         // §108 crash recovery: only for unexpected exits, only while retries remain.
@@ -384,7 +446,10 @@ fn run_process_attempt(
                             rec.info.state = ProcessState::Restarting;
                         }
                     }
-                    let _ = events_tx.send(ProcessEvent::StateChanged { id, state: ProcessState::Restarting });
+                    let _ = events_tx.send(ProcessEvent::StateChanged {
+                        id,
+                        state: ProcessState::Restarting,
+                    });
                     tokio::time::sleep(Duration::from_millis(policy.delay_ms)).await;
                     run_process_attempt(id, spec, processes, events_tx).await;
                 }
@@ -438,14 +503,34 @@ fn spawn_line_reader<R>(
 #[cfg(windows)]
 pub fn kill_orphans(runtimes_dir: &std::path::Path) -> usize {
     use std::os::windows::process::CommandExt;
-    const SERVERS: &[&str] = &["nginx.exe", "httpd.exe", "caddy.exe", "php-cgi.exe", "mysqld.exe", "mariadbd.exe", "mongod.exe", "mailpit.exe", "postgres.exe", "redis-server.exe"];
-    let filter = SERVERS.iter().map(|n| format!("Name='{n}'")).collect::<Vec<_>>().join(" or ");
+    const SERVERS: &[&str] = &[
+        "nginx.exe",
+        "httpd.exe",
+        "caddy.exe",
+        "php-cgi.exe",
+        "mysqld.exe",
+        "mariadbd.exe",
+        "mongod.exe",
+        "mailpit.exe",
+        "postgres.exe",
+        "redis-server.exe",
+    ];
+    let filter = SERVERS
+        .iter()
+        .map(|n| format!("Name='{n}'"))
+        .collect::<Vec<_>>()
+        .join(" or ");
     let script = format!(
         "Get-CimInstance Win32_Process -Filter \"{filter}\" | ForEach-Object {{ \"$($_.ProcessId)|$($_.ExecutablePath)|$($_.CommandLine)\" }}"
     );
     let out = crate::exec::run_capture(
         std::path::Path::new("powershell"),
-        &["-NoProfile".into(), "-NonInteractive".into(), "-Command".into(), script],
+        &[
+            "-NoProfile".into(),
+            "-NonInteractive".into(),
+            "-Command".into(),
+            script,
+        ],
         None,
         &[],
         Duration::from_secs(20),
@@ -454,8 +539,13 @@ pub fn kill_orphans(runtimes_dir: &std::path::Path) -> usize {
     let mut killed = 0;
     for line in out.stdout.lines() {
         let mut cols = line.splitn(3, '|');
-        let (Some(pid), Some(exe), cmd) = (cols.next(), cols.next(), cols.next().unwrap_or("")) else { continue };
-        let Ok(pid) = pid.trim().parse::<u32>() else { continue };
+        let (Some(pid), Some(exe), cmd) = (cols.next(), cols.next(), cols.next().unwrap_or(""))
+        else {
+            continue;
+        };
+        let Ok(pid) = pid.trim().parse::<u32>() else {
+            continue;
+        };
         let ours = !exe.is_empty() && exe.to_lowercase().starts_with(&root);
         let our_php_worker = exe.to_lowercase().ends_with("php-cgi.exe") && is_pool_worker(cmd);
         if ours || our_php_worker {
@@ -492,14 +582,19 @@ async fn kill_tree(pid: u32) {
     // tree. A proper Windows Job Object (so children are killed even if `taskkill` itself
     // can't enumerate them) is planned but not yet wired in (see module docs).
     let mut cmd = tokio::process::Command::new("taskkill");
-    cmd.args(["/PID", &pid.to_string(), "/T", "/F"]).stdout(Stdio::null()).stderr(Stdio::null());
+    cmd.args(["/PID", &pid.to_string(), "/T", "/F"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
     crate::exec::hide_window(cmd.as_std_mut());
     let _ = cmd.status().await;
 }
 
 #[cfg(not(windows))]
 async fn kill_tree(pid: u32) {
-    let _ = tokio::process::Command::new("kill").args(["-9", &pid.to_string()]).status().await;
+    let _ = tokio::process::Command::new("kill")
+        .args(["-9", &pid.to_string()])
+        .status()
+        .await;
 }
 
 #[cfg(test)]
@@ -509,11 +604,18 @@ mod tests {
     #[test]
     fn only_php_workers_on_our_pool_ports_count_as_ours() {
         assert!(is_pool_worker(r#""C:\php\php-cgi.exe" -b 127.0.0.1:10840"#));
-        assert!(!is_pool_worker(r#""C:\laragon\php-cgi.exe" -b 127.0.0.1:9000"#));
+        assert!(!is_pool_worker(
+            r#""C:\laragon\php-cgi.exe" -b 127.0.0.1:9000"#
+        ));
         assert!(!is_pool_worker("php-cgi.exe"));
     }
 
-    fn wait_for_state(sup: &ProcessSupervisor, id: ProcessId, want: ProcessState, timeout: Duration) -> bool {
+    fn wait_for_state(
+        sup: &ProcessSupervisor,
+        id: ProcessId,
+        want: ProcessState,
+        timeout: Duration,
+    ) -> bool {
         let start = Instant::now();
         loop {
             if sup.snapshot().iter().any(|p| p.id == id && p.state == want) {
@@ -544,7 +646,12 @@ mod tests {
         let sup = ProcessSupervisor::new();
         let id = sup.start(echo_spec("echo-test", "hello-supervisor"));
 
-        assert!(wait_for_state(&sup, id, ProcessState::Stopped, Duration::from_secs(5)));
+        assert!(wait_for_state(
+            &sup,
+            id,
+            ProcessState::Stopped,
+            Duration::from_secs(5)
+        ));
 
         let output = sup.recent_output(id);
         assert!(output.iter().any(|l| l.contains("hello-supervisor")));
@@ -565,10 +672,20 @@ mod tests {
             restart: None,
         };
         let id = sup.start(spec);
-        assert!(wait_for_state(&sup, id, ProcessState::Running, Duration::from_secs(3)));
+        assert!(wait_for_state(
+            &sup,
+            id,
+            ProcessState::Running,
+            Duration::from_secs(3)
+        ));
 
         sup.stop(id);
-        assert!(wait_for_state(&sup, id, ProcessState::Stopped, Duration::from_secs(5)));
+        assert!(wait_for_state(
+            &sup,
+            id,
+            ProcessState::Stopped,
+            Duration::from_secs(5)
+        ));
     }
 
     #[cfg(windows)]
@@ -584,10 +701,20 @@ mod tests {
             restart: None,
         };
         let id = sup.start(spec);
-        assert!(wait_for_state(&sup, id, ProcessState::Running, Duration::from_secs(3)));
+        assert!(wait_for_state(
+            &sup,
+            id,
+            ProcessState::Running,
+            Duration::from_secs(3)
+        ));
 
         assert!(sup.stop_all_and_wait(Duration::from_secs(5)));
-        assert!(wait_for_state(&sup, id, ProcessState::Stopped, Duration::from_millis(100)));
+        assert!(wait_for_state(
+            &sup,
+            id,
+            ProcessState::Stopped,
+            Duration::from_millis(100)
+        ));
     }
 
     #[cfg(windows)]
@@ -600,7 +727,10 @@ mod tests {
             args: vec!["/C".into(), "exit 1".into()],
             cwd: None,
             env: vec![],
-            restart: Some(RestartPolicy { max_retries: 2, delay_ms: 50 }),
+            restart: Some(RestartPolicy {
+                max_retries: 2,
+                delay_ms: 50,
+            }),
         };
         let id = sup.start(spec);
 
@@ -620,7 +750,12 @@ mod tests {
     #[test]
     fn command_runner_runs_to_completion() {
         let sup = ProcessSupervisor::new();
-        let entry = sup.run_to_completion("cmd", &["/C".into(), "exit 0".into()], None, Duration::from_secs(5));
+        let entry = sup.run_to_completion(
+            "cmd",
+            &["/C".into(), "exit 0".into()],
+            None,
+            Duration::from_secs(5),
+        );
         assert_eq!(entry.exit_code, Some(0));
         assert!(!entry.timed_out);
         assert_eq!(sup.history().len(), 1);

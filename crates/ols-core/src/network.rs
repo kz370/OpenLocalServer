@@ -10,7 +10,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::app::Inner;
 
-const PROBES: &[(&str, &str, u16)] = &[("Cloudflare DNS", "1.1.1.1", 443), ("GitHub", "github.com", 443), ("Google DNS", "8.8.8.8", 443)];
+const PROBES: &[(&str, &str, u16)] = &[
+    ("Cloudflare DNS", "1.1.1.1", 443),
+    ("GitHub", "github.com", 443),
+    ("Google DNS", "8.8.8.8", 443),
+];
 const CACHE_FOR: Duration = Duration::from_secs(20);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,8 +44,18 @@ static CACHE: Mutex<Option<(Instant, NetworkStatus)>> = Mutex::new(None);
 
 fn probe(name: &str, host: &str, port: u16) -> ProbeResult {
     let start = Instant::now();
-    let ok = (host, port).to_socket_addrs().ok().and_then(|mut a| a.next()).is_some_and(|addr| std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(1500)).is_ok());
-    ProbeResult { name: name.into(), ok, ms: ok.then(|| start.elapsed().as_millis() as u64) }
+    let ok = (host, port)
+        .to_socket_addrs()
+        .ok()
+        .and_then(|mut a| a.next())
+        .is_some_and(|addr| {
+            std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(1500)).is_ok()
+        });
+    ProbeResult {
+        name: name.into(),
+        ok,
+        ms: ok.then(|| start.elapsed().as_millis() as u64),
+    }
 }
 
 /// Probes in parallel; online when any host answers.
@@ -53,9 +67,16 @@ pub fn check(force: bool) -> NetworkStatus {
             }
         }
     }
-    let handles: Vec<_> = PROBES.iter().map(|(n, h, p)| std::thread::spawn(move || probe(n, h, *p))).collect();
+    let handles: Vec<_> = PROBES
+        .iter()
+        .map(|(n, h, p)| std::thread::spawn(move || probe(n, h, *p)))
+        .collect();
     let probes: Vec<ProbeResult> = handles.into_iter().filter_map(|h| h.join().ok()).collect();
-    let status = NetworkStatus { online: probes.iter().any(|p| p.ok), probes, needs_internet: NEEDS_INTERNET.iter().map(|s| s.to_string()).collect() };
+    let status = NetworkStatus {
+        online: probes.iter().any(|p| p.ok),
+        probes,
+        needs_internet: NEEDS_INTERNET.iter().map(|s| s.to_string()).collect(),
+    };
     *CACHE.lock().unwrap() = Some((Instant::now(), status.clone()));
     status
 }

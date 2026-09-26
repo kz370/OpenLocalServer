@@ -60,7 +60,11 @@ pub struct TaskStatus {
 /// The usual scheduler for a framework (`scheduler: true`).
 pub fn default_task(framework: &Framework) -> Option<ScheduledTaskManifest> {
     match framework {
-        Framework::Laravel => Some(ScheduledTaskManifest { name: "Laravel scheduler".into(), schedule: "every_minute".into(), command: "php artisan schedule:run".into() }),
+        Framework::Laravel => Some(ScheduledTaskManifest {
+            name: "Laravel scheduler".into(),
+            schedule: "every_minute".into(),
+            command: "php artisan schedule:run".into(),
+        }),
         _ => None,
     }
 }
@@ -79,27 +83,39 @@ pub struct Schedule {
 }
 
 fn shortcut(s: &str) -> Option<&'static str> {
-    Some(match s.trim().trim_start_matches('@').to_ascii_lowercase().replace([' ', '-'], "_").as_str() {
-        "every_minute" | "minutely" => "* * * * *",
-        "every_2_minutes" => "*/2 * * * *",
-        "every_5_minutes" => "*/5 * * * *",
-        "every_10_minutes" => "*/10 * * * *",
-        "every_15_minutes" => "*/15 * * * *",
-        "every_30_minutes" => "*/30 * * * *",
-        "hourly" => "0 * * * *",
-        "daily" | "midnight" => "0 0 * * *",
-        "weekly" => "0 0 * * 0",
-        "monthly" => "0 0 1 * *",
-        "yearly" | "annually" => "0 0 1 1 *",
-        _ => return None,
-    })
+    Some(
+        match s
+            .trim()
+            .trim_start_matches('@')
+            .to_ascii_lowercase()
+            .replace([' ', '-'], "_")
+            .as_str()
+        {
+            "every_minute" | "minutely" => "* * * * *",
+            "every_2_minutes" => "*/2 * * * *",
+            "every_5_minutes" => "*/5 * * * *",
+            "every_10_minutes" => "*/10 * * * *",
+            "every_15_minutes" => "*/15 * * * *",
+            "every_30_minutes" => "*/30 * * * *",
+            "hourly" => "0 * * * *",
+            "daily" | "midnight" => "0 0 * * *",
+            "weekly" => "0 0 * * 0",
+            "monthly" => "0 0 1 * *",
+            "yearly" | "annually" => "0 0 1 1 *",
+            _ => return None,
+        },
+    )
 }
 
 fn field(text: &str, min: u32, max: u32, name: &str) -> Result<BTreeSet<u32>, String> {
     let mut out = BTreeSet::new();
     for part in text.split(',') {
         let (range, step) = match part.split_once('/') {
-            Some((r, s)) => (r, s.parse::<u32>().map_err(|_| format!("bad step \"{s}\" in the {name} field"))?),
+            Some((r, s)) => (
+                r,
+                s.parse::<u32>()
+                    .map_err(|_| format!("bad step \"{s}\" in the {name} field"))?,
+            ),
             None => (part, 1),
         };
         if step == 0 {
@@ -108,17 +124,32 @@ fn field(text: &str, min: u32, max: u32, name: &str) -> Result<BTreeSet<u32>, St
         let (lo, hi) = if range == "*" {
             (min, max)
         } else if let Some((a, b)) = range.split_once('-') {
-            (a.parse().map_err(|_| format!("bad value \"{a}\" in the {name} field"))?, b.parse().map_err(|_| format!("bad value \"{b}\" in the {name} field"))?)
+            (
+                a.parse()
+                    .map_err(|_| format!("bad value \"{a}\" in the {name} field"))?,
+                b.parse()
+                    .map_err(|_| format!("bad value \"{b}\" in the {name} field"))?,
+            )
         } else {
-            let v: u32 = range.parse().map_err(|_| format!("bad value \"{range}\" in the {name} field"))?;
+            let v: u32 = range
+                .parse()
+                .map_err(|_| format!("bad value \"{range}\" in the {name} field"))?;
             (v, if part.contains('/') { max } else { v })
         };
         // Sunday is 0 or 7.
         let max_ok = if name == "weekday" { 7 } else { max };
         if lo < min || hi > max_ok || lo > hi {
-            return Err(format!("{range} is outside {min}-{max} in the {name} field"));
+            return Err(format!(
+                "{range} is outside {min}-{max} in the {name} field"
+            ));
         }
-        out.extend((lo..=hi).step_by(step as usize).map(|v| if name == "weekday" && v == 7 { 0 } else { v }));
+        out.extend((lo..=hi).step_by(step as usize).map(|v| {
+            if name == "weekday" && v == 7 {
+                0
+            } else {
+                v
+            }
+        }));
     }
     Ok(out)
 }
@@ -143,8 +174,15 @@ impl Schedule {
     pub fn matches<T: Datelike + Timelike>(&self, t: &T) -> bool {
         let day_ok = self.days.contains(&t.day());
         let weekday_ok = self.weekdays.contains(&t.weekday().num_days_from_sunday());
-        let date_ok = if self.day_or { day_ok || weekday_ok } else { day_ok && weekday_ok };
-        self.minutes.contains(&t.minute()) && self.hours.contains(&t.hour()) && self.months.contains(&t.month()) && date_ok
+        let date_ok = if self.day_or {
+            day_ok || weekday_ok
+        } else {
+            day_ok && weekday_ok
+        };
+        self.minutes.contains(&t.minute())
+            && self.hours.contains(&t.hour())
+            && self.months.contains(&t.month())
+            && date_ok
     }
 
     /// The next matching minute after `from`, looking up to a year ahead.
@@ -172,8 +210,12 @@ pub fn describe(text: &str) -> String {
         _ => {
             let p: Vec<&str> = expr.split_whitespace().collect();
             match p.as_slice() {
-                [m, "*", "*", "*", "*"] if m.starts_with("*/") => format!("every {} minutes", &m[2..]),
-                [m, h, "*", "*", "*"] if m.parse::<u32>().is_ok() && h.parse::<u32>().is_ok() => format!("daily at {:0>2}:{:0>2}", h, m),
+                [m, "*", "*", "*", "*"] if m.starts_with("*/") => {
+                    format!("every {} minutes", &m[2..])
+                }
+                [m, h, "*", "*", "*"] if m.parse::<u32>().is_ok() && h.parse::<u32>().is_ok() => {
+                    format!("daily at {:0>2}:{:0>2}", h, m)
+                }
                 _ => format!("cron {expr}"),
             }
         }
@@ -190,7 +232,10 @@ pub struct ScheduleStore {
 impl ScheduleStore {
     pub fn load(paths: &AppPaths) -> Self {
         let file = paths.data_dir().join("schedules.json");
-        let tasks = std::fs::read_to_string(&file).ok().and_then(|raw| serde_json::from_str(&raw).ok()).unwrap_or_default();
+        let tasks = std::fs::read_to_string(&file)
+            .ok()
+            .and_then(|raw| serde_json::from_str(&raw).ok())
+            .unwrap_or_default();
         Self { file, tasks }
     }
 
@@ -228,12 +273,21 @@ impl ScheduleStore {
 pub struct TaskRuns(pub std::sync::Mutex<HashMap<String, TaskRun>>);
 
 fn now_ms() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 impl Inner {
     pub fn schedules_for(&self, project_id: &str) -> Vec<ScheduledTask> {
-        self.schedules.lock().unwrap().list().into_iter().filter(|t| t.project_id.as_deref() == Some(project_id)).collect()
+        self.schedules
+            .lock()
+            .unwrap()
+            .list()
+            .into_iter()
+            .filter(|t| t.project_id.as_deref() == Some(project_id))
+            .collect()
     }
 
     pub fn task_statuses(&self, project_id: Option<&str>) -> Vec<TaskStatus> {
@@ -247,9 +301,25 @@ impl Inner {
             .filter(|t| project_id.is_none_or(|p| t.project_id.as_deref() == Some(p)))
             .map(|t| {
                 let last = runs.get(&t.id).cloned();
-                let running = last.as_ref().and_then(|r| r.process).is_some_and(|p| self.supervisor.is_alive(p));
-                let next = if t.enabled { Schedule::parse(&t.schedule).ok().and_then(|s| s.next_after(now)).map(|d| d.timestamp_millis() as u64) } else { None };
-                TaskStatus { description: describe(&t.schedule), next_run_ms: next, last_run: last, running, task: t }
+                let running = last
+                    .as_ref()
+                    .and_then(|r| r.process)
+                    .is_some_and(|p| self.supervisor.is_alive(p));
+                let next = if t.enabled {
+                    Schedule::parse(&t.schedule)
+                        .ok()
+                        .and_then(|s| s.next_after(now))
+                        .map(|d| d.timestamp_millis() as u64)
+                } else {
+                    None
+                };
+                TaskStatus {
+                    description: describe(&t.schedule),
+                    next_run_ms: next,
+                    last_run: last,
+                    running,
+                    task: t,
+                }
             })
             .collect()
     }
@@ -257,7 +327,9 @@ impl Inner {
     pub fn save_schedule(&self, mut t: ScheduledTask) -> Result<ScheduledTask, CoreError> {
         Schedule::parse(&t.schedule).map_err(CoreError::ServiceError)?;
         if t.command.trim().is_empty() {
-            return Err(CoreError::ServiceError("a scheduled task needs a command".into()));
+            return Err(CoreError::ServiceError(
+                "a scheduled task needs a command".into(),
+            ));
         }
         if let Some(p) = &t.project_id {
             if self.projects.lock().unwrap().get(p).is_none() {
@@ -279,22 +351,56 @@ impl Inner {
 
     /// Runs a task now (also what the clock calls). A run still going is never doubled.
     pub fn run_task(&self, id: &str) -> Result<TaskRun, CoreError> {
-        let t = self.schedules.lock().unwrap().get(id).ok_or_else(|| CoreError::ServiceError(format!("no scheduled task \"{id}\"")))?;
+        let t = self
+            .schedules
+            .lock()
+            .unwrap()
+            .get(id)
+            .ok_or_else(|| CoreError::ServiceError(format!("no scheduled task \"{id}\"")))?;
         let previous = self.task_runs.0.lock().unwrap().get(id).cloned();
-        if previous.as_ref().and_then(|r| r.process).is_some_and(|p| self.supervisor.is_alive(p)) {
-            let run = TaskRun { started_ms: now_ms(), skipped: true, ..Default::default() };
+        if previous
+            .as_ref()
+            .and_then(|r| r.process)
+            .is_some_and(|p| self.supervisor.is_alive(p))
+        {
+            let run = TaskRun {
+                started_ms: now_ms(),
+                skipped: true,
+                ..Default::default()
+            };
             tracing::info!(task = %t.name, "scheduled task skipped: previous run still going");
             return Ok(run);
         }
         let run = if !self.process_slot_free() {
-            TaskRun { started_ms: now_ms(), error: Some("the process limit in Settings → Resources is reached".into()), ..Default::default() }
+            TaskRun {
+                started_ms: now_ms(),
+                error: Some("the process limit in Settings → Resources is reached".into()),
+                ..Default::default()
+            }
         } else {
-            match self.run_command_line(&t.command, None, t.project_id.as_deref(), Some(&format!("Scheduled: {}", t.name))) {
-                Ok(p) => TaskRun { started_ms: now_ms(), process: Some(p), ..Default::default() },
-                Err(e) => TaskRun { started_ms: now_ms(), error: Some(e.to_string()), ..Default::default() },
+            match self.run_command_line(
+                &t.command,
+                None,
+                t.project_id.as_deref(),
+                Some(&format!("Scheduled: {}", t.name)),
+            ) {
+                Ok(p) => TaskRun {
+                    started_ms: now_ms(),
+                    process: Some(p),
+                    ..Default::default()
+                },
+                Err(e) => TaskRun {
+                    started_ms: now_ms(),
+                    error: Some(e.to_string()),
+                    ..Default::default()
+                },
             }
         };
-        self.task_runs.0.lock().unwrap().insert(id.to_string(), run.clone());
+        self.task_runs
+            .0
+            .lock()
+            .unwrap()
+            .insert(id.to_string(), run.clone());
         Ok(run)
     }
 
@@ -306,13 +412,25 @@ impl Inner {
             for run in runs.values_mut() {
                 if let (Some(p), None) = (run.process, run.exit_code) {
                     if !self.supervisor.is_alive(p) {
-                        run.exit_code = self.supervisor.snapshot().into_iter().find(|x| x.id == p).and_then(|x| x.exit_code);
+                        run.exit_code = self
+                            .supervisor
+                            .snapshot()
+                            .into_iter()
+                            .find(|x| x.id == p)
+                            .and_then(|x| x.exit_code);
                     }
                 }
             }
         }
-        let due: Vec<String> =
-            self.schedules.lock().unwrap().list().into_iter().filter(|t| t.enabled && Schedule::parse(&t.schedule).is_ok_and(|s| s.matches(&now))).map(|t| t.id).collect();
+        let due: Vec<String> = self
+            .schedules
+            .lock()
+            .unwrap()
+            .list()
+            .into_iter()
+            .filter(|t| t.enabled && Schedule::parse(&t.schedule).is_ok_and(|s| s.matches(&now)))
+            .map(|t| t.id)
+            .collect();
         for id in due {
             if let Err(e) = self.run_task(&id) {
                 tracing::warn!(task = %id, error = %e, "scheduled task failed to start");
@@ -348,7 +466,9 @@ mod tests {
 
     #[test]
     fn shortcuts_and_cron_expressions_parse() {
-        assert!(Schedule::parse("every_minute").unwrap().matches(&at(2026, 1, 5, 13, 7)));
+        assert!(Schedule::parse("every_minute")
+            .unwrap()
+            .matches(&at(2026, 1, 5, 13, 7)));
         let five = Schedule::parse("every 5 minutes").unwrap();
         assert!(five.matches(&at(2026, 1, 5, 13, 10)) && !five.matches(&at(2026, 1, 5, 13, 11)));
         let daily = Schedule::parse("30 2 * * *").unwrap();
@@ -356,20 +476,32 @@ mod tests {
         let weekdays = Schedule::parse("0 9 * * 1-5").unwrap();
         assert!(weekdays.matches(&at(2026, 9, 28, 9, 0)), "a Monday");
         assert!(!weekdays.matches(&at(2026, 9, 27, 9, 0)), "a Sunday");
-        assert!(Schedule::parse("0 0 * * 7").unwrap().matches(&at(2026, 9, 27, 0, 0)), "7 is Sunday too");
+        assert!(
+            Schedule::parse("0 0 * * 7")
+                .unwrap()
+                .matches(&at(2026, 9, 27, 0, 0)),
+            "7 is Sunday too"
+        );
     }
 
     #[test]
     fn bad_expressions_are_explained() {
-        assert!(Schedule::parse("61 * * * *").unwrap_err().contains("minute"));
-        assert!(Schedule::parse("* * *").unwrap_err().contains("five fields"));
+        assert!(Schedule::parse("61 * * * *")
+            .unwrap_err()
+            .contains("minute"));
+        assert!(Schedule::parse("* * *")
+            .unwrap_err()
+            .contains("five fields"));
         assert!(Schedule::parse("*/0 * * * *").is_err());
     }
 
     #[test]
     fn next_run_and_descriptions() {
         let s = Schedule::parse("hourly").unwrap();
-        assert_eq!(s.next_after(at(2026, 1, 1, 10, 15)).unwrap(), at(2026, 1, 1, 11, 0));
+        assert_eq!(
+            s.next_after(at(2026, 1, 1, 10, 15)).unwrap(),
+            at(2026, 1, 1, 11, 0)
+        );
         assert_eq!(describe("*/15 * * * *"), "every 15 minutes");
         assert_eq!(describe("30 2 * * *"), "daily at 02:30");
         assert_eq!(describe("every_minute"), "every minute");

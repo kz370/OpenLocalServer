@@ -38,11 +38,17 @@ fn patterns() -> &'static Patterns {
 pub fn redact_text(text: &str) -> String {
     let p = patterns();
     let t = p.pem.replace_all(text, "[redacted private key]");
-    let t = p.cookie_header.replace_all(&t, format!("$1 {REDACTED}").as_str());
+    let t = p
+        .cookie_header
+        .replace_all(&t, format!("$1 {REDACTED}").as_str());
     // Bearer/Basic first: `Authorization: Bearer abc` must lose `abc`, not just the word `Bearer`.
     let t = p.bearer.replace_all(&t, format!("$1 {REDACTED}").as_str());
-    let t = p.named.replace_all(&t, format!("${{1}}{REDACTED}").as_str());
-    let t = p.url_credentials.replace_all(&t, format!("${{1}}{REDACTED}@").as_str());
+    let t = p
+        .named
+        .replace_all(&t, format!("${{1}}{REDACTED}").as_str());
+    let t = p
+        .url_credentials
+        .replace_all(&t, format!("${{1}}{REDACTED}@").as_str());
     p.known_tokens.replace_all(&t, REDACTED).into_owned()
 }
 
@@ -56,7 +62,9 @@ pub fn redact_env_file(text: &str) -> String {
             }
             let body = trimmed.strip_prefix("export ").unwrap_or(trimmed);
             match body.split_once('=') {
-                Some((name, value)) if !value.trim().is_empty() => format!("{}={REDACTED}", name.trim_end()),
+                Some((name, value)) if !value.trim().is_empty() => {
+                    format!("{}={REDACTED}", name.trim_end())
+                }
                 _ => line.to_string(),
             }
         })
@@ -70,30 +78,52 @@ mod tests {
 
     #[test]
     fn values_next_to_secret_names_are_hidden() {
-        let out = redact_text("DB_PASSWORD=hunter2\napi_key: abcdef123456\n\"token\": \"xyz\"\nAPP_NAME=shop");
-        assert!(!out.contains("hunter2") && !out.contains("abcdef123456") && !out.contains("xyz"), "{out}");
+        let out = redact_text(
+            "DB_PASSWORD=hunter2\napi_key: abcdef123456\n\"token\": \"xyz\"\nAPP_NAME=shop",
+        );
+        assert!(
+            !out.contains("hunter2") && !out.contains("abcdef123456") && !out.contains("xyz"),
+            "{out}"
+        );
         assert!(out.contains("APP_NAME=shop"), "ordinary values stay: {out}");
     }
 
     #[test]
     fn bearer_tokens_url_credentials_and_known_shapes_are_hidden() {
         let out = redact_text("Authorization: Bearer abcdefghijklmnop\nmysql://root:s3cret@127.0.0.1/db\nkey sk-abcdefghijklmnopqrstuv and ghp_abcdefghijklmnopqrstuvwxyz");
-        for leaked in ["abcdefghijklmnop", "s3cret", "sk-abcdefghijklmnopqrstuv", "ghp_abcdefghijklmnopqrstuvwxyz"] {
+        for leaked in [
+            "abcdefghijklmnop",
+            "s3cret",
+            "sk-abcdefghijklmnopqrstuv",
+            "ghp_abcdefghijklmnopqrstuvwxyz",
+        ] {
             assert!(!out.contains(leaked), "{leaked} leaked: {out}");
         }
-        assert!(out.contains("127.0.0.1/db"), "the rest of the URL stays: {out}");
+        assert!(
+            out.contains("127.0.0.1/db"),
+            "the rest of the URL stays: {out}"
+        );
     }
 
     #[test]
     fn private_keys_and_cookies_are_hidden() {
         let out = redact_text("-----BEGIN PRIVATE KEY-----\nMIIabc\n-----END PRIVATE KEY-----\nCookie: session=abc; theme=dark\nSet-Cookie: id=9");
-        assert!(!out.contains("MIIabc") && !out.contains("session=abc") && !out.contains("id=9"), "{out}");
+        assert!(
+            !out.contains("MIIabc") && !out.contains("session=abc") && !out.contains("id=9"),
+            "{out}"
+        );
     }
 
     #[test]
     fn env_files_keep_names_and_comments_only() {
-        let out = redact_env_file("# database\nDB_HOST=127.0.0.1\nexport APP_KEY=base64:zzz\nEMPTY=\n");
-        assert!(out.contains("# database") && out.contains("DB_HOST=[redacted]") && out.contains("APP_KEY=[redacted]") && out.contains("EMPTY="));
+        let out =
+            redact_env_file("# database\nDB_HOST=127.0.0.1\nexport APP_KEY=base64:zzz\nEMPTY=\n");
+        assert!(
+            out.contains("# database")
+                && out.contains("DB_HOST=[redacted]")
+                && out.contains("APP_KEY=[redacted]")
+                && out.contains("EMPTY=")
+        );
         assert!(!out.contains("127.0.0.1") && !out.contains("zzz"));
     }
 }

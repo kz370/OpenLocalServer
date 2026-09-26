@@ -6,15 +6,16 @@
 use std::path::{Path, PathBuf};
 
 use rcgen::{
-    date_time_ymd, BasicConstraints, CertificateParams, DistinguishedName, DnType, ExtendedKeyUsagePurpose, IsCa, Issuer,
-    KeyPair, KeyUsagePurpose, SanType,
+    date_time_ymd, BasicConstraints, CertificateParams, DistinguishedName, DnType,
+    ExtendedKeyUsagePurpose, IsCa, Issuer, KeyPair, KeyUsagePurpose, SanType,
 };
 
 use crate::paths::AppPaths;
 
 /// Last answer of the trust-store probe (Windows) so status polling doesn't spawn certutil each time.
 #[cfg(windows)]
-static TRUST_CACHE: std::sync::Mutex<Option<(std::time::Instant, bool)>> = std::sync::Mutex::new(None);
+static TRUST_CACHE: std::sync::Mutex<Option<(std::time::Instant, bool)>> =
+    std::sync::Mutex::new(None);
 
 pub struct LocalCa {
     dir: PathBuf,
@@ -32,7 +33,10 @@ pub const CA_COMMON_NAME: &str = "OpenLocalServer Local CA";
 pub const LEAF_VALIDITY_DAYS: u64 = 397;
 
 pub fn unix_now() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 /// Unix seconds → (year, month, day) in UTC (Howard Hinnant's civil-from-days).
@@ -51,7 +55,9 @@ fn ymd_from_unix(secs: u64) -> (i32, u8, u8) {
 
 impl LocalCa {
     pub fn new(paths: &AppPaths) -> Self {
-        Self { dir: paths.certs_dir() }
+        Self {
+            dir: paths.certs_dir(),
+        }
     }
 
     fn ca_cert_path(&self) -> PathBuf {
@@ -96,7 +102,9 @@ impl LocalCa {
         std::fs::create_dir_all(&self.dir).map_err(|e| e.to_string())?;
 
         let key_pair = KeyPair::generate().map_err(|e| e.to_string())?;
-        let cert = Self::ca_params().self_signed(&key_pair).map_err(|e| e.to_string())?;
+        let cert = Self::ca_params()
+            .self_signed(&key_pair)
+            .map_err(|e| e.to_string())?;
 
         write_restricted(&self.ca_cert_path(), cert.pem().as_bytes())?;
         write_restricted(&self.ca_key_path(), key_pair.serialize_pem().as_bytes())?;
@@ -120,15 +128,24 @@ impl LocalCa {
         let ca_params = Self::ca_params();
         let issuer = Issuer::from_params(&ca_params, ca_key_pair);
 
-        let mut leaf_params = CertificateParams::new(Vec::<String>::new()).map_err(|e| e.to_string())?;
+        let mut leaf_params =
+            CertificateParams::new(Vec::<String>::new()).map_err(|e| e.to_string())?;
         let mut dn = DistinguishedName::new();
         dn.push(DnType::CommonName, first.as_str());
         leaf_params.distinguished_name = dn;
         leaf_params.subject_alt_names = names
             .iter()
-            .map(|n| n.as_str().try_into().map(SanType::DnsName).map_err(|e| format!("{e:?}")))
+            .map(|n| {
+                n.as_str()
+                    .try_into()
+                    .map(SanType::DnsName)
+                    .map_err(|e| format!("{e:?}"))
+            })
             .collect::<Result<_, _>>()?;
-        leaf_params.key_usages = vec![KeyUsagePurpose::DigitalSignature, KeyUsagePurpose::KeyEncipherment];
+        leaf_params.key_usages = vec![
+            KeyUsagePurpose::DigitalSignature,
+            KeyUsagePurpose::KeyEncipherment,
+        ];
         leaf_params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
 
         let now = unix_now();
@@ -138,9 +155,14 @@ impl LocalCa {
         leaf_params.not_after = date_time_ymd(y, m, d);
 
         let leaf_key = KeyPair::generate().map_err(|e| e.to_string())?;
-        let leaf_cert = leaf_params.signed_by(&leaf_key, &issuer).map_err(|e| e.to_string())?;
+        let leaf_cert = leaf_params
+            .signed_by(&leaf_key, &issuer)
+            .map_err(|e| e.to_string())?;
 
-        Ok(IssuedCert { cert_pem: leaf_cert.pem(), key_pem: leaf_key.serialize_pem() })
+        Ok(IssuedCert {
+            cert_pem: leaf_cert.pem(),
+            key_pem: leaf_key.serialize_pem(),
+        })
     }
 
     /// Trusts the CA in the CurrentUser Root store. No elevation needed — CurrentUser
@@ -150,7 +172,12 @@ impl LocalCa {
         *TRUST_CACHE.lock().unwrap() = None;
         self.ensure_created()?;
         let mut cmd = std::process::Command::new("certutil");
-        cmd.args(["-user", "-addstore", "Root", &self.ca_cert_path().display().to_string()]);
+        cmd.args([
+            "-user",
+            "-addstore",
+            "Root",
+            &self.ca_cert_path().display().to_string(),
+        ]);
         crate::exec::hide_window(&mut cmd);
         let output = cmd.output().map_err(|e| e.to_string())?;
         if output.status.success() {
@@ -219,7 +246,12 @@ fn write_restricted(path: &Path, data: &[u8]) -> Result<(), String> {
     // the CA private key not existing at all is worse than it existing with default
     // (still user-profile-scoped) ACLs, so a failure here doesn't abort cert generation.
     let mut icacls = std::process::Command::new("icacls");
-    icacls.args([&path.display().to_string(), "/inheritance:r", "/grant:r", &format!("{}:F", whoami())]);
+    icacls.args([
+        &path.display().to_string(),
+        "/inheritance:r",
+        "/grant:r",
+        &format!("{}:F", whoami()),
+    ]);
     crate::exec::hide_window(&mut icacls);
     let _ = icacls.output();
     Ok(())
@@ -255,7 +287,10 @@ mod tests {
         let cert_before = std::fs::read(ca.ca_cert_path()).unwrap();
         ca.ensure_created().unwrap();
         let cert_after = std::fs::read(ca.ca_cert_path()).unwrap();
-        assert_eq!(cert_before, cert_after, "calling ensure_created twice must not regenerate the CA");
+        assert_eq!(
+            cert_before, cert_after,
+            "calling ensure_created twice must not regenerate the CA"
+        );
     }
 
     #[test]
@@ -268,7 +303,9 @@ mod tests {
     #[test]
     fn issue_for_supports_wildcard_names() {
         let (ca, _home) = test_ca();
-        let issued = ca.issue_for(&["shop.test".to_string(), "*.shop.test".to_string()]).unwrap();
+        let issued = ca
+            .issue_for(&["shop.test".to_string(), "*.shop.test".to_string()])
+            .unwrap();
         assert!(issued.cert_pem.contains("BEGIN CERTIFICATE"));
     }
 
@@ -289,9 +326,12 @@ mod tests {
         let (ca, _home) = test_ca();
         let issued = ca.issue("localhost").unwrap();
 
-        let cert_der = rustls_pemfile::certs(&mut issued.cert_pem.as_bytes()).collect::<Result<Vec<_>, _>>().unwrap();
-        let key_der =
-            rustls_pemfile::private_key(&mut issued.key_pem.as_bytes()).unwrap().expect("leaf key parses");
+        let cert_der = rustls_pemfile::certs(&mut issued.cert_pem.as_bytes())
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        let key_der = rustls_pemfile::private_key(&mut issued.key_pem.as_bytes())
+            .unwrap()
+            .expect("leaf key parses");
 
         let server_config = rustls::ServerConfig::builder()
             .with_no_client_auth()
@@ -300,11 +340,15 @@ mod tests {
         let server_config = Arc::new(server_config);
 
         let ca_pem = std::fs::read_to_string(ca.ca_cert_pem_path()).unwrap();
-        let ca_der = rustls_pemfile::certs(&mut ca_pem.as_bytes()).next().unwrap().unwrap();
+        let ca_der = rustls_pemfile::certs(&mut ca_pem.as_bytes())
+            .next()
+            .unwrap()
+            .unwrap();
         let mut root_store = rustls::RootCertStore::empty();
         root_store.add(ca_der).unwrap();
-        let client_config =
-            rustls::ClientConfig::builder().with_root_certificates(root_store).with_no_client_auth();
+        let client_config = rustls::ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_no_client_auth();
 
         let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -325,7 +369,11 @@ mod tests {
         tls_stream.write_all(b"hello").unwrap();
         let mut buf = [0u8; 64];
         let n = tls_stream.read(&mut buf).unwrap();
-        assert_eq!(&buf[..n], b"hello", "TLS handshake + round trip through our issued cert must succeed");
+        assert_eq!(
+            &buf[..n],
+            b"hello",
+            "TLS handshake + round trip through our issued cert must succeed"
+        );
 
         server_thread.join().unwrap();
     }

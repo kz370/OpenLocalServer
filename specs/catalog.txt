@@ -37,7 +37,7 @@ PluginManager | Declarative plugin.yaml installer/validator.
 Updater | Minisign-signed self-updater (latest.json + SHA check).
 ServiceManager | DB/cache/mail lifecycle + TCP health.
 CustomServiceStore | User programs as supervised services (custom- prefix).
-DbTools | External GUI tools detect + launch.
+DbTools | External GUI tools detect + launch (HeidiSQL/pgAdmin/NoSQLBooster/Tiny RDM).
 MailPlanner | Per-framework .env Mailpit planner with diff preview.
 Monitor | sysinfo CPU/mem/disk + per-PID rollup + site cost.
 WorkerStore/WorkerProcesses | Queue workers registry + PID map.
@@ -89,7 +89,7 @@ CommandsPage | Discovered+custom commands runner with output ring.
 WebServerPage | Server/ports/certs tabs + settings save-apply.
 ConfigPage | Config files + history diff/restore + ownership.
 TunnelsPage | Tunnel CRUD + inspector + webhook tester.
-DatabasesPage | Per-engine DB/users/backups + external tools.
+DatabasesPage | Per-engine DB/users/backups + external tools (Redis one-click via Tiny RDM).
 ServicesPage | Mail/DB services + CustomServices child.
 RuntimesPage | Side-by-side versions + PHP dialogs.
 ProfilesPage | Env template CRUD + yaml editor.

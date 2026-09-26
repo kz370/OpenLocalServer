@@ -3,6 +3,7 @@ import { ExternalLink, FolderSearch, Play } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { CustomServices } from '@/components/CustomServices'
+import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
 import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
 import { Badge } from '@/components/ui/badge'
@@ -10,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { type DbTool, type Diagnostic, type ServiceStatus, runCommand } from '@/core'
+import { type DbTool, type Diagnostic, type PortStatus, type ServiceStatus, runCommand } from '@/core'
 import { waitForService } from '@/lib/wait'
 import { confirmAction } from '@/lib/confirm'
 
@@ -44,7 +45,8 @@ export function ServicesPage() {
       await waitForService(service.id, service.running ? 'stopped' : 'running')
       await refresh()
     } catch (err) {
-      setError(err as Diagnostic)
+      setError(asDiagnostic(err))
+      await refresh().catch(() => undefined)
     } finally {
       setBusy(null)
     }
@@ -96,6 +98,8 @@ export function ServicesPage() {
         <p className="text-sm text-muted-foreground">Mail testing and databases, managed like any other process.</p>
       </div>
 
+      <ErrorCard error={error} onDismiss={() => setError(null)} />
+
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">Services</CardTitle>
@@ -119,9 +123,19 @@ export function ServicesPage() {
                     {!s.installed ? (
                       <Badge variant="outline">not installed</Badge>
                     ) : s.running ? (
-                      <Badge variant="success">● Running</Badge>
+                      <span className="flex flex-wrap items-center gap-1.5">
+                        <Badge variant="success">● Running</Badge>
+                        {s.healthy === false && <Badge variant="warning">not answering</Badge>}
+                        {s.port_status === 'in_use' && <Badge variant="warning">port in use</Badge>}
+                      </span>
                     ) : (
-                      <Badge variant="secondary">Stopped</Badge>
+                      <span className="flex flex-col items-start gap-1">
+                        <span className="flex flex-wrap items-center gap-1.5">
+                          <Badge variant="secondary">Stopped</Badge>
+                          {s.port_status === 'in_use' && <Badge variant="warning">port in use</Badge>}
+                        </span>
+                        {s.installed && s.port !== null && s.port_status === 'in_use' && <PortHolder port={s.port} />}
+                      </span>
                     )}
                   </TableCell>
                   <TableCell className="text-right">
@@ -228,17 +242,42 @@ export function ServicesPage() {
           </Table>
         </CardContent>
       </Card>
-
-      {error && (
-        <Card className="border-destructive/40 bg-destructive/5">
-          <CardHeader>
-            <CardTitle className="text-destructive">{error.problem}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm">{error.cause}</p>
-          </CardContent>
-        </Card>
-      )}
     </div>
+  )
+}
+
+/** Who holds this port (best-effort via netstat). Propose, never kill blindly. */
+function PortHolder({ port }: { port: number }) {
+  const [holder, setHolder] = useState<PortStatus | null>(null)
+  useEffect(() => {
+    let alive = true
+    const tick = () => {
+      runCommand({ type: 'check_port', port })
+        .then((r) => alive && r.type === 'port' && setHolder(r.status))
+        .catch(() => undefined)
+    }
+    void tick()
+    const t = setInterval(tick, 5000)
+    return () => {
+      alive = false
+      clearInterval(t)
+    }
+  }, [port])
+  if (!holder || holder.status === 'free') return null
+  // Stale PID race (holder exited between netstat and tasklist): port frees
+  // on next check, so say retry instead of naming a ghost.
+  if (holder.process_name === null) {
+    return (
+      <span className="max-w-64 text-xs text-muted-foreground" title="The holder exited already or can't be identified. Wait a few seconds, then press Start again.">
+        holder gone — retry Start shortly
+      </span>
+    )
+  }
+  const pid = holder.pid !== null ? ` (PID ${holder.pid})` : ''
+  return (
+    <span className="max-w-64 text-xs text-muted-foreground" title="Stop that program safely (its own stop command or Windows Services), then Start here. Killing it by force can corrupt its data.">
+      held by {holder.process_name}
+      {pid} — stop it first, then Start
+    </span>
   )
 }

@@ -27,7 +27,9 @@ pub enum Ownership {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SiteKind {
     /// Served by a supervised `php-cgi` pool. `version: None` = the newest installed PHP.
-    Php { version: Option<String> },
+    Php {
+        version: Option<String>,
+    },
     /// Reverse proxy (§30): a dev server on this machine (Node/Python apps), or anything
     /// else reachable — a Docker container, another computer — via `upstream_host`.
     Proxy {
@@ -45,13 +47,26 @@ pub enum SiteKind {
 /// A proxy target is pasted into server configs: a real port, and a hostname or IPv4
 /// address with nothing that could break out of a directive.
 fn validate_kind(kind: &SiteKind) -> Result<(), CoreError> {
-    if let SiteKind::Proxy { upstream_port, upstream_host, .. } = kind {
+    if let SiteKind::Proxy {
+        upstream_port,
+        upstream_host,
+        ..
+    } = kind
+    {
         if *upstream_port == 0 {
-            return Err(CoreError::DomainError("upstream port must be between 1 and 65535".into()));
+            return Err(CoreError::DomainError(
+                "upstream port must be between 1 and 65535".into(),
+            ));
         }
         if let Some(h) = upstream_host {
-            if h.is_empty() || !h.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-') {
-                return Err(CoreError::DomainError(format!("\"{h}\" is not a valid target host")));
+            if h.is_empty()
+                || !h
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+            {
+                return Err(CoreError::DomainError(format!(
+                    "\"{h}\" is not a valid target host"
+                )));
             }
         }
     }
@@ -62,10 +77,17 @@ impl SiteKind {
     /// The full upstream URL of a proxy site, e.g. `http://127.0.0.1:3000`.
     pub fn upstream_url(&self) -> Option<String> {
         match self {
-            SiteKind::Proxy { upstream_port, upstream_host, upstream_https } => Some(format!(
+            SiteKind::Proxy {
+                upstream_port,
+                upstream_host,
+                upstream_https,
+            } => Some(format!(
                 "{}://{}:{upstream_port}",
                 if *upstream_https { "https" } else { "http" },
-                upstream_host.as_deref().filter(|h| !h.is_empty()).unwrap_or("127.0.0.1")
+                upstream_host
+                    .as_deref()
+                    .filter(|h| !h.is_empty())
+                    .unwrap_or("127.0.0.1")
             )),
             _ => None,
         }
@@ -189,7 +211,10 @@ impl DomainStore {
     }
 
     pub fn get(&self, hostname: &str) -> Option<Domain> {
-        self.domains.iter().find(|d| d.hostname == hostname).cloned()
+        self.domains
+            .iter()
+            .find(|d| d.hostname == hostname)
+            .cloned()
     }
 
     /// Adds a new domain. Rejects invalid names and any conflict (§44 conflict detection).
@@ -201,8 +226,17 @@ impl DomainStore {
             validate_hostname(host)?;
             validate_public_hostname(host)?;
         }
-        if let Some(other) = self.domains.iter().find(|d| d.hostname == domain.hostname || d.public_domain.as_deref() == Some(domain.hostname.as_str()) || domain.public_domain.as_deref().is_some_and(|host| d.hostname == host || d.public_domain.as_deref() == Some(host))) {
-            return Err(CoreError::DomainError(format!("{} overlaps the existing site or public hostname {}", domain.hostname, other.hostname)));
+        if let Some(other) = self.domains.iter().find(|d| {
+            d.hostname == domain.hostname
+                || d.public_domain.as_deref() == Some(domain.hostname.as_str())
+                || domain.public_domain.as_deref().is_some_and(|host| {
+                    d.hostname == host || d.public_domain.as_deref() == Some(host)
+                })
+        }) {
+            return Err(CoreError::DomainError(format!(
+                "{} overlaps the existing site or public hostname {}",
+                domain.hostname, other.hostname
+            )));
         }
         if let Some(reason) = self.conflict(&domain.hostname, domain.wildcard, None) {
             return Err(CoreError::DomainError(reason));
@@ -221,14 +255,30 @@ impl DomainStore {
             validate_hostname(host)?;
             validate_public_hostname(host)?;
         }
-        if let Some(other) = self.domains.iter().filter(|d| d.hostname != domain.hostname).find(|d| d.hostname == domain.hostname || d.public_domain.as_deref() == Some(domain.hostname.as_str()) || domain.public_domain.as_deref().is_some_and(|host| d.hostname == host || d.public_domain.as_deref() == Some(host))) {
-            return Err(CoreError::DomainError(format!("{} overlaps the existing site or public hostname {}", domain.hostname, other.hostname)));
+        if let Some(other) = self
+            .domains
+            .iter()
+            .filter(|d| d.hostname != domain.hostname)
+            .find(|d| {
+                d.hostname == domain.hostname
+                    || d.public_domain.as_deref() == Some(domain.hostname.as_str())
+                    || domain.public_domain.as_deref().is_some_and(|host| {
+                        d.hostname == host || d.public_domain.as_deref() == Some(host)
+                    })
+            })
+        {
+            return Err(CoreError::DomainError(format!(
+                "{} overlaps the existing site or public hostname {}",
+                domain.hostname, other.hostname
+            )));
         }
         let idx = self
             .domains
             .iter()
             .position(|d| d.hostname == domain.hostname)
-            .ok_or_else(|| CoreError::DomainError(format!("{} is not a known domain", domain.hostname)))?;
+            .ok_or_else(|| {
+                CoreError::DomainError(format!("{} is not a known domain", domain.hostname))
+            })?;
         self.domains[idx] = domain.clone();
         self.persist()?;
         Ok(domain)
@@ -241,17 +291,32 @@ impl DomainStore {
 
     /// Explains why `hostname` can't be added, if it can't. `ignoring` skips one existing
     /// domain (the one being edited).
-    pub fn conflict(&self, hostname: &str, wildcard: bool, ignoring: Option<&str>) -> Option<String> {
-        for existing in self.domains.iter().filter(|d| Some(d.hostname.as_str()) != ignoring) {
+    pub fn conflict(
+        &self,
+        hostname: &str,
+        wildcard: bool,
+        ignoring: Option<&str>,
+    ) -> Option<String> {
+        for existing in self
+            .domains
+            .iter()
+            .filter(|d| Some(d.hostname.as_str()) != ignoring)
+        {
             if existing.hostname == hostname {
                 return Some(format!("{hostname} already exists"));
             }
             // A wildcard on `shop.test` would swallow an existing `api.shop.test` (and the reverse).
             if existing.wildcard && hostname.ends_with(&format!(".{}", existing.hostname)) {
-                return Some(format!("{hostname} is already covered by the wildcard on {}", existing.hostname));
+                return Some(format!(
+                    "{hostname} is already covered by the wildcard on {}",
+                    existing.hostname
+                ));
             }
             if wildcard && existing.hostname.ends_with(&format!(".{hostname}")) {
-                return Some(format!("a wildcard on {hostname} would overlap the existing domain {}", existing.hostname));
+                return Some(format!(
+                    "a wildcard on {hostname} would overlap the existing domain {}",
+                    existing.hostname
+                ));
             }
         }
         None
@@ -267,8 +332,13 @@ impl DomainStore {
 }
 
 fn validate_public_hostname(host: &str) -> Result<(), CoreError> {
-    if ["test", "local", "localhost"].iter().any(|suffix| host == *suffix || host.ends_with(&format!(".{suffix}"))) {
-        return Err(CoreError::DomainError("a public domain must use a real DNS hostname, not a local development suffix".into()));
+    if ["test", "local", "localhost"]
+        .iter()
+        .any(|suffix| host == *suffix || host.ends_with(&format!(".{suffix}")))
+    {
+        return Err(CoreError::DomainError(
+            "a public domain must use a real DNS hostname, not a local development suffix".into(),
+        ));
     }
     Ok(())
 }
@@ -276,7 +346,11 @@ fn validate_public_hostname(host: &str) -> Result<(), CoreError> {
 /// RFC-1123 hostname with at least two labels. Strict on purpose: the name lands in a
 /// hosts file, a certificate SAN, and a config file, so nothing exotic may get through.
 pub fn validate_hostname(hostname: &str) -> Result<(), CoreError> {
-    let bad = |why: &str| Err(CoreError::DomainError(format!("\"{hostname}\" is not a valid domain: {why}")));
+    let bad = |why: &str| {
+        Err(CoreError::DomainError(format!(
+            "\"{hostname}\" is not a valid domain: {why}"
+        )))
+    };
     if hostname.len() > 253 {
         return bad("too long");
     }
@@ -291,7 +365,10 @@ pub fn validate_hostname(hostname: &str) -> Result<(), CoreError> {
         if label.starts_with('-') || label.ends_with('-') {
             return bad("labels can't start or end with '-'");
         }
-        if !label.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+        if !label
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        {
             return bad("use lowercase letters, digits and '-' only");
         }
     }
@@ -350,14 +427,23 @@ mod tests {
         assert!(validate_hostname("shop.test; rm -rf").is_err());
         assert!(validate_hostname("sh op.test").is_err());
         assert!(validate_hostname("-a.test").is_err());
-        assert!(validate_hostname("A.test").is_err(), "must be normalised to lowercase before validating");
+        assert!(
+            validate_hostname("A.test").is_err(),
+            "must be normalised to lowercase before validating"
+        );
         assert!(validate_hostname("a..test").is_err());
     }
 
     #[test]
     fn templates_expand_with_a_slugified_project_name() {
-        assert_eq!(apply_template("{project}.test", "My Shop_2"), "my-shop-2.test");
-        assert_eq!(apply_template("api.{project}.test", "shop"), "api.shop.test");
+        assert_eq!(
+            apply_template("{project}.test", "My Shop_2"),
+            "my-shop-2.test"
+        );
+        assert_eq!(
+            apply_template("api.{project}.test", "shop"),
+            "api.shop.test"
+        );
     }
 
     #[test]
@@ -370,7 +456,10 @@ mod tests {
         let mut wild = domain("acme.test");
         wild.wildcard = true;
         store.add(wild).unwrap();
-        assert!(store.add(domain("tenant.acme.test")).is_err(), "covered by *.acme.test");
+        assert!(
+            store.add(domain("tenant.acme.test")).is_err(),
+            "covered by *.acme.test"
+        );
 
         store.add(domain("api.shop.test")).unwrap();
 

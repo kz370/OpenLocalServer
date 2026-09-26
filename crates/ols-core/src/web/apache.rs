@@ -5,8 +5,8 @@
 use std::path::PathBuf;
 
 use super::{
-    cfg_path, https_redirect_port_suffix, Backend, Invocation, PoolSpec, Ports, ServerLayout, SiteSpec, WebServer,
-    MANAGED_HEADER,
+    cfg_path, https_redirect_port_suffix, Backend, Invocation, PoolSpec, Ports, ServerLayout,
+    SiteSpec, WebServer, MANAGED_HEADER,
 };
 
 pub struct Apache;
@@ -39,9 +39,15 @@ const MODULES: &[&str] = &[
 
 impl Apache {
     fn invocation(layout: &ServerLayout, extra: &[&str]) -> Invocation {
-        let mut args = vec!["-f".to_string(), cfg_path(&layout.prefix.join("conf").join("httpd.conf"))];
+        let mut args = vec![
+            "-f".to_string(),
+            cfg_path(&layout.prefix.join("conf").join("httpd.conf")),
+        ];
         args.extend(extra.iter().map(|s| s.to_string()));
-        Invocation { args, cwd: layout.install_dir.clone() }
+        Invocation {
+            args,
+            cwd: layout.install_dir.clone(),
+        }
     }
 }
 
@@ -66,24 +72,39 @@ impl WebServer for Apache {
         out.push_str(&format!("ServerRoot \"{install}\"\n"));
         out.push_str("ServerName localhost\n");
         out.push_str("ServerTokens Prod\n");
-        out.push_str(&format!("PidFile \"{}\"\n", cfg_path(&layout.logs_dir.join("httpd.pid"))));
+        out.push_str(&format!(
+            "PidFile \"{}\"\n",
+            cfg_path(&layout.logs_dir.join("httpd.pid"))
+        ));
         out.push_str(&format!("Listen 127.0.0.1:{}\n", ports.http));
         out.push_str(&format!("Listen 127.0.0.1:{}\n\n", ports.https));
 
         for module in MODULES {
-            let present = layout.install_dir.join("modules").join(format!("mod_{module}.so")).is_file();
+            let present = layout
+                .install_dir
+                .join("modules")
+                .join(format!("mod_{module}.so"))
+                .is_file();
             // `is_file` is false for a not-yet-created install in unit tests; render anyway
             // when the modules directory doesn't exist so tests can assert on the output.
             if present || !layout.install_dir.join("modules").is_dir() {
-                out.push_str(&format!("LoadModule {module}_module modules/mod_{module}.so\n"));
+                out.push_str(&format!(
+                    "LoadModule {module}_module modules/mod_{module}.so\n"
+                ));
             }
         }
         out.push('\n');
-        out.push_str(&format!("ErrorLog \"{}\"\n", cfg_path(&layout.logs_dir.join("error.log"))));
+        out.push_str(&format!(
+            "ErrorLog \"{}\"\n",
+            cfg_path(&layout.logs_dir.join("error.log"))
+        ));
         out.push_str("LogLevel warn\n");
         out.push_str("<IfModule log_config_module>\n");
         out.push_str("    LogFormat \"%h %l %u %t \\\"%r\\\" %>s %b\" common\n");
-        out.push_str(&format!("    CustomLog \"{}\" common\n", cfg_path(&layout.logs_dir.join("access.log"))));
+        out.push_str(&format!(
+            "    CustomLog \"{}\" common\n",
+            cfg_path(&layout.logs_dir.join("access.log"))
+        ));
         out.push_str("</IfModule>\n");
         out.push_str(&format!("TypesConfig \"{install}/conf/mime.types\"\n"));
         out.push_str("DirectoryIndex index.php index.html\n");
@@ -92,7 +113,9 @@ impl WebServer for Apache {
         out.push_str("<IfModule ssl_module>\n    SSLSessionCache \"shmcb:logs/ssl_scache(512000)\"\n</IfModule>\n\n");
 
         // Deny by default, then each site opens its own docroot.
-        out.push_str("<Directory />\n    AllowOverride None\n    Require all denied\n</Directory>\n\n");
+        out.push_str(
+            "<Directory />\n    AllowOverride None\n    Require all denied\n</Directory>\n\n",
+        );
 
         // PHP FastCGI pools: one balancer per PHP version so every site uses all
         // workers of its version. Windows php-cgi serves one request at a time
@@ -110,7 +133,10 @@ impl WebServer for Apache {
             "<VirtualHost 127.0.0.1:{}>\n    ServerName _default_.localhost\n    <Location />\n        Require all denied\n    </Location>\n</VirtualHost>\n\n",
             ports.http
         ));
-        out.push_str(&format!("IncludeOptional \"{}/*.conf\"\n", cfg_path(&layout.sites_dir)));
+        out.push_str(&format!(
+            "IncludeOptional \"{}/*.conf\"\n",
+            cfg_path(&layout.sites_dir)
+        ));
         out
     }
 
@@ -137,8 +163,14 @@ impl WebServer for Apache {
             out.push_str(&format!("\n<VirtualHost 127.0.0.1:{}>\n", ports.https));
             out.push_str(&head(site));
             out.push_str("    SSLEngine on\n");
-            out.push_str(&format!("    SSLCertificateFile \"{}\"\n", cfg_path(&tls.cert)));
-            out.push_str(&format!("    SSLCertificateKeyFile \"{}\"\n", cfg_path(&tls.key)));
+            out.push_str(&format!(
+                "    SSLCertificateFile \"{}\"\n",
+                cfg_path(&tls.cert)
+            ));
+            out.push_str(&format!(
+                "    SSLCertificateKeyFile \"{}\"\n",
+                cfg_path(&tls.key)
+            ));
             out.push_str(&body(site));
             out.push_str("</VirtualHost>\n");
         }
@@ -205,7 +237,10 @@ fn body(site: &SiteSpec) -> String {
     out.push_str("    <IfModule headers_module>\n        Header setifempty Cache-Control \"no-cache\"\n    </IfModule>\n");
 
     for header in &site.blocks.headers {
-        out.push_str(&format!("    Header always set {} \"{}\"\n", header.name, header.value));
+        out.push_str(&format!(
+            "    Header always set {} \"{}\"\n",
+            header.name, header.value
+        ));
     }
     for include in &site.blocks.includes {
         out.push_str(&format!("    Include \"{}\"\n", include.replace('\\', "/")));
@@ -214,11 +249,20 @@ fn body(site: &SiteSpec) -> String {
         out.push_str(&format!("    Include \"{}\"\n", cfg_path(snippet)));
     }
     for redirect in &site.blocks.redirects {
-        out.push_str(&format!("    Redirect {} \"{}\" \"{}\"\n", redirect.code, redirect.from, redirect.to));
+        out.push_str(&format!(
+            "    Redirect {} \"{}\" \"{}\"\n",
+            redirect.code, redirect.from, redirect.to
+        ));
     }
     for mapping in &site.blocks.mappings {
-        out.push_str(&format!("    ProxyPass \"{}\" \"{}\"\n", mapping.path, mapping.upstream));
-        out.push_str(&format!("    ProxyPassReverse \"{}\" \"{}\"\n", mapping.path, mapping.upstream));
+        out.push_str(&format!(
+            "    ProxyPass \"{}\" \"{}\"\n",
+            mapping.path, mapping.upstream
+        ));
+        out.push_str(&format!(
+            "    ProxyPassReverse \"{}\" \"{}\"\n",
+            mapping.path, mapping.upstream
+        ));
     }
 
     match &site.backend {
@@ -274,7 +318,10 @@ mod tests {
             wildcard: true,
             root: "C:\\sites\\shop".into(),
             backend,
-            tls: tls.then(|| CertPaths { cert: "C:/c/cert.pem".into(), key: "C:/c/key.pem".into() }),
+            tls: tls.then(|| CertPaths {
+                cert: "C:/c/cert.pem".into(),
+                key: "C:/c/key.pem".into(),
+            }),
             redirect_https: redirect,
             blocks: SiteBlocks::default(),
             custom_snippet: None,
@@ -283,11 +330,24 @@ mod tests {
         }
     }
 
-    const PORTS: Ports = Ports { http: 80, https: 443 };
+    const PORTS: Ports = Ports {
+        http: 80,
+        https: 443,
+    };
 
     #[test]
     fn https_php_site_has_two_vhosts_and_a_fcgi_handler() {
-        let cfg = Apache.render_site(&site(Backend::Php { pool: "php_84".into(), ports: vec![10840] }, true, true), PORTS);
+        let cfg = Apache.render_site(
+            &site(
+                Backend::Php {
+                    pool: "php_84".into(),
+                    ports: vec![10840],
+                },
+                true,
+                true,
+            ),
+            PORTS,
+        );
         assert!(cfg.contains("<VirtualHost 127.0.0.1:80>"));
         assert!(cfg.contains("<VirtualHost 127.0.0.1:443>"));
         assert!(cfg.contains("ServerAlias *.shop.test"));
@@ -299,7 +359,16 @@ mod tests {
 
     #[test]
     fn proxy_site_forwards_http_and_websockets() {
-        let cfg = Apache.render_site(&site(Backend::Proxy { upstream: "http://127.0.0.1:3000".into() }, false, false), PORTS);
+        let cfg = Apache.render_site(
+            &site(
+                Backend::Proxy {
+                    upstream: "http://127.0.0.1:3000".into(),
+                },
+                false,
+                false,
+            ),
+            PORTS,
+        );
         assert!(cfg.contains("ProxyPass \"/\" \"http://127.0.0.1:3000/\""));
         assert!(cfg.contains("ws://127.0.0.1:3000/"));
         assert!(!cfg.contains("SSLEngine"));
@@ -315,7 +384,14 @@ mod tests {
             logs_dir: "C:/ols/web/apache/logs".into(),
             binary: "C:/apache/bin/httpd.exe".into(),
         };
-        let cfg = Apache.render_main(&layout, PORTS, &[PoolSpec { id: "php_84".into(), ports: vec![10840, 10841] }]);
+        let cfg = Apache.render_main(
+            &layout,
+            PORTS,
+            &[PoolSpec {
+                id: "php_84".into(),
+                ports: vec![10840, 10841],
+            }],
+        );
         assert!(cfg.contains("LoadModule ssl_module"));
         assert!(cfg.contains("IncludeOptional \"C:/ols/web/apache/sites/*.conf\""));
         assert!(cfg.contains("<Proxy balancer://ols_php_84>"));

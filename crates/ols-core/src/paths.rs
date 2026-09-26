@@ -23,25 +23,36 @@ impl AppPaths {
     ///    (for example under Program Files).
     pub fn resolve() -> Self {
         if let Ok(override_home) = std::env::var(HOME_ENV_VAR) {
-            return Self { root: PathBuf::from(override_home) };
+            return Self {
+                root: PathBuf::from(override_home),
+            };
         }
         #[cfg(debug_assertions)]
         {
-            let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("data");
+            let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("..")
+                .join("..")
+                .join("data");
             if let Some(root) = writable_dir(&repo) {
                 return Self { root };
             }
         }
-        let beside_exe = std::env::current_exe().ok().and_then(|exe| exe.parent().map(|d| d.join("data")));
+        let beside_exe = std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|d| d.join("data")));
         if let Some(root) = beside_exe.and_then(|d| writable_dir(&d)) {
             return Self { root };
         }
-        Self { root: Self::legacy_root().expect("could not determine a home directory for the current user") }
+        Self {
+            root: Self::legacy_root()
+                .expect("could not determine a home directory for the current user"),
+        }
     }
 
     /// Where earlier versions kept everything (the OS app-data directory).
     pub fn legacy_root() -> Option<PathBuf> {
-        ProjectDirs::from("dev", "OpenLocalServer", "OpenLocalServer").map(|d| d.data_dir().to_path_buf())
+        ProjectDirs::from("dev", "OpenLocalServer", "OpenLocalServer")
+            .map(|d| d.data_dir().to_path_buf())
     }
 
     /// One-time move of data left in the old app-data location into the current root, so
@@ -53,11 +64,16 @@ impl AppPaths {
         if std::env::var(HOME_ENV_VAR).is_ok() {
             return notes;
         }
-        let Some(legacy) = Self::legacy_root() else { return notes };
+        let Some(legacy) = Self::legacy_root() else {
+            return notes;
+        };
         if !legacy.is_dir() || same_path(&legacy, &self.root) {
             return notes;
         }
-        if ["settings.json", "domains.json", "runtimes"].iter().any(|n| self.root.join(n).exists()) {
+        if ["settings.json", "domains.json", "runtimes"]
+            .iter()
+            .any(|n| self.root.join(n).exists())
+        {
             return notes;
         }
         let entries: Vec<_> = match std::fs::read_dir(&legacy) {
@@ -68,7 +84,11 @@ impl AppPaths {
             return notes;
         }
         let _ = std::fs::create_dir_all(&self.root);
-        notes.push(format!("moving data from {} to {}", legacy.display(), self.root.display()));
+        notes.push(format!(
+            "moving data from {} to {}",
+            legacy.display(),
+            self.root.display()
+        ));
         for entry in entries {
             let from = entry.path();
             let to = self.root.join(entry.file_name());
@@ -78,9 +98,16 @@ impl AppPaths {
             // Different drive: copy, and delete the original only once the copy is complete.
             match copy_recursive(&from, &to) {
                 Ok(()) => {
-                    let _ = if from.is_dir() { std::fs::remove_dir_all(&from) } else { std::fs::remove_file(&from) };
+                    let _ = if from.is_dir() {
+                        std::fs::remove_dir_all(&from)
+                    } else {
+                        std::fs::remove_file(&from)
+                    };
                 }
-                Err(e) => notes.push(format!("could not move {}: {e} (left in place)", from.display())),
+                Err(e) => notes.push(format!(
+                    "could not move {}: {e} (left in place)",
+                    from.display()
+                )),
             }
         }
         notes.push("data move finished".into());
@@ -89,7 +116,9 @@ impl AppPaths {
 
     /// Paths rooted at an explicit directory — for tests that need a second, separate home.
     pub fn resolve_at(root: &Path) -> Self {
-        Self { root: root.to_path_buf() }
+        Self {
+            root: root.to_path_buf(),
+        }
     }
 
     pub fn root(&self) -> &Path {
@@ -142,12 +171,16 @@ impl AppPaths {
         }
         #[cfg(not(debug_assertions))]
         {
-            let beside_exe = std::env::current_exe().ok().and_then(|exe| exe.parent().map(|d| d.join("sites")));
-            beside_exe.and_then(|dir| writable_dir(&dir)).unwrap_or_else(|| {
-                ProjectDirs::from("dev", "OpenLocalServer", "OpenLocalServer")
-                    .map(|d| d.data_dir().join("Sites"))
-                    .unwrap_or_else(|| self.root.join("Sites"))
-            })
+            let beside_exe = std::env::current_exe()
+                .ok()
+                .and_then(|exe| exe.parent().map(|d| d.join("sites")));
+            beside_exe
+                .and_then(|dir| writable_dir(&dir))
+                .unwrap_or_else(|| {
+                    ProjectDirs::from("dev", "OpenLocalServer", "OpenLocalServer")
+                        .map(|d| d.data_dir().join("Sites"))
+                        .unwrap_or_else(|| self.root.join("Sites"))
+                })
         }
     }
 
@@ -225,7 +258,10 @@ mod tests {
     #[test]
     fn override_env_var_wins() {
         let home = crate::test_support::isolated_home();
-        assert_eq!(std::env::var(HOME_ENV_VAR).unwrap(), home.paths.root().to_str().unwrap());
+        assert_eq!(
+            std::env::var(HOME_ENV_VAR).unwrap(),
+            home.paths.root().to_str().unwrap()
+        );
     }
 
     #[test]

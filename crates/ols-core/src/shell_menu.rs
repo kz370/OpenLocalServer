@@ -8,7 +8,10 @@ use serde::{Deserialize, Serialize};
 use crate::app::Inner;
 use crate::error::CoreError;
 
-const ROOTS: [&str; 2] = [r"HKCU\Software\Classes\Directory\shell", r"HKCU\Software\Classes\Directory\Background\shell"];
+const ROOTS: [&str; 2] = [
+    r"HKCU\Software\Classes\Directory\shell",
+    r"HKCU\Software\Classes\Directory\Background\shell",
+];
 const ADD: &str = "OpenLocalServer.Add";
 const SETUP: &str = "OpenLocalServer.Setup";
 
@@ -29,14 +32,26 @@ fn find_cli() -> Option<std::path::PathBuf> {
             return Some(beside);
         }
     }
-    std::env::var_os("PATH").and_then(|p| std::env::split_paths(&p).map(|d| d.join(name)).find(|f| f.is_file()))
+    std::env::var_os("PATH").and_then(|p| {
+        std::env::split_paths(&p)
+            .map(|d| d.join(name))
+            .find(|f| f.is_file())
+    })
 }
 
 /// The command each entry runs; `%V` is the folder Explorer passes.
 fn commands(cli: &str) -> [(&'static str, &'static str, String); 2] {
     [
-        (ADD, "Add to OpenLocalServer", format!("\"{cli}\" project add \"%V\"")),
-        (SETUP, "Set up with OpenLocalServer", format!("cmd.exe /k \"\"{cli}\" setup --path \"%V\"\"")),
+        (
+            ADD,
+            "Add to OpenLocalServer",
+            format!("\"{cli}\" project add \"%V\""),
+        ),
+        (
+            SETUP,
+            "Set up with OpenLocalServer",
+            format!("cmd.exe /k \"\"{cli}\" setup --path \"%V\"\""),
+        ),
     ]
 }
 
@@ -56,12 +71,24 @@ fn reg(args: &[&str]) -> Result<String, String> {
 #[cfg(windows)]
 impl Inner {
     pub fn shell_menu_status(&self) -> ShellMenuStatus {
-        let installed = ROOTS.iter().all(|r| reg(&["query", &format!("{r}\\{ADD}")]).is_ok());
-        ShellMenuStatus { installed, cli_path: find_cli().map(|p| p.display().to_string()), supported: true }
+        let installed = ROOTS
+            .iter()
+            .all(|r| reg(&["query", &format!("{r}\\{ADD}")]).is_ok());
+        ShellMenuStatus {
+            installed,
+            cli_path: find_cli().map(|p| p.display().to_string()),
+            supported: true,
+        }
     }
 
     pub fn install_shell_menu(&self) -> Result<ShellMenuStatus, CoreError> {
-        let cli = find_cli().ok_or_else(|| CoreError::failed_fix("The Explorer menu wasn't added.", "The `ols` command line program wasn't found next to the app or on PATH.", "Reinstall OpenLocalServer, or add the folder holding ols.exe to PATH."))?;
+        let cli = find_cli().ok_or_else(|| {
+            CoreError::failed_fix(
+                "The Explorer menu wasn't added.",
+                "The `ols` command line program wasn't found next to the app or on PATH.",
+                "Reinstall OpenLocalServer, or add the folder holding ols.exe to PATH.",
+            )
+        })?;
         let cli = cli.display().to_string();
         let result = (|| -> Result<(), String> {
             for root in ROOTS {
@@ -69,7 +96,14 @@ impl Inner {
                     let base = format!("{root}\\{key}");
                     reg(&["add", &base, "/ve", "/d", label, "/f"])?;
                     reg(&["add", &base, "/v", "Icon", "/d", &cli, "/f"])?;
-                    reg(&["add", &format!("{base}\\command"), "/ve", "/d", &command, "/f"])?;
+                    reg(&[
+                        "add",
+                        &format!("{base}\\command"),
+                        "/ve",
+                        "/d",
+                        &command,
+                        "/f",
+                    ])?;
                 }
             }
             Ok(())
@@ -86,7 +120,8 @@ impl Inner {
             for key in [ADD, SETUP] {
                 let base = format!("{root}\\{key}");
                 if reg(&["query", &base]).is_ok() {
-                    reg(&["delete", &base, "/f"]).map_err(|e| CoreError::failed("The Explorer menu wasn't removed.", e))?;
+                    reg(&["delete", &base, "/f"])
+                        .map_err(|e| CoreError::failed("The Explorer menu wasn't removed.", e))?;
                 }
             }
         }
@@ -97,10 +132,17 @@ impl Inner {
 #[cfg(not(windows))]
 impl Inner {
     pub fn shell_menu_status(&self) -> ShellMenuStatus {
-        ShellMenuStatus { installed: false, cli_path: find_cli().map(|p| p.display().to_string()), supported: false }
+        ShellMenuStatus {
+            installed: false,
+            cli_path: find_cli().map(|p| p.display().to_string()),
+            supported: false,
+        }
     }
     pub fn install_shell_menu(&self) -> Result<ShellMenuStatus, CoreError> {
-        Err(CoreError::failed("The Explorer menu wasn't added.", "It is only available on Windows."))
+        Err(CoreError::failed(
+            "The Explorer menu wasn't added.",
+            "It is only available on Windows.",
+        ))
     }
     pub fn remove_shell_menu(&self) -> Result<ShellMenuStatus, CoreError> {
         Ok(self.shell_menu_status())

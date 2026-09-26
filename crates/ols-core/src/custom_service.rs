@@ -67,7 +67,10 @@ pub fn slug(name: &str) -> String {
 
 fn valid_env_key(key: &str) -> bool {
     let mut chars = key.chars();
-    chars.next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_') && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 pub fn validate(s: &CustomService) -> Result<(), String> {
@@ -90,7 +93,9 @@ pub fn validate(s: &CustomService) -> Result<(), String> {
         }
     }
     if let Some((key, _)) = s.env.iter().find(|(k, _)| !valid_env_key(k)) {
-        return Err(format!("\"{key}\" is not a valid environment variable name"));
+        return Err(format!(
+            "\"{key}\" is not a valid environment variable name"
+        ));
     }
     if s.port == Some(0) {
         return Err("the port must be between 1 and 65535".into());
@@ -121,14 +126,26 @@ pub fn probe(port: u16, health: &HealthCheck) -> Option<bool> {
 }
 
 fn connect(port: u16) -> Option<TcpStream> {
-    TcpStream::connect_timeout(&SocketAddr::from(([127, 0, 0, 1], port)), Duration::from_millis(300)).ok()
+    TcpStream::connect_timeout(
+        &SocketAddr::from(([127, 0, 0, 1], port)),
+        Duration::from_millis(300),
+    )
+    .ok()
 }
 
 fn http_ok(port: u16, path: &str) -> bool {
-    let Some(mut stream) = connect(port) else { return false };
+    let Some(mut stream) = connect(port) else {
+        return false;
+    };
     let _ = stream.set_read_timeout(Some(Duration::from_millis(700)));
     let _ = stream.set_write_timeout(Some(Duration::from_millis(700)));
-    if stream.write_all(format!("GET {path} HTTP/1.0\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n").as_bytes()).is_err() {
+    if stream
+        .write_all(
+            format!("GET {path} HTTP/1.0\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+                .as_bytes(),
+        )
+        .is_err()
+    {
         return false;
     }
     let mut head = [0u8; 32];
@@ -140,7 +157,11 @@ fn http_ok(port: u16, path: &str) -> bool {
 fn status_ok(head: &[u8]) -> bool {
     let text = String::from_utf8_lossy(head);
     let mut parts = text.split_whitespace();
-    parts.next().is_some_and(|p| p.starts_with("HTTP/")) && parts.next().and_then(|c| c.parse::<u16>().ok()).is_some_and(|c| (200..400).contains(&c))
+    parts.next().is_some_and(|p| p.starts_with("HTTP/"))
+        && parts
+            .next()
+            .and_then(|c| c.parse::<u16>().ok())
+            .is_some_and(|c| (200..400).contains(&c))
 }
 
 pub struct CustomServiceStore {
@@ -152,7 +173,10 @@ impl CustomServiceStore {
     /// A file that is missing or unreadable is an empty list; the app must still start.
     pub fn load(paths: &AppPaths) -> Self {
         let file = paths.data_dir().join("custom_services.json");
-        let services = std::fs::read_to_string(&file).ok().and_then(|raw| serde_json::from_str(&raw).ok()).unwrap_or_default();
+        let services = std::fs::read_to_string(&file)
+            .ok()
+            .and_then(|raw| serde_json::from_str(&raw).ok())
+            .unwrap_or_default();
         Self { file, services }
     }
 
@@ -247,9 +271,13 @@ mod tests {
         s.port = None;
         assert!(validate(&s).is_err(), "a port check needs a port");
         let mut s = service(&exe);
-        s.health = HealthCheck::Http { path: "health".into() };
+        s.health = HealthCheck::Http {
+            path: "health".into(),
+        };
         assert!(validate(&s).is_err());
-        s.health = HealthCheck::Http { path: "/health".into() };
+        s.health = HealthCheck::Http {
+            path: "/health".into(),
+        };
         assert!(validate(&s).is_ok());
         let mut s = service(&exe);
         s.cwd = Some(dir.path().join("nope").display().to_string());
@@ -306,6 +334,9 @@ mod tests {
             l.local_addr().unwrap().port()
         };
         assert_eq!(probe(closed, &HealthCheck::Tcp), Some(false));
-        assert_eq!(probe(closed, &HealthCheck::Http { path: "/".into() }), Some(false));
+        assert_eq!(
+            probe(closed, &HealthCheck::Http { path: "/".into() }),
+            Some(false)
+        );
     }
 }

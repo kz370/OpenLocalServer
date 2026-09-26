@@ -88,7 +88,11 @@ impl ProjectStore {
         hasher.update(canonical_str.as_bytes());
         let id = format!("{:x}", hasher.finalize())[..16].to_string();
 
-        let project = Project { id, name, path: canonical_str };
+        let project = Project {
+            id,
+            name,
+            path: canonical_str,
+        };
         self.projects.push(project.clone());
         self.persist()?;
         Ok(project)
@@ -96,7 +100,11 @@ impl ProjectStore {
 
     /// A display name other than the folder's (clones and imports choose their own).
     pub fn rename(&mut self, id: &str, name: &str) -> Result<Project, CoreError> {
-        let p = self.projects.iter_mut().find(|p| p.id == id).ok_or_else(|| CoreError::InvalidProjectPath(id.to_string()))?;
+        let p = self
+            .projects
+            .iter_mut()
+            .find(|p| p.id == id)
+            .ok_or_else(|| CoreError::InvalidProjectPath(id.to_string()))?;
         p.name = name.to_string();
         let out = p.clone();
         self.persist()?;
@@ -151,20 +159,37 @@ pub fn build_detail(
             _ => None,
         };
         let global_version = global(id);
-        let mut r = resolver::resolve(id, manifest_version, detected_version, global_version.as_deref(), runtimes);
+        let mut r = resolver::resolve(
+            id,
+            manifest_version,
+            detected_version,
+            global_version.as_deref(),
+            runtimes,
+        );
 
         // A user-pinned custom install always wins (§126).
         if let Some(custom) = custom_installs.resolve(id, r.requested_version.as_deref()) {
             r.source = ResolutionSource::Custom;
-            r.requested_version = Some(if custom.label.is_empty() { "custom".to_string() } else { custom.label.clone() });
+            r.requested_version = Some(if custom.label.is_empty() {
+                "custom".to_string()
+            } else {
+                custom.label.clone()
+            });
             r.installed_version = Some(r.requested_version.clone().unwrap());
-            r.bin_dir = PathBuf::from(&custom.path).parent().map(|p| p.display().to_string());
+            r.bin_dir = PathBuf::from(&custom.path)
+                .parent()
+                .map(|p| p.display().to_string());
         }
 
         resolved.push(r);
     }
 
-    ProjectDetail { project: project.clone(), detection, manifest, resolved }
+    ProjectDetail {
+        project: project.clone(),
+        detection,
+        manifest,
+        resolved,
+    }
 }
 
 #[cfg(test)]
@@ -190,8 +215,16 @@ mod tests {
         std::fs::create_dir_all(&project_dir).unwrap();
 
         let project = store.register(project_dir.to_str().unwrap()).unwrap();
-        assert!(!project.path.contains(r"\\?\"), "path leaked verbatim prefix: {}", project.path);
-        assert!(!project.name.contains('?'), "name leaked verbatim prefix: {}", project.name);
+        assert!(
+            !project.path.contains(r"\\?\"),
+            "path leaked verbatim prefix: {}",
+            project.path
+        );
+        assert!(
+            !project.name.contains('?'),
+            "name leaked verbatim prefix: {}",
+            project.name
+        );
         assert_eq!(project.name, "shop");
     }
 
@@ -240,10 +273,18 @@ mod tests {
         let home = crate::test_support::isolated_home();
         let project_dir = home.paths.root().join("shop");
         std::fs::create_dir_all(&project_dir).unwrap();
-        std::fs::write(project_dir.join("composer.json"), r#"{"require":{"php":"^8.1"}}"#).unwrap();
+        std::fs::write(
+            project_dir.join("composer.json"),
+            r#"{"require":{"php":"^8.1"}}"#,
+        )
+        .unwrap();
         let manifest_dir = project_dir.join(".openlocalserver");
         std::fs::create_dir_all(&manifest_dir).unwrap();
-        std::fs::write(manifest_dir.join("environment.yaml"), "runtime:\n  php: \"8.3\"\n").unwrap();
+        std::fs::write(
+            manifest_dir.join("environment.yaml"),
+            "runtime:\n  php: \"8.3\"\n",
+        )
+        .unwrap();
 
         let mut store = ProjectStore::load(&home.paths).unwrap();
         let project = store.register(project_dir.to_str().unwrap()).unwrap();
@@ -268,7 +309,11 @@ mod tests {
         std::fs::create_dir_all(&project_dir).unwrap();
         let manifest_dir = project_dir.join(".openlocalserver");
         std::fs::create_dir_all(&manifest_dir).unwrap();
-        std::fs::write(manifest_dir.join("environment.yaml"), "runtime:\n  php: \"8.1\"\n").unwrap();
+        std::fs::write(
+            manifest_dir.join("environment.yaml"),
+            "runtime:\n  php: \"8.1\"\n",
+        )
+        .unwrap();
 
         let custom_php = home.paths.root().join("custom-php.exe");
         std::fs::write(&custom_php, b"fake").unwrap();
@@ -278,11 +323,16 @@ mod tests {
         let runtimes = RuntimeManager::new(home.paths.clone());
         let settings = SettingsService::load(&home.paths).unwrap();
         let mut custom_installs = CustomInstallStore::load(&home.paths).unwrap();
-        custom_installs.set("php", "8.1", custom_php.to_str().unwrap()).unwrap();
+        custom_installs
+            .set("php", "8.1", custom_php.to_str().unwrap())
+            .unwrap();
 
         let detail = build_detail(&project, &runtimes, &settings, &custom_installs);
         let php = detail.resolved.iter().find(|r| r.id == "php").unwrap();
         assert_eq!(php.source, resolver::ResolutionSource::Custom);
-        assert_eq!(php.bin_dir.as_deref(), Some(home.paths.root().display().to_string().as_str()));
+        assert_eq!(
+            php.bin_dir.as_deref(),
+            Some(home.paths.root().display().to_string().as_str())
+        );
     }
 }

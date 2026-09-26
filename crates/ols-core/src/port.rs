@@ -32,17 +32,31 @@ pub fn check_port(port: u16) -> PortStatus {
         }
         Err(_) => {
             // netstat + tasklist cost ~0.5s and the UI polls this; owners rarely change, so cache.
-            static CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<u16, (std::time::Instant, Option<u32>, Option<String>)>>> =
-                std::sync::OnceLock::new();
+            static CACHE: std::sync::OnceLock<
+                std::sync::Mutex<
+                    std::collections::HashMap<
+                        u16,
+                        (std::time::Instant, Option<u32>, Option<String>),
+                    >,
+                >,
+            > = std::sync::OnceLock::new();
             let cache = CACHE.get_or_init(Default::default);
             if let Some((at, pid, name)) = cache.lock().unwrap().get(&port) {
-                if at.elapsed() < std::time::Duration::from_secs(15) {
-                    return PortStatus::InUse { pid: *pid, process_name: name.clone() };
+                if at.elapsed() < std::time::Duration::from_secs(5) {
+                    return PortStatus::InUse {
+                        pid: *pid,
+                        process_name: name.clone(),
+                    };
                 }
             }
             let pid = find_owning_pid(port);
-            let process_name = pid.and_then(find_process_name);
-            cache.lock().unwrap().insert(port, (std::time::Instant::now(), pid, process_name.clone()));
+            let process_name = pid
+                .and_then(find_process_name)
+                .or_else(|| excluded_range_reason(port));
+            cache
+                .lock()
+                .unwrap()
+                .insert(port, (std::time::Instant::now(), pid, process_name.clone()));
             PortStatus::InUse { pid, process_name }
         }
     }
@@ -57,22 +71,68 @@ fn find_owning_pid(port: u16) -> Option<u32> {
     let text = String::from_utf8_lossy(&output.stdout);
     let needle = format!(":{port}");
 
+    let mut fallback: Option<u32> = None;
     for line in text.lines() {
         let cols: Vec<&str> = line.split_whitespace().collect();
-        // Expected shape: Proto  Local Address  Foreign Address  State  PID
+        // Expected shape: Proto  Local Address  Foreign Address  State  PID.
+        // State text is localized ("LISTENING" vs "ABHÖREN"), so prefer a
+        // LISTENING row but accept any 5-column TCP row: TIME_WAIT rows have
+        // no PID column and are skipped by the length check below.
         if cols.len() < 5 {
             continue;
         }
-        if cols[0] != "TCP" || cols[3] != "LISTENING" {
+        if cols[0] != "TCP" {
             continue;
         }
         if !cols[1].ends_with(&needle) {
             continue;
         }
-        if let Ok(pid) = cols[4].parse::<u32>() {
-            return Some(pid);
+        let state_listening = cols[3] == "LISTENING";
+        if let Ok(pid) = cols[cols.len() - 1].parse::<u32>() {
+            if state_listening {
+                return Some(pid);
+            }
+            // Localized state or non-LISTENING holder: remember, keep looking
+            // for an explicit LISTENING row first.
+            fallback = Some(pid);
         }
     }
+    fallback
+}
+
+/// Port binds fail with nobody listening when Windows reserves the range
+/// (Hyper-V / Docker / WSL exclude blocks via `netsh interface ipv4 show
+/// excludedportrange`). Name that so the UI proposes the real fix instead of
+/// a ghost holder. Best-effort: any parse failure means "not excluded".
+#[cfg(windows)]
+fn excluded_range_reason(port: u16) -> Option<String> {
+    let mut cmd = std::process::Command::new("netsh");
+    cmd.args([
+        "interface",
+        "ipv4",
+        "show",
+        "excludedportrange",
+        "protocol=tcp",
+    ]);
+    crate::exec::hide_window(&mut cmd);
+    let output = cmd.output().ok()?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    // Header lines are localized; only rows with two integers matter.
+    for line in text.lines() {
+        let nums: Vec<u16> = line
+            .split(|c: char| !(c.is_ascii_digit()))
+            .filter(|s| !s.is_empty())
+            .filter_map(|s| s.parse().ok())
+            .collect();
+        if nums.len() == 2 && port >= nums[0] && port <= nums[1] {
+            return Some("Windows excluded port range (Hyper-V/Docker)".to_string());
+        }
+    }
+    None
+}
+
+#[cfg(not(windows))]
+fn excluded_range_reason(_port: u16) -> Option<String> {
     None
 }
 
@@ -83,10 +143,16 @@ fn find_process_name(pid: u32) -> Option<String> {
     crate::exec::hide_window(&mut cmd);
     let output = cmd.output().ok()?;
     let text = String::from_utf8_lossy(&output.stdout);
+    let trimmed = text.trim();
+    // Race: netstat saw a PID that exited before tasklist ran. tasklist then
+    // prints "INFO: No tasks are running..." — never surface that as a name.
+    if trimmed.is_empty() || trimmed.starts_with("INFO:") {
+        return None;
+    }
     // CSV line: "name.exe","1234","Console","1","12,345 K"
-    let first_field = text.trim().split(',').next()?;
-    let name = first_field.trim_matches('"');
-    if name.is_empty() {
+    let first_field = trimmed.split(',').next()?;
+    let name = first_field.trim_matches('"').trim();
+    if name.is_empty() || name.starts_with("INFO:") {
         None
     } else {
         Some(name.to_string())

@@ -44,12 +44,27 @@ impl ResourceLimits {
             Some(v) if v < min || v > max => Err(format!("{what} must be between {min} and {max}")),
             _ => Ok(()),
         };
-        check(self.mariadb_buffer_pool_mb, 16, 65536, "The MariaDB buffer pool (MB)")?;
-        check(self.postgres_shared_buffers_mb, 16, 65536, "PostgreSQL shared buffers (MB)")?;
+        check(
+            self.mariadb_buffer_pool_mb,
+            16,
+            65536,
+            "The MariaDB buffer pool (MB)",
+        )?;
+        check(
+            self.postgres_shared_buffers_mb,
+            16,
+            65536,
+            "PostgreSQL shared buffers (MB)",
+        )?;
         check(self.redis_maxmemory_mb, 8, 65536, "Redis memory (MB)")?;
         check(self.mongodb_cache_mb, 256, 65536, "The MongoDB cache (MB)")?;
         check(self.node_max_old_space_mb, 64, 65536, "Node memory (MB)")?;
-        check(self.max_worker_count, 1, crate::workers::MAX_COUNT, "Copies per worker")?;
+        check(
+            self.max_worker_count,
+            1,
+            crate::workers::MAX_COUNT,
+            "Copies per worker",
+        )?;
         check(self.max_processes, 4, 1000, "The process limit")?;
         check(self.k6_max_vus, 1, 5000, "The load-test virtual users")?;
         Ok(())
@@ -58,10 +73,34 @@ impl ResourceLimits {
     /// Extra command-line arguments for a service, from these limits.
     pub fn service_args(&self, id: &str) -> Vec<String> {
         match id {
-            "mariadb" => self.mariadb_buffer_pool_mb.map(|m| vec![format!("--innodb-buffer-pool-size={m}M")]).unwrap_or_default(),
-            "postgres" => self.postgres_shared_buffers_mb.map(|m| vec!["-c".into(), format!("shared_buffers={m}MB")]).unwrap_or_default(),
-            "redis" => self.redis_maxmemory_mb.map(|m| vec!["--maxmemory".into(), format!("{m}mb"), "--maxmemory-policy".into(), "allkeys-lru".into()]).unwrap_or_default(),
-            "mongodb" => self.mongodb_cache_mb.map(|m| vec!["--wiredTigerCacheSizeGB".into(), format!("{:.2}", (m as f64 / 1024.0).max(0.25))]).unwrap_or_default(),
+            "mariadb" => self
+                .mariadb_buffer_pool_mb
+                .map(|m| vec![format!("--innodb-buffer-pool-size={m}M")])
+                .unwrap_or_default(),
+            "postgres" => self
+                .postgres_shared_buffers_mb
+                .map(|m| vec!["-c".into(), format!("shared_buffers={m}MB")])
+                .unwrap_or_default(),
+            "redis" => self
+                .redis_maxmemory_mb
+                .map(|m| {
+                    vec![
+                        "--maxmemory".into(),
+                        format!("{m}mb"),
+                        "--maxmemory-policy".into(),
+                        "allkeys-lru".into(),
+                    ]
+                })
+                .unwrap_or_default(),
+            "mongodb" => self
+                .mongodb_cache_mb
+                .map(|m| {
+                    vec![
+                        "--wiredTigerCacheSizeGB".into(),
+                        format!("{:.2}", (m as f64 / 1024.0).max(0.25)),
+                    ]
+                })
+                .unwrap_or_default(),
             _ => Vec::new(),
         }
     }
@@ -69,12 +108,20 @@ impl ResourceLimits {
 
 impl Inner {
     pub fn resource_limits(&self) -> ResourceLimits {
-        self.settings.lock().unwrap().get(KEY).and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default()
+        self.settings
+            .lock()
+            .unwrap()
+            .get(KEY)
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default()
     }
 
     pub fn set_resource_limits(&self, limits: ResourceLimits) -> Result<(), CoreError> {
         limits.validate().map_err(CoreError::ServiceError)?;
-        self.settings.lock().unwrap().set(KEY.to_string(), serde_json::to_value(&limits)?)?;
+        self.settings
+            .lock()
+            .unwrap()
+            .set(KEY.to_string(), serde_json::to_value(&limits)?)?;
         self.services.set_limits(limits);
         Ok(())
     }
@@ -82,7 +129,15 @@ impl Inner {
     /// Room for one more process under the process limit.
     pub fn process_slot_free(&self) -> bool {
         match self.resource_limits().max_processes {
-            Some(max) => (self.supervisor.snapshot().into_iter().filter(|p| self.supervisor.is_alive(p.id)).count() as u32) < max,
+            Some(max) => {
+                (self
+                    .supervisor
+                    .snapshot()
+                    .into_iter()
+                    .filter(|p| self.supervisor.is_alive(p.id))
+                    .count() as u32)
+                    < max
+            }
             None => true,
         }
     }
@@ -94,17 +149,41 @@ mod tests {
 
     #[test]
     fn limits_become_each_servers_own_flags() {
-        let l = ResourceLimits { mariadb_buffer_pool_mb: Some(256), redis_maxmemory_mb: Some(64), mongodb_cache_mb: Some(256), ..Default::default() };
-        assert_eq!(l.service_args("mariadb"), ["--innodb-buffer-pool-size=256M"]);
-        assert_eq!(l.service_args("redis")[..2], ["--maxmemory".to_string(), "64mb".to_string()]);
+        let l = ResourceLimits {
+            mariadb_buffer_pool_mb: Some(256),
+            redis_maxmemory_mb: Some(64),
+            mongodb_cache_mb: Some(256),
+            ..Default::default()
+        };
+        assert_eq!(
+            l.service_args("mariadb"),
+            ["--innodb-buffer-pool-size=256M"]
+        );
+        assert_eq!(
+            l.service_args("redis")[..2],
+            ["--maxmemory".to_string(), "64mb".to_string()]
+        );
         assert_eq!(l.service_args("mongodb")[1], "0.25");
-        assert!(l.service_args("postgres").is_empty(), "unset limits add nothing");
+        assert!(
+            l.service_args("postgres").is_empty(),
+            "unset limits add nothing"
+        );
     }
 
     #[test]
     fn silly_values_are_refused() {
-        assert!(ResourceLimits { redis_maxmemory_mb: Some(1), ..Default::default() }.validate().is_err());
-        assert!(ResourceLimits { max_worker_count: Some(99), ..Default::default() }.validate().is_err());
+        assert!(ResourceLimits {
+            redis_maxmemory_mb: Some(1),
+            ..Default::default()
+        }
+        .validate()
+        .is_err());
+        assert!(ResourceLimits {
+            max_worker_count: Some(99),
+            ..Default::default()
+        }
+        .validate()
+        .is_err());
         assert!(ResourceLimits::default().validate().is_ok());
     }
 }

@@ -4,7 +4,10 @@ use std::time::Duration;
 
 use ols_core::process::{ProcessEvent, ProcessState};
 use ols_core::runtime::RuntimeEvent;
-use ols_core::{AppPaths, Core, CoreCommand, CoreResponse, Diagnostic, ProcessSupervisor, RuntimeManager, SettingsService};
+use ols_core::{
+    AppPaths, Core, CoreCommand, CoreResponse, Diagnostic, ProcessSupervisor, RuntimeManager,
+    SettingsService,
+};
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, WindowEvent, Wry};
@@ -16,11 +19,18 @@ use tauri_plugin_notification::NotificationExt;
 /// Commands run on a blocking thread: applying the web config or installing a runtime can
 /// take seconds, and must never freeze the window.
 #[tauri::command]
-async fn run_command(command: CoreCommand, state: tauri::State<'_, Core>) -> Result<CoreResponse, Diagnostic> {
+async fn run_command(
+    command: CoreCommand,
+    state: tauri::State<'_, Core>,
+) -> Result<CoreResponse, Diagnostic> {
     let core = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || core.dispatch(command))
         .await
-        .map_err(|e| Diagnostic { problem: "The command crashed.".into(), cause: e.to_string(), fix: None })?
+        .map_err(|e| Diagnostic {
+            problem: "The command crashed.".into(),
+            cause: e.to_string(),
+            fix: None,
+        })?
 }
 
 fn notifications_enabled(core: &Core) -> bool {
@@ -92,7 +102,12 @@ fn begin_shutdown(app: &AppHandle, core: Core) {
                 return;
             }
             if !notified {
-                notify(&app, &core, "Still stopping", "OpenLocalServer will keep waiting and exit when its managed processes stop.");
+                notify(
+                    &app,
+                    &core,
+                    "Still stopping",
+                    "OpenLocalServer will keep waiting and exit when its managed processes stop.",
+                );
                 notified = true;
             }
             std::thread::sleep(Duration::from_secs(2));
@@ -113,11 +128,30 @@ fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
 
     let mut site_items: Vec<Box<dyn tauri::menu::IsMenuItem<Wry>>> = Vec::new();
     for site in core.inner().domains.lock().unwrap().list() {
-        site_items.push(Box::new(MenuItem::with_id(app, &format!("site:{}", site.hostname), &site.hostname, true, None::<&str>)?));
+        site_items.push(Box::new(MenuItem::with_id(
+            app,
+            &format!("site:{}", site.hostname),
+            &site.hostname,
+            true,
+            None::<&str>,
+        )?));
     }
-    site_items.push(Box::new(MenuItem::with_id(app, "sites_folder", "Open sites folder", true, None::<&str>)?));
-    site_items.push(Box::new(MenuItem::with_id(app, "site_add", "Add site...", true, None::<&str>)?));
-    let site_refs: Vec<&dyn tauri::menu::IsMenuItem<Wry>> = site_items.iter().map(|item| item.as_ref()).collect();
+    site_items.push(Box::new(MenuItem::with_id(
+        app,
+        "sites_folder",
+        "Open sites folder",
+        true,
+        None::<&str>,
+    )?));
+    site_items.push(Box::new(MenuItem::with_id(
+        app,
+        "site_add",
+        "Add site...",
+        true,
+        None::<&str>,
+    )?));
+    let site_refs: Vec<&dyn tauri::menu::IsMenuItem<Wry>> =
+        site_items.iter().map(|item| item.as_ref()).collect();
     let sites = Submenu::with_items(app, "Sites", true, &site_refs)?;
 
     let web_start = MenuItem::with_id(app, "web_start", "Start / reload", true, None::<&str>)?;
@@ -125,32 +159,102 @@ fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
     let active_server = core.inner().web_config().server;
     let mut server_items = Vec::new();
     for server in ["nginx", "apache", "caddy"] {
-        server_items.push(CheckMenuItem::with_id(app, &format!("server:{server}"), server, true, active_server == server, None::<&str>)?);
+        server_items.push(CheckMenuItem::with_id(
+            app,
+            &format!("server:{server}"),
+            server,
+            true,
+            active_server == server,
+            None::<&str>,
+        )?);
     }
-    let server_refs: Vec<&dyn tauri::menu::IsMenuItem<Wry>> = server_items.iter().map(|item| item as &dyn tauri::menu::IsMenuItem<Wry>).collect();
+    let server_refs: Vec<&dyn tauri::menu::IsMenuItem<Wry>> = server_items
+        .iter()
+        .map(|item| item as &dyn tauri::menu::IsMenuItem<Wry>)
+        .collect();
     let server_switch = Submenu::with_items(app, "Server", true, &server_refs)?;
-    let web_config = MenuItem::with_id(app, "web_config", "Open config folder", true, None::<&str>)?;
-    let web = Submenu::with_items(app, "Web server", true, &[&web_start, &web_stop, &server_switch, &web_config])?;
+    let web_config =
+        MenuItem::with_id(app, "web_config", "Open config folder", true, None::<&str>)?;
+    let web = Submenu::with_items(
+        app,
+        "Web server",
+        true,
+        &[&web_start, &web_stop, &server_switch, &web_config],
+    )?;
 
     let php_versions = core.inner().runtimes.installed_versions("php");
-    let php = MenuItem::with_id(app, "php_page", if php_versions.is_empty() { "PHP (none installed)" } else { "PHP" }, true, None::<&str>)?;
+    let php = MenuItem::with_id(
+        app,
+        "php_page",
+        if php_versions.is_empty() {
+            "PHP (none installed)"
+        } else {
+            "PHP"
+        },
+        true,
+        None::<&str>,
+    )?;
 
     let mut database_items: Vec<Box<dyn tauri::menu::IsMenuItem<Wry>>> = Vec::new();
-    for service in core.services().list().into_iter().filter(|service| service.kind == "sql" || service.kind == "document") {
-        let label = format!("{} ({})", service.name, if service.running { "stop" } else { "start" });
-        database_items.push(Box::new(MenuItem::with_id(app, &format!("db:{}", service.id), label, true, None::<&str>)?));
+    for service in core
+        .services()
+        .list()
+        .into_iter()
+        .filter(|service| service.kind == "sql" || service.kind == "document")
+    {
+        let label = format!(
+            "{} ({})",
+            service.name,
+            if service.running { "stop" } else { "start" }
+        );
+        database_items.push(Box::new(MenuItem::with_id(
+            app,
+            &format!("db:{}", service.id),
+            label,
+            true,
+            None::<&str>,
+        )?));
     }
-    database_items.push(Box::new(MenuItem::with_id(app, "databases_page", "Open databases", true, None::<&str>)?));
-    let database_refs: Vec<&dyn tauri::menu::IsMenuItem<Wry>> = database_items.iter().map(|item| item.as_ref()).collect();
+    database_items.push(Box::new(MenuItem::with_id(
+        app,
+        "databases_page",
+        "Open databases",
+        true,
+        None::<&str>,
+    )?));
+    let database_refs: Vec<&dyn tauri::menu::IsMenuItem<Wry>> =
+        database_items.iter().map(|item| item.as_ref()).collect();
     let databases = Submenu::with_items(app, "Databases", true, &database_refs)?;
 
     let mut service_items: Vec<Box<dyn tauri::menu::IsMenuItem<Wry>>> = Vec::new();
-    for service in core.services().list().into_iter().filter(|service| service.kind == "mail" || service.kind == "cache") {
-        let label = format!("{} ({})", service.name, if service.running { "stop" } else { "start" });
-        service_items.push(Box::new(MenuItem::with_id(app, &format!("service:{}", service.id), label, true, None::<&str>)?));
+    for service in core
+        .services()
+        .list()
+        .into_iter()
+        .filter(|service| service.kind == "mail" || service.kind == "cache")
+    {
+        let label = format!(
+            "{} ({})",
+            service.name,
+            if service.running { "stop" } else { "start" }
+        );
+        service_items.push(Box::new(MenuItem::with_id(
+            app,
+            &format!("service:{}", service.id),
+            label,
+            true,
+            None::<&str>,
+        )?));
     }
-    service_items.push(Box::new(MenuItem::with_id(app, "mailpit", "Open Mailpit", true, None::<&str>)?));
-    let service_refs: Vec<&dyn tauri::menu::IsMenuItem<Wry>> = service_items.iter().map(|item| item.as_ref()).collect();
+    service_items.push(Box::new(MenuItem::with_id(
+        app,
+        "mailpit",
+        "Open Mailpit",
+        true,
+        None::<&str>,
+    )?));
+    let service_refs: Vec<&dyn tauri::menu::IsMenuItem<Wry>> =
+        service_items.iter().map(|item| item.as_ref()).collect();
     let services = Submenu::with_items(app, "Services", true, &service_refs)?;
 
     let quick_apps = MenuItem::with_id(app, "quick_apps", "Recipes", true, None::<&str>)?;
@@ -162,7 +266,25 @@ fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
     let preferences = MenuItem::with_id(app, "preferences", "Preferences...", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
-    Menu::with_items(app, &[&open, &start_all, &stop_all, &separator, &sites, &web, &php, &databases, &services, &quick, &tools, &preferences, &separator, &quit])
+    Menu::with_items(
+        app,
+        &[
+            &open,
+            &start_all,
+            &stop_all,
+            &separator,
+            &sites,
+            &web,
+            &php,
+            &databases,
+            &services,
+            &quick,
+            &tools,
+            &preferences,
+            &separator,
+            &quit,
+        ],
+    )
 }
 
 fn refresh_tray(app: &AppHandle, core: &Core) {
@@ -189,7 +311,12 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
                             Err(e) => notify(&handle, &core, "Web server failed", &e.to_string()),
                         }
                         if event.id.as_ref() == "start_all" {
-                            for service in core.services().list().into_iter().filter(|service| !service.running) {
+                            for service in core
+                                .services()
+                                .list()
+                                .into_iter()
+                                .filter(|service| !service.running)
+                            {
                                 let _ = core.services().start(&service.id);
                             }
                         }
@@ -198,16 +325,44 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
                 }
                 "stop_all" => {
                     core.inner().web.stop();
-                    for service in core.services().list().into_iter().filter(|service| service.running) {
+                    for service in core
+                        .services()
+                        .list()
+                        .into_iter()
+                        .filter(|service| service.running)
+                    {
                         core.services().stop(&service.id);
                     }
                     refresh_tray(app, &core);
                 }
-                "web_stop" => { core.inner().web.stop(); refresh_tray(app, &core); }
-                "mailpit" => { let _ = core.inner().open_url("http://127.0.0.1:8025"); }
-                "sites_folder" => { let _ = core.inner().open_path(&core.inner().paths.root().join("sites").display().to_string()); }
-                "web_config" => { let _ = core.inner().open_path(&core.inner().paths.web_dir().display().to_string()); }
-                "data_folder" => { let _ = core.inner().open_path(&core.inner().paths.data_dir().display().to_string()); }
+                "web_stop" => {
+                    core.inner().web.stop();
+                    refresh_tray(app, &core);
+                }
+                "mailpit" => {
+                    let _ = core.inner().open_url("http://127.0.0.1:8025");
+                }
+                "sites_folder" => {
+                    let _ = core.inner().open_path(
+                        &core
+                            .inner()
+                            .paths
+                            .root()
+                            .join("sites")
+                            .display()
+                            .to_string(),
+                    );
+                }
+                "web_config" => {
+                    let _ = core
+                        .inner()
+                        .open_path(&core.inner().paths.web_dir().display().to_string());
+                }
+                "data_folder" => {
+                    let _ = core
+                        .inner()
+                        .open_path(&core.inner().paths.data_dir().display().to_string());
+                }
                 "preferences" => navigate(app, "settings"),
                 "databases_page" => navigate(app, "databases"),
                 "php_page" => navigate(app, "runtimes"),
@@ -217,12 +372,26 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
                 "site_add" => navigate(app, "sites"),
                 id if id.starts_with("site:") => {
                     if let Some(site) = core.inner().domains.lock().unwrap().get(&id[5..]) {
-                        let _ = core.inner().open_url(&format!("{}://{}", if site.https { "https" } else { "http" }, site.hostname));
+                        let _ = core.inner().open_url(&format!(
+                            "{}://{}",
+                            if site.https { "https" } else { "http" },
+                            site.hostname
+                        ));
                     }
                 }
                 id if id.starts_with("service:") || id.starts_with("db:") => {
-                    let service_id = id.split_once(':').map(|(_, value)| value).unwrap_or_default();
-                    if core.services().list().into_iter().find(|service| service.id == service_id).map(|service| service.running).unwrap_or(false) {
+                    let service_id = id
+                        .split_once(':')
+                        .map(|(_, value)| value)
+                        .unwrap_or_default();
+                    if core
+                        .services()
+                        .list()
+                        .into_iter()
+                        .find(|service| service.id == service_id)
+                        .map(|service| service.running)
+                        .unwrap_or(false)
+                    {
                         core.services().stop(service_id);
                     } else {
                         let _ = core.services().start(service_id);
@@ -230,7 +399,10 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
                     refresh_tray(app, &core);
                 }
                 id if id.starts_with("server:") => {
-                    let _ = core.dispatch(CoreCommand::SetSetting { key: "web.server".into(), value: serde_json::Value::String(id[7..].into()) });
+                    let _ = core.dispatch(CoreCommand::SetSetting {
+                        key: "web.server".into(),
+                        value: serde_json::Value::String(id[7..].into()),
+                    });
                     refresh_tray(app, &core);
                 }
                 "quit" => begin_shutdown(app, core.clone()),
@@ -238,7 +410,12 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
             }
         })
         .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
                 show_main_window(tray.app_handle());
             }
         });
@@ -252,7 +429,9 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let paths = AppPaths::resolve();
-    paths.ensure_dirs().expect("failed to create app directories");
+    paths
+        .ensure_dirs()
+        .expect("failed to create app directories");
     let migration_notes = paths.migrate_legacy();
     ols_core::logging::init(&paths.logs_dir());
     for note in &migration_notes {
@@ -267,12 +446,18 @@ pub fn run() {
     // their events and forward them to the webview — the UI shouldn't have to poll.
     let supervisor = Arc::new(ProcessSupervisor::new());
     let runtimes = Arc::new(RuntimeManager::new(paths.clone()));
-    let core = Core::with_parts(settings, paths.clone(), supervisor.clone(), runtimes.clone());
+    let core = Core::with_parts(
+        settings,
+        paths.clone(),
+        supervisor.clone(),
+        runtimes.clone(),
+    );
     // §136: the `ols` command line talks to the app through this.
     if let Err(e) = ols_core::control::serve(core.clone(), &paths, "app") {
         tracing::warn!(error = %e, "the command-line control channel is not available");
     }
-    let start_hidden = std::env::args().any(|a| a == "--minimized") && core.inner().setting_bool("startup.minimized", true);
+    let start_hidden = std::env::args().any(|a| a == "--minimized")
+        && core.inner().setting_bool("startup.minimized", true);
 
     let setup_core = core.clone();
     let window_core = core.clone();
@@ -296,9 +481,24 @@ pub fn run() {
                 while let Ok(event) = process_events.recv().await {
                     let _ = process_handle.emit("process-event", &event);
                     // §119: tell the user when something they rely on dies.
-                    if let ProcessEvent::StateChanged { id, state: ProcessState::Crashed | ProcessState::Failed } = &event {
-                        let name = process_core.supervisor().snapshot().into_iter().find(|p| p.id == *id).map(|p| p.name).unwrap_or_default();
-                        notify(&process_handle, &process_core, "A process stopped unexpectedly", &name);
+                    if let ProcessEvent::StateChanged {
+                        id,
+                        state: ProcessState::Crashed | ProcessState::Failed,
+                    } = &event
+                    {
+                        let name = process_core
+                            .supervisor()
+                            .snapshot()
+                            .into_iter()
+                            .find(|p| p.id == *id)
+                            .map(|p| p.name)
+                            .unwrap_or_default();
+                        notify(
+                            &process_handle,
+                            &process_core,
+                            "A process stopped unexpectedly",
+                            &name,
+                        );
                     }
                 }
             });
@@ -319,8 +519,22 @@ pub fn run() {
                 while let Ok(event) = runtime_events.recv().await {
                     let _ = runtime_handle.emit("runtime-event", &event);
                     match &event {
-                        RuntimeEvent::Installed { id, version, .. } => notify(&runtime_handle, &runtime_core, "Installed", &format!("{id} {version} is ready")),
-                        RuntimeEvent::Failed { id, version, message } => notify(&runtime_handle, &runtime_core, "Install failed", &format!("{id} {version}: {message}")),
+                        RuntimeEvent::Installed { id, version, .. } => notify(
+                            &runtime_handle,
+                            &runtime_core,
+                            "Installed",
+                            &format!("{id} {version} is ready"),
+                        ),
+                        RuntimeEvent::Failed {
+                            id,
+                            version,
+                            message,
+                        } => notify(
+                            &runtime_handle,
+                            &runtime_core,
+                            "Install failed",
+                            &format!("{id} {version}: {message}"),
+                        ),
                         _ => {}
                     }
                 }
@@ -344,7 +558,10 @@ pub fn run() {
                     for run in run_core.inner().runs.list() {
                         if run.finished_ms.is_some() && announced.insert(run.id.clone()) {
                             let (title, body) = match run.error {
-                                None => (format!("{} is ready", run.app_name), run.open_url.clone().unwrap_or_default()),
+                                None => (
+                                    format!("{} is ready", run.app_name),
+                                    run.open_url.clone().unwrap_or_default(),
+                                ),
                                 Some(e) => (format!("{} failed", run.app_name), e),
                             };
                             notify(&run_handle, &run_core, &title, &body);
@@ -370,9 +587,19 @@ pub fn run() {
                 loop {
                     for result in autostart_core.auto_fix_diagnostics() {
                         if result.ok {
-                            notify(&auto_fix_app, &autostart_core, "Diagnostics", &format!("Fixed: {}", result.problem));
+                            notify(
+                                &auto_fix_app,
+                                &autostart_core,
+                                "Diagnostics",
+                                &format!("Fixed: {}", result.problem),
+                            );
                         } else {
-                            notify(&auto_fix_app, &autostart_core, "Automatic fix failed", &format!("{}: {}", result.problem, result.detail));
+                            notify(
+                                &auto_fix_app,
+                                &autostart_core,
+                                "Automatic fix failed",
+                                &format!("{}: {}", result.problem, result.detail),
+                            );
                         }
                     }
                     std::thread::sleep(Duration::from_secs(300));
@@ -383,7 +610,10 @@ pub fn run() {
         .on_window_event(move |window, event| {
             // §120: closing the window keeps the servers running in the tray.
             if let WindowEvent::CloseRequested { api, .. } = event {
-                if window_core.inner().setting_bool("startup.close_to_tray", true) {
+                if window_core
+                    .inner()
+                    .setting_bool("startup.close_to_tray", true)
+                {
                     api.prevent_close();
                     let _ = window.hide();
                 } else {

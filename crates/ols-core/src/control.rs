@@ -52,14 +52,20 @@ pub fn info_file(paths: &AppPaths) -> PathBuf {
 }
 
 pub fn read_info(paths: &AppPaths) -> Option<ControlInfo> {
-    std::fs::read_to_string(info_file(paths)).ok().and_then(|t| serde_json::from_str(&t).ok())
+    std::fs::read_to_string(info_file(paths))
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
 }
 
 /// The pipe for this user and data folder: one owner per install, and a second install
 /// (or a test home) never collides with the first.
 pub fn pipe_name(paths: &AppPaths) -> String {
     use sha2::Digest;
-    let user: String = std::env::var("USERNAME").unwrap_or_else(|_| "user".into()).chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_').collect();
+    let user: String = std::env::var("USERNAME")
+        .unwrap_or_else(|_| "user".into())
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .collect();
     let root = paths.root().display().to_string().to_lowercase();
     let hash = format!("{:x}", sha2::Sha256::digest(root.as_bytes()));
     format!(r"\\.\pipe\OpenLocalServer-control-{user}-{}", &hash[..12])
@@ -73,7 +79,11 @@ fn new_token() -> String {
 
 /// Constant-time comparison, so the token can't be guessed byte by byte from timings.
 fn same(a: &str, b: &str) -> bool {
-    a.len() == b.len() && a.bytes().zip(b.bytes()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+    a.len() == b.len()
+        && a.bytes()
+            .zip(b.bytes())
+            .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+            == 0
 }
 
 // ------------------------------------------------------------------------ client
@@ -99,19 +109,26 @@ fn exchange(info: &ControlInfo, request: &Request) -> Result<Vec<u8>, ClientErro
     let mut pipe = None;
     // The server may be between connections for a moment (ERROR_PIPE_BUSY).
     for _ in 0..50 {
-        match std::fs::OpenOptions::new().read(true).write(true).open(&info.pipe) {
+        match std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&info.pipe)
+        {
             Ok(p) => {
                 pipe = Some(p);
                 break;
             }
-            Err(e) if e.raw_os_error() == Some(231) => std::thread::sleep(std::time::Duration::from_millis(100)),
+            Err(e) if e.raw_os_error() == Some(231) => {
+                std::thread::sleep(std::time::Duration::from_millis(100))
+            }
             Err(_) => return Err(ClientError::NotRunning),
         }
     }
     let mut pipe = pipe.ok_or(ClientError::NotRunning)?;
     let mut line = serde_json::to_vec(request).map_err(|e| ClientError::Io(e.to_string()))?;
     line.push(b'\n');
-    pipe.write_all(&line).map_err(|e| ClientError::Io(e.to_string()))?;
+    pipe.write_all(&line)
+        .map_err(|e| ClientError::Io(e.to_string()))?;
     let mut reply = Vec::new();
     let mut buf = [0u8; 64 * 1024];
     while !reply.contains(&b'\n') {
@@ -124,9 +141,19 @@ fn exchange(info: &ControlInfo, request: &Request) -> Result<Vec<u8>, ClientErro
 }
 
 /// Sends one command to whoever owns the core.
-pub fn send(paths: &AppPaths, command: CoreCommand) -> Result<Result<CoreResponse, Diagnostic>, ClientError> {
+pub fn send(
+    paths: &AppPaths,
+    command: CoreCommand,
+) -> Result<Result<CoreResponse, Diagnostic>, ClientError> {
     let info = read_info(paths).ok_or(ClientError::NotRunning)?;
-    let reply = exchange(&info, &Request { token: info.token.clone(), command: Some(command), op: None })?;
+    let reply = exchange(
+        &info,
+        &Request {
+            token: info.token.clone(),
+            command: Some(command),
+            op: None,
+        },
+    )?;
     let line = reply.split(|b| *b == b'\n').next().unwrap_or_default();
     match serde_json::from_slice::<Reply>(line) {
         Ok(Reply::Ok(r)) => Ok(Ok(*r)),
@@ -145,12 +172,21 @@ pub fn is_running(paths: &AppPaths) -> Option<ControlInfo> {
 /// Asks a running daemon to stop and hand over; waits until it has. Does nothing to a
 /// running app (only daemons hand over).
 pub fn take_over_from_daemon(paths: &AppPaths) {
-    let Some(info) = is_running(paths) else { return };
+    let Some(info) = is_running(paths) else {
+        return;
+    };
     if info.kind != "daemon" {
         return;
     }
     tracing::info!(pid = info.pid, "asking the ols daemon to hand over");
-    let _ = exchange(&info, &Request { token: info.token.clone(), command: None, op: Some("shutdown".into()) });
+    let _ = exchange(
+        &info,
+        &Request {
+            token: info.token.clone(),
+            command: None,
+            op: Some("shutdown".into()),
+        },
+    );
     for _ in 0..100 {
         if is_running(paths).is_none() {
             return;
@@ -170,7 +206,10 @@ pub struct ControlServer {
 impl ControlServer {
     /// Blocks until a client asks this process to shut down (daemons only).
     pub fn wait_for_shutdown(&mut self) {
-        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("runtime");
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
         rt.block_on(async {
             while !*self.shutdown.borrow() {
                 if self.shutdown.changed().await.is_err() {
@@ -188,7 +227,12 @@ pub fn serve(core: Core, paths: &AppPaths, kind: &str) -> Result<ControlServer, 
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     use tokio::net::windows::named_pipe::ServerOptions;
 
-    let info = ControlInfo { pipe: pipe_name(paths), token: new_token(), pid: std::process::id(), kind: kind.into() };
+    let info = ControlInfo {
+        pipe: pipe_name(paths),
+        token: new_token(),
+        pid: std::process::id(),
+        kind: kind.into(),
+    };
     let (tx, rx) = tokio::sync::watch::channel(false);
     let (ready_tx, ready_rx) = std::sync::mpsc::channel::<Result<(), String>>();
     let server_info = info.clone();
@@ -258,7 +302,11 @@ pub fn serve(core: Core, paths: &AppPaths, kind: &str) -> Result<ControlServer, 
         .map_err(|e| e.to_string())?;
     ready_rx.recv().map_err(|e| e.to_string())??;
     let file = info_file(paths);
-    std::fs::write(&file, serde_json::to_string_pretty(&info).map_err(|e| e.to_string())?).map_err(|e| format!("{}: {e}", file.display()))?;
+    std::fs::write(
+        &file,
+        serde_json::to_string_pretty(&info).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| format!("{}: {e}", file.display()))?;
     tracing::info!(pipe = %info.pipe, kind, "control channel open");
     Ok(ControlServer { info, shutdown: rx })
 }
@@ -287,14 +335,28 @@ mod tests {
         // The pipe name follows the (temporary) data folder, so a running app isn't disturbed.
         let server = serve(core, &home.paths, "daemon").unwrap();
         let info = server.info.clone();
-        assert_ne!(info.pipe, pipe_name(&AppPaths::resolve_at(std::path::Path::new("C:/elsewhere"))));
+        assert_ne!(
+            info.pipe,
+            pipe_name(&AppPaths::resolve_at(std::path::Path::new("C:/elsewhere")))
+        );
 
         match send(&home.paths, CoreCommand::Ping).unwrap() {
             Ok(CoreResponse::Pong { .. }) => {}
             other => panic!("{other:?}"),
         }
-        let bad = ControlInfo { token: "wrong".into(), ..info.clone() };
-        let reply = exchange(&bad, &Request { token: bad.token.clone(), command: Some(CoreCommand::Ping), op: None }).unwrap();
+        let bad = ControlInfo {
+            token: "wrong".into(),
+            ..info.clone()
+        };
+        let reply = exchange(
+            &bad,
+            &Request {
+                token: bad.token.clone(),
+                command: Some(CoreCommand::Ping),
+                op: None,
+            },
+        )
+        .unwrap();
         assert!(String::from_utf8_lossy(&reply).contains("Not allowed"));
         assert!(same("abc", "abc") && !same("abc", "abd") && !same("abc", "ab"));
     }

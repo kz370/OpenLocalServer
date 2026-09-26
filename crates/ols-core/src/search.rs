@@ -30,7 +30,10 @@ fn score(query: &str, text: &str) -> Option<u32> {
         Some(100)
     } else if t.starts_with(query) {
         Some(80)
-    } else if t.split(|c: char| !c.is_alphanumeric()).any(|w| w.starts_with(query)) {
+    } else if t
+        .split(|c: char| !c.is_alphanumeric())
+        .any(|w| w.starts_with(query))
+    {
         Some(60)
     } else if t.contains(query) {
         Some(40)
@@ -40,15 +43,27 @@ fn score(query: &str, text: &str) -> Option<u32> {
 }
 
 fn best(query: &str, fields: &[&str]) -> Option<u32> {
-    fields.iter().enumerate().filter_map(|(i, f)| score(query, f).map(|s| s.saturating_sub(i as u32 * 5))).max()
+    fields
+        .iter()
+        .enumerate()
+        .filter_map(|(i, f)| score(query, f).map(|s| s.saturating_sub(i as u32 * 5)))
+        .max()
 }
 
 fn excerpt(line: &str, query: &str) -> String {
     let lower = line.to_lowercase();
     let at = lower.find(query).unwrap_or(0);
-    let start = line.char_indices().map(|(i, _)| i).rfind(|i| *i + 60 <= at).unwrap_or(0);
+    let start = line
+        .char_indices()
+        .map(|(i, _)| i)
+        .rfind(|i| *i + 60 <= at)
+        .unwrap_or(0);
     let s: String = line[start..].chars().take(160).collect();
-    if start > 0 { format!("…{}", s.trim()) } else { s.trim().to_string() }
+    if start > 0 {
+        format!("…{}", s.trim())
+    } else {
+        s.trim().to_string()
+    }
 }
 
 impl Inner {
@@ -58,59 +73,151 @@ impl Inner {
             return Vec::new();
         }
         let mut hits: Vec<SearchHit> = Vec::new();
-        let mut push = |kind: &str, target: String, title: String, subtitle: String, s: u32, excerpt: Option<String>| {
-            hits.push(SearchHit { kind: kind.into(), target, title, subtitle, excerpt, score: s });
+        let mut push = |kind: &str,
+                        target: String,
+                        title: String,
+                        subtitle: String,
+                        s: u32,
+                        excerpt: Option<String>| {
+            hits.push(SearchHit {
+                kind: kind.into(),
+                target,
+                title,
+                subtitle,
+                excerpt,
+                score: s,
+            });
         };
 
         for p in self.projects.lock().unwrap().list() {
             if let Some(s) = best(&q, &[&p.name, &p.path]) {
-                push("project", p.id.clone(), p.name.clone(), p.path.clone(), s + 10, None);
+                push(
+                    "project",
+                    p.id.clone(),
+                    p.name.clone(),
+                    p.path.clone(),
+                    s + 10,
+                    None,
+                );
             }
         }
         for s in self.services.list() {
             if let Some(sc) = best(&q, &[&s.name, &s.id]) {
-                let state = if s.running { "running" } else if s.installed { "stopped" } else { "not installed" };
-                push("service", s.id.clone(), s.name.clone(), state.to_string(), sc, None);
+                let state = if s.running {
+                    "running"
+                } else if s.installed {
+                    "stopped"
+                } else {
+                    "not installed"
+                };
+                push(
+                    "service",
+                    s.id.clone(),
+                    s.name.clone(),
+                    state.to_string(),
+                    sc,
+                    None,
+                );
             }
         }
         for d in self.domains.lock().unwrap().list() {
             if let Some(s) = best(&q, &[&d.hostname, &d.root]) {
-                push("site", d.hostname.clone(), d.hostname.clone(), d.root.clone(), s + 5, None);
+                push(
+                    "site",
+                    d.hostname.clone(),
+                    d.hostname.clone(),
+                    d.root.clone(),
+                    s + 5,
+                    None,
+                );
             }
         }
         for a in self.catalog.lock().unwrap().list() {
             if let Some(s) = best(&q, &[&a.name, &a.id, &a.description]) {
-                push("quick_app", a.id.clone(), a.name.clone(), a.description.clone(), s, None);
+                push(
+                    "quick_app",
+                    a.id.clone(),
+                    a.name.clone(),
+                    a.description.clone(),
+                    s,
+                    None,
+                );
             }
         }
         for c in self.quick_commands.list() {
             if let Some(s) = best(&q, &[&c.name, &c.id, &c.description]) {
-                push("quick_command", c.id.clone(), c.name.clone(), c.description.clone(), s, None);
+                push(
+                    "quick_command",
+                    c.id.clone(),
+                    c.name.clone(),
+                    c.description.clone(),
+                    s,
+                    None,
+                );
             }
         }
         for r in self.runtimes.catalog() {
             if let Some(s) = best(&q, &[&r.name, &r.id]) {
-                let state = if r.installed { "installed" } else { "available" };
-                push("runtime", r.id.clone(), format!("{} {}", r.name, r.version), state.to_string(), s, None);
+                let state = if r.installed {
+                    "installed"
+                } else {
+                    "available"
+                };
+                push(
+                    "runtime",
+                    r.id.clone(),
+                    format!("{} {}", r.name, r.version),
+                    state.to_string(),
+                    s,
+                    None,
+                );
             }
         }
         for t in self.list_tunnels() {
             if let Some(s) = best(&q, &[&t.config.name, &t.config.target]) {
-                push("tunnel", t.config.id.clone(), t.config.name.clone(), t.config.target.clone(), s, None);
+                push(
+                    "tunnel",
+                    t.config.id.clone(),
+                    t.config.name.clone(),
+                    t.config.target.clone(),
+                    s,
+                    None,
+                );
             }
         }
 
         // Web configs: the text of every site's file.
         let cfg = self.web_config();
-        let hosts: Vec<String> = self.domains.lock().unwrap().list().into_iter().map(|d| d.hostname).collect();
+        let hosts: Vec<String> = self
+            .domains
+            .lock()
+            .unwrap()
+            .list()
+            .into_iter()
+            .map(|d| d.hostname)
+            .collect();
         let mut found = 0;
         for h in hosts {
             if found >= PER_KIND {
                 break;
             }
-            if let Ok(text) = self.web.read_config(&cfg, Some(&h), crate::web::manager::ConfigPart::Site) {
-                if let Some((n, line)) = text.lines().enumerate().find(|(_, l)| l.to_lowercase().contains(&q)) {
-                    push("config", h.clone(), format!("{h} web config"), format!("line {}", n + 1), 30, Some(excerpt(line, &q)));
+            if let Ok(text) =
+                self.web
+                    .read_config(&cfg, Some(&h), crate::web::manager::ConfigPart::Site)
+            {
+                if let Some((n, line)) = text
+                    .lines()
+                    .enumerate()
+                    .find(|(_, l)| l.to_lowercase().contains(&q))
+                {
+                    push(
+                        "config",
+                        h.clone(),
+                        format!("{h} web config"),
+                        format!("line {}", n + 1),
+                        30,
+                        Some(excerpt(line, &q)),
+                    );
                     found += 1;
                 }
             }
@@ -118,10 +225,19 @@ impl Inner {
 
         // Logs: the latest lines of each source, newest match first.
         for src in self.log_sources() {
-            let Ok(lines) = self.read_log(&src.id, 2000) else { continue };
+            let Ok(lines) = self.read_log(&src.id, 2000) else {
+                continue;
+            };
             let mut n = 0;
             for line in lines.iter().rev().filter(|l| l.to_lowercase().contains(&q)) {
-                push("log", src.id.clone(), src.name.clone(), String::new(), 20, Some(excerpt(line, &q)));
+                push(
+                    "log",
+                    src.id.clone(),
+                    src.name.clone(),
+                    String::new(),
+                    20,
+                    Some(excerpt(line, &q)),
+                );
                 n += 1;
                 if n >= 3 {
                     break;
@@ -161,11 +277,23 @@ mod tests {
         let dir = home.paths.root().join("www").join("webshop");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("index.html"), "x").unwrap();
-        core.dispatch(CoreCommand::RegisterProject { path: dir.display().to_string() }).unwrap();
+        core.dispatch(CoreCommand::RegisterProject {
+            path: dir.display().to_string(),
+        })
+        .unwrap();
         let hits = core.inner().global_search("webshop");
         assert!(hits.iter().any(|h| h.kind == "project"), "{hits:?}");
-        assert!(hits.iter().any(|h| h.kind == "site" && h.target == "webshop.test"));
-        assert!(core.inner().global_search("x").is_empty(), "one letter is too short to search");
-        assert!(core.inner().global_search("migrat").iter().any(|h| h.kind == "quick_command"));
+        assert!(hits
+            .iter()
+            .any(|h| h.kind == "site" && h.target == "webshop.test"));
+        assert!(
+            core.inner().global_search("x").is_empty(),
+            "one letter is too short to search"
+        );
+        assert!(core
+            .inner()
+            .global_search("migrat")
+            .iter()
+            .any(|h| h.kind == "quick_command"));
     }
 }

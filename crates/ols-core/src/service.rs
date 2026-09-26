@@ -88,7 +88,9 @@ pub struct ServiceManager {
 /// Names that go into SQL as identifiers can't be bound as parameters, so only plain
 /// names are accepted at all.
 pub fn is_safe_identifier(name: &str) -> bool {
-    !name.is_empty() && name.len() <= 64 && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+    !name.is_empty()
+        && name.len() <= 64
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 /// Single-quoted literal for PostgreSQL, where backslashes are ordinary characters.
@@ -102,9 +104,20 @@ fn sql_string(value: &str) -> String {
 }
 
 impl ServiceManager {
-    pub fn new(paths: AppPaths, runtimes: Arc<RuntimeManager>, supervisor: Arc<ProcessSupervisor>) -> Self {
+    pub fn new(
+        paths: AppPaths,
+        runtimes: Arc<RuntimeManager>,
+        supervisor: Arc<ProcessSupervisor>,
+    ) -> Self {
         let custom = Mutex::new(CustomServiceStore::load(&paths));
-        Self { paths, runtimes, supervisor, running: Mutex::new(HashMap::new()), custom, limits: Mutex::new(Default::default()) }
+        Self {
+            paths,
+            runtimes,
+            supervisor,
+            running: Mutex::new(HashMap::new()),
+            custom,
+            limits: Mutex::new(Default::default()),
+        }
     }
 
     pub fn set_limits(&self, limits: crate::resources::ResourceLimits) {
@@ -117,8 +130,20 @@ impl ServiceManager {
 
     /// The built-in services, then the user's own (§67).
     pub fn list(&self) -> Vec<ServiceStatus> {
-        let custom: Vec<String> = self.custom.lock().unwrap().list().into_iter().map(|s| s.id).collect();
-        KNOWN_SERVICES.iter().map(|s| s.to_string()).chain(custom).map(|id| self.status(&id)).collect()
+        let custom: Vec<String> = self
+            .custom
+            .lock()
+            .unwrap()
+            .list()
+            .into_iter()
+            .map(|s| s.id)
+            .collect();
+        KNOWN_SERVICES
+            .iter()
+            .map(|s| s.to_string())
+            .chain(custom)
+            .map(|id| self.status(&id))
+            .collect()
     }
 
     // ------------------------------------------------------------ custom services (§67)
@@ -143,10 +168,20 @@ impl ServiceManager {
             installed: std::path::Path::new(&def.executable).is_file(),
             running,
             port: def.port,
-            port_status: def.port.map(|p| if port_is_free(p) { PortStatusLite::Free } else { PortStatusLite::InUse }),
+            port_status: def.port.map(|p| {
+                if port_is_free(p) {
+                    PortStatusLite::Free
+                } else {
+                    PortStatusLite::InUse
+                }
+            }),
             kind: "custom".into(),
             connection: def.port.map(|p| format!("127.0.0.1:{p}")),
-            healthy: if running { def.port.and_then(|p| custom_service::probe(p, &def.health)) } else { None },
+            healthy: if running {
+                def.port.and_then(|p| custom_service::probe(p, &def.health))
+            } else {
+                None
+            },
             version: None,
             id: def.id,
             name: def.name,
@@ -158,7 +193,10 @@ impl ServiceManager {
             return Err(format!("{} no longer exists", def.executable));
         }
         if let Some(port) = def.port.filter(|p| !port_is_free(*p)) {
-            return Err(format!("port {port} is already in use, so {} can't start", def.name));
+            return Err(format!(
+                "port {port} is already in use, so {} can't start",
+                def.name
+            ));
         }
         Ok(self.supervisor.start(ProcessSpec {
             name: def.name.clone(),
@@ -166,7 +204,12 @@ impl ServiceManager {
             args: def.args.clone(),
             cwd: def.cwd.clone().filter(|c| !c.is_empty()),
             env: def.env.clone(),
-            restart: def.restart_on_crash.then_some(crate::process::RestartPolicy { max_retries: 3, delay_ms: 2000 }),
+            restart: def
+                .restart_on_crash
+                .then_some(crate::process::RestartPolicy {
+                    max_retries: 3,
+                    delay_ms: 2000,
+                }),
         }))
     }
 
@@ -200,16 +243,31 @@ impl ServiceManager {
         let port = primary_port(id);
         ServiceStatus {
             id: id.to_string(),
-            name: self.runtimes.display_name(id).unwrap_or_else(|| id.to_string()),
+            name: self
+                .runtimes
+                .display_name(id)
+                .unwrap_or_else(|| id.to_string()),
             installed,
             running,
             port,
             // Only free/in-use matters here, so skip the netstat/tasklist owner lookup.
-            port_status: port.map(|p| if port_is_free(p) { PortStatusLite::Free } else { PortStatusLite::InUse }),
+            port_status: port.map(|p| {
+                if port_is_free(p) {
+                    PortStatusLite::Free
+                } else {
+                    PortStatusLite::InUse
+                }
+            }),
             kind: kind_of(id).to_string(),
             connection: installed.then(|| connection_string(id)).flatten(),
             healthy: running.then(|| {
-                port.is_some_and(|p| TcpStream::connect_timeout(&([127, 0, 0, 1], p).into(), Duration::from_millis(300)).is_ok())
+                port.is_some_and(|p| {
+                    TcpStream::connect_timeout(
+                        &([127, 0, 0, 1], p).into(),
+                        Duration::from_millis(300),
+                    )
+                    .is_ok()
+                })
             }),
             version: versions.into_iter().next(),
         }
@@ -223,9 +281,17 @@ impl ServiceManager {
             return Err(format!("{id} is already running"));
         }
         if custom_service::is_custom_id(id) {
-            let def = self.custom.lock().unwrap().get(id).ok_or_else(|| format!("unknown service: {id}"))?;
+            let def = self
+                .custom
+                .lock()
+                .unwrap()
+                .get(id)
+                .ok_or_else(|| format!("unknown service: {id}"))?;
             let process_id = self.start_custom(&def)?;
-            self.running.lock().unwrap().insert(id.to_string(), process_id);
+            self.running
+                .lock()
+                .unwrap()
+                .insert(id.to_string(), process_id);
             return Ok(process_id);
         }
         let version = self
@@ -233,7 +299,9 @@ impl ServiceManager {
             .installed_versions(id)
             .into_iter()
             .next()
-            .ok_or_else(|| format!("{id} is not installed — install it from the Runtimes page first"))?;
+            .ok_or_else(|| {
+                format!("{id} is not installed — install it from the Runtimes page first")
+            })?;
 
         let process_id = match id {
             "mailpit" => self.start_mailpit(&version)?,
@@ -243,7 +311,10 @@ impl ServiceManager {
             "redis" => self.start_redis(&version)?,
             other => return Err(format!("unknown service: {other}")),
         };
-        self.running.lock().unwrap().insert(id.to_string(), process_id);
+        self.running
+            .lock()
+            .unwrap()
+            .insert(id.to_string(), process_id);
         Ok(process_id)
     }
 
@@ -261,7 +332,10 @@ impl ServiceManager {
     }
 
     fn start_mailpit(&self, version: &str) -> Result<ProcessId, String> {
-        let binary = self.runtimes.binary_path("mailpit", version).ok_or("mailpit.exe missing on disk")?;
+        let binary = self
+            .runtimes
+            .binary_path("mailpit", version)
+            .ok_or("mailpit.exe missing on disk")?;
         let db_file = self.paths.services_dir().join("mailpit").join("mailpit.db");
         std::fs::create_dir_all(db_file.parent().unwrap()).map_err(|e| e.to_string())?;
 
@@ -332,7 +406,10 @@ impl ServiceManager {
 
     /// MongoDB (§31, Stage 10): connection info, logs (process output), health (port probe).
     fn start_mongodb(&self, version: &str) -> Result<ProcessId, String> {
-        let mongod = self.runtimes.binary_path("mongodb", version).ok_or("mongod.exe missing on disk")?;
+        let mongod = self
+            .runtimes
+            .binary_path("mongodb", version)
+            .ok_or("mongod.exe missing on disk")?;
         let data_dir = self.paths.services_dir().join("mongodb").join("data");
         std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
 
@@ -415,7 +492,10 @@ impl ServiceManager {
     /// Redis (§31, Stage 5), from the community Windows build. Loopback only, snapshots go to
     /// the service's own data directory (the process's working directory).
     fn start_redis(&self, version: &str) -> Result<ProcessId, String> {
-        let server = self.runtimes.binary_path("redis", version).ok_or("redis-server.exe missing on disk")?;
+        let server = self
+            .runtimes
+            .binary_path("redis", version)
+            .ok_or("redis-server.exe missing on disk")?;
         let data_dir = self.paths.services_dir().join("redis").join("data");
         std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
 
@@ -445,7 +525,11 @@ impl ServiceManager {
         let (exe, port) = match engine {
             "mariadb" => ("mariadb.exe", primary_port("mariadb")),
             "postgres" => ("psql.exe", primary_port("postgres")),
-            other => return Err(format!("{other} is not a SQL engine OpenLocalServer manages")),
+            other => {
+                return Err(format!(
+                    "{other} is not a SQL engine OpenLocalServer manages"
+                ))
+            }
         };
         let version = self
             .runtimes
@@ -453,7 +537,11 @@ impl ServiceManager {
             .into_iter()
             .next()
             .ok_or_else(|| format!("{engine} is not installed"))?;
-        let client = self.runtimes.install_dir(engine, &version).join("bin").join(exe);
+        let client = self
+            .runtimes
+            .install_dir(engine, &version)
+            .join("bin")
+            .join(exe);
         if !client.is_file() {
             return Err(format!("{exe} missing on disk"));
         }
@@ -466,15 +554,42 @@ impl ServiceManager {
         let port_s = port.to_string();
         let args: Vec<String> = if engine == "postgres" {
             // Unaligned, tuples-only, tab-separated: the same shape the MySQL client gives.
-            ["-U", "postgres", "-h", "127.0.0.1", "-p", port_s.as_str(), "-X", "-A", "-t", "-F", "\t", "-v", "ON_ERROR_STOP=1", "-c", sql]
-                .iter()
-                .map(|a| a.to_string())
-                .collect()
+            [
+                "-U",
+                "postgres",
+                "-h",
+                "127.0.0.1",
+                "-p",
+                port_s.as_str(),
+                "-X",
+                "-A",
+                "-t",
+                "-F",
+                "\t",
+                "-v",
+                "ON_ERROR_STOP=1",
+                "-c",
+                sql,
+            ]
+            .iter()
+            .map(|a| a.to_string())
+            .collect()
         } else {
-            ["-u", "root", "-h", "127.0.0.1", "-P", port_s.as_str(), "--batch", "--skip-column-names", "-e", sql]
-                .iter()
-                .map(|a| a.to_string())
-                .collect()
+            [
+                "-u",
+                "root",
+                "-h",
+                "127.0.0.1",
+                "-P",
+                port_s.as_str(),
+                "--batch",
+                "--skip-column-names",
+                "-e",
+                sql,
+            ]
+            .iter()
+            .map(|a| a.to_string())
+            .collect()
         };
         let out: Captured = run_capture(&client, &args, None, &[], Duration::from_secs(20));
         if out.success() {
@@ -495,24 +610,47 @@ impl ServiceManager {
             if self.list_databases(engine)?.iter().any(|d| d == name) {
                 return Ok(());
             }
-            return self.run_sql(engine, &format!("CREATE DATABASE \"{name}\"")).map(|_| ());
+            return self
+                .run_sql(engine, &format!("CREATE DATABASE \"{name}\""))
+                .map(|_| ());
         }
-        self.run_sql(engine, &format!("CREATE DATABASE IF NOT EXISTS `{name}`")).map(|_| ())
+        self.run_sql(engine, &format!("CREATE DATABASE IF NOT EXISTS `{name}`"))
+            .map(|_| ())
     }
 
     pub fn list_databases(&self, engine: &str) -> Result<Vec<String>, String> {
         let text = if engine == "postgres" {
-            self.run_sql(engine, "SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY datname")?
+            self.run_sql(
+                engine,
+                "SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY datname",
+            )?
         } else {
             self.run_sql(engine, "SHOW DATABASES")?
         };
-        const SYSTEM: &[&str] = &["information_schema", "mysql", "performance_schema", "sys", "postgres"];
-        Ok(text.lines().map(str::trim).filter(|l| !l.is_empty() && !SYSTEM.contains(l)).map(str::to_string).collect())
+        const SYSTEM: &[&str] = &[
+            "information_schema",
+            "mysql",
+            "performance_schema",
+            "sys",
+            "postgres",
+        ];
+        Ok(text
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty() && !SYSTEM.contains(l))
+            .map(str::to_string)
+            .collect())
     }
 
     /// §31 "MariaDB (users)": creates `user@localhost` with a password and full rights on
     /// one database. The password is kept in the OS credential store, never on disk (§141).
-    pub fn create_user(&self, engine: &str, user: &str, password: &str, database: &str) -> Result<(), String> {
+    pub fn create_user(
+        &self,
+        engine: &str,
+        user: &str,
+        password: &str,
+        database: &str,
+    ) -> Result<(), String> {
         if !is_safe_identifier(user) {
             return Err("user name must be alphanumeric/underscore only".into());
         }
@@ -524,14 +662,32 @@ impl ServiceManager {
         }
         let u = sql_string(user);
         if engine == "postgres" {
-            let exists = !self.run_sql(engine, &format!("SELECT 1 FROM pg_roles WHERE rolname = {}", pg_string(user)))?.trim().is_empty();
+            let exists = !self
+                .run_sql(
+                    engine,
+                    &format!("SELECT 1 FROM pg_roles WHERE rolname = {}", pg_string(user)),
+                )?
+                .trim()
+                .is_empty();
             let verb = if exists { "ALTER" } else { "CREATE" };
-            self.run_sql(engine, &format!("{verb} ROLE \"{user}\" LOGIN PASSWORD {}", pg_string(password)))?;
+            self.run_sql(
+                engine,
+                &format!(
+                    "{verb} ROLE \"{user}\" LOGIN PASSWORD {}",
+                    pg_string(password)
+                ),
+            )?;
             self.create_database(engine, database)?;
-            self.run_sql(engine, &format!("GRANT ALL PRIVILEGES ON DATABASE \"{database}\" TO \"{user}\""))?;
+            self.run_sql(
+                engine,
+                &format!("GRANT ALL PRIVILEGES ON DATABASE \"{database}\" TO \"{user}\""),
+            )?;
             // PostgreSQL 15+ no longer lets ordinary users create tables in `public`; owning the
             // database fixes that.
-            self.run_sql(engine, &format!("ALTER DATABASE \"{database}\" OWNER TO \"{user}\""))?;
+            self.run_sql(
+                engine,
+                &format!("ALTER DATABASE \"{database}\" OWNER TO \"{user}\""),
+            )?;
             let _ = crate::secrets::set_secret(&format!("db.{engine}.{user}"), password);
             return Ok(());
         }
@@ -559,13 +715,21 @@ impl ServiceManager {
             .lines()
             .filter_map(|l| {
                 let (user, host) = l.split_once('\t')?;
-                Some(DbUser { user: user.trim().to_string(), host: host.trim().to_string() })
+                Some(DbUser {
+                    user: user.trim().to_string(),
+                    host: host.trim().to_string(),
+                })
             })
             .collect())
     }
 
     /// What an external tool needs to connect to `engine` (§102). `database` is optional.
-    pub fn connection_info(&self, engine: &str, database: Option<&str>, sqlite_path: Option<&str>) -> Result<ConnectionInfo, String> {
+    pub fn connection_info(
+        &self,
+        engine: &str,
+        database: Option<&str>,
+        sqlite_path: Option<&str>,
+    ) -> Result<ConnectionInfo, String> {
         match engine {
             "mariadb" => {
                 let port = primary_port(engine).unwrap();
@@ -588,7 +752,10 @@ impl ServiceManager {
                     user: Some("postgres".into()),
                     database: database.map(str::to_string),
                     path: None,
-                    uri: format!("postgresql://postgres@127.0.0.1:{port}/{}", database.unwrap_or("postgres")),
+                    uri: format!(
+                        "postgresql://postgres@127.0.0.1:{port}/{}",
+                        database.unwrap_or("postgres")
+                    ),
                 })
             }
             "redis" => Ok(ConnectionInfo {
@@ -648,7 +815,10 @@ fn primary_port(id: &str) -> Option<u16> {
 
 fn connection_string(id: &str) -> Option<String> {
     match id {
-        "mailpit" => Some(format!("SMTP 127.0.0.1:{} · UI http://127.0.0.1:8025", mailpit_smtp_port())),
+        "mailpit" => Some(format!(
+            "SMTP 127.0.0.1:{} · UI http://127.0.0.1:8025",
+            mailpit_smtp_port()
+        )),
         "mariadb" => Some("mysql://root@127.0.0.1:3306".into()),
         "mongodb" => Some("mongodb://127.0.0.1:27017".into()),
         "postgres" => Some("postgresql://postgres@127.0.0.1:5432".into()),
@@ -694,12 +864,31 @@ mod tests {
         let m = mgr.connection_info("mariadb", Some("shop"), None).unwrap();
         assert_eq!(m.port, Some(3306));
         assert_eq!(m.uri, "mysql://root@127.0.0.1:3306/shop");
-        assert!(mgr.connection_info("mysql", None, None).is_err(), "MySQL is not offered");
-        assert_eq!(mgr.connection_info("mongodb", None, None).unwrap().uri, "mongodb://127.0.0.1:27017");
+        assert!(
+            mgr.connection_info("mysql", None, None).is_err(),
+            "MySQL is not offered"
+        );
+        assert_eq!(
+            mgr.connection_info("mongodb", None, None).unwrap().uri,
+            "mongodb://127.0.0.1:27017"
+        );
         assert!(mgr.connection_info("sqlite", None, None).is_err());
-        assert_eq!(mgr.connection_info("sqlite", None, Some("C:\\db\\a.sqlite")).unwrap().uri, "sqlite:///C:/db/a.sqlite");
-        assert_eq!(mgr.connection_info("postgres", Some("shop"), None).unwrap().uri, "postgresql://postgres@127.0.0.1:5432/shop");
-        assert_eq!(mgr.connection_info("redis", None, None).unwrap().uri, "redis://127.0.0.1:6379");
+        assert_eq!(
+            mgr.connection_info("sqlite", None, Some("C:\\db\\a.sqlite"))
+                .unwrap()
+                .uri,
+            "sqlite:///C:/db/a.sqlite"
+        );
+        assert_eq!(
+            mgr.connection_info("postgres", Some("shop"), None)
+                .unwrap()
+                .uri,
+            "postgresql://postgres@127.0.0.1:5432/shop"
+        );
+        assert_eq!(
+            mgr.connection_info("redis", None, None).unwrap().uri,
+            "redis://127.0.0.1:6379"
+        );
         assert!(mgr.connection_info("oracle", None, None).is_err());
     }
 }

@@ -73,14 +73,35 @@ pub fn is_destructive(cmd: &CoreCommand) -> bool {
     match cmd {
         CoreCommand::CreateVenv { recreate, .. } => *recreate,
         CoreCommand::ApplyWeb { overwrite } => !overwrite.is_empty(),
-        CoreCommand::RestoreDatabase { .. } | CoreCommand::RemoveDomain { .. } | CoreCommand::RestoreSnapshot { .. } | CoreCommand::RevokeCertificate { .. } => true,
+        CoreCommand::RestoreDatabase { .. }
+        | CoreCommand::RemoveDomain { .. }
+        | CoreCommand::RestoreSnapshot { .. }
+        | CoreCommand::RevokeCertificate { .. } => true,
         _ => false,
     }
 }
 
-fn finding(id: String, severity: Severity, problem: String, cause: &str, fix: &str, fix_command: Option<CoreCommand>, details: Vec<String>) -> Finding {
+fn finding(
+    id: String,
+    severity: Severity,
+    problem: String,
+    cause: &str,
+    fix: &str,
+    fix_command: Option<CoreCommand>,
+    details: Vec<String>,
+) -> Finding {
     let auto_fixable = fix_command.as_ref().is_some_and(|cmd| !is_destructive(cmd));
-    Finding { id, severity, problem, cause: cause.into(), fix: fix.into(), fix_command, auto_fixable, details, ignored: false }
+    Finding {
+        id,
+        severity,
+        problem,
+        cause: cause.into(),
+        fix: fix.into(),
+        fix_command,
+        auto_fixable,
+        details,
+        ignored: false,
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -102,15 +123,26 @@ fn env_value(project: &Path, file: &str, key: &str) -> Option<String> {
 impl Inner {
     /// §112 for one project: runtimes, .env, APP_KEY, dependencies, its services and site.
     pub fn diagnose_project(&self, project_id: &str) -> Result<Vec<Finding>, CoreError> {
-        let detail = self.project_detail(project_id).ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
+        let detail = self
+            .project_detail(project_id)
+            .ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
         let root = Path::new(&detail.project.path);
         let name = detail.project.name.clone();
         let mut out = Vec::new();
 
         for r in &detail.resolved {
             if let (Some(wanted), None) = (&r.requested_version, &r.installed_version) {
-                let available = crate::catalog::builtin_catalog().into_iter().filter(|m| m.id == r.id).map(|m| m.version.to_string()).collect::<Vec<_>>();
-                let fix = crate::php::pick_version(&available, Some(wanted)).map(|version| CoreCommand::InstallRuntime { id: r.id.clone(), version });
+                let available = crate::catalog::builtin_catalog()
+                    .into_iter()
+                    .filter(|m| m.id == r.id)
+                    .map(|m| m.version.to_string())
+                    .collect::<Vec<_>>();
+                let fix = crate::php::pick_version(&available, Some(wanted)).map(|version| {
+                    CoreCommand::InstallRuntime {
+                        id: r.id.clone(),
+                        version,
+                    }
+                });
                 out.push(finding(
                     format!("project_runtime_missing:{}:{}", project_id, r.id),
                     Severity::Error,
@@ -135,7 +167,10 @@ impl Inner {
                 vec![],
             ));
         }
-        if detail.detection.framework == crate::detection::Framework::Laravel && root.join(".env").is_file() && env_value(root, ".env", "APP_KEY").is_none_or(|k| k.is_empty()) {
+        if detail.detection.framework == crate::detection::Framework::Laravel
+            && root.join(".env").is_file()
+            && env_value(root, ".env", "APP_KEY").is_none_or(|k| k.is_empty())
+        {
             out.push(finding(
                 format!("app_key_missing:{project_id}"),
                 Severity::Error,
@@ -147,7 +182,9 @@ impl Inner {
             ));
         }
         if root.join("package.json").is_file() && !root.join("node_modules").is_dir() {
-            let pm = crate::nodepm::info(root, None).detected.unwrap_or_else(|| "npm".into());
+            let pm = crate::nodepm::info(root, None)
+                .detected
+                .unwrap_or_else(|| "npm".into());
             out.push(finding(
                 format!("node_modules_missing:{project_id}"),
                 Severity::Info,
@@ -159,7 +196,8 @@ impl Inner {
             ));
         }
         let composer = crate::composer::read(root);
-        if composer.has_composer_json && !composer.vendor_installed && !composer.packages.is_empty() {
+        if composer.has_composer_json && !composer.vendor_installed && !composer.packages.is_empty()
+        {
             out.push(finding(
                 format!("composer_not_installed:{project_id}"),
                 Severity::Error,
@@ -172,7 +210,10 @@ impl Inner {
         }
 
         // What its manifest (or .env) says it needs running.
-        let m = crate::manifest::read_manifest(root).ok().flatten().unwrap_or_else(|| self.derive_manifest(project_id).unwrap_or_default());
+        let m = crate::manifest::read_manifest(root)
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| self.derive_manifest(project_id).unwrap_or_default());
         let mut services = m.enabled_services();
         if let Some(db) = &m.database {
             if let Some(s) = match db.engine.as_str() {
@@ -189,10 +230,32 @@ impl Inner {
         for s in services {
             let st = self.services.status(&s);
             if !st.installed {
-                let version = crate::catalog::builtin_catalog().into_iter().find(|x| x.id == s).map(|x| x.version.to_string());
-                out.push(finding(format!("project_service_missing:{project_id}:{s}"), Severity::Error, format!("{} is not installed", st.name), "This project uses it (its manifest or .env says so).", "Install it.", version.map(|version| CoreCommand::InstallRuntime { id: s.clone(), version }), vec![]));
+                let version = crate::catalog::builtin_catalog()
+                    .into_iter()
+                    .find(|x| x.id == s)
+                    .map(|x| x.version.to_string());
+                out.push(finding(
+                    format!("project_service_missing:{project_id}:{s}"),
+                    Severity::Error,
+                    format!("{} is not installed", st.name),
+                    "This project uses it (its manifest or .env says so).",
+                    "Install it.",
+                    version.map(|version| CoreCommand::InstallRuntime {
+                        id: s.clone(),
+                        version,
+                    }),
+                    vec![],
+                ));
             } else if !st.running {
-                out.push(finding(format!("project_service_stopped:{project_id}:{s}"), Severity::Warning, format!("{} is stopped", st.name), "This project uses it, so parts of it fail until it runs.", "Start it.", Some(CoreCommand::StartService { id: s.clone() }), vec![]));
+                out.push(finding(
+                    format!("project_service_stopped:{project_id}:{s}"),
+                    Severity::Warning,
+                    format!("{} is stopped", st.name),
+                    "This project uses it, so parts of it fail until it runs.",
+                    "Start it.",
+                    Some(CoreCommand::StartService { id: s.clone() }),
+                    vec![],
+                ));
             }
         }
         if let Some(d) = &m.domain {
@@ -203,7 +266,10 @@ impl Inner {
                     format!("{} is not set up yet", d.hostname),
                     "The manifest names this site, but it doesn't exist here.",
                     "Run the environment setup for the project.",
-                    Some(CoreCommand::ApplySetup { project_id: project_id.into(), dry_run: false }),
+                    Some(CoreCommand::ApplySetup {
+                        project_id: project_id.into(),
+                        dry_run: false,
+                    }),
                     vec![],
                 ));
             }
@@ -218,15 +284,38 @@ impl Inner {
     /// §113.
     pub fn doctor(&self) -> DoctorReport {
         let mut checks = Vec::new();
-        let mut add = |label: &str, status: &str, detail: String| checks.push(DoctorCheck { label: label.into(), status: status.into(), detail });
+        let mut add = |label: &str, status: &str, detail: String| {
+            checks.push(DoctorCheck {
+                label: label.into(),
+                status: status.into(),
+                detail,
+            })
+        };
 
-        add("Operating system supported", if cfg!(windows) { "ok" } else { "warning" }, std::env::consts::OS.to_string());
+        add(
+            "Operating system supported",
+            if cfg!(windows) { "ok" } else { "warning" },
+            std::env::consts::OS.to_string(),
+        );
         for (id, label) in [("php", "PHP available"), ("node", "Node available")] {
             let mut v = self.runtimes.installed_versions(id);
-            v.extend(self.custom_installs.lock().unwrap().list().into_iter().filter(|c| c.id == id).map(|c| c.label));
+            v.extend(
+                self.custom_installs
+                    .lock()
+                    .unwrap()
+                    .list()
+                    .into_iter()
+                    .filter(|c| c.id == id)
+                    .map(|c| c.label),
+            );
             match v.is_empty() {
                 false => add(label, "ok", v.join(", ")),
-                true => add(label, "info", "not installed (install it on the Runtimes page when a project needs it)".into()),
+                true => add(
+                    label,
+                    "info",
+                    "not installed (install it on the Runtimes page when a project needs it)"
+                        .into(),
+                ),
             }
         }
         match crate::runtime::detect_system_install("python") {
@@ -235,51 +324,130 @@ impl Inner {
         }
 
         let cfg = self.web_config();
-        let server = crate::web::server_by_id(&cfg.server).map(|s| s.name()).unwrap_or("Web server").to_string();
+        let server = crate::web::server_by_id(&cfg.server)
+            .map(|s| s.name())
+            .unwrap_or("Web server")
+            .to_string();
         if self.runtimes.installed_versions(&cfg.server).is_empty() {
             add(&format!("{server} valid"), "error", "not installed".into());
         } else {
             match self.web.validate(&cfg) {
-                Ok(text) => add(&format!("{server} valid"), "ok", text.lines().last().unwrap_or("configuration is valid").to_string()),
+                Ok(text) => add(
+                    &format!("{server} valid"),
+                    "ok",
+                    text.lines()
+                        .last()
+                        .unwrap_or("configuration is valid")
+                        .to_string(),
+                ),
                 Err(e) => add(&format!("{server} valid"), "error", e.to_string()),
             }
         }
-        for s in self.services.list().into_iter().filter(|s| s.kind != "custom") {
+        for s in self
+            .services
+            .list()
+            .into_iter()
+            .filter(|s| s.kind != "custom")
+        {
             let label = format!("{} valid", s.name);
             match (s.installed, s.running, s.healthy) {
                 (false, _, _) => add(&label, "info", "not installed".into()),
                 (true, false, _) => add(&label, "info", "installed, stopped".into()),
-                (true, true, Some(false)) => add(&label, "error", format!("{} unreachable on port {}", s.name, s.port.unwrap_or(0))),
-                (true, true, _) => add(&label, "ok", s.port.map(|p| format!("running on port {p}")).unwrap_or_else(|| "running".into())),
+                (true, true, Some(false)) => add(
+                    &label,
+                    "error",
+                    format!("{} unreachable on port {}", s.name, s.port.unwrap_or(0)),
+                ),
+                (true, true, _) => add(
+                    &label,
+                    "ok",
+                    s.port
+                        .map(|p| format!("running on port {p}"))
+                        .unwrap_or_else(|| "running".into()),
+                ),
             }
         }
         let web = self.web.status(&cfg);
-        add("DNS valid", if web.dns_running { "ok" } else { "info" }, if web.dns_running { format!("local DNS on port {}", web.dns_port) } else { "local DNS starts with the web server".into() });
+        add(
+            "DNS valid",
+            if web.dns_running { "ok" } else { "info" },
+            if web.dns_running {
+                format!("local DNS on port {}", web.dns_port)
+            } else {
+                "local DNS starts with the web server".into()
+            },
+        );
         let ca = self.certs.ca_info();
-        add("Local CA trusted", if ca.trusted { "ok" } else if ca.exists { "warning" } else { "info" }, if ca.trusted { "browsers trust local HTTPS sites".into() } else if ca.exists { "not trusted yet".into() } else { "not created yet (made with the first HTTPS site)".into() });
+        add(
+            "Local CA trusted",
+            if ca.trusted {
+                "ok"
+            } else if ca.exists {
+                "warning"
+            } else {
+                "info"
+            },
+            if ca.trusted {
+                "browsers trust local HTTPS sites".into()
+            } else if ca.exists {
+                "not trusted yet".into()
+            } else {
+                "not created yet (made with the first HTTPS site)".into()
+            },
+        );
         for v in self.php.all_versions() {
             let x = self.php.xdebug_report(&v);
             if !x.enabled {
-                add(&format!("Xdebug (PHP {v})"), "warning", "Xdebug disabled".into());
+                add(
+                    &format!("Xdebug (PHP {v})"),
+                    "warning",
+                    "Xdebug disabled".into(),
+                );
             }
         }
         match self.git_path() {
             Some(p) => add("Git available", "ok", p.display().to_string()),
-            None => add("Git available", "info", "not found (install portable Git on the Runtimes page)".into()),
+            None => add(
+                "Git available",
+                "info",
+                "not found (install portable Git on the Runtimes page)".into(),
+            ),
         }
         if self.tunnels.any_running() {
-            add("Public tunnels", "warning", "at least one project is public right now".into());
+            add(
+                "Public tunnels",
+                "warning",
+                "at least one project is public right now".into(),
+            );
         }
 
-        let findings = self.diagnose().into_iter().filter(|f| !f.ignored).collect::<Vec<_>>();
-        let warnings = checks.iter().filter(|c| c.status == "warning").count() + findings.iter().filter(|f| f.severity == Severity::Warning).count();
-        let errors = checks.iter().filter(|c| c.status == "error").count() + findings.iter().filter(|f| f.severity == Severity::Error).count();
-        DoctorReport { checks, findings, warnings, errors }
+        let findings = self
+            .diagnose()
+            .into_iter()
+            .filter(|f| !f.ignored)
+            .collect::<Vec<_>>();
+        let warnings = checks.iter().filter(|c| c.status == "warning").count()
+            + findings
+                .iter()
+                .filter(|f| f.severity == Severity::Warning)
+                .count();
+        let errors = checks.iter().filter(|c| c.status == "error").count()
+            + findings
+                .iter()
+                .filter(|f| f.severity == Severity::Error)
+                .count();
+        DoctorReport {
+            checks,
+            findings,
+            warnings,
+            errors,
+        }
     }
 
     /// §114 steps 1–3: diagnose, explain, propose.
     pub fn plan_repair(&self, project_id: Option<&str>) -> Result<RepairPlan, CoreError> {
-        let mut findings: Vec<Finding> = self.diagnose().into_iter().filter(|f| !f.ignored).collect();
+        let mut findings: Vec<Finding> =
+            self.diagnose().into_iter().filter(|f| !f.ignored).collect();
         if let Some(p) = project_id {
             let own = self.diagnose_project(p)?;
             // A project's own check replaces the app-wide one about the same thing.
@@ -290,11 +458,21 @@ impl Inner {
         let mut manual = Vec::new();
         for f in &findings {
             match &f.fix_command {
-                Some(cmd) => actions.push(RepairAction { finding_id: f.id.clone(), label: f.fix.clone(), destructive: is_destructive(cmd), command: cmd.clone() }),
+                Some(cmd) => actions.push(RepairAction {
+                    finding_id: f.id.clone(),
+                    label: f.fix.clone(),
+                    destructive: is_destructive(cmd),
+                    command: cmd.clone(),
+                }),
                 None => manual.push(format!("{}: {}", f.problem, f.fix)),
             }
         }
-        Ok(RepairPlan { project_id: project_id.map(str::to_string), findings, actions, manual })
+        Ok(RepairPlan {
+            project_id: project_id.map(str::to_string),
+            findings,
+            actions,
+            manual,
+        })
     }
 }
 
@@ -307,22 +485,41 @@ impl Core {
         }
         let findings = auto_fix_findings(self.inner());
         let mut results = Vec::new();
-        for f in findings.into_iter().filter(|f| !f.ignored && f.auto_fixable) {
+        for f in findings
+            .into_iter()
+            .filter(|f| !f.ignored && f.auto_fixable)
+        {
             {
                 let mut attempted = self.inner().auto_fix_attempted.lock().unwrap();
                 if !attempted.insert(f.id.clone()) {
                     continue;
                 }
             }
-            let Some(command) = f.fix_command.as_ref() else { continue };
+            let Some(command) = f.fix_command.as_ref() else {
+                continue;
+            };
             match self.run_fix(command) {
                 Ok(detail) => {
                     self.inner().auto_fix_failures.lock().unwrap().remove(&f.id);
-                    results.push(AutoFixResult { id: f.id, problem: f.problem, ok: true, detail });
+                    results.push(AutoFixResult {
+                        id: f.id,
+                        problem: f.problem,
+                        ok: true,
+                        detail,
+                    });
                 }
                 Err(detail) => {
-                    self.inner().auto_fix_failures.lock().unwrap().insert(f.id.clone(), detail.clone());
-                    results.push(AutoFixResult { id: f.id, problem: f.problem, ok: false, detail });
+                    self.inner()
+                        .auto_fix_failures
+                        .lock()
+                        .unwrap()
+                        .insert(f.id.clone(), detail.clone());
+                    results.push(AutoFixResult {
+                        id: f.id,
+                        problem: f.problem,
+                        ok: false,
+                        detail,
+                    });
                 }
             }
         }
@@ -336,15 +533,23 @@ impl Core {
         let outcome = self.dispatch(command.clone());
         // Fixes that start a process (composer install, key:generate) are waited for.
         let result = match outcome {
-            Ok(crate::command::CoreResponse::ProcessStarted { id }) => i.wait_process(id, std::time::Duration::from_secs(900)).map(|d| d.unwrap_or_else(|| "done".into())).map_err(|e| e.to_string()),
-            Ok(crate::command::CoreResponse::Setup { report }) if !report.ok => Err(report.error.clone().unwrap_or_else(|| "setup failed".into())),
+            Ok(crate::command::CoreResponse::ProcessStarted { id }) => i
+                .wait_process(id, std::time::Duration::from_secs(900))
+                .map(|d| d.unwrap_or_else(|| "done".into()))
+                .map_err(|e| e.to_string()),
+            Ok(crate::command::CoreResponse::Setup { report }) if !report.ok => Err(report
+                .error
+                .clone()
+                .unwrap_or_else(|| "setup failed".into())),
             Ok(_) => Ok("done".to_string()),
             Err(d) => Err(format!("{} {}", d.problem, d.cause)),
         };
         if let (CoreCommand::InstallRuntime { id, version }, true) = (command, result.is_ok()) {
             // Installs run in the background; wait for them so the re-check sees them.
             let started = std::time::Instant::now();
-            while !i.runtimes.installed_versions(id).contains(version) && started.elapsed() < std::time::Duration::from_secs(1800) {
+            while !i.runtimes.installed_versions(id).contains(version)
+                && started.elapsed() < std::time::Duration::from_secs(1800)
+            {
                 std::thread::sleep(std::time::Duration::from_millis(500));
             }
         }
@@ -353,29 +558,60 @@ impl Core {
 
     /// §114 steps 4–6: applies the chosen fixes (destructive ones only with `confirm_destructive`),
     /// then diagnoses again.
-    pub fn apply_repair(&self, project_id: Option<&str>, ids: &[String], confirm_destructive: bool) -> Result<RepairReport, CoreError> {
+    pub fn apply_repair(
+        &self,
+        project_id: Option<&str>,
+        ids: &[String],
+        confirm_destructive: bool,
+    ) -> Result<RepairReport, CoreError> {
         let i = self.inner();
         let plan = i.plan_repair(project_id)?;
         let mut steps = Vec::new();
-        let chosen: Vec<&RepairAction> = plan.actions.iter().filter(|a| ids.is_empty() || ids.contains(&a.finding_id)).collect();
+        let chosen: Vec<&RepairAction> = plan
+            .actions
+            .iter()
+            .filter(|a| ids.is_empty() || ids.contains(&a.finding_id))
+            .collect();
         for a in chosen {
             if a.destructive && !confirm_destructive {
-                steps.push(RepairStep { label: a.label.clone(), ok: false, detail: "skipped: this fix replaces or removes something; confirm it separately".into() });
+                steps.push(RepairStep {
+                    label: a.label.clone(),
+                    ok: false,
+                    detail:
+                        "skipped: this fix replaces or removes something; confirm it separately"
+                            .into(),
+                });
                 continue;
             }
             let result = self.run_fix(&a.command);
             match result {
                 Ok(d) => {
                     i.auto_fix_failures.lock().unwrap().remove(&a.finding_id);
-                    steps.push(RepairStep { label: a.label.clone(), ok: true, detail: d });
+                    steps.push(RepairStep {
+                        label: a.label.clone(),
+                        ok: true,
+                        detail: d,
+                    });
                 }
-                Err(e) => steps.push(RepairStep { label: a.label.clone(), ok: false, detail: e }),
+                Err(e) => steps.push(RepairStep {
+                    label: a.label.clone(),
+                    ok: false,
+                    detail: e,
+                }),
             }
         }
         let after = i.plan_repair(project_id)?.findings;
-        let fixed = plan.findings.iter().filter(|f| !after.iter().any(|a| a.id == f.id)).count();
+        let fixed = plan
+            .findings
+            .iter()
+            .filter(|f| !after.iter().any(|a| a.id == f.id))
+            .count();
         tracing::info!(project = ?project_id, fixed, "repair");
-        Ok(RepairReport { steps, after, fixed })
+        Ok(RepairReport {
+            steps,
+            after,
+            fixed,
+        })
     }
 }
 
@@ -385,7 +621,9 @@ fn auto_fix_findings(inner: &Inner) -> Vec<Finding> {
     for project in projects {
         match inner.diagnose_project(&project.id) {
             Ok(project_findings) => findings.extend(project_findings),
-            Err(error) => tracing::warn!(project = %project.id, %error, "could not diagnose project for automatic fixes"),
+            Err(error) => {
+                tracing::warn!(project = %project.id, %error, "could not diagnose project for automatic fixes")
+            }
         }
     }
     findings
@@ -401,23 +639,48 @@ pub fn doctor_text(r: &DoctorReport) -> String {
             "error" => "✗",
             _ => "·",
         };
-        out.push_str(&format!("{mark} {}{}\n", c.label, if c.detail.is_empty() { String::new() } else { format!(" ({})", c.detail) }));
+        out.push_str(&format!(
+            "{mark} {}{}\n",
+            c.label,
+            if c.detail.is_empty() {
+                String::new()
+            } else {
+                format!(" ({})", c.detail)
+            }
+        ));
     }
-    let warn: Vec<&Finding> = r.findings.iter().filter(|f| f.severity != Severity::Error).collect();
-    let errs: Vec<&Finding> = r.findings.iter().filter(|f| f.severity == Severity::Error).collect();
+    let warn: Vec<&Finding> = r
+        .findings
+        .iter()
+        .filter(|f| f.severity != Severity::Error)
+        .collect();
+    let errs: Vec<&Finding> = r
+        .findings
+        .iter()
+        .filter(|f| f.severity == Severity::Error)
+        .collect();
     if !warn.is_empty() {
         out.push_str("\nWarnings:\n");
         for f in warn {
-            out.push_str(&format!("⚠ {}\n    Cause: {}\n    Fix: {}\n", f.problem, f.cause, f.fix));
+            out.push_str(&format!(
+                "⚠ {}\n    Cause: {}\n    Fix: {}\n",
+                f.problem, f.cause, f.fix
+            ));
         }
     }
     if !errs.is_empty() {
         out.push_str("\nErrors:\n");
         for f in errs {
-            out.push_str(&format!("✗ {}\n    Cause: {}\n    Fix: {}\n", f.problem, f.cause, f.fix));
+            out.push_str(&format!(
+                "✗ {}\n    Cause: {}\n    Fix: {}\n",
+                f.problem, f.cause, f.fix
+            ));
         }
     }
-    out.push_str(&format!("\n{} warning(s), {} error(s)\n", r.warnings, r.errors));
+    out.push_str(&format!(
+        "\n{} warning(s), {} error(s)\n",
+        r.warnings, r.errors
+    ));
     out
 }
 
@@ -434,10 +697,19 @@ mod tests {
 
     #[test]
     fn destructive_fixes_are_recognised() {
-        assert!(is_destructive(&CoreCommand::CreateVenv { project_id: "p".into(), recreate: true }));
-        assert!(!is_destructive(&CoreCommand::StartService { id: "redis".into() }));
-        assert!(!is_destructive(&CoreCommand::ApplyWeb { overwrite: vec![] }));
-        assert!(is_destructive(&CoreCommand::ApplyWeb { overwrite: vec!["a.test".into()] }));
+        assert!(is_destructive(&CoreCommand::CreateVenv {
+            project_id: "p".into(),
+            recreate: true
+        }));
+        assert!(!is_destructive(&CoreCommand::StartService {
+            id: "redis".into()
+        }));
+        assert!(!is_destructive(&CoreCommand::ApplyWeb {
+            overwrite: vec![]
+        }));
+        assert!(is_destructive(&CoreCommand::ApplyWeb {
+            overwrite: vec!["a.test".into()]
+        }));
     }
 
     #[test]
@@ -446,18 +718,45 @@ mod tests {
         let dir = home.paths.root().join("shop");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join(".env.example"), "APP_NAME=shop\n").unwrap();
-        let CoreResponse::Project { project } = core.dispatch(CoreCommand::RegisterProject { path: dir.display().to_string() }).unwrap() else { panic!() };
+        let CoreResponse::Project { project } = core
+            .dispatch(CoreCommand::RegisterProject {
+                path: dir.display().to_string(),
+            })
+            .unwrap()
+        else {
+            panic!()
+        };
 
         let plan = core.inner().plan_repair(Some(&project.id)).unwrap();
-        let env = plan.actions.iter().find(|a| a.finding_id.starts_with("env_missing")).expect("a missing .env is found with a fix");
+        let env = plan
+            .actions
+            .iter()
+            .find(|a| a.finding_id.starts_with("env_missing"))
+            .expect("a missing .env is found with a fix");
         assert!(!env.destructive);
-        let f = plan.findings.iter().find(|f| f.id == env.finding_id).unwrap();
-        assert!(!f.problem.is_empty() && !f.cause.is_empty(), "§115: explained");
+        let f = plan
+            .findings
+            .iter()
+            .find(|f| f.id == env.finding_id)
+            .unwrap();
+        assert!(
+            !f.problem.is_empty() && !f.cause.is_empty(),
+            "§115: explained"
+        );
 
-        let report = core.apply_repair(Some(&project.id), std::slice::from_ref(&env.finding_id), false).unwrap();
+        let report = core
+            .apply_repair(
+                Some(&project.id),
+                std::slice::from_ref(&env.finding_id),
+                false,
+            )
+            .unwrap();
         assert!(report.steps.iter().all(|s| s.ok), "{:?}", report.steps);
         assert!(dir.join(".env").is_file());
-        assert!(!report.after.iter().any(|f| f.id == env.finding_id), "the re-check no longer finds it");
+        assert!(
+            !report.after.iter().any(|f| f.id == env.finding_id),
+            "the re-check no longer finds it"
+        );
         assert!(report.fixed >= 1);
     }
 
@@ -467,10 +766,20 @@ mod tests {
         let dir = home.paths.root().join("shop");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join(".env.example"), "APP_NAME=shop\n").unwrap();
-        let CoreResponse::Project { project } = core.dispatch(CoreCommand::RegisterProject { path: dir.display().to_string() }).unwrap() else { panic!() };
+        let CoreResponse::Project { project } = core
+            .dispatch(CoreCommand::RegisterProject {
+                path: dir.display().to_string(),
+            })
+            .unwrap()
+        else {
+            panic!()
+        };
 
         let findings = auto_fix_findings(core.inner());
-        let missing_env = findings.iter().find(|f| f.id == format!("env_missing:{}", project.id)).expect("project .env finding is scanned");
+        let missing_env = findings
+            .iter()
+            .find(|f| f.id == format!("env_missing:{}", project.id))
+            .expect("project .env finding is scanned");
         assert!(missing_env.auto_fixable);
     }
 
@@ -479,7 +788,12 @@ mod tests {
         let (core, _home) = core();
         let r = core.inner().doctor();
         let text = doctor_text(&r);
-        for want in ["Operating system supported", "PHP available", "Local CA trusted", "Git available"] {
+        for want in [
+            "Operating system supported",
+            "PHP available",
+            "Local CA trusted",
+            "Git available",
+        ] {
             assert!(text.contains(want), "{want} missing:\n{text}");
         }
     }

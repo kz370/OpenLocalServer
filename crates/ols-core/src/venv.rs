@@ -13,7 +13,12 @@ use serde::{Deserialize, Serialize};
 /// Folder names checked for an existing venv, in order. New ones are created as `.venv`.
 const NAMES: &[&str] = &[".venv", "venv", "env"];
 /// Files `pip install -r` can read, in the order they're offered.
-const REQUIREMENT_FILES: &[&str] = &["requirements.txt", "requirements-dev.txt", "requirements/base.txt", "requirements/dev.txt"];
+const REQUIREMENT_FILES: &[&str] = &[
+    "requirements.txt",
+    "requirements-dev.txt",
+    "requirements/base.txt",
+    "requirements/dev.txt",
+];
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct VenvInfo {
@@ -34,7 +39,10 @@ pub struct VenvInfo {
 
 /// The venv folder inside `project`, if there is one (a folder with `pyvenv.cfg`).
 pub fn find_dir(project: &Path) -> Option<PathBuf> {
-    NAMES.iter().map(|n| project.join(n)).find(|d| d.join("pyvenv.cfg").is_file())
+    NAMES
+        .iter()
+        .map(|n| project.join(n))
+        .find(|d| d.join("pyvenv.cfg").is_file())
 }
 
 pub fn python_exe(venv_dir: &Path) -> PathBuf {
@@ -54,18 +62,28 @@ fn config_value(cfg: &str, key: &str) -> Option<String> {
 }
 
 pub fn detect(project: &Path) -> VenvInfo {
-    let requirements: Vec<String> = REQUIREMENT_FILES.iter().filter(|f| project.join(f).is_file()).map(|f| f.to_string()).collect();
+    let requirements: Vec<String> = REQUIREMENT_FILES
+        .iter()
+        .filter(|f| project.join(f).is_file())
+        .map(|f| f.to_string())
+        .collect();
     let has_pyproject = project.join("pyproject.toml").is_file();
     let Some(dir) = find_dir(project) else {
-        return VenvInfo { requirements, has_pyproject, ..Default::default() };
+        return VenvInfo {
+            requirements,
+            has_pyproject,
+            ..Default::default()
+        };
     };
     let cfg = std::fs::read_to_string(dir.join("pyvenv.cfg")).unwrap_or_default();
     let base_home = config_value(&cfg, "home");
     let dir_name = dir.file_name().and_then(|n| n.to_str()).map(str::to_string);
     VenvInfo {
         exists: true,
-        python_version: config_value(&cfg, "version").or_else(|| config_value(&cfg, "version_info")),
-        base_missing: base_home.as_deref().is_some_and(|h| !Path::new(h).is_dir()) || !python_exe(&dir).is_file(),
+        python_version: config_value(&cfg, "version")
+            .or_else(|| config_value(&cfg, "version_info")),
+        base_missing: base_home.as_deref().is_some_and(|h| !Path::new(h).is_dir())
+            || !python_exe(&dir).is_file(),
         base_home,
         activate_command: dir_name.as_ref().map(|n| format!("{n}\\Scripts\\activate")),
         dir_name,
@@ -81,9 +99,20 @@ pub fn create_args(dir_name: &str) -> Vec<String> {
 /// Deleting is only ever done to a folder that `find_dir` recognised as a venv, so a
 /// wrong path can't wipe project files.
 pub fn remove(project: &Path) -> Result<Option<String>, String> {
-    let Some(dir) = find_dir(project) else { return Ok(None) };
-    let name = dir.file_name().and_then(|n| n.to_str()).unwrap_or(".venv").to_string();
-    std::fs::remove_dir_all(&dir).map_err(|e| format!("could not remove {}: {e} (close anything using the venv and retry)", dir.display()))?;
+    let Some(dir) = find_dir(project) else {
+        return Ok(None);
+    };
+    let name = dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(".venv")
+        .to_string();
+    std::fs::remove_dir_all(&dir).map_err(|e| {
+        format!(
+            "could not remove {}: {e} (close anything using the venv and retry)",
+            dir.display()
+        )
+    })?;
     Ok(Some(name))
 }
 
@@ -99,7 +128,9 @@ pub fn install_args(project: &Path, what: &str) -> Result<Vec<String>, String> {
     } else if REQUIREMENT_FILES.contains(&what) && project.join(what).is_file() {
         args.extend(["-r".into(), what.into()]);
     } else {
-        return Err(format!("\"{what}\" is not a requirements file in this project."));
+        return Err(format!(
+            "\"{what}\" is not a requirements file in this project."
+        ));
     }
     Ok(args)
 }
@@ -111,7 +142,11 @@ mod tests {
     fn make_venv(project: &Path, name: &str, home: &str) {
         let dir = project.join(name);
         std::fs::create_dir_all(dir.join("Scripts")).unwrap();
-        std::fs::write(dir.join("pyvenv.cfg"), format!("home = {home}\nversion = 3.12.4\n")).unwrap();
+        std::fs::write(
+            dir.join("pyvenv.cfg"),
+            format!("home = {home}\nversion = 3.12.4\n"),
+        )
+        .unwrap();
     }
 
     #[test]
@@ -126,7 +161,10 @@ mod tests {
         assert_eq!(info.python_version.as_deref(), Some("3.12.4"));
         assert_eq!(info.requirements, ["requirements.txt"]);
         assert!(!info.base_missing);
-        assert_eq!(info.activate_command.as_deref(), Some("venv\\Scripts\\activate"));
+        assert_eq!(
+            info.activate_command.as_deref(),
+            Some("venv\\Scripts\\activate")
+        );
     }
 
     #[test]
@@ -160,11 +198,20 @@ mod tests {
     fn install_arguments_accept_only_known_requirement_files() {
         let p = tempfile::tempdir().unwrap();
         std::fs::write(p.path().join("requirements.txt"), "").unwrap();
-        assert_eq!(install_args(p.path(), "requirements.txt").unwrap(), ["-m", "pip", "install", "-r", "requirements.txt"]);
+        assert_eq!(
+            install_args(p.path(), "requirements.txt").unwrap(),
+            ["-m", "pip", "install", "-r", "requirements.txt"]
+        );
         assert!(install_args(p.path(), "..\\evil.txt").is_err());
-        assert!(install_args(p.path(), "requirements-dev.txt").is_err(), "listed but missing");
+        assert!(
+            install_args(p.path(), "requirements-dev.txt").is_err(),
+            "listed but missing"
+        );
         assert!(install_args(p.path(), "pyproject").is_err());
         std::fs::write(p.path().join("pyproject.toml"), "").unwrap();
-        assert_eq!(install_args(p.path(), "pyproject").unwrap(), ["-m", "pip", "install", "-e", "."]);
+        assert_eq!(
+            install_args(p.path(), "pyproject").unwrap(),
+            ["-m", "pip", "install", "-e", "."]
+        );
     }
 }

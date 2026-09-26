@@ -72,8 +72,16 @@ pub struct Progress(std::sync::Mutex<MigrationProgress>);
 
 impl Progress {
     pub fn begin(&self, kind: &str) {
-        let started_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
-        *self.0.lock().unwrap() = MigrationProgress { running: true, kind: kind.into(), started_ms, ..Default::default() };
+        let started_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        *self.0.lock().unwrap() = MigrationProgress {
+            running: true,
+            kind: kind.into(),
+            started_ms,
+            ..Default::default()
+        };
     }
 
     pub fn end(&self) {
@@ -151,24 +159,57 @@ fn engine_of(dir_name: &str) -> &'static str {
 /// `…\bin\mysql\mysql-8.4.3-winx64` + `…\data\mysql-8.4`. Laragon names data folders by
 /// engine and short version (`mysql-8` for 8.0), so match the most specific binary.
 fn laragon(root: &Path, running: &[(PathBuf, u16)], out: &mut Vec<MigrationSource>) {
-    let Ok(datas) = std::fs::read_dir(root.join("data")) else { return };
+    let Ok(datas) = std::fs::read_dir(root.join("data")) else {
+        return;
+    };
     let bins: Vec<PathBuf> = std::fs::read_dir(root.join("bin").join("mysql"))
-        .map(|rd| rd.flatten().map(|e| e.path()).filter(|p| p.join("bin").join("mysqld.exe").is_file()).collect())
+        .map(|rd| {
+            rd.flatten()
+                .map(|e| e.path())
+                .filter(|p| p.join("bin").join("mysqld.exe").is_file())
+                .collect()
+        })
         .unwrap_or_default();
     for data in datas.flatten().map(|e| e.path()).filter(|p| p.is_dir()) {
-        let name = data.file_name().unwrap_or_default().to_string_lossy().to_ascii_lowercase();
+        let name = data
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_ascii_lowercase();
         if !(name.starts_with("mysql") || name.starts_with("mariadb")) {
             continue;
         }
-        let bin_name = |b: &PathBuf| b.file_name().unwrap_or_default().to_string_lossy().to_ascii_lowercase();
+        let bin_name = |b: &PathBuf| {
+            b.file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_ascii_lowercase()
+        };
         // "mysql-8" means 8.0; otherwise the data name is a prefix of the binary's name.
-        let wanted = if name == "mysql-8" { "mysql-8.0".to_string() } else { name.clone() };
+        let wanted = if name == "mysql-8" {
+            "mysql-8.0".to_string()
+        } else {
+            name.clone()
+        };
         let bin = bins
             .iter()
-            .find(|b| bin_name(b).starts_with(&format!("{wanted}.")) || bin_name(b).starts_with(&format!("{wanted}-")))
-            .or_else(|| bins.iter().find(|b| bin_name(b).starts_with(&format!("{name}."))));
+            .find(|b| {
+                bin_name(b).starts_with(&format!("{wanted}."))
+                    || bin_name(b).starts_with(&format!("{wanted}-"))
+            })
+            .or_else(|| {
+                bins.iter()
+                    .find(|b| bin_name(b).starts_with(&format!("{name}.")))
+            });
         if let Some(bin) = bin {
-            push(out, &format!("Laragon · {}", pretty(&name)), engine_of(&name), &bin.join("bin"), &data, running);
+            push(
+                out,
+                &format!("Laragon · {}", pretty(&name)),
+                engine_of(&name),
+                &bin.join("bin"),
+                &data,
+                running,
+            );
         }
     }
 }
@@ -176,19 +217,50 @@ fn laragon(root: &Path, running: &[(PathBuf, u16)], out: &mut Vec<MigrationSourc
 fn xampp(root: &Path, running: &[(PathBuf, u16)], out: &mut Vec<MigrationSource>) {
     let bin = root.join("mysql").join("bin");
     if bin.join("mysqld.exe").is_file() {
-        let engine = if bin.join("mariadbd.exe").is_file() || bin.join("mariadb.exe").is_file() { "mariadb" } else { "mysql" };
-        push(out, &format!("XAMPP · {}", if engine == "mariadb" { "MariaDB" } else { "MySQL" }), engine, &bin, &root.join("mysql").join("data"), running);
+        let engine = if bin.join("mariadbd.exe").is_file() || bin.join("mariadb.exe").is_file() {
+            "mariadb"
+        } else {
+            "mysql"
+        };
+        push(
+            out,
+            &format!(
+                "XAMPP · {}",
+                if engine == "mariadb" {
+                    "MariaDB"
+                } else {
+                    "MySQL"
+                }
+            ),
+            engine,
+            &bin,
+            &root.join("mysql").join("data"),
+            running,
+        );
     }
 }
 
 /// `…\bin\mysql\mysql8.0.31\{bin,data}` and `…\bin\mariadb\mariadb10.x\{bin,data}`.
 fn wamp(root: &Path, running: &[(PathBuf, u16)], out: &mut Vec<MigrationSource>) {
     for family in ["mysql", "mariadb"] {
-        let Ok(rd) = std::fs::read_dir(root.join("bin").join(family)) else { continue };
+        let Ok(rd) = std::fs::read_dir(root.join("bin").join(family)) else {
+            continue;
+        };
         for dir in rd.flatten().map(|e| e.path()) {
             if dir.join("bin").join("mysqld.exe").is_file() && dir.join("data").is_dir() {
-                let name = dir.file_name().unwrap_or_default().to_string_lossy().to_string();
-                push(out, &format!("WampServer · {name}"), family, &dir.join("bin"), &dir.join("data"), running);
+                let name = dir
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                push(
+                    out,
+                    &format!("WampServer · {name}"),
+                    family,
+                    &dir.join("bin"),
+                    &dir.join("data"),
+                    running,
+                );
             }
         }
     }
@@ -196,16 +268,30 @@ fn wamp(root: &Path, running: &[(PathBuf, u16)], out: &mut Vec<MigrationSource>)
 
 fn pretty(name: &str) -> String {
     let (engine, version) = name.split_once('-').unwrap_or((name, ""));
-    let engine = if engine == "mariadb" { "MariaDB" } else { "MySQL" };
+    let engine = if engine == "mariadb" {
+        "MariaDB"
+    } else {
+        "MySQL"
+    };
     format!("{engine} {version}").trim().to_string()
 }
 
-fn push(out: &mut Vec<MigrationSource>, label: &str, engine: &str, bin: &Path, data: &Path, running: &[(PathBuf, u16)]) {
+fn push(
+    out: &mut Vec<MigrationSource>,
+    label: &str,
+    engine: &str,
+    bin: &Path,
+    data: &Path,
+    running: &[(PathBuf, u16)],
+) {
     if !data.is_dir() {
         return;
     }
     let exe = bin.join("mysqld.exe");
-    let running_port = running.iter().find(|(p, _)| same_file(p, &exe)).map(|(_, port)| *port);
+    let running_port = running
+        .iter()
+        .find(|(p, _)| same_file(p, &exe))
+        .map(|(_, port)| *port);
     out.push(MigrationSource {
         id: data.display().to_string(),
         label: label.to_string(),
@@ -218,11 +304,15 @@ fn push(out: &mut Vec<MigrationSource>, label: &str, engine: &str, bin: &Path, d
 }
 
 fn same_file(a: &Path, b: &Path) -> bool {
-    a.display().to_string().eq_ignore_ascii_case(&b.display().to_string())
+    a.display()
+        .to_string()
+        .eq_ignore_ascii_case(&b.display().to_string())
 }
 
 fn dir_size(dir: &Path) -> u64 {
-    let Ok(rd) = std::fs::read_dir(dir) else { return 0 };
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return 0;
+    };
     rd.flatten()
         .map(|e| match e.metadata() {
             Ok(m) if m.is_dir() => dir_size(&e.path()),
@@ -237,7 +327,12 @@ fn running_servers() -> Vec<(PathBuf, u16)> {
     let script = "Get-CimInstance Win32_Process -Filter \"Name='mysqld.exe' or Name='mariadbd.exe'\" | ForEach-Object { \"$($_.ExecutablePath)|$($_.CommandLine)\" }";
     let out = run_capture(
         Path::new("powershell"),
-        &["-NoProfile".into(), "-NonInteractive".into(), "-Command".into(), script.into()],
+        &[
+            "-NoProfile".into(),
+            "-NonInteractive".into(),
+            "-Command".into(),
+            script.into(),
+        ],
         None,
         &[],
         Duration::from_secs(20),
@@ -246,7 +341,12 @@ fn running_servers() -> Vec<(PathBuf, u16)> {
         .lines()
         .filter_map(|l| {
             let (exe, cmd) = l.split_once('|')?;
-            let port = cmd.split("--port=").nth(1).and_then(|r| r.split(|c: char| !c.is_ascii_digit()).next()).and_then(|p| p.parse().ok()).unwrap_or(3306);
+            let port = cmd
+                .split("--port=")
+                .nth(1)
+                .and_then(|r| r.split(|c: char| !c.is_ascii_digit()).next())
+                .and_then(|p| p.parse().ok())
+                .unwrap_or(3306);
             (!exe.is_empty()).then(|| (PathBuf::from(exe), port))
         })
         .collect()
@@ -263,16 +363,35 @@ pub struct Session {
 }
 
 impl Session {
-    pub fn open(source: MigrationSource, password: &str, work_dir: &Path, progress: &Progress) -> Result<Self, String> {
+    pub fn open(
+        source: MigrationSource,
+        password: &str,
+        work_dir: &Path,
+        progress: &Progress,
+    ) -> Result<Self, String> {
         if let Some(port) = source.running_port {
             progress.step(format!("Connecting to the running {}", source.label), None);
-            return Ok(Self { source, port, password: password.to_string(), temp: None });
+            return Ok(Self {
+                source,
+                port,
+                password: password.to_string(),
+                temp: None,
+            });
         }
         let copy = work_dir.join(format!("migrate-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&copy);
-        progress.step("Copying the data folder (the original is not touched)", Some(source.size_bytes));
-        copy_data(Path::new(&source.data_dir), &copy, &|n| progress.add_bytes(n)).map_err(|e| format!("could not copy {}: {e}", source.data_dir))?;
-        progress.step(format!("Starting a temporary copy of {}", source.label), None);
+        progress.step(
+            "Copying the data folder (the original is not touched)",
+            Some(source.size_bytes),
+        );
+        copy_data(Path::new(&source.data_dir), &copy, &|n| {
+            progress.add_bytes(n)
+        })
+        .map_err(|e| format!("could not copy {}: {e}", source.data_dir))?;
+        progress.step(
+            format!("Starting a temporary copy of {}", source.label),
+            None,
+        );
         let port = free_port().ok_or("no free port for the temporary server")?;
         let bin = PathBuf::from(&source.bin_dir);
         let mut cmd = Command::new(bin.join("mysqld.exe"));
@@ -292,17 +411,27 @@ impl Session {
         // Not piped: nothing reads it while the server runs, and a full pipe would stall it.
         .stderr(Stdio::null());
         crate::exec::hide_window(&mut cmd);
-        let mut child = cmd.spawn().map_err(|e| format!("could not start {}: {e}", bin.join("mysqld.exe").display()))?;
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| format!("could not start {}: {e}", bin.join("mysqld.exe").display()))?;
         let started = Instant::now();
         loop {
-            if TcpStream::connect_timeout(&([127, 0, 0, 1], port).into(), Duration::from_millis(300)).is_ok() {
+            if TcpStream::connect_timeout(
+                &([127, 0, 0, 1], port).into(),
+                Duration::from_millis(300),
+            )
+            .is_ok()
+            {
                 break;
             }
             if let Ok(Some(status)) = child.try_wait() {
                 let err = std::fs::read_to_string(copy.join("migrate.err")).unwrap_or_default();
                 let _ = std::fs::remove_dir_all(&copy);
                 let tail: Vec<&str> = err.lines().rev().take(4).collect();
-                return Err(format!("the old server stopped ({status}): {}", tail.into_iter().rev().collect::<Vec<_>>().join(" / ")));
+                return Err(format!(
+                    "the old server stopped ({status}): {}",
+                    tail.into_iter().rev().collect::<Vec<_>>().join(" / ")
+                ));
             }
             if started.elapsed() > Duration::from_secs(90) {
                 kill_tree(&mut child);
@@ -311,7 +440,12 @@ impl Session {
             }
             std::thread::sleep(Duration::from_millis(300));
         }
-        Ok(Self { source, port, password: password.to_string(), temp: Some((child, copy)) })
+        Ok(Self {
+            source,
+            port,
+            password: password.to_string(),
+            temp: Some((child, copy)),
+        })
     }
 
     fn env(&self) -> Vec<(String, String)> {
@@ -319,25 +453,60 @@ impl Session {
     }
 
     fn conn_args(&self) -> Vec<String> {
-        vec!["-h".into(), "127.0.0.1".into(), "-P".into(), self.port.to_string(), "-u".into(), "root".into()]
+        vec![
+            "-h".into(),
+            "127.0.0.1".into(),
+            "-P".into(),
+            self.port.to_string(),
+            "-u".into(),
+            "root".into(),
+        ]
     }
 
     pub fn databases(&self) -> Result<Vec<String>, String> {
         let mut args = self.conn_args();
-        args.extend(["--batch".into(), "--skip-column-names".into(), "-e".into(), "SHOW DATABASES".into()]);
-        let out = run_capture(&PathBuf::from(&self.source.bin_dir).join("mysql.exe"), &args, None, &self.env(), Duration::from_secs(30));
+        args.extend([
+            "--batch".into(),
+            "--skip-column-names".into(),
+            "-e".into(),
+            "SHOW DATABASES".into(),
+        ]);
+        let out = run_capture(
+            &PathBuf::from(&self.source.bin_dir).join("mysql.exe"),
+            &args,
+            None,
+            &self.env(),
+            Duration::from_secs(30),
+        );
         if !out.success() {
             return Err(access_hint(&out.combined()));
         }
-        Ok(out.stdout.lines().map(str::trim).filter(|l| !l.is_empty() && !SYSTEM_DBS.contains(l)).map(str::to_string).collect())
+        Ok(out
+            .stdout
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty() && !SYSTEM_DBS.contains(l))
+            .map(str::to_string)
+            .collect())
     }
 
     /// Approximate size of each database (data + indexes), for export progress.
     pub fn sizes(&self) -> std::collections::HashMap<String, u64> {
         let mut args = self.conn_args();
         let sql = "SELECT table_schema, COALESCE(SUM(data_length + index_length), 0) FROM information_schema.tables GROUP BY table_schema";
-        args.extend(["--batch".into(), "--skip-column-names".into(), "-e".into(), sql.into()]);
-        let out = run_capture(&PathBuf::from(&self.source.bin_dir).join("mysql.exe"), &args, None, &self.env(), Duration::from_secs(30));
+        args.extend([
+            "--batch".into(),
+            "--skip-column-names".into(),
+            "-e".into(),
+            sql.into(),
+        ]);
+        let out = run_capture(
+            &PathBuf::from(&self.source.bin_dir).join("mysql.exe"),
+            &args,
+            None,
+            &self.env(),
+            Duration::from_secs(30),
+        );
         if !out.success() {
             return Default::default();
         }
@@ -369,8 +538,18 @@ impl Session {
             // GTID statements would fail on a server that isn't set up for replication.
             args.push("--set-gtid-purged=OFF".into());
         }
-        let out = run_capture(&PathBuf::from(&self.source.bin_dir).join("mysqldump.exe"), &args, None, &self.env(), Duration::from_secs(3600));
-        if out.success() { Ok(()) } else { Err(access_hint(&out.combined())) }
+        let out = run_capture(
+            &PathBuf::from(&self.source.bin_dir).join("mysqldump.exe"),
+            &args,
+            None,
+            &self.env(),
+            Duration::from_secs(3600),
+        );
+        if out.success() {
+            Ok(())
+        } else {
+            Err(access_hint(&out.combined()))
+        }
     }
 }
 
@@ -393,7 +572,9 @@ impl Drop for Session {
 /// kill would leave it running (and holding the copied files).
 fn kill_tree(child: &mut Child) {
     let mut kill = Command::new("taskkill");
-    kill.args(["/PID", &child.id().to_string(), "/T", "/F"]).stdout(Stdio::null()).stderr(Stdio::null());
+    kill.args(["/PID", &child.id().to_string(), "/T", "/F"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
     crate::exec::hide_window(&mut kill);
     let _ = kill.status();
     let _ = child.kill();
@@ -402,7 +583,10 @@ fn kill_tree(child: &mut Child) {
 
 fn access_hint(err: &str) -> String {
     if err.contains("Access denied") {
-        format!("{} (enter the old server's root password; Laragon and XAMPP use none by default)", err.trim())
+        format!(
+            "{} (enter the old server's root password; Laragon and XAMPP use none by default)",
+            err.trim()
+        )
     } else {
         err.trim().to_string()
     }
@@ -416,7 +600,9 @@ fn copy_data(from: &Path, to: &Path, on_bytes: &dyn Fn(u64)) -> std::io::Result<
         let name = e.file_name().to_string_lossy().to_ascii_lowercase();
         let skip = name.ends_with(".pid")
             || name.ends_with(".err")
-            || name.ends_with(".log") && !name.starts_with("ib_logfile") && !name.starts_with("aria_log")
+            || name.ends_with(".log")
+                && !name.starts_with("ib_logfile")
+                && !name.starts_with("aria_log")
             || name.starts_with("binlog.")
             || name.contains("-bin.")
             || name.ends_with(".index") && (name.contains("bin") || name.contains("relay"));
@@ -451,21 +637,36 @@ fn copy_file(from: &Path, to: &Path, on_bytes: &dyn Fn(u64)) -> std::io::Result<
 }
 
 fn free_port() -> Option<u16> {
-    std::net::TcpListener::bind(("127.0.0.1", 0)).ok()?.local_addr().ok().map(|a| a.port())
+    std::net::TcpListener::bind(("127.0.0.1", 0))
+        .ok()?
+        .local_addr()
+        .ok()
+        .map(|a| a.port())
 }
 
 /// Loads a dump into our server through its own client. We feed the file through stdin
 /// ourselves, so every byte the server has taken shows up in `progress`.
 pub fn import(client: &Path, port: u16, file: &Path, progress: &Progress) -> Result<(), String> {
     use std::io::{Read, Write};
-    let mut input = std::fs::File::open(file).map_err(|e| format!("could not read {}: {e}", file.display()))?;
+    let mut input =
+        std::fs::File::open(file).map_err(|e| format!("could not read {}: {e}", file.display()))?;
     let mut cmd = Command::new(client);
-    cmd.args(["-h", "127.0.0.1", "-P", &port.to_string(), "-u", "root", "--default-character-set=utf8mb4"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped());
+    cmd.args([
+        "-h",
+        "127.0.0.1",
+        "-P",
+        &port.to_string(),
+        "-u",
+        "root",
+        "--default-character-set=utf8mb4",
+    ])
+    .stdin(Stdio::piped())
+    .stdout(Stdio::null())
+    .stderr(Stdio::piped());
     crate::exec::hide_window(&mut cmd);
-    let mut child = cmd.spawn().map_err(|e| format!("could not start {}: {e}", client.display()))?;
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("could not start {}: {e}", client.display()))?;
     // Read stderr on its own thread: a client that fills that pipe would otherwise stall.
     let mut stderr = child.stderr.take().expect("stderr is piped");
     let errors = std::thread::spawn(move || {
@@ -489,7 +690,11 @@ pub fn import(client: &Path, port: u16, file: &Path, progress: &Progress) -> Res
     drop(stdin);
     let status = child.wait().map_err(|e| e.to_string())?;
     let err = errors.join().unwrap_or_default();
-    if status.success() { Ok(()) } else { Err(err.trim().to_string()) }
+    if status.success() {
+        Ok(())
+    } else {
+        Err(err.trim().to_string())
+    }
 }
 
 #[cfg(test)]
@@ -499,7 +704,11 @@ mod tests {
     #[test]
     fn laragon_data_folders_pair_with_the_right_binaries() {
         let root = tempfile::tempdir().unwrap();
-        for bin in ["mysql-8.0.30-winx64", "mysql-8.4.3-winx64", "mariadb-11.8.5"] {
+        for bin in [
+            "mysql-8.0.30-winx64",
+            "mysql-8.4.3-winx64",
+            "mariadb-11.8.5",
+        ] {
             let b = root.path().join("bin").join("mysql").join(bin).join("bin");
             std::fs::create_dir_all(&b).unwrap();
             std::fs::write(b.join("mysqld.exe"), "").unwrap();
@@ -511,19 +720,44 @@ mod tests {
         laragon(root.path(), &[], &mut found);
         let pairs: Vec<(String, String)> = found
             .iter()
-            .map(|s| (Path::new(&s.data_dir).file_name().unwrap().to_string_lossy().to_string(), Path::new(&s.bin_dir).parent().unwrap().file_name().unwrap().to_string_lossy().to_string()))
+            .map(|s| {
+                (
+                    Path::new(&s.data_dir)
+                        .file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .to_string(),
+                    Path::new(&s.bin_dir)
+                        .parent()
+                        .unwrap()
+                        .file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .to_string(),
+                )
+            })
             .collect();
         assert!(pairs.contains(&("mysql-8".into(), "mysql-8.0.30-winx64".into())));
         assert!(pairs.contains(&("mysql-8.4".into(), "mysql-8.4.3-winx64".into())));
         assert!(pairs.contains(&("mariadb-11.8".into(), "mariadb-11.8.5".into())));
         assert_eq!(found.len(), 3, "PostgreSQL isn't a MySQL-family source");
-        assert!(found.iter().any(|s| s.engine == "mariadb" && s.label == "Laragon · MariaDB 11.8"));
+        assert!(found
+            .iter()
+            .any(|s| s.engine == "mariadb" && s.label == "Laragon · MariaDB 11.8"));
     }
 
     #[test]
     fn copies_skip_binary_logs_but_keep_innodb_files() {
         let from = tempfile::tempdir().unwrap();
-        for f in ["ibdata1", "ib_logfile0", "binlog.000003", "binlog.index", "HOST.err", "aria_log.00000001", "mysql.pid"] {
+        for f in [
+            "ibdata1",
+            "ib_logfile0",
+            "binlog.000003",
+            "binlog.index",
+            "HOST.err",
+            "aria_log.00000001",
+            "mysql.pid",
+        ] {
             std::fs::write(from.path().join(f), "x").unwrap();
         }
         std::fs::create_dir_all(from.path().join("shop")).unwrap();
@@ -531,12 +765,20 @@ mod tests {
         let to = tempfile::tempdir().unwrap();
         let copied = std::cell::Cell::new(0u64);
         copy_data(from.path(), to.path(), &|n| copied.set(copied.get() + n)).unwrap();
-        assert_eq!(copied.get(), 4,"only the kept files count toward progress");
-        for kept in ["ibdata1", "ib_logfile0", "aria_log.00000001", "shop/orders.ibd"] {
+        assert_eq!(copied.get(), 4, "only the kept files count toward progress");
+        for kept in [
+            "ibdata1",
+            "ib_logfile0",
+            "aria_log.00000001",
+            "shop/orders.ibd",
+        ] {
             assert!(to.path().join(kept).exists(), "{kept} must be copied");
         }
         for skipped in ["binlog.000003", "binlog.index", "HOST.err", "mysql.pid"] {
-            assert!(!to.path().join(skipped).exists(), "{skipped} must be skipped");
+            assert!(
+                !to.path().join(skipped).exists(),
+                "{skipped} must be skipped"
+            );
         }
     }
 }

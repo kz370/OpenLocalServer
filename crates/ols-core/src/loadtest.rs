@@ -155,7 +155,8 @@ pub fn check_script(script: &str, allowed_hosts: &[String], max_vus: u32) -> Res
             return Err(format!("the script points at {host}, which isn't one of this project's sites. Use __ENV.BASE_URL, or add the site to the project."));
         }
     }
-    let numbers = Regex::new(r"\b(vus|preAllocatedVUs|maxVUs|target|startVUs)\s*:\s*(\d+)").unwrap();
+    let numbers =
+        Regex::new(r"\b(vus|preAllocatedVUs|maxVUs|target|startVUs)\s*:\s*(\d+)").unwrap();
     for cap in numbers.captures_iter(script) {
         let n: u32 = cap[2].parse().unwrap_or(u32::MAX);
         if n > max_vus {
@@ -166,7 +167,14 @@ pub fn check_script(script: &str, allowed_hosts: &[String], max_vus: u32) -> Res
 }
 
 fn script_name_ok(name: &str) -> bool {
-    !name.is_empty() && name.len() <= 80 && name.ends_with(".js") && !name.contains(['/', '\\', ':']) && !name.starts_with('.') && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
+    !name.is_empty()
+        && name.len() <= 80
+        && name.ends_with(".js")
+        && !name.contains(['/', '\\', ':'])
+        && !name.starts_with('.')
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -237,11 +245,19 @@ pub struct LoadProfile {
 }
 
 fn var_name_ok(n: &str) -> bool {
-    !n.is_empty() && n.len() <= 40 && n.chars().enumerate().all(|(i, c)| c == '_' || c.is_ascii_alphabetic() || (i > 0 && c.is_ascii_digit()))
+    !n.is_empty()
+        && n.len() <= 40
+        && n.chars()
+            .enumerate()
+            .all(|(i, c)| c == '_' || c.is_ascii_alphabetic() || (i > 0 && c.is_ascii_digit()))
 }
 
 fn header_name_ok(n: &str) -> bool {
-    !n.is_empty() && n.len() <= 60 && n.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') && !["host", "content-length", "connection", "transfer-encoding"].contains(&n.to_ascii_lowercase().as_str())
+    !n.is_empty()
+        && n.len() <= 60
+        && n.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+        && !["host", "content-length", "connection", "transfer-encoding"]
+            .contains(&n.to_ascii_lowercase().as_str())
 }
 
 fn placeholders() -> &'static Regex {
@@ -270,7 +286,10 @@ fn js_value(text: &str) -> String {
 const METHODS: &[&str] = &["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"];
 
 fn path_ok(p: &str) -> bool {
-    p.starts_with('/') && p.len() <= 300 && p.chars().all(|c| c.is_ascii_alphanumeric() || "/_-.?=&%~:@+,#".contains(c))
+    p.starts_with('/')
+        && p.len() <= 300
+        && p.chars()
+            .all(|c| c.is_ascii_alphanumeric() || "/_-.?=&%~:@+,#".contains(c))
 }
 
 impl LoadProfile {
@@ -286,10 +305,17 @@ impl LoadProfile {
         let mut total = 0u64;
         for (i, s) in self.stages.iter().enumerate() {
             if s.duration_s == 0 || s.duration_s > 14_400 {
-                return Err(format!("stage {}: the duration must be 1 second to 4 hours", i + 1));
+                return Err(format!(
+                    "stage {}: the duration must be 1 second to 4 hours",
+                    i + 1
+                ));
             }
             if s.target > max_vus {
-                return Err(format!("stage {}: {} users is over the limit of {max_vus} in Settings → Resources", i + 1, s.target));
+                return Err(format!(
+                    "stage {}: {} users is over the limit of {max_vus} in Settings → Resources",
+                    i + 1,
+                    s.target
+                ));
             }
             total += s.duration_s as u64;
         }
@@ -307,10 +333,16 @@ impl LoadProfile {
         }
         for r in &self.requests {
             if !METHODS.contains(&r.method.as_str()) {
-                return Err(format!("'{}' isn't a request method (GET, HEAD, POST, PUT, PATCH, DELETE)", r.method));
+                return Err(format!(
+                    "'{}' isn't a request method (GET, HEAD, POST, PUT, PATCH, DELETE)",
+                    r.method
+                ));
             }
             if !path_ok(&r.path) {
-                return Err(format!("'{}' isn't a usable path: start with / and use plain URL characters", r.path));
+                return Err(format!(
+                    "'{}' isn't a usable path: start with / and use plain URL characters",
+                    r.path
+                ));
             }
         }
         let mut seen = std::collections::HashSet::new();
@@ -322,14 +354,19 @@ impl LoadProfile {
                 return Err(format!("variable '{}': use letters, digits and _, not starting with a digit, once each (BASE_URL is taken)", v.name));
             }
             if v.value.len() > 4000 || v.value.contains(['\r', '\n', '\0']) {
-                return Err(format!("variable '{}': the value must be one line of up to 4000 characters", v.name));
+                return Err(format!(
+                    "variable '{}': the value must be one line of up to 4000 characters",
+                    v.name
+                ));
             }
         }
         let refs_ok = |text: &str, what: &str| -> Result<(), String> {
             for m in placeholders().captures_iter(text) {
                 let n = m[1].trim();
                 if !self.variables.iter().any(|v| v.name == n) {
-                    return Err(format!("{what} uses {{{{{n}}}}}, which isn't one of the variables"));
+                    return Err(format!(
+                        "{what} uses {{{{{n}}}}}, which isn't one of the variables"
+                    ));
                 }
             }
             Ok(())
@@ -342,26 +379,40 @@ impl LoadProfile {
                 return Err(format!("'{}' isn't a header name you can set (letters, digits and -; not Host or Content-Length)", h.name));
             }
             if h.value.len() > 2000 || h.value.contains(['\r', '\n', '\0']) {
-                return Err(format!("header {}: the value must be one line of up to 2000 characters", h.name));
+                return Err(format!(
+                    "header {}: the value must be one line of up to 2000 characters",
+                    h.name
+                ));
             }
             refs_ok(&h.value, &format!("header {}", h.name))?;
         }
         for r in &self.requests {
             if let Some(b) = &r.body {
                 if b.len() > 20_000 {
-                    return Err(format!("{}: the body is limited to 20000 characters", r.path));
+                    return Err(format!(
+                        "{}: the body is limited to 20000 characters",
+                        r.path
+                    ));
                 }
-                if !b.is_empty() && !["POST", "PUT", "PATCH", "DELETE"].contains(&r.method.as_str()) {
-                    return Err(format!("{} {}: only POST, PUT, PATCH and DELETE carry a body", r.method, r.path));
+                if !b.is_empty() && !["POST", "PUT", "PATCH", "DELETE"].contains(&r.method.as_str())
+                {
+                    return Err(format!(
+                        "{} {}: only POST, PUT, PATCH and DELETE carry a body",
+                        r.method, r.path
+                    ));
                 }
                 refs_ok(b, &format!("the body of {}", r.path))?;
             }
         }
         let t = &self.thresholds;
-        if t.p95_ms.is_some_and(|v| v == 0 || v > 600_000) || t.p99_ms.is_some_and(|v| v == 0 || v > 600_000) {
+        if t.p95_ms.is_some_and(|v| v == 0 || v > 600_000)
+            || t.p99_ms.is_some_and(|v| v == 0 || v > 600_000)
+        {
             return Err("a latency limit is 1 ms to 10 minutes".into());
         }
-        if t.error_rate_pct.is_some_and(|v| !(0.0..=100.0).contains(&v)) {
+        if t.error_rate_pct
+            .is_some_and(|v| !(0.0..=100.0).contains(&v))
+        {
             return Err("the error limit is 0 to 100 percent".into());
         }
         Ok(())
@@ -369,7 +420,17 @@ impl LoadProfile {
 
     /// The k6 script for this plan.
     pub fn script(&self) -> String {
-        let stages = self.stages.iter().map(|s| format!("    {{ duration: '{}s', target: {} }},", s.duration_s, s.target)).collect::<Vec<_>>().join("\n");
+        let stages = self
+            .stages
+            .iter()
+            .map(|s| {
+                format!(
+                    "    {{ duration: '{}s', target: {} }},",
+                    s.duration_s, s.target
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
         let mut thresholds = Vec::new();
         if let Some(e) = self.thresholds.error_rate_pct {
             thresholds.push(format!("    http_req_failed: ['rate<{}'],", e / 100.0));
@@ -387,13 +448,47 @@ impl LoadProfile {
         let requests = self
             .requests
             .iter()
-            .map(|r| format!("  {{ method: '{}', path: '{}', body: {} }},", r.method, r.path, r.body.as_deref().filter(|b| !b.is_empty()).map(js_value).unwrap_or_else(|| "null".into())))
+            .map(|r| {
+                format!(
+                    "  {{ method: '{}', path: '{}', body: {} }},",
+                    r.method,
+                    r.path,
+                    r.body
+                        .as_deref()
+                        .filter(|b| !b.is_empty())
+                        .map(js_value)
+                        .unwrap_or_else(|| "null".into())
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n");
-        let mut headers: Vec<String> = self.headers.iter().map(|h| format!("  {}: {},", serde_json::to_string(&h.name).unwrap_or_default(), js_value(&h.value))).collect();
-        if !self.headers.iter().any(|h| h.name.eq_ignore_ascii_case("content-type")) {
-            if let Some(body) = self.requests.iter().filter_map(|r| r.body.as_deref()).find(|b| !b.is_empty()) {
-                let kind = if matches!(body.trim_start().chars().next(), Some('{' | '[')) { "application/json" } else { "text/plain" };
+        let mut headers: Vec<String> = self
+            .headers
+            .iter()
+            .map(|h| {
+                format!(
+                    "  {}: {},",
+                    serde_json::to_string(&h.name).unwrap_or_default(),
+                    js_value(&h.value)
+                )
+            })
+            .collect();
+        if !self
+            .headers
+            .iter()
+            .any(|h| h.name.eq_ignore_ascii_case("content-type"))
+        {
+            if let Some(body) = self
+                .requests
+                .iter()
+                .filter_map(|r| r.body.as_deref())
+                .find(|b| !b.is_empty())
+            {
+                let kind = if matches!(body.trim_start().chars().next(), Some('{' | '[')) {
+                    "application/json"
+                } else {
+                    "text/plain"
+                };
                 headers.push(format!("  \"Content-Type\": \"{kind}\","));
             }
         }
@@ -408,36 +503,111 @@ impl LoadProfile {
     }
 }
 
-fn profile(id: &str, name: &str, icon: &str, description: &str, stages: &[(u32, u32)], think: f64, p95: u32, err: f64) -> LoadProfile {
+fn profile(
+    id: &str,
+    name: &str,
+    icon: &str,
+    description: &str,
+    stages: &[(u32, u32)],
+    think: f64,
+    p95: u32,
+    err: f64,
+) -> LoadProfile {
     LoadProfile {
         id: id.into(),
         name: name.into(),
         description: description.into(),
         builtin: true,
         icon: icon.into(),
-        stages: stages.iter().map(|&(duration_s, target)| Stage { duration_s, target }).collect(),
+        stages: stages
+            .iter()
+            .map(|&(duration_s, target)| Stage { duration_s, target })
+            .collect(),
         think_time_s: think,
-        requests: vec![PlannedRequest { method: "GET".into(), path: "/".into(), body: None }],
+        requests: vec![PlannedRequest {
+            method: "GET".into(),
+            path: "/".into(),
+            body: None,
+        }],
         headers: vec![],
         variables: vec![],
-        thresholds: Thresholds { p95_ms: Some(p95), p99_ms: None, error_rate_pct: Some(err) },
+        thresholds: Thresholds {
+            p95_ms: Some(p95),
+            p99_ms: None,
+            error_rate_pct: Some(err),
+        },
     }
 }
 
 /// The ready-made plans. A copy can be changed and saved under a new name.
 pub fn builtin_profiles() -> Vec<LoadProfile> {
     vec![
-        profile("smoke", "Smoke", "smoke", "One user for 30 seconds. Does every page answer at all?", &[(1, 1), (29, 1)], 1.0, 1000, 1.0),
-        profile("load", "Load", "load", "Ramp to 10 users, hold for a minute, ramp down. Everyday traffic.", &[(30, 10), (60, 10), (30, 0)], 1.0, 1000, 1.0),
-        profile("stress", "Stress", "stress", "Step up to 50 users to find where the site starts to slow down.", &[(30, 10), (60, 10), (30, 25), (60, 25), (30, 50), (60, 50), (30, 0)], 1.0, 2000, 5.0),
-        profile("spike", "Spike", "spike", "A sudden jump from 5 to 50 users, then back. Does it recover?", &[(10, 5), (10, 50), (30, 50), (10, 5), (10, 0)], 0.5, 2000, 5.0),
-        profile("soak", "Soak", "soak", "10 users for 10 minutes. Looks for slow leaks and things that degrade over time.", &[(60, 10), (600, 10), (60, 0)], 1.0, 1000, 1.0),
+        profile(
+            "smoke",
+            "Smoke",
+            "smoke",
+            "One user for 30 seconds. Does every page answer at all?",
+            &[(1, 1), (29, 1)],
+            1.0,
+            1000,
+            1.0,
+        ),
+        profile(
+            "load",
+            "Load",
+            "load",
+            "Ramp to 10 users, hold for a minute, ramp down. Everyday traffic.",
+            &[(30, 10), (60, 10), (30, 0)],
+            1.0,
+            1000,
+            1.0,
+        ),
+        profile(
+            "stress",
+            "Stress",
+            "stress",
+            "Step up to 50 users to find where the site starts to slow down.",
+            &[
+                (30, 10),
+                (60, 10),
+                (30, 25),
+                (60, 25),
+                (30, 50),
+                (60, 50),
+                (30, 0),
+            ],
+            1.0,
+            2000,
+            5.0,
+        ),
+        profile(
+            "spike",
+            "Spike",
+            "spike",
+            "A sudden jump from 5 to 50 users, then back. Does it recover?",
+            &[(10, 5), (10, 50), (30, 50), (10, 5), (10, 0)],
+            0.5,
+            2000,
+            5.0,
+        ),
+        profile(
+            "soak",
+            "Soak",
+            "soak",
+            "10 users for 10 minutes. Looks for slow leaks and things that degrade over time.",
+            &[(60, 10), (600, 10), (60, 0)],
+            1.0,
+            1000,
+            1.0,
+        ),
     ]
 }
 
 /// Applies one line of k6's `--out json` stream. Unknown lines are ignored.
 fn apply_line(live: &mut Live, line: &str, elapsed_s: u32) {
-    let Ok(v) = serde_json::from_str::<Value>(line) else { return };
+    let Ok(v) = serde_json::from_str::<Value>(line) else {
+        return;
+    };
     if v["type"] != "Point" {
         return;
     }
@@ -490,16 +660,34 @@ fn refresh_metrics(live: &mut Live, elapsed_s: f64) {
     m.p95_ms = percentile(&sorted, 95.0);
     m.p99_ms = percentile(&sorted, 99.0);
     m.max_ms = sorted.last().copied().unwrap_or(0.0);
-    m.avg_ms = if sorted.is_empty() { 0.0 } else { sum_ms / (m.requests.max(1) as f64) };
-    m.rps = if elapsed_s > 0.0 { m.requests as f64 / elapsed_s } else { 0.0 };
-    m.error_rate = if m.requests > 0 { m.failed as f64 / m.requests as f64 } else { 0.0 };
+    m.avg_ms = if sorted.is_empty() {
+        0.0
+    } else {
+        sum_ms / (m.requests.max(1) as f64)
+    };
+    m.rps = if elapsed_s > 0.0 {
+        m.requests as f64 / elapsed_s
+    } else {
+        0.0
+    };
+    m.error_rate = if m.requests > 0 {
+        m.failed as f64 / m.requests as f64
+    } else {
+        0.0
+    };
     let mut series: Vec<SeriesPoint> = live
         .buckets
         .iter()
         .map(|(t, b)| {
             let mut d = b.durations.clone();
             d.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-            SeriesPoint { t: *t, rps: b.reqs as f64, p95_ms: percentile(&d, 95.0), vus: b.vus, errors: b.errors }
+            SeriesPoint {
+                t: *t,
+                rps: b.reqs as f64,
+                p95_ms: percentile(&d, 95.0),
+                vus: b.vus,
+                errors: b.errors,
+            }
         })
         .collect();
     series.sort_by_key(|p| p.t);
@@ -507,7 +695,10 @@ fn refresh_metrics(live: &mut Live, elapsed_s: f64) {
 }
 
 fn now_ms() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 // ------------------------------------------------------------------------- the Inner API
@@ -520,11 +711,17 @@ impl Inner {
                 return Some((p, v.clone(), true));
             }
         }
-        crate::runtime::detect_system_install("k6").map(|s| (PathBuf::from(s.path), s.version, false))
+        crate::runtime::detect_system_install("k6")
+            .map(|s| (PathBuf::from(s.path), s.version, false))
     }
 
     fn load_project_dir(&self, project_id: &str) -> Result<PathBuf, CoreError> {
-        let p = self.projects.lock().unwrap().get(project_id).ok_or_else(|| fail(format!("no project '{project_id}'")))?;
+        let p = self
+            .projects
+            .lock()
+            .unwrap()
+            .get(project_id)
+            .ok_or_else(|| fail(format!("no project '{project_id}'")))?;
         Ok(PathBuf::from(p.path).join(".openlocalserver").join("k6"))
     }
 
@@ -538,12 +735,28 @@ impl Inner {
             .domain_summaries()
             .into_iter()
             .filter(|d| d.enabled && d.project_id.as_deref() == Some(project_id))
-            .map(|d| LoadSite { host: d.hostname, url: d.url.trim_end_matches('/').to_string(), public: false })
+            .map(|d| LoadSite {
+                host: d.hostname,
+                url: d.url.trim_end_matches('/').to_string(),
+                public: false,
+            })
             .collect();
-        for t in self.list_tunnels().into_iter().filter(|t| t.config.project_id.as_deref() == Some(project_id) && t.state == "connected") {
+        for t in self.list_tunnels().into_iter().filter(|t| {
+            t.config.project_id.as_deref() == Some(project_id) && t.state == "connected"
+        }) {
             if let Some(url) = t.public_url {
-                let host = url.trim_start_matches("https://").trim_start_matches("http://").split('/').next().unwrap_or("").to_string();
-                sites.push(LoadSite { host, url: url.trim_end_matches('/').to_string(), public: true });
+                let host = url
+                    .trim_start_matches("https://")
+                    .trim_start_matches("http://")
+                    .split('/')
+                    .next()
+                    .unwrap_or("")
+                    .to_string();
+                sites.push(LoadSite {
+                    host,
+                    url: url.trim_end_matches('/').to_string(),
+                    public: true,
+                });
             }
         }
         sites
@@ -552,34 +765,70 @@ impl Inner {
     pub fn load_overview(&self, project_id: &str) -> Result<LoadOverview, CoreError> {
         let dir = self.load_project_dir(project_id)?;
         let mut scripts: Vec<ScriptInfo> = std::fs::read_dir(&dir)
-            .map(|d| d.flatten().filter(|e| script_name_ok(&e.file_name().to_string_lossy())).map(|e| ScriptInfo { name: e.file_name().to_string_lossy().to_string(), size: e.metadata().map(|m| m.len()).unwrap_or(0) }).collect())
+            .map(|d| {
+                d.flatten()
+                    .filter(|e| script_name_ok(&e.file_name().to_string_lossy()))
+                    .map(|e| ScriptInfo {
+                        name: e.file_name().to_string_lossy().to_string(),
+                        size: e.metadata().map(|m| m.len()).unwrap_or(0),
+                    })
+                    .collect()
+            })
             .unwrap_or_default();
         scripts.sort_by(|a, b| a.name.cmp(&b.name));
         let k6 = match self.k6_binary() {
-            Some((p, v, managed)) => K6Info { installed: true, path: Some(p.display().to_string()), version: Some(v), managed },
-            None => K6Info { installed: false, path: None, version: None, managed: false },
+            Some((p, v, managed)) => K6Info {
+                installed: true,
+                path: Some(p.display().to_string()),
+                version: Some(v),
+                managed,
+            },
+            None => K6Info {
+                installed: false,
+                path: None,
+                version: None,
+                managed: false,
+            },
         };
-        Ok(LoadOverview { k6, scripts, sites: self.load_sites(project_id), max_vus: self.load_max_vus() })
+        Ok(LoadOverview {
+            k6,
+            scripts,
+            sites: self.load_sites(project_id),
+            max_vus: self.load_max_vus(),
+        })
     }
 
     fn script_path(&self, project_id: &str, name: &str) -> Result<PathBuf, CoreError> {
         if !script_name_ok(name) {
-            return Err(fail("a script name is letters, digits, '-', '_' and '.', ending in .js"));
+            return Err(fail(
+                "a script name is letters, digits, '-', '_' and '.', ending in .js",
+            ));
         }
         Ok(self.load_project_dir(project_id)?.join(name))
     }
 
     /// Whether `script` passes the same safety scan a run applies (only this project's own sites, limited VUs).
     pub fn load_check_script(&self, project_id: &str, script: &str) -> Result<(), String> {
-        let hosts: Vec<String> = self.load_sites(project_id).into_iter().map(|s| s.host).collect();
+        let hosts: Vec<String> = self
+            .load_sites(project_id)
+            .into_iter()
+            .map(|s| s.host)
+            .collect();
         check_script(script, &hosts, self.load_max_vus())
     }
 
     pub fn load_read_script(&self, project_id: &str, name: &str) -> Result<String, CoreError> {
-        Ok(std::fs::read_to_string(self.script_path(project_id, name)?)?)
+        Ok(std::fs::read_to_string(
+            self.script_path(project_id, name)?,
+        )?)
     }
 
-    pub fn load_save_script(&self, project_id: &str, name: &str, content: &str) -> Result<(), CoreError> {
+    pub fn load_save_script(
+        &self,
+        project_id: &str,
+        name: &str,
+        content: &str,
+    ) -> Result<(), CoreError> {
         let path = self.script_path(project_id, name)?;
         if content.len() > 256 * 1024 {
             return Err(fail("a script is limited to 256 KB"));
@@ -602,7 +851,10 @@ impl Inner {
     }
 
     fn custom_profiles(&self) -> Vec<LoadProfile> {
-        std::fs::read_to_string(self.profiles_file()).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+        std::fs::read_to_string(self.profiles_file())
+            .ok()
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default()
     }
 
     /// The ready-made plans, then the user's own.
@@ -611,25 +863,37 @@ impl Inner {
         for mut p in self.custom_profiles() {
             // Secret values live in the keyring; they are read back for the form and never stored in the file.
             for v in p.variables.iter_mut().filter(|v| v.secret) {
-                v.value = crate::secrets::get_secret(&secret_key(&p.id, &v.name)).ok().flatten().unwrap_or_default();
+                v.value = crate::secrets::get_secret(&secret_key(&p.id, &v.name))
+                    .ok()
+                    .flatten()
+                    .unwrap_or_default();
             }
             all.push(p);
         }
         all
     }
 
-    pub fn load_save_profile(&self, mut profile: LoadProfile) -> Result<Vec<LoadProfile>, CoreError> {
+    pub fn load_save_profile(
+        &self,
+        mut profile: LoadProfile,
+    ) -> Result<Vec<LoadProfile>, CoreError> {
         profile.validate(self.load_max_vus()).map_err(fail)?;
         profile.builtin = false;
         if profile.icon.is_empty() || builtin_profiles().iter().all(|b| b.icon != profile.icon) {
             profile.icon = "custom".into();
         }
-        let id = crate::domain::slugify(if profile.id.is_empty() { &profile.name } else { &profile.id });
+        let id = crate::domain::slugify(if profile.id.is_empty() {
+            &profile.name
+        } else {
+            &profile.id
+        });
         if id.is_empty() {
             return Err(fail("give the test a name"));
         }
         if builtin_profiles().iter().any(|b| b.id == id) {
-            return Err(fail(format!("'{id}' is a ready-made test; save yours under another name")));
+            return Err(fail(format!(
+                "'{id}' is a ready-made test; save yours under another name"
+            )));
         }
         profile.id = id.clone();
         let mut stored = profile.clone();
@@ -638,7 +902,8 @@ impl Inner {
             if v.value.is_empty() {
                 let _ = crate::secrets::delete_secret(&key);
             } else {
-                crate::secrets::set_secret(&key, &v.value).map_err(|e| fail(format!("the secret couldn't be stored: {e}")))?;
+                crate::secrets::set_secret(&key, &v.value)
+                    .map_err(|e| fail(format!("the secret couldn't be stored: {e}")))?;
             }
             v.value.clear();
         }
@@ -663,38 +928,82 @@ impl Inner {
     }
 
     /// Writes the script for a test plan into the project (replacing one of the same name); returns its file name.
-    pub fn load_generate(&self, project_id: &str, profile: &LoadProfile, name: Option<&str>) -> Result<String, CoreError> {
+    pub fn load_generate(
+        &self,
+        project_id: &str,
+        profile: &LoadProfile,
+        name: Option<&str>,
+    ) -> Result<String, CoreError> {
         profile.validate(self.load_max_vus()).map_err(fail)?;
-        let base = crate::domain::slugify(name.unwrap_or(if profile.id.is_empty() { &profile.name } else { &profile.id }));
-        let file = format!("{}.js", if base.is_empty() { "test".to_string() } else { base });
+        let base = crate::domain::slugify(name.unwrap_or(if profile.id.is_empty() {
+            &profile.name
+        } else {
+            &profile.id
+        }));
+        let file = format!(
+            "{}.js",
+            if base.is_empty() {
+                "test".to_string()
+            } else {
+                base
+            }
+        );
         self.load_save_script(project_id, &file, &profile.script())?;
         Ok(file)
     }
 
     /// Starts k6 against a site of the project. Returns the run (still running).
-    pub fn load_run(&self, project_id: &str, script: &str, target: Option<&str>, confirm_public: bool, env: &[(String, String)]) -> Result<LoadRun, CoreError> {
-        let (k6, _, _) = self.k6_binary().ok_or_else(|| CoreError::failed_fix("k6 isn't installed.", "Load tests run with k6.", "Install k6 from the Runtimes page."))?;
+    pub fn load_run(
+        &self,
+        project_id: &str,
+        script: &str,
+        target: Option<&str>,
+        confirm_public: bool,
+        env: &[(String, String)],
+    ) -> Result<LoadRun, CoreError> {
+        let (k6, _, _) = self.k6_binary().ok_or_else(|| {
+            CoreError::failed_fix(
+                "k6 isn't installed.",
+                "Load tests run with k6.",
+                "Install k6 from the Runtimes page.",
+            )
+        })?;
         let path = self.script_path(project_id, script)?;
-        let text = std::fs::read_to_string(&path).map_err(|_| fail(format!("{script} doesn't exist")))?;
+        let text =
+            std::fs::read_to_string(&path).map_err(|_| fail(format!("{script} doesn't exist")))?;
         let sites = self.load_sites(project_id);
         let site = match target {
-            Some(t) => sites.iter().find(|s| s.host.eq_ignore_ascii_case(t) || s.url == t),
+            Some(t) => sites
+                .iter()
+                .find(|s| s.host.eq_ignore_ascii_case(t) || s.url == t),
             None => sites.iter().find(|s| !s.public),
         }
-        .ok_or_else(|| fail("this project has no site to test. Give it a domain first, or start its tunnel."))?
+        .ok_or_else(|| {
+            fail("this project has no site to test. Give it a domain first, or start its tunnel.")
+        })?
         .clone();
         if site.public && !confirm_public {
             return Err(CoreError::failed_fix("The test wasn't started.", format!("{} is a public tunnel address. A load test sends real traffic through the tunnel provider.", site.host), "Confirm that you mean to test the public address."));
         }
-        let allowed: Vec<String> = sites.iter().filter(|s| site.public || !s.public).map(|s| s.host.clone()).collect();
+        let allowed: Vec<String> = sites
+            .iter()
+            .filter(|s| site.public || !s.public)
+            .map(|s| s.host.clone())
+            .collect();
         check_script(&text, &allowed, self.load_max_vus()).map_err(fail)?;
         for (k, v) in env {
-            if !var_name_ok(k) || k == "BASE_URL" || v.len() > 4000 || v.contains(['\0', '\r', '\n']) {
+            if !var_name_ok(k)
+                || k == "BASE_URL"
+                || v.len() > 4000
+                || v.contains(['\0', '\r', '\n'])
+            {
                 return Err(fail(format!("'{k}' isn't a usable variable")));
             }
         }
         if self.load_runs_active(project_id) {
-            return Err(fail("a test is already running for this project. Stop it first."));
+            return Err(fail(
+                "a test is already running for this project. Stop it first.",
+            ));
         }
 
         let id = format!("run-{}", now_ms());
@@ -723,7 +1032,9 @@ impl Inner {
             use std::os::windows::process::CommandExt;
             cmd.creation_flags(0x0800_0000 | 0x0000_4000); // no window, below-normal priority
         }
-        let mut child = cmd.spawn().map_err(|e| fail(format!("k6 didn't start: {e}")))?;
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| fail(format!("k6 didn't start: {e}")))?;
         let stdout = child.stdout.take();
         let stderr = child.stderr.take();
 
@@ -741,11 +1052,28 @@ impl Inner {
             output: vec![],
             message: None,
         };
-        let live = Arc::new(Mutex::new(Live { run: run.clone(), child: Some(child), stop_requested: false, durations: vec![], sum_ms: 0.0, buckets: HashMap::new() }));
-        self.loadtests.runs.lock().unwrap().insert(id.clone(), live.clone());
+        let live = Arc::new(Mutex::new(Live {
+            run: run.clone(),
+            child: Some(child),
+            stop_requested: false,
+            durations: vec![],
+            sum_ms: 0.0,
+            buckets: HashMap::new(),
+        }));
+        self.loadtests
+            .runs
+            .lock()
+            .unwrap()
+            .insert(id.clone(), live.clone());
 
         // k6's own messages (threshold results, errors) come on both pipes.
-        for pipe in [stdout.map(|s| Box::new(s) as Box<dyn Read + Send>), stderr.map(|s| Box::new(s) as Box<dyn Read + Send>)].into_iter().flatten() {
+        for pipe in [
+            stdout.map(|s| Box::new(s) as Box<dyn Read + Send>),
+            stderr.map(|s| Box::new(s) as Box<dyn Read + Send>),
+        ]
+        .into_iter()
+        .flatten()
+        {
             let live = live.clone();
             std::thread::spawn(move || {
                 for line in BufReader::new(pipe).lines().map_while(Result::ok) {
@@ -774,9 +1102,15 @@ impl Inner {
             return Ok(l.lock().unwrap().run.clone());
         }
         // A run from an earlier session.
-        let found = std::fs::read_dir(self.paths.data_dir().join("loadtests")).ok().and_then(|d| {
-            d.flatten().find_map(|p| std::fs::read_to_string(p.path().join(format!("{run_id}.json"))).ok().and_then(|t| serde_json::from_str::<LoadRun>(&t).ok()))
-        });
+        let found = std::fs::read_dir(self.paths.data_dir().join("loadtests"))
+            .ok()
+            .and_then(|d| {
+                d.flatten().find_map(|p| {
+                    std::fs::read_to_string(p.path().join(format!("{run_id}.json")))
+                        .ok()
+                        .and_then(|t| serde_json::from_str::<LoadRun>(&t).ok())
+                })
+            });
         found.ok_or_else(|| fail(format!("no run '{run_id}'")))
     }
 
@@ -794,9 +1128,16 @@ impl Inner {
 
     /// Saved runs of a project, newest first (running ones included).
     pub fn load_runs(&self, project_id: &str) -> Vec<LoadRun> {
-        let mut runs: Vec<LoadRun> = std::fs::read_dir(self.paths.data_dir().join("loadtests").join(project_id))
-            .map(|d| d.flatten().filter(|e| !e.file_name().to_string_lossy().contains(".points.")).filter_map(|e| std::fs::read_to_string(e.path()).ok()).filter_map(|t| serde_json::from_str::<LoadRun>(&t).ok()).collect())
-            .unwrap_or_default();
+        let mut runs: Vec<LoadRun> =
+            std::fs::read_dir(self.paths.data_dir().join("loadtests").join(project_id))
+                .map(|d| {
+                    d.flatten()
+                        .filter(|e| !e.file_name().to_string_lossy().contains(".points."))
+                        .filter_map(|e| std::fs::read_to_string(e.path()).ok())
+                        .filter_map(|t| serde_json::from_str::<LoadRun>(&t).ok())
+                        .collect()
+                })
+                .unwrap_or_default();
         for l in self.loadtests.runs.lock().unwrap().values() {
             let r = l.lock().unwrap().run.clone();
             if r.project_id == project_id && !runs.iter().any(|x| x.id == r.id) {
@@ -825,7 +1166,9 @@ fn monitor(live: Arc<Mutex<Live>>, points: PathBuf, dir: PathBuf) {
     let mut offset = 0u64;
     let mut carry = String::new();
     let read_new = |live: &mut Live, offset: &mut u64, carry: &mut String| {
-        let Ok(mut f) = std::fs::File::open(&points) else { return };
+        let Ok(mut f) = std::fs::File::open(&points) else {
+            return;
+        };
         if f.seek(SeekFrom::Start(*offset)).is_err() {
             return;
         }
@@ -890,14 +1233,23 @@ mod tests {
     fn a_script_may_only_name_the_projects_own_sites() {
         let ok = "http.get('https://shop.test/cart'); http.get(`${__ENV.BASE_URL}/`)";
         assert!(check_script(ok, &hosts(&["shop.test"]), 200).is_ok());
-        let err = check_script("http.get('https://example.com/')", &hosts(&["shop.test"]), 200).unwrap_err();
+        let err = check_script(
+            "http.get('https://example.com/')",
+            &hosts(&["shop.test"]),
+            200,
+        )
+        .unwrap_err();
         assert!(err.contains("example.com"), "{err}");
     }
 
     #[test]
     fn virtual_user_numbers_stay_under_the_limit() {
         assert!(check_script("export const options = { vus: 50 };", &[], 100).is_ok());
-        assert!(check_script("stages: [{ duration: '1m', target: 5000 }]", &[], 100).unwrap_err().contains("5000"));
+        assert!(
+            check_script("stages: [{ duration: '1m', target: 5000 }]", &[], 100)
+                .unwrap_err()
+                .contains("5000")
+        );
         assert!(check_script("{ preAllocatedVUs: 101 }", &[], 100).is_err());
     }
 
@@ -908,22 +1260,62 @@ mod tests {
     #[test]
     fn every_ready_made_plan_is_valid_and_its_script_passes_the_safety_scan() {
         for p in builtin_profiles() {
-            p.validate(DEFAULT_MAX_VUS).unwrap_or_else(|e| panic!("{}: {e}", p.id));
+            p.validate(DEFAULT_MAX_VUS)
+                .unwrap_or_else(|e| panic!("{}: {e}", p.id));
             let s = p.script();
-            assert!(s.contains("__ENV.BASE_URL") && s.contains("stages:") && s.contains("thresholds"), "{}", p.id);
-            assert!(check_script(&s, &[], DEFAULT_MAX_VUS).is_ok(), "{} must pass the safety scan", p.id);
+            assert!(
+                s.contains("__ENV.BASE_URL") && s.contains("stages:") && s.contains("thresholds"),
+                "{}",
+                p.id
+            );
+            assert!(
+                check_script(&s, &[], DEFAULT_MAX_VUS).is_ok(),
+                "{} must pass the safety scan",
+                p.id
+            );
         }
     }
 
     #[test]
     fn a_form_becomes_the_matching_script() {
         let mut p = plan();
-        p.stages = vec![Stage { duration_s: 20, target: 7 }, Stage { duration_s: 90, target: 7 }];
-        p.requests = vec![PlannedRequest { method: "GET".into(), path: "/".into(), body: None }, PlannedRequest { method: "POST".into(), path: "/api/orders?x=1".into(), body: None }];
+        p.stages = vec![
+            Stage {
+                duration_s: 20,
+                target: 7,
+            },
+            Stage {
+                duration_s: 90,
+                target: 7,
+            },
+        ];
+        p.requests = vec![
+            PlannedRequest {
+                method: "GET".into(),
+                path: "/".into(),
+                body: None,
+            },
+            PlannedRequest {
+                method: "POST".into(),
+                path: "/api/orders?x=1".into(),
+                body: None,
+            },
+        ];
         p.think_time_s = 2.5;
-        p.thresholds = Thresholds { p95_ms: Some(800), p99_ms: Some(1500), error_rate_pct: Some(2.0) };
+        p.thresholds = Thresholds {
+            p95_ms: Some(800),
+            p99_ms: Some(1500),
+            error_rate_pct: Some(2.0),
+        };
         let s = p.script();
-        for wanted in ["{ duration: '20s', target: 7 }", "{ duration: '90s', target: 7 }", "{ method: 'POST', path: '/api/orders?x=1', body: null }", "sleep(2.5)", "'p(95)<800', 'p(99)<1500'", "rate<0.02"] {
+        for wanted in [
+            "{ duration: '20s', target: 7 }",
+            "{ duration: '90s', target: 7 }",
+            "{ method: 'POST', path: '/api/orders?x=1', body: null }",
+            "sleep(2.5)",
+            "'p(95)<800', 'p(99)<1500'",
+            "rate<0.02",
+        ] {
             assert!(s.contains(wanted), "missing {wanted} in\n{s}");
         }
         p.thresholds = Thresholds::default();
@@ -933,16 +1325,39 @@ mod tests {
     #[test]
     fn headers_bodies_and_variables_reach_the_script_without_their_values() {
         let mut p = plan();
-        p.variables = vec![Variable { name: "TOKEN".into(), value: "s3cret-token".into(), secret: true }];
-        p.headers = vec![Header { name: "Authorization".into(), value: "Bearer {{TOKEN}}".into() }, Header { name: "X-Client".into(), value: "ols".into() }];
-        p.requests = vec![PlannedRequest { method: "POST".into(), path: "/api/login".into(), body: Some("{\"user\":\"a\",\"t\":\"{{TOKEN}}\"}".into()) }];
+        p.variables = vec![Variable {
+            name: "TOKEN".into(),
+            value: "s3cret-token".into(),
+            secret: true,
+        }];
+        p.headers = vec![
+            Header {
+                name: "Authorization".into(),
+                value: "Bearer {{TOKEN}}".into(),
+            },
+            Header {
+                name: "X-Client".into(),
+                value: "ols".into(),
+            },
+        ];
+        p.requests = vec![PlannedRequest {
+            method: "POST".into(),
+            path: "/api/login".into(),
+            body: Some("{\"user\":\"a\",\"t\":\"{{TOKEN}}\"}".into()),
+        }];
         p.validate(100).unwrap();
         let s = p.script();
-        assert!(s.contains("\"Authorization\": \"Bearer \" + __ENV.TOKEN"), "{s}");
+        assert!(
+            s.contains("\"Authorization\": \"Bearer \" + __ENV.TOKEN"),
+            "{s}"
+        );
         assert!(s.contains("\"X-Client\": \"ols\""));
         assert!(s.contains("__ENV.TOKEN"), "the body reads the variable");
         assert!(s.contains("\"Content-Type\": \"application/json\""), "{s}");
-        assert!(!s.contains("s3cret-token"), "the value must never be written into the script");
+        assert!(
+            !s.contains("s3cret-token"),
+            "the value must never be written into the script"
+        );
         assert!(check_script(&s, &[], 100).is_ok());
     }
 
@@ -954,13 +1369,36 @@ mod tests {
             f(&mut p);
             p.validate(100).is_err()
         };
-        assert!(bad(&|p| p.headers = vec![Header { name: "Host".into(), value: "evil.example".into() }]));
-        assert!(bad(&|p| p.headers = vec![Header { name: "X-A".into(), value: "a\r\nX-B: 1".into() }]));
-        assert!(bad(&|p| p.headers = vec![Header { name: "X-A".into(), value: "{{MISSING}}".into() }]));
-        assert!(bad(&|p| p.variables = vec![Variable { name: "1BAD".into(), value: "x".into(), secret: false }]));
-        assert!(bad(&|p| p.variables = vec![Variable { name: "BASE_URL".into(), value: "x".into(), secret: false }]));
-        assert!(bad(&|p| p.requests[0].body = Some("x".into())), "GET can't carry a body");
-        assert!(js_value("plain \"quoted\"").starts_with('"'), "literals are JSON-escaped");
+        assert!(bad(&|p| p.headers = vec![Header {
+            name: "Host".into(),
+            value: "evil.example".into()
+        }]));
+        assert!(bad(&|p| p.headers = vec![Header {
+            name: "X-A".into(),
+            value: "a\r\nX-B: 1".into()
+        }]));
+        assert!(bad(&|p| p.headers = vec![Header {
+            name: "X-A".into(),
+            value: "{{MISSING}}".into()
+        }]));
+        assert!(bad(&|p| p.variables = vec![Variable {
+            name: "1BAD".into(),
+            value: "x".into(),
+            secret: false
+        }]));
+        assert!(bad(&|p| p.variables = vec![Variable {
+            name: "BASE_URL".into(),
+            value: "x".into(),
+            secret: false
+        }]));
+        assert!(
+            bad(&|p| p.requests[0].body = Some("x".into())),
+            "GET can't carry a body"
+        );
+        assert!(
+            js_value("plain \"quoted\"").starts_with('"'),
+            "literals are JSON-escaped"
+        );
     }
 
     #[test]
@@ -988,7 +1426,15 @@ mod tests {
     #[test]
     fn script_names_cannot_leave_the_folder() {
         assert!(script_name_ok("smoke.js") && script_name_ok("my-test_2.js"));
-        for bad in ["../x.js", "a/b.js", "a\\b.js", ".hidden.js", "x.txt", "", "c:x.js"] {
+        for bad in [
+            "../x.js",
+            "a/b.js",
+            "a\\b.js",
+            ".hidden.js",
+            "x.txt",
+            "",
+            "c:x.js",
+        ] {
             assert!(!script_name_ok(bad), "{bad}");
         }
     }
@@ -996,7 +1442,20 @@ mod tests {
     #[test]
     fn point_lines_become_live_numbers() {
         let mut live = Live {
-            run: LoadRun { id: "r".into(), project_id: "p".into(), script: "s".into(), target: "t".into(), state: "running".into(), started_ms: 0, finished_ms: None, exit_code: None, metrics: Metrics::default(), series: vec![], output: vec![], message: None },
+            run: LoadRun {
+                id: "r".into(),
+                project_id: "p".into(),
+                script: "s".into(),
+                target: "t".into(),
+                state: "running".into(),
+                started_ms: 0,
+                finished_ms: None,
+                exit_code: None,
+                metrics: Metrics::default(),
+                series: vec![],
+                output: vec![],
+                message: None,
+            },
             child: None,
             stop_requested: false,
             durations: vec![],
@@ -1004,18 +1463,41 @@ mod tests {
             buckets: HashMap::new(),
         };
         for i in 1..=100 {
-            apply_line(&mut live, &format!(r#"{{"type":"Point","metric":"http_reqs","data":{{"time":"2026-01-01T00:00:00Z","value":1,"tags":{{}}}}}}"#), 0);
-            apply_line(&mut live, &format!(r#"{{"type":"Point","metric":"http_req_duration","data":{{"time":"2026-01-01T00:00:00Z","value":{i}.0,"tags":{{}}}}}}"#), 0);
+            apply_line(
+                &mut live,
+                &format!(
+                    r#"{{"type":"Point","metric":"http_reqs","data":{{"time":"2026-01-01T00:00:00Z","value":1,"tags":{{}}}}}}"#
+                ),
+                0,
+            );
+            apply_line(
+                &mut live,
+                &format!(
+                    r#"{{"type":"Point","metric":"http_req_duration","data":{{"time":"2026-01-01T00:00:00Z","value":{i}.0,"tags":{{}}}}}}"#
+                ),
+                0,
+            );
         }
-        apply_line(&mut live, r#"{"type":"Point","metric":"http_req_failed","data":{"time":"x","value":1,"tags":{}}}"#, 0);
-        apply_line(&mut live, r#"{"type":"Point","metric":"vus","data":{"time":"x","value":7,"tags":{}}}"#, 1);
+        apply_line(
+            &mut live,
+            r#"{"type":"Point","metric":"http_req_failed","data":{"time":"x","value":1,"tags":{}}}"#,
+            0,
+        );
+        apply_line(
+            &mut live,
+            r#"{"type":"Point","metric":"vus","data":{"time":"x","value":7,"tags":{}}}"#,
+            1,
+        );
         apply_line(&mut live, "not json", 1);
         refresh_metrics(&mut live, 10.0);
         let m = &live.run.metrics;
         assert_eq!(m.requests, 100);
         assert_eq!(m.failed, 1);
         assert!((m.rps - 10.0).abs() < 1e-9);
-        assert!((m.p50_ms - 51.0).abs() < 1.5 && (m.p95_ms - 95.0).abs() < 1.5 && m.p99_ms >= 99.0, "{m:?}");
+        assert!(
+            (m.p50_ms - 51.0).abs() < 1.5 && (m.p95_ms - 95.0).abs() < 1.5 && m.p99_ms >= 99.0,
+            "{m:?}"
+        );
         assert_eq!(m.vus, 7);
         assert_eq!(live.run.series.len(), 2);
     }

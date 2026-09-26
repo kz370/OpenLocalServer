@@ -61,11 +61,26 @@ pub struct CommandSource {
 /// Options every Symfony console application has. They only clutter a form (output
 /// verbosity, colours, `--help`), so they are left out; the free "extra arguments" field
 /// still takes them.
-const GLOBAL_OPTIONS: &[&str] =
-    &["--help", "--quiet", "--silent", "--verbose", "--version", "--ansi", "--no-ansi", "--no-interaction", "--profile", "--working-dir", "--no-plugins", "--no-cache"];
+const GLOBAL_OPTIONS: &[&str] = &[
+    "--help",
+    "--quiet",
+    "--silent",
+    "--verbose",
+    "--version",
+    "--ansi",
+    "--no-ansi",
+    "--no-interaction",
+    "--profile",
+    "--working-dir",
+    "--no-plugins",
+    "--no-cache",
+];
 
 fn text(v: Option<&Value>) -> String {
-    v.and_then(Value::as_str).unwrap_or_default().trim().to_string()
+    v.and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim()
+        .to_string()
 }
 
 fn default_text(v: Option<&Value>) -> Option<String> {
@@ -93,7 +108,10 @@ pub fn extract_json(output: &str) -> Option<Value> {
     let mut rest = output;
     while let Some(start) = rest.find('{') {
         let candidate = &rest[start..];
-        if let Some(Ok(v)) = serde_json::Deserializer::from_str(candidate).into_iter::<Value>().next() {
+        if let Some(Ok(v)) = serde_json::Deserializer::from_str(candidate)
+            .into_iter::<Value>()
+            .next()
+        {
             return Some(v);
         }
         rest = &candidate[1..];
@@ -105,7 +123,10 @@ pub fn extract_json(output: &str) -> Option<Value> {
 /// Symfony's bin/console, Composer). Hidden commands are skipped.
 pub fn parse_symfony_list(output: &str) -> Result<Vec<DiscoveredCommand>, String> {
     let json = extract_json(output).ok_or("the command list was not valid JSON")?;
-    let commands = json.get("commands").and_then(Value::as_array).ok_or("the command list has no \"commands\"")?;
+    let commands = json
+        .get("commands")
+        .and_then(Value::as_array)
+        .ok_or("the command list has no \"commands\"")?;
     let mut out: Vec<DiscoveredCommand> = commands
         .iter()
         .filter(|c| !c.get("hidden").and_then(Value::as_bool).unwrap_or(false))
@@ -120,7 +141,10 @@ pub fn parse_symfony_list(output: &str) -> Result<Vec<DiscoveredCommand>, String
                 .map(|a| CommandArgument {
                     name: text(a.get("name")),
                     description: text(a.get("description")),
-                    required: a.get("is_required").and_then(Value::as_bool).unwrap_or(false),
+                    required: a
+                        .get("is_required")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false),
                     multiple: a.get("is_array").and_then(Value::as_bool).unwrap_or(false),
                     default: default_text(a.get("default")),
                 })
@@ -132,14 +156,29 @@ pub fn parse_symfony_list(output: &str) -> Result<Vec<DiscoveredCommand>, String
                     name: text(o.get("name")),
                     shortcut: Some(text(o.get("shortcut"))).filter(|s| !s.is_empty()),
                     description: text(o.get("description")),
-                    accepts_value: o.get("accept_value").and_then(Value::as_bool).unwrap_or(false),
-                    value_required: o.get("is_value_required").and_then(Value::as_bool).unwrap_or(false),
-                    multiple: o.get("is_multiple").and_then(Value::as_bool).unwrap_or(false),
+                    accepts_value: o
+                        .get("accept_value")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false),
+                    value_required: o
+                        .get("is_value_required")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false),
+                    multiple: o
+                        .get("is_multiple")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false),
                     default: default_text(o.get("default")),
                 })
                 .filter(|o| o.name.starts_with("--") && !GLOBAL_OPTIONS.contains(&o.name.as_str()))
                 .collect();
-            Some(DiscoveredCommand { name, description: text(c.get("description")), help: text(c.get("help")), arguments, options })
+            Some(DiscoveredCommand {
+                name,
+                description: text(c.get("description")),
+                help: text(c.get("help")),
+                arguments,
+                options,
+            })
         })
         .collect();
     out.sort_by(|a, b| a.name.cmp(&b.name));
@@ -148,11 +187,19 @@ pub fn parse_symfony_list(output: &str) -> Result<Vec<DiscoveredCommand>, String
 
 /// package.json `scripts`, by name; the description is the script itself.
 pub fn package_scripts(package_json: &str) -> Vec<DiscoveredCommand> {
-    let Ok(json) = serde_json::from_str::<Value>(package_json) else { return vec![] };
-    let Some(Value::Object(scripts)) = json.get("scripts") else { return vec![] };
+    let Ok(json) = serde_json::from_str::<Value>(package_json) else {
+        return vec![];
+    };
+    let Some(Value::Object(scripts)) = json.get("scripts") else {
+        return vec![];
+    };
     scripts
         .iter()
-        .map(|(name, body)| DiscoveredCommand { name: name.clone(), description: body.as_str().unwrap_or_default().to_string(), ..Default::default() })
+        .map(|(name, body)| DiscoveredCommand {
+            name: name.clone(),
+            description: body.as_str().unwrap_or_default().to_string(),
+            ..Default::default()
+        })
         .collect()
 }
 
@@ -160,11 +207,21 @@ pub fn package_scripts(package_json: &str) -> Vec<DiscoveredCommand> {
 pub fn parse_name_list(output: &str) -> Vec<DiscoveredCommand> {
     let mut names: BTreeMap<String, ()> = BTreeMap::new();
     for line in output.lines().map(str::trim) {
-        if !line.is_empty() && line.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == ':') {
+        if !line.is_empty()
+            && line
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == ':')
+        {
             names.insert(line.to_string(), ());
         }
     }
-    names.into_keys().map(|name| DiscoveredCommand { name, ..Default::default() }).collect()
+    names
+        .into_keys()
+        .map(|name| DiscoveredCommand {
+            name,
+            ..Default::default()
+        })
+        .collect()
 }
 
 /// How a package.json script runs with the project's package manager.
@@ -177,7 +234,9 @@ pub fn script_prefix(manager: Option<&str>) -> Vec<String> {
 /// Removes terminal colour codes; artisan's error pages are full of them.
 pub fn strip_ansi(s: &str) -> String {
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    RE.get_or_init(|| regex::Regex::new(r"\x1b\[[0-9;]*[A-Za-z]").unwrap()).replace_all(s, "").into_owned()
+    RE.get_or_init(|| regex::Regex::new(r"\x1b\[[0-9;]*[A-Za-z]").unwrap())
+        .replace_all(s, "")
+        .into_owned()
 }
 
 /// One plain sentence for the usual reasons a Laravel app fails to start from the
@@ -188,7 +247,10 @@ pub fn boot_failure_hint(output: &str) -> Option<&'static str> {
         "The PHP this project uses has no database driver (pdo_mysql / pdo_pgsql) switched on. Enable it for that PHP version, or give the project a PHP that has it."
     } else if o.contains("unknown database") {
         "The database in the project's .env does not exist yet. Create it on the Databases page."
-    } else if o.contains("[2002]") || o.contains("connection refused") || o.contains("actively refused") {
+    } else if o.contains("[2002]")
+        || o.contains("connection refused")
+        || o.contains("actively refused")
+    {
         "The database server is not running. Start it on the Services page."
     } else if o.contains("access denied for user") {
         "The database user or password in the project's .env is wrong."
@@ -202,7 +264,9 @@ pub fn boot_failure_hint(output: &str) -> Option<&'static str> {
 }
 
 fn php_string(raw: &str) -> String {
-    raw.replace("\\'", "'").replace("\\\"", "\"").replace("\\\\", "\\")
+    raw.replace("\\'", "'")
+        .replace("\\\"", "\"")
+        .replace("\\\\", "\\")
 }
 
 /// Reads a class property's string value: `protected $field = '...'` (single or double
@@ -220,8 +284,14 @@ fn php_property(src: &str, field: &str) -> Option<String> {
 fn as_command(src: &str, key: &str) -> Option<String> {
     static ATTR: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     static ARG: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let attr = ATTR.get_or_init(|| regex::Regex::new(r"(?s)#\[AsCommand\((.*?)\)\]").unwrap()).captures(src)?.get(1)?.as_str();
-    let arg = ARG.get_or_init(|| regex::Regex::new(r"(name|description)\s*:\s*'((?:[^'\\]|\\.)*)'").unwrap());
+    let attr = ATTR
+        .get_or_init(|| regex::Regex::new(r"(?s)#\[AsCommand\((.*?)\)\]").unwrap())
+        .captures(src)?
+        .get(1)?
+        .as_str();
+    let arg = ARG.get_or_init(|| {
+        regex::Regex::new(r"(name|description)\s*:\s*'((?:[^'\\]|\\.)*)'").unwrap()
+    });
     let c = arg.captures_iter(attr).find(|c| &c[1] == key)?;
     Some(php_string(&c[2]))
 }
@@ -229,7 +299,11 @@ fn as_command(src: &str, key: &str) -> Option<String> {
 /// Parses a Laravel command signature: `migrate {name} {user?} {ids*} {--force : Why}
 /// {--Q|queue=default}` into the command name, its arguments and its options.
 pub fn parse_signature(signature: &str) -> (String, Vec<CommandArgument>, Vec<CommandOption>) {
-    let name = signature.split(|c: char| c.is_whitespace() || c == '{').next().unwrap_or_default().to_string();
+    let name = signature
+        .split(|c: char| c.is_whitespace() || c == '{')
+        .next()
+        .unwrap_or_default()
+        .to_string();
     let mut args = Vec::new();
     let mut opts = Vec::new();
     // Braces don't nest in signatures, but descriptions may contain "{" so walk by depth.
@@ -273,7 +347,9 @@ fn parse_token(token: &str, args: &mut Vec<CommandArgument>, opts: &mut Vec<Comm
             None => (rest, None),
         };
         let multiple = value.is_some_and(|v| v.starts_with('*'));
-        let default = value.map(|v| v.trim_start_matches('*').to_string()).filter(|v| !v.is_empty());
+        let default = value
+            .map(|v| v.trim_start_matches('*').to_string())
+            .filter(|v| !v.is_empty());
         opts.push(CommandOption {
             name: format!("--{}", name.trim()),
             shortcut,
@@ -285,36 +361,59 @@ fn parse_token(token: &str, args: &mut Vec<CommandArgument>, opts: &mut Vec<Comm
         });
     } else {
         let (name, default) = match spec.split_once('=') {
-            Some((n, d)) => (n.trim(), Some(d.trim().to_string()).filter(|d| !d.is_empty())),
+            Some((n, d)) => (
+                n.trim(),
+                Some(d.trim().to_string()).filter(|d| !d.is_empty()),
+            ),
             None => (spec, None),
         };
         let multiple = name.ends_with('*');
         let optional = name.ends_with('?') || default.is_some() || name.ends_with("?*");
         let name = name.trim_end_matches(['?', '*']).to_string();
         if !name.is_empty() {
-            args.push(CommandArgument { name, description, required: !optional, multiple, default });
+            args.push(CommandArgument {
+                name,
+                description,
+                required: !optional,
+                multiple,
+                default,
+            });
         }
     }
 }
 
 /// The rows of `getOptions()` / `getArguments()`: `['name', 'c', InputOption::VALUE_NONE, 'Why']`.
 fn array_rows<'a>(src: &'a str, method: &str) -> Vec<Vec<&'a str>> {
-    let Some(start) = src.find(&format!("function {method}(")) else { return vec![] };
+    let Some(start) = src.find(&format!("function {method}(")) else {
+        return vec![];
+    };
     let body = &src[start..];
-    let Some(end) = body.find("\n    }") else { return vec![] };
+    let Some(end) = body.find("\n    }") else {
+        return vec![];
+    };
     static ROW: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     static CELL: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let row = ROW.get_or_init(|| regex::Regex::new(r"(?m)^\s*\[(.+)\],?\s*$").unwrap());
-    let cell = CELL.get_or_init(|| regex::Regex::new(r"'((?:[^'\\]|\\.)*)'|([A-Za-z_:|\s]+|null|\d+)").unwrap());
+    let cell = CELL.get_or_init(|| {
+        regex::Regex::new(r"'((?:[^'\\]|\\.)*)'|([A-Za-z_:|\s]+|null|\d+)").unwrap()
+    });
     row.captures_iter(&body[..end])
-        .map(|c| cell.captures_iter(c.get(1).unwrap().as_str()).filter_map(|m| m.get(1).or_else(|| m.get(2)).map(|x| x.as_str().trim())).filter(|x| !x.is_empty()).collect())
+        .map(|c| {
+            cell.captures_iter(c.get(1).unwrap().as_str())
+                .filter_map(|m| m.get(1).or_else(|| m.get(2)).map(|x| x.as_str().trim()))
+                .filter(|x| !x.is_empty())
+                .collect()
+        })
         .collect()
 }
 
 /// A Laravel command class read as text, for when the app can't boot to list itself.
 /// Returns `None` for files that aren't a concrete command.
 pub fn parse_command_source(src: &str) -> Option<DiscoveredCommand> {
-    if !src.contains("extends ") || src.contains("abstract class") || !(src.contains("$signature") || src.contains("$name") || src.contains("AsCommand")) {
+    if !src.contains("extends ")
+        || src.contains("abstract class")
+        || !(src.contains("$signature") || src.contains("$name") || src.contains("AsCommand"))
+    {
         return None;
     }
     let (name, mut arguments, mut options) = if let Some(sig) = php_property(src, "signature") {
@@ -323,7 +422,11 @@ pub fn parse_command_source(src: &str) -> Option<DiscoveredCommand> {
         let name = as_command(src, "name").or_else(|| php_property(src, "name"))?;
         (name, vec![], vec![])
     };
-    if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, ':' | '-' | '_' | '.')) {
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, ':' | '-' | '_' | '.'))
+    {
         return None;
     }
     for row in array_rows(src, "getArguments") {
@@ -338,13 +441,20 @@ pub fn parse_command_source(src: &str) -> Option<DiscoveredCommand> {
         }
     }
     if arguments.is_empty() && src.contains("extends GeneratorCommand") {
-        arguments.push(CommandArgument { name: "name".into(), description: "The name of the class".into(), required: true, ..Default::default() });
+        arguments.push(CommandArgument {
+            name: "name".into(),
+            description: "The name of the class".into(),
+            required: true,
+            ..Default::default()
+        });
     }
     for row in array_rows(src, "getOptions") {
         if let [name, shortcut, mode, rest @ ..] = row.as_slice() {
             options.push(CommandOption {
                 name: format!("--{}", php_string(name)),
-                shortcut: Some(*shortcut).filter(|s| *s != "null" && !s.is_empty()).map(|s| format!("-{}", php_string(s))),
+                shortcut: Some(*shortcut)
+                    .filter(|s| *s != "null" && !s.is_empty())
+                    .map(|s| format!("-{}", php_string(s))),
                 description: rest.first().map(|d| php_string(d)).unwrap_or_default(),
                 accepts_value: !mode.contains("VALUE_NONE"),
                 value_required: mode.contains("VALUE_REQUIRED"),
@@ -353,17 +463,36 @@ pub fn parse_command_source(src: &str) -> Option<DiscoveredCommand> {
             });
         }
     }
-    let description = php_property(src, "description").or_else(|| as_command(src, "description")).unwrap_or_default();
-    Some(DiscoveredCommand { name, description, help: String::new(), arguments, options })
+    let description = php_property(src, "description")
+        .or_else(|| as_command(src, "description"))
+        .unwrap_or_default();
+    Some(DiscoveredCommand {
+        name,
+        description,
+        help: String::new(),
+        arguments,
+        options,
+    })
 }
 
 /// Where a Laravel project's commands live: its own `app/` and every package Laravel
 /// auto-discovers (`extra.laravel` in vendor/composer/installed.json), framework included.
 pub fn laravel_command_dirs(root: &std::path::Path) -> Vec<std::path::PathBuf> {
-    let mut dirs = vec![root.join("app"), root.join("vendor/laravel/framework/src/Illuminate")];
+    let mut dirs = vec![
+        root.join("app"),
+        root.join("vendor/laravel/framework/src/Illuminate"),
+    ];
     let composer_dir = root.join("vendor/composer");
-    if let Some(json) = std::fs::read_to_string(composer_dir.join("installed.json")).ok().and_then(|r| serde_json::from_str::<Value>(&r).ok()) {
-        let packages = json.get("packages").and_then(Value::as_array).cloned().or_else(|| json.as_array().cloned()).unwrap_or_default();
+    if let Some(json) = std::fs::read_to_string(composer_dir.join("installed.json"))
+        .ok()
+        .and_then(|r| serde_json::from_str::<Value>(&r).ok())
+    {
+        let packages = json
+            .get("packages")
+            .and_then(Value::as_array)
+            .cloned()
+            .or_else(|| json.as_array().cloned())
+            .unwrap_or_default();
         for p in packages {
             if p.pointer("/extra/laravel").is_some() {
                 if let Some(path) = p.get("install-path").and_then(Value::as_str) {
@@ -380,20 +509,36 @@ pub fn laravel_command_dirs(root: &std::path::Path) -> Vec<std::path::PathBuf> {
 /// Every command class under `dirs`, by name. Skips tests, stubs and fixtures.
 pub fn scan_command_sources(dirs: &[std::path::PathBuf]) -> Vec<DiscoveredCommand> {
     fn walk(dir: &std::path::Path, depth: usize, out: &mut BTreeMap<String, DiscoveredCommand>) {
-        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
         for e in entries.flatten() {
             let path = e.path();
             let name = e.file_name().to_string_lossy().to_string();
             if path.is_dir() {
-                if depth < 12 && !matches!(name.to_ascii_lowercase().as_str(), "tests" | "test" | "stubs" | "fixtures" | "node_modules" | "resources") {
+                if depth < 12
+                    && !matches!(
+                        name.to_ascii_lowercase().as_str(),
+                        "tests" | "test" | "stubs" | "fixtures" | "node_modules" | "resources"
+                    )
+                {
                     walk(&path, depth + 1, out);
                 }
             } else if name.ends_with(".php") {
-                let in_console = path.components().any(|c| matches!(c.as_os_str().to_str(), Some("Console" | "Commands" | "Command")));
+                let in_console = path.components().any(|c| {
+                    matches!(
+                        c.as_os_str().to_str(),
+                        Some("Console" | "Commands" | "Command")
+                    )
+                });
                 if !(name.ends_with("Command.php") || in_console) {
                     continue;
                 }
-                if let Some(cmd) = std::fs::read_to_string(&path).ok().as_deref().and_then(parse_command_source) {
+                if let Some(cmd) = std::fs::read_to_string(&path)
+                    .ok()
+                    .as_deref()
+                    .and_then(parse_command_source)
+                {
                     out.entry(cmd.name.clone()).or_insert(cmd);
                 }
             }
@@ -432,17 +577,38 @@ mod tests {
     fn parses_symfony_lists_through_leading_notices() {
         let cmds = parse_symfony_list(ARTISAN).unwrap();
         let names: Vec<&str> = cmds.iter().map(|c| c.name.as_str()).collect();
-        assert_eq!(names, ["make:model", "migrate"], "hidden and completion commands are skipped, sorted");
+        assert_eq!(
+            names,
+            ["make:model", "migrate"],
+            "hidden and completion commands are skipped, sorted"
+        );
 
         let model = &cmds[0];
-        assert_eq!(model.arguments, [CommandArgument { name: "name".into(), description: "The name of the model".into(), required: true, multiple: false, default: None }]);
+        assert_eq!(
+            model.arguments,
+            [CommandArgument {
+                name: "name".into(),
+                description: "The name of the model".into(),
+                required: true,
+                multiple: false,
+                default: None
+            }]
+        );
         assert!(model.options.is_empty());
 
         let migrate = &cmds[1];
         let opts: Vec<&str> = migrate.options.iter().map(|o| o.name.as_str()).collect();
-        assert_eq!(opts, ["--force", "--path", "--step"], "global options like --help are dropped");
+        assert_eq!(
+            opts,
+            ["--force", "--path", "--step"],
+            "global options like --help are dropped"
+        );
         assert!(!migrate.options[0].accepts_value && migrate.options[0].shortcut.is_none());
-        assert!(migrate.options[1].accepts_value && migrate.options[1].value_required && migrate.options[1].multiple);
+        assert!(
+            migrate.options[1].accepts_value
+                && migrate.options[1].value_required
+                && migrate.options[1].multiple
+        );
         assert_eq!(migrate.options[1].default, None);
     }
 
@@ -455,7 +621,14 @@ mod tests {
     fn reads_package_scripts_and_picks_the_runner() {
         let scripts = package_scripts(r#"{"scripts":{"dev":"vite","build":"vite build"}}"#);
         assert_eq!(scripts.len(), 2);
-        assert_eq!(scripts.iter().find(|c| c.name == "build").unwrap().description, "vite build");
+        assert_eq!(
+            scripts
+                .iter()
+                .find(|c| c.name == "build")
+                .unwrap()
+                .description,
+            "vite build"
+        );
         assert!(package_scripts("not json").is_empty());
         assert_eq!(script_prefix(Some("pnpm")), ["pnpm", "run"]);
         assert_eq!(script_prefix(None), ["npm", "run"]);
@@ -470,7 +643,18 @@ mod tests {
         assert_eq!(args.len(), 2);
         assert!(args[0].required && !args[0].multiple && args[0].description == "The user");
         assert!(!args[1].required && args[1].multiple && args[1].name == "ids");
-        assert_eq!(opts[0], CommandOption { name: "--queue".into(), shortcut: Some("-Q".into()), description: "Which queue".into(), accepts_value: true, value_required: false, multiple: false, default: Some("default".into()) });
+        assert_eq!(
+            opts[0],
+            CommandOption {
+                name: "--queue".into(),
+                shortcut: Some("-Q".into()),
+                description: "Which queue".into(),
+                accepts_value: true,
+                value_required: false,
+                multiple: false,
+                default: Some("default".into())
+            }
+        );
         assert!(!opts[1].accepts_value);
         assert!(opts[2].accepts_value && opts[2].multiple && opts[2].default.is_none());
     }
@@ -485,7 +669,10 @@ class BackupAutoRun extends Command
     public function handle() { $name = 'not-a-command'; }
 }"#;
         let cmd = parse_command_source(signature).unwrap();
-        assert_eq!((cmd.name.as_str(), cmd.description.as_str()), ("backup:auto", "Runs the scheduled backup"));
+        assert_eq!(
+            (cmd.name.as_str(), cmd.description.as_str()),
+            ("backup:auto", "Runs the scheduled backup")
+        );
         assert_eq!(cmd.options[0].name, "--dry");
 
         let generator = r#"<?php
@@ -505,22 +692,34 @@ class ModelMakeCommand extends GeneratorCommand
 }"#;
         let cmd = parse_command_source(generator).unwrap();
         assert_eq!(cmd.name, "make:model");
-        assert_eq!(cmd.arguments[0].name, "name", "generator commands take a class name");
+        assert_eq!(
+            cmd.arguments[0].name, "name",
+            "generator commands take a class name"
+        );
         assert_eq!(cmd.options.len(), 3);
         assert_eq!(cmd.options[0].shortcut.as_deref(), Some("-a"));
         assert!(cmd.options[1].shortcut.is_none() && !cmd.options[1].accepts_value);
         assert!(cmd.options[2].accepts_value && cmd.options[2].value_required);
 
-        assert!(parse_command_source("<?php abstract class Base extends Command { protected $signature = 'x'; }").is_none());
+        assert!(parse_command_source(
+            "<?php abstract class Base extends Command { protected $signature = 'x'; }"
+        )
+        .is_none());
         assert!(parse_command_source("<?php class Plain { }").is_none());
     }
 
     #[test]
     fn explains_common_boot_failures() {
-        let out = strip_ansi("\x1b[41;1m QueryException \x1b[49;22m could not find driver (Connection: mysql)");
+        let out = strip_ansi(
+            "\x1b[41;1m QueryException \x1b[49;22m could not find driver (Connection: mysql)",
+        );
         assert!(!out.contains('\x1b'));
         assert!(boot_failure_hint(&out).unwrap().contains("pdo_mysql"));
-        assert!(boot_failure_hint("SQLSTATE[HY000] [1049] Unknown database 'gymos'").unwrap().contains("Databases page"));
+        assert!(
+            boot_failure_hint("SQLSTATE[HY000] [1049] Unknown database 'gymos'")
+                .unwrap()
+                .contains("Databases page")
+        );
         assert!(boot_failure_hint("something else").is_none());
     }
 

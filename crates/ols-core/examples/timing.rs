@@ -1,6 +1,6 @@
 //! Times the read-only commands the UI polls. Uses the real app data dir.
-use std::time::Instant;
 use ols_core::{AppPaths, Core, CoreCommand, SettingsService};
+use std::time::Instant;
 
 fn main() {
     let paths = AppPaths::resolve();
@@ -24,7 +24,11 @@ fn main() {
         for i in 0..2 {
             let t = Instant::now();
             let r = core.dispatch(cmd.clone());
-            println!("{name:26} #{i} {:>6} ms {}", t.elapsed().as_millis(), if r.is_ok() { "ok" } else { "ERR" });
+            println!(
+                "{name:26} #{i} {:>6} ms {}",
+                t.elapsed().as_millis(),
+                if r.is_ok() { "ok" } else { "ERR" }
+            );
         }
     }
 }

@@ -30,7 +30,16 @@ use crate::paths::AppPaths;
 use crate::process::{ProcessId, ProcessSpec, RestartPolicy};
 
 /// Ports that are never a tunnel target by default: databases, caches, mail, debuggers.
-const INTERNAL_PORTS: &[(u16, &str)] = &[(3306, "MariaDB"), (5432, "PostgreSQL"), (27017, "MongoDB"), (6379, "Redis"), (1025, "Mailpit SMTP"), (8025, "Mailpit"), (9003, "Xdebug"), (9000, "PHP-FPM")];
+const INTERNAL_PORTS: &[(u16, &str)] = &[
+    (3306, "MariaDB"),
+    (5432, "PostgreSQL"),
+    (27017, "MongoDB"),
+    (6379, "Redis"),
+    (1025, "Mailpit SMTP"),
+    (8025, "Mailpit"),
+    (9003, "Xdebug"),
+    (9000, "PHP-FPM"),
+];
 const PUBLIC_ADDRESS_TIMEOUT_MS: u64 = 60_000;
 const PUBLIC_ADDRESS_TIMEOUT: &str = "The provider has not reported a public address after 60 seconds. Open Logs for details, then stop and try again.";
 
@@ -39,7 +48,10 @@ fn err(msg: impl Into<String>) -> CoreError {
 }
 
 fn now_ms() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -116,7 +128,12 @@ pub trait TunnelProvider: Send + Sync {
         ""
     }
     /// Arguments and environment to expose `127.0.0.1:port`.
-    fn command(&self, port: u16, token: Option<&str>, config: &TunnelConfig) -> (Vec<String>, Vec<(String, String)>);
+    fn command(
+        &self,
+        port: u16,
+        token: Option<&str>,
+        config: &TunnelConfig,
+    ) -> (Vec<String>, Vec<(String, String)>);
     /// The public URL, found in the program's output.
     fn find_url(&self, line: &str) -> Option<String>;
     /// Common install folders to look in besides PATH.
@@ -128,7 +145,9 @@ pub trait TunnelProvider: Send + Sync {
 fn url_matching(line: &str, suffix: &str) -> Option<String> {
     static URL: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let re = URL.get_or_init(|| regex::Regex::new(r"https://[A-Za-z0-9.-]+").unwrap());
-    re.find_iter(line).map(|m| m.as_str().to_string()).find(|u| u.ends_with(suffix) || u.contains(&format!("{suffix}/")))
+    re.find_iter(line)
+        .map(|m| m.as_str().to_string())
+        .find(|u| u.ends_with(suffix) || u.contains(&format!("{suffix}/")))
 }
 
 struct Cloudflare;
@@ -151,22 +170,46 @@ impl TunnelProvider for Cloudflare {
     fn note(&self) -> &'static str {
         "No account needed: a random trycloudflare.com address. Save a tunnel token for a named tunnel with your own hostname."
     }
-    fn command(&self, port: u16, token: Option<&str>, config: &TunnelConfig) -> (Vec<String>, Vec<(String, String)>) {
+    fn command(
+        &self,
+        port: u16,
+        token: Option<&str>,
+        config: &TunnelConfig,
+    ) -> (Vec<String>, Vec<(String, String)>) {
         let url = format!("http://127.0.0.1:{port}");
         match token {
             // A named tunnel: its token goes in TUNNEL_TOKEN, never on the command line.
-            Some(t) if config.public_hostname.as_deref().is_some_and(|h| !h.is_empty()) => {
-                (vec!["tunnel".into(), "--no-autoupdate".into(), "run".into()], vec![("TUNNEL_TOKEN".into(), t.into())])
+            Some(t)
+                if config
+                    .public_hostname
+                    .as_deref()
+                    .is_some_and(|h| !h.is_empty()) =>
+            {
+                (
+                    vec!["tunnel".into(), "--no-autoupdate".into(), "run".into()],
+                    vec![("TUNNEL_TOKEN".into(), t.into())],
+                )
             }
             // Quick tunnels use `tunnel --url`; `run` is only for a named tunnel.
-            _ => (vec!["tunnel".into(), "--no-autoupdate".into(), "--url".into(), url], vec![]),
+            _ => (
+                vec![
+                    "tunnel".into(),
+                    "--no-autoupdate".into(),
+                    "--url".into(),
+                    url,
+                ],
+                vec![],
+            ),
         }
     }
     fn find_url(&self, line: &str) -> Option<String> {
         url_matching(line, ".trycloudflare.com")
     }
     fn known_paths(&self) -> Vec<PathBuf> {
-        vec![PathBuf::from(r"C:\Program Files (x86)\cloudflared\cloudflared.exe"), PathBuf::from(r"C:\Program Files\cloudflared\cloudflared.exe")]
+        vec![
+            PathBuf::from(r"C:\Program Files (x86)\cloudflared\cloudflared.exe"),
+            PathBuf::from(r"C:\Program Files\cloudflared\cloudflared.exe"),
+        ]
     }
 }
 
@@ -190,15 +233,37 @@ impl TunnelProvider for Ngrok {
     fn note(&self) -> &'static str {
         "Needs a free ngrok account; its authtoken is kept in Windows Credential Manager."
     }
-    fn command(&self, port: u16, token: Option<&str>, _config: &TunnelConfig) -> (Vec<String>, Vec<(String, String)>) {
-        let env = token.map(|t| vec![("NGROK_AUTHTOKEN".to_string(), t.to_string())]).unwrap_or_default();
-        (vec!["http".into(), format!("127.0.0.1:{port}"), "--log".into(), "stdout".into(), "--log-format".into(), "logfmt".into()], env)
+    fn command(
+        &self,
+        port: u16,
+        token: Option<&str>,
+        _config: &TunnelConfig,
+    ) -> (Vec<String>, Vec<(String, String)>) {
+        let env = token
+            .map(|t| vec![("NGROK_AUTHTOKEN".to_string(), t.to_string())])
+            .unwrap_or_default();
+        (
+            vec![
+                "http".into(),
+                format!("127.0.0.1:{port}"),
+                "--log".into(),
+                "stdout".into(),
+                "--log-format".into(),
+                "logfmt".into(),
+            ],
+            env,
+        )
     }
     fn find_url(&self, line: &str) -> Option<String> {
-        url_matching(line, ".ngrok-free.app").or_else(|| url_matching(line, ".ngrok.app")).or_else(|| url_matching(line, ".ngrok.io")).or_else(|| url_matching(line, ".ngrok-free.dev"))
+        url_matching(line, ".ngrok-free.app")
+            .or_else(|| url_matching(line, ".ngrok.app"))
+            .or_else(|| url_matching(line, ".ngrok.io"))
+            .or_else(|| url_matching(line, ".ngrok-free.dev"))
     }
     fn known_paths(&self) -> Vec<PathBuf> {
-        std::env::var_os("LOCALAPPDATA").map(|d| vec![PathBuf::from(d).join(r"Microsoft\WinGet\Links\ngrok.exe")]).unwrap_or_default()
+        std::env::var_os("LOCALAPPDATA")
+            .map(|d| vec![PathBuf::from(d).join(r"Microsoft\WinGet\Links\ngrok.exe")])
+            .unwrap_or_default()
     }
 }
 
@@ -219,8 +284,23 @@ impl TunnelProvider for LocalTunnel {
     fn note(&self) -> &'static str {
         "No account; visitors see a reminder page on first visit (loca.lt)."
     }
-    fn command(&self, port: u16, _token: Option<&str>, _config: &TunnelConfig) -> (Vec<String>, Vec<(String, String)>) {
-        (vec!["--yes".into(), "localtunnel".into(), "--port".into(), port.to_string(), "--local-host".into(), "127.0.0.1".into()], vec![])
+    fn command(
+        &self,
+        port: u16,
+        _token: Option<&str>,
+        _config: &TunnelConfig,
+    ) -> (Vec<String>, Vec<(String, String)>) {
+        (
+            vec![
+                "--yes".into(),
+                "localtunnel".into(),
+                "--port".into(),
+                port.to_string(),
+                "--local-host".into(),
+                "127.0.0.1".into(),
+            ],
+            vec![],
+        )
     }
     fn find_url(&self, line: &str) -> Option<String> {
         url_matching(line, ".loca.lt")
@@ -244,7 +324,12 @@ impl TunnelProvider for Tailscale {
     fn note(&self) -> &'static str {
         "Uses your machine's ts.net name; Funnel must be allowed in the tailnet's policy."
     }
-    fn command(&self, port: u16, _token: Option<&str>, _config: &TunnelConfig) -> (Vec<String>, Vec<(String, String)>) {
+    fn command(
+        &self,
+        port: u16,
+        _token: Option<&str>,
+        _config: &TunnelConfig,
+    ) -> (Vec<String>, Vec<(String, String)>) {
         (vec!["funnel".into(), port.to_string()], vec![])
     }
     fn find_url(&self, line: &str) -> Option<String> {
@@ -270,7 +355,12 @@ impl TunnelProvider for Mock {
     fn install_hint(&self) -> &'static str {
         ""
     }
-    fn command(&self, _port: u16, _token: Option<&str>, _config: &TunnelConfig) -> (Vec<String>, Vec<(String, String)>) {
+    fn command(
+        &self,
+        _port: u16,
+        _token: Option<&str>,
+        _config: &TunnelConfig,
+    ) -> (Vec<String>, Vec<(String, String)>) {
         (vec![], vec![])
     }
     fn find_url(&self, _line: &str) -> Option<String> {
@@ -279,7 +369,12 @@ impl TunnelProvider for Mock {
 }
 
 pub fn providers() -> Vec<Box<dyn TunnelProvider>> {
-    vec![Box::new(Cloudflare), Box::new(Ngrok), Box::new(LocalTunnel), Box::new(Tailscale)]
+    vec![
+        Box::new(Cloudflare),
+        Box::new(Ngrok),
+        Box::new(LocalTunnel),
+        Box::new(Tailscale),
+    ]
 }
 
 fn provider(id: &str) -> Option<Box<dyn TunnelProvider>> {
@@ -303,7 +398,11 @@ fn basic_auth(user: &str, pass: &str) -> String {
     let input = format!("{user}:{pass}").into_bytes();
     let mut out = String::new();
     for chunk in input.chunks(3) {
-        let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
+        let b = [
+            chunk[0],
+            *chunk.get(1).unwrap_or(&0),
+            *chunk.get(2).unwrap_or(&0),
+        ];
         let n = (b[0] as u32) << 16 | (b[1] as u32) << 8 | b[2] as u32;
         for i in 0..4 {
             if i <= chunk.len() {
@@ -357,9 +456,22 @@ pub struct TunnelManager {
 impl TunnelManager {
     pub fn new(paths: &AppPaths) -> Self {
         let file = paths.data_dir().join("tunnels.json");
-        let configs = std::fs::read_to_string(&file).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
-        let runtime = tokio::runtime::Builder::new_multi_thread().worker_threads(2).thread_name("ols-inspector").enable_all().build().expect("failed to start the tunnel runtime");
-        Self { file, configs: Mutex::new(configs), live: Mutex::new(HashMap::new()), runtime: Arc::new(runtime) }
+        let configs = std::fs::read_to_string(&file)
+            .ok()
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default();
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .thread_name("ols-inspector")
+            .enable_all()
+            .build()
+            .expect("failed to start the tunnel runtime");
+        Self {
+            file,
+            configs: Mutex::new(configs),
+            live: Mutex::new(HashMap::new()),
+            runtime: Arc::new(runtime),
+        }
     }
 
     fn persist(&self, configs: &[TunnelConfig]) -> Result<(), CoreError> {
@@ -376,7 +488,11 @@ impl TunnelManager {
 
 /// Host and port of a target URL, for the safety checks.
 fn parse_target(target: &str) -> Result<reqwest::Url, CoreError> {
-    let url = reqwest::Url::parse(target.trim()).map_err(|_| err(format!("\"{target}\" is not a URL like https://shop.test or http://127.0.0.1:8000")))?;
+    let url = reqwest::Url::parse(target.trim()).map_err(|_| {
+        err(format!(
+            "\"{target}\" is not a URL like https://shop.test or http://127.0.0.1:8000"
+        ))
+    })?;
     if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
         return Err(err("the target must be an http:// or https:// address"));
     }
@@ -390,29 +506,52 @@ impl Inner {
             .map(|p| ProviderInfo {
                 id: p.id().into(),
                 name: p.name().into(),
-                path: self.provider_program(p.as_ref()).map(|x| x.display().to_string()),
+                path: self
+                    .provider_program(p.as_ref())
+                    .map(|x| x.display().to_string()),
                 install_hint: p.install_hint().into(),
                 uses_token: p.uses_token(),
-                token_saved: p.uses_token() && crate::secrets::get_secret(&token_key(p.id())).ok().flatten().is_some(),
+                token_saved: p.uses_token()
+                    && crate::secrets::get_secret(&token_key(p.id()))
+                        .ok()
+                        .flatten()
+                        .is_some(),
                 note: p.note().into(),
             })
             .collect()
     }
 
     fn provider_program(&self, p: &dyn TunnelProvider) -> Option<PathBuf> {
-        if let Some(c) = self.custom_installs.lock().unwrap().resolve(p.program(), None) {
+        if let Some(c) = self
+            .custom_installs
+            .lock()
+            .unwrap()
+            .resolve(p.program(), None)
+        {
             return Some(PathBuf::from(&c.path));
         }
         find_program(p.program(), &p.known_paths())
     }
 
     pub fn tunnels_for(&self, project_id: &str) -> Vec<TunnelConfig> {
-        self.tunnels.configs.lock().unwrap().iter().filter(|t| t.project_id.as_deref() == Some(project_id)).cloned().collect()
+        self.tunnels
+            .configs
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|t| t.project_id.as_deref() == Some(project_id))
+            .cloned()
+            .collect()
     }
 
     /// What starting this tunnel would expose, in words, for the confirmation dialog.
     fn exposure(&self, c: &TunnelConfig) -> String {
-        let project = c.project_id.as_ref().and_then(|p| self.projects.lock().unwrap().get(p)).map(|p| format!(" ({})", p.name)).unwrap_or_default();
+        let project = c
+            .project_id
+            .as_ref()
+            .and_then(|p| self.projects.lock().unwrap().get(p))
+            .map(|p| format!(" ({})", p.name))
+            .unwrap_or_default();
         format!("Anyone with the public address will be able to open {}{project}. Only start it while you need it, and stop it when you are done.", c.target)
     }
 
@@ -427,7 +566,9 @@ impl Inner {
             }
         }
         if !local && self.domains.lock().unwrap().get(&host).is_none() {
-            return Err(err(format!("{host} is not one of your sites. Tunnels point at your own sites or 127.0.0.1.")));
+            return Err(err(format!(
+                "{host} is not one of your sites. Tunnels point at your own sites or 127.0.0.1."
+            )));
         }
         Ok(())
     }
@@ -438,10 +579,17 @@ impl Inner {
         }
         self.check_target(&c)?;
         if c.name.trim().is_empty() {
-            c.name = parse_target(&c.target)?.host_str().unwrap_or("tunnel").to_string();
+            c.name = parse_target(&c.target)?
+                .host_str()
+                .unwrap_or("tunnel")
+                .to_string();
         }
         if c.id.is_empty() {
-            c.id = format!("{}-{}", crate::domain::slugify(&c.name), &format!("{:x}", now_ms())[6..]);
+            c.id = format!(
+                "{}-{}",
+                crate::domain::slugify(&c.name),
+                &format!("{:x}", now_ms())[6..]
+            );
         }
         let mut configs = self.tunnels.configs.lock().unwrap();
         match configs.iter_mut().find(|x| x.id == c.id) {
@@ -479,7 +627,11 @@ impl Inner {
         }
     }
 
-    pub fn set_tunnel_token(&self, provider_id: &str, token: Option<&str>) -> Result<(), CoreError> {
+    pub fn set_tunnel_token(
+        &self,
+        provider_id: &str,
+        token: Option<&str>,
+    ) -> Result<(), CoreError> {
         match token.filter(|t| !t.trim().is_empty()) {
             Some(t) => crate::secrets::set_secret(&token_key(provider_id), t.trim()).map_err(err),
             None => crate::secrets::delete_secret(&token_key(provider_id)).map_err(err),
@@ -488,8 +640,20 @@ impl Inner {
 
     /// Starts a tunnel. The first time, `confirm_exposure` must be true (§59: warn before
     /// first exposure); otherwise the status comes back as `needs_confirmation`.
-    pub fn start_tunnel(&self, id: &str, confirm_exposure: bool) -> Result<TunnelStatus, CoreError> {
-        let mut c = self.tunnels.configs.lock().unwrap().iter().find(|t| t.id == id).cloned().ok_or_else(|| err(format!("no tunnel \"{id}\"")))?;
+    pub fn start_tunnel(
+        &self,
+        id: &str,
+        confirm_exposure: bool,
+    ) -> Result<TunnelStatus, CoreError> {
+        let mut c = self
+            .tunnels
+            .configs
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|t| t.id == id)
+            .cloned()
+            .ok_or_else(|| err(format!("no tunnel \"{id}\"")))?;
         if self.tunnels.live.lock().unwrap().contains_key(id) {
             return self.tunnel_status(id);
         }
@@ -507,31 +671,70 @@ impl Inner {
             self.tunnels.persist(&configs)?;
         }
         self.check_target(&c)?;
-        let p = provider(&c.provider).ok_or_else(|| err(format!("unknown tunnel provider \"{}\"", c.provider)))?;
+        let p = provider(&c.provider)
+            .ok_or_else(|| err(format!("unknown tunnel provider \"{}\"", c.provider)))?;
 
         // The inspector sits between the provider and the site.
         let url = parse_target(&c.target)?;
         let host = url.host_str().unwrap_or_default().to_string();
         let cfg = self.web_config();
         let ours = self.domains.lock().unwrap().get(&host).is_some();
-        let resolve = ours.then(|| std::net::SocketAddr::from(([127, 0, 0, 1], if url.scheme() == "https" { cfg.https_port } else { cfg.http_port })));
-        let routed_host = c.public_hostname.as_deref().filter(|h| !h.is_empty()).unwrap_or(&host);
-        let base = if ours { format!("{}://{routed_host}", url.scheme()) } else { c.target.trim_end_matches('/').to_string() };
+        let resolve = ours.then(|| {
+            std::net::SocketAddr::from((
+                [127, 0, 0, 1],
+                if url.scheme() == "https" {
+                    cfg.https_port
+                } else {
+                    cfg.http_port
+                },
+            ))
+        });
+        let routed_host = c
+            .public_hostname
+            .as_deref()
+            .filter(|h| !h.is_empty())
+            .unwrap_or(&host);
+        let base = if ours {
+            format!("{}://{routed_host}", url.scheme())
+        } else {
+            c.target.trim_end_matches('/').to_string()
+        };
         let ca = std::fs::read(self.certs.ca_info().cert_path).ok();
-        let mut inspector = Inspector::start(self.tunnels.runtime.clone(), Target { base, host: routed_host.to_string() }, resolve, ca).map_err(err)?;
+        let mut inspector = Inspector::start(
+            self.tunnels.runtime.clone(),
+            Target {
+                base,
+                host: routed_host.to_string(),
+            },
+            resolve,
+            ca,
+        )
+        .map_err(err)?;
         let password = crate::secrets::get_secret(&password_key(id)).ok().flatten();
         let mut secrets = Vec::new();
-        if let (Some(user), Some(pass)) = (c.auth_user.as_deref().filter(|u| !u.is_empty()), password.as_deref()) {
+        if let (Some(user), Some(pass)) = (
+            c.auth_user.as_deref().filter(|u| !u.is_empty()),
+            password.as_deref(),
+        ) {
             inspector.require_auth(basic_auth(user, pass));
             secrets.push(pass.to_string());
         }
 
-        let token = if p.uses_token() { crate::secrets::get_secret(&token_key(p.id())).map_err(err)? } else { None };
-        if c.provider == "cloudflare" && c.public_hostname.as_deref().is_some_and(|h| !h.is_empty()) && token.is_none() {
+        let token = if p.uses_token() {
+            crate::secrets::get_secret(&token_key(p.id())).map_err(err)?
+        } else {
+            None
+        };
+        if c.provider == "cloudflare"
+            && c.public_hostname.as_deref().is_some_and(|h| !h.is_empty())
+            && token.is_none()
+        {
             return Err(err("a named Cloudflare tunnel needs its saved tunnel token. Add it in Tunnels → Providers."));
         }
         if c.provider == "ngrok" && token.is_none() {
-            return Err(err("ngrok needs your authtoken. Save it in the tunnel's provider settings first."));
+            return Err(err(
+                "ngrok needs your authtoken. Save it in the tunnel's provider settings first.",
+            ));
         }
         if let Some(t) = &token {
             secrets.push(t.clone());
@@ -541,18 +744,55 @@ impl Inner {
             None
         } else {
             let (exe, args, mut env_all) = if c.provider == "localtunnel" {
-                let (exe, full, env2) = self.project_program("npx", &args, c.project_id.as_deref())?;
+                let (exe, full, env2) =
+                    self.project_program("npx", &args, c.project_id.as_deref())?;
                 (exe, full, env2)
             } else {
-                let exe = self.provider_program(p.as_ref()).ok_or_else(|| err(format!("{} was not found. {}", p.name(), p.install_hint())))?;
+                let exe = self.provider_program(p.as_ref()).ok_or_else(|| {
+                    err(format!("{} was not found. {}", p.name(), p.install_hint()))
+                })?;
                 (exe, args, Vec::new())
             };
             env_all.extend(env);
-            Some(self.supervisor.start(ProcessSpec { name: format!("Tunnel: {} ({})", c.name, p.name()), executable: exe.display().to_string(), args, cwd: None, env: env_all, restart: (c.autostart && c.provider == "cloudflare" && c.public_hostname.is_some()).then_some(RestartPolicy { max_retries: 10, delay_ms: 5000 }) }))
+            Some(
+                self.supervisor.start(ProcessSpec {
+                    name: format!("Tunnel: {} ({})", c.name, p.name()),
+                    executable: exe.display().to_string(),
+                    args,
+                    cwd: None,
+                    env: env_all,
+                    restart: (c.autostart
+                        && c.provider == "cloudflare"
+                        && c.public_hostname.is_some())
+                    .then_some(RestartPolicy {
+                        max_retries: 10,
+                        delay_ms: 5000,
+                    }),
+                }),
+            )
         };
-        let public_url = if c.provider == "mock" { Some(format!("http://127.0.0.1:{}", inspector.port)) } else { c.public_hostname.clone().filter(|h| !h.is_empty() && token.is_some()).map(|h| format!("https://{h}")) };
+        let public_url = if c.provider == "mock" {
+            Some(format!("http://127.0.0.1:{}", inspector.port))
+        } else {
+            c.public_hostname
+                .clone()
+                .filter(|h| !h.is_empty() && token.is_some())
+                .map(|h| format!("https://{h}"))
+        };
         tracing::info!(tunnel = %c.name, provider = %c.provider, target = %c.target, "tunnel started");
-        self.tunnels.live.lock().unwrap().insert(id.to_string(), Live { inspector, process, provider: c.provider.clone(), started_ms: now_ms(), public_url, latency_ms: None, error: None, secrets });
+        self.tunnels.live.lock().unwrap().insert(
+            id.to_string(),
+            Live {
+                inspector,
+                process,
+                provider: c.provider.clone(),
+                started_ms: now_ms(),
+                public_url,
+                latency_ms: None,
+                error: None,
+                secrets,
+            },
+        );
         self.tunnel_status(id)
     }
 
@@ -577,17 +817,33 @@ impl Inner {
         let mut live = self.tunnels.live.lock().unwrap();
         let Some(l) = live.get_mut(id) else { return };
         let Some(pid) = l.process else { return };
-        let Some(p) = provider(&l.provider) else { return };
+        let Some(p) = provider(&l.provider) else {
+            return;
+        };
         if l.public_url.is_none() {
-            l.public_url = self.supervisor.recent_output(pid).iter().rev().find_map(|line| p.find_url(line));
+            l.public_url = self
+                .supervisor
+                .recent_output(pid)
+                .iter()
+                .rev()
+                .find_map(|line| p.find_url(line));
             if l.public_url.is_some() && l.error.as_deref() == Some(PUBLIC_ADDRESS_TIMEOUT) {
                 l.error = None;
-            } else if l.public_url.is_none() && l.error.is_none() && now_ms().saturating_sub(l.started_ms) >= PUBLIC_ADDRESS_TIMEOUT_MS {
+            } else if l.public_url.is_none()
+                && l.error.is_none()
+                && now_ms().saturating_sub(l.started_ms) >= PUBLIC_ADDRESS_TIMEOUT_MS
+            {
                 l.error = Some(PUBLIC_ADDRESS_TIMEOUT.into());
             }
         }
         if !self.supervisor.is_alive(pid) && l.error.is_none() {
-            let last = self.supervisor.recent_output(pid).into_iter().rev().find(|x| !x.trim().is_empty()).unwrap_or_default();
+            let last = self
+                .supervisor
+                .recent_output(pid)
+                .into_iter()
+                .rev()
+                .find(|x| !x.trim().is_empty())
+                .unwrap_or_default();
             let mut msg = format!("{} stopped: {last}", p.name());
             for s in &l.secrets {
                 msg = msg.replace(s.as_str(), "[redacted]");
@@ -597,14 +853,33 @@ impl Inner {
     }
 
     pub fn tunnel_status(&self, id: &str) -> Result<TunnelStatus, CoreError> {
-        let c = self.tunnels.configs.lock().unwrap().iter().find(|t| t.id == id).cloned().ok_or_else(|| err(format!("no tunnel \"{id}\"")))?;
+        let c = self
+            .tunnels
+            .configs
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|t| t.id == id)
+            .cloned()
+            .ok_or_else(|| err(format!("no tunnel \"{id}\"")))?;
         self.refresh_live(id);
-        let has_password = c.auth_user.as_deref().is_some_and(|u| !u.is_empty()) && crate::secrets::get_secret(&password_key(id)).ok().flatten().is_some();
+        let has_password = c.auth_user.as_deref().is_some_and(|u| !u.is_empty())
+            && crate::secrets::get_secret(&password_key(id))
+                .ok()
+                .flatten()
+                .is_some();
         let exposure = self.exposure(&c);
         let live = self.tunnels.live.lock().unwrap();
         Ok(match live.get(id) {
             Some(l) => TunnelStatus {
-                state: if l.error.is_some() { "failed" } else if l.public_url.is_some() { "connected" } else { "starting" }.into(),
+                state: if l.error.is_some() {
+                    "failed"
+                } else if l.public_url.is_some() {
+                    "connected"
+                } else {
+                    "starting"
+                }
+                .into(),
                 public_url: l.public_url.clone(),
                 started_ms: Some(l.started_ms),
                 requests: l.inspector.count(),
@@ -616,18 +891,42 @@ impl Inner {
                 exposure,
                 config: c,
             },
-            None => TunnelStatus { state: "stopped".into(), public_url: None, started_ms: None, requests: 0, last_request_ms: None, latency_ms: None, error: None, inspector_port: None, has_password, exposure, config: c },
+            None => TunnelStatus {
+                state: "stopped".into(),
+                public_url: None,
+                started_ms: None,
+                requests: 0,
+                last_request_ms: None,
+                latency_ms: None,
+                error: None,
+                inspector_port: None,
+                has_password,
+                exposure,
+                config: c,
+            },
         })
     }
 
     pub fn list_tunnels(&self) -> Vec<TunnelStatus> {
-        let ids: Vec<String> = self.tunnels.configs.lock().unwrap().iter().map(|t| t.id.clone()).collect();
-        ids.iter().filter_map(|id| self.tunnel_status(id).ok()).collect()
+        let ids: Vec<String> = self
+            .tunnels
+            .configs
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|t| t.id.clone())
+            .collect();
+        ids.iter()
+            .filter_map(|id| self.tunnel_status(id).ok())
+            .collect()
     }
 
     /// §60 latency: one request through the public URL, timed.
     pub fn check_tunnel(&self, id: &str) -> Result<TunnelStatus, CoreError> {
-        let url = self.tunnel_status(id)?.public_url.ok_or_else(|| err("the tunnel has no public address yet"))?;
+        let url = self
+            .tunnel_status(id)?
+            .public_url
+            .ok_or_else(|| err("the tunnel has no public address yet"))?;
         let started = std::time::Instant::now();
         let ok = self.runtimes.fetch(&url).is_ok();
         let ms = started.elapsed().as_millis() as u64;
@@ -643,7 +942,9 @@ impl Inner {
     /// The provider's output, with tokens and passwords scrubbed (§59, §141).
     pub fn tunnel_log(&self, id: &str) -> Vec<String> {
         let live = self.tunnels.live.lock().unwrap();
-        let Some(l) = live.get(id) else { return vec!["The tunnel is not running.".into()] };
+        let Some(l) = live.get(id) else {
+            return vec!["The tunnel is not running.".into()];
+        };
         let Some(p) = l.process else { return vec![] };
         self.supervisor
             .recent_output(p)
@@ -658,9 +959,15 @@ impl Inner {
             .collect()
     }
 
-    fn with_inspector<T>(&self, id: &str, f: impl FnOnce(&Inspector) -> Result<T, String>) -> Result<T, CoreError> {
+    fn with_inspector<T>(
+        &self,
+        id: &str,
+        f: impl FnOnce(&Inspector) -> Result<T, String>,
+    ) -> Result<T, CoreError> {
         let live = self.tunnels.live.lock().unwrap();
-        let l = live.get(id).ok_or_else(|| err("the tunnel is not running"))?;
+        let l = live
+            .get(id)
+            .ok_or_else(|| err("the tunnel is not running"))?;
         f(&l.inspector).map_err(err)
     }
 
@@ -675,25 +982,59 @@ impl Inner {
         })
     }
 
-    pub fn replay_tunnel_request(&self, id: &str, request_id: u64) -> Result<RecordedRequest, CoreError> {
+    pub fn replay_tunnel_request(
+        &self,
+        id: &str,
+        request_id: u64,
+    ) -> Result<RecordedRequest, CoreError> {
         // The inspector is used outside the lock: a replay can take a while.
         let inspector_port = self.with_inspector(id, |i| Ok(i.port))?;
         let _ = inspector_port;
         let live = self.tunnels.live.lock().unwrap();
-        let l = live.get(id).ok_or_else(|| err("the tunnel is not running"))?;
+        let l = live
+            .get(id)
+            .ok_or_else(|| err("the tunnel is not running"))?;
         l.inspector.replay(request_id).map_err(err)
     }
 
-    pub fn send_tunnel_test(&self, id: &str, method: &str, path: &str, headers: &[(String, String)], body: &str) -> Result<RecordedRequest, CoreError> {
+    pub fn send_tunnel_test(
+        &self,
+        id: &str,
+        method: &str,
+        path: &str,
+        headers: &[(String, String)],
+        body: &str,
+    ) -> Result<RecordedRequest, CoreError> {
         let live = self.tunnels.live.lock().unwrap();
-        let l = live.get(id).ok_or_else(|| err("start the tunnel first; test requests go through its inspector"))?;
-        l.inspector.send_test(method, path, headers, body).map_err(err)
+        let l = live
+            .get(id)
+            .ok_or_else(|| err("start the tunnel first; test requests go through its inspector"))?;
+        l.inspector
+            .send_test(method, path, headers, body)
+            .map_err(err)
     }
 
     /// For setup (§73.12): finds or creates the project's tunnel and starts it. A tunnel
     /// that was never confirmed is left for the user to confirm on the Tunnels page.
-    pub fn start_tunnel_for(&self, project_id: Option<&str>, provider_id: &str, target: &str, confirm: bool) -> Result<TunnelStatus, CoreError> {
-        let existing = self.tunnels.configs.lock().unwrap().iter().find(|t| t.project_id.as_deref() == project_id && t.provider == provider_id && t.target == target).cloned();
+    pub fn start_tunnel_for(
+        &self,
+        project_id: Option<&str>,
+        provider_id: &str,
+        target: &str,
+        confirm: bool,
+    ) -> Result<TunnelStatus, CoreError> {
+        let existing = self
+            .tunnels
+            .configs
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|t| {
+                t.project_id.as_deref() == project_id
+                    && t.provider == provider_id
+                    && t.target == target
+            })
+            .cloned();
         let c = match existing {
             Some(c) => c,
             None => self.save_tunnel(TunnelConfig {
@@ -725,29 +1066,61 @@ mod tests {
     }
 
     fn config(target: &str) -> TunnelConfig {
-        TunnelConfig { id: String::new(), project_id: None, name: "t".into(), provider: "mock".into(), target: target.into(), auth_user: None, allow_internal: false, public_hostname: None, acknowledged: false, autostart: false }
+        TunnelConfig {
+            id: String::new(),
+            project_id: None,
+            name: "t".into(),
+            provider: "mock".into(),
+            target: target.into(),
+            auth_user: None,
+            allow_internal: false,
+            public_hostname: None,
+            acknowledged: false,
+            autostart: false,
+        }
     }
 
     #[test]
     fn basic_auth_matches_the_standard_encoding() {
-        assert_eq!(basic_auth("Aladdin", "open sesame"), "Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ==");
+        assert_eq!(
+            basic_auth("Aladdin", "open sesame"),
+            "Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ=="
+        );
         assert_eq!(basic_auth("a", "b"), "Basic YTpi");
     }
 
     #[test]
     fn providers_find_their_public_urls() {
-        assert_eq!(Cloudflare.find_url("INF |  https://calm-sea-12.trycloudflare.com  |"), Some("https://calm-sea-12.trycloudflare.com".into()));
-        assert_eq!(Cloudflare.find_url("see https://www.cloudflare.com/website-terms/"), None);
-        assert_eq!(Ngrok.find_url("t=1 lvl=info msg=\"started tunnel\" url=https://ab12.ngrok-free.app"), Some("https://ab12.ngrok-free.app".into()));
-        assert_eq!(LocalTunnel.find_url("your url is: https://silly-cat.loca.lt"), Some("https://silly-cat.loca.lt".into()));
-        assert_eq!(Tailscale.find_url("Available on the internet:\nhttps://pc.tail1234.ts.net/"), Some("https://pc.tail1234.ts.net".into()));
+        assert_eq!(
+            Cloudflare.find_url("INF |  https://calm-sea-12.trycloudflare.com  |"),
+            Some("https://calm-sea-12.trycloudflare.com".into())
+        );
+        assert_eq!(
+            Cloudflare.find_url("see https://www.cloudflare.com/website-terms/"),
+            None
+        );
+        assert_eq!(
+            Ngrok.find_url("t=1 lvl=info msg=\"started tunnel\" url=https://ab12.ngrok-free.app"),
+            Some("https://ab12.ngrok-free.app".into())
+        );
+        assert_eq!(
+            LocalTunnel.find_url("your url is: https://silly-cat.loca.lt"),
+            Some("https://silly-cat.loca.lt".into())
+        );
+        assert_eq!(
+            Tailscale.find_url("Available on the internet:\nhttps://pc.tail1234.ts.net/"),
+            Some("https://pc.tail1234.ts.net".into())
+        );
     }
 
     #[test]
     fn provider_tokens_never_reach_the_command_line() {
         let (args, env) = Cloudflare.command(5000, Some("sekrit"), &config("http://127.0.0.1:1"));
         assert!(!args.iter().any(|a| a.contains("sekrit")));
-        assert_eq!(env, vec![("TUNNEL_TOKEN".to_string(), "sekrit".to_string())]);
+        assert_eq!(
+            env,
+            vec![("TUNNEL_TOKEN".to_string(), "sekrit".to_string())]
+        );
         let (args, env) = Ngrok.command(5000, Some("sekrit"), &config("http://127.0.0.1:1"));
         assert!(!args.iter().any(|a| a.contains("sekrit")) && env[0].0 == "NGROK_AUTHTOKEN");
     }
@@ -756,8 +1129,15 @@ mod tests {
     fn databases_and_unknown_hosts_are_refused_as_targets() {
         let (core, _home) = core();
         let i = core.inner();
-        assert!(i.save_tunnel(config("http://127.0.0.1:3306")).unwrap_err().to_string().contains("MariaDB"));
-        assert!(i.save_tunnel(config("https://example.com")).is_err(), "only our own sites or loopback");
+        assert!(i
+            .save_tunnel(config("http://127.0.0.1:3306"))
+            .unwrap_err()
+            .to_string()
+            .contains("MariaDB"));
+        assert!(
+            i.save_tunnel(config("https://example.com")).is_err(),
+            "only our own sites or loopback"
+        );
         let mut ok = config("http://127.0.0.1:3306");
         ok.allow_internal = true;
         assert!(i.save_tunnel(ok).is_ok(), "an explicit opt-in allows it");

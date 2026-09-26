@@ -31,14 +31,26 @@ const FORMAT: u32 = 1;
 const META: &str = "snapshot.json";
 
 /// Folders never copied or zipped with a project's files: they are rebuilt by installs.
-const SKIP_DIRS: &[&str] = &["node_modules", "vendor", ".venv", "venv", "__pycache__", ".next", ".nuxt", "target"];
+const SKIP_DIRS: &[&str] = &[
+    "node_modules",
+    "vendor",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".next",
+    ".nuxt",
+    "target",
+];
 
 fn err(msg: impl Into<String>) -> CoreError {
     CoreError::EnvError(msg.into())
 }
 
 fn now_ms() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -169,18 +181,47 @@ pub struct SettingsBackup {
 fn summary(c: &SnapshotContent) -> Vec<String> {
     let mut s = Vec::new();
     if !c.manifest_files.is_empty() {
-        s.push(format!("manifest ({})", c.manifest_files.keys().cloned().collect::<Vec<_>>().join(", ")));
+        s.push(format!(
+            "manifest ({})",
+            c.manifest_files
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
     }
     if !c.runtimes.is_empty() {
-        s.push(c.runtimes.iter().map(|(k, v)| format!("{k} {v}")).collect::<Vec<_>>().join(", "));
+        s.push(
+            c.runtimes
+                .iter()
+                .map(|(k, v)| format!("{k} {v}"))
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
     }
     if !c.domains.is_empty() {
-        s.push(format!("sites: {}", c.domains.iter().map(|d| d.hostname.clone()).collect::<Vec<_>>().join(", ")));
+        s.push(format!(
+            "sites: {}",
+            c.domains
+                .iter()
+                .map(|d| d.hostname.clone())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
     }
     if !c.databases.is_empty() {
         s.push(format!(
             "databases: {}",
-            c.databases.iter().map(|d| format!("{} ({}{})", d.name, d.engine, if d.dump.is_some() { ", with data" } else { "" })).collect::<Vec<_>>().join(", ")
+            c.databases
+                .iter()
+                .map(|d| format!(
+                    "{} ({}{})",
+                    d.name,
+                    d.engine,
+                    if d.dump.is_some() { ", with data" } else { "" }
+                ))
+                .collect::<Vec<_>>()
+                .join(", ")
         ));
     }
     if !c.workers.is_empty() {
@@ -193,7 +234,10 @@ fn summary(c: &SnapshotContent) -> Vec<String> {
         s.push(format!("{} tunnel(s)", c.tunnels.len()));
     }
     if !c.env_files.is_empty() {
-        s.push(format!("env files: {}", c.env_files.keys().cloned().collect::<Vec<_>>().join(", ")));
+        s.push(format!(
+            "env files: {}",
+            c.env_files.keys().cloned().collect::<Vec<_>>().join(", ")
+        ));
     }
     if c.file_count > 0 {
         s.push(format!("{} project file(s)", c.file_count));
@@ -202,13 +246,17 @@ fn summary(c: &SnapshotContent) -> Vec<String> {
 }
 
 fn zip_options() -> zip::write::SimpleFileOptions {
-    zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated).large_file(true)
+    zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated)
+        .large_file(true)
 }
 
 /// Project files relative to `root`, skipping rebuildable folders and `.git`.
 fn project_files(root: &Path) -> Vec<PathBuf> {
     fn walk(dir: &Path, root: &Path, out: &mut Vec<PathBuf>) {
-        let Ok(rd) = std::fs::read_dir(dir) else { return };
+        let Ok(rd) = std::fs::read_dir(dir) else {
+            return;
+        };
         for e in rd.flatten() {
             let name = e.file_name().to_string_lossy().to_string();
             let Ok(ft) = e.file_type() else { continue };
@@ -251,20 +299,36 @@ fn copy_project(from: &Path, to: &Path) -> std::io::Result<usize> {
 
 fn read_zip_meta(path: &Path) -> Result<SnapshotContent, String> {
     let file = std::fs::File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let mut zip = zip::ZipArchive::new(file).map_err(|e| format!("{} is not a snapshot: {e}", path.display()))?;
-    let mut entry = zip.by_name(META).map_err(|_| format!("{} is not an OpenLocalServer snapshot", path.display()))?;
+    let mut zip = zip::ZipArchive::new(file)
+        .map_err(|e| format!("{} is not a snapshot: {e}", path.display()))?;
+    let mut entry = zip
+        .by_name(META)
+        .map_err(|_| format!("{} is not an OpenLocalServer snapshot", path.display()))?;
     let mut text = String::new();
     entry.read_to_string(&mut text).map_err(|e| e.to_string())?;
-    let c: SnapshotContent = serde_json::from_str(&text).map_err(|e| format!("the snapshot's description is damaged: {e}"))?;
+    let c: SnapshotContent = serde_json::from_str(&text)
+        .map_err(|e| format!("the snapshot's description is damaged: {e}"))?;
     if c.format > FORMAT {
-        return Err(format!("this snapshot was made by a newer OpenLocalServer (format {})", c.format));
+        return Err(format!(
+            "this snapshot was made by a newer OpenLocalServer (format {})",
+            c.format
+        ));
     }
     Ok(c)
 }
 
 /// Replaces whole-word occurrences of a slug in a hostname ("shop.test" → "shop-copy.test").
 fn rename_host(host: &str, old: &str, new: &str) -> String {
-    let labels: Vec<String> = host.split('.').map(|l| if l == old { new.to_string() } else { l.to_string() }).collect();
+    let labels: Vec<String> = host
+        .split('.')
+        .map(|l| {
+            if l == old {
+                new.to_string()
+            } else {
+                l.to_string()
+            }
+        })
+        .collect();
     let renamed = labels.join(".");
     if renamed == host {
         format!("{new}.{host}")
@@ -279,8 +343,18 @@ impl Inner {
     }
 
     /// Reads a project's current configuration (no data) into a snapshot description.
-    pub fn snapshot_content(&self, project_id: &str, label: &str, options: SnapshotOptions) -> Result<SnapshotContent, CoreError> {
-        let project = self.projects.lock().unwrap().get(project_id).ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
+    pub fn snapshot_content(
+        &self,
+        project_id: &str,
+        label: &str,
+        options: SnapshotOptions,
+    ) -> Result<SnapshotContent, CoreError> {
+        let project = self
+            .projects
+            .lock()
+            .unwrap()
+            .get(project_id)
+            .ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
         let root = PathBuf::from(&project.path);
         let mut manifest_files = BTreeMap::new();
         if let Ok(rd) = std::fs::read_dir(manifest::dir(&root)) {
@@ -290,16 +364,43 @@ impl Inner {
                 }
             }
         }
-        let runtimes = self.project_detail(project_id).map(|d| d.resolved.into_iter().filter_map(|r| r.installed_version.map(|v| (r.id, v))).collect()).unwrap_or_default();
-        let domains: Vec<Domain> = self.domains.lock().unwrap().list().into_iter().filter(|d| d.project_id.as_deref() == Some(project_id)).collect();
+        let runtimes = self
+            .project_detail(project_id)
+            .map(|d| {
+                d.resolved
+                    .into_iter()
+                    .filter_map(|r| r.installed_version.map(|v| (r.id, v)))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let domains: Vec<Domain> = self
+            .domains
+            .lock()
+            .unwrap()
+            .list()
+            .into_iter()
+            .filter(|d| d.project_id.as_deref() == Some(project_id))
+            .collect();
         let cfg = self.web_config();
         let mut web_configs = BTreeMap::new();
         for d in domains.iter().filter(|d| d.ownership != Ownership::Managed) {
-            let site = self.web.read_config(&cfg, Some(&d.hostname), ConfigPart::Site).ok();
-            let custom = (d.ownership == Ownership::Advanced).then(|| self.web.read_config(&cfg, Some(&d.hostname), ConfigPart::Custom).ok()).flatten();
+            let site = self
+                .web
+                .read_config(&cfg, Some(&d.hostname), ConfigPart::Site)
+                .ok();
+            let custom = (d.ownership == Ownership::Advanced)
+                .then(|| {
+                    self.web
+                        .read_config(&cfg, Some(&d.hostname), ConfigPart::Custom)
+                        .ok()
+                })
+                .flatten();
             web_configs.insert(d.hostname.clone(), (site, custom));
         }
-        let certificates = domains.iter().filter_map(|d| self.certs.info(&d.hostname)).collect();
+        let certificates = domains
+            .iter()
+            .filter_map(|d| self.certs.info(&d.hostname))
+            .collect();
         let mut databases = Vec::new();
         if let Ok(Some(m)) = manifest::read_manifest(&root) {
             if let Some(db) = m.database {
@@ -309,11 +410,25 @@ impl Inner {
                     e => e,
                 };
                 if engine != "sqlite" {
-                    databases.push(DatabaseMeta { engine: engine.into(), name: db.name.unwrap_or_else(|| crate::setup::db_name_for(&project.name)), dump: None });
+                    databases.push(DatabaseMeta {
+                        engine: engine.into(),
+                        name: db
+                            .name
+                            .unwrap_or_else(|| crate::setup::db_name_for(&project.name)),
+                        dump: None,
+                    });
                 }
             }
         }
-        let sqlite = self.sqlite.lock().unwrap().list().into_iter().filter(|s| s.project_id.as_deref() == Some(project_id)).map(|s| s.path).collect();
+        let sqlite = self
+            .sqlite
+            .lock()
+            .unwrap()
+            .list()
+            .into_iter()
+            .filter(|s| s.project_id.as_deref() == Some(project_id))
+            .map(|s| s.path)
+            .collect();
         let mut env_files = BTreeMap::new();
         if options.env {
             for f in self.env_files(project_id).unwrap_or_default() {
@@ -338,8 +453,18 @@ impl Inner {
             workers: self.workers_for(project_id),
             schedules: self.schedules_for(project_id),
             tunnels: self.tunnels_for(project_id),
-            quick_commands: self.quick_commands.list().into_iter().filter(|c| !c.builtin).collect(),
-            mode: self.settings.lock().unwrap().get(&format!("project.{project_id}.mode")).and_then(|v| v.as_str().map(str::to_string)),
+            quick_commands: self
+                .quick_commands
+                .list()
+                .into_iter()
+                .filter(|c| !c.builtin)
+                .collect(),
+            mode: self
+                .settings
+                .lock()
+                .unwrap()
+                .get(&format!("project.{project_id}.mode"))
+                .and_then(|v| v.as_str().map(str::to_string)),
             env_files,
             file_count: 0,
             project,
@@ -347,12 +472,25 @@ impl Inner {
     }
 
     /// §131: takes a snapshot and stores it with the project's others.
-    pub fn create_snapshot(&self, project_id: &str, label: &str, options: SnapshotOptions) -> Result<SnapshotInfo, CoreError> {
+    pub fn create_snapshot(
+        &self,
+        project_id: &str,
+        label: &str,
+        options: SnapshotOptions,
+    ) -> Result<SnapshotInfo, CoreError> {
         let mut content = self.snapshot_content(project_id, label, options)?;
         let dir = self.snapshots_dir(project_id);
         std::fs::create_dir_all(&dir)?;
         let slug = crate::domain::slugify(if label.is_empty() { "snapshot" } else { label });
-        let file = dir.join(format!("{}-{}.zip", content.created_ms, if slug.is_empty() { "snapshot".into() } else { slug }));
+        let file = dir.join(format!(
+            "{}-{}.zip",
+            content.created_ms,
+            if slug.is_empty() {
+                "snapshot".into()
+            } else {
+                slug
+            }
+        ));
         let tmp = file.with_extension("zip.part");
         let result = (|| -> Result<(), CoreError> {
             let mut zip = zip::ZipWriter::new(std::fs::File::create(&tmp)?);
@@ -362,11 +500,15 @@ impl Inner {
                         continue;
                     }
                     if !self.services.is_running(&db.engine) {
-                        self.start_service_and_wait(&db.engine, &mut |_| {}).map_err(err)?;
+                        self.start_service_and_wait(&db.engine, &mut |_| {})
+                            .map_err(err)?;
                     }
-                    let dump = crate::dbbackup::backup(&self.services, &self.paths, &db.engine, &db.name).map_err(err)?;
+                    let dump =
+                        crate::dbbackup::backup(&self.services, &self.paths, &db.engine, &db.name)
+                            .map_err(err)?;
                     let name = format!("databases/{}-{}.sql", db.engine, db.name);
-                    zip.start_file(name.as_str(), zip_options()).map_err(|e| err(e.to_string()))?;
+                    zip.start_file(name.as_str(), zip_options())
+                        .map_err(|e| err(e.to_string()))?;
                     std::io::copy(&mut std::fs::File::open(&dump)?, &mut zip)?;
                     db.dump = Some(name);
                 }
@@ -375,12 +517,14 @@ impl Inner {
                 let root = PathBuf::from(&content.project.path);
                 for rel in project_files(&root) {
                     let name = format!("files/{}", rel.display().to_string().replace('\\', "/"));
-                    zip.start_file(name.as_str(), zip_options()).map_err(|e| err(e.to_string()))?;
+                    zip.start_file(name.as_str(), zip_options())
+                        .map_err(|e| err(e.to_string()))?;
                     std::io::copy(&mut std::fs::File::open(root.join(&rel))?, &mut zip)?;
                     content.file_count += 1;
                 }
             }
-            zip.start_file(META, zip_options()).map_err(|e| err(e.to_string()))?;
+            zip.start_file(META, zip_options())
+                .map_err(|e| err(e.to_string()))?;
             zip.write_all(serde_json::to_string_pretty(&content)?.as_bytes())?;
             zip.finish().map_err(|e| err(e.to_string()))?;
             Ok(())
@@ -397,7 +541,10 @@ impl Inner {
     fn snapshot_info(&self, file: &Path) -> Result<SnapshotInfo, CoreError> {
         let c = read_zip_meta(file).map_err(err)?;
         Ok(SnapshotInfo {
-            id: file.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
+            id: file
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default(),
             project_id: c.project.id.clone(),
             project_name: c.project.name.clone(),
             label: c.label.clone(),
@@ -445,11 +592,26 @@ impl Inner {
 
     /// Puts a project back the way a snapshot recorded it. A safety snapshot of the current
     /// state (config and env files) is taken first.
-    pub fn restore_snapshot(&self, project_id: &str, id: &str, opts: RestoreOptions) -> Result<RestoreResult, CoreError> {
+    pub fn restore_snapshot(
+        &self,
+        project_id: &str,
+        id: &str,
+        opts: RestoreOptions,
+    ) -> Result<RestoreResult, CoreError> {
         let file = self.snapshot_file(project_id, id)?;
         let content = read_zip_meta(&file).map_err(err)?;
-        let safety = self.create_snapshot(project_id, "Before restore", SnapshotOptions { env: true, ..Default::default() })?;
-        let mut r = RestoreResult { safety_snapshot: Some(safety.id), ..Default::default() };
+        let safety = self.create_snapshot(
+            project_id,
+            "Before restore",
+            SnapshotOptions {
+                env: true,
+                ..Default::default()
+            },
+        )?;
+        let mut r = RestoreResult {
+            safety_snapshot: Some(safety.id),
+            ..Default::default()
+        };
         let title = format!("Restore a snapshot of {}", content.project.name);
         self.journaled("restore_snapshot", &title, Some("A \"Before restore\" snapshot of the previous state was taken; restore it to undo."), None, || {
             let project = self.projects.lock().unwrap().get(project_id).ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
@@ -480,12 +642,18 @@ impl Inner {
     }
 
     fn extract_files(&self, zip_path: &Path, root: &Path) -> Result<usize, String> {
-        let mut zip = zip::ZipArchive::new(std::fs::File::open(zip_path).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+        let mut zip =
+            zip::ZipArchive::new(std::fs::File::open(zip_path).map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?;
         let mut n = 0;
         for i in 0..zip.len() {
             let mut entry = zip.by_index(i).map_err(|e| e.to_string())?;
-            let Some(rel) = entry.enclosed_name() else { continue };
-            let Ok(rel) = rel.strip_prefix("files") else { continue };
+            let Some(rel) = entry.enclosed_name() else {
+                continue;
+            };
+            let Ok(rel) = rel.strip_prefix("files") else {
+                continue;
+            };
             if rel.as_os_str().is_empty() || entry.is_dir() {
                 continue;
             }
@@ -493,7 +661,8 @@ impl Inner {
             if let Some(parent) = target.parent() {
                 std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
             }
-            let mut out = std::fs::File::create(&target).map_err(|e| format!("{}: {e}", target.display()))?;
+            let mut out =
+                std::fs::File::create(&target).map_err(|e| format!("{}: {e}", target.display()))?;
             std::io::copy(&mut entry, &mut out).map_err(|e| e.to_string())?;
             n += 1;
         }
@@ -501,22 +670,50 @@ impl Inner {
     }
 
     /// Loads each included dump; `rename` maps old database names to new ones (clones).
-    fn restore_dumps(&self, zip_path: &Path, content: &SnapshotContent, rename: Option<&BTreeMap<String, String>>, done: &mut Vec<String>, problems: &mut Vec<String>) {
-        let Ok(f) = std::fs::File::open(zip_path) else { return };
-        let Ok(mut zip) = zip::ZipArchive::new(f) else { return };
+    fn restore_dumps(
+        &self,
+        zip_path: &Path,
+        content: &SnapshotContent,
+        rename: Option<&BTreeMap<String, String>>,
+        done: &mut Vec<String>,
+        problems: &mut Vec<String>,
+    ) {
+        let Ok(f) = std::fs::File::open(zip_path) else {
+            return;
+        };
+        let Ok(mut zip) = zip::ZipArchive::new(f) else {
+            return;
+        };
         for db in &content.databases {
             let Some(dump) = &db.dump else { continue };
-            let target = rename.and_then(|m| m.get(&db.name)).cloned().unwrap_or_else(|| db.name.clone());
+            let target = rename
+                .and_then(|m| m.get(&db.name))
+                .cloned()
+                .unwrap_or_else(|| db.name.clone());
             let result = (|| -> Result<(), String> {
                 let mut entry = zip.by_name(dump).map_err(|e| e.to_string())?;
-                let tmp = self.paths.cache_dir().join(format!("restore-{}-{}.sql", db.engine, target));
+                let tmp = self
+                    .paths
+                    .cache_dir()
+                    .join(format!("restore-{}-{}.sql", db.engine, target));
                 std::fs::create_dir_all(self.paths.cache_dir()).map_err(|e| e.to_string())?;
-                std::io::copy(&mut entry, &mut std::fs::File::create(&tmp).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+                std::io::copy(
+                    &mut entry,
+                    &mut std::fs::File::create(&tmp).map_err(|e| e.to_string())?,
+                )
+                .map_err(|e| e.to_string())?;
                 if !self.services.is_running(&db.engine) {
                     self.start_service_and_wait(&db.engine, &mut |_| {})?;
                 }
                 self.services.create_database(&db.engine, &target)?;
-                let r = crate::dbbackup::restore(&self.services, &self.paths, &db.engine, &target, &tmp).map(|_| ());
+                let r = crate::dbbackup::restore(
+                    &self.services,
+                    &self.paths,
+                    &db.engine,
+                    &target,
+                    &tmp,
+                )
+                .map(|_| ());
                 let _ = std::fs::remove_file(&tmp);
                 r
             })();
@@ -528,7 +725,14 @@ impl Inner {
     }
 
     /// Writes a snapshot's configuration onto `project`, adjusted for a clone when asked.
-    fn apply_config(&self, c: &SnapshotContent, project: &Project, adjust: &Adjust, done: &mut Vec<String>, problems: &mut Vec<String>) {
+    fn apply_config(
+        &self,
+        c: &SnapshotContent,
+        project: &Project,
+        adjust: &Adjust,
+        done: &mut Vec<String>,
+        problems: &mut Vec<String>,
+    ) {
         let root = PathBuf::from(&project.path);
         // Manifest files, with the manifest's name / site / database adjusted.
         for (name, text) in &c.manifest_files {
@@ -543,7 +747,11 @@ impl Inner {
                             }
                         }
                         if let Some(db) = m.database.as_mut() {
-                            db.name = db.name.as_ref().map(|n| adjust.db(n)).or_else(|| Some(crate::setup::db_name_for(&project.name)));
+                            db.name = db
+                                .name
+                                .as_ref()
+                                .map(|n| adjust.db(n))
+                                .or_else(|| Some(crate::setup::db_name_for(&project.name)));
                         }
                         serde_yaml_ng::to_string(&m).unwrap_or_else(|_| text.clone())
                     }
@@ -553,7 +761,9 @@ impl Inner {
                 text.clone()
             };
             let path = manifest::dir(&root).join(name);
-            if let Err(e) = std::fs::create_dir_all(manifest::dir(&root)).and_then(|_| std::fs::write(&path, text)) {
+            if let Err(e) = std::fs::create_dir_all(manifest::dir(&root))
+                .and_then(|_| std::fs::write(&path, text))
+            {
                 problems.push(format!("{name}: {e}"));
             }
         }
@@ -564,7 +774,18 @@ impl Inner {
         // Sites: the snapshot's set replaces the project's (restores) or is added (clones).
         if adjust.is_none() {
             let keep: Vec<&str> = c.domains.iter().map(|d| d.hostname.as_str()).collect();
-            let extra: Vec<String> = self.domains.lock().unwrap().list().into_iter().filter(|d| d.project_id.as_deref() == Some(project.id.as_str()) && !keep.contains(&d.hostname.as_str())).map(|d| d.hostname).collect();
+            let extra: Vec<String> = self
+                .domains
+                .lock()
+                .unwrap()
+                .list()
+                .into_iter()
+                .filter(|d| {
+                    d.project_id.as_deref() == Some(project.id.as_str())
+                        && !keep.contains(&d.hostname.as_str())
+                })
+                .map(|d| d.hostname)
+                .collect();
             for h in extra {
                 match self.remove_domain(&h) {
                     Ok(()) => done.push(format!("removed site {h} (not in the snapshot)")),
@@ -579,7 +800,12 @@ impl Inner {
                 d.hostname = adjust.host(&d.hostname);
                 d.root = adjust.path(&d.root);
                 d.generated_hashes.clear();
-                if let SiteKind::Proxy { upstream_port, upstream_host: None, .. } = &mut d.kind {
+                if let SiteKind::Proxy {
+                    upstream_port,
+                    upstream_host: None,
+                    ..
+                } = &mut d.kind
+                {
                     *upstream_port = adjust.port(*upstream_port);
                 }
                 if let Some(app) = d.app.as_mut() {
@@ -589,7 +815,9 @@ impl Inner {
             let exists = self.domains.lock().unwrap().get(&d.hostname);
             let host = d.hostname.clone();
             let r = match exists {
-                Some(e) if e.project_id.as_deref().is_some_and(|p| p != project.id) => Err(format!("{host} belongs to another project")),
+                Some(e) if e.project_id.as_deref().is_some_and(|p| p != project.id) => {
+                    Err(format!("{host} belongs to another project"))
+                }
                 Some(_) => self.update_domain(d).map(|_| ()).map_err(|e| e.to_string()),
                 None => self.add_domain(d).map(|_| ()).map_err(|e| e.to_string()),
             };
@@ -655,7 +883,10 @@ impl Inner {
             }
         }
         if let Some(mode) = &c.mode {
-            let _ = self.settings.lock().unwrap().set(format!("project.{}.mode", project.id), serde_json::json!(mode));
+            let _ = self.settings.lock().unwrap().set(
+                format!("project.{}.mode", project.id),
+                serde_json::json!(mode),
+            );
         }
     }
 
@@ -665,7 +896,12 @@ impl Inner {
     pub fn preview_import(&self, source: &str) -> Result<ImportPreview, CoreError> {
         let content = read_zip_meta(Path::new(source)).map_err(err)?;
         let suggested = self.free_project_name(&content.project.name);
-        let adjust = Adjust::new(&content, &suggested, &PathBuf::from(&content.project.path).with_file_name(&suggested), self);
+        let adjust = Adjust::new(
+            &content,
+            &suggested,
+            &PathBuf::from(&content.project.path).with_file_name(&suggested),
+            self,
+        );
         let mut conflicts = Vec::new();
         for d in &content.domains {
             let h = adjust.host(&d.hostname);
@@ -674,25 +910,49 @@ impl Inner {
             }
         }
         if content.databases.iter().any(|d| d.dump.is_some()) {
-            conflicts.push("database data is included and will be loaded into new databases".into());
+            conflicts
+                .push("database data is included and will be loaded into new databases".into());
         }
         if content.options.env {
             conflicts.push(".env files are included; they may hold passwords and keys".into());
         }
-        Ok(ImportPreview { source: source.into(), summary: summary(&content), adjustments: adjust.describe(), suggested_name: suggested, conflicts, content: Box::new(content) })
+        Ok(ImportPreview {
+            source: source.into(),
+            summary: summary(&content),
+            adjustments: adjust.describe(),
+            suggested_name: suggested,
+            conflicts,
+            content: Box::new(content),
+        })
     }
 
     fn free_project_name(&self, base: &str) -> String {
         let projects = self.projects.lock().unwrap().list();
-        let taken = |n: &str| projects.iter().any(|p| p.name.eq_ignore_ascii_case(n)) || self.domains.lock().unwrap().get(&format!("{}.test", crate::domain::slugify(n))).is_some();
+        let taken = |n: &str| {
+            projects.iter().any(|p| p.name.eq_ignore_ascii_case(n))
+                || self
+                    .domains
+                    .lock()
+                    .unwrap()
+                    .get(&format!("{}.test", crate::domain::slugify(n)))
+                    .is_some()
+        };
         if !taken(base) {
             return base.to_string();
         }
-        (2..).map(|i| format!("{base}-{i}")).find(|n| !taken(n)).unwrap()
+        (2..)
+            .map(|i| format!("{base}-{i}"))
+            .find(|n| !taken(n))
+            .unwrap()
     }
 
     /// §132 import: creates a project from an environment file at `target`.
-    pub fn import_environment(&self, source: &str, target: &str, name: &str) -> Result<CloneResult, CoreError> {
+    pub fn import_environment(
+        &self,
+        source: &str,
+        target: &str,
+        name: &str,
+    ) -> Result<CloneResult, CoreError> {
         let zip_path = PathBuf::from(source);
         let content = read_zip_meta(&zip_path).map_err(err)?;
         let target = PathBuf::from(target);
@@ -702,22 +962,48 @@ impl Inner {
         let mut changes = Vec::new();
         let mut problems = Vec::new();
         if content.file_count > 0 {
-            if target.exists() && std::fs::read_dir(&target).map(|mut d| d.next().is_some()).unwrap_or(false) {
-                return Err(err(format!("{} is not empty; choose an empty or new folder", target.display())));
+            if target.exists()
+                && std::fs::read_dir(&target)
+                    .map(|mut d| d.next().is_some())
+                    .unwrap_or(false)
+            {
+                return Err(err(format!(
+                    "{} is not empty; choose an empty or new folder",
+                    target.display()
+                )));
             }
             let n = self.extract_files(&zip_path, &target).map_err(err)?;
             changes.push(format!("{n} project file(s) unpacked"));
         } else {
             std::fs::create_dir_all(&target)?;
         }
-        self.finish_clone(&content, Some(&zip_path), &target, name, true, changes, &mut problems)
+        self.finish_clone(
+            &content,
+            Some(&zip_path),
+            &target,
+            name,
+            true,
+            changes,
+            &mut problems,
+        )
     }
 
     /// §158: another copy of a project's environment. `what` is `full` (files, config,
     /// database copies), `infrastructure` (sites, services, workers, empty databases for an
     /// existing folder) or `configuration` (manifest and .env files only).
-    pub fn clone_environment(&self, project_id: &str, target: &str, name: &str, what: &str) -> Result<CloneResult, CoreError> {
-        let source = self.projects.lock().unwrap().get(project_id).ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
+    pub fn clone_environment(
+        &self,
+        project_id: &str,
+        target: &str,
+        name: &str,
+        what: &str,
+    ) -> Result<CloneResult, CoreError> {
+        let source = self
+            .projects
+            .lock()
+            .unwrap()
+            .get(project_id)
+            .ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
         let target = PathBuf::from(target);
         if !target.is_absolute() {
             return Err(err("choose a full folder path for the copy"));
@@ -727,8 +1013,14 @@ impl Inner {
         }
         // Database data is copied only when its server is installed; otherwise the clone
         // still goes ahead and says which databases it couldn't copy.
-        let dbs = self.snapshot_content(project_id, "", SnapshotOptions::default())?.databases;
-        let missing: Vec<String> = dbs.iter().filter(|d| d.engine != "mongodb" && !self.services.status(&d.engine).installed).map(|d| format!("{} ({})", d.name, d.engine)).collect();
+        let dbs = self
+            .snapshot_content(project_id, "", SnapshotOptions::default())?
+            .databases;
+        let missing: Vec<String> = dbs
+            .iter()
+            .filter(|d| d.engine != "mongodb" && !self.services.status(&d.engine).installed)
+            .map(|d| format!("{} ({})", d.name, d.engine))
+            .collect();
         let with_db = what == "full" && missing.is_empty() && !dbs.is_empty();
         let title = format!("Clone {} to {name}", source.name);
         self.journaled("clone_environment", &title, Some("Remove the new project and its sites to undo; the original is not changed."), None, || {
@@ -780,10 +1072,27 @@ impl Inner {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn finish_clone(&self, content: &SnapshotContent, zip_with_dumps: Option<&Path>, target: &Path, name: &str, infra: bool, mut changes: Vec<String>, problems: &mut Vec<String>) -> Result<CloneResult, CoreError> {
-        let mut project = self.projects.lock().unwrap().register(&target.display().to_string())?;
+    fn finish_clone(
+        &self,
+        content: &SnapshotContent,
+        zip_with_dumps: Option<&Path>,
+        target: &Path,
+        name: &str,
+        infra: bool,
+        mut changes: Vec<String>,
+        problems: &mut Vec<String>,
+    ) -> Result<CloneResult, CoreError> {
+        let mut project = self
+            .projects
+            .lock()
+            .unwrap()
+            .register(&target.display().to_string())?;
         if !name.trim().is_empty() && project.name != name.trim() {
-            project = self.projects.lock().unwrap().rename(&project.id, name.trim())?;
+            project = self
+                .projects
+                .lock()
+                .unwrap()
+                .rename(&project.id, name.trim())?;
         }
         let adjust = Adjust::new(content, &project.name, target, self);
         changes.extend(adjust.describe());
@@ -804,11 +1113,19 @@ impl Inner {
         self.apply_config(&c, &project, &adjust, &mut done, problems);
         changes.extend(done);
         if let Some(zip) = zip_with_dumps {
-            let rename: BTreeMap<String, String> = content.databases.iter().map(|d| (d.name.clone(), adjust.db(&d.name))).collect();
+            let rename: BTreeMap<String, String> = content
+                .databases
+                .iter()
+                .map(|d| (d.name.clone(), adjust.db(&d.name)))
+                .collect();
             self.restore_dumps(zip, content, Some(&rename), &mut changes, problems);
         }
         let _ = self.sync_auto_domains();
-        Ok(CloneResult { project, changes, problems: std::mem::take(problems) })
+        Ok(CloneResult {
+            project,
+            changes,
+            problems: std::mem::take(problems),
+        })
     }
 
     // ------------------------------------------------------------- settings backups
@@ -829,7 +1146,8 @@ impl Inner {
         for e in std::fs::read_dir(&root)?.flatten() {
             let path = e.path();
             if path.is_file() && path.extension().is_some_and(|x| x == "json") {
-                zip.start_file(e.file_name().to_string_lossy().as_ref(), zip_options()).map_err(|e| err(e.to_string()))?;
+                zip.start_file(e.file_name().to_string_lossy().as_ref(), zip_options())
+                    .map_err(|e| err(e.to_string()))?;
                 std::io::copy(&mut std::fs::File::open(&path)?, &mut zip)?;
             }
         }
@@ -837,14 +1155,21 @@ impl Inner {
             let base = root.join(sub);
             for rel in project_files(&base) {
                 let name = format!("{sub}/{}", rel.display().to_string().replace('\\', "/"));
-                zip.start_file(name.as_str(), zip_options()).map_err(|e| err(e.to_string()))?;
+                zip.start_file(name.as_str(), zip_options())
+                    .map_err(|e| err(e.to_string()))?;
                 std::io::copy(&mut std::fs::File::open(base.join(&rel))?, &mut zip)?;
             }
         }
-        zip.start_file("certificates.json", zip_options()).map_err(|e| err(e.to_string()))?;
+        zip.start_file("certificates.json", zip_options())
+            .map_err(|e| err(e.to_string()))?;
         zip.write_all(serde_json::to_string_pretty(&self.certs.list())?.as_bytes())?;
         zip.finish().map_err(|e| err(e.to_string()))?;
-        Ok(SettingsBackup { id: file.file_name().unwrap().to_string_lossy().to_string(), path: file.display().to_string(), created_ms: created, size_bytes: std::fs::metadata(&file).map(|m| m.len()).unwrap_or(0) })
+        Ok(SettingsBackup {
+            id: file.file_name().unwrap().to_string_lossy().to_string(),
+            path: file.display().to_string(),
+            created_ms: created,
+            size_bytes: std::fs::metadata(&file).map(|m| m.len()).unwrap_or(0),
+        })
     }
 
     pub fn list_settings_backups(&self) -> Vec<SettingsBackup> {
@@ -855,8 +1180,17 @@ impl Inner {
             .filter(|e| e.path().extension().is_some_and(|x| x == "zip"))
             .map(|e| {
                 let name = e.file_name().to_string_lossy().to_string();
-                let created_ms = name.trim_start_matches("settings-").trim_end_matches(".zip").parse().unwrap_or(0);
-                SettingsBackup { path: e.path().display().to_string(), size_bytes: e.metadata().map(|m| m.len()).unwrap_or(0), id: name, created_ms }
+                let created_ms = name
+                    .trim_start_matches("settings-")
+                    .trim_end_matches(".zip")
+                    .parse()
+                    .unwrap_or(0);
+                SettingsBackup {
+                    path: e.path().display().to_string(),
+                    size_bytes: e.metadata().map(|m| m.len()).unwrap_or(0),
+                    id: name,
+                    created_ms,
+                }
             })
             .collect();
         out.sort_by_key(|b| std::cmp::Reverse(b.created_ms));
@@ -870,12 +1204,15 @@ impl Inner {
             return Err(err("that is not a backup name"));
         }
         let file = self.settings_backups_dir().join(id);
-        let mut zip = zip::ZipArchive::new(std::fs::File::open(&file)?).map_err(|e| err(e.to_string()))?;
+        let mut zip =
+            zip::ZipArchive::new(std::fs::File::open(&file)?).map_err(|e| err(e.to_string()))?;
         let safety = self.backup_settings()?;
         let root = self.paths.data_dir();
         for i in 0..zip.len() {
             let mut entry = zip.by_index(i).map_err(|e| err(e.to_string()))?;
-            let Some(rel) = entry.enclosed_name() else { continue };
+            let Some(rel) = entry.enclosed_name() else {
+                continue;
+            };
             if entry.is_dir() || rel == Path::new("certificates.json") {
                 continue;
             }
@@ -891,7 +1228,11 @@ impl Inner {
 
 /// Maps a web-config key from the clone's new hostname back to the snapshot's old one.
 fn adjust_back(adjust: &Adjust, new_host: &str, c: &SnapshotContent) -> String {
-    c.domains.iter().map(|d| d.hostname.clone()).find(|h| adjust.host(h) == new_host).unwrap_or_else(|| new_host.to_string())
+    c.domains
+        .iter()
+        .map(|d| d.hostname.clone())
+        .find(|h| adjust.host(h) == new_host)
+        .unwrap_or_else(|| new_host.to_string())
 }
 
 /// How a clone differs from its source (§158): name, paths, sites, databases, ports.
@@ -907,7 +1248,15 @@ struct Adjust {
 
 impl Adjust {
     fn none() -> Self {
-        Self { old_slug: String::new(), new_slug: String::new(), old_path: String::new(), new_path: String::new(), dbs: BTreeMap::new(), ports: BTreeMap::new(), hosts: BTreeMap::new() }
+        Self {
+            old_slug: String::new(),
+            new_slug: String::new(),
+            old_path: String::new(),
+            new_path: String::new(),
+            dbs: BTreeMap::new(),
+            ports: BTreeMap::new(),
+            hosts: BTreeMap::new(),
+        }
     }
 
     fn is_none(&self) -> bool {
@@ -917,15 +1266,46 @@ impl Adjust {
     fn new(c: &SnapshotContent, new_name: &str, new_path: &Path, inner: &Inner) -> Self {
         let old_slug = crate::domain::slugify(&c.project.name);
         let new_slug = crate::domain::slugify(new_name);
-        let dbs = c.databases.iter().map(|d| (d.name.clone(), crate::setup::db_name_for(&if d.name == crate::setup::db_name_for(&c.project.name) { new_name.to_string() } else { format!("{}_{}", d.name, new_slug) }))).collect();
+        let dbs = c
+            .databases
+            .iter()
+            .map(|d| {
+                (
+                    d.name.clone(),
+                    crate::setup::db_name_for(&if d.name
+                        == crate::setup::db_name_for(&c.project.name)
+                    {
+                        new_name.to_string()
+                    } else {
+                        format!("{}_{}", d.name, new_slug)
+                    }),
+                )
+            })
+            .collect();
         // A proxied app gets a port nothing else uses.
-        let mut used: Vec<u16> = inner.domains.lock().unwrap().list().into_iter().filter_map(|d| match d.kind {
-            SiteKind::Proxy { upstream_port, upstream_host: None, .. } => Some(upstream_port),
-            _ => None,
-        }).collect();
+        let mut used: Vec<u16> = inner
+            .domains
+            .lock()
+            .unwrap()
+            .list()
+            .into_iter()
+            .filter_map(|d| match d.kind {
+                SiteKind::Proxy {
+                    upstream_port,
+                    upstream_host: None,
+                    ..
+                } => Some(upstream_port),
+                _ => None,
+            })
+            .collect();
         let mut ports = BTreeMap::new();
         for d in &c.domains {
-            if let SiteKind::Proxy { upstream_port, upstream_host: None, .. } = d.kind {
+            if let SiteKind::Proxy {
+                upstream_port,
+                upstream_host: None,
+                ..
+            } = d.kind
+            {
                 let mut p = upstream_port + 1;
                 while used.contains(&p) || !crate::port::port_is_free(p) {
                     p += 1;
@@ -945,14 +1325,25 @@ impl Adjust {
             }
             hosts.insert(d.hostname.clone(), h);
         }
-        Self { old_slug, new_slug, old_path: c.project.path.clone(), new_path: new_path.display().to_string(), dbs, ports, hosts }
+        Self {
+            old_slug,
+            new_slug,
+            old_path: c.project.path.clone(),
+            new_path: new_path.display().to_string(),
+            dbs,
+            ports,
+            hosts,
+        }
     }
 
     fn host(&self, h: &str) -> String {
         if self.is_none() {
             return h.to_string();
         }
-        self.hosts.get(h).cloned().unwrap_or_else(|| rename_host(h, &self.old_slug, &self.new_slug))
+        self.hosts
+            .get(h)
+            .cloned()
+            .unwrap_or_else(|| rename_host(h, &self.old_slug, &self.new_slug))
     }
 
     fn host_in_url(&self, url: &str) -> String {
@@ -967,7 +1358,10 @@ impl Adjust {
     }
 
     fn db(&self, name: &str) -> String {
-        self.dbs.get(name).cloned().unwrap_or_else(|| name.to_string())
+        self.dbs
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| name.to_string())
     }
 
     fn port(&self, p: u16) -> u16 {
@@ -1041,11 +1435,22 @@ mod tests {
     fn project(core: &Core, dir: &Path) -> String {
         std::fs::create_dir_all(dir.join(".openlocalserver")).unwrap();
         std::fs::write(dir.join("index.html"), "hi").unwrap();
-        std::fs::write(dir.join(".env"), "APP_URL=https://shop.test\nDB_DATABASE=shop\nPORT=3000\n").unwrap();
+        std::fs::write(
+            dir.join(".env"),
+            "APP_URL=https://shop.test\nDB_DATABASE=shop\nPORT=3000\n",
+        )
+        .unwrap();
         std::fs::write(dir.join(".openlocalserver").join("environment.yaml"), "name: shop\ndomain:\n  hostname: shop.test\ndatabase:\n  engine: mariadb\n  name: shop\n").unwrap();
         std::fs::create_dir_all(dir.join("node_modules").join("x")).unwrap();
         std::fs::write(dir.join("node_modules").join("x").join("big.js"), "x").unwrap();
-        let CoreResponse::Project { project } = core.dispatch(CoreCommand::RegisterProject { path: dir.display().to_string() }).unwrap() else { panic!() };
+        let CoreResponse::Project { project } = core
+            .dispatch(CoreCommand::RegisterProject {
+                path: dir.display().to_string(),
+            })
+            .unwrap()
+        else {
+            panic!()
+        };
         let d = Domain {
             hostname: "shop.test".into(),
             project_id: Some(project.id.clone()),
@@ -1063,7 +1468,14 @@ mod tests {
             tunnel_id: None,
         };
         // Registering already gave it shop.test (automatic domains); make it ours either way.
-        if core.inner().domains.lock().unwrap().get("shop.test").is_some() {
+        if core
+            .inner()
+            .domains
+            .lock()
+            .unwrap()
+            .get("shop.test")
+            .is_some()
+        {
             core.inner().update_domain(d).unwrap();
         } else {
             core.inner().add_domain(d).unwrap();
@@ -1073,9 +1485,16 @@ mod tests {
 
     #[test]
     fn hostnames_are_renamed_by_label() {
-        assert_eq!(rename_host("shop.test", "shop", "shop-copy"), "shop-copy.test");
+        assert_eq!(
+            rename_host("shop.test", "shop", "shop-copy"),
+            "shop-copy.test"
+        );
         assert_eq!(rename_host("api.shop.test", "shop", "b"), "api.b.test");
-        assert_eq!(rename_host("other.test", "shop", "b"), "b.other.test", "a name without the old one gets a prefix");
+        assert_eq!(
+            rename_host("other.test", "shop", "b"),
+            "b.other.test",
+            "a name without the old one gets a prefix"
+        );
     }
 
     #[test]
@@ -1083,19 +1502,61 @@ mod tests {
         let (core, home) = core();
         let dir = home.paths.root().join("shop");
         let id = project(&core, &dir);
-        let snap = core.inner().create_snapshot(&id, "Before upgrade", SnapshotOptions { env: true, files: true, databases: false }).unwrap();
-        assert!(snap.summary.iter().any(|s| s.contains("shop.test")), "{:?}", snap.summary);
+        let snap = core
+            .inner()
+            .create_snapshot(
+                &id,
+                "Before upgrade",
+                SnapshotOptions {
+                    env: true,
+                    files: true,
+                    databases: false,
+                },
+            )
+            .unwrap();
+        assert!(
+            snap.summary.iter().any(|s| s.contains("shop.test")),
+            "{:?}",
+            snap.summary
+        );
         let content = read_zip_meta(Path::new(&snap.path)).unwrap();
-        assert_eq!(content.file_count, 3, "index.html, .env, environment.yaml; node_modules left out");
+        assert_eq!(
+            content.file_count, 3,
+            "index.html, .env, environment.yaml; node_modules left out"
+        );
 
         core.inner().remove_domain("shop.test").unwrap();
         std::fs::write(dir.join(".env"), "BROKEN=1\n").unwrap();
-        let r = core.inner().restore_snapshot(&id, &snap.id, RestoreOptions { config: true, env: true, databases: false, files: false }).unwrap();
+        let r = core
+            .inner()
+            .restore_snapshot(
+                &id,
+                &snap.id,
+                RestoreOptions {
+                    config: true,
+                    env: true,
+                    databases: false,
+                    files: false,
+                },
+            )
+            .unwrap();
         assert!(r.problems.is_empty(), "{:?}", r.problems);
-        assert!(core.inner().domains.lock().unwrap().get("shop.test").is_some());
-        assert!(std::fs::read_to_string(dir.join(".env")).unwrap().contains("DB_DATABASE=shop"));
+        assert!(core
+            .inner()
+            .domains
+            .lock()
+            .unwrap()
+            .get("shop.test")
+            .is_some());
+        assert!(std::fs::read_to_string(dir.join(".env"))
+            .unwrap()
+            .contains("DB_DATABASE=shop"));
         assert!(r.safety_snapshot.is_some());
-        assert_eq!(core.inner().list_snapshots(&id).len(), 2, "the snapshot and the safety one");
+        assert_eq!(
+            core.inner().list_snapshots(&id).len(),
+            2,
+            "the snapshot and the safety one"
+        );
     }
 
     #[test]
@@ -1104,13 +1565,36 @@ mod tests {
         let dir = home.paths.root().join("shop");
         let id = project(&core, &dir);
         let target = home.paths.root().join("shop-copy");
-        let r = core.inner().clone_environment(&id, &target.display().to_string(), "shop-copy", "full").unwrap();
+        let r = core
+            .inner()
+            .clone_environment(&id, &target.display().to_string(), "shop-copy", "full")
+            .unwrap();
         assert!(target.join("index.html").is_file());
         assert!(!target.join("node_modules").exists());
-        assert!(core.inner().domains.lock().unwrap().get("shop-copy.test").is_some(), "{:?}", r);
-        assert!(core.inner().domains.lock().unwrap().get("shop.test").is_some(), "the original keeps its site");
+        assert!(
+            core.inner()
+                .domains
+                .lock()
+                .unwrap()
+                .get("shop-copy.test")
+                .is_some(),
+            "{:?}",
+            r
+        );
+        assert!(
+            core.inner()
+                .domains
+                .lock()
+                .unwrap()
+                .get("shop.test")
+                .is_some(),
+            "the original keeps its site"
+        );
         let env = std::fs::read_to_string(target.join(".env")).unwrap();
-        assert!(env.contains("DB_DATABASE=shop_copy") && env.contains("APP_URL=https://shop-copy.test"), "{env}");
+        assert!(
+            env.contains("DB_DATABASE=shop_copy") && env.contains("APP_URL=https://shop-copy.test"),
+            "{env}"
+        );
         let m = manifest::read_manifest(&target).unwrap().unwrap();
         assert_eq!(m.domain.unwrap().hostname, "shop-copy.test");
         assert_eq!(m.database.unwrap().name.as_deref(), Some("shop_copy"));
@@ -1121,24 +1605,63 @@ mod tests {
         let (core, home) = core();
         let dir = home.paths.root().join("shop");
         let id = project(&core, &dir);
-        let snap = core.inner().create_snapshot(&id, "export", SnapshotOptions { env: false, files: true, databases: false }).unwrap();
+        let snap = core
+            .inner()
+            .create_snapshot(
+                &id,
+                "export",
+                SnapshotOptions {
+                    env: false,
+                    files: true,
+                    databases: false,
+                },
+            )
+            .unwrap();
         let exported = home.paths.root().join("shop-env.zip");
-        core.inner().export_snapshot(&id, &snap.id, &exported.display().to_string()).unwrap();
+        core.inner()
+            .export_snapshot(&id, &snap.id, &exported.display().to_string())
+            .unwrap();
 
-        let preview = core.inner().preview_import(&exported.display().to_string()).unwrap();
+        let preview = core
+            .inner()
+            .preview_import(&exported.display().to_string())
+            .unwrap();
         assert_eq!(preview.suggested_name, "shop-2", "shop is taken");
         let target = home.paths.root().join("imported");
-        let r = core.inner().import_environment(&exported.display().to_string(), &target.display().to_string(), "imported").unwrap();
+        let r = core
+            .inner()
+            .import_environment(
+                &exported.display().to_string(),
+                &target.display().to_string(),
+                "imported",
+            )
+            .unwrap();
         assert!(target.join("index.html").is_file());
-        assert_eq!(r.project.path.to_lowercase(), std::fs::canonicalize(&target).unwrap().display().to_string().trim_start_matches(r"\\?\").to_lowercase());
+        assert_eq!(
+            r.project.path.to_lowercase(),
+            std::fs::canonicalize(&target)
+                .unwrap()
+                .display()
+                .to_string()
+                .trim_start_matches(r"\\?\")
+                .to_lowercase()
+        );
     }
 
     #[test]
     fn settings_backups_restore_after_saving_the_current_state() {
         let (core, _home) = core();
-        core.dispatch(CoreCommand::SetSetting { key: "editor".into(), value: serde_json::json!("vscode") }).unwrap();
+        core.dispatch(CoreCommand::SetSetting {
+            key: "editor".into(),
+            value: serde_json::json!("vscode"),
+        })
+        .unwrap();
         let b = core.inner().backup_settings().unwrap();
-        core.dispatch(CoreCommand::SetSetting { key: "editor".into(), value: serde_json::json!("zed") }).unwrap();
+        core.dispatch(CoreCommand::SetSetting {
+            key: "editor".into(),
+            value: serde_json::json!("zed"),
+        })
+        .unwrap();
         core.inner().restore_settings(&b.id).unwrap();
         let text = std::fs::read_to_string(core.inner().paths.settings_file()).unwrap();
         assert!(text.contains("vscode"));

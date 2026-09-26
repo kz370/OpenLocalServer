@@ -98,8 +98,16 @@ pub struct GitResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum GitAuth {
-    Https { username: String, password: String, remember: bool },
-    Ssh { key_path: String, remember: bool, passphrase: Option<String> },
+    Https {
+        username: String,
+        password: String,
+        remember: bool,
+    },
+    Ssh {
+        key_path: String,
+        remember: bool,
+        passphrase: Option<String>,
+    },
 }
 
 // ------------------------------------------------------------------------ parsing
@@ -127,8 +135,14 @@ pub fn parse_status(out: &str, st: &mut GitStatus) {
                 st.upstream = Some(u.to_string());
             } else if let Some(ab) = h.strip_prefix("branch.ab ") {
                 let mut it = ab.split_whitespace();
-                st.ahead = it.next().and_then(|a| a.trim_start_matches('+').parse().ok()).unwrap_or(0);
-                st.behind = it.next().and_then(|b| b.trim_start_matches('-').parse().ok()).unwrap_or(0);
+                st.ahead = it
+                    .next()
+                    .and_then(|a| a.trim_start_matches('+').parse().ok())
+                    .unwrap_or(0);
+                st.behind = it
+                    .next()
+                    .and_then(|b| b.trim_start_matches('-').parse().ok())
+                    .unwrap_or(0);
             }
             continue;
         }
@@ -136,16 +150,25 @@ pub fn parse_status(out: &str, st: &mut GitStatus) {
         let (xy, path) = match t.as_bytes().first() {
             Some(b'1') => {
                 let parts: Vec<&str> = t.splitn(9, ' ').collect();
-                (parts.get(1).copied().unwrap_or(".."), parts.get(8).copied().unwrap_or_default())
+                (
+                    parts.get(1).copied().unwrap_or(".."),
+                    parts.get(8).copied().unwrap_or_default(),
+                )
             }
             Some(b'2') => {
                 let parts: Vec<&str> = t.splitn(10, ' ').collect();
                 f.from = tokens.next().map(str::to_string);
-                (parts.get(1).copied().unwrap_or(".."), parts.get(9).copied().unwrap_or_default())
+                (
+                    parts.get(1).copied().unwrap_or(".."),
+                    parts.get(9).copied().unwrap_or_default(),
+                )
             }
             Some(b'u') => {
                 let parts: Vec<&str> = t.splitn(11, ' ').collect();
-                (parts.get(1).copied().unwrap_or("UU"), parts.get(10).copied().unwrap_or_default())
+                (
+                    parts.get(1).copied().unwrap_or("UU"),
+                    parts.get(10).copied().unwrap_or_default(),
+                )
             }
             Some(b'?') => ("??", &t[2..]),
             _ => continue,
@@ -171,7 +194,14 @@ pub fn parse_log(out: &str) -> Vec<Commit> {
     out.split(REC)
         .filter_map(|rec| {
             let p: Vec<&str> = rec.trim_start_matches(['\n', '\r']).split(SEP).collect();
-            (p.len() >= 6).then(|| Commit { hash: p[0].into(), short: p[1].into(), author: p[2].into(), email: p[3].into(), time: p[4].parse().unwrap_or(0), subject: p[5].into() })
+            (p.len() >= 6).then(|| Commit {
+                hash: p[0].into(),
+                short: p[1].into(),
+                author: p[2].into(),
+                email: p[3].into(),
+                time: p[4].parse().unwrap_or(0),
+                subject: p[5].into(),
+            })
         })
         .collect()
 }
@@ -179,7 +209,13 @@ pub fn parse_log(out: &str) -> Vec<Commit> {
 /// A branch or remote name Git will accept, and that can't be read as an option.
 fn safe_name(name: &str, what: &str) -> Result<String, CoreError> {
     let n = name.trim();
-    let bad = n.is_empty() || n.starts_with('-') || n.contains("..") || n.ends_with('/') || n.ends_with(".lock") || n.chars().any(|c| c.is_whitespace() || c.is_control() || "~^:?*[\\".contains(c));
+    let bad = n.is_empty()
+        || n.starts_with('-')
+        || n.contains("..")
+        || n.ends_with('/')
+        || n.ends_with(".lock")
+        || n.chars()
+            .any(|c| c.is_whitespace() || c.is_control() || "~^:?*[\\".contains(c));
     if bad {
         return Err(err(format!("\"{name}\" is not a valid {what} name")));
     }
@@ -189,12 +225,17 @@ fn safe_name(name: &str, what: &str) -> Result<String, CoreError> {
 /// Host of an https remote, for looking up saved credentials.
 pub fn remote_host(url: &str) -> Option<String> {
     let url = url.trim();
-    let host = if let Some(rest) = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://").or_else(|| url.strip_prefix("ssh://"))) {
+    let host = if let Some(rest) = url.strip_prefix("https://").or_else(|| {
+        url.strip_prefix("http://")
+            .or_else(|| url.strip_prefix("ssh://"))
+    }) {
         rest.split(['/', ':']).next()?.rsplit('@').next()?
     } else {
         // SCP-style SSH remotes: [user@]host:path
         let (authority, _) = url.split_once(':')?;
-        if authority.contains('/') { return None; }
+        if authority.contains('/') {
+            return None;
+        }
         authority.rsplit('@').next()?
     };
     (!host.is_empty()).then(|| host.to_ascii_lowercase())
@@ -229,7 +270,10 @@ pub fn ignore_template(kind: &str) -> Option<&'static str> {
 /// Adds the template's lines the file doesn't already have. Returns the lines added.
 pub fn merge_ignore(existing: &str, template: &str) -> (String, usize) {
     let have: std::collections::HashSet<&str> = existing.lines().map(str::trim).collect();
-    let new: Vec<&str> = template.lines().filter(|l| !l.trim().is_empty() && !have.contains(l.trim())).collect();
+    let new: Vec<&str> = template
+        .lines()
+        .filter(|l| !l.trim().is_empty() && !have.contains(l.trim()))
+        .collect();
     if new.is_empty() {
         return (existing.to_string(), 0);
     }
@@ -257,16 +301,26 @@ impl Inner {
             return Some(PathBuf::from(&c.path));
         }
         if let Some(path) = std::env::var_os("PATH") {
-            if let Some(p) = std::env::split_paths(&path).map(|d| d.join("git.exe")).find(|p| p.is_file()) {
+            if let Some(p) = std::env::split_paths(&path)
+                .map(|d| d.join("git.exe"))
+                .find(|p| p.is_file())
+            {
                 return Some(p);
             }
         }
-        for p in [r"C:\Program Files\Git\cmd\git.exe", r"C:\Program Files (x86)\Git\cmd\git.exe"] {
+        for p in [
+            r"C:\Program Files\Git\cmd\git.exe",
+            r"C:\Program Files (x86)\Git\cmd\git.exe",
+        ] {
             if Path::new(p).is_file() {
                 return Some(PathBuf::from(p));
             }
         }
-        self.runtimes.installed_versions("git").into_iter().next().and_then(|v| self.runtimes.binary_path("git", &v))
+        self.runtimes
+            .installed_versions("git")
+            .into_iter()
+            .next()
+            .and_then(|v| self.runtimes.binary_path("git", &v))
     }
 
     fn askpass_script(&self) -> Result<PathBuf, CoreError> {
@@ -288,21 +342,37 @@ impl Inner {
     }
 
     fn ssh_key_setting(&self, host: &str) -> Option<String> {
-        self.settings.lock().unwrap().get(&format!("git.ssh_key.{host}"))?.as_str().map(str::to_string)
+        self.settings
+            .lock()
+            .unwrap()
+            .get(&format!("git.ssh_key.{host}"))?
+            .as_str()
+            .map(str::to_string)
     }
 
     fn ssh_command(key_path: &str) -> Result<String, CoreError> {
         let path = if key_path.trim().is_empty() || key_path.trim() == "~/.ssh/id_ed25519" {
-            let default = directories::UserDirs::new().map(|u| u.home_dir().join(".ssh").join("id_ed25519"));
-            default.filter(|p| p.is_file()).ok_or_else(|| err("choose an SSH private key file; ~/.ssh/id_ed25519 was not found"))?.display().to_string()
+            let default =
+                directories::UserDirs::new().map(|u| u.home_dir().join(".ssh").join("id_ed25519"));
+            default
+                .filter(|p| p.is_file())
+                .ok_or_else(|| {
+                    err("choose an SSH private key file; ~/.ssh/id_ed25519 was not found")
+                })?
+                .display()
+                .to_string()
         } else {
             key_path.trim().to_string()
         };
         if path.contains(['"', '\r', '\n', '\0']) {
             return Err(err("choose a valid SSH private key file"));
         }
-        let canonical = std::fs::canonicalize(&path).map_err(|_| err(format!("SSH private key file was not found: {path}")))?;
-        Ok(format!("ssh -i \"{}\" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new", canonical.display().to_string().replace('\\', "/")))
+        let canonical = std::fs::canonicalize(&path)
+            .map_err(|_| err(format!("SSH private key file was not found: {path}")))?;
+        Ok(format!(
+            "ssh -i \"{}\" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new",
+            canonical.display().to_string().replace('\\', "/")
+        ))
     }
 
     /// Environment for a network command: saved credentials for the remote's host, if any.
@@ -310,20 +380,35 @@ impl Inner {
         let mut env = vec![("GIT_TERMINAL_PROMPT".to_string(), "0".to_string())];
         let mut pre = Vec::new();
         if let Some(host) = url.and_then(remote_host) {
-            if url.is_some_and(|u| u.starts_with("ssh://") || (!u.starts_with("http://") && !u.starts_with("https://") && u.contains(':'))) {
+            if url.is_some_and(|u| {
+                u.starts_with("ssh://")
+                    || (!u.starts_with("http://") && !u.starts_with("https://") && u.contains(':'))
+            }) {
                 if let Some(key_path) = self.ssh_key_setting(&host) {
                     env.push(("GIT_SSH_COMMAND".into(), Self::ssh_command(&key_path)?));
-                    if let Some(passphrase) = crate::secrets::get_secret(&secret_ssh_passphrase(&host)).map_err(err)? {
-                        env.push(("SSH_ASKPASS".into(), self.ssh_askpass_script()?.display().to_string()));
+                    if let Some(passphrase) =
+                        crate::secrets::get_secret(&secret_ssh_passphrase(&host)).map_err(err)?
+                    {
+                        env.push((
+                            "SSH_ASKPASS".into(),
+                            self.ssh_askpass_script()?.display().to_string(),
+                        ));
                         env.push(("SSH_ASKPASS_REQUIRE".into(), "force".into()));
                         env.push(("OLS_SSH_PASSPHRASE".into(), passphrase));
                     }
                 }
             }
-            let user = crate::secrets::get_secret(&secret_user(&host)).ok().flatten();
-            let token = crate::secrets::get_secret(&secret_token(&host)).ok().flatten();
+            let user = crate::secrets::get_secret(&secret_user(&host))
+                .ok()
+                .flatten();
+            let token = crate::secrets::get_secret(&secret_token(&host))
+                .ok()
+                .flatten();
             if let Some(token) = token {
-                env.push(("GIT_ASKPASS".into(), self.askpass_script()?.display().to_string()));
+                env.push((
+                    "GIT_ASKPASS".into(),
+                    self.askpass_script()?.display().to_string(),
+                ));
                 env.push(("OLS_GIT_USER".into(), user.unwrap_or_else(|| "git".into())));
                 env.push(("OLS_GIT_TOKEN".into(), token));
                 // Our answer, not a credential manager's window.
@@ -333,7 +418,14 @@ impl Inner {
         Ok((env, pre))
     }
 
-    fn git_run(&self, dir: &Path, args: &[&str], env: &[(String, String)], pre: &[String], timeout: Duration) -> Result<Captured, CoreError> {
+    fn git_run(
+        &self,
+        dir: &Path,
+        args: &[&str],
+        env: &[(String, String)],
+        pre: &[String],
+        timeout: Duration,
+    ) -> Result<Captured, CoreError> {
         let git = self.git_path().ok_or_else(|| err("Git was not found. Install Git for Windows, or the portable Git on the Runtimes page."))?;
         let mut full: Vec<String> = pre.to_vec();
         full.extend(["-c".to_string(), "core.quotepath=off".to_string()]);
@@ -343,7 +435,13 @@ impl Inner {
 
     /// Runs git and returns stdout, or its error text.
     fn git_ok(&self, dir: &Path, args: &[&str]) -> Result<String, CoreError> {
-        let out = self.git_run(dir, args, &[("GIT_TERMINAL_PROMPT".into(), "0".into())], &[], Duration::from_secs(60))?;
+        let out = self.git_run(
+            dir,
+            args,
+            &[("GIT_TERMINAL_PROMPT".into(), "0".into())],
+            &[],
+            Duration::from_secs(60),
+        )?;
         if out.success() {
             Ok(out.stdout)
         } else {
@@ -352,31 +450,72 @@ impl Inner {
     }
 
     fn project_dir(&self, project_id: &str) -> Result<PathBuf, CoreError> {
-        let p = self.projects.lock().unwrap().get(project_id).ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
+        let p = self
+            .projects
+            .lock()
+            .unwrap()
+            .get(project_id)
+            .ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
         Ok(PathBuf::from(p.path))
     }
 
     pub fn git_status(&self, project_id: &str) -> Result<GitStatus, CoreError> {
         let dir = self.project_dir(project_id)?;
-        let mut st = GitStatus { git_path: self.git_path().map(|p| p.display().to_string()), has_gitignore: dir.join(".gitignore").is_file(), ..Default::default() };
+        let mut st = GitStatus {
+            git_path: self.git_path().map(|p| p.display().to_string()),
+            has_gitignore: dir.join(".gitignore").is_file(),
+            ..Default::default()
+        };
         if st.git_path.is_none() {
             return Ok(st);
         }
         st.available = true;
-        st.version = self.git_ok(&dir, &["--version"]).ok().map(|v| v.trim().trim_start_matches("git version ").to_string());
-        let inside = self.git_run(&dir, &["rev-parse", "--is-inside-work-tree"], &[], &[], Duration::from_secs(20))?;
+        st.version = self
+            .git_ok(&dir, &["--version"])
+            .ok()
+            .map(|v| v.trim().trim_start_matches("git version ").to_string());
+        let inside = self.git_run(
+            &dir,
+            &["rev-parse", "--is-inside-work-tree"],
+            &[],
+            &[],
+            Duration::from_secs(20),
+        )?;
         if !inside.success() || inside.stdout.trim() != "true" {
             return Ok(st);
         }
         st.is_repo = true;
-        let out = self.git_ok(&dir, &["status", "--porcelain=v2", "--branch", "--untracked-files=all", "-z"])?;
+        let out = self.git_ok(
+            &dir,
+            &[
+                "status",
+                "--porcelain=v2",
+                "--branch",
+                "--untracked-files=all",
+                "-z",
+            ],
+        )?;
         parse_status(&out, &mut st);
-        if let Ok(log) = self.git_ok(&dir, &["log", "-n", "1", "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%at%x1f%s%x1e"]) {
+        if let Ok(log) = self.git_ok(
+            &dir,
+            &[
+                "log",
+                "-n",
+                "1",
+                "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%at%x1f%s%x1e",
+            ],
+        ) {
             st.last_commit = parse_log(&log).into_iter().next();
         }
         st.remotes = self.git_remotes(&dir);
-        st.stashes = self.git_ok(&dir, &["stash", "list", "--pretty=format:%gd: %s"]).map(|s| s.lines().map(str::to_string).collect()).unwrap_or_default();
-        let git_dir = self.git_ok(&dir, &["rev-parse", "--git-dir"]).map(|d| dir.join(d.trim())).unwrap_or_else(|_| dir.join(".git"));
+        st.stashes = self
+            .git_ok(&dir, &["stash", "list", "--pretty=format:%gd: %s"])
+            .map(|s| s.lines().map(str::to_string).collect())
+            .unwrap_or_default();
+        let git_dir = self
+            .git_ok(&dir, &["rev-parse", "--git-dir"])
+            .map(|d| dir.join(d.trim()))
+            .unwrap_or_else(|_| dir.join(".git"));
         st.operation = if git_dir.join("MERGE_HEAD").exists() {
             Some("merge".into())
         } else if git_dir.join("rebase-merge").exists() || git_dir.join("rebase-apply").exists() {
@@ -388,13 +527,24 @@ impl Inner {
     }
 
     fn git_remotes(&self, dir: &Path) -> Vec<Remote> {
-        let Ok(out) = self.git_ok(dir, &["remote", "-v"]) else { return vec![] };
+        let Ok(out) = self.git_ok(dir, &["remote", "-v"]) else {
+            return vec![];
+        };
         let mut remotes: Vec<Remote> = Vec::new();
         for line in out.lines().filter(|l| l.ends_with("(fetch)")) {
             let mut it = line.split_whitespace();
             if let (Some(name), Some(url)) = (it.next(), it.next()) {
-                let has = remote_host(url).is_some_and(|h| crate::secrets::get_secret(&secret_token(&h)).ok().flatten().is_some());
-                remotes.push(Remote { name: name.into(), url: url.into(), has_credentials: has });
+                let has = remote_host(url).is_some_and(|h| {
+                    crate::secrets::get_secret(&secret_token(&h))
+                        .ok()
+                        .flatten()
+                        .is_some()
+                });
+                remotes.push(Remote {
+                    name: name.into(),
+                    url: url.into(),
+                    has_credentials: has,
+                });
             }
         }
         remotes
@@ -429,7 +579,12 @@ impl Inner {
             .collect())
     }
 
-    pub fn git_create_branch(&self, project_id: &str, name: &str, checkout: bool) -> Result<(), CoreError> {
+    pub fn git_create_branch(
+        &self,
+        project_id: &str,
+        name: &str,
+        checkout: bool,
+    ) -> Result<(), CoreError> {
         let dir = self.project_dir(project_id)?;
         let name = safe_name(name, "branch")?;
         if checkout {
@@ -444,17 +599,29 @@ impl Inner {
     pub fn git_switch(&self, project_id: &str, name: &str) -> Result<(), CoreError> {
         let dir = self.project_dir(project_id)?;
         let name = safe_name(name, "branch")?;
-        let is_remote = self.git_branches(project_id)?.iter().any(|b| b.remote && b.name == name);
+        let is_remote = self
+            .git_branches(project_id)?
+            .iter()
+            .any(|b| b.remote && b.name == name);
         if is_remote {
-            let local = name.split_once('/').map(|(_, b)| b.to_string()).unwrap_or(name.clone());
-            self.git_ok(&dir, &["switch", "--track", "-c", &local, &name]).or_else(|_| self.git_ok(&dir, &["switch", &local]))?;
+            let local = name
+                .split_once('/')
+                .map(|(_, b)| b.to_string())
+                .unwrap_or(name.clone());
+            self.git_ok(&dir, &["switch", "--track", "-c", &local, &name])
+                .or_else(|_| self.git_ok(&dir, &["switch", &local]))?;
         } else {
             self.git_ok(&dir, &["switch", &name])?;
         }
         Ok(())
     }
 
-    pub fn git_delete_branch(&self, project_id: &str, name: &str, force: bool) -> Result<(), CoreError> {
+    pub fn git_delete_branch(
+        &self,
+        project_id: &str,
+        name: &str,
+        force: bool,
+    ) -> Result<(), CoreError> {
         let dir = self.project_dir(project_id)?;
         let name = safe_name(name, "branch")?;
         self.git_ok(&dir, &["branch", if force { "-D" } else { "-d" }, &name])?;
@@ -462,7 +629,10 @@ impl Inner {
     }
 
     fn paths_args<'a>(base: &[&'a str], paths: &'a [String]) -> Result<Vec<&'a str>, CoreError> {
-        if paths.iter().any(|p| p.contains("..") || Path::new(p).is_absolute()) {
+        if paths
+            .iter()
+            .any(|p| p.contains("..") || Path::new(p).is_absolute())
+        {
             return Err(err("file paths must be inside the project"));
         }
         let mut args = base.to_vec();
@@ -485,10 +655,16 @@ impl Inner {
     pub fn git_unstage(&self, project_id: &str, paths: &[String]) -> Result<(), CoreError> {
         let dir = self.project_dir(project_id)?;
         // `restore --staged` needs a commit; before the first one, `rm --cached` does it.
-        if self.git_ok(&dir, &["rev-parse", "--verify", "HEAD"]).is_ok() {
+        if self
+            .git_ok(&dir, &["rev-parse", "--verify", "HEAD"])
+            .is_ok()
+        {
             self.git_ok(&dir, &Self::paths_args(&["restore", "--staged"], paths)?)?;
         } else {
-            self.git_ok(&dir, &Self::paths_args(&["rm", "-r", "--cached", "-q"], paths)?)?;
+            self.git_ok(
+                &dir,
+                &Self::paths_args(&["rm", "-r", "--cached", "-q"], paths)?,
+            )?;
         }
         Ok(())
     }
@@ -501,9 +677,15 @@ impl Inner {
         }
         let dir = self.project_dir(project_id)?;
         let st = self.git_status(project_id)?;
-        let (untracked, tracked): (Vec<String>, Vec<String>) = paths.iter().cloned().partition(|p| st.files.iter().any(|f| &f.path == p && f.untracked));
+        let (untracked, tracked): (Vec<String>, Vec<String>) = paths
+            .iter()
+            .cloned()
+            .partition(|p| st.files.iter().any(|f| &f.path == p && f.untracked));
         if !tracked.is_empty() {
-            self.git_ok(&dir, &Self::paths_args(&["restore", "--staged", "--worktree"], &tracked)?)?;
+            self.git_ok(
+                &dir,
+                &Self::paths_args(&["restore", "--staged", "--worktree"], &tracked)?,
+            )?;
         }
         if !untracked.is_empty() {
             self.git_ok(&dir, &Self::paths_args(&["clean", "-f"], &untracked)?)?;
@@ -511,16 +693,31 @@ impl Inner {
         Ok(())
     }
 
-    pub fn git_commit(&self, project_id: &str, message: &str, amend: bool) -> Result<Commit, CoreError> {
+    pub fn git_commit(
+        &self,
+        project_id: &str,
+        message: &str,
+        amend: bool,
+    ) -> Result<Commit, CoreError> {
         let dir = self.project_dir(project_id)?;
         if message.trim().is_empty() && !amend {
             return Err(err("write a commit message"));
         }
         let mut args = vec!["commit", "-m", message.trim()];
         if amend {
-            args = if message.trim().is_empty() { vec!["commit", "--amend", "--no-edit"] } else { vec!["commit", "--amend", "-m", message.trim()] };
+            args = if message.trim().is_empty() {
+                vec!["commit", "--amend", "--no-edit"]
+            } else {
+                vec!["commit", "--amend", "-m", message.trim()]
+            };
         }
-        let out = self.git_run(&dir, &args, &[("GIT_TERMINAL_PROMPT".into(), "0".into())], &[], Duration::from_secs(120))?;
+        let out = self.git_run(
+            &dir,
+            &args,
+            &[("GIT_TERMINAL_PROMPT".into(), "0".into())],
+            &[],
+            Duration::from_secs(120),
+        )?;
         if !out.success() {
             let text = out.combined();
             return Err(err(if text.contains("Please tell me who you are") {
@@ -531,24 +728,50 @@ impl Inner {
                 scrub(&text)
             }));
         }
-        let log = self.git_ok(&dir, &["log", "-n", "1", "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%at%x1f%s%x1e"])?;
-        parse_log(&log).into_iter().next().ok_or_else(|| err("the commit was made but could not be read back"))
+        let log = self.git_ok(
+            &dir,
+            &[
+                "log",
+                "-n",
+                "1",
+                "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%at%x1f%s%x1e",
+            ],
+        )?;
+        parse_log(&log)
+            .into_iter()
+            .next()
+            .ok_or_else(|| err("the commit was made but could not be read back"))
     }
 
     fn origin_url(&self, dir: &Path, remote: Option<&str>) -> Option<String> {
         let remotes = self.git_remotes(dir);
-        let name = remote.map(str::to_string).or_else(|| self.git_ok(dir, &["rev-parse", "--abbrev-ref", "@{upstream}"]).ok().and_then(|u| u.trim().split('/').next().map(str::to_string)));
-        name.and_then(|n| remotes.iter().find(|r| r.name == n).map(|r| r.url.clone())).or_else(|| remotes.first().map(|r| r.url.clone()))
+        let name = remote.map(str::to_string).or_else(|| {
+            self.git_ok(dir, &["rev-parse", "--abbrev-ref", "@{upstream}"])
+                .ok()
+                .and_then(|u| u.trim().split('/').next().map(str::to_string))
+        });
+        name.and_then(|n| remotes.iter().find(|r| r.name == n).map(|r| r.url.clone()))
+            .or_else(|| remotes.first().map(|r| r.url.clone()))
     }
 
     /// pull, push or fetch. Network commands get saved credentials and a longer timeout.
-    pub fn git_sync(&self, project_id: &str, action: &str, remote: Option<&str>) -> Result<GitResult, CoreError> {
+    pub fn git_sync(
+        &self,
+        project_id: &str,
+        action: &str,
+        remote: Option<&str>,
+    ) -> Result<GitResult, CoreError> {
         let dir = self.project_dir(project_id)?;
         let remote = remote.map(|r| safe_name(r, "remote")).transpose()?;
         let url = self.origin_url(&dir, remote.as_deref());
         let (env, pre) = self.git_env(url.as_deref())?;
-        let branch = self.git_ok(&dir, &["rev-parse", "--abbrev-ref", "HEAD"]).map(|b| b.trim().to_string()).unwrap_or_default();
-        let has_upstream = self.git_ok(&dir, &["rev-parse", "--abbrev-ref", "@{upstream}"]).is_ok();
+        let branch = self
+            .git_ok(&dir, &["rev-parse", "--abbrev-ref", "HEAD"])
+            .map(|b| b.trim().to_string())
+            .unwrap_or_default();
+        let has_upstream = self
+            .git_ok(&dir, &["rev-parse", "--abbrev-ref", "@{upstream}"])
+            .is_ok();
         let mut args: Vec<&str> = match action {
             "pull" => vec!["pull", "--ff-only"],
             "fetch" => vec!["fetch", "--prune"],
@@ -556,7 +779,9 @@ impl Inner {
             "push" => vec!["push"],
             other => return Err(err(format!("unknown Git action \"{other}\""))),
         };
-        let remote_name = remote.clone().or_else(|| (!has_upstream && action == "push").then(|| "origin".to_string()));
+        let remote_name = remote
+            .clone()
+            .or_else(|| (!has_upstream && action == "push").then(|| "origin".to_string()));
         if let Some(r) = &remote_name {
             args.push(r);
             if action == "push" && !has_upstream && !branch.is_empty() {
@@ -568,19 +793,38 @@ impl Inner {
         let out = self.git_run(&dir, &args, &env, &pre, Duration::from_secs(600))?;
         let mut text = scrub(&out.combined());
         if !out.success() {
-            if text.contains("Authentication failed") || text.contains("could not read Username") || text.contains("terminal prompts disabled") {
+            if text.contains("Authentication failed")
+                || text.contains("could not read Username")
+                || text.contains("terminal prompts disabled")
+            {
                 text.push_str("\n\nSave a username and access token for this host in the Git tab's credentials, then try again.");
             } else if action == "pull" && text.contains("Not possible to fast-forward") {
                 text.push_str("\n\nYour branch and the remote have both changed. Merge or rebase in your Git client, then pull again.");
             }
         }
-        Ok(GitResult { ok: out.success(), output: if text.is_empty() { format!("{action}: done") } else { text } })
+        Ok(GitResult {
+            ok: out.success(),
+            output: if text.is_empty() {
+                format!("{action}: done")
+            } else {
+                text
+            },
+        })
     }
 
-    pub fn git_diff(&self, project_id: &str, path: &str, staged: bool) -> Result<String, CoreError> {
+    pub fn git_diff(
+        &self,
+        project_id: &str,
+        path: &str,
+        staged: bool,
+    ) -> Result<String, CoreError> {
         let dir = self.project_dir(project_id)?;
         let paths = [path.to_string()];
-        let base: &[&str] = if staged { &["diff", "--cached", "--no-color"] } else { &["diff", "--no-color"] };
+        let base: &[&str] = if staged {
+            &["diff", "--cached", "--no-color"]
+        } else {
+            &["diff", "--no-color"]
+        };
         let text = self.git_ok(&dir, &Self::paths_args(base, &paths)?)?;
         if text.is_empty() {
             // Untracked: show the whole file as added.
@@ -588,9 +832,15 @@ impl Inner {
             if full.is_file() {
                 let content = std::fs::read(&full).map_err(|e| err(e.to_string()))?;
                 if content.len() > 512 * 1024 || content.contains(&0) {
-                    return Ok(format!("new file {path} ({} bytes, not shown)", content.len()));
+                    return Ok(format!(
+                        "new file {path} ({} bytes, not shown)",
+                        content.len()
+                    ));
                 }
-                let body: String = String::from_utf8_lossy(&content).lines().map(|l| format!("+{l}\n")).collect();
+                let body: String = String::from_utf8_lossy(&content)
+                    .lines()
+                    .map(|l| format!("+{l}\n"))
+                    .collect();
                 return Ok(format!("new file {path}\n{body}"));
             }
         }
@@ -600,13 +850,24 @@ impl Inner {
     /// Everything that is staged, as one diff (for suggesting a commit message).
     pub fn git_staged_diff(&self, project_id: &str) -> Result<String, CoreError> {
         let dir = self.project_dir(project_id)?;
-        self.git_ok(&dir, &["diff", "--cached", "--no-color", "--stat", "--patch"])
+        self.git_ok(
+            &dir,
+            &["diff", "--cached", "--no-color", "--stat", "--patch"],
+        )
     }
 
     pub fn git_log(&self, project_id: &str, limit: usize) -> Result<Vec<Commit>, CoreError> {
         let dir = self.project_dir(project_id)?;
         let n = limit.clamp(1, 500).to_string();
-        match self.git_ok(&dir, &["log", "-n", &n, "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%at%x1f%s%x1e"]) {
+        match self.git_ok(
+            &dir,
+            &[
+                "log",
+                "-n",
+                &n,
+                "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%at%x1f%s%x1e",
+            ],
+        ) {
             Ok(out) => Ok(parse_log(&out)),
             // A new repository has no commits yet.
             Err(e) if e.to_string().contains("does not have any commits") => Ok(vec![]),
@@ -639,7 +900,13 @@ impl Inner {
     }
 
     /// `action`: push (with an optional message), pop, apply or drop (with an index).
-    pub fn git_stash(&self, project_id: &str, action: &str, message: Option<&str>, index: Option<u32>) -> Result<GitResult, CoreError> {
+    pub fn git_stash(
+        &self,
+        project_id: &str,
+        action: &str,
+        message: Option<&str>,
+        index: Option<u32>,
+    ) -> Result<GitResult, CoreError> {
         let dir = self.project_dir(project_id)?;
         let reference = format!("stash@{{{}}}", index.unwrap_or(0));
         let args: Vec<&str> = match action {
@@ -653,13 +920,17 @@ impl Inner {
             other => return Err(err(format!("unknown stash action \"{other}\""))),
         };
         let out = self.git_run(&dir, &args, &[], &[], Duration::from_secs(120))?;
-        Ok(GitResult { ok: out.success(), output: scrub(&out.combined()) })
+        Ok(GitResult {
+            ok: out.success(),
+            output: scrub(&out.combined()),
+        })
     }
 
     /// Adds a template's lines to `.gitignore` (only those it doesn't have). Returns how many.
     pub fn git_add_ignore(&self, project_id: &str, template: &str) -> Result<usize, CoreError> {
         let dir = self.project_dir(project_id)?;
-        let t = ignore_template(template).ok_or_else(|| err(format!("no .gitignore template \"{template}\"")))?;
+        let t = ignore_template(template)
+            .ok_or_else(|| err(format!("no .gitignore template \"{template}\"")))?;
         let file = dir.join(".gitignore");
         let existing = std::fs::read_to_string(&file).unwrap_or_default();
         let (text, added) = merge_ignore(&existing, t);
@@ -669,7 +940,12 @@ impl Inner {
         Ok(added)
     }
 
-    pub fn git_set_credentials(&self, host: &str, username: &str, token: Option<&str>) -> Result<(), CoreError> {
+    pub fn git_set_credentials(
+        &self,
+        host: &str,
+        username: &str,
+        token: Option<&str>,
+    ) -> Result<(), CoreError> {
         let host = host.trim().to_ascii_lowercase();
         if host.is_empty() || host.contains('/') {
             return Err(err("enter a host like github.com"));
@@ -688,7 +964,13 @@ impl Inner {
     }
 
     /// Clones into `target` and registers it as a project (and gives it its automatic site).
-    pub fn git_clone(&self, url: &str, target: &str, branch: Option<&str>, auth: Option<GitAuth>) -> Result<crate::project::Project, CoreError> {
+    pub fn git_clone(
+        &self,
+        url: &str,
+        target: &str,
+        branch: Option<&str>,
+        auth: Option<GitAuth>,
+    ) -> Result<crate::project::Project, CoreError> {
         let url = url.trim();
         if url.is_empty() || url.starts_with('-') {
             return Err(err("enter the repository's address"));
@@ -697,52 +979,101 @@ impl Inner {
         if !target.is_absolute() {
             return Err(err("choose a full folder path to clone into"));
         }
-        if target.exists() && std::fs::read_dir(&target).map(|mut d| d.next().is_some()).unwrap_or(false) {
+        if target.exists()
+            && std::fs::read_dir(&target)
+                .map(|mut d| d.next().is_some())
+                .unwrap_or(false)
+        {
             return Err(err(format!("{} is not empty", target.display())));
         }
-        let parent = target.parent().ok_or_else(|| err("choose a folder inside another folder"))?;
+        let parent = target
+            .parent()
+            .ok_or_else(|| err("choose a folder inside another folder"))?;
         std::fs::create_dir_all(parent)?;
         let (mut env, mut pre) = self.git_env(Some(url))?;
         if let Some(auth) = auth {
-            let host = remote_host(url).ok_or_else(|| err("enter a valid HTTPS or SSH repository address"))?;
+            let host = remote_host(url)
+                .ok_or_else(|| err("enter a valid HTTPS or SSH repository address"))?;
             match auth {
-                GitAuth::Https { username, password, remember } => {
+                GitAuth::Https {
+                    username,
+                    password,
+                    remember,
+                } => {
                     if !url.starts_with("https://") {
                         return Err(err("username and password authentication requires an HTTPS repository address"));
                     }
                     if username.trim().is_empty() || password.is_empty() {
                         return Err(err("enter both a username and password or access token"));
                     }
-                    if remember { self.git_set_credentials(&host, &username, Some(&password))?; }
-                    env.retain(|(k, _)| k != "GIT_ASKPASS" && k != "OLS_GIT_USER" && k != "OLS_GIT_TOKEN");
-                    env.push(("GIT_ASKPASS".into(), self.askpass_script()?.display().to_string()));
+                    if remember {
+                        self.git_set_credentials(&host, &username, Some(&password))?;
+                    }
+                    env.retain(|(k, _)| {
+                        k != "GIT_ASKPASS" && k != "OLS_GIT_USER" && k != "OLS_GIT_TOKEN"
+                    });
+                    env.push((
+                        "GIT_ASKPASS".into(),
+                        self.askpass_script()?.display().to_string(),
+                    ));
                     env.push(("OLS_GIT_USER".into(), username));
                     env.push(("OLS_GIT_TOKEN".into(), password));
                     if !pre.iter().any(|x| x == "credential.helper=") {
                         pre.extend(["-c".into(), "credential.helper=".into()]);
                     }
                 }
-                GitAuth::Ssh { key_path, remember, passphrase } => {
-                    if !(url.starts_with("ssh://") || (!url.starts_with("http://") && !url.starts_with("https://") && url.contains(':'))) {
-                        return Err(err("SSH key authentication requires an SSH repository address"));
+                GitAuth::Ssh {
+                    key_path,
+                    remember,
+                    passphrase,
+                } => {
+                    if !(url.starts_with("ssh://")
+                        || (!url.starts_with("http://")
+                            && !url.starts_with("https://")
+                            && url.contains(':')))
+                    {
+                        return Err(err(
+                            "SSH key authentication requires an SSH repository address",
+                        ));
                     }
                     let ssh_command = Self::ssh_command(&key_path)?;
                     if remember {
-                        let effective_key = if key_path.trim().is_empty() || key_path.trim() == "~/.ssh/id_ed25519" {
-                            directories::UserDirs::new().map(|u| u.home_dir().join(".ssh").join("id_ed25519")).ok_or_else(|| err("could not locate the home folder"))?
-                        } else { PathBuf::from(key_path.clone()) };
-                        let effective_key = std::fs::canonicalize(effective_key).map_err(|_| err("SSH private key file was not found"))?;
-                        self.settings.lock().unwrap().set(format!("git.ssh_key.{host}"), serde_json::Value::String(effective_key.display().to_string()))?;
+                        let effective_key = if key_path.trim().is_empty()
+                            || key_path.trim() == "~/.ssh/id_ed25519"
+                        {
+                            directories::UserDirs::new()
+                                .map(|u| u.home_dir().join(".ssh").join("id_ed25519"))
+                                .ok_or_else(|| err("could not locate the home folder"))?
+                        } else {
+                            PathBuf::from(key_path.clone())
+                        };
+                        let effective_key = std::fs::canonicalize(effective_key)
+                            .map_err(|_| err("SSH private key file was not found"))?;
+                        self.settings.lock().unwrap().set(
+                            format!("git.ssh_key.{host}"),
+                            serde_json::Value::String(effective_key.display().to_string()),
+                        )?;
                         match passphrase.as_deref().filter(|p| !p.is_empty()) {
-                            Some(value) => crate::secrets::set_secret(&secret_ssh_passphrase(&host), value).map_err(err)?,
-                            None => crate::secrets::delete_secret(&secret_ssh_passphrase(&host)).map_err(err)?,
+                            Some(value) => {
+                                crate::secrets::set_secret(&secret_ssh_passphrase(&host), value)
+                                    .map_err(err)?
+                            }
+                            None => crate::secrets::delete_secret(&secret_ssh_passphrase(&host))
+                                .map_err(err)?,
                         }
                     }
                     env.retain(|(k, _)| k != "GIT_SSH_COMMAND");
-                    env.retain(|(k, _)| k != "SSH_ASKPASS" && k != "SSH_ASKPASS_REQUIRE" && k != "OLS_SSH_PASSPHRASE");
+                    env.retain(|(k, _)| {
+                        k != "SSH_ASKPASS"
+                            && k != "SSH_ASKPASS_REQUIRE"
+                            && k != "OLS_SSH_PASSPHRASE"
+                    });
                     env.push(("GIT_SSH_COMMAND".into(), ssh_command));
                     if let Some(passphrase) = passphrase.filter(|p| !p.is_empty()) {
-                        env.push(("SSH_ASKPASS".into(), self.ssh_askpass_script()?.display().to_string()));
+                        env.push((
+                            "SSH_ASKPASS".into(),
+                            self.ssh_askpass_script()?.display().to_string(),
+                        ));
                         env.push(("SSH_ASKPASS_REQUIRE".into(), "force".into()));
                         env.push(("OLS_SSH_PASSPHRASE".into(), passphrase));
                     }
@@ -789,10 +1120,21 @@ u UU N... 100644 100644 100644 100644 f1 f2 f3 conflict.txt\0\
 ? notes.md\0";
         let mut st = GitStatus::default();
         parse_status(out, &mut st);
-        assert_eq!((st.branch.as_deref(), st.upstream.as_deref(), st.ahead, st.behind), (Some("main"), Some("origin/main"), 2, 1));
+        assert_eq!(
+            (
+                st.branch.as_deref(),
+                st.upstream.as_deref(),
+                st.ahead,
+                st.behind
+            ),
+            (Some("main"), Some("origin/main"), 2, 1)
+        );
         let by = |p: &str| st.files.iter().find(|f| f.path == p).unwrap().clone();
         assert!(by("src/app.php").unstaged && !by("src/app.php").staged);
-        assert!(by("new file.txt").staged && by("new file.txt").kind == "added", "paths with spaces survive");
+        assert!(
+            by("new file.txt").staged && by("new file.txt").kind == "added",
+            "paths with spaces survive"
+        );
         assert_eq!(by("renamed.txt").from.as_deref(), Some("old.txt"));
         assert!(by("conflict.txt").conflicted);
         assert!(by("notes.md").untracked);
@@ -808,15 +1150,25 @@ u UU N... 100644 100644 100644 100644 f1 f2 f3 conflict.txt\0\
 
     #[test]
     fn credentials_never_show_in_output() {
-        assert_eq!(scrub("fatal: https://me:ghp_secret@github.com/x.git not found"), "fatal: https://[redacted]@github.com/x.git not found");
-        assert_eq!(remote_host("https://me@GitHub.com/org/repo.git").as_deref(), Some("github.com"));
+        assert_eq!(
+            scrub("fatal: https://me:ghp_secret@github.com/x.git not found"),
+            "fatal: https://[redacted]@github.com/x.git not found"
+        );
+        assert_eq!(
+            remote_host("https://me@GitHub.com/org/repo.git").as_deref(),
+            Some("github.com")
+        );
         assert_eq!(remote_host("git@github.com:org/repo.git"), None);
     }
 
     #[test]
     fn gitignore_templates_only_add_missing_lines() {
         let (text, n) = merge_ignore("/vendor/\n.env\n", ignore_template("laravel").unwrap());
-        assert!(n > 0 && text.starts_with("/vendor/\n.env\n\n") && text.matches("/vendor/").count() == 1);
+        assert!(
+            n > 0
+                && text.starts_with("/vendor/\n.env\n\n")
+                && text.matches("/vendor/").count() == 1
+        );
         let (_, again) = merge_ignore(&text, ignore_template("laravel").unwrap());
         assert_eq!(again, 0);
     }
@@ -835,21 +1187,40 @@ u UU N... 100644 100644 100644 100644 f1 f2 f3 conflict.txt\0\
         let dir = home.paths.root().join("repo");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("a.txt"), "one\n").unwrap();
-        let id = i.projects.lock().unwrap().register(&dir.display().to_string()).unwrap().id;
+        let id = i
+            .projects
+            .lock()
+            .unwrap()
+            .register(&dir.display().to_string())
+            .unwrap()
+            .id;
         assert!(!i.git_status(&id).unwrap().is_repo);
         i.git_init(&id).unwrap();
         let _ = i.git_ok(&dir, &["config", "user.email", "t@example.com"]);
         let _ = i.git_ok(&dir, &["config", "user.name", "Test"]);
         let _ = i.git_ok(&dir, &["config", "commit.gpgsign", "false"]);
-        assert!(i.git_status(&id).unwrap().files.iter().any(|f| f.path == "a.txt" && f.untracked));
+        assert!(i
+            .git_status(&id)
+            .unwrap()
+            .files
+            .iter()
+            .any(|f| f.path == "a.txt" && f.untracked));
         assert!(i.git_diff(&id, "a.txt", false).unwrap().contains("+one"));
         i.git_stage(&id, &[]).unwrap();
         let c = i.git_commit(&id, "first", false).unwrap();
         assert_eq!(c.subject, "first");
         assert!(i.git_status(&id).unwrap().files.is_empty());
         i.git_create_branch(&id, "feature", true).unwrap();
-        assert!(i.git_branches(&id).unwrap().iter().any(|b| b.name == "feature" && b.current));
-        assert!(i.git_commit(&id, "empty", false).unwrap_err().to_string().contains("nothing"));
+        assert!(i
+            .git_branches(&id)
+            .unwrap()
+            .iter()
+            .any(|b| b.name == "feature" && b.current));
+        assert!(i
+            .git_commit(&id, "empty", false)
+            .unwrap_err()
+            .to_string()
+            .contains("nothing"));
         assert_eq!(i.git_log(&id, 10).unwrap().len(), 1);
     }
 }

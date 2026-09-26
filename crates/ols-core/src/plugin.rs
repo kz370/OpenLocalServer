@@ -147,25 +147,40 @@ struct PluginState {
 }
 
 fn fail(msg: impl Into<String>) -> CoreError {
-    CoreError::failed_fix("That plugin couldn't be used.", msg, "Check the plugin's plugin.yaml against docs/PLUGINS.md.")
+    CoreError::failed_fix(
+        "That plugin couldn't be used.",
+        msg,
+        "Check the plugin's plugin.yaml against docs/PLUGINS.md.",
+    )
 }
 
 fn slug_ok(s: &str) -> bool {
-    !s.is_empty() && s.len() <= 40 && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
+    !s.is_empty()
+        && s.len() <= 40
+        && s.chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
 }
 
 /// A relative path that stays inside its folder.
 fn relative_ok(p: &str) -> bool {
-    !p.is_empty() && Path::new(p).components().all(|c| matches!(c, Component::Normal(_))) && !p.contains(':')
+    !p.is_empty()
+        && Path::new(p)
+            .components()
+            .all(|c| matches!(c, Component::Normal(_)))
+        && !p.contains(':')
 }
 
 fn hash_text(text: &str) -> String {
-    Sha256::digest(text.as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
+    Sha256::digest(text.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 impl PluginManifest {
     pub fn parse(text: &str) -> Result<Self, String> {
-        let m: PluginManifest = serde_yaml_ng::from_str(text).map_err(|e| format!("plugin.yaml: {e}"))?;
+        let m: PluginManifest =
+            serde_yaml_ng::from_str(text).map_err(|e| format!("plugin.yaml: {e}"))?;
         m.validate()?;
         Ok(m)
     }
@@ -173,7 +188,10 @@ impl PluginManifest {
     /// Every rule a plugin has to meet, before it may be listed as usable.
     pub fn validate(&self) -> Result<(), String> {
         if !slug_ok(&self.id) {
-            return Err(format!("the id '{}' may only hold lowercase letters, digits, '-' and '_'", self.id));
+            return Err(format!(
+                "the id '{}' may only hold lowercase letters, digits, '-' and '_'",
+                self.id
+            ));
         }
         if self.name.trim().is_empty() || self.name.len() > 80 {
             return Err("the plugin needs a name of up to 80 characters".into());
@@ -188,7 +206,11 @@ impl PluginManifest {
                     return Err("a wasm plugin needs an `entry` module inside its folder".into());
                 }
             }
-            other => return Err(format!("unknown plugin kind '{other}' (declarative or wasm)")),
+            other => {
+                return Err(format!(
+                    "unknown plugin kind '{other}' (declarative or wasm)"
+                ))
+            }
         }
         for p in &self.permissions {
             if !PERMISSIONS.iter().any(|(id, _)| id == p) {
@@ -201,20 +223,28 @@ impl PluginManifest {
             return Err("it adds runtimes but doesn't declare the `download` permission".into());
         }
         if c.quick_apps.is_some() && !has("quick_apps") {
-            return Err("it adds Quick Apps but doesn't declare the `quick_apps` permission".into());
+            return Err(
+                "it adds Quick Apps but doesn't declare the `quick_apps` permission".into(),
+            );
         }
         if !c.detections.is_empty() && !has("read_projects") {
-            return Err("it adds detections but doesn't declare the `read_projects` permission".into());
+            return Err(
+                "it adds detections but doesn't declare the `read_projects` permission".into(),
+            );
         }
         if !c.health_checks.is_empty() && !has("network") {
-            return Err("it adds health checks but doesn't declare the `network` permission".into());
+            return Err(
+                "it adds health checks but doesn't declare the `network` permission".into(),
+            );
         }
         for r in &c.runtimes {
             r.check()?;
         }
         if let Some(dir) = &c.quick_apps {
             if !relative_ok(dir) {
-                return Err(format!("the quick_apps folder '{dir}' must be a relative path inside the plugin"));
+                return Err(format!(
+                    "the quick_apps folder '{dir}' must be a relative path inside the plugin"
+                ));
             }
         }
         let mut seen = std::collections::HashSet::new();
@@ -228,7 +258,10 @@ impl PluginManifest {
             for m in d.markers.iter().chain(&d.all) {
                 let name = m.strip_prefix("*.").unwrap_or(m);
                 if !relative_ok(name) {
-                    return Err(format!("detection '{}': marker '{m}' must be a relative path", d.id));
+                    return Err(format!(
+                        "detection '{}': marker '{m}' must be a relative path",
+                        d.id
+                    ));
                 }
             }
         }
@@ -244,10 +277,18 @@ impl PluginManifest {
                 }
                 "http" => {
                     if parse_http(&h.target).is_none() {
-                        return Err(format!("health check '{}': target must be an http:// URL", h.id));
+                        return Err(format!(
+                            "health check '{}': target must be an http:// URL",
+                            h.id
+                        ));
                     }
                 }
-                other => return Err(format!("health check '{}': unknown kind '{other}' (tcp or http)", h.id)),
+                other => {
+                    return Err(format!(
+                        "health check '{}': unknown kind '{other}' (tcp or http)",
+                        h.id
+                    ))
+                }
             }
         }
         Ok(())
@@ -256,7 +297,10 @@ impl PluginManifest {
 
 fn split_host_port(target: &str) -> Option<(String, u16)> {
     let (host, port) = target.rsplit_once(':')?;
-    let ok = !host.is_empty() && host.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'));
+    let ok = !host.is_empty()
+        && host
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'));
     ok.then(|| port.parse().ok().map(|p| (host.to_string(), p)))?
 }
 
@@ -271,7 +315,10 @@ fn parse_http(url: &str) -> Option<(String, u16, String)> {
         Some((h, p)) => (h, p.parse().ok()?),
         None => (authority, 80),
     };
-    let ok = !host.is_empty() && host.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'));
+    let ok = !host.is_empty()
+        && host
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'));
     ok.then(|| (host.to_string(), port, path.to_string()))
 }
 
@@ -281,11 +328,18 @@ fn run_check(h: &HealthCheck) -> Result<(), String> {
     use std::net::ToSocketAddrs;
     let timeout = Duration::from_millis(800);
     let (host, port, path) = match h.kind.as_str() {
-        "tcp" => split_host_port(&h.target).map(|(h, p)| (h, p, String::new())).ok_or("bad target")?,
+        "tcp" => split_host_port(&h.target)
+            .map(|(h, p)| (h, p, String::new()))
+            .ok_or("bad target")?,
         _ => parse_http(&h.target).ok_or("bad target")?,
     };
-    let addr = (host.as_str(), port).to_socket_addrs().map_err(|e| format!("{host} didn't resolve: {e}"))?.next().ok_or("no address")?;
-    let mut stream = std::net::TcpStream::connect_timeout(&addr, timeout).map_err(|_| format!("nothing answers on {host}:{port}"))?;
+    let addr = (host.as_str(), port)
+        .to_socket_addrs()
+        .map_err(|e| format!("{host} didn't resolve: {e}"))?
+        .next()
+        .ok_or("no address")?;
+    let mut stream = std::net::TcpStream::connect_timeout(&addr, timeout)
+        .map_err(|_| format!("nothing answers on {host}:{port}"))?;
     if h.kind == "tcp" {
         return Ok(());
     }
@@ -293,9 +347,15 @@ fn run_check(h: &HealthCheck) -> Result<(), String> {
     let _ = stream.set_write_timeout(Some(timeout));
     write!(stream, "GET {path} HTTP/1.0\r\nHost: {host}\r\nUser-Agent: OpenLocalServer\r\nConnection: close\r\n\r\n").map_err(|e| e.to_string())?;
     let mut head = [0u8; 32];
-    let n = stream.read(&mut head).map_err(|e| format!("no reply from {host}:{port}: {e}"))?;
+    let n = stream
+        .read(&mut head)
+        .map_err(|e| format!("no reply from {host}:{port}: {e}"))?;
     let line = String::from_utf8_lossy(&head[..n]);
-    let status: u16 = line.split_whitespace().nth(1).and_then(|s| s.parse().ok()).ok_or("not an HTTP reply")?;
+    let status: u16 = line
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .ok_or("not an HTTP reply")?;
     if (200..400).contains(&status) {
         Ok(())
     } else {
@@ -306,7 +366,16 @@ fn run_check(h: &HealthCheck) -> Result<(), String> {
 fn marker_present(root: &Path, marker: &str) -> bool {
     if let Some(ext) = marker.strip_prefix("*.") {
         let suffix = format!(".{}", ext.to_ascii_lowercase());
-        return std::fs::read_dir(root).map(|d| d.flatten().any(|e| e.file_name().to_string_lossy().to_ascii_lowercase().ends_with(&suffix))).unwrap_or(false);
+        return std::fs::read_dir(root)
+            .map(|d| {
+                d.flatten().any(|e| {
+                    e.file_name()
+                        .to_string_lossy()
+                        .to_ascii_lowercase()
+                        .ends_with(&suffix)
+                })
+            })
+            .unwrap_or(false);
     }
     root.join(marker).exists()
 }
@@ -316,10 +385,20 @@ pub fn detect_in(root: &Path, plugin: &str, detections: &[Detection]) -> Vec<Plu
     detections
         .iter()
         .filter_map(|d| {
-            let any: Vec<String> = d.markers.iter().filter(|m| marker_present(root, m)).cloned().collect();
+            let any: Vec<String> = d
+                .markers
+                .iter()
+                .filter(|m| marker_present(root, m))
+                .cloned()
+                .collect();
             let all_ok = d.all.iter().all(|m| marker_present(root, m));
             let hit = (d.markers.is_empty() || !any.is_empty()) && all_ok;
-            hit.then(|| PluginDetection { plugin: plugin.to_string(), id: d.id.clone(), name: d.name.clone(), matched: any.into_iter().chain(d.all.iter().cloned()).collect() })
+            hit.then(|| PluginDetection {
+                plugin: plugin.to_string(),
+                id: d.id.clone(),
+                name: d.name.clone(),
+                matched: any.into_iter().chain(d.all.iter().cloned()).collect(),
+            })
         })
         .collect()
 }
@@ -335,7 +414,10 @@ pub fn extract_plugin_zip(zip_path: &Path, dest: &Path) -> Result<(), String> {
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
         let Some(rel) = entry.enclosed_name() else {
-            return Err(format!("'{}' would be written outside the plugin folder", entry.name()));
+            return Err(format!(
+                "'{}' would be written outside the plugin folder",
+                entry.name()
+            ));
         };
         let out = dest.join(&rel);
         if entry.is_dir() {
@@ -357,7 +439,10 @@ pub fn extract_plugin_zip(zip_path: &Path, dest: &Path) -> Result<(), String> {
 
 fn copy_dir(from: &Path, to: &Path, files: &mut usize, bytes: &mut u64) -> Result<(), String> {
     std::fs::create_dir_all(to).map_err(|e| e.to_string())?;
-    for e in std::fs::read_dir(from).map_err(|e| e.to_string())?.flatten() {
+    for e in std::fs::read_dir(from)
+        .map_err(|e| e.to_string())?
+        .flatten()
+    {
         let meta = e.metadata().map_err(|e| e.to_string())?;
         // Links could point anywhere; a plugin is plain files.
         if meta.file_type().is_symlink() {
@@ -384,12 +469,19 @@ fn find_root(dir: &Path) -> Option<PathBuf> {
     if has(dir) {
         return Some(dir.to_path_buf());
     }
-    let subs: Vec<PathBuf> = std::fs::read_dir(dir).ok()?.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
+    let subs: Vec<PathBuf> = std::fs::read_dir(dir)
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_dir())
+        .collect();
     (subs.len() == 1 && has(&subs[0])).then(|| subs[0].clone())
 }
 
 fn read_manifest_text(dir: &Path) -> Option<String> {
-    MANIFEST_NAMES.iter().find_map(|n| std::fs::read_to_string(dir.join(n)).ok())
+    MANIFEST_NAMES
+        .iter()
+        .find_map(|n| std::fs::read_to_string(dir.join(n)).ok())
 }
 
 impl Inner {
@@ -398,18 +490,36 @@ impl Inner {
     }
 
     fn plugin_states(&self) -> std::collections::BTreeMap<String, PluginState> {
-        self.settings.lock().unwrap().get(STATE_KEY).and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default()
+        self.settings
+            .lock()
+            .unwrap()
+            .get(STATE_KEY)
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default()
     }
 
-    fn save_plugin_states(&self, states: &std::collections::BTreeMap<String, PluginState>) -> Result<(), CoreError> {
-        self.settings.lock().unwrap().set(STATE_KEY.to_string(), serde_json::to_value(states)?)
+    fn save_plugin_states(
+        &self,
+        states: &std::collections::BTreeMap<String, PluginState>,
+    ) -> Result<(), CoreError> {
+        self.settings
+            .lock()
+            .unwrap()
+            .set(STATE_KEY.to_string(), serde_json::to_value(states)?)
     }
 
     /// Every plugin's manifest text, the folder it lives in (none for built-ins), and whether it is built in.
     fn plugin_sources(&self) -> Vec<(String, Option<PathBuf>, bool)> {
-        let mut out: Vec<(String, Option<PathBuf>, bool)> = BUILTIN.iter().map(|(_, text)| (text.to_string(), None, true)).collect();
+        let mut out: Vec<(String, Option<PathBuf>, bool)> = BUILTIN
+            .iter()
+            .map(|(_, text)| (text.to_string(), None, true))
+            .collect();
         if let Ok(dirs) = std::fs::read_dir(self.plugins_dir()) {
-            let mut dirs: Vec<PathBuf> = dirs.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
+            let mut dirs: Vec<PathBuf> = dirs
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| p.is_dir())
+                .collect();
             dirs.sort();
             for d in dirs {
                 if let Some(text) = read_manifest_text(&d) {
@@ -421,23 +531,52 @@ impl Inner {
     }
 
     fn quick_app_count(dir: &Path, sub: &str) -> usize {
-        std::fs::read_dir(dir.join(sub)).map(|d| d.flatten().filter(|e| matches!(e.path().extension().and_then(|x| x.to_str()), Some("yaml" | "yml"))).count()).unwrap_or(0)
+        std::fs::read_dir(dir.join(sub))
+            .map(|d| {
+                d.flatten()
+                    .filter(|e| {
+                        matches!(
+                            e.path().extension().and_then(|x| x.to_str()),
+                            Some("yaml" | "yml")
+                        )
+                    })
+                    .count()
+            })
+            .unwrap_or(0)
     }
 
-    fn plugin_info(&self, text: &str, folder: Option<&Path>, builtin: bool, states: &std::collections::BTreeMap<String, PluginState>) -> Option<PluginInfo> {
+    fn plugin_info(
+        &self,
+        text: &str,
+        folder: Option<&Path>,
+        builtin: bool,
+        states: &std::collections::BTreeMap<String, PluginState>,
+    ) -> Option<PluginInfo> {
         let (manifest, mut problem) = match PluginManifest::parse(text) {
             Ok(m) => (m, None),
             Err(e) => {
                 // An invalid plugin is still listed (named by its folder), so it can be removed.
-                let id = folder.and_then(|f| f.file_name()).map(|n| n.to_string_lossy().to_string())?;
-                (PluginManifest { id: id.clone(), name: id, version: "?".into(), ..Default::default() }, Some(e))
+                let id = folder
+                    .and_then(|f| f.file_name())
+                    .map(|n| n.to_string_lossy().to_string())?;
+                (
+                    PluginManifest {
+                        id: id.clone(),
+                        name: id,
+                        version: "?".into(),
+                        ..Default::default()
+                    },
+                    Some(e),
+                )
             }
         };
         if problem.is_none() && manifest.kind == "wasm" {
             problem = Some("This plugin runs code in a sandbox, which this version of OpenLocalServer doesn't have yet. It can't be turned on.".into());
         }
         let state = states.get(&manifest.id).cloned().unwrap_or_default();
-        let approved = problem.is_none() && state.approved_hash == hash_text(text) && same_set(&state.approved, &manifest.permissions);
+        let approved = problem.is_none()
+            && state.approved_hash == hash_text(text)
+            && same_set(&state.approved, &manifest.permissions);
         let quick_apps = match (&manifest.contributes.quick_apps, folder) {
             (Some(sub), Some(dir)) if relative_ok(sub) => Self::quick_app_count(dir, sub),
             _ => 0,
@@ -448,7 +587,11 @@ impl Inner {
             permissions: PERMISSIONS
                 .iter()
                 .filter(|(id, _)| manifest.permissions.iter().any(|p| p == id))
-                .map(|(id, d)| PermissionInfo { id: id.to_string(), description: d.to_string(), used: true })
+                .map(|(id, d)| PermissionInfo {
+                    id: id.to_string(),
+                    description: d.to_string(),
+                    used: true,
+                })
                 .collect(),
             problem,
             runtimes: manifest.contributes.runtimes.len(),
@@ -463,17 +606,28 @@ impl Inner {
 
     pub fn list_plugins(&self) -> Vec<PluginInfo> {
         let states = self.plugin_states();
-        self.plugin_sources().iter().filter_map(|(text, folder, builtin)| self.plugin_info(text, folder.as_deref(), *builtin, &states)).collect()
+        self.plugin_sources()
+            .iter()
+            .filter_map(|(text, folder, builtin)| {
+                self.plugin_info(text, folder.as_deref(), *builtin, &states)
+            })
+            .collect()
     }
 
     fn get_plugin(&self, id: &str) -> Result<PluginInfo, CoreError> {
-        self.list_plugins().into_iter().find(|p| p.manifest.id == id).ok_or_else(|| fail(format!("no plugin '{id}' is installed")))
+        self.list_plugins()
+            .into_iter()
+            .find(|p| p.manifest.id == id)
+            .ok_or_else(|| fail(format!("no plugin '{id}' is installed")))
     }
 
     /// Installs a plugin from a folder or a `.zip`. It arrives switched off, with nothing approved.
     pub fn install_plugin(&self, source: &str) -> Result<PluginInfo, CoreError> {
         let src = PathBuf::from(source.trim());
-        let staging = self.paths.cache_dir().join(format!("plugin-stage-{}", crate::ca::unix_now()));
+        let staging = self
+            .paths
+            .cache_dir()
+            .join(format!("plugin-stage-{}", crate::ca::unix_now()));
         let _ = std::fs::remove_dir_all(&staging);
         std::fs::create_dir_all(&staging)?;
         let result = (|| -> Result<PluginInfo, CoreError> {
@@ -486,21 +640,29 @@ impl Inner {
                 return Err(fail(format!("{source} is not a folder or a .zip file")));
             }
             let root = find_root(&staging).ok_or_else(|| fail("there is no plugin.yaml in it"))?;
-            let text = read_manifest_text(&root).ok_or_else(|| fail("plugin.yaml can't be read"))?;
+            let text =
+                read_manifest_text(&root).ok_or_else(|| fail("plugin.yaml can't be read"))?;
             let manifest = PluginManifest::parse(&text).map_err(fail)?;
             if manifest.kind == "wasm" {
-                return Err(fail("code plugins need a sandbox that isn't part of this version"));
+                return Err(fail(
+                    "code plugins need a sandbox that isn't part of this version",
+                ));
             }
             if BUILTIN.iter().any(|(id, _)| *id == manifest.id) {
                 return Err(fail(format!("'{}' is a built-in plugin's id", manifest.id)));
             }
             if let Some(sub) = &manifest.contributes.quick_apps {
                 if Self::quick_app_count(&root, sub) == 0 {
-                    return Err(fail(format!("the quick_apps folder '{sub}' holds no .yaml recipes")));
+                    return Err(fail(format!(
+                        "the quick_apps folder '{sub}' holds no .yaml recipes"
+                    )));
                 }
             }
             let dest = self.plugins_dir().join(&manifest.id);
-            let was_enabled = self.plugin_states().get(&manifest.id).is_some_and(|s| s.enabled);
+            let was_enabled = self
+                .plugin_states()
+                .get(&manifest.id)
+                .is_some_and(|s| s.enabled);
             let _ = std::fs::remove_dir_all(&dest);
             std::fs::create_dir_all(&dest)?;
             let (mut files, mut bytes) = (0, 0);
@@ -519,11 +681,20 @@ impl Inner {
     }
 
     /// Turns a plugin on or off. Turning on needs `approve` to list exactly the permissions it declares.
-    pub fn set_plugin_enabled(&self, id: &str, enabled: bool, approve: &[String]) -> Result<PluginInfo, CoreError> {
+    pub fn set_plugin_enabled(
+        &self,
+        id: &str,
+        enabled: bool,
+        approve: &[String],
+    ) -> Result<PluginInfo, CoreError> {
         let sources = self.plugin_sources();
         let (text, _, _) = sources
             .iter()
-            .find(|(t, _, _)| PluginManifest::parse(t).map(|m| m.id == id).unwrap_or(false))
+            .find(|(t, _, _)| {
+                PluginManifest::parse(t)
+                    .map(|m| m.id == id)
+                    .unwrap_or(false)
+            })
             .ok_or_else(|| fail(format!("no plugin '{id}' is installed")))?;
         let manifest = PluginManifest::parse(text).map_err(fail)?;
         let mut states = self.plugin_states();
@@ -538,7 +709,14 @@ impl Inner {
                     "Review the permissions and approve them.",
                 ));
             }
-            states.insert(id.to_string(), PluginState { enabled: true, approved: manifest.permissions.clone(), approved_hash: hash_text(text) });
+            states.insert(
+                id.to_string(),
+                PluginState {
+                    enabled: true,
+                    approved: manifest.permissions.clone(),
+                    approved_hash: hash_text(text),
+                },
+            );
         } else if let Some(s) = states.get_mut(id) {
             s.enabled = false;
         }
@@ -573,7 +751,11 @@ impl Inner {
             .filter_map(|(text, folder, _)| {
                 let m = PluginManifest::parse(&text).ok()?;
                 let s = states.get(&m.id)?;
-                (s.enabled && m.kind == "declarative" && s.approved_hash == hash_text(&text) && same_set(&s.approved, &m.permissions)).then_some((m, folder))
+                (s.enabled
+                    && m.kind == "declarative"
+                    && s.approved_hash == hash_text(&text)
+                    && same_set(&s.approved, &m.permissions))
+                .then_some((m, folder))
             })
             .collect()
     }
@@ -582,7 +764,10 @@ impl Inner {
     /// Call at startup and after anything that changes them.
     pub fn apply_plugins(&self) {
         let enabled = self.enabled_plugins();
-        let mut runtimes: Vec<OwnedManifest> = enabled.iter().flat_map(|(m, _)| m.contributes.runtimes.clone()).collect();
+        let mut runtimes: Vec<OwnedManifest> = enabled
+            .iter()
+            .flat_map(|(m, _)| m.contributes.runtimes.clone())
+            .collect();
         runtimes.extend(self.catalog_runtimes());
         crate::catalog::set_extra(&runtimes);
 
@@ -597,9 +782,18 @@ impl Inner {
 
     /// What enabled plugins recognise in a project.
     pub fn plugin_detect(&self, project_id: &str) -> Result<Vec<PluginDetection>, CoreError> {
-        let project = self.projects.lock().unwrap().get(project_id).ok_or_else(|| fail(format!("no project '{project_id}'")))?;
+        let project = self
+            .projects
+            .lock()
+            .unwrap()
+            .get(project_id)
+            .ok_or_else(|| fail(format!("no project '{project_id}'")))?;
         let root = PathBuf::from(&project.path);
-        Ok(self.enabled_plugins().iter().flat_map(|(m, _)| detect_in(&root, &m.id, &m.contributes.detections)).collect())
+        Ok(self
+            .enabled_plugins()
+            .iter()
+            .flat_map(|(m, _)| detect_in(&root, &m.id, &m.contributes.detections))
+            .collect())
     }
 
     /// The health checks of enabled plugins, as environment-health items. Runs each with a short timeout.
@@ -609,8 +803,20 @@ impl Inner {
             for h in m.contributes.health_checks.iter().take(8) {
                 let label = format!("{} — {}", m.name, h.name);
                 items.push(match run_check(h) {
-                    Ok(()) => HealthItem { id: format!("plugin_{}_{}", m.id, h.id), label, status: "ok".into(), detail: format!("{} answers", h.target), fix: None },
-                    Err(e) => HealthItem { id: format!("plugin_{}_{}", m.id, h.id), label, status: "warn".into(), detail: e, fix: h.hint.clone() },
+                    Ok(()) => HealthItem {
+                        id: format!("plugin_{}_{}", m.id, h.id),
+                        label,
+                        status: "ok".into(),
+                        detail: format!("{} answers", h.target),
+                        fix: None,
+                    },
+                    Err(e) => HealthItem {
+                        id: format!("plugin_{}_{}", m.id, h.id),
+                        label,
+                        status: "warn".into(),
+                        detail: e,
+                        fix: h.hint.clone(),
+                    },
                 });
             }
         }
@@ -669,25 +875,55 @@ contributes:
 
     #[test]
     fn contributions_need_their_permission() {
-        let text = GOOD.replace("[download, read_projects, network]", "[read_projects, network]");
-        assert!(PluginManifest::parse(&text).unwrap_err().contains("download"));
-        let text = GOOD.replace("[download, read_projects, network]", "[download, read_projects]");
-        assert!(PluginManifest::parse(&text).unwrap_err().contains("network"));
+        let text = GOOD.replace(
+            "[download, read_projects, network]",
+            "[read_projects, network]",
+        );
+        assert!(PluginManifest::parse(&text)
+            .unwrap_err()
+            .contains("download"));
+        let text = GOOD.replace(
+            "[download, read_projects, network]",
+            "[download, read_projects]",
+        );
+        assert!(PluginManifest::parse(&text)
+            .unwrap_err()
+            .contains("network"));
     }
 
     #[test]
     fn unsafe_manifests_are_refused() {
-        assert!(PluginManifest::parse(&GOOD.replace("https://example.com", "http://example.com")).unwrap_err().contains("HTTPS"));
-        assert!(PluginManifest::parse(&GOOD.replace("binary: demo.exe", "binary: ../demo.exe")).is_err());
+        assert!(
+            PluginManifest::parse(&GOOD.replace("https://example.com", "http://example.com"))
+                .unwrap_err()
+                .contains("HTTPS")
+        );
+        assert!(
+            PluginManifest::parse(&GOOD.replace("binary: demo.exe", "binary: ../demo.exe"))
+                .is_err()
+        );
         assert!(PluginManifest::parse(&GOOD.replace("id: demo\n", "id: ../demo\n")).is_err());
-        assert!(PluginManifest::parse(&GOOD.replace("permissions: [download", "permissions: [root, download")).unwrap_err().contains("unknown permission"));
-        assert!(PluginManifest::parse(&GOOD.replace("0000000000000000000000000000000000000000000000000000000000000000", "abc")).is_err());
+        assert!(PluginManifest::parse(
+            &GOOD.replace("permissions: [download", "permissions: [root, download")
+        )
+        .unwrap_err()
+        .contains("unknown permission"));
+        assert!(PluginManifest::parse(&GOOD.replace(
+            "0000000000000000000000000000000000000000000000000000000000000000",
+            "abc"
+        ))
+        .is_err());
     }
 
     #[test]
     fn detections_match_files_and_globs() {
         let dir = tempfile::tempdir().unwrap();
-        let d = vec![Detection { id: "demo".into(), name: "Demo".into(), markers: vec!["demo.toml".into(), "*.demo".into()], all: vec![] }];
+        let d = vec![Detection {
+            id: "demo".into(),
+            name: "Demo".into(),
+            markers: vec!["demo.toml".into(), "*.demo".into()],
+            all: vec![],
+        }];
         assert!(detect_in(dir.path(), "p", &d).is_empty());
         std::fs::write(dir.path().join("app.DEMO"), "").unwrap();
         assert_eq!(detect_in(dir.path(), "p", &d)[0].name, "Demo");
@@ -715,7 +951,13 @@ contributes:
     fn health_checks_see_a_listening_port() {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
-        let up = HealthCheck { id: "a".into(), name: "a".into(), kind: "tcp".into(), target: format!("127.0.0.1:{port}"), hint: None };
+        let up = HealthCheck {
+            id: "a".into(),
+            name: "a".into(),
+            kind: "tcp".into(),
+            target: format!("127.0.0.1:{port}"),
+            hint: None,
+        };
         assert!(run_check(&up).is_ok());
         drop(listener);
         assert!(run_check(&up).is_err());

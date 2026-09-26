@@ -50,14 +50,14 @@ export function DatabasesPage() {
     Promise.all([
       runCommand({ type: 'list_db_tools' }),
       runCommand({ type: 'list_external_tools' }),
-      ...['mariadb', 'postgres', 'mongodb', 'sqlite'].map((engine) => runCommand({ type: 'get_setting', key: `database.default_tool.${engine}` })),
+      ...['mariadb', 'postgres', 'mongodb', 'redis', 'sqlite'].map((engine) => runCommand({ type: 'get_setting', key: `database.default_tool.${engine}` })),
     ]).then(([detected, external, ...settings]) => {
       if (detected.type === 'db_tools') setDbTools(detected.tools)
       if (external.type === 'external_tools') setExternalTools(external.tools)
       const defaults: Record<string, string> = {}
       const configured = new Set<string>()
       settings.forEach((setting, index) => {
-        const engine = ['mariadb', 'postgres', 'mongodb', 'sqlite'][index]
+        const engine = ['mariadb', 'postgres', 'mongodb', 'redis', 'sqlite'][index]
         if (setting.type === 'setting' && typeof setting.value === 'string') {
           defaults[engine] = setting.value
           configured.add(engine)
@@ -65,7 +65,7 @@ export function DatabasesPage() {
       })
       const builtinTools = detected.type === 'db_tools' ? detected.tools : []
       const registeredTools = external.type === 'external_tools' ? external.tools : []
-      for (const [engine, preferred] of Object.entries({ mariadb: 'heidisql', postgres: 'heidisql', mongodb: 'nosqlbooster', sqlite: 'heidisql' })) {
+      for (const [engine, preferred] of Object.entries({ mariadb: 'heidisql', postgres: 'heidisql', mongodb: 'nosqlbooster', redis: 'tinyrdm', sqlite: 'heidisql' })) {
         if (configured.has(engine)) continue
         const available = builtinTools.some((tool) => tool.id === preferred && tool.found_path) || registeredTools.some((tool) => tool.id === preferred && tool.engines.includes(engine))
         if (available) defaults[engine] = preferred
@@ -113,7 +113,7 @@ export function DatabasesPage() {
       />
       {(tab === 'mariadb' || tab === 'postgres') && <SqlEngine key={tab} engine={tab} service={services.find((s) => s.id === tab)} dbTools={dbTools} externalTools={externalTools} defaultTools={defaultTools} setDefaultTool={setDefaultTool} />}
       {tab === 'mongodb' && <Mongo service={services.find((s) => s.id === 'mongodb')} dbTools={dbTools} externalTools={externalTools} defaultTools={defaultTools} setDefaultTool={setDefaultTool} />}
-      {tab === 'redis' && <Redis service={services.find((s) => s.id === 'redis')} />}
+      {tab === 'redis' && <Redis service={services.find((s) => s.id === 'redis')} dbTools={dbTools} externalTools={externalTools} defaultTools={defaultTools} setDefaultTool={setDefaultTool} />}
       {tab === 'sqlite' && <Sqlite dbTools={dbTools} externalTools={externalTools} defaultTools={defaultTools} setDefaultTool={setDefaultTool} />}
       {tab === 'tools' && <Tools />}
     </div>
@@ -185,8 +185,19 @@ function OpenDatabaseButton({ engine, database = null, path = null, dbTools, ext
               }
             }
           }
+          if (engine === 'redis' && selectedTool === 'tinyrdm') {
+            const connection = await runCommand({ type: 'get_connection_info', engine, database, path })
+            if (connection.type === 'connection') {
+              try {
+                await navigator.clipboard.writeText(connection.info.uri)
+              } catch {
+                setNote(`Opened tool. Connect to ${connection.info.uri} if it did not pick it up.`)
+              }
+            }
+          }
           await runCommand({ type: 'open_database', engine, database, path, tool_id: selectedTool || null })
           if (engine === 'mongodb' && selectedTool === 'nosqlbooster') setNote((current) => current ?? 'MongoDB connection URI copied. In NoSQLBooster, choose Connect → From URI and paste.')
+          if (engine === 'redis' && selectedTool === 'tinyrdm') setNote((current) => current ?? 'Redis URI copied (redis://127.0.0.1:6379). Paste it if the tool asks for a connection.')
         })}>
           <ExternalLink className="size-3.5" /> Open in
         </Button>
@@ -386,7 +397,7 @@ function Mongo({ service, ...toolProps }: { service?: ServiceStatus } & Database
   )
 }
 
-function Redis({ service }: { service?: ServiceStatus }) {
+function Redis({ service, ...toolProps }: { service?: ServiceStatus } & DatabaseToolProps) {
   const [info, setInfo] = useState<ConnectionInfo | null>(null)
   const { error, setError } = useAction()
   useEffect(() => {
@@ -400,10 +411,16 @@ function Redis({ service }: { service?: ServiceStatus }) {
       <ServiceBanner service={service} name="Redis" />
       <ErrorCard error={error} onDismiss={() => setError(null)} />
       <Card>
-        <CardContent className="flex flex-col gap-2 pt-4 text-sm">
+        <CardContent className="flex items-center justify-between gap-3 pt-4 text-sm">
           <div>
             Health: {service?.running ? (service.healthy ? <Badge variant="success">answering</Badge> : <Badge variant="warning">not answering</Badge>) : <Badge variant="secondary">stopped</Badge>}
+            <div className="mt-1 text-xs text-muted-foreground">Logs are on the Logs page (source: Redis).</div>
           </div>
+          <OpenDatabaseButton engine="redis" {...toolProps} />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent className="flex flex-col gap-2 pt-4 text-sm">
           {info && <div className="rounded-lg bg-muted/40 p-3 font-mono text-xs">host {info.host} · port {info.port}<br />{info.uri}</div>}
           <p className="text-xs text-muted-foreground">
             Runs the Windows build of Redis from the Runtimes page (the community redis-windows project). It listens on 127.0.0.1 only. Logs are on the Logs page (source: Redis).
@@ -509,7 +526,7 @@ function Tools() {
           <Field label="Name">
             <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="MongoDB Compass" />
           </Field>
-          <Field label="Engines" hint="Comma separated: mariadb, sqlite, mongodb, postgres">
+          <Field label="Engines" hint="Comma separated: mariadb, sqlite, mongodb, postgres, redis">
             <Input value={draft.engines} onChange={(e) => setDraft({ ...draft, engines: e.target.value })} />
           </Field>
           <Field label="Arguments (space separated)">

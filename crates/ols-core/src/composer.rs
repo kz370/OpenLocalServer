@@ -32,19 +32,37 @@ pub struct ComposerInfo {
 
 /// Platform requirements (`php`, `ext-*`, `lib-*`) aren't packages you install.
 fn is_platform(name: &str) -> bool {
-    name == "php" || name == "php-64bit" || name.starts_with("ext-") || name.starts_with("lib-") || name.starts_with("composer-")
+    name == "php"
+        || name == "php-64bit"
+        || name.starts_with("ext-")
+        || name.starts_with("lib-")
+        || name.starts_with("composer-")
 }
 
 pub fn read(project: &Path) -> ComposerInfo {
-    let json: Option<Value> = std::fs::read_to_string(project.join("composer.json")).ok().and_then(|raw| serde_json::from_str(&raw).ok());
-    let Some(json) = json else { return ComposerInfo::default() };
+    let json: Option<Value> = std::fs::read_to_string(project.join("composer.json"))
+        .ok()
+        .and_then(|raw| serde_json::from_str(&raw).ok());
+    let Some(json) = json else {
+        return ComposerInfo::default();
+    };
 
-    let lock: Option<Value> = std::fs::read_to_string(project.join("composer.lock")).ok().and_then(|raw| serde_json::from_str(&raw).ok());
+    let lock: Option<Value> = std::fs::read_to_string(project.join("composer.lock"))
+        .ok()
+        .and_then(|raw| serde_json::from_str(&raw).ok());
     let mut locked: BTreeMap<String, String> = BTreeMap::new();
     if let Some(lock) = &lock {
         for key in ["packages", "packages-dev"] {
-            for p in lock.get(key).and_then(Value::as_array).into_iter().flatten() {
-                if let (Some(name), Some(version)) = (p.get("name").and_then(Value::as_str), p.get("version").and_then(Value::as_str)) {
+            for p in lock
+                .get(key)
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
+                if let (Some(name), Some(version)) = (
+                    p.get("name").and_then(Value::as_str),
+                    p.get("version").and_then(Value::as_str),
+                ) {
                     locked.insert(name.to_string(), version.to_string());
                 }
             }
@@ -53,7 +71,9 @@ pub fn read(project: &Path) -> ComposerInfo {
 
     let mut packages = Vec::new();
     for (key, dev) in [("require", false), ("require-dev", true)] {
-        let Some(map) = json.get(key).and_then(Value::as_object) else { continue };
+        let Some(map) = json.get(key).and_then(Value::as_object) else {
+            continue;
+        };
         for (name, constraint) in map {
             if is_platform(name) {
                 continue;
@@ -68,7 +88,11 @@ pub fn read(project: &Path) -> ComposerInfo {
     }
     packages.sort_by(|a, b| a.dev.cmp(&b.dev).then_with(|| a.name.cmp(&b.name)));
 
-    let scripts = json.get("scripts").and_then(Value::as_object).map(|m| m.keys().cloned().collect()).unwrap_or_default();
+    let scripts = json
+        .get("scripts")
+        .and_then(Value::as_object)
+        .map(|m| m.keys().cloned().collect())
+        .unwrap_or_default();
     ComposerInfo {
         has_composer_json: true,
         has_lock: lock.is_some(),
@@ -87,10 +111,24 @@ pub fn valid_requirement(spec: &str) -> bool {
         None => (spec, None),
     };
     let name_ok = name.split_once('/').is_some_and(|(vendor, pkg)| {
-        let part = |s: &str| !s.is_empty() && !s.starts_with('-') && s.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'));
+        let part = |s: &str| {
+            !s.is_empty()
+                && !s.starts_with('-')
+                && s.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        };
         part(vendor) && part(pkg)
     });
-    let constraint_ok = constraint.is_none_or(|c| !c.is_empty() && c.chars().all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '*' | '^' | '~' | '-' | '@' | '>' | '<' | '=' | '|' | ',')));
+    let constraint_ok = constraint.is_none_or(|c| {
+        !c.is_empty()
+            && c.chars().all(|ch| {
+                ch.is_ascii_alphanumeric()
+                    || matches!(
+                        ch,
+                        '.' | '*' | '^' | '~' | '-' | '@' | '>' | '<' | '=' | '|' | ','
+                    )
+            })
+    });
     name_ok && constraint_ok
 }
 
@@ -100,7 +138,9 @@ pub fn command_args(action: &str, target: Option<&str>) -> Result<Vec<String>, S
     let target = target.map(str::trim).filter(|t| !t.is_empty());
     let package = || match target {
         Some(t) if valid_requirement(t) => Ok(t.to_string()),
-        Some(t) => Err(format!("\"{t}\" is not a package name like vendor/name or vendor/name:^1.0")),
+        Some(t) => Err(format!(
+            "\"{t}\" is not a package name like vendor/name or vendor/name:^1.0"
+        )),
         None => Err(format!("The {action} action needs a package name.")),
     };
     let args: Vec<String> = match action {
@@ -111,7 +151,10 @@ pub fn command_args(action: &str, target: Option<&str>) -> Result<Vec<String>, S
         },
         "require" => vec!["require".into(), package()?],
         "require_dev" => vec!["require".into(), "--dev".into(), package()?],
-        "remove" => vec!["remove".into(), package()?.split(':').next().unwrap_or_default().to_string()],
+        "remove" => vec![
+            "remove".into(),
+            package()?.split(':').next().unwrap_or_default().to_string(),
+        ],
         "dump_autoload" => vec!["dump-autoload".into()],
         "dump_autoload_optimized" => vec!["dump-autoload".into(), "--optimize".into()],
         "outdated" => vec!["outdated".into(), "--direct".into()],
@@ -122,7 +165,11 @@ pub fn command_args(action: &str, target: Option<&str>) -> Result<Vec<String>, S
         "clear_cache" => vec!["clear-cache".into()],
         "run_script" => {
             let name = target.ok_or("Pick a script to run.")?;
-            if !name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | ':' | '.')) || name.starts_with('-') {
+            if !name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | ':' | '.'))
+                || name.starts_with('-')
+            {
                 return Err(format!("\"{name}\" is not a script name."));
             }
             vec!["run-script".into(), name.to_string()]
@@ -140,10 +187,22 @@ mod tests {
     fn actions_map_to_composer_arguments_and_reject_bad_targets() {
         assert_eq!(command_args("install", None).unwrap(), ["install"]);
         assert_eq!(command_args("update", None).unwrap(), ["update"]);
-        assert_eq!(command_args("update", Some("a/b")).unwrap(), ["update", "a/b"]);
-        assert_eq!(command_args("require_dev", Some("a/b:^2")).unwrap(), ["require", "--dev", "a/b:^2"]);
-        assert_eq!(command_args("remove", Some("a/b:^2")).unwrap(), ["remove", "a/b"]);
-        assert_eq!(command_args("run_script", Some("test")).unwrap(), ["run-script", "test"]);
+        assert_eq!(
+            command_args("update", Some("a/b")).unwrap(),
+            ["update", "a/b"]
+        );
+        assert_eq!(
+            command_args("require_dev", Some("a/b:^2")).unwrap(),
+            ["require", "--dev", "a/b:^2"]
+        );
+        assert_eq!(
+            command_args("remove", Some("a/b:^2")).unwrap(),
+            ["remove", "a/b"]
+        );
+        assert_eq!(
+            command_args("run_script", Some("test")).unwrap(),
+            ["run-script", "test"]
+        );
         assert!(command_args("require", None).is_err());
         assert!(command_args("require", Some("--no-scripts")).is_err());
         assert!(command_args("run_script", Some("--help")).is_err());
@@ -170,8 +229,18 @@ mod tests {
         assert_eq!(
             info.packages,
             vec![
-                ComposerPackage { name: "laravel/framework".into(), constraint: "^11.0".into(), locked: Some("v11.9.2".into()), dev: false },
-                ComposerPackage { name: "phpunit/phpunit".into(), constraint: "^11".into(), locked: Some("11.1.0".into()), dev: true },
+                ComposerPackage {
+                    name: "laravel/framework".into(),
+                    constraint: "^11.0".into(),
+                    locked: Some("v11.9.2".into()),
+                    dev: false
+                },
+                ComposerPackage {
+                    name: "phpunit/phpunit".into(),
+                    constraint: "^11".into(),
+                    locked: Some("11.1.0".into()),
+                    dev: true
+                },
             ]
         );
         assert_eq!(info.scripts.len(), 2);

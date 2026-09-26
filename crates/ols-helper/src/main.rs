@@ -48,7 +48,11 @@ impl HelperError {
 
 fn hosts_file_path() -> PathBuf {
     let root = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_string());
-    PathBuf::from(root).join("System32").join("drivers").join("etc").join("hosts")
+    PathBuf::from(root)
+        .join("System32")
+        .join("drivers")
+        .join("etc")
+        .join("hosts")
 }
 
 fn valid_host(host: &str) -> bool {
@@ -66,10 +70,12 @@ fn valid_entry(entry: &str) -> Option<(String, String)> {
 
 /// `.test` style DNS suffix: a leading dot then a valid hostname.
 fn valid_suffix(suffix: &str) -> bool {
-    suffix.strip_prefix('.').is_some_and(|rest| !rest.is_empty() && {
-        // A single label like "test" is a legal namespace even though it isn't a hostname
-        // by itself, so validate it as a label under a dummy parent.
-        valid_host(&format!("{rest}.x")) && valid_host(&format!("x.{rest}"))
+    suffix.strip_prefix('.').is_some_and(|rest| {
+        !rest.is_empty() && {
+            // A single label like "test" is a legal namespace even though it isn't a hostname
+            // by itself, so validate it as a label under a dummy parent.
+            valid_host(&format!("{rest}.x")) && valid_host(&format!("x.{rest}"))
+        }
     })
 }
 
@@ -126,11 +132,15 @@ fn powershell(script: &str) -> Result<(), HelperError> {
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x0800_0000);
     }
-    let output = cmd.output().map_err(|e| HelperError::Failed(e.to_string()))?;
+    let output = cmd
+        .output()
+        .map_err(|e| HelperError::Failed(e.to_string()))?;
     if output.status.success() {
         Ok(())
     } else {
-        Err(HelperError::Failed(String::from_utf8_lossy(&output.stderr).trim().to_string()))
+        Err(HelperError::Failed(
+            String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        ))
     }
 }
 
@@ -150,7 +160,13 @@ fn main() -> ExitCode {
                 Err(e) => {
                     eprintln!("{e}");
                     // Installing needs elevation; report it the same way as a hosts write.
-                    ExitCode::from(if e.contains("Access is denied") || e.contains("os error 5") { 5 } else { 1 })
+                    ExitCode::from(
+                        if e.contains("Access is denied") || e.contains("os error 5") {
+                            5
+                        } else {
+                            1
+                        },
+                    )
                 }
             };
         }
@@ -182,7 +198,15 @@ mod tests {
     #[test]
     fn hosts_apply_writes_only_the_managed_block() {
         let (_dir, path) = hosts_in_temp("127.0.0.1 localhost\n");
-        execute(&args(&["hosts-apply", "127.0.0.1=shop.test", "127.0.0.1=api.shop.test"]), &path).unwrap();
+        execute(
+            &args(&[
+                "hosts-apply",
+                "127.0.0.1=shop.test",
+                "127.0.0.1=api.shop.test",
+            ]),
+            &path,
+        )
+        .unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(text.contains("127.0.0.1 localhost"));
         assert!(text.contains("127.0.0.1 shop.test"));
@@ -203,18 +227,34 @@ mod tests {
             Err(HelperError::Rejected(_))
         ));
         assert!(matches!(
-            execute(&args(&["hosts-apply", "127.0.0.1=evil.test\n1.2.3.4 x"]), &path),
+            execute(
+                &args(&["hosts-apply", "127.0.0.1=evil.test\n1.2.3.4 x"]),
+                &path
+            ),
             Err(HelperError::Rejected(_))
         ));
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "", "a rejected command must not write");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "",
+            "a rejected command must not write"
+        );
     }
 
     #[test]
     fn rejects_unknown_commands_and_bad_nrpt_arguments() {
         let (_dir, path) = hosts_in_temp("");
-        assert!(matches!(execute(&args(&["format-c"]), &path), Err(HelperError::Rejected(_))));
-        assert!(matches!(execute(&args(&["nrpt-add", ".test", "8.8.8.8"]), &path), Err(HelperError::Rejected(_))));
-        assert!(matches!(execute(&args(&["nrpt-add", "test'; calc; '", "127.0.0.1"]), &path), Err(HelperError::Rejected(_))));
+        assert!(matches!(
+            execute(&args(&["format-c"]), &path),
+            Err(HelperError::Rejected(_))
+        ));
+        assert!(matches!(
+            execute(&args(&["nrpt-add", ".test", "8.8.8.8"]), &path),
+            Err(HelperError::Rejected(_))
+        ));
+        assert!(matches!(
+            execute(&args(&["nrpt-add", "test'; calc; '", "127.0.0.1"]), &path),
+            Err(HelperError::Rejected(_))
+        ));
         assert!(matches!(execute(&[], &path), Err(HelperError::Rejected(_))));
     }
 

@@ -49,6 +49,10 @@ All 202 files listed above processed via 4 parallel analysis agents (rust-core, 
 - [2026-09-26] Developer guide + API reference written
 - [2026-09-26] Coverage + consistency + English checks passed
 - [2026-09-26] Specs-sync mandate added: AGENTS.md created, CONTRIBUTING.md patched — code change requires specs update in same PR
+- [2026-09-27] fix: port holder lookup no longer surfaces tasklist INFO text as process name (stale-PID race), holder cache TTL 15s→5s; Services shows live holder + retry hint; Dashboard services rows regain per-service Start/Stop; Mailpit Open uses open_url; diagnostics auto-rescan
+- [2026-09-27] fix: check_port names Windows excluded port ranges (Hyper-V/Docker netsh) so busy-port-with-no-listener reports cause, not ghost holder
+- [2026-09-27] fix: netstat owner parse accepts localized/non-LISTENING 5-col TCP rows (LISTENING preferred, fallback otherwise) so holders show on non-English Windows
+- [2026-09-27] feat: Redis one-click — Tiny RDM auto-detect (Program Files/LOCALAPPDATA/PATH) + Open in button on Databases Redis tab with URI copy; RedisInsight excluded per request
 
 Status: Completed 100%
 

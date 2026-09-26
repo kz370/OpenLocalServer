@@ -102,7 +102,9 @@ impl Monitor {
     pub fn folder_sizes(&self, folders: &[PathBuf]) -> HashMap<PathBuf, u64> {
         let mut state = self.folders.lock().unwrap();
         let missing = folders.iter().any(|f| !state.sizes.contains_key(f));
-        let stale = state.counted_at.is_none_or(|t| t.elapsed() > FOLDER_REFRESH);
+        let stale = state
+            .counted_at
+            .is_none_or(|t| t.elapsed() > FOLDER_REFRESH);
         if (missing || stale) && !state.counting {
             state.counting = true;
             let shared = self.folders.clone();
@@ -137,7 +139,9 @@ impl Monitor {
             // The deepest mount point containing the folder is its drive.
             let Some(disk) = all
                 .iter()
-                .filter(|d| folder.starts_with(&d.mount_point().display().to_string().to_ascii_lowercase()))
+                .filter(|d| {
+                    folder.starts_with(&d.mount_point().display().to_string().to_ascii_lowercase())
+                })
                 .max_by_key(|d| d.mount_point().as_os_str().len())
             else {
                 continue;
@@ -162,7 +166,11 @@ impl Monitor {
         let mut sys = self.sys.lock().unwrap();
         sys.refresh_cpu_usage();
         sys.refresh_memory();
-        sys.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing().with_cpu().with_memory());
+        sys.refresh_processes_specifics(
+            ProcessesToUpdate::All,
+            true,
+            ProcessRefreshKind::nothing().with_cpu().with_memory(),
+        );
 
         let cores = sys.cpus().len().max(1);
         let mut children: HashMap<Pid, Vec<Pid>> = HashMap::new();
@@ -191,7 +199,14 @@ impl Monitor {
                         stack.extend(kids);
                     }
                 }
-                (root, ProcessStats { cpu_percent: cpu / cores as f32, memory, count })
+                (
+                    root,
+                    ProcessStats {
+                        cpu_percent: cpu / cores as f32,
+                        memory,
+                        count,
+                    },
+                )
             })
             .collect();
 
@@ -213,7 +228,9 @@ fn tree_size(dir: &Path) -> u64 {
     let mut total = 0;
     let mut stack = vec![dir.to_path_buf()];
     while let Some(d) = stack.pop() {
-        let Ok(rd) = std::fs::read_dir(&d) else { continue };
+        let Ok(rd) = std::fs::read_dir(&d) else {
+            continue;
+        };
         for e in rd.flatten() {
             let Ok(ft) = e.file_type() else { continue };
             if ft.is_symlink() {
@@ -241,7 +258,11 @@ mod tests {
         assert!(stats.memory_total > 0 && stats.memory_used <= stats.memory_total);
         assert!(stats.cpu_cores >= 1);
         assert!(stats.processes[&me].count >= 1 && stats.processes[&me].memory > 0);
-        assert_eq!(stats.processes[&(u32::MAX - 1)].count, 0, "an unknown PID reports nothing rather than failing");
+        assert_eq!(
+            stats.processes[&(u32::MAX - 1)].count,
+            0,
+            "an unknown PID reports nothing rather than failing"
+        );
     }
 
     #[test]
@@ -249,7 +270,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("vendor").join("x")).unwrap();
         std::fs::write(dir.path().join("index.php"), vec![0u8; 1000]).unwrap();
-        std::fs::write(dir.path().join("vendor").join("x").join("lib.php"), vec![0u8; 500]).unwrap();
+        std::fs::write(
+            dir.path().join("vendor").join("x").join("lib.php"),
+            vec![0u8; 500],
+        )
+        .unwrap();
         let monitor = Monitor::default();
         let folder = dir.path().to_path_buf();
         for _ in 0..100 {

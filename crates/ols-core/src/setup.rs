@@ -22,31 +22,66 @@ use crate::app::Inner;
 use crate::detection::Framework;
 use crate::domain::{AppSpec, Domain, Ownership, SiteKind};
 use crate::error::CoreError;
-use crate::manifest::{self, DatabaseManifest, DomainManifest, EnvironmentManifest, LockFile, SchedulerEntry, ServiceToggle, WorkerEntry};
+use crate::manifest::{
+    self, DatabaseManifest, DomainManifest, EnvironmentManifest, LockFile, SchedulerEntry,
+    ServiceToggle, WorkerEntry,
+};
 use crate::quickapp::commands::QuickCommand;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SetupAction {
-    InstallRuntime { id: String, version: String },
-    EnableExtension { php_version: String, name: String },
-    EnablePackageManager { manager: String },
-    StartService { id: String },
-    CreateDatabase { engine: String, name: String },
-    CreateSqlite { path: String },
-    AddDomain { domain: Box<Domain> },
-    UpdateDomain { domain: Box<Domain> },
+    InstallRuntime {
+        id: String,
+        version: String,
+    },
+    EnableExtension {
+        php_version: String,
+        name: String,
+    },
+    EnablePackageManager {
+        manager: String,
+    },
+    StartService {
+        id: String,
+    },
+    CreateDatabase {
+        engine: String,
+        name: String,
+    },
+    CreateSqlite {
+        path: String,
+    },
+    AddDomain {
+        domain: Box<Domain>,
+    },
+    UpdateDomain {
+        domain: Box<Domain>,
+    },
     SyncHosts,
     TrustCa,
-    ConfigureMail { file: String },
-    ImportCommands { commands: Vec<QuickCommand> },
-    AddWorker { worker: Box<crate::workers::Worker> },
-    AddSchedule { task: Box<crate::scheduler::ScheduledTask> },
+    ConfigureMail {
+        file: String,
+    },
+    ImportCommands {
+        commands: Vec<QuickCommand>,
+    },
+    AddWorker {
+        worker: Box<crate::workers::Worker>,
+    },
+    AddSchedule {
+        task: Box<crate::scheduler::ScheduledTask>,
+    },
     ApplyWeb,
     StartWorkers,
     /// Only planned when the manifest asks for `tunnel.autostart` (§73.12).
-    StartTunnel { provider: String, target: String },
-    HealthCheck { hostname: String },
+    StartTunnel {
+        provider: String,
+        target: String,
+    },
+    HealthCheck {
+        hostname: String,
+    },
     WriteLock,
 }
 
@@ -138,24 +173,45 @@ enum Undo {
     StopWorkers(String),
 }
 
-const DB_SERVICES: &[(&str, &str)] = &[("mariadb", "mariadb"), ("mysql", "mariadb"), ("postgres", "postgres"), ("postgresql", "postgres"), ("mongodb", "mongodb"), ("mongo", "mongodb")];
+const DB_SERVICES: &[(&str, &str)] = &[
+    ("mariadb", "mariadb"),
+    ("mysql", "mariadb"),
+    ("postgres", "postgres"),
+    ("postgresql", "postgres"),
+    ("mongodb", "mongodb"),
+    ("mongo", "mongodb"),
+];
 
 fn db_service(engine: &str) -> Option<&'static str> {
-    DB_SERVICES.iter().find(|(e, _)| e.eq_ignore_ascii_case(engine)).map(|(_, s)| *s)
+    DB_SERVICES
+        .iter()
+        .find(|(e, _)| e.eq_ignore_ascii_case(engine))
+        .map(|(_, s)| *s)
 }
 
 fn is_php(f: &Framework) -> bool {
-    matches!(f, Framework::Laravel | Framework::Symfony | Framework::WordPress | Framework::GenericPhp)
+    matches!(
+        f,
+        Framework::Laravel | Framework::Symfony | Framework::WordPress | Framework::GenericPhp
+    )
 }
 
 /// Lowercase letters, digits and underscores: what a database name may be.
 pub fn db_name_for(name: &str) -> String {
-    let mut out: String = name.to_ascii_lowercase().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect();
+    let mut out: String = name
+        .to_ascii_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect();
     while out.contains("__") {
         out = out.replace("__", "_");
     }
     let out = out.trim_matches('_').to_string();
-    if out.is_empty() { "app".into() } else { out.chars().take(64).collect() }
+    if out.is_empty() {
+        "app".into()
+    } else {
+        out.chars().take(64).collect()
+    }
 }
 
 /// Reads one `KEY=value` from a project's `.env`, if it has one.
@@ -186,7 +242,12 @@ pub struct ManifestInfo {
 
 impl Inner {
     pub fn manifest_info(&self, project_id: &str) -> Result<ManifestInfo, CoreError> {
-        let project = self.projects.lock().unwrap().get(project_id).ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
+        let project = self
+            .projects
+            .lock()
+            .unwrap()
+            .get(project_id)
+            .ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
         let root = PathBuf::from(&project.path);
         let path = manifest::manifest_path(&root);
         let text = std::fs::read_to_string(&path).ok();
@@ -208,8 +269,14 @@ impl Inner {
     }
 
     pub fn save_manifest_text(&self, project_id: &str, text: &str) -> Result<String, CoreError> {
-        serde_yaml_ng::from_str::<EnvironmentManifest>(text).map_err(|e| CoreError::EnvError(format!("the manifest doesn't read as YAML: {e}")))?;
-        let project = self.projects.lock().unwrap().get(project_id).ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
+        serde_yaml_ng::from_str::<EnvironmentManifest>(text)
+            .map_err(|e| CoreError::EnvError(format!("the manifest doesn't read as YAML: {e}")))?;
+        let project = self
+            .projects
+            .lock()
+            .unwrap()
+            .get(project_id)
+            .ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
         let path = manifest::manifest_path(Path::new(&project.path));
         std::fs::create_dir_all(path.parent().unwrap())?;
         std::fs::write(&path, text)?;
@@ -219,33 +286,61 @@ impl Inner {
     /// Without a manifest: what detection says the project needs, as a manifest the user
     /// can save and edit.
     pub fn derive_manifest(&self, project_id: &str) -> Result<EnvironmentManifest, CoreError> {
-        let detail = self.project_detail(project_id).ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
+        let detail = self
+            .project_detail(project_id)
+            .ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
         let path = PathBuf::from(&detail.project.path);
         let det = &detail.detection;
-        let mut m = EnvironmentManifest { name: Some(detail.project.name.clone()), ..Default::default() };
+        let mut m = EnvironmentManifest {
+            name: Some(detail.project.name.clone()),
+            ..Default::default()
+        };
         m.runtime.php = det.requirements.php.clone();
         m.runtime.node = det.requirements.node.clone();
         m.runtime.python = det.requirements.python.clone();
         if is_php(&det.framework) && m.runtime.php.is_none() {
-            m.runtime.php = self.php.pick_version(None).map(|v| v.split('.').take(2).collect::<Vec<_>>().join("."));
+            m.runtime.php = self
+                .php
+                .pick_version(None)
+                .map(|v| v.split('.').take(2).collect::<Vec<_>>().join("."));
         }
 
         // A site: PHP and static projects are served directly; others need their own port.
-        let existing = self.domains.lock().unwrap().list().into_iter().find(|d| d.project_id.as_deref() == Some(project_id));
+        let existing = self
+            .domains
+            .lock()
+            .unwrap()
+            .list()
+            .into_iter()
+            .find(|d| d.project_id.as_deref() == Some(project_id));
         let servable = is_php(&det.framework) || path.join("index.html").is_file();
         if let Some(d) = existing {
             m.domain = Some(DomainManifest {
                 hostname: d.hostname.clone(),
                 https: d.https,
                 wildcard: d.wildcard,
-                root: Path::new(&d.root).strip_prefix(&path).ok().map(|r| r.display().to_string().replace('\\', "/")).filter(|r| !r.is_empty()),
+                root: Path::new(&d.root)
+                    .strip_prefix(&path)
+                    .ok()
+                    .map(|r| r.display().to_string().replace('\\', "/"))
+                    .filter(|r| !r.is_empty()),
                 port: match d.kind {
-                    SiteKind::Proxy { upstream_port, upstream_host: None, .. } => Some(upstream_port),
+                    SiteKind::Proxy {
+                        upstream_port,
+                        upstream_host: None,
+                        ..
+                    } => Some(upstream_port),
                     _ => None,
                 },
             });
         } else if servable {
-            m.domain = Some(DomainManifest { hostname: format!("{}.test", crate::domain::slugify(&detail.project.name)), https: true, wildcard: false, root: det.doc_root.clone(), port: None });
+            m.domain = Some(DomainManifest {
+                hostname: format!("{}.test", crate::domain::slugify(&detail.project.name)),
+                https: true,
+                wildcard: false,
+                root: det.doc_root.clone(),
+                port: None,
+            });
         }
 
         // The database the project's .env already points at.
@@ -259,9 +354,21 @@ impl Inner {
             };
             if let Some(engine) = engine {
                 let name = env_value(&path, "DB_DATABASE").filter(|n| !n.is_empty());
-                m.database = Some(DatabaseManifest { engine: engine.into(), version: None, name });
+                m.database = Some(DatabaseManifest {
+                    engine: engine.into(),
+                    version: None,
+                    name,
+                });
             }
-            if env_value(&path, "REDIS_HOST").is_some() && ["redis"].iter().any(|k| env_value(&path, "CACHE_STORE").or_else(|| env_value(&path, "CACHE_DRIVER")).as_deref() == Some(k) || env_value(&path, "QUEUE_CONNECTION").as_deref() == Some(k)) {
+            if env_value(&path, "REDIS_HOST").is_some()
+                && ["redis"].iter().any(|k| {
+                    env_value(&path, "CACHE_STORE")
+                        .or_else(|| env_value(&path, "CACHE_DRIVER"))
+                        .as_deref()
+                        == Some(k)
+                        || env_value(&path, "QUEUE_CONNECTION").as_deref() == Some(k)
+                })
+            {
                 m.services.insert("redis".into(), ServiceToggle::On(true));
             }
             if env_value(&path, "MAIL_MAILER").is_some() {
@@ -283,33 +390,64 @@ impl Inner {
     }
 
     /// Writes a manifest (the derived one when `manifest` is `None`) into the project.
-    pub fn save_manifest(&self, project_id: &str, manifest: Option<EnvironmentManifest>) -> Result<String, CoreError> {
-        let project = self.projects.lock().unwrap().get(project_id).ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
+    pub fn save_manifest(
+        &self,
+        project_id: &str,
+        manifest: Option<EnvironmentManifest>,
+    ) -> Result<String, CoreError> {
+        let project = self
+            .projects
+            .lock()
+            .unwrap()
+            .get(project_id)
+            .ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
         let m = match manifest {
             Some(m) => m,
             None => self.derive_manifest(project_id)?,
         };
-        let path = manifest::write_manifest(Path::new(&project.path), &m).map_err(CoreError::EnvError)?;
+        let path =
+            manifest::write_manifest(Path::new(&project.path), &m).map_err(CoreError::EnvError)?;
         Ok(path.display().to_string())
     }
 
     /// §74–76: the plan for bringing this project's environment up.
     pub fn plan_setup(&self, project_id: &str) -> Result<EnvironmentPlan, CoreError> {
-        let detail = self.project_detail(project_id).ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
+        let detail = self
+            .project_detail(project_id)
+            .ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
         let path = PathBuf::from(&detail.project.path);
         let mut conflicts = Vec::new();
         let (mut manifest, manifest_found) = match manifest::read_manifest(&path) {
             Ok(Some(m)) => (m, true),
             Ok(None) => (self.derive_manifest(project_id)?, false),
-            Err(e) => return Err(CoreError::EnvError(format!("the manifest could not be read: {e}"))),
+            Err(e) => {
+                return Err(CoreError::EnvError(format!(
+                    "the manifest could not be read: {e}"
+                )))
+            }
         };
         if manifest.workers.is_empty() {
             if let Some((_, text)) = crate::procfile::project_file(&path) {
                 match crate::procfile::parse(&text) {
-                    Ok(entries) => for entry in entries.into_iter().filter(|e| e.name != "web") {
-                        manifest.workers.insert(entry.name, WorkerEntry::Custom(crate::manifest::WorkerManifest { command: entry.command, count: 1, timeout_secs: None, memory_mb: None }));
-                    },
-                    Err(e) => conflicts.push(Conflict { kind: "manifest".into(), blocking: false, message: format!("Procfile was not imported: {e}"), resolution: "Correct its process lines, then plan setup again.".into() }),
+                    Ok(entries) => {
+                        for entry in entries.into_iter().filter(|e| e.name != "web") {
+                            manifest.workers.insert(
+                                entry.name,
+                                WorkerEntry::Custom(crate::manifest::WorkerManifest {
+                                    command: entry.command,
+                                    count: 1,
+                                    timeout_secs: None,
+                                    memory_mb: None,
+                                }),
+                            );
+                        }
+                    }
+                    Err(e) => conflicts.push(Conflict {
+                        kind: "manifest".into(),
+                        blocking: false,
+                        message: format!("Procfile was not imported: {e}"),
+                        resolution: "Correct its process lines, then plan setup again.".into(),
+                    }),
                 }
             }
         }
@@ -317,21 +455,42 @@ impl Inner {
             Ok(Some(l)) => (l, true),
             Ok(None) => (LockFile::new(), false),
             Err(e) => {
-                conflicts.push(Conflict { kind: "manifest".into(), blocking: false, message: format!("environment.lock could not be read: {e}"), resolution: "It is ignored and rewritten after a successful setup.".into() });
+                conflicts.push(Conflict {
+                    kind: "manifest".into(),
+                    blocking: false,
+                    message: format!("environment.lock could not be read: {e}"),
+                    resolution: "It is ignored and rewritten after a successful setup.".into(),
+                });
                 (LockFile::new(), false)
             }
         };
         let commands = manifest::read_commands(&path).unwrap_or_else(|e| {
-            conflicts.push(Conflict { kind: "manifest".into(), blocking: true, message: format!("commands.yaml could not be read: {e}"), resolution: "Fix the file, then plan again.".into() });
+            conflicts.push(Conflict {
+                kind: "manifest".into(),
+                blocking: true,
+                message: format!("commands.yaml could not be read: {e}"),
+                resolution: "Fix the file, then plan again.".into(),
+            });
             Vec::new()
         });
 
-        let mut p = Planner { inner: self, steps: Vec::new(), conflicts, lock: &lock };
-        let project_name = manifest.name.clone().unwrap_or_else(|| detail.project.name.clone());
+        let mut p = Planner {
+            inner: self,
+            steps: Vec::new(),
+            conflicts,
+            lock: &lock,
+        };
+        let project_name = manifest
+            .name
+            .clone()
+            .unwrap_or_else(|| detail.project.name.clone());
 
         // Runtimes (§74: runtime requirements).
         let mut php_version = None;
-        for (id, wanted) in [("php", manifest.runtime.php.clone()), ("node", manifest.runtime.node.clone())] {
+        for (id, wanted) in [
+            ("php", manifest.runtime.php.clone()),
+            ("node", manifest.runtime.node.clone()),
+        ] {
             if let Some(v) = p.runtime(id, wanted.as_deref()) {
                 if id == "php" {
                     php_version = Some(v);
@@ -361,16 +520,37 @@ impl Inner {
                 }
                 Some(v) => {
                     for name in &manifest.extensions {
-                        p.step("configure", format!("Enable PHP extension {name}"), SetupAction::EnableExtension { php_version: v.clone(), name: name.clone() });
+                        p.step(
+                            "configure",
+                            format!("Enable PHP extension {name}"),
+                            SetupAction::EnableExtension {
+                                php_version: v.clone(),
+                                name: name.clone(),
+                            },
+                        );
                     }
                 }
-                None => p.conflict("runtime", false, "PHP extensions are listed but the project has no PHP.".to_string(), "Add runtime.php to the manifest."),
+                None => p.conflict(
+                    "runtime",
+                    false,
+                    "PHP extensions are listed but the project has no PHP.".to_string(),
+                    "Add runtime.php to the manifest.",
+                ),
             }
         }
 
         // Package manager.
-        if let Some(pm) = manifest.package_manager.as_deref().filter(|pm| *pm != "npm") {
-            let node_dir = detail.resolved.iter().find(|r| r.id == "node").and_then(|r| r.bin_dir.clone()).map(PathBuf::from);
+        if let Some(pm) = manifest
+            .package_manager
+            .as_deref()
+            .filter(|pm| *pm != "npm")
+        {
+            let node_dir = detail
+                .resolved
+                .iter()
+                .find(|r| r.id == "node")
+                .and_then(|r| r.bin_dir.clone())
+                .map(PathBuf::from);
             let info = crate::nodepm::info(&path, node_dir.as_deref());
             let ready = match pm {
                 "pnpm" => info.pnpm,
@@ -378,9 +558,17 @@ impl Inner {
                 _ => false,
             };
             if ready {
-                p.done("configure", format!("{pm} package manager"), SetupAction::EnablePackageManager { manager: pm.into() });
+                p.done(
+                    "configure",
+                    format!("{pm} package manager"),
+                    SetupAction::EnablePackageManager { manager: pm.into() },
+                );
             } else {
-                p.step("configure", format!("Switch on {pm} through corepack"), SetupAction::EnablePackageManager { manager: pm.into() });
+                p.step(
+                    "configure",
+                    format!("Switch on {pm} through corepack"),
+                    SetupAction::EnablePackageManager { manager: pm.into() },
+                );
             }
         }
 
@@ -393,48 +581,118 @@ impl Inner {
         }
 
         // Database (§74: database requirements).
-        let db_name = manifest.database.as_ref().map(|d| d.name.clone().unwrap_or_else(|| db_name_for(&project_name)));
+        let db_name = manifest
+            .database
+            .as_ref()
+            .map(|d| d.name.clone().unwrap_or_else(|| db_name_for(&project_name)));
         if let (Some(db), Some(name)) = (&manifest.database, &db_name) {
             if db.engine.eq_ignore_ascii_case("sqlite") {
-                let file = if name.ends_with(".sqlite") || name.contains('/') { name.clone() } else { "database/database.sqlite".into() };
+                let file = if name.ends_with(".sqlite") || name.contains('/') {
+                    name.clone()
+                } else {
+                    "database/database.sqlite".into()
+                };
                 match crate::quickapp::plan::safe_join(&detail.project.path, &file) {
-                    Ok(full) if Path::new(&full).is_file() => p.done("create", format!("SQLite database {file}"), SetupAction::CreateSqlite { path: full }),
-                    Ok(full) => p.step("create", format!("Create SQLite database {file}"), SetupAction::CreateSqlite { path: full }),
-                    Err(e) => p.conflict("database", true, format!("The SQLite path {file} is not allowed: {e}"), "Use a path inside the project."),
+                    Ok(full) if Path::new(&full).is_file() => p.done(
+                        "create",
+                        format!("SQLite database {file}"),
+                        SetupAction::CreateSqlite { path: full },
+                    ),
+                    Ok(full) => p.step(
+                        "create",
+                        format!("Create SQLite database {file}"),
+                        SetupAction::CreateSqlite { path: full },
+                    ),
+                    Err(e) => p.conflict(
+                        "database",
+                        true,
+                        format!("The SQLite path {file} is not allowed: {e}"),
+                        "Use a path inside the project.",
+                    ),
                 }
             } else if let Some(service) = db_service(&db.engine) {
                 if db.engine.eq_ignore_ascii_case("mysql") {
-                    p.note(format!("MySQL databases are served by MariaDB here (compatible for {} use).", project_name));
+                    p.note(format!(
+                        "MySQL databases are served by MariaDB here (compatible for {} use).",
+                        project_name
+                    ));
                 }
                 if let Some(v) = &db.version {
-                    let have: Vec<String> = crate::catalog::builtin_catalog().iter().filter(|m| m.id == service).map(|m| m.version.to_string()).collect();
-                    if db.engine.eq_ignore_ascii_case(service) && !have.iter().any(|h| h.starts_with(v.as_str())) {
+                    let have: Vec<String> = crate::catalog::builtin_catalog()
+                        .iter()
+                        .filter(|m| m.id == service)
+                        .map(|m| m.version.to_string())
+                        .collect();
+                    if db.engine.eq_ignore_ascii_case(service)
+                        && !have.iter().any(|h| h.starts_with(v.as_str()))
+                    {
                         p.conflict("database", false, format!("{} {v} is requested; the available version is {}.", db.engine, have.join(", ")), "The available version is used. Change database.version if that's fine.");
                     }
                 }
                 p.service(service);
                 if service == "mongodb" {
-                    p.done("create", format!("MongoDB database {name} (created on first write)"), SetupAction::CreateDatabase { engine: service.into(), name: name.clone() });
+                    p.done(
+                        "create",
+                        format!("MongoDB database {name} (created on first write)"),
+                        SetupAction::CreateDatabase {
+                            engine: service.into(),
+                            name: name.clone(),
+                        },
+                    );
                 } else if !crate::service::is_safe_identifier(name) {
-                    p.conflict("database", true, format!("\"{name}\" is not a usable database name."), "Use letters, digits and underscores in database.name.");
+                    p.conflict(
+                        "database",
+                        true,
+                        format!("\"{name}\" is not a usable database name."),
+                        "Use letters, digits and underscores in database.name.",
+                    );
                 } else {
-                    let exists = self.services.is_running(service) && self.services.list_databases(service).map(|l| l.iter().any(|d| d == name)).unwrap_or(false);
-                    let action = SetupAction::CreateDatabase { engine: service.into(), name: name.clone() };
+                    let exists = self.services.is_running(service)
+                        && self
+                            .services
+                            .list_databases(service)
+                            .map(|l| l.iter().any(|d| d == name))
+                            .unwrap_or(false);
+                    let action = SetupAction::CreateDatabase {
+                        engine: service.into(),
+                        name: name.clone(),
+                    };
                     if exists {
-                        p.done("create", format!("{} database \"{name}\"", self.runtimes.display_name(service).unwrap_or_default()), action);
+                        p.done(
+                            "create",
+                            format!(
+                                "{} database \"{name}\"",
+                                self.runtimes.display_name(service).unwrap_or_default()
+                            ),
+                            action,
+                        );
                     } else {
-                        p.step("create", format!("Create {} database \"{name}\"", self.runtimes.display_name(service).unwrap_or_default()), action);
+                        p.step(
+                            "create",
+                            format!(
+                                "Create {} database \"{name}\"",
+                                self.runtimes.display_name(service).unwrap_or_default()
+                            ),
+                            action,
+                        );
                     }
                 }
             } else {
-                p.conflict("database", true, format!("Unknown database engine \"{}\".", db.engine), "Use mariadb, mysql, postgres, mongodb or sqlite.");
+                p.conflict(
+                    "database",
+                    true,
+                    format!("Unknown database engine \"{}\".", db.engine),
+                    "Use mariadb, mysql, postgres, mongodb or sqlite.",
+                );
             }
         }
 
         // Services.
         for id in manifest.enabled_services() {
             let id = db_service(&id).unwrap_or(id.as_str()).to_string();
-            if crate::custom_service::is_custom_id(&id) || self.services.list().iter().any(|s| s.id == id) {
+            if crate::custom_service::is_custom_id(&id)
+                || self.services.list().iter().any(|s| s.id == id)
+            {
                 p.service(&id);
             } else {
                 p.conflict("service", true, format!("Unknown service \"{id}\"."), "Use redis, mailpit, mariadb, postgres or mongodb, or add it as a custom service.");
@@ -444,14 +702,36 @@ impl Inner {
         // Domain → DNS → SSL.
         let mut hostname = None;
         if let Some(dm) = &manifest.domain {
-            hostname = p.domain(project_id, &path, &detail.detection, dm, php_version.as_deref());
+            hostname = p.domain(
+                project_id,
+                &path,
+                &detail.detection,
+                dm,
+                php_version.as_deref(),
+            );
         }
 
         // Mail: point the project's .env at Mailpit when it uses mail and Mailpit is wanted.
-        if manifest.enabled_services().iter().any(|s| s == "mailpit") && path.join(".env").is_file() {
+        if manifest.enabled_services().iter().any(|s| s == "mailpit") && path.join(".env").is_file()
+        {
             match self.mailpit_env_plan(project_id, ".env") {
-                Ok(plan) if plan.up_to_date || plan.changes.is_empty() => p.done("configure", "Mail goes to Mailpit".to_string(), SetupAction::ConfigureMail { file: ".env".into() }),
-                Ok(plan) => p.step("configure", format!("Point .env mail settings at Mailpit ({} value(s))", plan.changes.len()), SetupAction::ConfigureMail { file: ".env".into() }),
+                Ok(plan) if plan.up_to_date || plan.changes.is_empty() => p.done(
+                    "configure",
+                    "Mail goes to Mailpit".to_string(),
+                    SetupAction::ConfigureMail {
+                        file: ".env".into(),
+                    },
+                ),
+                Ok(plan) => p.step(
+                    "configure",
+                    format!(
+                        "Point .env mail settings at Mailpit ({} value(s))",
+                        plan.changes.len()
+                    ),
+                    SetupAction::ConfigureMail {
+                        file: ".env".into(),
+                    },
+                ),
                 Err(_) => {}
             }
         }
@@ -459,15 +739,42 @@ impl Inner {
         // Project Quick Commands.
         if !commands.is_empty() {
             let known = self.quick_commands.list();
-            let new: Vec<QuickCommand> = commands.into_iter().filter(|c| !known.iter().any(|k| k.id == c.id && k.command == c.command && k.action == c.action)).collect();
-            let clashes: Vec<String> = new.iter().filter(|c| known.iter().any(|k| k.id == c.id && k.builtin)).map(|c| c.id.clone()).collect();
+            let new: Vec<QuickCommand> = commands
+                .into_iter()
+                .filter(|c| {
+                    !known
+                        .iter()
+                        .any(|k| k.id == c.id && k.command == c.command && k.action == c.action)
+                })
+                .collect();
+            let clashes: Vec<String> = new
+                .iter()
+                .filter(|c| known.iter().any(|k| k.id == c.id && k.builtin))
+                .map(|c| c.id.clone())
+                .collect();
             if !clashes.is_empty() {
-                p.conflict("file_ownership", true, format!("commands.yaml redefines built-in Quick Commands: {}.", clashes.join(", ")), "Give those commands other ids.");
+                p.conflict(
+                    "file_ownership",
+                    true,
+                    format!(
+                        "commands.yaml redefines built-in Quick Commands: {}.",
+                        clashes.join(", ")
+                    ),
+                    "Give those commands other ids.",
+                );
             } else if new.is_empty() {
-                p.done("configure", "Project Quick Commands".to_string(), SetupAction::ImportCommands { commands: vec![] });
+                p.done(
+                    "configure",
+                    "Project Quick Commands".to_string(),
+                    SetupAction::ImportCommands { commands: vec![] },
+                );
             } else {
                 let label = format!("Add {} Quick Command(s) from commands.yaml", new.len());
-                p.step("configure", label, SetupAction::ImportCommands { commands: new });
+                p.step(
+                    "configure",
+                    label,
+                    SetupAction::ImportCommands { commands: new },
+                );
             }
         }
 
@@ -476,18 +783,46 @@ impl Inner {
 
         // Web server config, then the things that need it.
         let web_running = self.web.is_running();
-        p.step("start", format!("Apply the web config and start {}", crate::web::server_by_id(&cfg.server).map(|s| s.name()).unwrap_or("the web server")), SetupAction::ApplyWeb);
+        p.step(
+            "start",
+            format!(
+                "Apply the web config and start {}",
+                crate::web::server_by_id(&cfg.server)
+                    .map(|s| s.name())
+                    .unwrap_or("the web server")
+            ),
+            SetupAction::ApplyWeb,
+        );
         if !web_running && hostname.is_none() {
             p.steps.pop();
         }
-        if p.steps.iter().any(|s| matches!(s.action, SetupAction::AddWorker { .. })) || !self.workers_for(project_id).is_empty() {
-            p.step("start", "Start the project's queue workers".to_string(), SetupAction::StartWorkers);
+        if p.steps
+            .iter()
+            .any(|s| matches!(s.action, SetupAction::AddWorker { .. }))
+            || !self.workers_for(project_id).is_empty()
+        {
+            p.step(
+                "start",
+                "Start the project's queue workers".to_string(),
+                SetupAction::StartWorkers,
+            );
         }
 
         // Tunnel (§73.12: only when explicitly configured).
         if let Some(t) = manifest.tunnel.as_ref().filter(|t| t.enabled) {
             let provider = t.provider.clone().unwrap_or_else(|| "cloudflare".into());
-            let target = t.target.clone().or_else(|| hostname.as_ref().map(|h| format!("{}://{h}", if manifest.domain.as_ref().is_some_and(|d| d.https) { "https" } else { "http" })));
+            let target = t.target.clone().or_else(|| {
+                hostname.as_ref().map(|h| {
+                    format!(
+                        "{}://{h}",
+                        if manifest.domain.as_ref().is_some_and(|d| d.https) {
+                            "https"
+                        } else {
+                            "http"
+                        }
+                    )
+                })
+            });
             match (target, t.autostart) {
                 (Some(target), true) => p.step("tunnel", format!("Start a public {provider} tunnel to {target}"), SetupAction::StartTunnel { provider, target }),
                 (Some(target), false) => p.note(format!("A {provider} tunnel to {target} is configured. It is not started automatically; start it from the Tunnels page.")),
@@ -496,15 +831,34 @@ impl Inner {
         }
 
         if let Some(h) = &hostname {
-            let scheme = if manifest.domain.as_ref().is_some_and(|d| d.https) { "https" } else { "http" };
-            p.step("check", format!("Check that {scheme}://{h} answers"), SetupAction::HealthCheck { hostname: h.clone() });
+            let scheme = if manifest.domain.as_ref().is_some_and(|d| d.https) {
+                "https"
+            } else {
+                "http"
+            };
+            p.step(
+                "check",
+                format!("Check that {scheme}://{h} answers"),
+                SetupAction::HealthCheck {
+                    hostname: h.clone(),
+                },
+            );
         }
-        p.step("check", "Write .openlocalserver/environment.lock".to_string(), SetupAction::WriteLock);
+        p.step(
+            "check",
+            "Write .openlocalserver/environment.lock".to_string(),
+            SetupAction::WriteLock,
+        );
 
         let ok = !p.conflicts.iter().any(|c| c.blocking);
-        let Planner { steps, conflicts, .. } = p;
+        let Planner {
+            steps, conflicts, ..
+        } = p;
         // Placeholder rows (used only to show Python as present) aren't real steps.
-        let steps = steps.into_iter().filter(|s| !(s.done && matches!(s.action, SetupAction::WriteLock))).collect();
+        let steps = steps
+            .into_iter()
+            .filter(|s| !(s.done && matches!(s.action, SetupAction::WriteLock)))
+            .collect();
         Ok(EnvironmentPlan {
             project_id: project_id.to_string(),
             project_name,
@@ -534,7 +888,16 @@ impl Inner {
             steps: plan
                 .steps
                 .iter()
-                .map(|s| StepResult { group: s.group.clone(), label: s.label.clone(), status: if s.done { StepStatus::Skipped } else { StepStatus::Pending }, detail: s.note.clone() })
+                .map(|s| StepResult {
+                    group: s.group.clone(),
+                    label: s.label.clone(),
+                    status: if s.done {
+                        StepStatus::Skipped
+                    } else {
+                        StepStatus::Pending
+                    },
+                    detail: s.note.clone(),
+                })
                 .collect(),
             ..Default::default()
         };
@@ -550,14 +913,23 @@ impl Inner {
         *self.setup.lock().unwrap() = Some(report.clone());
 
         let title = format!("Set up {}", plan.project_name);
-        let retry = crate::command::CoreCommand::ApplySetup { project_id: project_id.to_string(), dry_run: false };
-        let result = self.journaled("setup", &title, Some("Failed setups undo their safe changes automatically."), Some(retry), || {
-            self.run_plan(&plan, &mut report);
-            match &report.error {
-                Some(e) => Err(CoreError::EnvError(e.clone())),
-                None => Ok(()),
-            }
-        });
+        let retry = crate::command::CoreCommand::ApplySetup {
+            project_id: project_id.to_string(),
+            dry_run: false,
+        };
+        let result = self.journaled(
+            "setup",
+            &title,
+            Some("Failed setups undo their safe changes automatically."),
+            Some(retry),
+            || {
+                self.run_plan(&plan, &mut report);
+                match &report.error {
+                    Some(e) => Err(CoreError::EnvError(e.clone())),
+                    None => Ok(()),
+                }
+            },
+        );
         report.running = false;
         report.ok = result.is_ok();
         *self.setup.lock().unwrap() = Some(report.clone());
@@ -575,9 +947,22 @@ impl Inner {
             self.set_step(report, i, StepStatus::Running, None);
             let mut log_lines: Vec<String> = Vec::new();
             let mut log = |l: &str| log_lines.push(l.to_string());
-            let outcome = self.run_action(plan, &step.action, &mut undo, &mut installed, &path, report, &mut log);
+            let outcome = self.run_action(
+                plan,
+                &step.action,
+                &mut undo,
+                &mut installed,
+                &path,
+                report,
+                &mut log,
+            );
             match outcome {
-                Ok(detail) => self.set_step(report, i, StepStatus::Done, detail.or_else(|| log_lines.last().cloned())),
+                Ok(detail) => self.set_step(
+                    report,
+                    i,
+                    StepStatus::Done,
+                    detail.or_else(|| log_lines.last().cloned()),
+                ),
                 Err(e) => {
                     tracing::warn!(step = %step.label, error = %e, "setup step failed");
                     self.set_step(report, i, StepStatus::Failed, Some(e.clone()));
@@ -605,11 +990,24 @@ impl Inner {
     fn reversible(action: &SetupAction) -> bool {
         matches!(
             action,
-            SetupAction::AddDomain { .. } | SetupAction::UpdateDomain { .. } | SetupAction::StartService { .. } | SetupAction::EnableExtension { .. } | SetupAction::ImportCommands { .. } | SetupAction::AddWorker { .. } | SetupAction::AddSchedule { .. } | SetupAction::StartWorkers
+            SetupAction::AddDomain { .. }
+                | SetupAction::UpdateDomain { .. }
+                | SetupAction::StartService { .. }
+                | SetupAction::EnableExtension { .. }
+                | SetupAction::ImportCommands { .. }
+                | SetupAction::AddWorker { .. }
+                | SetupAction::AddSchedule { .. }
+                | SetupAction::StartWorkers
         )
     }
 
-    fn set_step(&self, report: &mut SetupReport, i: usize, status: StepStatus, detail: Option<String>) {
+    fn set_step(
+        &self,
+        report: &mut SetupReport,
+        i: usize,
+        status: StepStatus,
+        detail: Option<String>,
+    ) {
         report.steps[i].status = status;
         if detail.is_some() {
             report.steps[i].detail = detail;
@@ -644,7 +1042,9 @@ impl Inner {
                 Ok(None)
             }
             SetupAction::EnablePackageManager { manager } => {
-                let process = self.enable_package_manager(pid, manager).map_err(|e| e.to_string())?;
+                let process = self
+                    .enable_package_manager(pid, manager)
+                    .map_err(|e| e.to_string())?;
                 self.wait_process(process, std::time::Duration::from_secs(300))
             }
             SetupAction::StartService { id } => {
@@ -663,7 +1063,12 @@ impl Inner {
                 loop {
                     match self.services.create_database(engine, name) {
                         Ok(()) => return Ok(None),
-                        Err(e) if started.elapsed() < std::time::Duration::from_secs(30) && e.to_lowercase().contains("connect") => std::thread::sleep(std::time::Duration::from_millis(700)),
+                        Err(e)
+                            if started.elapsed() < std::time::Duration::from_secs(30)
+                                && e.to_lowercase().contains("connect") =>
+                        {
+                            std::thread::sleep(std::time::Duration::from_millis(700))
+                        }
                         Err(e) => return Err(e),
                     }
                 }
@@ -674,22 +1079,41 @@ impl Inner {
                     std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
                 }
                 crate::sqlite::create(&exe, Path::new(file))?;
-                self.sqlite.lock().unwrap().associate(file, Some(pid.to_string())).map_err(|e| e.to_string())?;
+                self.sqlite
+                    .lock()
+                    .unwrap()
+                    .associate(file, Some(pid.to_string()))
+                    .map_err(|e| e.to_string())?;
                 Ok(None)
             }
             SetupAction::AddDomain { domain } => {
-                self.add_domain((**domain).clone()).map_err(|e| e.to_string())?;
+                self.add_domain((**domain).clone())
+                    .map_err(|e| e.to_string())?;
                 undo.push(Undo::RemoveDomain(domain.hostname.clone()));
                 Ok(None)
             }
             SetupAction::UpdateDomain { domain } => {
-                let before = self.domains.lock().unwrap().get(&domain.hostname).ok_or("the site disappeared")?;
-                self.update_domain((**domain).clone()).map_err(|e| e.to_string())?;
+                let before = self
+                    .domains
+                    .lock()
+                    .unwrap()
+                    .get(&domain.hostname)
+                    .ok_or("the site disappeared")?;
+                self.update_domain((**domain).clone())
+                    .map_err(|e| e.to_string())?;
                 undo.push(Undo::RestoreDomain(Box::new(before)));
                 Ok(None)
             }
             SetupAction::SyncHosts => {
-                let hostnames: Vec<String> = self.domains.lock().unwrap().list().into_iter().filter(|d| d.enabled && !self.web.dns_covers(&d.hostname)).map(|d| d.hostname).collect();
+                let hostnames: Vec<String> = self
+                    .domains
+                    .lock()
+                    .unwrap()
+                    .list()
+                    .into_iter()
+                    .filter(|d| d.enabled && !self.web.dns_covers(&d.hostname))
+                    .map(|d| d.hostname)
+                    .collect();
                 crate::hosts::ensure(&hostnames)?;
                 Ok(None)
             }
@@ -699,13 +1123,20 @@ impl Inner {
                 Ok(None)
             }
             SetupAction::ConfigureMail { file } => {
-                let plan = self.apply_mailpit_env(pid, file).map_err(|e| e.to_string())?;
-                Ok(Some(format!("{} value(s) changed; the previous .env is kept as a backup", plan.changes.len())))
+                let plan = self
+                    .apply_mailpit_env(pid, file)
+                    .map_err(|e| e.to_string())?;
+                Ok(Some(format!(
+                    "{} value(s) changed; the previous .env is kept as a backup",
+                    plan.changes.len()
+                )))
             }
             SetupAction::ImportCommands { commands } => {
                 for c in commands {
                     let existed = self.quick_commands.list().iter().any(|k| k.id == c.id);
-                    self.quick_commands.save(c.clone()).map_err(|e| e.to_string())?;
+                    self.quick_commands
+                        .save(c.clone())
+                        .map_err(|e| e.to_string())?;
                     if !existed {
                         undo.push(Undo::DeleteCommand(c.id.clone()));
                     }
@@ -713,18 +1144,31 @@ impl Inner {
                 Ok(None)
             }
             SetupAction::AddWorker { worker } => {
-                self.save_worker((**worker).clone()).map_err(|e| e.to_string())?;
+                self.save_worker((**worker).clone())
+                    .map_err(|e| e.to_string())?;
                 undo.push(Undo::RemoveWorker(worker.id.clone()));
                 Ok(None)
             }
             SetupAction::AddSchedule { task } => {
-                self.save_schedule((**task).clone()).map_err(|e| e.to_string())?;
+                self.save_schedule((**task).clone())
+                    .map_err(|e| e.to_string())?;
                 undo.push(Undo::RemoveSchedule(task.id.clone()));
                 Ok(None)
             }
             SetupAction::ApplyWeb => {
                 let r = self.apply_web(&[]).map_err(|e| e.to_string())?;
-                let mut msg = format!("{}: {} file(s) written{}", r.server, r.written.len(), if r.started { ", started" } else if r.reloaded { ", reloaded" } else { "" });
+                let mut msg = format!(
+                    "{}: {} file(s) written{}",
+                    r.server,
+                    r.written.len(),
+                    if r.started {
+                        ", started"
+                    } else if r.reloaded {
+                        ", reloaded"
+                    } else {
+                        ""
+                    }
+                );
                 if !r.warnings.is_empty() {
                     msg.push_str(&format!(" ({})", r.warnings.join("; ")));
                 }
@@ -736,13 +1180,27 @@ impl Inner {
                 Ok(Some(format!("{started} worker process(es) running")))
             }
             SetupAction::StartTunnel { provider, target } => {
-                let t = self.start_tunnel_for(Some(pid), provider, target, false).map_err(|e| e.to_string())?;
-                Ok(Some(format!("public URL: {}", t.public_url.unwrap_or_else(|| "waiting for the provider".into()))))
+                let t = self
+                    .start_tunnel_for(Some(pid), provider, target, false)
+                    .map_err(|e| e.to_string())?;
+                Ok(Some(format!(
+                    "public URL: {}",
+                    t.public_url
+                        .unwrap_or_else(|| "waiting for the provider".into())
+                )))
             }
             SetupAction::HealthCheck { hostname } => {
                 // A health check failure is reported, not rolled back: the setup itself worked.
                 let h = self.health_check(hostname).map_err(|e| e.to_string())?;
-                let msg = if h.ok { "the site answers".to_string() } else { h.steps.iter().find(|s| !s.ok && !s.skipped).map(|s| format!("{}: {}", s.name, s.detail)).unwrap_or_default() };
+                let msg = if h.ok {
+                    "the site answers".to_string()
+                } else {
+                    h.steps
+                        .iter()
+                        .find(|s| !s.ok && !s.skipped)
+                        .map(|s| format!("{}: {}", s.name, s.detail))
+                        .unwrap_or_default()
+                };
                 report.health = Some(h);
                 Ok(Some(msg))
             }
@@ -750,13 +1208,22 @@ impl Inner {
                 let lock = self.current_lock(pid, installed);
                 let file = manifest::write_lock(path, &lock)?;
                 report.lock_written = Some(file.display().to_string());
-                Ok(Some(lock.iter().map(|(k, v)| format!("{k} {v}")).collect::<Vec<_>>().join(", ")))
+                Ok(Some(
+                    lock.iter()
+                        .map(|(k, v)| format!("{k} {v}"))
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                ))
             }
         }
     }
 
     /// Waits for a supervised process to exit; its exit code decides success.
-    pub(crate) fn wait_process(&self, id: crate::process::ProcessId, timeout: std::time::Duration) -> Result<Option<String>, String> {
+    pub(crate) fn wait_process(
+        &self,
+        id: crate::process::ProcessId,
+        timeout: std::time::Duration,
+    ) -> Result<Option<String>, String> {
         let started = std::time::Instant::now();
         while self.supervisor.is_alive(id) {
             if started.elapsed() > timeout {
@@ -768,7 +1235,14 @@ impl Inner {
         let info = self.supervisor.snapshot().into_iter().find(|p| p.id == id);
         match info.and_then(|p| p.exit_code) {
             Some(0) | None => Ok(None),
-            Some(code) => Err(format!("exited with code {code}: {}", self.supervisor.recent_output(id).last().cloned().unwrap_or_default())),
+            Some(code) => Err(format!(
+                "exited with code {code}: {}",
+                self.supervisor
+                    .recent_output(id)
+                    .last()
+                    .cloned()
+                    .unwrap_or_default()
+            )),
         }
     }
 
@@ -776,16 +1250,36 @@ impl Inner {
         let mut done = Vec::new();
         for u in undo.into_iter().rev() {
             let (what, result): (String, Result<(), String>) = match u {
-                Undo::RemoveDomain(h) => (format!("removed site {h}"), self.remove_domain(&h).map_err(|e| e.to_string())),
-                Undo::RestoreDomain(d) => (format!("restored site {}", d.hostname), self.update_domain(*d).map(|_| ()).map_err(|e| e.to_string())),
+                Undo::RemoveDomain(h) => (
+                    format!("removed site {h}"),
+                    self.remove_domain(&h).map_err(|e| e.to_string()),
+                ),
+                Undo::RestoreDomain(d) => (
+                    format!("restored site {}", d.hostname),
+                    self.update_domain(*d)
+                        .map(|_| ())
+                        .map_err(|e| e.to_string()),
+                ),
                 Undo::StopService(id) => {
                     self.services.stop(&id);
                     (format!("stopped {id}"), Ok(()))
                 }
-                Undo::DisableExtension(v, n) => (format!("switched PHP {v} extension {n} off again"), self.php.set_extension(&v, &n, false)),
-                Undo::DeleteCommand(id) => (format!("removed Quick Command {id}"), self.quick_commands.delete(&id).map_err(|e| e.to_string())),
-                Undo::RemoveWorker(id) => (format!("removed worker {id}"), self.remove_worker(&id).map_err(|e| e.to_string())),
-                Undo::RemoveSchedule(id) => (format!("removed scheduled task {id}"), self.remove_schedule(&id).map_err(|e| e.to_string())),
+                Undo::DisableExtension(v, n) => (
+                    format!("switched PHP {v} extension {n} off again"),
+                    self.php.set_extension(&v, &n, false),
+                ),
+                Undo::DeleteCommand(id) => (
+                    format!("removed Quick Command {id}"),
+                    self.quick_commands.delete(&id).map_err(|e| e.to_string()),
+                ),
+                Undo::RemoveWorker(id) => (
+                    format!("removed worker {id}"),
+                    self.remove_worker(&id).map_err(|e| e.to_string()),
+                ),
+                Undo::RemoveSchedule(id) => (
+                    format!("removed scheduled task {id}"),
+                    self.remove_schedule(&id).map_err(|e| e.to_string()),
+                ),
                 Undo::StopWorkers(pid) => {
                     self.stop_project_workers(&pid);
                     ("stopped the project's workers".to_string(), Ok(()))
@@ -817,7 +1311,12 @@ impl Inner {
             }
         }
         let cfg = self.web_config();
-        if let Some(v) = self.runtimes.installed_versions(&cfg.server).into_iter().next() {
+        if let Some(v) = self
+            .runtimes
+            .installed_versions(&cfg.server)
+            .into_iter()
+            .next()
+        {
             lock.insert(cfg.server, v);
         }
         lock
@@ -833,42 +1332,92 @@ struct Planner<'a> {
 
 impl Planner<'_> {
     fn step(&mut self, group: &str, label: String, action: SetupAction) {
-        self.steps.push(PlanStep { group: group.into(), label, action, done: false, note: None });
+        self.steps.push(PlanStep {
+            group: group.into(),
+            label,
+            action,
+            done: false,
+            note: None,
+        });
     }
 
     fn done(&mut self, group: &str, label: String, action: SetupAction) {
-        self.steps.push(PlanStep { group: group.into(), label, action, done: true, note: None });
+        self.steps.push(PlanStep {
+            group: group.into(),
+            label,
+            action,
+            done: true,
+            note: None,
+        });
     }
 
     fn note(&mut self, text: String) {
         if let Some(last) = self.steps.last_mut() {
             last.note = Some(text);
         } else {
-            self.conflicts.push(Conflict { kind: "info".into(), blocking: false, message: text, resolution: String::new() });
+            self.conflicts.push(Conflict {
+                kind: "info".into(),
+                blocking: false,
+                message: text,
+                resolution: String::new(),
+            });
         }
     }
 
     fn conflict(&mut self, kind: &str, blocking: bool, message: String, resolution: &str) {
-        self.conflicts.push(Conflict { kind: kind.into(), blocking, message, resolution: resolution.into() });
+        self.conflicts.push(Conflict {
+            kind: kind.into(),
+            blocking,
+            message,
+            resolution: resolution.into(),
+        });
     }
 
     /// Plans a managed runtime. Returns the version that will be used.
     fn runtime(&mut self, id: &str, wanted: Option<&str>) -> Option<String> {
         let wanted = wanted?;
-        let name = self.inner.runtimes.display_name(id).unwrap_or_else(|| id.to_string());
+        let name = self
+            .inner
+            .runtimes
+            .display_name(id)
+            .unwrap_or_else(|| id.to_string());
         // A lock pins the exact version a working setup used (§72).
         let locked = self.lock.get(id).cloned();
         let installed = self.inner.runtimes.installed_versions(id);
-        let mut custom: Vec<String> = self.inner.custom_installs.lock().unwrap().list().into_iter().filter(|c| c.id == id).map(|c| c.label).collect();
+        let mut custom: Vec<String> = self
+            .inner
+            .custom_installs
+            .lock()
+            .unwrap()
+            .list()
+            .into_iter()
+            .filter(|c| c.id == id)
+            .map(|c| c.label)
+            .collect();
         custom.sort();
         let want = locked.as_deref().unwrap_or(wanted);
-        if let Some(v) = crate::php::pick_version(&installed, Some(want)).or_else(|| crate::php::pick_version(&custom, Some(want))) {
-            self.done("install", format!("{name} {v}"), SetupAction::InstallRuntime { id: id.into(), version: v.clone() });
+        if let Some(v) = crate::php::pick_version(&installed, Some(want))
+            .or_else(|| crate::php::pick_version(&custom, Some(want)))
+        {
+            self.done(
+                "install",
+                format!("{name} {v}"),
+                SetupAction::InstallRuntime {
+                    id: id.into(),
+                    version: v.clone(),
+                },
+            );
             return Some(v);
         }
-        let available: Vec<String> = crate::catalog::builtin_catalog().iter().filter(|m| m.id == id).map(|m| m.version.to_string()).collect();
+        let available: Vec<String> = crate::catalog::builtin_catalog()
+            .iter()
+            .filter(|m| m.id == id)
+            .map(|m| m.version.to_string())
+            .collect();
         if let Some(locked) = &locked {
-            if let Some(v) = crate::php::pick_version(&installed, Some(wanted)).or_else(|| crate::php::pick_version(&available, Some(wanted))) {
+            if let Some(v) = crate::php::pick_version(&installed, Some(wanted))
+                .or_else(|| crate::php::pick_version(&available, Some(wanted)))
+            {
                 self.conflict("runtime", false, format!("The lock file pins {name} {locked}, which isn't available; {v} matches the manifest's \"{wanted}\"."), "Use it; the lock file is updated after setup.");
                 return self.install_or_use(id, &name, &installed, v);
             }
@@ -882,43 +1431,106 @@ impl Planner<'_> {
         }
     }
 
-    fn install_or_use(&mut self, id: &str, name: &str, installed: &[String], v: String) -> Option<String> {
+    fn install_or_use(
+        &mut self,
+        id: &str,
+        name: &str,
+        installed: &[String],
+        v: String,
+    ) -> Option<String> {
         if installed.contains(&v) {
-            self.done("install", format!("{name} {v}"), SetupAction::InstallRuntime { id: id.into(), version: v.clone() });
+            self.done(
+                "install",
+                format!("{name} {v}"),
+                SetupAction::InstallRuntime {
+                    id: id.into(),
+                    version: v.clone(),
+                },
+            );
         } else {
-            self.step("install", format!("Install {name} {v}"), SetupAction::InstallRuntime { id: id.into(), version: v.clone() });
+            self.step(
+                "install",
+                format!("Install {name} {v}"),
+                SetupAction::InstallRuntime {
+                    id: id.into(),
+                    version: v.clone(),
+                },
+            );
         }
         Some(v)
     }
 
     /// Plans installing (if needed) and starting a service, with port conflict checks.
     fn service(&mut self, id: &str) {
-        if self.steps.iter().any(|s| matches!(&s.action, SetupAction::StartService { id: x } if x == id)) {
+        if self
+            .steps
+            .iter()
+            .any(|s| matches!(&s.action, SetupAction::StartService { id: x } if x == id))
+        {
             return;
         }
         let status = self.inner.services.status(id);
         if !crate::custom_service::is_custom_id(id) && !status.installed {
-            if let Some(m) = crate::catalog::builtin_catalog().into_iter().find(|m| m.id == id) {
-                self.step("install", format!("Install {} {}", m.name, m.version), SetupAction::InstallRuntime { id: id.into(), version: m.version.into() });
+            if let Some(m) = crate::catalog::builtin_catalog()
+                .into_iter()
+                .find(|m| m.id == id)
+            {
+                self.step(
+                    "install",
+                    format!("Install {} {}", m.name, m.version),
+                    SetupAction::InstallRuntime {
+                        id: id.into(),
+                        version: m.version.into(),
+                    },
+                );
             }
         }
         if status.running {
-            self.done("start", format!("{} is running", status.name), SetupAction::StartService { id: id.into() });
+            self.done(
+                "start",
+                format!("{} is running", status.name),
+                SetupAction::StartService { id: id.into() },
+            );
             return;
         }
         if let Some(port) = status.port {
-            if let crate::port::PortStatus::InUse { process_name, pid } = crate::port::check_port(port) {
-                let who = process_name.map(|n| format!("{n}{}", pid.map(|p| format!(" (PID {p})")).unwrap_or_default())).unwrap_or_else(|| "another program".into());
+            if let crate::port::PortStatus::InUse { process_name, pid } =
+                crate::port::check_port(port)
+            {
+                let who = process_name
+                    .map(|n| {
+                        format!(
+                            "{n}{}",
+                            pid.map(|p| format!(" (PID {p})")).unwrap_or_default()
+                        )
+                    })
+                    .unwrap_or_else(|| "another program".into());
                 self.conflict("port", true, format!("{} needs port {port}, which {who} is using.", status.name), "Stop that program yourself (OpenLocalServer never stops programs it didn't start), then plan again.");
             }
         }
-        self.step("start", format!("Start {}", status.name), SetupAction::StartService { id: id.into() });
+        self.step(
+            "start",
+            format!("Start {}", status.name),
+            SetupAction::StartService { id: id.into() },
+        );
     }
 
-    fn domain(&mut self, project_id: &str, path: &Path, det: &crate::detection::DetectionResult, dm: &DomainManifest, php: Option<&str>) -> Option<String> {
+    fn domain(
+        &mut self,
+        project_id: &str,
+        path: &Path,
+        det: &crate::detection::DetectionResult,
+        dm: &DomainManifest,
+        php: Option<&str>,
+    ) -> Option<String> {
         let host = dm.hostname.trim().to_ascii_lowercase();
         if host.is_empty() || !host.contains('.') {
-            self.conflict("domain", true, format!("\"{}\" is not a usable site name.", dm.hostname), "Use a name like shop.test.");
+            self.conflict(
+                "domain",
+                true,
+                format!("\"{}\" is not a usable site name.", dm.hostname),
+                "Use a name like shop.test.",
+            );
             return None;
         }
         let root_rel = dm.root.clone().or_else(|| det.doc_root.clone());
@@ -926,15 +1538,26 @@ impl Planner<'_> {
             Some(r) => match crate::quickapp::plan::safe_join(&path.display().to_string(), r) {
                 Ok(p) => p,
                 Err(e) => {
-                    self.conflict("domain", true, format!("The site root {r} is not allowed: {e}"), "Use a folder inside the project.");
+                    self.conflict(
+                        "domain",
+                        true,
+                        format!("The site root {r} is not allowed: {e}"),
+                        "Use a folder inside the project.",
+                    );
                     return None;
                 }
             },
             None => path.display().to_string(),
         };
         let kind = match dm.port {
-            Some(port) => SiteKind::Proxy { upstream_port: port, upstream_host: None, upstream_https: false },
-            None if is_php(&det.framework) => SiteKind::Php { version: php.map(|v| v.split('.').take(2).collect::<Vec<_>>().join(".")) },
+            Some(port) => SiteKind::Proxy {
+                upstream_port: port,
+                upstream_host: None,
+                upstream_https: false,
+            },
+            None if is_php(&det.framework) => SiteKind::Php {
+                version: php.map(|v| v.split('.').take(2).collect::<Vec<_>>().join(".")),
+            },
             None => SiteKind::Static,
         };
         let existing = self.inner.domains.lock().unwrap().get(&host);
@@ -956,8 +1579,17 @@ impl Planner<'_> {
         };
         match existing {
             Some(d) if d.project_id.as_deref().is_some_and(|p| p != project_id) => {
-                let other = d.project_id.and_then(|p| self.inner.projects.lock().unwrap().get(&p)).map(|p| p.name).unwrap_or_else(|| "another project".into());
-                self.conflict("domain", true, format!("{host} already belongs to {other}."), "Choose another domain.hostname, or remove that site first.");
+                let other = d
+                    .project_id
+                    .and_then(|p| self.inner.projects.lock().unwrap().get(&p))
+                    .map(|p| p.name)
+                    .unwrap_or_else(|| "another project".into());
+                self.conflict(
+                    "domain",
+                    true,
+                    format!("{host} already belongs to {other}."),
+                    "Choose another domain.hostname, or remove that site first.",
+                );
                 return None;
             }
             Some(d) => {
@@ -971,18 +1603,49 @@ impl Planner<'_> {
                     updated.wildcard = dm.wildcard;
                     updated.enabled = true;
                     updated.project_id = Some(project_id.to_string());
-                    self.step("configure", format!("Update {host} (HTTPS {}, wildcard {})", on_off(dm.https), on_off(dm.wildcard)), SetupAction::UpdateDomain { domain: Box::new(updated) });
+                    self.step(
+                        "configure",
+                        format!(
+                            "Update {host} (HTTPS {}, wildcard {})",
+                            on_off(dm.https),
+                            on_off(dm.wildcard)
+                        ),
+                        SetupAction::UpdateDomain {
+                            domain: Box::new(updated),
+                        },
+                    );
                 } else {
-                    self.done("configure", format!("Site {host}"), SetupAction::AddDomain { domain: Box::new(wanted) });
+                    self.done(
+                        "configure",
+                        format!("Site {host}"),
+                        SetupAction::AddDomain {
+                            domain: Box::new(wanted),
+                        },
+                    );
                 }
             }
             None => {
-                let label = format!("Add site {host}{}{} → {}", if dm.https { " with HTTPS" } else { "" }, if dm.wildcard { " and *." } else { "" }, match &kind {
-                    SiteKind::Proxy { upstream_port, .. } => format!("port {upstream_port}"),
-                    _ => root_rel.clone().unwrap_or_else(|| "project folder".into()),
-                });
-                let label = if dm.wildcard { label.replace(" and *.", &format!(" and *.{host}")) } else { label };
-                self.step("configure", label, SetupAction::AddDomain { domain: Box::new(wanted) });
+                let label = format!(
+                    "Add site {host}{}{} → {}",
+                    if dm.https { " with HTTPS" } else { "" },
+                    if dm.wildcard { " and *." } else { "" },
+                    match &kind {
+                        SiteKind::Proxy { upstream_port, .. } => format!("port {upstream_port}"),
+                        _ => root_rel.clone().unwrap_or_else(|| "project folder".into()),
+                    }
+                );
+                let label = if dm.wildcard {
+                    label.replace(" and *.", &format!(" and *.{host}"))
+                } else {
+                    label
+                };
+                self.step(
+                    "configure",
+                    label,
+                    SetupAction::AddDomain {
+                        domain: Box::new(wanted),
+                    },
+                );
             }
         }
 
@@ -991,12 +1654,27 @@ impl Planner<'_> {
         if !["test", "localhost", "internal", "example", "invalid"].contains(&tld) {
             let hosts = std::fs::read_to_string(crate::hosts::hosts_path()).unwrap_or_default();
             if crate::hosts::lists(&hosts, &host) {
-                self.done("configure", format!("{host} is in the hosts file"), SetupAction::SyncHosts);
+                self.done(
+                    "configure",
+                    format!("{host} is in the hosts file"),
+                    SetupAction::SyncHosts,
+                );
             } else {
-                self.step("configure", format!("Add {host} to the Windows hosts file (asks for administrator approval)"), SetupAction::SyncHosts);
+                self.step(
+                    "configure",
+                    format!(
+                        "Add {host} to the Windows hosts file (asks for administrator approval)"
+                    ),
+                    SetupAction::SyncHosts,
+                );
             }
             if dm.wildcard {
-                self.conflict("domain", false, format!("*.{host} can't be resolved through the hosts file."), "Use a .test name for wildcard sites; they resolve through the built-in DNS.");
+                self.conflict(
+                    "domain",
+                    false,
+                    format!("*.{host} can't be resolved through the hosts file."),
+                    "Use a .test name for wildcard sites; they resolve through the built-in DNS.",
+                );
             }
         }
 
@@ -1004,11 +1682,20 @@ impl Planner<'_> {
         if dm.https {
             let ca = self.inner.certs.ca_info();
             if !ca.trusted {
-                self.step("configure", "Trust the local certificate authority (one Windows confirmation)".to_string(), SetupAction::TrustCa);
+                self.step(
+                    "configure",
+                    "Trust the local certificate authority (one Windows confirmation)".to_string(),
+                    SetupAction::TrustCa,
+                );
             }
             if let Some(cert) = self.inner.certs.info(&host) {
                 if cert.status == crate::certs::CertStatus::Expired {
-                    self.conflict("certificate", false, format!("The certificate for {host} has expired."), "It is renewed when the web config is applied.");
+                    self.conflict(
+                        "certificate",
+                        false,
+                        format!("The certificate for {host} has expired."),
+                        "It is renewed when the web config is applied.",
+                    );
                 }
             }
         }
@@ -1021,7 +1708,12 @@ impl Planner<'_> {
             let def = match entry {
                 WorkerEntry::On(false) => continue,
                 WorkerEntry::On(true) => match crate::workers::default_command(framework) {
-                    Some(cmd) => crate::manifest::WorkerManifest { command: cmd.into(), count: 1, timeout_secs: None, memory_mb: None },
+                    Some(cmd) => crate::manifest::WorkerManifest {
+                        command: cmd.into(),
+                        count: 1,
+                        timeout_secs: None,
+                        memory_mb: None,
+                    },
                     None => {
                         self.conflict("manifest", true, format!("The \"{name}\" worker has no command, and this kind of project has no usual one."), "Give it one: workers: { name: { command: \"node worker.js\" } }.");
                         continue;
@@ -1030,8 +1722,15 @@ impl Planner<'_> {
                 WorkerEntry::Custom(w) => w.clone(),
             };
             let id = crate::workers::worker_id(project_id, name);
-            if existing.iter().any(|w| w.id == id && w.command == def.command && w.count == def.count.max(1)) {
-                self.done("configure", format!("Worker \"{name}\""), SetupAction::StartWorkers);
+            if existing
+                .iter()
+                .any(|w| w.id == id && w.command == def.command && w.count == def.count.max(1))
+            {
+                self.done(
+                    "configure",
+                    format!("Worker \"{name}\""),
+                    SetupAction::StartWorkers,
+                );
                 continue;
             }
             let worker = crate::workers::Worker {
@@ -1046,17 +1745,28 @@ impl Planner<'_> {
                 restart: true,
                 autostart: true,
             };
-            self.step("configure", format!("Add worker \"{name}\": {} × {}", worker.count, worker.command), SetupAction::AddWorker { worker: Box::new(worker) });
+            self.step(
+                "configure",
+                format!(
+                    "Add worker \"{name}\": {} × {}",
+                    worker.count, worker.command
+                ),
+                SetupAction::AddWorker {
+                    worker: Box::new(worker),
+                },
+            );
         }
 
         let tasks: Vec<crate::manifest::ScheduledTaskManifest> = match &manifest.scheduler {
-            Some(SchedulerEntry::On(true)) => match crate::scheduler::default_task(framework) {
-                Some(t) => vec![t],
-                None => {
-                    self.conflict("manifest", false, "scheduler: true, but this kind of project has no usual scheduler command.".to_string(), "List the tasks instead: scheduler: [{ name, schedule, command }].");
-                    vec![]
+            Some(SchedulerEntry::On(true)) => {
+                match crate::scheduler::default_task(framework) {
+                    Some(t) => vec![t],
+                    None => {
+                        self.conflict("manifest", false, "scheduler: true, but this kind of project has no usual scheduler command.".to_string(), "List the tasks instead: scheduler: [{ name, schedule, command }].");
+                        vec![]
+                    }
                 }
-            },
+            }
             Some(SchedulerEntry::Tasks(list)) => list.clone(),
             _ => vec![],
         };
@@ -1067,18 +1777,47 @@ impl Planner<'_> {
                 continue;
             }
             let id = crate::workers::worker_id(project_id, &t.name);
-            if existing.iter().any(|x| x.id == id && x.command == t.command && x.schedule == t.schedule) {
-                self.done("configure", format!("Scheduled task \"{}\"", t.name), SetupAction::WriteLock);
+            if existing
+                .iter()
+                .any(|x| x.id == id && x.command == t.command && x.schedule == t.schedule)
+            {
+                self.done(
+                    "configure",
+                    format!("Scheduled task \"{}\"", t.name),
+                    SetupAction::WriteLock,
+                );
                 continue;
             }
-            let task = crate::scheduler::ScheduledTask { id, project_id: Some(project_id.to_string()), name: t.name.clone(), schedule: t.schedule.clone(), command: t.command.clone(), enabled: true };
-            self.step("configure", format!("Schedule \"{}\" ({}): {}", t.name, crate::scheduler::describe(&t.schedule), t.command), SetupAction::AddSchedule { task: Box::new(task) });
+            let task = crate::scheduler::ScheduledTask {
+                id,
+                project_id: Some(project_id.to_string()),
+                name: t.name.clone(),
+                schedule: t.schedule.clone(),
+                command: t.command.clone(),
+                enabled: true,
+            };
+            self.step(
+                "configure",
+                format!(
+                    "Schedule \"{}\" ({}): {}",
+                    t.name,
+                    crate::scheduler::describe(&t.schedule),
+                    t.command
+                ),
+                SetupAction::AddSchedule {
+                    task: Box::new(task),
+                },
+            );
         }
     }
 }
 
 fn on_off(b: bool) -> &'static str {
-    if b { "on" } else { "off" }
+    if b {
+        "on"
+    } else {
+        "off"
+    }
 }
 
 /// For the CLI and the UI: the plan as the §76 text block.
@@ -1086,7 +1825,10 @@ pub fn plan_text(plan: &EnvironmentPlan) -> String {
     let mut groups: BTreeMap<usize, (String, Vec<String>)> = BTreeMap::new();
     let order = ["install", "create", "configure", "start", "tunnel", "check"];
     for s in &plan.steps {
-        let idx = order.iter().position(|g| *g == s.group).unwrap_or(order.len());
+        let idx = order
+            .iter()
+            .position(|g| *g == s.group)
+            .unwrap_or(order.len());
         let title = match s.group.as_str() {
             "install" => "Install",
             "create" => "Create",
@@ -1096,7 +1838,18 @@ pub fn plan_text(plan: &EnvironmentPlan) -> String {
             _ => "Check",
         };
         let mark = if s.done { "✓" } else { "•" };
-        groups.entry(idx).or_insert_with(|| (title.to_string(), Vec::new())).1.push(format!("  {mark} {}{}", s.label, s.note.as_ref().map(|n| format!("\n      {n}")).unwrap_or_default()));
+        groups
+            .entry(idx)
+            .or_insert_with(|| (title.to_string(), Vec::new()))
+            .1
+            .push(format!(
+                "  {mark} {}{}",
+                s.label,
+                s.note
+                    .as_ref()
+                    .map(|n| format!("\n      {n}"))
+                    .unwrap_or_default()
+            ));
     }
     let mut out = format!("Environment Plan: {}\n", plan.project_name);
     if !plan.manifest_found {
@@ -1108,7 +1861,12 @@ pub fn plan_text(plan: &EnvironmentPlan) -> String {
     if !plan.conflicts.is_empty() {
         out.push_str("\nConflicts:\n");
         for c in &plan.conflicts {
-            out.push_str(&format!("  {} [{}] {}\n", if c.blocking { "✗" } else { "⚠" }, c.kind, c.message));
+            out.push_str(&format!(
+                "  {} [{}] {}\n",
+                if c.blocking { "✗" } else { "⚠" },
+                c.kind,
+                c.message
+            ));
             if !c.resolution.is_empty() {
                 out.push_str(&format!("      → {}\n", c.resolution));
             }
@@ -1129,7 +1887,12 @@ mod tests {
     }
 
     fn register(core: &Core, dir: &Path) -> String {
-        match core.dispatch(CoreCommand::RegisterProject { path: dir.display().to_string() }).unwrap() {
+        match core
+            .dispatch(CoreCommand::RegisterProject {
+                path: dir.display().to_string(),
+            })
+            .unwrap()
+        {
             CoreResponse::Project { project } => project.id,
             _ => panic!(),
         }
@@ -1139,7 +1902,9 @@ mod tests {
     fn db_names_are_safe_identifiers() {
         assert_eq!(db_name_for("My-Shop 2"), "my_shop_2");
         assert_eq!(db_name_for("--"), "app");
-        assert!(crate::service::is_safe_identifier(&db_name_for("ünïcode-thing")));
+        assert!(crate::service::is_safe_identifier(&db_name_for(
+            "ünïcode-thing"
+        )));
     }
 
     #[test]
@@ -1152,19 +1917,49 @@ mod tests {
         std::fs::write(dir.join(".openlocalserver").join("environment.yaml"), "name: shop\nruntime:\n  php: \"8.4\"\ndomain:\n  hostname: shop.test\n  https: true\n  root: public\ndatabase:\n  engine: mysql\nservices:\n  redis: true\n").unwrap();
         let id = register(&core, &dir);
 
-        let CoreResponse::SetupPlan { plan } = core.dispatch(CoreCommand::PlanSetup { project_id: id.clone() }).unwrap() else { panic!() };
+        let CoreResponse::SetupPlan { plan } = core
+            .dispatch(CoreCommand::PlanSetup {
+                project_id: id.clone(),
+            })
+            .unwrap()
+        else {
+            panic!()
+        };
         assert!(plan.manifest_found);
         let labels: Vec<&str> = plan.steps.iter().map(|s| s.label.as_str()).collect();
         let text = labels.join("\n");
-        for want in ["PHP", "MariaDB database \"shop\"", "Redis", "shop.test", "environment.lock"] {
+        for want in [
+            "PHP",
+            "MariaDB database \"shop\"",
+            "Redis",
+            "shop.test",
+            "environment.lock",
+        ] {
             assert!(text.contains(want), "missing {want} in:\n{text}");
         }
         let pos = |needle: &str| labels.iter().position(|l| l.contains(needle)).unwrap();
-        assert!(pos("PHP") < pos("database") && pos("database") < pos("shop.test"), "§74 order: runtimes, database, domain");
+        assert!(
+            pos("PHP") < pos("database") && pos("database") < pos("shop.test"),
+            "§74 order: runtimes, database, domain"
+        );
 
-        let CoreResponse::Setup { report } = core.dispatch(CoreCommand::ApplySetup { project_id: id.clone(), dry_run: true }).unwrap() else { panic!() };
+        let CoreResponse::Setup { report } = core
+            .dispatch(CoreCommand::ApplySetup {
+                project_id: id.clone(),
+                dry_run: true,
+            })
+            .unwrap()
+        else {
+            panic!()
+        };
         assert!(report.dry_run && !report.running);
-        assert!(report.steps.iter().all(|s| matches!(s.status, StepStatus::Pending | StepStatus::Skipped)), "a dry run runs nothing");
+        assert!(
+            report
+                .steps
+                .iter()
+                .all(|s| matches!(s.status, StepStatus::Pending | StepStatus::Skipped)),
+            "a dry run runs nothing"
+        );
         assert!(!manifest::lock_path(&dir).exists());
     }
 
@@ -1176,19 +1971,62 @@ mod tests {
         for d in [&a, &b] {
             std::fs::create_dir_all(d.join(".openlocalserver")).unwrap();
             std::fs::write(d.join("index.html"), "hi").unwrap();
-            std::fs::write(d.join(".openlocalserver").join("environment.yaml"), "domain:\n  hostname: same.test\n").unwrap();
+            std::fs::write(
+                d.join(".openlocalserver").join("environment.yaml"),
+                "domain:\n  hostname: same.test\n",
+            )
+            .unwrap();
         }
         let a_id = register(&core, &a);
         let b_id = register(&core, &b);
-        let CoreResponse::SetupPlan { plan } = core.dispatch(CoreCommand::PlanSetup { project_id: a_id.clone() }).unwrap() else { panic!() };
-        let SetupAction::AddDomain { domain } = &plan.steps.iter().find(|s| matches!(s.action, SetupAction::AddDomain { .. })).unwrap().action else { panic!() };
+        let CoreResponse::SetupPlan { plan } = core
+            .dispatch(CoreCommand::PlanSetup {
+                project_id: a_id.clone(),
+            })
+            .unwrap()
+        else {
+            panic!()
+        };
+        let SetupAction::AddDomain { domain } = &plan
+            .steps
+            .iter()
+            .find(|s| matches!(s.action, SetupAction::AddDomain { .. }))
+            .unwrap()
+            .action
+        else {
+            panic!()
+        };
         core.inner().add_domain((**domain).clone()).unwrap();
 
-        let CoreResponse::SetupPlan { plan } = core.dispatch(CoreCommand::PlanSetup { project_id: b_id.clone() }).unwrap() else { panic!() };
+        let CoreResponse::SetupPlan { plan } = core
+            .dispatch(CoreCommand::PlanSetup {
+                project_id: b_id.clone(),
+            })
+            .unwrap()
+        else {
+            panic!()
+        };
         assert!(!plan.ok);
-        assert!(plan.conflicts.iter().any(|c| c.kind == "domain" && c.blocking && c.message.contains("a")), "{:?}", plan.conflicts);
-        let CoreResponse::Setup { report } = core.dispatch(CoreCommand::ApplySetup { project_id: b_id, dry_run: false }).unwrap() else { panic!() };
-        assert!(!report.ok && report.error.is_some(), "a blocked plan is never applied");
+        assert!(
+            plan.conflicts
+                .iter()
+                .any(|c| c.kind == "domain" && c.blocking && c.message.contains("a")),
+            "{:?}",
+            plan.conflicts
+        );
+        let CoreResponse::Setup { report } = core
+            .dispatch(CoreCommand::ApplySetup {
+                project_id: b_id,
+                dry_run: false,
+            })
+            .unwrap()
+        else {
+            panic!()
+        };
+        assert!(
+            !report.ok && report.error.is_some(),
+            "a blocked plan is never applied"
+        );
     }
 
     #[test]
@@ -1199,23 +2037,50 @@ mod tests {
         std::fs::write(dir.join("index.html"), "hi").unwrap();
         // The site is added, then the unknown-extension-free failure: SQLite needs sqlite3,
         // which isn't installed in a test home, so creating the database fails.
-        std::fs::write(dir.join(".openlocalserver").join("environment.yaml"), "domain:\n  hostname: roll.test\ndatabase:\n  engine: sqlite\n").unwrap();
+        std::fs::write(
+            dir.join(".openlocalserver").join("environment.yaml"),
+            "domain:\n  hostname: roll.test\ndatabase:\n  engine: sqlite\n",
+        )
+        .unwrap();
         let id = register(&core, &dir);
         let plan = core.inner().plan_setup(&id).unwrap();
         // Put the site before the database so there is something to roll back.
         let mut steps = plan.steps.clone();
-        let site = steps.iter().position(|s| matches!(s.action, SetupAction::AddDomain { .. })).unwrap();
+        let site = steps
+            .iter()
+            .position(|s| matches!(s.action, SetupAction::AddDomain { .. }))
+            .unwrap();
         let s = steps.remove(site);
         steps.insert(0, s);
         let plan = EnvironmentPlan { steps, ..plan };
         let mut report = SetupReport {
-            steps: plan.steps.iter().map(|s| StepResult { group: s.group.clone(), label: s.label.clone(), status: StepStatus::Pending, detail: None }).collect(),
+            steps: plan
+                .steps
+                .iter()
+                .map(|s| StepResult {
+                    group: s.group.clone(),
+                    label: s.label.clone(),
+                    status: StepStatus::Pending,
+                    detail: None,
+                })
+                .collect(),
             ..Default::default()
         };
         core.inner().run_plan(&plan, &mut report);
-        assert!(report.error.is_some(), "creating SQLite without sqlite3 fails");
+        assert!(
+            report.error.is_some(),
+            "creating SQLite without sqlite3 fails"
+        );
         assert_eq!(report.steps[0].status, StepStatus::RolledBack);
-        assert!(core.inner().domains.lock().unwrap().get("roll.test").is_none(), "the site added before the failure is gone");
+        assert!(
+            core.inner()
+                .domains
+                .lock()
+                .unwrap()
+                .get("roll.test")
+                .is_none(),
+            "the site added before the failure is gone"
+        );
         assert!(report.rolled_back.iter().any(|r| r.contains("roll.test")));
     }
 
@@ -1226,10 +2091,21 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("index.html"), "hi").unwrap();
         let id = register(&core, &dir);
-        let CoreResponse::SetupPlan { plan } = core.dispatch(CoreCommand::PlanSetup { project_id: id.clone() }).unwrap() else { panic!() };
+        let CoreResponse::SetupPlan { plan } = core
+            .dispatch(CoreCommand::PlanSetup {
+                project_id: id.clone(),
+            })
+            .unwrap()
+        else {
+            panic!()
+        };
         assert!(!plan.manifest_found);
         assert_eq!(plan.manifest.domain.as_ref().unwrap().hostname, "blog.test");
-        core.dispatch(CoreCommand::SaveManifest { project_id: id.clone(), manifest: None }).unwrap();
+        core.dispatch(CoreCommand::SaveManifest {
+            project_id: id.clone(),
+            manifest: None,
+        })
+        .unwrap();
         assert!(manifest::read_manifest(&dir).unwrap().is_some());
         assert!(plan_text(&plan).contains("Environment Plan: blog"));
     }

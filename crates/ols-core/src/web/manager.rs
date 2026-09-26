@@ -15,7 +15,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::{
-    server_by_id, Backend, Invocation, PoolSpec, Ports, ServerLayout, SiteSpec, WebConfig, WebServer, SERVER_IDS,
+    server_by_id, Backend, Invocation, PoolSpec, Ports, ServerLayout, SiteSpec, WebConfig,
+    WebServer, SERVER_IDS,
 };
 use crate::certs::CertificateManager;
 use crate::dns::DnsServer;
@@ -150,7 +151,10 @@ fn sha_hex(text: &str) -> String {
 }
 
 fn now_ms() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 fn werr(msg: impl Into<String>) -> CoreError {
@@ -171,7 +175,12 @@ impl WebManager {
             supervisor,
             certs,
             php,
-            state: Mutex::new(State { server: None, apps: HashMap::new(), dns: None, site_php: HashMap::new() }),
+            state: Mutex::new(State {
+                server: None,
+                apps: HashMap::new(),
+                dns: None,
+                site_php: HashMap::new(),
+            }),
         }
     }
 
@@ -192,11 +201,18 @@ impl WebManager {
             .installed_versions(id)
             .into_iter()
             .next()
-            .ok_or_else(|| werr(format!("{} is not installed. Install it from the Runtimes page first.", server.name())))?;
-        let binary = self
-            .runtimes
-            .binary_path(id, &version)
-            .ok_or_else(|| werr(format!("{} {version} is missing its executable", server.name())))?;
+            .ok_or_else(|| {
+                werr(format!(
+                    "{} is not installed. Install it from the Runtimes page first.",
+                    server.name()
+                ))
+            })?;
+        let binary = self.runtimes.binary_path(id, &version).ok_or_else(|| {
+            werr(format!(
+                "{} {version} is missing its executable",
+                server.name()
+            ))
+        })?;
         let prefix = self.paths.web_dir().join(id);
         Ok(ServerLayout {
             install_dir: self.runtimes.install_dir(id, &version),
@@ -209,11 +225,21 @@ impl WebManager {
     }
 
     fn history_dir(&self, server_id: &str, hostname: &str) -> PathBuf {
-        self.paths.web_dir().join(server_id).join("history").join(hostname)
+        self.paths
+            .web_dir()
+            .join(server_id)
+            .join("history")
+            .join(hostname)
     }
 
     /// Where a config file lives on disk.
-    fn file_path(&self, server: &dyn WebServer, layout: &ServerLayout, hostname: Option<&str>, part: ConfigPart) -> Result<PathBuf, CoreError> {
+    fn file_path(
+        &self,
+        server: &dyn WebServer,
+        layout: &ServerLayout,
+        hostname: Option<&str>,
+        part: ConfigPart,
+    ) -> Result<PathBuf, CoreError> {
         match (part, hostname) {
             (ConfigPart::Main, _) => Ok(server.main_config(layout)),
             (ConfigPart::Site, Some(h)) => Ok(layout.site_file(server.config_ext(), h)),
@@ -237,7 +263,10 @@ impl WebManager {
             .collect();
 
         let st = self.state.lock().unwrap();
-        let running = st.server.as_ref().is_some_and(|r| self.supervisor.is_alive(r.process));
+        let running = st
+            .server
+            .as_ref()
+            .is_some_and(|r| self.supervisor.is_alive(r.process));
         let mut port_conflicts = Vec::new();
         if !running {
             for (label, port) in [("HTTP", cfg.http_port), ("HTTPS", cfg.https_port)] {
@@ -254,10 +283,16 @@ impl WebManager {
         let apps = st
             .apps
             .iter()
-            .map(|(h, id)| AppStatus { hostname: h.clone(), running: self.supervisor.is_alive(*id) })
+            .map(|(h, id)| AppStatus {
+                hostname: h.clone(),
+                running: self.supervisor.is_alive(*id),
+            })
             .collect();
-        let error_log = server_by_id(&cfg.server)
-            .and_then(|s| self.layout(s.as_ref()).ok().map(|l| s.error_log(&l).display().to_string()));
+        let error_log = server_by_id(&cfg.server).and_then(|s| {
+            self.layout(s.as_ref())
+                .ok()
+                .map(|l| s.error_log(&l).display().to_string())
+        });
 
         WebStatus {
             server: cfg.server.clone(),
@@ -286,18 +321,33 @@ impl WebManager {
 
     pub fn is_running(&self) -> bool {
         let st = self.state.lock().unwrap();
-        st.server.as_ref().is_some_and(|r| self.supervisor.is_alive(r.process))
+        st.server
+            .as_ref()
+            .is_some_and(|r| self.supervisor.is_alive(r.process))
     }
 
     // ---------------------------------------------------------------- apply (§28)
 
-    pub fn apply(&self, ctx: &ApplyContext, domains: &mut DomainStore) -> Result<ApplyReport, CoreError> {
+    pub fn apply(
+        &self,
+        ctx: &ApplyContext,
+        domains: &mut DomainStore,
+    ) -> Result<ApplyReport, CoreError> {
         let cfg = ctx.cfg;
-        let server = server_by_id(&cfg.server).ok_or_else(|| werr(format!("unknown web server \"{}\"", cfg.server)))?;
+        let server = server_by_id(&cfg.server)
+            .ok_or_else(|| werr(format!("unknown web server \"{}\"", cfg.server)))?;
         let layout = self.layout(server.as_ref())?;
-        server.prepare(&layout).map_err(|e| werr(format!("could not prepare {}: {e}", server.name())))?;
-        let ports = Ports { http: cfg.http_port, https: cfg.https_port };
-        let mut report = ApplyReport { server: server.id().to_string(), ..Default::default() };
+        server
+            .prepare(&layout)
+            .map_err(|e| werr(format!("could not prepare {}: {e}", server.name())))?;
+        let ports = Ports {
+            http: cfg.http_port,
+            https: cfg.https_port,
+        };
+        let mut report = ApplyReport {
+            server: server.id().to_string(),
+            ..Default::default()
+        };
 
         // Only one server may own ports 80/443 — stop a different one before switching.
         self.stop_other_server(server.id());
@@ -311,7 +361,9 @@ impl WebManager {
         let mut versions_in_use = Vec::new();
         let mut site_php: HashMap<String, String> = HashMap::new();
         for d in &enabled {
-            let SiteKind::Php { version } = effective_kind(d) else { continue };
+            let SiteKind::Php { version } = effective_kind(d) else {
+                continue;
+            };
             let wanted = version.or_else(|| (ctx.php_for)(d));
             let picked = self.php.pick_version(wanted.as_deref()).ok_or_else(|| {
                 werr(match &wanted {
@@ -321,7 +373,10 @@ impl WebManager {
             })?;
             let ports_for_version = self.php.ensure(&picked, cfg.php_workers).map_err(werr)?;
             let pool_id = PhpPools::pool_id(&picked);
-            pool_specs.entry(pool_id.clone()).or_insert(PoolSpec { id: pool_id.clone(), ports: ports_for_version.clone() });
+            pool_specs.entry(pool_id.clone()).or_insert(PoolSpec {
+                id: pool_id.clone(),
+                ports: ports_for_version.clone(),
+            });
             site_pools.insert(d.hostname.clone(), (pool_id, ports_for_version));
             site_php.insert(d.hostname.clone(), picked.clone());
             versions_in_use.push(picked);
@@ -332,16 +387,23 @@ impl WebManager {
         // 2. Certificates, then the rendered site files.
         let mut rendered: Vec<(Domain, String)> = Vec::new();
         for d in &enabled {
-            let tls = if d.https { Some(self.certs.ensure_for(d).map_err(werr)?) } else { None };
+            let tls = if d.https {
+                Some(self.certs.ensure_for(d).map_err(werr)?)
+            } else {
+                None
+            };
             let backend = match &effective_kind(d) {
                 SiteKind::Php { .. } => {
                     let (pool, ports) = site_pools[&d.hostname].clone();
                     Backend::Php { pool, ports }
                 }
-                kind @ SiteKind::Proxy { .. } => Backend::Proxy { upstream: kind.upstream_url().unwrap_or_default() },
+                kind @ SiteKind::Proxy { .. } => Backend::Proxy {
+                    upstream: kind.upstream_url().unwrap_or_default(),
+                },
                 SiteKind::Static => Backend::Static,
             };
-            let custom_snippet = (d.ownership == Ownership::Advanced).then(|| layout.custom_file(server.config_ext(), &d.hostname));
+            let custom_snippet = (d.ownership == Ownership::Advanced)
+                .then(|| layout.custom_file(server.config_ext(), &d.hostname));
             let spec = SiteSpec {
                 hostname: d.hostname.clone(),
                 wildcard: d.wildcard,
@@ -363,13 +425,16 @@ impl WebManager {
         let ext = server.config_ext();
         let mut snapshot: HashMap<PathBuf, Option<String>> = HashMap::new();
         let mut remember = |p: &Path| {
-            snapshot.entry(p.to_path_buf()).or_insert_with(|| std::fs::read_to_string(p).ok());
+            snapshot
+                .entry(p.to_path_buf())
+                .or_insert_with(|| std::fs::read_to_string(p).ok());
         };
 
         let main_path = server.main_config(&layout);
         remember(&main_path);
         let mut new_hashes: Vec<(String, String)> = Vec::new();
-        let mut plan: Vec<(PathBuf, String, Option<String>)> = vec![(main_path.clone(), main_text, None)];
+        let mut plan: Vec<(PathBuf, String, Option<String>)> =
+            vec![(main_path.clone(), main_text, None)];
 
         for (d, text) in &rendered {
             let path = layout.site_file(ext, &d.hostname);
@@ -419,13 +484,24 @@ impl WebManager {
                 let custom = layout.custom_file(ext, &d.hostname);
                 if !custom.exists() && !plan.iter().any(|(p, _, _)| *p == custom) {
                     remember(&custom);
-                    plan.push((custom, format!("# Your own {} directives for {}.\n", server.name(), d.hostname), None));
+                    plan.push((
+                        custom,
+                        format!(
+                            "# Your own {} directives for {}.\n",
+                            server.name(),
+                            d.hostname
+                        ),
+                        None,
+                    ));
                 }
             }
         }
 
         // Stale site files (deleted or disabled domains) are removed, archived first.
-        let keep: Vec<String> = enabled.iter().map(|d| format!("{}.{ext}", d.hostname)).collect();
+        let keep: Vec<String> = enabled
+            .iter()
+            .map(|d| format!("{}.{ext}", d.hostname))
+            .collect();
         let mut stale: Vec<PathBuf> = Vec::new();
         if let Ok(entries) = std::fs::read_dir(&layout.sites_dir) {
             for e in entries.flatten() {
@@ -447,7 +523,10 @@ impl WebManager {
                 write_atomic(path, content)?;
             }
             for path in &stale {
-                if let (Some(stem), Ok(old)) = (path.file_name().and_then(|n| n.to_str()), std::fs::read_to_string(path)) {
+                if let (Some(stem), Ok(old)) = (
+                    path.file_name().and_then(|n| n.to_str()),
+                    std::fs::read_to_string(path),
+                ) {
                     let host = stem.trim_end_matches(&format!(".{ext}")).to_string();
                     self.archive(server.id(), &host, ConfigPart::Site, ext, &old);
                 }
@@ -491,13 +570,18 @@ impl WebManager {
         // DNS answers for whole reserved TLDs (.test), so those names never need the
         // admin-only hosts file; only names outside them are written there.
         let covered = self.sync_dns(cfg, &enabled, &mut report);
-        let mut hostnames: Vec<String> =
-            enabled.iter().map(|d| d.hostname.clone()).filter(|h| !covered.contains(&tld_of(h))).collect();
+        let mut hostnames: Vec<String> = enabled
+            .iter()
+            .map(|d| d.hostname.clone())
+            .filter(|h| !covered.contains(&tld_of(h)))
+            .collect();
         hostnames.sort();
         if !hostnames.is_empty() {
             match crate::hosts::ensure(&hostnames) {
                 Ok(changed) => report.hosts_updated = changed,
-                Err(e) => report.warnings.push(format!("The hosts file was not updated: {e}")),
+                Err(e) => report
+                    .warnings
+                    .push(format!("The hosts file was not updated: {e}")),
             }
         }
 
@@ -505,7 +589,13 @@ impl WebManager {
     }
 
     fn run_invocation(&self, layout: &ServerLayout, inv: &Invocation) -> crate::exec::Captured {
-        run_capture(&layout.binary, &inv.args, Some(&inv.cwd), &[], Duration::from_secs(30))
+        run_capture(
+            &layout.binary,
+            &inv.args,
+            Some(&inv.cwd),
+            &[],
+            Duration::from_secs(30),
+        )
     }
 
     fn stop_other_server(&self, keep_id: &str) {
@@ -528,7 +618,10 @@ impl WebManager {
     ) -> Result<(), CoreError> {
         let alive = {
             let st = self.state.lock().unwrap();
-            st.server.as_ref().filter(|r| r.id == server.id() && self.supervisor.is_alive(r.process)).map(|r| r.process)
+            st.server
+                .as_ref()
+                .filter(|r| r.id == server.id() && self.supervisor.is_alive(r.process))
+                .map(|r| r.process)
         };
 
         if let Some(process) = alive {
@@ -538,7 +631,10 @@ impl WebManager {
                     report.reloaded = true;
                     return Ok(());
                 }
-                report.warnings.push(format!("Reload failed, restarting instead: {}", out.combined()));
+                report.warnings.push(format!(
+                    "Reload failed, restarting instead: {}",
+                    out.combined()
+                ));
             }
             // No graceful reload (Apache in foreground mode) or it failed: restart.
             self.supervisor.stop(process);
@@ -572,9 +668,15 @@ impl WebManager {
         if let Err(msg) = self.wait_ready(process, cfg.http_port, Duration::from_secs(10)) {
             self.supervisor.stop(process);
             let log_tail = tail(&server.error_log(layout), 8);
-            return Err(werr(format!("{} did not start: {msg}{log_tail}", server.name())));
+            return Err(werr(format!(
+                "{} did not start: {msg}{log_tail}",
+                server.name()
+            )));
         }
-        self.state.lock().unwrap().server = Some(Running { id: server.id().to_string(), process });
+        self.state.lock().unwrap().server = Some(Running {
+            id: server.id().to_string(),
+            process,
+        });
         report.started = true;
         Ok(())
     }
@@ -584,14 +686,33 @@ impl WebManager {
         loop {
             if !self.supervisor.is_alive(process) {
                 let out = self.supervisor.recent_output(process);
-                let text = out.iter().rev().take(6).rev().cloned().collect::<Vec<_>>().join("\n");
-                return Err(if text.is_empty() { "the process exited immediately".into() } else { text });
+                let text = out
+                    .iter()
+                    .rev()
+                    .take(6)
+                    .rev()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                return Err(if text.is_empty() {
+                    "the process exited immediately".into()
+                } else {
+                    text
+                });
             }
-            if TcpStream::connect_timeout(&([127, 0, 0, 1], port).into(), Duration::from_millis(200)).is_ok() {
+            if TcpStream::connect_timeout(
+                &([127, 0, 0, 1], port).into(),
+                Duration::from_millis(200),
+            )
+            .is_ok()
+            {
                 return Ok(());
             }
             if started.elapsed() > timeout {
-                return Err(format!("nothing answered on port {port} within {}s", timeout.as_secs()));
+                return Err(format!(
+                    "nothing answered on port {port} within {}s",
+                    timeout.as_secs()
+                ));
             }
             std::thread::sleep(Duration::from_millis(100));
         }
@@ -629,8 +750,12 @@ impl WebManager {
         let wanted: Vec<&Domain> = enabled.iter().filter(|d| d.app.is_some()).collect();
 
         // Stop apps whose site was removed/disabled or lost its app command.
-        let stale: Vec<String> =
-            st.apps.keys().filter(|h| !wanted.iter().any(|d| &d.hostname == *h)).cloned().collect();
+        let stale: Vec<String> = st
+            .apps
+            .keys()
+            .filter(|h| !wanted.iter().any(|d| &d.hostname == *h))
+            .cloned()
+            .collect();
         for host in stale {
             if let Some(id) = st.apps.remove(&host) {
                 self.supervisor.stop(id);
@@ -638,7 +763,11 @@ impl WebManager {
         }
 
         for d in wanted {
-            if st.apps.get(&d.hostname).is_some_and(|id| self.supervisor.is_alive(*id)) {
+            if st
+                .apps
+                .get(&d.hostname)
+                .is_some_and(|id| self.supervisor.is_alive(*id))
+            {
                 continue;
             }
             let app = d.app.as_ref().expect("filtered above");
@@ -646,13 +775,18 @@ impl WebManager {
                 SiteKind::Proxy { upstream_port, .. } => Some(upstream_port),
                 _ => None,
             };
-            let bin_dir = app.runtime.as_deref().and_then(|rt| (ctx.runtime_bin)(d, rt));
+            let bin_dir = app
+                .runtime
+                .as_deref()
+                .and_then(|rt| (ctx.runtime_bin)(d, rt));
             match build_app_spec(&d.hostname, app, port, bin_dir.as_deref()) {
                 Ok(spec) => {
                     let id = self.supervisor.start(spec);
                     st.apps.insert(d.hostname.clone(), id);
                 }
-                Err(e) => report.warnings.push(format!("{}: could not start the app: {e}", d.hostname)),
+                Err(e) => report
+                    .warnings
+                    .push(format!("{}: could not start the app: {e}", d.hostname)),
             }
         }
     }
@@ -672,13 +806,25 @@ impl WebManager {
     /// adding or deleting `.test` domains needs no administrator rights at all. TLD rules
     /// are never removed automatically (that would prompt again, and routing a reserved TLD
     /// to localhost is harmless). Returns the TLDs whose names are fully handled here.
-    fn sync_dns(&self, cfg: &WebConfig, enabled: &[Domain], report: &mut ApplyReport) -> Vec<String> {
-        let mut tlds: Vec<String> = enabled.iter().map(|d| tld_of(&d.hostname)).filter(|t| SAFE_TLDS.contains(&t.as_str())).collect();
+    fn sync_dns(
+        &self,
+        cfg: &WebConfig,
+        enabled: &[Domain],
+        report: &mut ApplyReport,
+    ) -> Vec<String> {
+        let mut tlds: Vec<String> = enabled
+            .iter()
+            .map(|d| tld_of(&d.hostname))
+            .filter(|t| SAFE_TLDS.contains(&t.as_str()))
+            .collect();
         tlds.sort();
         tlds.dedup();
         // Wildcards under a TLD we already answer for need nothing extra.
-        let wildcards: Vec<String> =
-            enabled.iter().filter(|d| d.wildcard && !tlds.contains(&tld_of(&d.hostname))).map(|d| d.hostname.clone()).collect();
+        let wildcards: Vec<String> = enabled
+            .iter()
+            .filter(|d| d.wildcard && !tlds.contains(&tld_of(&d.hostname)))
+            .map(|d| d.hostname.clone())
+            .collect();
         let suffixes: Vec<String> = tlds.iter().chain(&wildcards).cloned().collect();
 
         let mut st = self.state.lock().unwrap();
@@ -690,7 +836,9 @@ impl WebManager {
             match DnsServer::start(cfg.dns_port, suffixes.clone()) {
                 Ok(dns) => st.dns = Some(dns),
                 Err(e) => {
-                    report.warnings.push(format!("Local DNS is not running ({e}); using the hosts file instead."));
+                    report.warnings.push(format!(
+                        "Local DNS is not running ({e}); using the hosts file instead."
+                    ));
                     return Vec::new();
                 }
             }
@@ -705,22 +853,35 @@ impl WebManager {
         let before = installed.clone();
         for suffix in &suffixes {
             if !installed.contains(suffix) {
-                match crate::elevate::run_helper(&["nrpt-add".into(), format!(".{suffix}"), "127.0.0.1".into()]) {
+                match crate::elevate::run_helper(&[
+                    "nrpt-add".into(),
+                    format!(".{suffix}"),
+                    "127.0.0.1".into(),
+                ]) {
                     Ok(()) => installed.push(suffix.clone()),
-                    Err(e) => report.warnings.push(format!("Windows DNS rule for .{suffix} was not added: {e}")),
+                    Err(e) => report
+                        .warnings
+                        .push(format!("Windows DNS rule for .{suffix} was not added: {e}")),
                 }
             }
         }
         // Rules for single wildcard sites outside our TLDs point real-world names at this
         // machine, so those are removed when their site goes.
-        let stale: Vec<String> = installed.iter().filter(|s| !suffixes.contains(s) && !SAFE_TLDS.contains(&s.as_str())).cloned().collect();
+        let stale: Vec<String> = installed
+            .iter()
+            .filter(|s| !suffixes.contains(s) && !SAFE_TLDS.contains(&s.as_str()))
+            .cloned()
+            .collect();
         for suffix in stale {
             if crate::elevate::run_helper(&["nrpt-remove".into(), format!(".{suffix}")]).is_ok() {
                 installed.retain(|s| *s != suffix);
             }
         }
         if installed != before {
-            let _ = std::fs::write(self.nrpt_file(), serde_json::to_string_pretty(&installed).unwrap_or_default());
+            let _ = std::fs::write(
+                self.nrpt_file(),
+                serde_json::to_string_pretty(&installed).unwrap_or_default(),
+            );
         }
         tlds.into_iter().filter(|t| installed.contains(t)).collect()
     }
@@ -729,7 +890,9 @@ impl WebManager {
     /// new name, for every server. Generated files are simply rewritten on the next apply.
     pub fn rename_site_files(&self, old: &str, new: &str) {
         for id in SERVER_IDS {
-            let Some(server) = server_by_id(id) else { continue };
+            let Some(server) = server_by_id(id) else {
+                continue;
+            };
             let root = self.paths.web_dir().join(id);
             let ext = server.config_ext();
             for dir in ["sites", "custom"] {
@@ -750,18 +913,27 @@ impl WebManager {
     }
 
     fn nrpt_rules(&self) -> Vec<String> {
-        std::fs::read_to_string(self.nrpt_file()).ok().and_then(|r| serde_json::from_str(&r).ok()).unwrap_or_default()
+        std::fs::read_to_string(self.nrpt_file())
+            .ok()
+            .and_then(|r| serde_json::from_str(&r).ok())
+            .unwrap_or_default()
     }
 
     /// Whether `hostname` resolves through our local DNS right now (no hosts entry needed).
     pub fn dns_covers(&self, hostname: &str) -> bool {
         let tld = tld_of(hostname);
-        self.state.lock().unwrap().dns.is_some() && SAFE_TLDS.contains(&tld.as_str()) && self.nrpt_rules().contains(&tld)
+        self.state.lock().unwrap().dns.is_some()
+            && SAFE_TLDS.contains(&tld.as_str())
+            && self.nrpt_rules().contains(&tld)
     }
 
     // ---------------------------------------------------------------- config files (§25–29)
 
-    pub fn list_configs(&self, cfg: &WebConfig, domains: &DomainStore) -> Result<Vec<ConfigFile>, CoreError> {
+    pub fn list_configs(
+        &self,
+        cfg: &WebConfig,
+        domains: &DomainStore,
+    ) -> Result<Vec<ConfigFile>, CoreError> {
         let server = server_by_id(&cfg.server).ok_or_else(|| werr("unknown web server"))?;
         let layout = self.layout(server.as_ref())?;
         let mut files = vec![ConfigFile {
@@ -774,9 +946,10 @@ impl WebManager {
         }];
         for d in domains.list() {
             let path = layout.site_file(server.config_ext(), &d.hostname);
-            let drifted = std::fs::read_to_string(&path).ok().zip(d.generated_hashes.get(server.id())).is_some_and(|(text, h)| {
-                d.ownership != Ownership::Manual && sha_hex(&text) != *h
-            });
+            let drifted = std::fs::read_to_string(&path)
+                .ok()
+                .zip(d.generated_hashes.get(server.id()))
+                .is_some_and(|(text, h)| d.ownership != Ownership::Manual && sha_hex(&text) != *h);
             files.push(ConfigFile {
                 hostname: Some(d.hostname.clone()),
                 part: ConfigPart::Site,
@@ -789,7 +962,10 @@ impl WebManager {
                 files.push(ConfigFile {
                     hostname: Some(d.hostname.clone()),
                     part: ConfigPart::Custom,
-                    path: layout.custom_file(server.config_ext(), &d.hostname).display().to_string(),
+                    path: layout
+                        .custom_file(server.config_ext(), &d.hostname)
+                        .display()
+                        .to_string(),
                     ownership: Some(d.ownership),
                     drifted: false,
                     editable: true,
@@ -799,11 +975,17 @@ impl WebManager {
         Ok(files)
     }
 
-    pub fn read_config(&self, cfg: &WebConfig, hostname: Option<&str>, part: ConfigPart) -> Result<String, CoreError> {
+    pub fn read_config(
+        &self,
+        cfg: &WebConfig,
+        hostname: Option<&str>,
+        part: ConfigPart,
+    ) -> Result<String, CoreError> {
         let server = server_by_id(&cfg.server).ok_or_else(|| werr("unknown web server"))?;
         let layout = self.layout(server.as_ref())?;
         let path = self.file_path(server.as_ref(), &layout, hostname, part)?;
-        std::fs::read_to_string(&path).map_err(|e| werr(format!("could not read {}: {e}", path.display())))
+        std::fs::read_to_string(&path)
+            .map_err(|e| werr(format!("could not read {}: {e}", path.display())))
     }
 
     /// Saves an edit through the same pipeline as a full apply (§28): archive, write,
@@ -818,7 +1000,9 @@ impl WebManager {
     ) -> Result<String, CoreError> {
         let server = server_by_id(&cfg.server).ok_or_else(|| werr("unknown web server"))?;
         let layout = self.layout(server.as_ref())?;
-        let domain = domains.get(hostname).ok_or_else(|| werr(format!("{hostname} is not a known domain")))?;
+        let domain = domains
+            .get(hostname)
+            .ok_or_else(|| werr(format!("{hostname} is not a known domain")))?;
 
         match (part, domain.ownership) {
             (ConfigPart::Main, _) => return Err(werr("The main config is generated by OpenLocalServer and can't be edited here.")),
@@ -839,7 +1023,8 @@ impl WebManager {
             self.archive(server.id(), hostname, part, ext, old);
         }
         std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| werr(e.to_string()))?;
-        write_atomic(&path, content).map_err(|e| werr(format!("could not write {}: {e}", path.display())))?;
+        write_atomic(&path, content)
+            .map_err(|e| werr(format!("could not write {}: {e}", path.display())))?;
 
         let check = self.run_invocation(&layout, &server.validate(&layout));
         if !check.success() {
@@ -860,7 +1045,8 @@ impl WebManager {
 
         if part == ConfigPart::Site {
             let mut d = domain;
-            d.generated_hashes.insert(server.id().to_string(), sha_hex(content));
+            d.generated_hashes
+                .insert(server.id().to_string(), sha_hex(content));
             let _ = domains.update(d);
         }
 
@@ -879,7 +1065,9 @@ impl WebManager {
         hostname: &str,
         ownership: Ownership,
     ) -> Result<(), CoreError> {
-        let mut d = domains.get(hostname).ok_or_else(|| werr(format!("{hostname} is not a known domain")))?;
+        let mut d = domains
+            .get(hostname)
+            .ok_or_else(|| werr(format!("{hostname} is not a known domain")))?;
         if d.ownership == ownership {
             return Ok(());
         }
@@ -893,13 +1081,15 @@ impl WebManager {
                     self.archive(server.id(), hostname, ConfigPart::Site, ext, &old);
                     if ownership == Ownership::Manual {
                         // The current generated content becomes the user's starting point.
-                        d.generated_hashes.insert(server.id().to_string(), sha_hex(&old));
+                        d.generated_hashes
+                            .insert(server.id().to_string(), sha_hex(&old));
                     }
                 }
                 if ownership == Ownership::Advanced {
                     let custom = layout.custom_file(ext, hostname);
                     if !custom.exists() {
-                        std::fs::create_dir_all(&layout.custom_dir).map_err(|e| werr(e.to_string()))?;
+                        std::fs::create_dir_all(&layout.custom_dir)
+                            .map_err(|e| werr(e.to_string()))?;
                         write_atomic(
                             &custom,
                             &format!("# Your own {} directives for {hostname}. OpenLocalServer never overwrites this file.\n", server.name()),
@@ -922,13 +1112,23 @@ impl WebManager {
             return;
         }
         // Skip a byte-identical duplicate of the newest entry.
-        if let Some(latest) = self.list_history_raw(server_id, hostname).into_iter().max_by_key(|v| v.timestamp_ms) {
+        if let Some(latest) = self
+            .list_history_raw(server_id, hostname)
+            .into_iter()
+            .max_by_key(|v| v.timestamp_ms)
+        {
             let latest_path = dir.join(format!("{}.{ext}", latest.id));
-            if latest.part == part && std::fs::read_to_string(latest_path).ok().as_deref() == Some(content) {
+            if latest.part == part
+                && std::fs::read_to_string(latest_path).ok().as_deref() == Some(content)
+            {
                 return;
             }
         }
-        let tag = if part == ConfigPart::Custom { "custom" } else { "site" };
+        let tag = if part == ConfigPart::Custom {
+            "custom"
+        } else {
+            "site"
+        };
         let mut ts = now_ms();
         // Two archives within one millisecond must not collide.
         while dir.join(format!("{ts}-{tag}.{ext}")).exists() {
@@ -938,14 +1138,26 @@ impl WebManager {
     }
 
     fn list_history_raw(&self, server_id: &str, hostname: &str) -> Vec<ConfigVersion> {
-        let Ok(entries) = std::fs::read_dir(self.history_dir(server_id, hostname)) else { return Vec::new() };
+        let Ok(entries) = std::fs::read_dir(self.history_dir(server_id, hostname)) else {
+            return Vec::new();
+        };
         let mut out = Vec::new();
         for e in entries.flatten() {
             let path = e.path();
-            let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else { continue };
-            let Some((ts, tag)) = stem.split_once('-') else { continue };
-            let Ok(timestamp_ms) = ts.parse::<u64>() else { continue };
-            let part = if tag == "custom" { ConfigPart::Custom } else { ConfigPart::Site };
+            let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            let Some((ts, tag)) = stem.split_once('-') else {
+                continue;
+            };
+            let Ok(timestamp_ms) = ts.parse::<u64>() else {
+                continue;
+            };
+            let part = if tag == "custom" {
+                ConfigPart::Custom
+            } else {
+                ConfigPart::Site
+            };
             out.push(ConfigVersion {
                 id: stem.to_string(),
                 part,
@@ -962,40 +1174,73 @@ impl WebManager {
         v
     }
 
-    pub fn read_history(&self, cfg: &WebConfig, hostname: &str, id: &str) -> Result<String, CoreError> {
+    pub fn read_history(
+        &self,
+        cfg: &WebConfig,
+        hostname: &str,
+        id: &str,
+    ) -> Result<String, CoreError> {
         let server = server_by_id(&cfg.server).ok_or_else(|| werr("unknown web server"))?;
         if id.contains(['/', '\\', '.']) {
             return Err(werr("invalid history id"));
         }
-        let path = self.history_dir(server.id(), hostname).join(format!("{id}.{}", server.config_ext()));
-        std::fs::read_to_string(&path).map_err(|e| werr(format!("could not read that version: {e}")))
+        let path = self
+            .history_dir(server.id(), hostname)
+            .join(format!("{id}.{}", server.config_ext()));
+        std::fs::read_to_string(&path)
+            .map_err(|e| werr(format!("could not read that version: {e}")))
     }
 
     /// Restores an old version through the normal validated write path.
-    pub fn restore_history(&self, cfg: &WebConfig, domains: &mut DomainStore, hostname: &str, id: &str) -> Result<String, CoreError> {
+    pub fn restore_history(
+        &self,
+        cfg: &WebConfig,
+        domains: &mut DomainStore,
+        hostname: &str,
+        id: &str,
+    ) -> Result<String, CoreError> {
         let content = self.read_history(cfg, hostname, id)?;
-        let part = if id.ends_with("-custom") { ConfigPart::Custom } else { ConfigPart::Site };
+        let part = if id.ends_with("-custom") {
+            ConfigPart::Custom
+        } else {
+            ConfigPart::Site
+        };
         self.write_config(cfg, domains, hostname, part, &content)
     }
 
     /// Copies a config file (or a history version) to `dest` so it can be shared or diffed elsewhere.
-    pub fn export_config(&self, cfg: &WebConfig, hostname: &str, part: ConfigPart, dest: &str) -> Result<(), CoreError> {
+    pub fn export_config(
+        &self,
+        cfg: &WebConfig,
+        hostname: &str,
+        part: ConfigPart,
+        dest: &str,
+    ) -> Result<(), CoreError> {
         let text = self.read_config(cfg, Some(hostname), part)?;
         std::fs::write(dest, text).map_err(|e| werr(format!("could not export: {e}")))
     }
 
     /// `log`'s last lines, for the Logs page.
     pub fn error_log_tail(&self, cfg: &WebConfig, lines: usize) -> Vec<String> {
-        let Some(server) = server_by_id(&cfg.server) else { return Vec::new() };
-        let Ok(layout) = self.layout(server.as_ref()) else { return Vec::new() };
+        let Some(server) = server_by_id(&cfg.server) else {
+            return Vec::new();
+        };
+        let Ok(layout) = self.layout(server.as_ref()) else {
+            return Vec::new();
+        };
         read_tail(&server.error_log(&layout), lines)
     }
 }
 
 fn read_tail(path: &Path, lines: usize) -> Vec<String> {
-    let Ok(text) = std::fs::read_to_string(path) else { return Vec::new() };
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
     let all: Vec<&str> = text.lines().collect();
-    all[all.len().saturating_sub(lines)..].iter().map(|s| s.to_string()).collect()
+    all[all.len().saturating_sub(lines)..]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
 }
 
 fn tail(path: &Path, lines: usize) -> String {
@@ -1037,7 +1282,12 @@ fn wait_port_free_all(timeout: Duration) {
 
 /// Finds `exe` (with common Windows extensions) in `dir`, or on PATH when `dir` is None.
 pub fn find_executable(dir: Option<&Path>, exe: &str) -> Option<PathBuf> {
-    let candidates = [exe.to_string(), format!("{exe}.exe"), format!("{exe}.cmd"), format!("{exe}.bat")];
+    let candidates = [
+        exe.to_string(),
+        format!("{exe}.exe"),
+        format!("{exe}.cmd"),
+        format!("{exe}.bat"),
+    ];
     let search = |d: &Path| candidates.iter().map(|c| d.join(c)).find(|p| p.is_file());
     if let Some(dir) = dir {
         if let Some(found) = search(dir) {
@@ -1050,11 +1300,23 @@ pub fn find_executable(dir: Option<&Path>, exe: &str) -> Option<PathBuf> {
 
 /// Builds the supervised process for a site's app: the runtime's bin dir goes first on
 /// PATH, `PORT` tells the dev server where to listen, and `.cmd` shims (npm) run via cmd.exe.
-pub fn build_app_spec(hostname: &str, app: &AppSpec, port: Option<u16>, bin_dir: Option<&Path>) -> Result<ProcessSpec, String> {
+pub fn build_app_spec(
+    hostname: &str,
+    app: &AppSpec,
+    port: Option<u16>,
+    bin_dir: Option<&Path>,
+) -> Result<ProcessSpec, String> {
     let found = find_executable(bin_dir, &app.executable).ok_or_else(|| {
-        format!("\"{}\" was not found. Install the {} runtime or add it to PATH.", app.executable, app.runtime.as_deref().unwrap_or("required"))
+        format!(
+            "\"{}\" was not found. Install the {} runtime or add it to PATH.",
+            app.executable,
+            app.runtime.as_deref().unwrap_or("required")
+        )
     })?;
-    let is_shim = found.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("cmd") || e.eq_ignore_ascii_case("bat"));
+    let is_shim = found
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("cmd") || e.eq_ignore_ascii_case("bat"));
     let (executable, args) = if is_shim {
         let mut args = vec!["/C".to_string(), found.display().to_string()];
         args.extend(app.args.iter().cloned());
@@ -1108,25 +1370,52 @@ mod tests {
     #[test]
     fn static_site_with_an_index_php_is_served_as_php_not_downloaded() {
         let dir = tempfile::tempdir().unwrap();
-        assert!(matches!(effective_kind(&static_domain(dir.path())), SiteKind::Static));
+        assert!(matches!(
+            effective_kind(&static_domain(dir.path())),
+            SiteKind::Static
+        ));
         std::fs::write(dir.path().join("index.html"), "hi").unwrap();
-        assert!(matches!(effective_kind(&static_domain(dir.path())), SiteKind::Static), "plain HTML stays static");
+        assert!(
+            matches!(effective_kind(&static_domain(dir.path())), SiteKind::Static),
+            "plain HTML stays static"
+        );
         std::fs::create_dir_all(dir.path().join("node_modules").join("pkg")).unwrap();
-        std::fs::write(dir.path().join("node_modules").join("pkg").join("x.php"), "<?php").unwrap();
-        assert!(matches!(effective_kind(&static_domain(dir.path())), SiteKind::Static), "dependency folders don't count");
+        std::fs::write(
+            dir.path().join("node_modules").join("pkg").join("x.php"),
+            "<?php",
+        )
+        .unwrap();
+        assert!(
+            matches!(effective_kind(&static_domain(dir.path())), SiteKind::Static),
+            "dependency folders don't count"
+        );
         std::fs::create_dir_all(dir.path().join("contact")).unwrap();
         std::fs::write(dir.path().join("contact").join("Send.PHP"), "<?php").unwrap();
-        assert!(matches!(effective_kind(&static_domain(dir.path())), SiteKind::Php { version: None }), "php in a subfolder needs the PHP handler too");
+        assert!(
+            matches!(
+                effective_kind(&static_domain(dir.path())),
+                SiteKind::Php { version: None }
+            ),
+            "php in a subfolder needs the PHP handler too"
+        );
     }
 
     #[test]
     fn app_spec_puts_the_runtime_first_on_path_and_sets_port() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("npm.cmd"), "@echo off").unwrap();
-        let app = AppSpec { executable: "npm".into(), args: vec!["run".into(), "dev".into()], cwd: "C:/app".into(), runtime: Some("node".into()) };
+        let app = AppSpec {
+            executable: "npm".into(),
+            args: vec!["run".into(), "dev".into()],
+            cwd: "C:/app".into(),
+            runtime: Some("node".into()),
+        };
         let spec = build_app_spec("c.test", &app, Some(5173), Some(dir.path())).unwrap();
 
-        assert_eq!(spec.executable, "cmd.exe", ".cmd shims must run through cmd.exe");
+        assert_eq!(
+            spec.executable, "cmd.exe",
+            ".cmd shims must run through cmd.exe"
+        );
         assert_eq!(spec.args[0], "/C");
         assert!(spec.args.iter().any(|a| a.ends_with("npm.cmd")));
         assert_eq!(&spec.args[spec.args.len() - 2..], ["run", "dev"]);
@@ -1137,7 +1426,12 @@ mod tests {
 
     #[test]
     fn missing_executable_gives_a_helpful_error() {
-        let app = AppSpec { executable: "definitely-not-installed-xyz".into(), args: vec![], cwd: ".".into(), runtime: Some("node".into()) };
+        let app = AppSpec {
+            executable: "definitely-not-installed-xyz".into(),
+            args: vec![],
+            cwd: ".".into(),
+            runtime: Some("node".into()),
+        };
         let err = build_app_spec("c.test", &app, None, None).unwrap_err();
         assert!(err.contains("was not found"));
     }
@@ -1175,12 +1469,18 @@ fn effective_kind(d: &Domain) -> SiteKind {
 /// downloads just the same as a top-level one). Dependency and VCS folders are skipped:
 /// a `node_modules` package shipping a stray PHP file doesn't make the site PHP.
 fn has_php(dir: &Path, depth: u8) -> bool {
-    let Ok(rd) = std::fs::read_dir(dir) else { return false };
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return false;
+    };
     let mut subdirs = Vec::new();
     for e in rd.flatten() {
         let path = e.path();
         let Ok(ft) = e.file_type() else { continue };
-        if ft.is_file() && path.extension().is_some_and(|x| x.eq_ignore_ascii_case("php")) {
+        if ft.is_file()
+            && path
+                .extension()
+                .is_some_and(|x| x.eq_ignore_ascii_case("php"))
+        {
             return true;
         }
         if ft.is_dir() && depth > 0 {
@@ -1199,5 +1499,10 @@ fn has_php(dir: &Path, depth: u8) -> bool {
 const SAFE_TLDS: &[&str] = &["test", "localhost", "example", "invalid", "internal"];
 
 fn tld_of(hostname: &str) -> String {
-    hostname.trim_end_matches('.').rsplit('.').next().unwrap_or_default().to_ascii_lowercase()
+    hostname
+        .trim_end_matches('.')
+        .rsplit('.')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase()
 }

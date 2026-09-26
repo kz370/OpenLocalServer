@@ -58,7 +58,12 @@ impl CustomInstallStore {
             if let Some(found) = self.find(id, v) {
                 return Some(found);
             }
-            let labels: Vec<String> = self.entries.iter().filter(|e| e.id == id).map(|e| e.label.clone()).collect();
+            let labels: Vec<String> = self
+                .entries
+                .iter()
+                .filter(|e| e.id == id)
+                .map(|e| e.label.clone())
+                .collect();
             if let Some(best) = crate::php::pick_version(&labels, Some(v)) {
                 return self.find(id, &best);
             }
@@ -79,7 +84,11 @@ impl CustomInstallStore {
             return Err(CoreError::InvalidProjectPath(path.to_string()));
         }
         self.entries.retain(|e| !(e.id == id && e.label == label));
-        self.entries.push(CustomInstall { id: id.to_string(), label: label.to_string(), path: path.to_string() });
+        self.entries.push(CustomInstall {
+            id: id.to_string(),
+            label: label.to_string(),
+            path: path.to_string(),
+        });
         self.persist()
     }
 
@@ -106,7 +115,9 @@ mod tests {
         let home = crate::test_support::isolated_home();
         let mut store = CustomInstallStore::load(&home.paths).unwrap();
         let bogus = home.paths.root().join("nope.exe");
-        let err = store.set("heidisql", "", bogus.to_str().unwrap()).unwrap_err();
+        let err = store
+            .set("heidisql", "", bogus.to_str().unwrap())
+            .unwrap_err();
         assert!(matches!(err, CoreError::InvalidProjectPath(_)));
     }
 
@@ -133,7 +144,10 @@ mod tests {
         let mut store = CustomInstallStore::load(&home.paths).unwrap();
         store.set("php", "8.1", exe.to_str().unwrap()).unwrap();
 
-        assert_eq!(store.resolve("php", Some("8.1")).unwrap().path, exe.to_str().unwrap());
+        assert_eq!(
+            store.resolve("php", Some("8.1")).unwrap().path,
+            exe.to_str().unwrap()
+        );
         assert!(store.resolve("php", Some("8.3")).is_none());
     }
 
@@ -149,7 +163,11 @@ mod tests {
         store.set("php", "8.3.9", old.to_str().unwrap()).unwrap();
         store.set("php", "8.3.30", new.to_str().unwrap()).unwrap();
 
-        assert_eq!(store.resolve("php", Some("8.3")).unwrap().label, "8.3.30", "newest 8.3.x wins");
+        assert_eq!(
+            store.resolve("php", Some("8.3")).unwrap().label,
+            "8.3.30",
+            "newest 8.3.x wins"
+        );
         assert_eq!(store.resolve("php", Some("8.3.9")).unwrap().label, "8.3.9");
         assert!(store.resolve("php", Some("8.4")).is_none());
     }
@@ -162,7 +180,10 @@ mod tests {
         let mut store = CustomInstallStore::load(&home.paths).unwrap();
         store.set("heidisql", "", exe.to_str().unwrap()).unwrap();
 
-        assert_eq!(store.resolve("heidisql", None).unwrap().path, exe.to_str().unwrap());
+        assert_eq!(
+            store.resolve("heidisql", None).unwrap().path,
+            exe.to_str().unwrap()
+        );
     }
 
     #[test]
@@ -176,7 +197,10 @@ mod tests {
         store.set("php", "8.1", exe_a.to_str().unwrap()).unwrap();
         store.set("php", "8.3", exe_b.to_str().unwrap()).unwrap();
 
-        assert!(store.resolve("php", None).is_none(), "ambiguous — must not silently pick one");
+        assert!(
+            store.resolve("php", None).is_none(),
+            "ambiguous — must not silently pick one"
+        );
     }
 
     #[test]
@@ -192,6 +216,9 @@ mod tests {
         store.set("php", "8.1", exe_b.to_str().unwrap()).unwrap();
 
         assert_eq!(store.list().len(), 1);
-        assert_eq!(store.find("php", "8.1").unwrap().path, exe_b.to_str().unwrap());
+        assert_eq!(
+            store.find("php", "8.1").unwrap().path,
+            exe_b.to_str().unwrap()
+        );
     }
 }

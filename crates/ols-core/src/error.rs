@@ -41,15 +41,31 @@ pub enum CoreError {
 
     /// Plugins, catalogs, updates, load tests and the AI assistant: says what was being done.
     #[error("{problem}: {cause}")]
-    Failed { problem: String, cause: String, fix: Option<String> },
+    Failed {
+        problem: String,
+        cause: String,
+        fix: Option<String>,
+    },
 }
 
 impl CoreError {
     pub fn failed(problem: impl Into<String>, cause: impl Into<String>) -> Self {
-        CoreError::Failed { problem: problem.into(), cause: cause.into(), fix: None }
+        CoreError::Failed {
+            problem: problem.into(),
+            cause: cause.into(),
+            fix: None,
+        }
     }
-    pub fn failed_fix(problem: impl Into<String>, cause: impl Into<String>, fix: impl Into<String>) -> Self {
-        CoreError::Failed { problem: problem.into(), cause: cause.into(), fix: Some(fix.into()) }
+    pub fn failed_fix(
+        problem: impl Into<String>,
+        cause: impl Into<String>,
+        fix: impl Into<String>,
+    ) -> Self {
+        CoreError::Failed {
+            problem: problem.into(),
+            cause: cause.into(),
+            fix: Some(fix.into()),
+        }
     }
 }
 
@@ -68,12 +84,17 @@ impl From<&CoreError> for Diagnostic {
             CoreError::Io(e) => Diagnostic {
                 problem: "A file operation failed.".into(),
                 cause: e.to_string(),
-                fix: Some("Check that OpenLocalServer has permission to write to its data directory.".into()),
+                fix: Some(
+                    "Check that OpenLocalServer has permission to write to its data directory."
+                        .into(),
+                ),
             },
             CoreError::Json(e) => Diagnostic {
                 problem: "Settings could not be read or written.".into(),
                 cause: e.to_string(),
-                fix: Some("The settings file may be corrupted. Consider restoring a backup.".into()),
+                fix: Some(
+                    "The settings file may be corrupted. Consider restoring a backup.".into(),
+                ),
             },
             CoreError::UnknownKey(k) => Diagnostic {
                 problem: format!("Setting \"{k}\" does not exist."),
@@ -98,7 +119,10 @@ impl From<&CoreError> for Diagnostic {
             CoreError::WebError(msg) => Diagnostic {
                 problem: "The web server operation failed.".into(),
                 cause: msg.clone(),
-                fix: Some("Check the web-server log on the Logs page, fix the config, and apply again.".into()),
+                fix: Some(
+                    "Check the web-server log on the Logs page, fix the config, and apply again."
+                        .into(),
+                ),
             },
             CoreError::QuickAppError(msg) => Diagnostic {
                 problem: "That Quick App or Quick Command couldn't be used.".into(),
@@ -108,15 +132,30 @@ impl From<&CoreError> for Diagnostic {
             CoreError::EnvError(msg) => Diagnostic {
                 problem: "The project environment couldn't be set up.".into(),
                 cause: msg.clone(),
-                fix: Some("Check the project's .openlocalserver files, or review the plan's conflicts.".into()),
+                fix: Some(
+                    "Check the project's .openlocalserver files, or review the plan's conflicts."
+                        .into(),
+                ),
             },
-            CoreError::GitError(msg) => Diagnostic { problem: "Git reported a problem.".into(), cause: msg.clone(), fix: None },
+            CoreError::GitError(msg) => Diagnostic {
+                problem: "Git reported a problem.".into(),
+                cause: msg.clone(),
+                fix: None,
+            },
             CoreError::TunnelError(msg) => Diagnostic {
                 problem: "The tunnel operation failed.".into(),
                 cause: msg.clone(),
                 fix: Some("Check the tunnel's log on the Tunnels page.".into()),
             },
-            CoreError::Failed { problem, cause, fix } => Diagnostic { problem: problem.clone(), cause: cause.clone(), fix: fix.clone() },
+            CoreError::Failed {
+                problem,
+                cause,
+                fix,
+            } => Diagnostic {
+                problem: problem.clone(),
+                cause: cause.clone(),
+                fix: fix.clone(),
+            },
         }
     }
 }

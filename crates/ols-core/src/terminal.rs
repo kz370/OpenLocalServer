@@ -114,7 +114,11 @@ pub fn decode_chunk(pending: &mut Vec<u8>, incoming: &[u8]) -> String {
 impl TerminalManager {
     pub fn new() -> Self {
         let (events, _) = broadcast::channel(1024);
-        Self { next_id: AtomicU32::new(1), sessions: Arc::new(Mutex::new(HashMap::new())), events }
+        Self {
+            next_id: AtomicU32::new(1),
+            sessions: Arc::new(Mutex::new(HashMap::new())),
+            events,
+        }
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<TerminalEvent> {
@@ -123,11 +127,18 @@ impl TerminalManager {
 
     pub fn open(&self, spec: TerminalSpec) -> Result<u32, String> {
         if self.sessions.lock().unwrap().len() >= MAX_SESSIONS {
-            return Err(format!("{MAX_SESSIONS} terminals are already open. Close one first."));
+            return Err(format!(
+                "{MAX_SESSIONS} terminals are already open. Close one first."
+            ));
         }
         let (program, args) = shell_command(spec.shell.as_deref())?;
         let pair = native_pty_system()
-            .openpty(PtySize { rows: spec.rows.max(2), cols: spec.cols.max(10), pixel_width: 0, pixel_height: 0 })
+            .openpty(PtySize {
+                rows: spec.rows.max(2),
+                cols: spec.cols.max(10),
+                pixel_width: 0,
+                pixel_height: 0,
+            })
             .map_err(|e| format!("could not open a terminal: {e}"))?;
 
         let mut cmd = CommandBuilder::new(program);
@@ -140,13 +151,23 @@ impl TerminalManager {
         }
         cmd.env("TERM", "xterm-256color");
 
-        let child = pair.slave.spawn_command(cmd).map_err(|e| format!("could not start {program}: {e}"))?;
+        let child = pair
+            .slave
+            .spawn_command(cmd)
+            .map_err(|e| format!("could not start {program}: {e}"))?;
         drop(pair.slave);
         let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
         let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
 
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
-        self.sessions.lock().unwrap().insert(id, Session { master: pair.master, writer, child });
+        self.sessions.lock().unwrap().insert(
+            id,
+            Session {
+                master: pair.master,
+                writer,
+                child,
+            },
+        );
 
         let events = self.events.clone();
         std::thread::spawn(move || {
@@ -189,13 +210,23 @@ impl TerminalManager {
     pub fn write(&self, id: u32, data: &str) -> Result<(), String> {
         let mut map = self.sessions.lock().unwrap();
         let s = map.get_mut(&id).ok_or("that terminal is closed")?;
-        s.writer.write_all(data.as_bytes()).and_then(|_| s.writer.flush()).map_err(|e| e.to_string())
+        s.writer
+            .write_all(data.as_bytes())
+            .and_then(|_| s.writer.flush())
+            .map_err(|e| e.to_string())
     }
 
     pub fn resize(&self, id: u32, rows: u16, cols: u16) -> Result<(), String> {
         let map = self.sessions.lock().unwrap();
         let s = map.get(&id).ok_or("that terminal is closed")?;
-        s.master.resize(PtySize { rows: rows.max(2), cols: cols.max(10), pixel_width: 0, pixel_height: 0 }).map_err(|e| e.to_string())
+        s.master
+            .resize(PtySize {
+                rows: rows.max(2),
+                cols: cols.max(10),
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .map_err(|e| e.to_string())
     }
 
     /// Ends the shell and everything it started in its console.
@@ -227,9 +258,18 @@ pub fn composer_shim(phar: &Path) -> String {
 impl Inner {
     /// Where the terminal starts and what it sees: the project's folder, its runtimes first on
     /// PATH, its virtual environment active, and `composer` available as a command.
-    pub fn terminal_setup(&self, project_id: Option<&str>) -> Result<(Option<PathBuf>, Vec<(String, String)>), CoreError> {
+    pub fn terminal_setup(
+        &self,
+        project_id: Option<&str>,
+    ) -> Result<(Option<PathBuf>, Vec<(String, String)>), CoreError> {
         let project = match project_id {
-            Some(id) => Some(self.projects.lock().unwrap().get(id).ok_or_else(|| CoreError::InvalidProjectPath(id.to_string()))?),
+            Some(id) => Some(
+                self.projects
+                    .lock()
+                    .unwrap()
+                    .get(id)
+                    .ok_or_else(|| CoreError::InvalidProjectPath(id.to_string()))?,
+            ),
             None => None,
         };
 
@@ -251,7 +291,10 @@ impl Inner {
             }
         };
         let add_env = |env: &mut Vec<(String, String)>, k: String, v: String| {
-            if !env.iter().any(|(existing, _)| existing.eq_ignore_ascii_case(&k)) {
+            if !env
+                .iter()
+                .any(|(existing, _)| existing.eq_ignore_ascii_case(&k))
+            {
                 env.push((k, v));
             }
         };
@@ -270,7 +313,10 @@ impl Inner {
         if let Ok(r) = self.quick_resolve_program("composer", &values, project_id) {
             if let Some(phar) = r.pre_args.first() {
                 let shims = self.paths.root().join("shims");
-                if std::fs::create_dir_all(&shims).is_ok() && std::fs::write(shims.join("composer.cmd"), composer_shim(Path::new(phar))).is_ok() {
+                if std::fs::create_dir_all(&shims).is_ok()
+                    && std::fs::write(shims.join("composer.cmd"), composer_shim(Path::new(phar)))
+                        .is_ok()
+                {
                     add_dir(&mut dirs, shims);
                 }
             }
@@ -285,7 +331,9 @@ impl Inner {
         // Command-line clients of the databases we manage.
         for id in ["mariadb", "postgres", "redis", "mongodb", "sqlite"] {
             let versions = self.runtimes.installed_versions(id);
-            if let Some(dir) = crate::php::pick_version(&versions, None).and_then(|v| self.runtimes.bin_dir(id, &v)) {
+            if let Some(dir) = crate::php::pick_version(&versions, None)
+                .and_then(|v| self.runtimes.bin_dir(id, &v))
+            {
                 add_dir(&mut dirs, dir);
             }
         }
@@ -295,12 +343,31 @@ impl Inner {
         path.push(system_path);
         env.push(("PATH".to_string(), path.join(";")));
 
-        Ok((project.map(|p| PathBuf::from(p.path)).or_else(|| std::env::var_os("USERPROFILE").map(PathBuf::from)), env))
+        Ok((
+            project
+                .map(|p| PathBuf::from(p.path))
+                .or_else(|| std::env::var_os("USERPROFILE").map(PathBuf::from)),
+            env,
+        ))
     }
 
-    pub fn open_terminal(&self, project_id: Option<&str>, shell: Option<String>, rows: u16, cols: u16) -> Result<u32, CoreError> {
+    pub fn open_terminal(
+        &self,
+        project_id: Option<&str>,
+        shell: Option<String>,
+        rows: u16,
+        cols: u16,
+    ) -> Result<u32, CoreError> {
         let (cwd, env) = self.terminal_setup(project_id)?;
-        self.terminals.open(TerminalSpec { shell, cwd, env, rows, cols }).map_err(err)
+        self.terminals
+            .open(TerminalSpec {
+                shell,
+                cwd,
+                env,
+                rows,
+                cols,
+            })
+            .map_err(err)
     }
 }
 
@@ -331,7 +398,10 @@ mod tests {
     #[test]
     fn invalid_bytes_become_replacement_characters_without_losing_the_rest() {
         let mut pending = Vec::new();
-        assert_eq!(decode_chunk(&mut pending, &[b'a', 0xFF, b'b']), "a\u{FFFD}b");
+        assert_eq!(
+            decode_chunk(&mut pending, &[b'a', 0xFF, b'b']),
+            "a\u{FFFD}b"
+        );
         assert!(pending.is_empty());
     }
 

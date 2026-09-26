@@ -47,7 +47,10 @@ pub struct Journal {
 }
 
 fn now_ms() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 impl Journal {
@@ -55,7 +58,10 @@ impl Journal {
     /// unreadable file is an empty journal; the app must still start.
     pub fn load(paths: &AppPaths) -> Self {
         let file = paths.data_dir().join("operations.json");
-        let mut entries: Vec<Operation> = std::fs::read_to_string(&file).ok().and_then(|raw| serde_json::from_str(&raw).ok()).unwrap_or_default();
+        let mut entries: Vec<Operation> = std::fs::read_to_string(&file)
+            .ok()
+            .and_then(|raw| serde_json::from_str(&raw).ok())
+            .unwrap_or_default();
         let mut changed = false;
         for e in entries.iter_mut().filter(|e| e.status == OpStatus::Running) {
             e.status = OpStatus::Interrupted;
@@ -75,13 +81,24 @@ impl Journal {
     }
 
     pub fn interrupted(&self) -> Vec<Operation> {
-        self.entries.iter().filter(|e| e.status == OpStatus::Interrupted).cloned().collect()
+        self.entries
+            .iter()
+            .filter(|e| e.status == OpStatus::Interrupted)
+            .cloned()
+            .collect()
     }
 
     /// Records the start of an operation and returns its id. An older interrupted run of the
     /// same operation is dropped: starting it again is the answer to it.
-    pub fn begin(&mut self, kind: &str, title: &str, undo: Option<&str>, retry: Option<CoreCommand>) -> u64 {
-        self.entries.retain(|e| !(e.status == OpStatus::Interrupted && e.kind == kind && e.title == title));
+    pub fn begin(
+        &mut self,
+        kind: &str,
+        title: &str,
+        undo: Option<&str>,
+        retry: Option<CoreCommand>,
+    ) -> u64 {
+        self.entries
+            .retain(|e| !(e.status == OpStatus::Interrupted && e.kind == kind && e.title == title));
         let id = self.entries.iter().map(|e| e.id).max().unwrap_or(0) + 1;
         self.entries.push(Operation {
             id,
@@ -95,7 +112,11 @@ impl Journal {
             retry,
         });
         while self.entries.len() > KEEP {
-            match self.entries.iter().position(|e| matches!(e.status, OpStatus::Done | OpStatus::Failed)) {
+            match self
+                .entries
+                .iter()
+                .position(|e| matches!(e.status, OpStatus::Done | OpStatus::Failed))
+            {
                 Some(i) => {
                     self.entries.remove(i);
                 }
@@ -122,12 +143,15 @@ impl Journal {
 
     /// Forgets an interrupted operation the user has dealt with.
     pub fn dismiss(&mut self, id: u64) {
-        self.entries.retain(|e| !(e.id == id && e.status == OpStatus::Interrupted));
+        self.entries
+            .retain(|e| !(e.id == id && e.status == OpStatus::Interrupted));
         self.persist();
     }
 
     fn persist(&self) {
-        let Ok(raw) = serde_json::to_string_pretty(&self.entries) else { return };
+        let Ok(raw) = serde_json::to_string_pretty(&self.entries) else {
+            return;
+        };
         let tmp = self.file.with_extension("json.tmp");
         if std::fs::write(&tmp, raw).is_ok() {
             let _ = std::fs::rename(&tmp, &self.file);
@@ -144,7 +168,12 @@ mod tests {
         let home = crate::test_support::isolated_home();
         let mut j = Journal::load(&home.paths);
         let a = j.begin("apply_web", "Apply the web config", None, None);
-        let b = j.begin("restore_database", "Restore shop", Some("Restore the safety backup"), None);
+        let b = j.begin(
+            "restore_database",
+            "Restore shop",
+            Some("Restore the safety backup"),
+            None,
+        );
         j.finish(a, &Ok(()));
         j.finish(b, &Err("port busy".into()));
 
@@ -163,7 +192,12 @@ mod tests {
             let mut j = Journal::load(&home.paths);
             let done = j.begin("apply_web", "Apply the web config", None, None);
             j.finish(done, &Ok(()));
-            j.begin("apply_web", "Apply again", None, Some(CoreCommand::ApplyWeb { overwrite: vec![] }))
+            j.begin(
+                "apply_web",
+                "Apply again",
+                None,
+                Some(CoreCommand::ApplyWeb { overwrite: vec![] }),
+            )
             // The app "dies" here: no finish.
         };
 
@@ -172,7 +206,14 @@ mod tests {
         assert_eq!(stuck.len(), 1);
         assert_eq!(stuck[0].id, id);
         assert!(stuck[0].retry.is_some());
-        assert_eq!(reloaded.list().iter().filter(|e| e.status == OpStatus::Done).count(), 1);
+        assert_eq!(
+            reloaded
+                .list()
+                .iter()
+                .filter(|e| e.status == OpStatus::Done)
+                .count(),
+            1
+        );
     }
 
     #[test]
@@ -197,7 +238,11 @@ mod tests {
         let done = j.begin("a", "A", None, None);
         j.finish(done, &Ok(()));
         j.dismiss(done);
-        assert_eq!(j.list().len(), 1, "a finished operation stays in the history");
+        assert_eq!(
+            j.list().len(),
+            1,
+            "a finished operation stays in the history"
+        );
     }
 
     #[test]

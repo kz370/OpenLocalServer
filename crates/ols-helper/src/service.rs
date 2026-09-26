@@ -19,8 +19,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use windows_service::service::{
-    ServiceAccess, ServiceControl, ServiceControlAccept, ServiceErrorControl, ServiceExitCode, ServiceInfo, ServiceStartType,
-    ServiceState, ServiceStatus, ServiceType,
+    ServiceAccess, ServiceControl, ServiceControlAccept, ServiceErrorControl, ServiceExitCode,
+    ServiceInfo, ServiceStartType, ServiceState, ServiceStatus, ServiceType,
 };
 use windows_service::service_control_handler::{self, ServiceControlHandlerResult};
 use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
@@ -31,7 +31,9 @@ pub const PIPE_NAME: &str = r"\\.\pipe\OpenLocalServerHelper";
 
 /// Where the installed service binary lives: admin-only, unlike the app's own folder.
 fn install_dir() -> PathBuf {
-    let root = std::env::var_os("ProgramFiles").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(r"C:\Program Files"));
+    let root = std::env::var_os("ProgramFiles")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(r"C:\Program Files"));
     root.join("OpenLocalServer")
 }
 
@@ -41,16 +43,27 @@ fn install_dir() -> PathBuf {
 /// (re)creates the service, set to start automatically.
 pub fn install() -> Result<(), String> {
     let dir = install_dir();
-    std::fs::create_dir_all(&dir).map_err(|e| format!("could not create {}: {e}", dir.display()))?;
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("could not create {}: {e}", dir.display()))?;
     let target = dir.join("ols-helper.exe");
-    let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE)
-        .map_err(|e| format!("could not open the service manager: {e}"))?;
+    let manager = ServiceManager::local_computer(
+        None::<&str>,
+        ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE,
+    )
+    .map_err(|e| format!("could not open the service manager: {e}"))?;
 
     // Upgrading: stop and delete the old one so its binary can be replaced.
-    if let Ok(old) = manager.open_service(SERVICE_NAME, ServiceAccess::STOP | ServiceAccess::DELETE | ServiceAccess::QUERY_STATUS) {
+    if let Ok(old) = manager.open_service(
+        SERVICE_NAME,
+        ServiceAccess::STOP | ServiceAccess::DELETE | ServiceAccess::QUERY_STATUS,
+    ) {
         let _ = old.stop();
         for _ in 0..50 {
-            if old.query_status().map(|s| s.current_state == ServiceState::Stopped).unwrap_or(true) {
+            if old
+                .query_status()
+                .map(|s| s.current_state == ServiceState::Stopped)
+                .unwrap_or(true)
+            {
                 break;
             }
             std::thread::sleep(Duration::from_millis(100));
@@ -62,7 +75,8 @@ pub fn install() -> Result<(), String> {
 
     let me = std::env::current_exe().map_err(|e| e.to_string())?;
     if me != target {
-        std::fs::copy(&me, &target).map_err(|e| format!("could not copy the helper to {}: {e}", target.display()))?;
+        std::fs::copy(&me, &target)
+            .map_err(|e| format!("could not copy the helper to {}: {e}", target.display()))?;
     }
 
     let info = ServiceInfo {
@@ -81,15 +95,21 @@ pub fn install() -> Result<(), String> {
         .create_service(&info, ServiceAccess::CHANGE_CONFIG | ServiceAccess::START)
         .map_err(|e| format!("could not create the service: {e}"))?;
     let _ = service.set_description("Lets OpenLocalServer add local domains to the hosts file without asking for administrator rights each time.");
-    service.start::<&str>(&[]).map_err(|e| format!("could not start the service: {e}"))?;
+    service
+        .start::<&str>(&[])
+        .map_err(|e| format!("could not start the service: {e}"))?;
     Ok(())
 }
 
 /// `ols-helper uninstall-service` (run elevated).
 pub fn uninstall() -> Result<(), String> {
-    let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT).map_err(|e| e.to_string())?;
+    let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)
+        .map_err(|e| e.to_string())?;
     let service = manager
-        .open_service(SERVICE_NAME, ServiceAccess::STOP | ServiceAccess::DELETE | ServiceAccess::QUERY_STATUS)
+        .open_service(
+            SERVICE_NAME,
+            ServiceAccess::STOP | ServiceAccess::DELETE | ServiceAccess::QUERY_STATUS,
+        )
         .map_err(|e| format!("the helper service is not installed: {e}"))?;
     let _ = service.stop();
     service.delete().map_err(|e| e.to_string())?;
@@ -115,13 +135,18 @@ fn service_main(_args: Vec<OsString>) {
         ServiceControl::Stop | ServiceControl::Shutdown => {
             stop_flag.store(true, Ordering::SeqCst);
             // Unblock the pipe server waiting for a client.
-            let _ = std::fs::OpenOptions::new().read(true).write(true).open(PIPE_NAME);
+            let _ = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(PIPE_NAME);
             ServiceControlHandlerResult::NoError
         }
         ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
         _ => ServiceControlHandlerResult::NotImplemented,
     };
-    let Ok(status) = service_control_handler::register(SERVICE_NAME, handler) else { return };
+    let Ok(status) = service_control_handler::register(SERVICE_NAME, handler) else {
+        return;
+    };
     let set = |state, accept| {
         let _ = status.set_service_status(ServiceStatus {
             service_type: ServiceType::OWN_PROCESS,
@@ -133,7 +158,10 @@ fn service_main(_args: Vec<OsString>) {
             process_id: None,
         });
     };
-    set(ServiceState::Running, ServiceControlAccept::STOP | ServiceControlAccept::SHUTDOWN);
+    set(
+        ServiceState::Running,
+        ServiceControlAccept::STOP | ServiceControlAccept::SHUTDOWN,
+    );
     pipe::serve(PIPE_NAME, &stop, handle_request);
     set(ServiceState::Stopped, ServiceControlAccept::empty());
 }
@@ -141,27 +169,37 @@ fn service_main(_args: Vec<OsString>) {
 /// One request: a JSON array of helper arguments. Reply: `{"code":0,"message":""}`.
 fn handle_request(raw: &[u8]) -> Vec<u8> {
     let (code, message) = match serde_json::from_slice::<Vec<String>>(raw) {
-        Ok(args) if args.first().map(String::as_str) == Some("version") => (0, env!("CARGO_PKG_VERSION").to_string()),
+        Ok(args) if args.first().map(String::as_str) == Some("version") => {
+            (0, env!("CARGO_PKG_VERSION").to_string())
+        }
         Ok(args) => match crate::execute(&args, &crate::hosts_file_path()) {
             Ok(()) => (0, String::new()),
             Err(e) => (e.code(), e.message().to_string()),
         },
         Err(e) => (2, format!("bad request: {e}")),
     };
-    let mut out = serde_json::json!({ "code": code, "message": message }).to_string().into_bytes();
+    let mut out = serde_json::json!({ "code": code, "message": message })
+        .to_string()
+        .into_bytes();
     out.push(b'\n');
     out
 }
 
 mod pipe {
     use super::*;
-    use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, LocalFree, ERROR_PIPE_CONNECTED, INVALID_HANDLE_VALUE};
-    use windows_sys::Win32::Security::Authorization::{ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1};
+    use windows_sys::Win32::Foundation::{
+        CloseHandle, GetLastError, LocalFree, ERROR_PIPE_CONNECTED, INVALID_HANDLE_VALUE,
+    };
+    use windows_sys::Win32::Security::Authorization::{
+        ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
+    };
     use windows_sys::Win32::Security::{PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES};
-    use windows_sys::Win32::Storage::FileSystem::{FlushFileBuffers, ReadFile, WriteFile, PIPE_ACCESS_DUPLEX};
+    use windows_sys::Win32::Storage::FileSystem::{
+        FlushFileBuffers, ReadFile, WriteFile, PIPE_ACCESS_DUPLEX,
+    };
     use windows_sys::Win32::System::Pipes::{
-        ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE,
-        PIPE_WAIT,
+        ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, PIPE_READMODE_BYTE,
+        PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_WAIT,
     };
 
     /// SYSTEM and administrators: full; interactive (signed-in) users: read/write.
@@ -176,10 +214,22 @@ mod pipe {
         let mut sd: PSECURITY_DESCRIPTOR = std::ptr::null_mut();
         let sddl = wide(SDDL);
         // SAFETY: valid NUL-terminated wide string; `sd` receives a LocalAlloc'd descriptor.
-        if unsafe { ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl.as_ptr(), SDDL_REVISION_1, &mut sd, std::ptr::null_mut()) } == 0 {
+        if unsafe {
+            ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                sddl.as_ptr(),
+                SDDL_REVISION_1,
+                &mut sd,
+                std::ptr::null_mut(),
+            )
+        } == 0
+        {
             return;
         }
-        let sa = SECURITY_ATTRIBUTES { nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32, lpSecurityDescriptor: sd, bInheritHandle: 0 };
+        let sa = SECURITY_ATTRIBUTES {
+            nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
+            lpSecurityDescriptor: sd,
+            bInheritHandle: 0,
+        };
         let name = wide(pipe_name);
         while !stop.load(Ordering::SeqCst) {
             // SAFETY: `name` and `sa` outlive the call.
@@ -200,7 +250,8 @@ mod pipe {
                 continue;
             }
             // SAFETY: `h` is a valid pipe handle owned by this loop iteration.
-            let connected = unsafe { ConnectNamedPipe(h, std::ptr::null_mut()) } != 0 || unsafe { GetLastError() } == ERROR_PIPE_CONNECTED;
+            let connected = unsafe { ConnectNamedPipe(h, std::ptr::null_mut()) } != 0
+                || unsafe { GetLastError() } == ERROR_PIPE_CONNECTED;
             if connected && !stop.load(Ordering::SeqCst) {
                 let mut conn = Conn(h);
                 let mut request = Vec::new();
@@ -232,8 +283,20 @@ mod pipe {
         fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
             let mut n = 0u32;
             // SAFETY: `buf` is valid for `buf.len()` bytes.
-            let ok = unsafe { ReadFile(self.0, buf.as_mut_ptr(), buf.len() as u32, &mut n, std::ptr::null_mut()) };
-            if ok == 0 { Err(std::io::Error::last_os_error()) } else { Ok(n as usize) }
+            let ok = unsafe {
+                ReadFile(
+                    self.0,
+                    buf.as_mut_ptr(),
+                    buf.len() as u32,
+                    &mut n,
+                    std::ptr::null_mut(),
+                )
+            };
+            if ok == 0 {
+                Err(std::io::Error::last_os_error())
+            } else {
+                Ok(n as usize)
+            }
         }
     }
 
@@ -241,8 +304,20 @@ mod pipe {
         fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
             let mut n = 0u32;
             // SAFETY: `buf` is valid for `buf.len()` bytes.
-            let ok = unsafe { WriteFile(self.0, buf.as_ptr(), buf.len() as u32, &mut n, std::ptr::null_mut()) };
-            if ok == 0 { Err(std::io::Error::last_os_error()) } else { Ok(n as usize) }
+            let ok = unsafe {
+                WriteFile(
+                    self.0,
+                    buf.as_ptr(),
+                    buf.len() as u32,
+                    &mut n,
+                    std::ptr::null_mut(),
+                )
+            };
+            if ok == 0 {
+                Err(std::io::Error::last_os_error())
+            } else {
+                Ok(n as usize)
+            }
         }
         fn flush(&mut self) -> std::io::Result<()> {
             Ok(())
@@ -259,11 +334,16 @@ mod tests {
         let name = format!(r"\\.\pipe\OpenLocalServerHelperTest{}", std::process::id());
         let stop = Arc::new(AtomicBool::new(false));
         let (server_name, server_stop) = (name.clone(), stop.clone());
-        let server = std::thread::spawn(move || pipe::serve(&server_name, &server_stop, handle_request));
+        let server =
+            std::thread::spawn(move || pipe::serve(&server_name, &server_stop, handle_request));
 
         let ask = |request: &str| -> serde_json::Value {
             for _ in 0..50 {
-                if let Ok(mut p) = std::fs::OpenOptions::new().read(true).write(true).open(&name) {
+                if let Ok(mut p) = std::fs::OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .open(&name)
+                {
                     p.write_all(format!("{request}\n").as_bytes()).unwrap();
                     let mut reply = Vec::new();
                     let mut buf = [0u8; 256];
@@ -273,7 +353,8 @@ mod tests {
                             Ok(n) => reply.extend_from_slice(&buf[..n]),
                         }
                     }
-                    return serde_json::from_slice(reply.split(|b| *b == b'\n').next().unwrap()).unwrap();
+                    return serde_json::from_slice(reply.split(|b| *b == b'\n').next().unwrap())
+                        .unwrap();
                 }
                 std::thread::sleep(Duration::from_millis(50));
             }
@@ -283,12 +364,21 @@ mod tests {
         assert_eq!(v["code"], 0);
         assert_eq!(v["message"], env!("CARGO_PKG_VERSION"));
         let v = ask(r#"["hosts-apply","6.6.6.6=bank.test"]"#);
-        assert_eq!(v["code"], 2, "the service applies the same validation as the one-shot helper");
+        assert_eq!(
+            v["code"], 2,
+            "the service applies the same validation as the one-shot helper"
+        );
         let v = ask(r#"["install-service"]"#);
-        assert_eq!(v["code"], 2, "installing is never reachable through the pipe");
+        assert_eq!(
+            v["code"], 2,
+            "installing is never reachable through the pipe"
+        );
 
         stop.store(true, Ordering::SeqCst);
-        let _ = std::fs::OpenOptions::new().read(true).write(true).open(&name);
+        let _ = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&name);
         server.join().unwrap();
     }
 }

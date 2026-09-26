@@ -8,7 +8,14 @@ use tracing_subscriber::EnvFilter;
 
 /// Key name fragments that mark a value as sensitive. Case-insensitive substring match.
 const SECRET_KEY_MARKERS: &[&str] = &[
-    "password", "passwd", "secret", "token", "api_key", "apikey", "private_key", "credential",
+    "password",
+    "passwd",
+    "secret",
+    "token",
+    "api_key",
+    "apikey",
+    "private_key",
+    "credential",
 ];
 
 /// Redact `value` if `key` looks like it holds a secret. Non-secret values pass through unchanged.

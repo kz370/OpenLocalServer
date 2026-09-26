@@ -40,8 +40,11 @@ pub struct SystemInstall {
 /// ever offering a download (§126: never modify an existing install without asking).
 pub fn detect_system_install(id: &str) -> Option<SystemInstall> {
     // Each probe spawns `<tool> --version`, and the UI polls the catalog — remember answers briefly.
-    static CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, (std::time::Instant, Option<SystemInstall>)>>> =
-        std::sync::OnceLock::new();
+    static CACHE: std::sync::OnceLock<
+        std::sync::Mutex<
+            std::collections::HashMap<String, (std::time::Instant, Option<SystemInstall>)>,
+        >,
+    > = std::sync::OnceLock::new();
     const TTL: std::time::Duration = std::time::Duration::from_secs(60);
     let cache = CACHE.get_or_init(Default::default);
     if let Some((at, found)) = cache.lock().unwrap().get(id) {
@@ -50,18 +53,27 @@ pub fn detect_system_install(id: &str) -> Option<SystemInstall> {
         }
     }
     let found = probe_system_install(id);
-    cache.lock().unwrap().insert(id.to_string(), (std::time::Instant::now(), found.clone()));
+    cache
+        .lock()
+        .unwrap()
+        .insert(id.to_string(), (std::time::Instant::now(), found.clone()));
     found
 }
 
 fn probe_system_install(id: &str) -> Option<SystemInstall> {
     let (exe_name, version_flag) = crate::catalog::system_probe(id)?;
     let path_var = std::env::var_os("PATH")?;
-    let exe_path = std::env::split_paths(&path_var).map(|dir| dir.join(exe_name)).find(|p| p.is_file())?;
+    let exe_path = std::env::split_paths(&path_var)
+        .map(|dir| dir.join(exe_name))
+        .find(|p| p.is_file())?;
 
-    let version = probe_version(&exe_path, version_flag).unwrap_or_else(|| "unknown version".to_string());
+    let version =
+        probe_version(&exe_path, version_flag).unwrap_or_else(|| "unknown version".to_string());
 
-    Some(SystemInstall { path: exe_path.display().to_string(), version })
+    Some(SystemInstall {
+        path: exe_path.display().to_string(),
+        version,
+    })
 }
 
 /// First line of `<exe> <flag>`. Some tools (an old Windows Redis) never exit on their version flag, or
@@ -69,8 +81,12 @@ fn probe_system_install(id: &str) -> Option<SystemInstall> {
 /// the probe is killed after a few seconds. Nothing here can block the catalog for long.
 fn probe_version(exe: &std::path::Path, flag: &str) -> Option<String> {
     use std::process::Stdio;
-    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
-    let out_path = std::env::temp_dir().join(format!("ols-probe-{}-{nanos}.txt", std::process::id()));
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let out_path =
+        std::env::temp_dir().join(format!("ols-probe-{}-{nanos}.txt", std::process::id()));
     let out = std::fs::File::create(&out_path).ok()?;
     let err = out.try_clone().ok()?;
     let mut cmd = std::process::Command::new(exe);
@@ -92,7 +108,13 @@ fn probe_version(exe: &std::path::Path, flag: &str) -> Option<String> {
         std::fs::read_to_string(&out_path).ok()
     });
     let _ = std::fs::remove_file(&out_path);
-    text.map(|t| t.lines().find(|l| !l.trim().is_empty()).unwrap_or("unknown version").trim().to_string())
+    text.map(|t| {
+        t.lines()
+            .find(|l| !l.trim().is_empty())
+            .unwrap_or("unknown version")
+            .trim()
+            .to_string()
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -108,9 +130,23 @@ pub enum InstallState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RuntimeEvent {
-    Progress { id: String, version: String, state: InstallState, downloaded: u64, total: Option<u64> },
-    Installed { id: String, version: String, path: String },
-    Failed { id: String, version: String, message: String },
+    Progress {
+        id: String,
+        version: String,
+        state: InstallState,
+        downloaded: u64,
+        total: Option<u64>,
+    },
+    Installed {
+        id: String,
+        version: String,
+        path: String,
+    },
+    Failed {
+        id: String,
+        version: String,
+        message: String,
+    },
 }
 
 pub struct RuntimeManager {
@@ -144,7 +180,10 @@ impl RuntimeManager {
         Self {
             runtime,
             paths,
-            http: reqwest::Client::builder().user_agent("OpenLocalServer").build().expect("failed to build runtime HTTP client"),
+            http: reqwest::Client::builder()
+                .user_agent("OpenLocalServer")
+                .build()
+                .expect("failed to build runtime HTTP client"),
             events_tx,
             state: Arc::new(Mutex::new(HashMap::new())),
             preferred: RwLock::new(preferred),
@@ -179,20 +218,31 @@ impl RuntimeManager {
         let online = self.online_versions.read().unwrap().clone();
         let mut all_versions: HashMap<String, Vec<String>> = HashMap::new();
         for m in &manifests {
-            all_versions.entry(m.id.to_string()).or_default().push(m.version.to_string());
+            all_versions
+                .entry(m.id.to_string())
+                .or_default()
+                .push(m.version.to_string());
         }
         for (id, versions) in &online {
             let known = all_versions.entry(id.clone()).or_default();
             for version in versions {
-                if !known.contains(version) { known.push(version.clone()); }
+                if !known.contains(version) {
+                    known.push(version.clone());
+                }
             }
         }
-        for id in ["node", "php", "nginx", "mariadb", "apache", "composer", "mongodb", "postgres", "redis"] {
+        for id in [
+            "node", "php", "nginx", "mariadb", "apache", "composer", "mongodb", "postgres", "redis",
+        ] {
             if let Ok(dirs) = std::fs::read_dir(self.paths.runtimes_dir().join(id)) {
                 let known = all_versions.entry(id.to_string()).or_default();
                 for dir in dirs.flatten().filter(|d| d.path().is_dir()) {
-                    let Some(version) = dir.file_name().to_str().map(str::to_string) else { continue };
-                    if !known.contains(&version) && self.is_installed(id, &version) { known.push(version); }
+                    let Some(version) = dir.file_name().to_str().map(str::to_string) else {
+                        continue;
+                    };
+                    if !known.contains(&version) && self.is_installed(id, &version) {
+                        known.push(version);
+                    }
                 }
             }
         }
@@ -200,34 +250,58 @@ impl RuntimeManager {
         ids.sort();
         // Each probe spawns `<tool> --version`; run one per runtime id side by side instead of in turn.
         let detected: HashMap<String, Option<SystemInstall>> = std::thread::scope(|scope| {
-            let handles: Vec<_> = ids.iter().map(|id| (id.clone(), scope.spawn(move || detect_system_install(id)))).collect();
-            handles.into_iter().map(|(id, h)| (id, h.join().unwrap_or(None))).collect()
+            let handles: Vec<_> = ids
+                .iter()
+                .map(|id| (id.clone(), scope.spawn(move || detect_system_install(id))))
+                .collect();
+            handles
+                .into_iter()
+                .map(|(id, h)| (id, h.join().unwrap_or(None)))
+                .collect()
         });
         let preferred = self.preferred_versions();
-        let defaults: HashMap<String, String> = all_versions.iter().filter_map(|(id, versions)| {
-            let installed: Vec<String> = versions.iter().filter(|v| self.is_installed(id, v)).cloned().collect();
-            preferred.get(id).filter(|v| installed.contains(v)).cloned()
-                .or_else(|| installed.into_iter().max_by(|a,b| compare_versions(a,b)))
-                .map(|version| (id.clone(), version))
-        }).collect();
-        all_versions.into_iter().flat_map(|(id, versions)| {
-            versions.into_iter().map({
-                let id = id.clone();
-                let name = runtime_name(&id, &manifests);
-                let default = defaults.get(&id).cloned();
-                let system = detected.get(&id).cloned().flatten();
-                move |version| CatalogEntry {
-                    id: id.clone(), name: name.clone(),
-                    installed: self.is_installed(&id, &version),
-                    is_default: default.as_deref() == Some(version.as_str()),
-                    system: system.clone(), version,
-                }
+        let defaults: HashMap<String, String> = all_versions
+            .iter()
+            .filter_map(|(id, versions)| {
+                let installed: Vec<String> = versions
+                    .iter()
+                    .filter(|v| self.is_installed(id, v))
+                    .cloned()
+                    .collect();
+                preferred
+                    .get(id)
+                    .filter(|v| installed.contains(v))
+                    .cloned()
+                    .or_else(|| installed.into_iter().max_by(|a, b| compare_versions(a, b)))
+                    .map(|version| (id.clone(), version))
             })
-        }).collect()
+            .collect();
+        all_versions
+            .into_iter()
+            .flat_map(|(id, versions)| {
+                versions.into_iter().map({
+                    let id = id.clone();
+                    let name = runtime_name(&id, &manifests);
+                    let default = defaults.get(&id).cloned();
+                    let system = detected.get(&id).cloned().flatten();
+                    move |version| CatalogEntry {
+                        id: id.clone(),
+                        name: name.clone(),
+                        installed: self.is_installed(&id, &version),
+                        is_default: default.as_deref() == Some(version.as_str()),
+                        system: system.clone(),
+                        version,
+                    }
+                })
+            })
+            .collect()
     }
 
     fn is_installed(&self, id: &str, version: &str) -> bool {
-        let binary = builtin_catalog().into_iter().find(|m| m.id == id && m.version == version).map(|m| m.binary)
+        let binary = builtin_catalog()
+            .into_iter()
+            .find(|m| m.id == id && m.version == version)
+            .map(|m| m.binary)
             .or_else(|| runtime_binary(id));
         binary.is_some_and(|binary| self.version_dir(id, version).join(binary).exists())
     }
@@ -238,94 +312,188 @@ impl RuntimeManager {
         let versions = match id {
             "node" => {
                 let bytes = self.fetch("https://nodejs.org/dist/index.json")?;
-                let releases: Vec<serde_json::Value> = serde_json::from_slice(&bytes).map_err(|e| format!("Node.js release list is invalid: {e}"))?;
-                releases.into_iter().filter_map(|r| {
-                    let has_zip = r.get("files")?.as_array()?.iter().any(|f| f.as_str() == Some("win-x64-zip"));
-                    if has_zip { r.get("version")?.as_str()?.strip_prefix('v').map(str::to_string) } else { None }
-                }).collect()
+                let releases: Vec<serde_json::Value> = serde_json::from_slice(&bytes)
+                    .map_err(|e| format!("Node.js release list is invalid: {e}"))?;
+                releases
+                    .into_iter()
+                    .filter_map(|r| {
+                        let has_zip = r
+                            .get("files")?
+                            .as_array()?
+                            .iter()
+                            .any(|f| f.as_str() == Some("win-x64-zip"));
+                        if has_zip {
+                            r.get("version")?
+                                .as_str()?
+                                .strip_prefix('v')
+                                .map(str::to_string)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect()
             }
             "php" => {
-                let bytes = self.fetch("https://downloads.php.net/~windows/releases/releases.json")?;
-                let releases: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| format!("PHP release list is invalid: {e}"))?;
-                let mut versions: Vec<String> = releases.as_object().into_iter().flat_map(|branches| branches.values()).filter_map(|release| {
-                    let version = release.get("version")?.as_str()?;
-                    let x64_nts = release.as_object()?.iter().any(|(key, build)| key.starts_with("nts-vs") && key.ends_with("-x64") && build.pointer("/zip/sha256").and_then(|v| v.as_str()).is_some());
-                    x64_nts.then(|| version.to_string())
-                }).collect();
-                versions.sort_by(|a,b| compare_versions(b,a));
+                let bytes =
+                    self.fetch("https://downloads.php.net/~windows/releases/releases.json")?;
+                let releases: serde_json::Value = serde_json::from_slice(&bytes)
+                    .map_err(|e| format!("PHP release list is invalid: {e}"))?;
+                let mut versions: Vec<String> = releases
+                    .as_object()
+                    .into_iter()
+                    .flat_map(|branches| branches.values())
+                    .filter_map(|release| {
+                        let version = release.get("version")?.as_str()?;
+                        let x64_nts = release.as_object()?.iter().any(|(key, build)| {
+                            key.starts_with("nts-vs")
+                                && key.ends_with("-x64")
+                                && build
+                                    .pointer("/zip/sha256")
+                                    .and_then(|v| v.as_str())
+                                    .is_some()
+                        });
+                        x64_nts.then(|| version.to_string())
+                    })
+                    .collect();
+                versions.sort_by(|a, b| compare_versions(b, a));
                 versions.dedup();
                 versions
             }
             "nginx" => {
-                let page = String::from_utf8(self.fetch("https://nginx.org/en/download.html")?).map_err(|_| "Nginx release page is not UTF-8".to_string())?;
+                let page = String::from_utf8(self.fetch("https://nginx.org/en/download.html")?)
+                    .map_err(|_| "Nginx release page is not UTF-8".to_string())?;
                 nginx_versions(&page)
             }
             "apache" => {
-                let page = String::from_utf8(self.fetch("https://www.apachelounge.com/download/")?).map_err(|_| "Apache Lounge download page is not UTF-8".to_string())?;
+                let page = String::from_utf8(self.fetch("https://www.apachelounge.com/download/")?)
+                    .map_err(|_| "Apache Lounge download page is not UTF-8".to_string())?;
                 extract_numeric_filename_versions(&page, "httpd-")
             }
             "composer" => {
-                let page = String::from_utf8(self.fetch("https://getcomposer.org/download/")?).map_err(|_| "Composer download page is not UTF-8".to_string())?;
+                let page = String::from_utf8(self.fetch("https://getcomposer.org/download/")?)
+                    .map_err(|_| "Composer download page is not UTF-8".to_string())?;
                 extract_versions(&page, "/download/", "/composer.phar")
             }
             "mongodb" => {
                 let bytes = self.fetch("https://downloads.mongodb.org/current.json")?;
-                let releases: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| format!("MongoDB release list is invalid: {e}"))?;
+                let releases: serde_json::Value = serde_json::from_slice(&bytes)
+                    .map_err(|e| format!("MongoDB release list is invalid: {e}"))?;
                 let mut versions = Vec::new();
                 collect_mongodb_versions(&releases, &mut versions);
-                versions.sort_by(|a,b| compare_versions(b,a));
+                versions.sort_by(|a, b| compare_versions(b, a));
                 versions.dedup();
                 versions
             }
             "postgres" => {
-                let page = String::from_utf8(self.fetch("https://www.enterprisedb.com/download-postgresql-binaries")?).map_err(|_| "PostgreSQL download page is not UTF-8".to_string())?;
+                let page = String::from_utf8(
+                    self.fetch("https://www.enterprisedb.com/download-postgresql-binaries")?,
+                )
+                .map_err(|_| "PostgreSQL download page is not UTF-8".to_string())?;
                 extract_versions(&page, "Binaries from installer Version ", "<")
             }
             "redis" => {
                 let bytes = self.fetch("https://api.github.com/repos/redis-windows/redis-windows/releases?per_page=100")?;
-                let releases: Vec<serde_json::Value> = serde_json::from_slice(&bytes).map_err(|e| format!("Redis release list is invalid: {e}"))?;
-                releases.into_iter().filter_map(|release| {
-                    let assets = release.get("assets")?.as_array()?;
-                    let has_windows_zip = assets.iter().any(|asset| asset.get("name").and_then(|n| n.as_str()).is_some_and(|n| n.starts_with("Redis-") && n.contains("Windows-x64") && n.ends_with(".zip")));
-                    if !has_windows_zip { return None; }
-                    release.get("tag_name")?.as_str().map(|tag| tag.strip_prefix('v').unwrap_or(tag).to_string())
-                }).collect()
+                let releases: Vec<serde_json::Value> = serde_json::from_slice(&bytes)
+                    .map_err(|e| format!("Redis release list is invalid: {e}"))?;
+                releases
+                    .into_iter()
+                    .filter_map(|release| {
+                        let assets = release.get("assets")?.as_array()?;
+                        let has_windows_zip = assets.iter().any(|asset| {
+                            asset.get("name").and_then(|n| n.as_str()).is_some_and(|n| {
+                                n.starts_with("Redis-")
+                                    && n.contains("Windows-x64")
+                                    && n.ends_with(".zip")
+                            })
+                        });
+                        if !has_windows_zip {
+                            return None;
+                        }
+                        release
+                            .get("tag_name")?
+                            .as_str()
+                            .map(|tag| tag.strip_prefix('v').unwrap_or(tag).to_string())
+                    })
+                    .collect()
             }
             "mariadb" => {
                 let bytes = self.fetch("https://downloads.mariadb.org/rest-api/mariadb/")?;
-                let majors: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| format!("MariaDB release list is invalid: {e}"))?;
+                let majors: serde_json::Value = serde_json::from_slice(&bytes)
+                    .map_err(|e| format!("MariaDB release list is invalid: {e}"))?;
                 let mut versions = Vec::new();
-                for major in majors.get("major_releases").and_then(|v| v.as_array()).into_iter().flatten() {
-                    let Some(branch) = major.get("release_id").and_then(|v| v.as_str()) else { continue };
+                for major in majors
+                    .get("major_releases")
+                    .and_then(|v| v.as_array())
+                    .into_iter()
+                    .flatten()
+                {
+                    let Some(branch) = major.get("release_id").and_then(|v| v.as_str()) else {
+                        continue;
+                    };
                     let url = format!("https://downloads.mariadb.org/rest-api/mariadb/{branch}/");
-                    let Ok(bytes) = self.fetch(&url) else { continue };
-                    let Ok(data) = serde_json::from_slice::<serde_json::Value>(&bytes) else { continue };
-                    for (version, release) in data.get("releases").and_then(|v| v.as_object()).into_iter().flatten() {
-                        let has_windows_zip = release.get("files").and_then(|v| v.as_array()).into_iter().flatten().any(|f| {
-                            f.get("file_name").and_then(|v| v.as_str()).is_some_and(|name| name.ends_with("-winx64.zip") && !name.contains("debugsymbols"))
-                                && f.pointer("/checksum/sha256sum").and_then(|v| v.as_str()).is_some_and(|sum| sum.len() == 64)
-                        });
-                        if has_windows_zip { versions.push(version.clone()); }
+                    let Ok(bytes) = self.fetch(&url) else {
+                        continue;
+                    };
+                    let Ok(data) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+                        continue;
+                    };
+                    for (version, release) in data
+                        .get("releases")
+                        .and_then(|v| v.as_object())
+                        .into_iter()
+                        .flatten()
+                    {
+                        let has_windows_zip = release
+                            .get("files")
+                            .and_then(|v| v.as_array())
+                            .into_iter()
+                            .flatten()
+                            .any(|f| {
+                                f.get("file_name")
+                                    .and_then(|v| v.as_str())
+                                    .is_some_and(|name| {
+                                        name.ends_with("-winx64.zip")
+                                            && !name.contains("debugsymbols")
+                                    })
+                                    && f.pointer("/checksum/sha256sum")
+                                        .and_then(|v| v.as_str())
+                                        .is_some_and(|sum| sum.len() == 64)
+                            });
+                        if has_windows_zip {
+                            versions.push(version.clone());
+                        }
                     }
                 }
-                versions.sort_by(|a,b| compare_versions(b,a));
+                versions.sort_by(|a, b| compare_versions(b, a));
                 versions.dedup();
                 versions
             }
             _ => return Err(format!("Online version lists are not available for {id}.")),
         };
-        if versions.is_empty() { return Err(format!("No downloadable {id} versions were found online.")); }
-        self.online_versions.write().unwrap().insert(id.to_string(), versions);
+        if versions.is_empty() {
+            return Err(format!("No downloadable {id} versions were found online."));
+        }
+        self.online_versions
+            .write()
+            .unwrap()
+            .insert(id.to_string(), versions);
         Ok(())
     }
 
     /// Display name of `id` from the built-in catalog — no filesystem or process probing.
     pub fn display_name(&self, id: &str) -> Option<String> {
-        builtin_catalog().into_iter().find(|m| m.id == id).map(|m| m.name.to_string())
+        builtin_catalog()
+            .into_iter()
+            .find(|m| m.id == id)
+            .map(|m| m.name.to_string())
     }
 
     pub fn binary_path(&self, id: &str, version: &str) -> Option<PathBuf> {
-        let binary = builtin_catalog().into_iter().find(|m| m.id == id && m.version == version).map(|m| m.binary).or_else(|| runtime_binary(id))?;
+        let binary = builtin_catalog()
+            .into_iter()
+            .find(|m| m.id == id && m.version == version)
+            .map(|m| m.binary)
+            .or_else(|| runtime_binary(id))?;
         let path = self.version_dir(id, version).join(binary);
         path.exists().then_some(path)
     }
@@ -334,7 +502,8 @@ impl RuntimeManager {
     /// prepends to PATH (§19), and what the Environment Resolver checks before offering
     /// "this project needs PHP 8.1, install it?" (§18, §74).
     pub fn bin_dir(&self, id: &str, version: &str) -> Option<PathBuf> {
-        self.binary_path(id, version).and_then(|p| p.parent().map(|d| d.to_path_buf()))
+        self.binary_path(id, version)
+            .and_then(|p| p.parent().map(|d| d.to_path_buf()))
     }
 
     /// Installed versions for `id`, with a configured default first and the remaining versions
@@ -344,14 +513,21 @@ impl RuntimeManager {
         if let Some(binary) = runtime_binary(id) {
             if let Ok(dirs) = std::fs::read_dir(self.paths.runtimes_dir().join(id)) {
                 for dir in dirs.flatten().filter(|d| d.path().is_dir()) {
-                    if let (Some(version), true) = (dir.file_name().to_str().map(str::to_string), dir.path().join(binary).exists()) {
-                        if !versions.contains(&version) { versions.push(version); }
+                    if let (Some(version), true) = (
+                        dir.file_name().to_str().map(str::to_string),
+                        dir.path().join(binary).exists(),
+                    ) {
+                        if !versions.contains(&version) {
+                            versions.push(version);
+                        }
                     }
                 }
             }
         }
         for m in builtin_catalog().into_iter().filter(|m| m.id == id) {
-            if self.version_dir(m.id, m.version).join(m.binary).exists() && !versions.iter().any(|v| v == m.version) {
+            if self.version_dir(m.id, m.version).join(m.binary).exists()
+                && !versions.iter().any(|v| v == m.version)
+            {
                 versions.push(m.version.to_string());
             }
         }
@@ -370,14 +546,23 @@ impl RuntimeManager {
         if self.binary_path(id, version).is_none() {
             return Err(format!("{id} {version} is not installed"));
         }
-        self.preferred.write().unwrap().insert(id.to_string(), version.to_string());
+        self.preferred
+            .write()
+            .unwrap()
+            .insert(id.to_string(), version.to_string());
         Ok(())
     }
 
     /// Remove only the managed program files. Data directories (for example MariaDB's
     /// databases) live outside the runtime tree and are never touched here.
     pub fn remove(&self, id: &str, version: &str) -> Result<(), String> {
-        if !self.catalog().iter().any(|e| e.id == id && e.version == version) { return Err(format!("{id} {version} is not in the runtime catalog")); }
+        if !self
+            .catalog()
+            .iter()
+            .any(|e| e.id == id && e.version == version)
+        {
+            return Err(format!("{id} {version} is not in the runtime catalog"));
+        }
         let versions = self.installed_versions(id);
         let configured_default = self.preferred_versions().get(id).cloned();
         let selected = configured_default
@@ -385,19 +570,31 @@ impl RuntimeManager {
             .map(|v| v == version)
             .unwrap_or_else(|| versions.first().is_some_and(|v| v == version));
         if selected && versions.len() > 1 {
-            return Err("Choose another installed version as the default before removing this one.".into());
+            return Err(
+                "Choose another installed version as the default before removing this one.".into(),
+            );
         }
         let key = format!("{id}@{version}");
-        if self.state.lock().unwrap().get(&key).is_some_and(|s| matches!(s, InstallState::Downloading | InstallState::Verifying | InstallState::Extracting)) {
+        if self.state.lock().unwrap().get(&key).is_some_and(|s| {
+            matches!(
+                s,
+                InstallState::Downloading | InstallState::Verifying | InstallState::Extracting
+            )
+        }) {
             return Err(format!("{id} {version} is currently being installed"));
         }
         let dir = self.version_dir(id, version);
-        let binary = builtin_catalog().into_iter().find(|m| m.id == id && m.version == version).map(|m| m.binary).or_else(|| runtime_binary(id))
+        let binary = builtin_catalog()
+            .into_iter()
+            .find(|m| m.id == id && m.version == version)
+            .map(|m| m.binary)
+            .or_else(|| runtime_binary(id))
             .ok_or_else(|| format!("{id} {version} is not in the runtime catalog"))?;
         if !dir.join(binary).exists() {
             return Err(format!("{id} {version} is not installed"));
         }
-        std::fs::remove_dir_all(&dir).map_err(|e| format!("could not remove {id} {version}: {e}"))?;
+        std::fs::remove_dir_all(&dir)
+            .map_err(|e| format!("could not remove {id} {version}: {e}"))?;
         if selected {
             self.preferred.write().unwrap().remove(id);
         }
@@ -423,7 +620,11 @@ impl RuntimeManager {
                 if !response.status().is_success() {
                     return Err(format!("{url}: HTTP {}", response.status()));
                 }
-                response.bytes().await.map(|b| b.to_vec()).map_err(|e| e.to_string())
+                response
+                    .bytes()
+                    .await
+                    .map(|b| b.to_vec())
+                    .map_err(|e| e.to_string())
             };
             let result = tokio::time::timeout(std::time::Duration::from_secs(120), get)
                 .await
@@ -440,9 +641,23 @@ impl RuntimeManager {
     /// §21: download over HTTPS, verify SHA-256, and only then extract. Any failure aborts
     /// and leaves no partial install behind (temp dir is never renamed into place).
     pub fn install(&self, id: &str, version: &str) {
-        let static_manifest = builtin_catalog().into_iter().find(|m| m.id == id && m.version == version).map(owned_manifest);
-        if static_manifest.is_none() && !self.online_versions.read().unwrap().get(id).is_some_and(|vs| vs.iter().any(|v| v == version)) {
-            let _ = self.events_tx.send(RuntimeEvent::Failed { id: id.to_string(), version: version.to_string(), message: "not in the current online or built-in version list".into() });
+        let static_manifest = builtin_catalog()
+            .into_iter()
+            .find(|m| m.id == id && m.version == version)
+            .map(owned_manifest);
+        if static_manifest.is_none()
+            && !self
+                .online_versions
+                .read()
+                .unwrap()
+                .get(id)
+                .is_some_and(|vs| vs.iter().any(|v| v == version))
+        {
+            let _ = self.events_tx.send(RuntimeEvent::Failed {
+                id: id.to_string(),
+                version: version.to_string(),
+                message: "not in the current online or built-in version list".into(),
+            });
             return;
         }
 
@@ -481,11 +696,21 @@ impl RuntimeManager {
 }
 
 fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
-    let parts = |v: &str| v.split('.').map(|p| p.parse::<u64>().unwrap_or(0)).collect::<Vec<_>>();
+    let parts = |v: &str| {
+        v.split('.')
+            .map(|p| p.parse::<u64>().unwrap_or(0))
+            .collect::<Vec<_>>()
+    };
     let (a, b) = (parts(a), parts(b));
     for i in 0..a.len().max(b.len()) {
-        match a.get(i).copied().unwrap_or(0).cmp(&b.get(i).copied().unwrap_or(0)) {
-            std::cmp::Ordering::Equal => {}, other => return other,
+        match a
+            .get(i)
+            .copied()
+            .unwrap_or(0)
+            .cmp(&b.get(i).copied().unwrap_or(0))
+        {
+            std::cmp::Ordering::Equal => {}
+            other => return other,
         }
     }
     std::cmp::Ordering::Equal
@@ -507,18 +732,35 @@ fn runtime_binary(id: &str) -> Option<&'static str> {
 }
 
 fn runtime_name(id: &str, manifests: &[PackageManifest]) -> String {
-    manifests.iter().find(|m| m.id == id).map(|m| m.name.to_string()).unwrap_or_else(|| match id {
-        "node" => "Node.js".into(), "php" => "PHP".into(), "nginx" => "Nginx".into(), "mariadb" => "MariaDB".into(),
-        "apache" => "Apache HTTP Server".into(), "composer" => "Composer".into(), "mongodb" => "MongoDB".into(),
-        "postgres" => "PostgreSQL".into(), "redis" => "Redis".into(), _ => id.into(),
-    })
+    manifests
+        .iter()
+        .find(|m| m.id == id)
+        .map(|m| m.name.to_string())
+        .unwrap_or_else(|| match id {
+            "node" => "Node.js".into(),
+            "php" => "PHP".into(),
+            "nginx" => "Nginx".into(),
+            "mariadb" => "MariaDB".into(),
+            "apache" => "Apache HTTP Server".into(),
+            "composer" => "Composer".into(),
+            "mongodb" => "MongoDB".into(),
+            "postgres" => "PostgreSQL".into(),
+            "redis" => "Redis".into(),
+            _ => id.into(),
+        })
 }
 
 fn nginx_versions(page: &str) -> Vec<String> {
     let mut found = Vec::new();
     for part in page.split("nginx-").skip(1) {
-        let Some(version) = part.split(".zip").next() else { continue };
-        if !version.is_empty() && version.split('.').all(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit())) {
+        let Some(version) = part.split(".zip").next() else {
+            continue;
+        };
+        if !version.is_empty()
+            && version
+                .split('.')
+                .all(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))
+        {
             found.push(version.to_string());
         }
     }
@@ -530,11 +772,19 @@ fn nginx_versions(page: &str) -> Vec<String> {
 fn extract_versions(text: &str, start: &str, end: &str) -> Vec<String> {
     let mut found = Vec::new();
     for segment in text.split(start).skip(1) {
-        let Some(candidate) = segment.split(end).next() else { continue };
+        let Some(candidate) = segment.split(end).next() else {
+            continue;
+        };
         let candidate = candidate.trim().trim_matches(['\'', '"', '`', ' ']);
-        if !candidate.is_empty() && candidate.split('.').all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit())) { found.push(candidate.to_string()); }
+        if !candidate.is_empty()
+            && candidate
+                .split('.')
+                .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
+        {
+            found.push(candidate.to_string());
+        }
     }
-    found.sort_by(|a,b| compare_versions(b,a));
+    found.sort_by(|a, b| compare_versions(b, a));
     found.dedup();
     found
 }
@@ -542,22 +792,33 @@ fn extract_versions(text: &str, start: &str, end: &str) -> Vec<String> {
 fn extract_numeric_filename_versions(text: &str, prefix: &str) -> Vec<String> {
     let mut found = Vec::new();
     for segment in text.split(prefix).skip(1) {
-        let version: String = segment.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
-        if !version.is_empty() && version.split('.').all(|p| !p.is_empty()) { found.push(version); }
+        let version: String = segment
+            .chars()
+            .take_while(|c| c.is_ascii_digit() || *c == '.')
+            .collect();
+        if !version.is_empty() && version.split('.').all(|p| !p.is_empty()) {
+            found.push(version);
+        }
     }
-    found.sort_by(|a,b| compare_versions(b,a));
+    found.sort_by(|a, b| compare_versions(b, a));
     found.dedup();
     found
 }
 
 fn collect_mongodb_versions(value: &serde_json::Value, versions: &mut Vec<String>) {
     match value {
-        serde_json::Value::Array(items) => items.iter().for_each(|item| collect_mongodb_versions(item, versions)),
+        serde_json::Value::Array(items) => items
+            .iter()
+            .for_each(|item| collect_mongodb_versions(item, versions)),
         serde_json::Value::Object(fields) => {
             if let Some(version) = fields.get("version").and_then(|v| v.as_str()) {
-                if mongodb_archive(value).is_some() { versions.push(version.trim_start_matches('v').to_string()); }
+                if mongodb_archive(value).is_some() {
+                    versions.push(version.trim_start_matches('v').to_string());
+                }
             }
-            fields.values().for_each(|item| collect_mongodb_versions(item, versions));
+            fields
+                .values()
+                .for_each(|item| collect_mongodb_versions(item, versions));
         }
         _ => {}
     }
@@ -570,7 +831,11 @@ fn mongodb_archive(value: &serde_json::Value) -> Option<(String, String)> {
             let url = fields.get("url").and_then(|v| v.as_str());
             let sha = fields.get("sha256").and_then(|v| v.as_str());
             if let (Some(url), Some(sha)) = (url, sha) {
-                if url.contains("windows") && url.contains(".zip") && sha.len() == 64 && sha.chars().all(|c| c.is_ascii_hexdigit()) {
+                if url.contains("windows")
+                    && url.contains(".zip")
+                    && sha.len() == 64
+                    && sha.chars().all(|c| c.is_ascii_hexdigit())
+                {
                     return Some((url.to_string(), sha.to_string()));
                 }
             }
@@ -582,12 +847,20 @@ fn mongodb_archive(value: &serde_json::Value) -> Option<(String, String)> {
 
 fn mongodb_asset(value: &serde_json::Value, version: &str) -> Option<(String, String)> {
     match value {
-        serde_json::Value::Array(items) => items.iter().find_map(|item| mongodb_asset(item, version)),
+        serde_json::Value::Array(items) => {
+            items.iter().find_map(|item| mongodb_asset(item, version))
+        }
         serde_json::Value::Object(fields) => {
-            if fields.get("version").and_then(|v| v.as_str()).is_some_and(|v| v.trim_start_matches('v') == version) {
+            if fields
+                .get("version")
+                .and_then(|v| v.as_str())
+                .is_some_and(|v| v.trim_start_matches('v') == version)
+            {
                 return mongodb_archive(value);
             }
-            fields.values().find_map(|item| mongodb_asset(item, version))
+            fields
+                .values()
+                .find_map(|item| mongodb_asset(item, version))
         }
         _ => None,
     }
@@ -595,17 +868,27 @@ fn mongodb_asset(value: &serde_json::Value, version: &str) -> Option<(String, St
 
 fn linked_download_url(page: &str, filename_prefix: &str, version: &str) -> Option<String> {
     for segment in page.split(filename_prefix).skip(1) {
-        let Some(end) = segment.find(".zip") else { continue };
+        let Some(end) = segment.find(".zip") else {
+            continue;
+        };
         let filename = format!("{}{}.zip", filename_prefix, &segment[..end]);
-        if !filename.contains(version) { continue; }
+        if !filename.contains(version) {
+            continue;
+        }
         let position = page.find(&filename)?;
         let before = &page[..position];
         let href_at = before.rfind("href=")? + 5;
         let quote = before[href_at..].chars().next()?;
-        if quote != '\'' && quote != '"' { continue; }
+        if quote != '\'' && quote != '"' {
+            continue;
+        }
         let href = before[href_at + 1..].split(quote).next()?;
-        if href.starts_with("http://") || href.starts_with("https://") { return Some(href.to_string()); }
-        if href.starts_with('/') { return Some(format!("https://www.apachelounge.com{href}")); }
+        if href.starts_with("http://") || href.starts_with("https://") {
+            return Some(href.to_string());
+        }
+        if href.starts_with('/') {
+            return Some(format!("https://www.apachelounge.com{href}"));
+        }
         return Some(format!("https://www.apachelounge.com/download/{href}"));
     }
     None
@@ -615,115 +898,278 @@ fn edb_archive_link(page: &str, version: &str) -> Option<String> {
     let marker = format!("Binaries from installer Version {version}");
     let start = page.find(&marker)?;
     let tail = &page[start + marker.len()..];
-    let end = tail.find("Binaries from installer Version").unwrap_or(tail.len());
+    let end = tail
+        .find("Binaries from installer Version")
+        .unwrap_or(tail.len());
     let section = &tail[..end];
     let at = section.find("getfile.jsp")?;
     let before = &section[..at];
     let href_at = before.rfind("href=")? + 5;
     let quote = before[href_at..].chars().next()?;
-    if quote != '\'' && quote != '"' { return None; }
+    if quote != '\'' && quote != '"' {
+        return None;
+    }
     let from = href_at + 1;
     let to = section[from..].find(quote)? + from;
-    Some(format!("https://www.enterprisedb.com{}", &section[from..to]))
+    Some(format!(
+        "https://www.enterprisedb.com{}",
+        &section[from..to]
+    ))
 }
 
 fn owned_manifest(m: PackageManifest) -> OwnedManifest {
     OwnedManifest {
-        id: m.id.into(), name: m.name.into(), version: m.version.into(),
-        platform: m.platform.into(), architecture: m.architecture.into(),
-        url: m.url.into(), sha256: m.sha256.into(), archive_root: m.archive_root.into(),
-        binary: m.binary.into(), probe: None,
+        id: m.id.into(),
+        name: m.name.into(),
+        version: m.version.into(),
+        platform: m.platform.into(),
+        architecture: m.architecture.into(),
+        url: m.url.into(),
+        sha256: m.sha256.into(),
+        archive_root: m.archive_root.into(),
+        binary: m.binary.into(),
+        probe: None,
     }
 }
 
 async fn fetch_text(http: &reqwest::Client, url: &str) -> Result<String, String> {
     let response = http.get(url).send().await.map_err(|e| e.to_string())?;
-    if !response.status().is_success() { return Err(format!("{url}: HTTP {}", response.status())); }
+    if !response.status().is_success() {
+        return Err(format!("{url}: HTTP {}", response.status()));
+    }
     response.text().await.map_err(|e| e.to_string())
 }
 
-async fn resolve_online_manifest(http: &reqwest::Client, id: &str, version: &str) -> Result<OwnedManifest, String> {
+async fn resolve_online_manifest(
+    http: &reqwest::Client,
+    id: &str,
+    version: &str,
+) -> Result<OwnedManifest, String> {
     let (url, sha256, archive_root, binary) = match id {
         "node" => {
             let filename = format!("node-v{version}-win-x64.zip");
             let sums_url = format!("https://nodejs.org/dist/v{version}/SHASUMS256.txt");
             let sums = fetch_text(http, &sums_url).await?;
-            let sha = sums.lines().find_map(|line| {
-                let mut words = line.split_whitespace();
-                let sum = words.next()?;
-                let name = words.next()?.trim_start_matches('*');
-                (name == filename && sum.len() == 64).then(|| sum.to_string())
-            }).ok_or_else(|| format!("Node.js does not publish a SHA-256 for {filename}"))?;
-            (format!("https://nodejs.org/dist/v{version}/{filename}"), sha, format!("node-v{version}-win-x64"), "node.exe")
+            let sha = sums
+                .lines()
+                .find_map(|line| {
+                    let mut words = line.split_whitespace();
+                    let sum = words.next()?;
+                    let name = words.next()?.trim_start_matches('*');
+                    (name == filename && sum.len() == 64).then(|| sum.to_string())
+                })
+                .ok_or_else(|| format!("Node.js does not publish a SHA-256 for {filename}"))?;
+            (
+                format!("https://nodejs.org/dist/v{version}/{filename}"),
+                sha,
+                format!("node-v{version}-win-x64"),
+                "node.exe",
+            )
         }
         "php" => {
-            let bytes = http.get("https://downloads.php.net/~windows/releases/releases.json").send().await.map_err(|e| e.to_string())?
-                .error_for_status().map_err(|e| e.to_string())?.bytes().await.map_err(|e| e.to_string())?;
-            let releases: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
-            let release = releases.as_object().into_iter().flat_map(|o| o.values()).find(|r| r.get("version").and_then(|v| v.as_str()) == Some(version))
+            let bytes = http
+                .get("https://downloads.php.net/~windows/releases/releases.json")
+                .send()
+                .await
+                .map_err(|e| e.to_string())?
+                .error_for_status()
+                .map_err(|e| e.to_string())?
+                .bytes()
+                .await
+                .map_err(|e| e.to_string())?;
+            let releases: serde_json::Value =
+                serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+            let release = releases
+                .as_object()
+                .into_iter()
+                .flat_map(|o| o.values())
+                .find(|r| r.get("version").and_then(|v| v.as_str()) == Some(version))
                 .ok_or_else(|| format!("PHP {version} is no longer in the Windows release feed"))?;
-            let (path, sha) = release.as_object().into_iter().flat_map(|o| o.iter())
+            let (path, sha) = release
+                .as_object()
+                .into_iter()
+                .flat_map(|o| o.iter())
                 .filter(|(key, _)| key.starts_with("nts-vs") && key.ends_with("-x64"))
                 .find_map(|(_, build)| {
                     let zip = build.get("zip")?;
-                    Some((zip.get("path")?.as_str()?.to_string(), zip.get("sha256")?.as_str()?.to_string()))
-                }).ok_or_else(|| format!("PHP {version} has no non-thread-safe x64 Windows archive"))?;
-            (format!("https://downloads.php.net/~windows/releases/{path}"), sha, String::new(), "php.exe")
+                    Some((
+                        zip.get("path")?.as_str()?.to_string(),
+                        zip.get("sha256")?.as_str()?.to_string(),
+                    ))
+                })
+                .ok_or_else(|| {
+                    format!("PHP {version} has no non-thread-safe x64 Windows archive")
+                })?;
+            (
+                format!("https://downloads.php.net/~windows/releases/{path}"),
+                sha,
+                String::new(),
+                "php.exe",
+            )
         }
         "mariadb" => {
             let api = format!("https://downloads.mariadb.org/rest-api/mariadb/{version}/");
-            let bytes = http.get(&api).send().await.map_err(|e| e.to_string())?.error_for_status().map_err(|e| e.to_string())?
-                .bytes().await.map_err(|e| e.to_string())?;
-            let data: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
-            let release = data.get("releases").and_then(|v| v.get(version)).ok_or_else(|| format!("MariaDB {version} is unavailable"))?;
-            let file = release.get("files").and_then(|v| v.as_array()).into_iter().flatten().find(|f| {
-                f.get("file_name").and_then(|v| v.as_str()).is_some_and(|name| name == format!("mariadb-{version}-winx64.zip"))
-            }).ok_or_else(|| format!("MariaDB {version} has no Windows x64 ZIP"))?;
-            let sha = file.pointer("/checksum/sha256sum").and_then(|v| v.as_str()).filter(|s| s.len() == 64)
+            let bytes = http
+                .get(&api)
+                .send()
+                .await
+                .map_err(|e| e.to_string())?
+                .error_for_status()
+                .map_err(|e| e.to_string())?
+                .bytes()
+                .await
+                .map_err(|e| e.to_string())?;
+            let data: serde_json::Value =
+                serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+            let release = data
+                .get("releases")
+                .and_then(|v| v.get(version))
+                .ok_or_else(|| format!("MariaDB {version} is unavailable"))?;
+            let file = release
+                .get("files")
+                .and_then(|v| v.as_array())
+                .into_iter()
+                .flatten()
+                .find(|f| {
+                    f.get("file_name")
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|name| name == format!("mariadb-{version}-winx64.zip"))
+                })
+                .ok_or_else(|| format!("MariaDB {version} has no Windows x64 ZIP"))?;
+            let sha = file
+                .pointer("/checksum/sha256sum")
+                .and_then(|v| v.as_str())
+                .filter(|s| s.len() == 64)
                 .ok_or_else(|| format!("MariaDB {version} has no published SHA-256"))?;
             (format!("https://archive.mariadb.org/mariadb-{version}/winx64-packages/mariadb-{version}-winx64.zip"), sha.to_string(), format!("mariadb-{version}-winx64"), "bin/mariadbd.exe")
         }
         "apache" => {
             let page = fetch_text(http, "https://www.apachelounge.com/download/").await?;
-            let url = linked_download_url(&page, "httpd-", version).ok_or_else(|| format!("Apache Lounge no longer lists a Windows archive for {version}"))?;
+            let url = linked_download_url(&page, "httpd-", version).ok_or_else(|| {
+                format!("Apache Lounge no longer lists a Windows archive for {version}")
+            })?;
             (url, String::new(), "Apache24".into(), "bin/httpd.exe")
         }
         "composer" => {
-            let checksum_url = format!("https://getcomposer.org/download/{version}/composer.phar.sha256sum");
+            let checksum_url =
+                format!("https://getcomposer.org/download/{version}/composer.phar.sha256sum");
             let checksum = fetch_text(http, &checksum_url).await?;
-            let sha = checksum.split_whitespace().next().filter(|s| s.len() == 64).ok_or_else(|| format!("Composer did not publish a SHA-256 for {version}"))?;
-            (format!("https://getcomposer.org/download/{version}/composer.phar"), sha.to_string(), String::new(), "composer.phar")
+            let sha = checksum
+                .split_whitespace()
+                .next()
+                .filter(|s| s.len() == 64)
+                .ok_or_else(|| format!("Composer did not publish a SHA-256 for {version}"))?;
+            (
+                format!("https://getcomposer.org/download/{version}/composer.phar"),
+                sha.to_string(),
+                String::new(),
+                "composer.phar",
+            )
         }
         "mongodb" => {
-            let bytes = http.get("https://downloads.mongodb.org/current.json").send().await.map_err(|e| e.to_string())?.error_for_status().map_err(|e| e.to_string())?.bytes().await.map_err(|e| e.to_string())?;
-            let releases: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
-            let (url, sha) = mongodb_asset(&releases, version).ok_or_else(|| format!("MongoDB {version} has no Windows x64 ZIP with a published checksum"))?;
-            (url, sha, format!("mongodb-win32-x86_64-windows-{version}"), "bin/mongod.exe")
+            let bytes = http
+                .get("https://downloads.mongodb.org/current.json")
+                .send()
+                .await
+                .map_err(|e| e.to_string())?
+                .error_for_status()
+                .map_err(|e| e.to_string())?
+                .bytes()
+                .await
+                .map_err(|e| e.to_string())?;
+            let releases: serde_json::Value =
+                serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+            let (url, sha) = mongodb_asset(&releases, version).ok_or_else(|| {
+                format!("MongoDB {version} has no Windows x64 ZIP with a published checksum")
+            })?;
+            (
+                url,
+                sha,
+                format!("mongodb-win32-x86_64-windows-{version}"),
+                "bin/mongod.exe",
+            )
         }
         "postgres" => {
-            let page = fetch_text(http, "https://www.enterprisedb.com/download-postgresql-binaries").await?;
-            let link = edb_archive_link(&page, version).ok_or_else(|| format!("EDB no longer lists the PostgreSQL {version} Windows binaries"))?;
-            let response = http.get(&link).header(reqwest::header::RANGE, "bytes=0-0").send().await.map_err(|e| e.to_string())?.error_for_status().map_err(|e| e.to_string())?;
-            (response.url().to_string(), String::new(), "pgsql".into(), "bin/postgres.exe")
+            let page = fetch_text(
+                http,
+                "https://www.enterprisedb.com/download-postgresql-binaries",
+            )
+            .await?;
+            let link = edb_archive_link(&page, version).ok_or_else(|| {
+                format!("EDB no longer lists the PostgreSQL {version} Windows binaries")
+            })?;
+            let response = http
+                .get(&link)
+                .header(reqwest::header::RANGE, "bytes=0-0")
+                .send()
+                .await
+                .map_err(|e| e.to_string())?
+                .error_for_status()
+                .map_err(|e| e.to_string())?;
+            (
+                response.url().to_string(),
+                String::new(),
+                "pgsql".into(),
+                "bin/postgres.exe",
+            )
         }
         "redis" => {
-            let api = format!("https://api.github.com/repos/redis-windows/redis-windows/releases/tags/{version}");
-            let bytes = http.get(&api).send().await.map_err(|e| e.to_string())?.error_for_status().map_err(|e| e.to_string())?.bytes().await.map_err(|e| e.to_string())?;
-            let release: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
-            let (url, archive_root) = release.get("assets").and_then(|v| v.as_array()).into_iter().flatten().find_map(|asset| {
-                let name = asset.get("name")?.as_str()?;
-                if name.starts_with("Redis-") && name.contains("Windows-x64") && name.ends_with(".zip") {
-                    Some((asset.get("browser_download_url")?.as_str()?.to_string(), name.trim_end_matches(".zip").to_string()))
-                } else { None }
-            }).ok_or_else(|| format!("Redis Windows release {version} has no x64 archive"))?;
+            let api = format!(
+                "https://api.github.com/repos/redis-windows/redis-windows/releases/tags/{version}"
+            );
+            let bytes = http
+                .get(&api)
+                .send()
+                .await
+                .map_err(|e| e.to_string())?
+                .error_for_status()
+                .map_err(|e| e.to_string())?
+                .bytes()
+                .await
+                .map_err(|e| e.to_string())?;
+            let release: serde_json::Value =
+                serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+            let (url, archive_root) = release
+                .get("assets")
+                .and_then(|v| v.as_array())
+                .into_iter()
+                .flatten()
+                .find_map(|asset| {
+                    let name = asset.get("name")?.as_str()?;
+                    if name.starts_with("Redis-")
+                        && name.contains("Windows-x64")
+                        && name.ends_with(".zip")
+                    {
+                        Some((
+                            asset.get("browser_download_url")?.as_str()?.to_string(),
+                            name.trim_end_matches(".zip").to_string(),
+                        ))
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| format!("Redis Windows release {version} has no x64 archive"))?;
             (url, String::new(), archive_root, "redis-server.exe")
         }
-        "nginx" => (format!("https://nginx.org/download/nginx-{version}.zip"), String::new(), format!("nginx-{version}"), "nginx.exe"),
+        "nginx" => (
+            format!("https://nginx.org/download/nginx-{version}.zip"),
+            String::new(),
+            format!("nginx-{version}"),
+            "nginx.exe",
+        ),
         _ => return Err(format!("Online installs are not supported for {id}.")),
     };
     Ok(OwnedManifest {
-        id: id.to_string(), name: runtime_name(id, &builtin_catalog()), version: version.to_string(),
-        platform: "windows".into(), architecture: "x64".into(), url, sha256, archive_root, binary: binary.into(), probe: None,
+        id: id.to_string(),
+        name: runtime_name(id, &builtin_catalog()),
+        version: version.to_string(),
+        platform: "windows".into(),
+        architecture: "x64".into(),
+        url,
+        sha256,
+        archive_root,
+        binary: binary.into(),
+        probe: None,
     })
 }
 
@@ -736,7 +1182,9 @@ async fn install_one(
 ) -> Result<(), String> {
     let key = format!("{}@{}", manifest.id, manifest.version);
     let cache_dir = paths.cache_dir();
-    tokio::fs::create_dir_all(&cache_dir).await.map_err(|e| e.to_string())?;
+    tokio::fs::create_dir_all(&cache_dir)
+        .await
+        .map_err(|e| e.to_string())?;
     let archive_path = cache_dir.join(format!("{}-{}.download", manifest.id, manifest.version));
 
     // §127: a previously-downloaded, still-correct copy is reused instead of fetched
@@ -744,16 +1192,29 @@ async fn install_one(
     // entry with a different hash) is treated as absent and re-downloaded below.
     let cached_digest: Option<String> = {
         let path = archive_path.clone();
-        tokio::task::spawn_blocking(move || hash_file(&path)).await.map_err(|e| e.to_string())?.ok()
+        tokio::task::spawn_blocking(move || hash_file(&path))
+            .await
+            .map_err(|e| e.to_string())?
+            .ok()
     };
-    let already_cached = if manifest.sha256.is_empty() { cached_digest.is_some() } else { cached_digest.as_deref() == Some(manifest.sha256.as_str()) };
+    let already_cached = if manifest.sha256.is_empty() {
+        cached_digest.is_some()
+    } else {
+        cached_digest.as_deref() == Some(manifest.sha256.as_str())
+    };
 
     let mut downloaded: u64;
     let total: Option<u64>;
 
     if already_cached {
-        tracing::info!(id = manifest.id, version = manifest.version, "reusing verified cached download");
-        downloaded = std::fs::metadata(&archive_path).map(|m| m.len()).unwrap_or(0);
+        tracing::info!(
+            id = manifest.id,
+            version = manifest.version,
+            "reusing verified cached download"
+        );
+        downloaded = std::fs::metadata(&archive_path)
+            .map(|m| m.len())
+            .unwrap_or(0);
         total = Some(downloaded);
         let _ = events_tx.send(RuntimeEvent::Progress {
             id: manifest.id.to_string(),
@@ -794,7 +1255,10 @@ async fn install_one(
         drop(file);
 
         // -- Verify (§21). A mismatch deletes the download and aborts; nothing is extracted. --
-        state.lock().unwrap().insert(key.clone(), InstallState::Verifying);
+        state
+            .lock()
+            .unwrap()
+            .insert(key.clone(), InstallState::Verifying);
         let _ = events_tx.send(RuntimeEvent::Progress {
             id: manifest.id.to_string(),
             version: manifest.version.to_string(),
@@ -816,7 +1280,10 @@ async fn install_one(
     }
 
     // -- Extract into a scratch dir, then atomically rename into place (§163). --
-    state.lock().unwrap().insert(key.clone(), InstallState::Extracting);
+    state
+        .lock()
+        .unwrap()
+        .insert(key.clone(), InstallState::Extracting);
     let _ = events_tx.send(RuntimeEvent::Progress {
         id: manifest.id.to_string(),
         version: manifest.version.to_string(),
@@ -832,20 +1299,27 @@ async fn install_one(
     let archive_path_for_blocking = archive_path.clone();
     let scratch_dir_for_blocking = scratch_dir.clone();
     let archive_root = manifest.archive_root.to_string();
-    let single_file_name = (!manifest.url.ends_with(".zip"))
-        .then(|| manifest.binary.to_string());
+    let single_file_name = (!manifest.url.ends_with(".zip")).then(|| manifest.binary.to_string());
     tokio::task::spawn_blocking(move || match single_file_name {
         // A non-archive download (e.g. composer.phar) is the runtime itself — "extract"
         // just means copying it into place under its final name.
         Some(name) => {
             std::fs::create_dir_all(&scratch_dir_for_blocking)?;
-            std::fs::copy(&archive_path_for_blocking, scratch_dir_for_blocking.join(name)).map(|_| ())
+            std::fs::copy(
+                &archive_path_for_blocking,
+                scratch_dir_for_blocking.join(name),
+            )
+            .map(|_| ())
         }
-        None => extract_zip(&archive_path_for_blocking, &scratch_dir_for_blocking, &archive_root),
+        None => extract_zip(
+            &archive_path_for_blocking,
+            &scratch_dir_for_blocking,
+            &archive_root,
+        ),
     })
     .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())?;
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
 
     // The verified archive stays in cache/ on purpose (§127) — a later reinstall (or
     // installing after a bad uninstall) reuses it via the cache-hit check above instead
@@ -853,7 +1327,9 @@ async fn install_one(
     if final_dir.exists() {
         let _ = tokio::fs::remove_dir_all(&final_dir).await;
     }
-    tokio::fs::rename(&scratch_dir, &final_dir).await.map_err(|e| e.to_string())?;
+    tokio::fs::rename(&scratch_dir, &final_dir)
+        .await
+        .map_err(|e| e.to_string())?;
 
     state.lock().unwrap().insert(key, InstallState::Installed);
     tracing::info!(id = %manifest.id, version = %manifest.version, path = %final_dir.display(), "runtime installed");
@@ -885,7 +1361,11 @@ fn hash_file(path: &Path) -> Result<String, std::io::Error> {
 
 /// Extracts `archive_path` (a zip) into `dest_dir`, stripping the single top-level
 /// `archive_root` directory the vendor wrapped everything in.
-pub(crate) fn extract_zip(archive_path: &Path, dest_dir: &Path, archive_root: &str) -> std::io::Result<()> {
+pub(crate) fn extract_zip(
+    archive_path: &Path,
+    dest_dir: &Path,
+    archive_root: &str,
+) -> std::io::Result<()> {
     let file = std::fs::File::open(archive_path)?;
     let mut zip = zip::ZipArchive::new(file).map_err(std::io::Error::other)?;
 
@@ -900,8 +1380,13 @@ pub(crate) fn extract_zip(archive_path: &Path, dest_dir: &Path, archive_root: &s
             continue;
         }
         // Zip-slip guard: an entry may never climb out of the destination.
-        if relative.split('/').any(|c| c == "..") || relative.contains(':') || relative.starts_with('/') {
-            return Err(std::io::Error::other(format!("refusing unsafe path in archive: {relative}")));
+        if relative.split('/').any(|c| c == "..")
+            || relative.contains(':')
+            || relative.starts_with('/')
+        {
+            return Err(std::io::Error::other(format!(
+                "refusing unsafe path in archive: {relative}"
+            )));
         }
         let out_path = dest_dir.join(relative);
 
@@ -931,7 +1416,11 @@ mod tests {
         let manager = RuntimeManager::new(home.paths.clone());
         let mut events = manager.subscribe();
 
-        let entry = manager.catalog().into_iter().find(|e| e.id == id).unwrap_or_else(|| panic!("{id} in catalog"));
+        let entry = manager
+            .catalog()
+            .into_iter()
+            .find(|e| e.id == id)
+            .unwrap_or_else(|| panic!("{id} in catalog"));
         assert!(!entry.installed);
 
         manager.install(&entry.id, &entry.version);
@@ -951,7 +1440,9 @@ mod tests {
         let installed_path = installed_path.expect("install did not finish within 180s");
         assert!(Path::new(&installed_path).join(binary).exists());
 
-        let bin = manager.binary_path(&entry.id, &entry.version).expect("binary_path after install");
+        let bin = manager
+            .binary_path(&entry.id, &entry.version)
+            .expect("binary_path after install");
         assert!(bin.exists());
 
         let entry_after = manager.catalog().into_iter().find(|e| e.id == id).unwrap();

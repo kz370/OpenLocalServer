@@ -71,7 +71,10 @@ pub struct CertPaths {
 
 impl CertificateManager {
     pub fn new(paths: &AppPaths) -> Self {
-        Self { ca: LocalCa::new(paths), sites_dir: paths.certs_dir().join("sites") }
+        Self {
+            ca: LocalCa::new(paths),
+            sites_dir: paths.certs_dir().join("sites"),
+        }
     }
 
     pub fn ca(&self) -> &LocalCa {
@@ -84,7 +87,10 @@ impl CertificateManager {
 
     fn paths_for(&self, hostname: &str) -> CertPaths {
         let dir = self.dir_for(hostname);
-        CertPaths { cert: dir.join("cert.pem"), key: dir.join("key.pem") }
+        CertPaths {
+            cert: dir.join("cert.pem"),
+            key: dir.join("key.pem"),
+        }
     }
 
     fn read_meta(&self, hostname: &str) -> Option<CertMeta> {
@@ -147,8 +153,11 @@ impl CertificateManager {
             expires_at: now + crate::ca::LEAF_VALIDITY_DAYS * 86_400,
             project_id: domain.project_id.clone(),
         };
-        std::fs::write(dir.join("meta.json"), serde_json::to_string_pretty(&meta).map_err(|e| e.to_string())?)
-            .map_err(|e| e.to_string())?;
+        std::fs::write(
+            dir.join("meta.json"),
+            serde_json::to_string_pretty(&meta).map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?;
         Ok(paths)
     }
 
@@ -189,7 +198,9 @@ impl CertificateManager {
     }
 
     pub fn list(&self) -> Vec<CertInfo> {
-        let Ok(entries) = std::fs::read_dir(&self.sites_dir) else { return Vec::new() };
+        let Ok(entries) = std::fs::read_dir(&self.sites_dir) else {
+            return Vec::new();
+        };
         let mut all: Vec<CertInfo> = entries
             .flatten()
             .filter_map(|e| e.file_name().to_str().map(str::to_string))
@@ -237,7 +248,11 @@ mod tests {
         let first = mgr.ensure_for(&d).unwrap();
         let bytes = std::fs::read(&first.cert).unwrap();
         let again = mgr.ensure_for(&d).unwrap();
-        assert_eq!(bytes, std::fs::read(&again.cert).unwrap(), "a valid cert must not be regenerated");
+        assert_eq!(
+            bytes,
+            std::fs::read(&again.cert).unwrap(),
+            "a valid cert must not be regenerated"
+        );
     }
 
     #[test]
@@ -248,7 +263,10 @@ mod tests {
         assert_eq!(mgr.info("shop.test").unwrap().sans, vec!["shop.test"]);
 
         mgr.ensure_for(&domain("shop.test", true)).unwrap();
-        assert_eq!(mgr.info("shop.test").unwrap().sans, vec!["shop.test", "*.shop.test"]);
+        assert_eq!(
+            mgr.info("shop.test").unwrap().sans,
+            vec!["shop.test", "*.shop.test"]
+        );
     }
 
     #[test]
@@ -263,7 +281,10 @@ mod tests {
         assert_eq!(info.project_id.as_deref(), Some("p1"));
         assert!(info.key_path.ends_with("key.pem"));
         let json = serde_json::to_string(&info).unwrap();
-        assert!(!json.contains("PRIVATE KEY"), "key material must never appear in CertInfo");
+        assert!(
+            !json.contains("PRIVATE KEY"),
+            "key material must never appear in CertInfo"
+        );
     }
 
     #[test]

@@ -195,7 +195,11 @@ pub struct EnvironmentManifest {
 impl EnvironmentManifest {
     /// Services switched on, in a stable order.
     pub fn enabled_services(&self) -> Vec<String> {
-        self.services.iter().filter(|(_, t)| t.enabled()).map(|(k, _)| k.clone()).collect()
+        self.services
+            .iter()
+            .filter(|(_, t)| t.enabled())
+            .map(|(k, _)| k.clone())
+            .collect()
     }
 }
 
@@ -230,14 +234,17 @@ fn read_yaml<T: serde::de::DeserializeOwned>(path: &Path) -> Result<Option<T>, S
     if text.trim().is_empty() {
         return Ok(None);
     }
-    serde_yaml_ng::from_str(&text).map(Some).map_err(|e| format!("{}: {e}", path.display()))
+    serde_yaml_ng::from_str(&text)
+        .map(Some)
+        .map_err(|e| format!("{}: {e}", path.display()))
 }
 
 /// Reads `environment.yaml` with `services.yaml` merged in. `None` when the project has no
 /// manifest; an error when a file doesn't parse.
 pub fn read_manifest(project_path: &Path) -> Result<Option<EnvironmentManifest>, String> {
     let base: Option<EnvironmentManifest> = read_yaml(&manifest_path(project_path))?;
-    let extra: Option<BTreeMap<String, ServiceToggle>> = read_yaml(&dir(project_path).join("services.yaml"))?;
+    let extra: Option<BTreeMap<String, ServiceToggle>> =
+        read_yaml(&dir(project_path).join("services.yaml"))?;
     Ok(match (base, extra) {
         (None, None) => None,
         (base, extra) => {
@@ -252,10 +259,14 @@ pub fn read_manifest(project_path: &Path) -> Result<Option<EnvironmentManifest>,
 
 /// The project's own Quick Commands from `commands.yaml` (empty when there is none).
 pub fn read_commands(project_path: &Path) -> Result<Vec<QuickCommand>, String> {
-    Ok(match read_yaml::<CommandsFile>(&dir(project_path).join("commands.yaml"))? {
-        Some(CommandsFile::Wrapped { commands }) | Some(CommandsFile::List(commands)) => commands,
-        None => Vec::new(),
-    })
+    Ok(
+        match read_yaml::<CommandsFile>(&dir(project_path).join("commands.yaml"))? {
+            Some(CommandsFile::Wrapped { commands }) | Some(CommandsFile::List(commands)) => {
+                commands
+            }
+            None => Vec::new(),
+        },
+    )
 }
 
 pub fn read_lock(project_path: &Path) -> Result<Option<LockFile>, String> {
@@ -265,7 +276,10 @@ pub fn read_lock(project_path: &Path) -> Result<Option<LockFile>, String> {
 const MANIFEST_HEADER: &str = "# OpenLocalServer project environment (see docs: .openlocalserver/environment.yaml).\n# Commit this folder so `ols setup` rebuilds the same environment on another machine.\n";
 const LOCK_HEADER: &str = "# Written by OpenLocalServer after a successful setup. Exact versions, for reproducible setups.\n";
 
-pub fn write_manifest(project_path: &Path, manifest: &EnvironmentManifest) -> Result<PathBuf, String> {
+pub fn write_manifest(
+    project_path: &Path,
+    manifest: &EnvironmentManifest,
+) -> Result<PathBuf, String> {
     let path = manifest_path(project_path);
     let yaml = serde_yaml_ng::to_string(manifest).map_err(|e| e.to_string())?;
     write_atomic(&path, &format!("{MANIFEST_HEADER}{yaml}"))?;
@@ -303,8 +317,13 @@ mod tests {
 
     #[test]
     fn reads_runtime_versions_from_manifest() {
-        let tmp = project_with(&[("environment.yaml", "name: shop\nruntime:\n  php: \"8.1\"\n  node: \"20\"\n")]);
-        let manifest = read_manifest(tmp.path()).unwrap().expect("manifest present");
+        let tmp = project_with(&[(
+            "environment.yaml",
+            "name: shop\nruntime:\n  php: \"8.1\"\n  node: \"20\"\n",
+        )]);
+        let manifest = read_manifest(tmp.path())
+            .unwrap()
+            .expect("manifest present");
         assert_eq!(manifest.name.as_deref(), Some("shop"));
         assert_eq!(manifest.runtime.php.as_deref(), Some("8.1"));
         assert_eq!(manifest.runtime.node.as_deref(), Some("20"));
@@ -335,21 +354,37 @@ scheduler: true
 tunnel:
   enabled: false
 "#;
-        let tmp = project_with(&[("environment.yaml", yaml), ("services.yaml", "mailpit: false\npostgres: { enabled: true }\n")]);
+        let tmp = project_with(&[
+            ("environment.yaml", yaml),
+            (
+                "services.yaml",
+                "mailpit: false\npostgres: { enabled: true }\n",
+            ),
+        ]);
         let m = read_manifest(tmp.path()).unwrap().unwrap();
         let d = m.domain.as_ref().unwrap();
         assert!(d.https && d.wildcard && d.hostname == "shop.test");
         assert_eq!(m.database.as_ref().unwrap().engine, "mysql");
-        assert_eq!(m.enabled_services(), vec!["postgres".to_string(), "redis".to_string()], "services.yaml overrides and extends");
+        assert_eq!(
+            m.enabled_services(),
+            vec!["postgres".to_string(), "redis".to_string()],
+            "services.yaml overrides and extends"
+        );
         assert_eq!(m.workers.get("queue"), Some(&WorkerEntry::On(true)));
         assert_eq!(m.scheduler, Some(SchedulerEntry::On(true)));
-        assert!(!m.tunnel.unwrap().autostart, "a tunnel never starts by default");
+        assert!(
+            !m.tunnel.unwrap().autostart,
+            "a tunnel never starts by default"
+        );
     }
 
     #[test]
     fn manifest_and_lock_round_trip() {
         let tmp = tempfile::tempdir().unwrap();
-        let mut m = EnvironmentManifest { name: Some("api".into()), ..Default::default() };
+        let mut m = EnvironmentManifest {
+            name: Some("api".into()),
+            ..Default::default()
+        };
         m.runtime.node = Some("24".into());
         m.services.insert("redis".into(), ServiceToggle::On(true));
         write_manifest(tmp.path(), &m).unwrap();
@@ -365,7 +400,13 @@ tunnel:
         let item = "- id: migrate\n  name: Migrate\n  command: { executable: php, arguments: [artisan, migrate] }\n";
         let tmp = project_with(&[("commands.yaml", item)]);
         assert_eq!(read_commands(tmp.path()).unwrap()[0].id, "migrate");
-        let tmp = project_with(&[("commands.yaml", &format!("commands:\n{}", item.lines().map(|l| format!("  {l}\n")).collect::<String>()))]);
+        let tmp = project_with(&[(
+            "commands.yaml",
+            &format!(
+                "commands:\n{}",
+                item.lines().map(|l| format!("  {l}\n")).collect::<String>()
+            ),
+        )]);
         assert_eq!(read_commands(tmp.path()).unwrap().len(), 1);
     }
 

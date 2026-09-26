@@ -89,13 +89,17 @@ fn de_variables<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<Variable>, D::Err
     let value = serde_yaml_ng::Value::deserialize(d)?;
     match value {
         serde_yaml_ng::Value::Null => Ok(Vec::new()),
-        serde_yaml_ng::Value::Sequence(items) => {
-            items.into_iter().map(|i| serde_yaml_ng::from_value(i).map_err(D::Error::custom)).collect()
-        }
+        serde_yaml_ng::Value::Sequence(items) => items
+            .into_iter()
+            .map(|i| serde_yaml_ng::from_value(i).map_err(D::Error::custom))
+            .collect(),
         serde_yaml_ng::Value::Mapping(map) => {
             let mut out = Vec::new();
             for (k, v) in map {
-                let name = k.as_str().ok_or_else(|| D::Error::custom("variable names must be strings"))?.to_string();
+                let name = k
+                    .as_str()
+                    .ok_or_else(|| D::Error::custom("variable names must be strings"))?
+                    .to_string();
                 let mut var: Variable = serde_yaml_ng::from_value(v).map_err(D::Error::custom)?;
                 var.name = name;
                 out.push(var);
@@ -141,7 +145,10 @@ pub struct StepSpec {
 impl Step {
     pub fn spec(&self) -> StepSpec {
         match self {
-            Step::Line(line) => StepSpec { run: Some(line.clone()), ..Default::default() },
+            Step::Line(line) => StepSpec {
+                run: Some(line.clone()),
+                ..Default::default()
+            },
             Step::Full(spec) => spec.clone(),
         }
     }
@@ -289,7 +296,8 @@ pub struct QuickApp {
 }
 
 pub fn parse(yaml: &str) -> Result<QuickApp, String> {
-    let app: QuickApp = serde_yaml_ng::from_str(yaml).map_err(|e| format!("invalid Quick App YAML: {e}"))?;
+    let app: QuickApp =
+        serde_yaml_ng::from_str(yaml).map_err(|e| format!("invalid Quick App YAML: {e}"))?;
     validate(&app)?;
     Ok(app)
 }
@@ -302,33 +310,54 @@ pub fn to_yaml(app: &QuickApp) -> Result<String, String> {
 pub fn valid_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 64
-        && id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        && id
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
         && !id.starts_with('-')
 }
 
 pub fn validate(app: &QuickApp) -> Result<(), String> {
     if !valid_id(&app.id) {
-        return Err(format!("id \"{}\" must be lowercase letters, digits and dashes", app.id));
+        return Err(format!(
+            "id \"{}\" must be lowercase letters, digits and dashes",
+            app.id
+        ));
     }
     if app.name.trim().is_empty() {
         return Err("name is required".into());
     }
     let mut seen = std::collections::HashSet::new();
     for v in &app.variables {
-        if v.name.is_empty() || !v.name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
-            return Err(format!("variable name \"{}\" must be letters, digits and underscores", v.name));
+        if v.name.is_empty()
+            || !v
+                .name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_')
+        {
+            return Err(format!(
+                "variable name \"{}\" must be letters, digits and underscores",
+                v.name
+            ));
         }
         if !seen.insert(v.name.clone()) {
             return Err(format!("variable \"{}\" is defined twice", v.name));
         }
         if !VARIABLE_TYPES.contains(&v.var_type.as_str()) {
-            return Err(format!("variable \"{}\" has unknown type \"{}\"", v.name, v.var_type));
+            return Err(format!(
+                "variable \"{}\" has unknown type \"{}\"",
+                v.name, v.var_type
+            ));
         }
         if matches!(v.var_type.as_str(), "select" | "multiselect") && v.options.is_empty() {
             return Err(format!("select variable \"{}\" needs options", v.name));
         }
         if let Some(pattern) = &v.validation {
-            regex::Regex::new(pattern).map_err(|e| format!("variable \"{}\" has an invalid validation pattern: {e}", v.name))?;
+            regex::Regex::new(pattern).map_err(|e| {
+                format!(
+                    "variable \"{}\" has an invalid validation pattern: {e}",
+                    v.name
+                )
+            })?;
         }
     }
     let all_steps = app
@@ -352,7 +381,10 @@ pub fn validate(app: &QuickApp) -> Result<(), String> {
     if let Some(d) = &app.domain {
         // `kind` may be a template ("{{ kind }}"); those are checked when the plan is built.
         if !d.kind.contains("{{") && !matches!(d.kind.as_str(), "php" | "proxy" | "static") {
-            return Err(format!("domain kind \"{}\" must be php, proxy or static", d.kind));
+            return Err(format!(
+                "domain kind \"{}\" must be php, proxy or static",
+                d.kind
+            ));
         }
     }
     Ok(())
@@ -394,13 +426,25 @@ environment:
 "#;
         let app = parse(yaml).unwrap();
         assert_eq!(app.variables.len(), 2);
-        assert_eq!(app.variables[0].name, "project_name", "map key becomes the variable name, in order");
+        assert_eq!(
+            app.variables[0].name, "project_name",
+            "map key becomes the variable name, in order"
+        );
         assert!(app.variables[0].required);
-        assert_eq!(app.variables[1].default, Some(Scalar::Str("{{project_name}}.test".into())));
-        assert_eq!(app.requirements["php"], Requirement::Version(Scalar::Str("8.4".into())));
+        assert_eq!(
+            app.variables[1].default,
+            Some(Scalar::Str("{{project_name}}.test".into()))
+        );
+        assert_eq!(
+            app.requirements["php"],
+            Requirement::Version(Scalar::Str("8.4".into()))
+        );
         assert_eq!(app.requirements["redis"], Requirement::Flag(true));
         assert_eq!(app.commands.len(), 1);
-        assert_eq!(app.post_create[1].spec().run.as_deref(), Some("php artisan migrate"));
+        assert_eq!(
+            app.post_create[1].spec().run.as_deref(),
+            Some("php artisan migrate")
+        );
         assert_eq!(app.environment.https, Some(true));
     }
 
@@ -429,21 +473,55 @@ commands:
 "#;
         let app = parse(yaml).unwrap();
         assert_eq!(app.variables[0].options.len(), 3);
-        assert_eq!(app.variables[1].show_if.as_deref(), Some("database != none"));
-        assert_eq!(app.conditions[0].commands[0].spec().action.as_deref(), Some("create_database"));
+        assert_eq!(
+            app.variables[1].show_if.as_deref(),
+            Some("database != none")
+        );
+        assert_eq!(
+            app.conditions[0].commands[0].spec().action.as_deref(),
+            Some("create_database")
+        );
         assert!(app.commands[0].spec().allow_failure);
     }
 
     #[test]
     fn rejects_bad_definitions_with_a_clear_reason() {
-        assert!(parse("id: Bad Id\nname: x").unwrap_err().contains("lowercase"));
-        assert!(parse("id: ok\nname: x\nvariables:\n  - name: a\n    type: wat").unwrap_err().contains("unknown type"));
-        assert!(parse("id: ok\nname: x\nvariables:\n  - name: a\n  - name: a").unwrap_err().contains("twice"));
-        assert!(parse("id: ok\nname: x\nvariables:\n  - name: a\n    type: select").unwrap_err().contains("options"));
-        assert!(parse("id: ok\nname: x\nvariables:\n  - name: a\n    validation: '('").unwrap_err().contains("validation"));
-        assert!(parse("id: ok\nname: x\ncommands:\n  - name: nothing").unwrap_err().contains("run"));
-        assert!(parse("id: ok\nname: x\ncommands:\n  - run: a\n    action: b").unwrap_err().contains("run"));
-        assert!(parse("id: ok\nname: x\ndomain: { hostname: a.test, kind: cgi }").unwrap_err().contains("kind"));
+        assert!(parse("id: Bad Id\nname: x")
+            .unwrap_err()
+            .contains("lowercase"));
+        assert!(
+            parse("id: ok\nname: x\nvariables:\n  - name: a\n    type: wat")
+                .unwrap_err()
+                .contains("unknown type")
+        );
+        assert!(
+            parse("id: ok\nname: x\nvariables:\n  - name: a\n  - name: a")
+                .unwrap_err()
+                .contains("twice")
+        );
+        assert!(
+            parse("id: ok\nname: x\nvariables:\n  - name: a\n    type: select")
+                .unwrap_err()
+                .contains("options")
+        );
+        assert!(
+            parse("id: ok\nname: x\nvariables:\n  - name: a\n    validation: '('")
+                .unwrap_err()
+                .contains("validation")
+        );
+        assert!(parse("id: ok\nname: x\ncommands:\n  - name: nothing")
+            .unwrap_err()
+            .contains("run"));
+        assert!(
+            parse("id: ok\nname: x\ncommands:\n  - run: a\n    action: b")
+                .unwrap_err()
+                .contains("run")
+        );
+        assert!(
+            parse("id: ok\nname: x\ndomain: { hostname: a.test, kind: cgi }")
+                .unwrap_err()
+                .contains("kind")
+        );
     }
 
     #[test]

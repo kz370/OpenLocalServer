@@ -79,7 +79,11 @@ pub fn hosts_path() -> std::path::PathBuf {
         return over.into();
     }
     let root = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_string());
-    std::path::PathBuf::from(root).join("System32").join("drivers").join("etc").join("hosts")
+    std::path::PathBuf::from(root)
+        .join("System32")
+        .join("drivers")
+        .join("etc")
+        .join("hosts")
 }
 
 /// Whether `hostname` already points at this machine somewhere in the hosts file text.
@@ -94,7 +98,8 @@ fn listed_names(text: &str) -> Vec<String> {
         .filter_map(|l| {
             let mut cols = l.split_whitespace();
             let ip = cols.next()?;
-            (ip == "127.0.0.1" || ip == "::1").then(|| cols.map(|n| n.to_ascii_lowercase()).collect::<Vec<_>>())
+            (ip == "127.0.0.1" || ip == "::1")
+                .then(|| cols.map(|n| n.to_ascii_lowercase()).collect::<Vec<_>>())
         })
         .flatten()
         .collect()
@@ -113,7 +118,10 @@ fn block_names(text: &str) -> Vec<String> {
 
 /// Loopback entries for `hostnames` — OpenLocalServer never points a name anywhere else (§138).
 pub fn loopback_entries(hostnames: &[String]) -> Vec<(String, String)> {
-    hostnames.iter().map(|h| ("127.0.0.1".to_string(), h.clone())).collect()
+    hostnames
+        .iter()
+        .map(|h| ("127.0.0.1".to_string(), h.clone()))
+        .collect()
 }
 
 /// True when the file already contains exactly `entries` in our block (so no privileged
@@ -136,7 +144,10 @@ pub fn ensure(hostnames: &[String]) -> Result<bool, String> {
     let path = hosts_path();
     let existing = std::fs::read_to_string(&path).unwrap_or_default();
     let listed = listed_names(&existing);
-    if hostnames.iter().all(|h| listed.contains(&h.to_ascii_lowercase())) {
+    if hostnames
+        .iter()
+        .all(|h| listed.contains(&h.to_ascii_lowercase()))
+    {
         return Ok(false);
     }
     let mut wanted: Vec<String> = block_names(&existing);
@@ -145,15 +156,20 @@ pub fn ensure(hostnames: &[String]) -> Result<bool, String> {
     wanted.dedup();
     let entries = loopback_entries(&wanted);
     if std::env::var("OLS_HOSTS_FILE").is_ok() {
-        let updated =
-            if entries.is_empty() { remove_hosts_block(&existing) } else { apply_hosts_block(&existing, &entries) };
+        let updated = if entries.is_empty() {
+            remove_hosts_block(&existing)
+        } else {
+            apply_hosts_block(&existing, &entries)
+        };
         std::fs::write(&path, updated).map_err(|e| e.to_string())?;
         return Ok(true);
     }
     let args: Vec<String> = if entries.is_empty() {
         vec!["hosts-remove".to_string()]
     } else {
-        std::iter::once("hosts-apply".to_string()).chain(entries.iter().map(|(ip, h)| format!("{ip}={h}"))).collect()
+        std::iter::once("hosts-apply".to_string())
+            .chain(entries.iter().map(|(ip, h)| format!("{ip}={h}")))
+            .collect()
     };
     crate::elevate::run_helper(&args)?;
     Ok(true)
@@ -170,14 +186,26 @@ mod tests {
 # 127.0.0.1 commented.test
 ";
         let with_block = apply_hosts_block(text, &entries());
-        assert!(lists(&with_block, "shop.test"), "someone else's line (Laragon's) counts, case-insensitively");
+        assert!(
+            lists(&with_block, "shop.test"),
+            "someone else's line (Laragon's) counts, case-insensitively"
+        );
         assert!(lists(&with_block, "api.shop.test"));
-        assert!(!lists(&with_block, "commented.test"), "a commented-out line doesn't resolve anything");
-        assert_eq!(block_names(&with_block), vec!["shop.test".to_string(), "api.shop.test".to_string()]);
+        assert!(
+            !lists(&with_block, "commented.test"),
+            "a commented-out line doesn't resolve anything"
+        );
+        assert_eq!(
+            block_names(&with_block),
+            vec!["shop.test".to_string(), "api.shop.test".to_string()]
+        );
     }
 
     fn entries() -> Vec<(String, String)> {
-        vec![("127.0.0.1".to_string(), "shop.test".to_string()), ("127.0.0.1".to_string(), "api.shop.test".to_string())]
+        vec![
+            ("127.0.0.1".to_string(), "shop.test".to_string()),
+            ("127.0.0.1".to_string(), "api.shop.test".to_string()),
+        ]
     }
 
     #[test]
@@ -207,11 +235,23 @@ mod tests {
         assert!(first.contains("# my own comment"));
         assert!(first.contains("10.0.0.5 nas"));
 
-        let updated = apply_hosts_block(&first, &[("127.0.0.1".to_string(), "new-project.test".to_string())]);
-        assert!(updated.contains("# my own comment"), "unrelated content must survive");
-        assert!(updated.contains("10.0.0.5 nas"), "unrelated content must survive");
+        let updated = apply_hosts_block(
+            &first,
+            &[("127.0.0.1".to_string(), "new-project.test".to_string())],
+        );
+        assert!(
+            updated.contains("# my own comment"),
+            "unrelated content must survive"
+        );
+        assert!(
+            updated.contains("10.0.0.5 nas"),
+            "unrelated content must survive"
+        );
         assert!(updated.contains("127.0.0.1 new-project.test"));
-        assert!(!updated.contains("shop.test"), "old managed entries must be gone, not accumulated");
+        assert!(
+            !updated.contains("shop.test"),
+            "old managed entries must be gone, not accumulated"
+        );
     }
 
     #[test]
@@ -231,7 +271,10 @@ mod tests {
         let original = "127.0.0.1 localhost\r\n";
         let result = apply_hosts_block(original, &entries());
         assert!(result.contains("\r\n"));
-        assert!(!result.replace("\r\n", "").contains('\n'), "no bare LF may remain in a CRLF file");
+        assert!(
+            !result.replace("\r\n", "").contains('\n'),
+            "no bare LF may remain in a CRLF file"
+        );
     }
 
     #[test]
@@ -240,8 +283,14 @@ mod tests {
         let synced = apply_hosts_block(original, &entries());
         assert!(is_in_sync(&synced, &entries()));
         assert!(!is_in_sync(original, &entries()));
-        assert!(is_in_sync(original, &[]), "nothing to write and no block present");
-        assert!(!is_in_sync(&synced, &[]), "an old block that should be removed is out of sync");
+        assert!(
+            is_in_sync(original, &[]),
+            "nothing to write and no block present"
+        );
+        assert!(
+            !is_in_sync(&synced, &[]),
+            "an old block that should be removed is out of sync"
+        );
     }
 
     #[test]

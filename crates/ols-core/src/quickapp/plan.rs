@@ -30,11 +30,29 @@ pub struct PlanCtx {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum StepBody {
-    Run { program: String, args: Vec<String>, cwd: Option<String> },
-    Action { action: String, with: BTreeMap<String, String> },
-    WriteFile { path: String, content: String, overwrite: bool },
-    WriteEnv { file: String, key: String, value: String },
-    EnsureRuntime { id: String, version: Option<String> },
+    Run {
+        program: String,
+        args: Vec<String>,
+        cwd: Option<String>,
+    },
+    Action {
+        action: String,
+        with: BTreeMap<String, String>,
+    },
+    WriteFile {
+        path: String,
+        content: String,
+        overwrite: bool,
+    },
+    WriteEnv {
+        file: String,
+        key: String,
+        value: String,
+    },
+    EnsureRuntime {
+        id: String,
+        version: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -89,7 +107,10 @@ fn random_string(n: usize) -> String {
     let mut bytes = vec![0u8; n];
     // A failing OS RNG would otherwise yield a predictable "secret" — fail loudly instead.
     getrandom::fill(&mut bytes).expect("the operating system random number generator failed");
-    bytes.iter().map(|b| ALPHABET[*b as usize % ALPHABET.len()] as char).collect()
+    bytes
+        .iter()
+        .map(|b| ALPHABET[*b as usize % ALPHABET.len()] as char)
+        .collect()
 }
 
 fn env() -> Environment<'static> {
@@ -106,10 +127,16 @@ fn env() -> Environment<'static> {
 fn context(values: &BTreeMap<String, String>, vars: &[Variable]) -> BTreeMap<String, Value> {
     let mut ctx = BTreeMap::new();
     for (k, v) in values {
-        let ty = vars.iter().find(|x| &x.name == k).map(|x| x.var_type.as_str());
+        let ty = vars
+            .iter()
+            .find(|x| &x.name == k)
+            .map(|x| x.var_type.as_str());
         let value = match ty {
             Some("boolean") => Value::from(is_truthy(v)),
-            Some("number") | Some("port") => v.parse::<i64>().map(Value::from).unwrap_or_else(|_| Value::from(v.as_str())),
+            Some("number") | Some("port") => v
+                .parse::<i64>()
+                .map(Value::from)
+                .unwrap_or_else(|_| Value::from(v.as_str())),
             _ => Value::from(v.as_str()),
         };
         ctx.insert(k.clone(), value);
@@ -117,20 +144,31 @@ fn context(values: &BTreeMap<String, String>, vars: &[Variable]) -> BTreeMap<Str
     ctx
 }
 
-pub fn render(template: &str, values: &BTreeMap<String, String>, vars: &[Variable]) -> Result<String, String> {
+pub fn render(
+    template: &str,
+    values: &BTreeMap<String, String>,
+    vars: &[Variable],
+) -> Result<String, String> {
     let env = env();
-    env.render_str(template, context(values, vars)).map_err(|e| format!("template error in \"{template}\": {e}"))
+    env.render_str(template, context(values, vars))
+        .map_err(|e| format!("template error in \"{template}\": {e}"))
 }
 
 // ---------------------------------------------------------------------------- conditions
 
 fn is_truthy(v: &str) -> bool {
-    !matches!(v.trim().to_ascii_lowercase().as_str(), "" | "false" | "0" | "no" | "none" | "off")
+    !matches!(
+        v.trim().to_ascii_lowercase().as_str(),
+        "" | "false" | "0" | "no" | "none" | "off"
+    )
 }
 
 fn unquote(s: &str) -> &str {
     let s = s.trim();
-    s.strip_prefix('"').and_then(|x| x.strip_suffix('"')).or_else(|| s.strip_prefix('\'').and_then(|x| x.strip_suffix('\''))).unwrap_or(s)
+    s.strip_prefix('"')
+        .and_then(|x| x.strip_suffix('"'))
+        .or_else(|| s.strip_prefix('\'').and_then(|x| x.strip_suffix('\'')))
+        .unwrap_or(s)
 }
 
 /// §85: `database == mysql`, `redis == true`, `install_node`, `!x`, joined by `&&` / `||`
@@ -145,7 +183,8 @@ pub fn eval_condition(expr: &str, values: &BTreeMap<String, String>) -> bool {
                 lookup(l).eq_ignore_ascii_case(unquote(r))
             } else if let Some((l, r)) = atom.split_once("!=") {
                 !lookup(l).eq_ignore_ascii_case(unquote(r))
-            } else if let Some(rest) = atom.strip_prefix('!').or_else(|| atom.strip_prefix("not ")) {
+            } else if let Some(rest) = atom.strip_prefix('!').or_else(|| atom.strip_prefix("not "))
+            {
                 !is_truthy(&lookup(rest))
             } else {
                 is_truthy(&lookup(atom))
@@ -212,14 +251,21 @@ pub fn split_command_line(line: &str) -> Vec<String> {
 
 /// Tokenises first, then renders each token, so a value containing spaces (a project
 /// folder like `C:\Users\Jo Smith\Sites`) stays one argument.
-fn render_command(line: &str, values: &BTreeMap<String, String>, vars: &[Variable]) -> Result<(String, Vec<String>), String> {
+fn render_command(
+    line: &str,
+    values: &BTreeMap<String, String>,
+    vars: &[Variable],
+) -> Result<(String, Vec<String>), String> {
     let tokens = split_command_line(line);
     let mut rendered = Vec::with_capacity(tokens.len());
     for t in &tokens {
         rendered.push(render(t, values, vars)?);
     }
     let mut it = rendered.into_iter();
-    let program = it.next().filter(|p| !p.is_empty()).ok_or_else(|| format!("empty command in \"{line}\""))?;
+    let program = it
+        .next()
+        .filter(|p| !p.is_empty())
+        .ok_or_else(|| format!("empty command in \"{line}\""))?;
     Ok((program, it.collect()))
 }
 
@@ -243,13 +289,24 @@ pub fn resolve_values(
 /// Like [`resolve_values`], but always returns the best-effort answers next to the errors —
 /// the wizard uses them to show templated defaults ("shop.test") while the form is still
 /// being filled in.
-pub fn resolve_lenient(app: &QuickApp, provided: &BTreeMap<String, String>, ctx: &PlanCtx) -> (BTreeMap<String, String>, Vec<FieldError>) {
+pub fn resolve_lenient(
+    app: &QuickApp,
+    provided: &BTreeMap<String, String>,
+    ctx: &PlanCtx,
+) -> (BTreeMap<String, String>, Vec<FieldError>) {
     let mut values: BTreeMap<String, String> = BTreeMap::new();
-    values.insert("default_projects_dir".into(), ctx.projects_dir.display().to_string());
+    values.insert(
+        "default_projects_dir".into(),
+        ctx.projects_dir.display().to_string(),
+    );
     let mut errors = Vec::new();
 
     for v in &app.variables {
-        let visible = v.show_if.as_deref().map(|c| eval_condition(c, &values)).unwrap_or(true);
+        let visible = v
+            .show_if
+            .as_deref()
+            .map(|c| eval_condition(c, &values))
+            .unwrap_or(true);
         let raw = provided.get(&v.name).cloned().or_else(|| {
             v.default.as_ref().map(|d| {
                 let text = d.as_string();
@@ -260,32 +317,65 @@ pub fn resolve_lenient(app: &QuickApp, provided: &BTreeMap<String, String>, ctx:
         let mut value = raw.unwrap_or_default().trim().to_string();
 
         if v.var_type == "boolean" {
-            value = if is_truthy(&value) { "true".into() } else { "false".into() };
+            value = if is_truthy(&value) {
+                "true".into()
+            } else {
+                "false".into()
+            };
         }
         if !visible {
-            values.insert(v.name.clone(), if v.var_type == "boolean" { "false".into() } else { String::new() });
+            values.insert(
+                v.name.clone(),
+                if v.var_type == "boolean" {
+                    "false".into()
+                } else {
+                    String::new()
+                },
+            );
             continue;
         }
         if value.is_empty() {
             if v.required && v.var_type != "boolean" {
-                errors.push(FieldError { field: v.name.clone(), message: format!("{} is required", label_of(v)) });
+                errors.push(FieldError {
+                    field: v.name.clone(),
+                    message: format!("{} is required", label_of(v)),
+                });
             }
             values.insert(v.name.clone(), value);
             continue;
         }
 
         if let Some(msg) = validate_value(v, &value) {
-            errors.push(FieldError { field: v.name.clone(), message: msg });
+            errors.push(FieldError {
+                field: v.name.clone(),
+                message: msg,
+            });
         }
         values.insert(v.name.clone(), value);
     }
     // Derived, always available to templates.
-    let https_on = values.get("https").map(|v| is_truthy(v)).or(app.environment.https).unwrap_or(false);
-    values.insert("site_port".into(), if https_on { ctx.https_port } else { ctx.http_port }.to_string());
+    let https_on = values
+        .get("https")
+        .map(|v| is_truthy(v))
+        .or(app.environment.https)
+        .unwrap_or(false);
+    values.insert(
+        "site_port".into(),
+        if https_on {
+            ctx.https_port
+        } else {
+            ctx.http_port
+        }
+        .to_string(),
+    );
     if !values.contains_key("parent_dir") || values["parent_dir"].is_empty() {
         values.insert("parent_dir".into(), ctx.projects_dir.display().to_string());
     }
-    if let Some(name) = values.get("project_name").filter(|n| !n.is_empty()).cloned() {
+    if let Some(name) = values
+        .get("project_name")
+        .filter(|n| !n.is_empty())
+        .cloned()
+    {
         let project_path = Path::new(&values["parent_dir"]).join(&name);
         values.insert("project_path".into(), project_path.display().to_string());
         values.insert("project_slug".into(), slugify(&name));
@@ -316,15 +406,22 @@ fn validate_value(v: &Variable, value: &str) -> Option<String> {
             Ok(p) if p >= 1 => None,
             _ => Some(format!("{label} must be a port between 1 and 65535")),
         },
-        "select" if !v.options.iter().any(|o| o.as_string() == value) => {
-            Some(format!("{label} must be one of: {}", v.options.iter().map(|o| o.as_string()).collect::<Vec<_>>().join(", ")))
-        }
+        "select" if !v.options.iter().any(|o| o.as_string() == value) => Some(format!(
+            "{label} must be one of: {}",
+            v.options
+                .iter()
+                .map(|o| o.as_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )),
         "multiselect" => value
             .split(',')
             .map(str::trim)
             .find(|p| !v.options.iter().any(|o| o.as_string() == *p))
             .map(|bad| format!("{label} has an unknown choice \"{bad}\"")),
-        "domain" => crate::domain::validate_hostname(value).err().map(|e| e.to_string()),
+        "domain" => crate::domain::validate_hostname(value)
+            .err()
+            .map(|e| e.to_string()),
         _ => None,
     }
 }
@@ -344,17 +441,29 @@ fn req_enabled(r: &Requirement) -> bool {
 
 /// A requirement key may be switched off by a matching boolean variable (`mailpit: false`).
 fn req_wanted(id: &str, r: &Requirement, values: &BTreeMap<String, String>) -> bool {
-    req_enabled(r) && values.get(id).map(|v| is_truthy(v) || !matches!(v.as_str(), "false")).unwrap_or(true)
+    req_enabled(r)
+        && values
+            .get(id)
+            .map(|v| is_truthy(v) || !matches!(v.as_str(), "false"))
+            .unwrap_or(true)
 }
 
-pub fn build_plan(app: &QuickApp, values: BTreeMap<String, String>, ctx: &PlanCtx) -> Result<RunPlan, String> {
+pub fn build_plan(
+    app: &QuickApp,
+    values: BTreeMap<String, String>,
+    ctx: &PlanCtx,
+) -> Result<RunPlan, String> {
     let vars = &app.variables;
     let mut steps: Vec<PlannedStep> = Vec::new();
     let warnings: Vec<String> = Vec::new();
     let mut requirements: Vec<ReqSpec> = Vec::new();
 
     let flag = |name: &str, fallback: Option<bool>| -> bool {
-        values.get(name).map(|v| is_truthy(v)).or(fallback).unwrap_or(false)
+        values
+            .get(name)
+            .map(|v| is_truthy(v))
+            .or(fallback)
+            .unwrap_or(false)
     };
     let https = flag("https", app.environment.https);
     let wildcard = flag("wildcard", app.environment.wildcard);
@@ -368,12 +477,18 @@ pub fn build_plan(app: &QuickApp, values: BTreeMap<String, String>, ctx: &PlanCt
         }
         match id.as_str() {
             "redis" => {
-                requirements.push(ReqSpec { id: "redis".into(), wanted: None });
+                requirements.push(ReqSpec {
+                    id: "redis".into(),
+                    wanted: None,
+                });
                 services_to_start.push("redis".into());
             }
             "mailpit" => {
                 if mailpit_wanted || !values.contains_key("mailpit") {
-                    requirements.push(ReqSpec { id: id.clone(), wanted: None });
+                    requirements.push(ReqSpec {
+                        id: id.clone(),
+                        wanted: None,
+                    });
                     services_to_start.push("mailpit".into());
                 }
             }
@@ -381,27 +496,54 @@ pub fn build_plan(app: &QuickApp, values: BTreeMap<String, String>, ctx: &PlanCt
                 // Only when the chosen database is this one (or the app has no `database` choice).
                 let chosen = values.get("database").map(|d| d == id).unwrap_or(true);
                 if chosen {
-                    requirements.push(ReqSpec { id: id.clone(), wanted: req_version(req) });
+                    requirements.push(ReqSpec {
+                        id: id.clone(),
+                        wanted: req_version(req),
+                    });
                     services_to_start.push(id.clone());
                 }
             }
             "composer" => {
-                requirements.push(ReqSpec { id: "php".into(), wanted: values.get("php_version").cloned() });
-                requirements.push(ReqSpec { id: "composer".into(), wanted: None });
+                requirements.push(ReqSpec {
+                    id: "php".into(),
+                    wanted: values.get("php_version").cloned(),
+                });
+                requirements.push(ReqSpec {
+                    id: "composer".into(),
+                    wanted: None,
+                });
             }
             "php" => {
-                let wanted = values.get("php_version").cloned().or_else(|| req_version(req));
-                requirements.push(ReqSpec { id: "php".into(), wanted });
+                let wanted = values
+                    .get("php_version")
+                    .cloned()
+                    .or_else(|| req_version(req));
+                requirements.push(ReqSpec {
+                    id: "php".into(),
+                    wanted,
+                });
             }
             "node" => {
-                let wanted = values.get("node_version").cloned().or_else(|| req_version(req));
-                requirements.push(ReqSpec { id: "node".into(), wanted });
+                let wanted = values
+                    .get("node_version")
+                    .cloned()
+                    .or_else(|| req_version(req));
+                requirements.push(ReqSpec {
+                    id: "node".into(),
+                    wanted,
+                });
             }
-            other => requirements.push(ReqSpec { id: other.to_string(), wanted: req_version(req) }),
+            other => requirements.push(ReqSpec {
+                id: other.to_string(),
+                wanted: req_version(req),
+            }),
         }
     }
     if app.domain.is_some() {
-        requirements.push(ReqSpec { id: ctx.web_server.clone(), wanted: None });
+        requirements.push(ReqSpec {
+            id: ctx.web_server.clone(),
+            wanted: None,
+        });
     }
     // De-duplicate while keeping the first (most specific) entry per runtime.
     let mut seen = std::collections::HashSet::new();
@@ -415,7 +557,10 @@ pub fn build_plan(app: &QuickApp, values: BTreeMap<String, String>, ctx: &PlanCt
                 None => format!("Make sure {} is installed", r.id),
             },
             display: format!("ensure runtime {}", r.id),
-            body: StepBody::EnsureRuntime { id: r.id.clone(), version: r.wanted.clone() },
+            body: StepBody::EnsureRuntime {
+                id: r.id.clone(),
+                version: r.wanted.clone(),
+            },
             elevated: false,
             allow_failure: false,
         });
@@ -425,20 +570,24 @@ pub fn build_plan(app: &QuickApp, values: BTreeMap<String, String>, ctx: &PlanCt
             stage: "requirements".into(),
             name: format!("Start {svc}"),
             display: format!("start service {svc}"),
-            body: StepBody::Action { action: "start_service".into(), with: BTreeMap::from([("id".to_string(), svc.clone())]) },
+            body: StepBody::Action {
+                action: "start_service".into(),
+                with: BTreeMap::from([("id".to_string(), svc.clone())]),
+            },
             elevated: false,
             allow_failure: false,
         });
     }
 
-    let push_steps = |stage: &str, list: &[Step], steps: &mut Vec<PlannedStep>| -> Result<(), String> {
-        for step in list {
-            if let Some(p) = plan_step(stage, &step.spec(), &values, vars)? {
-                steps.push(p);
+    let push_steps =
+        |stage: &str, list: &[Step], steps: &mut Vec<PlannedStep>| -> Result<(), String> {
+            for step in list {
+                if let Some(p) = plan_step(stage, &step.spec(), &values, vars)? {
+                    steps.push(p);
+                }
             }
-        }
-        Ok(())
-    };
+            Ok(())
+        };
 
     push_steps("pre_create", &app.pre_create, &mut steps)?;
     push_steps("create", &app.commands, &mut steps)?;
@@ -452,7 +601,10 @@ pub fn build_plan(app: &QuickApp, values: BTreeMap<String, String>, ctx: &PlanCt
     let project_path = values.get("project_path").cloned();
     if let Some(root) = &project_path {
         for f in &app.files {
-            if f.cond.as_deref().is_some_and(|c| !eval_condition(c, &values)) {
+            if f.cond
+                .as_deref()
+                .is_some_and(|c| !eval_condition(c, &values))
+            {
                 continue;
             }
             let rel = render(&f.path, &values, vars)?;
@@ -461,13 +613,20 @@ pub fn build_plan(app: &QuickApp, values: BTreeMap<String, String>, ctx: &PlanCt
                 stage: "files".into(),
                 name: format!("Write {rel}"),
                 display: format!("write file {rel}"),
-                body: StepBody::WriteFile { path: abs, content: render(&f.content, &values, vars)?, overwrite: f.overwrite },
+                body: StepBody::WriteFile {
+                    path: abs,
+                    content: render(&f.content, &values, vars)?,
+                    overwrite: f.overwrite,
+                },
                 elevated: false,
                 allow_failure: false,
             });
         }
         for e in &app.env_vars {
-            if e.cond.as_deref().is_some_and(|c| !eval_condition(c, &values)) {
+            if e.cond
+                .as_deref()
+                .is_some_and(|c| !eval_condition(c, &values))
+            {
                 continue;
             }
             let file = safe_join(root, &render(&e.file, &values, vars)?)?;
@@ -476,7 +635,11 @@ pub fn build_plan(app: &QuickApp, values: BTreeMap<String, String>, ctx: &PlanCt
                 stage: "files".into(),
                 name: format!("Set {key} in {}", e.file),
                 display: format!("set {key} in {}", e.file),
-                body: StepBody::WriteEnv { file, key, value: render(&e.value, &values, vars)? },
+                body: StepBody::WriteEnv {
+                    file,
+                    key,
+                    value: render(&e.value, &values, vars)?,
+                },
                 elevated: false,
                 allow_failure: false,
             });
@@ -491,22 +654,38 @@ pub fn build_plan(app: &QuickApp, values: BTreeMap<String, String>, ctx: &PlanCt
     // 4. Finalize: project, domain, certificate, web server, health (§155 result list).
     let mut hostname = None;
     if let Some(root) = &project_path {
-        steps.push(action_step("finalize", "Register the project", "register_project", [("path".to_string(), root.clone())]));
+        steps.push(action_step(
+            "finalize",
+            "Register the project",
+            "register_project",
+            [("path".to_string(), root.clone())],
+        ));
     }
     push_steps("pre_start", &app.pre_start, &mut steps)?;
 
     if let Some(d) = &app.domain {
-        if d.cond.as_deref().map(|c| eval_condition(c, &values)).unwrap_or(true) {
+        if d.cond
+            .as_deref()
+            .map(|c| eval_condition(c, &values))
+            .unwrap_or(true)
+        {
             let host = render(&d.hostname, &values, vars)?.to_ascii_lowercase();
             let kind = render(&d.kind, &values, vars)?;
             if !matches!(kind.as_str(), "php" | "proxy" | "static") {
-                return Err(format!("domain kind \"{kind}\" must be php, proxy or static"));
+                return Err(format!(
+                    "domain kind \"{kind}\" must be php, proxy or static"
+                ));
             }
             crate::domain::validate_hostname(&host).map_err(|e| e.to_string())?;
             let root = match (&d.root, &project_path) {
                 (Some(r), _) => render(r, &values, vars)?,
                 (None, Some(p)) => p.clone(),
-                (None, None) => return Err("the domain needs a document root, but the app has no project folder".into()),
+                (None, None) => {
+                    return Err(
+                        "the domain needs a document root, but the app has no project folder"
+                            .into(),
+                    )
+                }
             };
             let mut with: BTreeMap<String, String> = BTreeMap::from([
                 ("hostname".into(), host.clone()),
@@ -527,14 +706,22 @@ pub fn build_plan(app: &QuickApp, values: BTreeMap<String, String>, ctx: &PlanCt
             if let Some(php) = values.get("php_version").filter(|v| !v.is_empty()) {
                 with.insert("php_version".into(), php.clone());
             }
-            let app_cmd = d.app.as_ref().filter(|a| a.cond.as_deref().map(|c| eval_condition(c, &values)).unwrap_or(true));
+            let app_cmd = d.app.as_ref().filter(|a| {
+                a.cond
+                    .as_deref()
+                    .map(|c| eval_condition(c, &values))
+                    .unwrap_or(true)
+            });
             if kind != "proxy" && d.port.is_some() {
                 with.remove("port");
             }
             if let Some(app_cmd) = app_cmd {
                 let (program, args) = render_command(&app_cmd.run, &values, vars)?;
                 with.insert("app_program".into(), program);
-                with.insert("app_args".into(), serde_json::to_string(&args).unwrap_or_default());
+                with.insert(
+                    "app_args".into(),
+                    serde_json::to_string(&args).unwrap_or_default(),
+                );
                 if let Some(rt) = &app_cmd.runtime {
                     let rt = render(rt, &values, vars)?;
                     if !rt.is_empty() && rt != "none" {
@@ -548,22 +735,40 @@ pub fn build_plan(app: &QuickApp, values: BTreeMap<String, String>, ctx: &PlanCt
                 with.insert("app_cwd".into(), cwd);
             }
             hostname = Some(host.clone());
-            steps.push(action_step("finalize", &format!("Create {host}"), "create_domain", with));
+            steps.push(action_step(
+                "finalize",
+                &format!("Create {host}"),
+                "create_domain",
+                with,
+            ));
             if https {
                 {
                     // Windows shows its own confirmation for a root certificate; if it's
                     // declined the site still works, the browser just warns.
-                    let mut trust = action_step("finalize", "Trust the local certificate authority", "trust_ca", []);
+                    let mut trust = action_step(
+                        "finalize",
+                        "Trust the local certificate authority",
+                        "trust_ca",
+                        [],
+                    );
                     trust.allow_failure = true;
                     steps.push(trust);
                 }
             }
-            steps.push(action_step("finalize", "Apply web server config", "apply_web", []));
+            steps.push(action_step(
+                "finalize",
+                "Apply web server config",
+                "apply_web",
+                [],
+            ));
             steps.push(PlannedStep {
                 stage: "finalize".into(),
                 name: "Health checks".into(),
                 display: format!("health check {host}"),
-                body: StepBody::Action { action: "health_check".into(), with: BTreeMap::from([("hostname".to_string(), host)]) },
+                body: StepBody::Action {
+                    action: "health_check".into(),
+                    with: BTreeMap::from([("hostname".to_string(), host)]),
+                },
                 elevated: false,
                 allow_failure: true,
             });
@@ -576,7 +781,14 @@ pub fn build_plan(app: &QuickApp, values: BTreeMap<String, String>, ctx: &PlanCt
         .iter()
         .map(|(k, v)| {
             let secret = vars.iter().any(|x| &x.name == k && x.is_secret());
-            (k.clone(), if secret && !v.is_empty() { "••••••••".to_string() } else { v.clone() })
+            (
+                k.clone(),
+                if secret && !v.is_empty() {
+                    "••••••••".to_string()
+                } else {
+                    v.clone()
+                },
+            )
         })
         .collect();
 
@@ -595,12 +807,20 @@ pub fn build_plan(app: &QuickApp, values: BTreeMap<String, String>, ctx: &PlanCt
     })
 }
 
-fn action_step(stage: &str, name: &str, action: &str, with: impl IntoIterator<Item = (String, String)>) -> PlannedStep {
+fn action_step(
+    stage: &str,
+    name: &str,
+    action: &str,
+    with: impl IntoIterator<Item = (String, String)>,
+) -> PlannedStep {
     PlannedStep {
         stage: stage.into(),
         name: name.into(),
         display: action.replace('_', " "),
-        body: StepBody::Action { action: action.into(), with: with.into_iter().collect() },
+        body: StepBody::Action {
+            action: action.into(),
+            with: with.into_iter().collect(),
+        },
         elevated: false,
         allow_failure: false,
     }
@@ -612,13 +832,24 @@ fn plan_step(
     values: &BTreeMap<String, String>,
     vars: &[Variable],
 ) -> Result<Option<PlannedStep>, String> {
-    if spec.cond.as_deref().is_some_and(|c| !eval_condition(c, values)) {
+    if spec
+        .cond
+        .as_deref()
+        .is_some_and(|c| !eval_condition(c, values))
+    {
         return Ok(None);
     }
-    let cwd = spec.cwd.as_deref().map(|c| render(c, values, vars)).transpose()?;
+    let cwd = spec
+        .cwd
+        .as_deref()
+        .map(|c| render(c, values, vars))
+        .transpose()?;
     if let Some(line) = &spec.run {
         let (program, args) = render_command(line, values, vars)?;
-        let display = std::iter::once(program.clone()).chain(args.iter().map(|a| quote_for_display(a))).collect::<Vec<_>>().join(" ");
+        let display = std::iter::once(program.clone())
+            .chain(args.iter().map(|a| quote_for_display(a)))
+            .collect::<Vec<_>>()
+            .join(" ");
         return Ok(Some(PlannedStep {
             stage: stage.into(),
             name: spec.name.clone().unwrap_or_else(|| display.clone()),
@@ -635,8 +866,19 @@ fn plan_step(
     }
     Ok(Some(PlannedStep {
         stage: stage.into(),
-        name: spec.name.clone().unwrap_or_else(|| action.replace('_', " ")),
-        display: format!("{action} {}", with.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join(" ")).trim().to_string(),
+        name: spec
+            .name
+            .clone()
+            .unwrap_or_else(|| action.replace('_', " ")),
+        display: format!(
+            "{action} {}",
+            with.iter()
+                .map(|(k, v)| format!("{k}={v}"))
+                .collect::<Vec<_>>()
+                .join(" ")
+        )
+        .trim()
+        .to_string(),
         body: StepBody::Action { action, with },
         elevated: spec.elevated,
         allow_failure: spec.allow_failure,
@@ -656,7 +898,14 @@ pub fn safe_join(root: &str, rel: &str) -> Result<String, String> {
     let rel_path = Path::new(rel);
     if rel_path.is_absolute()
         || rel.contains(':')
-        || rel_path.components().any(|c| matches!(c, std::path::Component::ParentDir | std::path::Component::RootDir | std::path::Component::Prefix(_)))
+        || rel_path.components().any(|c| {
+            matches!(
+                c,
+                std::path::Component::ParentDir
+                    | std::path::Component::RootDir
+                    | std::path::Component::Prefix(_)
+            )
+        })
     {
         return Err(format!("\"{rel}\" must stay inside the project folder"));
     }
@@ -668,17 +917,25 @@ fn derive_permissions(steps: &[PlannedStep], https: bool, has_domain: bool) -> V
     let mut perms = Vec::new();
     let mut add = |id: &str, label: &str| {
         if !perms.iter().any(|p: &Permission| p.id == id) {
-            perms.push(Permission { id: id.into(), label: label.into() });
+            perms.push(Permission {
+                id: id.into(),
+                label: label.into(),
+            });
         }
     };
     for s in steps {
         match &s.body {
             StepBody::Run { .. } => add("execute", "Run commands"),
             StepBody::EnsureRuntime { .. } => add("install", "Download and install software"),
-            StepBody::WriteFile { .. } | StepBody::WriteEnv { .. } => add("write_files", "Write files in the project folder"),
+            StepBody::WriteFile { .. } | StepBody::WriteEnv { .. } => {
+                add("write_files", "Write files in the project folder")
+            }
             StepBody::Action { action, .. } => match action.as_str() {
                 "create_database" => add("database", "Create a database"),
-                "create_domain" => add("dns", "Add a domain (hosts file — Windows may ask for administrator approval)"),
+                "create_domain" => add(
+                    "dns",
+                    "Add a domain (hosts file — Windows may ask for administrator approval)",
+                ),
                 "start_service" => add("services", "Start background services"),
                 _ => {}
             },
@@ -699,27 +956,58 @@ mod tests {
     use crate::quickapp::schema::parse;
 
     fn ctx() -> PlanCtx {
-        PlanCtx { projects_dir: PathBuf::from("C:\\Sites"), web_server: "nginx".into(), http_port: 80, https_port: 443 }
+        PlanCtx {
+            projects_dir: PathBuf::from("C:\\Sites"),
+            web_server: "nginx".into(),
+            http_port: 80,
+            https_port: 443,
+        }
     }
 
     fn vals(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
-        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
     }
 
     #[test]
     fn tokenizer_groups_quotes_and_keeps_windows_paths() {
-        assert_eq!(split_command_line(r#"composer create-project laravel/laravel "C:\My Sites\shop""#), ["composer", "create-project", "laravel/laravel", r"C:\My Sites\shop"]);
+        assert_eq!(
+            split_command_line(r#"composer create-project laravel/laravel "C:\My Sites\shop""#),
+            [
+                "composer",
+                "create-project",
+                "laravel/laravel",
+                r"C:\My Sites\shop"
+            ]
+        );
         assert_eq!(split_command_line("a   b\tc"), ["a", "b", "c"]);
-        assert_eq!(split_command_line(r#"echo "say \"hi\"""#), ["echo", r#"say "hi""#]);
+        assert_eq!(
+            split_command_line(r#"echo "say \"hi\"""#),
+            ["echo", r#"say "hi""#]
+        );
         assert_eq!(split_command_line("x ''"), ["x", ""]);
-        assert_eq!(split_command_line("runserver 127.0.0.1:{{ port }} --x"), ["runserver", "127.0.0.1:{{ port }}", "--x"], "template tags are atomic");
-        assert_eq!(split_command_line("run {% if a %}--b{% endif %} c"), ["run", "{% if a %}--b{% endif %}", "c"]);
+        assert_eq!(
+            split_command_line("runserver 127.0.0.1:{{ port }} --x"),
+            ["runserver", "127.0.0.1:{{ port }}", "--x"],
+            "template tags are atomic"
+        );
+        assert_eq!(
+            split_command_line("run {% if a %}--b{% endif %} c"),
+            ["run", "{% if a %}--b{% endif %}", "c"]
+        );
         assert!(split_command_line("   ").is_empty());
     }
 
     #[test]
     fn conditions_cover_equality_truthiness_negation_and_joins() {
-        let v = vals(&[("database", "mysql"), ("redis", "true"), ("empty", ""), ("off", "false")]);
+        let v = vals(&[
+            ("database", "mysql"),
+            ("redis", "true"),
+            ("empty", ""),
+            ("off", "false"),
+        ]);
         assert!(eval_condition("database == mysql", &v));
         assert!(!eval_condition("database == mariadb", &v));
         assert!(eval_condition("database != none", &v));
@@ -732,7 +1020,10 @@ mod tests {
         assert!(eval_condition("database == mysql && redis", &v));
         assert!(!eval_condition("database == mysql and off", &v));
         assert!(eval_condition("off || redis", &v));
-        assert!(eval_condition("database == 'mysql'", &v), "quotes are ignored");
+        assert!(
+            eval_condition("database == 'mysql'", &v),
+            "quotes are ignored"
+        );
         assert!(!eval_condition("missing", &v));
     }
 
@@ -758,13 +1049,23 @@ variables:
         assert_eq!(v["port"], "5173");
         assert_eq!(v["project_path"], "C:\\Sites\\shop");
 
-        let errs = resolve_values(&app, &vals(&[("project_name", "Bad Name; rm")]), &ctx()).unwrap_err();
+        let errs =
+            resolve_values(&app, &vals(&[("project_name", "Bad Name; rm")]), &ctx()).unwrap_err();
         assert!(errs.iter().any(|e| e.field == "project_name"), "{errs:?}");
 
         let errs = resolve_values(&app, &vals(&[]), &ctx()).unwrap_err();
         assert!(errs[0].message.contains("required"));
 
-        let errs = resolve_values(&app, &vals(&[("project_name", "shop"), ("database", "oracle"), ("port", "99999")]), &ctx()).unwrap_err();
+        let errs = resolve_values(
+            &app,
+            &vals(&[
+                ("project_name", "shop"),
+                ("database", "oracle"),
+                ("port", "99999"),
+            ]),
+            &ctx(),
+        )
+        .unwrap_err();
         assert_eq!(errs.len(), 2, "every bad field is reported at once");
     }
 
@@ -780,7 +1081,10 @@ variables:
 "#,
         )
         .unwrap();
-        assert!(resolve_values(&app, &vals(&[]), &ctx()).is_ok(), "db_name isn't required when there's no database");
+        assert!(
+            resolve_values(&app, &vals(&[]), &ctx()).is_ok(),
+            "db_name isn't required when there's no database"
+        );
         assert!(resolve_values(&app, &vals(&[("database", "mariadb")]), &ctx()).is_err());
     }
 
@@ -823,36 +1127,90 @@ domain: { hostname: "{{ project_name }}.test", kind: php, root: "{{ project_path
         let plan = build_plan(&app, v, &ctx()).unwrap();
 
         let stages: Vec<&str> = plan.steps.iter().map(|s| s.stage.as_str()).collect();
-        let first = |name: &str| stages.iter().position(|s| *s == name).unwrap_or_else(|| panic!("missing stage {name}: {stages:?}"));
+        let first = |name: &str| {
+            stages
+                .iter()
+                .position(|s| *s == name)
+                .unwrap_or_else(|| panic!("missing stage {name}: {stages:?}"))
+        };
         assert!(first("requirements") < first("pre_create"));
         assert!(first("pre_create") < first("create"));
         assert!(first("create") < first("files"));
         assert!(first("files") < first("post_create"));
         assert!(first("post_create") < first("finalize"));
 
-        assert!(!plan.steps.iter().any(|s| s.display.contains("never")), "false condition must be skipped");
-        assert!(plan.steps.iter().any(|s| matches!(&s.body, StepBody::Action { action, .. } if action == "create_database")));
+        assert!(
+            !plan.steps.iter().any(|s| s.display.contains("never")),
+            "false condition must be skipped"
+        );
+        assert!(plan.steps.iter().any(
+            |s| matches!(&s.body, StepBody::Action { action, .. } if action == "create_database")
+        ));
         assert_eq!(plan.hostname.as_deref(), Some("shop.test"));
         let ids: Vec<&str> = plan.requirements.iter().map(|r| r.id.as_str()).collect();
-        assert!(ids.contains(&"php") && ids.contains(&"composer") && ids.contains(&"mariadb") && ids.contains(&"mailpit") && ids.contains(&"nginx") && ids.contains(&"redis"));
-        assert_eq!(ids.iter().filter(|i| **i == "php").count(), 1, "php requirement de-duplicated");
+        assert!(
+            ids.contains(&"php")
+                && ids.contains(&"composer")
+                && ids.contains(&"mariadb")
+                && ids.contains(&"mailpit")
+                && ids.contains(&"nginx")
+                && ids.contains(&"redis")
+        );
+        assert_eq!(
+            ids.iter().filter(|i| **i == "php").count(),
+            1,
+            "php requirement de-duplicated"
+        );
 
         let perm_ids: Vec<&str> = plan.permissions.iter().map(|p| p.id.as_str()).collect();
-        for want in ["execute", "install", "write_files", "database", "dns", "certificate"] {
-            assert!(perm_ids.contains(&want), "missing permission {want}: {perm_ids:?}");
+        for want in [
+            "execute",
+            "install",
+            "write_files",
+            "database",
+            "dns",
+            "certificate",
+        ] {
+            assert!(
+                perm_ids.contains(&want),
+                "missing permission {want}: {perm_ids:?}"
+            );
         }
         // Stage order inside finalize: domain → trust → apply → health.
-        let fin: Vec<&str> = plan.steps.iter().filter(|s| s.stage == "finalize").map(|s| s.name.as_str()).collect();
+        let fin: Vec<&str> = plan
+            .steps
+            .iter()
+            .filter(|s| s.stage == "finalize")
+            .map(|s| s.name.as_str())
+            .collect();
         assert_eq!(fin.last().copied(), Some("Health checks"));
     }
 
     #[test]
     fn paths_with_spaces_stay_one_argument() {
         let app = parse("id: t\nname: T\nvariables:\n  - { name: project_name }\ncommands:\n  - 'tool \"{{ project_path }}\" --flag'\n").unwrap();
-        let mut v = resolve_values(&app, &vals(&[("project_name", "shop")]), &PlanCtx { projects_dir: "C:\\Jo Smith\\Sites".into(), web_server: "nginx".into(), http_port: 80, https_port: 443 }).unwrap();
+        let mut v = resolve_values(
+            &app,
+            &vals(&[("project_name", "shop")]),
+            &PlanCtx {
+                projects_dir: "C:\\Jo Smith\\Sites".into(),
+                web_server: "nginx".into(),
+                http_port: 80,
+                https_port: 443,
+            },
+        )
+        .unwrap();
         v.insert("x".into(), "y".into());
         let plan = build_plan(&app, v, &ctx()).unwrap();
-        let StepBody::Run { args, .. } = &plan.steps.iter().find(|s| matches!(s.body, StepBody::Run { .. })).expect("a run step").body else { panic!() };
+        let StepBody::Run { args, .. } = &plan
+            .steps
+            .iter()
+            .find(|s| matches!(s.body, StepBody::Run { .. }))
+            .expect("a run step")
+            .body
+        else {
+            panic!()
+        };
         assert_eq!(args, &["C:\\Jo Smith\\Sites\\shop", "--flag"]);
     }
 
@@ -874,18 +1232,35 @@ domain: { hostname: "{{ project_name }}.test", kind: php, root: "{{ project_path
     #[test]
     fn secrets_are_masked_in_the_display_values_but_kept_in_the_real_ones() {
         let app = parse("id: t\nname: T\nvariables:\n  - { name: project_name }\n  - { name: db_pass, type: password }\n").unwrap();
-        let v = resolve_values(&app, &vals(&[("project_name", "a"), ("db_pass", "hunter2")]), &ctx()).unwrap();
+        let v = resolve_values(
+            &app,
+            &vals(&[("project_name", "a"), ("db_pass", "hunter2")]),
+            &ctx(),
+        )
+        .unwrap();
         let plan = build_plan(&app, v, &ctx()).unwrap();
         assert_eq!(plan.display_values["db_pass"], "••••••••");
         assert_eq!(plan.values["db_pass"], "hunter2");
-        assert!(!serde_json::to_string(&plan).unwrap().contains("hunter2"), "secrets must not serialize");
+        assert!(
+            !serde_json::to_string(&plan).unwrap().contains("hunter2"),
+            "secrets must not serialize"
+        );
     }
 
     #[test]
     fn templates_support_filters_and_random_functions() {
         let v = vals(&[("name", "My Shop")]);
-        assert_eq!(render("{{ name | slug }}.test", &v, &[]).unwrap(), "my-shop.test");
-        assert_eq!(render("{{ random_string(40) }}", &v, &[]).unwrap().len(), 40);
-        assert_ne!(render("{{ random_string(16) }}", &v, &[]).unwrap(), render("{{ random_string(16) }}", &v, &[]).unwrap());
+        assert_eq!(
+            render("{{ name | slug }}.test", &v, &[]).unwrap(),
+            "my-shop.test"
+        );
+        assert_eq!(
+            render("{{ random_string(40) }}", &v, &[]).unwrap().len(),
+            40
+        );
+        assert_ne!(
+            render("{{ random_string(16) }}", &v, &[]).unwrap(),
+            render("{{ random_string(16) }}", &v, &[]).unwrap()
+        );
     }
 }

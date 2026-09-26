@@ -43,14 +43,25 @@ struct Builder {
 }
 
 impl Builder {
-    fn add(&mut self, id: impl Into<String>, severity: Severity, problem: impl Into<String>, cause: impl Into<String>, fix: impl Into<String>, fix_command: Option<CoreCommand>, details: Vec<String>) {
+    fn add(
+        &mut self,
+        id: impl Into<String>,
+        severity: Severity,
+        problem: impl Into<String>,
+        cause: impl Into<String>,
+        fix: impl Into<String>,
+        fix_command: Option<CoreCommand>,
+        details: Vec<String>,
+    ) {
         self.findings.push(Finding {
             id: id.into(),
             severity,
             problem: problem.into(),
             cause: cause.into(),
             fix: fix.into(),
-            auto_fixable: fix_command.as_ref().is_some_and(|cmd| !crate::repair::is_destructive(cmd)),
+            auto_fixable: fix_command
+                .as_ref()
+                .is_some_and(|cmd| !crate::repair::is_destructive(cmd)),
             fix_command,
             details,
             ignored: false,
@@ -61,7 +72,9 @@ impl Builder {
 impl Inner {
     /// Every finding, most severe first. Ignored ones are flagged and sorted last.
     pub fn diagnose(&self) -> Vec<Finding> {
-        let mut b = Builder { findings: Vec::new() };
+        let mut b = Builder {
+            findings: Vec::new(),
+        };
         self.check_web(&mut b);
         self.check_https(&mut b);
         self.check_sites(&mut b);
@@ -96,23 +109,42 @@ impl Inner {
             .unwrap_or_default()
     }
 
-    pub fn set_diagnostic_ignored(&self, id: &str, ignore: bool) -> Result<(), crate::error::CoreError> {
+    pub fn set_diagnostic_ignored(
+        &self,
+        id: &str,
+        ignore: bool,
+    ) -> Result<(), crate::error::CoreError> {
         let mut list = self.ignored_diagnostics();
         list.retain(|x| x != id);
         if ignore {
             list.push(id.to_string());
         }
-        self.settings.lock().unwrap().set("diagnostics.ignored".to_string(), serde_json::json!(list))?;
+        self.settings
+            .lock()
+            .unwrap()
+            .set("diagnostics.ignored".to_string(), serde_json::json!(list))?;
         Ok(())
     }
 
     fn check_web(&self, b: &mut Builder) {
         let cfg = self.web_config();
-        let enabled = self.domains.lock().unwrap().list().into_iter().filter(|d| d.enabled).count();
-        let server_name = crate::web::server_by_id(&cfg.server).map(|s| s.name()).unwrap_or("The web server");
+        let enabled = self
+            .domains
+            .lock()
+            .unwrap()
+            .list()
+            .into_iter()
+            .filter(|d| d.enabled)
+            .count();
+        let server_name = crate::web::server_by_id(&cfg.server)
+            .map(|s| s.name())
+            .unwrap_or("The web server");
 
         if self.runtimes.installed_versions(&cfg.server).is_empty() {
-            let version = crate::catalog::builtin_catalog().into_iter().find(|m| m.id == cfg.server).map(|m| m.version.to_string());
+            let version = crate::catalog::builtin_catalog()
+                .into_iter()
+                .find(|m| m.id == cfg.server)
+                .map(|m| m.version.to_string());
             b.add(
                 "web_not_installed",
                 Severity::Error,
@@ -133,7 +165,9 @@ impl Inner {
                 "The web server is stopped, so your sites are offline",
                 format!("{enabled} enabled site(s) are waiting for {server_name} to start."),
                 "Apply the web config to start it.",
-                web.port_conflicts.is_empty().then(|| CoreCommand::ApplyWeb { overwrite: vec![] }),
+                web.port_conflicts
+                    .is_empty()
+                    .then(|| CoreCommand::ApplyWeb { overwrite: vec![] }),
                 vec![],
             );
         }
@@ -172,7 +206,9 @@ impl Inner {
                     format!("The certificate for {} has expired", cert.hostname),
                     "Browsers refuse HTTPS connections with an expired certificate.",
                     "Regenerate the certificate.",
-                    Some(CoreCommand::RegenerateCertificate { hostname: cert.hostname.clone() }),
+                    Some(CoreCommand::RegenerateCertificate {
+                        hostname: cert.hostname.clone(),
+                    }),
                     vec![format!("Expired {} day(s) ago", -cert.days_left)],
                 ),
                 crate::certs::CertStatus::Expiring => b.add(
@@ -181,7 +217,9 @@ impl Inner {
                     format!("The certificate for {} expires soon", cert.hostname),
                     format!("It is valid for {} more day(s).", cert.days_left),
                     "It renews on the next apply; or regenerate it now.",
-                    Some(CoreCommand::RegenerateCertificate { hostname: cert.hostname.clone() }),
+                    Some(CoreCommand::RegenerateCertificate {
+                        hostname: cert.hostname.clone(),
+                    }),
                     vec![],
                 ),
                 crate::certs::CertStatus::Valid => {}
@@ -196,7 +234,11 @@ impl Inner {
 
         let unresolved: Vec<String> = domains
             .iter()
-            .filter(|d| d.enabled && !self.web.dns_covers(&d.hostname) && !crate::hosts::lists(&hosts, &d.hostname))
+            .filter(|d| {
+                d.enabled
+                    && !self.web.dns_covers(&d.hostname)
+                    && !crate::hosts::lists(&hosts, &d.hostname)
+            })
             .map(|d| d.hostname.clone())
             .collect();
         if !unresolved.is_empty() {
@@ -304,7 +346,10 @@ impl Inner {
                 continue;
             }
             let composer = crate::composer::read(root);
-            if composer.has_composer_json && !composer.vendor_installed && !composer.packages.is_empty() {
+            if composer.has_composer_json
+                && !composer.vendor_installed
+                && !composer.packages.is_empty()
+            {
                 b.add(
                     format!("composer_not_installed:{}", p.id),
                     Severity::Info,
@@ -323,7 +368,10 @@ impl Inner {
                     format!("The Python environment of {} is broken", p.name),
                     "The Python it was created from has been moved or uninstalled.",
                     "Recreate the virtual environment.",
-                    Some(CoreCommand::CreateVenv { project_id: p.id.clone(), recreate: true }),
+                    Some(CoreCommand::CreateVenv {
+                        project_id: p.id.clone(),
+                        recreate: true,
+                    }),
                     venv.base_home.into_iter().collect(),
                 );
             }
@@ -333,7 +381,10 @@ impl Inner {
     fn check_php(&self, b: &mut Builder) {
         for version in self.php.all_versions() {
             let report = self.php.xdebug_report(&version);
-            if report.enabled && report.settings.start_with_request == "yes" && report.settings.modes.iter().any(|m| m == "debug") {
+            if report.enabled
+                && report.settings.start_with_request == "yes"
+                && report.settings.modes.iter().any(|m| m == "debug")
+            {
                 b.add(
                     format!("xdebug_always_on:{version}"),
                     Severity::Info,
@@ -366,7 +417,16 @@ impl Inner {
 
         // Cloud-synced folders lock and rewrite files while servers run.
         let lower = root.to_ascii_lowercase();
-        if ["onedrive", "dropbox", "google drive", "googledrive", "icloud"].iter().any(|m| lower.contains(m)) {
+        if [
+            "onedrive",
+            "dropbox",
+            "google drive",
+            "googledrive",
+            "icloud",
+        ]
+        .iter()
+        .any(|m| lower.contains(m))
+        {
             b.add(
                 "data_in_synced_folder",
                 Severity::Warning,
@@ -379,15 +439,25 @@ impl Inner {
         }
 
         // A full disk stops databases first.
-        let stats = self.monitor.disks(&[("OpenLocalServer data".to_string(), self.paths.root().to_path_buf())]);
+        let stats = self.monitor.disks(&[(
+            "OpenLocalServer data".to_string(),
+            self.paths.root().to_path_buf(),
+        )]);
         for d in stats {
             let free = d.total.saturating_sub(d.used);
             if d.total > 0 && free < 2 * 1024 * 1024 * 1024 {
                 b.add(
                     format!("disk_low:{}", d.mount),
-                    if free < 512 * 1024 * 1024 { Severity::Error } else { Severity::Warning },
+                    if free < 512 * 1024 * 1024 {
+                        Severity::Error
+                    } else {
+                        Severity::Warning
+                    },
                     format!("Drive {} is almost full", d.mount),
-                    format!("{} MB are free, and databases, logs and downloads all write here.", free / (1024 * 1024)),
+                    format!(
+                        "{} MB are free, and databases, logs and downloads all write here.",
+                        free / (1024 * 1024)
+                    ),
                     "Free some space, or move the data folder to another drive.",
                     None,
                     d.holds.clone(),

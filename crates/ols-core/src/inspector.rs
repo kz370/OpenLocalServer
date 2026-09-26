@@ -31,9 +31,42 @@ const MAX_BODY: usize = 50 * 1024 * 1024;
 /// Shown in the inspector; the rest is summarised.
 const PREVIEW: usize = 16 * 1024;
 
-const HOP_BY_HOP: &[&str] = &["connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer", "transfer-encoding", "upgrade", "host", "content-length"];
-const SECRET_HEADERS: &[&str] = &["authorization", "proxy-authorization", "cookie", "set-cookie", "x-api-key", "x-auth-token", "x-csrf-token", "x-xsrf-token"];
-const SECRET_WORDS: &[&str] = &["password", "passwd", "secret", "token", "apikey", "api_key", "signature", "auth", "session", "key", "otp", "credential"];
+const HOP_BY_HOP: &[&str] = &[
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+    "host",
+    "content-length",
+];
+const SECRET_HEADERS: &[&str] = &[
+    "authorization",
+    "proxy-authorization",
+    "cookie",
+    "set-cookie",
+    "x-api-key",
+    "x-auth-token",
+    "x-csrf-token",
+    "x-xsrf-token",
+];
+const SECRET_WORDS: &[&str] = &[
+    "password",
+    "passwd",
+    "secret",
+    "token",
+    "apikey",
+    "api_key",
+    "signature",
+    "auth",
+    "session",
+    "key",
+    "otp",
+    "credential",
+];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecordedRequest {
@@ -73,7 +106,9 @@ pub fn is_secret_name(name: &str) -> bool {
 }
 
 pub fn redact_query(path: &str) -> String {
-    let Some((base, query)) = path.split_once('?') else { return path.to_string() };
+    let Some((base, query)) = path.split_once('?') else {
+        return path.to_string();
+    };
     let parts: Vec<String> = query
         .split('&')
         .map(|kv| match kv.split_once('=') {
@@ -98,7 +133,11 @@ fn headers_view(h: &hyper::HeaderMap) -> Vec<(String, String)> {
     h.iter()
         .map(|(k, v)| {
             let name = k.as_str().to_string();
-            let value = if is_secret_name(&name) { "[redacted]".to_string() } else { String::from_utf8_lossy(v.as_bytes()).to_string() };
+            let value = if is_secret_name(&name) {
+                "[redacted]".to_string()
+            } else {
+                String::from_utf8_lossy(v.as_bytes()).to_string()
+            };
             (name, value)
         })
         .collect()
@@ -108,8 +147,17 @@ fn body_preview(h: &hyper::HeaderMap, body: &[u8]) -> Option<String> {
     if body.is_empty() {
         return None;
     }
-    let ct = h.get(hyper::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("").to_ascii_lowercase();
-    let texty = ct.is_empty() || ct.contains("json") || ct.contains("text") || ct.contains("xml") || ct.contains("x-www-form-urlencoded") || ct.contains("javascript");
+    let ct = h
+        .get(hyper::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let texty = ct.is_empty()
+        || ct.contains("json")
+        || ct.contains("text")
+        || ct.contains("xml")
+        || ct.contains("x-www-form-urlencoded")
+        || ct.contains("javascript");
     if !texty {
         return Some(format!("[{} bytes of {ct}]", body.len()));
     }
@@ -122,7 +170,10 @@ fn body_preview(h: &hyper::HeaderMap, body: &[u8]) -> Option<String> {
 }
 
 fn now_ms() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 /// Where the proxy sends requests.
@@ -156,8 +207,15 @@ impl Inspector {
     /// Starts the proxy on a free loopback port. `resolve` maps the site's name to our own
     /// web server (so `.test` names work without the system resolver); `ca_pem` is the
     /// local CA, trusted for the forwarded HTTPS request.
-    pub fn start(runtime: Arc<tokio::runtime::Runtime>, target: Target, resolve: Option<SocketAddr>, ca_pem: Option<Vec<u8>>) -> Result<Self, String> {
-        let mut builder = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).timeout(std::time::Duration::from_secs(120));
+    pub fn start(
+        runtime: Arc<tokio::runtime::Runtime>,
+        target: Target,
+        resolve: Option<SocketAddr>,
+        ca_pem: Option<Vec<u8>>,
+    ) -> Result<Self, String> {
+        let mut builder = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(std::time::Duration::from_secs(120));
         if let Some(addr) = resolve {
             builder = builder.resolve(&target.host, addr);
         }
@@ -167,10 +225,20 @@ impl Inspector {
             }
         }
         let client = builder.build().map_err(|e| e.to_string())?;
-        let state = Arc::new(State { target, client, log: Mutex::new(VecDeque::new()), next: Mutex::new(1), last_ms: Mutex::new(None), auth: Mutex::new(None) });
+        let state = Arc::new(State {
+            target,
+            client,
+            log: Mutex::new(VecDeque::new()),
+            next: Mutex::new(1),
+            last_ms: Mutex::new(None),
+            auth: Mutex::new(None),
+        });
         // Bound here (not with `block_on`): callers may already be inside another runtime.
-        let std_listener = std::net::TcpListener::bind(("127.0.0.1", 0)).map_err(|e| format!("the inspector could not open a port: {e}"))?;
-        std_listener.set_nonblocking(true).map_err(|e| e.to_string())?;
+        let std_listener = std::net::TcpListener::bind(("127.0.0.1", 0))
+            .map_err(|e| format!("the inspector could not open a port: {e}"))?;
+        std_listener
+            .set_nonblocking(true)
+            .map_err(|e| e.to_string())?;
         let port = std_listener.local_addr().map_err(|e| e.to_string())?.port();
         let (tx, mut rx) = tokio::sync::oneshot::channel::<()>();
         let serve_state = state.clone();
@@ -190,7 +258,12 @@ impl Inspector {
                 }
             }
         });
-        Ok(Self { port, state, shutdown: Some(tx), runtime })
+        Ok(Self {
+            port,
+            state,
+            shutdown: Some(tx),
+            runtime,
+        })
     }
 
     /// Visitors must send this `Authorization` value; others get 401 (never recorded).
@@ -199,7 +272,14 @@ impl Inspector {
     }
 
     pub fn requests(&self) -> Vec<RecordedRequest> {
-        self.state.log.lock().unwrap().iter().rev().map(|(r, _)| r.clone()).collect()
+        self.state
+            .log
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .map(|(r, _)| r.clone())
+            .collect()
     }
 
     pub fn clear(&self) {
@@ -216,21 +296,47 @@ impl Inspector {
 
     /// §111: sends a recorded request again, exactly as it first arrived.
     pub fn replay(&self, id: u64) -> Result<RecordedRequest, String> {
-        let original = self.state.log.lock().unwrap().iter().find(|(r, _)| r.id == id).map(|(_, o)| o.clone()).ok_or("that request is no longer in the log")?;
+        let original = self
+            .state
+            .log
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|(r, _)| r.id == id)
+            .map(|(_, o)| o.clone())
+            .ok_or("that request is no longer in the log")?;
         self.send(original)
     }
 
     /// §111: a hand-made request (the webhook tester), recorded like real traffic.
-    pub fn send_test(&self, method: &str, path: &str, headers: &[(String, String)], body: &str) -> Result<RecordedRequest, String> {
-        let method = hyper::Method::from_bytes(method.to_ascii_uppercase().as_bytes()).map_err(|_| format!("\"{method}\" is not an HTTP method"))?;
-        let path = if path.starts_with('/') { path.to_string() } else { format!("/{path}") };
+    pub fn send_test(
+        &self,
+        method: &str,
+        path: &str,
+        headers: &[(String, String)],
+        body: &str,
+    ) -> Result<RecordedRequest, String> {
+        let method = hyper::Method::from_bytes(method.to_ascii_uppercase().as_bytes())
+            .map_err(|_| format!("\"{method}\" is not an HTTP method"))?;
+        let path = if path.starts_with('/') {
+            path.to_string()
+        } else {
+            format!("/{path}")
+        };
         let mut map = hyper::HeaderMap::new();
         for (k, v) in headers {
-            let name = hyper::header::HeaderName::from_bytes(k.trim().as_bytes()).map_err(|_| format!("\"{k}\" is not a header name"))?;
-            let value = hyper::header::HeaderValue::from_str(v.trim()).map_err(|_| format!("the value of {k} is not allowed in a header"))?;
+            let name = hyper::header::HeaderName::from_bytes(k.trim().as_bytes())
+                .map_err(|_| format!("\"{k}\" is not a header name"))?;
+            let value = hyper::header::HeaderValue::from_str(v.trim())
+                .map_err(|_| format!("the value of {k} is not allowed in a header"))?;
             map.append(name, value);
         }
-        self.send(Original { method, path, headers: map, body: Bytes::from(body.to_string()) })
+        self.send(Original {
+            method,
+            path,
+            headers: map,
+            body: Bytes::from(body.to_string()),
+        })
     }
 
     fn send(&self, o: Original) -> Result<RecordedRequest, String> {
@@ -243,12 +349,24 @@ impl Inspector {
         let (done_tx, done_rx) = std::sync::mpsc::channel();
         self.runtime.spawn(async move {
             let (parts, body) = req.into_parts();
-            let bytes = body.collect().await.map(|b| b.to_bytes()).unwrap_or_default();
+            let bytes = body
+                .collect()
+                .await
+                .map(|b| b.to_bytes())
+                .unwrap_or_default();
             let _ = forward(Request::from_parts(parts, bytes), state, true).await;
             let _ = done_tx.send(());
         });
-        done_rx.recv_timeout(std::time::Duration::from_secs(130)).map_err(|_| "the local site did not answer in time".to_string())?;
-        self.state.log.lock().unwrap().back().map(|(r, _)| r.clone()).ok_or_else(|| "nothing was recorded".to_string())
+        done_rx
+            .recv_timeout(std::time::Duration::from_secs(130))
+            .map_err(|_| "the local site did not answer in time".to_string())?;
+        self.state
+            .log
+            .lock()
+            .unwrap()
+            .back()
+            .map(|(r, _)| r.clone())
+            .ok_or_else(|| "nothing was recorded".to_string())
     }
 }
 
@@ -260,12 +378,25 @@ impl Drop for Inspector {
     }
 }
 
-async fn handle(req: Request<hyper::body::Incoming>, state: Arc<State>, replay: bool) -> Result<Response<Full<Bytes>>, Infallible> {
+async fn handle(
+    req: Request<hyper::body::Incoming>,
+    state: Arc<State>,
+    replay: bool,
+) -> Result<Response<Full<Bytes>>, Infallible> {
     let wanted = state.auth.lock().unwrap().clone();
     if let Some(wanted) = wanted {
-        let given = req.headers().get(hyper::header::AUTHORIZATION).and_then(|v| v.to_str().ok());
+        let given = req
+            .headers()
+            .get(hyper::header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok());
         if given != Some(wanted.as_str()) {
-            let r = Response::builder().status(401).header("www-authenticate", "Basic realm=\"OpenLocalServer tunnel\"").body(Full::new(Bytes::from_static(b"This tunnel needs a username and password."))).unwrap();
+            let r = Response::builder()
+                .status(401)
+                .header("www-authenticate", "Basic realm=\"OpenLocalServer tunnel\"")
+                .body(Full::new(Bytes::from_static(
+                    b"This tunnel needs a username and password.",
+                )))
+                .unwrap();
             return Ok(r);
         }
     }
@@ -281,25 +412,50 @@ async fn handle(req: Request<hyper::body::Incoming>, state: Arc<State>, replay: 
 }
 
 fn simple(status: u16, text: &str) -> Response<Full<Bytes>> {
-    Response::builder().status(status).header("content-type", "text/plain; charset=utf-8").body(Full::new(Bytes::from(text.to_string()))).unwrap()
+    Response::builder()
+        .status(status)
+        .header("content-type", "text/plain; charset=utf-8")
+        .body(Full::new(Bytes::from(text.to_string())))
+        .unwrap()
 }
 
 async fn forward(req: Request<Bytes>, state: Arc<State>, replay: bool) -> Response<Full<Bytes>> {
     let started = Instant::now();
-    let path = req.uri().path_and_query().map(|p| p.as_str().to_string()).unwrap_or_else(|| "/".into());
-    let original = Original { method: req.method().clone(), path: path.clone(), headers: req.headers().clone(), body: req.body().clone() };
-    let client_ip = req.headers().get("x-forwarded-for").and_then(|v| v.to_str().ok()).map(|s| s.split(',').next().unwrap_or(s).trim().to_string());
+    let path = req
+        .uri()
+        .path_and_query()
+        .map(|p| p.as_str().to_string())
+        .unwrap_or_else(|| "/".into());
+    let original = Original {
+        method: req.method().clone(),
+        path: path.clone(),
+        headers: req.headers().clone(),
+        body: req.body().clone(),
+    };
+    let client_ip = req
+        .headers()
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.split(',').next().unwrap_or(s).trim().to_string());
 
     let url = format!("{}{}", state.target.base.trim_end_matches('/'), path);
-    let method = reqwest::Method::from_bytes(req.method().as_str().as_bytes()).unwrap_or(reqwest::Method::GET);
+    let method = reqwest::Method::from_bytes(req.method().as_str().as_bytes())
+        .unwrap_or(reqwest::Method::GET);
     let mut out = state.client.request(method, &url);
     for (k, v) in req.headers() {
         if !HOP_BY_HOP.contains(&k.as_str()) {
             out = out.header(k.as_str(), v.as_bytes());
         }
     }
-    let public_host = req.headers().get("x-forwarded-host").or_else(|| req.headers().get(hyper::header::HOST)).and_then(|v| v.to_str().ok()).map(str::to_string);
-    out = out.header("host", state.target.host.as_str()).header("x-forwarded-proto", "https");
+    let public_host = req
+        .headers()
+        .get("x-forwarded-host")
+        .or_else(|| req.headers().get(hyper::header::HOST))
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+    out = out
+        .header("host", state.target.host.as_str())
+        .header("x-forwarded-proto", "https");
     if let Some(h) = &public_host {
         out = out.header("x-forwarded-host", h.as_str());
     }
@@ -335,7 +491,10 @@ async fn forward(req: Request<Bytes>, state: Arc<State>, replay: bool) -> Respon
             let mut headers = hyper::HeaderMap::new();
             for (k, v) in resp.headers() {
                 if !HOP_BY_HOP.contains(&k.as_str()) {
-                    if let (Ok(name), Ok(value)) = (hyper::header::HeaderName::from_bytes(k.as_str().as_bytes()), hyper::header::HeaderValue::from_bytes(v.as_bytes())) {
+                    if let (Ok(name), Ok(value)) = (
+                        hyper::header::HeaderName::from_bytes(k.as_str().as_bytes()),
+                        hyper::header::HeaderValue::from_bytes(v.as_bytes()),
+                    ) {
                         headers.append(name, value);
                     }
                 }
@@ -349,7 +508,8 @@ async fn forward(req: Request<Bytes>, state: Arc<State>, replay: bool) -> Respon
             if let Some(h) = r.headers_mut() {
                 *h = headers;
             }
-            r.body(Full::new(body)).unwrap_or_else(|_| simple(502, "bad response from the site"))
+            r.body(Full::new(body))
+                .unwrap_or_else(|_| simple(502, "bad response from the site"))
         }
         Err(e) => {
             let msg = format!("the local site did not answer: {e}");
@@ -375,10 +535,19 @@ mod tests {
 
     #[test]
     fn secrets_are_redacted_everywhere_they_show() {
-        assert_eq!(redact_query("/cb?code=1&access_token=abc&state=x"), "/cb?code=1&access_token=[redacted]&state=x");
+        assert_eq!(
+            redact_query("/cb?code=1&access_token=abc&state=x"),
+            "/cb?code=1&access_token=[redacted]&state=x"
+        );
         let json = redact_body(r#"{"user":"a","password":"hunter2","nested":{"api_key":"k"}}"#);
-        assert!(!json.contains("hunter2") && !json.contains("\"k\"") && json.contains("\"user\":\"a\""), "{json}");
-        assert_eq!(redact_body("user=a&password=b&x=1"), "user=a&password=[redacted]&x=1");
+        assert!(
+            !json.contains("hunter2") && !json.contains("\"k\"") && json.contains("\"user\":\"a\""),
+            "{json}"
+        );
+        assert_eq!(
+            redact_body("user=a&password=b&x=1"),
+            "user=a&password=[redacted]&x=1"
+        );
         let mut h = hyper::HeaderMap::new();
         h.insert("cookie", "sid=1".parse().unwrap());
         h.insert("stripe-signature", "t=1,v1=abc".parse().unwrap());
@@ -404,14 +573,32 @@ mod tests {
                 let _ = write!(s, "HTTP/1.1 201 Created\r\ncontent-type: text/plain\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}", body.len());
             }
         });
-        let rt = Arc::new(tokio::runtime::Builder::new_multi_thread().worker_threads(1).enable_all().build().unwrap());
-        let inspector = Inspector::start(rt, Target { base: format!("http://127.0.0.1:{site_port}"), host: "shop.test".into() }, None, None).unwrap();
+        let rt = Arc::new(
+            tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(1)
+                .enable_all()
+                .build()
+                .unwrap(),
+        );
+        let inspector = Inspector::start(
+            rt,
+            Target {
+                base: format!("http://127.0.0.1:{site_port}"),
+                host: "shop.test".into(),
+            },
+            None,
+            None,
+        )
+        .unwrap();
 
         let mut c = std::net::TcpStream::connect(("127.0.0.1", inspector.port)).unwrap();
         write!(c, "POST /hook?token=secret HTTP/1.1\r\nhost: abc.trycloudflare.com\r\ncontent-type: application/json\r\ncontent-length: 20\r\nconnection: close\r\n\r\n{{\"password\":\"x1234\"}}").unwrap();
         let mut resp = String::new();
         c.read_to_string(&mut resp).unwrap();
-        assert!(resp.starts_with("HTTP/1.1 201") && resp.ends_with("hello"), "{resp}");
+        assert!(
+            resp.starts_with("HTTP/1.1 201") && resp.ends_with("hello"),
+            "{resp}"
+        );
 
         let reqs = inspector.requests();
         assert_eq!(reqs.len(), 1);

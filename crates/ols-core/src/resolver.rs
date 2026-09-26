@@ -46,9 +46,22 @@ pub fn resolve(
     let installed_version = requested.as_ref().and_then(|v| {
         let installed = runtimes.installed_versions(id);
         // Exact match first, then "requested 8.2 satisfied by installed 8.2.26".
-        installed.iter().find(|iv| *iv == v).or_else(|| installed.iter().find(|iv| iv.starts_with(v.as_str()))).cloned()
+        installed
+            .iter()
+            .find(|iv| *iv == v)
+            .or_else(|| installed.iter().find(|iv| iv.starts_with(v.as_str())))
+            .cloned()
     });
-    let bin_dir = installed_version.as_ref().and_then(|v| runtimes.bin_dir(id, v)).map(|p| p.display().to_string());
+    let bin_dir = installed_version
+        .as_ref()
+        .and_then(|v| runtimes.bin_dir(id, v))
+        .map(|p| p.display().to_string());
 
-    ResolvedRuntime { id: id.to_string(), requested_version: requested, source, installed_version, bin_dir }
+    ResolvedRuntime {
+        id: id.to_string(),
+        requested_version: requested,
+        source,
+        installed_version,
+        bin_dir,
+    }
 }
