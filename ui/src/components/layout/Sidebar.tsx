@@ -1,6 +1,5 @@
 import {
   Box,
-  ChevronDown,
   Database,
   Globe,
   Globe2,
@@ -96,17 +95,6 @@ const NAV_GROUPS: { id: string; label: string; items: NavItem[] }[] = [
   },
 ]
 
-const COLLAPSED_KEY = 'ols.sidebar.collapsed'
-
-function loadCollapsed(): string[] {
-  try {
-    const v = JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? '[]')
-    return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []
-  } catch {
-    return []
-  }
-}
-
 const SOON_ITEMS: string[] = []
 
 export function Sidebar({ page, onNavigate }: { page: Page; onNavigate: (p: Page) => void }) {
@@ -114,17 +102,6 @@ export function Sidebar({ page, onNavigate }: { page: Page; onNavigate: (p: Page
   // §59: always visible when something is public.
   const [publicCount, setPublicCount] = useState(0)
   const network = useOnline()
-  const [collapsed, setCollapsed] = useState<string[]>(loadCollapsed)
-
-  function toggleGroup(id: string) {
-    const next = collapsed.includes(id) ? collapsed.filter((g) => g !== id) : [...collapsed, id]
-    setCollapsed(next)
-    try {
-      localStorage.setItem(COLLAPSED_KEY, JSON.stringify(next))
-    } catch {
-      // Storage can be unavailable; the groups just won't be remembered.
-    }
-  }
 
   const navButton = ({ id, label, icon: Icon }: NavItem) => (
     <button
@@ -174,24 +151,14 @@ export function Sidebar({ page, onNavigate }: { page: Page; onNavigate: (p: Page
 
       <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2">
         {navButton(DASHBOARD)}
-        {NAV_GROUPS.map((g) => {
-          const closed = collapsed.includes(g.id)
-          // A collapsed group still shows the page you are on, so you never lose your place.
-          const shown = closed ? g.items.filter((i) => i.id === page) : g.items
-          return (
-            <div key={g.id} className="mt-2 flex flex-col gap-0.5">
-              <button
-                onClick={() => toggleGroup(g.id)}
-                aria-expanded={!closed}
-                className="flex items-center justify-between rounded-md px-3 py-1 text-[11px] font-medium uppercase tracking-wider text-sidebar-foreground/45 transition-colors hover:text-sidebar-foreground/80"
-              >
-                {g.label}
-                <ChevronDown className={cn('size-3 transition-transform', closed && '-rotate-90')} />
-              </button>
-              {shown.map(navButton)}
+        {NAV_GROUPS.map((g) => (
+          <div key={g.id} className="mt-2.5 flex flex-col gap-0.5">
+            <div className="px-3 py-1 text-[11px] font-medium uppercase tracking-wider text-sidebar-foreground/45">
+              {g.label}
             </div>
-          )
-        })}
+            {g.items.map(navButton)}
+          </div>
+        ))}
 
         {SOON_ITEMS.length > 0 && (
           <div className="mt-4 px-3 text-[11px] font-medium uppercase tracking-wider text-sidebar-foreground/40">

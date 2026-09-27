@@ -55,6 +55,7 @@ SitesPage | uses | UseWeb hook
 SiteDialog | uses | CoreClient
 TerminalComp | uses | TerminalManager
 EnvEditor | uses | EnvFile (via Core)
+Sidebar | uses | CoreClient (list_tunnels)
 LoadTestRunner | uses | ProcessSupervisor
 DaemonRunner | uses | ScheduleStore ticker
 HelperService | uses | HelperMain execute

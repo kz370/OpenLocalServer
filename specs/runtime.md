@@ -94,5 +94,7 @@ All text written in English.
 - [2026-09-27] feat: Add site dialog Project field changed from select to text input; typing project name auto-fills domain (via template) and site folder (via parent directory); auto-detects existing project details if matching; ui lint 0 errors + vite build green; Files Processed still 203
 - [2026-09-27] feat: Git clone SSH key detection — added list_ssh_keys IPC command to scan ~/.ssh for private keys; GitCloneButton SshKeyPicker dropdown auto-detects keys, provides refresh button, file-picker browse fallback, and hint about %USERPROFILE%\.ssh; unit test list_ssh_keys_does_not_panic_and_excludes_invalid_files; specs updated; Files Processed still 203
 - [2026-09-27] style: Quick Apps grid compact and space-efficient layout (4-col xl, 3-col lg, gap-3, compact p-3.5 card padding, 36px brand tiles, 14px semibold titles, 12px leading-relaxed descriptions, square 28px ghost action buttons, 28px Create button); no IPC change; ui lint 0 errors + vite build green; Files Processed still 203
+- [2026-09-27] style: Sidebar navigation items made permanently visible under static group headers (removed collapsible accordion state, ChevronDown toggle, and localStorage key); no IPC change; ui lint 0 errors + vite build green; cargo fmt, clippy, and tests all pass; Files Processed still 203
+
 
 

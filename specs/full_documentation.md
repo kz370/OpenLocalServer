@@ -38,7 +38,7 @@ Dispatch, state, IPC, infra. `lib.rs` re-exports; `app.rs` Inner + all command i
 `project.rs` registry ID=sha256[..16]; `project_tools.rs` wrappers; `manifest.rs` strict YAML; `profiles.rs` templates; `setup.rs` 14-step pipeline + lock file; `snapshots.rs` zip + clone; `envfile.rs` lossless editor; `command_catalog.rs` Symfony/artisan/npm discovery; `git.rs` real binary + ASK_PASS + ~/.ssh key detection (list_ssh_keys); `shortcuts.rs`; `editors.rs`; `terminal.rs` pty max 8; `shell_menu.rs` HKCU; `procfile.rs`; `loadtest.rs` k6 VU cap 200; `xdebug.rs` trigger-default; `quickapp/*` schema->plan->run.
 
 ### 3.7 CLI / Helper / Shell / UI
-CLI `ols` never manages directly; daemon mode runs core headless + scheduler clock. Helper validates ip=127.0.0.1/::1 and suffix leading-dot. Tauri shell builds tray from domains/services, single-instance, close-to-tray. UI `core.ts` sole IPC wrapper; no router, page state + `ols:navigate` events; `useWeb` shared poll 4s; pages per concern (see catalog.txt).
+CLI `ols` never manages directly; daemon mode runs core headless + scheduler clock. Helper validates ip=127.0.0.1/::1 and suffix leading-dot. Tauri shell builds tray from domains/services, single-instance, close-to-tray. UI `core.ts` sole IPC wrapper; no router, page state + `ols:navigate` events; `Sidebar` provides persistent navigation with static non-collapsible category groups; `useWeb` shared poll 4s; pages per concern (see catalog.txt).
 
 ## 4. File Analysis
 ### Rust core essentials
