@@ -40,6 +40,7 @@ import {
 import { useAction } from '@/lib/hooks'
 import { confirmThen } from '@/lib/confirm'
 import { buildSitePath, domainToFolderName, folderNameToDomain, getDefaultSitesDir } from '@/lib/sites'
+import { cn } from '@/lib/utils'
 
 const CATEGORIES = ['all', 'php', 'node', 'python', 'static', 'proxy', 'custom']
 /** Built-in recipes with their own brand mark; anything else shows its category's. */
@@ -180,56 +181,103 @@ export function QuickAppsPage({ onNavigate }: { onNavigate: (p: Page) => void })
         <Toggle checked={favOnly} onChange={setFavOnly} label="Favorites only" />
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {shown.map((a) => (
-          <Card key={a.id} className="flex flex-col">
-            <CardHeader className="flex-row items-start justify-between gap-3 space-y-0 pb-2">
-              <TechTile id={a.id in BRANDED_APPS ? a.id : a.category} />
+          <Card key={a.id} className="flex flex-col transition-all duration-150 hover:border-border/80 hover:shadow-md">
+            <CardHeader className="flex-row items-start justify-between gap-2.5 p-3.5 pb-1 space-y-0">
+              <TechTile id={a.id in BRANDED_APPS ? a.id : a.category} className="size-9 rounded-lg [&_svg]:size-4.5" />
               <div className="min-w-0 flex-1">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  {a.name}
-                  {a.source === 'imported' && <Badge variant={a.trusted ? 'secondary' : 'warning'}>{a.trusted ? 'imported' : 'untrusted'}</Badge>}
-                  {a.overrides_builtin && <Badge variant="secondary">modified</Badge>}
+                <CardTitle className="flex items-center gap-1.5 text-sm font-semibold leading-tight">
+                  <span className="truncate">{a.name}</span>
+                  {a.source === 'imported' && (
+                    <Badge variant={a.trusted ? 'secondary' : 'warning'} className="px-1.5 py-0 text-[10px] leading-tight font-normal shrink-0">
+                      {a.trusted ? 'imported' : 'untrusted'}
+                    </Badge>
+                  )}
+                  {a.overrides_builtin && (
+                    <Badge variant="secondary" className="px-1.5 py-0 text-[10px] leading-tight font-normal shrink-0">
+                      modified
+                    </Badge>
+                  )}
                 </CardTitle>
-                <CardDescription className="mt-1 line-clamp-2">{a.description}</CardDescription>
+                <CardDescription className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                  {a.description}
+                </CardDescription>
               </div>
               <button
+                type="button"
                 onClick={() => run('fav', async () => { await runCommand({ type: 'favorite_quick_app', id: a.id, favorite: !a.favorite }); await refresh() })}
-                className={a.favorite ? 'text-warning' : 'text-muted-foreground hover:text-foreground'}
+                className={cn(
+                  'rounded-md p-1 transition-colors hover:bg-accent shrink-0',
+                  a.favorite ? 'text-warning' : 'text-muted-foreground/60 hover:text-foreground',
+                )}
                 title="Favorite"
               >
-                <Star className="size-4" fill={a.favorite ? 'currentColor' : 'none'} />
+                <Star className="size-3.5" fill={a.favorite ? 'currentColor' : 'none'} />
               </button>
             </CardHeader>
-            <CardContent className="mt-auto flex items-center justify-between gap-2 pt-2">
-              <div className="flex gap-0.5">
-                <Button size="sm" variant="ghost" title="Edit" onClick={() => run('edit', () => openEditor(a.id))}>
+            <CardContent className="mt-auto flex items-center justify-between gap-2 p-3.5 pt-1.5">
+              <div className="flex items-center gap-0.5">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                  title="Edit"
+                  onClick={() => run('edit', () => openEditor(a.id))}
+                >
                   <Pencil className="size-3.5" />
                 </Button>
-                <Button size="sm" variant="ghost" title="Duplicate" onClick={() => setDup(a)}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                  title="Duplicate"
+                  onClick={() => setDup(a)}
+                >
                   <Copy className="size-3.5" />
                 </Button>
-                <Button size="sm" variant="ghost" title="Export" onClick={() => run('export', () => exportApp(a.id))}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                  title="Export"
+                  onClick={() => run('export', () => exportApp(a.id))}
+                >
                   <Download className="size-3.5" />
                 </Button>
                 {(a.source !== 'builtin' || a.overrides_builtin) && (
                   <Button
                     size="sm"
                     variant="ghost"
+                    className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
                     title={a.overrides_builtin ? 'Revert to the built-in version' : 'Delete'}
-                    onClick={() => confirmThen(a.overrides_builtin ? 'Discard your changes and restore the built-in recipe?' : `Delete "${a.name}"?`, () => run('delete', async () => { await runCommand({ type: 'delete_quick_app', id: a.id }); await refresh() }))}
+                    onClick={() =>
+                      confirmThen(
+                        a.overrides_builtin ? 'Discard your changes and restore the built-in recipe?' : `Delete "${a.name}"?`,
+                        () =>
+                          run('delete', async () => {
+                            await runCommand({ type: 'delete_quick_app', id: a.id })
+                            await refresh()
+                          }),
+                      )
+                    }
                   >
                     <Trash2 className="size-3.5" />
                   </Button>
                 )}
               </div>
-              <Button size="sm" onClick={() => setWizardId(a.id)} disabled={busy !== null}>
-                <Rocket /> Create
+              <Button
+                size="sm"
+                className="h-7 px-2.5 text-xs font-medium gap-1.5 [&_svg]:size-3.5"
+                onClick={() => setWizardId(a.id)}
+                disabled={busy !== null}
+              >
+                <Rocket className="size-3.5" /> Create
               </Button>
             </CardContent>
           </Card>
         ))}
-        {shown.length === 0 && <p className="text-sm text-muted-foreground">Nothing matches.</p>}
+        {shown.length === 0 && <p className="col-span-full py-8 text-center text-sm text-muted-foreground">Nothing matches.</p>}
       </div>
 
       {wizardId && <Wizard key={wizardId} id={wizardId} onClose={() => { setWizardId(null); void refresh() }} onNavigate={onNavigate} />}
