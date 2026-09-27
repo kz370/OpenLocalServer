@@ -1,6 +1,6 @@
 import { open } from '@tauri-apps/plugin-dialog'
 import { FileKey, FileUp, GitBranch } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
 import { Spinner } from '@/components/Spinner'
@@ -10,6 +10,7 @@ import { Field, Select, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { type CloneResult, type ImportPreview, type Project, runCommand } from '@/core'
 import { useAction } from '@/lib/hooks'
+import { buildSitePath, domainToFolderName, folderNameToDomain, getDefaultSitesDir } from '@/lib/sites'
 
 function FolderInput({ value, onChange, title }: { value: string; onChange: (v: string) => void; title: string }) {
   return (
@@ -32,8 +33,12 @@ function FolderInput({ value, onChange, title }: { value: string; onChange: (v: 
 export function GitCloneButton({ defaultParent, onDone }: { defaultParent: string; onDone: (p: Project) => void }) {
   const [openDialog, setOpen] = useState(false)
   const [url, setUrl] = useState('')
-  const [branch, setBranch] = useState('')
+  const [domain, setDomain] = useState('')
+  const [domainTouched, setDomainTouched] = useState(false)
   const [target, setTarget] = useState('')
+  const [targetTouched, setTargetTouched] = useState(false)
+  const [parentDir, setParentDir] = useState(defaultParent || '')
+  const [branch, setBranch] = useState('')
   const [authMode, setAuthMode] = useState<'none' | 'https' | 'ssh'>('none')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -41,9 +46,48 @@ export function GitCloneButton({ defaultParent, onDone }: { defaultParent: strin
   const [keyPath, setKeyPath] = useState('')
   const [passphrase, setPassphrase] = useState('')
   const { busy, error, setError, run } = useAction()
+
+  useEffect(() => {
+    if (!parentDir) void getDefaultSitesDir().then((p) => p && setParentDir(p))
+  }, [parentDir])
+  useEffect(() => {
+    if (defaultParent) setParentDir(defaultParent)
+  }, [defaultParent])
+
   const repoName = url.trim().replace(/\.git$/, '').split(/[/:]/).pop() ?? ''
-  const suggested = repoName && defaultParent ? `${defaultParent.replace(/[\\/]+$/, '')}\\${repoName}` : ''
+  const effectiveParent = parentDir || defaultParent
+  const suggested = repoName && effectiveParent ? buildSitePath(effectiveParent, domainToFolderName(domain) || repoName) : ''
   const resolved = target || suggested
+
+  const onUrlChange = (newUrl: string) => {
+    setUrl(newUrl)
+    if (/^(git@|ssh:\/\/)/i.test(newUrl.trim())) setAuthMode('ssh')
+    const derived = newUrl.trim().replace(/\.git$/, '').split(/[/:]/).pop() ?? ''
+    if (derived) {
+      const newDom = folderNameToDomain(derived)
+      if (!domainTouched) {
+        setDomain(newDom)
+      }
+      if (!targetTouched && effectiveParent) {
+        const folder = domainTouched && domain ? (domainToFolderName(domain) || derived) : derived
+        setTarget(buildSitePath(effectiveParent, folder))
+      }
+    }
+  }
+
+  const onDomainChange = (newDom: string) => {
+    setDomain(newDom)
+    setDomainTouched(newDom.trim().length > 0)
+    if (!targetTouched && effectiveParent) {
+      const folder = domainToFolderName(newDom) || repoName
+      if (folder) setTarget(buildSitePath(effectiveParent, folder))
+    }
+  }
+
+  const onTargetChange = (val: string) => {
+    setTargetTouched(val.trim().length > 0)
+    setTarget(val)
+  }
 
   return (
     <>
@@ -72,9 +116,40 @@ export function GitCloneButton({ defaultParent, onDone }: { defaultParent: strin
                       : null
                   const r = await runCommand({ type: 'git_clone', url: url.trim(), target: dest, branch: branch.trim() || null, auth })
                   if (r.type === 'project') {
+                    const desiredDomain = domain.trim().toLowerCase()
+                    if (desiredDomain) {
+                      try {
+                        const existing = await runCommand({ type: 'get_domain', hostname: desiredDomain })
+                        if (existing.type !== 'domain') {
+                          await runCommand({
+                            type: 'add_domain',
+                            domain: {
+                              hostname: desiredDomain,
+                              project_id: r.project.id,
+                              root: dest,
+                              kind: { type: 'static' },
+                              https: true,
+                              redirect_https: true,
+                              wildcard: false,
+                              enabled: true,
+                              ownership: 'managed',
+                              app: null,
+                              blocks: { headers: [], redirects: [], mappings: [], upstreams: [], includes: [] },
+                              generated_hashes: {},
+                            },
+                          })
+                          await runCommand({ type: 'apply_web', overwrite: [] })
+                        }
+                      } catch {
+                        // ignore
+                      }
+                    }
                     setOpen(false)
                     setUrl('')
+                    setDomain('')
+                    setDomainTouched(false)
                     setTarget('')
+                    setTargetTouched(false)
                     setPassword('')
                     setPassphrase('')
                     onDone(r.project)
@@ -90,11 +165,18 @@ export function GitCloneButton({ defaultParent, onDone }: { defaultParent: strin
         <div className="flex flex-col gap-4">
           <ErrorCard error={error} onDismiss={() => setError(null)} />
           <Field label="Repository address">
-            <Input value={url} onChange={(e) => {
-              const value = e.target.value
-              setUrl(value)
-              if (/^(git@|ssh:\/\/)/i.test(value.trim())) setAuthMode('ssh')
-            }} placeholder="https://github.com/you/shop.git" className="font-mono" autoFocus />
+            <Input value={url} onChange={(e) => onUrlChange(e.target.value)} placeholder="https://github.com/you/shop.git" className="font-mono" autoFocus />
+          </Field>
+          <Field label="Domain" hint={domain ? `Site opens at https://${domain.trim().toLowerCase()} once cloned.` : 'Domain name for the site (e.g. shop.test)'}>
+            <Input value={domain} onChange={(e) => onDomainChange(e.target.value)} placeholder={repoName ? folderNameToDomain(repoName) : 'shop.test'} />
+          </Field>
+          <Field label="Site folder" hint={resolved ? `Will clone into ${resolved}. Edit folder name or Browse different location.` : effectiveParent ? `Defaults to ${effectiveParent}\\<repo>. Edit name or Browse.` : 'Folder inside <install>\\sites by default.'}>
+            <FolderInput value={target} onChange={onTargetChange} title="Folder to clone into" />
+            {!target && suggested ? (
+              <p className="mt-1 truncate font-mono text-xs text-muted-foreground" title={suggested}>
+                Default: {suggested}
+              </p>
+            ) : null}
           </Field>
           <Field label="Authentication" hint="Saved HTTPS credentials are used automatically when available.">
             <Select value={authMode} onChange={(e) => setAuthMode(e.target.value as typeof authMode)}>
@@ -123,14 +205,6 @@ export function GitCloneButton({ defaultParent, onDone }: { defaultParent: strin
           </>}
           <Field label="Branch" hint="Blank for the repository's default branch.">
             <Input value={branch} onChange={(e) => setBranch(e.target.value)} className="font-mono" />
-          </Field>
-          <Field label="Folder" hint={resolved ? `Will clone into ${resolved}. Edit name or Browse different location.` : 'A new or empty folder inside <install>\\sites by default.'}>
-            <FolderInput value={target} onChange={setTarget} title="Folder to clone into" />
-            {!target && suggested ? (
-              <p className="mt-1 truncate font-mono text-xs text-muted-foreground" title={suggested}>
-                Default: {suggested}
-              </p>
-            ) : null}
           </Field>
         </div>
       </Dialog>

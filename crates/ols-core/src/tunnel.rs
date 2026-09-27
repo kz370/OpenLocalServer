@@ -1068,7 +1068,9 @@ mod tests {
 
     #[test]
     fn provider_tokens_never_reach_the_command_line() {
-        let (args, env) = Cloudflare.command(5000, Some("sekrit"), &config("http://127.0.0.1:1"));
+        let mut cfg = config("http://127.0.0.1:1");
+        cfg.public_hostname = Some("test.example.com".into());
+        let (args, env) = Cloudflare.command(5000, Some("sekrit"), &cfg);
         assert!(!args.iter().any(|a| a.contains("sekrit")));
         assert_eq!(
             env,

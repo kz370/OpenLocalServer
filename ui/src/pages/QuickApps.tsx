@@ -39,6 +39,7 @@ import {
 } from '@/core'
 import { useAction } from '@/lib/hooks'
 import { confirmThen } from '@/lib/confirm'
+import { buildSitePath, domainToFolderName, folderNameToDomain, getDefaultSitesDir } from '@/lib/sites'
 
 const CATEGORIES = ['all', 'php', 'node', 'python', 'static', 'proxy', 'custom']
 /** Built-in recipes with their own brand mark; anything else shows its category's. */
@@ -361,6 +362,11 @@ export function Wizard({ id, onClose, onNavigate }: { id: string; onClose: () =>
   useEffect(() => {
     runCommand({ type: 'get_quick_app', id }).then((r) => r.type === 'quick_app' && setDetail(r.detail)).catch((e) => setError(asDiagnostic(e)))
     runCommand({ type: 'list_runtime_catalog' }).then((r) => r.type === 'runtime_catalog' && setCatalog(r.entries))
+    void getDefaultSitesDir().then((dir) => {
+      if (dir) {
+        setProvided((p) => (p.parent_dir ? p : { ...p, parent_dir: dir }))
+      }
+    })
   }, [id])
 
   // Re-plan (debounced) as answers change: this is what fills in templated defaults
@@ -380,6 +386,35 @@ export function Wizard({ id, onClose, onNavigate }: { id: string; onClose: () =>
   const valueOf = (name: string) => provided[name] ?? resolved[name] ?? ''
   const shown = (app?.variables ?? []).filter((v) => !v.show_if || evalCondition(v.show_if, { ...resolved, ...provided }))
   const errorFor = (name: string) => plan?.errors.find((e) => e.field === name)?.message
+  const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({})
+
+  const onVariableChange = (name: string, val: string) => {
+    const isNotEmpty = val.trim().length > 0
+    setTouchedFields((prev) => ({ ...prev, [name]: isNotEmpty }))
+
+    setProvided((prev) => {
+      const next = { ...prev, [name]: val }
+
+      if (name === 'project_name') {
+        if (!touchedFields['domain']) {
+          const dom = folderNameToDomain(val)
+          if (dom) next['domain'] = dom
+          else delete next['domain']
+        }
+      } else if (name === 'domain') {
+        if (!touchedFields['project_name']) {
+          const folder = domainToFolderName(val)
+          if (folder) next['project_name'] = folder
+          else delete next['project_name']
+        }
+      }
+      return next
+    })
+  }
+
+  const effectiveParent = provided.parent_dir || resolved.parent_dir || resolved.default_projects_dir || ''
+  const effectiveProject = provided.project_name || resolved.project_name || ''
+  const siteFolderPath = plan?.values?.project_path || (effectiveParent && effectiveProject ? buildSitePath(effectiveParent, effectiveProject) : '')
 
   async function start() {
     setStarting(true)
@@ -439,10 +474,16 @@ export function Wizard({ id, onClose, onNavigate }: { id: string; onClose: () =>
                   touched={provided[v.name] !== undefined}
                   error={errorFor(v.name)}
                   catalog={catalog}
-                  onChange={(val) => setProvided((p) => ({ ...p, [v.name]: val }))}
+                  onChange={(val) => onVariableChange(v.name, val)}
                 />
               ))}
             </div>
+            {siteFolderPath && (
+              <div className="mt-2 flex items-center justify-between gap-2 rounded-lg border border-border/80 bg-accent/40 px-3 py-2 text-xs">
+                <span className="text-muted-foreground">Site folder:</span>
+                <span className="font-mono font-medium text-foreground truncate" title={siteFolderPath}>{siteFolderPath}</span>
+              </div>
+            )}
           </FormSection>
         )}
 
@@ -459,7 +500,7 @@ export function Wizard({ id, onClose, onNavigate }: { id: string; onClose: () =>
 function VariableField({
   v,
   value,
-  touched,
+  touched: _touched,
   error,
   catalog,
   onChange,
@@ -533,8 +574,8 @@ function VariableField({
         <div className="flex gap-2">
           <Input
             type={v.type === 'password' || v.type === 'secret' ? 'password' : v.type === 'number' || v.type === 'port' ? 'number' : 'text'}
-            value={touched ? value : ''}
-            placeholder={value}
+            value={value}
+            placeholder={value || (v.default ? String(v.default) : '')}
             onChange={(e) => onChange(e.target.value)}
           />
           {isPicker && (

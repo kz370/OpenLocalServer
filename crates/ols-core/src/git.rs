@@ -1158,7 +1158,10 @@ u UU N... 100644 100644 100644 100644 f1 f2 f3 conflict.txt\0\
             remote_host("https://me@GitHub.com/org/repo.git").as_deref(),
             Some("github.com")
         );
-        assert_eq!(remote_host("git@github.com:org/repo.git"), None);
+        assert_eq!(
+            remote_host("git@github.com:org/repo.git").as_deref(),
+            Some("github.com")
+        );
     }
 
     #[test]

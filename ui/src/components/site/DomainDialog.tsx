@@ -8,6 +8,7 @@ import { Dialog } from '@/components/ui/dialog'
 import { Field, FormSection, Select, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
+import { buildSitePath, domainToFolderName, getDefaultSitesDir } from '@/lib/sites'
 import { type Domain, type Project, type QuickEntryView, type TunnelStatus, runCommand } from '@/core'
 
 const emptyBlocks = { headers: [], redirects: [], mappings: [], upstreams: [], includes: [] }
@@ -151,6 +152,7 @@ export function DomainSettings({
 }) {
   const [d, setD] = useState<Domain>(domain)
   const [rootTouched, setRootTouched] = useState(false)
+  const [parentDir, setParentDir] = useState(defaultParent || '')
   const kindType = d.kind.type
   const [appLine, setAppLine] = useState('')
   const [template, setTemplate] = useState('{project}.test')
@@ -167,6 +169,18 @@ export function DomainSettings({
     setAppLine(domain?.app ? [domain.app.executable, ...domain.app.args].join(' ') : '')
   }, [domain])
   useEffect(() => {
+    if (!parentDir) void getDefaultSitesDir().then((p) => p && setParentDir(p))
+  }, [parentDir])
+  useEffect(() => {
+    if (defaultParent) setParentDir(defaultParent)
+  }, [defaultParent])
+  useEffect(() => {
+    if (isNew && !d.project_id && !rootTouched && d.hostname && !d.root && parentDir) {
+      const folder = domainToFolderName(d.hostname)
+      if (folder) setD((cur) => ({ ...cur, root: buildSitePath(parentDir, folder) }))
+    }
+  }, [isNew, d.project_id, rootTouched, d.hostname, d.root, parentDir])
+  useEffect(() => {
     if (!showApps) return
     void runCommand({ type: 'list_quick_apps' }).then((r) => r.type === 'quick_apps' && setQuickApps(r.apps))
   }, [showApps])
@@ -176,7 +190,11 @@ export function DomainSettings({
   }, [])
   async function pickProject(id: string) {
     const p = projects.find((x) => x.id === id)
-    if (!p) return setD((cur) => ({ ...cur, project_id: null }))
+    if (!p) {
+      setRootTouched(false)
+      return setD((cur) => ({ ...cur, project_id: null }))
+    }
+    setRootTouched(true)
     let root = p.path
     const detail = await runCommand({ type: 'get_project_detail', id })
     let kind: Domain['kind'] | null = null
@@ -199,9 +217,27 @@ export function DomainSettings({
 
   const set = (patch: Partial<Domain>) => setD({ ...d, ...patch })
 
+  const onDomainChange = (val: string) => {
+    if (isNew && !d.project_id && !rootTouched) {
+      const folder = domainToFolderName(val)
+      const newRoot = folder && parentDir ? buildSitePath(parentDir, folder) : ''
+      setD((cur) => ({ ...cur, hostname: val, root: newRoot }))
+    } else {
+      set({ hostname: val })
+    }
+  }
+
+  const onRootChange = (val: string) => {
+    setRootTouched(val.trim().length > 0)
+    set({ root: val })
+  }
+
   async function browseRoot() {
     const picked = await open({ directory: true, title: 'Document root' })
-    if (picked && !Array.isArray(picked)) set({ root: picked })
+    if (picked && !Array.isArray(picked)) {
+      setRootTouched(true)
+      set({ root: picked })
+    }
   }
 
   function submit() {
@@ -296,11 +332,25 @@ export function DomainSettings({
               : 'Subdomains work too: api.shop.test routes independently of shop.test'
           }
         >
-          <Input value={d.hostname} onChange={(e) => set({ hostname: e.target.value })} placeholder="shop.test, myapp.local, api.company.dev…" />
+          <Input value={d.hostname} onChange={(e) => onDomainChange(e.target.value)} placeholder="shop.test, myapp.local, api.company.dev…" />
         </Field>
-        <Field label="Site folder">
+        <Field
+          label="Site folder"
+          hint={
+            d.root
+              ? `Will serve files from ${d.root}. Edit folder name or Browse different location.`
+              : parentDir
+                ? `Defaults to ${parentDir}\\<domain>. Edit folder name or Browse different location.`
+                : 'Folder containing index.html, index.php or public assets.'
+          }
+        >
           <div className="flex gap-2">
-            <Input value={d.root} onChange={(e) => set({ root: e.target.value })} placeholder="C:\Sites\shop\public" className="min-w-0 flex-1" />
+            <Input
+              value={d.root}
+              onChange={(e) => onRootChange(e.target.value)}
+              placeholder={parentDir ? buildSitePath(parentDir, 'shop') : 'C:\\Sites\\shop\\public'}
+              className="min-w-0 flex-1"
+            />
             <Button variant="secondary" onClick={browseRoot} className="shrink-0">
               <FolderSearch /> Browse
             </Button>

@@ -91,6 +91,8 @@ fn domain(host: &str, root: &std::path::Path, kind: SiteKind) -> Domain {
         app: None,
         blocks: SiteBlocks::default(),
         generated_hashes: BTreeMap::new(),
+        tunnel_id: None,
+        public_domain: None,
     }
 }
 
