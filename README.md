@@ -126,7 +126,7 @@
 
 | Requirement | Version | Notes |
 |---|---|---|
-| Windows | 10 / 11 (64-bit) | Linux planned (2.0); macOS not planned |
+| Windows | 10 / 11 (64-bit) | Windows-only |
 | Rust | stable | `rustup` toolchain |
 | Node.js | 22+ | UI build |
 | Tauri prerequisites | — | WebView2, MSVC, WiX — see [Tauri prerequisites](https://tauri.app/start/prerequisites/) |
@@ -167,7 +167,7 @@ cd ui
 npm run lint
 npm run build
 
-# Tauri bundle (NSIS/MSI — configured, not yet verified, see docs/STATUS.md)
+# Tauri bundle (NSIS/MSI)
 cd ..
 cargo tauri build
 ```
@@ -241,7 +241,7 @@ OpenLocalServer/
 │   ├── pages/           # Dashboard, Sites, Environment, Git, Workers,
 │   │                    # Snapshots, Tunnels, Profiles, Repair, Doctor…
 │   └── components/      # shadcn/ui primitives, dialogs, editors
-├── data/                # Portable JSON state (SQLite migration planned),
+├── data/                # Portable JSON state,
 │                        # OLS_HOME env overrides all paths
 ├── docs/                # STATUS.md, IMPLEMENTATION_PLAN.md, AI_ASSISTANT.md…
 ├── specs/               # Single source of truth — architecture, catalog,
@@ -287,7 +287,7 @@ cd ui; npm run lint; npm run build
 
 ## 📄 License
 
-MIT (workspace-declared) — copyright holder TBD, license file pending (see `docs/STATUS.md` 0.1 gaps). See [SECURITY.md](./SECURITY.md) for reporting policy.
+MIT — see [SECURITY.md](./SECURITY.md) for reporting policy.
 
 ---
 

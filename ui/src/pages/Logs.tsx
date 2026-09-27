@@ -32,6 +32,17 @@ export const SEVERITY_COLOR: Record<Severity, string> = {
   debug: 'text-muted-foreground',
 }
 
+/** Normalize log line for dedupe: strip timestamps, collapse whitespace, lowercase. */
+export function dedupeKey(line: string): string {
+  return line
+    .replace(/\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?/g, '')
+    .replace(/\b\d{2}:\d{2}:\d{2}(?:\.\d+)?\b/g, '')
+    .replace(/^\s*\[[\d\s:.,-]+\]\s*/, '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase()
+}
+
 /** §117: every log source in one place, live tail, search, filter, copy, export. */
 export function LogsPage() {
   const [sources, setSources] = useState<LogSource[]>([])
