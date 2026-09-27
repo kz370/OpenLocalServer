@@ -20,7 +20,7 @@ Selected CoreCommands (type strings mirror Rust variants):
 - Services/DB: `list_services`, `start_service{id}`, `stop_service{id}`, `get_connection_info{id}`, `list_databases{engine}`, `create_database{engine,name}`, `list_db_users`, `create_db_user`, `list_db_backups`, `backup_database`, `restore_database`, `open_db_tool`, `list_sqlite`, `detect_sqlite`, `associate_sqlite`, `check_sqlite`
 - Workers/Scheduler: `list_workers`, `save_worker`, `start_worker`, `stop_worker`, `list_schedules`, `save_schedule`, `run_schedule_now`
 - Terminal/Process: `open_terminal{cwd}`, `terminal_input{id,data}`, `terminal_resize`, `close_terminal`, `list_processes`, `start_process{spec}`, `stop_process{id}`, `get_process_output`, `check_port{port}`
-- Git/Env: `git_status`, `git_commit`, `git_pull`, `git_push`, `git_diff`, `git_clone`, `read_env_file`, `save_env_file`, `compare_env`
+- Git/Env: `git_status`, `git_commit`, `git_pull`, `git_push`, `git_diff`, `git_clone`, `list_ssh_keys`, `read_env_file`, `save_env_file`, `compare_env`
 - QuickApps: `list_quick_apps`, `get_quick_app{id}`, `plan_quick_app{id,answers}`, `start_quick_app{id,answers}`, `get_quick_run{id}`, `cancel_quick_run`
 - Plugins/Catalogs: `list_plugins`, `install_plugin`, `set_plugin_enabled`, `remove_plugin`, `list_catalog_sources`, `add_catalog_source{name,url,pubkey}`, `refresh_catalogs`
 - Tunnels: `list_tunnels`, `start_tunnel{name}`, `stop_tunnel`, `check_tunnel`, `tunnel_log`, `list_tunnel_requests`, `replay_tunnel_request`

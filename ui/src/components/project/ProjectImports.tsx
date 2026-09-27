@@ -44,17 +44,24 @@ function SshKeyPicker({ value, onChange }: { value: string; onChange: (v: string
     setLoading(true)
     try {
       const r = await runCommand({ type: 'list_ssh_keys' })
-      if (r.type === 'ssh_keys') setKeys(r.keys)
+      if (r.type === 'ssh_keys') {
+        setKeys(r.keys)
+        if (!value && r.keys.length > 0) {
+          const defaultKey = r.keys.find((k) => /[\\/](id_ed25519|id_rsa)$/i.test(k)) ?? r.keys[0]
+          if (defaultKey) onChange(defaultKey)
+        }
+      }
     } catch {
       // Best-effort; fall back to manual entry.
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [value, onChange])
 
   useEffect(() => {
     void loadKeys()
-  }, [loadKeys])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleSelect = async (v: string) => {
     if (v === BROWSE_SENTINEL) {
@@ -69,10 +76,15 @@ function SshKeyPicker({ value, onChange }: { value: string; onChange: (v: string
     <div className="flex flex-col gap-1.5">
       <div className="flex gap-2">
         <div className="relative min-w-0 flex-1">
-          <Select value={keys.includes(value) ? value : ''} onChange={(e) => void handleSelect(e.target.value)}>
+          <Select value={value} onChange={(e) => void handleSelect(e.target.value)}>
             <option value="" disabled>
               {loading ? 'Detecting keys…' : keys.length === 0 ? 'No keys found in ~/.ssh' : 'Select a key from ~/.ssh…'}
             </option>
+            {value && !keys.includes(value) && (
+              <option value={value}>
+                {value.replace(/\\/g, '/').split('/').pop() ?? value} (custom)
+              </option>
+            )}
             {keys.map((k) => {
               const label = k.replace(/\\/g, '/').split('/').pop() ?? k
               return (
@@ -428,9 +440,9 @@ export function ImportEnvironmentButton({ defaultParent, onDone }: { defaultPare
                       setName(next)
                       const clean = next.trim().replace(/[\\/:*?"<>|]+/g, '-')
                       if (clean && defaultParent) {
-                        const base = target.replace(/[\\\/][^\\\/]+$/, '')
+                        const base = target.replace(/[\\/][^\\/]+$/, '')
                         if (!base || base.toLowerCase() === defaultParent.toLowerCase()) {
-                          setTarget(`${defaultParent.replace(/[\\\/]+$/, '')}\\${clean}`)
+                          setTarget(`${defaultParent.replace(/[\\/]+$/, '')}\\${clean}`)
                         }
                       }
                     }}

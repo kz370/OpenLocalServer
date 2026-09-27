@@ -65,11 +65,11 @@ SetupPlanner | 14-step resolve-plan-apply with rollback + lock file.
 SnapshotManager | Zip snapshots (manifests+sites+certs meta) + clone/import.
 EnvFile | Lossless .env line editor preserving comments/order/CRLF.
 CommandCatalog | Symfony/artisan/npm script discovery + signature parser.
-GitTools | Real-binary git via PATH/portable + ASK_PASS creds.
+GitTools | Real-binary git via PATH/portable + ASK_PASS creds + ~/.ssh key detection (list_ssh_keys).
 Shortcuts | Jump-to places + open-with guard.
 EditorRegistry | VSCode/Cursor/Zed/etc detect + resolve.
 TerminalManager | portable-pty shells with runtime PATH-first (max 8).
-ShellMenu | HKCU Directory\\shell right-click installer.
+ShellMenu | HKCU Directory\shell right-click installer.
 ProcfileImporter | Procfile.dev>Procfile web/worker splitter.
 LoadTestRunner | k6 scripts runner with VU cap + JSON metrics.
 XdebugConfig | Per-PHP ini block + IDE validator.
@@ -84,7 +84,7 @@ TauriApp | Window+tray+single IPC run_command + event emits.
 
 --- FRONTEND pages ---
 DashboardPage | Overview with health filter + stop-all.
-SitesPage | Domains+projects merged table, group/search/duplicate. New Git clone / import / QuickApp defaults to <install>\sites (quickapps.projects_dir override); each dialog shows resolved path, folder name + location editable.
+SitesPage | Domains+projects merged table, group/search/duplicate. New Git clone / import / QuickApp defaults to <install>\sites (quickapps.projects_dir override); each dialog shows resolved path, folder name + location editable; Git clone supports SSH auth with ~/.ssh key detection dropdown, refresh button, and file-picker fallback.
 QuickAppsPage/Wizard | Recipe CRUD + 3-phase plan/run wizard.
 CommandsPage | Discovered+custom commands runner with output ring.
 WebServerPage | Server/ports/certs tabs + settings save-apply.

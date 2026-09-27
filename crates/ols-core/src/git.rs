@@ -1269,4 +1269,19 @@ u UU N... 100644 100644 100644 100644 f1 f2 f3 conflict.txt\0\
             .contains("nothing"));
         assert_eq!(i.git_log(&id, 10).unwrap().len(), 1);
     }
+
+    #[test]
+    fn list_ssh_keys_does_not_panic_and_excludes_invalid_files() {
+        let home = crate::test_support::isolated_home();
+        let settings = crate::settings::SettingsService::load(&home.paths).unwrap();
+        let core = crate::command::Core::new(settings, home.paths.clone());
+        let i = core.inner();
+        let keys = i.list_ssh_keys();
+        for k in keys {
+            assert!(!k.ends_with(".pub"));
+            assert!(!k.ends_with("known_hosts"));
+            assert!(!k.ends_with("authorized_keys"));
+            assert!(!k.ends_with("config"));
+        }
+    }
 }
