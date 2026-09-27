@@ -4,7 +4,7 @@ rem Stage already-built release files and create the Inno Setup installer.
 rem Contract: cargo build --release (and the frontend it embeds) has already
 rem run. For a full clean build use build-installer.bat instead.
 
-set "ROOT=%~dp0"
+set "ROOT=%~dp0..\"
 set "APPNAME=Open Local Server"
 set "CARGO_BIN=openlocalserver"
 set "HELPER_BIN=ols-helper"

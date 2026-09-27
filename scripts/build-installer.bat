@@ -4,7 +4,7 @@ rem Build the OpenLocalServer frontend, desktop executable, and installer.
 rem Handles: tool checks, stale deps, running-app locks (retry), version
 rem parsing, staging, optional Inno Setup (v6/v7), artifact verification.
 
-set "ROOT=%~dp0"
+set "ROOT=%~dp0..\"
 set "APPNAME=Open Local Server"
 set "CARGO_BIN=openlocalserver"
 set "HELPER_BIN=ols-helper"
@@ -196,7 +196,7 @@ echo.
 echo === Done: %APPNAME% %VERSION% ===
 echo     Run:      "%STAGED%"
 if exist "%SETUP%" echo     Installer: "%SETUP%"
-echo     Publish:  upload-release.bat v%VERSION%
+echo     Publish:  scripts\upload-release.bat v%VERSION%
 echo.
 exit /b 0
 

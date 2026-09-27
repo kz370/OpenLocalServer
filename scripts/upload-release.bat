@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions
-cd /d "%~dp0"
+cd /d "%~dp0.."
 
 rem Publish a GitHub release of this repo from the files build-installer.bat
 rem put in release\:
