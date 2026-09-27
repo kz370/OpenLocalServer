@@ -184,7 +184,10 @@ if errorlevel 1 (
 )
 
 if /i "%MODE%"=="notes-only" goto :notes_done
-gh release upload "%TAG%" "%SETUPPATH%" "%ZIPPATH%" "%SUMSPATH%" --clobber || (echo Upload failed. & exit /b 1)
+set "EXTRA="
+if exist "%DIST%\latest.json" set "EXTRA="%DIST%\latest.json" "%DIST%\latest.json.minisig""
+if defined EXTRA (echo Uploading update manifest too.) else (echo No latest.json - updater will 404 until a run signs one.)
+gh release upload "%TAG%" "%SETUPPATH%" "%ZIPPATH%" "%SUMSPATH%" %EXTRA% --clobber || (echo Upload failed. & exit /b 1)
 
 del /f /q "%ZIPPATH%" >nul 2>&1
 echo Done. Uploaded %SETUP%, %ZIP% and %SUMS% to %TAG%.
