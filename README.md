@@ -5,7 +5,7 @@
 [![Build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/openlocalserver/openlocalserver/actions)
 [![Version](https://img.shields.io/badge/version-0.3.0--pre-blue)](./CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-0078D6)](./docs/STATUS.md)
-[![License](https://img.shields.io/badge/license-MIT-lightgrey)](./LICENSE)
+[![License](https://img.shields.io/badge/license-GPL--3.0-blue)](./LICENSE)
 [![Tauri](https://img.shields.io/badge/shell-Tauri_2-orange)](./src-tauri/tauri.conf.json)
 [![Rust](https://img.shields.io/badge/backend-Rust-red)](./crates/ols-core)
 
@@ -287,7 +287,7 @@ cd ui; npm run lint; npm run build
 
 ## 📄 License
 
-MIT — see [SECURITY.md](./SECURITY.md) for reporting policy.
+GPL-3.0-only — see [LICENSE](./LICENSE). See [SECURITY.md](./SECURITY.md) for reporting policy.
 
 ---
 

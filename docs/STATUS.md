@@ -59,7 +59,7 @@ Everything else in release 0.1 is now written. What is left needs a person or a 
 
 | Item | § | Notes |
 |---|---|---|
-| LICENSE file | 144 | The workspace says MIT, but the copyright holder and the final choice are yours to make |
+| LICENSE file | 144 | GPL-3.0-only LICENSE added; copyright holder line still needs the owner name |
 | Installer (NSIS/MSI) verified, E2E tests, clean-VM release gate | 155, 160 | Bundling is configured but never run |
 | Full rollback of operations | 78 | The journal finds interrupted operations and offers to run them again; undoing an operation is a written hint, not a button |
 
@@ -132,5 +132,5 @@ Everything planned for 0.3 is built (stages 12–15). Limits worth knowing:
 ## Suggested order from here
 
 1. Look at every new screen in the running app; try a tunnel with cloudflared and `ols setup` on a real project.
-2. Choose the license, verify the installer (bundle `ols.exe` beside the app), run the clean-VM gate, and release 0.1.
+2. Verify the installer (bundle `ols.exe` beside the app), run the clean-VM gate, and release 0.1.
 3. Release 1.0 work: plugins, updater, Linux. (The Sites page now holds projects too, aaPanel style, built 2026-09-26 and only type-checked; the web server and certificates moved to a "Web server" page.)
