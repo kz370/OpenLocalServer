@@ -41,12 +41,6 @@ if errorlevel 1 (
   echo     Fix: install Node.js LTS from https://nodejs.org and run this again.
   goto :fail
 )
-cargo tauri --version >nul 2>nul
-if errorlevel 1 (
-  echo [x] Problem: cargo-tauri not found. Cause: Tauri CLI not installed.
-  echo     Fix: run "cargo install tauri-cli" and run this again.
-  goto :fail
-)
 if not exist "%UI%\package.json" (
   echo [x] Problem: ui\package.json missing. Cause: wrong working copy.
   echo     Fix: run from a full repo checkout.
@@ -66,7 +60,7 @@ if not errorlevel 1 (
   echo     Fix: stop it via tray icon Quit or Task Manager, then run this again.
   goto :fail
 )
-echo       tools ok (cargo, node, tauri-cli).
+echo       tools ok (cargo, node).
 
 
 rem Cap the build at half the CPU threads so the PC stays usable.
@@ -118,31 +112,18 @@ if not exist "%UI%\dist\index.html" (
 )
 
 echo [2/5] Building release executables (%JOBS% build jobs)...
-rem cargo tauri build embeds the frontend (ui\dist) into the executable.
-rem Plain cargo build does NOT -- it leaves the webview pointing at devUrl
-rem (http://localhost:1420), which causes "can't reach this page" at runtime.
-rem --no-bundle: the installer is handled by Inno Setup below.
 pushd "%ROOT%"
-cargo tauri build --no-bundle -- --jobs %JOBS%
-set "BUILD_ERR=%ERRORLEVEL%"
-if not "%BUILD_ERR%"=="0" (
-  popd
-  echo [x] Problem: cargo tauri build failed. Cause: see output above.
-  echo     Fix: fix the reported error and run this again.
-  goto :fail
-)
-rem The helper is not a Tauri app -- build it with cargo directly.
-cargo build -p %HELPER_BIN% --release --jobs %JOBS%
+cargo build -p %CARGO_BIN% -p %HELPER_BIN% --release --jobs %JOBS%
 set "BUILD_ERR=%ERRORLEVEL%"
 popd
 if not "%BUILD_ERR%"=="0" (
-  echo [x] Problem: cargo build (helper) failed. Cause: see rustc output above.
+  echo [x] Problem: cargo build failed. Cause: see rustc output above.
   echo     Fix: fix the reported error and run this again.
   goto :fail
 )
 if not exist "%EXE%" (
   echo [x] Problem: %CARGO_BIN%.exe missing from target\release after build.
-  echo     Fix: run cargo tauri build --no-bundle manually to see why.
+  echo     Fix: run cargo build -p %CARGO_BIN% --release manually to see why.
   goto :fail
 )
 if not exist "%HELPER_EXE%" (

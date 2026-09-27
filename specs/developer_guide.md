@@ -14,7 +14,7 @@ Managed binaries downloaded on demand with SHA-256 verify; never run unverified 
 - Dev app: `dev.bat`.
 - Dev CLI: `cargo run -p ols-cli -- <cmd> --help`.
 - Smoke checks: `cargo run --release --example smoke -p ols-core`; web smoke needs `OLS_HOME=<dir> OLS_HOSTS_FILE=<dir>/hosts`; services smoke similar.
-- Production: `build-installer.bat` builds UI (`npm run build`, checks `ui/dist/index.html`), builds release exe via `cargo tauri build --no-bundle` (embeds frontendDist into binary) + `ols-helper` via `cargo build --release` (half-CPU jobs), copies to `release/`, compiles Inno Setup if `ISCC.exe` found.
+- Production: `build-installer.bat` (4-stage) builds UI, builds release exes (`cargo build -p openlocalserver -p ols-helper --release`), copies to `release/`, compiles Inno Setup if found, offers GitHub upload via `upload-release.bat`.
 - First run flow: Runtimes page install PHP/Node -> Sites add folder + domain `*.test` -> WebServer apply + trust CA once -> Services start DB/mail.
 
 ## Debugging

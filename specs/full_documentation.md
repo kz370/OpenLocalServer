@@ -73,7 +73,7 @@ CLI `ols` never manages directly; daemon mode runs core headless + scheduler clo
 - Components: SiteDialog (big tabbed editor), Terminal (xterm bridge), EnvEditor (lossless), CodeEditor (CodeMirror + diff), Diagnostics/Doctor, Release/SettingsExtras, CustomServices, PHP/Xdebug dialogs, Migrate, SystemMonitor, ui primitives (no IPC).
 
 ### Docs / build
-README pre-release notice; dev.bat (npm+helper+vite+tauri dev); build-installer.bat 5-stage (tool/lock preflight incl. cargo-tauri check, always npm install, cargo tauri build --no-bundle embeds frontendDist, ols-helper via cargo build --release, staged as Open Local Server.exe, copy retries, ISCC v6/v7 optional, artifact + certutil SHA-256 verify, no parens in block echoes); upload-release.bat (Open-Local-Server setup + portable zip + certutil SHA256SUMS via gh release); vite chunkSizeWarningLimit 1600 (main bundle ~1.5MB: xterm + CodeMirror); Inno Setup x64compatible lzma, lowest privileges, dir/program-group pages enabled; render-icon.mjs Resvg 1024.
+README pre-release notice; dev.bat (npm+helper+vite+tauri dev); build-installer.bat 4-stage (tool+lock preflight, npm install if needed + npm run build, cargo build --release, ISCC v6/v7 optional, upload prompt); upload-release.bat (Open-Local-Server setup + portable zip + certutil SHA256SUMS via gh release); vite chunkSizeWarningLimit 1600 (main bundle ~1.5MB: xterm + CodeMirror); Inno Setup x64compatible lzma, lowest privileges, dir/program-group pages enabled; render-icon.mjs Resvg 1024.
 
 ## 5. Business Rules
 - Resolution manifest > detected > global; global never overrides explicit.

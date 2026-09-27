@@ -1,17 +1,20 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "OpenLocalServer",
+  "productName": "Open Local Server",
   "version": "1.0.0",
   "identifier": "dev.openlocalserver.app",
   "build": {
-    "frontendDist": "../ui/dist",
-    "devUrl": "http://localhost:1420"
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../ui/dist"
   },
   "app": {
     "windows": [
       {
         "label": "main",
-        "title": "OpenLocalServer",
+        "title": "Open Local Server",
+        "url": "index.html",
         "width": 1180,
         "height": 760,
         "minWidth": 960,
@@ -24,7 +27,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; script-src 'self'"
     }
   },
   "bundle": {
