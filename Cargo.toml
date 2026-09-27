@@ -12,7 +12,7 @@ version = "1.0.0"
 edition = "2021"
 license = "GPL-3.0-only"
 authors = ["Khaled Morsi"]
-repository = "https://github.com/openlocalserver/openlocalserver"
+repository = "https://github.com/kz370/OpenLocalServer"
 
 [profile.dev]
 incremental = true

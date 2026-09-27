@@ -969,10 +969,7 @@ fn authorize(
     }
     if p.kind == "openrouter" {
         rb = rb
-            .header(
-                "HTTP-Referer",
-                "https://github.com/openlocalserver/openlocalserver",
-            )
+            .header("HTTP-Referer", "https://github.com/kz370/OpenLocalServer")
             .header("X-Title", "OpenLocalServer");
     }
     Ok(rb)

@@ -92,17 +92,14 @@ set "DIRTY="
 for /f "delims=" %%L in ('git status --porcelain') do set "DIRTY=1"
 if not defined DIRTY goto :nothing_to_commit
 if exist "%MSGFILE%" goto :do_commit
-if /i "%MODE%"=="notes-only" goto :push_only
-(echo Missing %MSGFILE% - write the commit message there first. & exit /b 1)
+if /i "%MODE%"=="notes-only" goto :push_it
+echo Uncommitted changes left as-is - no %MSGFILE%, skipping commit.
+goto :push_it
 
 :do_commit
 echo Committing with message from %MSGFILE%...
 git add -A || (echo git add failed. & exit /b 1)
 git commit -F "%MSGFILE%" || (echo Commit failed. & exit /b 1)
-goto :push_it
-
-:push_only
-echo Uncommitted changes left as-is - no %MSGFILE%, skipping commit.
 goto :push_it
 
 :nothing_to_commit
@@ -139,7 +136,7 @@ set "MINISIGN="
 for /f "delims=" %%m in ('where minisign 2^>nul') do if not defined MINISIGN set "MINISIGN=%%m"
 if not defined MINISIGN_KEY set "MINISIGN_KEY=%USERPROFILE%\.minisign\ols-update.key"
 if not defined MINISIGN (
-  echo [!] minisign not found - skipping latest.json (updater will 404).
+  echo [!] minisign not found - skipping latest.json ^(updater will 404^).
   echo     Fix: cargo install minisign, then re-run this script.
   goto :manifest_done
 )
@@ -152,10 +149,12 @@ echo Writing latest.json...
 set "UP_VERSION=%VERSION%"
 set "UP_TAG=%TAG%"
 set "UP_SETUP=%SETUPPATH%"
-set "UP_NOTES=%NOTES%"
+set "UP_NOTES=release-notes\%TAG%.md"
 set "UP_OUT=%LATEST%"
-powershell -NoProfile -Command "$sha=[BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([IO.File]::ReadAllBytes($env:UP_SETUP))).Replace('-','').ToLower(); $size=(Get-Item $env:UP_SETUP).Length; $notes=''; if (Test-Path $env:UP_NOTES) { $notes=Get-Content $env:UP_NOTES -Raw }; $url='https://github.com/openlocalserver/openlocalserver/releases/download/'+$env:UP_TAG+'/'+[IO.Path]::GetFileName($env:UP_SETUP); $o=[ordered]@{version=$env:UP_VERSION; notes=$notes; pub_date=(Get-Date -Format yyyy-MM-dd); platforms=[ordered]@{'windows-x86_64'=[ordered]@{url=$url; sha256=$sha; size=$size}}}; $o | ConvertTo-Json -Depth 5 | Out-File $env:UP_OUT -Encoding utf8" || (echo Manifest failed. & exit /b 1)
-"%MINISIGN%" -Sm "%LATEST%" -s "%MINISIGN_KEY%" || (echo Sign failed. & exit /b 1)
+powershell -NoProfile -Command "$sha=[BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([IO.File]::ReadAllBytes($env:UP_SETUP))).Replace('-','').ToLower(); $size=(Get-Item $env:UP_SETUP).Length; $notes=''; if (Test-Path $env:UP_NOTES) { $notes=Get-Content $env:UP_NOTES -Raw }; $url='https://github.com/kz370/OpenLocalServer/releases/download/'+$env:UP_TAG+'/'+[IO.Path]::GetFileName($env:UP_SETUP); $o=[ordered]@{version=$env:UP_VERSION; notes=$notes; pub_date=(Get-Date -Format yyyy-MM-dd); platforms=[ordered]@{'windows-x86_64'=[ordered]@{url=$url; sha256=$sha; size=$size}}}; $o | ConvertTo-Json -Depth 5 | Out-File $env:UP_OUT -Encoding utf8"
+if errorlevel 1 (echo Manifest failed. & exit /b 1)
+"%MINISIGN%" -Sm "%LATEST%" -s "%MINISIGN_KEY%"
+if errorlevel 1 (echo Sign failed. & exit /b 1)
 echo       signed latest.json + latest.json.minisig
 echo       Public key for builds ^(OLS_UPDATE_PUBKEY^):
 type "%MINISIGN_KEY%.pub"

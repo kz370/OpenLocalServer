@@ -23,7 +23,7 @@ use crate::error::CoreError;
 
 const KEY: &str = "updater";
 const DEFAULT_ENDPOINT: &str =
-    "https://github.com/openlocalserver/openlocalserver/releases/latest/download/latest.json";
+    "https://github.com/kz370/OpenLocalServer/releases/latest/download/latest.json";
 const MAX_INSTALLER: usize = 600 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
