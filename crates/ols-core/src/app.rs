@@ -880,6 +880,12 @@ impl Inner {
     /// Gives a site a different name (any valid hostname, any ending). Its certificate is
     /// reissued for the new name on the next apply, and its config files move with it.
     pub fn rename_domain(&self, hostname: &str, new_hostname: &str) -> Result<Domain, CoreError> {
+        if hostname == crate::domain::HOME_HOSTNAME {
+            return Err(CoreError::DomainError(format!(
+                "{} is built in and can't be renamed",
+                crate::domain::HOME_HOSTNAME
+            )));
+        }
         let new_hostname = new_hostname.trim().to_ascii_lowercase();
         if new_hostname == hostname {
             return self.domains.lock().unwrap().get(hostname).ok_or_else(|| {

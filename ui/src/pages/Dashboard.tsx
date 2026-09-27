@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, Database, Play, Rocket, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Database, Home, Play, Rocket, XCircle } from 'lucide-react'
 import { memo, useMemo, useState } from 'react'
 
 import { DiagnosticsCard } from '@/components/DiagnosticsCard'
@@ -229,6 +229,17 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: Page) => void })
                 </div>
               ))}
               {web?.dns_running && <div>Wildcard DNS on port {web.dns_port}</div>}
+              <div className="pt-1">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={!web?.running}
+                  title={web?.running ? 'Open the built-in welcome site' : 'Start the web server first'}
+                  onClick={() => runCommand({ type: 'open_url', url: 'https://openlocalserver.test' }).catch(() => undefined)}
+                >
+                  <Home /> Open home page
+                </Button>
+              </div>
             </CardContent>
           </Card>
 

@@ -92,7 +92,8 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       : target
 
   const rows: Row[] = [
-    ...domains.map((d) => ({ key: `site:${d.hostname}`, site: d, project: projects.find((p) => p.id === d.project_id) ?? null })),
+    // openlocalserver.test is built in: served and configurable, but never listed, so it can't be deleted.
+    ...domains.filter((d) => d.hostname !== 'openlocalserver.test').map((d) => ({ key: `site:${d.hostname}`, site: d, project: projects.find((p) => p.id === d.project_id) ?? null })),
     ...projects.filter((p) => !domains.some((d) => d.project_id === p.id)).map((p) => ({ key: `project:${p.id}`, site: null, project: p })),
   ].sort((a, b) => (a.site?.hostname ?? a.project?.name ?? '').localeCompare(b.site?.hostname ?? b.project?.name ?? ''))
 

@@ -3943,6 +3943,21 @@ mod tests {
             ),
             "a failed rename leaves the site as it was"
         );
+        assert!(
+            core.dispatch(CoreCommand::RenameDomain {
+                hostname: "openlocalserver.test".into(),
+                new_hostname: "gone.test".into()
+            })
+            .is_err(),
+            "the built-in home site can't be renamed away"
+        );
+        assert!(
+            core.dispatch(CoreCommand::RemoveDomain {
+                hostname: "openlocalserver.test".into()
+            })
+            .is_err(),
+            "the built-in home site can't be deleted"
+        );
     }
 
     /// Laragon-style: scanning a folder gives each servable project `<name>.test`, a
@@ -3977,7 +3992,7 @@ mod tests {
         assert_eq!(
             found,
             vec![
-                ("home.test".to_string(), "static".to_string()),
+                ("openlocalserver.test".to_string(), "static".to_string()),
                 ("shop.test".to_string(), "php".to_string()),
                 ("site.test".to_string(), "static".to_string())
             ],
@@ -4116,7 +4131,7 @@ mod tests {
         assert!(core.dispatch(CoreCommand::AddDomain { domain }).is_ok());
         match core.dispatch(CoreCommand::ListDomains).unwrap() {
             CoreResponse::Domains { domains } => {
-                // The seeded home.test plus the added shop.test.
+                // The seeded openlocalserver.test plus the added shop.test.
                 assert_eq!(domains.len(), 2);
                 let shop = domains.iter().find(|d| d.hostname == "shop.test").unwrap();
                 assert_eq!(shop.url, "http://shop.test/");

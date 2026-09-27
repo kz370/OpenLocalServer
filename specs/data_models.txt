@@ -3,7 +3,7 @@ Data models (JSON files under data/ today; SQL tables planned).
 Entities:
 - Project {id: sha256(path)[..16], name, path, framework, created_at, updated_at}
 - Domain {id, project_id, hostname, root, kind: Php{version}|Proxy{host,port,https}|Static, https, redirect_https, wildcard, enabled, ownership: Managed|Advanced|Manual, app:{executable,args,cwd,runtime}, blocks:{headers,redirects,mappings,upstreams,includes}, generated_hashes, public_domain, tunnel_id}
-- Fresh install seeds Domain home.test (Static, managed, https, root data-dir/home + welcome index.html); seeded once, deletable.
+- Fresh install seeds Domain openlocalserver.test (Static, managed, https, root data-dir/home + welcome index.html + exact logo.svg brand bytes); always ensured on load (legacy home.test auto-renamed), hidden from Sites list, remove/rename refused.
 - Runtime {id, type: php|node|python|composer|mariadb|postgres|mongo|redis|mailpit|nginx|apache|caddy|sqlite|git|k6, version, path, arch, installed_at}
 - DatabaseInstance {id, engine, version, host, port, data_path, status}
 - Database {engine, name, owner} + DbUser {name, host, password_ref}
