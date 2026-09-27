@@ -22,21 +22,17 @@ pub struct CustomInstall {
 }
 
 pub struct CustomInstallStore {
-    file: PathBuf,
+    paths: AppPaths,
     entries: Vec<CustomInstall>,
 }
 
 impl CustomInstallStore {
     pub fn load(paths: &AppPaths) -> Result<Self, CoreError> {
-        paths.ensure_dirs()?;
-        let file = paths.data_dir().join("custom_installs.json");
-        let entries = if file.exists() {
-            let raw = std::fs::read_to_string(&file)?;
-            serde_json::from_str(&raw).unwrap_or_default()
-        } else {
-            Vec::new()
-        };
-        Ok(Self { file, entries })
+        let entries = crate::db::load_docs(paths, "custom_installs")?;
+        Ok(Self {
+            paths: paths.clone(),
+            entries,
+        })
     }
 
     pub fn list(&self) -> Vec<CustomInstall> {
@@ -98,11 +94,12 @@ impl CustomInstallStore {
     }
 
     fn persist(&self) -> Result<(), CoreError> {
-        let raw = serde_json::to_string_pretty(&self.entries)?;
-        let tmp = self.file.with_extension("json.tmp");
-        std::fs::write(&tmp, raw)?;
-        std::fs::rename(&tmp, &self.file)?;
-        Ok(())
+        let refs: Vec<(String, &CustomInstall)> = self
+            .entries
+            .iter()
+            .map(|e| (format!("{}|{}", e.id, e.label), e))
+            .collect();
+        crate::db::save_docs(&self.paths, "custom_installs", &refs)
     }
 }
 

@@ -3977,6 +3977,7 @@ mod tests {
         assert_eq!(
             found,
             vec![
+                ("home.test".to_string(), "static".to_string()),
                 ("shop.test".to_string(), "php".to_string()),
                 ("site.test".to_string(), "static".to_string())
             ],
@@ -4115,8 +4116,10 @@ mod tests {
         assert!(core.dispatch(CoreCommand::AddDomain { domain }).is_ok());
         match core.dispatch(CoreCommand::ListDomains).unwrap() {
             CoreResponse::Domains { domains } => {
-                assert_eq!(domains.len(), 1);
-                assert_eq!(domains[0].url, "http://shop.test/");
+                // The seeded home.test plus the added shop.test.
+                assert_eq!(domains.len(), 2);
+                let shop = domains.iter().find(|d| d.hostname == "shop.test").unwrap();
+                assert_eq!(shop.url, "http://shop.test/");
             }
             _ => panic!(),
         }

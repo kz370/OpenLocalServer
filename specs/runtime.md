@@ -1,10 +1,10 @@
 # RUNTIME
 
 ## Files to Process
-Total meaningful source files: 202 (excluding target/, node_modules/, .git/, dist/, data/services/postgres runtime data, icon bulk).
+Total meaningful source files: 203 (excluding target/, node_modules/, .git/, dist/, data/services/postgres runtime data, icon bulk).
 
 ### Rust core (crates/ols-core/src, 73 files)
-- src/lib.rs, app.rs, command.rs, control.rs, api.rs, paths.rs, settings.rs, secrets.rs
+- src/lib.rs, app.rs, command.rs, control.rs, api.rs, paths.rs, settings.rs, secrets.rs, db.rs
 - src/process.rs, port.rs, exec.rs, error.rs, logging.rs, redact.rs, diagnostics.rs, repair.rs, search.rs, support.rs, network.rs, journal.rs, resources.rs, elevate.rs, test_support.rs
 - src/catalog.rs, catalogs.rs, runtime.rs, php.rs, nodepm.rs, composer.rs, venv.rs, custom_install.rs, resolver.rs, detection.rs, plugin.rs, updater.rs
 - src/service.rs, custom_service.rs, dbtools.rs, mail.rs, monitor.rs, workers.rs, scheduler.rs
@@ -36,7 +36,7 @@ Total meaningful source files: 202 (excluding target/, node_modules/, .git/, dis
 - Cargo.toml, Cargo.lock, scripts/dev.bat, scripts/build-installer.bat, scripts/build-inno-installer.bat, scripts/upload-release.bat, installer/open-local-server.iss, scripts/render-icon.mjs
 
 ## Files Processed
-All 202 files listed above processed via 4 parallel analysis agents (rust-core, UI frontend, tauri-cli-helper, docs-catalogs) on 2026-09-26.
+All 203 files listed above processed via 4 parallel analysis agents (rust-core, UI frontend, tauri-cli-helper, docs-catalogs) on 2026-09-26, plus db.rs added 2026-09-27.
 
 ## Log
 - [2026-09-26] Initialization completed
@@ -77,9 +77,11 @@ All 202 files listed above processed via 4 parallel analysis agents (rust-core, 
 - [2026-09-27] fix: build-exe-installer.bat was broken — STAGED_* paths missed the backslash after %DIST% (staged into repo root as "releaseOpen Local Server.exe", ISCC SourceExe pointed nowhere), LibDir pointed at the (mis-staged) release dir instead of target\release like build-installer.bat, no copy retry on AV locks, no running-app guard. Rewrote to match proven build-installer.bat patterns (retry copy, tasklist preflight, LibDir=target\release, sizes + certutil SHA-256 summary); smoke run correctly refused while app running; Files Processed still 202
 - [2026-09-27] chore: moved dev.bat, build-installer.bat, build-inno-installer.bat (renamed from build-exe-installer.bat), upload-release.bat into scripts/; fixed %~dp0 roots to repo root, updated cross-refs + README/CONTRIBUTING/specs file list; Files Processed still 202
 - [2026-09-27] fix: updater pointed at wrong repo (openlocalserver/openlocalserver → kz370/OpenLocalServer in updater.rs default, upload manifest URL, Cargo.toml, README badge, AI referer); upload-release.bat now generates/signs/uploads latest.json + .minisig per release (minisign + key required, else skipped with warning); fixed batch paren-in-echo parse crash and missing manifest in upload line; manifest notes read via .NET (PS Get-Content wrapped it as object, breaking serde); commit-message.txt no longer required; Files Processed still 202
+- [2026-09-27] feat: fresh installs seed home.test (static, managed, HTTPS, welcome page in data-dir/home); seeded once on missing domains.json, deletable; updater manifest check 20s timeout (was 120s hang feel), Updates card simplified (Update source opens releases page, endpoint/key fields removed); fixed db.rs test E0716 blocking lib tests; domain/updater/db targeted tests green; 3 remaining lib failures pre-existing/environmental (git credential helper, sqlite-migration WIP settings restore, tunnel provider env); Files Processed still 202
 
 Status: Completed 100%
 
 Documentation ready in /specs
 
 All text written in English.
+- [2026-09-27] feat: JSON stores migrated to SQLite app.db (WAL) via new db.rs (settings table + generic docs collections); migrated 15 stores (settings, projects, domains, custom_installs, custom_services, external_tools, sqlite_databases, workers, schedules, tunnels, operations, command_history, quick_apps_meta, ai, loadtest_profiles); fresh only, no JSON import; backup/restore now zips app.db with WAL checkpoint; fixed backup filename ms-collision; catalog updated; Files Processed 203

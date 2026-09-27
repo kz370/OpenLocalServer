@@ -11,6 +11,9 @@ pub enum CoreError {
     #[error("could not read or write settings: {0}")]
     Json(#[from] serde_json::Error),
 
+    #[error("database error: {0}")]
+    Db(String),
+
     #[error("unknown setting key: {0}")]
     UnknownKey(String),
 
@@ -94,6 +97,14 @@ impl From<&CoreError> for Diagnostic {
                 cause: e.to_string(),
                 fix: Some(
                     "The settings file may be corrupted. Consider restoring a backup.".into(),
+                ),
+            },
+            CoreError::Db(e) => Diagnostic {
+                problem: "The local database failed.".into(),
+                cause: e.clone(),
+                fix: Some(
+                    "Check that OpenLocalServer can write to its data directory, then restart."
+                        .into(),
                 ),
             },
             CoreError::UnknownKey(k) => Diagnostic {

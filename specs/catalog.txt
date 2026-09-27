@@ -7,7 +7,8 @@ CoreResponse | Tagged response enum for every command.
 CoreError/Diagnostic | User-facing error shape {problem,cause,fix}.
 Inner | Arc-shared state holding all managers.
 AppPaths | OLS_HOME-aware path resolver (certs/data/settings).
-SettingsService | Atomic JSON key-value store (settings.json).
+SettingsService | SQLite key-value store (app.db settings table).
+Db | Central SQLite store (app.db, WAL): settings table + generic docs collections for all Vec-stores.
 Secrets | OS keyring wrapper (set/get/delete).
 ProcessSupervisor | Owns child processes, tree-kill, output ring, restart policy.
 ProcessSpec/ProcessInfo/ProcessEvent | Process spawn descriptor, status, broadcast event.
@@ -113,7 +114,7 @@ TerminalComp | xterm.js bridge to TerminalManager (lineHeight 1.3 + windowsMode 
 EnvEditor | .env table editor with diff.
 CodeEditor/DiffView | CodeMirror yaml/nginx/apache + diff restore; content color pinned to theme foreground; Config load failure shows message, never silent blank. Requires tauri CSP style-src 'self' 'unsafe-inline' (CodeMirror injects all CSS via runtime <style> tags; blocked CSP = unstyled scaffold).
 DiagnosticsCard/DoctorDialog | Findings list + doctor runner.
-ReleaseCards | API/updater/shell-menu cards.
+ReleaseCards | API/updater/shell-menu cards. Updates: 20s manifest timeout, Update source opens releases page (no endpoint/key fields).
 SettingsExtras | Resource limits + settings backup cards.
 CustomServices | Custom service CRUD table.
 PhpExtensionsDialog/XdebugDialog | PHP extension toggles + xdebug form.

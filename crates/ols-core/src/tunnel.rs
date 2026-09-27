@@ -409,7 +409,7 @@ struct Live {
 }
 
 pub struct TunnelManager {
-    file: PathBuf,
+    paths: AppPaths,
     configs: Mutex<Vec<TunnelConfig>>,
     live: Mutex<HashMap<String, Live>>,
     runtime: Arc<tokio::runtime::Runtime>,
@@ -417,11 +417,7 @@ pub struct TunnelManager {
 
 impl TunnelManager {
     pub fn new(paths: &AppPaths) -> Self {
-        let file = paths.data_dir().join("tunnels.json");
-        let configs = std::fs::read_to_string(&file)
-            .ok()
-            .and_then(|t| serde_json::from_str(&t).ok())
-            .unwrap_or_default();
+        let configs = crate::db::load_docs(paths, "tunnels").unwrap_or_default();
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .thread_name("ols-inspector")
@@ -429,7 +425,7 @@ impl TunnelManager {
             .build()
             .expect("failed to start the tunnel runtime");
         Self {
-            file,
+            paths: paths.clone(),
             configs: Mutex::new(configs),
             live: Mutex::new(HashMap::new()),
             runtime: Arc::new(runtime),
@@ -437,10 +433,9 @@ impl TunnelManager {
     }
 
     fn persist(&self, configs: &[TunnelConfig]) -> Result<(), CoreError> {
-        let tmp = self.file.with_extension("json.tmp");
-        std::fs::write(&tmp, serde_json::to_string_pretty(configs)?)?;
-        std::fs::rename(&tmp, &self.file)?;
-        Ok(())
+        let refs: Vec<(String, &TunnelConfig)> =
+            configs.iter().map(|c| (c.id.clone(), c)).collect();
+        crate::db::save_docs(&self.paths, "tunnels", &refs)
     }
 
     pub fn any_running(&self) -> bool {

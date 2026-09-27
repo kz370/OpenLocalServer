@@ -196,10 +196,7 @@ impl RuntimeManager {
     }
 
     fn preferred_versions(&self) -> HashMap<String, String> {
-        let values = std::fs::read_to_string(self.paths.settings_file())
-            .ok()
-            .and_then(|raw| serde_json::from_str::<HashMap<String, serde_json::Value>>(&raw).ok())
-            .unwrap_or_default();
+        let values = crate::db::load_settings(&self.paths).unwrap_or_default();
         let preferred = values
             .into_iter()
             .filter_map(|(key, value)| {
@@ -611,6 +608,13 @@ impl RuntimeManager {
     /// Runs on this manager's own runtime, so it's safe from inside another runtime's
     /// blocking thread too (where `block_on` would panic).
     pub fn fetch(&self, url: &str) -> Result<Vec<u8>, String> {
+        self.fetch_with_timeout(url, 120)
+    }
+
+    /// Same GET with a caller-chosen ceiling. The update manifest uses 20s so a
+    /// stalled check fails fast instead of spinning the button for two minutes;
+    /// big installer downloads keep the long timeout.
+    pub fn fetch_with_timeout(&self, url: &str, secs: u64) -> Result<Vec<u8>, String> {
         let http = self.http.clone();
         let url = url.to_string();
         let (tx, rx) = std::sync::mpsc::channel();
@@ -626,7 +630,7 @@ impl RuntimeManager {
                     .map(|b| b.to_vec())
                     .map_err(|e| e.to_string())
             };
-            let result = tokio::time::timeout(std::time::Duration::from_secs(120), get)
+            let result = tokio::time::timeout(std::time::Duration::from_secs(secs), get)
                 .await
                 .unwrap_or_else(|_| Err(format!("{url}: timed out")));
             let _ = tx.send(result);

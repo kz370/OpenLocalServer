@@ -3,10 +3,11 @@
 //! Pure data + validation — turning a `Domain` into server config lives in `web/`.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use crate::db;
 use crate::error::CoreError;
 use crate::paths::AppPaths;
 
@@ -186,22 +187,118 @@ fn yes() -> bool {
     true
 }
 
+/// The site every fresh install starts with: a static welcome page.
+pub const HOME_HOSTNAME: &str = "home.test";
+
+/// A fresh install (no `domains.json` yet) gets `home.test`: a static,
+/// managed, HTTPS site serving a welcome page from the data dir. A missing
+/// file is the only trigger — deleting the site afterwards is respected.
+fn home_domain(dir: &Path) -> Domain {
+    Domain {
+        hostname: HOME_HOSTNAME.into(),
+        project_id: None,
+        root: dir.display().to_string(),
+        kind: SiteKind::Static,
+        https: true,
+        redirect_https: true,
+        wildcard: false,
+        enabled: true,
+        ownership: Ownership::Managed,
+        app: None,
+        blocks: SiteBlocks::default(),
+        generated_hashes: BTreeMap::new(),
+        public_domain: None,
+        tunnel_id: None,
+    }
+}
+
+/// Writes the welcome page. Never overwrites: hand edits survive updates.
+fn write_home_page(dir: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)?;
+    let index = dir.join("index.html");
+    if !index.exists() {
+        std::fs::write(index, HOME_PAGE)?;
+    }
+    Ok(())
+}
+
+/// Static welcome page for `home.test`. Self-contained (no external assets)
+/// so it renders offline on a fresh machine.
+const HOME_PAGE: &str = r#"<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>home.test — OpenLocalServer</title>
+<style>
+  :root { --teal: #0d9488; --ink: #134e4a; --bg: #f0fdfa; --card: #ffffff; --muted: #5f6b6b; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--ink); }
+  header { background: var(--teal); color: #fff; padding: 40px 24px; }
+  header h1 { margin: 0 0 8px; font-size: 28px; }
+  header p { margin: 0; opacity: 0.9; }
+  main { max-width: 720px; margin: -24px auto 48px; padding: 0 24px; }
+  .card { background: var(--card); border-radius: 12px; padding: 24px; margin-top: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+  .card h2 { margin: 0 0 8px; font-size: 18px; }
+  .card p, .card li { color: var(--muted); font-size: 15px; line-height: 1.6; }
+  code { background: #ccfbf1; padding: 1px 6px; border-radius: 6px; font-size: 14px; }
+  a { color: var(--teal); }
+  .ok { display: inline-block; background: #fff; color: var(--teal); font-weight: 700; font-size: 13px; padding: 4px 12px; border-radius: 999px; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <span class="ok">IT WORKS</span>
+  <h1>home.test</h1>
+  <p>OpenLocalServer is serving this page over trusted local HTTPS.</p>
+</header>
+<main>
+  <div class="card">
+    <h2>Add your first site</h2>
+    <ol>
+      <li>Open the <b>Sites</b> page in the app and add a project folder.</li>
+      <li>Pick PHP, static files, or a reverse proxy.</li>
+      <li>Apply the web config — your site goes live at <code>your-project.test</code>.</li>
+    </ol>
+  </div>
+  <div class="card">
+    <h2>Good to know</h2>
+    <p><code>*.test</code> domains resolve locally with no hosts-file edits, and certificates are trusted automatically. This page lives in the app data folder under <code>home/index.html</code> — edit it freely. Deleting the <code>home.test</code> site removes it for good; it is only created once, on first install.</p>
+    <p><a href="https://github.com/kz370/OpenLocalServer">Docs and releases on GitHub</a></p>
+  </div>
+</main>
+</body>
+</html>
+"#;
+
 pub struct DomainStore {
-    file: PathBuf,
+    paths: AppPaths,
     domains: Vec<Domain>,
 }
 
 impl DomainStore {
     pub fn load(paths: &AppPaths) -> Result<Self, CoreError> {
         paths.ensure_dirs()?;
-        let file = paths.data_dir().join("domains.json");
-        let domains = if file.exists() {
-            let raw = std::fs::read_to_string(&file)?;
-            serde_json::from_str(&raw).unwrap_or_default()
-        } else {
-            Vec::new()
+        let mut domains: Vec<Domain> = db::load_docs(paths, "domains").unwrap_or_default();
+        let mut seeded = false;
+        if domains.is_empty() {
+            // Fresh install = empty collection + no welcome page yet.
+            // Deleted home.test respected: home/index.html still exists → no reseed.
+            let home_dir = paths.data_dir().join("home");
+            if !home_dir.join("index.html").exists() {
+                write_home_page(&home_dir)?;
+                domains.push(home_domain(&home_dir));
+                seeded = true;
+            }
+        }
+        let store = Self {
+            paths: paths.clone(),
+            domains,
         };
-        Ok(Self { file, domains })
+        if seeded {
+            store.persist()?;
+        }
+        Ok(store)
     }
 
     pub fn list(&self) -> Vec<Domain> {
@@ -323,11 +420,12 @@ impl DomainStore {
     }
 
     fn persist(&self) -> Result<(), CoreError> {
-        let raw = serde_json::to_string_pretty(&self.domains)?;
-        let tmp = self.file.with_extension("json.tmp");
-        std::fs::write(&tmp, raw)?;
-        std::fs::rename(&tmp, &self.file)?;
-        Ok(())
+        let items: Vec<(String, &Domain)> = self
+            .domains
+            .iter()
+            .map(|d| (d.hostname.clone(), d))
+            .collect();
+        db::save_docs(&self.paths, "domains", &items)
     }
 }
 
@@ -463,9 +561,9 @@ mod tests {
 
         store.add(domain("api.shop.test")).unwrap();
 
-        // Survives a reload.
+        // Survives a reload (plus the seeded home.test).
         let reloaded = DomainStore::load(&home.paths).unwrap();
-        assert_eq!(reloaded.list().len(), 3);
+        assert_eq!(reloaded.list().len(), 4);
     }
 
     #[test]
@@ -476,5 +574,40 @@ mod tests {
         let mut wild = domain("shop.test");
         wild.wildcard = true;
         assert!(store.add(wild).is_err());
+    }
+
+    #[test]
+    fn fresh_install_seeds_home_test_once_with_a_welcome_page() {
+        let home = crate::test_support::isolated_home();
+        let store = DomainStore::load(&home.paths).unwrap();
+        let seeded = store.get(HOME_HOSTNAME).expect("home.test seeded");
+        assert_eq!(seeded.kind, SiteKind::Static);
+        assert!(seeded.enabled && seeded.https);
+        assert!(home
+            .paths
+            .data_dir()
+            .join("home")
+            .join("index.html")
+            .is_file());
+
+        // Second load: no duplicate, page kept.
+        let again = DomainStore::load(&home.paths).unwrap();
+        assert_eq!(
+            again
+                .list()
+                .iter()
+                .filter(|d| d.hostname == HOME_HOSTNAME)
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn deleted_home_test_is_not_reseeded() {
+        let home = crate::test_support::isolated_home();
+        let mut store = DomainStore::load(&home.paths).unwrap();
+        store.remove(HOME_HOSTNAME).unwrap();
+        let reloaded = DomainStore::load(&home.paths).unwrap();
+        assert!(reloaded.get(HOME_HOSTNAME).is_none());
     }
 }

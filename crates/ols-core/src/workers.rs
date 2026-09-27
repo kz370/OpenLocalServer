@@ -4,7 +4,6 @@
 //! times, and can pass a job timeout and a memory limit to the frameworks that take one.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
@@ -137,18 +136,17 @@ pub fn command_line(w: &Worker) -> String {
 }
 
 pub struct WorkerStore {
-    file: PathBuf,
+    paths: AppPaths,
     workers: Vec<Worker>,
 }
 
 impl WorkerStore {
     pub fn load(paths: &AppPaths) -> Self {
-        let file = paths.data_dir().join("workers.json");
-        let workers = std::fs::read_to_string(&file)
-            .ok()
-            .and_then(|raw| serde_json::from_str(&raw).ok())
-            .unwrap_or_default();
-        Self { file, workers }
+        let workers = crate::db::load_docs(paths, "workers").unwrap_or_default();
+        Self {
+            paths: paths.clone(),
+            workers,
+        }
     }
 
     pub fn list(&self) -> Vec<Worker> {
@@ -173,10 +171,8 @@ impl WorkerStore {
     }
 
     fn persist(&self) -> Result<(), CoreError> {
-        let tmp = self.file.with_extension("json.tmp");
-        std::fs::write(&tmp, serde_json::to_string_pretty(&self.workers)?)?;
-        std::fs::rename(&tmp, &self.file)?;
-        Ok(())
+        let refs: Vec<(String, &Worker)> = self.workers.iter().map(|w| (w.id.clone(), w)).collect();
+        crate::db::save_docs(&self.paths, "workers", &refs)
     }
 }
 

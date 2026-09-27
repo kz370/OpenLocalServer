@@ -37,21 +37,17 @@ fn strip_verbatim_prefix(path: &str) -> String {
 }
 
 pub struct ProjectStore {
-    file: PathBuf,
+    paths: AppPaths,
     projects: Vec<Project>,
 }
 
 impl ProjectStore {
     pub fn load(paths: &AppPaths) -> Result<Self, CoreError> {
-        paths.ensure_dirs()?;
-        let file = paths.data_dir().join("projects.json");
-        let projects = if file.exists() {
-            let raw = std::fs::read_to_string(&file)?;
-            serde_json::from_str(&raw).unwrap_or_default()
-        } else {
-            Vec::new()
-        };
-        Ok(Self { file, projects })
+        let projects = crate::db::load_docs(paths, "projects")?;
+        Ok(Self {
+            paths: paths.clone(),
+            projects,
+        })
     }
 
     pub fn list(&self) -> Vec<Project> {
@@ -117,11 +113,9 @@ impl ProjectStore {
     }
 
     fn persist(&self) -> Result<(), CoreError> {
-        let raw = serde_json::to_string_pretty(&self.projects)?;
-        let tmp = self.file.with_extension("json.tmp");
-        std::fs::write(&tmp, raw)?;
-        std::fs::rename(&tmp, &self.file)?;
-        Ok(())
+        let refs: Vec<(String, &Project)> =
+            self.projects.iter().map(|p| (p.id.clone(), p)).collect();
+        crate::db::save_docs(&self.paths, "projects", &refs)
     }
 }
 

@@ -1,31 +1,26 @@
-//! Settings service (§1 core skeleton). Backed by a JSON file for now; will move onto the
-//! SQLite `settings` table once the storage layer lands.
+//! Settings service (§1 core skeleton). Backed by SQLite `settings` table in `app.db`.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 
 use serde_json::Value;
 
+use crate::db;
 use crate::error::CoreError;
 use crate::paths::AppPaths;
 
 #[derive(Debug)]
 pub struct SettingsService {
-    file: PathBuf,
+    paths: AppPaths,
     values: BTreeMap<String, Value>,
 }
 
 impl SettingsService {
     pub fn load(paths: &AppPaths) -> Result<Self, CoreError> {
-        paths.ensure_dirs()?;
-        let file = paths.settings_file();
-        let values = if file.exists() {
-            let raw = std::fs::read_to_string(&file)?;
-            serde_json::from_str(&raw).unwrap_or_default()
-        } else {
-            BTreeMap::new()
-        };
-        Ok(Self { file, values })
+        let values = db::load_settings(paths)?;
+        Ok(Self {
+            paths: paths.clone(),
+            values,
+        })
     }
 
     pub fn get(&self, key: &str) -> Option<&Value> {
@@ -38,16 +33,9 @@ impl SettingsService {
     }
 
     pub fn set(&mut self, key: impl Into<String>, value: Value) -> Result<(), CoreError> {
-        self.values.insert(key.into(), value);
-        self.persist()
-    }
-
-    fn persist(&self) -> Result<(), CoreError> {
-        let raw = serde_json::to_string_pretty(&self.values)?;
-        // Atomic-ish write: write to a temp file then rename (§163 reliability).
-        let tmp = self.file.with_extension("json.tmp");
-        std::fs::write(&tmp, raw)?;
-        std::fs::rename(&tmp, &self.file)?;
+        let key = key.into();
+        db::save_setting(&self.paths, &key, &value)?;
+        self.values.insert(key, value);
         Ok(())
     }
 }

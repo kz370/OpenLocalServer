@@ -4,8 +4,6 @@
 //! still marked as running, marks it interrupted and reports it, instead of leaving the
 //! user to wonder what state things are in.
 
-use std::path::PathBuf;
-
 use serde::{Deserialize, Serialize};
 
 use crate::command::CoreCommand;
@@ -42,7 +40,7 @@ pub struct Operation {
 }
 
 pub struct Journal {
-    file: PathBuf,
+    paths: AppPaths,
     entries: Vec<Operation>,
 }
 
@@ -55,19 +53,19 @@ fn now_ms() -> u64 {
 
 impl Journal {
     /// Loads the journal and marks whatever was still running as interrupted. A missing or
-    /// unreadable file is an empty journal; the app must still start.
+    /// unreadable DB is an empty journal; the app must still start.
     pub fn load(paths: &AppPaths) -> Self {
-        let file = paths.data_dir().join("operations.json");
-        let mut entries: Vec<Operation> = std::fs::read_to_string(&file)
-            .ok()
-            .and_then(|raw| serde_json::from_str(&raw).ok())
-            .unwrap_or_default();
+        let mut entries: Vec<Operation> =
+            crate::db::load_docs(paths, "operations").unwrap_or_default();
         let mut changed = false;
         for e in entries.iter_mut().filter(|e| e.status == OpStatus::Running) {
             e.status = OpStatus::Interrupted;
             changed = true;
         }
-        let journal = Self { file, entries };
+        let journal = Self {
+            paths: paths.clone(),
+            entries,
+        };
         if changed {
             journal.persist();
         }
@@ -149,13 +147,9 @@ impl Journal {
     }
 
     fn persist(&self) {
-        let Ok(raw) = serde_json::to_string_pretty(&self.entries) else {
-            return;
-        };
-        let tmp = self.file.with_extension("json.tmp");
-        if std::fs::write(&tmp, raw).is_ok() {
-            let _ = std::fs::rename(&tmp, &self.file);
-        }
+        let refs: Vec<(String, &Operation)> =
+            self.entries.iter().map(|e| (e.id.to_string(), e)).collect();
+        let _ = crate::db::save_docs(&self.paths, "operations", &refs);
     }
 }
 

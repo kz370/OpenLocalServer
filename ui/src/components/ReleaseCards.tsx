@@ -1,5 +1,5 @@
 import { save } from '@tauri-apps/plugin-dialog'
-import { Copy, Download, FileText, KeyRound, RefreshCw, ShieldCheck, TerminalSquare, Wifi } from 'lucide-react'
+import { Copy, Download, ExternalLink, FileText, KeyRound, RefreshCw, ShieldCheck, TerminalSquare, Wifi } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
@@ -7,7 +7,7 @@ import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Field, Select, Textarea } from '@/components/ui/form'
+import { Field, Select } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { type ApiStatus, type NetworkStatus, type ShellMenuStatus, type UpdateInfo, type UpdaterStatus, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
@@ -115,17 +115,12 @@ export function ApiCard() {
 export function UpdatesCard() {
   const [status, setStatus] = useState<UpdaterStatus | null>(null)
   const [update, setUpdate] = useState<UpdateInfo | null>(null)
-  const [edit, setEdit] = useState(false)
-  const [endpoint, setEndpoint] = useState('')
-  const [key, setKey] = useState('')
   const { busy, error, setError, run } = useAction()
   const load = useCallback(async () => {
     const r = await runCommand({ type: 'get_updater_status' })
     if (r.type === 'updater_status') {
       setStatus(r.status)
       setUpdate(r.status.last)
-      setEndpoint(r.status.settings.endpoint)
-      setKey(r.status.settings.public_key)
     }
   }, [])
   useEffect(() => {
@@ -140,7 +135,6 @@ export function UpdatesCard() {
         </CardTitle>
         <CardDescription>
           You have {status.current}. An update is trusted only if its manifest carries a valid signature from the update key, and its installer must match the SHA-256 in that manifest. Nothing is checked, downloaded or installed on its own.
-          {!status.key_configured && ' No update key is configured in this build, so an update can be found but not trusted. Add one below.'}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
@@ -178,25 +172,10 @@ export function UpdatesCard() {
               Install now
             </Button>
           )}
-          <Button variant="ghost" onClick={() => setEdit(!edit)}>
-            Update source
+          <Button variant="ghost" onClick={() => run('src', () => runCommand({ type: 'open_url', url: 'https://github.com/kz370/OpenLocalServer/releases/latest' }))}>
+            <ExternalLink /> Update source
           </Button>
         </div>
-        {edit && (
-          <div className="flex flex-col gap-3">
-            <Field label="Manifest address" hint="latest.json, with latest.json.minisig beside it">
-              <Input value={endpoint} onChange={(e) => setEndpoint(e.target.value)} />
-            </Field>
-            <Field label="Update public key" hint="minisign public key; blank uses the key built into this version">
-              <Textarea rows={2} value={key} onChange={(e) => setKey(e.target.value)} />
-            </Field>
-            <div>
-              <Button variant="secondary" disabled={busy !== null} onClick={() => run('save', async () => { await runCommand({ type: 'set_updater_settings', endpoint, public_key: key }); await load(); setEdit(false) })}>
-                Save
-              </Button>
-            </div>
-          </div>
-        )}
       </CardContent>
     </Card>
   )

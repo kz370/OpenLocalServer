@@ -115,7 +115,7 @@ struct Meta {
 
 pub struct QuickCatalog {
     root: PathBuf,
-    meta_file: PathBuf,
+    paths: AppPaths,
     meta: Meta,
 }
 
@@ -137,14 +137,13 @@ impl QuickCatalog {
         let root = paths.quick_apps_dir();
         std::fs::create_dir_all(root.join("local"))?;
         std::fs::create_dir_all(root.join("imported"))?;
-        let meta_file = paths.data_dir().join("quick_apps_meta.json");
-        let meta = std::fs::read_to_string(&meta_file)
-            .ok()
-            .and_then(|r| serde_json::from_str(&r).ok())
+        let meta: Meta = crate::db::load_docs(paths, "quick_apps_meta")?
+            .into_iter()
+            .next()
             .unwrap_or_default();
         Ok(Self {
             root,
-            meta_file,
+            paths: paths.clone(),
             meta,
         })
     }
@@ -157,11 +156,11 @@ impl QuickCatalog {
     }
 
     fn persist(&self) -> Result<(), CoreError> {
-        let raw = serde_json::to_string_pretty(&self.meta)?;
-        let tmp = self.meta_file.with_extension("json.tmp");
-        std::fs::write(&tmp, raw)?;
-        std::fs::rename(&tmp, &self.meta_file)?;
-        Ok(())
+        crate::db::save_docs(
+            &self.paths,
+            "quick_apps_meta",
+            &[("meta".to_string(), &self.meta)],
+        )
     }
 
     fn read_dir_defs(dir: &Path) -> Vec<(QuickApp, String, PathBuf)> {

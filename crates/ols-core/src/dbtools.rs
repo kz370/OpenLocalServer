@@ -155,20 +155,17 @@ pub struct ExternalTool {
 }
 
 pub struct ExternalToolStore {
-    file: PathBuf,
+    paths: AppPaths,
     tools: Vec<ExternalTool>,
 }
 
 impl ExternalToolStore {
     pub fn load(paths: &AppPaths) -> Result<Self, CoreError> {
-        paths.ensure_dirs()?;
-        let file = paths.data_dir().join("external_tools.json");
-        let tools = if file.exists() {
-            serde_json::from_str(&std::fs::read_to_string(&file)?).unwrap_or_default()
-        } else {
-            Vec::new()
-        };
-        Ok(Self { file, tools })
+        let tools = crate::db::load_docs(paths, "external_tools")?;
+        Ok(Self {
+            paths: paths.clone(),
+            tools,
+        })
     }
 
     pub fn list(&self) -> Vec<ExternalTool> {
@@ -212,11 +209,9 @@ impl ExternalToolStore {
     }
 
     fn persist(&self) -> Result<(), CoreError> {
-        let raw = serde_json::to_string_pretty(&self.tools)?;
-        let tmp = self.file.with_extension("json.tmp");
-        std::fs::write(&tmp, raw)?;
-        std::fs::rename(&tmp, &self.file)?;
-        Ok(())
+        let refs: Vec<(String, &ExternalTool)> =
+            self.tools.iter().map(|t| (t.id.clone(), t)).collect();
+        crate::db::save_docs(&self.paths, "external_tools", &refs)
     }
 }
 

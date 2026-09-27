@@ -609,10 +609,6 @@ impl Inner {
 // ------------------------------------------------------------------------------ the Inner API
 
 impl Inner {
-    fn ai_file(&self) -> PathBuf {
-        self.paths.data_dir().join("ai.json")
-    }
-
     fn excerpt_dir(&self) -> PathBuf {
         self.paths.data_dir().join("ai-excerpts")
     }
@@ -664,9 +660,9 @@ impl Inner {
 
     /// The settings with the computed fields filled in.
     pub fn ai_settings(&self) -> AiSettings {
-        let mut cfg: AiSettings = std::fs::read_to_string(self.ai_file())
+        let mut cfg: AiSettings = crate::db::load_docs(&self.paths, "ai")
             .ok()
-            .and_then(|t| serde_json::from_str(&t).ok())
+            .and_then(|v: Vec<AiSettings>| v.into_iter().next())
             .unwrap_or_default();
         for p in &mut cfg.providers {
             p.local = is_local_url(&p.base_url);
@@ -676,16 +672,13 @@ impl Inner {
     }
 
     fn ai_write(&self, cfg: &AiSettings) -> Result<(), CoreError> {
-        std::fs::create_dir_all(self.paths.data_dir())?;
         let mut stored = cfg.clone();
         for p in &mut stored.providers {
             p.local = false;
             p.has_key = false;
         }
-        let tmp = self.ai_file().with_extension("json.tmp");
-        std::fs::write(&tmp, serde_json::to_string_pretty(&stored)?)?;
-        std::fs::rename(&tmp, self.ai_file())?;
-        Ok(())
+        let refs = [("state".to_string(), &stored)];
+        crate::db::save_docs(&self.paths, "ai", &refs)
     }
 
     pub fn ai_state(&self) -> AiState {

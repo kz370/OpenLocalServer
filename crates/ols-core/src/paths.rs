@@ -70,7 +70,7 @@ impl AppPaths {
         if !legacy.is_dir() || same_path(&legacy, &self.root) {
             return notes;
         }
-        if ["settings.json", "domains.json", "runtimes"]
+        if ["app.db", "runtimes"]
             .iter()
             .any(|n| self.root.join(n).exists())
         {
@@ -191,6 +191,11 @@ impl AppPaths {
 
     pub fn settings_file(&self) -> PathBuf {
         self.data_dir().join("settings.json")
+    }
+
+    /// Single SQLite file replacing all `*.json` stores (fresh only, no JSON import).
+    pub fn db_file(&self) -> PathBuf {
+        self.data_dir().join("app.db")
     }
 
     /// Create every directory this struct points at. Idempotent.

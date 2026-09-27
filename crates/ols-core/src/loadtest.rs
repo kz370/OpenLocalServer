@@ -846,15 +846,13 @@ impl Inner {
         Ok(())
     }
 
-    fn profiles_file(&self) -> PathBuf {
-        self.paths.data_dir().join("loadtest_profiles.json")
+    fn custom_profiles(&self) -> Vec<LoadProfile> {
+        crate::db::load_docs(&self.paths, "loadtest_profiles").unwrap_or_default()
     }
 
-    fn custom_profiles(&self) -> Vec<LoadProfile> {
-        std::fs::read_to_string(self.profiles_file())
-            .ok()
-            .and_then(|t| serde_json::from_str(&t).ok())
-            .unwrap_or_default()
+    fn save_custom_profiles(&self, custom: &[LoadProfile]) -> Result<(), CoreError> {
+        let refs: Vec<(String, &LoadProfile)> = custom.iter().map(|p| (p.id.clone(), p)).collect();
+        crate::db::save_docs(&self.paths, "loadtest_profiles", &refs)
     }
 
     /// The ready-made plans, then the user's own.
@@ -910,8 +908,7 @@ impl Inner {
         let mut custom = self.custom_profiles();
         custom.retain(|p| p.id != id);
         custom.push(stored);
-        std::fs::create_dir_all(self.paths.data_dir())?;
-        std::fs::write(self.profiles_file(), serde_json::to_string_pretty(&custom)?)?;
+        self.save_custom_profiles(&custom)?;
         Ok(self.load_profiles())
     }
 
@@ -923,7 +920,7 @@ impl Inner {
             }
         }
         custom.retain(|p| p.id != id);
-        std::fs::write(self.profiles_file(), serde_json::to_string_pretty(&custom)?)?;
+        self.save_custom_profiles(&custom)?;
         Ok(self.load_profiles())
     }
 

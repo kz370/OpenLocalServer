@@ -175,19 +175,17 @@ pub struct HistoryEntry {
 }
 
 pub struct CommandHistory {
-    file: PathBuf,
+    paths: AppPaths,
     entries: Vec<HistoryEntry>,
 }
 
 impl CommandHistory {
     pub fn load(paths: &AppPaths) -> Result<Self, CoreError> {
-        paths.ensure_dirs()?;
-        let file = paths.data_dir().join("command_history.json");
-        let entries = std::fs::read_to_string(&file)
-            .ok()
-            .and_then(|r| serde_json::from_str(&r).ok())
-            .unwrap_or_default();
-        Ok(Self { file, entries })
+        let entries = crate::db::load_docs(paths, "command_history")?;
+        Ok(Self {
+            paths: paths.clone(),
+            entries,
+        })
     }
 
     /// Newest first.
@@ -244,11 +242,9 @@ impl CommandHistory {
     }
 
     fn persist(&self) -> Result<(), CoreError> {
-        let raw = serde_json::to_string_pretty(&self.entries)?;
-        let tmp = self.file.with_extension("json.tmp");
-        std::fs::write(&tmp, raw)?;
-        std::fs::rename(&tmp, &self.file)?;
-        Ok(())
+        let refs: Vec<(String, &HistoryEntry)> =
+            self.entries.iter().map(|e| (e.id.to_string(), e)).collect();
+        crate::db::save_docs(&self.paths, "command_history", &refs)
     }
 }
 

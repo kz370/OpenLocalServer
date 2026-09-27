@@ -35,20 +35,17 @@ pub struct IntegrityResult {
 }
 
 pub struct SqliteStore {
-    file: PathBuf,
+    paths: AppPaths,
     entries: Vec<SqliteEntry>,
 }
 
 impl SqliteStore {
     pub fn load(paths: &AppPaths) -> Result<Self, CoreError> {
-        paths.ensure_dirs()?;
-        let file = paths.data_dir().join("sqlite_databases.json");
-        let entries = if file.exists() {
-            serde_json::from_str(&std::fs::read_to_string(&file)?).unwrap_or_default()
-        } else {
-            Vec::new()
-        };
-        Ok(Self { file, entries })
+        let entries = crate::db::load_docs(paths, "sqlite_databases")?;
+        Ok(Self {
+            paths: paths.clone(),
+            entries,
+        })
     }
 
     pub fn list(&self) -> Vec<SqliteInfo> {
@@ -85,11 +82,9 @@ impl SqliteStore {
     }
 
     fn persist(&self) -> Result<(), CoreError> {
-        let raw = serde_json::to_string_pretty(&self.entries)?;
-        let tmp = self.file.with_extension("json.tmp");
-        std::fs::write(&tmp, raw)?;
-        std::fs::rename(&tmp, &self.file)?;
-        Ok(())
+        let refs: Vec<(String, &SqliteEntry)> =
+            self.entries.iter().map(|e| (e.path.clone(), e)).collect();
+        crate::db::save_docs(&self.paths, "sqlite_databases", &refs)
     }
 }
 

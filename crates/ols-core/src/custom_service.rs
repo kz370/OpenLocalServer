@@ -4,7 +4,6 @@
 
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
-use std::path::PathBuf;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -165,19 +164,18 @@ fn status_ok(head: &[u8]) -> bool {
 }
 
 pub struct CustomServiceStore {
-    file: PathBuf,
+    paths: AppPaths,
     services: Vec<CustomService>,
 }
 
 impl CustomServiceStore {
-    /// A file that is missing or unreadable is an empty list; the app must still start.
+    /// Missing or unreadable DB is an empty list; the app must still start.
     pub fn load(paths: &AppPaths) -> Self {
-        let file = paths.data_dir().join("custom_services.json");
-        let services = std::fs::read_to_string(&file)
-            .ok()
-            .and_then(|raw| serde_json::from_str(&raw).ok())
-            .unwrap_or_default();
-        Self { file, services }
+        let services = crate::db::load_docs(paths, "custom_services").unwrap_or_default();
+        Self {
+            paths: paths.clone(),
+            services,
+        }
     }
 
     pub fn list(&self) -> Vec<CustomService> {
@@ -218,10 +216,9 @@ impl CustomServiceStore {
     }
 
     fn persist(&self) -> Result<(), String> {
-        let raw = serde_json::to_string_pretty(&self.services).map_err(|e| e.to_string())?;
-        let tmp = self.file.with_extension("json.tmp");
-        std::fs::write(&tmp, raw).map_err(|e| e.to_string())?;
-        std::fs::rename(&tmp, &self.file).map_err(|e| e.to_string())
+        let refs: Vec<(String, &CustomService)> =
+            self.services.iter().map(|s| (s.id.clone(), s)).collect();
+        crate::db::save_docs(&self.paths, "custom_services", &refs).map_err(|e| e.to_string())
     }
 }
 

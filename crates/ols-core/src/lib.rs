@@ -14,6 +14,7 @@ pub mod composer;
 pub mod control;
 pub mod custom_install;
 pub mod custom_service;
+pub mod db;
 pub mod dbbackup;
 pub mod dbtools;
 pub mod detection;

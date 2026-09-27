@@ -1140,12 +1140,31 @@ impl Inner {
         let dir = self.settings_backups_dir();
         std::fs::create_dir_all(&dir)?;
         let created = now_ms();
-        let file = dir.join(format!("settings-{created}.zip"));
+        // Same-ms backups must not overwrite each other (restore takes a safety
+        // backup first; fast tests hit the same millisecond).
+        let mut seq = 0u32;
+        let file = loop {
+            let candidate = if seq == 0 {
+                dir.join(format!("settings-{created}.zip"))
+            } else {
+                dir.join(format!("settings-{created}-{seq}.zip"))
+            };
+            if !candidate.exists() {
+                break candidate;
+            }
+            seq += 1;
+        };
         let mut zip = zip::ZipWriter::new(std::fs::File::create(&file)?);
         let root = self.paths.data_dir();
+        // Checkpoint so app.db is complete on disk before zipping.
+        if let Ok(conn) = rusqlite::Connection::open(root.join("app.db")) {
+            let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+        }
         for e in std::fs::read_dir(&root)?.flatten() {
             let path = e.path();
-            if path.is_file() && path.extension().is_some_and(|x| x == "json") {
+            let is_cfg =
+                path.is_file() && path.extension().is_some_and(|x| x == "json" || x == "db");
+            if is_cfg {
                 zip.start_file(e.file_name().to_string_lossy().as_ref(), zip_options())
                     .map_err(|e| err(e.to_string()))?;
                 std::io::copy(&mut std::fs::File::open(&path)?, &mut zip)?;
@@ -1222,6 +1241,9 @@ impl Inner {
             }
             std::io::copy(&mut entry, &mut std::fs::File::create(&target)?)?;
         }
+        // Drop WAL sidecars so reopened app.db recovers cleanly from restored main file.
+        let _ = std::fs::remove_file(root.join("app.db-wal"));
+        let _ = std::fs::remove_file(root.join("app.db-shm"));
         Ok(safety)
     }
 }
@@ -1663,7 +1685,8 @@ mod tests {
         })
         .unwrap();
         core.inner().restore_settings(&b.id).unwrap();
-        let text = std::fs::read_to_string(core.inner().paths.settings_file()).unwrap();
+        let settings = crate::db::load_settings(&core.inner().paths).unwrap();
+        let text = serde_json::to_string(&settings).unwrap();
         assert!(text.contains("vscode"));
         assert_eq!(core.inner().list_settings_backups().len(), 2);
     }

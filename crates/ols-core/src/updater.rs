@@ -238,10 +238,13 @@ impl Inner {
     /// Fetches and verifies the manifest. Returns what was found, whether or not it is newer.
     pub fn check_update(&self) -> Result<UpdateInfo, CoreError> {
         let settings = self.updater_settings();
-        let data = self.runtimes.fetch(&settings.endpoint).map_err(fail)?;
+        let data = self
+            .runtimes
+            .fetch_with_timeout(&settings.endpoint, 20)
+            .map_err(fail)?;
         let sig = String::from_utf8(
             self.runtimes
-                .fetch(&format!("{}.minisig", settings.endpoint))
+                .fetch_with_timeout(&format!("{}.minisig", settings.endpoint), 20)
                 .map_err(|e| fail(format!("no signature was published ({e})")))?,
         )
         .map_err(|_| fail("the signature isn't text"))?;
