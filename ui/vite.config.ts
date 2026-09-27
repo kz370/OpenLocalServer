@@ -12,6 +12,10 @@ export default defineConfig({
     },
   },
   clearScreen: false,
+  build: {
+    // Main bundle ~1.5 MB (xterm + CodeMirror). Warn only past 1600 kB.
+    chunkSizeWarningLimit: 1600,
+  },
   server: {
     port: 1420,
     strictPort: true,

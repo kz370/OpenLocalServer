@@ -98,8 +98,10 @@ powershell -NoProfile -Command "Compress-Archive -Path (Join-Path $env:STAGE '*'
 rmdir /s /q "%STAGE%"
 
 rem Checksums so downloaders can verify (SHA-256 per repo safety rules).
+rem certutil ships with every Windows; Get-FileHash does not.
 echo Writing %SUMS%...
-powershell -NoProfile -Command "$files = @($env:SETUPPATH, $env:ZIPPATH); $lines = foreach ($f in $files) { $h = (Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash.ToLower(); '{0}  {1}' -f $h, (Split-Path $f -Leaf) }; $lines | Out-File -LiteralPath $env:SUMSPATH -Encoding ascii" || (echo Checksum failed. & exit /b 1)
+if exist "%SUMSPATH%" del /f /q "%SUMSPATH%"
+for %%f in ("%SETUPPATH%" "%ZIPPATH%") do call :sum_one "%%~f" "%SUMSPATH%" || (echo Checksum failed. & exit /b 1)
 
 rem Release notes: release-notes\<tag>.md if present, else GitHub's generated notes
 rem (new releases only). An existing release keeps its notes unless the file exists.
@@ -128,3 +130,13 @@ gh release upload "%TAG%" "%SETUPPATH%" "%ZIPPATH%" "%SUMSPATH%" --clobber || (e
 del /f /q "%ZIPPATH%" >nul 2>&1
 echo Done. Uploaded %SETUP%, %ZIP% and %SUMS% to %TAG%.
 endlocal & exit /b 0
+
+rem Append SHA-256 of %1 to %2. No parens in echoes: this file uses
+rem single-line ( ... ) blocks elsewhere.
+:sum_one
+set "SH="
+for /f "skip=1 delims=" %%h in ('certutil -hashfile "%~1" SHA256 2^>nul') do if not defined SH set "SH=%%h"
+if not defined SH exit /b 1
+>> "%~2" echo %SH%  %~nx1
+set "SH="
+exit /b 0
