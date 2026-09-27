@@ -1,6 +1,6 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { FileKey, FileUp, GitBranch } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { FileUp, GitBranch, Info, RefreshCw } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
 import { Spinner } from '@/components/Spinner'
@@ -11,6 +11,8 @@ import { Input } from '@/components/ui/input'
 import { type CloneResult, type ImportPreview, type Project, runCommand } from '@/core'
 import { useAction } from '@/lib/hooks'
 import { buildSitePath, domainToFolderName, folderNameToDomain, getDefaultSitesDir } from '@/lib/sites'
+
+const BROWSE_SENTINEL = '__browse__'
 
 function FolderInput({ value, onChange, title }: { value: string; onChange: (v: string) => void; title: string }) {
   return (
@@ -25,6 +27,102 @@ function FolderInput({ value, onChange, title }: { value: string; onChange: (v: 
       >
         Browse
       </Button>
+    </div>
+  )
+}
+
+/**
+ * Dropdown that shows SSH private keys detected from `~/.ssh`, plus a "Browse" fallback.
+ * A refresh button lets the user re-scan without closing the dialog.
+ * A hint explains where to add new keys and how to use the refresh button.
+ */
+function SshKeyPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [keys, setKeys] = useState<string[]>([])
+  const [loading, setLoading] = useState(false)
+
+  const loadKeys = useCallback(async () => {
+    setLoading(true)
+    try {
+      const r = await runCommand({ type: 'list_ssh_keys' })
+      if (r.type === 'ssh_keys') setKeys(r.keys)
+    } catch {
+      // Best-effort; fall back to manual entry.
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadKeys()
+  }, [loadKeys])
+
+  const handleSelect = async (v: string) => {
+    if (v === BROWSE_SENTINEL) {
+      const p = await open({ multiple: false, title: 'Choose SSH private key' })
+      if (p && !Array.isArray(p)) onChange(p)
+      return
+    }
+    onChange(v)
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex gap-2">
+        <div className="relative min-w-0 flex-1">
+          <Select value={keys.includes(value) ? value : ''} onChange={(e) => void handleSelect(e.target.value)}>
+            <option value="" disabled>
+              {loading ? 'Detecting keys…' : keys.length === 0 ? 'No keys found in ~/.ssh' : 'Select a key from ~/.ssh…'}
+            </option>
+            {keys.map((k) => {
+              const label = k.replace(/\\/g, '/').split('/').pop() ?? k
+              return (
+                <option key={k} value={k}>
+                  {label}
+                </option>
+              )
+            })}
+            <option value={BROWSE_SENTINEL}>Browse for a key file…</option>
+          </Select>
+        </div>
+        <Button
+          variant="secondary"
+          title="Refresh key list from ~/.ssh"
+          aria-label="Refresh SSH key list"
+          disabled={loading}
+          onClick={() => void loadKeys()}
+        >
+          {loading ? <Spinner /> : <RefreshCw className="size-4" />}
+        </Button>
+      </div>
+
+      {/* Resolved path preview */}
+      {value && (
+        <p className="truncate font-mono text-xs text-muted-foreground" title={value}>
+          {value}
+        </p>
+      )}
+
+      {/* Contextual hint */}
+      <div className="flex items-start gap-1.5 rounded-md bg-muted/40 px-2.5 py-2 text-xs text-muted-foreground">
+        <Info className="mt-0.5 size-3.5 shrink-0 text-ring" aria-hidden="true" />
+        <span>
+          Only keys in <span className="font-mono">%USERPROFILE%\.ssh\</span> appear here. To add more keys, copy them into
+          that folder and click <RefreshCw className="inline size-3 align-middle" aria-hidden="true" /> to update this list.
+          You can also{' '}
+          <button
+            type="button"
+            className="underline hover:text-foreground"
+            onClick={() =>
+              void open({ multiple: false, title: 'Choose SSH private key' }).then(
+                (p) => p && !Array.isArray(p) && onChange(p),
+              )
+            }
+          >
+            browse for any file
+          </button>{' '}
+          on disk.
+        </span>
+      </div>
     </div>
   )
 }
@@ -89,6 +187,12 @@ export function GitCloneButton({ defaultParent, onDone }: { defaultParent: strin
     setTarget(val)
   }
 
+  function resetAndClose() {
+    setPassword('')
+    setPassphrase('')
+    setOpen(false)
+  }
+
   return (
     <>
       <Button size="sm" variant="secondary" onClick={() => setOpen(true)} title="Clone a Git repository into a new project">
@@ -101,19 +205,26 @@ export function GitCloneButton({ defaultParent, onDone }: { defaultParent: strin
         description="Clones into a new folder and adds it as a project. You can use saved HTTPS credentials or enter credentials for this clone."
         footer={
           <>
-            <Button variant="ghost" onClick={() => { setPassword(''); setPassphrase(''); setOpen(false) }} disabled={busy !== null}>
+            <Button variant="ghost" onClick={resetAndClose} disabled={busy !== null}>
               Cancel
             </Button>
             <Button
-              disabled={busy !== null || !url.trim() || !resolved || (authMode === 'https' && (!username.trim() || !password))}
+              disabled={
+                busy !== null ||
+                !url.trim() ||
+                !resolved ||
+                (authMode === 'https' && (!username.trim() || !password)) ||
+                (authMode === 'ssh' && !keyPath.trim())
+              }
               onClick={() =>
                 run('clone', async () => {
                   const dest = resolved
-                  const auth = authMode === 'https'
-                    ? { type: 'https' as const, username, password, remember }
-                    : authMode === 'ssh'
-                      ? { type: 'ssh' as const, key_path: keyPath, remember, passphrase: passphrase || null }
-                      : null
+                  const auth =
+                    authMode === 'https'
+                      ? { type: 'https' as const, username, password, remember }
+                      : authMode === 'ssh'
+                        ? { type: 'ssh' as const, key_path: keyPath, remember, passphrase: passphrase || null }
+                        : null
                   const r = await runCommand({ type: 'git_clone', url: url.trim(), target: dest, branch: branch.trim() || null, auth })
                   if (r.type === 'project') {
                     const desiredDomain = domain.trim().toLowerCase()
@@ -152,6 +263,7 @@ export function GitCloneButton({ defaultParent, onDone }: { defaultParent: strin
                     setTargetTouched(false)
                     setPassword('')
                     setPassphrase('')
+                    setKeyPath('')
                     onDone(r.project)
                   }
                 })
@@ -170,7 +282,16 @@ export function GitCloneButton({ defaultParent, onDone }: { defaultParent: strin
           <Field label="Domain" hint={domain ? `Site opens at https://${domain.trim().toLowerCase()} once cloned.` : 'Domain name for the site (e.g. shop.test)'}>
             <Input value={domain} onChange={(e) => onDomainChange(e.target.value)} placeholder={repoName ? folderNameToDomain(repoName) : 'shop.test'} />
           </Field>
-          <Field label="Site folder" hint={resolved ? `Will clone into ${resolved}. Edit folder name or Browse different location.` : effectiveParent ? `Defaults to ${effectiveParent}\\<repo>. Edit name or Browse.` : 'Folder inside <install>\\sites by default.'}>
+          <Field
+            label="Site folder"
+            hint={
+              resolved
+                ? `Will clone into ${resolved}. Edit folder name or Browse different location.`
+                : effectiveParent
+                  ? `Defaults to ${effectiveParent}\\<repo>. Edit name or Browse.`
+                  : 'Folder inside <install>\\sites by default.'
+            }
+          >
             <FolderInput value={target} onChange={onTargetChange} title="Folder to clone into" />
             {!target && suggested ? (
               <p className="mt-1 truncate font-mono text-xs text-muted-foreground" title={suggested}>
@@ -185,24 +306,33 @@ export function GitCloneButton({ defaultParent, onDone }: { defaultParent: strin
               <option value="ssh">SSH key</option>
             </Select>
           </Field>
-          {authMode === 'https' && <>
-            <Field label="Username"><Input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" /></Field>
-            <Field label="Password or access token"><Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" /></Field>
-            <Toggle checked={remember} onChange={setRemember} label="Remember for this host" hint="Stores the username and token in the system credential store." />
-          </>}
-          {authMode === 'ssh' && <>
-            <Field label="Private key file" hint="Defaults to ~/.ssh/id_ed25519 when present.">
-              <div className="flex gap-2">
-                <Input value={keyPath} onChange={(e) => setKeyPath(e.target.value)} className="min-w-0 flex-1 font-mono text-xs" placeholder="~/.ssh/id_ed25519" />
-                <Button variant="secondary" onClick={async () => {
-                  const p = await open({ multiple: false, title: 'Choose SSH private key' })
-                  if (p && !Array.isArray(p)) setKeyPath(p)
-                }}><FileKey /> Browse</Button>
-              </div>
-            </Field>
-            <Field label="Key passphrase" hint="Used for this clone only; it is not saved."><Input type="password" value={passphrase} onChange={(e) => setPassphrase(e.target.value)} autoComplete="new-password" /></Field>
-            <Toggle checked={remember} onChange={setRemember} label="Remember SSH key for this host" hint="Applies this key to later Git pull and push operations. Any passphrase is stored securely in the system credential store." />
-          </>}
+          {authMode === 'https' && (
+            <>
+              <Field label="Username">
+                <Input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
+              </Field>
+              <Field label="Password or access token">
+                <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
+              </Field>
+              <Toggle checked={remember} onChange={setRemember} label="Remember for this host" hint="Stores the username and token in the system credential store." />
+            </>
+          )}
+          {authMode === 'ssh' && (
+            <>
+              <Field label="Private key file">
+                <SshKeyPicker value={keyPath} onChange={setKeyPath} />
+              </Field>
+              <Field label="Key passphrase" hint="Used for this clone only; it is not saved.">
+                <Input type="password" value={passphrase} onChange={(e) => setPassphrase(e.target.value)} autoComplete="new-password" />
+              </Field>
+              <Toggle
+                checked={remember}
+                onChange={setRemember}
+                label="Remember SSH key for this host"
+                hint="Applies this key to later Git pull and push operations. Any passphrase is stored securely in the system credential store."
+              />
+            </>
+          )}
           <Field label="Branch" hint="Blank for the repository's default branch.">
             <Input value={branch} onChange={(e) => setBranch(e.target.value)} className="font-mono" />
           </Field>
@@ -291,17 +421,20 @@ export function ImportEnvironmentButton({ defaultParent, onDone }: { defaultPare
                   </div>
                 )}
                 <Field label="Project name" hint={preview.adjustments.length ? `Adjusted: ${preview.adjustments.join(', ')}` : undefined}>
-                  <Input value={name} onChange={(e) => {
-                    const next = e.target.value
-                    setName(next)
-                    const clean = next.trim().replace(/[\\/:*?"<>|]+/g, '-')
-                    if (clean && defaultParent) {
-                      const base = target.replace(/[\\/][^\\/]+$/, '')
-                      if (!base || base.toLowerCase() === defaultParent.toLowerCase()) {
-                        setTarget(`${defaultParent.replace(/[\\/]+$/, '')}\\${clean}`)
+                  <Input
+                    value={name}
+                    onChange={(e) => {
+                      const next = e.target.value
+                      setName(next)
+                      const clean = next.trim().replace(/[\\/:*?"<>|]+/g, '-')
+                      if (clean && defaultParent) {
+                        const base = target.replace(/[\\\/][^\\\/]+$/, '')
+                        if (!base || base.toLowerCase() === defaultParent.toLowerCase()) {
+                          setTarget(`${defaultParent.replace(/[\\\/]+$/, '')}\\${clean}`)
+                        }
                       }
-                    }
-                  }} />
+                    }}
+                  />
                 </Field>
                 <Field label="Folder" hint="Defaults to <install>\sites. Edit folder name or Browse different location.">
                   <FolderInput value={target} onChange={setTarget} title="Folder for the project" />

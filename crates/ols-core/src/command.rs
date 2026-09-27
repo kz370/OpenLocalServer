@@ -965,6 +965,8 @@ pub enum CoreCommand {
         username: String,
         token: Option<String>,
     },
+    /// Returns the file paths of SSH private keys found in the current user's `~/.ssh` directory.
+    ListSshKeys,
     GitClone {
         url: String,
         target: String,
@@ -1493,6 +1495,10 @@ pub enum CoreResponse {
     },
     GitResult {
         result: crate::git::GitResult,
+    },
+    /// Paths to SSH private key files found in `~/.ssh`.
+    SshKeys {
+        keys: Vec<String>,
     },
 
     Plugins {
@@ -3307,6 +3313,9 @@ impl Core {
                 i.git_set_credentials(&host, &username, token.as_deref())?;
                 Ok(R::Ok)
             }
+            C::ListSshKeys => Ok(R::SshKeys {
+                keys: i.list_ssh_keys(),
+            }),
             C::GitClone {
                 url,
                 target,

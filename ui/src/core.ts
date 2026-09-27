@@ -824,6 +824,7 @@ export type CoreCommand =
   | { type: 'git_stash'; project_id: string; action: 'push' | 'pop' | 'apply' | 'drop'; message: string | null; index: number | null }
   | { type: 'git_add_ignore'; project_id: string; template: string }
   | { type: 'git_set_credentials'; host: string; username: string; token: string | null }
+  | { type: 'list_ssh_keys' }
   | { type: 'git_clone'; url: string; target: string; branch: string | null; auth: { type: 'https'; username: string; password: string; remember: boolean } | { type: 'ssh'; key_path: string; remember: boolean; passphrase: string | null } | null }
   | { type: 'list_plugins' }
   | { type: 'install_plugin'; source: string }
@@ -989,6 +990,7 @@ export type CoreResponse =
   | { type: 'git_commits'; commits: GitCommit[] }
   | { type: 'git_commit'; commit: GitCommit }
   | { type: 'git_result'; result: { ok: boolean; output: string } }
+  | { type: 'ssh_keys'; keys: string[] }
   | { type: 'operations'; operations: Operation[] }
   | { type: 'plugins'; plugins: PluginInfo[] }
   | { type: 'plugin'; plugin: PluginInfo }

@@ -963,6 +963,49 @@ impl Inner {
         Ok(())
     }
 
+    /// Returns the absolute paths of files in `~/.ssh` that look like SSH private keys.
+    ///
+    /// Only plain files with no extension (e.g. `id_ed25519`, `id_rsa`, `my_deploy_key`)
+    /// are returned. `.pub` companions, `known_hosts`, `authorized_keys`, and `config` are
+    /// excluded. The list is sorted for stable display in the UI.
+    pub fn list_ssh_keys(&self) -> Vec<String> {
+        let Some(home) = directories::UserDirs::new().map(|u| u.home_dir().join(".ssh")) else {
+            return vec![];
+        };
+        let Ok(rd) = std::fs::read_dir(&home) else {
+            return vec![];
+        };
+        let skip = ["known_hosts", "authorized_keys", "config", "environment"];
+        let mut keys: Vec<String> = rd
+            .filter_map(|entry| {
+                let entry = entry.ok()?;
+                let path = entry.path();
+                if !path.is_file() {
+                    return None;
+                }
+                let name = path.file_name()?.to_string_lossy();
+                // Skip files with .pub extension (public keys) and well-known non-key files.
+                if name.ends_with(".pub") || skip.contains(&name.as_ref()) {
+                    return None;
+                }
+                // Only accept files with no extension (classic key naming) or a
+                // recognisable key extension (.pem, .key). Files with other extensions
+                // (e.g. .txt) are skipped.
+                let has_no_ext = path.extension().is_none();
+                let has_key_ext = path
+                    .extension()
+                    .map(|e| matches!(e.to_str(), Some("pem" | "key")))
+                    .unwrap_or(false);
+                if !has_no_ext && !has_key_ext {
+                    return None;
+                }
+                Some(path.to_string_lossy().into_owned())
+            })
+            .collect();
+        keys.sort();
+        keys
+    }
+
     /// Clones into `target` and registers it as a project (and gives it its automatic site).
     pub fn git_clone(
         &self,
