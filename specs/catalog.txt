@@ -96,7 +96,7 @@ ProfilesPage | Env template CRUD + yaml editor.
 PluginsPage | Plugins + signed catalog sources.
 LogsPage | Unified logs with severity regex + AI ask (error/warn picker, timestamp-blind dedupe with ×count, overlong pick spills to .log file via read_excerpt).
 ProcessesPage | Raw process manager + system stats.
-SettingsPage | General/sites/startup/AI/API/resources/backups.
+SettingsPage | General/sites/startup/AI/API/resources/backups/about.
 
 --- FRONTEND components/lib ---
 CoreClient (core.ts) | Single invoke('run_command') wrapper + all types.

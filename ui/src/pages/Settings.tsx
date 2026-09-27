@@ -1,11 +1,11 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Archive, ExternalLink, FolderPlus, FolderSearch, FolderTree, Gauge, Globe, Power, Settings2, ShieldCheck, Sparkles, Stethoscope, Trash2 } from 'lucide-react'
+import { Archive, ExternalLink, FolderPlus, FolderSearch, FolderTree, Gauge, Globe, Info, Power, Settings2, ShieldCheck, Sparkles, Stethoscope, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { AiCard } from '@/components/ai/AiSettings'
 import { ErrorCard } from '@/components/ErrorCard'
 import { ApiCard, SystemCard, UpdatesCard } from '@/components/ReleaseCards'
-import { ResourcesCard, SettingsBackupsCard } from '@/components/SettingsExtras'
+import { AboutCard, ResourcesCard, SettingsBackupsCard } from '@/components/SettingsExtras'
 import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -17,7 +17,7 @@ import { confirmThen } from '@/lib/confirm'
 import { useAction } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 
-type Section = 'general' | 'sites' | 'roots' | 'startup' | 'diagnostics' | 'ai' | 'resources' | 'backups'
+type Section = 'general' | 'sites' | 'roots' | 'startup' | 'diagnostics' | 'ai' | 'resources' | 'backups' | 'about'
 const SECTIONS: { id: Section; label: string; icon: typeof Globe }[] = [
   { id: 'general', label: 'General', icon: Settings2 },
   { id: 'sites', label: 'Sites & domains', icon: Globe },
@@ -27,6 +27,7 @@ const SECTIONS: { id: Section; label: string; icon: typeof Globe }[] = [
   { id: 'ai', label: 'AI', icon: Sparkles },
   { id: 'resources', label: 'Resources', icon: Gauge },
   { id: 'backups', label: 'Backups', icon: Archive },
+  { id: 'about', label: 'About', icon: Info },
 ]
 
 async function getString(key: string): Promise<string> {
@@ -332,6 +333,7 @@ export function SettingsPage() {
           {section === 'ai' && <AiCard />}
           {section === 'resources' && <ResourcesCard />}
           {section === 'backups' && <SettingsBackupsCard />}
+          {section === 'about' && <AboutCard />}
 
           {showSave && (
             <div className="flex items-center gap-3">

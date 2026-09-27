@@ -4,7 +4,7 @@ rem Build the OpenLocalServer frontend, desktop executable, and installer.
 
 set "ROOT=%~dp0"
 set "APPNAME=Open Local Server"
-set "BINNAME=openlocalserver"
+set "BINNAME=Open Local Server"
 set "UI=%ROOT%ui"
 set "TARGET=%ROOT%target\release"
 set "EXE=%TARGET%\%BINNAME%.exe"
