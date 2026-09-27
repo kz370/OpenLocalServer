@@ -130,6 +130,37 @@ echo Writing %SUMS%...
 if exist "%SUMSPATH%" del /f /q "%SUMSPATH%"
 for %%f in ("%SETUPPATH%" "%ZIPPATH%") do call :sum_one "%%~f" "%SUMSPATH%" || (echo Checksum failed. & exit /b 1)
 
+rem Update manifest for the in-app updater (latest.json + latest.json.minisig).
+rem Needs minisign and the signing key; without them binaries still upload.
+set "LATEST=%DIST%\latest.json"
+set "LATESTSIG=%LATEST%.minisig"
+del /f /q "%LATEST%" "%LATESTSIG%" >nul 2>&1
+set "MINISIGN="
+for /f "delims=" %%m in ('where minisign 2^>nul') do if not defined MINISIGN set "MINISIGN=%%m"
+if not defined MINISIGN_KEY set "MINISIGN_KEY=%USERPROFILE%\.minisign\ols-update.key"
+if not defined MINISIGN (
+  echo [!] minisign not found - skipping latest.json (updater will 404).
+  echo     Fix: cargo install minisign, then re-run this script.
+  goto :manifest_done
+)
+if not exist "%MINISIGN_KEY%" (
+  echo [!] No signing key at %MINISIGN_KEY% - skipping latest.json.
+  echo     Fix: minisign -G -W -p "%MINISIGN_KEY%.pub" -s "%MINISIGN_KEY%", bake the RW.. line as OLS_UPDATE_PUBKEY at build time, then re-run.
+  goto :manifest_done
+)
+echo Writing latest.json...
+set "UP_VERSION=%VERSION%"
+set "UP_TAG=%TAG%"
+set "UP_SETUP=%SETUPPATH%"
+set "UP_NOTES=%NOTES%"
+set "UP_OUT=%LATEST%"
+powershell -NoProfile -Command "$sha=[BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([IO.File]::ReadAllBytes($env:UP_SETUP))).Replace('-','').ToLower(); $size=(Get-Item $env:UP_SETUP).Length; $notes=''; if (Test-Path $env:UP_NOTES) { $notes=Get-Content $env:UP_NOTES -Raw }; $url='https://github.com/openlocalserver/openlocalserver/releases/download/'+$env:UP_TAG+'/'+[IO.Path]::GetFileName($env:UP_SETUP); $o=[ordered]@{version=$env:UP_VERSION; notes=$notes; pub_date=(Get-Date -Format yyyy-MM-dd); platforms=[ordered]@{'windows-x86_64'=[ordered]@{url=$url; sha256=$sha; size=$size}}}; $o | ConvertTo-Json -Depth 5 | Out-File $env:UP_OUT -Encoding utf8" || (echo Manifest failed. & exit /b 1)
+"%MINISIGN%" -Sm "%LATEST%" -s "%MINISIGN_KEY%" || (echo Sign failed. & exit /b 1)
+echo       signed latest.json + latest.json.minisig
+echo       Public key for builds ^(OLS_UPDATE_PUBKEY^):
+type "%MINISIGN_KEY%.pub"
+:manifest_done
+
 :notes_only
 rem Release notes: release-notes\<tag>.md if present, else GitHub's generated notes
 rem (new releases only). An existing release keeps its notes unless the file exists.
