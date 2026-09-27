@@ -334,8 +334,9 @@ impl Inner {
                 },
             });
         } else if servable {
+            let default_tld = self.setting_string("domains.default_tld", "local");
             m.domain = Some(DomainManifest {
-                hostname: format!("{}.test", crate::domain::slugify(&detail.project.name)),
+                hostname: format!("{}.{default_tld}", crate::domain::slugify(&detail.project.name)),
                 https: true,
                 wildcard: false,
                 root: det.doc_root.clone(),
@@ -2100,7 +2101,7 @@ mod tests {
             panic!()
         };
         assert!(!plan.manifest_found);
-        assert_eq!(plan.manifest.domain.as_ref().unwrap().hostname, "blog.test");
+        assert_eq!(plan.manifest.domain.as_ref().unwrap().hostname, "blog.local");
         core.dispatch(CoreCommand::SaveManifest {
             project_id: id.clone(),
             manifest: None,

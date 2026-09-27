@@ -285,7 +285,7 @@ mod tests {
         assert!(hits.iter().any(|h| h.kind == "project"), "{hits:?}");
         assert!(hits
             .iter()
-            .any(|h| h.kind == "site" && h.target == "webshop.test"));
+            .any(|h| h.kind == "site" && h.target == "webshop.local"));
         assert!(
             core.inner().global_search("x").is_empty(),
             "one letter is too short to search"

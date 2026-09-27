@@ -391,6 +391,17 @@ impl Inner {
             .unwrap_or(default)
     }
 
+    pub fn setting_string(&self, key: &str, default: &str) -> String {
+        self.settings
+            .lock()
+            .unwrap()
+            .get(key)
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| default.to_string())
+    }
+
     fn default_projects_dir(&self) -> PathBuf {
         if let Some(dir) = self
             .settings

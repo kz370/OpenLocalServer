@@ -8,7 +8,7 @@ import { Dialog } from '@/components/ui/dialog'
 import { Field, FormSection, Select, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
-import { buildSitePath, domainToFolderName, getDefaultSitesDir, getDefaultTld } from '@/lib/sites'
+import { buildSitePath, domainToFolderName, getDefaultSitesDir, getDefaultTld, slugify } from '@/lib/sites'
 import { type Domain, type Project, type QuickEntryView, type TunnelStatus, runCommand } from '@/core'
 
 const emptyBlocks = { headers: [], redirects: [], mappings: [], upstreams: [], includes: [] }
@@ -151,7 +151,15 @@ export function DomainSettings({
   submitRef?: { current: (() => void) | null }
 }) {
   const [d, setD] = useState<Domain>(domain)
+  const [projectName, setProjectName] = useState(() => {
+    if (domain.project_id) {
+      const p = projects.find((x) => x.id === domain.project_id)
+      return p ? p.name : ''
+    }
+    return ''
+  })
   const [rootTouched, setRootTouched] = useState(false)
+  const [domainTouched, setDomainTouched] = useState(false)
   const [parentDir, setParentDir] = useState(defaultParent || '')
   const kindType = d.kind.type
   const [appLine, setAppLine] = useState('')
@@ -162,69 +170,131 @@ export function DomainSettings({
   const [tunnels, setTunnels] = useState<TunnelStatus[]>([])
   const [httpPort, setHttpPort] = useState(80)
   const [err, setErr] = useState<string | null>(null)
+
   useEffect(() => {
     setD(domain)
     setErr(null)
     setShowApps(false)
     setRootTouched(false)
+    setDomainTouched(false)
     setAppLine(domain?.app ? [domain.app.executable, ...domain.app.args].join(' ') : '')
-  }, [domain])
+    if (domain.project_id) {
+      const p = projects.find((x) => x.id === domain.project_id)
+      setProjectName(p ? p.name : '')
+    } else {
+      setProjectName('')
+    }
+  }, [domain, projects])
+
   useEffect(() => {
     void getDefaultTld().then((tld) => {
       setDefaultTld(tld)
-      setTemplate(`{project}.${tld}`)
+      const tpl = `{project}.${tld}`
+      setTemplate(tpl)
+      if (projectName.trim() && !domainTouched) {
+        const slug = slugify(projectName.trim())
+        if (slug) setD((cur) => ({ ...cur, hostname: tpl.replace('{project}', slug) }))
+      }
     })
   }, [])
+
   useEffect(() => {
     if (!parentDir) void getDefaultSitesDir().then((p) => p && setParentDir(p))
   }, [parentDir])
+
   useEffect(() => {
     if (defaultParent) setParentDir(defaultParent)
   }, [defaultParent])
+
   useEffect(() => {
-    if (isNew && !d.project_id && !rootTouched && d.hostname && !d.root && parentDir) {
-      const folder = domainToFolderName(d.hostname)
+    if (isNew && !rootTouched && parentDir && !d.root) {
+      const slug = projectName.trim() ? slugify(projectName.trim()) : ''
+      const folder = slug || (d.hostname ? domainToFolderName(d.hostname) : '')
       if (folder) setD((cur) => ({ ...cur, root: buildSitePath(parentDir, folder) }))
     }
-  }, [isNew, d.project_id, rootTouched, d.hostname, d.root, parentDir])
+  }, [isNew, rootTouched, projectName, d.hostname, d.root, parentDir])
+
   useEffect(() => {
     if (!showApps) return
     void runCommand({ type: 'list_quick_apps' }).then((r) => r.type === 'quick_apps' && setQuickApps(r.apps))
   }, [showApps])
+
   useEffect(() => {
     void runCommand({ type: 'list_tunnels' }).then((r) => r.type === 'tunnels' && setTunnels(r.tunnels.map((t) => t)))
     void runCommand({ type: 'get_web_config' }).then((r) => r.type === 'web_config' && setHttpPort(r.config.http_port))
   }, [])
-  async function pickProject(id: string) {
-    const p = projects.find((x) => x.id === id)
-    if (!p) {
-      setRootTouched(false)
-      return setD((cur) => ({ ...cur, project_id: null }))
+
+  const onProjectNameChange = (val: string) => {
+    setProjectName(val)
+    const trimmed = val.trim()
+    if (!trimmed) setDomainTouched(false)
+    const slug = slugify(trimmed)
+
+    // Auto-fill domain from template if domain hasn't been manually detached
+    const newHost = !domainTouched ? (slug ? template.replace('{project}', slug) : '') : d.hostname
+
+    // Auto-fill site folder from parentDir if root hasn't been manually touched
+    let newRoot = d.root
+    if (!rootTouched) {
+      const folder = slug || (trimmed ? domainToFolderName(trimmed) : '')
+      newRoot = folder && parentDir ? buildSitePath(parentDir, folder) : ''
     }
-    setRootTouched(true)
-    let root = p.path
-    const detail = await runCommand({ type: 'get_project_detail', id })
-    let kind: Domain['kind'] | null = null
-    if (detail.type === 'project_detail') {
-      const fw = detail.detail.detection.framework
-      const sub = detail.detail.detection.doc_root ?? (fw === 'laravel' || fw === 'symfony' ? 'public' : null)
-      if (sub) root = `${p.path}\\${sub}`
-      if (fw === 'laravel' || fw === 'symfony' || fw === 'word_press' || fw === 'generic_php') kind = { type: 'php', version: null }
-      else if (fw === 'node' || fw === 'fast_api' || fw === 'django' || fw === 'flask') kind = { type: 'proxy', upstream_port: 3000 }
+
+    // Check if there is an existing project matching this name or id
+    const matched = projects.find(
+      (p) => p.name.toLowerCase() === trimmed.toLowerCase() || p.id.toLowerCase() === trimmed.toLowerCase()
+    )
+
+    setD((cur) => ({
+      ...cur,
+      hostname: newHost,
+      root: newRoot,
+      project_id: matched ? matched.id : null,
+    }))
+
+    if (matched && !rootTouched) {
+      void runCommand({ type: 'get_project_detail', id: matched.id }).then((detail) => {
+        if (detail.type === 'project_detail') {
+          let root = matched.path
+          const fw = detail.detail.detection.framework
+          const sub = detail.detail.detection.doc_root ?? (fw === 'laravel' || fw === 'symfony' ? 'public' : null)
+          if (sub) root = `${matched.path}\\${sub}`
+          let kind: Domain['kind'] | null = null
+          if (fw === 'laravel' || fw === 'symfony' || fw === 'word_press' || fw === 'generic_php') kind = { type: 'php', version: null }
+          else if (fw === 'node' || fw === 'fast_api' || fw === 'django' || fw === 'flask') kind = { type: 'proxy', upstream_port: 3000 }
+          setD((cur) => ({
+            ...cur,
+            root,
+            kind: kind ?? cur.kind,
+          }))
+        }
+      })
     }
-    const suggested = await runCommand({ type: 'suggest_domain', project_id: id, template })
-    setD((cur) => ({ ...cur, project_id: id, root, kind: kind ?? cur.kind, hostname: cur.hostname || (suggested.type === 'text' ? suggested.text : '') }))
+  }
+
+  const onTemplateChange = (val: string) => {
+    setTemplate(val)
+    if (projectName.trim() && !domainTouched) {
+      const slug = slugify(projectName.trim())
+      if (slug) {
+        setD((cur) => ({ ...cur, hostname: val.replace('{project}', slug) }))
+      }
+    }
   }
 
   // "Add site" from a project arrives with the project chosen: fill in its folder, type and name.
   useEffect(() => {
-    if (isNew && domain.project_id && !domain.root) void pickProject(domain.project_id)
+    if (isNew && domain.project_id && !domain.root) {
+      const p = projects.find((x) => x.id === domain.project_id)
+      if (p) onProjectNameChange(p.name)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [domain])
 
   const set = (patch: Partial<Domain>) => setD({ ...d, ...patch })
 
   const onDomainChange = (val: string) => {
+    setDomainTouched(true)
     if (isNew && !d.project_id && !rootTouched) {
       const folder = domainToFolderName(val)
       const newRoot = folder && parentDir ? buildSitePath(parentDir, folder) : ''
@@ -282,20 +352,17 @@ export function DomainSettings({
       )}
 
       {isNew && (
-        <FormSection title="Source" hint="Start from a project you already have, or create a new app.">
+        <FormSection title="Source" hint="Enter a project name to automatically fill the domain and folder, or create a new app.">
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Project (optional)">
-              <Select value={d.project_id ?? ''} onChange={(e) => pickProject(e.target.value)}>
-                <option value="">— none —</option>
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </Select>
+            <Field label="Project (optional)" hint="Folder and domain fill automatically">
+              <Input
+                value={projectName}
+                onChange={(e) => onProjectNameChange(e.target.value)}
+                placeholder="e.g. my-app, blog, shop"
+              />
             </Field>
             <Field label="Name template (§48)">
-              <Select value={template} onChange={(e) => setTemplate(e.target.value)}>
+              <Select value={template} onChange={(e) => onTemplateChange(e.target.value)}>
                 <option>{`{project}.${defaultTld}`}</option>
                 <option>{`api.{project}.${defaultTld}`}</option>
                 <option>{`admin.{project}.${defaultTld}`}</option>

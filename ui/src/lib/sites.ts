@@ -49,6 +49,25 @@ export async function getDefaultSitesDir(): Promise<string> {
 }
 
 /**
+ * Lowercase, alphanumerics and single dashes — e.g. "My Shop_2" -> "my-shop-2".
+ * Matches ols-core slugify function (§48).
+ */
+export function slugify(name: string): string {
+  let out = ''
+  let lastDash = true
+  for (const c of name) {
+    if (/[a-zA-Z0-9]/.test(c)) {
+      out += c.toLowerCase()
+      lastDash = false
+    } else if (!lastDash) {
+      out += '-'
+      lastDash = true
+    }
+  }
+  return out.replace(/-+$/, '')
+}
+
+/**
  * Derives a folder name from a domain or project name.
  * e.g. "shop.test" -> "shop", "my-app.local" -> "my-app", "api.shop.test" -> "api.shop".
  * Cleans illegal Windows path characters and protocol prefixes.

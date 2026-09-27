@@ -3993,14 +3993,14 @@ mod tests {
             found,
             vec![
                 ("openlocalserver.test".to_string(), "static".to_string()),
-                ("shop.test".to_string(), "php".to_string()),
-                ("site.test".to_string(), "static".to_string())
+                ("shop.local".to_string(), "php".to_string()),
+                ("site.local".to_string(), "static".to_string())
             ],
             "a Node project needs a dev server, so no automatic domain"
         );
 
         core.dispatch(CoreCommand::RemoveDomain {
-            hostname: "shop.test".into(),
+            hostname: "shop.local".into(),
         })
         .unwrap();
         std::fs::create_dir_all(www.join("blog")).unwrap();
@@ -4008,11 +4008,11 @@ mod tests {
         core.dispatch(CoreCommand::SyncAutoDomains).unwrap();
         let hosts: Vec<String> = kinds(&core).into_iter().map(|(h, _)| h).collect();
         assert!(
-            hosts.contains(&"blog.test".to_string()),
+            hosts.contains(&"blog.local".to_string()),
             "a new folder is picked up"
         );
         assert!(
-            !hosts.contains(&"shop.test".to_string()),
+            !hosts.contains(&"shop.local".to_string()),
             "a deleted automatic domain is not recreated"
         );
     }
