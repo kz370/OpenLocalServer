@@ -376,7 +376,19 @@ pub fn resolve_lenient(
         .filter(|n| !n.is_empty())
         .cloned()
     {
-        let project_path = Path::new(&values["parent_dir"]).join(&name);
+        let parent = Path::new(&values["parent_dir"]);
+        let project_path = if parent
+            .file_name()
+            .and_then(|f| f.to_str())
+            .is_some_and(|f| f.eq_ignore_ascii_case(&name))
+        {
+            parent.to_path_buf()
+        } else {
+            parent.join(&name)
+        };
+        if let Some(actual_parent) = project_path.parent() {
+            values.insert("parent_dir".into(), actual_parent.display().to_string());
+        }
         values.insert("project_path".into(), project_path.display().to_string());
         values.insert("project_slug".into(), slugify(&name));
     }

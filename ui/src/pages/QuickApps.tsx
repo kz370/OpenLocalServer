@@ -358,13 +358,16 @@ export function Wizard({ id, onClose, onNavigate }: { id: string; onClose: () =>
   const [runId, setRunId] = useState<string | null>(null)
   const [error, setError] = useState<Diagnostic | null>(null)
   const [starting, setStarting] = useState(false)
+  const [baseParentDir, setBaseParentDir] = useState('')
+  const [parentDirCustom, setParentDirCustom] = useState<string | null>(null)
+  const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     runCommand({ type: 'get_quick_app', id }).then((r) => r.type === 'quick_app' && setDetail(r.detail)).catch((e) => setError(asDiagnostic(e)))
     runCommand({ type: 'list_runtime_catalog' }).then((r) => r.type === 'runtime_catalog' && setCatalog(r.entries))
     void getDefaultSitesDir().then((dir) => {
       if (dir) {
-        setProvided((p) => (p.parent_dir ? p : { ...p, parent_dir: dir }))
+        setBaseParentDir(dir)
       }
     })
   }, [id])
@@ -383,17 +386,62 @@ export function Wizard({ id, onClose, onNavigate }: { id: string; onClose: () =>
 
   const app = detail?.app
   const resolved = plan?.values ?? {}
-  const valueOf = (name: string) => provided[name] ?? resolved[name] ?? ''
+  const currentProjectName = provided.project_name ?? resolved.project_name ?? ''
+  const effectiveBase = baseParentDir || resolved.default_projects_dir || ''
+
+  const valueOf = (name: string) => {
+    if (name === 'parent_dir') {
+      if (parentDirCustom !== null) return parentDirCustom
+      return currentProjectName && effectiveBase ? buildSitePath(effectiveBase, currentProjectName) : effectiveBase
+    }
+    return provided[name] ?? resolved[name] ?? ''
+  }
+
   const shown = (app?.variables ?? []).filter((v) => !v.show_if || evalCondition(v.show_if, { ...resolved, ...provided }))
   const errorFor = (name: string) => plan?.errors.find((e) => e.field === name)?.message
-  const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({})
 
   const onVariableChange = (name: string, val: string) => {
     const isNotEmpty = val.trim().length > 0
     setTouchedFields((prev) => ({ ...prev, [name]: isNotEmpty }))
 
+    if (name === 'parent_dir') {
+      const trimmed = val.trim().replace(/[\\/]+$/, '')
+      const lastSlash = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'))
+      let parentPart = trimmed
+      let folderPart = ''
+      if (lastSlash !== -1) {
+        parentPart = trimmed.slice(0, lastSlash)
+        folderPart = trimmed.slice(lastSlash + 1)
+      } else {
+        folderPart = trimmed
+      }
+
+      if (currentProjectName && !folderPart.toLowerCase().includes(currentProjectName.toLowerCase())) {
+        const full = buildSitePath(trimmed, currentProjectName)
+        setBaseParentDir(trimmed)
+        setParentDirCustom(full)
+        setProvided((prev) => ({ ...prev, parent_dir: trimmed }))
+        return
+      }
+
+      setParentDirCustom(val)
+      if (parentPart) setBaseParentDir(parentPart)
+      setProvided((prev) => {
+        const next: Record<string, string> = { ...prev, parent_dir: parentPart || trimmed }
+        if (folderPart && !touchedFields['project_name']) {
+          next['project_name'] = folderPart
+          if (!touchedFields['domain']) {
+            const dom = folderNameToDomain(folderPart)
+            if (dom) next['domain'] = dom
+          }
+        }
+        return next
+      })
+      return
+    }
+
     setProvided((prev) => {
-      const next = { ...prev, [name]: val }
+      const next: Record<string, string> = { ...prev, [name]: val }
 
       if (name === 'project_name') {
         if (!touchedFields['domain']) {
@@ -401,20 +449,26 @@ export function Wizard({ id, onClose, onNavigate }: { id: string; onClose: () =>
           if (dom) next['domain'] = dom
           else delete next['domain']
         }
+        if (!touchedFields['parent_dir'] && effectiveBase) {
+          next['parent_dir'] = effectiveBase
+          setParentDirCustom(null)
+        }
       } else if (name === 'domain') {
         if (!touchedFields['project_name']) {
           const folder = domainToFolderName(val)
           if (folder) next['project_name'] = folder
           else delete next['project_name']
+          if (!touchedFields['parent_dir'] && effectiveBase) {
+            next['parent_dir'] = effectiveBase
+            setParentDirCustom(null)
+          }
         }
       }
       return next
     })
   }
 
-  const effectiveParent = provided.parent_dir || resolved.parent_dir || resolved.default_projects_dir || ''
-  const effectiveProject = provided.project_name || resolved.project_name || ''
-  const siteFolderPath = plan?.values?.project_path || (effectiveParent && effectiveProject ? buildSitePath(effectiveParent, effectiveProject) : '')
+  const siteFolderPath = plan?.values?.project_path || (currentProjectName && effectiveBase ? buildSitePath(effectiveBase, currentProjectName) : '')
 
   async function start() {
     setStarting(true)
