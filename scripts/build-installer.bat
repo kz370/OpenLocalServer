@@ -128,6 +128,9 @@ if not exist "%UI%\dist\index.html" (
 )
 
 echo [2/5] Building release executables (%JOBS% build jobs)...
+rem Update trust baked into every build: the PUBLIC key is safe to ship.
+rem A pre-set OLS_UPDATE_PUBKEY in the environment always wins.
+if not defined OLS_UPDATE_PUBKEY set "OLS_UPDATE_PUBKEY=RWQTa5rn3AFu8SRjdSvz7VsUi/pRNNdk2FPuCbmgSZMV+veJMB9XCiys"
 pushd "%ROOT%"
 cargo build -p %CARGO_BIN% -p %HELPER_BIN% --release --jobs %JOBS%
 set "BUILD_ERR=%ERRORLEVEL%"
