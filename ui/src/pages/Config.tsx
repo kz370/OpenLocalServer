@@ -170,6 +170,10 @@ export function ConfigFilePane({
     if (res.type === 'text') {
       setText(res.text)
       setSaved(res.text)
+    } else {
+      // Never leave a silent blank editor: anything unexpected explains itself.
+      setText(`(could not load this file: unexpected response '${res.type}')`)
+      setSaved('')
     }
   }
 

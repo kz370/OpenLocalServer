@@ -29,15 +29,29 @@ export function ProjectTerminal({ projectId }: { projectId: string | null }) {
     setEnded(false)
     setError(null)
 
-    const term = new XTerm({ cursorBlink: true, fontSize: 13, fontFamily: 'Consolas, "Cascadia Mono", monospace', scrollback: 5000, convertEol: false })
+    // lineHeight 1.0 (xterm default) clips descenders (p, g, y) in WebView2's
+    // Consolas metrics; windowsMode aligns the renderer with Windows fonts.
+    // Release builds hit this while dev stayed lucky on fallback fonts.
+    // Explicit theme: default xterm grays can render near-invisible against the
+    // black host on some WebView2 color profiles, looking like "nothing shown".
+    const term = new XTerm({ cursorBlink: true, cursorStyle: 'bar', fontSize: 13, lineHeight: 1.3, fontFamily: 'Consolas, "Cascadia Mono", monospace', scrollback: 5000, convertEol: false, windowsMode: true, theme: { background: '#000000', foreground: '#e8e8e8', cursor: '#34d399', selectionBackground: 'rgba(52, 211, 153, 0.3)' } })
     const fit = new FitAddon()
     term.loadAddon(fit)
     term.open(el)
     fit.fit()
+    // Shell startup resolves runtimes synchronously and can take seconds:
+    // say so instead of showing a dead black box.
+    term.write('\x1b[90m[starting shell…]\x1b[0m\r\n')
 
     // Output can arrive before the open call returns the session id, so it is held until then.
     const early: TerminalEvent[] = []
+    // The "[starting shell…]" hint must vanish once the shell speaks.
+    let started = false
     const show = (e: TerminalEvent) => {
+      if (!started) {
+        started = true
+        term.clear()
+      }
       if (e.kind === 'output') term.write(e.data)
       else {
         term.write('\r\n\x1b[90m[the shell has exited]\x1b[0m\r\n')

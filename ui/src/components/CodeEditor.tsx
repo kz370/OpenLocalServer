@@ -52,9 +52,15 @@ function baseExtensions(lang: EditorLanguage, dark: boolean, readOnly: boolean):
   ]
 }
 
-/** Sit on the app's own card colour instead of One Dark's grey, in both themes. */
+/** Sit on the app's own card colour instead of One Dark's grey, in both themes.
+ * The content colour is pinned explicitly to the theme foreground: in release
+ * builds the resolved theme can lag the `.dark` class by a render (fresh
+ * profile, system theme), which left dark-on-dark text looking like a blank
+ * editor while the gutter stayed visible. */
 const appSurface = EditorView.theme({
   '&': { backgroundColor: 'var(--card)' },
+  '.cm-content': { color: 'var(--foreground)', caretColor: 'var(--primary)' },
+  '.cm-cursor': { borderLeftColor: 'var(--primary)' },
   '.cm-gutters': { backgroundColor: 'var(--card)', borderRight: '1px solid var(--border)', color: 'var(--muted-foreground)' },
   '.cm-activeLineGutter': { backgroundColor: 'transparent' },
 })
@@ -174,6 +180,7 @@ function diffExtensions(lang: EditorLanguage, dark: boolean): Extension[] {
     EditorView.editable.of(false),
     EditorView.theme({
       '&': { fontSize: '12.5px' },
+      '.cm-content': { color: 'var(--foreground)', caretColor: 'var(--primary)' },
       '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Consolas, monospace', lineHeight: '1.55' },
     }),
     appSurface,

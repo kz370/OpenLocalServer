@@ -109,9 +109,9 @@ ThemeProvider | system/light/dark with localStorage.
 CommandPalette | Ctrl+K fuzzy global_search palette.
 SiteDialog | Tabbed project editor (env/terminal/git/workers/snapshots/...).
 DomainDialog/DomainSettings | Add-site modal (Source/Address/Serves/Options) sharing FormSection + form-size Dialog with QuickApps Wizard; footer via Dialog prop, submitRef.
-TerminalComp | xterm.js bridge to TerminalManager.
+TerminalComp | xterm.js bridge to TerminalManager (lineHeight 1.3 + windowsMode so WebView2 Consolas descenders never clip; explicit light-on-black theme + visible cursor + "[starting shell…]" hint so slow startup never looks dead).
 EnvEditor | .env table editor with diff.
-CodeEditor/DiffView | CodeMirror yaml/nginx/apache + diff restore.
+CodeEditor/DiffView | CodeMirror yaml/nginx/apache + diff restore; content color pinned to theme foreground; Config load failure shows message, never silent blank. Requires tauri CSP style-src 'self' 'unsafe-inline' (CodeMirror injects all CSS via runtime <style> tags; blocked CSP = unstyled scaffold).
 DiagnosticsCard/DoctorDialog | Findings list + doctor runner.
 ReleaseCards | API/updater/shell-menu cards.
 SettingsExtras | Resource limits + settings backup cards.
