@@ -1,4 +1,4 @@
-Data models (JSON files under data/ today; SQL tables planned).
+Data models (SQLite app.db: settings table + docs collections holding JSON blobs).
 
 Entities:
 - Project {id: sha256(path)[..16], name, path, framework, created_at, updated_at}

@@ -241,7 +241,7 @@ OpenLocalServer/
 │   ├── pages/           # Dashboard, Sites, Environment, Git, Workers,
 │   │                    # Snapshots, Tunnels, Profiles, Repair, Doctor…
 │   └── components/      # shadcn/ui primitives, dialogs, editors
-├── data/                # Portable JSON state,
+├── data/                # SQLite app database (app.db),
 │                        # OLS_HOME env overrides all paths
 ├── docs/                # STATUS.md, IMPLEMENTATION_PLAN.md, AI_ASSISTANT.md…
 ├── specs/               # Single source of truth — architecture, catalog,

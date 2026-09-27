@@ -81,6 +81,7 @@ All 203 files listed above processed via 4 parallel analysis agents (rust-core, 
 - [2026-09-27] feat: home.test now built in — hidden from Sites list, remove/rename refused in backend (welcome page redesigned: big centered hero + info cards); Files Processed still 202
 - [2026-09-27] feat: welcome site renamed openlocalserver.test (legacy home.test auto-migrated on load); page redesigned as premium dev-tool landing (exact favicon.svg brand bytes seeded as logo.svg, hero + orbit visual + 5 cards + 3 steps + local-first + footer, theme toggle, responsive); stock old pages auto-refresh on load via version marker (hand edits kept); home site always ensured on load (heals installs missing the entry); update public key defaulted in build scripts (env override wins); Dashboard Web server card has Open home page button; Files Processed still 202
 - [2026-09-27] chore: Updates card stripped to a releases-page link (in-app check/download/install UI removed); Files Processed still 202
+- [2026-09-27] docs: state storage corrected JSON → SQLite app.db (README tree, v1.0.0 notes, architecture overview, data models); Files Processed still 202
 
 Status: Completed 100%
 
