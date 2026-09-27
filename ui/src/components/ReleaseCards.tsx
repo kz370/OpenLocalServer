@@ -1,5 +1,5 @@
 import { save } from '@tauri-apps/plugin-dialog'
-import { Copy, Download, ExternalLink, FileText, KeyRound, RefreshCw, ShieldCheck, TerminalSquare, Wifi } from 'lucide-react'
+import { Copy, Download, ExternalLink, FileText, KeyRound, ShieldCheck, TerminalSquare, Wifi } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, Select } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
-import { type ApiStatus, type NetworkStatus, type ShellMenuStatus, type UpdateInfo, type UpdaterStatus, runCommand } from '@/core'
+import { type ApiStatus, type NetworkStatus, type ShellMenuStatus, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
 import { useAction } from '@/lib/hooks'
 
@@ -111,71 +111,20 @@ export function ApiCard() {
   )
 }
 
-/** §145: signed updates. Nothing is checked until the button is pressed. */
+/** Updates live on the releases page; the app just links out. */
 export function UpdatesCard() {
-  const [status, setStatus] = useState<UpdaterStatus | null>(null)
-  const [update, setUpdate] = useState<UpdateInfo | null>(null)
-  const { busy, error, setError, run } = useAction()
-  const load = useCallback(async () => {
-    const r = await runCommand({ type: 'get_updater_status' })
-    if (r.type === 'updater_status') {
-      setStatus(r.status)
-      setUpdate(r.status.last)
-    }
-  }, [])
-  useEffect(() => {
-    load().catch(setError)
-  }, [load, setError])
-  if (!status) return null
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-sm">
           <Download className="size-4" /> Updates
         </CardTitle>
-        <CardDescription>
-          You have {status.current}. An update is trusted only if its manifest carries a valid signature from the update key, and its installer must match the SHA-256 in that manifest. Nothing is checked, downloaded or installed on its own.
-        </CardDescription>
+        <CardDescription>New versions, installers and checksums are published on the releases page.</CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-col gap-3">
-        <ErrorCard error={error} onDismiss={() => setError(null)} />
-        {update && (
-          <div className="rounded-md border border-border p-3 text-sm">
-            {update.available ? (
-              <>
-                <div className="font-medium">
-                  Version {update.latest} is available <Badge variant="success">signature verified</Badge>
-                </div>
-                {update.notes && <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{update.notes}</p>}
-              </>
-            ) : (
-              <span>You are up to date.</span>
-            )}
-          </div>
-        )}
-        <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" disabled={busy !== null} onClick={() => run('check', async () => { const r = await runCommand({ type: 'check_update' }); if (r.type === 'update') setUpdate(r.update) })}>
-            {busy === 'check' ? <Spinner /> : <RefreshCw />} Check for updates
-          </Button>
-          {update?.available && !update.downloaded && (
-            <Button disabled={busy !== null} onClick={() => run('dl', async () => { const r = await runCommand({ type: 'download_update' }); if (r.type === 'update') setUpdate(r.update) })}>
-              {busy === 'dl' ? <Spinner /> : <Download />} Download
-            </Button>
-          )}
-          {update?.downloaded && (
-            <Button
-              disabled={busy !== null}
-              onClick={async () => {
-                if (await confirmAction('The installer will start and replace this version. Save your work first.', 'Install the update')) await run('inst', () => runCommand({ type: 'install_update' }))
-              }}
-            >
-              Install now
-            </Button>
-          )}
-          <Button variant="ghost" onClick={() => run('src', () => runCommand({ type: 'open_url', url: 'https://github.com/kz370/OpenLocalServer/releases/latest' }))}>
-            <ExternalLink /> Update source
-          </Button>
-        </div>
+      <CardContent>
+        <Button variant="secondary" onClick={() => runCommand({ type: 'open_url', url: 'https://github.com/kz370/OpenLocalServer/releases/latest' }).catch(() => undefined)}>
+          <ExternalLink /> Open releases page
+        </Button>
       </CardContent>
     </Card>
   )

@@ -114,7 +114,7 @@ TerminalComp | xterm.js bridge to TerminalManager (lineHeight 1.3 + windowsMode 
 EnvEditor | .env table editor with diff.
 CodeEditor/DiffView | CodeMirror yaml/nginx/apache + diff restore; content color pinned to theme foreground; Config load failure shows message, never silent blank. Requires tauri CSP style-src 'self' 'unsafe-inline' (CodeMirror injects all CSS via runtime <style> tags; blocked CSP = unstyled scaffold).
 DiagnosticsCard/DoctorDialog | Findings list + doctor runner.
-ReleaseCards | API/updater/shell-menu cards. Updates: 20s manifest timeout, Update source opens releases page (no endpoint/key fields).
+ReleaseCards | API/shell-menu cards. Updates card is just a releases-page link (in-app updater UI removed).
 SettingsExtras | Resource limits + settings backup cards.
 CustomServices | Custom service CRUD table.
 PhpExtensionsDialog/XdebugDialog | PHP extension toggles + xdebug form.
