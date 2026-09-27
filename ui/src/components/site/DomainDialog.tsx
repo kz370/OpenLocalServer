@@ -46,11 +46,13 @@ export function DomainDialog({
   projects,
   onQuickApp,
   installedPhp,
+  defaultParent,
 }: {
   projects: Project[]
   onQuickApp: (id: string) => void
   domain: Domain | null
   installedPhp: string[]
+  defaultParent?: string
   onClose: () => void
   onSave: (d: Domain) => void
   busy: boolean
@@ -61,6 +63,7 @@ export function DomainDialog({
       projects={projects}
       onQuickApp={onQuickApp}
       domain={domain}
+      defaultParent={defaultParent}
       installedPhp={installedPhp}
       onClose={onClose}
       onSave={onSave}
@@ -73,6 +76,7 @@ function AddSiteDialogBody({
   projects,
   onQuickApp,
   domain,
+  defaultParent,
   installedPhp,
   onSave,
   busy,
@@ -81,6 +85,7 @@ function AddSiteDialogBody({
   projects: Project[]
   onQuickApp?: (id: string) => void
   domain: Domain
+  defaultParent?: string
   installedPhp: string[]
   onSave: (d: Domain) => void
   busy: boolean
@@ -110,6 +115,7 @@ function AddSiteDialogBody({
         onQuickApp={onQuickApp}
         domain={domain}
         isNew
+        defaultParent={defaultParent}
         installedPhp={installedPhp}
         onSave={onSave}
         busy={busy}
@@ -125,6 +131,7 @@ export function DomainSettings({
   onQuickApp,
   domain,
   isNew,
+  defaultParent,
   installedPhp,
   onSave,
   busy,
@@ -135,6 +142,7 @@ export function DomainSettings({
   onQuickApp?: (id: string) => void
   domain: Domain
   isNew: boolean
+  defaultParent?: string
   installedPhp: string[]
   onSave: (d: Domain) => void
   busy: boolean
@@ -142,6 +150,7 @@ export function DomainSettings({
   submitRef?: { current: (() => void) | null }
 }) {
   const [d, setD] = useState<Domain>(domain)
+  const [rootTouched, setRootTouched] = useState(false)
   const kindType = d.kind.type
   const [appLine, setAppLine] = useState('')
   const [template, setTemplate] = useState('{project}.test')
@@ -154,6 +163,7 @@ export function DomainSettings({
     setD(domain)
     setErr(null)
     setShowApps(false)
+    setRootTouched(false)
     setAppLine(domain?.app ? [domain.app.executable, ...domain.app.args].join(' ') : '')
   }, [domain])
   useEffect(() => {
