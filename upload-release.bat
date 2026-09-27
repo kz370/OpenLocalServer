@@ -10,11 +10,23 @@ rem   release\Open-Local-Server-<version>-SHA256SUMS.txt       checksums for bot
 rem Release notes come from release-notes\<tag>.md, the commit message from
 rem commit-message.txt (git-ignored, rewrite it for each release).
 rem
-rem Usage: upload-release.bat [tag]   (e.g. upload-release.bat v1.0.0)
-rem No tag given = read the version from the setup exe name
-rem (Open-Local-Server-<version>-setup.exe) and use tag v<version>.
+rem Usage: upload-release.bat [tag] [mode]   (e.g. upload-release.bat v1.0.0 full)
+rem Modes: full = binaries + release notes, notes-only = release notes only.
+rem No mode given = ask 1 or 2. No tag given = read the version from the
+rem setup exe name and use tag v<version>.
 set "DIST=release"
 set "TAG=%~1"
+set "MODE=%~2"
+if "%MODE%"=="" call :ask_mode || exit /b 1
+if /i "%MODE%"=="1" set "MODE=full"
+if /i "%MODE%"=="2" set "MODE=notes-only"
+if /i "%MODE%"=="notes" set "MODE=notes-only"
+if /i "%MODE%"=="full" goto :mode_ok
+if /i "%MODE%"=="notes-only" goto :mode_ok
+echo Unknown mode "%MODE%". Use full or notes-only.
+exit /b 1
+
+:mode_ok
 if not "%TAG%"=="" goto :have_tag
 
 rem Newest setup exe wins if there are several.
@@ -42,6 +54,7 @@ set "VERSION=%VERSION:"=%"
 set "TAG=v%VERSION%"
 rem Find the actual setup file on disk (tolerates the old leading-space name).
 set "SETUP=Open-Local-Server-%VERSION%-setup.exe"
+if /i "%MODE%"=="notes-only" goto :tag_ready
 if not exist "%DIST%\%SETUP%" (
   set "SETUP="
   for /f "delims=" %%F in ('dir /b /a-d /o-d "%DIST%\Open-Local-Server-*-setup.exe" 2^>nul') do if not defined SETUP set "SETUP=%%F"
@@ -53,7 +66,7 @@ if not exist "%DIST%\%SETUP%" (
 )
 
 :tag_ready
-echo Using tag %TAG% (version %VERSION%)
+echo Using tag %TAG% (version %VERSION%, mode %MODE%)
 
 set "SETUPPATH=%DIST%\%SETUP%"
 set "ZIP=Open-Local-Server-%VERSION%-portable-win-x64.zip"
@@ -66,26 +79,40 @@ set "HELPER_EXE=ols-helper.exe"
 
 where gh >nul 2>&1 || (echo GitHub CLI "gh" not found. & exit /b 1)
 where git >nul 2>&1 || (echo git not found. & exit /b 1)
+if /i "%MODE%"=="notes-only" goto :commit_step
 if not exist "%SETUPPATH%" (echo Missing %SETUPPATH% - run build-installer.bat first. & exit /b 1)
 if not exist "%DIST%\%MAIN_EXE%" (echo Missing %DIST%\%MAIN_EXE% - run build-installer.bat first. & exit /b 1)
 if not exist "%DIST%\%HELPER_EXE%" (echo Missing %DIST%\%HELPER_EXE% - run build-installer.bat first. & exit /b 1)
 
+:commit_step
 rem Commit and push first, so a new release tag points at the commit these
 rem builds came from.
 set "MSGFILE=commit-message.txt"
 set "DIRTY="
 for /f "delims=" %%L in ('git status --porcelain') do set "DIRTY=1"
-if defined DIRTY (
-  if not exist "%MSGFILE%" (echo Missing %MSGFILE% - write the commit message there first. & exit /b 1)
-  echo Committing with message from %MSGFILE%...
-  git add -A || (echo git add failed. & exit /b 1)
-  git commit -F "%MSGFILE%" || (echo Commit failed. & exit /b 1)
-) else (
-  echo Nothing new to commit.
-)
+if not defined DIRTY goto :nothing_to_commit
+if exist "%MSGFILE%" goto :do_commit
+if /i "%MODE%"=="notes-only" goto :push_only
+(echo Missing %MSGFILE% - write the commit message there first. & exit /b 1)
+
+:do_commit
+echo Committing with message from %MSGFILE%...
+git add -A || (echo git add failed. & exit /b 1)
+git commit -F "%MSGFILE%" || (echo Commit failed. & exit /b 1)
+goto :push_it
+
+:push_only
+echo Uncommitted changes left as-is - no %MSGFILE%, skipping commit.
+goto :push_it
+
+:nothing_to_commit
+echo Nothing new to commit.
+
+:push_it
 echo Pushing...
 git push origin HEAD || (echo Push failed. & exit /b 1)
 
+if /i "%MODE%"=="notes-only" goto :notes_only
 rem Only the portable files go in the zip, not the setup exe next to them.
 echo Zipping portable version...
 if exist "%STAGE%" rmdir /s /q "%STAGE%"
@@ -103,6 +130,7 @@ echo Writing %SUMS%...
 if exist "%SUMSPATH%" del /f /q "%SUMSPATH%"
 for %%f in ("%SETUPPATH%" "%ZIPPATH%") do call :sum_one "%%~f" "%SUMSPATH%" || (echo Checksum failed. & exit /b 1)
 
+:notes_only
 rem Release notes: release-notes\<tag>.md if present, else GitHub's generated notes
 rem (new releases only). An existing release keeps its notes unless the file exists.
 set "NOTES=release-notes\%TAG%.md"
@@ -118,18 +146,37 @@ if errorlevel 1 (
     gh release create "%TAG%" --title "%TAG%" --generate-notes || (echo Create failed. & exit /b 1)
   )
 ) else (
-  echo Release %TAG% exists - replacing assets.
+  echo Release %TAG% exists - updating it.
   if exist "%NOTES%" (
     echo Updating notes from %NOTES%
     gh release edit "%TAG%" --notes-file "%NOTES%" || (echo Notes update failed. & exit /b 1)
   )
 )
 
+if /i "%MODE%"=="notes-only" goto :notes_done
 gh release upload "%TAG%" "%SETUPPATH%" "%ZIPPATH%" "%SUMSPATH%" --clobber || (echo Upload failed. & exit /b 1)
 
 del /f /q "%ZIPPATH%" >nul 2>&1
 echo Done. Uploaded %SETUP%, %ZIP% and %SUMS% to %TAG%.
 endlocal & exit /b 0
+
+:notes_done
+echo Done. Updated notes for %TAG% - no binaries uploaded.
+endlocal & exit /b 0
+
+rem Prompt for upload mode when the second argument is missing.
+:ask_mode
+echo Select upload mode:
+echo   1 - full: binaries + release notes
+echo   2 - notes-only: release notes only
+set "CHOICE="
+set /p "CHOICE=Enter 1 or 2 [1]: "
+if "%CHOICE%"=="" set "CHOICE=1"
+if "%CHOICE%"=="1" set "MODE=full" & exit /b 0
+if "%CHOICE%"=="2" set "MODE=notes-only" & exit /b 0
+if /i "%CHOICE%"=="full" set "MODE=full" & exit /b 0
+if /i "%CHOICE%"=="notes-only" set "MODE=notes-only" & exit /b 0
+echo Invalid choice. & exit /b 1
 
 rem Append SHA-256 of %1 to %2. No parens in echoes: this file uses
 rem single-line ( ... ) blocks elsewhere.
