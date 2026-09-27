@@ -731,6 +731,41 @@ impl Inner {
         })
     }
 
+    /// Removes a project from the list for good: its folder joins a skip list so
+    /// folder rescans (watcher, restart, Scan) don't re-register it. Explicitly
+    /// adding the folder again clears the skip.
+    pub fn remove_project(&self, id: &str) -> Result<(), CoreError> {
+        let path = self
+            .projects
+            .lock()
+            .unwrap()
+            .get(id)
+            .map(|p| p.path.clone());
+        self.projects.lock().unwrap().remove(id)?;
+        if let Some(path) = path {
+            self.edit_string_list(PROJECT_SKIP, |list| {
+                if !list.iter().any(|p| p.eq_ignore_ascii_case(&path)) {
+                    list.push(path.clone());
+                }
+            })?;
+        }
+        Ok(())
+    }
+
+    /// True when the user removed this folder from the project list.
+    pub(crate) fn is_project_skipped(&self, path: &str) -> bool {
+        self.string_list(PROJECT_SKIP)
+            .iter()
+            .any(|p| p.eq_ignore_ascii_case(path))
+    }
+
+    /// Explicitly adding a folder again clears a previous removal.
+    pub(crate) fn clear_project_skip(&self, path: &str) -> Result<(), CoreError> {
+        self.edit_string_list(PROJECT_SKIP, |list| {
+            list.retain(|p| !p.eq_ignore_ascii_case(path))
+        })
+    }
+
     /// Laragon-style automatic domains (setting `domains.auto`, on by default): every
     /// folder in a remembered projects folder becomes a project, and every project that
     /// can be served (PHP or plain HTML) gets `<folder>.test` over HTTPS. Domains the user
@@ -762,12 +797,27 @@ impl Inner {
             let Ok(entries) = std::fs::read_dir(&root) else {
                 continue;
             };
+            let skipped = self.string_list(PROJECT_SKIP);
+            let is_skipped = |dir: &std::path::Path| {
+                let raw = dir.display().to_string();
+                // Registered paths are stored canonicalized; compare both forms.
+                let canonical = std::fs::canonicalize(dir)
+                    .map(|c| {
+                        let s = c.display().to_string();
+                        s.strip_prefix(r"\\?\").unwrap_or(&s).to_string()
+                    })
+                    .unwrap_or_else(|_| raw.clone());
+                skipped
+                    .iter()
+                    .any(|s| s.eq_ignore_ascii_case(&raw) || s.eq_ignore_ascii_case(&canonical))
+            };
             let mut projects = self.projects.lock().unwrap();
             for e in entries.flatten() {
                 let dir = e.path();
                 let hidden = e.file_name().to_string_lossy().starts_with('.');
                 if dir.is_dir()
                     && !hidden
+                    && !is_skipped(&dir)
                     && (crate::detection::looks_like_a_project(&dir) || has_index(&dir))
                 {
                     let _ = projects.register(&dir.display().to_string());
@@ -2948,6 +2998,9 @@ fn site_folder(d: &Domain, projects: &[crate::project::Project]) -> String {
 
 const PROJECT_ROOTS: &str = "projects.roots";
 const AUTO_SKIP: &str = "domains.auto_skip";
+/// Folders the user removed from the project list. Folder rescans must not
+/// re-register them; only explicitly adding the folder brings one back.
+const PROJECT_SKIP: &str = "projects.removed";
 
 fn has_index(dir: &Path) -> bool {
     ["index.php", "index.html", "index.htm"]
@@ -2971,6 +3024,67 @@ fn auto_site(path: &Path) -> Option<(SiteKind, PathBuf)> {
         }
         _ if has_index(&root) => Some((SiteKind::Static, root)),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod project_skip_tests {
+    use super::*;
+
+    fn inner() -> (Arc<Inner>, crate::test_support::IsolatedHome) {
+        let home = crate::test_support::isolated_home();
+        let settings = crate::settings::SettingsService::load(&home.paths).unwrap();
+        (Inner::new(settings, home.paths.clone()).unwrap(), home)
+    }
+
+    fn project_dir(root: &std::path::Path, name: &str) -> std::path::PathBuf {
+        let dir = root.join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("index.html"), "hi").unwrap();
+        dir
+    }
+
+    #[test]
+    fn removed_projects_stay_removed_across_rescans() {
+        let (inner, home) = inner();
+        let root = home.paths.data_dir().join("www");
+        let app1 = project_dir(&root, "app1");
+        project_dir(&root, "app2");
+        inner
+            .remember_projects_root(&root.display().to_string())
+            .unwrap();
+
+        inner.sync_auto_domains().unwrap();
+        assert_eq!(inner.projects.lock().unwrap().list().len(), 2);
+
+        let id1 = inner.projects.lock().unwrap().list()[0].id.clone();
+        inner.remove_project(&id1).unwrap();
+        assert_eq!(inner.projects.lock().unwrap().list().len(), 1);
+
+        // Rescans (watcher, restart, Scan) must not bring it back.
+        inner.sync_auto_domains().unwrap();
+        inner.sync_auto_domains().unwrap();
+        let ids: Vec<_> = inner
+            .projects
+            .lock()
+            .unwrap()
+            .list()
+            .into_iter()
+            .map(|p| p.id)
+            .collect();
+        assert!(!ids.contains(&id1), "removed project was re-registered");
+        assert_eq!(ids.len(), 1);
+
+        // Explicitly adding the folder again clears the removal.
+        let p = inner
+            .projects
+            .lock()
+            .unwrap()
+            .register(&app1.display().to_string())
+            .unwrap();
+        inner.clear_project_skip(&p.path).unwrap();
+        inner.sync_auto_domains().unwrap();
+        assert_eq!(inner.projects.lock().unwrap().list().len(), 2);
     }
 }
 

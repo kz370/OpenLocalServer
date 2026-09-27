@@ -47,6 +47,12 @@ const MAX_ACTIONS: usize = 10;
 const MAX_PART: usize = 12_000;
 const MAX_TOTAL: usize = 48_000;
 const TOOL_OUTPUT: usize = 8_000;
+/// Inline cap for a user-picked log excerpt; beyond this the full text spills to a `.log` file readable via `read_excerpt`.
+const EXCERPT_INLINE: usize = 12_000;
+/// Hard cap stored on disk for a picked excerpt (≈200 KB).
+const EXCERPT_MAX_FILE: usize = 200_000;
+/// How many excerpt files to keep per workspace before pruning oldest.
+const EXCERPT_KEEP: usize = 20;
 const IDLE: Duration = Duration::from_secs(120);
 
 fn fail(msg: impl Into<String>) -> CoreError {
@@ -443,6 +449,7 @@ fn tool_defs() -> Vec<Value> {
         f("get_findings", "Problems the diagnostics found, with cause and suggested fix.", json!({}), &[]),
         f("list_log_sources", "The logs that can be read.", json!({}), &[]),
         f("read_log", "The last lines of a log (source from list_log_sources, e.g. app, web:error).", json!({"source":{"type":"string"},"lines":{"type":"integer"}}), &["source"]),
+        f("read_excerpt", "A page of a saved log excerpt file (from a previous overlong pick), as <file> lines <a>-<b> of <n>.", json!({"file":{"type":"string"},"start_line":{"type":"integer"},"lines":{"type":"integer"}}), &["file"]),
         f("read_web_config", "The generated web server config for a site (part: site or custom), or the main config with no hostname.", json!({"hostname":{"type":"string"},"part":{"type":"string"}}), &[]),
         f("read_manifest", "A project's .openlocalserver/environment.yaml.", json!({"project_id":{"type":"string"}}), &["project_id"]),
         f("read_env_names", "The variable names in a project's .env file, values hidden.", json!({"project_id":{"type":"string"},"file":{"type":"string"}}), &["project_id"]),
@@ -529,6 +536,20 @@ impl Inner {
                     .clamp(1, 300) as usize;
                 self.read_log(&source, lines).map_err(e)?.join("\n")
             }
+            "read_excerpt" => {
+                let file = s("file").ok_or("read_excerpt needs a file")?;
+                let start = args
+                    .get("start_line")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(1)
+                    .max(1) as usize;
+                let lines = args
+                    .get("lines")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(80)
+                    .clamp(1, 300) as usize;
+                self.read_excerpt(&file, start, lines)?
+            }
             "read_web_config" => {
                 let part = match s("part").as_deref() {
                     Some("custom") => crate::web::manager::ConfigPart::Custom,
@@ -590,6 +611,55 @@ impl Inner {
 impl Inner {
     fn ai_file(&self) -> PathBuf {
         self.paths.data_dir().join("ai.json")
+    }
+
+    fn excerpt_dir(&self) -> PathBuf {
+        self.paths.data_dir().join("ai-excerpts")
+    }
+
+    /// Spill an overlong picked excerpt to a `.log` text file; returns file name. Prunes oldest beyond keep cap.
+    fn save_excerpt(&self, text: &str) -> Result<String, String> {
+        let dir = self.excerpt_dir();
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| format!("couldn't store the excerpt file: {e}"))?;
+        let body = head(&clean(text), EXCERPT_MAX_FILE);
+        let name = format!("excerpt-{}.log", now_ms());
+        std::fs::write(dir.join(&name), &body)
+            .map_err(|e| format!("couldn't store the excerpt file: {e}"))?;
+        if let Ok(mut files) = std::fs::read_dir(&dir).map(|d| {
+            d.flatten()
+                .filter(|e| e.path().extension().is_some_and(|x| x == "log"))
+                .collect::<Vec<_>>()
+        }) {
+            files.sort_by_key(|e| e.file_name());
+            for stale in files.iter().rev().skip(EXCERPT_KEEP) {
+                let _ = std::fs::remove_file(stale.path());
+            }
+        }
+        Ok(name)
+    }
+
+    /// Page through a saved excerpt file: `start_line` 1-based, `lines` capped.
+    fn read_excerpt(&self, file: &str, start_line: usize, lines: usize) -> Result<String, String> {
+        if file.contains('/') || file.contains('\\') || file.contains("..") {
+            return Err("unknown excerpt file".into());
+        }
+        if !file.starts_with("excerpt-") || !file.ends_with(".log") {
+            return Err("unknown excerpt file".into());
+        }
+        let text = std::fs::read_to_string(self.excerpt_dir().join(file))
+            .map_err(|_| "that excerpt file is gone; re-pick the lines".to_string())?;
+        let all: Vec<&str> = text.lines().collect();
+        let start = start_line.saturating_sub(1).min(all.len());
+        let end = (start + lines.clamp(1, 300)).min(all.len());
+        Ok(format!(
+            "<file {}> lines {}-{} of {}\n{}",
+            file,
+            if all.is_empty() { 0 } else { start + 1 },
+            end,
+            all.len(),
+            all[start..end].join("\n")
+        ))
     }
 
     /// The settings with the computed fields filled in.
@@ -1245,6 +1315,36 @@ impl Inner {
             }
             "logs" => {
                 let question = need(&req.question, "a question")?.to_string();
+                if let Some(picked) = req.text.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
+                    let cleaned = clean(picked);
+                    if cleaned.len() <= EXCERPT_INLINE {
+                        attachments.push((
+                            format!(
+                                "Selected log lines (user-picked {} characters)",
+                                cleaned.len()
+                            ),
+                            cleaned,
+                        ));
+                    } else if let Ok(file) = self.save_excerpt(&cleaned) {
+                        attachments.push((
+                            format!(
+                                "Selected log lines (first {} of {} chars in full excerpt file {file}; use read_excerpt for rest)",
+                                EXCERPT_INLINE,
+                                cleaned.len(),
+                                file = file
+                            ),
+                            head(&cleaned, EXCERPT_INLINE),
+                        ));
+                    } else {
+                        attachments.push((
+                            format!(
+                                "Selected log lines (user-picked {} characters, truncated)",
+                                cleaned.len()
+                            ),
+                            head(&cleaned, EXCERPT_INLINE),
+                        ));
+                    }
+                }
                 let sources: Vec<String> = if req.log_sources.is_empty() {
                     vec!["app".into(), "web:error".into()]
                 } else {

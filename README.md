@@ -11,67 +11,112 @@
 
 **OpenLocalServer** is the successor to XAMPP / Laragon with broader runtime coverage and full extensibility. Every project gets isolated runtimes, its own `.test` domain, and trusted local HTTPS. One core engine (`ols-core`) powers three front doors: desktop GUI, CLI (`ols`), and local HTTP API.
 
-> **Status:** pre-release — Stage 15/18 built, release 0.3 feature-complete but not yet verified end-to-end. See [docs/STATUS.md](./docs/STATUS.md) for what works and what's missing.
+## Contents
+
+- [Tour](#tour) · [Runtimes](#runtimes--toolchain) · [Sites & HTTPS](#sites-web-servers--https) · [Projects](#projects--reproducible-environments) · [Databases & Services](#databases--services) · [Dashboard & Monitoring](#dashboard--monitoring) · [Sharing](#sharing--tunnels) · [Automation](#cli-api--automation)
+- [Getting Started](#getting-started) · [Usage](#usage) · [Project Structure](#project-structure) · [Contributing](#contributing) · [License](#license)
 
 ---
 
-## 📸 Demo / Screenshots
+## 📸 Tour
 
-> Screenshots live in `./assets/`. Drop your PNGs there with matching filenames.
+> Captured from running app (dark theme).
 
 <p align="center">
-  <img width="700" src="./assets/dashboard.png" alt="Dashboard Overview — environment health, services, and diagnostics">
-  <br><em>Dashboard — environment health, services, and diagnostics</em>
+  <img width="700" src="./assets/dashboard.webp" alt="Dashboard — environment health, services, diagnostics">
+  <br><em>Dashboard — health, services, diagnostics at a glance</em>
 </p>
 
 <p align="center">
-  <img width="700" src="./assets/sites.png" alt="Sites and Projects — domains, PHP per site, HTTPS, reverse proxy">
-  <br><em>Sites & Projects — domains, per-site PHP, HTTPS, reverse proxy</em>
+  <img width="700" src="./assets/sites.webp" alt="Sites & Projects — domains, per-site PHP, HTTPS, reverse proxy">
+  <br><em>Sites — domains, per-site PHP, HTTPS, reverse proxy</em>
 </p>
 
 <p align="center">
-  <img width="700" src="./assets/terminal-git.png" alt="Terminal, Git manager, workers, and tunnel inspector">
-  <br><em>Terminal, Git manager, workers, and tunnel inspector</em>
+  <img width="700" src="./assets/runtimes.webp" alt="Runtimes — side-by-side versions and defaults">
+  <br><em>Runtimes — side-by-side versions and defaults</em>
+</p>
+
+<p align="center">
+  <img width="700" src="./assets/version-manager.webp" alt="Version manager — install and manage versions per runtime">
+  <br><em>Version manager — install and manage versions per runtime</em>
+</p>
+
+<p align="center">
+  <img width="700" src="./assets/databases.webp" alt="Databases — engines, users, backups">
+  <br><em>Databases — engines, users, backups</em>
+</p>
+
+<p align="center">
+  <img width="700" src="./assets/webserver.webp" alt="Web server — engine config and control">
+  <br><em>Web server — engine config and control</em>
+</p>
+
+<p align="center">
+  <img width="700" src="./assets/tunnels.webp" alt="Tunnels — share a local site, traffic inspector">
+  <br><em>Tunnels — share a local site, inspect traffic</em>
 </p>
 
 ---
 
 ## ✨ Features
 
-### Runtimes & Toolchain
-- **Managed runtimes:** PHP NTS 8.1–8.5 (+ Xdebug, per-version extensions, PECL), Node 22/24 (+ corepack npm/pnpm/yarn), Composer, Python venvs, portable Git, k6
-- **SHA-256 verified downloads**, PATH probe cache, or register existing Laragon / XAMPP installs
-- **Per-project runtime resolution** — manifest > detected > global
+### 📦 Runtimes & Toolchain
 
-### Sites & Web Servers
-- Any domain name, wildcard subdomains, Laragon-style automatic `<folder>.test`
-- **Trusted local HTTPS** via local CA (rcgen, 397-day leaves, auto-renew < 30d)
-- **Per-site PHP version**, static sites, reverse proxy to any host:port
-- Nginx 1.28, Apache 2.4, Caddy 2.11 with generated configs, Managed/Advanced/Manual modes, drift detection, history with diff + restore
-- Built-in DNS for `.test` / `.localhost` / `.internal` + optional elevated helper for hosts/NRPT (no repeated UAC prompts)
+- **Side-by-side versions** per runtime with a **version manager** dialog: search, install, default badge, per-version path display.
+- **Managed lineup:** PHP NTS 8.1–8.5 (per-version extensions, Xdebug per version, PECL), Node 22/24 (corepack npm/pnpm/yarn), Composer, Python venvs, portable Git, k6.
+- **Online catalogs** per runtime (vendor sources, 24h cache, background refresh) + **SHA-256 verified** downloads, resume-safe cache, atomic extract.
+- **Bring your own:** scan a folder for existing PHP installs, or register one executable (PHP/Node/Python) by locating the file.
+- **Resolution order:** project manifest pin > auto-detected > global default. Changing a default never touches project files.
 
-### Projects & Reproducible Environments
-- Framework + version detection (`composer.json`, `package.json`, `manage.py`, …)
-- `.openlocalserver/*.yaml` manifests (environment, services, commands, lock file)
-- 14-step setup pipeline: plan → conflicts → dry-run → apply with journal + rollback
-- Profiles & modes (Development / Testing / Debugging / Demo), snapshots, cloning, export/import
-- `.env` editor, Composer/npm/pnpm/yarn/Python venv runners, Quick Apps (13 built-in recipes) + Quick Commands
+### 🌐 Sites, Web Servers & HTTPS
 
-### Databases & Services
-- MariaDB 11.4, PostgreSQL, MongoDB, Redis (`redis-windows`), Mailpit, SQLite
-- Create DBs/users, connection details, backup/restore, SQLite tools
-- One-click external GUIs: HeidiSQL, pgAdmin, NoSQLBooster, Tiny RDM
-- Import from Laragon / XAMPP / WampServer without SQL dumps
+- Any domain + wildcard subdomains; Laragon-style automatic `<folder>.test`; static sites; **reverse proxy** to any host:port.
+- **Trusted local HTTPS:** on-device CA, 397-day leaf certs, auto-renew under 30 days, SAN-aware reuse.
+- **Per-site PHP version**; unpinned sites follow the global default.
+- **Nginx 1.28 / Apache 2.4 / Caddy 2.11** with generated configs; Managed / Advanced / Manual modes; validate-before-reload with rollback; **drift detection**; config history with diff + restore.
+- Built-in **wildcard DNS** for `.test` / `.localhost` / `.internal`; optional elevated helper for hosts/NRPT (no repeated UAC prompts).
 
-### Everyday Workflow
-- Dashboard with diagnostics, log viewer (search/filter/export/clear), process + system monitor, per-site usage
-- Command palette (`Ctrl+Shift+P`) + global search (`Ctrl+K`), doctor with safe auto-repair
-- Git manager (status, stage/commit, branches, pull/push, remotes, stash, clone)
-- Queue workers (max 16), scheduler (cron, 1-min tick), interactive terminal (portable-pty, max 8)
-- Tunnels (Cloudflare / ngrok / LocalTunnel) with exposure confirmation, password, badge, one-click stop + traffic inspector (redacted, replay, webhook tester)
-- Tray icon, notifications, start with Windows, leftover-server cleanup, resource limits
-- CLI: `ols setup | doctor | repair | status | start | stop` + `project | runtime | service | tunnel | worker | snapshot | quick-command | search`, daemon mode when GUI closed
-- Power tools: k6 load testing, AI assistant (LM Studio / Hugging Face / OpenRouter / OpenAI-compatible)
+### 🧩 Projects & Reproducible Environments
+
+- **Auto-detection:** framework + version from `composer.json`, `package.json`, `manage.py`, markers; workspace scan.
+- **Manifests** (`.openlocalserver/*.yaml`): environment, services, commands, lock file.
+- **14-step setup pipeline:** resolve → plan → conflict report → dry-run → apply, journaled with **rollback** and file lock.
+- **Profiles** (Development / Testing / Debugging / Demo), **snapshots** (zip, clone, import/export), `.env` lossless editor (comments/order/CRLF preserved).
+- **Quick Apps:** 13 built-in recipes (Laravel, Symfony, WordPress, Express, React/Vite, Vue, Next.js, Django, FastAPI, static…) — validate → plan review → run with history.
+- **Quick Commands + project commands:** discovered Composer/npm scripts with one-click run and output ring.
+
+### 🗄️ Databases & Services
+
+- **Engines:** MariaDB 11.4 (per-series data folders), PostgreSQL 17, MongoDB, Redis (`redis-windows`), Mailpit, SQLite.
+- Per-engine **DB + user management**, connection details, **backup/restore** (safety copy first), SQLite `.backup` + integrity checks.
+- **One-click external GUIs:** HeidiSQL, pgAdmin 4, NoSQLBooster, Tiny RDM (auto-detected, Redis URI copy).
+- **Importers:** Laragon / XAMPP / WampServer databases without SQL dumps (live-dump importer).
+- Service lifecycle with TCP health, Mailpit mail capture per framework (`.env` planner with diff preview).
+
+### 📊 Dashboard & Monitoring
+
+- **Overview:** sites/projects counts, resource donuts (CPU/RAM/disk), **traffic graph** from web access log (30-bucket, hover inspector).
+- **Diagnostics card:** findings as Problem/Cause/Fix, safe one-click **auto-repair**, ignore list, AI explain per finding.
+- **Doctor:** full report + repair planner; every error is `Diagnostic{problem, cause, fix}`.
+- **Logs page:** unified severity-aware viewer (search/filter/export/clear); **Processes page:** raw process manager + system stats; per-site usage rollups.
+- Command palette (`Ctrl+Shift+P`), global search (`Ctrl+K`).
+
+### 🔗 Sharing & Tunnels
+
+- Providers: **Cloudflare, ngrok, LocalTunnel, Tailscale** (abstraction + confirm gate).
+- **Exposure confirmation**, optional password, public badge, one-click stop.
+- **Traffic inspector:** forwarding proxy, redacted log (500 cap), replay, webhook tester.
+
+### 🤖 CLI, API & Automation
+
+- **CLI (`ols`):** `setup [--dry-run] | doctor | repair | status | start | stop`, plus `project | runtime | service | tunnel | worker | snapshot | quick-command | search`; background **daemon** keeps working with GUI closed.
+- **Local HTTP API** (`127.0.0.1:7420`): same `CoreCommand` JSON, bearer token, origin reject, read-only vs operate scopes.
+- **Workers** (queue registry, max 16, Procfile.dev import), **scheduler** (cron, 1-min tick, no overlap), **terminal** (portable-pty shells with runtime PATH-first, max 8).
+- **Git manager:** status/stage/commit/branches/pull/push/remotes/stash/clone with credential helper.
+- **k6 load testing** (VU cap, JSON metrics), **AI assistant** (LM Studio / Hugging Face / OpenRouter / OpenAI-compatible) with scoped permissions.
+- **Plugins:** declarative `plugin.yaml` (runtimes, quick apps, detections, health checks) via **minisign-signed catalogs**, re-verified each load.
+- **Self-updater** (signed `latest.json` + SHA check), tray icon, notifications, start with Windows, leftover-server cleanup, memory limits. See [docs/PLUGINS.md](./docs/PLUGINS.md), [docs/API.md](./docs/API.md), [docs/AI_ASSISTANT.md](./docs/AI_ASSISTANT.md).
 
 ---
 
@@ -202,8 +247,9 @@ OpenLocalServer/
 ├── specs/               # Single source of truth — architecture, catalog,
 │                        # relationships, data models, API reference, diagrams
 ├── installer/ scripts/  # NSIS/MSI bundling, dev.bat, build-installer.bat
-├── assets/              # App icons + README screenshots (dashboard.png,
-│                        # sites.png, terminal-git.png)
+├── assets/              # App icons + README screenshots (dashboard, sites,
+│                        # runtimes, version-manager, databases, webserver,
+│                        # tunnels — all .webp)
 └── OpenLocalServer_Master_SRS_v4.md  # Full requirements spec (v4)
 ```
 

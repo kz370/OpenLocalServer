@@ -59,8 +59,13 @@ All 202 files listed above processed via 4 parallel analysis agents (rust-core, 
 - [2026-09-27] fix: Node install rejected as "not in the current online or built-in version list" — backend online_versions is memory-only (daemon restart wipes it) while UI localStorage cache persists, so cached choices failed validation and the error flashed away on refresh. Backend install() now does one on-demand online refresh before rejecting (reason appended); frontend tracks backend-verified keys, offers only verified versions, always re-verifies on dialog open, and keeps failure in sticky installError state with retry affordance
 - [2026-09-27] feat: version select lists full verified catalog with installed rows disabled + "· Installed" suffix (newest free version preselected); renamed ghost "Use" to prominent secondary "Set default" for global default control
 - [2026-09-27] style: prevent chrome text selection app-wide (body select-none); opt-in allowlist: inputs, pre/code, xterm, CodeMirror, data-selectable
+- [2026-09-27] fix: Dashboard overlap in narrow windows — header toolbar, donut row, traffic stats, finding rows now wrap (grid-cols-2 base); removed unused var blocking tsc build
+- [2026-09-27] fix: Traffic widget stats crushed in 4 columns (narrow card) — 2×2 grid, nowrap values, 4 unique y-ticks
+- [2026-09-27] docs: README tour uses 7 webp shots (dashboard, sites, runtimes, version-manager, databases, webserver, tunnels)
+- [2026-09-27] fix: removed projects returned to Sites list — folder rescans re-registered them with no opt-out. Added projects.removed skip-list (remove_project records canonical path; sync/scan honor it; explicit Add-folder clears it) + regression test removed_projects_stay_removed_across_rescans
 - [2026-09-27] style: Add Site / Quick Apps / Create Quick App one design system — shared form modal width (max-w-2xl), shared FormSection, gap-5 sections + gap-3 grids, compact Quick App cards, equal Serves/Options cards, h-9 Browse shrink-0, footer via Dialog prop, icon errors; no behavior / IPC / order change; Files Processed still 202
 - [2026-09-27] feat: remove Tailscale Funnel tunnel provider — struct + registration + URL matcher + UI program map cut; providers now cloudflare/ngrok/localtunnel (+mock in tests); saved tailscale tunnels report unknown provider on start; specs (catalog/architecture/data_models) + docs STATUS/IMPLEMENTATION_PLAN updated; Files Processed still 202
+- [2026-09-27] feat: Logs Ask AI picks error/warn lines — picker dialog (Errors/Warns/Both tabs, w-60 filter), timestamp-blind dedupe with ×count badge, char counter, over ~12k chars spills to .log text file via new read_excerpt tool; docs AI_ASSISTANT + catalog updated; Files Processed still 202
 
 Status: Completed 100%
 

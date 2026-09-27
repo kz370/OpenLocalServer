@@ -143,7 +143,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   }
 
   async function removeProject(p: Project) {
-    if (!(await confirmAction(`Remove ${p.name} from OpenLocalServer?\n\nYour project files are not deleted, and its sites stay.`))) return
+    if (!(await confirmAction(`Remove ${p.name} from OpenLocalServer?\n\nYour project files are not deleted, and its sites stay. It won't be re-added by folder scans — add the folder again to bring it back.`))) return
     await run('remove', async () => {
       await runCommand({ type: 'remove_project', id: p.id })
       await refreshProjects()

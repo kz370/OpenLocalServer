@@ -1770,6 +1770,7 @@ impl Core {
             C::RegisterProject { path } => {
                 tracing::info!(command = "register_project", path = %path);
                 let project = i.projects.lock().unwrap().register(&path)?;
+                let _ = i.clear_project_skip(&project.path);
                 if let Err(e) = i.sync_auto_domains() {
                     tracing::warn!(error = %e, "automatic domains could not be synced");
                 }
@@ -1786,6 +1787,10 @@ impl Core {
                 let mut registered = Vec::with_capacity(candidates.len());
                 for candidate in candidates {
                     if let Some(s) = candidate.to_str() {
+                        // Bulk scans don't resurrect folders removed from the list.
+                        if i.is_project_skipped(s) {
+                            continue;
+                        }
                         registered.push(projects.register(s)?);
                     }
                 }
@@ -1805,7 +1810,7 @@ impl Core {
                 projects: i.projects.lock().unwrap().list(),
             }),
             C::RemoveProject { id } => {
-                i.projects.lock().unwrap().remove(&id)?;
+                i.remove_project(&id)?;
                 Ok(R::Ok)
             }
             C::GetProjectDetail { id } => {

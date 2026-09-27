@@ -62,18 +62,17 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: Page) => void })
   const autoStopped = (data?.services ?? []).filter((s) => s.installed && !s.running && autoIds.includes(s.id))
   const autoWebRunning = !!startup?.autostart_web && !!web?.running
   const hasAutoRunning = autoWebRunning || autoRunning.length > 0
-  const hasRunningProcesses = !!web?.running || runningServices.length > 0
   const autoConfigured = !!startup?.autostart_web || autoIds.length > 0
   const problems = data?.health.filter((h) => h.status !== 'ok') ?? []
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
           <p className="text-sm text-muted-foreground">Your local environment at a glance.</p>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-1 rounded-lg border border-border bg-card/50 p-1 shadow-sm">
+        <div className="flex max-w-full flex-wrap items-center justify-start gap-1 rounded-lg border border-border bg-card/50 p-1 shadow-sm sm:justify-end">
           <Button variant="secondary" size="sm" className="h-8 rounded-md px-3 text-[13px] font-medium [&_svg]:size-3.5" onClick={() => onNavigate('quickapps')}>
             <Rocket /> New from Quick App
           </Button>
@@ -175,7 +174,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: Page) => void })
                   Details
                 </Button>
               </div>
-              <div className="flex items-start justify-around gap-4">
+              <div className="flex flex-wrap items-start justify-around gap-4">
                 <Donut
                   label="CPU"
                   percent={stats?.cpu_percent ?? 0}
@@ -425,7 +424,7 @@ const TrafficGraph = memo(function TrafficGraph({ lines, tall }: { lines: string
   const totalKb = kb.reduce((a, b) => a + b, 0)
   const fmtT = (ms: number) => new Date(ms).toTimeString().slice(0, 8)
   const bucketT = (i: number) => end - ((N - 1 - i) / N) * WIN_MS
-  const ticks = [0, 1, 2, 3, 4, 5].map((i) => Math.round((niceMax / 5) * i))
+  const ticks = [...new Set([0, 1, 2, 3, 4].map((i) => Math.round((niceMax / 4) * i)))]
   const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
     const rect = e.currentTarget.getBoundingClientRect()
     const x = ((e.clientX - rect.left) / rect.width) * W
@@ -435,26 +434,26 @@ const TrafficGraph = memo(function TrafficGraph({ lines, tall }: { lines: string
   const hov = hover !== null ? { i: hover, t: bucketT(hover), r: req[hover], k: kb[hover], x: upPts[hover].x } : null
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      <div className="grid grid-cols-4 gap-2 rounded-lg bg-muted/40 px-3 py-2 text-center">
-        <div>
+      <div className="grid grid-cols-2 gap-x-2 gap-y-2.5 rounded-lg bg-muted/40 px-3 py-2.5 text-center">
+        <div className="leading-tight">
           <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-            <span className="size-1.5 rounded-full" style={{ background: UP_COLOR }} /> Upstream
+            <span className="size-1.5 shrink-0 rounded-full" style={{ background: UP_COLOR }} /> Upstream
           </div>
-          <div className="text-sm font-semibold tabular-nums">{req[N - 1] === 0 && totalReq === 0 ? '—' : `${req[N - 1]} req`}</div>
+          <div className="mt-0.5 whitespace-nowrap text-sm font-semibold tabular-nums">{req[N - 1] === 0 && totalReq === 0 ? '—' : `${req[N - 1]} req`}</div>
         </div>
-        <div>
+        <div className="leading-tight">
           <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-            <span className="size-1.5 rounded-full" style={{ background: DOWN_COLOR }} /> Downstream
+            <span className="size-1.5 shrink-0 rounded-full" style={{ background: DOWN_COLOR }} /> Downstream
           </div>
-          <div className="text-sm font-semibold tabular-nums">{kb[N - 1].toFixed(2)} KB</div>
+          <div className="mt-0.5 whitespace-nowrap text-sm font-semibold tabular-nums">{kb[N - 1].toFixed(2)} KB</div>
         </div>
-        <div>
+        <div className="leading-tight">
           <div className="text-xs text-muted-foreground">Total req</div>
-          <div className="text-sm font-semibold tabular-nums">{totalReq}</div>
+          <div className="mt-0.5 whitespace-nowrap text-sm font-semibold tabular-nums">{totalReq}</div>
         </div>
-        <div>
+        <div className="leading-tight">
           <div className="text-xs text-muted-foreground">Total served</div>
-          <div className="text-sm font-semibold tabular-nums">{totalKb >= 1024 ? `${(totalKb / 1024).toFixed(2)} MB` : `${totalKb.toFixed(2)} KB`}</div>
+          <div className="mt-0.5 whitespace-nowrap text-sm font-semibold tabular-nums">{totalKb >= 1024 ? `${(totalKb / 1024).toFixed(2)} MB` : `${totalKb.toFixed(2)} KB`}</div>
         </div>
       </div>
       <div className="relative" onMouseLeave={() => setHover(null)}>

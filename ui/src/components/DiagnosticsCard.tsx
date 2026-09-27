@@ -89,8 +89,8 @@ export function DiagnosticsCard({ refreshToken = 0 }: { refreshToken?: number })
           const Icon = ICON[f.severity]
           const expanded = open === f.id
           return (
-            <div key={f.id} className={`rounded-lg border border-border p-3 ${f.ignored ? 'opacity-60' : ''}`}>
-              <div className="flex items-start gap-2">
+              <div key={f.id} className={`rounded-lg border border-border p-3 ${f.ignored ? 'opacity-60' : ''}`}>
+                <div className="flex flex-wrap items-start gap-2">
                 <Icon className={`mt-0.5 size-4 shrink-0 ${COLOR[f.severity]}`} />
                 <div className="min-w-0 flex-1 text-sm">
                   <div className="font-medium">
@@ -103,7 +103,7 @@ export function DiagnosticsCard({ refreshToken = 0 }: { refreshToken?: number })
                     <b className="font-medium text-foreground/80">Fix:</b> {f.fix}
                   </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-1">
+                <div className="flex w-full flex-wrap items-center gap-1 sm:w-auto sm:shrink-0">
                   {!f.ignored && <AiButton ask={() => explainFinding(f)} />}
                   {f.fix_command && !f.ignored && (
                     <Button size="sm" disabled={busy !== null} onClick={() => run(`fix:${f.id}`, () => fix(f))}>

@@ -26,7 +26,7 @@ this computer.
    why, and may propose steps.
 2. **Configs and manifests**: *Draft with AI* on the environment manifest (the draft opens in the editor; nothing is set up
    until you save it and apply the plan), and *Ask AI* on a web config (a change comes back as a diff to apply by hand).
-3. **Ask the logs**: questions across the app and web logs, quoting the lines it used.
+3. **Ask the logs**: the Logs page opens a picker of detected error/warn lines (duplicates collapsed ignoring timestamps, repeat count shown as ×n). Pick one or many, or send the full tail. A pick over ~12k chars spills to a `.log` text file the model pages via `read_excerpt`; the answer quotes the lines it used.
 4. **Traffic**: explain a captured request, write a webhook handler, or write a k6 script (saved only if it passes the
    load-test safety scan).
 5. **Commit messages** from the staged changes.
@@ -50,7 +50,7 @@ Command line: `ols ai status`, `on`, `off`, `test [provider]`, `ask "..."` (`--f
   more). Anything else, including shell commands, secrets and deletions, is refused and shown as refused. Nothing runs until
   you tick the steps and press Run; steps that replace something (a `.env` value, an overwrite) need a separate
   confirmation. The allowlist is checked again when the steps run. An imported Quick App never gets its approval from a plan.
-- **The model's tools only read**: projects, sites, services, findings, log tails, web configs, the manifest, and the names
+- **The model's tools only read**: projects, sites, services, findings, log tails, saved excerpt files (`read_excerpt`), web configs, the manifest, and the names
   in a `.env` file (values hidden). There is no shell tool. A model that rejects tools is retried without them, and a
   provider can be set to never get them.
 - The AI commands are never available over the local HTTP API.
