@@ -7,7 +7,7 @@ Thanks for helping. This is a short guide to getting a change in.
 You need Windows, Rust (stable), Node 22 and the [Tauri prerequisites](https://tauri.app/start/prerequisites/).
 
 ```
-dev.bat
+scripts\dev.bat
 ```
 
 That installs the UI dependencies if needed, builds the helper, starts the Vite dev server and launches the app.

@@ -149,7 +149,7 @@ npm install
 
 ```powershell
 # From repo root — starts Tauri + Vite + Rust core
-.\dev.bat
+.\scripts\dev.bat
 ```
 
 This launches the desktop app with hot-reload (Vite on `http://localhost:1420`).
@@ -246,7 +246,8 @@ OpenLocalServer/
 ├── docs/                # STATUS.md, IMPLEMENTATION_PLAN.md, AI_ASSISTANT.md…
 ├── specs/               # Single source of truth — architecture, catalog,
 │                        # relationships, data models, API reference, diagrams
-├── installer/ scripts/  # NSIS/MSI bundling, dev.bat, build-installer.bat
+├── installer/          # Inno Setup script (open-local-server.iss)
+├── scripts/            # dev.bat, build-installer.bat, upload-release.bat
 ├── assets/              # App icons + README screenshots (dashboard, sites,
 │                        # runtimes, version-manager, databases, webserver,
 │                        # tunnels — all .webp)

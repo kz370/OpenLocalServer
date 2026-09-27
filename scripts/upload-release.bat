@@ -2,7 +2,7 @@
 setlocal EnableExtensions
 cd /d "%~dp0.."
 
-rem Publish a GitHub release of this repo from the files build-installer.bat
+rem Publish a GitHub release of this repo from the files scripts\build-installer.bat
 rem put in release\:
 rem   release\Open-Local-Server-<version>-setup.exe   uploaded as-is
 rem   release\Open Local Server.exe + ols-helper.exe + *.dll   zipped as portable
@@ -10,7 +10,7 @@ rem   release\Open-Local-Server-<version>-SHA256SUMS.txt       checksums for bot
 rem Release notes come from release-notes\<tag>.md, the commit message from
 rem commit-message.txt (git-ignored, rewrite it for each release).
 rem
-rem Usage: upload-release.bat [tag] [mode]   (e.g. upload-release.bat v1.0.0 full)
+rem Usage: scripts\upload-release.bat [tag] [mode]   (e.g. scripts\upload-release.bat v1.0.0 full)
 rem Modes: full = binaries + release notes, notes-only = release notes only.
 rem No mode given = ask 1 or 2. No tag given = read the version from the
 rem setup exe name and use tag v<version>.
@@ -34,7 +34,7 @@ set "SETUP="
 for /f "delims=" %%F in ('dir /b /a-d /o-d "%DIST%\Open-Local-Server-*-setup.exe" 2^>nul') do if not defined SETUP set "SETUP=%%F"
 if not defined SETUP (
   echo No %DIST%\Open-Local-Server-*-setup.exe found and no tag given.
-  echo Run build-installer.bat first.
+  echo Run scripts\build-installer.bat first.
   exit /b 1
 )
 rem Strip prefix/suffix, then all spaces + quotes (build-installer once
@@ -60,7 +60,7 @@ if not exist "%DIST%\%SETUP%" (
   for /f "delims=" %%F in ('dir /b /a-d /o-d "%DIST%\Open-Local-Server-*-setup.exe" 2^>nul') do if not defined SETUP set "SETUP=%%F"
   if not defined SETUP (
     echo No %DIST%\Open-Local-Server-*-setup.exe found.
-    echo Run build-installer.bat first.
+    echo Run scripts\build-installer.bat first.
     exit /b 1
   )
 )
@@ -80,9 +80,9 @@ set "HELPER_EXE=ols-helper.exe"
 where gh >nul 2>&1 || (echo GitHub CLI "gh" not found. & exit /b 1)
 where git >nul 2>&1 || (echo git not found. & exit /b 1)
 if /i "%MODE%"=="notes-only" goto :commit_step
-if not exist "%SETUPPATH%" (echo Missing %SETUPPATH% - run build-installer.bat first. & exit /b 1)
-if not exist "%DIST%\%MAIN_EXE%" (echo Missing %DIST%\%MAIN_EXE% - run build-installer.bat first. & exit /b 1)
-if not exist "%DIST%\%HELPER_EXE%" (echo Missing %DIST%\%HELPER_EXE% - run build-installer.bat first. & exit /b 1)
+if not exist "%SETUPPATH%" (echo Missing %SETUPPATH% - run scripts\build-installer.bat first. & exit /b 1)
+if not exist "%DIST%\%MAIN_EXE%" (echo Missing %DIST%\%MAIN_EXE% - run scripts\build-installer.bat first. & exit /b 1)
+if not exist "%DIST%\%HELPER_EXE%" (echo Missing %DIST%\%HELPER_EXE% - run scripts\build-installer.bat first. & exit /b 1)
 
 :commit_step
 rem Commit and push first, so a new release tag points at the commit these

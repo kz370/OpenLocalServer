@@ -2,7 +2,7 @@
 
 ## Setup
 Requirements: Windows 10/11 x64, Rust stable, Node 22, Tauri prerequisites (WebView2, MSVC build tools).
-Clone repo, then run `dev.bat` from repo root. Script installs UI deps if `ui/node_modules` missing, builds `ols-helper`, starts Vite dev server, launches `cargo tauri dev`.
+Clone repo, then run `scripts\dev.bat` from repo root. Script installs UI deps if `ui/node_modules` missing, builds `ols-helper`, starts Vite dev server, launches `cargo tauri dev`.
 Portable layout: `data/` beside exe holds settings, certs, web configs, DB data, logs. Override with `OLS_HOME` env var. Debug run uses `repo/data`.
 
 ## Dependencies
@@ -11,10 +11,10 @@ Frontend: React 19, Vite 8, Tailwind 4, shadcn/ui, CodeMirror, xterm.js, Tauri A
 Managed binaries downloaded on demand with SHA-256 verify; never run unverified binary.
 
 ## Run Instructions
-- Dev app: `dev.bat`.
+- Dev app: `scripts\dev.bat`.
 - Dev CLI: `cargo run -p ols-cli -- <cmd> --help`.
 - Smoke checks: `cargo run --release --example smoke -p ols-core`; web smoke needs `OLS_HOME=<dir> OLS_HOSTS_FILE=<dir>/hosts`; services smoke similar.
-- Production: `build-installer.bat` (4-stage) builds UI, builds release exes (`cargo build -p openlocalserver -p ols-helper --release`; **`src-tauri/Cargo.toml` must have `custom-protocol` feature** so `generate_context!()` embeds `ui/dist/`), copies to `release/`, compiles Inno Setup if found, offers GitHub upload via `upload-release.bat`.
+- Production: `scripts\build-installer.bat` (4-stage) builds UI, builds release exes (`cargo build -p openlocalserver -p ols-helper --release`; **`src-tauri/Cargo.toml` must have `custom-protocol` feature** so `generate_context!()` embeds `ui/dist/`), copies to `release/`, compiles Inno Setup if found, offers GitHub upload via `scripts\upload-release.bat`. `scripts\build-inno-installer.bat` stages prebuilt exes + compiles the installer only.
 - First run flow: Runtimes page install PHP/Node -> Sites add folder + domain `*.test` -> WebServer apply + trust CA once -> Services start DB/mail.
 
 ## Debugging

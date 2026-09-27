@@ -33,7 +33,7 @@ Total meaningful source files: 202 (excluding target/, node_modules/, .git/, dis
 ### Docs / Config / Build (20 files)
 - README.md, CONTRIBUTING.md, SECURITY.md, CHANGELOG.md, CODE_OF_CONDUCT.md, OpenLocalServer_Master_SRS_v4.md
 - docs/API.md, IMPLEMENTATION_PLAN.md, STATUS.md, USER_GUIDE.md, PLUGINS.md, SECURITY_REVIEW.md, LOAD_TESTING.md, AI_ASSISTANT.md, UX polish batch doc
-- Cargo.toml, Cargo.lock, dev.bat, build-installer.bat, upload-release.bat, installer/open-local-server.iss, scripts/render-icon.mjs
+- Cargo.toml, Cargo.lock, scripts/dev.bat, scripts/build-installer.bat, scripts/build-inno-installer.bat, scripts/upload-release.bat, installer/open-local-server.iss, scripts/render-icon.mjs
 
 ## Files Processed
 All 202 files listed above processed via 4 parallel analysis agents (rust-core, UI frontend, tauri-cli-helper, docs-catalogs) on 2026-09-26.
@@ -75,6 +75,7 @@ All 202 files listed above processed via 4 parallel analysis agents (rust-core, 
 - [2026-09-27] fix: release-only UI, true root cause — Tauri CSP had no style-src, so prod (custom protocol enforces CSP; dev Vite server does not) blocked every runtime-injected <style> tag and React inline style= attributes. CodeMirror/MergeView ship 100% of their CSS via JS-injected styles → unstyled scaffold (bare gutter numbers, spilling plain text). Added style-src 'self' 'unsafe-inline' to src-tauri/tauri.conf.json; scripts stay 'self'. Rebuild release to pick up; Files Processed still 202
 - [2026-09-27] fix: terminal looked empty/dead — explicit xterm theme (bright foreground, green bar cursor, selection tint) instead of WebView2-dependent defaults, plus "[starting shell…]" hint during slow runtime-resolving startup, cleared on first real shell output/exit; prompt path (pty → event → xterm) verified alive in backend/frontend wiring; Files Processed still 202
 - [2026-09-27] fix: build-exe-installer.bat was broken — STAGED_* paths missed the backslash after %DIST% (staged into repo root as "releaseOpen Local Server.exe", ISCC SourceExe pointed nowhere), LibDir pointed at the (mis-staged) release dir instead of target\release like build-installer.bat, no copy retry on AV locks, no running-app guard. Rewrote to match proven build-installer.bat patterns (retry copy, tasklist preflight, LibDir=target\release, sizes + certutil SHA-256 summary); smoke run correctly refused while app running; Files Processed still 202
+- [2026-09-27] chore: moved dev.bat, build-installer.bat, build-inno-installer.bat (renamed from build-exe-installer.bat), upload-release.bat into scripts/; fixed %~dp0 roots to repo root, updated cross-refs + README/CONTRIBUTING/specs file list; Files Processed still 202
 
 Status: Completed 100%
 

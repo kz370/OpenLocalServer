@@ -1,6 +1,7 @@
 @echo off
 setlocal EnableExtensions
 rem Build the OpenLocalServer frontend, desktop executable, and installer.
+rem Usage: build-installer.bat [full|inno]  (no arg = ask).
 rem Handles: tool checks, stale deps, running-app locks (retry), version
 rem parsing, staging, optional Inno Setup (v6/v7), artifact verification.
 
@@ -26,6 +27,21 @@ if not defined VERSION set "VERSION=0.0.1"
 echo.
 echo === %APPNAME% %VERSION% ===
 echo.
+
+rem Usage: build-installer.bat [full|inno]  (no arg = ask).
+rem full = rebuild UI + exes + installer. inno = skip the rebuild,
+rem stage the prebuilt target\release exes and compile the installer only.
+set "MODE=%~1"
+if "%MODE%"=="" call :ask_mode || goto :fail
+if /i "%MODE%"=="1" set "MODE=full"
+if /i "%MODE%"=="2" set "MODE=inno"
+if /i "%MODE%"=="full" goto :mode_ok
+if /i "%MODE%"=="inno" goto :mode_ok
+echo Unknown mode "%MODE%". Use full or inno.
+goto :fail
+
+:mode_ok
+if /i "%MODE%"=="inno" goto :inno_only
 
 
 echo [0/5] Checking tools...
@@ -199,6 +215,74 @@ if exist "%SETUP%" echo     Installer: "%SETUP%"
 echo     Publish:  scripts\upload-release.bat v%VERSION%
 echo.
 exit /b 0
+
+
+rem Inno-only mode: no rebuild. Stage prebuilt exes, compile installer.
+:inno_only
+echo [inno] Skipping rebuild - staging prebuilt exes...
+tasklist /FI "IMAGENAME eq %APPNAME%.exe" 2>nul | find /I "%APPNAME%.exe" >nul
+if not errorlevel 1 (
+  echo [x] Problem: %APPNAME%.exe is running - check the system tray.
+  echo     Fix: right-click the tray icon, Quit, then run this again.
+  goto :fail
+)
+tasklist /FI "IMAGENAME eq %CARGO_BIN%.exe" 2>nul | find /I "%CARGO_BIN%.exe" >nul
+if not errorlevel 1 (
+  echo [x] Problem: %CARGO_BIN%.exe is running.
+  echo     Fix: stop it via tray icon Quit or Task Manager, then run this again.
+  goto :fail
+)
+if not exist "%EXE%" (
+  echo [x] Problem: %CARGO_BIN%.exe missing from target\release.
+  echo     Fix: run scripts\build-installer.bat full first to build it.
+  goto :fail
+)
+if not exist "%HELPER_EXE%" (
+  echo [x] Problem: %HELPER_BIN%.exe missing from target\release.
+  echo     Fix: run scripts\build-installer.bat full first to build it.
+  goto :fail
+)
+if not exist "%DIST%" mkdir "%DIST%"
+call :copy_retry "%EXE%" "%STAGED%" || goto :fail
+call :copy_retry "%HELPER_EXE%" "%STAGED_HELPER%" || goto :fail
+for %%d in ("%TARGET%\*.dll") do if exist "%%~d" (
+  call :copy_retry "%%~d" "%DIST%\%%~nxd" || goto :fail
+)
+echo       portable exe: "%STAGED%"
+set "ISCC="
+for %%p in ("%ProgramFiles%\Inno Setup 7\ISCC.exe" "%ProgramFiles(x86)%\Inno Setup 7\ISCC.exe" "%ProgramFiles%\Inno Setup 6\ISCC.exe" "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" "%LocalAppData%\Programs\Inno Setup 7\ISCC.exe") do (
+  if not defined ISCC if exist "%%~p" set "ISCC=%%~p"
+)
+if not defined ISCC for /f "delims=" %%p in ('where iscc 2^>nul') do if not defined ISCC set "ISCC=%%p"
+if not defined ISCC (
+  echo [!] Inno Setup not found, so no setup file was made.
+  echo     Install it from https://jrsoftware.org/isdl.php and run this again.
+  echo     The portable executable is still available in release\.
+  goto :verify
+)
+echo [inno] Creating installer...
+"%ISCC%" /Q "/DAppVersion=%VERSION%" "/DSourceExe=%STAGED%" "/DLibDir=%TARGET%" "/DOutputDir=%DIST%" "%ROOT%installer\open-local-server.iss"
+if errorlevel 1 (
+  echo [x] Problem: Inno Setup failed. Cause: see ISCC output above.
+  echo     Fix: fix the reported error and run this again.
+  goto :fail
+)
+goto :verify
+
+
+rem Prompt for build mode when the first argument is missing.
+:ask_mode
+echo Select build mode:
+echo   1 - full: rebuild UI + exes + installer
+echo   2 - inno: installer only from prebuilt exes
+set "CHOICE="
+set /p "CHOICE=Enter 1 or 2 [1]: "
+if "%CHOICE%"=="" set "CHOICE=1"
+if "%CHOICE%"=="1" set "MODE=full" & exit /b 0
+if "%CHOICE%"=="2" set "MODE=inno" & exit /b 0
+if /i "%CHOICE%"=="full" set "MODE=full" & exit /b 0
+if /i "%CHOICE%"=="inno" set "MODE=inno" & exit /b 0
+echo Invalid choice. & exit /b 1
 
 
 rem Print SHA-256 via certutil (present on every Windows; Get-FileHash is not).
