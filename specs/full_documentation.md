@@ -73,7 +73,7 @@ CLI `ols` never manages directly; daemon mode runs core headless + scheduler clo
 - Components: SiteDialog (big tabbed editor), Terminal (xterm bridge), EnvEditor (lossless), CodeEditor (CodeMirror + diff), Diagnostics/Doctor, Release/SettingsExtras, CustomServices, PHP/Xdebug dialogs, Migrate, SystemMonitor, ui primitives (no IPC).
 
 ### Docs / build
-README pre-release notice; dev.bat (npm+helper+vite+tauri dev); build-installer.bat (UI build check, half-CPU release, ISCC optional); Inno Setup x64compatible lzma; render-icon.mjs Resvg 1024.
+README pre-release notice; dev.bat (npm+helper+vite+tauri dev); build-installer.bat (UI build check, half-CPU release, ISCC optional); upload-release.bat (Open-Local-Server setup + portable zip + SHA256SUMS via gh release); Inno Setup x64compatible lzma, lowest privileges, dir/program-group pages enabled; render-icon.mjs Resvg 1024.
 
 ## 5. Business Rules
 - Resolution manifest > detected > global; global never overrides explicit.

@@ -33,7 +33,7 @@ Total meaningful source files: 202 (excluding target/, node_modules/, .git/, dis
 ### Docs / Config / Build (20 files)
 - README.md, CONTRIBUTING.md, SECURITY.md, CHANGELOG.md, CODE_OF_CONDUCT.md, OpenLocalServer_Master_SRS_v4.md
 - docs/API.md, IMPLEMENTATION_PLAN.md, STATUS.md, USER_GUIDE.md, PLUGINS.md, SECURITY_REVIEW.md, LOAD_TESTING.md, AI_ASSISTANT.md, UX polish batch doc
-- Cargo.toml, Cargo.lock, dev.bat, build-installer.bat, installer/open-local-server.iss, scripts/render-icon.mjs
+- Cargo.toml, Cargo.lock, dev.bat, build-installer.bat, upload-release.bat, installer/open-local-server.iss, scripts/render-icon.mjs
 
 ## Files Processed
 All 202 files listed above processed via 4 parallel analysis agents (rust-core, UI frontend, tauri-cli-helper, docs-catalogs) on 2026-09-26.
@@ -67,6 +67,7 @@ All 202 files listed above processed via 4 parallel analysis agents (rust-core, 
 - [2026-09-27] style: Add Site / Quick Apps / Create Quick App one design system — shared form modal width (max-w-2xl), shared FormSection, gap-5 sections + gap-3 grids, compact Quick App cards, equal Serves/Options cards, h-9 Browse shrink-0, footer via Dialog prop, icon errors; no behavior / IPC / order change; Files Processed still 202
 - [2026-09-27] feat: remove Tailscale Funnel tunnel provider — struct + registration + URL matcher + UI program map cut; providers now cloudflare/ngrok/localtunnel (+mock in tests); saved tailscale tunnels report unknown provider on start; specs (catalog/architecture/data_models) + docs STATUS/IMPLEMENTATION_PLAN updated; Files Processed still 202
 - [2026-09-27] feat: Logs Ask AI picks error/warn lines — picker dialog (Errors/Warns/Both tabs, w-60 filter), timestamp-blind dedupe with ×count badge, char counter, over ~12k chars spills to .log text file via new read_excerpt tool; docs AI_ASSISTANT + catalog updated; Files Processed still 202
+- [2026-09-27] fix: upload-release.bat retargeted from Open-Local-Assistant to OpenLocalServer (setup pattern, portable exe+helper+dlls, space-tolerant version parse, SHA256SUMS upload); installer/open-local-server.iss enables dir choice (DisableDirPage=no, lowest privileges + override dialog, program-group page); ISCC compile verified; Files Processed still 202
 - [2026-09-27] fix: Logs.tsx missing dedupeKey impl broke tsc build — added exported dedupeKey (strip ISO/HH:MM:SS timestamps, collapse ws, lowercase); restores documented timestamp-blind dedupe, no behavior / IPC change; Files Processed still 202
 
 Status: Completed 100%
