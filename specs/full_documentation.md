@@ -68,7 +68,7 @@ CLI `ols` never manages directly; daemon mode runs core headless + scheduler clo
 
 ### Frontend
 - `core.ts`: only IPC caller. `App.tsx`: page state router. `main.tsx`: ThemeProvider mount.
-- Pages: Dashboard (3s poll get_dashboard), Sites (merge domains+orphans, group/search), QuickApps (debounced plan 250ms, trust gate), Commands (prefix build, process-event stream), WebServer (5-key save-then-apply), Config (ownership + DiffView), Tunnels (exposure confirm + Inspector), Databases (per-engine tools + backup-before-restore), Services (3s poll), Runtimes (runtime-event + version compare), Profiles/Plugins/Logs (1.5s poll + severity regex)/Processes (2s stats)/Settings.
+- Pages: Dashboard (3s poll get_dashboard), Sites (merge domains+orphans, group/search; creation defaults to <install>\sites via quickapps.projects_dir override, folder name/location editable per dialog), QuickApps (debounced plan 250ms, trust gate), Commands (prefix build, process-event stream), WebServer (5-key save-then-apply), Config (ownership + DiffView), Tunnels (exposure confirm + Inspector), Databases (per-engine tools + backup-before-restore), Services (3s poll), Runtimes (runtime-event + version compare), Profiles/Plugins/Logs (1.5s poll + severity regex)/Processes (2s stats)/Settings.
 - Libs: hooks (usePoll/useAction), theme, web (shared state), ai/confirm/nav buses, wait (poll-until-real), utils cn.
 - Components: SiteDialog (big tabbed editor), Terminal (xterm bridge), EnvEditor (lossless), CodeEditor (CodeMirror + diff), Diagnostics/Doctor, Release/SettingsExtras, CustomServices, PHP/Xdebug dialogs, Migrate, SystemMonitor, ui primitives (no IPC).
 
@@ -80,6 +80,7 @@ README pre-release notice; scripts/dev.bat (npm+helper+vite+tauri dev); scripts/
 - Downloads require HTTPS + SHA256; mismatch aborts; catalogs minisign-verified each load.
 - Web ownership Managed/Advanced/Manual; drift preserved + flagged; invalid keeps old.
 - Domains any name, default `<project>.test`, wildcard via local DNS+NRPT; conflict detect; reverse proxy to any host/port; static index.php still runs PHP.
+- New sites/clones/imports/QuickApps default to `<install>\sites` (writable) else user Sites; `quickapps.projects_dir` override wins, blank falls back; absolute path required, parent auto-created, non-empty target refused; per-dialog folder name/location editable.
 - Local CA trusted once to CurrentUser Root; wildcard certs; HTTP->HTTPS toggle; health 5-step chain.
 - DB version isolation; safety backup before restore; secrets in keyring only; redaction everywhere.
 - Mailpit mandatory; .env diff preview; local mail never leaves machine.

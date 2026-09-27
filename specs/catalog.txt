@@ -84,7 +84,7 @@ TauriApp | Window+tray+single IPC run_command + event emits.
 
 --- FRONTEND pages ---
 DashboardPage | Overview with health filter + stop-all.
-SitesPage | Domains+projects merged table, group/search/duplicate.
+SitesPage | Domains+projects merged table, group/search/duplicate. New Git clone / import / QuickApp defaults to <install>\sites (quickapps.projects_dir override); each dialog shows resolved path, folder name + location editable.
 QuickAppsPage/Wizard | Recipe CRUD + 3-phase plan/run wizard.
 CommandsPage | Discovered+custom commands runner with output ring.
 WebServerPage | Server/ports/certs tabs + settings save-apply.

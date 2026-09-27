@@ -65,11 +65,12 @@ export function DatabasesPage() {
       })
       const builtinTools = detected.type === 'db_tools' ? detected.tools : []
       const registeredTools = external.type === 'external_tools' ? external.tools : []
-      for (const [engine, preferred] of Object.entries({ mariadb: 'heidisql', postgres: 'heidisql', mongodb: 'nosqlbooster', redis: 'tinyrdm', sqlite: 'heidisql' })) {
+      for (const [engine, preferred] of Object.entries({ mariadb: 'heidisql', postgres: 'heidisql', mongodb: 'nosqlbooster', redis: 'tinyrdm', sqlite: 'dbbrowser' })) {
         if (configured.has(engine)) continue
         const available = builtinTools.some((tool) => tool.id === preferred && tool.found_path) || registeredTools.some((tool) => tool.id === preferred && tool.engines.includes(engine))
         if (available) defaults[engine] = preferred
         else if (engine === 'postgres' && builtinTools.some((tool) => tool.id === 'pgadmin' && tool.found_path)) defaults[engine] = 'pgadmin'
+        else if (engine === 'sqlite' && (builtinTools.some((tool) => tool.id === 'heidisql' && tool.found_path) || registeredTools.some((tool) => tool.id === 'heidisql' && tool.engines.includes(engine)))) defaults[engine] = 'heidisql'
         else defaults[engine] = registeredTools.find((tool) => tool.engines.includes(engine))?.id ?? ''
       }
       setDefaultTools(defaults)
@@ -516,7 +517,7 @@ function Tools() {
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">Register a tool</CardTitle>
           <CardDescription>
-            Used by "Open in tool". Arguments can use {'{host} {port} {user} {database} {path} {uri}'}. Without a registered tool, MariaDB and SQLite open in HeidiSQL if it's installed.
+            Used by "Open in tool". Arguments can use {'{host} {port} {user} {database} {path} {uri}'}. Without a registered tool, MariaDB opens in HeidiSQL if it's installed; SQLite opens in DB Browser for SQLite, then HeidiSQL.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 sm:grid-cols-2">

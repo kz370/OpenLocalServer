@@ -89,3 +89,4 @@ Documentation ready in /specs
 
 All text written in English.
 - [2026-09-27] feat: JSON stores migrated to SQLite app.db (WAL) via new db.rs (settings table + generic docs collections); migrated 15 stores (settings, projects, domains, custom_installs, custom_services, external_tools, sqlite_databases, workers, schedules, tunnels, operations, command_history, quick_apps_meta, ai, loadtest_profiles); fresh only, no JSON import; backup/restore now zips app.db with WAL checkpoint; fixed backup filename ms-collision; catalog updated; Files Processed 203
+- [2026-09-27] feat: new site/clone default unified to <install>\sites (quickapps.projects_dir override, blank falls back); Sites loads effective default via get_setting, clone/import dialogs show resolved path with editable folder name/location; Settings hint corrected; no IPC change; ui lint 0 errors + vite build green; Files Processed still 203

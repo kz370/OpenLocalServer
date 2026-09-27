@@ -238,7 +238,7 @@ export function SettingsPage() {
                     </Button>
                   </div>
                 </SettingRow>
-                <SettingRow stacked title="Where new projects are created" hint="Quick Apps default to this folder. Leave blank for Sites in your user folder.">
+                <SettingRow stacked title="Where new projects are created" hint="Quick Apps, Git clone and imports default here. Leave blank for <install>\sites. Each dialog can still change folder name or location.">
                   <div className="flex gap-2">
                     <Input value={projectsDir} onChange={(e) => setProjectsDir(e.target.value)} placeholder="C:\Users\you\Sites" />
                     <Button variant="secondary" onClick={async () => { const p = await open({ directory: true }); if (p && !Array.isArray(p)) setProjectsDir(p) }}>

@@ -398,6 +398,8 @@ impl Inner {
             .unwrap()
             .get("quickapps.projects_dir")
             .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
         {
             return PathBuf::from(dir);
         }
@@ -1072,6 +1074,17 @@ impl Inner {
                 })?;
                 return dbtools::launch(&exe, &[], false).map_err(svc);
             }
+            if id == "dbbrowser" {
+                if engine != "sqlite" {
+                    return Err(svc("DB Browser for SQLite only supports SQLite"));
+                }
+                let exe = find(id).ok_or_else(|| {
+                    svc("DB Browser for SQLite was not found. Install it or locate it from Services.")
+                })?;
+                let args = dbtools::dbbrowser_args(&info)
+                    .ok_or_else(|| svc("DB Browser for SQLite needs a database file path"))?;
+                return dbtools::launch(&exe, &args, false).map_err(svc);
+            }
         }
 
         // 1) an explicitly chosen registered tool, 2) the first registered for the engine,
@@ -1088,11 +1101,24 @@ impl Inner {
             return dbtools::launch(&tool.executable, &args, false).map_err(svc);
         }
         match engine {
-            "mariadb" | "sqlite" => {
+            "mariadb" => {
                 let exe = find("heidisql").ok_or_else(|| svc("HeidiSQL was not found. Install it, locate it, or register another tool for this engine."))?;
                 let args = dbtools::heidisql_args_for_executable(&info, &exe)
                     .ok_or_else(|| svc("HeidiSQL can't open that database"))?;
                 dbtools::launch(&exe, &args, true).map_err(svc)
+            }
+            "sqlite" => {
+                if let Some(exe) = find("dbbrowser") {
+                    if let Some(args) = dbtools::dbbrowser_args(&info) {
+                        return dbtools::launch(&exe, &args, false).map_err(svc);
+                    }
+                }
+                if let Some(exe) = find("heidisql") {
+                    if let Some(args) = dbtools::heidisql_args_for_executable(&info, &exe) {
+                        return dbtools::launch(&exe, &args, true).map_err(svc);
+                    }
+                }
+                Err(svc("Neither DB Browser for SQLite nor HeidiSQL was found. Install one, locate it from Services, or register another tool for this engine."))
             }
             "postgres" => {
                 if let Some(exe) = find("heidisql") {

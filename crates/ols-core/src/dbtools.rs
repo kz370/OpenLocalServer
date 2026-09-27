@@ -40,6 +40,12 @@ pub fn detect_db_tools() -> Vec<DbTool> {
             found_path: find_tinyrdm(),
             engines: vec!["redis".into()],
         },
+        DbTool {
+            id: "dbbrowser".into(),
+            name: "DB Browser for SQLite".into(),
+            found_path: find_dbbrowser(),
+            engines: vec!["sqlite".into()],
+        },
     ]
 }
 
@@ -106,6 +112,21 @@ fn find_nosqlbooster() -> Option<String> {
         }
     }
     find_on_path(exe)
+}
+
+fn find_dbbrowser() -> Option<String> {
+    for base in [
+        r"C:\Program Files\DB Browser for SQLite",
+        r"C:\Program Files (x86)\DB Browser for SQLite",
+    ] {
+        for exe in ["DB Browser for SQLite.exe", "sqlitebrowser.exe"] {
+            let candidate = PathBuf::from(base).join(exe);
+            if candidate.is_file() {
+                return Some(candidate.display().to_string());
+            }
+        }
+    }
+    find_on_path("DB Browser for SQLite.exe").or_else(|| find_on_path("sqlitebrowser.exe"))
 }
 
 fn find_tinyrdm() -> Option<String> {
@@ -269,10 +290,19 @@ pub fn heidisql_args(info: &ConnectionInfo) -> Option<Vec<String>> {
         }
         "sqlite" => Some(vec![
             "--nettype=10".to_string(),
+            "--library=sqlite3.dll".to_string(),
             format!("--host=\"{}\"", info.path.as_deref()?),
         ]),
         _ => None,
     }
+}
+
+/// DB Browser for SQLite opens a file directly: `sqlitebrowser.exe "C:\path\to.db"`.
+pub fn dbbrowser_args(info: &ConnectionInfo) -> Option<Vec<String>> {
+    if info.engine.as_str() != "sqlite" {
+        return None;
+    }
+    Some(vec![info.path.clone()?])
 }
 
 pub fn heidisql_args_for_executable(
@@ -372,7 +402,8 @@ mod external_tool_tests {
 
         let sqlite = heidisql_args(&info("sqlite")).unwrap();
         assert_eq!(sqlite[0], "--nettype=10");
-        assert_eq!(sqlite[1], "--host=\"C:\\my dbs\\a.sqlite\"");
+        assert_eq!(sqlite[1], "--library=sqlite3.dll");
+        assert_eq!(sqlite[2], "--host=\"C:\\my dbs\\a.sqlite\"");
 
         assert!(heidisql_args(&info("mongodb")).is_none());
     }
@@ -396,6 +427,24 @@ mod external_tool_tests {
             heidisql_args(&info("redis")).is_none(),
             "HeidiSQL cannot open redis; custom tool required"
         );
+    }
+
+    #[test]
+    fn dbbrowser_opens_sqlite_file_directly() {
+        let tools = detect_db_tools();
+        let tool = tools
+            .iter()
+            .find(|t| t.id == "dbbrowser")
+            .expect("detect_db_tools must list dbbrowser");
+        assert!(
+            tool.engines.contains(&"sqlite".to_string()),
+            "dbbrowser must handle sqlite"
+        );
+        assert_eq!(
+            dbbrowser_args(&info("sqlite")).unwrap(),
+            vec!["C:\\my dbs\\a.sqlite".to_string()]
+        );
+        assert!(dbbrowser_args(&info("mariadb")).is_none());
     }
 
     #[test]

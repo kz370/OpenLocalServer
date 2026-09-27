@@ -42,6 +42,8 @@ export function GitCloneButton({ defaultParent, onDone }: { defaultParent: strin
   const [passphrase, setPassphrase] = useState('')
   const { busy, error, setError, run } = useAction()
   const repoName = url.trim().replace(/\.git$/, '').split(/[/:]/).pop() ?? ''
+  const suggested = repoName && defaultParent ? `${defaultParent.replace(/[\\/]+$/, '')}\\${repoName}` : ''
+  const resolved = target || suggested
 
   return (
     <>
@@ -59,10 +61,10 @@ export function GitCloneButton({ defaultParent, onDone }: { defaultParent: strin
               Cancel
             </Button>
             <Button
-              disabled={busy !== null || !url.trim() || !(target || defaultParent) || (authMode === 'https' && (!username.trim() || !password))}
+              disabled={busy !== null || !url.trim() || !resolved || (authMode === 'https' && (!username.trim() || !password))}
               onClick={() =>
                 run('clone', async () => {
-                  const dest = target || `${defaultParent}\\${repoName}`
+                  const dest = resolved
                   const auth = authMode === 'https'
                     ? { type: 'https' as const, username, password, remember }
                     : authMode === 'ssh'
@@ -122,8 +124,13 @@ export function GitCloneButton({ defaultParent, onDone }: { defaultParent: strin
           <Field label="Branch" hint="Blank for the repository's default branch.">
             <Input value={branch} onChange={(e) => setBranch(e.target.value)} className="font-mono" />
           </Field>
-          <Field label="Folder" hint={!target && repoName && defaultParent ? `${defaultParent}\\${repoName}` : 'A new or empty folder.'}>
+          <Field label="Folder" hint={resolved ? `Will clone into ${resolved}. Edit name or Browse different location.` : 'A new or empty folder inside <install>\\sites by default.'}>
             <FolderInput value={target} onChange={setTarget} title="Folder to clone into" />
+            {!target && suggested ? (
+              <p className="mt-1 truncate font-mono text-xs text-muted-foreground" title={suggested}>
+                Default: {suggested}
+              </p>
+            ) : null}
           </Field>
         </div>
       </Dialog>
@@ -210,9 +217,19 @@ export function ImportEnvironmentButton({ defaultParent, onDone }: { defaultPare
                   </div>
                 )}
                 <Field label="Project name" hint={preview.adjustments.length ? `Adjusted: ${preview.adjustments.join(', ')}` : undefined}>
-                  <Input value={name} onChange={(e) => setName(e.target.value)} />
+                  <Input value={name} onChange={(e) => {
+                    const next = e.target.value
+                    setName(next)
+                    const clean = next.trim().replace(/[\\/:*?"<>|]+/g, '-')
+                    if (clean && defaultParent) {
+                      const base = target.replace(/[\\/][^\\/]+$/, '')
+                      if (!base || base.toLowerCase() === defaultParent.toLowerCase()) {
+                        setTarget(`${defaultParent.replace(/[\\/]+$/, '')}\\${clean}`)
+                      }
+                    }
+                  }} />
                 </Field>
-                <Field label="Folder">
+                <Field label="Folder" hint="Defaults to <install>\sites. Edit folder name or Browse different location.">
                   <FolderInput value={target} onChange={setTarget} title="Folder for the project" />
                 </Field>
               </>

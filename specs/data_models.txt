@@ -18,7 +18,7 @@ Entities:
 - ScheduledTask {id, project_id|global, cron|every_*, command, last_run, next_run}
 - ServiceStatus {id: mailpit|mariadb|postgres|mongodb|redis, state, port, pid} + ConnectionInfo {host, port, user, password_ref}
 - ProcessInfo {id, pid, exe, args, cwd, env, state: Starting|Running|Stopping|Stopped|Crashed|Restarting|Failed, cpu, mem, exit_code}
-- Settings (key-value JSON): runtime.php.global, runtime.node.global, paths.sites_dir, projects.roots, projects.removed (folders removed from list; rescans skip them), domains.auto, domains.auto_skip (deleted auto sites), web.*, database.default_tool.*, diagnostics.auto_fix, startup.*, notifications.enabled, api.*, updater.*
+- Settings (key-value JSON): runtime.php.global, runtime.node.global, paths.sites_dir, quickapps.projects_dir (blank = <install>\sites; blank/whitespace falls back to sites_dir), projects.roots, projects.removed (folders removed from list; rescans skip them), domains.auto, domains.auto_skip (deleted auto sites), web.*, database.default_tool.*, diagnostics.auto_fix, startup.*, notifications.enabled, api.*, updater.*
 - Secrets (OS keyring, never files): tunnel tokens, db passwords, api bearer hash, git per-host creds.
 - Operation journal: Operation {id, kind, CoreCommand JSON, status: Running|Done|Interrupted, retry_hint}
 - Snapshot zip: manifests + sites + cert meta + workers + schedules (+ optional .env/dumps/files; skips node_modules/vendor/.venv).

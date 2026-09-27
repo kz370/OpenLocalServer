@@ -109,8 +109,31 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     if (term && activeGroup !== 'all' && !rows.some((r) => groupOf(r) === activeGroup && `${r.site?.hostname ?? ''} ${r.project?.name ?? ''}`.toLowerCase().includes(term))) setGroup('all')
   }
 
-  // New projects from Git or an environment file go beside the existing ones by default.
-  const projectsParent = projects[0]?.path.replace(/[\\/][^\\/]+$/, '') ?? ''
+  // New projects default to <install>/sites (or quickapps.projects_dir override).
+  // User can change folder name or location in each creation dialog.
+  const [projectsParent, setProjectsParent] = useState('')
+  useEffect(() => {
+    let alive = true
+    async function loadDefault() {
+      try {
+        const override = await runCommand({ type: 'get_setting', key: 'quickapps.projects_dir' })
+        const custom = override.type === 'setting' && typeof override.value === 'string' ? override.value.trim() : ''
+        if (custom) {
+          if (alive) setProjectsParent(custom)
+          return
+        }
+        const sites = await runCommand({ type: 'get_setting', key: 'paths.sites_dir' })
+        if (sites.type === 'setting' && typeof sites.value === 'string' && alive) setProjectsParent(sites.value)
+      } catch {
+        // Keep fallback below when backend unreachable.
+      }
+    }
+    void loadDefault()
+    return () => {
+      alive = false
+    }
+  }, [])
+  const effectiveParent = projectsParent || projects[0]?.path.replace(/[\\/][^\\/]+$/, '') || ''
   async function adopt(p: Project) {
     await refreshProjects()
     setTarget({ hostname: null, projectId: p.id, tab: 'environment' })
@@ -239,8 +262,8 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
           <Button size="sm" variant="secondary" onClick={scanFolder} title="Pick a workspace folder holding several projects side by side">
             <FolderSearch /> Scan a folder
           </Button>
-          <GitCloneButton defaultParent={projectsParent} onDone={adopt} />
-          <ImportEnvironmentButton defaultParent={projectsParent} onDone={adopt} />
+          <GitCloneButton defaultParent={effectiveParent} onDone={adopt} />
+          <ImportEnvironmentButton defaultParent={effectiveParent} onDone={adopt} />
         </div>
       </div>
 
