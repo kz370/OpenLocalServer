@@ -151,7 +151,7 @@ set "UP_TAG=%TAG%"
 set "UP_SETUP=%SETUPPATH%"
 set "UP_NOTES=release-notes\%TAG%.md"
 set "UP_OUT=%LATEST%"
-powershell -NoProfile -Command "$sha=[BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([IO.File]::ReadAllBytes($env:UP_SETUP))).Replace('-','').ToLower(); $size=(Get-Item $env:UP_SETUP).Length; $notes=''; if (Test-Path $env:UP_NOTES) { $notes=Get-Content $env:UP_NOTES -Raw }; $url='https://github.com/kz370/OpenLocalServer/releases/download/'+$env:UP_TAG+'/'+[IO.Path]::GetFileName($env:UP_SETUP); $o=[ordered]@{version=$env:UP_VERSION; notes=$notes; pub_date=(Get-Date -Format yyyy-MM-dd); platforms=[ordered]@{'windows-x86_64'=[ordered]@{url=$url; sha256=$sha; size=$size}}}; $o | ConvertTo-Json -Depth 5 | Out-File $env:UP_OUT -Encoding utf8"
+powershell -NoProfile -Command "$sha=[BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([IO.File]::ReadAllBytes($env:UP_SETUP))).Replace('-','').ToLower(); $size=(Get-Item $env:UP_SETUP).Length; $notes=''; if (($env:UP_NOTES) -and (Test-Path $env:UP_NOTES)) { $notes=[IO.File]::ReadAllText($env:UP_NOTES) }; $url='https://github.com/kz370/OpenLocalServer/releases/download/'+$env:UP_TAG+'/'+[IO.Path]::GetFileName($env:UP_SETUP); $o=[ordered]@{version=$env:UP_VERSION; notes=$notes; pub_date=(Get-Date -Format yyyy-MM-dd); platforms=[ordered]@{'windows-x86_64'=[ordered]@{url=$url; sha256=$sha; size=$size}}}; $o | ConvertTo-Json -Depth 5 | Out-File $env:UP_OUT -Encoding utf8"
 if errorlevel 1 (echo Manifest failed. & exit /b 1)
 "%MINISIGN%" -Sm "%LATEST%" -s "%MINISIGN_KEY%"
 if errorlevel 1 (echo Sign failed. & exit /b 1)
