@@ -1,79 +1,200 @@
-import { Archive, Gauge, History } from 'lucide-react'
+import { Activity, Archive, Boxes, Copy, Database, Gauge, History, Info, Leaf, RotateCcw, Settings2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
 import { Spinner } from '@/components/Spinner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Field } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { type ResourceLimits, type SettingsBackup, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
 import { formatBytes, timeAgo, useAction } from '@/lib/hooks'
+import { cn } from '@/lib/utils'
 
-const LIMITS: { key: keyof ResourceLimits; label: string; hint: string; unit: string }[] = [
-  { key: 'mariadb_buffer_pool_mb', label: 'MariaDB buffer pool', hint: 'innodb_buffer_pool_size', unit: 'MB' },
-  { key: 'postgres_shared_buffers_mb', label: 'PostgreSQL shared buffers', hint: 'shared_buffers', unit: 'MB' },
-  { key: 'redis_maxmemory_mb', label: 'Redis memory', hint: 'maxmemory, oldest keys evicted first', unit: 'MB' },
-  { key: 'mongodb_cache_mb', label: 'MongoDB cache', hint: 'WiredTiger cache, at least 256', unit: 'MB' },
-  { key: 'node_max_old_space_mb', label: 'Node memory', hint: 'heap limit for every project command', unit: 'MB' },
-  { key: 'max_worker_count', label: 'Copies per worker', hint: 'upper limit for queue workers', unit: '' },
-  { key: 'max_processes', label: 'Process limit', hint: 'processes the app may run at once', unit: '' },
-  { key: 'k6_max_vus', label: 'Load-test users', hint: 'most virtual users a k6 script may ask for (default 200)', unit: '' },
+type LimitKey = keyof ResourceLimits
+interface LimitDef {
+  key: LimitKey
+  label: string
+  hint: string
+  unit: string
+  icon: typeof Database
+  iconClass: string
+}
+
+const DB_LIMITS: LimitDef[] = [
+  { key: 'mariadb_buffer_pool_mb', label: 'MariaDB buffer pool', hint: 'InnoDB buffer pool size', unit: 'MB', icon: Database, iconClass: 'text-sky-400' },
+  { key: 'postgres_shared_buffers_mb', label: 'PostgreSQL shared buffers', hint: 'PostgreSQL shared_buffers', unit: 'MB', icon: Database, iconClass: 'text-blue-400' },
+  { key: 'redis_maxmemory_mb', label: 'Redis memory', hint: 'Max memory, oldest keys evicted first', unit: 'MB', icon: Boxes, iconClass: 'text-red-400' },
+  { key: 'mongodb_cache_mb', label: 'MongoDB cache', hint: 'WiredTiger cache · minimum 256 MB', unit: 'MB', icon: Leaf, iconClass: 'text-emerald-400' },
 ]
+
+const APP_LIMITS: LimitDef[] = [
+  { key: 'node_max_old_space_mb', label: 'Node memory', hint: 'Heap limit for every project command', unit: 'MB', icon: Boxes, iconClass: 'text-emerald-400' },
+  { key: 'max_worker_count', label: 'Copies per worker', hint: 'Upper limit for queue workers', unit: '', icon: Copy, iconClass: 'text-muted-foreground' },
+  { key: 'max_processes', label: 'Process limit', hint: 'Maximum concurrent processes the app may run', unit: '', icon: Activity, iconClass: 'text-muted-foreground' },
+  { key: 'k6_max_vus', label: 'Load-test users', hint: 'Maximum virtual users (default 200)', unit: '', icon: Activity, iconClass: 'text-muted-foreground' },
+]
+
+const EMPTY_LIMITS: ResourceLimits = {
+  mariadb_buffer_pool_mb: null,
+  postgres_shared_buffers_mb: null,
+  redis_maxmemory_mb: null,
+  mongodb_cache_mb: null,
+  node_max_old_space_mb: null,
+  max_worker_count: null,
+  max_processes: null,
+  k6_max_vus: null,
+}
+
+function LimitField({ def, value, onChange }: { def: LimitDef; value: number | null; onChange: (v: number | null) => void }) {
+  const Icon = def.icon
+  const input = (
+    <Input
+      type="number"
+      min={1}
+      value={value ?? ''}
+      placeholder="Use default"
+      onChange={(e) => {
+        const n = parseInt(e.target.value, 10)
+        onChange(Number.isFinite(n) && n > 0 ? n : null)
+      }}
+      className={cn(def.unit && 'rounded-r-none')}
+    />
+  )
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <div className="flex items-center gap-2">
+        <Icon className={cn('size-4 shrink-0', def.iconClass)} aria-hidden="true" />
+        <span className="truncate text-[13px] font-medium text-foreground">{def.label}</span>
+        <span title={def.hint} className="flex size-4 shrink-0 cursor-help items-center justify-center rounded-full border border-muted-foreground/40 text-[10px] leading-none text-muted-foreground">
+          ?
+        </span>
+      </div>
+      {def.unit ? (
+        <div className="flex">
+          {input}
+          <span className="flex h-9 shrink-0 items-center rounded-r-lg border border-l-0 border-border/60 bg-muted/40 px-3 text-[13px] text-muted-foreground">
+            {def.unit}
+          </span>
+        </div>
+      ) : (
+        input
+      )}
+      <p className="text-xs leading-relaxed text-muted-foreground">{def.hint}</p>
+    </div>
+  )
+}
 
 /** §129: optional memory and process limits. Blank means the program's own default. */
 export function ResourcesCard() {
   const [limits, setLimits] = useState<ResourceLimits | null>(null)
   const [saved, setSaved] = useState(false)
   const { busy, error, setError, run } = useAction()
-  useEffect(() => {
-    runCommand({ type: 'get_resource_limits' }).then((r) => r.type === 'resources' && setLimits(r.limits))
+  const load = useCallback(async () => {
+    const r = await runCommand({ type: 'get_resource_limits' })
+    if (r.type === 'resources') setLimits(r.limits)
   }, [])
+  useEffect(() => {
+    void load()
+  }, [load])
   if (!limits) return null
+  const set = (key: LimitKey, v: number | null) => {
+    setSaved(false)
+    setLimits({ ...limits, [key]: v })
+  }
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Gauge className="size-4" /> Resources
-        </CardTitle>
-        <CardDescription>Optional limits, applied the next time each service starts. Windows offers no simple per-program CPU limit, so there is none here.</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <ErrorCard error={error} onDismiss={() => setError(null)} />
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {LIMITS.map((l) => (
-            <Field key={l.key} label={`${l.label}${l.unit ? ` (${l.unit})` : ''}`} hint={l.hint}>
-              <Input
-                type="number"
-                min={1}
-                value={limits[l.key] ?? ''}
-                placeholder="default"
-                onChange={(e) => {
-                  const n = parseInt(e.target.value, 10)
-                  setSaved(false)
-                  setLimits({ ...limits, [l.key]: Number.isFinite(n) && n > 0 ? n : null })
-                }}
-              />
-            </Field>
-          ))}
-        </div>
-        <div className="flex items-center gap-3">
+    <Card className="border-border/60 bg-card">
+      <CardContent className="flex flex-col gap-6 p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <Gauge className="mt-0.5 size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <div>
+              <h2 className="text-[15px] font-semibold tracking-tight text-foreground">Resources</h2>
+              <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">Optional resource limits. Changes apply the next time each service starts.</p>
+            </div>
+          </div>
           <Button
-            variant="secondary"
+            size="sm"
+            variant="outline"
             disabled={busy !== null}
-            onClick={() =>
-              run('limits', async () => {
-                const r = await runCommand({ type: 'set_resource_limits', limits })
-                if (r.type === 'resources') setLimits(r.limits)
-                setSaved(true)
-              })
-            }
+            onClick={() => {
+              setSaved(false)
+              setLimits({ ...EMPTY_LIMITS })
+            }}
           >
-            {busy ? <Spinner /> : null} Save limits
+            <RotateCcw /> Reset to defaults
           </Button>
-          {saved && <span className="text-sm text-success">Saved. Restart a service to apply its limit.</span>}
         </div>
+
+        <div className="flex items-center gap-2 rounded-lg border border-sky-500/25 bg-sky-500/10 px-3 py-2 text-[13px] text-sky-200/90">
+          <Info className="size-4 shrink-0" aria-hidden="true" />
+          CPU limits are not available on Windows.
+        </div>
+
+        <ErrorCard error={error} onDismiss={() => setError(null)} />
+
+        <section className="flex flex-col gap-4 border-t border-border/60 pt-6">
+          <div className="flex items-start gap-3">
+            <Database className="mt-0.5 size-5 shrink-0 text-blue-400" aria-hidden="true" />
+            <div>
+              <h3 className="text-[14px] font-semibold text-foreground">Database resources</h3>
+              <p className="mt-0.5 text-[13px] text-muted-foreground">Limits for database services. Leave empty to use the default values.</p>
+            </div>
+          </div>
+          <div className="grid gap-x-5 gap-y-5 sm:grid-cols-2 xl:grid-cols-3">
+            {DB_LIMITS.map((def) => (
+              <LimitField key={def.key} def={def} value={limits[def.key]} onChange={(v) => set(def.key, v)} />
+            ))}
+          </div>
+        </section>
+
+        <section className="flex flex-col gap-4 border-t border-border/60 pt-6">
+          <div className="flex items-start gap-3">
+            <Settings2 className="mt-0.5 size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <div>
+              <h3 className="text-[14px] font-semibold text-foreground">Application resources</h3>
+              <p className="mt-0.5 text-[13px] text-muted-foreground">Limits for application and worker processes. Leave empty to use the default values.</p>
+            </div>
+          </div>
+          <div className="grid gap-x-5 gap-y-5 sm:grid-cols-2">
+            {APP_LIMITS.map((def) => (
+              <LimitField key={def.key} def={def} value={limits[def.key]} onChange={(v) => set(def.key, v)} />
+            ))}
+          </div>
+        </section>
+
+        <div className="flex flex-col gap-3 border-t border-border/60 pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="flex items-center gap-2 text-[13px] text-muted-foreground">
+            <Info className="size-4 shrink-0 text-sky-400" aria-hidden="true" />
+            Changes are applied the next time the service starts.
+          </p>
+          <div className="flex items-center gap-2.5">
+            <Button
+              variant="secondary"
+              disabled={busy !== null}
+              onClick={() => {
+                setSaved(false)
+                void load()
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={busy !== null}
+              className="bg-emerald-500 text-zinc-950 hover:bg-emerald-400"
+              onClick={() =>
+                run('limits', async () => {
+                  const r = await runCommand({ type: 'set_resource_limits', limits })
+                  if (r.type === 'resources') setLimits(r.limits)
+                  setSaved(true)
+                })
+              }
+            >
+              {busy ? <Spinner /> : null} Save limits
+            </Button>
+          </div>
+        </div>
+        {saved && <span className="text-sm text-success">Saved. Restart a service to apply its limit.</span>}
       </CardContent>
     </Card>
   )
