@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input'
 import { type EditorInfo, type ServiceStatus, type StartupSettings, runCommand } from '@/core'
 import { confirmThen } from '@/lib/confirm'
 import { useAction } from '@/lib/hooks'
+import { invalidateDefaultTldCache } from '@/lib/sites'
 import { cn } from '@/lib/utils'
 
 type Section = 'general' | 'sites' | 'roots' | 'startup' | 'diagnostics' | 'ai' | 'resources' | 'backups' | 'about'
@@ -53,6 +54,8 @@ export function SettingsPage() {
   const [autoFixDiagnostics, setAutoFixDiagnostics] = useState(true)
   const [sitesDir, setSitesDir] = useState('')
   const [rootFolders, setRootFolders] = useState<string[]>([])
+  const [defaultTld, setDefaultTld] = useState('local')
+  const [customTld, setCustomTld] = useState('')
   const [helper, setHelper] = useState<boolean | null>(null)
   const [version, setVersion] = useState('')
   const [saved, setSaved] = useState<string | null>(null)
@@ -75,6 +78,17 @@ export function SettingsPage() {
     void runCommand({ type: 'get_setting', key: 'projects.watch' }).then((r) => r.type === 'setting' && setWatchSites(r.value !== false))
     void runCommand({ type: 'get_setting', key: 'domains.auto' }).then((r) => r.type === 'setting' && setAutoDomains(r.value !== false))
     void runCommand({ type: 'get_setting', key: 'diagnostics.auto_fix' }).then((r) => r.type === 'setting' && setAutoFixDiagnostics(r.value !== false))
+    void getString('domains.default_tld').then((val) => {
+      const tld = val.trim().replace(/^\./, '') || 'local'
+      const presets = ['local', 'test', 'localhost']
+      if (presets.includes(tld)) {
+        setDefaultTld(tld)
+        setCustomTld('')
+      } else {
+        setDefaultTld('custom')
+        setCustomTld(tld)
+      }
+    })
   }, [])
 
   async function saveAll() {
@@ -86,6 +100,9 @@ export function SettingsPage() {
     await runCommand({ type: 'set_setting', key: 'quickapps.projects_dir', value: projectsDir })
     await runCommand({ type: 'set_setting', key: 'domains.auto', value: autoDomains })
     await runCommand({ type: 'set_setting', key: 'projects.watch', value: watchSites })
+    const tldValue = defaultTld === 'custom' ? customTld.trim().replace(/^\./, '') : defaultTld
+    await runCommand({ type: 'set_setting', key: 'domains.default_tld', value: tldValue || 'local' })
+    invalidateDefaultTldCache()
     if (autoDomains) await runCommand({ type: 'sync_auto_domains' })
     setSaved('Saved.')
     setTimeout(() => setSaved(null), 2500)
@@ -250,8 +267,39 @@ export function SettingsPage() {
                   checked={autoDomains}
                   onChange={setAutoDomains}
                   title="Create domains automatically"
-                  hint="Like Laragon: every folder in a scanned projects folder gets <folder>.test with HTTPS. Domains you delete stay deleted."
+                  hint="Like Laragon: every folder in a scanned projects folder gets <folder>.<tld> with HTTPS. Domains you delete stay deleted."
                 />
+                <SettingRow
+                  title="Default top-level domain"
+                  hint={`New sites and auto-created domains use this TLD (e.g. shop.${defaultTld === 'custom' ? (customTld || 'local') : defaultTld}). Existing sites are not changed.`}
+                >
+                  <div className="flex flex-col gap-2">
+                    <Select
+                      value={defaultTld}
+                      onChange={(e) => {
+                        setDefaultTld(e.target.value)
+                        if (e.target.value !== 'custom') setCustomTld('')
+                      }}
+                      className="w-48"
+                    >
+                      <option value="local">.local</option>
+                      <option value="test">.test</option>
+                      <option value="localhost">.localhost</option>
+                      <option value="custom">Custom…</option>
+                    </Select>
+                    {defaultTld === 'custom' && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground">.</span>
+                        <Input
+                          value={customTld}
+                          onChange={(e) => setCustomTld(e.target.value.replace(/^\./, '').replace(/\s/g, ''))}
+                          placeholder="mycompany"
+                          className="w-40"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </SettingRow>
                 <SwitchRow checked={watchSites} onChange={setWatchSites} title="Watch sites folder" hint="New and removed project folders are detected automatically." />
               </CardContent>
             </Card>

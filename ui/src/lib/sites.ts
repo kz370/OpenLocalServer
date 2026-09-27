@@ -1,5 +1,26 @@
 import { runCommand } from '@/core'
 
+/** Cached default TLD (domains.default_tld setting, default: 'local'). */
+let cachedDefaultTld: string | null = null
+
+/** Returns the user-configured default TLD (e.g. 'local', 'test', 'localhost', or a custom value). */
+export async function getDefaultTld(): Promise<string> {
+  if (cachedDefaultTld !== null) return cachedDefaultTld
+  try {
+    const r = await runCommand({ type: 'get_setting', key: 'domains.default_tld' })
+    const val = r.type === 'setting' && typeof r.value === 'string' ? r.value.trim().replace(/^\./, '') : ''
+    cachedDefaultTld = val || 'local'
+  } catch {
+    cachedDefaultTld = 'local'
+  }
+  return cachedDefaultTld
+}
+
+/** Invalidates the cached TLD so the next call to getDefaultTld() re-fetches from the backend. */
+export function invalidateDefaultTldCache(): void {
+  cachedDefaultTld = null
+}
+
 /** Cached default sites directory (<install>\sites or quickapps.projects_dir). */
 let cachedSitesDir: string | null = null
 
@@ -43,13 +64,14 @@ export function domainToFolderName(domain: string): string {
 
 /**
  * Derives a domain name from a folder or project name.
- * e.g. "shop" -> "shop.test", "my-site" -> "my-site.test".
+ * e.g. "shop" -> "shop.local", "my-site" -> "my-site.local".
+ * Pass `tld` (e.g. from `getDefaultTld()`) to use a specific TLD; defaults to 'local'.
  */
-export function folderNameToDomain(name: string): string {
+export function folderNameToDomain(name: string, tld = 'local'): string {
   const clean = name.trim().toLowerCase().replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, '-').replace(/^-+|-+$/g, '')
   if (!clean) return ''
   if (/\.(test|local|localhost)$/i.test(clean)) return clean
-  return `${clean}.test`
+  return `${clean}.${tld}`
 }
 
 /**

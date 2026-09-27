@@ -79,7 +79,7 @@ README pre-release notice; scripts/dev.bat (npm+helper+vite+tauri dev); scripts/
 - Resolution manifest > detected > global; global never overrides explicit.
 - Downloads require HTTPS + SHA256; mismatch aborts; catalogs minisign-verified each load.
 - Web ownership Managed/Advanced/Manual; drift preserved + flagged; invalid keeps old.
-- Domains any name, default `<project>.test`, wildcard via local DNS+NRPT; conflict detect; reverse proxy to any host/port; static index.php still runs PHP.
+- Domains any name, default `<project>.<tld>` where tld comes from `domains.default_tld` setting (default: `local`; presets local|test|localhost or custom); wildcard via local DNS+NRPT; conflict detect; reverse proxy to any host/port; static index.php still runs PHP.
 - New sites/clones/imports/QuickApps default to `<install>\sites` (writable) else user Sites; `quickapps.projects_dir` override wins, blank falls back; absolute path required, parent auto-created, non-empty target refused; per-dialog folder name/location editable.
 - Local CA trusted once to CurrentUser Root; wildcard certs; HTTP->HTTPS toggle; health 5-step chain.
 - DB version isolation; safety backup before restore; secrets in keyring only; redaction everywhere.

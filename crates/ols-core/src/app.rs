@@ -770,9 +770,10 @@ impl Inner {
 
     /// Laragon-style automatic domains (setting `domains.auto`, on by default): every
     /// folder in a remembered projects folder becomes a project, and every project that
-    /// can be served (PHP or plain HTML) gets `<folder>.test` over HTTPS. Domains the user
-    /// deleted stay deleted. Applies the web config when something was added and the
-    /// server is running. Returns how many domains were created.
+    /// can be served (PHP or plain HTML) gets `<folder>.<tld>` over HTTPS where `<tld>` is
+    /// read from `domains.default_tld` (default: `local`). Domains the user deleted stay
+    /// deleted. Applies the web config when something was added and the server is running.
+    /// Returns how many domains were created.
     pub fn sync_auto_domains(&self) -> Result<usize, CoreError> {
         if !self.setting_bool("domains.auto", true) {
             return Ok(0);
@@ -828,13 +829,23 @@ impl Inner {
         }
 
         let skip = self.string_list(AUTO_SKIP);
+        let default_tld = self
+            .settings
+            .lock()
+            .unwrap()
+            .get("domains.default_tld")
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim().trim_start_matches('.').to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "local".to_string());
+        let auto_template = format!("{{project}}.{default_tld}");
         let projects = self.projects.lock().unwrap().list();
         let mut created = 0;
         for p in projects {
             let path = Path::new(&p.path);
             let (taken, linked) = {
                 let domains = self.domains.lock().unwrap();
-                let hostname = crate::domain::apply_template("{project}.test", &p.name);
+                let hostname = crate::domain::apply_template(&auto_template, &p.name);
                 (
                     domains.get(&hostname).is_some() || skip.contains(&hostname),
                     domains
@@ -850,7 +861,7 @@ impl Inner {
                 continue;
             };
             let domain = Domain {
-                hostname: crate::domain::apply_template("{project}.test", &p.name),
+                hostname: crate::domain::apply_template(&auto_template, &p.name),
                 project_id: Some(p.id.clone()),
                 root: root.display().to_string(),
                 kind,

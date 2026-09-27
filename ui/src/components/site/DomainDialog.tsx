@@ -8,7 +8,7 @@ import { Dialog } from '@/components/ui/dialog'
 import { Field, FormSection, Select, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
-import { buildSitePath, domainToFolderName, getDefaultSitesDir } from '@/lib/sites'
+import { buildSitePath, domainToFolderName, getDefaultSitesDir, getDefaultTld } from '@/lib/sites'
 import { type Domain, type Project, type QuickEntryView, type TunnelStatus, runCommand } from '@/core'
 
 const emptyBlocks = { headers: [], redirects: [], mappings: [], upstreams: [], includes: [] }
@@ -155,7 +155,8 @@ export function DomainSettings({
   const [parentDir, setParentDir] = useState(defaultParent || '')
   const kindType = d.kind.type
   const [appLine, setAppLine] = useState('')
-  const [template, setTemplate] = useState('{project}.test')
+  const [defaultTld, setDefaultTld] = useState('local')
+  const [template, setTemplate] = useState(`{project}.local`)
   const [showApps, setShowApps] = useState(false)
   const [quickApps, setQuickApps] = useState<QuickEntryView[]>([])
   const [tunnels, setTunnels] = useState<TunnelStatus[]>([])
@@ -168,6 +169,12 @@ export function DomainSettings({
     setRootTouched(false)
     setAppLine(domain?.app ? [domain.app.executable, ...domain.app.args].join(' ') : '')
   }, [domain])
+  useEffect(() => {
+    void getDefaultTld().then((tld) => {
+      setDefaultTld(tld)
+      setTemplate(`{project}.${tld}`)
+    })
+  }, [])
   useEffect(() => {
     if (!parentDir) void getDefaultSitesDir().then((p) => p && setParentDir(p))
   }, [parentDir])
@@ -289,9 +296,9 @@ export function DomainSettings({
             </Field>
             <Field label="Name template (§48)">
               <Select value={template} onChange={(e) => setTemplate(e.target.value)}>
-                <option>{'{project}.test'}</option>
-                <option>{'api.{project}.test'}</option>
-                <option>{'admin.{project}.test'}</option>
+                <option>{`{project}.${defaultTld}`}</option>
+                <option>{`api.{project}.${defaultTld}`}</option>
+                <option>{`admin.{project}.${defaultTld}`}</option>
               </Select>
             </Field>
           </div>
