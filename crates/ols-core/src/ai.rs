@@ -562,8 +562,14 @@ impl Inner {
                 } else {
                     part
                 };
+                let cfg = self.web_config();
+                let server = host
+                    .as_deref()
+                    .and_then(|h| self.domains.lock().unwrap().get(h))
+                    .map(|d| crate::domain::resolved_server(&d, &cfg))
+                    .unwrap_or_else(|| cfg.default_server.clone());
                 self.web
-                    .read_config(&self.web_config(), host.as_deref(), part)
+                    .read_config(&server, host.as_deref(), part)
                     .map_err(e)?
             }
             "read_manifest" => {

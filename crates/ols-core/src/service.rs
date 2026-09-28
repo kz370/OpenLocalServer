@@ -83,6 +83,20 @@ pub struct ServiceManager {
     custom: Mutex<CustomServiceStore>,
     /// Memory limits from Settings → Resources (§129), applied at start.
     limits: Mutex<crate::resources::ResourceLimits>,
+    /// The web servers, listed and probed here but owned by `WebManager` — the Services
+    /// page shows all three rows, and there is only ever one set of processes (§3.3).
+    web: Mutex<Option<WebServers>>,
+}
+
+/// Settings are read fresh on every call, so the web rows always show current ports.
+pub type WebConfigFn = Arc<dyn Fn() -> crate::web::WebConfig + Send + Sync>;
+
+/// The handle `ServiceManager` needs to answer for a web server without owning it.
+#[derive(Clone)]
+pub struct WebServers {
+    pub web: Arc<crate::web::manager::WebManager>,
+    /// Ports and the default server are settings, so they're read fresh each time.
+    pub config: WebConfigFn,
 }
 
 /// Names that go into SQL as identifiers can't be bound as parameters, so only plain
@@ -117,7 +131,48 @@ impl ServiceManager {
             running: Mutex::new(HashMap::new()),
             custom,
             limits: Mutex::new(Default::default()),
+            web: Mutex::new(None),
         }
+    }
+
+    /// Adds the three web servers to this list. They keep running through
+    /// `WebManager`; nothing is duplicated here.
+    pub fn attach_web(&self, web: Arc<crate::web::manager::WebManager>, config: WebConfigFn) {
+        *self.web.lock().unwrap() = Some(WebServers { web, config });
+    }
+
+    fn web_handle(&self) -> Option<WebServers> {
+        self.web.lock().unwrap().clone()
+    }
+
+    /// A web server as a service row: its effective HTTP port, a live TCP probe, and
+    /// whether it is the one owning 80/443.
+    pub fn web_status(&self, handle: &WebServers, id: &str) -> Option<ServiceStatus> {
+        let cfg = (handle.config)();
+        let id_owned = id.to_string();
+        let s = handle.web.status(&cfg).servers.into_iter().find(|s| s.id == id_owned)?;
+        Some(ServiceStatus {
+            id: s.id.clone(),
+            name: s.name,
+            installed: s.installed,
+            running: s.running,
+            port: Some(s.http_port),
+            port_status: Some(if crate::port::port_is_free(s.http_port) {
+                PortStatusLite::Free
+            } else {
+                PortStatusLite::InUse
+            }),
+            kind: "web".into(),
+            connection: Some(format!("http://127.0.0.1:{}", s.http_port)),
+            healthy: s.running.then(|| {
+                TcpStream::connect_timeout(
+                    &([127, 0, 0, 1], s.http_port).into(),
+                    Duration::from_millis(300),
+                )
+                .is_ok()
+            }),
+            version: None,
+        })
     }
 
     pub fn set_limits(&self, limits: crate::resources::ResourceLimits) {
@@ -128,7 +183,7 @@ impl ServiceManager {
         self.limits.lock().unwrap().service_args(id)
     }
 
-    /// The built-in services, then the user's own (§67).
+    /// The built-in services, then the user's own (§67), then the web servers.
     pub fn list(&self) -> Vec<ServiceStatus> {
         let custom: Vec<String> = self
             .custom
@@ -138,12 +193,20 @@ impl ServiceManager {
             .into_iter()
             .map(|s| s.id)
             .collect();
-        KNOWN_SERVICES
+        let mut out: Vec<ServiceStatus> = KNOWN_SERVICES
             .iter()
             .map(|s| s.to_string())
             .chain(custom)
             .map(|id| self.status(&id))
-            .collect()
+            .collect();
+        if let Some(handle) = self.web_handle() {
+            out.extend(
+                crate::web::SERVER_IDS
+                    .iter()
+                    .filter_map(|id| self.web_status(&handle, id)),
+            );
+        }
+        out
     }
 
     // ------------------------------------------------------------ custom services (§67)
@@ -240,6 +303,11 @@ impl ServiceManager {
     }
 
     pub fn is_running(&self, id: &str) -> bool {
+        if let Some(handle) = self.web_handle() {
+            if crate::web::SERVER_IDS.contains(&id) {
+                return handle.web.is_running_id(id);
+            }
+        }
         self.prune_finished();
         let map = self.running.lock().unwrap();
         map.contains_key(id)
@@ -249,10 +317,20 @@ impl ServiceManager {
     /// callers like the tray/taskbar status icon can poll it cheaply (§122).
     pub fn any_running(&self) -> bool {
         self.prune_finished();
-        !self.running.lock().unwrap().is_empty()
+        let busy = !self.running.lock().unwrap().is_empty();
+        if busy {
+            return true;
+        }
+        self.web_handle()
+            .is_some_and(|h| crate::web::SERVER_IDS.iter().any(|id| h.web.is_running_id(id)))
     }
 
     pub fn status(&self, id: &str) -> ServiceStatus {
+        if let Some(handle) = self.web_handle() {
+            if let Some(st) = self.web_status(&handle, id) {
+                return st;
+            }
+        }
         if custom_service::is_custom_id(id) {
             let def = self.custom.lock().unwrap().get(id);
             return match def {
@@ -311,6 +389,16 @@ impl ServiceManager {
     /// this dispatches to a per-service starter — the shared part (recording the
     /// resulting `ProcessId`, refusing a double-start) lives here once.
     pub fn start(&self, id: &str) -> Result<ProcessId, String> {
+        if let Some(handle) = self.web_handle() {
+            if crate::web::SERVER_IDS.contains(&id) {
+                let cfg = (handle.config)();
+                handle
+                    .web
+                    .start_server(id, &cfg)
+                    .map_err(|e| e.to_string())?;
+                return Ok(handle.web.running_pid(id).unwrap_or(ProcessId(0)));
+            }
+        }
         if self.is_running(id) {
             return Err(format!("{id} is already running"));
         }
@@ -353,6 +441,12 @@ impl ServiceManager {
     }
 
     pub fn stop(&self, id: &str) {
+        if let Some(handle) = self.web_handle() {
+            if crate::web::SERVER_IDS.contains(&id) {
+                handle.web.stop_server(id);
+                return;
+            }
+        }
         if let Some(process_id) = self.running.lock().unwrap().remove(id) {
             self.supervisor.stop(process_id);
         }

@@ -1232,8 +1232,9 @@ pub enum CoreResponse {
     Text {
         text: String,
     },
+    /// One entry per web server that was applied; each renders only its own sites.
     Applied {
-        report: Box<ApplyReport>,
+        reports: Vec<ApplyReport>,
     },
     CaInfo {
         info: CaInfo,
@@ -1927,11 +1928,20 @@ impl Core {
             }
             C::StartService { id } => {
                 tracing::info!(command = "start_service", id = %id);
-                i.services.start(&id).map_err(CoreError::ServiceError)?;
+                if crate::web::SERVER_IDS.contains(&id.as_str()) {
+                    // A web server renders the sites assigned to it, then binds its ports.
+                    i.apply_web_server(&id, &[]).map(|_| R::Ok)?;
+                } else {
+                    i.services.start(&id).map_err(CoreError::ServiceError)?;
+                }
                 Ok(R::Ok)
             }
             C::StopService { id } => {
-                i.services.stop(&id);
+                if crate::web::SERVER_IDS.contains(&id.as_str()) {
+                    i.web.stop_server(&id);
+                } else {
+                    i.services.stop(&id);
+                }
                 Ok(R::Ok)
             }
 
@@ -2102,16 +2112,14 @@ impl Core {
             C::ApplyWeb { overwrite } => {
                 tracing::info!(command = "apply_web");
                 let retry = CoreCommand::ApplyWeb { overwrite: vec![] };
-                let report = i.journaled(
+                let reports = i.journaled(
                     "apply_web",
                     "Apply the web configuration",
                     Some("Restore the previous config from a site's history on the Config page."),
                     Some(retry),
                     || i.apply_web(&overwrite),
                 )?;
-                Ok(R::Applied {
-                    report: Box::new(report),
-                })
+                Ok(R::Applied { reports })
             }
             C::StopWeb => {
                 i.web.stop();
@@ -2194,16 +2202,28 @@ impl Core {
 
             // ---- Stage 9
             C::ListWebConfigs => {
+                let cfg = i.web_config();
                 let domains = i.domains.lock().unwrap();
-                Ok(R::Configs {
-                    files: i.web.list_configs(&i.web_config(), &domains)?,
+                // Sites can be spread over every installed server; list each one's own
+                // files under the server that renders it.
+                let files = crate::web::SERVER_IDS
+                    .iter()
+                    .filter_map(|id| i.web.list_configs(&cfg, &domains, id).ok())
+                    .flatten()
+                    .collect();
+                Ok(R::Configs { files })
+            }
+            C::ReadWebConfig { hostname, part } => {
+                let cfg = i.web_config();
+                let server = hostname
+                    .as_deref()
+                    .and_then(|h| i.domains.lock().unwrap().get(h))
+                    .map(|d| crate::domain::resolved_server(&d, &cfg))
+                    .unwrap_or_else(|| cfg.default_server.clone());
+                Ok(R::Text {
+                    text: i.web.read_config(&server, hostname.as_deref(), part)?,
                 })
             }
-            C::ReadWebConfig { hostname, part } => Ok(R::Text {
-                text: i
-                    .web
-                    .read_config(&i.web_config(), hostname.as_deref(), part)?,
-            }),
             C::WriteWebConfig {
                 hostname,
                 part,
@@ -2218,12 +2238,20 @@ impl Core {
                 i.set_ownership(&hostname, ownership)?;
                 Ok(R::Ok)
             }
-            C::ListConfigHistory { hostname } => Ok(R::ConfigVersions {
-                versions: i.web.list_history(&i.web_config(), &hostname),
-            }),
-            C::ReadConfigHistory { hostname, id } => Ok(R::Text {
-                text: i.web.read_history(&i.web_config(), &hostname, &id)?,
-            }),
+            C::ListConfigHistory { hostname } => {
+                let cfg = i.web_config();
+                Ok(R::ConfigVersions {
+                    versions: i.web.list_history(&cfg, &i.domains.lock().unwrap(), &hostname),
+                })
+            }
+            C::ReadConfigHistory { hostname, id } => {
+                let cfg = i.web_config();
+                Ok(R::Text {
+                    text: i
+                        .web
+                        .read_history(&cfg, &i.domains.lock().unwrap(), &hostname, &id)?,
+                })
+            }
             C::RestoreConfigHistory { hostname, id } => Ok(R::Text {
                 text: i.restore_web_history(&hostname, &id)?,
             }),
@@ -2232,8 +2260,9 @@ impl Core {
                 part,
                 dest,
             } => {
+                let cfg = i.web_config();
                 i.web
-                    .export_config(&i.web_config(), &hostname, part, &dest)?;
+                    .export_config(&cfg, &i.domains.lock().unwrap(), &hostname, part, &dest)?;
                 Ok(R::Ok)
             }
 
@@ -3608,6 +3637,7 @@ mod tests {
                 generated_hashes: Default::default(),
                 public_domain: None,
                 tunnel_id: None,
+                 server: None,
             };
         let proxy = || crate::domain::SiteKind::Proxy {
             upstream_port: 3000,
@@ -3777,6 +3807,7 @@ mod tests {
             generated_hashes: Default::default(),
             public_domain: None,
             tunnel_id: None,
+             server: None,
         };
         // Written straight to the store: AddDomain would reject a folder that doesn't exist.
         core.inner().domains.lock().unwrap().add(domain).ok();
@@ -3918,6 +3949,7 @@ mod tests {
             generated_hashes: Default::default(),
             public_domain: None,
             tunnel_id: None,
+             server: None,
         };
         core.dispatch(CoreCommand::AddDomain {
             domain: domain("old.test"),
@@ -4115,6 +4147,7 @@ mod tests {
             generated_hashes: Default::default(),
             public_domain: None,
             tunnel_id: None,
+             server: None,
         };
         domain.blocks.headers.push(HeaderRule {
             name: "X-Test".into(),

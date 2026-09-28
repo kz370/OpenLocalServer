@@ -186,24 +186,27 @@ impl Inner {
             }
         }
 
-        // Web configs: the text of every site's file.
+        // Web configs: the text of every site's file, on the server that renders it.
         let cfg = self.web_config();
-        let hosts: Vec<String> = self
+        let hosts: Vec<(String, String)> = self
             .domains
             .lock()
             .unwrap()
             .list()
             .into_iter()
-            .map(|d| d.hostname)
+            .map(|d| {
+                let server = crate::domain::resolved_server(&d, &cfg);
+                (d.hostname, server)
+            })
             .collect();
         let mut found = 0;
-        for h in hosts {
+        for (h, server) in hosts {
             if found >= PER_KIND {
                 break;
             }
-            if let Ok(text) =
-                self.web
-                    .read_config(&cfg, Some(&h), crate::web::manager::ConfigPart::Site)
+            if let Ok(text) = self
+                .web
+                .read_config(&server, Some(&h), crate::web::manager::ConfigPart::Site)
             {
                 if let Some((n, line)) = text
                     .lines()

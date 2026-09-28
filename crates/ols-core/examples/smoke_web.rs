@@ -13,12 +13,30 @@ use std::thread::sleep;
 use std::time::Duration;
 
 use ols_core::domain::{AppSpec, Domain, Ownership, SiteBlocks, SiteKind};
-use ols_core::web::manager::ConfigPart;
+use ols_core::web::manager::{ApplyReport, ConfigPart};
 use ols_core::{AppPaths, Core, CoreCommand, CoreResponse, SettingsService};
 
 fn dispatch(core: &Core, cmd: CoreCommand) -> CoreResponse {
     core.dispatch(cmd)
         .unwrap_or_else(|d| panic!("command failed: {} — {}", d.problem, d.cause))
+}
+
+/// An apply now returns one report per server; pick the one for `server`.
+fn pick_report(reports: &[ApplyReport], server: &str) -> ApplyReport {
+    reports
+        .iter()
+        .find(|r| r.server == server)
+        .unwrap_or_else(|| panic!("no apply report for {server}, got {reports:?}"))
+        .clone()
+}
+
+fn apply_report(core: &Core, server: &str, overwrite: &[String]) -> ApplyReport {
+    let CoreResponse::Applied { reports } =
+        dispatch(core, CoreCommand::ApplyWeb { overwrite: overwrite.to_vec() })
+    else {
+        panic!("expected Applied")
+    };
+    pick_report(&reports, server)
 }
 
 fn expect_err(core: &Core, cmd: CoreCommand) -> String {
@@ -92,6 +110,7 @@ fn domain(host: &str, root: &std::path::Path, kind: SiteKind) -> Domain {
         blocks: SiteBlocks::default(),
         generated_hashes: BTreeMap::new(),
         tunnel_id: None,
+         server: None,
         public_domain: None,
     }
 }
@@ -224,6 +243,11 @@ fn main() {
         },
     );
 
+    // Pinned to Apache later, to prove exclusive binding.
+    let e_dir = work.join("e");
+    std::fs::create_dir_all(&e_dir).unwrap();
+    std::fs::write(e_dir.join("index.html"), "HOST=e.test").unwrap();
+
     dispatch(
         &core,
         CoreCommand::AddDomain {
@@ -266,11 +290,7 @@ fn main() {
     dispatch(&core, CoreCommand::AddDomain { domain: c });
 
     // ---- Apply on Nginx
-    let CoreResponse::Applied { report } =
-        dispatch(&core, CoreCommand::ApplyWeb { overwrite: vec![] })
-    else {
-        panic!()
-    };
+    let report = apply_report(&core, "nginx", &[]);
     check(
         "nginx started",
         report.started,
@@ -373,11 +393,7 @@ fn main() {
     };
     a.redirect_https = false;
     dispatch(&core, CoreCommand::UpdateDomain { domain: *a });
-    let CoreResponse::Applied { report } =
-        dispatch(&core, CoreCommand::ApplyWeb { overwrite: vec![] })
-    else {
-        panic!()
-    };
+    let report = apply_report(&core, "nginx", &[]);
     println!(
         "[smoke] apply: written={:?} reloaded={} warnings={:?}",
         report.written, report.reloaded, report.warnings
@@ -418,11 +434,7 @@ fn main() {
 
     let original = std::fs::read_to_string(&a_file.path).unwrap();
     std::fs::write(&a_file.path, format!("{original}\n# hand edit\n")).unwrap();
-    let CoreResponse::Applied { report } =
-        dispatch(&core, CoreCommand::ApplyWeb { overwrite: vec![] })
-    else {
-        panic!()
-    };
+    let report = apply_report(&core, "nginx", &[]);
     check(
         "hand edit is flagged as drift and preserved",
         report.drifted == vec!["a.test".to_string()]
@@ -431,14 +443,7 @@ fn main() {
                 .contains("# hand edit"),
         format!("{:?}", report.drifted),
     );
-    let CoreResponse::Applied { report } = dispatch(
-        &core,
-        CoreCommand::ApplyWeb {
-            overwrite: vec!["a.test".into()],
-        },
-    ) else {
-        panic!()
-    };
+    let report = apply_report(&core, "nginx", &["a.test".into()]);
     check(
         "overwrite restores the generated file",
         report.drifted.is_empty()
@@ -532,11 +537,7 @@ fn main() {
             },
         },
     );
-    let CoreResponse::Applied { report } =
-        dispatch(&core, CoreCommand::ApplyWeb { overwrite: vec![] })
-    else {
-        panic!()
-    };
+    let report = apply_report(&core, "nginx", &[]);
     println!("[smoke] warnings: {:?}", report.warnings);
     check(
         "wildcard DNS answers *.d.test with loopback",
@@ -570,7 +571,8 @@ fn main() {
         install(&core, server, prefix);
         set(&core, "web.server", server.into());
         match core.dispatch(CoreCommand::ApplyWeb { overwrite: vec![] }) {
-            Ok(CoreResponse::Applied { report }) => {
+            Ok(CoreResponse::Applied { reports }) => {
+                let report = pick_report(&reports, server);
                 check(
                     &format!("{server} started"),
                     report.started,
@@ -595,7 +597,7 @@ fn main() {
                     &body,
                 );
             }
-            Ok(_) => panic!(),
+            Ok(other) => panic!("{server} apply returned {other:?}"),
             Err(d) => check(
                 &format!("{server} apply"),
                 false,
@@ -612,6 +614,70 @@ fn main() {
         "switching back to nginx works",
         s == 200 && body.contains("PHP=8.4."),
         &body,
+    );
+
+    // ---- Both at once: nginx keeps 80/443, apache moves to its own port and serves
+    // only the site pinned to it.
+    set(&core, "web.servers.apache.http_port", 8080.into());
+    set(&core, "web.servers.apache.https_port", 8443.into());
+    let CoreResponse::Applied { reports } =
+        dispatch(&core, CoreCommand::ApplyWeb { overwrite: vec![] })
+    else {
+        panic!()
+    };
+    let apache = pick_report(&reports, "apache");
+    let nginx = pick_report(&reports, "nginx");
+    check(
+        "both servers report their own start",
+        apache.started && nginx.started,
+        format!("apache={:?} nginx={:?}", apache.warnings, nginx.warnings),
+    );
+
+    let mut pinned = domain("e.test", &e_dir, SiteKind::Static);
+    pinned.server = Some("apache".into());
+    dispatch(&core, CoreCommand::AddDomain { domain: pinned });
+    dispatch(
+        &core,
+        CoreCommand::StartService {
+            id: "apache".into(),
+        },
+    );
+    let report = apply_report(&core, "apache", &[]);
+    check(
+        "the pinned site is rendered on apache only",
+        report.written.contains(&"e.test".to_string())
+            && !report.written.contains(&"a.test".to_string()),
+        format!("{:?}", report.written),
+    );
+    let (s, body) = https_get(&ca_pem, "e.test", 8443);
+    check(
+        "apache answers on its own port",
+        s == 200 && body.contains("HOST=e.test"),
+        &body,
+    );
+    let (s, _) = https_get(&ca_pem, "a.test", https);
+    check(
+        "nginx still answers for its own site on 443",
+        s == 200,
+        "a.test",
+    );
+    check(
+        "stopping apache leaves nginx up",
+        {
+            dispatch(
+                &core,
+                CoreCommand::StopService {
+                    id: "apache".into(),
+                },
+            );
+            let CoreResponse::WebStatus { status } = dispatch(&core, CoreCommand::GetWebStatus)
+            else {
+                panic!()
+            };
+            !status.servers.iter().any(|s| s.id == "apache" && s.running)
+                && status.servers.iter().any(|s| s.id == "nginx" && s.running)
+        },
+        "",
     );
 
     dispatch(&core, CoreCommand::StopWeb);

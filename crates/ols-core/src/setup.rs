@@ -579,8 +579,8 @@ impl Inner {
         // Web server (every site shares the one the app is set to).
         let cfg = self.web_config();
         if let Some(want) = manifest.web.as_ref().and_then(|w| w.server.clone()) {
-            if want != cfg.server {
-                p.conflict("web_server", false, format!("The manifest asks for {want}; sites here are served by {}.", cfg.server), "Every site shares one web server; switch it in the Sites settings if this project really needs another.");
+            if want != cfg.default_server {
+                p.conflict("web_server", false, format!("The manifest asks for {want}; this site is served by {}.", cfg.default_server), "Pin the site's web server in its settings, or switch the default in the Sites settings.");
             }
         }
 
@@ -791,7 +791,7 @@ impl Inner {
             "start",
             format!(
                 "Apply the web config and start {}",
-                crate::web::server_by_id(&cfg.server)
+                crate::web::server_by_id(cfg.server())
                     .map(|s| s.name())
                     .unwrap_or("the web server")
             ),
@@ -1160,21 +1160,29 @@ impl Inner {
                 Ok(None)
             }
             SetupAction::ApplyWeb => {
-                let r = self.apply_web(&[]).map_err(|e| e.to_string())?;
-                let mut msg = format!(
-                    "{}: {} file(s) written{}",
-                    r.server,
-                    r.written.len(),
-                    if r.started {
-                        ", started"
-                    } else if r.reloaded {
-                        ", reloaded"
-                    } else {
-                        ""
-                    }
-                );
-                if !r.warnings.is_empty() {
-                    msg.push_str(&format!(" ({})", r.warnings.join("; ")));
+                let reports = self.apply_web(&[]).map_err(|e| e.to_string())?;
+                let mut msg = reports
+                    .iter()
+                    .map(|r| {
+                        format!(
+                            "{}: {} file(s) written{}",
+                            r.server,
+                            r.written.len(),
+                            if r.started {
+                                ", started"
+                            } else if r.reloaded {
+                                ", reloaded"
+                            } else {
+                                ""
+                            }
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                let warnings: Vec<String> =
+                    reports.iter().flat_map(|r| r.warnings.clone()).collect();
+                if !warnings.is_empty() {
+                    msg.push_str(&format!(" ({})", warnings.join("; ")));
                 }
                 Ok(Some(msg))
             }
@@ -1317,11 +1325,11 @@ impl Inner {
         let cfg = self.web_config();
         if let Some(v) = self
             .runtimes
-            .installed_versions(&cfg.server)
+            .installed_versions(cfg.server())
             .into_iter()
             .next()
         {
-            lock.insert(cfg.server, v);
+            lock.insert(cfg.default_server, v);
         }
         lock
     }
@@ -1580,6 +1588,7 @@ impl Planner<'_> {
             generated_hashes: Default::default(),
             public_domain: None,
             tunnel_id: None,
+             server: None,
         };
         match existing {
             Some(d) if d.project_id.as_deref().is_some_and(|p| p != project_id) => {

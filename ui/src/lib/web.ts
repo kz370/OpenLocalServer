@@ -27,7 +27,7 @@ export function useWeb() {
   const [projects, setProjects] = useState<Project[]>([])
   const [catalog, setCatalog] = useState<CatalogEntry[]>([])
   const [customPhp, setCustomPhp] = useState<string[]>([])
-  const [report, setReport] = useState<ApplyReport | null>(null)
+  const [reports, setReports] = useState<ApplyReport[]>([])
   const [driftOpen, setDriftOpen] = useState(false)
   const action = useAction()
 
@@ -84,13 +84,15 @@ export function useWeb() {
   async function apply(overwrite: string[] = []) {
     const res = await runCommand({ type: 'apply_web', overwrite })
     if (res.type === 'applied') {
-      setReport(res.report)
-      if (res.report.drifted.length > 0) setDriftOpen(true)
+      setReports(res.reports)
+      if (res.reports.some((r) => r.drifted.length > 0)) setDriftOpen(true)
     }
     await refresh(true)
   }
 
   const installedPhp = [...new Set([...catalog.filter((c) => c.id === 'php' && c.installed).map((c) => c.version), ...customPhp])]
+  /** Hostnames whose generated config was edited by hand, across every server. */
+  const driftedHosts = reports.flatMap((r) => r.drifted)
 
   return {
     ...action,
@@ -101,8 +103,9 @@ export function useWeb() {
     ca,
     projects,
     installedPhp,
-    report,
-    setReport,
+    reports,
+    setReports,
+    driftedHosts,
     driftOpen,
     setDriftOpen,
     refresh: () => refresh(),

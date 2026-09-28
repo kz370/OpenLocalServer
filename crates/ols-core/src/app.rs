@@ -337,6 +337,15 @@ impl Inner {
         core.start_projects_watcher();
         core.sync_php_external();
         core.services.set_limits(core.resource_limits());
+        {
+            // The Services page shows the web servers too, but they keep running through
+            // `WebManager` — this only hands it over for listing and probing.
+            let for_config = Arc::clone(&core);
+            core.services.attach_web(
+                Arc::clone(&core.web),
+                Arc::new(move || for_config.web_config()),
+            );
+        }
         core.apply_plugins();
         Ok(core)
     }
@@ -499,9 +508,9 @@ impl Inner {
         let cfg = self.web_config();
         PlanCtx {
             projects_dir: self.default_projects_dir(),
-            web_server: cfg.server.clone(),
-            http_port: cfg.http_port,
-            https_port: cfg.https_port,
+            web_server: cfg.default_server.clone(),
+            http_port: cfg.http_port(),
+            https_port: cfg.https_port(),
         }
     }
 
@@ -550,11 +559,14 @@ impl Inner {
 
     // -------------------------------------------------------------------- domains
 
+    /// The URL a site is reachable at, on the server that actually renders it: a site
+    /// pinned to a non-default server always carries that server's port.
     pub fn site_url(&self, d: &Domain, cfg: &WebConfig) -> String {
+        let ports = cfg.effective_ports(&crate::domain::resolved_server(d, cfg));
         let (scheme, port, default) = if d.https {
-            ("https", cfg.https_port, 443)
+            ("https", ports.https, 443)
         } else {
-            ("http", cfg.http_port, 80)
+            ("http", ports.http, 80)
         };
         if port == default {
             format!("{scheme}://{}/", d.hostname)
@@ -886,6 +898,7 @@ impl Inner {
                 generated_hashes: Default::default(),
                 public_domain: None,
                 tunnel_id: None,
+                 server: None,
             };
             match self.add_domain(domain) {
                 Ok(d) => {
@@ -956,7 +969,9 @@ impl Inner {
         domains.add(copy)
     }
 
-    pub fn apply_web(&self, overwrite: &[String]) -> Result<ApplyReport, CoreError> {
+    /// Applies every running web server. One report per server; a failure in one never
+    /// rolls back or stops another.
+    pub fn apply_web(&self, overwrite: &[String]) -> Result<Vec<ApplyReport>, CoreError> {
         let cfg = self.web_config();
         let php_for = |d: &Domain| -> Option<String> {
             let detail = self.project_detail(d.project_id.as_deref()?)?;
@@ -975,6 +990,32 @@ impl Inner {
         };
         let mut domains = self.domains.lock().unwrap();
         self.web.apply(&ctx, &mut domains)
+    }
+
+    /// Applies a single web server, for "Start" on one row of the Services page.
+    pub fn apply_web_server(
+        &self,
+        server_id: &str,
+        overwrite: &[String],
+    ) -> Result<ApplyReport, CoreError> {
+        let cfg = self.web_config();
+        let php_for = |d: &Domain| -> Option<String> {
+            let detail = self.project_detail(d.project_id.as_deref()?)?;
+            detail
+                .resolved
+                .into_iter()
+                .find(|r| r.id == "php")
+                .and_then(|r| r.installed_version)
+        };
+        let runtime_bin = |d: &Domain, rt: &str| self.runtime_bin_for(d.project_id.as_deref(), rt);
+        let ctx = ApplyContext {
+            cfg: &cfg,
+            php_for: &php_for,
+            runtime_bin: &runtime_bin,
+            overwrite,
+        };
+        let mut domains = self.domains.lock().unwrap();
+        self.web.apply_one(&ctx, &mut domains, server_id)
     }
 
     pub fn set_domain_enabled(&self, hostname: &str, enabled: bool) -> Result<(), CoreError> {
@@ -1025,8 +1066,8 @@ impl Inner {
         Ok(health::check_site(&HealthTarget {
             hostname,
             https: d.https,
-            http_port: cfg.http_port,
-            https_port: cfg.https_port,
+            http_port: cfg.http_port(),
+            https_port: cfg.https_port(),
             ca_pem: &ca_path,
             ca_trusted: ca_info.trusted,
             cert: cert.as_ref(),
@@ -1353,10 +1394,10 @@ impl Inner {
                 fix: fix.map(str::to_string),
             };
 
-        let server_name = crate::web::server_by_id(&cfg.server)
+        let server_name = crate::web::server_by_id(cfg.server())
             .map(|s| s.name())
             .unwrap_or("Web server");
-        let server_installed = !self.runtimes.installed_versions(&cfg.server).is_empty();
+        let server_installed = !self.runtimes.installed_versions(cfg.server()).is_empty();
         items.push(if server_installed {
             item(
                 "web_installed",
@@ -1389,7 +1430,7 @@ impl Inner {
                 "web_running",
                 "Web server",
                 "ok",
-                format!("running on ports {} / {}", cfg.http_port, cfg.https_port),
+                format!("running on ports {} / {}", cfg.http_port(), cfg.https_port()),
                 None,
             ));
         } else if domain_count > 0 {
@@ -1559,7 +1600,7 @@ impl Inner {
             .into_iter()
             .filter(|d| d.enabled)
             .collect();
-        let server = plan.server.map(|s| sum(&[s])).unwrap_or_default();
+        let server = sum(&plan.servers);
         let static_sites = enabled
             .iter()
             .filter(|d| {
@@ -1781,7 +1822,7 @@ impl Inner {
             kind: "app".into(),
         }];
         let cfg = self.web_config();
-        if let Some(s) = crate::web::server_by_id(&cfg.server) {
+        if let Some(s) = crate::web::server_by_id(cfg.server()) {
             out.push(LogSource {
                 id: "web:error".into(),
                 name: format!("{} error log", s.name()),
@@ -1840,7 +1881,7 @@ impl Inner {
             }
             "web:error" | "web:access" => {
                 let cfg = self.web_config();
-                let server = crate::web::server_by_id(&cfg.server)
+                let server = crate::web::server_by_id(cfg.server())
                     .ok_or_else(|| svc("unknown web server"))?;
                 let logs = self.paths.web_dir().join(server.id()).join("logs");
                 let file = if source == "web:error" {
@@ -1885,7 +1926,7 @@ impl Inner {
             }
             "web:error" | "web:access" => {
                 let cfg = self.web_config();
-                let server = crate::web::server_by_id(&cfg.server)
+                let server = crate::web::server_by_id(cfg.server())
                     .ok_or_else(|| svc("unknown web server"))?;
                 let file = if source == "web:error" {
                     "error.log"
@@ -2395,6 +2436,7 @@ impl Inner {
                     generated_hashes: BTreeMap::new(),
                     public_domain: None,
                     tunnel_id: None,
+                    server: None,
                 };
                 let cfg = self.web_config();
                 let url = self.site_url(&domain, &cfg);
@@ -2431,9 +2473,11 @@ impl Inner {
                 Ok(ActionOutcome::default())
             }
             "apply_web" => {
-                let report = self.apply_web(&[]).map_err(|e| e.to_string())?;
-                for w in &report.warnings {
-                    log(&format!("warning: {w}"));
+                let reports = self.apply_web(&[]).map_err(|e| e.to_string())?;
+                for r in &reports {
+                    for w in &r.warnings {
+                        log(&format!("warning: {w}"));
+                    }
                 }
                 Ok(ActionOutcome::default())
             }
@@ -2704,7 +2748,7 @@ impl Inner {
                 }
                 "open_web_config" => {
                     let cfg = self.web_config();
-                    let dir = self.paths.web_dir().join(&cfg.server);
+                    let dir = self.paths.web_dir().join(cfg.server());
                     std::fs::create_dir_all(&dir)?;
                     self.open_path(&dir.display().to_string())?;
                 }

@@ -181,6 +181,28 @@ pub struct Domain {
     /// Saved tunnel configuration used to expose this site.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tunnel_id: Option<String>,
+    /// Which web server renders this site ("nginx" | "apache" | "caddy"). `None` means
+    /// the default server; a site is rendered on exactly one server, never both.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server: Option<String>,
+}
+
+/// Rejects a per-site server id that isn't one we ship. A blank value means "use the
+/// default" and is stored as such, so the form and the file agree.
+pub fn validate_domain_server(server: Option<&str>) -> Result<Option<String>, CoreError> {
+    match server.map(str::trim) {
+        None | Some("") => Ok(None),
+        Some(s) if crate::web::SERVER_IDS.contains(&s) => Ok(Some(s.to_string())),
+        Some(s) => Err(CoreError::DomainError(format!(
+            "\"{s}\" is not a web server OpenLocalServer ships. \
+             Pick Default, Nginx, Apache or Caddy."
+        ))),
+    }
+}
+
+/// The server that actually renders this site: its own override, or the default one.
+pub fn resolved_server(d: &Domain, cfg: &crate::web::WebConfig) -> String {
+    cfg.resolve_server(d.server.as_deref())
 }
 
 fn yes() -> bool {
@@ -211,6 +233,7 @@ fn home_domain(dir: &Path) -> Domain {
         generated_hashes: BTreeMap::new(),
         public_domain: None,
         tunnel_id: None,
+        server: None,
     }
 }
 
@@ -505,6 +528,7 @@ impl DomainStore {
     pub fn add(&mut self, mut domain: Domain) -> Result<Domain, CoreError> {
         domain.hostname = domain.hostname.trim().to_ascii_lowercase();
         validate_hostname(&domain.hostname)?;
+        domain.server = validate_domain_server(domain.server.as_deref())?;
         if let Some(host) = domain.public_domain.as_mut() {
             *host = host.trim().to_ascii_lowercase();
             validate_hostname(host)?;
@@ -534,6 +558,7 @@ impl DomainStore {
     /// Replaces an existing domain (same hostname) with edited settings.
     pub fn update(&mut self, mut domain: Domain) -> Result<Domain, CoreError> {
         validate_kind(&domain.kind)?;
+        domain.server = validate_domain_server(domain.server.as_deref())?;
         if let Some(host) = domain.public_domain.as_mut() {
             *host = host.trim().to_ascii_lowercase();
             validate_hostname(host)?;
@@ -706,6 +731,7 @@ mod tests {
             generated_hashes: BTreeMap::new(),
             public_domain: None,
             tunnel_id: None,
+            server: None,
         }
     }
 
@@ -859,5 +885,62 @@ mod tests {
         assert!(store.get(HOME_HOSTNAME).is_some());
         let reloaded = DomainStore::load(&home.paths).unwrap();
         assert!(reloaded.get(HOME_HOSTNAME).is_some());
+    }
+
+    fn web_config(default_server: &str) -> crate::web::WebConfig {
+        crate::web::WebConfig {
+            default_server: default_server.into(),
+            servers: BTreeMap::new(),
+            php_workers: 3,
+            dns_port: 53,
+        }
+    }
+
+    #[test]
+    fn domain_server_none_means_default() {
+        let cfg = web_config("nginx");
+        assert_eq!(resolved_server(&domain("a.test"), &cfg), "nginx");
+        let mut pinned = domain("b.test");
+        pinned.server = Some("apache".into());
+        assert_eq!(resolved_server(&pinned, &cfg), "apache");
+    }
+
+    #[test]
+    fn domain_server_rejects_unknown_id_and_treats_blank_as_default() {
+        assert!(validate_domain_server(Some("iis")).is_err());
+        assert_eq!(validate_domain_server(None).unwrap(), None);
+        assert_eq!(validate_domain_server(Some("")).unwrap(), None);
+        assert_eq!(
+            validate_domain_server(Some(" caddy ")).unwrap(),
+            Some("caddy".into())
+        );
+    }
+
+    #[test]
+    fn an_unknown_override_survives_load_but_resolves_to_the_default() {
+        // A site saved against a server that is no longer known must not be dropped:
+        // it still resolves, it just falls back to the default server.
+        let home = crate::test_support::isolated_home();
+        let mut store = DomainStore::load(&home.paths).unwrap();
+        let mut d = domain("legacy.test");
+        d.server = Some("iis".into());
+        store.domains.push(d);
+        store.persist().unwrap();
+
+        let reloaded = DomainStore::load(&home.paths).unwrap();
+        let saved = reloaded.get("legacy.test").unwrap();
+        assert_eq!(saved.server.as_deref(), Some("iis"));
+        assert_eq!(resolved_server(&saved, &web_config("nginx")), "nginx");
+    }
+
+    #[test]
+    fn add_rejects_an_unknown_server_instead_of_silently_dropping_it() {
+        let home = crate::test_support::isolated_home();
+        let mut store = DomainStore::load(&home.paths).unwrap();
+        let mut d = domain("shop.test");
+        d.server = Some("iis".into());
+        assert!(store.add(d.clone()).is_err());
+        d.server = Some("apache".into());
+        assert_eq!(store.add(d).unwrap().server.as_deref(), Some("apache"));
     }
 }

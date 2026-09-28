@@ -640,7 +640,7 @@ fn run(ctx: &Ctx, cmd: Cmd) -> R<()> {
                 } else {
                     "stopped"
                 },
-                data.web.server
+                data.web.default_server
             );
             let mut rows = vec![vec!["SERVICE".into(), "STATE".into(), "PORT".into()]];
             for s in data.services.iter().filter(|s| s.installed) {

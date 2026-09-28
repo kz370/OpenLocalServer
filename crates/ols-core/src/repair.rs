@@ -324,11 +324,11 @@ impl Inner {
         }
 
         let cfg = self.web_config();
-        let server = crate::web::server_by_id(&cfg.server)
+        let server = crate::web::server_by_id(cfg.server())
             .map(|s| s.name())
             .unwrap_or("Web server")
             .to_string();
-        if self.runtimes.installed_versions(&cfg.server).is_empty() {
+        if self.runtimes.installed_versions(cfg.server()).is_empty() {
             add(&format!("{server} valid"), "error", "not installed".into());
         } else {
             match self.web.validate(&cfg) {

@@ -293,10 +293,14 @@ export interface DomainSummary {
   public_domain?: string | null
 }
 
+/** Ports a server is stored with. The default server always binds 80/443 instead. */
+export interface ServerPorts {
+  http: number
+  https: number
+}
 export interface WebConfig {
-  server: string
-  http_port: number
-  https_port: number
+  default_server: string
+  servers: Record<string, ServerPorts>
   php_workers: number
   dns_port: number
 }
@@ -309,10 +313,15 @@ export interface ServerAvailability {
   id: string
   name: string
   installed: boolean
+  /** The server that owns 80/443 and serves every site with no override. */
   active: boolean
+  running: boolean
+  /** Ports it will actually bind. */
+  http_port: number
+  https_port: number
 }
 export interface WebStatus {
-  server: string
+  default_server: string
   servers: ServerAvailability[]
   running: boolean
   http_port: number
@@ -908,7 +917,7 @@ export type CoreResponse =
   | { type: 'domains'; domains: DomainSummary[] }
   | { type: 'domain'; domain: Domain }
   | { type: 'text'; text: string }
-  | { type: 'applied'; report: ApplyReport }
+  | { type: 'applied'; reports: ApplyReport[] }
   | { type: 'ca_info'; info: CaInfo }
   | { type: 'certificates'; certs: CertInfo[] }
   | { type: 'health'; report: HealthReport }

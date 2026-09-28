@@ -212,7 +212,7 @@ fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
 
     let web_start = MenuItem::with_id(app, "web_start", "Start / reload", true, None::<&str>)?;
     let web_stop = MenuItem::with_id(app, "web_stop", "Stop", true, None::<&str>)?;
-    let active_server = core.inner().web_config().server;
+    let active_server = core.inner().web_config().default_server;
     let mut server_items = Vec::new();
     for server in ["nginx", "apache", "caddy"] {
         server_items.push(CheckMenuItem::with_id(

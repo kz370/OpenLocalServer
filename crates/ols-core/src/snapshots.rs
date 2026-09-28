@@ -384,14 +384,15 @@ impl Inner {
         let cfg = self.web_config();
         let mut web_configs = BTreeMap::new();
         for d in domains.iter().filter(|d| d.ownership != Ownership::Managed) {
+            let server = crate::domain::resolved_server(d, &cfg);
             let site = self
                 .web
-                .read_config(&cfg, Some(&d.hostname), ConfigPart::Site)
+                .read_config(&server, Some(&d.hostname), ConfigPart::Site)
                 .ok();
             let custom = (d.ownership == Ownership::Advanced)
                 .then(|| {
                     self.web
-                        .read_config(&cfg, Some(&d.hostname), ConfigPart::Custom)
+                        .read_config(&server, Some(&d.hostname), ConfigPart::Custom)
                         .ok()
                 })
                 .flatten();
@@ -1488,6 +1489,7 @@ mod tests {
             generated_hashes: Default::default(),
             public_domain: None,
             tunnel_id: None,
+             server: None,
         };
         // Registering already gave it shop.test (automatic domains); make it ours either way.
         if core

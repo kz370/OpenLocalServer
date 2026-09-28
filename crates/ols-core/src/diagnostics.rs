@@ -136,14 +136,14 @@ impl Inner {
             .into_iter()
             .filter(|d| d.enabled)
             .count();
-        let server_name = crate::web::server_by_id(&cfg.server)
+        let server_name = crate::web::server_by_id(cfg.server())
             .map(|s| s.name())
             .unwrap_or("The web server");
 
-        if self.runtimes.installed_versions(&cfg.server).is_empty() {
+        if self.runtimes.installed_versions(cfg.server()).is_empty() {
             let version = crate::catalog::builtin_catalog()
                 .into_iter()
-                .find(|m| m.id == cfg.server)
+                .find(|m| m.id == cfg.default_server)
                 .map(|m| m.version.to_string());
             b.add(
                 "web_not_installed",
@@ -151,7 +151,7 @@ impl Inner {
                 format!("{server_name} is not installed"),
                 "Sites are served by the web server chosen in the Sites settings, and its files are not on this computer.",
                 format!("Install {server_name} from the Runtimes page."),
-                version.map(|version| CoreCommand::InstallRuntime { id: cfg.server.clone(), version }),
+                version.map(|version| CoreCommand::InstallRuntime { id: cfg.default_server.clone(), version }),
                 vec![],
             );
             return;
@@ -179,7 +179,7 @@ impl Inner {
                 conflict.clone(),
                 "Stop that program (IIS, Skype and other web servers are common), or choose other ports in the Sites settings.",
                 None,
-                vec![format!("HTTP port {}, HTTPS port {}", cfg.http_port, cfg.https_port)],
+                vec![format!("HTTP port {}, HTTPS port {}", cfg.http_port(), cfg.https_port())],
             );
         }
     }

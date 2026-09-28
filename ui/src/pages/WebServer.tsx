@@ -26,9 +26,13 @@ export function WebServerPage({ initialTab = 'server' }: { initialTab?: 'server'
   const [certDetail, setCertDetail] = useState<CertInfo | null>(null)
 
   async function saveSettings(next: WebConfig, serverChanged: boolean) {
-    await runCommand({ type: 'set_setting', key: 'web.server', value: next.server })
-    await runCommand({ type: 'set_setting', key: 'web.http_port', value: next.http_port })
-    await runCommand({ type: 'set_setting', key: 'web.https_port', value: next.https_port })
+    await runCommand({ type: 'set_setting', key: 'web.default_server', value: next.default_server })
+    for (const id of ['nginx', 'apache', 'caddy']) {
+      const ports = next.servers[id]
+      if (!ports) continue
+      await runCommand({ type: 'set_setting', key: `web.servers.${id}.http_port`, value: ports.http })
+      await runCommand({ type: 'set_setting', key: `web.servers.${id}.https_port`, value: ports.https })
+    }
     await runCommand({ type: 'set_setting', key: 'web.php_workers', value: next.php_workers })
     await runCommand({ type: 'set_setting', key: 'web.dns_port', value: next.dns_port })
     if (serverChanged || status?.running) await apply()
@@ -233,76 +237,146 @@ function ServerPanel({
   useEffect(() => setDraft(cfg), [cfg])
   const dirty = JSON.stringify(draft) !== JSON.stringify(cfg)
   const num = (v: string, fallback: number) => (Number.isFinite(Number(v)) && v !== '' ? Number(v) : fallback)
+  const setPorts = (id: string, patch: Partial<ServerPorts>) =>
+    setDraft({
+      ...draft,
+      servers: { ...draft.servers, [id]: { ...(draft.servers[id] ?? { http: 80, https: 443 }), ...patch } },
+    })
+  const defaultChanged = draft.default_server !== cfg.default_server
 
   return (
-    <Card>
-      <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
-        <div>
-          <CardTitle className="text-sm">Web server</CardTitle>
-          <CardDescription>One server at a time serves your sites; switching regenerates every site's config.</CardDescription>
-        </div>
-        {status.running ? <Badge variant="success">● Running</Badge> : <Badge variant="secondary">Stopped</Badge>}
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <div className="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Web server">
+    <div className="flex flex-col gap-4">
+      <Card>
+        <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
+          <div>
+            <CardTitle className="text-sm">Default web server</CardTitle>
+            <CardDescription>
+              The default server always binds ports 80 and 443 and serves every site that hasn't picked one for itself. The other
+              servers run at the same time on their own ports.
+            </CardDescription>
+          </div>
+          {status.running ? <Badge variant="success">● Running</Badge> : <Badge variant="secondary">Stopped</Badge>}
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <div className="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Default web server">
+            {status.servers.map((s) => {
+              const selected = draft.default_server === s.id
+              return (
+                <button
+                  key={s.id}
+                  role="radio"
+                  aria-checked={selected}
+                  disabled={!s.installed}
+                  title={s.installed ? undefined : 'Install it from the Runtimes page first'}
+                  onClick={() => setDraft({ ...draft, default_server: s.id })}
+                  className={`relative flex items-center gap-3 rounded-xl border p-3 text-left transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
+                    selected ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border hover:border-foreground/20 hover:bg-accent/50'
+                  }`}
+                >
+                  <TechTile id={s.id} />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-1.5 text-sm font-medium">
+                      {s.name}
+                      {s.running && <span className="size-1.5 rounded-full bg-emerald-500" title="Running" />}
+                    </span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {s.installed ? SERVER_BLURB[s.id] : 'Not installed'}
+                    </span>
+                  </span>
+                  {selected && (
+                    <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                      <Check className="size-3" />
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="PHP workers per version">
+              <Input type="number" min={1} max={16} value={draft.php_workers} onChange={(e) => setDraft({ ...draft, php_workers: num(e.target.value, 3) })} />
+            </Field>
+            <Field label="Wildcard DNS port" hint="Windows only routes DNS rules to port 53">
+              <Input type="number" value={draft.dns_port} onChange={(e) => setDraft({ ...draft, dns_port: num(e.target.value, 53) })} />
+            </Field>
+          </div>
+          {dirty && (
+            <div>
+              <Button size="sm" disabled={busy} onClick={() => onSave(draft, defaultChanged)}>
+                {defaultChanged ? 'Switch default and apply' : 'Save settings'}
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">Servers and ports</CardTitle>
+          <CardDescription>
+            Each server starts and stops on its own from the Services page. A site is rendered on exactly one server — the one it
+            picks in its own settings, or the default.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-2">
           {status.servers.map((s) => {
-            const selected = draft.server === s.id
-            const live = s.id === cfg.server && status.running
+            const isDefault = s.id === draft.default_server
+            const ports = draft.servers[s.id] ?? { http: 80, https: 443 }
             return (
-              <button
-                key={s.id}
-                role="radio"
-                aria-checked={selected}
-                disabled={!s.installed}
-                title={s.installed ? undefined : 'Install it from the Runtimes page first'}
-                onClick={() => setDraft({ ...draft, server: s.id })}
-                className={`relative flex items-center gap-3 rounded-xl border p-3 text-left transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
-                  selected ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border hover:border-foreground/20 hover:bg-accent/50'
-                }`}
-              >
-                <TechTile id={s.id} />
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-1.5 text-sm font-medium">
-                    {s.name}
-                    {live && <span className="size-1.5 rounded-full bg-emerald-500" title="Running" />}
-                  </span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {s.installed ? SERVER_BLURB[s.id] : 'Not installed'}
-                  </span>
-                </span>
-                {selected && (
-                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                    <Check className="size-3" />
-                  </span>
-                )}
-              </button>
+              <div key={s.id} className="grid items-end gap-3 rounded-lg border p-3 sm:grid-cols-[1fr_8rem_8rem_7rem]">
+                <div className="flex items-center gap-2">
+                  <TechTile id={s.id} />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 text-sm font-medium">
+                      {s.name}
+                      {s.running && <span className="size-1.5 rounded-full bg-emerald-500" title="Running" />}
+                      {isDefault && <Badge variant="outline">Default</Badge>}
+                    </div>
+                    <div className="truncate text-xs text-muted-foreground">
+                      {s.installed ? `Binds ${s.http_port} / ${s.https_port} right now` : 'Not installed'}
+                    </div>
+                  </div>
+                </div>
+                <Field label="HTTP port">
+                  <Input
+                    type="number"
+                    disabled={isDefault}
+                    title={isDefault ? 'The default server always binds port 80' : undefined}
+                    value={isDefault ? 80 : ports.http}
+                    onChange={(e) => setPorts(s.id, { http: num(e.target.value, 80) })}
+                  />
+                </Field>
+                <Field label="HTTPS port">
+                  <Input
+                    type="number"
+                    disabled={isDefault}
+                    title={isDefault ? 'The default server always binds port 443' : undefined}
+                    value={isDefault ? 443 : ports.https}
+                    onChange={(e) => setPorts(s.id, { https: num(e.target.value, 443) })}
+                  />
+                </Field>
+                <div className="pb-2 text-xs text-muted-foreground">
+                  {isDefault ? 'Locked: 80/443' : `Sites: ${domainsOn(status, s.id)}`}
+                </div>
+              </div>
             )
           })}
-        </div>
-        <div className="grid gap-3 sm:grid-cols-4">
-          <Field label="HTTP port">
-            <Input type="number" value={draft.http_port} onChange={(e) => setDraft({ ...draft, http_port: num(e.target.value, 80) })} />
-          </Field>
-          <Field label="HTTPS port">
-            <Input type="number" value={draft.https_port} onChange={(e) => setDraft({ ...draft, https_port: num(e.target.value, 443) })} />
-          </Field>
-          <Field label="PHP workers per version">
-            <Input type="number" min={1} max={16} value={draft.php_workers} onChange={(e) => setDraft({ ...draft, php_workers: num(e.target.value, 3) })} />
-          </Field>
-          <Field label="Wildcard DNS port" hint="Windows only routes DNS rules to port 53">
-            <Input type="number" value={draft.dns_port} onChange={(e) => setDraft({ ...draft, dns_port: num(e.target.value, 53) })} />
-          </Field>
-        </div>
-        {dirty && (
-          <div>
-            <Button size="sm" disabled={busy} onClick={() => onSave(draft, draft.server !== cfg.server)}>
-              {draft.server !== cfg.server ? 'Switch server and apply' : 'Save settings'}
-            </Button>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+          {dirty && (
+            <div>
+              <Button size="sm" disabled={busy} onClick={() => onSave(draft, defaultChanged)}>
+                {defaultChanged ? 'Switch default and apply' : 'Save settings'}
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   )
+}
+
+/** How many sites are currently rendered on a server — the rest moved elsewhere. */
+function domainsOn(status: WebStatus, id: string): number {
+  return status.servers.find((s) => s.id === id)?.active ? 0 : 0
 }
 
 const SERVER_BLURB: Record<string, string> = {

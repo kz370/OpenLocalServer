@@ -185,6 +185,7 @@ impl crate::app::Inner {
                     generated_hashes: Default::default(),
                     public_domain: None,
                     tunnel_id: None,
+                     server: None,
                 };
                 self.domains.lock().unwrap().add(site)?;
             }

@@ -107,20 +107,24 @@ impl Inner {
             .map(|d| d.hostname)
             .collect();
         if !hostnames.is_empty() {
-            if let Ok(files) = self.web.list_configs(&self.web_config(), &domains) {
-                for f in files
-                    .into_iter()
-                    .filter(|f| f.hostname.as_ref().is_some_and(|h| hostnames.contains(h)))
-                {
-                    if Path::new(&f.path).is_file() {
-                        let host = f.hostname.unwrap_or_default();
-                        shortcuts.push(Shortcut {
-                            id: format!("server:{host}"),
-                            label: format!("Server config · {host}"),
-                            path: f.path,
-                            is_dir: false,
-                        });
-                    }
+            let cfg = self.web_config();
+            // A project's sites can sit on different servers, so each one's own files.
+            let files = crate::web::SERVER_IDS
+                .iter()
+                .filter_map(|id| self.web.list_configs(&cfg, &domains, id).ok())
+                .flatten();
+            for f in files
+                .into_iter()
+                .filter(|f| f.hostname.as_ref().is_some_and(|h| hostnames.contains(h)))
+            {
+                if Path::new(&f.path).is_file() {
+                    let host = f.hostname.unwrap_or_default();
+                    shortcuts.push(Shortcut {
+                        id: format!("server:{host}"),
+                        label: format!("Server config · {host}"),
+                        path: f.path,
+                        is_dir: false,
+                    });
                 }
             }
         }

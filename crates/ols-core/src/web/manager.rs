@@ -20,7 +20,7 @@ use super::{
 };
 use crate::certs::CertificateManager;
 use crate::dns::DnsServer;
-use crate::domain::{AppSpec, Domain, DomainStore, Ownership, SiteKind};
+use crate::domain::{resolved_server, AppSpec, Domain, DomainStore, Ownership, SiteKind};
 use crate::error::CoreError;
 use crate::exec::run_capture;
 use crate::paths::AppPaths;
@@ -89,7 +89,13 @@ pub struct ServerAvailability {
     pub id: String,
     pub name: String,
     pub installed: bool,
+    /// The server that owns 80/443 and serves every site with no override.
     pub active: bool,
+    /// Whether this server's process is alive right now. Each one runs independently.
+    pub running: bool,
+    /// Ports it will actually bind: 80/443 for the default, its own stored pair otherwise.
+    pub http_port: u16,
+    pub https_port: u16,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,8 +106,10 @@ pub struct AppStatus {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WebStatus {
-    pub server: String,
+    /// Server that owns 80/443. Every site without its own override is served by it.
+    pub default_server: String,
     pub servers: Vec<ServerAvailability>,
+    /// Any web server alive.
     pub running: bool,
     pub http_port: u16,
     pub https_port: u16,
@@ -111,16 +119,18 @@ pub struct WebStatus {
     pub apps: Vec<AppStatus>,
     pub dns_running: bool,
     pub dns_port: u16,
+    /// Error log of the default server; each server's own log is reachable per id.
     pub error_log: Option<String>,
 }
 
 struct Running {
-    id: String,
     process: ProcessId,
 }
 
 struct State {
-    server: Option<Running>,
+    /// One entry per server that is running. They hold different ports, so more than one
+    /// can be alive at the same time (§3.1).
+    servers: HashMap<String, Running>,
     apps: HashMap<String, ProcessId>,
     dns: Option<DnsServer>,
     /// hostname -> the PHP version its requests go to (from the last apply).
@@ -129,7 +139,7 @@ struct State {
 
 /// Which supervised processes do each site's work, for per-site resource usage.
 pub struct UsagePlan {
-    pub server: Option<ProcessId>,
+    pub servers: Vec<ProcessId>,
     pub apps: HashMap<String, ProcessId>,
     pub site_php: HashMap<String, String>,
     pub pools: HashMap<String, Vec<ProcessId>>,
@@ -161,6 +171,25 @@ fn werr(msg: impl Into<String>) -> CoreError {
     CoreError::WebError(msg.into())
 }
 
+/// Who is sitting on a port, in words a user can act on.
+fn port_owner(process_name: Option<String>, pid: Option<u32>) -> String {
+    match (process_name, pid) {
+        (Some(n), Some(p)) => format!("{n} (PID {p})"),
+        (None, Some(p)) => format!("PID {p}"),
+        _ => "another program".to_string(),
+    }
+}
+
+/// The enabled sites one server renders. A site is served by exactly one server: its own
+/// `server` override, or the default when it has none.
+pub fn sites_for_server(cfg: &WebConfig, domains: &[Domain], server_id: &str) -> Vec<Domain> {
+    domains
+        .iter()
+        .filter(|d| d.enabled && resolved_server(d, cfg) == server_id)
+        .cloned()
+        .collect()
+}
+
 impl WebManager {
     pub fn new(
         paths: AppPaths,
@@ -176,7 +205,7 @@ impl WebManager {
             certs,
             php,
             state: Mutex::new(State {
-                server: None,
+                servers: HashMap::new(),
                 apps: HashMap::new(),
                 dns: None,
                 site_php: HashMap::new(),
@@ -251,33 +280,46 @@ impl WebManager {
     // ---------------------------------------------------------------- status
 
     pub fn status(&self, cfg: &WebConfig) -> WebStatus {
+        let st = self.state.lock().unwrap();
         let servers = SERVER_IDS
             .iter()
             .filter_map(|id| server_by_id(id))
-            .map(|s| ServerAvailability {
-                id: s.id().to_string(),
-                name: s.name().to_string(),
-                installed: !self.runtimes.installed_versions(s.id()).is_empty(),
-                active: s.id() == cfg.server,
+            .map(|s| {
+                let ports = cfg.effective_ports(s.id());
+                ServerAvailability {
+                    id: s.id().to_string(),
+                    name: s.name().to_string(),
+                    installed: !self.runtimes.installed_versions(s.id()).is_empty(),
+                    active: s.id() == cfg.default_server,
+                    running: st
+                        .servers
+                        .get(s.id())
+                        .is_some_and(|r| self.supervisor.is_alive(r.process)),
+                    http_port: ports.http,
+                    https_port: ports.https,
+                }
             })
             .collect();
 
-        let st = self.state.lock().unwrap();
         let running = st
-            .server
-            .as_ref()
-            .is_some_and(|r| self.supervisor.is_alive(r.process));
+            .servers
+            .values()
+            .any(|r| self.supervisor.is_alive(r.process));
         let mut port_conflicts = Vec::new();
-        if !running {
-            for (label, port) in [("HTTP", cfg.http_port), ("HTTPS", cfg.https_port)] {
-                if let PortStatus::InUse { pid, process_name } = check_port(port) {
-                    let who = match (process_name, pid) {
-                        (Some(n), Some(p)) => format!("{n} (PID {p})"),
-                        (None, Some(p)) => format!("PID {p}"),
-                        _ => "another program".to_string(),
-                    };
-                    port_conflicts.push(format!("{label} port {port} is in use by {who}"));
-                }
+        for (label, port) in [("HTTP", cfg.http_port()), ("HTTPS", cfg.https_port())] {
+            // A port the default server is already using isn't a conflict with itself.
+            if st
+                .servers
+                .get(&cfg.default_server)
+                .is_some_and(|r| self.supervisor.is_alive(r.process))
+            {
+                continue;
+            }
+            if let PortStatus::InUse { pid, process_name } = check_port(port) {
+                port_conflicts.push(format!(
+                    "{label} port {port} is in use by {}",
+                    port_owner(process_name, pid)
+                ));
             }
         }
         let apps = st
@@ -288,72 +330,144 @@ impl WebManager {
                 running: self.supervisor.is_alive(*id),
             })
             .collect();
-        let error_log = server_by_id(&cfg.server).and_then(|s| {
-            self.layout(s.as_ref())
-                .ok()
-                .map(|l| s.error_log(&l).display().to_string())
-        });
+        drop(st);
+        let error_log = self.error_log_path(&cfg.default_server);
 
         WebStatus {
-            server: cfg.server.clone(),
+            default_server: cfg.default_server.clone(),
             servers,
             running,
-            http_port: cfg.http_port,
-            https_port: cfg.https_port,
+            http_port: cfg.http_port(),
+            https_port: cfg.https_port(),
             port_conflicts,
             php_pools: self.php.status(),
             apps,
-            dns_running: st.dns.is_some(),
+            dns_running: self.state.lock().unwrap().dns.is_some(),
             dns_port: cfg.dns_port,
             error_log,
         }
     }
 
+    /// Where a server writes its error log, if it is installed.
+    pub fn error_log_path(&self, id: &str) -> Option<String> {
+        let server = server_by_id(id)?;
+        let layout = self.layout(server.as_ref()).ok()?;
+        Some(server.error_log(&layout).display().to_string())
+    }
+
     pub fn usage_plan(&self) -> UsagePlan {
         let st = self.state.lock().unwrap();
         UsagePlan {
-            server: st.server.as_ref().map(|r| r.process),
+            servers: st.servers.values().map(|r| r.process).collect(),
             apps: st.apps.clone(),
             site_php: st.site_php.clone(),
             pools: self.php.pool_processes(),
         }
     }
 
+    /// Is any web server alive?
     pub fn is_running(&self) -> bool {
         let st = self.state.lock().unwrap();
-        st.server
-            .as_ref()
+        st.servers
+            .values()
+            .any(|r| self.supervisor.is_alive(r.process))
+    }
+
+    /// Is this one server alive? Each starts and stops on its own (§3.2).
+    pub fn is_running_id(&self, id: &str) -> bool {
+        let st = self.state.lock().unwrap();
+        st.servers
+            .get(id)
             .is_some_and(|r| self.supervisor.is_alive(r.process))
+    }
+
+    /// Stops one web server, leaving every other one running.
+    pub fn stop_server(&self, id: &str) {
+        let running = self.state.lock().unwrap().servers.remove(id);
+        if let Some(r) = running {
+            self.supervisor.stop(r.process);
+        }
+    }
+
+    /// The supervised process of a running server, for callers that need its id.
+    pub fn running_pid(&self, id: &str) -> Option<ProcessId> {
+        self.state.lock().unwrap().servers.get(id).map(|r| r.process)
     }
 
     // ---------------------------------------------------------------- apply (§28)
 
+    /// Which servers an apply touches: the default one always, plus every installed
+    /// server the user has explicitly started. A server that was never started renders
+    /// nothing, so its config on disk is left exactly as it was.
+    fn apply_targets(&self, cfg: &WebConfig) -> Vec<String> {
+        let mut targets = vec![cfg.default_server.clone()];
+        for id in SERVER_IDS {
+            if *id != cfg.default_server
+                && self.is_running_id(id)
+                && !self.runtimes.installed_versions(id).is_empty()
+            {
+                targets.push((*id).to_string());
+            }
+        }
+        targets
+    }
+
+    /// Renders, validates and starts every server that should be serving, one after the
+    /// other. Each server's rollback is its own, so a bad config for one never touches
+    /// the others.
     pub fn apply(
         &self,
         ctx: &ApplyContext,
         domains: &mut DomainStore,
+    ) -> Result<Vec<ApplyReport>, CoreError> {
+        let mut out = Vec::new();
+        for id in self.apply_targets(ctx.cfg) {
+            out.push(self.apply_one(ctx, domains, &id)?);
+        }
+        self.finish_global(ctx, domains, &mut out);
+        Ok(out)
+    }
+
+    /// §28 for one server, rendering only the sites assigned to it.
+    pub fn apply_one(
+        &self,
+        ctx: &ApplyContext,
+        domains: &mut DomainStore,
+        server_id: &str,
     ) -> Result<ApplyReport, CoreError> {
         let cfg = ctx.cfg;
-        let server = server_by_id(&cfg.server)
-            .ok_or_else(|| werr(format!("unknown web server \"{}\"", cfg.server)))?;
+        let server = server_by_id(server_id)
+            .ok_or_else(|| werr(format!("unknown web server \"{server_id}\"")))?;
         let layout = self.layout(server.as_ref())?;
         server
             .prepare(&layout)
             .map_err(|e| werr(format!("could not prepare {}: {e}", server.name())))?;
+        let effective = cfg.effective_ports(server.id());
         let ports = Ports {
-            http: cfg.http_port,
-            https: cfg.https_port,
+            http: effective.http,
+            https: effective.https,
         };
         let mut report = ApplyReport {
             server: server.id().to_string(),
             ..Default::default()
         };
 
-        // Only one server may own ports 80/443 — stop a different one before switching.
-        self.stop_other_server(server.id());
-
         let all = domains.list();
-        let enabled: Vec<Domain> = all.iter().filter(|d| d.enabled).cloned().collect();
+        // Exclusive binding: a site is rendered on its assigned server and no other, so
+        // the files of the other servers for that host are removed below.
+        let enabled = sites_for_server(cfg, &all, server.id());
+        for d in &enabled {
+            if let Some(want) = d.server.as_deref() {
+                if !SERVER_IDS.contains(&want) {
+                    report.warnings.push(format!(
+                        "{} asks for web server \"{want}\", which is not one we ship; \
+                         it is being served by {} instead.",
+                        d.hostname,
+                        server.id()
+                    ));
+                }
+            }
+        }
 
         // 1. PHP pools for every version a PHP site needs.
         let mut pool_specs: BTreeMap<String, PoolSpec> = BTreeMap::new();
@@ -561,15 +675,33 @@ impl WebManager {
         }
 
         // 5. Start (or gracefully reload).
-        self.start_or_reload(server.as_ref(), &layout, cfg, &mut report)?;
+        self.start_or_reload(server.as_ref(), &layout, ports, &mut report)?;
 
-        // 6. Site app processes (npm run dev, uvicorn, ...).
-        self.sync_apps(ctx, &enabled, &mut report);
+        Ok(report)
+    }
 
-        // 7. Name resolution. Failures here don't invalidate the server config. Our local
+    /// Steps that are about the machine, not one server: site app processes and name
+    /// resolution run once for every enabled site, whichever server renders it (§3.2).
+    fn finish_global(
+        &self,
+        ctx: &ApplyContext,
+        domains: &DomainStore,
+        reports: &mut [ApplyReport],
+    ) {
+        let enabled: Vec<Domain> = domains
+            .list()
+            .into_iter()
+            .filter(|d| d.enabled)
+            .collect();
+        let Some(report) = reports.last_mut() else {
+            return;
+        };
+        self.sync_apps(ctx, &enabled, report);
+
+        // Name resolution. Failures here don't invalidate any server config. Our local
         // DNS answers for whole reserved TLDs (.test), so those names never need the
         // admin-only hosts file; only names outside them are written there.
-        let covered = self.sync_dns(cfg, &enabled, &mut report);
+        let covered = self.sync_dns(ctx.cfg, &enabled, report);
         let mut hostnames: Vec<String> = enabled
             .iter()
             .map(|d| d.hostname.clone())
@@ -584,8 +716,6 @@ impl WebManager {
                     .push(format!("The hosts file was not updated: {e}")),
             }
         }
-
-        Ok(report)
     }
 
     fn run_invocation(&self, layout: &ServerLayout, inv: &Invocation) -> crate::exec::Captured {
@@ -598,29 +728,18 @@ impl WebManager {
         )
     }
 
-    fn stop_other_server(&self, keep_id: &str) {
-        let mut st = self.state.lock().unwrap();
-        if st.server.as_ref().is_some_and(|r| r.id != keep_id) {
-            if let Some(r) = st.server.take() {
-                self.supervisor.stop(r.process);
-                drop(st);
-                wait_port_free_all(Duration::from_secs(3));
-            }
-        }
-    }
-
     fn start_or_reload(
         &self,
         server: &dyn WebServer,
         layout: &ServerLayout,
-        cfg: &WebConfig,
+        ports: Ports,
         report: &mut ApplyReport,
     ) -> Result<(), CoreError> {
         let alive = {
             let st = self.state.lock().unwrap();
-            st.server
-                .as_ref()
-                .filter(|r| r.id == server.id() && self.supervisor.is_alive(r.process))
+            st.servers
+                .get(server.id())
+                .filter(|r| self.supervisor.is_alive(r.process))
                 .map(|r| r.process)
         };
 
@@ -638,20 +757,18 @@ impl WebManager {
             }
             // No graceful reload (Apache in foreground mode) or it failed: restart.
             self.supervisor.stop(process);
-            self.state.lock().unwrap().server = None;
+            self.state.lock().unwrap().servers.remove(server.id());
             wait_port_free_all(Duration::from_secs(4));
         }
 
         // Ports must be ours to take.
-        for (label, port) in [("HTTP", cfg.http_port), ("HTTPS", cfg.https_port)] {
+        for (label, port) in [("HTTP", ports.http), ("HTTPS", ports.https)] {
             if let PortStatus::InUse { pid, process_name } = check_port(port) {
-                let who = match (process_name, pid) {
-                    (Some(n), Some(p)) => format!("{n} (PID {p})"),
-                    (None, Some(p)) => format!("PID {p}"),
-                    _ => "another program".to_string(),
-                };
                 return Err(werr(format!(
-                    "{label} port {port} is already in use by {who}. Stop it, or choose different ports in the web settings."
+                    "{label} port {port} is already in use by {}. \
+                     Stop it, or give {} different ports in the web settings.",
+                    port_owner(process_name, pid),
+                    server.name()
                 )));
             }
         }
@@ -665,7 +782,7 @@ impl WebManager {
             env: vec![],
             restart: None,
         });
-        if let Err(msg) = self.wait_ready(process, cfg.http_port, Duration::from_secs(10)) {
+        if let Err(msg) = self.wait_ready(process, ports.http, Duration::from_secs(10)) {
             self.supervisor.stop(process);
             let log_tail = tail(&server.error_log(layout), 8);
             return Err(werr(format!(
@@ -673,10 +790,10 @@ impl WebManager {
                 server.name()
             )));
         }
-        self.state.lock().unwrap().server = Some(Running {
-            id: server.id().to_string(),
-            process,
-        });
+        self.state.lock().unwrap().servers.insert(
+            server.id().to_string(),
+            Running { process },
+        );
         report.started = true;
         Ok(())
     }
@@ -718,9 +835,10 @@ impl WebManager {
         }
     }
 
+    /// Stops every web server at once (shutdown).
     pub fn stop(&self) {
         let mut st = self.state.lock().unwrap();
-        if let Some(r) = st.server.take() {
+        for (_, r) in st.servers.drain() {
             self.supervisor.stop(r.process);
         }
         for (_, id) in st.apps.drain() {
@@ -731,15 +849,47 @@ impl WebManager {
         self.php.stop_all();
     }
 
-    /// Re-runs the server's config check against what's on disk, without changing anything.
+    /// Starts one server on its own, without touching the others. The config for the
+    /// sites assigned to it is rendered by the caller's apply.
+    pub fn start_server(&self, id: &str, cfg: &WebConfig) -> Result<(), CoreError> {
+        let server = server_by_id(id).ok_or_else(|| werr(format!("unknown web server \"{id}\"")))?;
+        let layout = self.layout(server.as_ref())?;
+        server
+            .prepare(&layout)
+            .map_err(|e| werr(format!("could not prepare {}: {e}", server.name())))?;
+        let effective = cfg.effective_ports(id);
+        let mut report = ApplyReport {
+            server: id.to_string(),
+            ..Default::default()
+        };
+        self.start_or_reload(
+            server.as_ref(),
+            &layout,
+            Ports {
+                http: effective.http,
+                https: effective.https,
+            },
+            &mut report,
+        )
+    }
+
+    /// Re-runs one server's config check against what's on disk, without changing anything.
     pub fn validate(&self, cfg: &WebConfig) -> Result<String, CoreError> {
-        let server = server_by_id(&cfg.server).ok_or_else(|| werr("unknown web server"))?;
+        self.validate_server(&cfg.default_server)
+    }
+
+    pub fn validate_server(&self, id: &str) -> Result<String, CoreError> {
+        let server = server_by_id(id).ok_or_else(|| werr("unknown web server"))?;
         let layout = self.layout(server.as_ref())?;
         let out = self.run_invocation(&layout, &server.validate(&layout));
         if out.success() {
             Ok(out.combined())
         } else {
-            Err(werr(out.combined()))
+            Err(werr(format!(
+                "{} rejected the config on disk:\n{}",
+                server.name(),
+                out.combined()
+            )))
         }
     }
 
@@ -929,12 +1079,16 @@ impl WebManager {
 
     // ---------------------------------------------------------------- config files (§25–29)
 
+    /// Config files for one server. `server_id` is resolved from the site's own override,
+    /// so a site's files are listed under the server that actually renders it.
     pub fn list_configs(
         &self,
         cfg: &WebConfig,
         domains: &DomainStore,
+        server_id: &str,
     ) -> Result<Vec<ConfigFile>, CoreError> {
-        let server = server_by_id(&cfg.server).ok_or_else(|| werr("unknown web server"))?;
+        let server = server_by_id(server_id)
+            .ok_or_else(|| werr(format!("unknown web server \"{server_id}\"")))?;
         let layout = self.layout(server.as_ref())?;
         let mut files = vec![ConfigFile {
             hostname: None,
@@ -945,6 +1099,9 @@ impl WebManager {
             editable: false,
         }];
         for d in domains.list() {
+            if resolved_server(&d, cfg) != server.id() {
+                continue;
+            }
             let path = layout.site_file(server.config_ext(), &d.hostname);
             let drifted = std::fs::read_to_string(&path)
                 .ok()
@@ -977,11 +1134,12 @@ impl WebManager {
 
     pub fn read_config(
         &self,
-        cfg: &WebConfig,
+        server_id: &str,
         hostname: Option<&str>,
         part: ConfigPart,
     ) -> Result<String, CoreError> {
-        let server = server_by_id(&cfg.server).ok_or_else(|| werr("unknown web server"))?;
+        let server = server_by_id(server_id)
+            .ok_or_else(|| werr(format!("unknown web server \"{server_id}\"")))?;
         let layout = self.layout(server.as_ref())?;
         let path = self.file_path(server.as_ref(), &layout, hostname, part)?;
         std::fs::read_to_string(&path)
@@ -998,11 +1156,14 @@ impl WebManager {
         part: ConfigPart,
         content: &str,
     ) -> Result<String, CoreError> {
-        let server = server_by_id(&cfg.server).ok_or_else(|| werr("unknown web server"))?;
-        let layout = self.layout(server.as_ref())?;
         let domain = domains
             .get(hostname)
             .ok_or_else(|| werr(format!("{hostname} is not a known domain")))?;
+        let server_id = resolved_server(&domain, cfg);
+        let server = server_by_id(&server_id)
+            .ok_or_else(|| werr(format!("unknown web server \"{server_id}\"")))?;
+        let layout = self.layout(server.as_ref())?;
+        let domain = domain;
 
         match (part, domain.ownership) {
             (ConfigPart::Main, _) => return Err(werr("The main config is generated by OpenLocalServer and can't be edited here.")),
@@ -1051,8 +1212,17 @@ impl WebManager {
         }
 
         let mut report = ApplyReport::default();
-        if self.is_running() {
-            self.start_or_reload(server.as_ref(), &layout, cfg, &mut report)?;
+        if self.is_running_id(server.id()) {
+            let effective = cfg.effective_ports(server.id());
+            self.start_or_reload(
+                server.as_ref(),
+                &layout,
+                Ports {
+                    http: effective.http,
+                    https: effective.https,
+                },
+                &mut report,
+            )?;
         }
         Ok(check.combined())
     }
@@ -1071,7 +1241,8 @@ impl WebManager {
         if d.ownership == ownership {
             return Ok(());
         }
-        if let Some(server) = server_by_id(&cfg.server) {
+        let server_id = resolved_server(&d, cfg);
+        if let Some(server) = server_by_id(&server_id) {
             if let Ok(layout) = self.layout(server.as_ref()) {
                 let ext = server.config_ext();
                 let site = layout.site_file(ext, hostname);
@@ -1168,19 +1339,32 @@ impl WebManager {
         out
     }
 
-    pub fn list_history(&self, cfg: &WebConfig, hostname: &str) -> Vec<ConfigVersion> {
-        let mut v = self.list_history_raw(&cfg.server, hostname);
+    /// Saved versions of a site's config, under the server that renders the site.
+    pub fn list_history(&self, cfg: &WebConfig, domains: &DomainStore, hostname: &str) -> Vec<ConfigVersion> {
+        let server_id = self.server_of(cfg, domains, hostname);
+        let mut v = self.list_history_raw(&server_id, hostname);
         v.sort_by(|a, b| b.timestamp_ms.cmp(&a.timestamp_ms));
         v
+    }
+
+    /// Which server a hostname's config lives under: its own override, or the default.
+    fn server_of(&self, cfg: &WebConfig, domains: &DomainStore, hostname: &str) -> String {
+        domains
+            .get(hostname)
+            .map(|d| resolved_server(&d, cfg))
+            .unwrap_or_else(|| cfg.default_server.clone())
     }
 
     pub fn read_history(
         &self,
         cfg: &WebConfig,
+        domains: &DomainStore,
         hostname: &str,
         id: &str,
     ) -> Result<String, CoreError> {
-        let server = server_by_id(&cfg.server).ok_or_else(|| werr("unknown web server"))?;
+        let server_id = self.server_of(cfg, domains, hostname);
+        let server = server_by_id(&server_id)
+            .ok_or_else(|| werr(format!("unknown web server \"{server_id}\"")))?;
         if id.contains(['/', '\\', '.']) {
             return Err(werr("invalid history id"));
         }
@@ -1199,7 +1383,7 @@ impl WebManager {
         hostname: &str,
         id: &str,
     ) -> Result<String, CoreError> {
-        let content = self.read_history(cfg, hostname, id)?;
+        let content = self.read_history(cfg, domains, hostname, id)?;
         let part = if id.ends_with("-custom") {
             ConfigPart::Custom
         } else {
@@ -1212,17 +1396,21 @@ impl WebManager {
     pub fn export_config(
         &self,
         cfg: &WebConfig,
+        domains: &DomainStore,
         hostname: &str,
         part: ConfigPart,
         dest: &str,
     ) -> Result<(), CoreError> {
-        let text = self.read_config(cfg, Some(hostname), part)?;
+        let server_id = self.server_of(cfg, domains, hostname);
+        let text = self.read_config(&server_id, Some(hostname), part)?;
         std::fs::write(dest, text).map_err(|e| werr(format!("could not export: {e}")))
     }
 
-    /// `log`'s last lines, for the Logs page.
-    pub fn error_log_tail(&self, cfg: &WebConfig, lines: usize) -> Vec<String> {
-        let Some(server) = server_by_id(&cfg.server) else {
+    /// A server's error log, last `lines` lines, for the Logs page. `server_id` of `None`
+    /// means the default server.
+    pub fn error_log_tail(&self, cfg: &WebConfig, server_id: Option<&str>, lines: usize) -> Vec<String> {
+        let id = server_id.unwrap_or(&cfg.default_server);
+        let Some(server) = server_by_id(id) else {
             return Vec::new();
         };
         let Ok(layout) = self.layout(server.as_ref()) else {
@@ -1358,6 +1546,7 @@ pub fn build_app_spec(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::web::ServerPorts;
 
     fn static_domain(root: &Path) -> Domain {
         Domain {
@@ -1375,6 +1564,7 @@ mod tests {
             generated_hashes: Default::default(),
             public_domain: None,
             tunnel_id: None,
+             server: None,
         }
     }
 
@@ -1485,6 +1675,117 @@ mod tests {
 
         assert_eq!(std::fs::read_to_string(&existing).unwrap(), "old");
         assert!(!created.exists());
+    }
+
+    fn test_config(default_server: &str) -> WebConfig {
+        WebConfig {
+            default_server: default_server.into(),
+            servers: BTreeMap::new(),
+            php_workers: 1,
+            dns_port: 5354,
+        }
+    }
+
+    fn test_manager(home: &crate::test_support::IsolatedHome) -> WebManager {
+        let runtimes = Arc::new(RuntimeManager::new(home.paths.clone()));
+        WebManager::new(
+            home.paths.clone(),
+            runtimes,
+            Arc::new(ProcessSupervisor::new()),
+            Arc::new(crate::certs::CertificateManager::new(&home.paths)),
+            Arc::new(PhpPools::new(
+                home.paths.clone(),
+                Arc::new(RuntimeManager::new(home.paths.clone())),
+                Arc::new(ProcessSupervisor::new()),
+            )),
+        )
+    }
+
+    #[test]
+    fn two_servers_track_running_independently() {
+        let home = crate::test_support::isolated_home();
+        let mgr = test_manager(&home);
+        assert!(!mgr.is_running_id("nginx") && !mgr.is_running_id("apache"));
+
+        // Bookkeeping is per id: dropping one entry must not touch the other.
+        mgr.state
+            .lock()
+            .unwrap()
+            .servers
+            .insert("nginx".into(), Running { process: ProcessId(1) });
+        mgr.state
+            .lock()
+            .unwrap()
+            .servers
+            .insert("apache".into(), Running { process: ProcessId(2) });
+        assert_eq!(mgr.state.lock().unwrap().servers.len(), 2);
+        assert!(mgr.usage_plan().servers.contains(&ProcessId(2)));
+
+        mgr.stop_server("nginx");
+        let st = mgr.state.lock().unwrap();
+        assert!(!st.servers.contains_key("nginx"));
+        assert!(st.servers.contains_key("apache"), "stopping one stops only one");
+    }
+
+    #[test]
+    fn status_reports_each_servers_own_effective_ports() {
+        let home = crate::test_support::isolated_home();
+        let mgr = test_manager(&home);
+        let mut cfg = test_config("nginx");
+        cfg.servers
+            .insert("apache".into(), ServerPorts { http: 9080, https: 9443 });
+        let st = mgr.status(&cfg);
+        let by_id = |id: &str| st.servers.iter().find(|s| s.id == id).unwrap().clone();
+        assert_eq!(st.default_server, "nginx");
+        assert_eq!(by_id("nginx").http_port, 80);
+        assert!(by_id("nginx").active);
+        assert_eq!(by_id("apache").http_port, 9080);
+        assert!(!by_id("apache").active);
+        assert!(!by_id("apache").running);
+    }
+
+    #[test]
+    fn apply_groups_sites_onto_their_assigned_server_only() {
+        let cfg = test_config("nginx");
+        let mut a = static_domain(Path::new("C:/sites/a"));
+        a.hostname = "a.test".into();
+        let mut b = static_domain(Path::new("C:/sites/b"));
+        b.hostname = "b.test".into();
+        b.server = Some("apache".into());
+        let mut off = static_domain(Path::new("C:/sites/c"));
+        off.hostname = "c.test".into();
+        off.enabled = false;
+        let domains = vec![a.clone(), b.clone(), off.clone()];
+
+        let names = |id: &str| {
+            sites_for_server(&cfg, &domains, id)
+                .into_iter()
+                .map(|d| d.hostname)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(names("nginx"), vec!["a.test".to_string()]);
+        assert_eq!(names("apache"), vec!["b.test".to_string()]);
+        assert!(names("caddy").is_empty());
+
+        // Turning a site's override off moves it back to the default server.
+        let mut moved = b.clone();
+        moved.server = None;
+        let all = vec![a, moved, off];
+        assert_eq!(
+            sites_for_server(&cfg, &all, "nginx")
+                .into_iter()
+                .map(|d| d.hostname)
+                .collect::<Vec<_>>(),
+            vec!["a.test".to_string(), "b.test".to_string()]
+        );
+    }
+
+    #[test]
+    fn a_server_that_was_never_started_is_not_an_apply_target() {
+        let home = crate::test_support::isolated_home();
+        let mgr = test_manager(&home);
+        let cfg = test_config("nginx");
+        assert_eq!(mgr.apply_targets(&cfg), vec!["nginx".to_string()]);
     }
 }
 

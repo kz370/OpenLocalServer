@@ -640,9 +640,9 @@ impl Inner {
             std::net::SocketAddr::from((
                 [127, 0, 0, 1],
                 if url.scheme() == "https" {
-                    cfg.https_port
+                    cfg.https_port()
                 } else {
-                    cfg.http_port
+                    cfg.http_port()
                 },
             ))
         });
