@@ -264,6 +264,7 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
               services={data?.services ?? null}
               webServers={data?.web?.servers ?? null}
               busy={busy}
+              onNavigate={onNavigate}
               onOpenLogs={onOpenLogs}
               onDone={async () => {
                 await refresh()
@@ -309,12 +310,14 @@ function ServicesWidget({
   services,
   webServers,
   busy,
+  onNavigate,
   onOpenLogs,
   onDone,
 }: {
   services: ServiceStatus[] | null
   webServers: ServerAvailability[] | null
   busy: string | null
+  onNavigate: (p: Page) => void
   onOpenLogs: (source: string) => void
   onDone: () => Promise<void>
 }) {
@@ -364,15 +367,13 @@ function ServicesWidget({
           const working = busy === `svc:${s.id}:start` || busy === `svc:${s.id}:stop` || busy === `svc:${s.id}:restart` || busy === `svc:${s.id}:reload`
           const state = !s.installed ? 'missing' : s.running ? (s.healthy === false ? 'unhealthy' : 'running') : 'stopped'
           return (
-            <div
-              key={s.id}
-              // Fixed tracks, so the port, the state and the controls form real columns:
-              // a web row's third button no longer shoves them left.
-              className={cn(
-                'group grid grid-cols-[1.5rem_minmax(0,1fr)_2.5rem_5.75rem_4.5rem_2rem] items-center gap-x-2 px-3 py-1.5 transition-colors hover:bg-muted/40',
-                i > 0 && 'border-t border-border/60'
-              )}
-            >
+             <div
+               key={s.id}
+               className={cn(
+                 'grid grid-cols-[1.25rem_minmax(0,1fr)_5.5rem_6.5rem_auto] items-center gap-x-3 px-3 h-9 transition-colors hover:bg-muted/25',
+                 i > 0 && 'border-t border-border/60'
+               )}
+             >
               <span className={cn('shrink-0', !s.installed && 'opacity-40 grayscale')}>
                 <TechIcon id={s.id} className="size-4" />
               </span>
@@ -380,45 +381,57 @@ function ServicesWidget({
                   the window is too narrow for the rest. */}
               <span className="min-w-0 truncate text-[13px] font-medium">{s.name}</span>
               <span
-                className="text-right font-mono text-[11px] tabular-nums text-muted-foreground"
+                className="text-right font-mono text-xs tabular-nums text-muted-foreground"
                 title={servicePortTitle(s, webSites.get(s.id))}
               >
                 {s.port === null ? '—' : s.port}
               </span>
-              <StateBadge state={state} />
-              <span className="flex items-center justify-end gap-1">
+              <ServiceStatus state={state} />
+              <span className="flex items-center justify-end gap-0.5">
                 <IconAction
-                  title={s.running ? `Stop ${s.name}` : `Start ${s.name}`}
-                  disabled={busy !== null || !s.installed}
-                  spinning={working}
-                  onClick={() => act(s, s.running ? 'stop' : 'start')}
-                  iconColor={s.running ? 'text-red-500 hover:text-red-600' : 'text-emerald-500 hover:text-emerald-600'}
+                  title={`Start ${s.name}`}
+                  disabled={busy !== null || !s.installed || s.running}
+                  spinning={working && busy === `svc:${s.id}:start`}
+                  onClick={() => act(s, 'start')}
+                  iconColor="text-emerald-400"
                 >
-                  {s.running ? <StopIcon className="size-3.5" /> : <Play className="size-3.5" />}
+                  <Play className="size-3.5" />
+                </IconAction>
+                <IconAction
+                  title={`Stop ${s.name}`}
+                  disabled={busy !== null || !s.installed || !s.running}
+                  spinning={working && busy === `svc:${s.id}:stop`}
+                  onClick={() => act(s, 'stop')}
+                  iconColor="text-destructive/70"
+                >
+                  <StopIcon className="size-3.5" />
                 </IconAction>
                 <IconAction
                   title="Restart"
                   disabled={busy !== null || !s.installed}
+                  spinning={working && busy === `svc:${s.id}:restart`}
                   onClick={() => act(s, 'restart')}
-                  iconColor="text-amber-500 hover:text-amber-600"
+                  iconColor="text-amber-400"
                 >
                   <RotateCw className="size-3.5" />
                 </IconAction>
-                {s.kind === 'web' && (
-                  <IconAction title="Reload config" disabled={busy !== null || !s.installed} onClick={() => act(s, 'reload')} iconColor="text-sky-500 hover:text-sky-600">
-                    <RefreshCw className="size-3.5" />
-                  </IconAction>
-                )}
-                {s.log_source && (
-                  <IconAction
-                    title="Logs"
-                    disabled={busy !== null || !s.installed}
-                    onClick={() => onOpenLogs(s.log_source!)}
-                    iconColor="text-violet-500 hover:text-violet-600"
-                  >
-                    <FileText className="size-3.5" />
-                  </IconAction>
-                )}
+                <IconAction
+                  title="Reload config"
+                  disabled={busy !== null || !s.installed || s.kind !== 'web'}
+                  spinning={working && busy === `svc:${s.id}:reload`}
+                  onClick={() => act(s, 'reload')}
+                  iconColor="text-sky-400"
+                >
+                  <RefreshCw className="size-3.5" />
+                </IconAction>
+                <IconAction
+                  title="Logs"
+                  disabled={busy !== null || !s.installed || !s.log_source}
+                  onClick={() => s.log_source && onOpenLogs(s.log_source)}
+                  iconColor="text-violet-400"
+                >
+                  <FileText className="size-3.5" />
+                </IconAction>
               </span>
             </div>
           )
@@ -430,23 +443,17 @@ function ServicesWidget({
 
 type WidgetState = 'running' | 'stopped' | 'unhealthy' | 'missing'
 
-function StateBadge({ state }: { state: WidgetState }) {
-  const label = state === 'running' ? 'Running' : state === 'unhealthy' ? 'Not responding' : state === 'missing' ? 'Not installed' : 'Stopped'
+function ServiceStatus({ state }: { state: WidgetState }) {
+  const config = {
+    running: { dot: 'bg-emerald-500/70', text: 'text-emerald-400', label: 'Active' },
+    unhealthy: { dot: 'bg-amber-500/70', text: 'text-amber-400', label: 'Unhealthy' },
+    stopped: { dot: 'bg-muted-foreground/40', text: 'text-muted-foreground', label: 'Inactive' },
+    missing: { dot: 'bg-muted-foreground/30', text: 'text-muted-foreground/70', label: 'Not installed' },
+  }[state]
   return (
-    <span
-      title={label}
-      className={cn(
-        'inline-flex shrink-0 items-center justify-center rounded-full',
-        'h-auto w-[5.75rem] py-0.5',
-        state === 'running' && 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
-        state === 'unhealthy' && 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
-        state === 'stopped' && 'bg-muted text-muted-foreground',
-        state === 'missing' && 'bg-muted/50 text-muted-foreground/70'
-      )}
-    >
-      <span className="truncate px-1.5 text-center text-[10px] font-medium leading-4">
-        {label}
-      </span>
+    <span className="inline-flex items-center gap-1.5" title={config.label}>
+      <span className={cn('size-1.5 shrink-0 rounded-full', config.dot)} />
+      <span className={cn('text-xs tabular-nums', config.text)}>{config.label}</span>
     </span>
   )
 }
@@ -471,8 +478,15 @@ function IconAction({
       size="sm"
       variant="ghost"
       className={cn(
-        'size-6 shrink-0 cursor-pointer rounded-md p-0 text-muted-foreground hover:text-foreground [&_svg]:size-3.5',
-        iconColor
+        'size-7 shrink-0 cursor-pointer rounded-md p-0 transition-colors',
+        // Enabled: the action's own colour, dimmed slightly until hover. Disabled:
+        // flat grey with no hover response, so "you cannot do this right now" reads
+        // at a glance instead of looking like a live button.
+        disabled
+          ? 'cursor-not-allowed bg-muted/30 text-muted-foreground/45 disabled:opacity-100 hover:bg-muted/30 hover:text-muted-foreground/45'
+          : iconColor
+            ? `opacity-70 hover:bg-muted/60 hover:opacity-100 ${iconColor} hover:${iconColor}`
+            : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
       )}
       title={title}
       aria-label={title}
