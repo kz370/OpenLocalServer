@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { type ServiceStatus, runCommand } from '@/core'
 import { usePoll } from '@/lib/hooks'
 import type { Web } from '@/lib/web'
-import { waitForService, waitForWebStopped } from '@/lib/wait'
+import { waitForService } from '@/lib/wait'
 
 /**
  * Start, stop and restart what a site runs on without leaving its settings: the web server
@@ -20,17 +20,20 @@ export function ServersPanel({ web, hostname }: { web: Web; hostname: string | n
 
   usePoll(async () => {
     const r = await runCommand({ type: 'list_services' }).catch(() => null)
-    if (r?.type === 'services') setServices(r.services.filter((s) => s.installed))
+    // The web servers get their own rows above, with the ports they actually bind.
+    if (r?.type === 'services') setServices(r.services.filter((s) => s.installed && s.kind !== 'web'))
   }, 4000)
 
-  const server = status?.servers.find((s) => s.id === status.server)
+  // This site's own server: what it pinned, or the default.
+  const siteServer = (hostname ? web.domains.find((d) => d.hostname === hostname)?.server : null) ?? status?.default_server
+  const server = status?.servers.find((s) => s.id === siteServer)
   const app = hostname ? status?.apps.find((a) => a.hostname === hostname) : undefined
 
   const restartWeb = () =>
     run('web:restart', async () => {
-      if (status?.running) {
-        await runCommand({ type: 'stop_web' })
-        await waitForWebStopped()
+      if (server?.running) {
+        await runCommand({ type: 'stop_service', id: server.id })
+        await waitForService(server.id, 'stopped')
       }
       await apply()
     })
@@ -40,22 +43,22 @@ export function ServersPanel({ web, hostname }: { web: Web; hostname: string | n
       await runCommand({ type: `${action}_service`, id: s.id })
       await waitForService(s.id, action === 'stop' ? 'stopped' : 'running')
       const r = await runCommand({ type: 'list_services' })
-      if (r.type === 'services') setServices(r.services.filter((x) => x.installed))
+      if (r.type === 'services') setServices(r.services.filter((x) => x.installed && x.kind !== 'web'))
     })
   }
 
   return (
     <div className="flex flex-col gap-5">
-      <Section title="Web server" hint="Restarting it also restarts the PHP processes and site apps.">
-        {status && (
+      <Section title="Web server" hint="This site's own server. Reloading keeps the other web servers running.">
+        {status && server && (
           <ServerRow
-            icon={status.server}
-            name={server?.name ?? status.server}
-            detail={`HTTP ${status.http_port} · HTTPS ${status.https_port}`}
-            running={status.running}
+            icon={server.id}
+            name={server.name}
+            detail={`HTTP ${server.http_port} · HTTPS ${server.https_port}${server.active ? ' · default (80/443)' : ''}`}
+            running={server.running}
             busy={busy?.startsWith('web:') ?? false}
             actions={
-              status.running ? (
+              server.running ? (
                 <>
                   <IconButton title="Reload config (apply changes without dropping connections)" disabled={busy !== null} onClick={() => run('web:reload', () => apply())}>
                     <RefreshCw />
@@ -68,8 +71,8 @@ export function ServersPanel({ web, hostname }: { web: Web; hostname: string | n
                     disabled={busy !== null}
                     onClick={() =>
                       run('web:stop', async () => {
-                        await runCommand({ type: 'stop_web' })
-                        await waitForWebStopped()
+                        await runCommand({ type: 'stop_service', id: server.id })
+                        await waitForService(server.id, 'stopped')
                         await refresh()
                       })
                     }

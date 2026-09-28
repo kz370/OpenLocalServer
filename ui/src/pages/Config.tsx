@@ -58,7 +58,7 @@ export function ConfigPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Web config</h1>
         <p className="text-sm text-muted-foreground">
-          Every site's generated config for {cfg?.server ?? 'the web server'}. Read it, customise it safely, and roll back any change (§23–29).
+          Every site's generated config for the web server that renders it. Read it, customise it safely, and roll back any change (§23–29).
         </p>
       </div>
 
@@ -111,7 +111,7 @@ export function ConfigPage() {
             <ConfigFilePane
               key={selected}
               file={file}
-              server={cfg?.server ?? 'nginx'}
+              server={cfg?.default_server ?? 'nginx'}
               history={history}
               openHistoryTick={historyTick}
               onChanged={async () => {
@@ -360,7 +360,7 @@ export function SiteConfigTab({ hostname }: { hostname: string }) {
       setFiles(mine)
       setMissing(mine.length === 0)
     }
-    if (c.type === 'web_config') setServer(c.config.server)
+    if (c.type === 'web_config') setServer(c.config.default_server)
   }
 
   useEffect(() => {
@@ -663,7 +663,7 @@ function StructuredEditor({ hostname, onApplied }: { hostname: string; onApplied
               setDone(null)
               await runCommand({ type: 'update_domain', domain })
               const r = await runCommand({ type: 'apply_web', overwrite: [] })
-              if (r.type === 'applied') setDone(r.report.drifted.length ? 'Saved, but the file was edited by hand and was left alone.' : 'Saved and applied. The server accepted the config.')
+              if (r.type === 'applied') setDone(r.reports.some((x) => x.drifted.length) ? 'Saved, but the file was edited by hand and was left alone.' : 'Saved and applied. The server accepted the config.')
               onApplied()
             })
           }

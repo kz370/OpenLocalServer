@@ -13,7 +13,7 @@ import { Dialog } from '@/components/ui/dialog'
 import { Field, Tabs } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { type CertInfo, type WebConfig, type WebStatus, runCommand } from '@/core'
+import { type CertInfo, type DomainSummary, type ServerPorts, type WebConfig, type WebStatus, runCommand } from '@/core'
 import { confirmThen } from '@/lib/confirm'
 import { useWeb } from '@/lib/web'
 import { waitForWebStopped } from '@/lib/wait'
@@ -94,7 +94,9 @@ export function WebServerPage({ initialTab = 'server' }: { initialTab?: 'server'
         onChange={setTab}
       />
 
-      {tab === 'server' && cfg && status && <ServerPanel cfg={cfg} status={status} onSave={(c, changed) => run('settings', () => saveSettings(c, changed))} busy={busy !== null} />}
+      {tab === 'server' && cfg && status && (
+        <ServerPanel cfg={cfg} status={status} domains={web.domains} onSave={(c, changed) => run('settings', () => saveSettings(c, changed))} busy={busy !== null} />
+      )}
 
       {tab === 'config' && <ConfigPage />}
 
@@ -225,11 +227,13 @@ export function WebServerPage({ initialTab = 'server' }: { initialTab?: 'server'
 function ServerPanel({
   cfg,
   status,
+  domains,
   onSave,
   busy,
 }: {
   cfg: WebConfig
   status: WebStatus
+  domains: DomainSummary[]
   onSave: (c: WebConfig, serverChanged: boolean) => void
   busy: boolean
 }) {
@@ -237,6 +241,7 @@ function ServerPanel({
   useEffect(() => setDraft(cfg), [cfg])
   const dirty = JSON.stringify(draft) !== JSON.stringify(cfg)
   const num = (v: string, fallback: number) => (Number.isFinite(Number(v)) && v !== '' ? Number(v) : fallback)
+  const enabledDomains = domains.filter((d) => d.enabled)
   const setPorts = (id: string, patch: Partial<ServerPorts>) =>
     setDraft({
       ...draft,
@@ -322,6 +327,7 @@ function ServerPanel({
           {status.servers.map((s) => {
             const isDefault = s.id === draft.default_server
             const ports = draft.servers[s.id] ?? { http: 80, https: 443 }
+            const siteCount = enabledDomains.filter((d) => d.server === s.id).length
             return (
               <div key={s.id} className="grid items-end gap-3 rounded-lg border p-3 sm:grid-cols-[1fr_8rem_8rem_7rem]">
                 <div className="flex items-center gap-2">
@@ -356,7 +362,7 @@ function ServerPanel({
                   />
                 </Field>
                 <div className="pb-2 text-xs text-muted-foreground">
-                  {isDefault ? 'Locked: 80/443' : `Sites: ${domainsOn(status, s.id)}`}
+                  {isDefault ? 'Locked: 80/443' : `${siteCount} site(s)`}
                 </div>
               </div>
             )
@@ -372,11 +378,6 @@ function ServerPanel({
       </Card>
     </div>
   )
-}
-
-/** How many sites are currently rendered on a server — the rest moved elsewhere. */
-function domainsOn(status: WebStatus, id: string): number {
-  return status.servers.find((s) => s.id === id)?.active ? 0 : 0
 }
 
 const SERVER_BLURB: Record<string, string> = {

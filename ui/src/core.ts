@@ -270,6 +270,8 @@ export interface Domain {
   generated_hashes: Record<string, string>
   public_domain?: string | null
   tunnel_id?: string | null
+  /** Web server that renders this site: its own override, or the default. */
+  server?: string | null
 }
 
 export interface ProcfilePreview {
@@ -291,6 +293,8 @@ export interface DomainSummary {
   /** Website type the site is listed under. */
   group: 'php' | 'nodejs' | 'python' | 'static' | 'proxy'
   public_domain?: string | null
+  /** Web server that renders this site: its own override, or the default. */
+  server: string
 }
 
 /** Ports a server is stored with. The default server always binds 80/443 instead. */

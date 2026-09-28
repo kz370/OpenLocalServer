@@ -90,98 +90,45 @@ export function ServicesPage() {
   }
 
   const mariadb = services.find((s) => s.id === 'mariadb')
+  // The three web servers get their own table: each starts and stops on its own, on
+  // the port it binds right now (§3.3).
+  const webServers = services.filter((s) => s.kind === 'web')
+  const otherServices = services.filter((s) => s.kind !== 'web')
 
   return (
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Services</h1>
-        <p className="text-sm text-muted-foreground">Mail testing and databases, managed like any other process.</p>
+        <p className="text-sm text-muted-foreground">Web servers, mail testing and databases — each one a process you start and stop.</p>
       </div>
 
       <ErrorCard error={error} onDismiss={() => setError(null)} />
 
       <Card>
         <CardHeader className="pb-2">
+          <CardTitle className="text-sm">Web servers</CardTitle>
+          <CardDescription>
+            They can run at the same time on different ports. The default one owns 80/443 and serves every site that hasn't picked a
+            server of its own; the rest serve only the sites pinned to them.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          <ServiceTable
+            services={webServers}
+            busy={busy}
+            onToggle={toggle}
+            onError={setError}
+            portLabel={(s) => (s.port === 80 ? '80 / 443 (default)' : s.port === null ? '—' : `${s.port} (custom)`)}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
           <CardTitle className="text-sm">Services</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Port</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {services.map((s) => (
-                <TableRow key={s.id}>
-                  <TableCell className="font-medium">{s.name}</TableCell>
-                  <TableCell className="text-muted-foreground">{s.installed ? s.port : '—'}</TableCell>
-                  <TableCell>
-                    {!s.installed ? (
-                      <Badge variant="outline">not installed</Badge>
-                    ) : s.running ? (
-                      <span className="flex flex-wrap items-center gap-1.5">
-                        <Badge variant="success">● Running</Badge>
-                        {s.healthy === false && <Badge variant="warning">not answering</Badge>}
-                        {s.port_status === 'in_use' && <Badge variant="warning">port in use</Badge>}
-                      </span>
-                    ) : (
-                      <span className="flex flex-col items-start gap-1">
-                        <span className="flex flex-wrap items-center gap-1.5">
-                          <Badge variant="secondary">Stopped</Badge>
-                          {s.port_status === 'in_use' && <Badge variant="warning">port in use</Badge>}
-                        </span>
-                        {s.installed && s.port !== null && s.port_status === 'in_use' && <PortHolder port={s.port} />}
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      {s.id === 'mailpit' && s.running && s.port !== null && (
-                        <button
-                          type="button"
-                          className="inline-flex cursor-pointer items-center gap-1 text-xs text-primary hover:underline"
-                          title={`Open Mailpit at http://127.0.0.1:${s.port}`}
-                          onClick={() =>
-                            runCommand({ type: 'open_url', url: `http://127.0.0.1:${s.port}` }).catch((e) => setError(e as Diagnostic))
-                          }
-                        >
-                          Open <ExternalLink className="size-3" />
-                        </button>
-                      )}
-                      {s.installed && (
-                        <Button size="sm" variant="secondary" disabled={busy === s.id} onClick={() => toggle(s)}>
-                          {busy === s.id ? (
-                            <>
-                              <Spinner /> {s.running ? 'Stopping…' : 'Starting…'}
-                            </>
-                          ) : s.running ? (
-                            <>
-                              <StopIcon /> Stop
-                            </>
-                          ) : (
-                            <>
-                              <Play /> Start
-                            </>
-                          )}
-                        </Button>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {services.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={4} className="text-center text-sm text-muted-foreground">
-                    No services registered.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+          <ServiceTable services={otherServices} busy={busy} onToggle={toggle} onError={setError} />
         </CardContent>
       </Card>
 

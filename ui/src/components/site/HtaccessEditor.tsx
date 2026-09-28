@@ -27,7 +27,7 @@ export function HtaccessEditor({ hostname }: { hostname: string }) {
       if (!alive) return
       if (file.type === 'text') { setContent(file.text); setExists(file.text.length > 0) }
       else { setContent(''); setExists(false) }
-      if (web.type === 'web_config') setServer(web.config.server)
+      if (web.type === 'web_config') setServer(web.config.default_server)
     }).catch((e: unknown) => { if (alive) setError({ problem: 'Could not read the site file', cause: String(e), fix: null }) })
     return () => { alive = false }
   }, [hostname, setError])

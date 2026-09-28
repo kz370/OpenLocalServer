@@ -35,6 +35,7 @@ export function newDomain(): Domain {
     app: null,
     blocks: emptyBlocks,
     generated_hashes: {},
+    server: null,
   }
 }
 
@@ -168,7 +169,7 @@ export function DomainSettings({
   const [showApps, setShowApps] = useState(false)
   const [quickApps, setQuickApps] = useState<QuickEntryView[]>([])
   const [tunnels, setTunnels] = useState<TunnelStatus[]>([])
-  const [httpPort, setHttpPort] = useState(80)
+  const [webServers, setWebServers] = useState<{ id: string; name: string; http: number; https: number; default: boolean }[]>([])
   const [err, setErr] = useState<string | null>(null)
 
   useEffect(() => {
@@ -221,8 +222,24 @@ export function DomainSettings({
 
   useEffect(() => {
     void runCommand({ type: 'list_tunnels' }).then((r) => r.type === 'tunnels' && setTunnels(r.tunnels.map((t) => t)))
-    void runCommand({ type: 'get_web_config' }).then((r) => r.type === 'web_config' && setHttpPort(r.config.http_port))
+    void runCommand({ type: 'get_web_status' }).then((r) => {
+      if (r.type !== 'web_status') return
+      setWebServers(
+        // The default first, so the "Default (…)" label names the right one.
+        [...r.status.servers].sort((a, b) => Number(b.active) - Number(a.active)).map((s) => ({
+          id: s.id,
+          name: s.name,
+          http: s.http_port,
+          https: s.https_port,
+          default: s.active,
+        })),
+      )
+    })
   }, [])
+
+  // The port the tunnel should point at is the one this site's own server binds.
+  const pickedServer = webServers.find((s) => (d.server ?? webServers[0]?.id) === s.id)
+  const httpPort = pickedServer?.http ?? 80
 
   const onProjectNameChange = (val: string) => {
     setProjectName(val)
@@ -429,6 +446,23 @@ export function DomainSettings({
               <FolderSearch /> Browse
             </Button>
           </div>
+        </Field>
+        <Field
+          label="Web server"
+          hint={
+            pickedServer
+              ? `Served by ${pickedServer.name} on HTTP ${pickedServer.http} / HTTPS ${pickedServer.https}. This site is only rendered on that one server.`
+              : 'The site is served by the default web server.'
+          }
+        >
+          <Select value={d.server ?? 'default'} onChange={(e) => set({ server: e.target.value === 'default' ? null : e.target.value })}>
+            <option value="default">Default ({webServers[0]?.id ?? 'nginx'})</option>
+            {webServers.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name} ({s.id})
+              </option>
+            ))}
+          </Select>
         </Field>
       </FormSection>
 

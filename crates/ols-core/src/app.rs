@@ -107,6 +107,8 @@ pub struct DomainSummary {
     /// Website type it is listed under: "php", "nodejs", "python", "static" or "proxy".
     pub group: String,
     pub public_domain: Option<String>,
+    /// Web server that renders this site: its own override, or the default.
+    pub server: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -599,6 +601,7 @@ impl Inner {
                 group: site_group(&d, &projects).into(),
                 folder: site_folder(&d, &projects),
                 public_domain: d.public_domain.clone(),
+                server: crate::domain::resolved_server(&d, &cfg),
             })
             .collect()
     }

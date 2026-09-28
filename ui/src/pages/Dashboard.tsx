@@ -9,7 +9,7 @@ import type { Page } from '@/components/layout/Sidebar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { type DashboardData, type HealthItem, type StartupSettings, type SystemStats, runCommand } from '@/core'
+import { type DashboardData, type HealthItem, type ServiceStatus, type StartupSettings, type SystemStats, runCommand } from '@/core'
 import { formatBytes, useAction, usePoll } from '@/lib/hooks'
 import { waitForService, waitForWebStopped } from '@/lib/wait'
 import { confirmAction } from '@/lib/confirm'
@@ -260,14 +260,23 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: Page) => void })
             <CardContent className="flex flex-col gap-1.5">
               {(data?.services.filter((s) => s.installed) ?? []).map((s) => (
                 <div key={s.id} className="flex items-center justify-between gap-2 text-sm">
-                  <span className="flex min-w-0 items-center gap-2">
-                    <span className={`size-1.5 shrink-0 rounded-full ${s.running ? 'bg-emerald-500' : 'bg-muted-foreground/40'}`} />
-                    <span className="truncate">{s.name}</span>
-                    {s.running && s.healthy === false && (
-                      <Badge variant="warning" className="shrink-0">
-                        not answering
-                      </Badge>
-                    )}
+                  <span className="flex min-w-0 items-start gap-2">
+                    <span className={`mt-1.5 size-1.5 shrink-0 rounded-full ${s.running ? 'bg-emerald-500' : 'bg-muted-foreground/40'}`} />
+                    <span className="flex min-w-0 flex-col">
+                      <span className="flex items-center gap-1.5">
+                        <span className="truncate">{s.name}</span>
+                        {s.running && s.healthy === false && (
+                          <Badge variant="warning" className="shrink-0">
+                            not answering
+                          </Badge>
+                        )}
+                      </span>
+                      {s.port !== null && (
+                        <span className="truncate font-mono text-xs tabular-nums text-foreground/75" title={servicePortTitle(s)}>
+                          {s.kind === 'web' ? 'HTTP' : 'Port'} {s.port}
+                        </span>
+                      )}
+                    </span>
                   </span>
                   <Button
                     size="sm"
@@ -324,8 +333,12 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: Page) => void })
   )
 }
 
-function Donut({ label, percent, detail, base, loading }: { label: string; percent: number; detail: string; base: string; loading?: boolean }) {
-  const r = 34
+/** What the port column means for this row: a web server's HTTP port, or the service's own. */
+function servicePortTitle(s: ServiceStatus): string {
+  return s.kind === 'web' ? `HTTP port ${s.port} — change it on the Web server page` : `Port ${s.port}`
+}
+
+function Donut({ label, percent, detail, base, loading }: { label: string; percent: number; detail: string; base: string; loading?: boolean }) {  const r = 34
   const c = 2 * Math.PI * r
   const p = Math.min(100, Math.max(0, percent))
   const color = p >= 90 ? 'var(--destructive)' : base
