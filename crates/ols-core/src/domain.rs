@@ -234,15 +234,17 @@ fn write_home_page(dir: &Path) -> std::io::Result<()> {
 const LOGO_SVG: &[u8] = include_bytes!("../../../ui/public/favicon.svg");
 
 /// Marker of the currently shipped welcome page.
-const HOME_VERSION_MARKER: &str = "<!-- home v3 -->";
+const HOME_VERSION_MARKER: &str = "<!-- home v4 -->";
 
-/// Markers of older shipped pages (v1 teal cards, v1.5 centered hero, v2 brand).
-/// A page carrying one of these was never hand-edited, so it is safe to refresh.
+/// Markers of older shipped pages (v1 teal cards, v1.5 centered hero, v2 brand,
+/// v3 brand). A page carrying one of these was never hand-edited, so it is safe
+/// to refresh — v4 is what re-seeds `logo.svg` with the new green app icon.
 const HOME_LEGACY_MARKERS: &[&str] = &[
     "max-width: 720px",
     "OPENLOCALSERVER",
     "<h1>home.test</h1>",
     "created once, on first install",
+    "<!-- home v3 -->",
 ];
 
 /// Replaces a stock older welcome page with the current one. Returns true when
@@ -346,7 +348,7 @@ const HOME_PAGE: &str = r##"<!doctype html>
 </style>
 </head>
 <body>
-<!-- home v3 -->
+<!-- home v4 -->
 <div class="wrap">
   <header class="top">
     <div class="brand"><img src="logo.svg" alt="Open Local Server logo">Open Local Server</div>

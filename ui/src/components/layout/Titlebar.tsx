@@ -1,6 +1,7 @@
 import { Copy, Minus, Square, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
+import { useServerStopped } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 
 function isTauri(): boolean {
@@ -9,6 +10,7 @@ function isTauri(): boolean {
 
 export function Titlebar() {
   const [maximized, setMaximized] = useState(false)
+  const stopped = useServerStopped()
 
   useEffect(() => {
     if (!isTauri()) return
@@ -37,7 +39,10 @@ export function Titlebar() {
       className="flex h-9 shrink-0 select-none items-center gap-2 border-b border-sidebar-border bg-sidebar px-3"
     >
       <span className="flex items-center gap-2 text-xs font-medium text-sidebar-foreground">
-        <span className="size-2 rounded-full bg-primary" aria-hidden />
+        <span
+          className={cn('size-2 rounded-full', stopped ? 'bg-destructive' : 'bg-primary')}
+          aria-hidden
+        />
         OpenLocalServer
       </span>
       <div data-tauri-drag-region className="min-w-0 flex-1" />

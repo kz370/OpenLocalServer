@@ -1,7 +1,7 @@
 # RUNTIME
 
 ## Files to Process
-Total meaningful source files: 203 (excluding target/, node_modules/, .git/, dist/, data/services/postgres runtime data, icon bulk).
+Total meaningful source files: 204 (excluding target/, node_modules/, .git/, dist/, data/services/postgres runtime data, icon bulk).
 
 ### Rust core (crates/ols-core/src, 73 files)
 - src/lib.rs, app.rs, command.rs, control.rs, api.rs, paths.rs, settings.rs, secrets.rs, db.rs
@@ -30,13 +30,13 @@ Total meaningful source files: 203 (excluding target/, node_modules/, .git/, dis
 - src/components/ui/button.tsx, card.tsx, dialog.tsx, input.tsx, form.tsx, table.tsx, menu.tsx, switch.tsx, badge.tsx, checkbox.tsx
 - src/lib/ai.ts, confirm.ts, hooks.ts, nav.ts, theme.tsx, utils.ts, wait.ts, web.ts
 
-### Docs / Config / Build (20 files)
+### Docs / Config / Build (21 files)
 - README.md, CONTRIBUTING.md, SECURITY.md, CHANGELOG.md, CODE_OF_CONDUCT.md, OpenLocalServer_Master_SRS_v4.md
 - docs/API.md, IMPLEMENTATION_PLAN.md, STATUS.md, USER_GUIDE.md, PLUGINS.md, SECURITY_REVIEW.md, LOAD_TESTING.md, AI_ASSISTANT.md, UX polish batch doc
-- Cargo.toml, Cargo.lock, scripts/dev.bat, scripts/build-installer.bat, scripts/build-inno-installer.bat, scripts/upload-release.bat, installer/open-local-server.iss, scripts/render-icon.mjs
+- Cargo.toml, Cargo.lock, scripts/dev.bat, scripts/build-installer.bat, scripts/build-inno-installer.bat, scripts/upload-release.bat, installer/open-local-server.iss, scripts/render-icon.mjs, scripts/prepare-icon-source.ps1
 
 ## Files Processed
-All 203 files listed above processed via 4 parallel analysis agents (rust-core, UI frontend, tauri-cli-helper, docs-catalogs) on 2026-09-26, plus db.rs added 2026-09-27.
+All 204 files listed above processed via 4 parallel analysis agents (rust-core, UI frontend, tauri-cli-helper, docs-catalogs) on 2026-09-26, plus db.rs added 2026-09-27 and scripts/prepare-icon-source.ps1 added 2026-09-28.
 
 ## Log
 - [2026-09-26] Initialization completed
@@ -95,6 +95,7 @@ All text written in English.
 - [2026-09-27] feat: Git clone SSH key detection — added list_ssh_keys IPC command to scan ~/.ssh for private keys; GitCloneButton SshKeyPicker dropdown auto-detects keys, provides refresh button, file-picker browse fallback, and hint about %USERPROFILE%\.ssh; unit test list_ssh_keys_does_not_panic_and_excludes_invalid_files; specs updated; Files Processed still 203
 - [2026-09-27] style: Quick Apps grid compact and space-efficient layout (4-col xl, 3-col lg, gap-3, compact p-3.5 card padding, 36px brand tiles, 14px semibold titles, 12px leading-relaxed descriptions, square 28px ghost action buttons, 28px Create button); no IPC change; ui lint 0 errors + vite build green; Files Processed still 203
 - [2026-09-27] style: Sidebar navigation items made permanently visible under static group headers (removed collapsible accordion state, ChevronDown toggle, and localStorage key); no IPC change; ui lint 0 errors + vite build green; cargo fmt, clippy, and tests all pass; Files Processed still 203
+- [2026-09-28] feat: official app icon replaced with the green 3D server-stack mark (assets/new-icon.png -> scripts/prepare-icon-source.ps1 crops the black matte, resizes to 1024 and knocks the rounded corners to alpha 0 -> src-tauri/icons/source/icon-green.png -> `cargo tauri icon` regenerates every bundle/Android/iOS/StoreLogo size, so taskbar, tray, window, installer and shortcuts all change); the red twin (assets/stop-icon.png -> src-tauri/icons/red/32x32.png + 128x128.png, embedded with include_bytes!) is painted on the tray icon AND the main window whenever no service is running, and forced during shutdown, replacing the old per-pixel recolour of the default window icon; sync runs from refresh_tray, the process-event stream, tray build, and after autostart, with a Mutex<Option<bool>> guard so a state change repaints once; ui/public/favicon.svg is now the official 128px mark embedded as base64 (still the single brand source seeded into the welcome page logo.svg), and domain.rs bumps the welcome page marker to v4 with v3 added to HOME_LEGACY_MARKERS so stock installs re-seed the new logo; no IPC command change; Files Processed 204
 
 
 

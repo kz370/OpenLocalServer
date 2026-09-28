@@ -60,3 +60,4 @@ LoadTestRunner | uses | ProcessSupervisor
 DaemonRunner | uses | ScheduleStore ticker
 HelperService | uses | HelperMain execute
 TauriApp | depends_on | ols-helper (install/service)
+TauriApp | uses | ServiceManager.list (green/red status icon)

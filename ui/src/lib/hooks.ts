@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { listen } from '@tauri-apps/api/event'
+
 import { asDiagnostic } from '@/components/ErrorCard'
 import type { Diagnostic } from '@/core'
 
@@ -57,6 +59,31 @@ export function formatBytes(n: number): string {
 
 /** Exit animation length shared with the `.modal-*` rules in index.css. */
 export const MODAL_MS = 160
+
+/**
+ * True when nothing is running, so the app can show the red mark. The backend owns
+ * the decision (it also drives the tray and taskbar) and pushes it as
+ * `ols:status-icon`; without Tauri it falls back to "not stopped".
+ */
+export function useServerStopped(): boolean {
+  const [stopped, setStopped] = useState(false)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return
+    let alive = true
+    let unlisten: (() => void) | undefined
+    void listen<boolean>('ols:status-icon', (event) => {
+      if (alive) setStopped(event.payload)
+    }).then((dispose) => {
+      if (alive) unlisten = dispose
+      else dispose()
+    })
+    return () => {
+      alive = false
+      unlisten?.()
+    }
+  }, [])
+  return stopped
+}
 
 /** Keeps a modal mounted while its exit animation plays. `state` drives `data-state`. */
 export function usePresence(open: boolean, ms = MODAL_MS) {

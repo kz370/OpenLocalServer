@@ -1,5 +1,5 @@
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use ols_core::process::{ProcessEvent, ProcessState};
@@ -22,15 +22,20 @@ use tauri_plugin_notification::NotificationExt;
 async fn run_command(
     command: CoreCommand,
     state: tauri::State<'_, Core>,
+    app: AppHandle,
 ) -> Result<CoreResponse, Diagnostic> {
     let core = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || core.dispatch(command))
+    let dispatched = tauri::async_runtime::spawn_blocking(move || core.dispatch(command))
         .await
         .map_err(|e| Diagnostic {
             problem: "The command crashed.".into(),
             cause: e.to_string(),
             fix: None,
-        })?
+        })?;
+    // Any command can start or stop things, so the tray, taskbar and in-app mark
+    // are refreshed after every one of them rather than only the tray menu ones.
+    sync_status_icon(&app, &state.inner().clone());
+    dispatched
 }
 
 fn notifications_enabled(core: &Core) -> bool {
@@ -55,20 +60,66 @@ fn show_main_window(app: &AppHandle) {
 
 static SHUTDOWN_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 
-fn set_stopping_tray(app: &AppHandle) {
-    if let Some(tray) = app.tray_by_id("main") {
-        if let Some(icon) = app.default_window_icon() {
-            let mut rgba = icon.rgba().to_vec();
-            for pixel in rgba.chunks_exact_mut(4) {
-                if pixel[3] > 0 {
-                    pixel[0] = 220;
-                    pixel[1] = 38;
-                    pixel[2] = 55;
-                }
-            }
-            let red_icon = tauri::image::Image::new_owned(rgba, icon.width(), icon.height());
-            let _ = tray.set_icon(Some(red_icon));
+/// The green mark is the app's official icon; the red one is the same art in the
+/// "nothing is running" colour. Both are shipped next to the bundle icons so the
+/// tray, the taskbar and the window can switch between them at runtime.
+const TRAY_ICON_GREEN: &[u8] = include_bytes!("../icons/32x32.png");
+const TRAY_ICON_RED: &[u8] = include_bytes!("../icons/red/32x32.png");
+const WINDOW_ICON_GREEN: &[u8] = include_bytes!("../icons/128x128.png");
+const WINDOW_ICON_RED: &[u8] = include_bytes!("../icons/red/128x128.png");
+
+/// What the tray and window currently show, so a state change only repaints once.
+static ICON_SHOWS_RED: Mutex<Option<bool>> = Mutex::new(None);
+
+fn decode_icon(bytes: &[u8]) -> Option<tauri::image::Image<'static>> {
+    tauri::image::Image::from_bytes(bytes).ok()
+}
+
+/// Paints the status mark on the tray icon, the main window (taskbar) and, through
+/// `ols:status-icon`, the mark inside the app. `force` repaints even when the mark
+/// is already showing.
+fn apply_status_icon(app: &AppHandle, red: bool, force: bool) {
+    {
+        let mut current = ICON_SHOWS_RED.lock().unwrap_or_else(|e| e.into_inner());
+        if !force && *current == Some(red) {
+            return;
         }
+        *current = Some(red);
+    }
+    let (tray_bytes, window_bytes) = if red {
+        (TRAY_ICON_RED, WINDOW_ICON_RED)
+    } else {
+        (TRAY_ICON_GREEN, WINDOW_ICON_GREEN)
+    };
+    if let Some(icon) = decode_icon(tray_bytes) {
+        if let Some(tray) = app.tray_by_id("main") {
+            let _ = tray.set_icon(Some(icon));
+        }
+    }
+    if let Some(icon) = decode_icon(window_bytes) {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.set_icon(icon);
+        }
+    }
+    let _ = app.emit("ols:status-icon", red);
+}
+
+/// The mark is green while at least one managed process is running — a service or
+/// a supervised process — and red once everything is stopped, so the tray, the
+/// taskbar and the in-app mark always state what the app is doing.
+fn sync_status_icon(app: &AppHandle, core: &Core) {
+    let service_running = core.services().list().iter().any(|s| s.running);
+    let process_running = core
+        .supervisor()
+        .snapshot()
+        .iter()
+        .any(|p| p.state == ProcessState::Running || p.state == ProcessState::Starting);
+    apply_status_icon(app, !(service_running || process_running), false);
+}
+
+fn set_stopping_tray(app: &AppHandle) {
+    apply_status_icon(app, true, true);
+    if let Some(tray) = app.tray_by_id("main") {
         let _ = tray.set_tooltip(Some("OpenLocalServer is stopping"));
     }
 }
@@ -291,10 +342,12 @@ fn refresh_tray(app: &AppHandle, core: &Core) {
     if let (Some(tray), Ok(menu)) = (app.tray_by_id("main"), tray_menu(app, core)) {
         let _ = tray.set_menu(Some(menu));
     }
+    sync_status_icon(app, core);
 }
 
 fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
     let menu = tray_menu(app, &core)?;
+    let menu_core = core.clone();
     let mut builder = TrayIconBuilder::with_id("main")
         .tooltip("OpenLocalServer")
         .menu(&menu)
@@ -423,6 +476,7 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
         builder = builder.icon(icon.clone());
     }
     builder.build(app)?;
+    sync_status_icon(app, &menu_core);
     Ok(())
 }
 
@@ -480,6 +534,9 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 while let Ok(event) = process_events.recv().await {
                     let _ = process_handle.emit("process-event", &event);
+                    // A service that dies on its own changes what the tray and
+                    // taskbar mark should say.
+                    sync_status_icon(&process_handle, &process_core);
                     // §119: tell the user when something they rely on dies.
                     if let ProcessEvent::StateChanged {
                         id,
@@ -584,6 +641,7 @@ pub fn run() {
             let auto_fix_app = app.handle().clone();
             std::thread::spawn(move || {
                 autostart_core.inner().run_autostart();
+                sync_status_icon(&auto_fix_app, &autostart_core);
                 loop {
                     for result in autostart_core.auto_fix_diagnostics() {
                         if result.ok {

@@ -81,6 +81,7 @@ DaemonRunner | Background core + scheduler clock + graceful stop.
 HelperMain | Elevated closed command set (hosts/nrpt/service).
 HelperService | LocalSystem resident pipe server (SDDL locked).
 TauriApp | Window+tray+single IPC run_command + event emits.
+TauriApp status icon | Green mark (icons/*) while any service runs, red mark (icons/red/*) on tray+window when none run and while shutting down; embedded with include_bytes!, repainted on state change only.
 
 --- FRONTEND pages ---
 DashboardPage | Overview with health filter + stop-all.
