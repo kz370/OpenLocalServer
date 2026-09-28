@@ -392,11 +392,9 @@ impl RuntimeManager {
                 versions
             }
             "postgres" => {
-                let page = String::from_utf8(
-                    self.fetch("https://www.enterprisedb.com/download-postgresql-binaries")?,
-                )
-                .map_err(|_| "PostgreSQL download page is not UTF-8".to_string())?;
-                extract_versions(&page, "Binaries from installer Version ", "<")
+                let page = String::from_utf8(self.fetch(EDB_PAGE_URL)?)
+                    .map_err(|_| "PostgreSQL download page is not UTF-8".to_string())?;
+                edb_versions(&page)
             }
             "redis" => {
                 let bytes = self.fetch("https://api.github.com/repos/redis-windows/redis-windows/releases?per_page=100")?;
@@ -988,15 +986,45 @@ fn linked_download_url(page: &str, filename_prefix: &str, version: &str) -> Opti
     None
 }
 
-fn edb_archive_link(page: &str, version: &str) -> Option<String> {
-    let marker = format!("Binaries from installer Version {version}");
-    let start = page.find(&marker)?;
-    let tail = &page[start + marker.len()..];
-    let end = tail
-        .find("Binaries from installer Version")
-        .unwrap_or(tail.len());
-    let section = &tail[..end];
-    let at = section.find("getfile.jsp")?;
+const EDB_PAGE_URL: &str = "https://www.enterprisedb.com/download-postgresql-binaries";
+
+/// EDB renders every downloadable version as
+/// `Binaries from installer<span …>Version <!-- -->18.6</span>` followed by one
+/// `<a href="…getfile.jsp?fileid=…"><img alt="…">` per platform. HTML comment nodes and the
+/// span mean the version is never adjacent to the label, so each half is parsed on its own:
+/// the version after `Version`, the link from the `alt="Windows x86-64"` image it wraps.
+fn edb_versions(page: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    for section in page.split("Binaries from installer").skip(1) {
+        if let Some(version) = edb_section_version(section) {
+            if edb_windows_link(section).is_some() {
+                found.push(version);
+            }
+        }
+    }
+    found.sort_by(|a, b| compare_versions(b, a));
+    found.dedup();
+    found
+}
+
+/// The `18.6` in `…Version <!-- -->18.6</span>`, skipping the markup React interleaves.
+fn edb_section_version(section: &str) -> Option<String> {
+    let at = section.find("Version")? + "Version".len();
+    let version: String = section[at..]
+        .trim_start()
+        .chars()
+        .skip_while(|c| !c.is_ascii_digit())
+        .take_while(|c| c.is_ascii_digit() || *c == '.')
+        .collect();
+    (!version.is_empty()).then_some(version)
+}
+
+/// The Windows x86-64 archive for one `Binaries from installer` section. EDB serves the file
+/// through a `getfile.jsp` redirect rather than a direct `.zip` URL, so the caller still
+/// resolves the final location over HTTP; only the platform anchor is selected here — the
+/// first one in a section is whatever the page happens to list first (often Mac OS X).
+fn edb_windows_link(section: &str) -> Option<String> {
+    let at = section.find("alt=\"Windows x86-64\"")?;
     let before = &section[..at];
     let href_at = before.rfind("href=")? + 5;
     let quote = before[href_at..].chars().next()?;
@@ -1005,10 +1033,18 @@ fn edb_archive_link(page: &str, version: &str) -> Option<String> {
     }
     let from = href_at + 1;
     let to = section[from..].find(quote)? + from;
-    Some(format!(
-        "https://www.enterprisedb.com{}",
-        &section[from..to]
-    ))
+    let href = &section[from..to];
+    if href.starts_with("http://") || href.starts_with("https://") {
+        return Some(href.to_string());
+    }
+    Some(format!("https://www.enterprisedb.com{href}"))
+}
+
+fn edb_archive_link(page: &str, version: &str) -> Option<String> {
+    page.split("Binaries from installer")
+        .skip(1)
+        .filter(|section| edb_section_version(section).as_deref() == Some(version))
+        .find_map(edb_windows_link)
 }
 
 fn owned_manifest(m: PackageManifest) -> OwnedManifest {
@@ -1184,11 +1220,7 @@ async fn resolve_online_manifest(
             )
         }
         "postgres" => {
-            let page = fetch_text(
-                http,
-                "https://www.enterprisedb.com/download-postgresql-binaries",
-            )
-            .await?;
+            let page = fetch_text(http, EDB_PAGE_URL).await?;
             let link = edb_archive_link(&page, version).ok_or_else(|| {
                 format!("EDB no longer lists the PostgreSQL {version} Windows binaries")
             })?;
@@ -1807,6 +1839,77 @@ mod tests {
         // include the Node.js entry we curated.
         if cfg!(windows) && cfg!(target_arch = "x86_64") {
             assert!(entries.iter().any(|e| e.id == "node"));
+        }
+    }
+
+    /// Trimmed copy of the real EDB binaries page: the version is separated from the
+    /// `Binaries from installer` label by a `<span>` and a React `<!-- -->` comment, and
+    /// each version's anchors are absolute `sbp.enterprisedb.com` links, Windows not first.
+    const EDB_PAGE: &str = r#"<div class="italic mt-16 mb-5">Binaries from installer<span class="font-semibold pl-1">Version <!-- -->18.6</span><div><div class="m-5"><a href="https://sbp.enterprisedb.com/getfile.jsp?fileid=1260549"><img alt="Mac OS X"></a></div><div class="m-5"><a href="https://sbp.enterprisedb.com/getfile.jsp?fileid=1260566"><img alt="Windows x86-64"></a></div></div></div><div class="italic mt-16 mb-5">Binaries from installer<span class="font-semibold pl-1">Version <!-- -->17.11</span><div><div class="m-5"><a href="https://sbp.enterprisedb.com/getfile.jsp?fileid=1260569"><img alt="Windows x86-64"></a></div><div class="m-5"><a href="https://sbp.enterprisedb.com/getfile.jsp?fileid=1260579"><img alt="Mac OS X"></a></div></div></div>"#;
+
+    #[test]
+    fn postgres_versions_survive_the_edb_span_and_comment_markup() {
+        let versions = edb_versions(EDB_PAGE);
+        assert_eq!(versions, vec!["18.6".to_string(), "17.11".to_string()]);
+    }
+
+    #[test]
+    fn postgres_archive_link_picks_the_windows_x64_anchor_not_the_first() {
+        // 18.6 lists Mac OS X first: taking the first getfile.jsp would hand the Mac
+        // archive to the Windows installer.
+        assert_eq!(
+            edb_archive_link(EDB_PAGE, "18.6").as_deref(),
+            Some("https://sbp.enterprisedb.com/getfile.jsp?fileid=1260566")
+        );
+        assert_eq!(
+            edb_archive_link(EDB_PAGE, "17.11").as_deref(),
+            Some("https://sbp.enterprisedb.com/getfile.jsp?fileid=1260569")
+        );
+        assert!(edb_archive_link(EDB_PAGE, "9.2.24").is_none());
+    }
+
+    #[test]
+    fn postgres_relative_edb_href_is_still_accepted() {
+        let page = r#"Binaries from installer<span>Version <!-- -->16.15</span><a href='/getfile.jsp?fileid=1'><img alt="Windows x86-64"></a>"#;
+        assert_eq!(
+            edb_archive_link(page, "16.15").as_deref(),
+            Some("https://www.enterprisedb.com/getfile.jsp?fileid=1")
+        );
+    }
+
+    #[test]
+    fn a_version_with_no_windows_anchor_is_not_offered() {
+        let page = r#"Binaries from installer<span>Version <!-- -->10.23</span><a href="https://sbp.enterprisedb.com/getfile.jsp?fileid=7"><img alt="Mac OS X"></a>"#;
+        assert!(edb_versions(page).is_empty());
+    }
+
+    /// EDB reshapes this page without notice (it already did once: the version moved
+    /// behind a `<span>` and a React comment), which silently emptied the list before.
+    /// `cargo test -p ols-core --release -- --ignored postgres_feed`
+    #[test]
+    #[ignore]
+    fn postgres_feed_still_lists_versions_and_windows_archives() {
+        let home = crate::test_support::isolated_home();
+        let manager = RuntimeManager::new(home.paths.clone());
+        manager.refresh_online_catalog("postgres").unwrap();
+        let versions = manager
+            .online_versions
+            .read()
+            .unwrap()
+            .get("postgres")
+            .cloned()
+            .unwrap();
+        assert!(
+            !versions.is_empty(),
+            "no PostgreSQL versions parsed from EDB"
+        );
+        let page = String::from_utf8(manager.fetch(EDB_PAGE_URL).unwrap()).unwrap();
+        for version in &versions {
+            let link = edb_archive_link(&page, version);
+            assert!(
+                link.is_some(),
+                "no Windows x86-64 archive listed for {version}"
+            );
         }
     }
 }
