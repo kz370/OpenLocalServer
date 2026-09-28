@@ -1,6 +1,6 @@
 import { listen } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
-import { Bug, Check, ChevronDown, Download, FolderSearch, Puzzle, Settings2, Trash2 } from 'lucide-react'
+import { Bug, Check, ChevronDown, Download, FolderSearch, Pause, Play, Puzzle, Settings2, Square, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { Spinner } from '@/components/Spinner'
@@ -88,6 +88,10 @@ export function RuntimesPage() {
   // Install failure for the open dialog. Kept in dedicated state (not derived
   // from the progress map) so a catalog refresh can't wipe it mid-read.
   const [installError, setInstallError] = useState<{ id: string; version: string; message: string } | null>(null)
+  // Versions whose install was requested but has not reported yet. `install_runtime`
+  // returns immediately, and the first backend event only comes after the online
+  // manifest is resolved and the first chunk lands — seconds of silence without this.
+  const [pending, setPending] = useState<Set<string>>(new Set())
 
   const [customInstalls, setCustomInstalls] = useState<CustomInstall[]>([])
   const [manageId, setManageId] = useState<string | null>(null)
@@ -214,16 +218,22 @@ export function RuntimesPage() {
     })()
     const unlisten = listen<RuntimeEvent>('runtime-event', (event) => {
       const e = event.payload
-      // Terminal states always paint. Progress paints at most every 250ms.
-      if (e.kind === 'progress') {
+      const key = `${e.id}@${e.version}`
+      setPending((prev) => (prev.has(key) ? new Set([...prev].filter((k) => k !== key)) : prev))
+      // Only coalesce byte-progress. A state change (paused, resumed, verifying) is one
+      // event the user is waiting on, so dropping it left the button stuck on the state
+      // they just left — pausing looked like it did nothing.
+      if (e.kind === 'progress' && e.state === 'downloading') {
         const now = Date.now()
         if (now - lastProgressPaint.current < 250) return
         lastProgressPaint.current = now
       }
-      setProgress((prev) => ({ ...prev, [`${e.id}@${e.version}`]: e }))
+      setProgress((prev) => ({ ...prev, [key]: e }))
       if (e.kind === 'failed') setInstallError({ id: e.id, version: e.version, message: e.message })
       if (e.kind === 'installed') setInstallError(null)
-      if (e.kind === 'installed' || e.kind === 'failed') void refresh()
+      // A stop is not a failure, so it clears no error and sets none — but the version
+      // is no longer installing, so the catalog still needs re-reading.
+      if (e.kind === 'installed' || e.kind === 'failed' || e.kind === 'cancelled') void refresh()
     })
     return () => {
       active = false
@@ -233,8 +243,31 @@ export function RuntimesPage() {
 
   const install = (entry: CatalogEntry) =>
     guarded(async () => {
+      const key = `${entry.id}@${entry.version}`
       setInstallError(null)
-      await runCommand({ type: 'install_runtime', id: entry.id, version: entry.version })
+      // Paint the in-progress state here, not on the first event: the backend sends
+      // nothing until the manifest resolves and bytes arrive, and until then the button
+      // looked dead.
+      setPending((prev) => new Set([...prev, key]))
+      try {
+        await runCommand({ type: 'install_runtime', id: entry.id, version: entry.version })
+      } catch (err) {
+        setPending((prev) => new Set([...prev].filter((k) => k !== key)))
+        throw err
+      }
+    })
+
+  // Pause/Resume hold the transfer where it is rather than restarting it: the partial
+  // file is kept, so resuming finishes the same download.
+  const setPaused = (entry: CatalogEntry, paused: boolean) =>
+    guarded(async () => {
+      await runCommand({ type: 'pause_runtime', id: entry.id, version: entry.version, paused })
+    })
+
+  const stopInstall = (entry: CatalogEntry) =>
+    guarded(async () => {
+      if (!(await confirmAction(`Stop downloading ${entry.name} ${entry.version}? The partial download is deleted and nothing is installed.`, 'Stop download'))) return
+      await runCommand({ type: 'cancel_runtime', id: entry.id, version: entry.version })
     })
 
   const chooseDefault = (entry: CatalogEntry) =>
@@ -329,9 +362,25 @@ export function RuntimesPage() {
   const selectedInstall = rememberedChoice && installable.some((r) => r.version === rememberedChoice) ? rememberedChoice : installable[0]?.version ?? ''
   const selectedInstallVisible = filteredInstallable.some((r) => r.version === selectedInstall)
   const selectedInstallEvent = progress[`${manageId}@${selectedInstall}`]
-  const installingChoice = selectedInstallEvent?.kind === 'progress'
+  const selectedInstallRow = installable.find((r) => r.version === selectedInstall)
+  const selectedInstallPending = !!manageId && pending.has(`${manageId}@${selectedInstall}`)
+  // Pending counts as installing so the click is acknowledged before the first event.
+  const installingChoice = selectedInstallEvent?.kind === 'progress' || selectedInstallPending
   const installedRows = managedGroup?.rows.filter((r) => r.kind === 'custom' || r.entry?.installed) ?? []
   const managedInstalledCount = managedGroup?.rows.filter((r) => r.kind === 'managed' && r.entry?.installed).length ?? 0
+  // Downloads in flight for this runtime, including ones started elsewhere. A pending
+  // entry is included so a just-clicked install shows up (and can be stopped) before the
+  // backend has sent anything.
+  const activeDownloads = [...new Set([...Object.keys(progress), ...pending])].flatMap((key) => {
+    const [id, version] = [key.slice(0, key.indexOf('@')), key.slice(key.indexOf('@') + 1)]
+    const event = progress[key]
+    if (event && !(event.kind === 'progress' && (event.state === 'downloading' || event.state === 'paused'))) return []
+    if (!event && !pending.has(key)) return []
+    if (managedGroup && id !== managedGroup.id) return []
+    const entry = catalog.find((c) => c.id === id && c.version === version)
+    const live: RuntimeEvent = event ?? { kind: 'progress', id, version, state: 'downloading', downloaded: 0, total: null }
+    return entry ? [{ key, entry, live }] : []
+  })
 
   return (
     <div className="flex flex-col gap-5">
@@ -524,7 +573,7 @@ export function RuntimesPage() {
                     <optgroup key={major} label={major === 'Other' ? major : `Major ${major}`}>
                       {rows.map((row) => {
                         const installed = !!row.entry?.installed
-                        return <option key={row.key} value={row.version} disabled={installed}>{row.version}{installed ? ' · Installed' : progress[row.key]?.kind === 'progress' ? ' · Installing' : ''}</option>
+                        return <option key={row.key} value={row.version} disabled={installed}>{row.version}{installed ? ' · Installed' : progress[row.key]?.kind === 'progress' ? ' · Installing' : pending.has(row.key) ? ' · Starting…' : ''}</option>
                       })}
                     </optgroup>
                   ))}
@@ -539,6 +588,33 @@ export function RuntimesPage() {
                 {installingChoice ? <Spinner /> : <Download />} {installingChoice ? 'Installing…' : 'Download and install'}
               </Button>
             </div>
+            {/* Pause and Stop apply to the running download, not to a version that is
+                merely chosen. Only the transfer can be held or stopped — verification
+                and extraction are not pausable, so the controls go away once they start. */}
+            {installingChoice && selectedInstallRow?.entry && selectedInstallEvent?.kind === 'progress' && (() => {
+              const live = selectedInstallEvent
+              const row = selectedInstallRow.entry!
+              const paused = live.state === 'paused'
+              const holding = paused || live.state === 'downloading'
+              return (
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                  <p className="text-xs text-muted-foreground">
+                    {live.state}: {formatBytes(live.downloaded)}{live.total ? ` / ${formatBytes(live.total)}` : ''}
+                    {paused ? ' — held; the download resumes where it stopped' : ''}
+                  </p>
+                  {holding && (
+                    <>
+                      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs font-normal text-muted-foreground hover:text-foreground" onClick={() => void setPaused(row, !paused)}>
+                        {paused ? <Play className="size-3.5 opacity-70" /> : <Pause className="size-3.5 opacity-70" />} {paused ? 'Resume' : 'Pause'}
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs font-normal text-muted-foreground hover:text-foreground" onClick={() => void stopInstall(row)}>
+                        <Square className="size-3 opacity-70" /> Stop
+                      </Button>
+                    </>
+                  )}
+                </div>
+              )
+            })()}
             {dialogChecking && <p className="mt-2 text-xs text-muted-foreground">Checking the vendor’s online version list…</p>}
             {dialogRefreshFailed && (
               <p className="mt-2 text-xs text-muted-foreground">
@@ -563,14 +639,50 @@ export function RuntimesPage() {
                 </button>
               </p>
             )}
-            {selectedInstall && progress[`${managedGroup.id}@${selectedInstall}`]?.kind === 'progress' && (() => {
-              const live = progress[`${managedGroup.id}@${selectedInstall}`]
-              return live?.kind === 'progress' ? <p className="mt-2 text-xs text-muted-foreground">{live.state}: {formatBytes(live.downloaded)}{live.total ? ` / ${formatBytes(live.total)}` : ''}</p> : null
-            })()}
             {installError && installError.id === managedGroup.id && (
               <p className="mt-2 text-sm text-destructive">{installError.version}: {installError.message}</p>
             )}
           </section>
+
+          {/* Every download in flight for this runtime, whatever started it (this
+              dialog, the command palette, a project pinning a version). Each one can be
+              held or stopped; verification and extraction finish on their own. */}
+          {activeDownloads.length > 0 && (
+          <section>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5">
+                <h3 className="text-[13px] font-semibold leading-none">Downloads in progress</h3>
+                <p className="text-xs text-muted-foreground">Pausing holds the transfer; stopping deletes the partial download and installs nothing.</p>
+              </div>
+            </div>
+            <div className="overflow-hidden rounded-lg border-border/60 border">
+              {activeDownloads.map(({ key, entry, live }) => {
+                const paused = live.state === 'paused'
+                return (
+                  <div key={key} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border/60 px-3 py-2 last:border-b-0">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5 text-[13px] font-medium tabular-nums">
+                        <span className="font-mono">{entry.version}</span>
+                        {paused && <Badge variant="secondary" className="px-1.5 text-[11px] font-normal">Paused</Badge>}
+                      </div>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">
+                        {live.state}: {formatBytes(live.downloaded)}{live.total ? ` / ${formatBytes(live.total)}` : ''}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-0.5">
+                      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs font-normal text-muted-foreground hover:text-foreground" onClick={() => void setPaused(entry, !paused)}>
+                        {paused ? <Play className="size-3.5 opacity-70" /> : <Pause className="size-3.5 opacity-70" />} {paused ? 'Resume' : 'Pause'}
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs font-normal text-muted-foreground hover:text-foreground" onClick={() => void stopInstall(entry)}>
+                        <Square className="size-3 opacity-70" /> Stop
+                      </Button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </section>
+          )}
 
           <section>
             <div className="mb-2 flex items-center justify-between gap-3">

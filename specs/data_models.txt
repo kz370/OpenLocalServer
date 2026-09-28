@@ -6,6 +6,9 @@ Entities:
   server null = served by the default web server; a set id pins the site to that one server. Exclusive: a site is rendered on exactly one server, never mirrored. An id that is no longer a known server is kept in the file and falls back to the default with a warning, never dropped (validate_domain_server rejects one on add/update).
 - Fresh install seeds Domain openlocalserver.test (Static, managed, https, root data-dir/home + welcome index.html + exact logo.svg brand bytes); always ensured on load (legacy home.test auto-renamed), hidden from Sites list, remove/rename refused.
 - Runtime {id, type: php|node|python|composer|mariadb|postgres|mongo|redis|mailpit|nginx|apache|caddy|sqlite|git|k6, version, path, arch, installed_at}
+- RuntimeEvent = Progress{id, version, state: Downloading|Paused|Verifying|Extracting, downloaded, total} | Installed{id, version, path} | Failed{id, version, message} | Cancelled{id, version}
+  InstallState (the `state` map) additionally carries Installed|Cancelled|Failed. Cancelled is a user stop, not a failure: it produces its own terminal event and no Diagnostic, and it never reaches Failed.
+- InstallControl {paused, cancelled}, one per in-flight id@version, live only while that install runs. Pause holds the transfer (partial file kept, resume continues it); cancel deletes the partial download and installs nothing.
 - DatabaseInstance {id, engine, version, host, port, data_path, status}
 - Database {engine, name, owner} + DbUser {name, host, password_ref}
 - WebConfig {default_server: nginx|apache|caddy, servers:{server_id -> ServerPorts{http, https}}, php_workers, dns_port}

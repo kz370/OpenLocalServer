@@ -214,12 +214,13 @@ export interface CatalogEntry {
   system: SystemInstall | null
 }
 
-export type InstallState = 'downloading' | 'verifying' | 'extracting' | 'installed' | 'failed'
+export type InstallState = 'downloading' | 'paused' | 'verifying' | 'extracting' | 'installed' | 'cancelled' | 'failed'
 
 export type RuntimeEvent =
   | { kind: 'progress'; id: string; version: string; state: InstallState; downloaded: number; total: number | null }
   | { kind: 'installed'; id: string; version: string; path: string }
   | { kind: 'failed'; id: string; version: string; message: string }
+  | { kind: 'cancelled'; id: string; version: string }
 
 // ---- Stage 6–10 types (mirror crates/ols-core/src/{domain,certs,health,web,service,sqlite,quickapp,app}.rs)
 
@@ -593,6 +594,8 @@ export type CoreCommand =
   | { type: 'list_runtime_catalog' }
   | { type: 'refresh_runtime_catalog'; id: string }
   | { type: 'install_runtime'; id: string; version: string }
+  | { type: 'pause_runtime'; id: string; version: string; paused: boolean }
+  | { type: 'cancel_runtime'; id: string; version: string }
   | { type: 'remove_runtime'; id: string; version: string }
   | { type: 'register_project'; path: string }
   | { type: 'scan_and_register_projects'; path: string }

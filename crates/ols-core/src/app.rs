@@ -2162,6 +2162,14 @@ impl Inner {
                 }) if i == id && v == version => {
                     return Err(format!("installing {id} {version} failed: {message}"));
                 }
+                // A stop is a deliberate outcome, not a failure: the caller is told what
+                // happened instead of being left waiting for an install that will never
+                // finish.
+                Ok(RuntimeEvent::Cancelled { id: i, version: v }) if i == id && v == version => {
+                    return Err(format!(
+                        "installing {id} {version} was stopped before it finished"
+                    ));
+                }
                 Ok(RuntimeEvent::Progress {
                     id: i,
                     version: v,

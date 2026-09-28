@@ -597,6 +597,13 @@ pub fn run() {
                             "Install failed",
                             &format!("{id} {version}: {message}"),
                         ),
+                        // A stop is deliberate — say so, don't style it as a failure.
+                        RuntimeEvent::Cancelled { id, version } => notify(
+                            &runtime_handle,
+                            &runtime_core,
+                            "Install stopped",
+                            &format!("{id} {version} download was stopped"),
+                        ),
                         _ => {}
                     }
                 }

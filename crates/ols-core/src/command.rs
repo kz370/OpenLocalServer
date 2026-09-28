@@ -81,6 +81,19 @@ pub enum CoreCommand {
         id: String,
         version: String,
     },
+    /// Hold an in-flight download where it is, or let it continue. The partial file is
+    /// kept, so resuming finishes the same transfer instead of starting over.
+    PauseRuntime {
+        id: String,
+        version: String,
+        paused: bool,
+    },
+    /// Stop an in-flight install. The partial download is deleted and nothing is
+    /// installed; this is a user choice, not a failure, so it is not reported as one.
+    CancelRuntime {
+        id: String,
+        version: String,
+    },
     RemoveRuntime {
         id: String,
         version: String,
@@ -1730,6 +1743,24 @@ impl Core {
             C::InstallRuntime { id, version } => {
                 tracing::info!(command = "install_runtime", id = %id, version = %version);
                 i.runtimes.install(&id, &version);
+                Ok(R::Ok)
+            }
+            C::PauseRuntime {
+                id,
+                version,
+                paused,
+            } => {
+                tracing::info!(command = "pause_runtime", id = %id, version = %version, paused);
+                i.runtimes
+                    .pause_install(&id, &version, paused)
+                    .map_err(CoreError::ServiceError)?;
+                Ok(R::Ok)
+            }
+            C::CancelRuntime { id, version } => {
+                tracing::info!(command = "cancel_runtime", id = %id, version = %version);
+                i.runtimes
+                    .cancel_install(&id, &version)
+                    .map_err(CoreError::ServiceError)?;
                 Ok(R::Ok)
             }
             C::RemoveRuntime { id, version } => {

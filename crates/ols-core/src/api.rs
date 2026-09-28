@@ -102,6 +102,8 @@ const OPERATE: &[&str] = &[
     "validate_web",
     "restart_site_app",
     "install_runtime",
+    "pause_runtime",
+    "cancel_runtime",
     "register_project",
     "start_worker",
     "stop_worker",

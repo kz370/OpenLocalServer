@@ -121,10 +121,56 @@ fn probe_version(exe: &std::path::Path, flag: &str) -> Option<String> {
 #[serde(rename_all = "snake_case")]
 pub enum InstallState {
     Downloading,
+    /// The user paused it. The download is held where it is; resuming continues.
+    Paused,
     Verifying,
     Extracting,
     Installed,
+    /// The user stopped it. The partial download is deleted and nothing is installed.
+    Cancelled,
     Failed,
+}
+
+/// Why an install stopped. A user stop is not a failure: nothing went wrong, so it must
+/// not be reported as one (and must not set `InstallState::Failed`).
+#[derive(Debug)]
+pub enum InstallOutcome {
+    Done,
+    Failed(String),
+    Cancelled,
+}
+
+/// The in-flight install controls a UI can drive: pause holds the transfer where it is,
+/// cancel aborts it. One per `id@version`; dropped when the install finishes.
+#[derive(Default)]
+struct InstallControl {
+    paused: std::sync::atomic::AtomicBool,
+    cancelled: std::sync::atomic::AtomicBool,
+}
+
+impl InstallControl {
+    fn pause(&self) {
+        self.paused
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn resume(&self) {
+        self.paused
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn is_paused(&self) -> bool {
+        self.paused.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn cancel(&self) {
+        self.cancelled
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.cancelled.load(std::sync::atomic::Ordering::Relaxed)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -147,6 +193,9 @@ pub enum RuntimeEvent {
         version: String,
         message: String,
     },
+    /// The user stopped this install. Not a failure: nothing is left behind and no
+    /// diagnostic is warranted, so this is its own terminal event.
+    Cancelled { id: String, version: String },
 }
 
 pub struct RuntimeManager {
@@ -155,6 +204,9 @@ pub struct RuntimeManager {
     http: reqwest::Client,
     events_tx: broadcast::Sender<RuntimeEvent>,
     state: Arc<Mutex<HashMap<String, InstallState>>>,
+    /// One control per in-flight `id@version`, so a running download can be paused or
+    /// stopped from the UI. Entries are removed when the install reaches a terminal state.
+    controls: Arc<RwLock<HashMap<String, Arc<InstallControl>>>>,
     preferred: RwLock<HashMap<String, String>>,
     online_versions: RwLock<HashMap<String, Vec<String>>>,
 }
@@ -186,6 +238,7 @@ impl RuntimeManager {
                 .expect("failed to build runtime HTTP client"),
             events_tx,
             state: Arc::new(Mutex::new(HashMap::new())),
+            controls: Arc::new(RwLock::new(HashMap::new())),
             preferred: RwLock::new(preferred),
             online_versions: RwLock::new(HashMap::new()),
         }
@@ -641,7 +694,10 @@ impl RuntimeManager {
         if self.state.lock().unwrap().get(&key).is_some_and(|s| {
             matches!(
                 s,
-                InstallState::Downloading | InstallState::Verifying | InstallState::Extracting
+                InstallState::Downloading
+                    | InstallState::Paused
+                    | InstallState::Verifying
+                    | InstallState::Extracting
             )
         }) {
             return Err(format!("{id} {version} is currently being installed"));
@@ -752,16 +808,64 @@ impl RuntimeManager {
         }
 
         {
+            let key = format!("{id}@{version}");
             let mut s = self.state.lock().unwrap();
-            s.insert(format!("{id}@{version}"), InstallState::Downloading);
+            // A second install of the same version while one is running would race it
+            // over the same cache file and scratch dir. The running one keeps the
+            // controls; only the state entry is refreshed.
+            if s.get(&key).is_some_and(|st| {
+                matches!(
+                    st,
+                    InstallState::Downloading
+                        | InstallState::Paused
+                        | InstallState::Verifying
+                        | InstallState::Extracting
+                )
+            }) {
+                // Say it is already running, so the caller that just asked is told
+                // something instead of hearing nothing at all.
+                let _ = self.events_tx.send(RuntimeEvent::Progress {
+                    id: id.to_string(),
+                    version: version.to_string(),
+                    state: s.get(&key).copied().unwrap_or(InstallState::Downloading),
+                    downloaded: 0,
+                    total: None,
+                });
+                return;
+            }
+            s.insert(key.clone(), InstallState::Downloading);
+            self.controls
+                .write()
+                .unwrap()
+                .insert(key, Arc::new(InstallControl::default()));
         }
+
+        // Announce the start before anything slow happens. Resolving an online manifest
+        // is a ranged GET and the first body chunk can be seconds away, so without this
+        // the UI showed a button that had visibly done nothing.
+        let _ = self.events_tx.send(RuntimeEvent::Progress {
+            id: id.to_string(),
+            version: version.to_string(),
+            state: InstallState::Downloading,
+            downloaded: 0,
+            total: None,
+        });
 
         let paths = self.paths.clone();
         let http = self.http.clone();
         let events_tx = self.events_tx.clone();
         let state = self.state.clone();
+        let controls = self.controls.clone();
         let manifest_id = id.to_string();
         let manifest_version = version.to_string();
+        let key = format!("{}@{}", manifest_id, manifest_version);
+        let control = self
+            .controls
+            .read()
+            .unwrap()
+            .get(&key)
+            .cloned()
+            .unwrap_or_default();
 
         self.runtime.spawn(async move {
             let manifest = match static_manifest {
@@ -769,19 +873,88 @@ impl RuntimeManager {
                 None => resolve_online_manifest(&http, &manifest_id, &manifest_version).await,
             };
             let result = match manifest {
-                Ok(manifest) => install_one(manifest, paths, http, events_tx.clone(), state.clone()).await,
-                Err(e) => Err(e),
+                Ok(manifest) => {
+                    install_one(
+                        manifest,
+                        paths,
+                        http,
+                        events_tx.clone(),
+                        state.clone(),
+                        control.clone(),
+                    )
+                    .await
+                }
+                Err(e) => InstallOutcome::Failed(e),
             };
-            if let Err(e) = result {
-                tracing::warn!(id = %manifest_id, version = %manifest_version, error = %e, "runtime install failed");
-                state.lock().unwrap().insert(format!("{}@{}", manifest_id, manifest_version), InstallState::Failed);
-                let _ = events_tx.send(RuntimeEvent::Failed {
-                    id: manifest_id,
-                    version: manifest_version,
-                    message: e,
-                });
+            // The control is dropped with the install, so a later "pause" can never
+            // address one that is no longer running.
+            controls.write().unwrap().remove(&key);
+            match result {
+                InstallOutcome::Done => {}
+                InstallOutcome::Failed(e) => {
+                    tracing::warn!(id = %manifest_id, version = %manifest_version, error = %e, "runtime install failed");
+                    state.lock().unwrap().insert(key, InstallState::Failed);
+                    let _ = events_tx.send(RuntimeEvent::Failed {
+                        id: manifest_id,
+                        version: manifest_version,
+                        message: e,
+                    });
+                }
+                InstallOutcome::Cancelled => {
+                    tracing::info!(id = %manifest_id, version = %manifest_version, "runtime install stopped by the user");
+                    state.lock().unwrap().insert(key, InstallState::Cancelled);
+                    let _ = events_tx.send(RuntimeEvent::Cancelled {
+                        id: manifest_id,
+                        version: manifest_version,
+                    });
+                }
             }
         });
+    }
+
+    /// Holds an in-flight download where it is. The partial file stays, and resuming
+    /// continues the same transfer — the file is never renamed into place while paused,
+    /// so a pause can never produce a half-installed runtime.
+    pub fn pause_install(&self, id: &str, version: &str, paused: bool) -> Result<(), String> {
+        let key = format!("{id}@{version}");
+        let control = self
+            .controls
+            .read()
+            .unwrap()
+            .get(&key)
+            .cloned()
+            .ok_or_else(|| format!("{id} {version} is not installing"))?;
+        if paused {
+            control.pause();
+        } else {
+            control.resume();
+        }
+        Ok(())
+    }
+
+    /// Aborts an in-flight install. The partial download is deleted, nothing is extracted
+    /// or installed, and the user sees a stop, not an error.
+    pub fn cancel_install(&self, id: &str, version: &str) -> Result<(), String> {
+        let key = format!("{id}@{version}");
+        let control = self
+            .controls
+            .read()
+            .unwrap()
+            .get(&key)
+            .cloned()
+            .ok_or_else(|| format!("{id} {version} is not installing"))?;
+        control.cancel();
+        Ok(())
+    }
+
+    /// Whether an install is running right now, and whether the user has it paused.
+    pub fn install_control(&self, id: &str, version: &str) -> Option<(bool, bool)> {
+        let key = format!("{id}@{version}");
+        self.controls
+            .read()
+            .unwrap()
+            .get(&key)
+            .map(|c| (c.is_paused(), c.is_cancelled()))
     }
 }
 
@@ -1047,6 +1220,18 @@ fn edb_archive_link(page: &str, version: &str) -> Option<String> {
         .find_map(edb_windows_link)
 }
 
+/// The `13.1` of `13.1.1` — the release branch `downloads.mariadb.org/rest-api` is keyed by.
+/// Cuts at the second dot, so `10.11.14` becomes `10.11`; a branch-only `13.1` is unchanged.
+fn mariadb_branch(version: &str) -> &str {
+    let Some(first) = version.find('.') else {
+        return version;
+    };
+    match version[first + 1..].find('.') {
+        Some(second) => &version[..first + 1 + second],
+        None => version,
+    }
+}
+
 fn owned_manifest(m: PackageManifest) -> OwnedManifest {
     OwnedManifest {
         id: m.id.into(),
@@ -1138,7 +1323,12 @@ async fn resolve_online_manifest(
             )
         }
         "mariadb" => {
-            let api = format!("https://downloads.mariadb.org/rest-api/mariadb/{version}/");
+            // The API is keyed by *branch* (`13.1`), not by full version: asking for
+            // `/mariadb/13.1.1/` returns 200 with a `release_data` object and no `releases`
+            // map, so the lookup below found nothing and every 13.x install failed with
+            // "MariaDB 13.1.1 is unavailable". The branch carries every patch release.
+            let branch = mariadb_branch(version);
+            let api = format!("https://downloads.mariadb.org/rest-api/mariadb/{branch}/");
             let bytes = http
                 .get(&api)
                 .send()
@@ -1154,7 +1344,14 @@ async fn resolve_online_manifest(
             let release = data
                 .get("releases")
                 .and_then(|v| v.get(version))
-                .ok_or_else(|| format!("MariaDB {version} is unavailable"))?;
+                .ok_or_else(|| {
+                    format!(
+                        "MariaDB {version} is not listed in the {branch} release feed, so its \
+Windows x64 package cannot be verified. Fix: pick another {branch} version on the Runtimes \
+page, or report it at https://github.com/kz370/OpenLocalServer/issues so the feed mapping can \
+be updated."
+                    )
+                })?;
             let file = release
                 .get("files")
                 .and_then(|v| v.as_array())
@@ -1369,12 +1566,13 @@ async fn install_one(
     http: reqwest::Client,
     events_tx: broadcast::Sender<RuntimeEvent>,
     state: Arc<Mutex<HashMap<String, InstallState>>>,
-) -> Result<(), String> {
+    control: Arc<InstallControl>,
+) -> InstallOutcome {
     let key = format!("{}@{}", manifest.id, manifest.version);
     let cache_dir = paths.cache_dir();
-    tokio::fs::create_dir_all(&cache_dir)
-        .await
-        .map_err(|e| e.to_string())?;
+    if let Err(e) = tokio::fs::create_dir_all(&cache_dir).await {
+        return InstallOutcome::Failed(e.to_string());
+    }
     // The on-disk name is deliberately not `<id>-<version>.download`. Bitdefender blocks
     // a *specific* filename for memcached (verified: `__probe.download` and
     // `memcached-1.6.8.download2` both write fine, `memcached-1.6.8.download` is denied
@@ -1389,13 +1587,26 @@ async fn install_one(
     // entry with a different hash) is treated as absent and re-downloaded below.
     let cached_digest: Option<String> = {
         let path = archive_path.clone();
-        tokio::task::spawn_blocking(move || hash_file(&path))
-            .await
-            .map_err(|e| e.to_string())?
-            .ok()
+        match tokio::task::spawn_blocking(move || hash_file(&path)).await {
+            Ok(Ok(digest)) => Some(digest),
+            Ok(Err(_)) => None,
+            Err(e) => return InstallOutcome::Failed(e.to_string()),
+        }
+    };
+    // A vendor that publishes no checksum can only be judged on the file's own structure.
+    // A cached copy whose zip end-of-central-directory record is missing is a truncated
+    // download, not a usable archive — treating it as a hit would fail later inside
+    // extract_zip with "Could not find EOCD", naming neither the cause nor the fix.
+    let cached_is_valid_archive = {
+        let path = archive_path.clone();
+        let is_archive = manifest.url.ends_with(".zip");
+        match tokio::task::spawn_blocking(move || zip_has_eocd(&path, is_archive)).await {
+            Ok(v) => v,
+            Err(e) => return InstallOutcome::Failed(e.to_string()),
+        }
     };
     let already_cached = if manifest.sha256.is_empty() {
-        cached_digest.is_some()
+        cached_digest.is_some() && cached_is_valid_archive
     } else {
         cached_digest.as_deref() == Some(manifest.sha256.as_str())
     };
@@ -1426,29 +1637,95 @@ async fn install_one(
         if let Some(referer) = crate::catalog::download_referer(&manifest.url) {
             request = request.header(reqwest::header::REFERER, referer);
         }
-        let response = request.send().await.map_err(|e| e.to_string())?;
+        let response = match request.send().await {
+            Ok(r) => r,
+            Err(_) if control.is_cancelled() => return stop_install(&control, &archive_path).await,
+            Err(e) => return InstallOutcome::Failed(e.to_string()),
+        };
         if !response.status().is_success() {
-            return Err(format!("download failed: HTTP {}", response.status()));
+            return InstallOutcome::Failed(format!("download failed: HTTP {}", response.status()));
         }
         total = response.content_length();
         downloaded = 0;
         // Antivirus that blocks by name denies the create (os error 5) instead of letting
         // the download finish and then deleting it, so the raw "Access is denied" never
         // reached the user with any explanation.
-        let mut file = std::fs::File::create(&archive_path).map_err(|e| {
-            if e.kind() == std::io::ErrorKind::PermissionDenied {
-                quarantined_error(&manifest)
-            } else {
-                e.to_string()
+        let mut file = match std::fs::File::create(&archive_path) {
+            Ok(f) => f,
+            Err(e) => {
+                return InstallOutcome::Failed(
+                    if e.kind() == std::io::ErrorKind::PermissionDenied {
+                        quarantined_error(&manifest)
+                    } else {
+                        e.to_string()
+                    },
+                )
             }
-        })?;
+        };
         let mut hasher = Sha256::new();
         let mut stream = response.bytes_stream();
         let mut throttle = ProgressThrottle::new();
+        // A pause must be visible on the first tick even if no bytes moved yet.
+        let mut announced_pause = false;
 
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(|e| e.to_string())?;
-            file.write_all(&chunk).map_err(|e| e.to_string())?;
+        loop {
+            // A stop wins over a pause: both set, stop.
+            if control.is_cancelled() {
+                drop(file);
+                return stop_install(&control, &archive_path).await;
+            }
+            if control.is_paused() {
+                if !announced_pause {
+                    announced_pause = true;
+                    state
+                        .lock()
+                        .unwrap()
+                        .insert(key.clone(), InstallState::Paused);
+                    let _ = events_tx.send(RuntimeEvent::Progress {
+                        id: manifest.id.to_string(),
+                        version: manifest.version.to_string(),
+                        state: InstallState::Paused,
+                        downloaded,
+                        total,
+                    });
+                }
+                // Sleep instead of polling the stream: the transfer really is held
+                // (the socket is not drained), it is not merely not written to.
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                continue;
+            }
+            if announced_pause {
+                announced_pause = false;
+                state
+                    .lock()
+                    .unwrap()
+                    .insert(key.clone(), InstallState::Downloading);
+                let _ = events_tx.send(RuntimeEvent::Progress {
+                    id: manifest.id.to_string(),
+                    version: manifest.version.to_string(),
+                    state: InstallState::Downloading,
+                    downloaded,
+                    total,
+                });
+            }
+            let Some(next) = stream.next().await else {
+                break;
+            };
+            let chunk = match next {
+                Ok(chunk) => chunk,
+                Err(_) if control.is_cancelled() => {
+                    drop(file);
+                    return stop_install(&control, &archive_path).await;
+                }
+                Err(e) => {
+                    drop(file);
+                    return InstallOutcome::Failed(e.to_string());
+                }
+            };
+            if let Err(e) = file.write_all(&chunk) {
+                drop(file);
+                return InstallOutcome::Failed(e.to_string());
+            }
             hasher.update(&chunk);
             downloaded += chunk.len() as u64;
             if !throttle.should_emit(downloaded, total) {
@@ -1464,6 +1741,22 @@ async fn install_one(
         }
         drop(file);
 
+        // A stop that lands after the last byte still aborts: nothing has been verified
+        // or installed yet, so this is where the user means it.
+        if control.is_cancelled() {
+            return stop_install(&control, &archive_path).await;
+        }
+        if control.is_paused() {
+            // Wait out a pause that arrived during the final chunk, then continue to
+            // verify — the transfer itself is already complete.
+            while control.is_paused() && !control.is_cancelled() {
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+            if control.is_cancelled() {
+                return stop_install(&control, &archive_path).await;
+            }
+        }
+
         // -- Verify (§21). A mismatch deletes the download and aborts; nothing is extracted. --
         state
             .lock()
@@ -1477,12 +1770,30 @@ async fn install_one(
             total,
         });
         let digest = format!("{:x}", hasher.finalize());
+        // A transfer that ends early is a truncated file, not a complete one. The stream
+        // gives no error when the server simply closes the connection, so the byte count is
+        // checked against the advertised length. Without this the partial file is left in
+        // cache and, for a vendor that publishes no checksum (postgres, nginx, apache,
+        // mailpit, redis, memcached), the cache-hit check above trusts *any* existing file —
+        // so the next install reuses the truncated bytes and fails much later at
+        // "Could not find EOCD", far from the cause.
+        if let Some(expected) = total {
+            if downloaded < expected {
+                let _ = tokio::fs::remove_file(&archive_path).await;
+                return InstallOutcome::Failed(format!(
+                    "download of {} {} was cut short: got {downloaded} of {expected} bytes. \
+The connection dropped mid-transfer; the partial file has been deleted, so installing again \
+restarts the download from the beginning.",
+                    manifest.name, manifest.version
+                ));
+            }
+        }
         // Nginx does not publish a SHA-256 sidecar. For those releases, calculate and
         // retain the digest of the HTTPS download; vendors that publish hashes are checked
         // against their published value above.
         if !manifest.sha256.is_empty() && digest != manifest.sha256 {
             let _ = tokio::fs::remove_file(&archive_path).await;
-            return Err(format!(
+            return InstallOutcome::Failed(format!(
                 "checksum mismatch: expected {}, got {digest} — refusing to install an unverified binary",
                 manifest.sha256
             ));
@@ -1490,6 +1801,13 @@ async fn install_one(
     }
 
     // -- Extract into a scratch dir, then atomically rename into place (§163). --
+    // Extraction itself is a blocking zip walk and is not pausable mid-file; a stop
+    // lands at the next boundary below, and nothing is ever renamed into place after
+    // one, so a stop can never leave a half-extracted runtime installed.
+    if control.is_cancelled() {
+        let _ = tokio::fs::remove_file(&archive_path).await;
+        return InstallOutcome::Cancelled;
+    }
     state
         .lock()
         .unwrap()
@@ -1527,8 +1845,18 @@ async fn install_one(
             &archive_root,
         ),
     })
-    .await
-    .map_err(|e| e.to_string())?;
+    .await;
+
+    let extracted = match extracted {
+        Ok(result) => result,
+        Err(e) => return InstallOutcome::Failed(e.to_string()),
+    };
+
+    if control.is_cancelled() {
+        let _ = tokio::fs::remove_dir_all(&scratch_dir).await;
+        let _ = tokio::fs::remove_file(&archive_path).await;
+        return InstallOutcome::Cancelled;
+    }
 
     if let Err(e) = extracted {
         // Antivirus watches the download folder and quarantines some community archives
@@ -1537,9 +1865,9 @@ async fn install_one(
         // file or directory" — so name the real cause and the way out (§3 safety rule).
         if !archive_path.exists() {
             let _ = tokio::fs::remove_dir_all(&scratch_dir).await;
-            return Err(quarantined_error(&manifest));
+            return InstallOutcome::Failed(quarantined_error(&manifest));
         }
-        return Err(e.to_string());
+        return InstallOutcome::Failed(e.to_string());
     }
 
     // The extracted binary itself is quarantined by some products (a server binary with no
@@ -1548,7 +1876,7 @@ async fn install_one(
     let staged_binary = scratch_dir.join(&manifest.binary);
     if !staged_binary.is_file() {
         let _ = tokio::fs::remove_dir_all(&scratch_dir).await;
-        return Err(quarantined_error(&manifest));
+        return InstallOutcome::Failed(quarantined_error(&manifest));
     }
 
     // The verified archive stays in cache/ on purpose (§127) — a later reinstall (or
@@ -1557,9 +1885,9 @@ async fn install_one(
     if final_dir.exists() {
         let _ = tokio::fs::remove_dir_all(&final_dir).await;
     }
-    tokio::fs::rename(&scratch_dir, &final_dir)
-        .await
-        .map_err(|e| e.to_string())?;
+    if let Err(e) = tokio::fs::rename(&scratch_dir, &final_dir).await {
+        return InstallOutcome::Failed(e.to_string());
+    }
 
     state.lock().unwrap().insert(key, InstallState::Installed);
     tracing::info!(id = %manifest.id, version = %manifest.version, path = %final_dir.display(), "runtime installed");
@@ -1568,7 +1896,14 @@ async fn install_one(
         version: manifest.version.to_string(),
         path: final_dir.display().to_string(),
     });
-    Ok(())
+    InstallOutcome::Done
+}
+
+/// A user stop: the partial download is deleted (it is unverified, so keeping it could
+/// only ever be re-fetched anyway) and nothing is extracted.
+async fn stop_install(_control: &InstallControl, archive_path: &Path) -> InstallOutcome {
+    let _ = tokio::fs::remove_file(archive_path).await;
+    InstallOutcome::Cancelled
 }
 
 /// A vendor-agnostic cache filename for a downloaded runtime archive.
@@ -1627,6 +1962,40 @@ fn hash_file(path: &Path) -> Result<String, std::io::Error> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
+/// Whether a cached download is a structurally complete zip, judged the same way the zip
+/// crate judges it: the end-of-central-directory record (`PK\x05\x06`) must be present. That
+/// record is written last, so its absence is exactly the "Could not find EOCD" signature of a
+/// transfer that stopped early. A missing or unreadable file is reported as not-an-archive so
+/// the caller simply re-downloads. Non-archive runtimes (composer.phar) have no EOCD to find
+/// and are trusted as-is — they are a few MB, so a short transfer is not a practical risk.
+fn zip_has_eocd(path: &Path, is_archive: bool) -> bool {
+    if !is_archive {
+        return true;
+    }
+    use std::io::{Read, Seek, SeekFrom};
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return false;
+    };
+    let Ok(len) = file.metadata().map(|m| m.len()) else {
+        return false;
+    };
+    // EOCD is 22 bytes plus an optional comment of up to 64 KiB.
+    const EOCD: &[u8; 4] = b"PK\x05\x06";
+    let window = 22u64 + u16::MAX as u64;
+    if len < EOCD.len() as u64 {
+        return false;
+    }
+    let start = len.saturating_sub(window);
+    if file.seek(SeekFrom::Start(start)).is_err() {
+        return false;
+    }
+    let mut buf = vec![0u8; (len - start) as usize];
+    if file.read_exact(&mut buf).is_err() {
+        return false;
+    }
+    buf.windows(EOCD.len()).any(|w| w == EOCD)
+}
+
 /// Extracts `archive_path` (a zip) into `dest_dir`, stripping the single top-level
 /// `archive_root` directory the vendor wrapped everything in.
 pub(crate) fn extract_zip(
@@ -1674,6 +2043,7 @@ pub(crate) fn extract_zip(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Read as _;
     use std::time::{Duration, Instant};
 
     /// Real network access, real downloads — not run by default. Proves the full §21
@@ -1830,6 +2200,214 @@ mod tests {
         assert!(t.should_emit(30_000_000, Some(30_000_000)));
     }
 
+    /// Serves a body of `total` bytes in `chunk`-sized pieces, `delay_ms` apart, so a test
+    /// can pause or stop a download that is genuinely still in flight. The socket stays
+    /// undrained while the client is paused, so the pause is a real hold, not a cosmetic one.
+    fn slow_file_server(total: usize, chunk: usize, delay_ms: u64) -> String {
+        use std::io::Write as _;
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let url = format!("http://{}/tool.bin", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            let Ok((mut socket, _)) = listener.accept() else {
+                return;
+            };
+            // Read the request head; the body answer is all these tests care about.
+            let mut head = [0u8; 1024];
+            let _ = socket.read(&mut head).ok();
+            let _ = write!(
+                socket,
+                "HTTP/1.1 200 OK\r\nContent-Length: {total}\r\nContent-Type: application/octet-stream\r\nConnection: close\r\n\r\n"
+            );
+            let body = vec![b'x'; chunk];
+            let mut sent = 0;
+            while sent < total {
+                let n = chunk.min(total - sent);
+                if socket.write_all(&body[..n]).is_err() || socket.flush().is_err() {
+                    return;
+                }
+                sent += n;
+                std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+            }
+            // Keep the connection open so the client sees a clean end only after the body.
+            let _ = socket.flush();
+        });
+        url
+    }
+
+    fn test_manifest(url: String) -> OwnedManifest {
+        OwnedManifest {
+            id: "testrt".into(),
+            name: "Test Runtime".into(),
+            version: "1.0.0".into(),
+            platform: "windows".into(),
+            architecture: "x64".into(),
+            url,
+            // Empty: the check is skipped, so the test exercises the transport controls
+            // and not the vendor-hash path (covered by the real-download tests).
+            sha256: String::new(),
+            archive_root: String::new(),
+            binary: "tool.bin".into(),
+            probe: None,
+        }
+    }
+
+    /// Runs `install_one` on a runtime of its own thread, so the test body can drive the
+    /// control flags and read events while the download runs.
+    fn spawn_install(
+        manifest: OwnedManifest,
+        paths: AppPaths,
+        http: reqwest::Client,
+        events_tx: broadcast::Sender<RuntimeEvent>,
+        state: Arc<Mutex<HashMap<String, InstallState>>>,
+        control: Arc<InstallControl>,
+    ) -> std::thread::JoinHandle<InstallOutcome> {
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(install_one(
+                manifest, paths, http, events_tx, state, control,
+            ))
+        })
+    }
+
+    /// A pause must actually hold the transfer: no further bytes are read or written while
+    /// it is on, and resuming continues the same download instead of starting over.
+    #[test]
+    fn pausing_holds_the_download_and_resuming_finishes_it() {
+        let home = crate::test_support::isolated_home();
+        let manager = RuntimeManager::new(home.paths.clone());
+        let (events_tx, mut events) = broadcast::channel(256);
+        let state = Arc::new(Mutex::new(HashMap::new()));
+        let control = Arc::new(InstallControl::default());
+        let url = slow_file_server(200 * 1024, 4 * 1024, 25);
+        let manifest = test_manifest(url);
+
+        let task = spawn_install(
+            manifest,
+            home.paths.clone(),
+            manager.http.clone(),
+            events_tx.clone(),
+            state,
+            control.clone(),
+        );
+
+        // Wait until bytes are moving, then pause.
+        let mut first_bytes = 0u64;
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while Instant::now() < deadline {
+            match events.try_recv() {
+                Ok(RuntimeEvent::Progress {
+                    state: InstallState::Downloading,
+                    downloaded,
+                    ..
+                }) => {
+                    first_bytes = downloaded;
+                    break;
+                }
+                _ => std::thread::sleep(Duration::from_millis(10)),
+            }
+        }
+        assert!(first_bytes > 0, "no bytes were ever downloaded");
+        control.pause();
+        std::thread::sleep(Duration::from_millis(300));
+
+        // The in-flight chunk may still land, but nothing may keep growing: the transfer
+        // is held, so the byte count stops moving.
+        let mut held = first_bytes;
+        while let Ok(event) = events.try_recv() {
+            if let RuntimeEvent::Progress { downloaded, .. } = event {
+                held = held.max(downloaded);
+            }
+        }
+        std::thread::sleep(Duration::from_millis(500));
+        let mut after = held;
+        while let Ok(event) = events.try_recv() {
+            if let RuntimeEvent::Progress { downloaded, .. } = event {
+                after = after.max(downloaded);
+            }
+        }
+        assert_eq!(after, held, "the download kept moving while paused");
+
+        control.resume();
+        let outcome = task.join().unwrap();
+        assert!(matches!(outcome, InstallOutcome::Done), "{outcome:?}");
+        let installed = home
+            .paths
+            .runtimes_dir()
+            .join("testrt")
+            .join("1.0.0")
+            .join("tool.bin");
+        assert!(installed.is_file(), "resume must finish the same install");
+    }
+
+    /// A stop is not a failure: the partial download is deleted, nothing is installed, and
+    /// the outcome is `Cancelled` so the caller never reports an error the user did not hit.
+    #[test]
+    fn stopping_deletes_the_partial_download_and_installs_nothing() {
+        let home = crate::test_support::isolated_home();
+        let manager = RuntimeManager::new(home.paths.clone());
+        let (events_tx, mut events) = broadcast::channel(256);
+        let state = Arc::new(Mutex::new(HashMap::new()));
+        let control = Arc::new(InstallControl::default());
+        let url = slow_file_server(4 * 1024 * 1024, 4 * 1024, 25);
+        let manifest = test_manifest(url);
+        let archive = home
+            .paths
+            .cache_dir()
+            .join(cache_file_name(&manifest.id, &manifest.version));
+
+        let task = spawn_install(
+            manifest,
+            home.paths.clone(),
+            manager.http.clone(),
+            events_tx.clone(),
+            state,
+            control.clone(),
+        );
+
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while Instant::now() < deadline {
+            if matches!(
+                events.try_recv(),
+                Ok(RuntimeEvent::Progress { downloaded, .. }) if downloaded > 0
+            ) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        control.cancel();
+        let outcome = task.join().unwrap();
+        assert!(
+            matches!(outcome, InstallOutcome::Cancelled),
+            "a user stop must not be reported as a failure: {outcome:?}"
+        );
+        assert!(!archive.exists(), "the partial download must be deleted");
+        assert!(
+            !home
+                .paths
+                .runtimes_dir()
+                .join("testrt")
+                .join("1.0.0")
+                .exists(),
+            "a stopped install must leave nothing installed"
+        );
+    }
+
+    /// The controls are per in-flight install: addressing one that is not running says so
+    /// rather than silently doing nothing.
+    #[test]
+    fn pausing_or_stopping_a_version_that_is_not_installing_says_so() {
+        let home = crate::test_support::isolated_home();
+        let manager = RuntimeManager::new(home.paths.clone());
+        let err = manager.pause_install("php", "8.4.26", true).unwrap_err();
+        assert!(err.contains("not installing"), "{err}");
+        let err = manager.cancel_install("php", "8.4.26").unwrap_err();
+        assert!(err.contains("not installing"), "{err}");
+        assert!(manager.install_control("php", "8.4.26").is_none());
+    }
+
     #[test]
     fn catalog_only_lists_entries_for_this_platform() {
         let home = crate::test_support::isolated_home();
@@ -1881,6 +2459,55 @@ mod tests {
     fn a_version_with_no_windows_anchor_is_not_offered() {
         let page = r#"Binaries from installer<span>Version <!-- -->10.23</span><a href="https://sbp.enterprisedb.com/getfile.jsp?fileid=7"><img alt="Mac OS X"></a>"#;
         assert!(edb_versions(page).is_empty());
+    }
+
+    #[test]
+    fn mariadb_branch_strips_the_patch_component() {
+        // The rest-api is keyed by branch: `/mariadb/13.1.1/` returns a `release_data`
+        // object with no `releases` map, so the lookup silently finds nothing.
+        assert_eq!(mariadb_branch("13.1.1"), "13.1");
+        assert_eq!(mariadb_branch("11.4.9"), "11.4");
+        assert_eq!(mariadb_branch("10.11.14"), "10.11");
+        // Already a branch, or nothing to strip.
+        assert_eq!(mariadb_branch("13.1"), "13.1");
+        assert_eq!(mariadb_branch("11"), "11");
+    }
+
+    /// A transfer that stops early leaves no EOCD, which is exactly what extract_zip later
+    /// rejects as "invalid Zip archive: Could not find EOCD" — far from the real cause.
+    #[test]
+    fn a_truncated_zip_is_recognised_before_it_is_reused() {
+        let dir = std::env::temp_dir().join("ols-zip-eocd-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("truncated.zip");
+
+        // A real zip, then a copy with its tail cut off mid-entry.
+        let complete = dir.join("complete.zip");
+        let file = std::fs::File::create(&complete).unwrap();
+        let mut writer = zip::ZipWriter::new(file);
+        let opts: zip::write::FileOptions<'_, ()> =
+            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        writer.add_directory("root/", opts).unwrap();
+        writer.start_file("root/bin/postgres.exe", opts).unwrap();
+        use std::io::Write as _;
+        writer.write_all(&[0u8; 4096]).unwrap();
+        writer.finish().unwrap();
+        assert!(zip_has_eocd(&complete, true), "a finished zip has an EOCD");
+
+        let bytes = std::fs::read(&complete).unwrap();
+        std::fs::write(&path, &bytes[..bytes.len() - 2048]).unwrap();
+        assert!(
+            !zip_has_eocd(&path, true),
+            "a zip missing its EOCD must not be trusted as a complete download"
+        );
+
+        // A missing file is simply "not cached" so the caller re-downloads.
+        assert!(!zip_has_eocd(&dir.join("absent.zip"), true));
+        // Non-archive runtimes (composer.phar) have no EOCD to look for.
+        assert!(zip_has_eocd(&path, false));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// EDB reshapes this page without notice (it already did once: the version moved
