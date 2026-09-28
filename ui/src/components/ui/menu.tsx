@@ -53,7 +53,7 @@ export function ActionMenu({ items, label = 'More actions' }: { items: MenuItem[
 
   return (
     <>
-      <Button ref={button} size="sm" variant="ghost" className="h-8 w-8 cursor-pointer px-0" title={label} aria-label={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <Button ref={button} size="sm" variant="ghost" className="h-8 w-8 shrink-0 cursor-pointer px-0" title={label} aria-label={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         <MoreHorizontal className="size-4" />
       </Button>
       {open && (

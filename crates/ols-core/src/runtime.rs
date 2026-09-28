@@ -1422,7 +1422,7 @@ async fn install_one(
     let scratch_dir_for_blocking = scratch_dir.clone();
     let archive_root = manifest.archive_root.to_string();
     let single_file_name = (!manifest.url.ends_with(".zip")).then(|| manifest.binary.to_string());
-    tokio::task::spawn_blocking(move || match single_file_name {
+    let extracted = tokio::task::spawn_blocking(move || match single_file_name {
         // A non-archive download (e.g. composer.phar) is the runtime itself — "extract"
         // just means copying it into place under its final name.
         Some(name) => {
@@ -1440,8 +1440,28 @@ async fn install_one(
         ),
     })
     .await
-    .map_err(|e| e.to_string())?
     .map_err(|e| e.to_string())?;
+
+    if let Err(e) = extracted {
+        // Antivirus watches the download folder and quarantines some community archives
+        // (memcached's community Windows port trips启发式 detections reliably). It removes
+        // the file while we are reading it, which surfaces as a bare "No such file or
+        // directory" — so name the real cause and the way out of it (§3 safety rule).
+        if !archive_path.exists() {
+            let _ = tokio::fs::remove_dir_all(&scratch_dir).await;
+            return Err(quarantined_error(&manifest, &archive_path));
+        }
+        return Err(e.to_string());
+    }
+
+    // The extracted binary itself is quarantined by some products (a server binary with no
+    // installer is a common heuristic hit), so confirm the runtime we are about to promise
+    // is really on disk before renaming it into place as "Installed".
+    let staged_binary = scratch_dir.join(&manifest.binary);
+    if !staged_binary.is_file() {
+        let _ = tokio::fs::remove_dir_all(&scratch_dir).await;
+        return Err(quarantined_error(&manifest, &staged_binary));
+    }
 
     // The verified archive stays in cache/ on purpose (§127) — a later reinstall (or
     // installing after a bad uninstall) reuses it via the cache-hit check above instead
@@ -1461,6 +1481,28 @@ async fn install_one(
         path: final_dir.display().to_string(),
     });
     Ok(())
+}
+
+/// Antivirus removed a download (or the binary extracted from it) instead of letting the
+/// install finish. Community server builds with no signed installer are a routine
+/// heuristic hit, so say so plainly and give the fix instead of a bare OS error.
+fn quarantined_error(manifest: &OwnedManifest, path: &Path) -> String {
+    format!(
+        "Antivirus removed the {name} {version} download.\n\
+         What went wrong: {} was deleted by your security software while it was being \
+         installed, so nothing could be extracted.\n\
+         Why: {name} has no signed Windows installer — it is a community build, which \
+         heuristic scanners flag often. The download itself is verified: it matches the \
+         publisher's published SHA-256 ({digest}).\n\
+         Fix: add an exclusion for this app's data folder in your antivirus, then install \
+         again from the Runtimes page — Windows Defender: \
+         Windows Security → Virus & threat protection → Settings → Manage settings → \
+         Exclusions → Add an exclusion → Folder.",
+        path.display(),
+        name = manifest.name,
+        version = manifest.version,
+        digest = manifest.sha256,
+    )
 }
 
 /// Hashes an existing file on disk, if present. Errors (including "not found") collapse
@@ -1608,6 +1650,40 @@ mod tests {
         let extracted = dest.join("bin").join("tool.txt");
         assert!(extracted.exists());
         assert_eq!(std::fs::read_to_string(extracted).unwrap(), "hello");
+    }
+
+    /// The message a user sees when antivirus eats the memcached download must name the
+    /// cause and the fix, not leak a bare OS error the way the extract path used to.
+    #[test]
+    fn a_quarantined_download_says_so_and_says_how_to_fix_it() {
+        let home = crate::test_support::isolated_home();
+        let manifest = OwnedManifest {
+            id: "memcached".into(),
+            name: "Memcached".into(),
+            version: "1.6.8".into(),
+            platform: "windows".into(),
+            architecture: "x64".into(),
+            url: "https://example.invalid/memcached.zip".into(),
+            sha256: "48ec62cef718f0d73698414b783c0e4a69821013553ca00afe0eed324eb5994b".into(),
+            archive_root: "memcached-1.6.8-win64-mingw".into(),
+            binary: "bin/memcached.exe".into(),
+            probe: None,
+        };
+        let gone = home.paths.cache_dir().join("memcached-1.6.8.download");
+
+        let msg = quarantined_error(&manifest, &gone);
+        assert!(msg.contains("Antivirus"), "names the cause: {msg}");
+        assert!(msg.contains("Memcached"), "names the runtime: {msg}");
+        assert!(
+            msg.contains("Exclusions"),
+            "gives the user a way out: {msg}"
+        );
+        assert!(
+            msg.contains("48ec62ce"),
+            "shows the verified digest so the user can tell verified from tampered: {msg}"
+        );
+        // Never the raw OS error the user used to get.
+        assert!(!msg.contains("No such file or directory"), "{msg}");
     }
 
     #[test]

@@ -163,8 +163,8 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
         </Card>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
           <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
             <div>
               <CardTitle className="text-sm">Overview</CardTitle>
@@ -179,7 +179,9 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
               </Badge>
             </Button>
           </CardHeader>
-          <CardContent className="grid gap-6 md:grid-cols-2">
+          {/* One block per row: the card shares the top row with Services, so the two
+              blocks stack instead of sitting side by side. */}
+          <CardContent className="flex flex-col gap-6">
             <div className="flex flex-col gap-3">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium">Resources</span>
@@ -187,7 +189,7 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
                   Details
                 </Button>
               </div>
-              <div className="flex flex-wrap items-start justify-around gap-4">
+              <div className="grid grid-cols-3 gap-2">
                 <Donut
                   label="CPU"
                   percent={stats?.cpu_percent ?? 0}
@@ -197,7 +199,7 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
                 />
                 <Donut
                   label="RAM"
-                  percent={stats ? (stats.memory_used / Math.max(stats.memory_total, 1)) * 100 : 0}
+                  percent={stats?.memory_used && stats?.memory_total ? (stats.memory_used / stats.memory_total) * 100 : 0}
                   detail={stats ? `${formatBytes(stats.memory_used)} / ${formatBytes(stats.memory_total)}` : '…'}
                   base="oklch(0.68 0.12 220)"
                   loading={!stats}
@@ -206,7 +208,7 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
                   <Donut
                     key={d.mount}
                     label={`Disk ${d.mount.replace(/\\$/, '')}`}
-                    percent={(d.used / Math.max(d.total, 1)) * 100}
+                    percent={d.used / Math.max(d.total, 1)}
                     detail={stats ? `${formatBytes(d.total - d.used)} free` : '…'}
                     base="oklch(0.66 0.16 295)"
                     loading={!stats}
@@ -226,6 +228,8 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
           </CardContent>
         </Card>
 
+        {/* Web server sits above Services and the pair fills the column, so both columns
+            share a top and a bottom edge with Overview. */}
         <div className="flex flex-col gap-4">
           <Card>
             <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
@@ -256,21 +260,22 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
             </CardContent>
           </Card>
 
-          <ServicesWidget
-            services={data?.services ?? null}
-            webServers={data?.web?.servers ?? null}
-            busy={busy}
-            onNavigate={onNavigate}
-            onOpenLogs={onOpenLogs}
-            onDone={async () => {
-              await refresh()
-              setDiagToken((t) => t + 1)
-            }}
-          />
+          <div className="flex min-h-0 flex-1 flex-col">
+            <ServicesWidget
+              services={data?.services ?? null}
+              webServers={data?.web?.servers ?? null}
+              busy={busy}
+              onNavigate={onNavigate}
+              onOpenLogs={onOpenLogs}
+              onDone={async () => {
+                await refresh()
+                setDiagToken((t) => t + 1)
+              }}
+            />
+          </div>
         </div>
       </div>
       <DiagnosticsCard refreshToken={diagToken} />
-
 
       <Card>
         <CardHeader className="pb-2">
@@ -283,6 +288,7 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
     </div>
   )
 }
+
 
 /** What the port column means for this row: a web server's HTTP port, or the service's own. */
 function servicePortTitle(s: ServiceStatus, sites?: number): string {
@@ -345,7 +351,7 @@ function ServicesWidget({
   }
 
   return (
-    <Card className="overflow-hidden py-0">
+    <Card className="flex flex-1 flex-col overflow-hidden py-0">
       <CardHeader className="flex-row items-center justify-between space-y-0 px-3 py-2.5">
         <div className="flex min-w-0 items-baseline gap-2">
           <CardTitle className="text-sm">Services</CardTitle>
@@ -364,22 +370,27 @@ function ServicesWidget({
           return (
             <div
               key={s.id}
-              className={`group flex items-center gap-2 px-3 py-1.5 transition-colors hover:bg-muted/40 ${i > 0 ? 'border-t border-border/60' : ''}`}
+              // Fixed tracks, so the port, the state and the controls form real columns:
+              // a web row's third button no longer shoves them left.
+              className={cn(
+                'group grid grid-cols-[1.5rem_minmax(0,1fr)_2.5rem_5.75rem_4.5rem_2rem] items-center gap-x-2 px-3 py-1.5 transition-colors hover:bg-muted/40',
+                i > 0 && 'border-t border-border/60'
+              )}
             >
               <span className={cn('shrink-0', !s.installed && 'opacity-40 grayscale')}>
                 <TechIcon id={s.id} className="size-4" />
               </span>
-              {/* The name is the row's label, so it keeps a real minimum and is what gives
-                  way last: the port, the badge and the action buttons all shrink first. */}
-              <span className="min-w-[4.5rem] flex-1 truncate text-[13px] font-medium">{s.name}</span>
+              {/* The name is the row's only flexible field, so it is what gives way when
+                  the window is too narrow for the rest. */}
+              <span className="min-w-0 truncate text-[13px] font-medium">{s.name}</span>
               <span
-                className="hidden w-10 shrink-0 text-right font-mono text-[11px] tabular-nums text-muted-foreground sm:inline-block"
+                className="text-right font-mono text-[11px] tabular-nums text-muted-foreground"
                 title={servicePortTitle(s, webSites.get(s.id))}
               >
                 {s.port === null ? '—' : s.port}
               </span>
               <StateBadge state={state} />
-              <span className="flex shrink-0 items-center justify-end">
+              <span className="flex items-center justify-end">
                 <IconAction
                   title={s.running ? `Stop ${s.name}` : `Start ${s.name}`}
                   disabled={busy !== null || !s.installed}
@@ -442,21 +453,19 @@ function menuFor(
 
 function StateBadge({ state }: { state: WidgetState }) {
   const label = state === 'running' ? 'Running' : state === 'unhealthy' ? 'Not responding' : state === 'missing' ? 'Not installed' : 'Stopped'
-  // A full pill is the first thing to cost too much room in a narrow window, so below
-  // the sm breakpoint it becomes a dot that still carries the label as its title.
   return (
     <span
       title={label}
       className={cn(
         'inline-flex shrink-0 items-center justify-center rounded-full',
-        'h-5 w-2.5 sm:h-auto sm:w-[5.75rem] sm:py-0.5',
+        'h-auto w-[5.75rem] py-0.5',
         state === 'running' && 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
         state === 'unhealthy' && 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
         state === 'stopped' && 'bg-muted text-muted-foreground',
         state === 'missing' && 'bg-muted/50 text-muted-foreground/70'
       )}
     >
-      <span className="hidden truncate px-1.5 text-center text-[10px] font-medium leading-4 sm:inline">
+      <span className="truncate px-1.5 text-center text-[10px] font-medium leading-4">
         {label}
       </span>
     </span>
@@ -496,7 +505,7 @@ function Donut({ label, percent, detail, base, loading }: { label: string; perce
   const p = Math.min(100, Math.max(0, percent))
   const color = p >= 90 ? 'var(--destructive)' : base
   return (
-    <div className="flex w-28 flex-col items-center gap-1.5 text-center">
+    <div className="mx-auto flex w-full max-w-28 flex-col items-center gap-1.5 text-center">
       <div className="relative size-24">
         <svg viewBox="0 0 80 80" className="size-full -rotate-90">
           <circle cx="40" cy="40" r={r} fill="none" stroke="var(--muted)" strokeWidth="8" />

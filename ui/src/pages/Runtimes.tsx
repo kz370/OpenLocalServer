@@ -4,6 +4,7 @@ import { Bug, Check, ChevronDown, Download, FolderSearch, Puzzle, Settings2, Tra
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { Spinner } from '@/components/Spinner'
+import { ErrorCard } from '@/components/ErrorCard'
 import { PhpExtensionsDialog } from '@/components/PhpExtensionsDialog'
 import { XdebugDialog } from '@/components/XdebugDialog'
 import { Badge } from '@/components/ui/badge'
@@ -340,6 +341,19 @@ export function RuntimesPage() {
             Install versions side by side, then choose a default for new projects and services. Vendor SHA-256 checksums are verified when published.
         </p>
       </div>
+
+      {/* An install failure is otherwise only visible inside the manage dialog, so a
+          runtime that failed to install looked like nothing had happened. */}
+      {installError && (
+        <ErrorCard
+          error={{
+            problem: `${installError.version} could not be installed.`,
+            cause: installError.message,
+            fix: null,
+          }}
+          onDismiss={() => setInstallError(null)}
+        />
+      )}
 
       <div className="rounded-xl border border-border/60 bg-card/40 p-4">
         <div className="flex flex-col gap-0.5">
