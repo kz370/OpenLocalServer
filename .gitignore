@@ -36,3 +36,6 @@ Thumbs.db
 # Portable app data used by debug builds
 /data/*
 release/*
+
+# Isolated worktrees (sdd)
+.worktrees/
