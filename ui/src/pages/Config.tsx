@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Dialog } from '@/components/ui/dialog'
 import { Field, Select, Tabs } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { TechTile } from '@/components/TechIcon'
 import { type ConfigFile, type ConfigVersion, type Domain, type Ownership, type SiteBlocks, type WebConfig, runCommand } from '@/core'
 import { useAction } from '@/lib/hooks'
 import { confirmThen } from '@/lib/confirm'
@@ -21,7 +22,10 @@ const OWNERSHIP_INFO: Record<Ownership, { label: string; blurb: string }> = {
   manual: { label: 'Manual', blurb: 'You own the whole file. OpenLocalServer validates and reloads it but never rewrites it.' },
 }
 
-const fileKey = (f: ConfigFile) => `${f.hostname ?? ''}|${f.part}`
+/** A file is only unique by hostname + part + server: every server has its own main config. */
+const fileKey = (f: ConfigFile) => `${f.server}|${f.hostname ?? ''}|${f.part}`
+
+const SERVER_LABEL: Record<string, string> = { nginx: 'Nginx', apache: 'Apache', caddy: 'Caddy' }
 
 function languageFor(server: string): EditorLanguage {
   return server === 'nginx' ? 'nginx' : server === 'apache' ? 'apache' : 'text'
@@ -51,7 +55,21 @@ export function ConfigPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const grouped = files.filter((f) => f.part !== 'custom')
+  // Grouped by server: each of the three ships its own main config, so a flat list showed
+  // "Main config" once per server with no way to tell them apart.
+  const grouped = useMemo(() => {
+    const order: string[] = []
+    const byServer = new Map<string, ConfigFile[]>()
+    for (const f of files) {
+      if (f.part === 'custom') continue
+      if (!byServer.has(f.server)) {
+        byServer.set(f.server, [])
+        order.push(f.server)
+      }
+      byServer.get(f.server)!.push(f)
+    }
+    return order.map((server) => ({ server, files: byServer.get(server)! }))
+  }, [files])
 
   return (
     <div className="flex flex-col gap-4">
@@ -70,17 +88,39 @@ export function ConfigPage() {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">Files</CardTitle>
           </CardHeader>
-          <CardContent className="flex flex-col gap-1 p-2 pt-0">
-            {grouped.map((f) => {
-              const custom = files.find((x) => x.hostname === f.hostname && x.part === 'custom')
-              return (
-                <div key={fileKey(f)}>
-                  <FileRow f={f} active={selected === fileKey(f)} onClick={() => setSelected(fileKey(f))} label={f.hostname ?? 'Main config'} />
-                  {custom && <FileRow f={custom} active={selected === fileKey(custom)} onClick={() => setSelected(fileKey(custom))} label="↳ your snippet" indent />}
+          <CardContent className="flex flex-col gap-3 p-2 pt-0">
+            {grouped.map((group) => (
+              <div key={group.server} className="flex flex-col gap-1">
+                <div className="flex items-center gap-1.5 px-2.5 pt-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <TechTile id={group.server} className="size-4 rounded" />
+                  {SERVER_LABEL[group.server] ?? group.server}
+                  {group.server === cfg?.default_server && <span className="text-primary">default</span>}
                 </div>
-              )
-            })}
-            {grouped.length <= 1 && <p className="px-2 py-3 text-xs text-muted-foreground">Add a site and apply the web config to see its file here.</p>}
+                {group.files.map((f) => {
+                  const custom = files.find((x) => x.server === f.server && x.hostname === f.hostname && x.part === 'custom')
+                  return (
+                    <div key={fileKey(f)}>
+                      <FileRow
+                        f={f}
+                        active={selected === fileKey(f)}
+                        onClick={() => setSelected(fileKey(f))}
+                        label={f.hostname ?? 'Main config'}
+                      />
+                      {custom && (
+                        <FileRow
+                          f={custom}
+                          active={selected === fileKey(custom)}
+                          onClick={() => setSelected(fileKey(custom))}
+                          label="↳ your snippet"
+                          indent
+                        />
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            ))}
+            {grouped.length === 0 && <p className="px-2 py-3 text-xs text-muted-foreground">Add a site and apply the web config to see its file here.</p>}
           </CardContent>
         </Card>
 
@@ -157,6 +197,10 @@ export function ConfigFilePane({
   const { busy, error, setError, run } = useAction()
   const ownHistory = useConfigHistory(history ? null : file.hostname)
   const hist = history ?? ownHistory
+  // The file names its own server: a main config exists once per server, and a site file
+  // lives on the server that renders it, which is not always the default one.
+  const fileServer = file.server || server
+  const title = file.hostname ? `${file.hostname} · ${SERVER_LABEL[fileServer] ?? fileServer}` : `${SERVER_LABEL[fileServer] ?? fileServer} main config`
 
   useEffect(() => {
     if (openHistoryTick) setTab('history')
@@ -166,7 +210,7 @@ export function ConfigFilePane({
   const editable = !!file.editable
 
   async function load() {
-    const res = await runCommand({ type: 'read_web_config', hostname: file.hostname, part: file.part })
+    const res = await runCommand({ type: 'read_web_config', hostname: file.hostname, part: file.part, server: file.server })
     if (res.type === 'text') {
       setText(res.text)
       setSaved(res.text)
@@ -212,7 +256,7 @@ export function ConfigFilePane({
       <Card>
         <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-4">
           <div className="min-w-0">
-            <div className="truncate text-sm font-medium">{file.hostname ?? 'Main config'}{file.part === 'custom' && ' (your snippet)'}</div>
+            <div className="truncate text-sm font-medium">{title}{file.part === 'custom' && ' (your snippet)'}</div>
             <div className="truncate font-mono text-xs text-muted-foreground">{file.path}</div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -242,7 +286,7 @@ export function ConfigFilePane({
               ask={() => ({
                 title: 'Explain or change this config',
                 description: 'Reads the text in the editor. A suggested change comes back as a diff for you to apply by hand.',
-                request: { feature: 'config', kind: 'web', title: `${file.hostname ?? 'Main'} ${server} config`, text },
+                request: { feature: 'config', kind: 'web', title: `${file.hostname ?? fileServer} ${fileServer} config`, text },
                 question: 'optional',
                 placeholder: 'What do you want? e.g. redirect www to non-www, add gzip',
               })}
@@ -288,7 +332,7 @@ export function ConfigFilePane({
         onChange={setTab}
       />
 
-      {tab === 'editor' && <CodeEditor value={text} onChange={setText} readOnly={!editable} language={languageFor(server)} height="480px" />}
+      {tab === 'editor' && <CodeEditor value={text} onChange={setText} readOnly={!editable} language={languageFor(fileServer)} height="480px" />}
       {tab === 'structured' && file.hostname && (
         <StructuredEditor
           hostname={file.hostname}
@@ -304,7 +348,7 @@ export function ConfigFilePane({
           history={hist}
           listed={!history}
           current={text}
-          language={languageFor(server)}
+          language={languageFor(fileServer)}
           canRestore={editable}
           onRestored={() => {
             hist.reload()
@@ -385,7 +429,7 @@ export function SiteConfigTab({ hostname }: { hostname: string }) {
           onChange={setPart}
         />
       )}
-      <ConfigFilePane key={`${file.hostname}|${file.part}`} file={file} server={server} onChanged={refresh} />
+      <ConfigFilePane key={`${file.server}|${file.hostname}|${file.part}`} file={file} server={server} onChanged={refresh} />
     </div>
   )
 }
@@ -394,6 +438,7 @@ function FileRow({ f, active, onClick, label, indent }: { f: ConfigFile; active:
   return (
     <button
       onClick={onClick}
+      title={f.path}
       className={`flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors ${active ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/60'} ${indent ? 'pl-6 text-xs text-muted-foreground' : ''}`}
     >
       <span className="truncate">{label}</span>

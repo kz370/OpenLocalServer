@@ -258,6 +258,10 @@ pub enum CoreCommand {
     ReadWebConfig {
         hostname: Option<String>,
         part: ConfigPart,
+        /// Which server's file to read. Every server has its own main config, so a main
+        /// file (no hostname) is only identified by its server. Omitted means the
+        /// default server, which is what a site file resolves to anyway.
+        server: Option<String>,
     },
     WriteWebConfig {
         hostname: String,
@@ -2249,13 +2253,28 @@ impl Core {
                     .collect();
                 Ok(R::Configs { files })
             }
-            C::ReadWebConfig { hostname, part } => {
+            C::ReadWebConfig {
+                hostname,
+                part,
+                server,
+            } => {
                 let cfg = i.web_config();
-                let server = hostname
-                    .as_deref()
-                    .and_then(|h| i.domains.lock().unwrap().get(h))
-                    .map(|d| crate::domain::resolved_server(&d, &cfg))
-                    .unwrap_or_else(|| cfg.default_server.clone());
+                let server = match (hostname.as_deref(), server.as_deref()) {
+                    (Some(_), Some(id)) | (None, Some(id)) => {
+                        if !crate::web::SERVER_IDS.contains(&id) {
+                            return Err(CoreError::DomainError(format!(
+                                "{id} is not a web server we ship"
+                            )));
+                        }
+                        id.to_string()
+                    }
+                    // No server asked for: a site file is rendered by the server it is
+                    // assigned to, a main file belongs to the default one.
+                    (h, _) => h
+                        .and_then(|h| i.domains.lock().unwrap().get(h))
+                        .map(|d| crate::domain::resolved_server(&d, &cfg))
+                        .unwrap_or_else(|| cfg.default_server.clone()),
+                };
                 Ok(R::Text {
                     text: i.web.read_config(&server, hostname.as_deref(), part)?,
                 })

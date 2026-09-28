@@ -450,7 +450,7 @@ fn tool_defs() -> Vec<Value> {
         f("list_log_sources", "The logs that can be read.", json!({}), &[]),
         f("read_log", "The last lines of a log (source from list_log_sources, e.g. app, web:error).", json!({"source":{"type":"string"},"lines":{"type":"integer"}}), &["source"]),
         f("read_excerpt", "A page of a saved log excerpt file (from a previous overlong pick), as <file> lines <a>-<b> of <n>.", json!({"file":{"type":"string"},"start_line":{"type":"integer"},"lines":{"type":"integer"}}), &["file"]),
-        f("read_web_config", "The generated web server config for a site (part: site or custom), or the main config with no hostname.", json!({"hostname":{"type":"string"},"part":{"type":"string"}}), &[]),
+        f("read_web_config", "The generated web server config for a site (part: site or custom), or that server's main config with no hostname (server: nginx, apache or caddy; defaults to the default server).", json!({"hostname":{"type":"string"},"part":{"type":"string"},"server":{"type":"string"}}), &[]),
         f("read_manifest", "A project's .openlocalserver/environment.yaml.", json!({"project_id":{"type":"string"}}), &["project_id"]),
         f("read_env_names", "The variable names in a project's .env file, values hidden.", json!({"project_id":{"type":"string"},"file":{"type":"string"}}), &["project_id"]),
         f("list_quick_apps", "The Quick Apps (id, name, description).", json!({}), &[]),
@@ -563,10 +563,13 @@ impl Inner {
                     part
                 };
                 let cfg = self.web_config();
-                let server = host
-                    .as_deref()
-                    .and_then(|h| self.domains.lock().unwrap().get(h))
-                    .map(|d| crate::domain::resolved_server(&d, &cfg))
+                let server = s("server")
+                    .filter(|id| crate::web::SERVER_IDS.contains(&id.as_str()))
+                    .or_else(|| {
+                        host.as_deref()
+                            .and_then(|h| self.domains.lock().unwrap().get(h))
+                            .map(|d| crate::domain::resolved_server(&d, &cfg))
+                    })
                     .unwrap_or_else(|| cfg.default_server.clone());
                 self.web
                     .read_config(&server, host.as_deref(), part)

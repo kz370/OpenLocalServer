@@ -21,22 +21,28 @@ import { ConfigPage } from '@/pages/Config'
 
 export function WebServerPage({ initialTab = 'server' }: { initialTab?: 'server' | 'config' | 'certs' }) {
   const web = useWeb()
-  const { status, cfg, certs, ca, projects, busy, error, setError, run, refresh, apply } = web
+  const { status, cfg, certs, ca, projects, busy, error, setError, run, refresh, refreshConfig, apply } = web
   const [tab, setTab] = useState<'server' | 'config' | 'certs'>(initialTab)
   const [certDetail, setCertDetail] = useState<CertInfo | null>(null)
+  // Settings are written to disk but read only when the web server is applied, so a save
+  // while it is stopped has to say so instead of looking like it did nothing.
+  const [savedWhileStopped, setSavedWhileStopped] = useState(false)
 
-  async function saveSettings(next: WebConfig, serverChanged: boolean) {
+  async function saveDefaultSettings(next: WebConfig) {
     await runCommand({ type: 'set_setting', key: 'web.default_server', value: next.default_server })
-    for (const id of ['nginx', 'apache', 'caddy']) {
-      const ports = next.servers[id]
-      if (!ports) continue
+    await runCommand({ type: 'set_setting', key: 'web.php_workers', value: next.php_workers })
+    await runCommand({ type: 'set_setting', key: 'web.dns_port', value: next.dns_port })
+    await refreshConfig()
+    setSavedWhileStopped(true)
+  }
+
+  async function saveServerPorts(next: WebConfig) {
+    for (const [id, ports] of Object.entries(next.servers)) {
       await runCommand({ type: 'set_setting', key: `web.servers.${id}.http_port`, value: ports.http })
       await runCommand({ type: 'set_setting', key: `web.servers.${id}.https_port`, value: ports.https })
     }
-    await runCommand({ type: 'set_setting', key: 'web.php_workers', value: next.php_workers })
-    await runCommand({ type: 'set_setting', key: 'web.dns_port', value: next.dns_port })
-    if (serverChanged || status?.running) await apply()
-    else await refresh()
+    await refreshConfig()
+    setSavedWhileStopped(true)
   }
 
   return (
@@ -48,24 +54,40 @@ export function WebServerPage({ initialTab = 'server' }: { initialTab?: 'server'
             The server that serves your sites, its ports, and the local HTTPS certificates. Sites themselves live on the Sites page (§44–53).
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button disabled={busy !== null} onClick={() => run('apply', () => apply())}>
-            {busy === 'apply' ? <Spinner /> : <Play />} {busy === 'apply' ? (status?.running ? 'Applying…' : 'Starting…') : status?.running ? 'Apply changes' : 'Start web server'}
-          </Button>
-          {status?.running && (
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex gap-2">
             <Button
-              variant="outline"
               disabled={busy !== null}
               onClick={() =>
-                run('stop', async () => {
-                  await runCommand({ type: 'stop_web' })
-                  await waitForWebStopped()
-                  await refresh()
+                run('apply', async () => {
+                  setSavedWhileStopped(false)
+                  await apply()
                 })
               }
             >
-              {busy === 'stop' ? <Spinner /> : <StopIcon />} {busy === 'stop' ? 'Stopping…' : 'Stop'}
+              {busy === 'apply' ? <Spinner /> : <Play />}{' '}
+              {busy === 'apply' ? (status?.running ? 'Applying…' : 'Starting…') : status?.running ? 'Apply changes' : 'Start web server'}
             </Button>
+            {status?.running && (
+              <Button
+                variant="outline"
+                disabled={busy !== null}
+                onClick={() =>
+                  run('stop', async () => {
+                    await runCommand({ type: 'stop_web' })
+                    await waitForWebStopped()
+                    await refresh()
+                  })
+                }
+              >
+                {busy === 'stop' ? <Spinner /> : <StopIcon />} {busy === 'stop' ? 'Stopping…' : 'Stop'}
+              </Button>
+            )}
+          </div>
+          {savedWhileStopped && !status?.running && (
+            <p className="max-w-[18rem] text-right text-xs text-muted-foreground">
+              Saved. The web server is stopped, so these settings apply the next time you start it or choose Apply changes.
+            </p>
           )}
         </div>
       </div>
@@ -95,7 +117,14 @@ export function WebServerPage({ initialTab = 'server' }: { initialTab?: 'server'
       />
 
       {tab === 'server' && cfg && status && (
-        <ServerPanel cfg={cfg} status={status} domains={web.domains} onSave={(c, changed) => run('settings', () => saveSettings(c, changed))} busy={busy !== null} />
+        <ServerPanel
+          cfg={cfg}
+          status={status}
+          domains={web.domains}
+          onSaveDefault={(c) => run('settings-default', () => saveDefaultSettings(c))}
+          onSavePorts={(c) => run('settings-ports', () => saveServerPorts(c))}
+          busyKey={busy}
+        />
       )}
 
       {tab === 'config' && <ConfigPage />}
@@ -259,14 +288,16 @@ function ServerPanel({
   cfg,
   status,
   domains,
-  onSave,
-  busy,
+  onSaveDefault,
+  onSavePorts,
+  busyKey,
 }: {
   cfg: WebConfig
   status: WebStatus
   domains: DomainSummary[]
-  onSave: (c: WebConfig, serverChanged: boolean) => void
-  busy: boolean
+  onSaveDefault: (c: WebConfig) => void
+  onSavePorts: (c: WebConfig) => void
+  busyKey: string | null
 }) {
   const [draft, setDraft] = useState(cfg)
   useEffect(() => setDraft(cfg), [cfg])
@@ -276,8 +307,18 @@ function ServerPanel({
       ...draft,
       servers: { ...draft.servers, [id]: { ...(draft.servers[id] ?? { http: 80, https: 443 }), ...patch } },
     })
-  const defaultChanged = draft.default_server !== cfg.default_server
-  const dirty = JSON.stringify(draft) !== JSON.stringify(cfg)
+  // Each card owns its own Save, so each needs to know about its own edits only. A change
+  // in one section must not make the other section's button appear.
+  const defaultDirty =
+    draft.default_server !== cfg.default_server ||
+    draft.php_workers !== cfg.php_workers ||
+    draft.dns_port !== cfg.dns_port
+  const portsDirty = Object.keys({ ...cfg.servers, ...draft.servers }).some((id) => {
+    const a = draft.servers[id]
+    const b = cfg.servers[id]
+    return a?.http !== b?.http || a?.https !== b?.https
+  })
+  const busy = busyKey !== null
   // Every port that will actually be bound: the default always takes 80/443.
   const clashes = portClashes(draft)
 
@@ -357,11 +398,13 @@ function ServerPanel({
               />
             </Field>
           </div>
-          {dirty && (
-            <div>
-              <Button size="sm" disabled={busy} onClick={() => onSave(draft, defaultChanged)}>
-                {defaultChanged ? 'Switch default and apply' : 'Save settings'}
+          {defaultDirty && (
+            <div className="flex items-center gap-2">
+              <Button size="sm" disabled={busy} onClick={() => onSaveDefault(draft)}>
+                {busyKey === 'settings-default' && <Spinner />}
+                {busyKey === 'settings-default' ? 'Saving…' : 'Save default server'}
               </Button>
+              <span className="text-xs text-muted-foreground">Takes effect on the next start or apply.</span>
             </div>
           )}
         </CardContent>
@@ -436,11 +479,13 @@ function ServerPanel({
               </ul>
             </div>
           )}
-          {dirty && (
-            <div>
-              <Button size="sm" disabled={busy || clashes.length > 0} onClick={() => onSave(draft, defaultChanged)}>
-                {defaultChanged ? 'Switch default and apply' : 'Save settings'}
+          {portsDirty && (
+            <div className="flex items-center gap-2">
+              <Button size="sm" disabled={busy || clashes.length > 0} onClick={() => onSavePorts(draft)}>
+                {busyKey === 'settings-ports' && <Spinner />}
+                {busyKey === 'settings-ports' ? 'Saving…' : 'Save ports'}
               </Button>
+              <span className="text-xs text-muted-foreground">Takes effect on the next start or apply.</span>
             </div>
           )}
         </CardContent>

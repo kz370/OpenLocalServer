@@ -69,6 +69,9 @@ pub enum ConfigPart {
 pub struct ConfigFile {
     pub hostname: Option<String>,
     pub part: ConfigPart,
+    /// The web server whose layout this file lives in. Every server has its own main
+    /// config, so a file is only identified by hostname + part + server.
+    pub server: String,
     pub path: String,
     pub ownership: Option<Ownership>,
     /// The file on disk no longer matches what OpenLocalServer last wrote (§26).
@@ -1145,6 +1148,7 @@ impl WebManager {
         let mut files = vec![ConfigFile {
             hostname: None,
             part: ConfigPart::Main,
+            server: server.id().into(),
             path: server.main_config(&layout).display().to_string(),
             ownership: None,
             drifted: false,
@@ -1162,6 +1166,7 @@ impl WebManager {
             files.push(ConfigFile {
                 hostname: Some(d.hostname.clone()),
                 part: ConfigPart::Site,
+                server: server.id().into(),
                 path: path.display().to_string(),
                 ownership: Some(d.ownership),
                 drifted,
@@ -1171,6 +1176,7 @@ impl WebManager {
                 files.push(ConfigFile {
                     hostname: Some(d.hostname.clone()),
                     part: ConfigPart::Custom,
+                    server: server.id().into(),
                     path: layout
                         .custom_file(server.config_ext(), &d.hostname)
                         .display()
@@ -1767,6 +1773,48 @@ mod tests {
                 Arc::new(ProcessSupervisor::new()),
             )),
         )
+    }
+
+    #[test]
+    fn every_server_lists_its_own_main_config() {
+        let home = crate::test_support::isolated_home();
+        // list_configs resolves a layout per server, which needs that runtime installed.
+        for (id, version, binary) in [
+            ("nginx", "1.0.0", "nginx.exe"),
+            ("apache", "1.0.0", "bin/httpd.exe"),
+            ("caddy", "1.0.0", "caddy.exe"),
+        ] {
+            let dir = home.paths.runtimes_dir().join(id).join(version);
+            std::fs::create_dir_all(dir.join(binary).parent().unwrap()).unwrap();
+            std::fs::write(dir.join(binary), b"").unwrap();
+        }
+        let mgr = test_manager(&home);
+        let cfg = test_config("nginx");
+        let domains = DomainStore::load(&home.paths).unwrap();
+
+        // One Main per server, each naming its server and pointing at its own file. The
+        // page keys a file by (server, hostname, part), so without the server field the
+        // three Main entries collapse to one key and the sidebar shows "Main config" three
+        // times with a single selection between them.
+        let listed: Vec<ConfigFile> = SERVER_IDS
+            .iter()
+            .filter_map(|id| mgr.list_configs(&cfg, &domains, id).ok())
+            .flatten()
+            .filter(|f| f.part == ConfigPart::Main)
+            .collect();
+        assert_eq!(listed.len(), SERVER_IDS.len());
+        for id in SERVER_IDS {
+            let f = listed
+                .iter()
+                .find(|f| f.server == *id)
+                .unwrap_or_else(|| panic!("no Main config listed for {id}"));
+            assert_eq!(f.hostname, None);
+            assert!(
+                f.path.contains(id),
+                "{id}'s Main config points at another server's file: {}",
+                f.path
+            );
+        }
     }
 
     #[test]

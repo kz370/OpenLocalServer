@@ -391,6 +391,8 @@ export type ConfigPart = 'main' | 'site' | 'custom'
 export interface ConfigFile {
   hostname: string | null
   part: ConfigPart
+  /** Every server has its own main config, so a file needs its server to be identified. */
+  server: string
   path: string
   ownership: Ownership | null
   drifted: boolean
@@ -641,7 +643,7 @@ export type CoreCommand =
   | { type: 'revoke_certificate'; hostname: string }
   | { type: 'health_check'; hostname: string }
   | { type: 'list_web_configs' }
-  | { type: 'read_web_config'; hostname: string | null; part: ConfigPart }
+  | { type: 'read_web_config'; hostname: string | null; part: ConfigPart; server?: string }
   | { type: 'write_web_config'; hostname: string; part: ConfigPart; content: string }
   | { type: 'set_ownership'; hostname: string; ownership: Ownership }
   | { type: 'list_config_history'; hostname: string }

@@ -109,6 +109,8 @@ export function useWeb() {
     driftOpen,
     setDriftOpen,
     refresh: () => refresh(),
+    /** Re-reads the stored config, so a settings save clears the drafts that produced it. */
+    refreshConfig: () => refresh(true),
     refreshProjects,
     apply,
   }
