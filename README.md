@@ -96,7 +96,7 @@
 
 ### 📊 Dashboard & Monitoring
 
-- **Services card:** all 9 built-ins in a fixed order — start/stop/restart/reload/logs colour-coded per action, and anything unavailable right now shown flat grey instead of looking clickable.
+- **Services card:** all 9 built-ins in a fixed order — start/stop/restart/reload/logs colour-coded per action, and anything unavailable right now shown flat grey instead of looking clickable. In a narrow window the **Web server** card moves above Overview; side by side it sits above Services.
 - **Overview:** sites/projects counts, resource donuts (CPU/RAM/disk), **traffic graph** from web access log (30-bucket, hover inspector).
 - **Diagnostics card:** findings as Problem/Cause/Fix, safe one-click **auto-repair**, ignore list, AI explain per finding.
 - **Doctor:** full report + repair planner; every error is `Diagnostic{problem, cause, fix}`.

@@ -163,7 +163,7 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
       )}
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
+        <Card className="order-2 lg:order-none">
           <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
             <div>
               <CardTitle className="text-sm">Overview</CardTitle>
@@ -227,10 +227,11 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
           </CardContent>
         </Card>
 
-        {/* Web server sits above Services and the pair fills the column, so both columns
-            share a top and a bottom edge with Overview. */}
-        <div className="flex flex-col gap-4">
-          <Card>
+        {/* In windowed (single-column) mode the Web server card leads, then Overview,
+            then Services. In the 2-column layout it stacks above Services in the right
+            column, so both columns share a top and a bottom edge with Overview. */}
+        <div className="contents lg:flex lg:flex-col lg:gap-4">
+          <Card className="order-1 lg:order-none">
             <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm">Web server</CardTitle>
               {web?.running ? <Badge variant="success">● Running</Badge> : <Badge variant="secondary">Stopped</Badge>}
@@ -259,7 +260,7 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
             </CardContent>
           </Card>
 
-          <div className="flex min-h-0 flex-1 flex-col">
+          <div className="order-3 flex min-h-0 flex-1 flex-col lg:order-none">
             <ServicesWidget
               services={data?.services ?? null}
               webServers={data?.web?.servers ?? null}
