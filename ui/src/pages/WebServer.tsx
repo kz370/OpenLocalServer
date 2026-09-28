@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog } from '@/components/ui/dialog'
 import { Field, Tabs } from '@/components/ui/form'
-import { Input } from '@/components/ui/input'
+import { NumberInput } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { type CertInfo, type DomainSummary, type ServerPorts, type WebConfig, type WebStatus, runCommand } from '@/core'
 import { confirmThen } from '@/lib/confirm'
@@ -270,7 +270,6 @@ function ServerPanel({
 }) {
   const [draft, setDraft] = useState(cfg)
   useEffect(() => setDraft(cfg), [cfg])
-  const num = (v: string, fallback: number) => (Number.isFinite(Number(v)) && v !== '' ? Number(v) : fallback)
   const enabledDomains = domains.filter((d) => d.enabled)
   const setPorts = (id: string, patch: Partial<ServerPorts>) =>
     setDraft({
@@ -342,10 +341,20 @@ function ServerPanel({
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="PHP workers per version">
-              <Input type="number" min={1} max={16} value={draft.php_workers} onChange={(e) => setDraft({ ...draft, php_workers: num(e.target.value, 3) })} />
+              <NumberInput
+                label="PHP workers per version"
+                min={1}
+                max={16}
+                value={draft.php_workers}
+                onChange={(n) => setDraft({ ...draft, php_workers: n ?? 3 })}
+              />
             </Field>
             <Field label="Wildcard DNS port" hint="Windows only routes DNS rules to port 53">
-              <Input type="number" value={draft.dns_port} onChange={(e) => setDraft({ ...draft, dns_port: num(e.target.value, 53) })} />
+              <NumberInput
+                label="wildcard DNS port"
+                value={draft.dns_port}
+                onChange={(n) => setDraft({ ...draft, dns_port: n ?? 53 })}
+              />
             </Field>
           </div>
           {dirty && (
@@ -390,23 +399,23 @@ function ServerPanel({
                   </div>
                 </div>
                 <Field label="HTTP port">
-                  <Input
-                    type="number"
-                    className="w-full px-2.5 tabular-nums"
+                  <NumberInput
+                    label={`${s.name} HTTP port`}
+                    className="px-2.5 tabular-nums"
                     disabled={isDefault}
                     title={isDefault ? 'The default server always binds port 80' : undefined}
                     value={isDefault ? 80 : ports.http}
-                    onChange={(e) => setPorts(s.id, { http: num(e.target.value, 80) })}
+                    onChange={(n) => setPorts(s.id, { http: n ?? 80 })}
                   />
                 </Field>
                 <Field label="HTTPS port">
-                  <Input
-                    type="number"
-                    className="w-full px-2.5 tabular-nums"
+                  <NumberInput
+                    label={`${s.name} HTTPS port`}
+                    className="px-2.5 tabular-nums"
                     disabled={isDefault}
                     title={isDefault ? 'The default server always binds port 443' : undefined}
                     value={isDefault ? 443 : ports.https}
-                    onChange={(e) => setPorts(s.id, { https: num(e.target.value, 443) })}
+                    onChange={(n) => setPorts(s.id, { https: n ?? 443 })}
                   />
                 </Field>
                 {/* h-9 + items-center lines this note up with the inputs above it instead

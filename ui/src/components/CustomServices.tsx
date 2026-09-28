@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog } from '@/components/ui/dialog'
 import { Field, Select, Textarea, Toggle } from '@/components/ui/form'
-import { Input } from '@/components/ui/input'
+import { Input, NumberInput } from '@/components/ui/input'
 import { type CustomServiceDef, runCommand } from '@/core'
 import { useAction } from '@/lib/hooks'
 import { confirmThen } from '@/lib/confirm'
@@ -191,7 +191,14 @@ export function CustomServices({ onChanged }: { onChanged: () => void }) {
             </Field>
             <div className="grid gap-3 sm:grid-cols-3">
               <Field label="Port (optional)">
-                <Input type="number" value={draft.port} onChange={(e) => setDraft({ ...draft, port: e.target.value })} placeholder="9000" />
+                <NumberInput
+                  label="port"
+                  min={1}
+                  max={65535}
+                  placeholder="9000"
+                  value={draft.port === '' ? null : Number(draft.port)}
+                  onChange={(n) => setDraft({ ...draft, port: n === null ? '' : String(n) })}
+                />
               </Field>
               <Field label="Health check">
                 <Select value={draft.health} onChange={(e) => setDraft({ ...draft, health: e.target.value as Draft['health'] })}>

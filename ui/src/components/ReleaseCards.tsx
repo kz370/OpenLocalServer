@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, Select } from '@/components/ui/form'
-import { Input } from '@/components/ui/input'
+import { NumberInput } from '@/components/ui/input'
 import { type ApiStatus, type NetworkStatus, type ShellMenuStatus, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
 import { useAction } from '@/lib/hooks'
@@ -53,7 +53,13 @@ export function ApiCard() {
         {status.error && <p className="text-sm text-warning">{status.error}</p>}
         <div className="grid gap-4 sm:grid-cols-3">
           <Field label="Port">
-            <Input type="number" min={1024} max={65535} value={port} onChange={(e) => setPort(e.target.value)} />
+            <NumberInput
+              label="API port"
+              min={1024}
+              max={65535}
+              value={port === '' ? null : Number(port)}
+              onChange={(n) => setPort(n === null ? '' : String(n))}
+            />
           </Field>
           <Field label="What it may do" hint="Read-only can list and look; operate can also start, stop and apply.">
             <Select value={status.settings.mode} onChange={(e) => apply(status.settings.enabled, e.target.value as 'read_only' | 'operate')}>

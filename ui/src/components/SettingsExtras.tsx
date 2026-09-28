@@ -6,7 +6,7 @@ import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
+import { NumberInput } from '@/components/ui/input'
 import { type ResourceLimits, type SettingsBackup, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
 import { formatBytes, timeAgo, useAction } from '@/lib/hooks'
@@ -52,15 +52,12 @@ const EMPTY_LIMITS: ResourceLimits = {
 function LimitField({ def, value, onChange }: { def: LimitDef; value: number | null; onChange: (v: number | null) => void }) {
   const Icon = def.icon
   const input = (
-    <Input
-      type="number"
+    <NumberInput
+      label={def.label}
       min={1}
-      value={value ?? ''}
+      value={value}
       placeholder="Use default"
-      onChange={(e) => {
-        const n = parseInt(e.target.value, 10)
-        onChange(Number.isFinite(n) && n > 0 ? n : null)
-      }}
+      onChange={(n) => onChange(n !== null && n > 0 ? n : null)}
       className={cn(def.unit && 'rounded-r-none')}
     />
   )

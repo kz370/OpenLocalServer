@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
 import { Field, Select, Toggle } from '@/components/ui/form'
-import { Input } from '@/components/ui/input'
+import { Input, NumberInput } from '@/components/ui/input'
 import { type XdebugReport, type XdebugSettings, runCommand } from '@/core'
 import { useAction } from '@/lib/hooks'
 
@@ -144,7 +144,13 @@ export function XdebugDialog({ version, onClose }: { version: string | null; onC
                 <Input value={draft.client_host} onChange={(e) => setDraft({ ...draft, client_host: e.target.value })} />
               </Field>
               <Field label="IDE port" hint="9003 is Xdebug 3's default">
-                <Input type="number" value={draft.client_port} onChange={(e) => setDraft({ ...draft, client_port: Number(e.target.value) })} />
+                <NumberInput
+                  label="IDE port"
+                  min={1}
+                  max={65535}
+                  value={draft.client_port}
+                  onChange={(n) => setDraft({ ...draft, client_port: n ?? 9003 })}
+                />
               </Field>
               <Field label="IDE key">
                 <Input value={draft.idekey} onChange={(e) => setDraft({ ...draft, idekey: e.target.value })} />

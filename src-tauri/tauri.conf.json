@@ -15,6 +15,7 @@
         "label": "main",
         "title": "Open Local Server",
         "url": "index.html",
+        "visible": false,
         "width": 1180,
         "height": 760,
         "minWidth": 960,

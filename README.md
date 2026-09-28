@@ -98,6 +98,7 @@
 
 - **Services card:** all 9 built-ins in a fixed order — start/stop/restart/reload/logs colour-coded per action, and anything unavailable right now shown flat grey instead of looking clickable. In a narrow window the **Web server** card moves above Overview; side by side it sits above Services.
 - **Ports tab:** one aligned row per server (icon, name, HTTP, HTTPS, site count) with fixed-width port fields sized to five digits; a server that is the default shows its 80/443 fields locked rather than editable.
+- **Number fields:** ports, worker counts, memory limits and IDE ports all use an in-app stepper (rounded chevrons, app palette, arrow keys work) rather than the browser's default arrows.
 - **Overview:** sites/projects counts, resource donuts (CPU/RAM/disk), **traffic graph** from web access log (30-bucket, hover inspector).
 - **Diagnostics card:** findings as Problem/Cause/Fix, safe one-click **auto-repair**, ignore list, AI explain per finding.
 - **Doctor:** full report + repair planner; every error is `Diagnostic{problem, cause, fix}`.
