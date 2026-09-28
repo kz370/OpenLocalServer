@@ -93,6 +93,9 @@ pub struct ServerAvailability {
     pub active: bool,
     /// Whether this server's process is alive right now. Each one runs independently.
     pub running: bool,
+    /// Enabled sites this server renders. A running server with none of its own opens
+    /// no listener at all, so "running" is all that can be true of it.
+    pub sites: usize,
     /// Ports it will actually bind: 80/443 for the default, its own stored pair otherwise.
     pub http_port: u16,
     pub https_port: u16,
@@ -279,7 +282,7 @@ impl WebManager {
 
     // ---------------------------------------------------------------- status
 
-    pub fn status(&self, cfg: &WebConfig) -> WebStatus {
+    pub fn status(&self, cfg: &WebConfig, domains: &[Domain]) -> WebStatus {
         let st = self.state.lock().unwrap();
         let servers = SERVER_IDS
             .iter()
@@ -295,6 +298,7 @@ impl WebManager {
                         .servers
                         .get(s.id())
                         .is_some_and(|r| self.supervisor.is_alive(r.process)),
+                    sites: sites_for_server(cfg, domains, s.id()).len(),
                     http_port: ports.http,
                     https_port: ports.https,
                 }
@@ -1808,7 +1812,7 @@ mod tests {
                 https: 9443,
             },
         );
-        let st = mgr.status(&cfg);
+        let st = mgr.status(&cfg, &DomainStore::load(&home.paths).unwrap().list());
         let by_id = |id: &str| st.servers.iter().find(|s| s.id == id).unwrap().clone();
         assert_eq!(st.default_server, "nginx");
         assert_eq!(by_id("nginx").http_port, 80);
@@ -1816,6 +1820,32 @@ mod tests {
         assert_eq!(by_id("apache").http_port, 9080);
         assert!(!by_id("apache").active);
         assert!(!by_id("apache").running);
+    }
+
+    #[test]
+    fn status_counts_the_sites_each_server_actually_renders() {
+        let home = crate::test_support::isolated_home();
+        let mgr = test_manager(&home);
+        let cfg = test_config("nginx");
+        let mut domains = DomainStore::load(&home.paths).unwrap();
+        let mut a = static_domain(Path::new("C:/sites/a"));
+        a.hostname = "a.test".into();
+        let mut pinned = static_domain(Path::new("C:/sites/b"));
+        pinned.hostname = "b.test".into();
+        pinned.server = Some("apache".into());
+        domains.add(pinned).unwrap();
+        domains.add(a).unwrap();
+        let mut off = static_domain(Path::new("C:/sites/c"));
+        off.hostname = "c.test".into();
+        off.enabled = false;
+        domains.add(off).unwrap();
+
+        let st = mgr.status(&cfg, &domains.list());
+        let count = |id: &str| st.servers.iter().find(|s| s.id == id).unwrap().sites;
+        // The store's own home.test plus a.test, since neither picked a server.
+        assert_eq!(count("nginx"), 2, "home.test and a.test");
+        assert_eq!(count("apache"), 1, "b.test only");
+        assert_eq!(count("caddy"), 0);
     }
 
     #[test]

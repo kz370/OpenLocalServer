@@ -11,7 +11,7 @@ import type { Page } from '@/components/layout/Sidebar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { type DashboardData, type HealthItem, type ServiceStatus, type StartupSettings, type SystemStats, runCommand } from '@/core'
+import { type DashboardData, type HealthItem, type ServerAvailability, type ServiceStatus, type StartupSettings, type SystemStats, runCommand } from '@/core'
 import { formatBytes, useAction, usePoll } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 import { waitForService, waitForWebStopped } from '@/lib/wait'
@@ -248,6 +248,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: Page) => void })
 
           <ServicesWidget
             services={data?.services ?? null}
+            webServers={data?.web?.servers ?? null}
             busy={busy}
             onNavigate={onNavigate}
             onDone={async () => {
@@ -273,8 +274,10 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: Page) => void })
 }
 
 /** What the port column means for this row: a web server's HTTP port, or the service's own. */
-function servicePortTitle(s: ServiceStatus): string {
-  return s.kind === 'web' ? `HTTP port ${s.port} — change it on the Web server page` : `Port ${s.port}`
+function servicePortTitle(s: ServiceStatus, sites?: number): string {
+  if (s.kind !== 'web') return `Port ${s.port}`
+  if (sites === 0) return `HTTP port ${s.port} — no sites assigned to ${s.name} yet, so it serves nothing`
+  return `HTTP port ${s.port} — ${sites} site${sites === 1 ? '' : 's'} on ${s.name}`
 }
 
 /** The services the widget shows, in a fixed order, so the list never re-shuffles. */
@@ -289,11 +292,13 @@ type WidgetAction = 'start' | 'stop' | 'restart' | 'reload'
  */
 function ServicesWidget({
   services,
+  webServers,
   busy,
   onNavigate,
   onDone,
 }: {
   services: ServiceStatus[] | null
+  webServers: ServerAvailability[] | null
   busy: string | null
   onNavigate: (p: Page) => void
   onDone: () => Promise<void>
@@ -304,6 +309,9 @@ function ServicesWidget({
   const rows = WIDGET_ORDER.map((id) => byId.get(id)).filter((s): s is ServiceStatus => !!s)
   const running = rows.filter((s) => s.running).length
   const installed = rows.filter((s) => s.installed).length
+  // How many sites each web server renders — a running server with none opens no
+  // listener, which is different from one that has stopped answering.
+  const webSites = new Map((webServers ?? []).map((s) => [s.id, s.sites]))
 
   async function act(s: ServiceStatus, action: WidgetAction) {
     if (action === 'stop' && !(await confirmAction(`Stop ${s.name}? Anything connected to it will be disconnected.`))) return
@@ -349,7 +357,10 @@ function ServicesWidget({
                 <TechIcon id={s.id} className="size-4" />
               </span>
               <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{s.name}</span>
-              <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground" title={servicePortTitle(s)}>
+              <span
+                className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground"
+                title={servicePortTitle(s, webSites.get(s.id))}
+              >
                 {s.port === null ? '—' : s.port}
               </span>
               <StateBadge state={state} />

@@ -60,6 +60,10 @@ pub struct ServiceStatus {
     pub healthy: Option<bool>,
     #[serde(default)]
     pub version: Option<String>,
+    /// Web servers only: enabled sites it renders. Zero means it opens no listener,
+    /// so a port probe there would say "not answering" about a healthy server.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sites: Option<usize>,
 }
 
 /// Everything an external DB tool needs to open a connection (§102).
@@ -97,6 +101,8 @@ pub struct ServiceManager {
 
 /// Settings are read fresh on every call, so the web rows always show current ports.
 pub type WebConfigFn = Arc<dyn Fn() -> crate::web::WebConfig + Send + Sync>;
+/// Sites live in `Core`, not here, so the site count is read through a handle too.
+pub type DomainsFn = Arc<dyn Fn() -> Vec<crate::domain::Domain> + Send + Sync>;
 
 /// The handle `ServiceManager` needs to answer for a web server without owning it.
 #[derive(Clone)]
@@ -104,6 +110,8 @@ pub struct WebServers {
     pub web: Arc<crate::web::manager::WebManager>,
     /// Ports and the default server are settings, so they're read fresh each time.
     pub config: WebConfigFn,
+    /// Which server each site belongs to, to tell "up" from "up but serving nothing".
+    pub domains: DomainsFn,
 }
 
 /// Names that go into SQL as identifiers can't be bound as parameters, so only plain
@@ -144,8 +152,17 @@ impl ServiceManager {
 
     /// Adds the three web servers to this list. They keep running through
     /// `WebManager`; nothing is duplicated here.
-    pub fn attach_web(&self, web: Arc<crate::web::manager::WebManager>, config: WebConfigFn) {
-        *self.web.lock().unwrap() = Some(WebServers { web, config });
+    pub fn attach_web(
+        &self,
+        web: Arc<crate::web::manager::WebManager>,
+        config: WebConfigFn,
+        domains: DomainsFn,
+    ) {
+        *self.web.lock().unwrap() = Some(WebServers {
+            web,
+            config,
+            domains,
+        });
     }
 
     fn web_handle(&self) -> Option<WebServers> {
@@ -159,7 +176,7 @@ impl ServiceManager {
         let id_owned = id.to_string();
         let s = handle
             .web
-            .status(&cfg)
+            .status(&cfg, &(handle.domains)().as_slice())
             .servers
             .into_iter()
             .find(|s| s.id == id_owned)?;
@@ -176,14 +193,18 @@ impl ServiceManager {
             }),
             kind: "web".into(),
             connection: Some(format!("http://127.0.0.1:{}", s.http_port)),
+            // A running server with no sites of its own opens no listener, so probing
+            // its port would report a perfectly healthy server as not answering.
             healthy: s.running.then(|| {
-                TcpStream::connect_timeout(
-                    &([127, 0, 0, 1], s.http_port).into(),
-                    Duration::from_millis(300),
-                )
-                .is_ok()
+                s.sites == 0
+                    || TcpStream::connect_timeout(
+                        &([127, 0, 0, 1], s.http_port).into(),
+                        Duration::from_millis(300),
+                    )
+                    .is_ok()
             }),
             version: None,
+            sites: Some(s.sites),
         })
     }
 
@@ -258,6 +279,7 @@ impl ServiceManager {
                 None
             },
             version: None,
+            sites: None,
             id: def.id,
             name: def.name,
         }
@@ -361,6 +383,7 @@ impl ServiceManager {
                     connection: None,
                     healthy: None,
                     version: None,
+                    sites: None,
                 },
             };
         }
@@ -397,6 +420,7 @@ impl ServiceManager {
                 })
             }),
             version: versions.into_iter().next(),
+            sites: None,
         }
     }
 

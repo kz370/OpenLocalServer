@@ -241,6 +241,7 @@ function ServiceTable({
                   <Badge variant="success">● Running</Badge>
                   {s.healthy === false && <Badge variant="warning">not answering</Badge>}
                   {s.port_status === 'in_use' && <Badge variant="warning">port in use</Badge>}
+                  {s.kind === 'web' && (s.sites ?? 0) === 0 && <Badge variant="outline">no sites</Badge>}
                 </span>
               ) : (
                 <span className="flex flex-col items-start gap-1">

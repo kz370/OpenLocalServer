@@ -2049,7 +2049,10 @@ impl Core {
 
             // ---- Stage 6
             C::GetWebStatus => Ok(R::WebStatus {
-                status: Box::new(i.web.status(&i.web_config())),
+                status: Box::new(
+                    i.web
+                        .status(&i.web_config(), &i.domains.lock().unwrap().list()),
+                ),
             }),
             C::GetWebConfig => Ok(R::WebConfig {
                 config: i.web_config(),
@@ -2589,7 +2592,7 @@ impl Core {
                 Ok(R::Dashboard {
                     data: Box::new(DashboardData {
                         services: i.services.list(),
-                        web: i.web.status(&cfg),
+                        web: i.web.status(&cfg, &i.domains.lock().unwrap().list()),
                         domains: i.domain_summaries(),
                         project_count: i.projects.lock().unwrap().list().len(),
                         health: i.environment_health(),

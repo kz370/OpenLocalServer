@@ -157,7 +157,7 @@ impl Inner {
             return;
         }
 
-        let web = self.web.status(&cfg);
+        let web = self.web.status(&cfg, &self.domains.lock().unwrap().list());
         if !web.running && enabled > 0 {
             b.add(
                 "web_stopped",

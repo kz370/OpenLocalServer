@@ -186,6 +186,8 @@ export interface ServiceStatus {
   connection: string | null
   healthy: boolean | null
   version: string | null
+  /** Web servers only: enabled sites it renders. Zero means it opens no listener. */
+  sites?: number
 }
 
 export interface DbTool {
@@ -320,6 +322,8 @@ export interface ServerAvailability {
   /** The server that owns 80/443 and serves every site with no override. */
   active: boolean
   running: boolean
+  /** Enabled sites this server renders. Zero means it opens no listener at all. */
+  sites: number
   /** Ports it will actually bind. */
   http_port: number
   https_port: number

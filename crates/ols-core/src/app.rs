@@ -343,9 +343,11 @@ impl Inner {
             // The Services page shows the web servers too, but they keep running through
             // `WebManager` — this only hands it over for listing and probing.
             let for_config = Arc::clone(&core);
+            let for_sites = Arc::clone(&core);
             core.services.attach_web(
                 Arc::clone(&core.web),
                 Arc::new(move || for_config.web_config()),
+                Arc::new(move || for_sites.domains.lock().unwrap().list()),
             );
         }
         core.apply_plugins();
@@ -1431,7 +1433,7 @@ impl Inner {
             )
         });
 
-        let web = self.web.status(&cfg);
+        let web = self.web.status(&cfg, &self.domains.lock().unwrap().list());
         let domain_count = self
             .domains
             .lock()

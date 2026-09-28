@@ -367,7 +367,7 @@ impl Inner {
                 ),
             }
         }
-        let web = self.web.status(&cfg);
+        let web = self.web.status(&cfg, &self.domains.lock().unwrap().list());
         add(
             "DNS valid",
             if web.dns_running { "ok" } else { "info" },
