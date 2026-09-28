@@ -36,7 +36,7 @@ Resolver | Version precedence manifest>detected>global.
 Detector | Marker-file framework detection + workspace scan.
 PluginManager | Declarative plugin.yaml installer/validator.
 Updater | Minisign-signed self-updater (latest.json + SHA check).
-ServiceManager | DB/cache/mail lifecycle + TCP health.
+ServiceManager | DB/cache/mail lifecycle + TCP health; also lists/proxies the three web servers (kind web) without owning their processes.
 CustomServiceStore | User programs as supervised services (custom- prefix).
 DbTools | External GUI tools detect + launch (HeidiSQL/pgAdmin/NoSQLBooster/Tiny RDM).
 MailPlanner | Per-framework .env Mailpit planner with diff preview.
@@ -44,7 +44,10 @@ Monitor | sysinfo CPU/mem/disk + per-PID rollup + site cost.
 WorkerStore/WorkerProcesses | Queue workers registry + PID map.
 ScheduleStore/TaskRuns | Cron tasks + 1-min ticker, no overlap.
 WebServer trait | render_main/render_site/validate/start/reload/stop.
-WebManager | Render-write-validate-reload pipeline with rollback + drift detect.
+WebManager | Per-server render-write-validate-reload pipeline with rollback + drift detect; one Running entry per server, each startable on its own.
+WebConfig | {default_server, servers:{id -> ServerPorts{http,https}}, php_workers, dns_port}; effective_ports(id) is 80/443 for the default and the stored pair otherwise.
+ServerPorts | {http, https} - the stored pair one server keeps even while it is the default.
+Server first-time ports | apache 8080/8443, caddy 8081/8444, nginx 8082/8445; two servers may never share a bound port (WebConfig::port_conflicts).
 Nginx/Apache/Caddy | Server renderers + invocation builders.
 DomainStore | Domain data + validation (no rendering).
 LocalCa | Deterministic root CA (2024-2044) + leaf issuance.

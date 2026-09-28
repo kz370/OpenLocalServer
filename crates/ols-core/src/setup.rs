@@ -378,6 +378,16 @@ impl Inner {
             if env_value(&path, "MAIL_MAILER").is_some() {
                 m.services.insert("mailpit".into(), ServiceToggle::On(true));
             }
+            // Memcached projects name it directly: Laravel's cache stores are `memcached`,
+            // and Drupal/others just export MEMCACHED_* variables.
+            let uses_memcached = env_value(&path, "CACHE_STORE")
+                .or_else(|| env_value(&path, "CACHE_DRIVER"))
+                .or_else(|| env_value(&path, "MEMCACHED_HOST"))
+                .is_some_and(|v| v.eq_ignore_ascii_case("memcached"));
+            if uses_memcached {
+                m.services
+                    .insert("memcached".into(), ServiceToggle::On(true));
+            }
         }
         if det.framework == Framework::Laravel {
             if env_value(&path, "QUEUE_CONNECTION").is_some_and(|q| q != "sync") {
@@ -699,7 +709,7 @@ impl Inner {
             {
                 p.service(&id);
             } else {
-                p.conflict("service", true, format!("Unknown service \"{id}\"."), "Use redis, mailpit, mariadb, postgres or mongodb, or add it as a custom service.");
+                p.conflict("service", true, format!("Unknown service \"{id}\"."), "Use redis, memcached, mailpit, mariadb, postgres or mongodb, or add it as a custom service.");
             }
         }
 

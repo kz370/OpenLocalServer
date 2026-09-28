@@ -976,6 +976,7 @@ impl Inner {
     /// rolls back or stops another.
     pub fn apply_web(&self, overwrite: &[String]) -> Result<Vec<ApplyReport>, CoreError> {
         let cfg = self.web_config();
+        Self::require_distinct_ports(&cfg)?;
         let php_for = |d: &Domain| -> Option<String> {
             let detail = self.project_detail(d.project_id.as_deref()?)?;
             detail
@@ -1002,6 +1003,7 @@ impl Inner {
         overwrite: &[String],
     ) -> Result<ApplyReport, CoreError> {
         let cfg = self.web_config();
+        Self::require_distinct_ports(&cfg)?;
         let php_for = |d: &Domain| -> Option<String> {
             let detail = self.project_detail(d.project_id.as_deref()?)?;
             detail
@@ -1019,6 +1021,16 @@ impl Inner {
         };
         let mut domains = self.domains.lock().unwrap();
         self.web.apply_one(&ctx, &mut domains, server_id)
+    }
+
+    /// Two servers pointed at one port can never both start, so the clash is refused
+    /// up front with the fix, rather than surfacing as a bind error halfway through.
+    fn require_distinct_ports(cfg: &WebConfig) -> Result<(), CoreError> {
+        let clashes = cfg.port_conflicts();
+        if clashes.is_empty() {
+            return Ok(());
+        }
+        Err(CoreError::WebError(clashes.join("\n")))
     }
 
     pub fn set_domain_enabled(&self, hostname: &str, enabled: bool) -> Result<(), CoreError> {

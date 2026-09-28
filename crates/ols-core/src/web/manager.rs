@@ -306,6 +306,9 @@ impl WebManager {
             .values()
             .any(|r| self.supervisor.is_alive(r.process));
         let mut port_conflicts = Vec::new();
+        // Two servers pointed at the same port can never both come up: say so before
+        // either is asked to start.
+        port_conflicts.extend(cfg.port_conflicts());
         for (label, port) in [("HTTP", cfg.http_port()), ("HTTPS", cfg.https_port())] {
             // A port the default server is already using isn't a conflict with itself.
             if st
@@ -679,8 +682,15 @@ impl WebManager {
             }
         }
 
-        // 5. Start (or gracefully reload).
-        self.start_or_reload(server.as_ref(), &layout, ports, &mut report)?;
+        // 5. Start (or gracefully reload). A server with no sites of its own opens no
+        // listener, so it is not waited on by port — only checked for staying alive.
+        self.start_or_reload(
+            server.as_ref(),
+            &layout,
+            ports,
+            !enabled.is_empty(),
+            &mut report,
+        )?;
 
         Ok(report)
     }
@@ -734,6 +744,7 @@ impl WebManager {
         server: &dyn WebServer,
         layout: &ServerLayout,
         ports: Ports,
+        expect_listener: bool,
         report: &mut ApplyReport,
     ) -> Result<(), CoreError> {
         let alive = {
@@ -783,8 +794,11 @@ impl WebManager {
             env: vec![],
             restart: None,
         });
-        if let Err(msg) = self.wait_ready(process, ports.http, Duration::from_secs(10)) {
+        if let Err(msg) = self.await_start(process, ports.http, expect_listener) {
             self.supervisor.stop(process);
+            // Give the OS the port back before reporting, or the next start would see
+            // our own dying process as the owner of it.
+            wait_port_free_all(Duration::from_secs(3));
             let log_tail = tail(&server.error_log(layout), 8);
             return Err(werr(format!(
                 "{} did not start: {msg}{log_tail}",
@@ -800,24 +814,51 @@ impl WebManager {
         Ok(())
     }
 
+    /// A freshly started server is up when its HTTP port answers — unless it was given
+    /// no sites at all, in which case it opens no listener and all we can check is that
+    /// it did not fall over straight away (§3.2: servers run side by side).
+    fn await_start(
+        &self,
+        process: ProcessId,
+        port: u16,
+        expect_listener: bool,
+    ) -> Result<(), String> {
+        if expect_listener {
+            return self.wait_ready(process, port, Duration::from_secs(10));
+        }
+        let deadline = Instant::now() + Duration::from_millis(1500);
+        while Instant::now() < deadline {
+            if !self.supervisor.is_alive(process) {
+                return Err(self.exit_reason(process));
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        Ok(())
+    }
+
+    /// The tail of a process's output, for "it died on the way up".
+    fn exit_reason(&self, process: ProcessId) -> String {
+        let out = self.supervisor.recent_output(process);
+        let text = out
+            .iter()
+            .rev()
+            .take(6)
+            .rev()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n");
+        if text.is_empty() {
+            "the process exited immediately".into()
+        } else {
+            text
+        }
+    }
+
     fn wait_ready(&self, process: ProcessId, port: u16, timeout: Duration) -> Result<(), String> {
         let started = Instant::now();
         loop {
             if !self.supervisor.is_alive(process) {
-                let out = self.supervisor.recent_output(process);
-                let text = out
-                    .iter()
-                    .rev()
-                    .take(6)
-                    .rev()
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                return Err(if text.is_empty() {
-                    "the process exited immediately".into()
-                } else {
-                    text
-                });
+                return Err(self.exit_reason(process));
             }
             if TcpStream::connect_timeout(
                 &([127, 0, 0, 1], port).into(),
@@ -865,6 +906,9 @@ impl WebManager {
             server: id.to_string(),
             ..Default::default()
         };
+        // Starting on its own: the port pre-check still guards the bind, but there is
+        // no way to know from here whether this server has sites yet, so liveness is
+        // judged by the process rather than by a listener.
         self.start_or_reload(
             server.as_ref(),
             &layout,
@@ -872,6 +916,7 @@ impl WebManager {
                 http: effective.http,
                 https: effective.https,
             },
+            false,
             &mut report,
         )
     }
@@ -1216,6 +1261,12 @@ impl WebManager {
         let mut report = ApplyReport::default();
         if self.is_running_id(server.id()) {
             let effective = cfg.effective_ports(server.id());
+            // An edited file with no site of its own still has no listener; the reload
+            // is the whole check there.
+            let has_sites = domains
+                .list()
+                .iter()
+                .any(|d| d.enabled && resolved_server(d, cfg) == server.id());
             self.start_or_reload(
                 server.as_ref(),
                 &layout,
@@ -1223,6 +1274,7 @@ impl WebManager {
                     http: effective.http,
                     https: effective.https,
                 },
+                has_sites,
                 &mut report,
             )?;
         }

@@ -1651,8 +1651,10 @@ impl Core {
                             "Stop the web server before changing its runtime version.".into(),
                         ));
                     }
-                    if matches!(id, "mariadb" | "postgres" | "mongodb" | "redis" | "mailpit")
-                        && i.services.is_running(id)
+                    if matches!(
+                        id,
+                        "mariadb" | "postgres" | "mongodb" | "redis" | "memcached" | "mailpit"
+                    ) && i.services.is_running(id)
                     {
                         return Err(CoreError::ServiceError(format!(
                             "Stop {id} before changing its runtime version."
@@ -2722,6 +2724,14 @@ impl Core {
                 })
             }
             C::RestartService { id } => {
+                if crate::web::SERVER_IDS.contains(&id.as_str()) {
+                    // A web server is restarted by re-applying it, so its sites' config
+                    // is re-rendered and reloaded rather than only bounced.
+                    i.services.stop(&id);
+                    std::thread::sleep(Duration::from_millis(800));
+                    i.apply_web_server(&id, &[]).map(|_| R::Ok)?;
+                    return Ok(R::Ok);
+                }
                 i.services.stop(&id);
                 // The old process needs a moment to release its port before the new one binds it.
                 std::thread::sleep(Duration::from_millis(800));

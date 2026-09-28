@@ -329,7 +329,14 @@ impl Inner {
         }
 
         // Command-line clients of the databases we manage.
-        for id in ["mariadb", "postgres", "redis", "mongodb", "sqlite"] {
+        for id in [
+            "mariadb",
+            "postgres",
+            "redis",
+            "memcached",
+            "mongodb",
+            "sqlite",
+        ] {
             let versions = self.runtimes.installed_versions(id);
             if let Some(dir) = crate::php::pick_version(&versions, None)
                 .and_then(|v| self.runtimes.bin_dir(id, &v))

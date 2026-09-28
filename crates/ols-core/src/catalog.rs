@@ -219,6 +219,20 @@ const CATALOG: &[PackageManifest] = &[
         binary: "redis-server.exe",
     },
     PackageManifest {
+        id: "memcached",
+        name: "Memcached",
+        version: "1.6.8",
+        platform: "windows",
+        architecture: "x64",
+        url: "https://github.com/jefyt/memcached-windows/releases/download/1.6.8_mingw_libressl/memcached-1.6.8-win64-mingw.zip",
+        // Memcached has no official Windows build; this is the community native port of the
+        // upstream source. The publisher ships a hashes.txt next to the asset, and this
+        // SHA-256 matches its `SHA2-256(memcached-1.6.8-win64-mingw.zip)` entry.
+        sha256: "48ec62cef718f0d73698414b783c0e4a69821013553ca00afe0eed324eb5994b",
+        archive_root: "memcached-1.6.8-win64-mingw",
+        binary: "bin/memcached.exe",
+    },
+    PackageManifest {
         id: "sqlite",
         name: "SQLite",
         version: "3.53.4",
@@ -459,6 +473,7 @@ pub fn system_probe(id: &str) -> Option<(&'static str, &'static str)> {
         "mongodb" => Some(("mongod.exe", "--version")),
         "postgres" => Some(("postgres.exe", "--version")),
         "redis" => Some(("redis-server.exe", "--version")),
+        "memcached" => Some(("memcached.exe", "--version")),
         "sqlite" => Some(("sqlite3.exe", "--version")),
         "k6" => Some(("k6.exe", "version")),
         _ => EXTRA_PROBES

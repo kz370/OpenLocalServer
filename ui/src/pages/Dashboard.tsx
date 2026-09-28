@@ -1,16 +1,19 @@
-import { AlertTriangle, CheckCircle2, Database, Home, Play, Rocket, XCircle } from 'lucide-react'
-import { memo, useMemo, useState } from 'react'
+import { AlertTriangle, CheckCircle2, Home, Play, RefreshCw, Rocket, RotateCw, XCircle } from 'lucide-react'
+import { type ReactNode, memo, useMemo, useState } from 'react'
 
 import { DiagnosticsCard } from '@/components/DiagnosticsCard'
 import { ErrorCard } from '@/components/ErrorCard'
 import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
+import { TechIcon } from '@/components/TechIcon'
+import { ActionMenu, type MenuItem } from '@/components/ui/menu'
 import type { Page } from '@/components/layout/Sidebar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { type DashboardData, type HealthItem, type ServiceStatus, type StartupSettings, type SystemStats, runCommand } from '@/core'
 import { formatBytes, useAction, usePoll } from '@/lib/hooks'
+import { cn } from '@/lib/utils'
 import { waitForService, waitForWebStopped } from '@/lib/wait'
 import { confirmAction } from '@/lib/confirm'
 
@@ -243,79 +246,15 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: Page) => void })
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
-              <div>
-                <CardTitle className="flex items-center gap-1.5 text-sm">
-                  <Database className="size-3.5 text-muted-foreground" /> Services
-                </CardTitle>
-                <CardDescription>
-                  {data ? `${runningServices.length} running · ${data.services.filter((s) => s.installed).length} installed` : 'Loading…'}
-                </CardDescription>
-              </div>
-              <Button size="sm" variant="ghost" onClick={() => onNavigate('services')}>
-                Manage
-              </Button>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-1.5">
-              {(data?.services.filter((s) => s.installed) ?? []).map((s) => (
-                <div key={s.id} className="flex items-center justify-between gap-2 text-sm">
-                  <span className="flex min-w-0 items-start gap-2">
-                    <span className={`mt-1.5 size-1.5 shrink-0 rounded-full ${s.running ? 'bg-emerald-500' : 'bg-muted-foreground/40'}`} />
-                    <span className="flex min-w-0 flex-col">
-                      <span className="flex items-center gap-1.5">
-                        <span className="truncate">{s.name}</span>
-                        {s.running && s.healthy === false && (
-                          <Badge variant="warning" className="shrink-0">
-                            not answering
-                          </Badge>
-                        )}
-                      </span>
-                      {s.port !== null && (
-                        <span className="truncate font-mono text-xs tabular-nums text-foreground/75" title={servicePortTitle(s)}>
-                          {s.kind === 'web' ? 'HTTP' : 'Port'} {s.port}
-                        </span>
-                      )}
-                    </span>
-                  </span>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    className="h-7 shrink-0 px-2.5 text-xs [&_svg]:size-3.5"
-                    disabled={busy !== null}
-                    title={s.running ? `Stop ${s.name}` : `Start ${s.name}`}
-                    onClick={async () => {
-                      if (s.running && !(await confirmAction(`Stop ${s.name}? Anything connected to it will be disconnected.`))) return
-                      void run(`svc:${s.id}`, async () => {
-                        await runCommand({ type: s.running ? 'stop_service' : 'start_service', id: s.id })
-                        await waitForService(s.id, s.running ? 'stopped' : 'running')
-                        await refresh()
-                        setDiagToken((t) => t + 1)
-                      })
-                    }}
-                  >
-                    {busy === `svc:${s.id}` ? (
-                      <Spinner className="size-3.5" />
-                    ) : s.running ? (
-                      <>
-                        <StopIcon /> Stop
-                      </>
-                    ) : (
-                      <>
-                        <Play /> Start
-                      </>
-                    )}
-                  </Button>
-                </div>
-              ))}
-              {data && data.services.every((s) => !s.installed) && (
-                <p className="text-xs text-muted-foreground">No services installed. Add some from Runtimes.</p>
-              )}
-              <Button size="sm" variant="ghost" className="mt-1 self-start" onClick={() => onNavigate('services')}>
-                Manage services
-              </Button>
-            </CardContent>
-          </Card>
+          <ServicesWidget
+            services={data?.services ?? null}
+            busy={busy}
+            onNavigate={onNavigate}
+            onDone={async () => {
+              await refresh()
+              setDiagToken((t) => t + 1)
+            }}
+          />
         </div>
       </div>
       <DiagnosticsCard refreshToken={diagToken} />
@@ -336,6 +275,183 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: Page) => void })
 /** What the port column means for this row: a web server's HTTP port, or the service's own. */
 function servicePortTitle(s: ServiceStatus): string {
   return s.kind === 'web' ? `HTTP port ${s.port} — change it on the Web server page` : `Port ${s.port}`
+}
+
+/** The services the widget shows, in a fixed order, so the list never re-shuffles. */
+const WIDGET_ORDER = ['mailpit', 'mariadb', 'postgres', 'mongodb', 'redis', 'nginx', 'apache', 'caddy'] as const
+
+type WidgetAction = 'start' | 'stop' | 'restart' | 'reload'
+
+/**
+ * The dashboard's Services card: one compact row per service, each with its own logo,
+ * port and state, and icon-only controls. Nothing here scrolls — the eight built-in
+ * services always fit.
+ */
+function ServicesWidget({
+  services,
+  busy,
+  onNavigate,
+  onDone,
+}: {
+  services: ServiceStatus[] | null
+  busy: string | null
+  onNavigate: (p: Page) => void
+  onDone: () => Promise<void>
+}) {
+  const { run } = useAction()
+  const byId = new Map((services ?? []).map((s) => [s.id, s]))
+  // Always the same eight rows, installed or not, so the card keeps a stable height.
+  const rows = WIDGET_ORDER.map((id) => byId.get(id)).filter((s): s is ServiceStatus => !!s)
+  const running = rows.filter((s) => s.running).length
+  const installed = rows.filter((s) => s.installed).length
+
+  async function act(s: ServiceStatus, action: WidgetAction) {
+    if (action === 'stop' && !(await confirmAction(`Stop ${s.name}? Anything connected to it will be disconnected.`))) return
+    if (action === 'restart' && s.running && !(await confirmAction(`Restart ${s.name}? Anything connected to it will be disconnected.`))) return
+    void run(`svc:${s.id}:${action}`, async () => {
+      if (action === 'reload') {
+        // A web server reloads its config in place: no dropped connections.
+        await runCommand({ type: 'apply_web', overwrite: [] })
+      } else if (action === 'restart') {
+        await runCommand({ type: 'restart_service', id: s.id })
+        await waitForService(s.id, 'running')
+      } else {
+        await runCommand({ type: action === 'start' ? 'start_service' : 'stop_service', id: s.id })
+        await waitForService(s.id, action === 'start' ? 'running' : 'stopped')
+      }
+      await onDone()
+    })
+  }
+
+  return (
+    <Card className="overflow-hidden py-0">
+      <CardHeader className="flex-row items-center justify-between space-y-0 px-3 py-2.5">
+        <div className="flex min-w-0 items-baseline gap-2">
+          <CardTitle className="text-sm">Services</CardTitle>
+          <CardDescription className="truncate text-xs tabular-nums">
+            {services === null ? 'Loading…' : `${running} running · ${installed} installed`}
+          </CardDescription>
+        </div>
+        <Button size="sm" variant="ghost" className="h-7 shrink-0 rounded-md px-2 text-xs" onClick={() => onNavigate('services')}>
+          Manage
+        </Button>
+      </CardHeader>
+      <CardContent className="p-0">
+        {rows.map((s, i) => {
+          const working = busy === `svc:${s.id}:start` || busy === `svc:${s.id}:stop` || busy === `svc:${s.id}:restart` || busy === `svc:${s.id}:reload`
+          const state = !s.installed ? 'missing' : s.running ? (s.healthy === false ? 'unhealthy' : 'running') : 'stopped'
+          return (
+            <div
+              key={s.id}
+              className={`group flex items-center gap-2 px-3 py-1.5 transition-colors hover:bg-muted/40 ${i > 0 ? 'border-t border-border/60' : ''}`}
+            >
+              <span className={cn('shrink-0', !s.installed && 'opacity-40 grayscale')}>
+                <TechIcon id={s.id} className="size-4" />
+              </span>
+              <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{s.name}</span>
+              <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground" title={servicePortTitle(s)}>
+                {s.port === null ? '—' : s.port}
+              </span>
+              <StateBadge state={state} />
+              <span className="flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                <IconAction
+                  title={s.running ? `Stop ${s.name}` : `Start ${s.name}`}
+                  disabled={busy !== null || !s.installed}
+                  spinning={working}
+                  onClick={() => act(s, s.running ? 'stop' : 'start')}
+                >
+                  {s.running ? <StopIcon className="size-3.5" /> : <Play className="size-3.5" />}
+                </IconAction>
+                <IconAction
+                  title="Restart"
+                  disabled={busy !== null || !s.installed}
+                  onClick={() => act(s, 'restart')}
+                >
+                  <RotateCw className="size-3.5" />
+                </IconAction>
+                {s.kind === 'web' && (
+                  <IconAction title="Reload config" disabled={busy !== null || !s.installed} onClick={() => act(s, 'reload')}>
+                    <RefreshCw className="size-3.5" />
+                  </IconAction>
+                )}
+              </span>
+              <ActionMenu
+                label={`More actions for ${s.name}`}
+                items={menuFor(s, act, onNavigate)}
+              />
+            </div>
+          )
+        })}
+      </CardContent>
+    </Card>
+  )
+}
+
+type WidgetState = 'running' | 'stopped' | 'unhealthy' | 'missing'
+
+function menuFor(
+  s: ServiceStatus,
+  act: (s: ServiceStatus, action: WidgetAction) => void,
+  onNavigate: (p: Page) => void
+): MenuItem[] {
+  const items: MenuItem[] = [
+    { label: s.running ? 'Stop' : 'Start', onSelect: () => act(s, s.running ? 'stop' : 'start'), disabled: !s.installed },
+    { label: 'Restart', onSelect: () => act(s, 'restart'), disabled: !s.installed },
+  ]
+  if (s.kind === 'web') {
+    items.push({ label: 'Reload config', onSelect: () => act(s, 'reload'), disabled: !s.installed })
+  }
+  items.push('separator', { label: 'Open in Services', onSelect: () => onNavigate('services') })
+  items.push({ label: 'View logs', onSelect: () => onNavigate('logs') })
+  if (!s.installed) {
+    items.push({ label: 'Install from Runtimes', onSelect: () => onNavigate('runtimes') })
+  }
+  return items
+}
+
+function StateBadge({ state }: { state: WidgetState }) {
+  const label = state === 'running' ? 'Running' : state === 'unhealthy' ? 'Not responding' : state === 'missing' ? 'Not installed' : 'Stopped'
+  return (
+    <span
+      className={cn(
+        'w-[5.75rem] shrink-0 truncate rounded-full px-1.5 py-0.5 text-center text-[10px] font-medium leading-4',
+        state === 'running' && 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
+        state === 'unhealthy' && 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
+        state === 'stopped' && 'bg-muted text-muted-foreground',
+        state === 'missing' && 'bg-muted/50 text-muted-foreground/70'
+      )}
+    >
+      {label}
+    </span>
+  )
+}
+
+function IconAction({
+  title,
+  disabled,
+  spinning,
+  onClick,
+  children,
+}: {
+  title: string
+  disabled: boolean
+  spinning?: boolean
+  onClick: () => void
+  children: ReactNode
+}) {
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      className="size-6 shrink-0 cursor-pointer rounded-md p-0 text-muted-foreground hover:text-foreground [&_svg]:size-3.5"
+      title={title}
+      aria-label={title}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {spinning ? <Spinner className="size-3.5" /> : children}
+    </Button>
+  )
 }
 
 function Donut({ label, percent, detail, base, loading }: { label: string; percent: number; detail: string; base: string; loading?: boolean }) {  const r = 34

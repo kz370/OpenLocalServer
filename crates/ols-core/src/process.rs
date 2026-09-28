@@ -514,6 +514,7 @@ pub fn kill_orphans(runtimes_dir: &std::path::Path) -> usize {
         "mailpit.exe",
         "postgres.exe",
         "redis-server.exe",
+        "memcached.exe",
     ];
     let filter = SERVERS
         .iter()

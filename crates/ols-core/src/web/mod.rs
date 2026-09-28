@@ -177,6 +177,48 @@ impl WebConfig {
     pub fn https_port(&self) -> u16 {
         self.effective_ports(&self.default_server).https
     }
+
+    /// Every way two servers would end up fighting for the same port, named the way a
+    /// user can act on. The default's 80/443 count as taken by it, so a custom port
+    /// that collides with either is reported too.
+    pub fn port_conflicts(&self) -> Vec<String> {
+        // The default always binds these two, whatever is stored for it. Only the
+        // non-default servers compete for their own stored pairs, so a stale entry can't
+        // accuse the current default of a clash with itself.
+        let mut claims: Vec<(u16, String)> = vec![
+            (
+                ServerPorts::STANDARD.http,
+                "the default server on 80".to_string(),
+            ),
+            (
+                ServerPorts::STANDARD.https,
+                "the default server on 443".to_string(),
+            ),
+        ];
+        for (id, ports) in &self.servers {
+            if *id == self.default_server {
+                continue;
+            }
+            claims.push((ports.http, format!("{id} HTTP")));
+            claims.push((ports.https, format!("{id} HTTPS")));
+        }
+
+        // One message per pair of claims on the same port. A server whose own HTTP and
+        // HTTPS are equal is reported too — it can only bind one of them.
+        let mut out: Vec<String> = Vec::new();
+        for (i, (port, who)) in claims.iter().enumerate() {
+            for (other_port, other) in claims.iter().skip(i + 1) {
+                if port != other_port || who == other {
+                    continue;
+                }
+                out.push(format!(
+                    "{who} and {other} are both on port {port}. \
+                     Two servers can't share a port — give one of them a different one."
+                ));
+            }
+        }
+        out
+    }
 }
 
 /// How a site's requests are answered, with everything already resolved to concrete
@@ -399,5 +441,93 @@ mod tests {
         assert_eq!(cfg.resolve_server(Some("apache")), "apache");
         assert_eq!(cfg.resolve_server(Some("")), "nginx");
         assert_eq!(cfg.resolve_server(Some("iis")), "nginx");
+    }
+
+    fn config_with(default_server: &str, pairs: &[(&str, u16, u16)]) -> WebConfig {
+        WebConfig {
+            default_server: default_server.into(),
+            servers: pairs
+                .iter()
+                .map(|(id, http, https)| {
+                    (
+                        (*id).to_string(),
+                        ServerPorts {
+                            http: *http,
+                            https: *https,
+                        },
+                    )
+                })
+                .collect(),
+            php_workers: 3,
+            dns_port: 53,
+        }
+    }
+
+    #[test]
+    fn the_default_ports_never_collide_with_anything() {
+        let cfg = config_with(
+            "nginx",
+            &[
+                ("nginx", 8082, 8445),
+                ("apache", 8080, 8443),
+                ("caddy", 8081, 8444),
+            ],
+        );
+        assert!(
+            cfg.port_conflicts().is_empty(),
+            "fresh defaults are all distinct: {:?}",
+            cfg.port_conflicts()
+        );
+    }
+
+    #[test]
+    fn a_server_whose_own_two_ports_are_equal_is_reported() {
+        let cfg = config_with("nginx", &[("nginx", 80, 443), ("apache", 8080, 8080)]);
+        let clashes = cfg.port_conflicts();
+        assert_eq!(clashes.len(), 1, "{clashes:?}");
+        assert!(clashes[0].contains("apache HTTP"), "{clashes:?}");
+        assert!(clashes[0].contains("apache HTTPS"), "{clashes:?}");
+        assert!(clashes[0].contains("8080"), "{clashes:?}");
+        assert!(
+            clashes[0].contains("can't share a port"),
+            "the message must say how to fix it: {clashes:?}"
+        );
+    }
+
+    #[test]
+    fn two_servers_sharing_a_port_pair_are_reported() {
+        let cfg = config_with(
+            "nginx",
+            &[
+                ("nginx", 80, 443),
+                ("apache", 8080, 8443),
+                ("caddy", 8080, 8444),
+            ],
+        );
+        let clashes = cfg.port_conflicts();
+        assert_eq!(clashes.len(), 1, "{clashes:?}");
+        assert!(clashes[0].contains("apache HTTP"), "{clashes:?}");
+        assert!(clashes[0].contains("caddy HTTP"), "{clashes:?}");
+    }
+
+    #[test]
+    fn a_custom_port_on_80_or_443_collides_with_the_default_server() {
+        let cfg = config_with("nginx", &[("nginx", 80, 443), ("apache", 80, 8443)]);
+        let clashes = cfg.port_conflicts();
+        assert_eq!(clashes.len(), 1, "{clashes:?}");
+        assert!(clashes[0].contains("default server on 80"), "{clashes:?}");
+    }
+
+    #[test]
+    fn switching_the_default_does_not_invent_a_clash() {
+        let mut cfg = config_with("nginx", &[("nginx", 8082, 8445), ("apache", 8080, 8443)]);
+        assert!(cfg.port_conflicts().is_empty());
+        // Apache now owns 80/443; nginx falls back to its own stored pair.
+        cfg.default_server = "apache".into();
+        assert!(
+            cfg.port_conflicts().is_empty(),
+            "the old default now binds its own ports: {:?}",
+            cfg.port_conflicts()
+        );
     }
 }

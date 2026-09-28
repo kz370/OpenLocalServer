@@ -48,7 +48,7 @@ Key patterns:
 - ProcessSupervisor (own Tokio runtime, broadcast events: process-event, terminal-event, runtime-event).
 - RuntimeManager (download -> SHA256 verify -> extract, PATH probe cache, broadcast).
 - ServiceManager (MariaDB/Postgres/Mongo/Redis/Mailpit lifecycle, TCP health probe).
-- WebManager (render -> validate -> backup -> apply -> reload -> health; rollback on validator fail).
+- WebManager (render -> validate -> backup -> apply -> reload -> health; rollback on validator fail). One pipeline run per web server, each with its own process, ports and config files; a rollback is scoped to the server that failed.
 - PhpPools (one php-cgi pool per version, auto extensions, opcache/xdebug zend).
 - CertificateManager + LocalCa (rcgen, 397-day leaves, <30d renewal, per-domain dirs).
 - DnsServer (UDP 127.0.0.1 wildcard A records) + NRPT rules + hosts-file managed block.
@@ -59,7 +59,7 @@ Key patterns:
 ## Service Relationships
 - UI -> Tauri `run_command` -> Core::dispatch -> Inner managers -> ProcessSupervisor -> OS processes.
 - CLI -> control pipe -> app Core, or auto-spawn `ols daemon` when app closed.
-- WebManager depends on: DomainStore, Certs, PhpPools, DnsServer, Hosts (via helper), RuntimeManager, ProcessSupervisor.
+- WebManager depends on: DomainStore, Certs, PhpPools, DnsServer, Hosts (via helper), RuntimeManager, ProcessSupervisor, WebConfig. ServiceManager depends on WebManager only to list and probe the web servers.
 - ServiceManager depends on: RuntimeManager, ProcessSupervisor, Port checker, CustomServiceStore.
 - Setup pipeline depends on: Detection, Manifest, Resolver, Domain, Workers, Scheduler, QuickApp commands; wrapped in Journal.
 - QuickApp: schema -> plan (review) -> run (background executor, host handles runtimes/domains/elevation).

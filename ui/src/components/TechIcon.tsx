@@ -73,8 +73,30 @@ const BRANDS: Record<string, SimpleIcon> = {
   mongodb: siMongodb,
   postgres: siPostgresql,
   redis: siRedis,
+  // simple-icons has no Memcached mark, so it borrows Redis' cache-family tile.
+  memcached: siRedis,
   sqlite: siSqlite,
 }
+
+/**
+ * Mailpit's mark: an envelope in isometric, so the lid reads as a top face and the
+ * seam as the fold. simple-icons has no mail-trap brand, so it is drawn here.
+ */
+const ENVELOPE_3D = (
+  <svg viewBox="0 0 24 24" role="img" aria-label="Mailpit">
+    <path d="M4 7.5 12 3.2l8 4.3v9L12 20.8 4 16.5v-9Z" fill="currentColor" fillOpacity="0.1" />
+    <path d="M12 3.2 20 7.5l-8 4.3-8-4.3 8-4.3Z" fill="currentColor" fillOpacity="0.34" />
+    <path
+      d="M4 7.5 12 11.8l8-4.3M12 11.8v9"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      fill="none"
+      opacity="0.85"
+    />
+  </svg>
+)
 
 /** Generic stand-ins for ids without a brand. */
 const GENERIC: Record<string, ReactNode> = {
@@ -85,6 +107,8 @@ const GENERIC: Record<string, ReactNode> = {
   proxy: <ArrowLeftRight />,
   'reverse-proxy': <ArrowLeftRight />,
   other: <Package />,
+  mailpit: ENVELOPE_3D,
+  mail: ENVELOPE_3D,
 }
 
 /** Near-black brand colours vanish on a dark background; those follow the text colour. */

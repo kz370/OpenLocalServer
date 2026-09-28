@@ -25,7 +25,14 @@ use crate::runtime::RuntimeManager;
 
 /// In the order the pages list them. MariaDB is the MySQL-compatible server; MySQL itself
 /// is not offered.
-const KNOWN_SERVICES: &[&str] = &["mailpit", "mariadb", "postgres", "mongodb", "redis"];
+const KNOWN_SERVICES: &[&str] = &[
+    "mailpit",
+    "mariadb",
+    "postgres",
+    "mongodb",
+    "redis",
+    "memcached",
+];
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -439,6 +446,7 @@ impl ServiceManager {
             "postgres" => self.start_postgres(&version)?,
             "mongodb" => self.start_mongodb(&version)?,
             "redis" => self.start_redis(&version)?,
+            "memcached" => self.start_memcached(&version)?,
             other => return Err(format!("unknown service: {other}")),
         };
         self.running
@@ -646,6 +654,34 @@ impl ServiceManager {
             ]
             .into_iter()
             .chain(self.limit_args("redis"))
+            .collect(),
+            cwd: Some(data_dir.display().to_string()),
+            env: vec![],
+            restart: None,
+        }))
+    }
+
+    /// Memcached, from the community Windows port. Loopback only and capped in memory, the
+    /// way a dev cache should be: it keeps everything in RAM and evicts rather than growing.
+    fn start_memcached(&self, version: &str) -> Result<ProcessId, String> {
+        let server = self
+            .runtimes
+            .binary_path("memcached", version)
+            .ok_or("memcached.exe missing on disk")?;
+        let data_dir = self.paths.services_dir().join("memcached");
+        std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
+
+        Ok(self.supervisor.start(ProcessSpec {
+            name: "Memcached".into(),
+            executable: server.display().to_string(),
+            args: vec![
+                "-l".into(),
+                "127.0.0.1".into(),
+                "-p".into(),
+                primary_port("memcached").unwrap().to_string(),
+            ]
+            .into_iter()
+            .chain(self.limit_args("memcached"))
             .collect(),
             cwd: Some(data_dir.display().to_string()),
             env: vec![],
@@ -894,15 +930,18 @@ impl ServiceManager {
                     ),
                 })
             }
-            "redis" => Ok(ConnectionInfo {
-                engine: "redis".into(),
-                host: "127.0.0.1".into(),
-                port: primary_port("redis"),
-                user: None,
-                database: None,
-                path: None,
-                uri: format!("redis://127.0.0.1:{}", primary_port("redis").unwrap()),
-            }),
+            engine @ ("redis" | "memcached") => {
+                let port = primary_port(engine).unwrap();
+                Ok(ConnectionInfo {
+                    engine: engine.into(),
+                    host: "127.0.0.1".into(),
+                    port: Some(port),
+                    user: None,
+                    database: None,
+                    path: None,
+                    uri: format!("{engine}://127.0.0.1:{port}"),
+                })
+            }
             "mongodb" => Ok(ConnectionInfo {
                 engine: "mongodb".into(),
                 host: "127.0.0.1".into(),
@@ -934,6 +973,7 @@ fn kind_of(id: &str) -> &'static str {
         "mailpit" => "mail",
         "mongodb" => "document",
         "redis" => "cache",
+        "memcached" => "cache",
         _ => "sql",
     }
 }
@@ -945,6 +985,7 @@ fn primary_port(id: &str) -> Option<u16> {
         "mongodb" => Some(27017),
         "postgres" => Some(5432),
         "redis" => Some(6379),
+        "memcached" => Some(11211),
         _ => None,
     }
 }
@@ -959,6 +1000,7 @@ fn connection_string(id: &str) -> Option<String> {
         "mongodb" => Some("mongodb://127.0.0.1:27017".into()),
         "postgres" => Some("postgresql://postgres@127.0.0.1:5432".into()),
         "redis" => Some("redis://127.0.0.1:6379".into()),
+        "memcached" => Some("memcached://127.0.0.1:11211".into()),
         _ => None,
     }
 }

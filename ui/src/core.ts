@@ -1442,6 +1442,7 @@ export interface ResourceLimits {
   mariadb_buffer_pool_mb: number | null
   postgres_shared_buffers_mb: number | null
   redis_maxmemory_mb: number | null
+  memcached_max_memory_mb: number | null
   mongodb_cache_mb: number | null
   node_max_old_space_mb: number | null
   max_worker_count: number | null

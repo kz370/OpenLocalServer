@@ -25,6 +25,8 @@ pub struct ResourceLimits {
     #[serde(default)]
     pub redis_maxmemory_mb: Option<u32>,
     #[serde(default)]
+    pub memcached_max_memory_mb: Option<u32>,
+    #[serde(default)]
     pub mongodb_cache_mb: Option<u32>,
     #[serde(default)]
     pub node_max_old_space_mb: Option<u32>,
@@ -57,6 +59,12 @@ impl ResourceLimits {
             "PostgreSQL shared buffers (MB)",
         )?;
         check(self.redis_maxmemory_mb, 8, 65536, "Redis memory (MB)")?;
+        check(
+            self.memcached_max_memory_mb,
+            8,
+            65536,
+            "Memcached memory (MB)",
+        )?;
         check(self.mongodb_cache_mb, 256, 65536, "The MongoDB cache (MB)")?;
         check(self.node_max_old_space_mb, 64, 65536, "Node memory (MB)")?;
         check(
@@ -91,6 +99,10 @@ impl ResourceLimits {
                         "allkeys-lru".into(),
                     ]
                 })
+                .unwrap_or_default(),
+            "memcached" => self
+                .memcached_max_memory_mb
+                .map(|m| vec!["-m".into(), m.to_string()])
                 .unwrap_or_default(),
             "mongodb" => self
                 .mongodb_cache_mb

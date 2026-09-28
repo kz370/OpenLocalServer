@@ -26,6 +26,7 @@ const DB_LIMITS: LimitDef[] = [
   { key: 'mariadb_buffer_pool_mb', label: 'MariaDB buffer pool', hint: 'InnoDB buffer pool size', unit: 'MB', icon: Database, iconClass: 'text-sky-400' },
   { key: 'postgres_shared_buffers_mb', label: 'PostgreSQL shared buffers', hint: 'PostgreSQL shared_buffers', unit: 'MB', icon: Database, iconClass: 'text-blue-400' },
   { key: 'redis_maxmemory_mb', label: 'Redis memory', hint: 'Max memory, oldest keys evicted first', unit: 'MB', icon: Boxes, iconClass: 'text-red-400' },
+  { key: 'memcached_max_memory_mb', label: 'Memcached memory', hint: 'Cache size in RAM; it evicts when full', unit: 'MB', icon: Boxes, iconClass: 'text-red-400' },
   { key: 'mongodb_cache_mb', label: 'MongoDB cache', hint: 'WiredTiger cache · minimum 256 MB', unit: 'MB', icon: Leaf, iconClass: 'text-emerald-400' },
 ]
 
@@ -40,6 +41,7 @@ const EMPTY_LIMITS: ResourceLimits = {
   mariadb_buffer_pool_mb: null,
   postgres_shared_buffers_mb: null,
   redis_maxmemory_mb: null,
+  memcached_max_memory_mb: null,
   mongodb_cache_mb: null,
   node_max_old_space_mb: null,
   max_worker_count: null,

@@ -229,7 +229,16 @@ impl RuntimeManager {
             }
         }
         for id in [
-            "node", "php", "nginx", "mariadb", "apache", "composer", "mongodb", "postgres", "redis",
+            "node",
+            "php",
+            "nginx",
+            "mariadb",
+            "apache",
+            "composer",
+            "mongodb",
+            "postgres",
+            "redis",
+            "memcached",
         ] {
             if let Ok(dirs) = std::fs::read_dir(self.paths.runtimes_dir().join(id)) {
                 let known = all_versions.entry(id.to_string()).or_default();
@@ -412,6 +421,35 @@ impl RuntimeManager {
                             .map(|tag| tag.strip_prefix('v').unwrap_or(tag).to_string())
                     })
                     .collect()
+            }
+            "memcached" => {
+                // The Windows port tags releases `<upstream version>_mingw_libressl`; offer
+                // the upstream version so the download URL can be rebuilt from it.
+                let bytes = self.fetch(
+                    "https://api.github.com/repos/jefyt/memcached-windows/releases?per_page=100",
+                )?;
+                let releases: Vec<serde_json::Value> = serde_json::from_slice(&bytes)
+                    .map_err(|e| format!("Memcached release list is invalid: {e}"))?;
+                let mut versions: Vec<String> = releases
+                    .into_iter()
+                    .filter_map(|release| {
+                        let assets = release.get("assets")?.as_array()?;
+                        let has_windows_zip = assets.iter().any(|asset| {
+                            asset.get("name").and_then(|n| n.as_str()).is_some_and(|n| {
+                                n.starts_with("memcached-") && n.ends_with("-win64-mingw.zip")
+                            })
+                        });
+                        if !has_windows_zip {
+                            return None;
+                        }
+                        let tag = release.get("tag_name")?.as_str()?;
+                        tag.strip_suffix("_mingw_libressl")
+                            .map(|v| v.trim_start_matches('v').to_string())
+                    })
+                    .collect();
+                versions.sort_by(|a, b| compare_versions(b, a));
+                versions.dedup();
+                versions
             }
             "mariadb" => {
                 let bytes = self.fetch("https://downloads.mariadb.org/rest-api/mariadb/")?;
@@ -751,6 +789,7 @@ fn runtime_binary(id: &str) -> Option<&'static str> {
         "mongodb" => Some("bin/mongod.exe"),
         "postgres" => Some("bin/postgres.exe"),
         "redis" => Some("redis-server.exe"),
+        "memcached" => Some("bin/memcached.exe"),
         _ => None,
     }
 }
@@ -770,6 +809,7 @@ fn runtime_name(id: &str, manifests: &[PackageManifest]) -> String {
             "mongodb" => "MongoDB".into(),
             "postgres" => "PostgreSQL".into(),
             "redis" => "Redis".into(),
+            "memcached" => "Memcached".into(),
             _ => id.into(),
         })
 }
@@ -1180,6 +1220,15 @@ async fn resolve_online_manifest(
             String::new(),
             format!("nginx-{version}"),
             "nginx.exe",
+        ),
+        "memcached" => (
+            // The community Windows port tags upstream versions as `<version>_mingw_libressl`.
+            format!(
+                "https://github.com/jefyt/memcached-windows/releases/download/{version}_mingw_libressl/memcached-{version}-win64-mingw.zip"
+            ),
+            String::new(),
+            format!("memcached-{version}-win64-mingw"),
+            "bin/memcached.exe",
         ),
         _ => return Err(format!("Online installs are not supported for {id}.")),
     };

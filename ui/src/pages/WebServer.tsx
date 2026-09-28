@@ -224,6 +224,37 @@ export function WebServerPage({ initialTab = 'server' }: { initialTab?: 'server'
   )
 }
 
+/**
+ * The ports each server will actually bind, and the ones used twice. The default always
+ * takes 80/443 whatever is stored for it, so a custom port on either is a clash too.
+ */
+function portClashes(cfg: WebConfig): string[] {
+  // The default always binds 80/443 whatever is stored for it. Only the non-default
+  // servers compete for their own pairs, so a stale entry can't accuse the current
+  // default of a clash with itself.
+  const claims: { port: number; who: string }[] = [
+    { port: 80, who: 'the default server on 80' },
+    { port: 443, who: 'the default server on 443' },
+  ]
+  for (const [id, ports] of Object.entries(cfg.servers)) {
+    if (id === cfg.default_server) continue
+    claims.push({ port: ports.http, who: `${id} HTTP` }, { port: ports.https, who: `${id} HTTPS` })
+  }
+  // One message per pair of claims on the same port — including a server whose own HTTP
+  // and HTTPS are equal, since it can only bind one of them.
+  const out: string[] = []
+  for (let i = 0; i < claims.length; i++) {
+    for (let j = i + 1; j < claims.length; j++) {
+      const a = claims[i]
+      const b = claims[j]
+      if (a.port === b.port && a.who !== b.who) {
+        out.push(`${a.who} and ${b.who} are both on port ${a.port} — two servers can't share a port.`)
+      }
+    }
+  }
+  return out
+}
+
 function ServerPanel({
   cfg,
   status,
@@ -239,7 +270,6 @@ function ServerPanel({
 }) {
   const [draft, setDraft] = useState(cfg)
   useEffect(() => setDraft(cfg), [cfg])
-  const dirty = JSON.stringify(draft) !== JSON.stringify(cfg)
   const num = (v: string, fallback: number) => (Number.isFinite(Number(v)) && v !== '' ? Number(v) : fallback)
   const enabledDomains = domains.filter((d) => d.enabled)
   const setPorts = (id: string, patch: Partial<ServerPorts>) =>
@@ -248,6 +278,9 @@ function ServerPanel({
       servers: { ...draft.servers, [id]: { ...(draft.servers[id] ?? { http: 80, https: 443 }), ...patch } },
     })
   const defaultChanged = draft.default_server !== cfg.default_server
+  const dirty = JSON.stringify(draft) !== JSON.stringify(cfg)
+  // Every port that will actually be bound: the default always takes 80/443.
+  const clashes = portClashes(draft)
 
   return (
     <div className="flex flex-col gap-4">
@@ -367,9 +400,19 @@ function ServerPanel({
               </div>
             )
           })}
+          {clashes.length > 0 && (
+            <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm">
+              <div className="font-medium text-destructive">Two servers want the same port</div>
+              <ul className="mt-1 list-disc pl-5 text-muted-foreground">
+                {clashes.map((c) => (
+                  <li key={c}>{c}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           {dirty && (
             <div>
-              <Button size="sm" disabled={busy} onClick={() => onSave(draft, defaultChanged)}>
+              <Button size="sm" disabled={busy || clashes.length > 0} onClick={() => onSave(draft, defaultChanged)}>
                 {defaultChanged ? 'Switch default and apply' : 'Save settings'}
               </Button>
             </div>

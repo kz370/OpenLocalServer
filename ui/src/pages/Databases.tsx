@@ -28,7 +28,7 @@ import { formatBytes, useAction, usePoll } from '@/lib/hooks'
 import { waitForService } from '@/lib/wait'
 import { confirmAction, confirmThen } from '@/lib/confirm'
 
-type Tab = 'mariadb' | 'postgres' | 'mongodb' | 'redis' | 'sqlite' | 'tools'
+type Tab = 'mariadb' | 'postgres' | 'mongodb' | 'redis' | 'memcached' | 'sqlite' | 'tools'
 type DatabaseToolProps = {
   dbTools: DbTool[]
   externalTools: ExternalTool[]
@@ -106,6 +106,7 @@ export function DatabasesPage() {
           { id: 'postgres', label: 'PostgreSQL', icon: <TechIcon id="postgres" /> },
           { id: 'mongodb', label: 'MongoDB', icon: <TechIcon id="mongodb" /> },
           { id: 'redis', label: 'Redis', icon: <TechIcon id="redis" /> },
+          { id: 'memcached', label: 'Memcached', icon: <TechIcon id="memcached" /> },
           { id: 'sqlite', label: 'SQLite', icon: <TechIcon id="sqlite" /> },
           { id: 'tools', label: 'External tools', icon: <TechIcon id="tools" /> },
         ]}
@@ -115,6 +116,7 @@ export function DatabasesPage() {
       {(tab === 'mariadb' || tab === 'postgres') && <SqlEngine key={tab} engine={tab} service={services.find((s) => s.id === tab)} dbTools={dbTools} externalTools={externalTools} defaultTools={defaultTools} setDefaultTool={setDefaultTool} />}
       {tab === 'mongodb' && <Mongo service={services.find((s) => s.id === 'mongodb')} dbTools={dbTools} externalTools={externalTools} defaultTools={defaultTools} setDefaultTool={setDefaultTool} />}
       {tab === 'redis' && <Redis service={services.find((s) => s.id === 'redis')} dbTools={dbTools} externalTools={externalTools} defaultTools={defaultTools} setDefaultTool={setDefaultTool} />}
+      {tab === 'memcached' && <Memcached service={services.find((s) => s.id === 'memcached')} />}
       {tab === 'sqlite' && <Sqlite dbTools={dbTools} externalTools={externalTools} defaultTools={defaultTools} setDefaultTool={setDefaultTool} />}
       {tab === 'tools' && <Tools />}
     </div>
@@ -425,6 +427,52 @@ function Redis({ service, ...toolProps }: { service?: ServiceStatus } & Database
           {info && <div className="rounded-lg bg-muted/40 p-3 font-mono text-xs">host {info.host} · port {info.port}<br />{info.uri}</div>}
           <p className="text-xs text-muted-foreground">
             Runs the Windows build of Redis from the Runtimes page (the community redis-windows project). It listens on 127.0.0.1 only. Logs are on the Logs page (source: Redis).
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+/** A key/value cache: no GUI tool ships for it, so the panel is status + connection only. */
+function Memcached({ service }: { service?: ServiceStatus }) {
+  const [info, setInfo] = useState<ConnectionInfo | null>(null)
+  const { error, setError } = useAction()
+  useEffect(() => {
+    runCommand({ type: 'get_connection_info', engine: 'memcached', database: null, path: null })
+      .then((r) => r.type === 'connection' && setInfo(r.info))
+      .catch((e) => setError(e))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  return (
+    <div className="flex flex-col gap-4">
+      <ServiceBanner service={service} name="Memcached" />
+      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <Card>
+        <CardContent className="flex items-center justify-between gap-3 pt-4 text-sm">
+          <div>
+            Health:{' '}
+            {service?.running ? (
+              service.healthy ? <Badge variant="success">answering</Badge> : <Badge variant="warning">not answering</Badge>
+            ) : (
+              <Badge variant="secondary">stopped</Badge>
+            )}
+            <div className="mt-1 text-xs text-muted-foreground">Logs are on the Logs page (source: Memcached).</div>
+          </div>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent className="flex flex-col gap-2 pt-4 text-sm">
+          {info && (
+            <div className="rounded-lg bg-muted/40 p-3 font-mono text-xs">
+              host {info.host} · port {info.port}
+              <br />
+              {info.uri}
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground">
+            Runs the Windows build of Memcached from the Runtimes page (the community native port). It listens on 127.0.0.1 only and keeps
+            everything in RAM, so its memory cap lives in Settings → Resources.
           </p>
         </CardContent>
       </Card>
