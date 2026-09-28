@@ -106,15 +106,20 @@ fn apply_status_icon(app: &AppHandle, red: bool, force: bool) {
 
 /// The mark is green while at least one managed process is running — a service or
 /// a supervised process — and red once everything is stopped, so the tray, the
-/// taskbar and the in-app mark always state what the app is doing.
+/// taskbar and the in-app mark always state what the app is doing. Both checks are
+/// lock-only, so this is cheap enough to call after every command and on a timer.
 fn sync_status_icon(app: &AppHandle, core: &Core) {
-    let service_running = core.services().list().iter().any(|s| s.running);
-    let process_running = core
+    let services = core.services().any_running();
+    let live: Vec<String> = core
         .supervisor()
         .snapshot()
         .iter()
-        .any(|p| p.state == ProcessState::Running || p.state == ProcessState::Starting);
-    apply_status_icon(app, !(service_running || process_running), false);
+        .filter(|p| p.state == ProcessState::Running || p.state == ProcessState::Starting)
+        .map(|p| format!("{}:{:?}", p.name, p.state))
+        .collect();
+    let red = !(services || !live.is_empty());
+    tracing::debug!(services, live_processes = ?live, red, "status icon sync");
+    apply_status_icon(app, red, false);
 }
 
 fn set_stopping_tray(app: &AppHandle) {
@@ -628,6 +633,16 @@ pub fn run() {
             });
 
             build_tray(app.handle(), core.clone())?;
+            // §122: the tray, taskbar and in-app mark must also follow the paths
+            // that never touch the IPC command or the tray menu — `ols stop` over
+            // the control channel, the scheduler, and services that die on their
+            // own — so the state is re-checked on a slow clock.
+            let status_handle = app.handle().clone();
+            let status_core = core.clone();
+            std::thread::spawn(move || loop {
+                std::thread::sleep(Duration::from_secs(2));
+                sync_status_icon(&status_handle, &status_core);
+            });
             // §106: scheduled tasks run while the app is open.
             ols_core::scheduler::start_clock(core.inner());
 

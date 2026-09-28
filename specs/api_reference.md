@@ -4,7 +4,7 @@ Three front doors share one command model: Tauri IPC, CLI, HTTP API. All dispatc
 
 ## Tauri IPC
 Single command: `invoke('run_command', {command})` from `ui/src/core.ts` `runCommand(cmd)`.
-Events emitted: `process-event`, `terminal-event`, `runtime-event`, `projects-changed`, `ols:navigate`.
+Events emitted: `process-event`, `terminal-event`, `runtime-event`, `projects-changed`, `ols:navigate`, `ols:status-icon` (payload `boolean` — true when nothing is running, so the UI shows the red mark).
 Example:
 ```ts
 import { runCommand } from './core';

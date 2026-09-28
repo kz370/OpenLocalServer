@@ -213,9 +213,43 @@ impl ServiceManager {
         }))
     }
 
+    /// Drops bookkeeping for services whose process is gone. A service that exits
+    /// or crashes on its own used to stay "running" forever, because only
+    /// `stop`/`mark_stopped` cleared the map — the tray/taskbar mark and the
+    /// Services page then reported a server that was long gone (§122).
+    fn prune_finished(&self) {
+        let stale: Vec<ProcessId> = self
+            .running
+            .lock()
+            .unwrap()
+            .values()
+            .copied()
+            .filter(|process_id| !self.supervisor.is_alive(*process_id))
+            .collect();
+        if stale.is_empty() {
+            return;
+        }
+        tracing::debug!(
+            count = stale.len(),
+            "cleared finished services from the running map"
+        );
+        self.running
+            .lock()
+            .unwrap()
+            .retain(|_, process_id| !stale.contains(process_id));
+    }
+
     pub fn is_running(&self, id: &str) -> bool {
+        self.prune_finished();
         let map = self.running.lock().unwrap();
-        map.get(id).is_some_and(|p| self.supervisor.is_alive(*p))
+        map.contains_key(id)
+    }
+
+    /// Is anything running at all? A couple of locks with no port probes, so
+    /// callers like the tray/taskbar status icon can poll it cheaply (§122).
+    pub fn any_running(&self) -> bool {
+        self.prune_finished();
+        !self.running.lock().unwrap().is_empty()
     }
 
     pub fn status(&self, id: &str) -> ServiceStatus {
