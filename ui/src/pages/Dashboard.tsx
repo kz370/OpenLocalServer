@@ -273,6 +273,7 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
               services={data?.services ?? null}
               webServers={data?.web?.servers ?? null}
               busy={busy}
+              run={run}
               onNavigate={onNavigate}
               onOpenLogs={onOpenLogs}
               onDone={async () => {
@@ -319,6 +320,7 @@ function ServicesWidget({
   services,
   webServers,
   busy,
+  run,
   onNavigate,
   onOpenLogs,
   onDone,
@@ -326,11 +328,14 @@ function ServicesWidget({
   services: ServiceStatus[] | null
   webServers: ServerAvailability[] | null
   busy: string | null
+  // The page's own `run`, not a local one: a failure has to reach the `ErrorCard` the
+  // page renders. A widget-local action stored its error in state nobody read, so a
+  // start or stop that failed looked like a status that had silently reverted.
+  run: <T,>(key: string, fn: () => Promise<T>) => Promise<T | undefined>
   onNavigate: (p: Page) => void
   onOpenLogs: (source: string) => void
   onDone: () => Promise<void>
 }) {
-  const { run } = useAction()
   const byId = new Map((services ?? []).map((s) => [s.id, s]))
   // Always the same eight rows, installed or not, so the card keeps a stable height.
   const rows = WIDGET_ORDER.map((id) => byId.get(id)).filter((s): s is ServiceStatus => !!s)

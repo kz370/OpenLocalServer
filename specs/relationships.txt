@@ -20,7 +20,7 @@ PhpPools | uses | RuntimeManager
 PhpPools | uses | ProcessSupervisor
 PhpPools | uses | XdebugConfig
 ServiceManager | uses | RuntimeManager
-ServiceManager | uses | ProcessSupervisor
+ServiceManager | uses | ProcessSupervisor (start waits for the spawn to be decided via wait_for_spawn and keeps the OS reason; stop waits for exit via wait_for_exit)
 ServiceManager | uses | PortChecker
 ServiceManager | uses | WebManager (proxied web rows: list/status/start/stop/is_running delegate, no duplicated state)
 ServiceManager | uses | CustomServiceStore
@@ -55,7 +55,8 @@ Updater | uses | CatalogSources
 PluginManager | uses | Catalog
 WebConfig | resolves | Domain.server -> resolved_server(domain, cfg)
 SitesPage | uses | UseWeb hook
-SiteDialog | uses | CoreClient
+ServicesWidget | uses | DashboardPage.useAction (so a failed service action reaches the page ErrorCard)
+SiteDialog | uses | CoreClient (get_domain once per trigger, unchanged read dropped — it seeds DomainSettings)
 TerminalComp | uses | TerminalManager
 EnvEditor | uses | EnvFile (via Core)
 Sidebar | uses | CoreClient (list_tunnels)
@@ -64,5 +65,6 @@ DaemonRunner | uses | ScheduleStore ticker
 HelperService | uses | HelperMain execute
 TauriApp | depends_on | ols-helper (install/service)
 TauriApp | uses | ServiceManager.list (green/red status icon, includes the web servers)
+TauriApp | uses | ProcessSupervisor.is_alive (the status mark's rule for a supervised process, the same one any_running/prune_finished use)
 TauriApp | waits_on | UI main.tsx `ols:ui-ready` (window revealed after first paint; 5s fallback)
 TauriApp | reads | ols-core `app::should_start_hidden` (startup.minimized preference decides on every launch; --minimized only forces)

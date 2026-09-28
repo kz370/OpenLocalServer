@@ -943,4 +943,60 @@ mod tests {
         d.server = Some("apache".into());
         assert_eq!(store.add(d).unwrap().server.as_deref(), Some("apache"));
     }
+
+    #[test]
+    fn update_persists_a_pinned_server_across_a_reload() {
+        // `add` was covered, `update` was not — and `update` is the path the site
+        // settings dialog uses, so a pin set from the UI had no round-trip proof.
+        let home = crate::test_support::isolated_home();
+        let mut store = DomainStore::load(&home.paths).unwrap();
+        let mut d = domain("shop.test");
+        store.add(d.clone()).unwrap();
+
+        d.server = Some("caddy".into());
+        assert_eq!(store.update(d).unwrap().server.as_deref(), Some("caddy"));
+
+        let reloaded = DomainStore::load(&home.paths).unwrap();
+        assert_eq!(
+            reloaded.get("shop.test").unwrap().server.as_deref(),
+            Some("caddy")
+        );
+        assert_eq!(
+            resolved_server(&reloaded.get("shop.test").unwrap(), &web_config("nginx")),
+            "caddy"
+        );
+
+        // Back to automatic: `None` must survive the write too, not just the pin.
+        let mut auto = reloaded.get("shop.test").unwrap().clone();
+        auto.server = None;
+        assert!(store.update(auto).unwrap().server.is_none());
+        assert!(DomainStore::load(&home.paths)
+            .unwrap()
+            .get("shop.test")
+            .unwrap()
+            .server
+            .is_none());
+    }
+
+    #[test]
+    fn update_rejects_an_unknown_server_instead_of_clearing_the_pin() {
+        let home = crate::test_support::isolated_home();
+        let mut store = DomainStore::load(&home.paths).unwrap();
+        let mut d = domain("shop.test");
+        d.server = Some("apache".into());
+        store.add(d.clone()).unwrap();
+
+        d.server = Some("iis".into());
+        assert!(store.update(d.clone()).is_err());
+        // The failed write must leave the stored pin alone, not reset it to automatic.
+        assert_eq!(
+            DomainStore::load(&home.paths)
+                .unwrap()
+                .get("shop.test")
+                .unwrap()
+                .server
+                .as_deref(),
+            Some("apache")
+        );
+    }
 }

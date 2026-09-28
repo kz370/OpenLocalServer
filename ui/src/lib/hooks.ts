@@ -72,6 +72,11 @@ export const MODAL_MS = 160
  * True when nothing is running, so the app can show the red mark. The backend owns
  * the decision (it also drives the tray and taskbar) and pushes it as
  * `ols:status-icon`; without Tauri it falls back to "not stopped".
+ *
+ * The event is only ever pushed, never fetched, so this state starts at "running"
+ * and is corrected by the first event that arrives. `show_main_window` on the
+ * Rust side emits the current mark on every reveal for that reason — a window
+ * opened from the tray has no `ols:ui-ready` to resync against.
  */
 export function useServerStopped(): boolean {
   const [stopped, setStopped] = useState(false)

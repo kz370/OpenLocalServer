@@ -1969,13 +1969,23 @@ impl Inner {
                 )))
             }
             // A service's own output. Empty while it is stopped: the buffer went
-            // with the process, and an error here would look like a broken page.
+            // with the process, and an error here would look like a broken page. A
+            // Start that never spawned is the exception — there is no buffer to read,
+            // so the recorded reason is the whole story.
             s if s.starts_with("service:") => {
                 let id = &s[8..];
-                Ok(self
+                let lines = self
                     .services
                     .process_id(id)
                     .map(|process_id| tail(self.supervisor.recent_output(process_id)))
+                    .unwrap_or_default();
+                if !lines.is_empty() {
+                    return Ok(lines);
+                }
+                Ok(self
+                    .services
+                    .last_start_failure(id)
+                    .map(|reason| vec![format!("last start attempt failed: {reason}")])
                     .unwrap_or_default())
             }
             s if s.starts_with("process:") => {

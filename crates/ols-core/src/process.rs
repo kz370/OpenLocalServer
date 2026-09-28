@@ -97,6 +97,10 @@ struct ProcessRecord {
     info: ProcessInfo,
     spec: ProcessSpec,
     output: VecDeque<String>,
+    /// The OS spawn error, kept for the life of the record. It used to exist only as a
+    /// `tracing::warn!` line, so a process that never started reported success to its
+    /// caller and had no reachable reason anywhere.
+    spawn_error: Option<String>,
     /// Set once the caller explicitly asked to stop — tells the exit-watcher not to
     /// treat this exit as a crash and not to apply the restart policy.
     stop_requested: bool,
@@ -156,6 +160,7 @@ impl ProcessSupervisor {
             },
             spec: spec.clone(),
             output: VecDeque::with_capacity(OUTPUT_BUFFER_LINES),
+            spawn_error: None,
             stop_requested: false,
         };
         self.processes.lock().unwrap().insert(id.0, record);
@@ -252,6 +257,57 @@ impl ProcessSupervisor {
         let mut list: Vec<_> = guard.values().map(|r| r.info.clone()).collect();
         list.sort_by_key(|p| p.id.0);
         list
+    }
+
+    /// The OS error that stopped this process from ever starting, if that is what
+    /// happened. `None` for a process that spawned, and for one still spawning.
+    pub fn spawn_error(&self, id: ProcessId) -> Option<String> {
+        let guard = self.processes.lock().unwrap();
+        guard.get(&id.0).and_then(|r| r.spawn_error.clone())
+    }
+
+    /// Blocks until the spawn attempt is decided, so a caller that asked for a service
+    /// to start can report *why* it did not. `start` returns before the process exists,
+    /// which is right for a fire-and-forget process but wrong for a one-click Start
+    /// button: the failure used to surface as a status that reverted with nothing said.
+    ///
+    /// `Ok(())` once the process is up (or has already gone on to exit on its own —
+    /// that is not this call's failure to report). `Err` carries the OS error text.
+    pub fn wait_for_spawn(&self, id: ProcessId, timeout: Duration) -> Result<(), String> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            let outcome = {
+                let guard = self.processes.lock().unwrap();
+                guard
+                    .get(&id.0)
+                    .map(|r| (r.info.state, r.spawn_error.clone()))
+            };
+            match outcome {
+                Some((ProcessState::Failed, Some(err))) => return Err(err),
+                // Gone from the table, or in any state past the spawn: the spawn itself
+                // worked, and whatever happened next is the caller's own waiting to see.
+                None => return Ok(()),
+                Some((state, _)) if state != ProcessState::Starting => return Ok(()),
+                _ => {}
+            }
+            if Instant::now() >= deadline {
+                return Ok(());
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    /// Blocks until the process is no longer alive, or `timeout` passes. Reports whether
+    /// it is gone, so a caller can tell a stop that worked from one the OS ignored.
+    pub fn wait_for_exit(&self, id: ProcessId, timeout: Duration) -> bool {
+        let deadline = Instant::now() + timeout;
+        while self.is_alive(id) {
+            if Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        true
     }
 
     pub fn recent_output(&self, id: ProcessId) -> Vec<String> {
@@ -364,10 +420,25 @@ fn run_process_attempt(
             Ok(c) => c,
             Err(e) => {
                 tracing::warn!(process = %spec.name, error = %e, "failed to spawn process");
+                let line = format!("failed to start {}: {e}", spec.executable);
+                if let Some(rec) = processes.lock().unwrap().get_mut(&id.0) {
+                    rec.spawn_error = Some(line.clone());
+                    // Also into the output ring: the Logs page reads that, and this is
+                    // the only output a process that never existed can ever have.
+                    if rec.output.len() >= OUTPUT_BUFFER_LINES {
+                        rec.output.pop_front();
+                    }
+                    rec.output.push_back(line.clone());
+                }
                 set_state(&processes, id, ProcessState::Failed, None);
                 let _ = events_tx.send(ProcessEvent::StateChanged {
                     id,
                     state: ProcessState::Failed,
+                });
+                let _ = events_tx.send(ProcessEvent::Output {
+                    id,
+                    stream: OutputStream::Stderr,
+                    line,
                 });
                 return;
             }
@@ -639,6 +710,51 @@ mod tests {
             env: vec![],
             restart: None,
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_process_that_cannot_spawn_reports_the_reason() {
+        // The failure path used to be a `tracing::warn!` and nothing else, so a Start
+        // button returned success and the row silently went back to Inactive.
+        let sup = ProcessSupervisor::new();
+        let spec = ProcessSpec {
+            name: "missing-exe".into(),
+            executable: r"C:\nope\does-not-exist.exe".into(),
+            args: vec![],
+            cwd: None,
+            env: vec![],
+            restart: None,
+        };
+        let id = sup.start(spec);
+
+        let err = sup
+            .wait_for_spawn(id, Duration::from_secs(5))
+            .expect_err("spawning a missing executable must not report success");
+        assert!(!err.is_empty(), "the OS reason has to reach the caller");
+        assert_eq!(sup.spawn_error(id).as_deref(), Some(err.as_str()));
+        // And it has to be readable as the process's own output, which is what the
+        // Logs page shows for a service.
+        assert!(sup.recent_output(id).iter().any(|l| l.contains(&err)));
+        assert!(!sup.is_alive(id));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn wait_for_spawn_reports_ok_once_the_process_is_up() {
+        let sup = ProcessSupervisor::new();
+        let spec = ProcessSpec {
+            name: "ping-test".into(),
+            executable: "ping".into(),
+            args: vec!["127.0.0.1".into(), "-n".into(), "3".into()],
+            cwd: None,
+            env: vec![],
+            restart: None,
+        };
+        let id = sup.start(spec);
+        assert!(sup.wait_for_spawn(id, Duration::from_secs(5)).is_ok());
+        assert!(sup.spawn_error(id).is_none());
+        sup.stop(id);
     }
 
     #[cfg(windows)]

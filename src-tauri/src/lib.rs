@@ -56,6 +56,13 @@ fn show_main_window(app: &AppHandle) {
         let _ = w.unminimize();
         let _ = w.set_focus();
     }
+    // Every way back to the window is also a moment the webview may be mounting for
+    // the first time. `useServerStopped` starts at "running" and only ever learns the
+    // mark from this event, so it is emitted on every reveal rather than only on the
+    // ui-ready path — a window opened from the tray has no ui-ready event coming.
+    if let Some(core) = app.try_state::<Core>() {
+        let _ = app.emit("ols:status-icon", status_mark(Some(core.inner())));
+    }
 }
 
 static SHUTDOWN_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
@@ -77,6 +84,14 @@ fn reveal_window_on_ui_ready(app: &AppHandle) {
         }
         tracing::info!("the UI reported ready; showing the main window");
         show_main_window(app);
+        // The webview has just mounted and `useServerStopped` starts at "running", so
+        // it is told the real mark now instead of waiting for the next state change.
+        // Emitted directly rather than through `sync_status_icon`, which skips the
+        // emit when the mark has not changed and this webview has never seen it.
+        let _ = app.emit(
+            "ols:status-icon",
+            status_mark(app.try_state::<Core>().as_ref().map(|c| &**c)),
+        );
     };
 
     let ready_app = app.clone();
@@ -108,28 +123,41 @@ fn decode_icon(bytes: &[u8]) -> Option<tauri::image::Image<'static>> {
 /// `ols:status-icon`, the mark inside the app. `force` repaints even when the mark
 /// is already showing.
 fn apply_status_icon(app: &AppHandle, red: bool, force: bool) {
-    {
-        let mut current = ICON_SHOWS_RED.lock().unwrap_or_else(|e| e.into_inner());
-        if !force && *current == Some(red) {
-            return;
-        }
-        *current = Some(red);
+    if !force && *ICON_SHOWS_RED.lock().unwrap_or_else(|e| e.into_inner()) == Some(red) {
+        return;
     }
     let (tray_bytes, window_bytes) = if red {
         (TRAY_ICON_RED, WINDOW_ICON_RED)
     } else {
         (TRAY_ICON_GREEN, WINDOW_ICON_GREEN)
     };
+    // Paint first, remember second. Latching the state before the repaint meant a
+    // tray that did not exist yet, a decode that failed, or a `set_icon` that
+    // errored all looked like "already painted" and froze the mark for the session.
+    let mut painted = false;
     if let Some(icon) = decode_icon(tray_bytes) {
-        if let Some(tray) = app.tray_by_id("main") {
-            let _ = tray.set_icon(Some(icon));
+        match app.tray_by_id("main") {
+            Some(tray) => match tray.set_icon(Some(icon)) {
+                Ok(()) => painted = true,
+                Err(e) => tracing::warn!(error = %e, "the tray icon could not be repainted"),
+            },
+            None => tracing::debug!("no tray icon to repaint yet"),
         }
     }
     if let Some(icon) = decode_icon(window_bytes) {
         if let Some(window) = app.get_webview_window("main") {
-            let _ = window.set_icon(icon);
+            if let Err(e) = window.set_icon(icon) {
+                tracing::warn!(error = %e, "the window icon could not be repainted");
+            }
         }
     }
+    // Only a real tray repaint may be cached. Otherwise the next clock tick retries,
+    // which is what recovers a mark that raced the tray's own creation.
+    if painted || force {
+        *ICON_SHOWS_RED.lock().unwrap_or_else(|e| e.into_inner()) = Some(red);
+    }
+    // The webview needs the value even when nothing was repainted, and a window that
+    // mounts late has to be told what the mark currently says.
     let _ = app.emit("ols:status-icon", red);
 }
 
@@ -137,18 +165,31 @@ fn apply_status_icon(app: &AppHandle, red: bool, force: bool) {
 /// a supervised process — and red once everything is stopped, so the tray, the
 /// taskbar and the in-app mark always state what the app is doing. Both checks are
 /// lock-only, so this is cheap enough to call after every command and on a timer.
-fn sync_status_icon(app: &AppHandle, core: &Core) {
+/// A missing core means the managed state is not available yet, which reads as
+/// "running" so a red mark is never claimed before it is known.
+fn status_mark(core: Option<&Core>) -> bool {
+    let Some(core) = core else { return false };
     let services = core.services().any_running();
-    let live: Vec<String> = core
-        .supervisor()
+    let supervisor = core.supervisor();
+    // `is_alive` is the same rule `ServiceManager::any_running` and `prune_finished`
+    // use. The previous hand-written `Running | Starting` filter disagreed with it on
+    // `Restarting`, so a process in restart-backoff counted as alive for the services
+    // check and as dead for this one. The supervisor keeps a record per process for
+    // the whole session, so anything that is not alive is filtered out here rather
+    // than trusted from a stale state field.
+    let live: Vec<String> = supervisor
         .snapshot()
-        .iter()
-        .filter(|p| p.state == ProcessState::Running || p.state == ProcessState::Starting)
+        .into_iter()
+        .filter(|p| supervisor.is_alive(p.id))
         .map(|p| format!("{}:{:?}", p.name, p.state))
         .collect();
     let red = !(services || !live.is_empty());
     tracing::debug!(services, live_processes = ?live, red, "status icon sync");
-    apply_status_icon(app, red, false);
+    red
+}
+
+fn sync_status_icon(app: &AppHandle, core: &Core) {
+    apply_status_icon(app, status_mark(Some(core)), false);
 }
 
 fn set_stopping_tray(app: &AppHandle) {
@@ -167,7 +208,9 @@ fn shutdown(core: &Core) -> bool {
     core.inner().web.stop();
     for s in core.services().list() {
         if s.running {
-            core.services().stop(&s.id);
+            if let Err(e) = core.services().stop(&s.id) {
+                tracing::warn!(service = %s.id, error = %e, "a service did not stop");
+            }
         }
     }
     core.supervisor().stop_all_and_wait(Duration::from_secs(30))
@@ -418,7 +461,17 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
                         .into_iter()
                         .filter(|service| service.running)
                     {
-                        core.services().stop(&service.id);
+                        // A stop that fails leaves the service running, which is
+                        // exactly why the mark would stay green — so it is said out loud
+                        // instead of being dropped.
+                        if let Err(e) = core.services().stop(&service.id) {
+                            notify(
+                                app,
+                                &core,
+                                "A service did not stop",
+                                &format!("{}: {e}", service.id),
+                            );
+                        }
                     }
                     refresh_tray(app, &core);
                 }
@@ -479,7 +532,14 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
                         .map(|service| service.running)
                         .unwrap_or(false)
                     {
-                        core.services().stop(service_id);
+                        if let Err(e) = core.services().stop(service_id) {
+                            notify(
+                                app,
+                                &core,
+                                "A service did not stop",
+                                &format!("{service_id}: {e}"),
+                            );
+                        }
                     } else {
                         let _ = core.services().start(service_id);
                     }
@@ -562,6 +622,15 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_main_window(app);
+            // A second launch is also a moment to be sure the mark matches reality —
+            // it is the one user action that reaches an app whose window was hidden,
+            // so this is also when the taskbar entry first becomes worth colouring.
+            if let Some(core) = app.try_state::<Core>().map(|c| c.inner().clone()) {
+                let handle = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    sync_status_icon(&handle, &core);
+                });
+            }
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())

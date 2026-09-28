@@ -20,7 +20,7 @@ import {
   X,
   Zap,
 } from 'lucide-react'
-import { type ReactNode, useEffect, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
 import { ProjectShortcuts } from '@/components/OpenWithMenu'
@@ -94,21 +94,25 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
   const project = projects.find((p) => p.id === projectId) ?? null
 
   // Re-read the site whenever its settings are shown: the config tab can change ownership and blocks.
+  // Two rules keep this from wiping unsaved edits in the settings form, which is seeded from
+  // `domain`:
+  //   * one fetch per trigger — it used to run twice (once on mount, once for the tab), each
+  //     producing a fresh object, so the form reset twice before you could type;
+  //   * an unchanged read is dropped, so a tab bounce leaves the object identity alone.
+  const loadedFor = useRef<string | null>(null)
   useEffect(() => {
-    if (!target.hostname || tab !== 'settings') return
+    if (!target.hostname) return
+    if (tab !== 'settings' && loadedFor.current === target.hostname) return
     let current = true
-    runCommand({ type: 'get_domain', hostname: target.hostname }).then((r) => {
-      if (current && r.type === 'domain') setDomain(r.domain)
+    void runCommand({ type: 'get_domain', hostname: target.hostname }).then((r) => {
+      if (!current || r.type !== 'domain') return
+      loadedFor.current = target.hostname
+      setDomain((cur) => (cur && JSON.stringify(cur) === JSON.stringify(r.domain) ? cur : r.domain))
     })
     return () => {
       current = false
     }
   }, [target.hostname, tab])
-
-  useEffect(() => {
-    if (!target.hostname) return
-    runCommand({ type: 'get_domain', hostname: target.hostname }).then((r) => r.type === 'domain' && setDomain(r.domain))
-  }, [target.hostname])
 
   useEffect(() => {
     setDetail(null)

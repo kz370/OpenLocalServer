@@ -1973,7 +1973,7 @@ impl Core {
                 if crate::web::SERVER_IDS.contains(&id.as_str()) {
                     i.web.stop_server(&id);
                 } else {
-                    i.services.stop(&id);
+                    i.services.stop(&id).map_err(CoreError::ServiceError)?;
                 }
                 Ok(R::Ok)
             }
@@ -2769,12 +2769,14 @@ impl Core {
                 if crate::web::SERVER_IDS.contains(&id.as_str()) {
                     // A web server is restarted by re-applying it, so its sites' config
                     // is re-rendered and reloaded rather than only bounced.
-                    i.services.stop(&id);
+                    i.services.stop(&id).map_err(CoreError::ServiceError)?;
                     std::thread::sleep(Duration::from_millis(800));
                     i.apply_web_server(&id, &[]).map(|_| R::Ok)?;
                     return Ok(R::Ok);
                 }
-                i.services.stop(&id);
+                // A stop that did not take would only make the following start fail with
+                // "already running", which hides the real problem.
+                i.services.stop(&id).map_err(CoreError::ServiceError)?;
                 // The old process needs a moment to release its port before the new one binds it.
                 std::thread::sleep(Duration::from_millis(800));
                 i.services.start(&id).map_err(CoreError::ServiceError)?;

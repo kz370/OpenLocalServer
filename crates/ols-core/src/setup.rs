@@ -1283,8 +1283,8 @@ impl Inner {
                         .map_err(|e| e.to_string()),
                 ),
                 Undo::StopService(id) => {
-                    self.services.stop(&id);
-                    (format!("stopped {id}"), Ok(()))
+                    let stopped = self.services.stop(&id).map_err(|e| e.to_string());
+                    (format!("stopped {id}"), stopped)
                 }
                 Undo::DisableExtension(v, n) => (
                     format!("switched PHP {v} extension {n} off again"),

@@ -161,6 +161,8 @@ export function DomainSettings({
   })
   const [rootTouched, setRootTouched] = useState(false)
   const [domainTouched, setDomainTouched] = useState(false)
+  /** Set once the user types a project name, so a later projects-changed event leaves it alone. */
+  const projectNameTouched = useRef(false)
   const [parentDir, setParentDir] = useState(defaultParent || '')
   const kindType = d.kind.type
   const [appLine, setAppLine] = useState('')
@@ -172,20 +174,31 @@ export function DomainSettings({
   const [webServers, setWebServers] = useState<{ id: string; name: string; http: number; https: number; default: boolean }[]>([])
   const [err, setErr] = useState<string | null>(null)
 
+  // Re-seed the form only when the domain being edited actually changes. Keying this
+  // on `projects` too meant a project-folder watcher event (debounced, fires on any
+  // change under the sites root) reset the form and discarded whatever had been picked
+  // but not yet saved — picking a web server and then saving wrote the stale value
+  // back, which is how a pin to one server kept reverting to "Default (automatic)".
   useEffect(() => {
     setD(domain)
     setErr(null)
     setShowApps(false)
     setRootTouched(false)
     setDomainTouched(false)
+    projectNameTouched.current = false
     setAppLine(domain?.app ? [domain.app.executable, ...domain.app.args].join(' ') : '')
-    if (domain.project_id) {
-      const p = projects.find((x) => x.id === domain.project_id)
-      setProjectName(p ? p.name : '')
-    } else {
-      setProjectName('')
-    }
-  }, [domain, projects])
+    if (!domain.project_id) setProjectName('')
+  }, [domain])
+
+  // The project list is its own stream and changes identity on every watcher event;
+  // only the name derived from it follows along, and never over a name the user is
+  // still typing.
+  useEffect(() => {
+    if (projectNameTouched.current) return
+    if (!domain.project_id) return
+    const p = projects.find((x) => x.id === domain.project_id)
+    setProjectName(p ? p.name : '')
+  }, [domain.project_id, projects])
 
   useEffect(() => {
     void getDefaultTld().then((tld) => {
@@ -243,6 +256,7 @@ export function DomainSettings({
 
   const onProjectNameChange = (val: string) => {
     setProjectName(val)
+    projectNameTouched.current = true
     const trimmed = val.trim()
     if (!trimmed) setDomainTouched(false)
     const slug = slugify(trimmed)

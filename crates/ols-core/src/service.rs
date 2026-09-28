@@ -97,6 +97,11 @@ pub struct ServiceManager {
     runtimes: Arc<RuntimeManager>,
     supervisor: Arc<ProcessSupervisor>,
     running: Mutex<HashMap<String, ProcessId>>,
+    /// The last reason a Start failed for each service, kept after the failed process
+    /// record is gone. A process that never spawned has no output ring to read and no
+    /// row left in `running`, so without this its only trace was a log line nobody
+    /// opens — the Logs page for that service showed nothing at all.
+    start_failures: Mutex<HashMap<String, String>>,
     custom: Mutex<CustomServiceStore>,
     /// Memory limits from Settings → Resources (§129), applied at start.
     limits: Mutex<crate::resources::ResourceLimits>,
@@ -150,6 +155,7 @@ impl ServiceManager {
             runtimes,
             supervisor,
             running: Mutex::new(HashMap::new()),
+            start_failures: Mutex::new(HashMap::new()),
             custom,
             limits: Mutex::new(Default::default()),
             web: Mutex::new(None),
@@ -279,7 +285,11 @@ impl ServiceManager {
 
     /// Stops the service if it is running, then forgets its definition.
     pub fn remove_custom(&self, id: &str) -> Result<(), String> {
-        self.stop(id);
+        // A stop that did not take is not worth blocking the delete over — the
+        // definition is going away either way, and the port conflict resurfaces.
+        if let Err(e) = self.stop(id) {
+            tracing::warn!(service = id, %e, "service was still running when it was removed");
+        }
         self.custom.lock().unwrap().remove(id)
     }
 
@@ -468,6 +478,10 @@ impl ServiceManager {
     /// §61–68 / §101 one-click "Start". Each service needs a different command line, so
     /// this dispatches to a per-service starter — the shared part (recording the
     /// resulting `ProcessId`, refusing a double-start) lives here once.
+    ///
+    /// Waits for the spawn to be decided, so a process that never starts is an `Err`
+    /// with the OS reason rather than a success the UI then shows as a status that
+    /// silently reverted.
     pub fn start(&self, id: &str) -> Result<ProcessId, String> {
         if let Some(handle) = self.web_handle() {
             if crate::web::SERVER_IDS.contains(&id) {
@@ -489,11 +503,7 @@ impl ServiceManager {
                 .unwrap()
                 .get(id)
                 .ok_or_else(|| format!("unknown service: {id}"))?;
-            let process_id = self.start_custom(&def)?;
-            self.running
-                .lock()
-                .unwrap()
-                .insert(id.to_string(), process_id);
+            let process_id = self.track_start(id, self.start_custom(&def)?)?;
             return Ok(process_id);
         }
         let version = self
@@ -505,32 +515,78 @@ impl ServiceManager {
                 format!("{id} is not installed — install it from the Runtimes page first")
             })?;
 
-        let process_id = match id {
-            "mailpit" => self.start_mailpit(&version)?,
-            "mariadb" => self.start_mariadb(&version)?,
-            "postgres" => self.start_postgres(&version)?,
-            "mongodb" => self.start_mongodb(&version)?,
-            "redis" => self.start_redis(&version)?,
-            "memcached" => self.start_memcached(&version)?,
+        let started = match id {
+            "mailpit" => self.start_mailpit(&version),
+            "mariadb" => self.start_mariadb(&version),
+            "postgres" => self.start_postgres(&version),
+            "mongodb" => self.start_mongodb(&version),
+            "redis" => self.start_redis(&version),
+            "memcached" => self.start_memcached(&version),
             other => return Err(format!("unknown service: {other}")),
         };
-        self.running
-            .lock()
-            .unwrap()
-            .insert(id.to_string(), process_id);
-        Ok(process_id)
+        self.track_start(id, started?)
     }
 
-    pub fn stop(&self, id: &str) {
+    /// Records a freshly started process, and turns "the OS refused to spawn it" into an
+    /// error carrying the reason. Long enough for a local spawn to be decided, short
+    /// enough that a slow disk cannot hang the UI thread.
+    fn track_start(&self, id: &str, process_id: ProcessId) -> Result<ProcessId, String> {
+        match self
+            .supervisor
+            .wait_for_spawn(process_id, Duration::from_millis(5000))
+        {
+            Ok(()) => {
+                self.running
+                    .lock()
+                    .unwrap()
+                    .insert(id.to_string(), process_id);
+                self.start_failures.lock().unwrap().remove(id);
+                Ok(process_id)
+            }
+            Err(reason) => {
+                // The record is already terminal `Failed` and owns no PID, so there is
+                // nothing to kill — and `stop` would overwrite that state with `Stopping`.
+                self.running.lock().unwrap().remove(id);
+                tracing::error!(service = id, %reason, "service failed to start");
+                self.start_failures
+                    .lock()
+                    .unwrap()
+                    .insert(id.to_string(), reason.clone());
+                Err(format!("{id} could not be started: {reason}"))
+            }
+        }
+    }
+
+    /// Why the last Start of this service failed, if it did. Survives the failed process
+    /// record, so the Logs page can still say why.
+    pub fn last_start_failure(&self, id: &str) -> Option<String> {
+        self.start_failures.lock().unwrap().get(id).cloned()
+    }
+
+    /// Stops a service and waits for the process to actually be gone. This used to
+    /// return `()` unconditionally, so a kill the OS ignored reported success and the
+    /// row went back to Inactive on the next poll with nothing said about it.
+    pub fn stop(&self, id: &str) -> Result<(), String> {
         if let Some(handle) = self.web_handle() {
             if crate::web::SERVER_IDS.contains(&id) {
                 handle.web.stop_server(id);
-                return;
+                return Ok(());
             }
         }
-        if let Some(process_id) = self.running.lock().unwrap().remove(id) {
-            self.supervisor.stop(process_id);
+        let Some(process_id) = self.running.lock().unwrap().remove(id) else {
+            return Ok(());
+        };
+        self.supervisor.stop(process_id);
+        self.start_failures.lock().unwrap().remove(id);
+        if self
+            .supervisor
+            .wait_for_exit(process_id, Duration::from_secs(10))
+        {
+            return Ok(());
         }
+        Err(format!(
+            "{id} did not stop within 10s — it is still running"
+        ))
     }
 
     /// Called when the caller already knows the process exited (e.g. after seeing a
