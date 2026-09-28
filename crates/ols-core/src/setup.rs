@@ -1588,7 +1588,7 @@ impl Planner<'_> {
             generated_hashes: Default::default(),
             public_domain: None,
             tunnel_id: None,
-             server: None,
+            server: None,
         };
         match existing {
             Some(d) if d.project_id.as_deref().is_some_and(|p| p != project_id) => {

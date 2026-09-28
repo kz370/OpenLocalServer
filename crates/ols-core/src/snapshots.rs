@@ -1489,7 +1489,7 @@ mod tests {
             generated_hashes: Default::default(),
             public_domain: None,
             tunnel_id: None,
-             server: None,
+            server: None,
         };
         // Registering already gave it shop.test (automatic domains); make it ours either way.
         if core

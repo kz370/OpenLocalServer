@@ -31,9 +31,12 @@ fn pick_report(reports: &[ApplyReport], server: &str) -> ApplyReport {
 }
 
 fn apply_report(core: &Core, server: &str, overwrite: &[String]) -> ApplyReport {
-    let CoreResponse::Applied { reports } =
-        dispatch(core, CoreCommand::ApplyWeb { overwrite: overwrite.to_vec() })
-    else {
+    let CoreResponse::Applied { reports } = dispatch(
+        core,
+        CoreCommand::ApplyWeb {
+            overwrite: overwrite.to_vec(),
+        },
+    ) else {
         panic!("expected Applied")
     };
     pick_report(&reports, server)
@@ -110,7 +113,7 @@ fn domain(host: &str, root: &std::path::Path, kind: SiteKind) -> Domain {
         blocks: SiteBlocks::default(),
         generated_hashes: BTreeMap::new(),
         tunnel_id: None,
-         server: None,
+        server: None,
         public_domain: None,
     }
 }

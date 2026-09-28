@@ -1,5 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { ArrowLeftRight, Braces, CircleAlert, FileCode2, FileText, FolderSearch, Rocket } from 'lucide-react'
+import { ArrowLeftRight, Braces, Check, CircleAlert, FileCode2, FileText, FolderSearch, Rocket } from 'lucide-react'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 
 import { TechTile } from '@/components/TechIcon'
@@ -451,18 +451,44 @@ export function DomainSettings({
           label="Web server"
           hint={
             pickedServer
-              ? `Served by ${pickedServer.name} on HTTP ${pickedServer.http} / HTTPS ${pickedServer.https}. This site is only rendered on that one server.`
+              ? pickedServer.default
+                ? `Served by the default server, ${pickedServer.name}, on HTTP ${pickedServer.http} / HTTPS ${pickedServer.https}.`
+                : `Pinned to ${pickedServer.name} on HTTP ${pickedServer.http} / HTTPS ${pickedServer.https}. This site is only rendered on that one server.`
               : 'The site is served by the default web server.'
           }
         >
-          <Select value={d.server ?? 'default'} onChange={(e) => set({ server: e.target.value === 'default' ? null : e.target.value })}>
-            <option value="default">Default ({webServers[0]?.id ?? 'nginx'})</option>
-            {webServers.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name} ({s.id})
-              </option>
-            ))}
-          </Select>
+          <div className="grid gap-2 sm:grid-cols-4" role="radiogroup" aria-label="Web server for this site">
+            {webServers.map((s) => {
+              // The default server's tile means "no override"; the rest pin this site.
+              const isDefaultChoice = s.default
+              const active = isDefaultChoice ? d.server === null || d.server === undefined : d.server === s.id
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => set({ server: isDefaultChoice ? null : s.id })}
+                  className={`relative flex items-center gap-2 rounded-xl border p-2.5 text-left transition-all ${
+                    active ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border hover:border-foreground/20 hover:bg-accent/50'
+                  }`}
+                >
+                  <TechTile id={s.id} className="size-7 rounded-md [&_svg]:size-4" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] font-medium">{isDefaultChoice ? 'Default' : s.name}</span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {isDefaultChoice ? s.name : `${s.http} / ${s.https}`}
+                    </span>
+                  </span>
+                  {active && (
+                    <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                      <Check className="size-2.5" />
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
         </Field>
       </FormSection>
 

@@ -2241,7 +2241,9 @@ impl Core {
             C::ListConfigHistory { hostname } => {
                 let cfg = i.web_config();
                 Ok(R::ConfigVersions {
-                    versions: i.web.list_history(&cfg, &i.domains.lock().unwrap(), &hostname),
+                    versions: i
+                        .web
+                        .list_history(&cfg, &i.domains.lock().unwrap(), &hostname),
                 })
             }
             C::ReadConfigHistory { hostname, id } => {
@@ -3637,7 +3639,7 @@ mod tests {
                 generated_hashes: Default::default(),
                 public_domain: None,
                 tunnel_id: None,
-                 server: None,
+                server: None,
             };
         let proxy = || crate::domain::SiteKind::Proxy {
             upstream_port: 3000,
@@ -3807,7 +3809,7 @@ mod tests {
             generated_hashes: Default::default(),
             public_domain: None,
             tunnel_id: None,
-             server: None,
+            server: None,
         };
         // Written straight to the store: AddDomain would reject a folder that doesn't exist.
         core.inner().domains.lock().unwrap().add(domain).ok();
@@ -3949,7 +3951,7 @@ mod tests {
             generated_hashes: Default::default(),
             public_domain: None,
             tunnel_id: None,
-             server: None,
+            server: None,
         };
         core.dispatch(CoreCommand::AddDomain {
             domain: domain("old.test"),
@@ -4147,7 +4149,7 @@ mod tests {
             generated_hashes: Default::default(),
             public_domain: None,
             tunnel_id: None,
-             server: None,
+            server: None,
         };
         domain.blocks.headers.push(HeaderRule {
             name: "X-Test".into(),

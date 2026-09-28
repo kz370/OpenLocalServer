@@ -901,7 +901,7 @@ impl Inner {
                 generated_hashes: Default::default(),
                 public_domain: None,
                 tunnel_id: None,
-                 server: None,
+                server: None,
             };
             match self.add_domain(domain) {
                 Ok(d) => {
@@ -1433,7 +1433,11 @@ impl Inner {
                 "web_running",
                 "Web server",
                 "ok",
-                format!("running on ports {} / {}", cfg.http_port(), cfg.https_port()),
+                format!(
+                    "running on ports {} / {}",
+                    cfg.http_port(),
+                    cfg.https_port()
+                ),
                 None,
             ));
         } else if domain_count > 0 {

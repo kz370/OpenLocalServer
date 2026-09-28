@@ -150,7 +150,12 @@ impl ServiceManager {
     pub fn web_status(&self, handle: &WebServers, id: &str) -> Option<ServiceStatus> {
         let cfg = (handle.config)();
         let id_owned = id.to_string();
-        let s = handle.web.status(&cfg).servers.into_iter().find(|s| s.id == id_owned)?;
+        let s = handle
+            .web
+            .status(&cfg)
+            .servers
+            .into_iter()
+            .find(|s| s.id == id_owned)?;
         Some(ServiceStatus {
             id: s.id.clone(),
             name: s.name,
@@ -321,8 +326,11 @@ impl ServiceManager {
         if busy {
             return true;
         }
-        self.web_handle()
-            .is_some_and(|h| crate::web::SERVER_IDS.iter().any(|id| h.web.is_running_id(id)))
+        self.web_handle().is_some_and(|h| {
+            crate::web::SERVER_IDS
+                .iter()
+                .any(|id| h.web.is_running_id(id))
+        })
     }
 
     pub fn status(&self, id: &str) -> ServiceStatus {

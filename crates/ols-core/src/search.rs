@@ -204,9 +204,9 @@ impl Inner {
             if found >= PER_KIND {
                 break;
             }
-            if let Ok(text) = self
-                .web
-                .read_config(&server, Some(&h), crate::web::manager::ConfigPart::Site)
+            if let Ok(text) =
+                self.web
+                    .read_config(&server, Some(&h), crate::web::manager::ConfigPart::Site)
             {
                 if let Some((n, line)) = text
                     .lines()

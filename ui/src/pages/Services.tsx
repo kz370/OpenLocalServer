@@ -193,6 +193,101 @@ export function ServicesPage() {
   )
 }
 
+/** One start/stop table. Shared by the web servers and the other services. */
+function ServiceTable({
+  services,
+  busy,
+  onToggle,
+  onError,
+  portLabel,
+}: {
+  services: ServiceStatus[]
+  busy: string | null
+  onToggle: (s: ServiceStatus) => void
+  onError: (e: Diagnostic) => void
+  portLabel?: (s: ServiceStatus) => string
+}) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Name</TableHead>
+          <TableHead>Port</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead className="text-right">Action</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {services.map((s) => (
+          <TableRow key={s.id}>
+            <TableCell className="font-medium">{s.name}</TableCell>
+            <TableCell className="font-mono text-xs tabular-nums text-foreground/75">
+              {portLabel ? portLabel(s) : s.installed ? (s.port ?? '—') : '—'}
+            </TableCell>
+            <TableCell>
+              {!s.installed ? (
+                <Badge variant="outline">not installed</Badge>
+              ) : s.running ? (
+                <span className="flex flex-wrap items-center gap-1.5">
+                  <Badge variant="success">● Running</Badge>
+                  {s.healthy === false && <Badge variant="warning">not answering</Badge>}
+                  {s.port_status === 'in_use' && <Badge variant="warning">port in use</Badge>}
+                </span>
+              ) : (
+                <span className="flex flex-col items-start gap-1">
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    <Badge variant="secondary">Stopped</Badge>
+                    {s.port_status === 'in_use' && <Badge variant="warning">port in use</Badge>}
+                  </span>
+                  {s.installed && s.port !== null && s.port_status === 'in_use' && <PortHolder port={s.port} />}
+                </span>
+              )}
+            </TableCell>
+            <TableCell className="text-right">
+              <div className="flex items-center justify-end gap-2">
+                {s.id === 'mailpit' && s.running && s.port !== null && (
+                  <button
+                    type="button"
+                    className="inline-flex cursor-pointer items-center gap-1 text-xs text-primary hover:underline"
+                    title={`Open Mailpit at http://127.0.0.1:${s.port}`}
+                    onClick={() => runCommand({ type: 'open_url', url: `http://127.0.0.1:${s.port}` }).catch((e) => onError(e as Diagnostic))}
+                  >
+                    Open <ExternalLink className="size-3" />
+                  </button>
+                )}
+                {s.installed && (
+                  <Button size="sm" variant="secondary" disabled={busy === s.id} onClick={() => onToggle(s)}>
+                    {busy === s.id ? (
+                      <>
+                        <Spinner /> {s.running ? 'Stopping…' : 'Starting…'}
+                      </>
+                    ) : s.running ? (
+                      <>
+                        <StopIcon /> Stop
+                      </>
+                    ) : (
+                      <>
+                        <Play /> Start
+                      </>
+                    )}
+                  </Button>
+                )}
+              </div>
+            </TableCell>
+          </TableRow>
+        ))}
+        {services.length === 0 && (
+          <TableRow>
+            <TableCell colSpan={4} className="text-center text-sm text-muted-foreground">
+              Nothing registered.
+            </TableCell>
+          </TableRow>
+        )}
+      </TableBody>
+    </Table>
+  )
+}
+
 /** Who holds this port (best-effort via netstat). Propose, never kill blindly. */
 function PortHolder({ port }: { port: number }) {
   const [holder, setHolder] = useState<PortStatus | null>(null)

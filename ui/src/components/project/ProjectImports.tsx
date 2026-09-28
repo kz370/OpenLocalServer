@@ -259,6 +259,7 @@ export function GitCloneButton({ defaultParent, onDone }: { defaultParent: strin
                               app: null,
                               blocks: { headers: [], redirects: [], mappings: [], upstreams: [], includes: [] },
                               generated_hashes: {},
+                              server: null,
                             },
                           })
                           await runCommand({ type: 'apply_web', overwrite: [] })
