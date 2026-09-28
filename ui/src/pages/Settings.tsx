@@ -342,7 +342,7 @@ export function SettingsPage() {
               </CardHeader>
               <CardContent>
                 <SwitchRow checked={startup.with_windows} onChange={(v) => set({ with_windows: v })} title="Start with Windows" hint="Adds OpenLocalServer to your account's startup list (no administrator rights needed)." />
-                <SwitchRow checked={startup.start_minimized} onChange={(v) => set({ start_minimized: v })} title="Start minimized to the tray" hint="Only applies when it was started automatically with Windows." />
+                <SwitchRow checked={startup.start_minimized} onChange={(v) => set({ start_minimized: v })} title="Start minimized to the tray" hint="Every launch, whether you open it yourself or Windows starts it with your account." />
                 <SwitchRow checked={startup.close_to_tray} onChange={(v) => set({ close_to_tray: v })} title="Closing the window keeps running in the tray" hint="Use Quit in the tray menu to stop everything." />
                 <SwitchRow checked={startup.autostart_web} onChange={(v) => set({ autostart_web: v })} title="Start the web server and your sites when the app starts" />
                 <SwitchRow checked={startup.notifications} onChange={(v) => set({ notifications: v })} title="Desktop notifications" hint="When a process crashes, an install finishes, or a Quick App completes." />

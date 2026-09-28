@@ -544,8 +544,15 @@ pub fn run() {
     if let Err(e) = ols_core::control::serve(core.clone(), &paths, "app") {
         tracing::warn!(error = %e, "the command-line control channel is not available");
     }
-    let start_hidden = std::env::args().any(|a| a == "--minimized")
-        && core.inner().setting_bool("startup.minimized", true);
+    // The preference decides. A manual launch honours it exactly like the startup
+    // entry does, so the toggle means what it says instead of only mattering at
+    // login. `--minimized` still forces a hidden start for the rare case where the
+    // preference is off and something else (a script, a shortcut) wants the tray.
+    let start_hidden = ols_core::app::should_start_hidden(
+        core.inner().setting_bool("startup.minimized", true),
+        std::env::args(),
+    );
+    ols_core::app::migrate_startup_entry();
 
     let setup_core = core.clone();
     let window_core = core.clone();
@@ -685,7 +692,23 @@ pub fn run() {
             // The window is created hidden and only revealed once the UI has painted
             // (see `reveal_window_on_ui_ready`), unless the user asked to start
             // minimized — then it stays in the tray until they open it.
-            if !start_hidden {
+            if start_hidden {
+                // Say so, or a launch with no window reads as an app that failed to
+                // start. The tray icon can also be in the Windows overflow area,
+                // which is invisible until the user opens it.
+                let hidden_app = app.handle().clone();
+                let hidden_core = core.clone();
+                std::thread::spawn(move || {
+                    // Give the tray icon a moment to exist under its own taskbar entry.
+                    std::thread::sleep(Duration::from_secs(2));
+                    notify(
+                        &hidden_app,
+                        &hidden_core,
+                        "Running in the system tray",
+                        "OpenLocalServer started minimized. Click the tray icon to open the window.",
+                    );
+                });
+            } else {
                 reveal_window_on_ui_ready(app.handle());
             }
             // §121: start what the user asked to have started with the app.

@@ -65,3 +65,4 @@ HelperService | uses | HelperMain execute
 TauriApp | depends_on | ols-helper (install/service)
 TauriApp | uses | ServiceManager.list (green/red status icon, includes the web servers)
 TauriApp | waits_on | UI main.tsx `ols:ui-ready` (window revealed after first paint; 5s fallback)
+TauriApp | reads | ols-core `app::should_start_hidden` (startup.minimized preference decides on every launch; --minimized only forces)

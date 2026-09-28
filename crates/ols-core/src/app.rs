@@ -3090,8 +3090,11 @@ fn set_start_with_windows(enabled: bool) -> Result<(), String> {
             REG_VALUE,
             "/t",
             "REG_SZ",
+            // No `--minimized`: the startup entry and a manual launch now behave
+            // the same way, because `startup.minimized` decides on its own. Passing
+            // the flag here would hide the window even with the preference off.
             "/d",
-            &format!("\"{}\" --minimized", exe.display()),
+            &format!("\"{}\"", exe.display()),
             "/f",
         ]);
     } else {
@@ -3112,6 +3115,42 @@ fn set_start_with_windows(enabled: bool) -> Result<(), String> {
 #[cfg(not(windows))]
 fn registry_run_value() -> Option<String> {
     None
+}
+
+/// The CLI flag that forces a hidden start regardless of the preference. Rare, but
+/// a script or a hand-made shortcut still needs a way to say it.
+pub const FORCE_MINIMIZED_ARG: &str = "--minimized";
+
+/// Whether this launch starts in the tray.
+///
+/// The preference is the whole answer: it applies to a manual launch exactly as it
+/// does to the startup entry, so the toggle means what it says. The flag only adds
+/// to that — it forces a hidden start when the preference is off, and changes
+/// nothing when it is on. Anything else opens the window.
+pub fn should_start_hidden(start_minimized: bool, args: impl IntoIterator<Item = String>) -> bool {
+    start_minimized || args.into_iter().any(|a| a == FORCE_MINIMIZED_ARG)
+}
+
+/// Rewrites the startup entry when it is stale. An entry written by an earlier
+/// build still carries `--minimized`, which would hide the window even with the
+/// preference off — the opposite of what the user then chose. The entry itself is
+/// left alone when it is missing, so a build without autostart is not changed
+/// behind the user's back. Failures are logged, never fatal: a bad registry value
+/// must not stop the app from starting.
+pub fn migrate_startup_entry() {
+    #[cfg(windows)]
+    {
+        let Some(current) = registry_run_value() else {
+            return;
+        };
+        if !current.contains("--minimized") {
+            return;
+        }
+        match set_start_with_windows(true) {
+            Ok(()) => tracing::info!("rewrote the startup entry without the old --minimized flag"),
+            Err(e) => tracing::warn!(error = %e, "could not rewrite the startup entry"),
+        }
+    }
 }
 
 #[cfg(not(windows))]
@@ -3382,5 +3421,114 @@ mod log_source_tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("traefik"), "{err}");
+    }
+}
+
+#[cfg(test)]
+mod startup_visibility_tests {
+    use super::*;
+
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    /// The bug this replaced: the preference was ANDed with `--minimized`, so a user
+    /// who turned "Start minimized to the tray" on still got a window every time
+    /// they opened the app themselves. Only a launch at login hid it.
+    #[test]
+    fn the_preference_alone_hides_a_manual_launch() {
+        assert!(should_start_hidden(
+            true,
+            args(&["C:\\app\\Open Local Server.exe"])
+        ));
+    }
+
+    #[test]
+    fn turning_the_preference_off_opens_the_window() {
+        assert!(!should_start_hidden(
+            false,
+            args(&["C:\\app\\Open Local Server.exe"])
+        ));
+    }
+
+    #[test]
+    fn the_flag_forces_a_hidden_start_with_the_preference_off() {
+        assert!(should_start_hidden(
+            false,
+            args(&["C:\\app\\Open Local Server.exe", FORCE_MINIMIZED_ARG])
+        ));
+    }
+
+    #[test]
+    fn the_flag_changes_nothing_when_the_preference_is_on() {
+        assert!(should_start_hidden(
+            true,
+            args(&["C:\\app\\Open Local Server.exe", FORCE_MINIMIZED_ARG])
+        ));
+    }
+
+    /// Every argument the app is actually launched with must be tolerated; only the
+    /// exact flag may hide the window. A near-miss like `--minimized=true` is a
+    /// different argument and must not silently start hidden.
+    #[test]
+    fn only_the_exact_flag_counts() {
+        for other in [
+            "--minimized=true",
+            "--hidden",
+            "--tray",
+            "--MINIMIZED",
+            "-minimized",
+        ] {
+            assert!(
+                !should_start_hidden(false, args(&["app.exe", other])),
+                "{other} hid the window"
+            );
+        }
+    }
+
+    /// The stored preference is what reaches the decision, so a value that is not a
+    /// bool must not quietly flip a launch either way. `setting_bool` answers false
+    /// for a non-bool instead of inventing the default.
+    #[test]
+    fn a_non_bool_stored_value_does_not_hide_the_window() {
+        let home = crate::test_support::isolated_home();
+        let settings = crate::settings::SettingsService::load(&home.paths).unwrap();
+        let inner = Inner::new(settings, home.paths.clone()).unwrap();
+
+        // Never written: the documented default is to start minimized.
+        assert!(inner.setting_bool("startup.minimized", true));
+        assert!(should_start_hidden(
+            inner.setting_bool("startup.minimized", true),
+            args(&["app.exe"])
+        ));
+
+        // Written as a string, not a bool: the read falls back to the default the
+        // caller passed, so the launch follows the default rather than a guess.
+        let mut settings = crate::settings::SettingsService::load(&home.paths).unwrap();
+        settings
+            .set("startup.minimized", serde_json::json!("true"))
+            .unwrap();
+        let inner = Inner::new(settings, home.paths.clone()).unwrap();
+        assert!(inner.setting_bool("startup.minimized", true));
+        assert!(!inner.setting_bool("startup.minimized", false));
+    }
+
+    /// The preference survives a restart, because the decision is made on a later
+    /// launch than the one where it was toggled.
+    #[test]
+    fn turning_the_preference_off_survives_a_reload() {
+        let home = crate::test_support::isolated_home();
+        let mut settings = crate::settings::SettingsService::load(&home.paths).unwrap();
+        settings
+            .set("startup.minimized", serde_json::json!(false))
+            .unwrap();
+        drop(settings);
+
+        let reloaded = crate::settings::SettingsService::load(&home.paths).unwrap();
+        let inner = Inner::new(reloaded, home.paths.clone()).unwrap();
+        assert!(!should_start_hidden(
+            inner.setting_bool("startup.minimized", true),
+            args(&["app.exe"])
+        ));
     }
 }

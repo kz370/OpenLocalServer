@@ -85,7 +85,9 @@ HelperMain | Elevated closed command set (hosts/nrpt/service).
 HelperService | LocalSystem resident pipe server (SDDL locked).
 TauriApp | Window+tray+single IPC run_command + event emits.
 TauriApp status icon | Green mark (icons/*) while any service runs, red mark (icons/red/*) on tray+window when none run and while shutting down; embedded with include_bytes!, repainted on state change only.
-TauriApp window reveal | Main window configured visible:false (the window is transparent, so showing it before the webview paints is a blank see-through frame). `reveal_window_on_ui_ready` shows it on the UI's `ols:ui-ready` event (emitted from main.tsx after two rAFs) with a 5s fallback timer and a MAIN_WINDOW_REVEALED guard; `--minimized` skips both and leaves the window in the tray.
+TauriApp window reveal | Main window configured visible:false (the window is transparent, so showing it before the webview paints is a blank see-through frame). `reveal_window_on_ui_ready` shows it on the UI's `ols:ui-ready` event (emitted from main.tsx after two rAFs) with a 5s fallback timer and a MAIN_WINDOW_REVEALED guard.
+app::should_start_hidden | Startup visibility decision (app.rs). The `startup.minimized` preference is the whole answer and applies to every launch — manual, startup entry, or shortcut — so the toggle means what it says. `--minimized` only forces a hidden start when the preference is off. Pure function, covered by startup_visibility_tests.
+app::migrate_startup_entry | Rewrites an existing `HKCU\...\Run` value that still carries the old `--minimized`, which would hide the window even with the preference off. Missing entry is left alone; failure is logged, never fatal.
 ui/index.html | Blocking inline pre-paint theme script (stored `ols-theme`, else `prefers-color-scheme`) so a dark-theme start never flashes white.
 
 --- FRONTEND pages ---
