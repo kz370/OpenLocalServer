@@ -234,7 +234,15 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
           <Card className="order-1 lg:order-none">
             <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm">Web server</CardTitle>
-              {web?.running ? <Badge variant="success">● Running</Badge> : <Badge variant="secondary">Stopped</Badge>}
+              {web?.running ? (
+                <Badge variant="success" className="shrink-0 whitespace-nowrap">
+                  ● Running
+                </Badge>
+              ) : (
+                <Badge variant="secondary" className="shrink-0 whitespace-nowrap">
+                  Stopped
+                </Badge>
+              )}
             </CardHeader>
             <CardContent className="flex flex-col gap-1 text-sm text-muted-foreground">
               <div>

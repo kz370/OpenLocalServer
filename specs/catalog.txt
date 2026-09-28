@@ -91,7 +91,8 @@ DashboardPage | Overview with health filter + stop-all. Web server + Services ca
 SitesPage | Domains+projects merged table, group/search/duplicate. New Git clone / import / QuickApp defaults to <install>\sites (quickapps.projects_dir override); each dialog shows resolved path, folder name + location editable; Git clone supports SSH auth with ~/.ssh key detection dropdown, refresh button, and file-picker fallback.
 QuickAppsPage/Wizard | Recipe CRUD + compact responsive recipe grid (4-col xl, 3-col lg, compact cards) + 3-phase plan/run wizard.
 CommandsPage | Discovered+custom commands runner with output ring.
-WebServerPage | Server/ports/certs tabs + settings save-apply.
+so the narrow window answers "is the web server up?" before the load graphs.
+WebServerPage | Server/ports/certs tabs + settings save-apply. The ports tab rows are a 4-column grid `minmax(0,1fr) 5.5rem 5.5rem 7rem` (fixed port columns, not proportional) so HTTP/HTTPS inputs and the site-count note land on the same columns in every row at every width; a port input is padded down to fit 6 characters, and the note is an h-9 items-center cell rather than a padding nudge. A status badge inside a row-layout CardHeader carries shrink-0 + whitespace-nowrap — squeezed, it wrapped "● Running" onto two lines and stretched the header.
 ConfigPage | Config files + history diff/restore + ownership.
 TunnelsPage | Tunnel CRUD + inspector + webhook tester.
 DatabasesPage | Per-engine DB/users/backups + external tools (Redis one-click via Tiny RDM).

@@ -285,15 +285,25 @@ function ServerPanel({
   return (
     <div className="flex flex-col gap-4">
       <Card>
-        <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
-          <div>
+        <CardHeader className="flex-row items-start justify-between gap-3 space-y-0 pb-2">
+          <div className="min-w-0">
             <CardTitle className="text-sm">Default web server</CardTitle>
             <CardDescription>
               The default server always binds ports 80 and 443 and serves every site that hasn't picked one for itself. The other
               servers run at the same time on their own ports.
             </CardDescription>
           </div>
-          {status.running ? <Badge variant="success">● Running</Badge> : <Badge variant="secondary">Stopped</Badge>}
+          {/* shrink-0/whitespace-nowrap: a squeezed flex item made the badge wrap
+              "● Running" onto two lines and stretch down the whole header. */}
+          {status.running ? (
+            <Badge variant="success" className="shrink-0 whitespace-nowrap">
+              ● Running
+            </Badge>
+          ) : (
+            <Badge variant="secondary" className="shrink-0 whitespace-nowrap">
+              Stopped
+            </Badge>
+          )}
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <div className="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Default web server">
@@ -362,13 +372,16 @@ function ServerPanel({
             const ports = draft.servers[s.id] ?? { http: 80, https: 443 }
             const siteCount = enabledDomains.filter((d) => d.server === s.id).length
             return (
-              <div key={s.id} className="grid items-end gap-3 rounded-lg border p-3 sm:grid-cols-[1fr_8rem_8rem_7rem]">
-                <div className="flex items-center gap-2">
+              /* Fixed port columns, not proportional: a port is at most 5 digits, so
+                 5.5rem holds 6 with the spinner, and every row's inputs and note sit
+                 on the same columns at every width. */
+              <div key={s.id} className="grid items-end gap-3 rounded-lg border p-3 sm:grid-cols-[minmax(0,1fr)_5.5rem_5.5rem_7rem]">
+                <div className="flex min-w-0 items-center gap-2">
                   <TechTile id={s.id} />
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5 text-sm font-medium">
                       {s.name}
-                      {s.running && <span className="size-1.5 rounded-full bg-emerald-500" title="Running" />}
+                      {s.running && <span className="size-1.5 shrink-0 rounded-full bg-emerald-500" title="Running" />}
                       {isDefault && <Badge variant="outline">Default</Badge>}
                     </div>
                     <div className="truncate text-xs text-muted-foreground">
@@ -379,6 +392,7 @@ function ServerPanel({
                 <Field label="HTTP port">
                   <Input
                     type="number"
+                    className="w-full px-2.5 tabular-nums"
                     disabled={isDefault}
                     title={isDefault ? 'The default server always binds port 80' : undefined}
                     value={isDefault ? 80 : ports.http}
@@ -388,14 +402,17 @@ function ServerPanel({
                 <Field label="HTTPS port">
                   <Input
                     type="number"
+                    className="w-full px-2.5 tabular-nums"
                     disabled={isDefault}
                     title={isDefault ? 'The default server always binds port 443' : undefined}
                     value={isDefault ? 443 : ports.https}
                     onChange={(e) => setPorts(s.id, { https: num(e.target.value, 443) })}
                   />
                 </Field>
-                <div className="pb-2 text-xs text-muted-foreground">
-                  {isDefault ? 'Locked: 80/443' : `${siteCount} site(s)`}
+                {/* h-9 + items-center lines this note up with the inputs above it instead
+                    of the old pb-2 nudge, which drifted as soon as the row grew. */}
+                <div className="flex h-9 min-w-0 items-center text-xs text-muted-foreground">
+                  <span className="truncate">{isDefault ? 'Locked: 80/443' : `${siteCount} site(s)`}</span>
                 </div>
               </div>
             )
