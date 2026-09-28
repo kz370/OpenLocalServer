@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, Home, Play, RefreshCw, Rocket, RotateCw, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, FileText, Home, Play, RefreshCw, Rocket, RotateCw, XCircle } from 'lucide-react'
 import { type ReactNode, memo, useMemo, useState } from 'react'
 
 import { DiagnosticsCard } from '@/components/DiagnosticsCard'
@@ -6,7 +6,6 @@ import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
 import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
 import { TechIcon } from '@/components/TechIcon'
-import { ActionMenu, type MenuItem } from '@/components/ui/menu'
 import type { Page } from '@/components/layout/Sidebar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -265,7 +264,6 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
               services={data?.services ?? null}
               webServers={data?.web?.servers ?? null}
               busy={busy}
-              onNavigate={onNavigate}
               onOpenLogs={onOpenLogs}
               onDone={async () => {
                 await refresh()
@@ -311,14 +309,12 @@ function ServicesWidget({
   services,
   webServers,
   busy,
-  onNavigate,
   onOpenLogs,
   onDone,
 }: {
   services: ServiceStatus[] | null
   webServers: ServerAvailability[] | null
   busy: string | null
-  onNavigate: (p: Page) => void
   onOpenLogs: (source: string) => void
   onDone: () => Promise<void>
 }) {
@@ -390,12 +386,13 @@ function ServicesWidget({
                 {s.port === null ? '—' : s.port}
               </span>
               <StateBadge state={state} />
-              <span className="flex items-center justify-end">
+              <span className="flex items-center justify-end gap-1">
                 <IconAction
                   title={s.running ? `Stop ${s.name}` : `Start ${s.name}`}
                   disabled={busy !== null || !s.installed}
                   spinning={working}
                   onClick={() => act(s, s.running ? 'stop' : 'start')}
+                  iconColor={s.running ? 'text-red-500 hover:text-red-600' : 'text-emerald-500 hover:text-emerald-600'}
                 >
                   {s.running ? <StopIcon className="size-3.5" /> : <Play className="size-3.5" />}
                 </IconAction>
@@ -403,19 +400,26 @@ function ServicesWidget({
                   title="Restart"
                   disabled={busy !== null || !s.installed}
                   onClick={() => act(s, 'restart')}
+                  iconColor="text-amber-500 hover:text-amber-600"
                 >
                   <RotateCw className="size-3.5" />
                 </IconAction>
                 {s.kind === 'web' && (
-                  <IconAction title="Reload config" disabled={busy !== null || !s.installed} onClick={() => act(s, 'reload')}>
+                  <IconAction title="Reload config" disabled={busy !== null || !s.installed} onClick={() => act(s, 'reload')} iconColor="text-sky-500 hover:text-sky-600">
                     <RefreshCw className="size-3.5" />
                   </IconAction>
                 )}
+                {s.log_source && (
+                  <IconAction
+                    title="Logs"
+                    disabled={busy !== null || !s.installed}
+                    onClick={() => onOpenLogs(s.log_source!)}
+                    iconColor="text-violet-500 hover:text-violet-600"
+                  >
+                    <FileText className="size-3.5" />
+                  </IconAction>
+                )}
               </span>
-              <ActionMenu
-                label={`More actions for ${s.name}`}
-                items={menuFor(s, act, onNavigate, onOpenLogs)}
-              />
             </div>
           )
         })}
@@ -425,31 +429,6 @@ function ServicesWidget({
 }
 
 type WidgetState = 'running' | 'stopped' | 'unhealthy' | 'missing'
-
-function menuFor(
-  s: ServiceStatus,
-  act: (s: ServiceStatus, action: WidgetAction) => void,
-  onNavigate: (p: Page) => void,
-  onOpenLogs: (source: string) => void
-): MenuItem[] {
-  const items: MenuItem[] = [
-    { label: s.running ? 'Stop' : 'Start', onSelect: () => act(s, s.running ? 'stop' : 'start'), disabled: !s.installed },
-    { label: 'Restart', onSelect: () => act(s, 'restart'), disabled: !s.installed },
-  ]
-  if (s.kind === 'web') {
-    items.push({ label: 'Reload config', onSelect: () => act(s, 'reload'), disabled: !s.installed })
-  }
-  items.push('separator', { label: 'Open in Services', onSelect: () => onNavigate('services') })
-  // The core names this service's own log source, so the Logs page opens on the
-  // service that was clicked rather than on the app log.
-  if (s.log_source) {
-    items.push({ label: 'View logs', onSelect: () => onOpenLogs(s.log_source!) })
-  }
-  if (!s.installed) {
-    items.push({ label: 'Install from Runtimes', onSelect: () => onNavigate('runtimes') })
-  }
-  return items
-}
 
 function StateBadge({ state }: { state: WidgetState }) {
   const label = state === 'running' ? 'Running' : state === 'unhealthy' ? 'Not responding' : state === 'missing' ? 'Not installed' : 'Stopped'
@@ -478,18 +457,23 @@ function IconAction({
   spinning,
   onClick,
   children,
+  iconColor,
 }: {
   title: string
   disabled: boolean
   spinning?: boolean
   onClick: () => void
   children: ReactNode
+  iconColor?: string
 }) {
   return (
     <Button
       size="sm"
       variant="ghost"
-      className="size-6 shrink-0 cursor-pointer rounded-md p-0 text-muted-foreground hover:text-foreground [&_svg]:size-3.5"
+      className={cn(
+        'size-6 shrink-0 cursor-pointer rounded-md p-0 text-muted-foreground hover:text-foreground [&_svg]:size-3.5',
+        iconColor
+      )}
       title={title}
       aria-label={title}
       disabled={disabled}

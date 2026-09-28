@@ -2539,4 +2539,38 @@ mod tests {
             );
         }
     }
+
+    /// The MariaDB rest-api is keyed by branch, and asking it for a full version returns
+    /// 200 with a different document — so this regressed into "13.1.1 is unavailable"
+    /// while every 13.x release was perfectly installable.
+    /// `cargo test -p ols-core --release -- --ignored mariadb_resolves`
+    #[test]
+    #[ignore]
+    fn mariadb_resolves_a_real_release_to_a_verified_windows_zip() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let http = reqwest::Client::builder()
+            .user_agent("OpenLocalServer")
+            .build()
+            .unwrap();
+        let version = "13.1.1";
+        let manifest = rt
+            .block_on(resolve_online_manifest(&http, "mariadb", version))
+            .unwrap_or_else(|e| panic!("MariaDB {version} must resolve: {e}"));
+        assert!(manifest.url.ends_with(".zip"), "url: {}", manifest.url);
+        assert!(
+            manifest.url.starts_with("https://"),
+            "a download must be HTTPS: {}",
+            manifest.url
+        );
+        assert_eq!(
+            manifest.sha256.len(),
+            64,
+            "MariaDB publishes a SHA-256 and it must be used to verify the download"
+        );
+        assert!(!manifest.sha256.is_empty());
+        assert_eq!(manifest.binary, "bin/mariadbd.exe");
+    }
 }
