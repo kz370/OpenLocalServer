@@ -1412,6 +1412,20 @@ impl Inner {
     /// §116: one list answering "is my setup healthy, and if not, what do I do?".
     pub fn environment_health(&self) -> Vec<HealthItem> {
         let cfg = self.web_config();
+        let web = self.web.status(&cfg, &self.domains.lock().unwrap().list());
+        let services = self.services.list();
+        self.environment_health_with(&web, &services)
+    }
+
+    /// [`Self::environment_health`] over an already-computed web status and service list.
+    /// The dashboard needs both for its own cards, so recomputing them here doubled the
+    /// runtime-folder scans, PHP-pool reads and TCP probes on a page polled every 3s.
+    pub fn environment_health_with(
+        &self,
+        web: &crate::web::manager::WebStatus,
+        services: &[crate::service::ServiceStatus],
+    ) -> Vec<HealthItem> {
+        let cfg = self.web_config();
         let mut items = Vec::new();
         let item =
             |id: &str, label: &str, status: &str, detail: String, fix: Option<&str>| HealthItem {
@@ -1444,7 +1458,6 @@ impl Inner {
             )
         });
 
-        let web = self.web.status(&cfg, &self.domains.lock().unwrap().list());
         let domain_count = self
             .domains
             .lock()
@@ -1575,7 +1588,7 @@ impl Inner {
                 Some("Install one from the Runtimes page."),
             ));
         }
-        for s in self.services.list().into_iter().filter(|s| s.installed) {
+        for s in services.iter().filter(|s| s.installed) {
             items.push(match (s.running, s.healthy) {
                 (true, Some(false)) => item(
                     &format!("svc_{}", s.id),

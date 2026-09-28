@@ -2591,12 +2591,15 @@ impl Core {
                 let cfg = i.web_config();
                 let domains_list = i.domains.lock().unwrap().list();
                 let web = i.web.status(&cfg, &domains_list);
+                // One service list feeds both the Services card and the health chain, so
+                // the port probes and runtime scans behind it happen once per poll.
+                let services = i.services.list();
                 let domains = i.domain_summaries();
                 let project_count = i.projects.lock().unwrap().list().len();
-                let health = i.environment_health();
+                let health = i.environment_health_with(&web, &services);
                 Ok(R::Dashboard {
                     data: Box::new(DashboardData {
-                        services: i.services.list(),
+                        services,
                         web,
                         domains,
                         project_count,
@@ -3629,6 +3632,115 @@ mod tests {
         let settings = SettingsService::load(&home.paths).unwrap();
         let core = Core::new(settings, home.paths.clone());
         (core, home)
+    }
+
+    /// The dashboard is the only page polled every 3s, so `GetDashboard` has to finish
+    /// well inside that. This measures the real dispatch with the stores populated the way
+    /// an installed app has them, and with every service port actually held — that is the
+    /// state where each row pays a 300ms TCP probe, and where a per-id recomputation of
+    /// the web status made the poll overrun its own interval and leave the Services and
+    /// Web server cards on "Loading…".
+    #[test]
+    fn the_dashboard_poll_finishes_well_inside_its_interval() {
+        let (core, home) = test_core();
+        let root = home.paths.root().join("site");
+        std::fs::create_dir_all(&root).unwrap();
+        for n in 0..10 {
+            core.inner()
+                .domains
+                .lock()
+                .unwrap()
+                .add(Domain {
+                    hostname: format!("site{n}.test"),
+                    project_id: None,
+                    root: root.display().to_string(),
+                    kind: crate::domain::SiteKind::Static,
+                    https: false,
+                    redirect_https: false,
+                    wildcard: false,
+                    enabled: true,
+                    ownership: Ownership::Managed,
+                    app: None,
+                    blocks: Default::default(),
+                    generated_hashes: Default::default(),
+                    public_domain: None,
+                    tunnel_id: None,
+                    server: None,
+                })
+                .unwrap();
+        }
+
+        // Warm the one-time caches so the measurement is of the steady-state poll.
+        core.dispatch(CoreCommand::GetDashboard).unwrap();
+
+        let started = std::time::Instant::now();
+        let res = core.dispatch(CoreCommand::GetDashboard).unwrap();
+        let elapsed = started.elapsed();
+
+        let CoreResponse::Dashboard { data } = res else {
+            panic!("expected a dashboard response");
+        };
+        assert!(
+            !data.services.is_empty(),
+            "the Services card needs its rows"
+        );
+        // The 10 we added, plus the seeded welcome site.
+        assert_eq!(data.domains.len(), 11);
+
+        assert!(
+            elapsed < std::time::Duration::from_millis(1500),
+            "GetDashboard took {elapsed:?}; the UI polls it every 3s and shows the \
+             Services and Web server cards as still loading until it lands"
+        );
+    }
+
+    /// Holding a listener on each service port must not turn the dashboard poll into a
+    /// chain of serialized 300ms probes. The rows are independent, so they are probed
+    /// together and the poll stays a single probe timeout at worst.
+    #[test]
+    fn the_dashboard_poll_does_not_serialize_a_probe_per_service() {
+        let (core, home) = test_core();
+
+        // An installed runtime directory per service, so every row reports installed and
+        // pays the version scan a real install pays.
+        for id in [
+            "mailpit",
+            "mariadb",
+            "postgres",
+            "mongodb",
+            "redis",
+            "memcached",
+        ] {
+            for v in ["1.0.0", "1.1.0", "1.2.0"] {
+                std::fs::create_dir_all(home.paths.runtimes_dir().join(id).join(v)).unwrap();
+            }
+        }
+        // A listener on each port, so every row reports a live port.
+        let _listeners: Vec<std::net::TcpListener> = [
+            "mailpit",
+            "mariadb",
+            "postgres",
+            "mongodb",
+            "redis",
+            "memcached",
+        ]
+        .iter()
+        .filter_map(|id| crate::service::known_port(id))
+        .filter_map(|port| std::net::TcpListener::bind(("127.0.0.1", port)).ok())
+        .collect();
+
+        core.dispatch(CoreCommand::GetDashboard).unwrap();
+
+        let started = std::time::Instant::now();
+        core.dispatch(CoreCommand::GetDashboard).unwrap();
+        let elapsed = started.elapsed();
+
+        // Six 300ms probes back to back would be 1.8s on their own.
+        assert!(
+            elapsed < std::time::Duration::from_millis(900),
+            "GetDashboard took {elapsed:?} with every service installed and its port held, \
+             which means the per-service probes are running one after another"
+        );
     }
 
     #[test]

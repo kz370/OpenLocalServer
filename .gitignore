@@ -6,6 +6,7 @@ Cargo.lock.bak
 # Node / UI
 node_modules/
 ui/dist/
+ui/.build-cache/
 ui/node_modules/.tmp/
 *.tsbuildinfo
 

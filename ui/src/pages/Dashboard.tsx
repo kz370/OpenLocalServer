@@ -2,7 +2,7 @@ import { AlertTriangle, CheckCircle2, Home, Play, RefreshCw, Rocket, RotateCw, X
 import { type ReactNode, memo, useMemo, useState } from 'react'
 
 import { DiagnosticsCard } from '@/components/DiagnosticsCard'
-import { ErrorCard } from '@/components/ErrorCard'
+import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
 import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
 import { TechIcon } from '@/components/TechIcon'
@@ -11,7 +11,7 @@ import type { Page } from '@/components/layout/Sidebar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { type DashboardData, type HealthItem, type ServerAvailability, type ServiceStatus, type StartupSettings, type SystemStats, runCommand } from '@/core'
+import { type DashboardData, type Diagnostic, type HealthItem, type ServerAvailability, type ServiceStatus, type StartupSettings, type SystemStats, runCommand } from '@/core'
 import { formatBytes, useAction, usePoll } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 import { waitForService, waitForWebStopped } from '@/lib/wait'
@@ -20,6 +20,7 @@ import { confirmAction } from '@/lib/confirm'
 /** §173 / §116 / §101: what's running, what's wrong, and one-click ways to act on it. */
 export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page) => void; onOpenLogs: (source: string) => void }) {
   const [data, setData] = useState<DashboardData | null>(null)
+  const [dataError, setDataError] = useState<Diagnostic | null>(null)
   const [diagToken, setDiagToken] = useState(0)
   const [stats, setStats] = useState<SystemStats | null>(null)
   const [accessLines, setAccessLines] = useState<string[]>([])
@@ -29,9 +30,14 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
   usePoll(async () => {
     try {
       const res = await runCommand({ type: 'get_dashboard' })
-      if (res.type === 'dashboard') setData(res.data)
-    } catch {
-      /* the core is busy or restarting; the next poll retries */
+      if (res.type === 'dashboard') {
+        setData(res.data)
+        setDataError(null)
+      }
+    } catch (e) {
+      // Swallowing this left the Services and Web server cards on "Loading…" forever with
+      // no way to tell a busy core from a broken one. The next poll retries either way.
+      setDataError(asDiagnostic(e))
     }
   }, 3000)
 
@@ -137,6 +143,10 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
       </div>
 
       <ErrorCard error={error} onDismiss={() => setError(null)} />
+
+      {dataError && (
+        <ErrorCard error={dataError} onDismiss={() => setDataError(null)} />
+      )}
 
       {problems.length > 0 && (
         <Card className="border-warning/40">
@@ -282,7 +292,7 @@ function servicePortTitle(s: ServiceStatus, sites?: number): string {
 }
 
 /** The services the widget shows, in a fixed order, so the list never re-shuffles. */
-const WIDGET_ORDER = ['mailpit', 'mariadb', 'postgres', 'mongodb', 'redis', 'nginx', 'apache', 'caddy'] as const
+const WIDGET_ORDER = ['mailpit', 'mariadb', 'postgres', 'mongodb', 'redis', 'memcached', 'nginx', 'apache', 'caddy'] as const
 
 type WidgetAction = 'start' | 'stop' | 'restart' | 'reload'
 
@@ -359,15 +369,17 @@ function ServicesWidget({
               <span className={cn('shrink-0', !s.installed && 'opacity-40 grayscale')}>
                 <TechIcon id={s.id} className="size-4" />
               </span>
-              <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{s.name}</span>
+              {/* The name is the row's label, so it keeps a real minimum and is what gives
+                  way last: the port, the badge and the action buttons all shrink first. */}
+              <span className="min-w-[4.5rem] flex-1 truncate text-[13px] font-medium">{s.name}</span>
               <span
-                className="w-10 shrink-0 text-right font-mono text-[11px] tabular-nums text-muted-foreground"
+                className="hidden w-10 shrink-0 text-right font-mono text-[11px] tabular-nums text-muted-foreground sm:inline-block"
                 title={servicePortTitle(s, webSites.get(s.id))}
               >
                 {s.port === null ? '—' : s.port}
               </span>
               <StateBadge state={state} />
-              <span className="flex w-[4.5rem] shrink-0 items-center justify-end">
+              <span className="flex shrink-0 items-center justify-end">
                 <IconAction
                   title={s.running ? `Stop ${s.name}` : `Start ${s.name}`}
                   disabled={busy !== null || !s.installed}
@@ -430,17 +442,23 @@ function menuFor(
 
 function StateBadge({ state }: { state: WidgetState }) {
   const label = state === 'running' ? 'Running' : state === 'unhealthy' ? 'Not responding' : state === 'missing' ? 'Not installed' : 'Stopped'
+  // A full pill is the first thing to cost too much room in a narrow window, so below
+  // the sm breakpoint it becomes a dot that still carries the label as its title.
   return (
     <span
+      title={label}
       className={cn(
-        'w-[5.75rem] shrink-0 truncate rounded-full px-1.5 py-0.5 text-center text-[10px] font-medium leading-4',
+        'inline-flex shrink-0 items-center justify-center rounded-full',
+        'h-5 w-2.5 sm:h-auto sm:w-[5.75rem] sm:py-0.5',
         state === 'running' && 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
         state === 'unhealthy' && 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
         state === 'stopped' && 'bg-muted text-muted-foreground',
         state === 'missing' && 'bg-muted/50 text-muted-foreground/70'
       )}
     >
-      {label}
+      <span className="hidden truncate px-1.5 text-center text-[10px] font-medium leading-4 sm:inline">
+        {label}
+      </span>
     </span>
   )
 }

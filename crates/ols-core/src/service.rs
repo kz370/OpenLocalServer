@@ -175,44 +175,61 @@ impl ServiceManager {
         self.web.lock().unwrap().clone()
     }
 
-    /// A web server as a service row: its effective HTTP port, a live TCP probe, and
-    /// whether it is the one owning 80/443.
-    pub fn web_status(&self, handle: &WebServers, id: &str) -> Option<ServiceStatus> {
+    /// Every web server as a service row: its effective HTTP port, a live TCP probe,
+    /// and whether it is the one owning 80/443.
+    ///
+    /// The whole web status is computed once and shared by all three rows. Building a
+    /// single row used to call `WebManager::status` per server id, and that repeats its
+    /// runtime-folder scans, PHP-pool reads and port checks once per id — so listing
+    /// services did that work three times over on a page the UI polls every 3s.
+    pub fn web_rows(&self) -> Vec<ServiceStatus> {
+        let Some(handle) = self.web_handle() else {
+            return Vec::new();
+        };
         let cfg = (handle.config)();
-        let id_owned = id.to_string();
-        let s = handle
+        handle
             .web
             .status(&cfg, &(handle.domains)().as_slice())
             .servers
             .into_iter()
-            .find(|s| s.id == id_owned)?;
-        Some(ServiceStatus {
-            id: s.id.clone(),
-            name: s.name,
-            installed: s.installed,
-            running: s.running,
-            port: Some(s.http_port),
-            port_status: Some(if crate::port::port_is_free(s.http_port) {
-                PortStatusLite::Free
-            } else {
-                PortStatusLite::InUse
-            }),
-            kind: "web".into(),
-            connection: Some(format!("http://127.0.0.1:{}", s.http_port)),
-            // A running server with no sites of its own opens no listener, so probing
-            // its port would report a perfectly healthy server as not answering.
-            healthy: s.running.then(|| {
-                s.sites == 0
-                    || TcpStream::connect_timeout(
-                        &([127, 0, 0, 1], s.http_port).into(),
-                        Duration::from_millis(300),
-                    )
-                    .is_ok()
-            }),
-            version: None,
-            sites: Some(s.sites),
-            log_source: Some(format!("web:{}:error", s.id)),
-        })
+            .map(|s| {
+                // A running server with no sites of its own opens no listener, so probing
+                // its port would report a perfectly healthy server as not answering.
+                let healthy = s.running.then(|| {
+                    s.sites == 0
+                        || TcpStream::connect_timeout(
+                            &([127, 0, 0, 1], s.http_port).into(),
+                            Duration::from_millis(300),
+                        )
+                        .is_ok()
+                });
+                let port_status = if crate::port::port_is_free(s.http_port) {
+                    PortStatusLite::Free
+                } else {
+                    PortStatusLite::InUse
+                };
+                let log_source = format!("web:{}:error", s.id);
+                ServiceStatus {
+                    id: s.id,
+                    name: s.name,
+                    installed: s.installed,
+                    running: s.running,
+                    port: Some(s.http_port),
+                    port_status: Some(port_status),
+                    kind: "web".into(),
+                    connection: Some(format!("http://127.0.0.1:{}", s.http_port)),
+                    healthy,
+                    version: None,
+                    sites: Some(s.sites),
+                    log_source: Some(log_source),
+                }
+            })
+            .collect()
+    }
+
+    /// One web server's row, from the same single status computation as [`Self::web_rows`].
+    pub fn web_status(&self, id: &str) -> Option<ServiceStatus> {
+        self.web_rows().into_iter().find(|s| s.id == id)
     }
 
     pub fn set_limits(&self, limits: crate::resources::ResourceLimits) {
@@ -237,15 +254,16 @@ impl ServiceManager {
             .iter()
             .map(|s| s.to_string())
             .chain(custom)
-            .map(|id| self.status(&id))
+            .map(|id| self.builtin_status(&id))
             .collect();
-        if let Some(handle) = self.web_handle() {
-            out.extend(
-                crate::web::SERVER_IDS
-                    .iter()
-                    .filter_map(|id| self.web_status(&handle, id)),
-            );
-        }
+        // The web rows come from one shared status computation, and are filtered by id
+        // so a custom service may not shadow a real web server.
+        let taken: Vec<String> = out.iter().map(|s| s.id.clone()).collect();
+        out.extend(
+            self.web_rows()
+                .into_iter()
+                .filter(|s| !taken.contains(&s.id)),
+        );
         out
     }
 
@@ -378,11 +396,17 @@ impl ServiceManager {
     }
 
     pub fn status(&self, id: &str) -> ServiceStatus {
-        if let Some(handle) = self.web_handle() {
-            if let Some(st) = self.web_status(&handle, id) {
+        if crate::web::SERVER_IDS.contains(&id) {
+            if let Some(st) = self.web_status(id) {
                 return st;
             }
         }
+        self.builtin_status(id)
+    }
+
+    /// A non-web service's row. Split out of [`Self::status`] so listing the built-in
+    /// services never asks the web manager about a server that isn't one.
+    fn builtin_status(&self, id: &str) -> ServiceStatus {
         if custom_service::is_custom_id(id) {
             let def = self.custom.lock().unwrap().get(id);
             return match def {
@@ -1031,6 +1055,12 @@ fn primary_port(id: &str) -> Option<u16> {
     }
 }
 
+/// [`primary_port`] for callers outside this module (the dashboard's poll test needs the
+/// same port table to hold a listener on it).
+pub fn known_port(id: &str) -> Option<u16> {
+    primary_port(id)
+}
+
 fn connection_string(id: &str) -> Option<String> {
     match id {
         "mailpit" => Some(format!(
@@ -1109,5 +1139,74 @@ mod tests {
             "redis://127.0.0.1:6379"
         );
         assert!(mgr.connection_info("oracle", None, None).is_err());
+    }
+
+    /// The dashboard polls `GetDashboard` every 3s. When a web status was computed per
+    /// service id, listing services re-ran its runtime-folder scans, PHP-pool reads and
+    /// port checks once per web server *plus* once per built-in service, so the poll never
+    /// finished and the Services and Web server cards sat on "Loading…". One shared
+    /// computation is what keeps the poll inside its interval.
+    #[test]
+    fn listing_services_computes_the_web_status_once_not_once_per_id() {
+        let home = crate::test_support::isolated_home();
+        let runtimes = Arc::new(RuntimeManager::new(home.paths.clone()));
+        let sup = Arc::new(ProcessSupervisor::new());
+        let mgr = ServiceManager::new(home.paths.clone(), runtimes.clone(), sup.clone());
+        let web = Arc::new(crate::web::manager::WebManager::new(
+            home.paths.clone(),
+            Arc::new(RuntimeManager::new(home.paths.clone())),
+            Arc::new(ProcessSupervisor::new()),
+            Arc::new(crate::certs::CertificateManager::new(&home.paths)),
+            Arc::new(crate::php::PhpPools::new(
+                home.paths.clone(),
+                Arc::new(RuntimeManager::new(home.paths.clone())),
+                Arc::new(ProcessSupervisor::new()),
+            )),
+        ));
+        let settings = crate::settings::SettingsService::load(&home.paths).unwrap();
+
+        // The domains closure stands in for the web status: it is the one collaborator
+        // `WebManager::status` reaches for on every call, so counting it counts the work.
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = Arc::clone(&calls);
+        let config_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let config_counter = Arc::clone(&config_calls);
+        mgr.attach_web(
+            web,
+            Arc::new(move || {
+                config_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                crate::web::WebConfig::from_settings(&settings)
+            }),
+            Arc::new(move || {
+                counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Vec::new()
+            }),
+        );
+
+        let rows = mgr.list();
+        let ids: Vec<&str> = rows.iter().map(|s| s.id.as_str()).collect();
+        for expected in KNOWN_SERVICES {
+            assert!(
+                ids.contains(expected),
+                "{expected} missing from the listing"
+            );
+        }
+        for expected in crate::web::SERVER_IDS {
+            assert!(
+                ids.contains(expected),
+                "{expected} missing from the listing"
+            );
+        }
+
+        assert_eq!(
+            calls.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "one listing must compute the web status once, not once per service"
+        );
+        assert_eq!(
+            config_calls.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "one listing must read the web config once"
+        );
     }
 }
