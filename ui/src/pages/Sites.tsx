@@ -65,6 +65,7 @@ function StatusDot({ site, running }: { site: DomainSummary | null; running: boo
 export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   const web = useWeb()
   const { projects, domains, status, busy, error, setError, run, apply, refresh, refreshProjects, installedPhp } = web
+  const defaultServer = status?.default_server
 
   const [target, setTarget] = useState<SiteTarget | null>(null)
   const [adding, setAdding] = useState<Domain | null>(null)
@@ -315,16 +316,47 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                 return (
                   <TableRow key={r.key}>
                     <TableCell className="min-w-0">
+                      {/* The two icon buttons sit in their own column, centred against
+                          the name *and* the sub-line below it. */}
                       <div className="flex min-w-0 items-center gap-1">
-                        <button className="min-w-0 flex-1 cursor-pointer truncate text-left font-medium hover:underline" onClick={openSettings} title={d?.hostname ?? p?.name}>
-                          {d?.hostname ?? p?.name}
-                        </button>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex min-w-0 items-center">
+                            <button className="min-w-0 flex-1 cursor-pointer truncate text-left font-medium leading-6 hover:underline" onClick={openSettings} title={d?.hostname ?? p?.name}>
+                              {d?.hostname ?? p?.name}
+                            </button>
+                          </div>
+                          <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                            {d ? (
+                              <>
+                                <TechIcon id={GROUPS.find((g) => g.id === d.group)?.icon ?? 'static'} className="size-3.5 shrink-0" />
+                                <span className="shrink-0">
+                                  {d.kind}
+                                  {d.has_app && ' + app'}
+                                </span>
+                                {defaultServer && d.server !== defaultServer && (
+                                  <span className="flex shrink-0 items-center gap-1" title={`Served by ${d.server}, not the default (${defaultServer})`}>
+                                    <TechIcon id={d.server} className="size-3.5" />
+                                    {d.server}
+                                  </span>
+                                )}
+                                {d && p && p.name !== d.hostname && <span className="shrink-0">{p.name}</span>}
+                                <span className="min-w-0 flex-1 truncate" title={folder}>
+                                  {folder}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="truncate" title={folder}>
+                                no domain yet · {folder}
+                              </span>
+                            )}
+                          </div>
+                        </div>
                         {d && (
                           <>
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="h-7 w-7 shrink-0 cursor-pointer px-0"
+                              className="size-7 shrink-0 cursor-pointer self-center px-0"
                               title={!d.enabled ? 'The site is disabled' : !status?.running ? 'Start the web server first' : `Open ${d.hostname}`}
                               aria-label={`Open ${d.hostname}`}
                               disabled={!d.enabled || !status?.running}
@@ -335,37 +367,18 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="h-7 w-7 shrink-0 cursor-pointer px-0"
+                              className="size-7 shrink-0 cursor-pointer self-center px-0"
                               title={copiedUrl === d.url ? 'Copied' : 'Copy domain'}
                               aria-label={copiedUrl === d.url ? 'Domain copied' : `Copy ${d.hostname}`}
                               onClick={async () => {
                                 await navigator.clipboard.writeText(d.hostname)
                                 setCopiedUrl(d.url)
-                                window.setTimeout(() => setCopiedUrl((current) => (current === d.url ? null : current)), 1500)
+                                window.setTimeout(() => setCopiedUrl((current) => (current === d.url ? null : d.url)), 1500)
                               }}
                             >
                               {copiedUrl === d.url ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
                             </Button>
                           </>
-                        )}
-                      </div>
-                      <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-                        {d ? (
-                          <>
-                            <TechIcon id={GROUPS.find((g) => g.id === d.group)?.icon ?? 'static'} className="size-3.5 shrink-0" />
-                            <span className="shrink-0">
-                              {d.kind}
-                              {d.has_app && ' + app'}
-                            </span>
-                            {d && p && p.name !== d.hostname && <span className="shrink-0">{p.name}</span>}
-                            <span className="min-w-0 flex-1 truncate" title={folder}>
-                              {folder}
-                            </span>
-                          </>
-                        ) : (
-                          <span className="truncate" title={folder}>
-                            no domain yet · {folder}
-                          </span>
                         )}
                       </div>
                     </TableCell>

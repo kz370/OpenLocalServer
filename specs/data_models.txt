@@ -2,12 +2,17 @@ Data models (SQLite app.db: settings table + docs collections holding JSON blobs
 
 Entities:
 - Project {id: sha256(path)[..16], name, path, framework, created_at, updated_at}
-- Domain {id, project_id, hostname, root, kind: Php{version}|Proxy{host,port,https}|Static, https, redirect_https, wildcard, enabled, ownership: Managed|Advanced|Manual, app:{executable,args,cwd,runtime}, blocks:{headers,redirects,mappings,upstreams,includes}, generated_hashes, public_domain, tunnel_id}
+- Domain {id, project_id, hostname, root, kind: Php{version}|Proxy{host,port,https}|Static, https, redirect_https, wildcard, enabled, ownership: Managed|Advanced|Manual, app:{executable,args,cwd,runtime}, blocks:{headers,redirects,mappings,upstreams,includes}, generated_hashes, public_domain, tunnel_id, server: nginx|apache|caddy|null}
+  server null = served by the default web server; a set id pins the site to that one server. Exclusive: a site is rendered on exactly one server, never mirrored. An id that is no longer a known server is kept in the file and falls back to the default with a warning, never dropped (validate_domain_server rejects one on add/update).
 - Fresh install seeds Domain openlocalserver.test (Static, managed, https, root data-dir/home + welcome index.html + exact logo.svg brand bytes); always ensured on load (legacy home.test auto-renamed), hidden from Sites list, remove/rename refused.
 - Runtime {id, type: php|node|python|composer|mariadb|postgres|mongo|redis|mailpit|nginx|apache|caddy|sqlite|git|k6, version, path, arch, installed_at}
 - DatabaseInstance {id, engine, version, host, port, data_path, status}
 - Database {engine, name, owner} + DbUser {name, host, password_ref}
-- WebConfig {id, project_id, server: nginx|apache|caddy, path, managed, hash, updated_at} + ConfigHistory {hostname, timestamp, content}
+- WebConfig {default_server: nginx|apache|caddy, servers:{server_id -> ServerPorts{http, https}}, php_workers, dns_port}
+  Settings keys: web.default_server, web.servers.<id>.http_port, web.servers.<id>.https_port (legacy web.server / web.http_port / web.https_port migrate into the default server's entry on load).
+  effective_ports(id) = 80/443 when id == default_server, else the stored pair; stored pairs are never rewritten just because a server becomes the default. First-time pairs: apache 8080/8443, caddy 8081/8444, nginx 8082/8445.
+  resolve_server(override) = override when it is a known id, else default_server.
+- WebServerConfig {id, project_id, server: nginx|apache|caddy, path, managed, hash, updated_at} + ConfigHistory {hostname, timestamp, content}
 - Certificate {hostname, cert.pem, key.pem, meta.json{sans, expiry}} + CaInfo {cn: OpenLocalServer Local CA, valid 2024-2044}
 - Tunnel {id, project_id, provider: cloudflare|ngrok|localtunnel|mock, target, public_url, status, created_at}
 - QuickApp {id, name, source: Builtin|Local|Imported, version, definition_path, trusted, favorite} + QuickRun {id, app_id, status, logs[4000 cap]}
@@ -16,7 +21,8 @@ Entities:
 - Profile {id, name, environment, builtin} + EnvironmentManifest {runtime, web, domain, database, services, workers, scheduler, tunnel}
 - Worker {id, project_id, command, count[1..16], timeout, memory} + WorkerStatus {pid, state}
 - ScheduledTask {id, project_id|global, cron|every_*, command, last_run, next_run}
-- ServiceStatus {id: mailpit|mariadb|postgres|mongodb|redis, state, port, pid} + ConnectionInfo {host, port, user, password_ref}
+- ServiceStatus {id: mailpit|mariadb|postgres|mongodb|redis|nginx|apache|caddy, state, port, pid, kind: mail|sql|document|cache|custom|web, healthy}
+  Web servers are proxied entries: WebManager owns the process, ServiceManager only lists and probes them (kind web, port = that server's effective HTTP port, healthy = TCP probe). + ConnectionInfo {host, port, user, password_ref}
 - ProcessInfo {id, pid, exe, args, cwd, env, state: Starting|Running|Stopping|Stopped|Crashed|Restarting|Failed, cpu, mem, exit_code}
 - Settings (key-value JSON): runtime.php.global, runtime.node.global, paths.sites_dir, quickapps.projects_dir (blank = <install>\sites; blank/whitespace falls back to sites_dir), projects.roots, projects.removed (folders removed from list; rescans skip them), domains.auto, domains.auto_skip (deleted auto sites), web.*, database.default_tool.*, diagnostics.auto_fix, startup.*, notifications.enabled, api.*, updater.*
 - Secrets (OS keyring, never files): tunnel tokens, db passwords, api bearer hash, git per-host creds.
