@@ -64,6 +64,12 @@ pub struct ServiceStatus {
     /// so a port probe there would say "not answering" about a healthy server.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sites: Option<usize>,
+    /// The log source that holds this service's own output, so the UI can open
+    /// Logs already pointed at it instead of the app log. `None` for a web
+    /// server that is not the configured default — its logs live under
+    /// `web:<id>:error` and the caller has to name one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log_source: Option<String>,
 }
 
 /// Everything an external DB tool needs to open a connection (§102).
@@ -205,6 +211,7 @@ impl ServiceManager {
             }),
             version: None,
             sites: Some(s.sites),
+            log_source: Some(format!("web:{}:error", s.id)),
         })
     }
 
@@ -280,8 +287,9 @@ impl ServiceManager {
             },
             version: None,
             sites: None,
-            id: def.id,
+            id: def.id.clone(),
             name: def.name,
+            log_source: Some(format!("service:{}", def.id)),
         }
     }
 
@@ -347,6 +355,13 @@ impl ServiceManager {
         map.contains_key(id)
     }
 
+    /// The process backing a running service, so the Logs page can read its
+    /// output. `None` while it is stopped — the process is gone with its output.
+    pub fn process_id(&self, id: &str) -> Option<ProcessId> {
+        self.prune_finished();
+        self.running.lock().unwrap().get(id).copied()
+    }
+
     /// Is anything running at all? A couple of locks with no port probes, so
     /// callers like the tray/taskbar status icon can poll it cheaply (§122).
     pub fn any_running(&self) -> bool {
@@ -384,6 +399,7 @@ impl ServiceManager {
                     healthy: None,
                     version: None,
                     sites: None,
+                    log_source: Some(format!("service:{id}")),
                 },
             };
         }
@@ -421,6 +437,7 @@ impl ServiceManager {
             }),
             version: versions.into_iter().next(),
             sites: None,
+            log_source: Some(format!("service:{id}")),
         }
     }
 

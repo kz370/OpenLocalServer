@@ -1333,19 +1333,35 @@ fn service(ctx: &Ctx, cmd: ServiceCmd) -> R<()> {
                 .find(|s| s.id == id)
                 .map(|s| s.name.clone())
                 .unwrap_or(id.clone());
-            let source = sources
+            // The service names its own log source; fall back to a same-named
+            // process (older cores without `log_source`) and then to a web log.
+            let source = services
                 .iter()
-                .rfind(|s| s.kind == "process" && s.name.eq_ignore_ascii_case(&name))
+                .find(|s| s.id == id)
+                .and_then(|s| s.log_source.clone())
+                .and_then(|wanted| {
+                    sources
+                        .iter()
+                        .find(|s| s.id == wanted)
+                        .map(|s| s.id.clone())
+                })
+                .or_else(|| {
+                    sources
+                        .iter()
+                        .rfind(|s| s.kind == "process" && s.name.eq_ignore_ascii_case(&name))
+                        .map(|s| s.id.clone())
+                })
                 .or_else(|| {
                     sources
                         .iter()
                         .find(|s| s.id == id || (id.starts_with("web") && s.id == "web:error"))
+                        .map(|s| s.id.clone())
                 })
                 .ok_or_else(|| {
                     format!("{name} has no log yet (it hasn't run since the app started)")
                 })?;
             if let CoreResponse::LogLines { lines, .. } = ctx.call(CoreCommand::ReadLog {
-                source: source.id.clone(),
+                source: source.clone(),
                 max_lines: lines,
             })? {
                 for l in lines {

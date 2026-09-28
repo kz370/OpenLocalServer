@@ -21,8 +21,10 @@ Entities:
 - Profile {id, name, environment, builtin} + EnvironmentManifest {runtime, web, domain, database, services, workers, scheduler, tunnel}
 - Worker {id, project_id, command, count[1..16], timeout, memory} + WorkerStatus {pid, state}
 - ScheduledTask {id, project_id|global, cron|every_*, command, last_run, next_run}
-- ServiceStatus {id: mailpit|mariadb|postgres|mongodb|redis|nginx|apache|caddy, state, port, pid, kind: mail|sql|document|cache|custom|web, healthy}
+- ServiceStatus {id: mailpit|mariadb|postgres|mongodb|redis|nginx|apache|caddy, state, port, pid, kind: mail|sql|document|cache|custom|web, healthy, log_source}
   Web servers are proxied entries: WebManager owns the process, ServiceManager only lists and probes them (kind web, port = that server's effective HTTP port, healthy = TCP probe). + ConnectionInfo {host, port, user, password_ref}
+  `log_source` names the log source holding that service's own output: `service:<id>` for a process-backed service (its stdout/stderr buffer, empty while stopped), `web:<id>:error` for a web server. It is what the UI opens Logs on, so "View logs" shows the service that was clicked instead of the app log.
+- LogSource {id, name, kind: app|web|service|process|run}. Web ids are per server (`web:nginx:error`, `web:nginx:access`); the bare `web:error`/`web:access` still read the configured default server.
 - ProcessInfo {id, pid, exe, args, cwd, env, state: Starting|Running|Stopping|Stopped|Crashed|Restarting|Failed, cpu, mem, exit_code}
 - Settings (key-value JSON): runtime.php.global, runtime.node.global, paths.sites_dir, quickapps.projects_dir (blank = <install>\sites; blank/whitespace falls back to sites_dir), projects.roots, projects.removed (folders removed from list; rescans skip them), domains.auto, domains.auto_skip (deleted auto sites), web.*, database.default_tool.*, diagnostics.auto_fix, startup.*, notifications.enabled, api.*, updater.*
 - Secrets (OS keyring, never files): tunnel tokens, db passwords, api bearer hash, git per-host creds.

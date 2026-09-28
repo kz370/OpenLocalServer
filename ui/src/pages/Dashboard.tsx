@@ -18,7 +18,7 @@ import { waitForService, waitForWebStopped } from '@/lib/wait'
 import { confirmAction } from '@/lib/confirm'
 
 /** §173 / §116 / §101: what's running, what's wrong, and one-click ways to act on it. */
-export function DashboardPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
+export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page) => void; onOpenLogs: (source: string) => void }) {
   const [data, setData] = useState<DashboardData | null>(null)
   const [diagToken, setDiagToken] = useState(0)
   const [stats, setStats] = useState<SystemStats | null>(null)
@@ -251,6 +251,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (p: Page) => void })
             webServers={data?.web?.servers ?? null}
             busy={busy}
             onNavigate={onNavigate}
+            onOpenLogs={onOpenLogs}
             onDone={async () => {
               await refresh()
               setDiagToken((t) => t + 1)
@@ -295,12 +296,14 @@ function ServicesWidget({
   webServers,
   busy,
   onNavigate,
+  onOpenLogs,
   onDone,
 }: {
   services: ServiceStatus[] | null
   webServers: ServerAvailability[] | null
   busy: string | null
   onNavigate: (p: Page) => void
+  onOpenLogs: (source: string) => void
   onDone: () => Promise<void>
 }) {
   const { run } = useAction()
@@ -364,7 +367,7 @@ function ServicesWidget({
                 {s.port === null ? '—' : s.port}
               </span>
               <StateBadge state={state} />
-              <span className="flex w-[4.5rem] shrink-0 items-center justify-end opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+              <span className="flex w-[4.5rem] shrink-0 items-center justify-end">
                 <IconAction
                   title={s.running ? `Stop ${s.name}` : `Start ${s.name}`}
                   disabled={busy !== null || !s.installed}
@@ -388,7 +391,7 @@ function ServicesWidget({
               </span>
               <ActionMenu
                 label={`More actions for ${s.name}`}
-                items={menuFor(s, act, onNavigate)}
+                items={menuFor(s, act, onNavigate, onOpenLogs)}
               />
             </div>
           )
@@ -403,7 +406,8 @@ type WidgetState = 'running' | 'stopped' | 'unhealthy' | 'missing'
 function menuFor(
   s: ServiceStatus,
   act: (s: ServiceStatus, action: WidgetAction) => void,
-  onNavigate: (p: Page) => void
+  onNavigate: (p: Page) => void,
+  onOpenLogs: (source: string) => void
 ): MenuItem[] {
   const items: MenuItem[] = [
     { label: s.running ? 'Stop' : 'Start', onSelect: () => act(s, s.running ? 'stop' : 'start'), disabled: !s.installed },
@@ -413,7 +417,11 @@ function menuFor(
     items.push({ label: 'Reload config', onSelect: () => act(s, 'reload'), disabled: !s.installed })
   }
   items.push('separator', { label: 'Open in Services', onSelect: () => onNavigate('services') })
-  items.push({ label: 'View logs', onSelect: () => onNavigate('logs') })
+  // The core names this service's own log source, so the Logs page opens on the
+  // service that was clicked rather than on the app log.
+  if (s.log_source) {
+    items.push({ label: 'View logs', onSelect: () => onOpenLogs(s.log_source!) })
+  }
   if (!s.installed) {
     items.push({ label: 'Install from Runtimes', onSelect: () => onNavigate('runtimes') })
   }

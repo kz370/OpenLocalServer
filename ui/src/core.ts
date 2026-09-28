@@ -188,6 +188,8 @@ export interface ServiceStatus {
   version: string | null
   /** Web servers only: enabled sites it renders. Zero means it opens no listener. */
   sites?: number
+  /** Log source holding this service's own output, so Logs can open on it directly. */
+  log_source?: string
 }
 
 export interface DbTool {

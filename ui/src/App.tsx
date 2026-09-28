@@ -25,6 +25,7 @@ import { TunnelsPage } from '@/pages/Tunnels'
 export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
   const [webServerTab, setWebServerTab] = useState<'server' | 'config' | 'certs'>('server')
+  const [logSource, setLogSource] = useState<string | null>(null)
   const [doctor, setDoctor] = useState(false)
   const openDoctor = useCallback(() => setDoctor(true), [])
 
@@ -36,6 +37,12 @@ export default function App() {
     }
     if (target === 'webserver') setWebServerTab('server')
     setPage(target)
+  }, [])
+
+  /** Logs opened for one service: switch page and preselect that service's source. */
+  const openLogs = useCallback((source: string) => {
+    setLogSource(source)
+    setPage('logs')
   }, [])
 
   useEffect(() => {
@@ -63,7 +70,7 @@ export default function App() {
         <CommandPalette onNavigate={navigate} onDoctor={openDoctor} />
         <DoctorDialog open={doctor} onClose={() => setDoctor(false)} />
         <main className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-6">
-        {page === 'dashboard' && <DashboardPage onNavigate={setPage} />}
+        {page === 'dashboard' && <DashboardPage onNavigate={setPage} onOpenLogs={openLogs} />}
         {page === 'sites' && <SitesPage onNavigate={setPage} />}
         {page === 'quickapps' && <QuickAppsPage onNavigate={setPage} />}
         {page === 'commands' && <CommandsPage />}
@@ -74,7 +81,7 @@ export default function App() {
         {page === 'runtimes' && <RuntimesPage />}
         {page === 'profiles' && <ProfilesPage />}
         {page === 'plugins' && <PluginsPage />}
-        {page === 'logs' && <LogsPage />}
+        {page === 'logs' && <LogsPage initialSource={logSource} />}
         {page === 'processes' && <ProcessesPage />}
         {page === 'settings' && <SettingsPage />}
       </main>

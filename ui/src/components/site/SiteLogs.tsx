@@ -87,7 +87,7 @@ export function SiteLogs({ hostname, projectId, projectName }: { hostname: strin
 /** The web server's logs (narrowed to this site where the log says which site a line is for) and the site's processes. */
 function LogViewer({ hostname, projectName }: { hostname: string | null; projectName: string | null }) {
   const [all, setAll] = useState<LogSource[]>([])
-  const [source, setSource] = useState('web:error')
+  const [source, setSource] = useState('')
   const [lines, setLines] = useState<string[]>([])
   const [onlySite, setOnlySite] = useState(true)
   const [query, setQuery] = useState('')
@@ -96,7 +96,14 @@ function LogViewer({ hostname, projectName }: { hostname: string | null; project
 
   useEffect(() => {
     runCommand({ type: 'list_log_sources' })
-      .then((r) => r.type === 'log_sources' && setAll(r.sources))
+      .then((r) => {
+        if (r.type !== 'log_sources') return
+        setAll(r.sources)
+        // Web logs are listed per server (`web:nginx:error`), so pick the error
+        // log of whichever server the sources list has; the bare `web:error` id
+        // is the fallback for a core that still only lists the default server.
+        setSource((cur) => cur || r.sources.find((s) => s.kind === 'web' && s.id.endsWith(':error'))?.id || 'web:error')
+      })
       .catch(() => undefined)
   }, [])
 
@@ -106,6 +113,9 @@ function LogViewer({ hostname, projectName }: { hostname: string | null; project
 
   useEffect(() => {
     let alive = true
+    // Nothing to read until the source list names a log; reading "" would just
+    // raise "unknown log source" on every tick.
+    if (!source) return () => void (alive = false)
     const tick = () =>
       runCommand({ type: 'read_log', source, max_lines: 2000 })
         .then((r) => alive && r.type === 'log_lines' && setLines(r.lines))
@@ -120,7 +130,7 @@ function LogViewer({ hostname, projectName }: { hostname: string | null; project
   }, [source, live])
 
   // The error log names the site on each line ("server: shop.test"); the access log does not.
-  const canNarrow = source === 'web:error' && !!hostname
+  const canNarrow = /(:error|^web:error)$/.test(source) && !!hostname
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase()
     return lines
@@ -137,6 +147,7 @@ function LogViewer({ hostname, projectName }: { hostname: string | null; project
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-3">
         <Select value={source} onChange={(e) => setSource(e.target.value)} className="w-64">
+          {!mine.some((s) => s.id === source) && source && <option value={source}>{source}</option>}
           {mine.map((s) => (
             <option key={s.id} value={s.id}>
               {s.name}
@@ -154,7 +165,7 @@ function LogViewer({ hostname, projectName }: { hostname: string | null; project
           </Button>
         </div>
       </div>
-      {source === 'web:access' && <p className="text-xs text-muted-foreground">The access log is shared by every site and doesn't say which site a request was for.</p>}
+      {/:access$/.test(source) && <p className="text-xs text-muted-foreground">The access log is shared by every site and doesn't say which site a request was for.</p>}
       <div ref={box} className="h-80 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-all rounded-lg border border-border bg-muted/30 p-3 font-mono text-xs leading-relaxed">
         {shown.length === 0 && <p className="text-muted-foreground">No log lines{query || (canNarrow && onlySite) ? ' match' : ' yet'}.</p>}
         {shown.map((l, i) => (

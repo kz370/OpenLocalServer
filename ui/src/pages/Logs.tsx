@@ -44,9 +44,12 @@ export function dedupeKey(line: string): string {
 }
 
 /** §117: every log source in one place, live tail, search, filter, copy, export. */
-export function LogsPage() {
+export function LogsPage({ initialSource }: { initialSource?: string | null }) {
   const [sources, setSources] = useState<LogSource[]>([])
-  const [source, setSource] = useState('app')
+  /** What the picker is on. `initialSource` wins until the user picks something
+   *  else, so opening logs for a service lands on that service. */
+  const [chosen, setChosen] = useState<string | null>(null)
+  const source = chosen ?? initialSource ?? 'app'
   const [lines, setLines] = useState<string[]>([])
   const [query, setQuery] = useState('')
   const [level, setLevel] = useState<'all' | Severity>('all')
@@ -169,7 +172,11 @@ export function LogsPage() {
 
       <Card>
         <CardContent className="flex flex-wrap items-center gap-3 pt-4">
-          <Select value={source} onChange={(e) => setSource(e.target.value)} className="w-72">
+          <Select value={source} onChange={(e) => setChosen(e.target.value)} className="w-72">
+            {/* A source can be gone by the time this renders (the service stopped,
+                its Quick App run ended), so keep it selectable instead of showing
+                a blank picker for a source we are still reading. */}
+            {!sources.some((s) => s.id === source) && <option value={source}>{source}</option>}
             {sources.map((s) => (
               <option key={s.id} value={s.id}>{s.name}</option>
             ))}

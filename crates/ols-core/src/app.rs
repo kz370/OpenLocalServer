@@ -1853,18 +1853,36 @@ impl Inner {
             name: "OpenLocalServer".into(),
             kind: "app".into(),
         }];
-        let cfg = self.web_config();
-        if let Some(s) = crate::web::server_by_id(cfg.server()) {
+        // Every web server writes its own logs, not just the configured default,
+        // so all three are listed by id. The bare `web:error` / `web:access` ids
+        // still read the default server, but the picker shows the per-server ones
+        // so opening logs for a service row never shows another server's file.
+        for id in crate::web::SERVER_IDS {
+            let Some(s) = crate::web::server_by_id(id) else {
+                continue;
+            };
             out.push(LogSource {
-                id: "web:error".into(),
+                id: format!("web:{id}:error"),
                 name: format!("{} error log", s.name()),
                 kind: "web".into(),
             });
             out.push(LogSource {
-                id: "web:access".into(),
+                id: format!("web:{id}:access"),
                 name: format!("{} access log", s.name()),
                 kind: "web".into(),
             });
+        }
+        // A service's own stdout/stderr, so "View logs" on a service row lands on
+        // that service instead of the app log. Only while it runs: the output
+        // buffer dies with the process.
+        for s in self.services.list().into_iter().filter(|s| s.kind != "web") {
+            if let Some(source) = s.log_source {
+                out.push(LogSource {
+                    id: source,
+                    name: format!("{} log", s.name),
+                    kind: "service".into(),
+                });
+            }
         }
         for p in self.supervisor.snapshot() {
             out.push(LogSource {
@@ -1923,6 +1941,30 @@ impl Inner {
                 };
                 Ok(tail(file_lines(&logs.join(file))))
             }
+            // Per-server form (`web:nginx:error`) so a service row for a server
+            // that isn't the configured default still reads its own file.
+            s if s.starts_with("web:") => {
+                let (id, file) = match s[4..].rsplit_once(':') {
+                    Some((id, "error")) => (id, "error.log"),
+                    Some((id, "access")) => (id, "access.log"),
+                    _ => return Err(svc(format!("unknown log source {s}"))),
+                };
+                crate::web::server_by_id(id)
+                    .ok_or_else(|| svc(format!("unknown web server {id}")))?;
+                Ok(tail(file_lines(
+                    &self.paths.web_dir().join(id).join("logs").join(file),
+                )))
+            }
+            // A service's own output. Empty while it is stopped: the buffer went
+            // with the process, and an error here would look like a broken page.
+            s if s.starts_with("service:") => {
+                let id = &s[8..];
+                Ok(self
+                    .services
+                    .process_id(id)
+                    .map(|process_id| tail(self.supervisor.recent_output(process_id)))
+                    .unwrap_or_default())
+            }
             s if s.starts_with("process:") => {
                 let id: u64 = s[8..].parse().map_err(|_| svc("bad process id"))?;
                 Ok(tail(self.supervisor.recent_output(ProcessId(id))))
@@ -1973,6 +2015,24 @@ impl Inner {
                         .join("logs")
                         .join(file),
                 )
+            }
+            s if s.starts_with("web:") => {
+                let (id, file) = match s[4..].rsplit_once(':') {
+                    Some((id, "error")) => (id, "error.log"),
+                    Some((id, "access")) => (id, "access.log"),
+                    _ => return Err(svc(format!("unknown log source {s}"))),
+                };
+                crate::web::server_by_id(id)
+                    .ok_or_else(|| svc(format!("unknown web server {id}")))?;
+                truncate(&self.paths.web_dir().join(id).join("logs").join(file))
+            }
+            s if s.starts_with("service:") => {
+                // Nothing to clear while the service is stopped: the buffer that
+                // held its output went away with the process.
+                if let Some(process_id) = self.services.process_id(&s[8..]) {
+                    self.supervisor.clear_output(process_id);
+                }
+                Ok(())
             }
             s if s.starts_with("process:") => {
                 let id: u64 = s[8..].parse().map_err(|_| svc("bad process id"))?;
@@ -3235,5 +3295,71 @@ mod open_database_tests {
             !err.contains("No tool is registered"),
             "tinyrdm fell through routing: {err}"
         );
+    }
+}
+
+#[cfg(test)]
+mod log_source_tests {
+    use super::*;
+
+    fn inner() -> (Arc<Inner>, crate::test_support::IsolatedHome) {
+        let home = crate::test_support::isolated_home();
+        let settings = crate::settings::SettingsService::load(&home.paths).unwrap();
+        (Inner::new(settings, home.paths.clone()).unwrap(), home)
+    }
+
+    /// A service names the log source holding its own output, so "View logs" on
+    /// a service row opens that service rather than the app log.
+    #[test]
+    fn every_service_names_its_own_log_source() {
+        let (inner, _home) = inner();
+        for s in inner.services.list() {
+            let source = s
+                .log_source
+                .unwrap_or_else(|| panic!("{} names no log source", s.id));
+            if s.kind == "web" {
+                assert!(source.starts_with("web:"), "{}: {source}", s.id);
+            } else {
+                assert_eq!(source, format!("service:{}", s.id), "{}", s.id);
+            }
+        }
+    }
+
+    #[test]
+    fn a_stopped_service_reads_empty_rather_than_failing() {
+        let (inner, _home) = inner();
+        // The output buffer dies with the process, so a stopped service has no
+        // lines — an error here would look like a broken Logs page.
+        assert!(inner.read_log("service:redis", 100).unwrap().is_empty());
+        inner.clear_log("service:redis").unwrap();
+    }
+
+    #[test]
+    fn each_web_server_reads_its_own_error_log() {
+        let (inner, home) = inner();
+        for id in crate::web::SERVER_IDS {
+            let file = home.paths.web_dir().join(id).join("logs").join("error.log");
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(&file, format!("{id} failed to bind\n")).unwrap();
+
+            let lines = inner.read_log(&format!("web:{id}:error"), 100).unwrap();
+            assert_eq!(lines, vec![format!("{id} failed to bind")], "{id}");
+
+            inner.clear_log(&format!("web:{id}:error")).unwrap();
+            assert!(inner
+                .read_log(&format!("web:{id}:error"), 100)
+                .unwrap()
+                .is_empty());
+        }
+    }
+
+    #[test]
+    fn an_unknown_web_server_is_reported_not_silently_empty() {
+        let (inner, _home) = inner();
+        let err = inner
+            .read_log("web:traefik:error", 100)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("traefik"), "{err}");
     }
 }
