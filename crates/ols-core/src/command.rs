@@ -2589,13 +2589,18 @@ impl Core {
             // ---- Stage 8
             C::GetDashboard => {
                 let cfg = i.web_config();
+                let domains_list = i.domains.lock().unwrap().list();
+                let web = i.web.status(&cfg, &domains_list);
+                let domains = i.domain_summaries();
+                let project_count = i.projects.lock().unwrap().list().len();
+                let health = i.environment_health();
                 Ok(R::Dashboard {
                     data: Box::new(DashboardData {
                         services: i.services.list(),
-                        web: i.web.status(&cfg, &i.domains.lock().unwrap().list()),
-                        domains: i.domain_summaries(),
-                        project_count: i.projects.lock().unwrap().list().len(),
-                        health: i.environment_health(),
+                        web,
+                        domains,
+                        project_count,
+                        health,
                     }),
                 })
             }

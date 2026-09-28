@@ -18,9 +18,11 @@ State: `Arc<Inner>` shared across threads; lock order domains-first. ProcessSupe
 
 Privilege model: main app never elevated. `ols-helper` closed set (hosts-apply/remove, nrpt-add/remove, install-service) via UAC or LocalSystem pipe service with SDDL lock.
 
+Helper pipe calls are bounded: a request waits at most 10s for the service's reply, then falls back to running the change un-elevated/elevated. A wedged or killed `ols-helper` must never block the caller indefinitely — `apply_web` waits on the helper, and an unbounded wait there froze the web state lock and with it every command in the app.
+
 ## 3. Modules
 ### 3.1 System core
-Dispatch, state, IPC, infra. `lib.rs` re-exports; `app.rs` Inner + all command impls; `command.rs` ~150-variant dispatcher; `control.rs` named-pipe RPC with token; `api.rs` localhost HTTP with bearer + allowlists; `paths.rs` resolution; `settings.rs` atomic JSON; `secrets.rs` keyring; `process.rs` supervisor; `port.rs` conflict reporter; `exec.rs` capture helper; `error.rs` Diagnostic shape; `logging.rs` + `redact.rs`; `diagnostics.rs` findings engine; `repair.rs` doctor; `search.rs` global search; `support.rs` bundle; `network.rs` probe; `journal.rs` op log; `resources.rs` caps; `elevate.rs` helper runner.
+Dispatch, state, IPC, infra. `lib.rs` re-exports; `app.rs` Inner + all command impls; `command.rs` ~150-variant dispatcher; `control.rs` named-pipe RPC with token; `api.rs` localhost HTTP with bearer + allowlists; `paths.rs` resolution; `settings.rs` atomic JSON; `secrets.rs` keyring; `process.rs` supervisor; `port.rs` conflict reporter; `exec.rs` capture helper; `error.rs` Diagnostic shape; `logging.rs` + `redact.rs`; `diagnostics.rs` findings engine; `repair.rs` doctor; `search.rs` global search; `support.rs` bundle; `network.rs` probe; `journal.rs` op log; `resources.rs` caps; `elevate.rs` helper runner (pipe reply bounded to 10s).
 
 ### 3.2 Runtime
 `catalog.rs` pinned HTTPS+SHA256 manifests; `catalogs.rs` minisign-signed remotes; `runtime.rs` download-verify-extract + probe; `php.rs` per-version php-cgi pools + extensions; `nodepm.rs` lockfile/corepack; `composer.rs` reader; `venv.rs` finder; `custom_install.rs` pinned paths win; `resolver.rs` manifest>detected>global; `detection.rs` marker scan; `plugin.rs` declarative plugins (wasm refused); `updater.rs` signed self-update.

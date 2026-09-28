@@ -347,7 +347,18 @@ impl Inner {
             core.services.attach_web(
                 Arc::clone(&core.web),
                 Arc::new(move || for_config.web_config()),
-                Arc::new(move || for_sites.domains.lock().unwrap().list()),
+                // `apply_web` holds the domains mutex for the full apply pipeline, which
+                // can block for several seconds (helper-service reply timeout).  Using
+                // `lock().unwrap()` here would deadlock any concurrent `list_services` call
+                // that arrives while an apply is in flight.  `try_lock` lets that call
+                // return immediately with an empty site-count instead of hanging forever.
+                Arc::new(move || {
+                    for_sites
+                        .domains
+                        .try_lock()
+                        .map(|g| g.list())
+                        .unwrap_or_default()
+                }),
             );
         }
         core.apply_plugins();

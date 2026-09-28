@@ -15,7 +15,7 @@ WebManager | uses | DnsServer
 WebManager | uses | RuntimeManager
 WebManager | uses | WebConfig (default_server + per-server ports)
 WebManager | uses | ProcessSupervisor
-WebManager | depends_on | ols-helper (hosts/NRPT via elevate)
+WebManager | depends_on | ols-helper (hosts/NRPT via elevate; reply bounded to 10s so a wedged helper cannot hold the web state lock)
 PhpPools | uses | RuntimeManager
 PhpPools | uses | ProcessSupervisor
 PhpPools | uses | XdebugConfig

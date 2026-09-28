@@ -26,10 +26,16 @@ export function ServicesPage() {
   const [message, setMessage] = useState<string | null>(null)
 
   async function refresh() {
-    const res = await runCommand({ type: 'list_services' })
-    if (res.type === 'services') setServices(res.services)
-    const tools = await runCommand({ type: 'list_db_tools' })
-    if (tools.type === 'db_tools') setDbTools(tools.tools)
+    try {
+      const res = await runCommand({ type: 'list_services' })
+      if (res.type === 'services') setServices(res.services)
+      const tools = await runCommand({ type: 'list_db_tools' })
+      if (tools.type === 'db_tools') setDbTools(tools.tools)
+    } catch (err) {
+      // An empty list and a failed list look identical on screen, so the failure has
+      // to be shown or the page silently claims nothing is registered.
+      setError(asDiagnostic(err))
+    }
   }
 
   useEffect(() => {

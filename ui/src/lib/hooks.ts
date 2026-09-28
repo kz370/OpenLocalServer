@@ -5,14 +5,22 @@ import { listen } from '@tauri-apps/api/event'
 import { asDiagnostic } from '@/components/ErrorCard'
 import type { Diagnostic } from '@/core'
 
-/** Runs `fn` now and then every `ms` while the component is mounted. */
+/** Runs `fn` now and then every `ms` while the component is mounted. Skips a tick while the previous one is still pending, so slow core commands (dashboard, services) never pile up and starve the IPC thread pool. */
 export function usePoll(fn: () => void | Promise<void>, ms: number) {
   const ref = useRef(fn)
   ref.current = fn
   useEffect(() => {
     let alive = true
+    let pending = false
     const tick = () => {
-      if (alive) void ref.current()
+      if (!alive || pending) return
+      const r = ref.current()
+      if (r && typeof (r as Promise<void>).finally === 'function') {
+        pending = true
+        void (r as Promise<void>).finally(() => {
+          pending = false
+        })
+      }
     }
     tick()
     const id = setInterval(tick, ms)

@@ -3,32 +3,42 @@ use ols_core::{AppPaths, Core, CoreCommand, SettingsService};
 use std::time::Instant;
 
 fn main() {
+    eprintln!("1. Resolving paths");
     let paths = AppPaths::resolve();
+    eprintln!("2. Loading settings");
     let settings = SettingsService::load(&paths).unwrap();
+    eprintln!("3. Creating core");
     let core = Core::new(settings, paths);
-    let cmds: Vec<(&str, CoreCommand)> = vec![
-        ("get_dashboard", CoreCommand::GetDashboard),
-        ("get_web_status", CoreCommand::GetWebStatus),
-        ("get_web_config", CoreCommand::GetWebConfig),
-        ("list_domains", CoreCommand::ListDomains),
-        ("list_certificates", CoreCommand::ListCertificates),
-        ("get_ca_info", CoreCommand::GetCaInfo),
-        ("list_projects", CoreCommand::ListProjects),
-        ("list_runtime_catalog", CoreCommand::ListRuntimeCatalog),
-        ("list_services", CoreCommand::ListServices),
-        ("list_processes", CoreCommand::ListProcesses),
-        ("get_environment_health", CoreCommand::GetEnvironmentHealth),
-        ("list_web_configs", CoreCommand::ListWebConfigs),
-    ];
-    for (name, cmd) in cmds {
-        for i in 0..2 {
-            let t = Instant::now();
-            let r = core.dispatch(cmd.clone());
-            println!(
-                "{name:26} #{i} {:>6} ms {}",
-                t.elapsed().as_millis(),
-                if r.is_ok() { "ok" } else { "ERR" }
-            );
-        }
-    }
+    eprintln!("4. Core created successfully");
+    eprintln!("Test A: web_config");
+    let cfg = core.inner().web_config();
+    eprintln!("Test A done: default_server={}", cfg.default_server);
+
+    eprintln!("Test B: services.list()");
+    let svcs = core.inner().services.list();
+    eprintln!("Test B done: {} services", svcs.len());
+
+    eprintln!("Test C: domains.lock()");
+    let doms = core.inner().domains.lock().unwrap().list();
+    eprintln!("Test C done: {} domains", doms.len());
+
+    eprintln!("Test D: web.status()");
+    let web_status = core.inner().web.status(&cfg, &doms);
+    eprintln!("Test D done: running={}", web_status.running);
+
+    eprintln!("Test E: domain_summaries()");
+    let summaries = core.inner().domain_summaries();
+    eprintln!("Test E done: {} summaries", summaries.len());
+
+    eprintln!("Test F: projects.lock()");
+    let projs = core.inner().projects.lock().unwrap().list();
+    eprintln!("Test F done: {} projects", projs.len());
+
+    eprintln!("Test G: environment_health()");
+    let health = core.inner().environment_health();
+    eprintln!("Test G done: {} health items", health.len());
+
+    eprintln!("Test H: core.dispatch(GetDashboard)");
+    let res = core.dispatch(CoreCommand::GetDashboard);
+    eprintln!("Test H done: {:?}", res.is_ok());
 }

@@ -6,7 +6,7 @@
 //!    runs elevated instead.
 
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const ACCESS_DENIED: i32 = 5;
 
@@ -89,8 +89,15 @@ pub fn service_available() -> bool {
 }
 
 /// Sends one command to the helper service. `None` when the service isn't there.
+///
+/// The reply is read with a deadline: a helper that accepted the connection and then
+/// wedged (or was killed mid-request) used to block here forever. That froze the caller —
+/// `apply_web` holds the web state lock across this — so every later command queued behind
+/// it and the whole app went blank. A helper that cannot answer in time is treated as
+/// unavailable, and the caller falls back to running the change itself.
 fn via_service(args: &[String]) -> Option<Result<(), String>> {
     use std::io::{Read, Write};
+    const REPLY_TIMEOUT: Duration = Duration::from_secs(10);
     let mut pipe = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
@@ -101,9 +108,17 @@ fn via_service(args: &[String]) -> Option<Result<(), String>> {
     pipe.write_all(&request).ok()?;
     // Read up to the newline: the service disconnects right after replying, which Windows
     // reports as an error rather than a clean end of stream.
+    let deadline = Instant::now() + REPLY_TIMEOUT;
     let mut reply = Vec::new();
     let mut buf = [0u8; 4096];
     while !reply.contains(&b'\n') {
+        if Instant::now() >= deadline {
+            tracing::warn!(
+                args = ?args,
+                "the helper service did not reply in time; continuing without it"
+            );
+            return None;
+        }
         match pipe.read(&mut buf) {
             Ok(0) | Err(_) => break,
             Ok(n) => reply.extend_from_slice(&buf[..n]),
