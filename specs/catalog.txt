@@ -26,7 +26,7 @@ ResourceLimits | Optional memory caps applied next start.
 ElevateRunner | Privileged ols-helper invoker with UAC fallback.
 Catalog | Built-in runtime pins (URL+SHA256, HTTPS enforced).
 CatalogSources | Signed remote catalogs (minisign, re-verified each load).
-RuntimeManager | Download-verify-extract + version probe + events.
+RuntimeManager | Download-verify-extract + version probe + events + per-vendor online version feeds (node, php, nginx, apache, composer, mongodb, postgres, redis, memcached, mailpit, mariadb).
 PhpPools | Per-version php-cgi FastCGI pools + extension management.
 NodePm | Lockfile/packageManager detector + corepack switch.
 ComposerReader | composer.json/lock merger, vendor/scripts reporter.
@@ -96,7 +96,7 @@ ConfigPage | Config files + history diff/restore + ownership.
 TunnelsPage | Tunnel CRUD + inspector + webhook tester.
 DatabasesPage | Per-engine DB/users/backups + external tools (Redis one-click via Tiny RDM).
 ServicesPage | Mail/DB services + CustomServices child.
-RuntimesPage | Side-by-side versions + PHP dialogs.
+RuntimesPage | Side-by-side versions + PHP dialogs; vendor feed refresh for the ONLINE_CATALOGS ids (TechIcon per runtime: mailpit envelope, git brand, others simple-icons).
 ProfilesPage | Env template CRUD + yaml editor.
 PluginsPage | Plugins + signed catalog sources.
 LogsPage | Unified logs with severity regex + AI ask (error/warn picker, timestamp-blind dedupe with ×count, overlong pick spills to .log file via read_excerpt).

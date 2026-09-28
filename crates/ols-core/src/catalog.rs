@@ -81,15 +81,15 @@ const CATALOG: &[PackageManifest] = &[
     PackageManifest {
         id: "mailpit",
         name: "Mailpit",
-        version: "1.31.2",
+        version: "1.31.3",
         platform: "windows",
         architecture: "x64",
-        url: "https://github.com/axllent/mailpit/releases/download/v1.31.2/mailpit-windows-amd64.zip",
+        url: "https://github.com/axllent/mailpit/releases/download/v1.31.3/mailpit-windows-amd64.zip",
         // Mailpit's GitHub release publishes no checksum file for this version. Downloaded
         // directly over HTTPS from the release URL above and hashed here ourselves — the
         // same trust-on-first-use pinning any tool must fall back to when a vendor
         // publishes no signature (§21's "where available: digital signatures").
-        sha256: "42c20e5c3254125ea7489847811f10d70e39de573fe41d03a61412c87913e995",
+        sha256: "863e9502d4e0f14a78c0f91c5091797b1c7b7b7e3fc7e5eab62e5770ce44b76e",
         archive_root: "",
         binary: "mailpit.exe",
     },

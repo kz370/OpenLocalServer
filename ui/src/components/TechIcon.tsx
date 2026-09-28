@@ -13,6 +13,7 @@ import {
   siDjango,
   siExpress,
   siFastapi,
+  siGit,
   siHtml5,
   siLaravel,
   siMariadb,
@@ -76,24 +77,41 @@ const BRANDS: Record<string, SimpleIcon> = {
   // simple-icons has no Memcached mark, so it borrows Redis' cache-family tile.
   memcached: siRedis,
   sqlite: siSqlite,
+  git: siGit,
 }
 
 /**
- * Mailpit's mark: an envelope in isometric, so the lid reads as a top face and the
- * seam as the fold. simple-icons has no mail-trap brand, so it is drawn here.
+ * Mailpit's mark: an envelope, drawn here because simple-icons has no mail-trap brand.
+ * The earlier isometric outline read as an empty shape at 16px, so this is a filled body
+ * with a full-strength outline and flap.
  */
-const ENVELOPE_3D = (
+const ENVELOPE = (
   <svg viewBox="0 0 24 24" role="img" aria-label="Mailpit">
-    <path d="M4 7.5 12 3.2l8 4.3v9L12 20.8 4 16.5v-9Z" fill="currentColor" fillOpacity="0.1" />
-    <path d="M12 3.2 20 7.5l-8 4.3-8-4.3 8-4.3Z" fill="currentColor" fillOpacity="0.34" />
+    <rect x="2.6" y="5" width="18.8" height="14" rx="2.2" fill="currentColor" fillOpacity="0.18" />
     <path
-      d="M4 7.5 12 11.8l8-4.3M12 11.8v9"
+      d="M3.6 6.6 12 13l8.4-6.4"
+      fill="none"
       stroke="currentColor"
-      strokeWidth="1.4"
+      strokeWidth="1.7"
       strokeLinecap="round"
       strokeLinejoin="round"
-      fill="none"
-      opacity="0.85"
+    />
+    <rect x="2.6" y="5" width="18.8" height="14" rx="2.2" fill="none" stroke="currentColor" strokeWidth="1.6" />
+  </svg>
+)
+
+/** Tiny RDM: a desktop client window over a key/value list — a Redis GUI, not a server. */
+const REDIS_CLIENT = (
+  <svg viewBox="0 0 24 24" role="img" aria-label="Tiny RDM">
+    <rect x="2.5" y="4" width="19" height="16" rx="2.2" fill="currentColor" fillOpacity="0.14" />
+    <rect x="2.5" y="4" width="19" height="16" rx="2.2" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    <path d="M2.5 8.4h19" stroke="currentColor" strokeWidth="1.5" />
+    <path
+      d="M5.2 12h5.4M5.2 14.8h9M5.2 17.4h4.4"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      opacity="0.75"
     />
   </svg>
 )
@@ -107,8 +125,9 @@ const GENERIC: Record<string, ReactNode> = {
   proxy: <ArrowLeftRight />,
   'reverse-proxy': <ArrowLeftRight />,
   other: <Package />,
-  mailpit: ENVELOPE_3D,
-  mail: ENVELOPE_3D,
+  mailpit: ENVELOPE,
+  mail: ENVELOPE,
+  tinyrdm: REDIS_CLIENT,
 }
 
 /** Near-black brand colours vanish on a dark background; those follow the text colour. */

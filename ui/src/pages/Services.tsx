@@ -174,7 +174,9 @@ export function ServicesPage() {
             <TableBody>
               {dbTools.map((t) => (
                 <TableRow key={t.id}>
-                  <TableCell className="font-medium">{t.name}</TableCell>
+                  <TableCell className="font-medium">
+                    <span className="flex items-center gap-2"><TechIcon id={t.id} className="size-4 opacity-90" />{t.name}</span>
+                  </TableCell>
                   <TableCell className="max-w-xs truncate text-xs text-muted-foreground">
                     {t.found_path ?? '—'}
                   </TableCell>

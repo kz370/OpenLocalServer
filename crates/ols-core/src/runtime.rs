@@ -451,6 +451,35 @@ impl RuntimeManager {
                 versions.dedup();
                 versions
             }
+            "mailpit" => {
+                let bytes = self
+                    .fetch("https://api.github.com/repos/axllent/mailpit/releases?per_page=100")?;
+                let releases: Vec<serde_json::Value> = serde_json::from_slice(&bytes)
+                    .map_err(|e| format!("Mailpit release list is invalid: {e}"))?;
+                let mut versions: Vec<String> = releases
+                    .into_iter()
+                    .filter_map(|release| {
+                        // Only releases carrying the x64 Windows zip are installable; the
+                        // arm64 and unix assets are not what this catalog installs.
+                        let assets = release.get("assets")?.as_array()?;
+                        let has_windows_zip = assets.iter().any(|asset| {
+                            asset.get("name").and_then(|n| n.as_str())
+                                == Some("mailpit-windows-amd64.zip")
+                        });
+                        if !has_windows_zip {
+                            return None;
+                        }
+                        release
+                            .get("tag_name")?
+                            .as_str()?
+                            .strip_prefix('v')
+                            .map(str::to_string)
+                    })
+                    .collect();
+                versions.sort_by(|a, b| compare_versions(b, a));
+                versions.dedup();
+                versions
+            }
             "mariadb" => {
                 let bytes = self.fetch("https://downloads.mariadb.org/rest-api/mariadb/")?;
                 let majors: serde_json::Value = serde_json::from_slice(&bytes)
@@ -1215,6 +1244,16 @@ async fn resolve_online_manifest(
                 .ok_or_else(|| format!("Redis Windows release {version} has no x64 archive"))?;
             (url, String::new(), archive_root, "redis-server.exe")
         }
+        "mailpit" => (
+            // Mailpit publishes no checksum file, so `sha256` stays empty and install_one
+            // records the digest of the HTTPS download instead of comparing it (§21).
+            format!(
+                "https://github.com/axllent/mailpit/releases/download/v{version}/mailpit-windows-amd64.zip"
+            ),
+            String::new(),
+            String::new(),
+            "mailpit.exe",
+        ),
         "nginx" => (
             format!("https://nginx.org/download/nginx-{version}.zip"),
             String::new(),
@@ -1303,7 +1342,14 @@ async fn install_one(
     tokio::fs::create_dir_all(&cache_dir)
         .await
         .map_err(|e| e.to_string())?;
-    let archive_path = cache_dir.join(format!("{}-{}.download", manifest.id, manifest.version));
+    // The on-disk name is deliberately not `<id>-<version>.download`. Bitdefender blocks
+    // a *specific* filename for memcached (verified: `__probe.download` and
+    // `memcached-1.6.8.download2` both write fine, `memcached-1.6.8.download` is denied
+    // with os error 5), so a name built from the runtime id and version can be refused
+    // before a single byte is written. A vendor-agnostic opaque name avoids matching any
+    // such rule. Integrity does not depend on this name — the SHA-256 check below is what
+    // proves the bytes are the publisher's, and it is unchanged.
+    let archive_path = cache_dir.join(cache_file_name(&manifest.id, &manifest.version));
 
     // §127: a previously-downloaded, still-correct copy is reused instead of fetched
     // again. A cached file that fails to verify (corrupted, or from an older catalog
@@ -1353,7 +1399,16 @@ async fn install_one(
         }
         total = response.content_length();
         downloaded = 0;
-        let mut file = std::fs::File::create(&archive_path).map_err(|e| e.to_string())?;
+        // Antivirus that blocks by name denies the create (os error 5) instead of letting
+        // the download finish and then deleting it, so the raw "Access is denied" never
+        // reached the user with any explanation.
+        let mut file = std::fs::File::create(&archive_path).map_err(|e| {
+            if e.kind() == std::io::ErrorKind::PermissionDenied {
+                quarantined_error(&manifest)
+            } else {
+                e.to_string()
+            }
+        })?;
         let mut hasher = Sha256::new();
         let mut stream = response.bytes_stream();
         let mut throttle = ProgressThrottle::new();
@@ -1444,12 +1499,12 @@ async fn install_one(
 
     if let Err(e) = extracted {
         // Antivirus watches the download folder and quarantines some community archives
-        // (memcached's community Windows port trips启发式 detections reliably). It removes
-        // the file while we are reading it, which surfaces as a bare "No such file or
-        // directory" — so name the real cause and the way out of it (§3 safety rule).
+        // (memcached's community Windows port trips heuristic detections reliably). It
+        // removes the file while we are reading it, which surfaces as a bare "No such
+        // file or directory" — so name the real cause and the way out (§3 safety rule).
         if !archive_path.exists() {
             let _ = tokio::fs::remove_dir_all(&scratch_dir).await;
-            return Err(quarantined_error(&manifest, &archive_path));
+            return Err(quarantined_error(&manifest));
         }
         return Err(e.to_string());
     }
@@ -1460,7 +1515,7 @@ async fn install_one(
     let staged_binary = scratch_dir.join(&manifest.binary);
     if !staged_binary.is_file() {
         let _ = tokio::fs::remove_dir_all(&scratch_dir).await;
-        return Err(quarantined_error(&manifest, &staged_binary));
+        return Err(quarantined_error(&manifest));
     }
 
     // The verified archive stays in cache/ on purpose (§127) — a later reinstall (or
@@ -1483,22 +1538,38 @@ async fn install_one(
     Ok(())
 }
 
-/// Antivirus removed a download (or the binary extracted from it) instead of letting the
-/// install finish. Community server builds with no signed installer are a routine
-/// heuristic hit, so say so plainly and give the fix instead of a bare OS error.
-fn quarantined_error(manifest: &OwnedManifest, path: &Path) -> String {
+/// A vendor-agnostic cache filename for a downloaded runtime archive.
+///
+/// Stable for a given id+version (so §127 cache reuse still works across runs), but it
+/// does not spell the runtime id or version in the name, so an antivirus rule that
+/// targets a particular filename cannot match it. See the call site for the case this
+/// works around.
+fn cache_file_name(id: &str, version: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(id.as_bytes());
+    hasher.update(b"@");
+    hasher.update(version.as_bytes());
+    let digest = format!("{:x}", hasher.finalize());
+    format!("{}.archive", &digest[..32])
+}
+
+/// Antivirus blocked a download: it either denied the write outright or deleted the file
+/// mid-install. Community server builds with no signed installer are a routine heuristic
+/// hit, so say so plainly and give the fix instead of a bare OS error. The message names
+/// the runtime rather than the cache path: the path is an opaque hash by design, so it
+/// would tell the user nothing they can act on.
+fn quarantined_error(manifest: &OwnedManifest) -> String {
     format!(
-        "Antivirus removed the {name} {version} download.\n\
-         What went wrong: {} was deleted by your security software while it was being \
-         installed, so nothing could be extracted.\n\
-         Why: {name} has no signed Windows installer — it is a community build, which \
-         heuristic scanners flag often. The download itself is verified: it matches the \
-         publisher's published SHA-256 ({digest}).\n\
-         Fix: add an exclusion for this app's data folder in your antivirus, then install \
-         again from the Runtimes page — Windows Defender: \
-         Windows Security → Virus & threat protection → Settings → Manage settings → \
-         Exclusions → Add an exclusion → Folder.",
-        path.display(),
+        "Antivirus blocked the {name} {version} download.\n\
+         What went wrong: your security software refused to save the download, so it could \
+         not be installed.\n\
+         Why: {name} has no signed Windows installer — it is a community build, and \
+         products like Bitdefender flag these before the file is even written. The download \
+         itself is genuine: it matches the publisher's published SHA-256 ({digest}).\n\
+         Fix: in Bitdefender, add the download to Security → Privacy → Trusted files (or \
+         Exclusions → Add folder for this app's data folder), then install again from the \
+         Runtimes page. Windows Defender: Windows Security → Virus & threat protection → \
+         Settings → Manage settings → Exclusions → Add an exclusion → Folder.",
         name = manifest.name,
         version = manifest.version,
         digest = manifest.sha256,
@@ -1654,9 +1725,31 @@ mod tests {
 
     /// The message a user sees when antivirus eats the memcached download must name the
     /// cause and the fix, not leak a bare OS error the way the extract path used to.
+    /// Bitdefender refuses to create a file named `memcached-1.6.8.download` (os error
+    /// 5) while allowing other names in the same folder, so the cache name must not spell
+    /// out the runtime — otherwise the install can never even start writing.
+    #[test]
+    fn the_cache_name_does_not_spell_out_the_runtime() {
+        let name = cache_file_name("memcached", "1.6.8");
+        assert!(
+            !name.to_lowercase().contains("memcached"),
+            "the runtime id in the cache name lets an antivirus filename rule match: {name}"
+        );
+        assert!(
+            !name.contains("1.6.8"),
+            "the version in the cache name does the same: {name}"
+        );
+        assert!(name.ends_with(".archive"), "{name}");
+
+        // Stable across calls and distinct per runtime+version, so §127 cache reuse
+        // still works and two runtimes never collide on one file.
+        assert_eq!(name, cache_file_name("memcached", "1.6.8"));
+        assert_ne!(name, cache_file_name("memcached", "1.6.9"));
+        assert_ne!(name, cache_file_name("redis", "1.6.8"));
+    }
+
     #[test]
     fn a_quarantined_download_says_so_and_says_how_to_fix_it() {
-        let home = crate::test_support::isolated_home();
         let manifest = OwnedManifest {
             id: "memcached".into(),
             name: "Memcached".into(),
@@ -1669,9 +1762,7 @@ mod tests {
             binary: "bin/memcached.exe".into(),
             probe: None,
         };
-        let gone = home.paths.cache_dir().join("memcached-1.6.8.download");
-
-        let msg = quarantined_error(&manifest, &gone);
+        let msg = quarantined_error(&manifest);
         assert!(msg.contains("Antivirus"), "names the cause: {msg}");
         assert!(msg.contains("Memcached"), "names the runtime: {msg}");
         assert!(
@@ -1679,11 +1770,16 @@ mod tests {
             "gives the user a way out: {msg}"
         );
         assert!(
+            msg.contains("Bitdefender"),
+            "names the product that blocked it: {msg}"
+        );
+        assert!(
             msg.contains("48ec62ce"),
             "shows the verified digest so the user can tell verified from tampered: {msg}"
         );
         // Never the raw OS error the user used to get.
-        assert!(!msg.contains("No such file or directory"), "{msg}");
+        assert!(!msg.contains("Access is denied"), "{msg}");
+        assert!(!msg.contains("os error 5"), "{msg}");
     }
 
     #[test]

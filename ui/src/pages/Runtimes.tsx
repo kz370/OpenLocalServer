@@ -20,7 +20,7 @@ import { confirmAction } from '@/lib/confirm'
 
 /** Runtimes a user may already have somewhere else and want to point at. */
 const LOCATABLE = ['php', 'node', 'python']
-const ONLINE_CATALOGS = new Set(['nginx', 'node', 'mariadb', 'php', 'apache', 'composer', 'mongodb', 'postgres', 'redis', 'memcached'])
+const ONLINE_CATALOGS = new Set(['nginx', 'node', 'mariadb', 'php', 'apache', 'composer', 'mongodb', 'postgres', 'redis', 'memcached', 'mailpit'])
 const ONLINE_CATALOG_CACHE_KEY = 'ols.runtime-catalogs'
 const ONLINE_CATALOG_CACHE_TTL = 24 * 60 * 60 * 1000
 
