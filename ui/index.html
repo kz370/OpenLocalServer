@@ -5,6 +5,23 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>OpenLocalServer</title>
+    <script>
+      // Apply the stored theme before the first paint. The React ThemeProvider does
+      // the same thing in an effect, which runs after the first frame — without this
+      // a dark-theme start flashes a white window on the way to dark.
+      ;(function () {
+        try {
+          var stored = localStorage.getItem('ols-theme') || 'system'
+          var dark =
+            stored === 'dark' ||
+            (stored === 'system' &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches)
+          document.documentElement.classList.toggle('dark', dark)
+        } catch (e) {
+          /* private mode: fall back to the light theme */
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

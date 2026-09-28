@@ -5,6 +5,8 @@ Three front doors share one command model: Tauri IPC, CLI, HTTP API. All dispatc
 ## Tauri IPC
 Single command: `invoke('run_command', {command})` from `ui/src/core.ts` `runCommand(cmd)`.
 Events emitted: `process-event`, `terminal-event`, `runtime-event`, `projects-changed`, `ols:navigate`, `ols:status-icon` (payload `boolean` — true when nothing is running, so the UI shows the red mark).
+
+Event sent by the UI: `ols:ui-ready` (no payload). The main window is created hidden (`visible: false` in `tauri.conf.json`) because the app window is transparent — showing it before the webview paints puts an empty see-through frame on screen for the length of the bundle load. `main.tsx` emits `ols:ui-ready` after two animation frames, once React has actually presented the first frame, and `reveal_window_on_ui_ready` shows the window on it. A 5s fallback timer reveals the window anyway so a UI error can never leave a running app with no window; `MAIN_WINDOW_REVEALED` makes the two paths idempotent. Starting minimized (`--minimized` + `startup.minimized`) never registers either path — the window stays in the tray until the user opens it.
 Example:
 ```ts
 import { runCommand } from './core';

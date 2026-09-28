@@ -10,7 +10,7 @@ use ols_core::{
 };
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager, WindowEvent, Wry};
+use tauri::{AppHandle, Emitter, Listener, Manager, WindowEvent, Wry};
 use tauri_plugin_notification::NotificationExt;
 
 /// The single front door from the UI into the application core (architecture decision 1).
@@ -59,6 +59,35 @@ fn show_main_window(app: &AppHandle) {
 }
 
 static SHUTDOWN_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+
+/// Set once the main window has been shown for the first time, so the readiness
+/// event and the fallback timer cannot both reveal it.
+static MAIN_WINDOW_REVEALED: AtomicBool = AtomicBool::new(false);
+
+/// The main window is created hidden (`visible: false`) because the app window is
+/// transparent: showing it before the webview paints would put an empty, see-through
+/// frame on screen for as long as the bundle takes to load. The UI emits
+/// `ols:ui-ready` after its first paint and the window is shown then. The timer is
+/// the safety net — a UI error must never leave a running app with no window and no
+/// explanation, so the window is revealed anyway after a few seconds.
+fn reveal_window_on_ui_ready(app: &AppHandle) {
+    let reveal = |app: &AppHandle| {
+        if MAIN_WINDOW_REVEALED.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        tracing::info!("the UI reported ready; showing the main window");
+        show_main_window(app);
+    };
+
+    let ready_app = app.clone();
+    let _ = app.once("ols:ui-ready", move |_| reveal(&ready_app));
+
+    let fallback_app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(5));
+        reveal(&fallback_app);
+    });
+}
 
 /// The green mark is the app's official icon; the red one is the same art in the
 /// "nothing is running" colour. Both are shipped next to the bundle icons so the
@@ -653,10 +682,11 @@ pub fn run() {
             // §106: scheduled tasks run while the app is open.
             ols_core::scheduler::start_clock(core.inner());
 
-            if start_hidden {
-                if let Some(w) = app.get_webview_window("main") {
-                    let _ = w.hide();
-                }
+            // The window is created hidden and only revealed once the UI has painted
+            // (see `reveal_window_on_ui_ready`), unless the user asked to start
+            // minimized — then it stays in the tray until they open it.
+            if !start_hidden {
+                reveal_window_on_ui_ready(app.handle());
             }
             // §121: start what the user asked to have started with the app.
             let autostart_core = core.clone();
