@@ -358,13 +358,13 @@ function ServicesWidget({
               </span>
               <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{s.name}</span>
               <span
-                className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground"
+                className="w-10 shrink-0 text-right font-mono text-[11px] tabular-nums text-muted-foreground"
                 title={servicePortTitle(s, webSites.get(s.id))}
               >
                 {s.port === null ? '—' : s.port}
               </span>
               <StateBadge state={state} />
-              <span className="flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+              <span className="flex w-[4.5rem] shrink-0 items-center justify-end opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                 <IconAction
                   title={s.running ? `Stop ${s.name}` : `Start ${s.name}`}
                   disabled={busy !== null || !s.installed}
