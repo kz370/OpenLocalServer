@@ -239,6 +239,7 @@ impl RuntimeManager {
             "postgres",
             "redis",
             "memcached",
+            "mailpit",
         ] {
             if let Ok(dirs) = std::fs::read_dir(self.paths.runtimes_dir().join(id)) {
                 let known = all_versions.entry(id.to_string()).or_default();
