@@ -142,29 +142,28 @@ impl SkipEntry {
     }
 }
 
+/// `ProjectStore::register` stores paths without the Windows `\\?\` prefix, but a caller can
+/// hand us one that still has it and canonicalizing adds it back. Normalize both sides so
+/// one folder is spelled one way on every comparison.
+fn normalize_skip_path(path: &str) -> String {
+    path.strip_prefix(r"\\?\").unwrap_or(path).to_string()
+}
+
 /// True when `path` is one of the skipped project folders, in either form.
 ///
-/// Skips are stored the way `ProjectStore::register` writes paths — canonicalized, without
-/// the `\\?\` prefix — while a scan only has the path `read_dir` handed it, which is raw.
-/// A folder reached through a short name, a junction or a mapped drive only matches when
-/// both are compared.
+/// Skips are stored the way `ProjectStore::register` writes paths — canonicalized — while a
+/// scan only has the path `read_dir` handed it, which is raw. A folder reached through a
+/// short name, a junction, a mapped drive or a `..` segment only matches when both are
+/// compared; comparing the raw spelling alone let a scan re-add what the user deleted.
 pub(crate) fn skip_matches(entries: &[SkipEntry], path: &str) -> bool {
-    if entries
-        .iter()
-        .any(|e| e.value.eq_ignore_ascii_case(path))
-    {
-        return true;
-    }
-    let dir = Path::new(path);
-    let canonical = std::fs::canonicalize(dir)
-        .map(|c| {
-            let s = c.display().to_string();
-            s.strip_prefix(r"\\?\").unwrap_or(&s).to_string()
-        })
-        .unwrap_or_else(|_| dir.display().to_string());
-    entries
-        .iter()
-        .any(|e| e.value.eq_ignore_ascii_case(path) || e.value.eq_ignore_ascii_case(&canonical))
+    let raw = normalize_skip_path(path);
+    let canonical = std::fs::canonicalize(Path::new(&raw))
+        .map(|c| normalize_skip_path(&c.display().to_string()))
+        .unwrap_or_else(|_| raw.clone());
+    entries.iter().any(|e| {
+        let stored = normalize_skip_path(&e.value);
+        stored.eq_ignore_ascii_case(&raw) || stored.eq_ignore_ascii_case(&canonical)
+    })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -969,7 +968,11 @@ impl Inner {
         let mut items: Vec<DeletedItem> = [PROJECT_SKIP, AUTO_SKIP]
             .into_iter()
             .flat_map(|key| {
-                let kind = if key == PROJECT_SKIP { "project" } else { "domain" };
+                let kind = if key == PROJECT_SKIP {
+                    "project"
+                } else {
+                    "domain"
+                };
                 self.skip_entries(key)
                     .into_iter()
                     .map(move |e| DeletedItem {
@@ -1020,11 +1023,6 @@ impl Inner {
             self.push_skip(PROJECT_SKIP, &path)?;
         }
         Ok(())
-    }
-
-    /// True when the user removed this folder from the project list.
-    pub(crate) fn is_project_skipped(&self, path: &str) -> bool {
-        skip_matches(&self.skip_entries(PROJECT_SKIP), path)
     }
 
     /// The skipped project folders, read once so a scan can compare many paths without
@@ -3625,6 +3623,144 @@ mod project_skip_tests {
         inner.clear_project_skip(&p.path).unwrap();
         inner.sync_auto_domains().unwrap();
         assert_eq!(inner.projects.lock().unwrap().list().len(), 2);
+    }
+
+    #[test]
+    fn deletion_history_lists_deleted_projects_and_sites_newest_first() {
+        let (inner, home) = inner();
+        let root = home.paths.data_dir().join("www");
+        project_dir(&root, "app1");
+        project_dir(&root, "app2");
+        inner
+            .remember_projects_root(&root.display().to_string())
+            .unwrap();
+        inner.sync_auto_domains().unwrap();
+
+        let id = inner.projects.lock().unwrap().list()[0].id.clone();
+        inner.remove_project(&id).unwrap();
+        let hostname = inner.domains.lock().unwrap().list()[0].hostname.clone();
+        inner.remove_domain(&hostname).unwrap();
+
+        let items = inner.list_deleted_items();
+        assert!(
+            items.iter().any(|i| i.is_project()),
+            "the removed project folder is missing from the history"
+        );
+        assert!(
+            items
+                .iter()
+                .any(|i| i.kind == "domain" && i.value == hostname),
+            "the deleted automatic site is missing from the history"
+        );
+        assert!(
+            items.iter().all(|i| i.deleted_at > 0),
+            "entries must carry when they were deleted"
+        );
+        let times: Vec<_> = items.iter().map(|i| i.deleted_at).collect();
+        let mut sorted = times.clone();
+        sorted.sort_unstable_by(|a, b| b.cmp(a));
+        assert_eq!(times, sorted, "history must be newest first");
+    }
+
+    #[test]
+    fn clearing_one_history_entry_lets_scans_register_the_folder_again() {
+        let (inner, home) = inner();
+        let root = home.paths.data_dir().join("www");
+        let app = project_dir(&root, "app1");
+        inner
+            .remember_projects_root(&root.display().to_string())
+            .unwrap();
+        inner.sync_auto_domains().unwrap();
+        let id = inner.projects.lock().unwrap().list()[0].id.clone();
+        inner.remove_project(&id).unwrap();
+
+        // This is the round trip the settings page exists for: delete, then take the
+        // folder back out of the history and rescan.
+        assert!(inner
+            .forget_deleted_item(&app.display().to_string())
+            .unwrap());
+        assert!(inner.list_deleted_items().is_empty());
+        inner.sync_auto_domains().unwrap();
+        assert_eq!(inner.projects.lock().unwrap().list().len(), 1);
+    }
+
+    #[test]
+    fn clear_deleted_items_empties_both_histories() {
+        let (inner, home) = inner();
+        let root = home.paths.data_dir().join("www");
+        project_dir(&root, "app1");
+        inner
+            .remember_projects_root(&root.display().to_string())
+            .unwrap();
+        inner.sync_auto_domains().unwrap();
+        let id = inner.projects.lock().unwrap().list()[0].id.clone();
+        inner.remove_project(&id).unwrap();
+        let hostname = inner.domains.lock().unwrap().list()[0].hostname.clone();
+        inner.remove_domain(&hostname).unwrap();
+        assert!(!inner.list_deleted_items().is_empty());
+
+        assert!(inner.clear_deleted_items().unwrap() > 0);
+        assert!(inner.list_deleted_items().is_empty());
+        // Both histories really are empty, so a rescan sees the folder again.
+        inner.sync_auto_domains().unwrap();
+        assert_eq!(inner.projects.lock().unwrap().list().len(), 1);
+        assert!(!inner.domains.lock().unwrap().list().is_empty());
+    }
+
+    /// Lists written before the history existed held bare strings. They must keep working
+    /// instead of silently turning into an empty history.
+    #[test]
+    fn skip_lists_written_as_plain_strings_still_skip() {
+        let (inner, home) = inner();
+        let root = home.paths.data_dir().join("www");
+        let app = project_dir(&root, "app1");
+        inner
+            .settings
+            .lock()
+            .unwrap()
+            .set(PROJECT_SKIP, serde_json::json!([app.display().to_string()]))
+            .unwrap();
+        inner
+            .remember_projects_root(&root.display().to_string())
+            .unwrap();
+
+        inner.sync_auto_domains().unwrap();
+        assert!(
+            inner.projects.lock().unwrap().list().is_empty(),
+            "a folder skipped by an older list was re-registered"
+        );
+        let items = inner.list_deleted_items();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].value, app.display().to_string());
+    }
+
+    /// A folder reached through a different spelling of the same path — a short name, a
+    /// junction, or a path with `..` in it — used to dodge the skip list, so a scan
+    /// re-added what the user deleted. The entry is stored the way `register` stores it,
+    /// canonicalized; a scan only ever holds the raw `read_dir` spelling.
+    #[test]
+    fn a_deleted_folder_is_skipped_however_its_path_is_spelled() {
+        let (inner, home) = inner();
+        let root = home.paths.data_dir().join("www");
+        let app = project_dir(&root, "app1");
+        let detour = root.join("app1").join("..").join("app1");
+
+        // Stored canonicalized, the way removing a project records it.
+        let canonical = std::fs::canonicalize(&app).unwrap();
+        inner
+            .push_skip(PROJECT_SKIP, &canonical.display().to_string())
+            .unwrap();
+        let skipped = inner.project_skips();
+
+        let raw = app.display().to_string();
+        let detour = detour.display().to_string();
+        assert_ne!(raw, detour, "the test needs two spellings of one folder");
+        assert!(!skipped.iter().any(|e| e.value == detour));
+        assert!(
+            skip_matches(&skipped, &detour),
+            "a scan that reached the deleted folder by another route must still skip it"
+        );
+        assert!(skip_matches(&skipped, &raw));
     }
 }
 

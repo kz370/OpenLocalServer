@@ -4308,6 +4308,115 @@ mod tests {
         );
     }
 
+    /// The round trip the Settings history exists for: delete a project, see it listed,
+    /// drop it from the history, and a scan registers the folder again.
+    #[test]
+    fn a_deleted_project_can_be_taken_back_out_of_the_history() {
+        let (core, home) = test_core();
+        let www = home.paths.root().join("www");
+        std::fs::create_dir_all(www.join("Shop")).unwrap();
+        std::fs::write(www.join("Shop").join("index.php"), "x").unwrap();
+        core.dispatch(CoreCommand::ScanAndRegisterProjects {
+            path: www.display().to_string(),
+        })
+        .unwrap();
+
+        let projects = |core: &Core| -> Vec<Project> {
+            match core.dispatch(CoreCommand::ListProjects).unwrap() {
+                CoreResponse::Projects { projects } => projects,
+                _ => panic!("expected Projects"),
+            }
+        };
+        let shop = projects(&core)
+            .into_iter()
+            .find(|p| p.name == "Shop")
+            .expect("the scanned folder is registered");
+        core.dispatch(CoreCommand::RemoveProject { id: shop.id }).unwrap();
+
+        let items = |core: &Core| -> Vec<crate::app::DeletedItem> {
+            match core.dispatch(CoreCommand::ListDeletedItems).unwrap() {
+                CoreResponse::DeletedItems { items } => items,
+                _ => panic!("expected DeletedItems"),
+            }
+        };
+        let deleted = items(&core);
+        assert_eq!(deleted.len(), 1, "the removed folder is on the list");
+        assert_eq!(deleted[0].value, shop.path);
+        assert_eq!(deleted[0].kind, "project");
+
+        // Scanning again must not bring it back while the history still names it.
+        core.dispatch(CoreCommand::ScanAndRegisterProjects {
+            path: www.display().to_string(),
+        })
+        .unwrap();
+        assert!(projects(&core).is_empty(), "a deleted folder was re-registered");
+
+        // Clearing that one entry is what unblocks it.
+        match core
+            .dispatch(CoreCommand::ForgetDeletedItem {
+                value: shop.path.clone(),
+            })
+            .unwrap()
+        {
+            CoreResponse::DeletedItems { items } => assert!(items.is_empty()),
+            _ => panic!("expected DeletedItems"),
+        }
+        core.dispatch(CoreCommand::ScanAndRegisterProjects {
+            path: www.display().to_string(),
+        })
+        .unwrap();
+        assert_eq!(projects(&core).len(), 1, "the folder came back");
+    }
+
+    #[test]
+    fn clearing_the_history_returns_the_deleted_items_to_a_scan() {
+        let (core, home) = test_core();
+        let www = home.paths.root().join("www");
+        for dir in ["Shop", "Blog"] {
+            std::fs::create_dir_all(www.join(dir)).unwrap();
+            std::fs::write(www.join(dir).join("index.php"), "x").unwrap();
+        }
+        core.dispatch(CoreCommand::ScanAndRegisterProjects {
+            path: www.display().to_string(),
+        })
+        .unwrap();
+        let ids: Vec<String> = match core.dispatch(CoreCommand::ListProjects).unwrap() {
+            CoreResponse::Projects { projects } => projects.into_iter().map(|p| p.id).collect(),
+            _ => panic!("expected Projects"),
+        };
+        for id in ids {
+            core.dispatch(CoreCommand::RemoveProject { id }).unwrap();
+        }
+
+        match core.dispatch(CoreCommand::ClearDeletedItems).unwrap() {
+            CoreResponse::DeletedItems { items } => assert!(items.is_empty()),
+            _ => panic!("expected DeletedItems"),
+        }
+        core.dispatch(CoreCommand::ScanAndRegisterProjects {
+            path: www.display().to_string(),
+        })
+        .unwrap();
+        match core.dispatch(CoreCommand::ListProjects).unwrap() {
+            CoreResponse::Projects { projects } => assert_eq!(projects.len(), 2),
+            _ => panic!("expected Projects"),
+        }
+    }
+
+    #[test]
+    fn forgetting_nothing_says_so_instead_of_doing_nothing_quietly() {
+        let (core, _home) = test_core();
+        let err = core
+            .dispatch(CoreCommand::ForgetDeletedItem {
+                value: "   ".into(),
+            })
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(
+            text.contains("deletion history"),
+            "an empty value must be reported, not ignored: {text}"
+        );
+    }
+
     #[test]
     fn ping_returns_pong_with_version() {
         let (core, _home) = test_core();

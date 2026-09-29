@@ -39,8 +39,11 @@ export function Titlebar() {
       className="flex h-9 shrink-0 select-none items-center gap-2 border-b border-sidebar-border bg-sidebar px-3"
     >
       <span className="flex items-center gap-2 text-xs font-medium text-sidebar-foreground">
-        <span
-          className={cn('size-2 rounded-full', stopped ? 'bg-destructive' : 'bg-primary')}
+        {/* Same green/red pair the tray, the taskbar and the sidebar use. */}
+        <img
+          src={stopped ? '/favicon-stopped.svg' : '/favicon.svg'}
+          alt=""
+          className="size-4 rounded"
           aria-hidden
         />
         OpenLocalServer

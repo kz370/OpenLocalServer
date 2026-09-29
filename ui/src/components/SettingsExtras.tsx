@@ -10,7 +10,7 @@ import { Field, Select } from '@/components/ui/form'
 import { NumberInput, Input } from '@/components/ui/input'
 import { type CpuCapStatus, type ResourceLimits, type SettingsBackup, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
-import { formatBytes, timeAgo, useAction } from '@/lib/hooks'
+import { formatBytes, timeAgo, useAction, useServerStopped } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 
 /** Only the numeric limits render as fields; `cpu_limiter_path` is a string and is not one. */
@@ -324,6 +324,7 @@ export function ResourcesCard() {
 /** About this app: name, version, license, stack. Version comes from the backend `ping`. */
 export function AboutCard() {
   const [version, setVersion] = useState('')
+  const stopped = useServerStopped()
   useEffect(() => {
     runCommand({ type: 'ping' }).then((r) => r.type === 'pong' && setVersion(r.version))
   }, [])
@@ -331,7 +332,7 @@ export function AboutCard() {
     <Card className="border-border/60 bg-card">
       <CardContent className="flex flex-col gap-5 p-6">
         <div className="flex items-center gap-4">
-          <img src="/favicon.svg" alt="" className="size-12 rounded-xl shadow-sm shadow-teal-500/30" />
+          <img src={stopped ? '/favicon-stopped.svg' : '/favicon.svg'} alt="" className="size-12 rounded-xl shadow-sm shadow-teal-500/30" />
           <div>
             <h2 className="text-lg font-semibold tracking-tight text-foreground">OpenLocalServer</h2>
             <div className="mt-1 flex items-center gap-2">
