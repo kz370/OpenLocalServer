@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, Select } from '@/components/ui/form'
-import { NumberInput } from '@/components/ui/input'
+import { NumberInput, Input } from '@/components/ui/input'
 import { type CpuCapStatus, type ResourceLimits, type SettingsBackup, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
 import { formatBytes, timeAgo, useAction } from '@/lib/hooks'
@@ -173,6 +173,15 @@ function CpuLimitField({
             </span>
           </div>
         )
+      ) : null}
+      {mode !== 'off' && !cpu.limiter_path ? (
+        <Field label="Path to cpulimit.exe" hint="Only needed when it is not beside the app — a portable copy, or a dev build run from target\.">
+          <Input
+            value={limits.cpu_limiter_path ?? ''}
+            placeholder="C:\Program Files\Open Local Server\cpulimit.exe"
+            onChange={(e) => onChange({ cpu_limiter_path: e.target.value.trim() || null })}
+          />
+        </Field>
       ) : null}
     </div>
   )

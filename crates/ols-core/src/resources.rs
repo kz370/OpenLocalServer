@@ -32,8 +32,8 @@ const KEY: &str = "resources";
 const LIMITER_ENV: &str = "OLS_CPULIMIT_PATH";
 const LIMITER_EXE: &str = "cpulimit.exe";
 const LIMITER_HINT: &str =
-    "CPU limits need the cpulimit utility (kz370/win-utils). Run its install.bat, or set the \
-     path to cpulimit.exe in Resources.";
+    "CPU limits need cpulimit.exe, which Open Local Server ships with. It is not in the install \
+     folder — reinstall, or set the path to it in Resources.";
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ResourceLimits {
@@ -197,12 +197,25 @@ impl ResourceLimits {
             let path = PathBuf::from(p);
             return path.is_file().then_some(path);
         }
+        // The installer drops cpulimit.exe next to Open Local Server.exe, so a default
+        // install finds it here with nothing configured — same "beside the app" rule
+        // elevate::helper_path uses for the helper.
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                let candidate = dir.join(LIMITER_EXE);
+                if candidate.is_file() {
+                    return Some(candidate);
+                }
+            }
+        }
         if let Some(p) = std::env::var_os(LIMITER_ENV)
             .map(PathBuf::from)
             .filter(|p| p.is_file())
         {
             return Some(p);
         }
+        // A dev build launched from target\debug has no such sibling, so a build the user
+        // installed with the utility's own install.bat is still found.
         if let Some(local) = std::env::var_os("LOCALAPPDATA") {
             let candidate = PathBuf::from(local)
                 .join("Programs")
@@ -464,5 +477,24 @@ mod tests {
             "the message names the utility: {err}"
         );
         assert!(l.validate().is_err(), "and a bad path is refused on save");
+    }
+
+    /// The installer puts cpulimit.exe next to the app, so the directory of the running
+    /// executable is searched before anything the user would have to configure. Pointed at
+    /// a real file, that file is what comes back.
+    #[test]
+    fn a_configured_path_is_used_verbatim() {
+        let dir = tempfile::tempdir().unwrap();
+        let limiter = dir.path().join("cpulimit.exe");
+        std::fs::write(&limiter, b"MZ").unwrap();
+        let l = ResourceLimits {
+            cpu_limiter_path: Some(limiter.display().to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            l.find_cpu_limiter().expect("a file is found"),
+            limiter,
+            "the configured path wins, whatever else is installed"
+        );
     }
 }

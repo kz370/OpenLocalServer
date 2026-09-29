@@ -38,6 +38,10 @@ WizardStyle=modern
 [Files]
 Source: "{#SourceExe}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#LibDir}\ols-helper.exe"; DestDir: "{app}"; Flags: ignoreversion
+; The CPU limiter for Settings > Resources (§129). Shipped next to the app because
+; resources::find_cpu_limiter looks in the current exe's directory first, so a
+; default install can cap CPU with nothing configured.
+Source: "{#OutputDir}\cpulimit.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#LibDir}\*.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "..\src-tauri\icons\icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 

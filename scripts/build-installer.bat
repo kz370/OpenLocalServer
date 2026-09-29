@@ -16,6 +16,12 @@ set "HELPER_EXE=%TARGET%\%HELPER_BIN%.exe"
 set "DIST=%ROOT%release"
 set "STAGED=%DIST%\%APPNAME%.exe"
 set "STAGED_HELPER=%DIST%\%HELPER_BIN%.exe"
+rem The CPU limiter for Settings > Resources (§129). Vendored, not built: see
+rem vendor\cpulimit\README.md for provenance. It is hash-checked on every build
+rem and installed next to the app, so a default install needs no configuration.
+set "CPULIMIT_SRC=%ROOT%vendor\cpulimit\cpulimit.exe"
+set "CPULIMIT_SHA=A54EACA4BD1BCCDCBAA69E31BFFE0EEDC2019E9EFCDE7BDE06F31542B7746DA3"
+set "STAGED_CPULIMIT=%DIST%\cpulimit.exe"
 
 for /f "tokens=2 delims==" %%v in ('findstr /b /c:"version = " "%ROOT%Cargo.toml"') do if not defined VERSION set "VERSION=%%~v"
 rem Strip spaces/quotes (tokens=2 leaves a leading space, breaking %%~v).
@@ -155,6 +161,7 @@ if not exist "%DIST%" mkdir "%DIST%"
 rem Copy with retries: antivirus or a just-exited app can hold the file briefly.
 call :copy_retry "%EXE%" "%STAGED%" || goto :fail
 call :copy_retry "%HELPER_EXE%" "%STAGED_HELPER%" || goto :fail
+call :stage_cpulimit || goto :fail
 for %%d in ("%TARGET%\*.dll") do if exist "%%~d" (
   call :copy_retry "%%~d" "%DIST%\%%~nxd" || goto :fail
 )
@@ -193,6 +200,21 @@ if not exist "%STAGED_HELPER%" (
   echo [x] Missing "%STAGED_HELPER%"
   set "VERIFY_FAIL=1"
 )
+if not exist "%STAGED_CPULIMIT%" (
+  echo [x] Missing "%STAGED_CPULIMIT%" - Settings > Resources cannot cap CPU without it.
+  set "VERIFY_FAIL=1"
+) else (
+  rem Re-verify the staged copy, not just the source: this is the file that ships.
+  set "STAGED_CPULIMIT_SHA="
+  for /f "skip=1 delims=" %%h in ('certutil -hashfile "%STAGED_CPULIMIT%" SHA256 2^>nul') do if not defined STAGED_CPULIMIT_SHA set "STAGED_CPULIMIT_SHA=%%h"
+  if /i not "%STAGED_CPULIMIT_SHA%"=="%CPULIMIT_SHA%" (
+    echo [x] Problem: staged cpulimit.exe does not match the pinned hash.
+    echo     Expected: %CPULIMIT_SHA%
+    echo     Got:      %STAGED_CPULIMIT_SHA%
+    echo     Fix: reinstall the vendored binary per vendor\cpulimit\README.md, and update CPULIMIT_SHA in this script in the same commit.
+    goto :fail
+  )
+)
 set "SETUP=%DIST%\Open-Local-Server-%VERSION%-setup.exe"
 if defined ISCC (
   if not exist "%SETUP%" (
@@ -205,11 +227,11 @@ if defined ISCC (
 if defined VERIFY_FAIL goto :fail
 echo.
 echo       Artifacts:
-for %%f in ("%STAGED%" "%STAGED_HELPER%") do echo       %%~nxf - %%~zf bytes
+for %%f in ("%STAGED%" "%STAGED_HELPER%" "%STAGED_CPULIMIT%") do echo       %%~nxf - %%~zf bytes
 if exist "%SETUP%" for %%f in ("%SETUP%") do echo       %%~nxf - %%~zf bytes
 echo.
 echo       SHA-256:
-for %%f in ("%STAGED%" "%STAGED_HELPER%") do call :show_hash "%%~f"
+for %%f in ("%STAGED%" "%STAGED_HELPER%" "%STAGED_CPULIMIT%") do call :show_hash "%%~f"
 if exist "%SETUP%" call :show_hash "%SETUP%"
 echo.
 echo === Done: %APPNAME% %VERSION% ===
@@ -248,6 +270,7 @@ if not exist "%HELPER_EXE%" (
 if not exist "%DIST%" mkdir "%DIST%"
 call :copy_retry "%EXE%" "%STAGED%" || goto :fail
 call :copy_retry "%HELPER_EXE%" "%STAGED_HELPER%" || goto :fail
+call :stage_cpulimit || goto :fail
 for %%d in ("%TARGET%\*.dll") do if exist "%%~d" (
   call :copy_retry "%%~d" "%DIST%\%%~nxd" || goto :fail
 )
@@ -294,6 +317,35 @@ set "SH_HASH="
 for /f "skip=1 delims=" %%h in ('certutil -hashfile "%~1" SHA256 2^>nul') do if not defined SH_HASH set "SH_HASH=%%h"
 if defined SH_HASH (echo       %SH_HASH%  %~nx1) else (echo       hash failed for %~nx1)
 set "SH_HASH="
+exit /b 0
+
+
+rem Stage the vendored CPU limiter, verifying the pinned hash on the SOURCE before
+rem it is copied. The staged copy is re-hashed in :verify, so what ships is checked
+rem too. A binary nobody vouched for is a shipped binary with a CVE attached.
+:stage_cpulimit
+if not exist "%CPULIMIT_SRC%" (
+  echo [x] Problem: %CPULIMIT_SRC% is missing.
+  echo     Cause: the vendored CPU limiter was deleted or never checked out.
+  echo     Fix: restore it per vendor\cpulimit\README.md, which records the source URL and SHA-256.
+  exit /b 1
+)
+set "CPULIMIT_SHA_ACTUAL="
+for /f "skip=1 delims=" %%h in ('certutil -hashfile "%CPULIMIT_SRC%" SHA256 2^>nul') do if not defined CPULIMIT_SHA_ACTUAL set "CPULIMIT_SHA_ACTUAL=%%h"
+if not defined CPULIMIT_SHA_ACTUAL (
+  echo [x] Problem: could not hash "%CPULIMIT_SRC%".
+  echo     Cause: the file is unreadable, or PowerShell is unavailable.
+  echo     Fix: check the file is not locked, then run this again.
+  exit /b 1
+)
+if /i not "%CPULIMIT_SHA_ACTUAL%"=="%CPULIMIT_SHA%" (
+  echo [x] Problem: vendored cpulimit.exe does not match the pinned hash.
+  echo     Expected: %CPULIMIT_SHA%
+  echo     Got:      %CPULIMIT_SHA_ACTUAL%
+  echo     Fix: reinstall the binary per vendor\cpulimit\README.md and update CPULIMIT_SHA in this script in the same commit.
+  exit /b 1
+)
+call :copy_retry "%CPULIMIT_SRC%" "%STAGED_CPULIMIT%" || exit /b 1
 exit /b 0
 
 
