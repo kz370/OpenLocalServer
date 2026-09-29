@@ -76,7 +76,12 @@ if not exist "%UI%\package.json" (
   goto :fail
 )
 rem Refuse to build over a running app: Windows locks the exe and the
-rem copy below would silently (or loudly) fail.
+rem copy below would silently (or loudly) fail. The same lock is why the
+rem in-app update has to close the app first (installer\open-local-server.iss
+rem CloseApplications/AppMutex, and updater::install_update exits after it
+rem spawns the installer) -- so an install that reports success and leaves
+rem the old version on disk means the app was never closed, not that the
+rem update was skipped.
 tasklist /FI "IMAGENAME eq %APPNAME%.exe" 2>nul | find /I "%APPNAME%.exe" >nul
 if not errorlevel 1 (
   echo [x] Problem: %APPNAME%.exe is running - check the system tray.
@@ -245,6 +250,13 @@ exit /b 0
 rem Inno-only mode: no rebuild. Stage prebuilt exes, compile installer.
 :inno_only
 echo [inno] Skipping rebuild - staging prebuilt exes...
+rem An installer built this way ships whatever is in target\release right now,
+rem which is the whole reason a release can look "older than the source":
+rem nothing here recompiles. Print what is being staged so a stale build is
+rem visible before it ships.
+echo       staged from:
+for %%f in ("%EXE%" "%HELPER_EXE%") do echo         %%~nxf  %%~t  %%~zf bytes
+echo       (run "full" to rebuild these from the current source)
 tasklist /FI "IMAGENAME eq %APPNAME%.exe" 2>nul | find /I "%APPNAME%.exe" >nul
 if not errorlevel 1 (
   echo [x] Problem: %APPNAME%.exe is running - check the system tray.
