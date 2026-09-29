@@ -13,21 +13,28 @@ set "UI=%ROOT%ui"
 set "TARGET=%ROOT%target\release"
 set "EXE=%TARGET%\%CARGO_BIN%.exe"
 set "HELPER_EXE=%TARGET%\%HELPER_BIN%.exe"
-set "DIST=%ROOT%release"
-set "STAGED=%DIST%\%APPNAME%.exe"
-set "STAGED_HELPER=%DIST%\%HELPER_BIN%.exe"
+set "DISTROOT=%ROOT%release"
 rem The CPU limiter for Settings > Resources (§129). Vendored, not built: see
 rem vendor\cpulimit\README.md for provenance. It is hash-checked on every build
 rem and installed next to the app, so a default install needs no configuration.
 set "CPULIMIT_SRC=%ROOT%vendor\cpulimit\cpulimit.exe"
 set "CPULIMIT_SHA=A54EACA4BD1BCCDCBAA69E31BFFE0EEDC2019E9EFCDE7BDE06F31542B7746DA3"
-set "STAGED_CPULIMIT=%DIST%\cpulimit.exe"
 
 for /f "tokens=2 delims==" %%v in ('findstr /b /c:"version = " "%ROOT%Cargo.toml"') do if not defined VERSION set "VERSION=%%~v"
 rem Strip spaces/quotes (tokens=2 leaves a leading space, breaking %%~v).
 set "VERSION=%VERSION: =%"
 set "VERSION=%VERSION:"=%"
 if not defined VERSION set "VERSION=0.0.1"
+
+rem Every version builds into release\<version>\ so a build never overwrites
+rem the artifacts of another one. upload-release.bat reads the same folder.
+rem The staged paths are set HERE, not with the other paths above: batch expands
+rem %DIST% when the line runs, so a STAGED set before VERSION is known would
+rem capture a literal %DIST%.
+set "DIST=%DISTROOT%\%VERSION%"
+set "STAGED=%DIST%\%APPNAME%.exe"
+set "STAGED_HELPER=%DIST%\%HELPER_BIN%.exe"
+set "STAGED_CPULIMIT=%DIST%\cpulimit.exe"
 
 
 echo.
@@ -176,7 +183,7 @@ if not defined ISCC for /f "delims=" %%p in ('where iscc 2^>nul') do if not defi
 if not defined ISCC (
   echo [!] Inno Setup not found, so no setup file was made.
   echo     Install it from https://jrsoftware.org/isdl.php and run this again.
-  echo     The portable executable is still available in release\.
+  echo     The portable executable is still available in "%DIST%".
   goto :verify
 )
 
@@ -276,7 +283,7 @@ if not defined ISCC for /f "delims=" %%p in ('where iscc 2^>nul') do if not defi
 if not defined ISCC (
   echo [!] Inno Setup not found, so no setup file was made.
   echo     Install it from https://jrsoftware.org/isdl.php and run this again.
-  echo     The portable executable is still available in release\.
+  echo     The portable executable is still available in "%DIST%".
   goto :verify
 )
 echo [inno] Creating installer...

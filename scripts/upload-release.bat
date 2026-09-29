@@ -3,18 +3,18 @@ setlocal EnableExtensions
 cd /d "%~dp0.."
 
 rem Publish a GitHub release of this repo from the files scripts\build-installer.bat
-rem put in release\:
-rem   release\Open-Local-Server-<version>-setup.exe   uploaded as-is
-rem   release\Open Local Server.exe + ols-helper.exe + *.dll   zipped as portable
-rem   release\Open-Local-Server-<version>-SHA256SUMS.txt       checksums for both
+rem put in release\<version>\:
+rem   Open-Local-Server-<version>-setup.exe   uploaded as-is
+rem   Open Local Server.exe + ols-helper.exe + *.dll   zipped as portable
+rem   Open-Local-Server-<version>-SHA256SUMS.txt       checksums for both
 rem Release notes come from release-notes\<tag>.md, the commit message from
 rem commit-message.txt (git-ignored, rewrite it for each release).
 rem
 rem Usage: scripts\upload-release.bat [tag] [mode]   (e.g. scripts\upload-release.bat v1.0.0 full)
 rem Modes: full = binaries + release notes, notes-only = release notes only.
-rem No mode given = ask 1 or 2. No tag given = read the version from the
-rem setup exe name and use tag v<version>.
-set "DIST=release"
+rem No mode given = ask 1 or 2. No tag given = the newest release\<version>\
+rem folder wins and the tag is v<version>.
+set "DISTROOT=release"
 set "TAG=%~1"
 set "MODE=%~2"
 if "%MODE%"=="" call :ask_mode || exit /b 1
@@ -29,20 +29,22 @@ exit /b 1
 :mode_ok
 if not "%TAG%"=="" goto :have_tag
 
-rem Newest setup exe wins if there are several.
-set "SETUP="
-for /f "delims=" %%F in ('dir /b /a-d /o-d "%DIST%\Open-Local-Server-*-setup.exe" 2^>nul') do if not defined SETUP set "SETUP=%%F"
-if not defined SETUP (
-  echo No %DIST%\Open-Local-Server-*-setup.exe found and no tag given.
+rem No tag: take the newest release\<version>\ folder that has a setup exe.
+rem /o-d sorts by date descending, so the first hit is the newest build. The
+rem folder name IS the version, so nothing has to be parsed out of a filename.
+set "DIST="
+for /f "delims=" %%D in ('dir /b /a-d /o-d /ad "%DISTROOT%\*" 2^>nul') do (
+  if not defined DIST if exist "%DISTROOT%\%%D\Open-Local-Server-*-setup.exe" (
+    set "DIST=%DISTROOT%\%%D"
+    set "VERSION=%%D"
+  )
+)
+if not defined DIST (
+  echo No %DISTROOT%\<version>\Open-Local-Server-*-setup.exe found and no tag given.
   echo Run scripts\build-installer.bat first.
   exit /b 1
 )
-rem Strip prefix/suffix, then all spaces + quotes (build-installer once
-rem emitted "Open-Local-Server- 1.0.0-setup.exe" with a leading space).
-set "VERSION=%SETUP:Open-Local-Server-=%"
-set "VERSION=%VERSION:-setup.exe=%"
-set "VERSION=%VERSION: =%"
-set "VERSION=%VERSION:"=%"
+set "SETUP=Open-Local-Server-%VERSION%-setup.exe"
 set "TAG=v%VERSION%"
 goto :tag_ready
 
@@ -52,6 +54,7 @@ if /i "%VERSION:~0,1%"=="v" set "VERSION=%VERSION:~1%"
 set "VERSION=%VERSION: =%"
 set "VERSION=%VERSION:"=%"
 set "TAG=v%VERSION%"
+set "DIST=%DISTROOT%\%VERSION%"
 rem Find the actual setup file on disk (tolerates the old leading-space name).
 set "SETUP=Open-Local-Server-%VERSION%-setup.exe"
 if /i "%MODE%"=="notes-only" goto :tag_ready

@@ -20,8 +20,13 @@ AppPublisher=OpenLocalServer contributors
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 DisableDirPage=no
+; Keep the previous install's directory so an upgrade lands on top of the
+; old one. Note this means ANY earlier install of this AppId seeds the next
+; run's default, even a test install into a scratch folder or TEMP -- verified
+; here: a silent install with /DIR= into a temp folder recorded that folder and
+; the next run offered it as the destination. Run that install's unins000.exe
+; (or delete its uninstall registry entry) after any such test.
 UsePreviousAppDir=yes
-AppendDefaultDirName=yes
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=commandline dialog
 AllowNoIcons=yes
