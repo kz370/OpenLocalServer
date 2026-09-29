@@ -9,9 +9,11 @@
 //!
 //! CPU was left out before because Windows has no per-process CPU cap without Job Objects.
 //! It is not missing any more, but it is still not something this crate does itself: the
-//! cap is `cpulimit.exe <percent> <program> <args>`, an external utility. So the limit is
-//! only honoured when that utility is on disk, and the UI is told plainly when it is not
-//! instead of the cap being silently dropped. Changes apply the next time a service starts.
+//! cap is `cpulimit.exe <percent> <program> <args>`, an external utility. The installer
+//! ships that binary next to the app and [`cpu_cap`] looks for it there first, so a
+//! default install needs no configuration; the limit is only honoured when the utility is
+//! on disk, and the UI is told plainly when it is not instead of the cap being silently
+//! dropped. Changes apply the next time a service starts.
 //!
 //! A percentage is a share of *total* CPU across all cores, not of one core — the same
 //! meaning `cpulimit` gives it, passed through unchanged. Capping something to about one
@@ -26,9 +28,11 @@ use crate::error::CoreError;
 
 const KEY: &str = "resources";
 
-/// Where `cpulimit.exe` is looked for, in order. The utility is never downloaded: an
-/// installer puts it at `%LOCALAPPDATA%\Programs\cpulimit`, and a user can point at any
-/// build through `cpu_limiter_path` or `OLS_CPULIMIT_PATH`.
+/// Where `cpulimit.exe` is looked for, in order: the path the user configured, the
+/// directory of the running executable (where the installer puts it, and where
+/// `elevate::helper_path` looks for the helper), `OLS_CPULIMIT_PATH`, the standard
+/// per-user folder from the utility's own installer, then `PATH`. It is shipped, not
+/// downloaded at runtime; provenance and the pinned hash are in `vendor/cpulimit/`.
 const LIMITER_ENV: &str = "OLS_CPULIMIT_PATH";
 const LIMITER_EXE: &str = "cpulimit.exe";
 const LIMITER_HINT: &str =
@@ -185,8 +189,9 @@ impl ResourceLimits {
     }
 
     /// `cpulimit.exe` if it is installed. A configured path is authoritative, so a moved
-    /// or hand-built binary is still found; failing that, the standard per-user install
-    /// folder from the utility's own installer, then `PATH`.
+    /// or hand-built binary is still found; then the install folder the installer writes
+    /// to; then `OLS_CPULIMIT_PATH`, the utility's own per-user install folder, and
+    /// `PATH` for a dev build run from `target\`.
     pub fn find_cpu_limiter(&self) -> Option<PathBuf> {
         if let Some(p) = self
             .cpu_limiter_path
@@ -387,7 +392,7 @@ mod tests {
         };
         let pct = l.effective_cpu_percent().expect("a thread count is a cap");
         assert_eq!(pct, (100u32).div_ceil(cores));
-        assert!(pct >= 1 && pct <= 100, "a cap is always in range");
+        assert!((1..=100).contains(&pct), "a cap is always in range");
 
         let all = ResourceLimits {
             cpu_threads: Some(cores),

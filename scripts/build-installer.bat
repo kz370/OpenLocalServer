@@ -203,18 +203,11 @@ if not exist "%STAGED_HELPER%" (
 if not exist "%STAGED_CPULIMIT%" (
   echo [x] Missing "%STAGED_CPULIMIT%" - Settings > Resources cannot cap CPU without it.
   set "VERIFY_FAIL=1"
-) else (
-  rem Re-verify the staged copy, not just the source: this is the file that ships.
-  set "STAGED_CPULIMIT_SHA="
-  for /f "skip=1 delims=" %%h in ('certutil -hashfile "%STAGED_CPULIMIT%" SHA256 2^>nul') do if not defined STAGED_CPULIMIT_SHA set "STAGED_CPULIMIT_SHA=%%h"
-  if /i not "%STAGED_CPULIMIT_SHA%"=="%CPULIMIT_SHA%" (
-    echo [x] Problem: staged cpulimit.exe does not match the pinned hash.
-    echo     Expected: %CPULIMIT_SHA%
-    echo     Got:      %STAGED_CPULIMIT_SHA%
-    echo     Fix: reinstall the vendored binary per vendor\cpulimit\README.md, and update CPULIMIT_SHA in this script in the same commit.
-    goto :fail
-  )
 )
+rem Flat lines, not a block: %VAR% inside a parenthesised block is expanded when the whole
+rem block is parsed, so a value set by a for/f in the same block reads back empty. The
+rem staged copy is re-hashed, not just the source, because this is the file that ships.
+if not defined VERIFY_FAIL call :hash_matches "%STAGED_CPULIMIT%" || goto :fail
 set "SETUP=%DIST%\Open-Local-Server-%VERSION%-setup.exe"
 if defined ISCC (
   if not exist "%SETUP%" (
@@ -334,19 +327,28 @@ set "CPULIMIT_SHA_ACTUAL="
 for /f "skip=1 delims=" %%h in ('certutil -hashfile "%CPULIMIT_SRC%" SHA256 2^>nul') do if not defined CPULIMIT_SHA_ACTUAL set "CPULIMIT_SHA_ACTUAL=%%h"
 if not defined CPULIMIT_SHA_ACTUAL (
   echo [x] Problem: could not hash "%CPULIMIT_SRC%".
-  echo     Cause: the file is unreadable, or PowerShell is unavailable.
+  echo     Cause: the file is unreadable.
   echo     Fix: check the file is not locked, then run this again.
   exit /b 1
 )
-if /i not "%CPULIMIT_SHA_ACTUAL%"=="%CPULIMIT_SHA%" (
-  echo [x] Problem: vendored cpulimit.exe does not match the pinned hash.
-  echo     Expected: %CPULIMIT_SHA%
-  echo     Got:      %CPULIMIT_SHA_ACTUAL%
-  echo     Fix: reinstall the binary per vendor\cpulimit\README.md and update CPULIMIT_SHA in this script in the same commit.
-  exit /b 1
-)
+call :hash_matches "%CPULIMIT_SRC%" || exit /b 1
 call :copy_retry "%CPULIMIT_SRC%" "%STAGED_CPULIMIT%" || exit /b 1
 exit /b 0
+
+
+rem Fails unless %1's SHA-256 is the pinned one. Used on the source at stage time and on
+rem the staged copy at verify time, so neither a tampered vendor copy nor a corrupted
+rem copy can reach an artifact.
+:hash_matches
+set "HM_PATH=%~1"
+set "HM_SHA="
+for /f "skip=1 delims=" %%h in ('certutil -hashfile "%HM_PATH%" SHA256 2^>nul') do if not defined HM_SHA set "HM_SHA=%%h"
+if /i "%HM_SHA%"=="%CPULIMIT_SHA%" exit /b 0
+echo [x] Problem: "%HM_PATH%" does not match the pinned hash.
+echo     Expected: %CPULIMIT_SHA%
+echo     Got:      %HM_SHA%
+echo     Fix: reinstall the binary per vendor\cpulimit\README.md and update CPULIMIT_SHA in this script in the same commit.
+exit /b 1
 
 
 rem Retry copy: %1 = source, %2 = dest. Survives brief AV locks.
