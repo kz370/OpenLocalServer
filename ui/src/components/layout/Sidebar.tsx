@@ -24,7 +24,7 @@ import { useState } from 'react'
 import { OfflineNotice, useOnline } from '@/components/ReleaseCards'
 import { Badge } from '@/components/ui/badge'
 import { runCommand } from '@/core'
-import { usePoll, useServerStopped } from '@/lib/hooks'
+import { useAppMarkPath, usePoll } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 import { useTheme } from '@/lib/theme'
 
@@ -132,14 +132,14 @@ export function Sidebar({ page, onNavigate }: { page: Page; onNavigate: (p: Page
 
   const ThemeIcon = theme === 'system' ? SunMoon : resolvedTheme === 'dark' ? Moon : Sun
 
-  // Same green/red pair the tray and taskbar use.
-  const stopped = useServerStopped()
+  // Same four colourways (light/dark × running/stopped) the tray and taskbar use.
+  const mark = useAppMarkPath()
 
   return (
     <aside className="flex h-full w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
       <div className="flex items-center gap-2 px-4 py-4">
         <img
-          src={stopped ? '/favicon-stopped.svg' : '/favicon.svg'}
+          src={mark}
           alt=""
           className="size-8 rounded-lg shadow-sm shadow-teal-500/30"
         />

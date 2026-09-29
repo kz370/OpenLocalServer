@@ -179,14 +179,11 @@ fn apply_status_icon(app: &AppHandle, red: bool, force: bool) {
 
 /// Repaints after the UI reports a theme flip. Only the colourway changes, so the
 /// running/stopped state is re-read rather than remembered by the caller.
-fn set_theme_icon(app: &AppHandle, core: Option<&Core>, dark: bool) {
+fn set_theme_icon(app: &AppHandle, core: &Core, dark: bool) {
     if THEME_IS_DARK.swap(dark, Ordering::Relaxed) == dark {
         return;
     }
-    match core {
-        Some(core) => apply_status_icon(app, status_mark(Some(core)), false),
-        None => apply_status_icon(app, false, true),
-    }
+    apply_status_icon(app, status_mark(Some(core)), false);
 }
 
 /// The mark is green while at least one managed process is running — a service or
@@ -670,24 +667,20 @@ pub fn run() {
             // UI reports the resolved theme and the native marks follow it. Seeded
             // from the OS so the tray is not painted light for a frame on a dark
             // desktop before the webview answers.
-            if let Ok(theme) = app.handle().window("main").map(|w| w.theme()) {
-                THEME_IS_DARK.store(
-                    matches!(theme, tauri::Theme::Dark),
-                    Ordering::Relaxed,
-                );
+            if let Some(window) = app.get_webview_window("main") {
+                if let Ok(theme) = window.theme() {
+                    THEME_IS_DARK.store(matches!(theme, tauri::Theme::Dark), Ordering::Relaxed);
+                }
             }
             let theme_handle = app.handle().clone();
             let theme_core = core.clone();
             app.listen("ols:theme", move |event| {
-                let Some(dark) = event
-                    .payload_json::<String>()
-                    .ok()
-                    .filter(|t| t == "dark" || t == "light")
-                    .map(|t| t == "dark")
-                else {
-                    return;
+                let dark = match event.payload() {
+                    "\"dark\"" => true,
+                    "\"light\"" => false,
+                    _ => return,
                 };
-                set_theme_icon(&theme_handle, Some(&theme_core), dark);
+                set_theme_icon(&theme_handle, &theme_core, dark);
             });
 
             let process_handle = app.handle().clone();

@@ -1,5 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 
+import { emit } from '@tauri-apps/api/event'
+
 type Theme = 'light' | 'dark' | 'system'
 
 interface ThemeContextValue {
@@ -32,6 +34,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const resolved = theme === 'system' ? systemTheme() : theme
     setResolvedTheme(resolved)
     document.documentElement.classList.toggle('dark', resolved === 'dark')
+    // The tray icon and the taskbar entry live outside the webview, so the resolved
+    // theme is reported to Rust, which repaints them in the matching colourway.
+    void emit('ols:theme', resolved).catch(() => undefined)
   }, [theme])
 
   useEffect(() => {
@@ -41,6 +46,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       const resolved = systemTheme()
       setResolvedTheme(resolved)
       document.documentElement.classList.toggle('dark', resolved === 'dark')
+      void emit('ols:theme', resolved).catch(() => undefined)
     }
     mql.addEventListener('change', onChange)
     return () => mql.removeEventListener('change', onChange)

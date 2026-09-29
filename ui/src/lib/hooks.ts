@@ -4,6 +4,7 @@ import { listen } from '@tauri-apps/api/event'
 
 import { asDiagnostic } from '@/components/ErrorCard'
 import type { Diagnostic } from '@/core'
+import { useTheme } from '@/lib/theme'
 
 /** Runs `fn` now and then every `ms` while the component is mounted. Skips a tick while the previous one is still pending, so slow core commands (dashboard, services) never pile up and starve the IPC thread pool. */
 export function usePoll(fn: () => void | Promise<void>, ms: number) {
@@ -96,6 +97,21 @@ export function useServerStopped(): boolean {
     }
   }, [])
   return stopped
+}
+
+/**
+ * Path to the app mark for the current theme and service state — the same four
+ * colourways the tray and the taskbar show, so the sidebar, the titlebar and the
+ * About card never disagree with the icons outside the window.
+ *
+ * Must be called inside `ThemeProvider`; components outside it have no resolved
+ * theme to pick from.
+ */
+export function useAppMarkPath(): string {
+  const { resolvedTheme } = useTheme()
+  const stopped = useServerStopped()
+  if (resolvedTheme === 'dark') return stopped ? '/favicon-stopped-dark.svg' : '/favicon-dark.svg'
+  return stopped ? '/favicon-stopped.svg' : '/favicon.svg'
 }
 
 /** Keeps a modal mounted while its exit animation plays. `state` drives `data-state`. */
