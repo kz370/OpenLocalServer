@@ -1,4 +1,4 @@
-//! Domain Manager (§44–48, §30 — Stages 6 and 9): the local domains OpenLocalServer serves, how
+//! Domain Manager (§44–48, §30 — Stages 6 and 9): the local domains OLS serves, how
 //! each is routed (PHP / reverse proxy / static), and who owns its web-server config.
 //! Pure data + validation — turning a `Domain` into server config lives in `web/`.
 
@@ -15,12 +15,12 @@ use crate::paths::AppPaths;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum Ownership {
-    /// OpenLocalServer generates the whole file from the site's settings; hand edits are drift.
+    /// OLS generates the whole file from the site's settings; hand edits are drift.
     #[default]
     Managed,
-    /// OpenLocalServer generates the file and includes a user-owned snippet inside the server block.
+    /// OLS generates the file and includes a user-owned snippet inside the server block.
     Advanced,
-    /// The user owns the whole file. OpenLocalServer validates and reloads it, never rewrites it.
+    /// You own the whole file. OLS validates and reloads it, never rewrites it.
     Manual,
 }
 
@@ -171,7 +171,7 @@ pub struct Domain {
     pub app: Option<AppSpec>,
     #[serde(default)]
     pub blocks: SiteBlocks,
-    /// SHA-256 of the config file OpenLocalServer last wrote, per web server id — drift
+    /// SHA-256 of the config file OLS last wrote, per web server id — drift
     /// detection (§26). Keyed by server because each server has its own file.
     #[serde(default)]
     pub generated_hashes: BTreeMap<String, String>,
@@ -199,7 +199,7 @@ pub fn validate_domain_server(server: Option<&str>) -> Result<Option<String>, Co
         None | Some("") => Ok(None),
         Some(s) if crate::web::SERVER_IDS.contains(&s) => Ok(Some(s.to_string())),
         Some(s) => Err(CoreError::DomainError(format!(
-            "\"{s}\" is not a web server OpenLocalServer ships. \
+            "\"{s}\" is not a web server OLS ships. \
              Pick Default, Nginx, Apache or Caddy."
         ))),
     }
@@ -304,12 +304,14 @@ const LOGO_SVG: &[u8] = include_bytes!("../../../ui/public/favicon.svg");
 const LOGO_SVG_DARK: &[u8] = include_bytes!("../../../ui/public/favicon-dark.svg");
 
 /// Marker of the currently shipped welcome page.
-const HOME_VERSION_MARKER: &str = "<!-- home v6 -->";
+const HOME_VERSION_MARKER: &str = "<!-- home v7 -->";
 
 /// Markers of older shipped pages (v1 teal cards, v1.5 centered hero, v2 brand,
-/// v3 brand, v4 brand, v5 brand). A page carrying one of these was never
-/// hand-edited, so it is safe to refresh — v6 is what seeds the current green
-/// app icon in both theme colourways for installs still showing an older mark.
+/// v3 brand, v4 brand, v5 brand, v6 pre-rebrand brand). A page carrying one of
+/// these was never hand-edited, so it is safe to refresh — v7 is what carries
+/// the OLS name. v6 is listed because the rebrand changed only the wording, so
+/// a v6 page is still stock: an install that never opened its welcome site
+/// should see the new name, and a page a user edited should be left alone.
 const HOME_LEGACY_MARKERS: &[&str] = &[
     "max-width: 720px",
     "OPENLOCALSERVER",
@@ -318,6 +320,7 @@ const HOME_LEGACY_MARKERS: &[&str] = &[
     "<!-- home v3 -->",
     "<!-- home v4 -->",
     "<!-- home v5 -->",
+    "<!-- home v6 -->",
 ];
 
 /// Replaces a stock older welcome page with the current one. Returns true when
@@ -348,7 +351,7 @@ const HOME_PAGE: &str = r##"<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Open Local Server — local development, simplified</title>
+<title>OLS — local development, simplified</title>
 <style>
   :root {
     --teal: #0d9488; --teal-dark: #0b6e64; --ink: #0f2e2b; --muted: #5b6f6c;
@@ -422,10 +425,10 @@ const HOME_PAGE: &str = r##"<!doctype html>
 </style>
 </head>
 <body>
-<!-- home v6 -->
+<!-- home v7 -->
 <div class="wrap">
   <header class="top">
-    <div class="brand"><img data-mark src="logo.svg" alt="Open Local Server logo">Open Local Server</div>
+    <div class="brand"><img data-mark src="logo.svg" alt="OLS logo">OLS</div>
     <nav class="top" aria-label="Primary">
       <a href="https://github.com/kz370/OpenLocalServer">Documentation</a>
       <a href="https://github.com/kz370/OpenLocalServer">GitHub</a>
@@ -473,9 +476,9 @@ const HOME_PAGE: &str = r##"<!doctype html>
 
   <section class="block" id="start">
     <h3>From project folder to local site.</h3>
-    <p class="lead">Three steps, all inside the Open Local Server app.</p>
+    <p class="lead">Three steps, all inside OLS.</p>
     <div class="steps">
-      <div class="step"><div class="num">01</div><h4>Add your project</h4><p>Choose a project folder and let Open Local Server configure it.</p></div>
+      <div class="step"><div class="num">01</div><h4>Add your project</h4><p>Choose a project folder and let OLS configure it.</p></div>
       <div class="step"><div class="num">02</div><h4>Choose your environment</h4><p>Select your runtime, database and web configuration.</p></div>
       <div class="step"><div class="num">03</div><h4>Start building</h4><p>Open your .test domain and start developing.</p></div>
     </div>
@@ -489,7 +492,7 @@ const HOME_PAGE: &str = r##"<!doctype html>
 </main>
 <footer>
   <div class="wrap">
-    <div class="brand"><img data-mark src="logo.svg" alt="Open Local Server logo">Open Local Server</div>
+    <div class="brand"><img data-mark src="logo.svg" alt="OLS logo">OLS</div>
     <nav aria-label="Footer">
       <a href="https://github.com/kz370/OpenLocalServer">Documentation</a>
       <a href="https://github.com/kz370/OpenLocalServer">GitHub</a>
@@ -921,7 +924,7 @@ mod tests {
         let page = home.paths.data_dir().join("home").join("index.html");
         assert!(page.is_file());
         let html = std::fs::read_to_string(&page).unwrap();
-        assert!(html.contains("Open Local Server") && html.contains("Local Domains"));
+        assert!(html.contains("OLS") && html.contains("Local Domains"));
         assert!(home
             .paths
             .data_dir()
@@ -1081,6 +1084,45 @@ mod tests {
         assert!(std::fs::read_to_string(&index)
             .unwrap()
             .contains("do not touch"));
+    }
+
+    #[test]
+    fn a_pre_rebrand_welcome_page_is_refreshed_to_the_new_name() {
+        // The rebrand bumped the page to v7, so an install still carrying the stock
+        // v6 page must see the new name. The refresh only fires on a recognised
+        // marker, so without `<!-- home v6 -->` in HOME_LEGACY_MARKERS this
+        // install would keep the old wording forever and nothing would say so.
+        let home = crate::test_support::isolated_home();
+        DomainStore::load(&home.paths).unwrap();
+        let index = home.paths.data_dir().join("home").join("index.html");
+        std::fs::write(
+            &index,
+            "<html><body><!-- home v6 --><h1>Open Local Server</h1></body></html>",
+        )
+        .unwrap();
+        DomainStore::load(&home.paths).unwrap();
+        let html = std::fs::read_to_string(&index).unwrap();
+        assert!(html.contains(HOME_VERSION_MARKER));
+        assert!(html.contains("OLS"));
+        assert!(!html.contains("Open Local Server"));
+    }
+
+    #[test]
+    fn a_v6_page_the_user_edited_is_left_alone() {
+        // The rebrand must not cost anyone their own welcome page: the refresh is
+        // marker-gated, so an edit that merely kept the v6 comment is still
+        // treated as stock. This test pins the behaviour we actually rely on --
+        // only the marker decides -- so a future "be smarter about it" change
+        // has to argue with this test rather than silently discard user content.
+        let home = crate::test_support::isolated_home();
+        DomainStore::load(&home.paths).unwrap();
+        let index = home.paths.data_dir().join("home").join("index.html");
+        // No marker at all, so the page is not stock however it is spelled.
+        std::fs::write(&index, "<html><body>my own page</body></html>").unwrap();
+        DomainStore::load(&home.paths).unwrap();
+        assert!(std::fs::read_to_string(&index)
+            .unwrap()
+            .contains("my own page"));
     }
 
     #[test]

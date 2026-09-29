@@ -371,7 +371,7 @@ pub fn https_redirect_port_suffix(ports: Ports) -> String {
     }
 }
 
-pub const MANAGED_HEADER: &str = "# Managed by OpenLocalServer. Changes made here are reported as drift;\n# switch this site to Advanced or Manual ownership to customise it.\n";
+pub const MANAGED_HEADER: &str = "# Managed by OLS. Changes made here are reported as drift;\n# switch this site to Advanced or Manual ownership to customise it.\n";
 
 #[cfg(test)]
 mod tests {

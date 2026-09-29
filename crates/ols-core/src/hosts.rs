@@ -8,16 +8,16 @@
 const BEGIN_MARKER: &str = "# BEGIN OpenLocalServer — do not edit this block by hand";
 const END_MARKER: &str = "# END OpenLocalServer";
 
-/// Replaces (or appends) the OpenLocalServer-managed block in `existing` hosts-file
+/// Replaces (or appends) the OLS-managed block in `existing` hosts-file
 /// content. Idempotent — calling this again with the same `entries` reproduces the same
-/// output. Never touches anything outside its own delimited block (§75: OpenLocalServer must
+/// output. Never touches anything outside its own delimited block (§75: OLS must
 /// not clobber a user's other hosts entries).
 pub fn apply_hosts_block(existing: &str, entries: &[(String, String)]) -> String {
     let block = render_block(entries);
     replace_block(existing, Some(&block))
 }
 
-/// Removes the OpenLocalServer block entirely, leaving everything else untouched.
+/// Removes the OLS block entirely, leaving everything else untouched.
 pub fn remove_hosts_block(existing: &str) -> String {
     replace_block(existing, None)
 }
@@ -116,7 +116,7 @@ fn block_names(text: &str) -> Vec<String> {
     }
 }
 
-/// Loopback entries for `hostnames` — OpenLocalServer never points a name anywhere else (§138).
+/// Loopback entries for `hostnames` — OLS never points a name anywhere else (§138).
 pub fn loopback_entries(hostnames: &[String]) -> Vec<(String, String)> {
     hostnames
         .iter()

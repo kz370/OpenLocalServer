@@ -1,6 +1,6 @@
 [package]
 name = "ols-cli"
-description = "OpenLocalServer command line: drives the running app (or a background daemon)"
+description = "OLS command line: drives the running app (or a background daemon)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

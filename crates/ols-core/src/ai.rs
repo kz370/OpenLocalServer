@@ -1,4 +1,4 @@
-//! The AI assistant (Stage 19). Opt-in, off by default, bring your own model: OpenLocalServer ships no model and no
+//! The AI assistant (Stage 19). Opt-in, off by default, bring your own model: OLS ships no model and no
 //! account. Every provider (LM Studio, Ollama, Hugging Face, OpenRouter, any OpenAI-compatible server) is the same
 //! code over the chat-completions API with a different base URL and key.
 //!
@@ -434,7 +434,7 @@ To propose changes, end the answer with exactly one block:
 ```
 Propose only what you are sure about, at most 10 steps, and use ids and names you were given. Do not propose anything when no command is needed."#;
 
-const SYSTEM: &str = "You are the assistant inside OpenLocalServer, a Windows local development environment manager: Nginx, Apache and Caddy, PHP, Node, Python, MariaDB, PostgreSQL, MongoDB, Redis, Mailpit, trusted local HTTPS domains, and project manifests in .openlocalserver/. Be concrete and brief; say what you are unsure of. You cannot run anything yourself: the user approves every change. Secrets in what you are given are replaced by [redacted]; never ask for them.";
+const SYSTEM: &str = "You are the assistant inside OLS, a Windows local development environment manager: Nginx, Apache and Caddy, PHP, Node, Python, MariaDB, PostgreSQL, MongoDB, Redis, Mailpit, trusted local HTTPS domains, and project manifests in .openlocalserver/. Be concrete and brief; say what you are unsure of. You cannot run anything yourself: the user approves every change. Secrets in what you are given are replaced by [redacted]; never ask for them.";
 
 const MANIFEST_INSTRUCTIONS: &str = "Draft .openlocalserver/environment.yaml for this project. Reply with the complete file in one ```yaml block, using only the keys shown in the detected example, then a short note on what you chose and what to check. Do not invent versions the project files don't support.";
 
@@ -944,7 +944,7 @@ fn block_on<F: std::future::Future>(f: F) -> F::Output {
 fn client(local: bool, total: Option<Duration>) -> reqwest::Client {
     let mut b = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(10))
-        .user_agent("OpenLocalServer");
+        .user_agent("OLS");
     if let Some(t) = total {
         b = b.timeout(t);
     }
@@ -972,7 +972,7 @@ fn authorize(
     if p.kind == "openrouter" {
         rb = rb
             .header("HTTP-Referer", "https://github.com/kz370/OpenLocalServer")
-            .header("X-Title", "OpenLocalServer");
+            .header("X-Title", "OLS");
     }
     Ok(rb)
 }

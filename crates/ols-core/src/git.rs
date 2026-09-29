@@ -325,7 +325,7 @@ impl Inner {
 
     fn askpass_script(&self) -> Result<PathBuf, CoreError> {
         let file = self.paths.data_dir().join("git-askpass.cmd");
-        let body = "@echo off\r\nrem Answers Git's credential prompts from this process's environment (OpenLocalServer).\r\necho %~1| findstr /i \"username\" >nul && (echo %OLS_GIT_USER%) || (echo %OLS_GIT_TOKEN%)\r\n";
+        let body = "@echo off\r\nrem Answers Git's credential prompts from this process's environment (OLS).\r\necho %~1| findstr /i \"username\" >nul && (echo %OLS_GIT_USER%) || (echo %OLS_GIT_TOKEN%)\r\n";
         if std::fs::read_to_string(&file).ok().as_deref() != Some(body) {
             std::fs::write(&file, body)?;
         }

@@ -392,7 +392,7 @@ async fn handle(
         if given != Some(wanted.as_str()) {
             let r = Response::builder()
                 .status(401)
-                .header("www-authenticate", "Basic realm=\"OpenLocalServer tunnel\"")
+                .header("www-authenticate", "Basic realm=\"OLS tunnel\"")
                 .body(Full::new(Bytes::from_static(
                     b"This tunnel needs a username and password.",
                 )))

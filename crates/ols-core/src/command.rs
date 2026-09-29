@@ -184,7 +184,7 @@ pub enum CoreCommand {
         id: String,
     },
 
-    // Custom install locations (Stage 5, user-requested): point OpenLocalServer at a tool or
+    // Custom install locations (Stage 5, user-requested): point OLS at a tool or
     // runtime version it didn't find/install itself, instead of only ever offering a
     // download. `label` is a version string for runtimes ("8.1"), empty for single-path
     // tools (heidisql/pgadmin).

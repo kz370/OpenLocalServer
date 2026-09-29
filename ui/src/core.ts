@@ -1110,7 +1110,7 @@ export interface SystemStats {
   cpu_cores: number
   memory_used: number
   memory_total: number
-  /** Drives holding OpenLocalServer's data or your projects. */
+  /** Drives holding OLS's data or your projects. */
   disks: { mount: string; used: number; total: number; holds: string[] }[]
   /** Keyed by the managed process's PID; includes its child processes. */
   processes: Record<number, { cpu_percent: number; memory: number; count: number }>

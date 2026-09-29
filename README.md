@@ -1,4 +1,4 @@
-# OpenLocalServer
+# OLS (Open Local Server)
 
 > A modern local development environment manager for Windows — runtimes, sites, databases, and trusted HTTPS, without touching your system by hand.
 
@@ -9,7 +9,7 @@
 [![Tauri](https://img.shields.io/badge/shell-Tauri_2-orange)](./src-tauri/tauri.conf.json)
 [![Rust](https://img.shields.io/badge/backend-Rust-red)](./crates/ols-core)
 
-**OpenLocalServer** is the successor to XAMPP / Laragon with broader runtime coverage and full extensibility. Every project gets isolated runtimes, its own `.test` domain, and trusted local HTTPS. One core engine (`ols-core`) powers three front doors: desktop GUI, CLI (`ols`), and local HTTP API.
+**OLS** (Open Local Server) is the successor to XAMPP / Laragon with broader runtime coverage and full extensibility. Every project gets isolated runtimes, its own `.test` domain, and trusted local HTTPS. One core engine (`ols-core`) powers three front doors: desktop GUI, CLI (`ols`), and local HTTP API.
 
 ## Contents
 
@@ -270,7 +270,7 @@ OpenLocalServer/
 ├── assets/              # App icons + README screenshots (dashboard, sites,
 │                        # runtimes, version-manager, databases, webserver,
 │                        # tunnels — all .webp)
-└── OpenLocalServer_Master_SRS_v4.md  # Full requirements spec (v4)
+└── OLS_Master_SRS_v4.md  # Full requirements spec (v4)
 ```
 
 **Architecture (one core, many front doors):**
@@ -316,6 +316,6 @@ GPL-3.0-only — see [LICENSE](./LICENSE). See [SECURITY.md](./SECURITY.md) for 
   <br>
   <a href="./docs/STATUS.md">Status</a> ·
   <a href="./docs/IMPLEMENTATION_PLAN.md">Implementation Plan</a> ·
-  <a href="./OpenLocalServer_Master_SRS_v4.md">Master SRS v4</a> ·
+  <a href="./OLS_Master_SRS_v4.md">Master SRS v4</a> ·
   <a href="./CONTRIBUTING.md">Contributing</a>
 </p>

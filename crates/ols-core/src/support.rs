@@ -42,7 +42,7 @@ impl Inner {
         let mut entries: Vec<(String, String)> = Vec::new();
 
         let mut summary = format!(
-            "OpenLocalServer {}\nOS: {} {}\nData folder: {}\n\nInstalled runtimes:\n",
+            "OLS {}\nOS: {} {}\nData folder: {}\n\nInstalled runtimes:\n",
             env!("CARGO_PKG_VERSION"),
             std::env::consts::OS,
             std::env::consts::ARCH,

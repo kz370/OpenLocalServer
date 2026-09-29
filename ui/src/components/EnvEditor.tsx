@@ -226,7 +226,7 @@ export function EnvEditor({ projectId }: { projectId: string }) {
                   <Plus /> Add
                 </Button>
               </div>
-              <p className="mt-2 text-xs text-muted-foreground">Passwords, tokens and keys are hidden until you show them. Each change keeps the file's comments and order; the previous version is saved in OpenLocalServer's data folder.</p>
+              <p className="mt-2 text-xs text-muted-foreground">Passwords, tokens and keys are hidden until you show them. Each change keeps the file's comments and order; the previous version is saved in OLS's data folder.</p>
             </div>
           )}
 

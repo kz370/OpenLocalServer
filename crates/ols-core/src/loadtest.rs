@@ -43,7 +43,7 @@ pub struct K6Info {
     pub installed: bool,
     pub path: Option<String>,
     pub version: Option<String>,
-    /// Installed by OpenLocalServer (Runtimes), not found on PATH.
+    /// Installed by OLS (Runtimes), not found on PATH.
     pub managed: bool,
 }
 
@@ -495,7 +495,7 @@ impl LoadProfile {
         let headers = headers.join("\n");
         let thresholds = thresholds.join("\n");
         format!(
-            "// {name}: {desc}\n// Made by OpenLocalServer from the test form. You can edit it; BASE_URL is the site you run it against, and variables come from __ENV.\nimport http from 'k6/http';\nimport {{ check, sleep }} from 'k6';\n\nexport const options = {{\n  stages: [\n{stages}\n  ],\n  thresholds: {{\n{thresholds}\n  }},\n}};\n\nconst BASE = __ENV.BASE_URL;\nconst HEADERS = {{\n{headers}\n}};\nconst REQUESTS = [\n{requests}\n];\n\nexport default function () {{\n  for (const r of REQUESTS) {{\n    const res = http.request(r.method, `${{BASE}}${{r.path}}`, r.body, {{ headers: HEADERS }});\n    check(res, {{ 'status is 2xx or 3xx': (r) => r.status >= 200 && r.status < 400 }});\n  }}\n  sleep({think});\n}}\n",
+            "// {name}: {desc}\n// Made by OLS from the test form. You can edit it; BASE_URL is the site you run it against, and variables come from __ENV.\nimport http from 'k6/http';\nimport {{ check, sleep }} from 'k6';\n\nexport const options = {{\n  stages: [\n{stages}\n  ],\n  thresholds: {{\n{thresholds}\n  }},\n}};\n\nconst BASE = __ENV.BASE_URL;\nconst HEADERS = {{\n{headers}\n}};\nconst REQUESTS = [\n{requests}\n];\n\nexport default function () {{\n  for (const r of REQUESTS) {{\n    const res = http.request(r.method, `${{BASE}}${{r.path}}`, r.body, {{ headers: HEADERS }});\n    check(res, {{ 'status is 2xx or 3xx': (r) => r.status >= 200 && r.status < 400 }});\n  }}\n  sleep({think});\n}}\n",
             name = self.name.replace(['\n', '\r'], " "),
             desc = self.description.replace(['\n', '\r'], " "),
             think = self.think_time_s,

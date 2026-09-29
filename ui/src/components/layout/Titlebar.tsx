@@ -48,7 +48,7 @@ export function Titlebar() {
           className="size-4 rounded"
           aria-hidden
         />
-        OpenLocalServer
+        OLS
       </span>
       <div data-tauri-drag-region className="min-w-0 flex-1" />
       {isTauri() && (

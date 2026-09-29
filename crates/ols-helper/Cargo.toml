@@ -1,6 +1,6 @@
 [package]
 name = "ols-helper"
-description = "OpenLocalServer privileged helper: a closed set of validated system-file commands"
+description = "OLS privileged helper: a closed set of validated system-file commands"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

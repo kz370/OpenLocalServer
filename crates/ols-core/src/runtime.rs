@@ -20,7 +20,7 @@ pub struct CatalogEntry {
     pub id: String,
     pub name: String,
     pub version: String,
-    /// A OpenLocalServer-managed copy is installed under `runtimes/<id>/<version>/`.
+    /// An OLS-managed copy is installed under `runtimes/<id>/<version>/`.
     pub installed: bool,
     /// The version newly-created projects and services will use by default.
     pub is_default: bool,
@@ -233,7 +233,7 @@ impl RuntimeManager {
             runtime,
             paths,
             http: reqwest::Client::builder()
-                .user_agent("OpenLocalServer")
+                .user_agent("OLS")
                 .build()
                 .expect("failed to build runtime HTTP client"),
             events_tx,
@@ -2552,7 +2552,7 @@ mod tests {
             .build()
             .unwrap();
         let http = reqwest::Client::builder()
-            .user_agent("OpenLocalServer")
+            .user_agent("OLS")
             .build()
             .unwrap();
         let version = "13.1.1";

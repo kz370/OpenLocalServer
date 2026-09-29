@@ -113,7 +113,7 @@ pub fn install() -> Result<(), String> {
     let service = manager
         .create_service(&info, ServiceAccess::CHANGE_CONFIG | ServiceAccess::START)
         .map_err(|e| format!("could not create the service: {e}"))?;
-    let _ = service.set_description("Lets OpenLocalServer add local domains to the hosts file without asking for administrator rights each time.");
+    let _ = service.set_description("Lets OLS add local domains to the hosts file without asking for administrator rights each time.");
     service
         .start::<&str>(&[])
         .map_err(|e| format!("could not start the service: {e}"))?;

@@ -1,6 +1,6 @@
 //! System monitoring for the Processes page: machine-wide CPU and memory, free space on
-//! the drives OpenLocalServer uses, plus
-//! CPU/memory for each process OpenLocalServer manages — counted with its children,
+//! the drives OLS uses, plus
+//! CPU/memory for each process OLS manages — counted with its children,
 //! since nginx, Apache and php-cgi do their work in child processes.
 
 use std::collections::HashMap;
@@ -52,7 +52,7 @@ pub struct DiskStats {
     pub mount: String,
     pub used: u64,
     pub total: u64,
-    /// What lives there: "OpenLocalServer data", "Projects".
+    /// What lives there: "OLS data", "Projects".
     pub holds: Vec<String>,
 }
 

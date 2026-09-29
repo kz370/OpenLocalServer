@@ -314,7 +314,7 @@ function NodePanel({ projectId, info, busy, go }: { projectId: string; info: Pac
           <span className="text-muted-foreground">No package manager is set in this project; npm is the default.</span>
         )}
       </p>
-      {info.detected === 'bun' && <p className="text-xs text-warning">Bun is not managed by OpenLocalServer. Install it yourself and run it from a terminal.</p>}
+      {info.detected === 'bun' && <p className="text-xs text-warning">Bun is not managed by OLS. Install it yourself and run it from a terminal.</p>}
       <div className="flex flex-col gap-2">
         {(['npm', 'pnpm', 'yarn'] as const).map((m) => (
           <div key={m} className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm">

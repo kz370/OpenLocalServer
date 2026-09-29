@@ -1,4 +1,4 @@
-//! `ols`: the OpenLocalServer command line (§136).
+//! `ols`: the OLS command line (§136).
 //!
 //! Every command is a `CoreCommand` sent over the local control channel to whoever owns
 //! the core: the desktop app when it is open, otherwise a background `ols daemon` that is
@@ -15,7 +15,7 @@ use ols_core::control::{self, ClientError};
 use ols_core::{AppPaths, Diagnostic};
 
 #[derive(Parser)]
-#[command(name = "ols", version, about = "OpenLocalServer from the command line", long_about = None)]
+#[command(name = "ols", version, about = "OLS from the command line", long_about = None)]
 struct Cli {
     /// Print the raw JSON response instead of text.
     #[arg(long, global = true)]
@@ -46,7 +46,7 @@ enum Cmd {
         #[arg(short, long)]
         yes: bool,
     },
-    /// Check everything OpenLocalServer depends on (§113).
+    /// Check everything OLS depends on (§113).
     Doctor,
     /// Diagnose and fix what is safe (§114); a project name limits it to that project.
     Repair {
@@ -424,7 +424,7 @@ impl Ctx {
         match control::send(&self.paths, cmd.clone()) {
             Ok(r) => r.map_err(diag),
             Err(ClientError::NotRunning) => {
-                eprintln!("Starting OpenLocalServer in the background…");
+                eprintln!("Starting OLS in the background…");
                 spawn_daemon()?;
                 let started = Instant::now();
                 while control::is_running(&self.paths).is_none() {
@@ -561,10 +561,7 @@ fn daemon(paths: &AppPaths, stop: bool) -> ExitCode {
         return ExitCode::SUCCESS;
     }
     if let Some(i) = control::is_running(paths) {
-        eprintln!(
-            "OpenLocalServer is already running ({}, process {}).",
-            i.kind, i.pid
-        );
+        eprintln!("OLS is already running ({}, process {}).", i.kind, i.pid);
         return ExitCode::FAILURE;
     }
     ols_core::logging::init(&paths.logs_dir());
@@ -1777,7 +1774,7 @@ Install it with: ols update install",
             }
         }
         UpdateCmd::Install => {
-            if !confirm("Start the installer? OpenLocalServer will be replaced.") {
+            if !confirm("Start the installer? OLS will be replaced.") {
                 return Ok(());
             }
             ctx.call(CoreCommand::InstallUpdate)?;

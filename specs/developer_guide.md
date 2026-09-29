@@ -1,4 +1,4 @@
-# Developer Guide — OpenLocalServer
+# Developer Guide — OLS
 
 ## Setup
 Requirements: Windows 10/11 x64, Rust stable, Node 22, Tauri prerequisites (WebView2, MSVC build tools).

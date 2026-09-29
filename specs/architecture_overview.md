@@ -1,7 +1,7 @@
-# Architecture Overview — OpenLocalServer
+# Architecture Overview — OLS
 
 ## Project Type
-OpenLocalServer is a local development environment manager for Windows. Successor to XAMPP / Laragon with broader runtime coverage and extensibility. Each project gets isolated runtimes, own domain, trusted local HTTPS, without manual system edits. Status: pre-release, stage 15/20 built.
+OLS is a local development environment manager for Windows. Successor to XAMPP / Laragon with broader runtime coverage and extensibility. Each project gets isolated runtimes, own domain, trusted local HTTPS, without manual system edits. Status: pre-release, stage 15/20 built.
 
 ## Technologies Used
 - **Backend:** Rust (edition 2021, stable), Tokio full runtime, tracing + tracing-appender, serde / serde_json / serde_yaml, reqwest (rustls), sha2/sha1, zip, minijinja, regex, rcgen + rustls, portable-pty, sysinfo, chrono, hyper, minisign-verify, notify, keyring, directories, clap 4.

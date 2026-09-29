@@ -37,7 +37,7 @@ const KEY: &str = "resources";
 const LIMITER_ENV: &str = "OLS_CPULIMIT_PATH";
 const LIMITER_EXE: &str = "cpulimit.exe";
 const LIMITER_HINT: &str =
-    "CPU limits need cpulimit.exe, which Open Local Server ships with. It is not in the install \
+    "CPU limits need cpulimit.exe, which OLS ships with. It is not in the install \
      folder — reinstall, or set the path to it in Resources.";
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

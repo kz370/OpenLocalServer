@@ -1,5 +1,5 @@
 //! Caddy (§22, Stage 10): Caddyfile generation behind [`WebServer`]. Caddy's own automatic
-//! HTTPS is switched off — certificates come from the OpenLocalServer CA like every other
+//! HTTPS is switched off — certificates come from the OLS CA like every other
 //! server, so a site looks identical whichever server is active.
 
 use std::path::PathBuf;

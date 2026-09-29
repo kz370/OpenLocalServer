@@ -1,4 +1,4 @@
-# OpenLocalServer user guide
+# OLS user guide
 
 ## First run
 1. Open **Runtimes** and install a PHP version (and Node or Python if you use them). Downloads are checked against a SHA-256.
@@ -26,7 +26,7 @@ Run **Doctor** (command palette) or `ols doctor`. It lists problems as Problem, 
 integration, support and privacy → Save bundle** writes a redacted zip for a bug report.
 
 ## Privacy
-OpenLocalServer sends nothing anywhere on its own: no telemetry, no analytics. It contacts the internet only when you
+OLS sends nothing anywhere on its own: no telemetry, no analytics. It contacts the internet only when you
 install or update something, refresh a catalog, check for updates, start a tunnel, or use an AI provider you configured.
 
 ## AI assistant (optional)

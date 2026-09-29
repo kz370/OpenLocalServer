@@ -11,7 +11,7 @@ in the release notes if you want.
 
 ## Scope
 
-OpenLocalServer runs local servers and edits system files (the hosts file, the certificate trust store). Reports
+OLS runs local servers and edits system files (the hosts file, the certificate trust store). Reports
 about the following are especially welcome:
 
 - The elevated helper accepting commands it should refuse.

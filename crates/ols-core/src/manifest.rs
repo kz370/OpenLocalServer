@@ -273,8 +273,9 @@ pub fn read_lock(project_path: &Path) -> Result<Option<LockFile>, String> {
     read_yaml(&lock_path(project_path))
 }
 
-const MANIFEST_HEADER: &str = "# OpenLocalServer project environment (see docs: .openlocalserver/environment.yaml).\n# Commit this folder so `ols setup` rebuilds the same environment on another machine.\n";
-const LOCK_HEADER: &str = "# Written by OpenLocalServer after a successful setup. Exact versions, for reproducible setups.\n";
+const MANIFEST_HEADER: &str = "# OLS project environment (see docs: .openlocalserver/environment.yaml).\n# Commit this folder so `ols setup` rebuilds the same environment on another machine.\n";
+const LOCK_HEADER: &str =
+    "# Written by OLS after a successful setup. Exact versions, for reproducible setups.\n";
 
 pub fn write_manifest(
     project_path: &Path,

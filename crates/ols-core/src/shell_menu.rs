@@ -1,4 +1,4 @@
-//! Explorer context menu (§124, Stage 17). Adds "Add to OpenLocalServer" and "Set up with OpenLocalServer"
+//! Explorer context menu (§124, Stage 17). Adds "Add to OLS" and "Set up with OLS"
 //! to the right-click menu of a folder (and of its background). Per user (`HKCU\Software\Classes`), so no
 //! administrator prompt; it only ever runs the `ols` command line, which does the work through the core.
 //! Removing it deletes exactly the keys added here.
@@ -42,14 +42,10 @@ fn find_cli() -> Option<std::path::PathBuf> {
 /// The command each entry runs; `%V` is the folder Explorer passes.
 fn commands(cli: &str) -> [(&'static str, &'static str, String); 2] {
     [
-        (
-            ADD,
-            "Add to OpenLocalServer",
-            format!("\"{cli}\" project add \"%V\""),
-        ),
+        (ADD, "Add to OLS", format!("\"{cli}\" project add \"%V\"")),
         (
             SETUP,
-            "Set up with OpenLocalServer",
+            "Set up with OLS",
             format!("cmd.exe /k \"\"{cli}\" setup --path \"%V\"\""),
         ),
     ]
@@ -86,7 +82,7 @@ impl Inner {
             CoreError::failed_fix(
                 "The Explorer menu wasn't added.",
                 "The `ols` command line program wasn't found next to the app or on PATH.",
-                "Reinstall OpenLocalServer, or add the folder holding ols.exe to PATH.",
+                "Reinstall OLS, or add the folder holding ols.exe to PATH.",
             )
         })?;
         let cli = cli.display().to_string();

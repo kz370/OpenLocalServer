@@ -83,11 +83,7 @@ pub fn check_site(target: &HealthTarget) -> HealthReport {
         let (tls_step, http_step) = if tcp_ok {
             match tls_get(target.hostname, addr, target.ca_pem) {
                 Ok(status_line) => (
-                    step(
-                        "TLS",
-                        true,
-                        "handshake succeeded against the OpenLocalServer CA",
-                    ),
+                    step("TLS", true, "handshake succeeded against the OLS CA"),
                     Some(status_line),
                 ),
                 Err(e) => (step("TLS", false, e), None),
@@ -218,7 +214,7 @@ fn http_result(status_line: &str) -> HealthStep {
 }
 
 fn request(hostname: &str) -> String {
-    format!("GET / HTTP/1.1\r\nHost: {hostname}\r\nConnection: close\r\nUser-Agent: OpenLocalServer-health\r\nAccept: */*\r\n\r\n")
+    format!("GET / HTTP/1.1\r\nHost: {hostname}\r\nConnection: close\r\nUser-Agent: OLS-health\r\nAccept: */*\r\n\r\n")
 }
 
 fn first_line(mut reader: impl Read) -> Result<String, String> {
@@ -285,7 +281,7 @@ fn tls_get(hostname: &str, addr: SocketAddr, ca_pem: &Path) -> Result<String, St
     let mut tls = rustls::StreamOwned::new(conn, socket);
 
     tls.write_all(request(hostname).as_bytes())
-        .map_err(|e| format!("TLS handshake failed: {e}. The certificate does not chain to the OpenLocalServer CA, or does not cover {hostname}."))?;
+        .map_err(|e| format!("TLS handshake failed: {e}. The certificate does not chain to the OLS CA, or does not cover {hostname}."))?;
     first_line(tls).map_err(|e| format!("TLS handshake failed: {e}"))
 }
 

@@ -148,7 +148,7 @@ impl Inner {
                     Severity::Error,
                     format!("{name} needs {} {wanted}, which is not installed", r.id.to_uppercase()),
                     "The project asks for this version (in its manifest or its own files), and no installed version matches.",
-                    if fix.is_some() { "Install it." } else { "Install it yourself and point OpenLocalServer at it on the Runtimes page." },
+                    if fix.is_some() { "Install it." } else { "Install it yourself and point OLS at it on the Runtimes page." },
                     fix,
                     vec![format!("Requested by: {:?}", r.source).to_lowercase()],
                 ));
@@ -631,7 +631,7 @@ fn auto_fix_findings(inner: &Inner) -> Vec<Finding> {
 
 /// `ols doctor` as text.
 pub fn doctor_text(r: &DoctorReport) -> String {
-    let mut out = String::from("OpenLocalServer Doctor\n\n");
+    let mut out = String::from("OLS Doctor\n\n");
     for c in &r.checks {
         let mark = match c.status.as_str() {
             "ok" => "✓",

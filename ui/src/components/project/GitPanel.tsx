@@ -75,7 +75,7 @@ export function GitPanel({ projectId }: { projectId: string }) {
       <div className="flex flex-col gap-3">
         <ErrorCard error={error} onDismiss={() => setError(null)} />
         <p className="text-sm">Git was not found on this computer.</p>
-        <p className="text-sm text-muted-foreground">Install Git for Windows, or a portable Git that OpenLocalServer keeps in its own folder.</p>
+        <p className="text-sm text-muted-foreground">Install Git for Windows, or a portable Git that OLS keeps in its own folder.</p>
         <div>
           <Button
             disabled={busy !== null}

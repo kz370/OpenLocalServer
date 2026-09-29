@@ -306,7 +306,7 @@ impl Inner {
                 format!("operation_interrupted:{}", op.id),
                 Severity::Warning,
                 format!("\"{}\" did not finish", op.title),
-                "OpenLocalServer stopped or crashed while this was running, so it may have been applied only in part.",
+                "OLS stopped or crashed while this was running, so it may have been applied only in part.",
                 if op.retry.is_some() { "Run it again to finish the job." } else { "Check the result, and do it again if something is missing." },
                 op.retry.clone(),
                 details,
@@ -409,7 +409,7 @@ impl Inner {
                 Severity::Warning,
                 "The data folder's path is very long",
                 format!("It is {} characters, and Windows tools often fail past 260 characters once a project's own folders are added.", root.len()),
-                "Move OpenLocalServer to a shorter folder such as C:\\OpenLocalServer.",
+                "Move OLS to a shorter folder such as C:\\OpenLocalServer.",
                 None,
                 vec![root.clone()],
             );
@@ -432,17 +432,16 @@ impl Inner {
                 Severity::Warning,
                 "The data folder is inside a synced folder",
                 "Sync clients lock files that databases and servers keep open, which causes corruption and slow starts.",
-                "Move OpenLocalServer out of the synced folder, or pause syncing for it.",
+                "Move OLS out of the synced folder, or pause syncing for it.",
                 None,
                 vec![root.clone()],
             );
         }
 
         // A full disk stops databases first.
-        let stats = self.monitor.disks(&[(
-            "OpenLocalServer data".to_string(),
-            self.paths.root().to_path_buf(),
-        )]);
+        let stats = self
+            .monitor
+            .disks(&[("OLS data".to_string(), self.paths.root().to_path_buf())]);
         for d in stats {
             let free = d.total.saturating_sub(d.used);
             if d.total > 0 && free < 2 * 1024 * 1024 * 1024 {

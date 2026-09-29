@@ -448,7 +448,7 @@ pub fn set_extra(entries: &[OwnedManifest]) {
     *EXTRA_PROBES.write().unwrap() = probes;
 }
 
-/// Entries matching the machine OpenLocalServer is actually running on.
+/// Entries matching the machine OLS is actually running on.
 pub fn builtin_catalog() -> Vec<PackageManifest> {
     let extra = EXTRA.read().unwrap();
     CATALOG

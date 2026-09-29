@@ -1,6 +1,6 @@
 # Plugins and catalogs
 
-A plugin adds things to OpenLocalServer without changing the app. This version supports **declarative plugins**:
+A plugin adds things to OLS without changing the app. This version supports **declarative plugins**:
 data checked against a schema, with no code in them. Code plugins (`kind: wasm`) are recognised but refused,
 because there is no sandbox for them yet.
 

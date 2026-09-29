@@ -1,4 +1,4 @@
-# API Reference — OpenLocalServer
+# API Reference — OLS
 
 Three front doors share one command model: Tauri IPC, CLI, HTTP API. All dispatch `CoreCommand` -> `CoreResponse`; errors shaped `{problem, cause, fix}`.
 

@@ -1,7 +1,7 @@
-# OpenLocalServer — Status and Missing Features
+# OLS — Status and Missing Features
 
 As of 2026-09-26. The staged plan is in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md); section numbers (§)
-refer to [OpenLocalServer_Master_SRS_v4.md](../OpenLocalServer_Master_SRS_v4.md).
+refer to [OLS_Master_SRS_v4.md](../OLS_Master_SRS_v4.md).
 
 ## Where we are
 
@@ -18,7 +18,7 @@ Release 1.1   Stages 18–19  ████████████████�
 Release 2.0   Stage 20      ░░░░░░░░░░░░░░░░░░░░  Linux, last
 ```
 
-OpenLocalServer targets Windows; Linux comes last (release 2.0). macOS is not planned.
+OLS targets Windows; Linux comes last (release 2.0). macOS is not planned.
 
 ## What works today
 

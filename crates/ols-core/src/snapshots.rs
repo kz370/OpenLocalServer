@@ -303,14 +303,14 @@ fn read_zip_meta(path: &Path) -> Result<SnapshotContent, String> {
         .map_err(|e| format!("{} is not a snapshot: {e}", path.display()))?;
     let mut entry = zip
         .by_name(META)
-        .map_err(|_| format!("{} is not an OpenLocalServer snapshot", path.display()))?;
+        .map_err(|_| format!("{} is not an OLS snapshot", path.display()))?;
     let mut text = String::new();
     entry.read_to_string(&mut text).map_err(|e| e.to_string())?;
     let c: SnapshotContent = serde_json::from_str(&text)
         .map_err(|e| format!("the snapshot's description is damaged: {e}"))?;
     if c.format > FORMAT {
         return Err(format!(
-            "this snapshot was made by a newer OpenLocalServer (format {})",
+            "this snapshot was made by a newer OLS (format {})",
             c.format
         ));
     }

@@ -98,7 +98,7 @@ pub enum ClientError {
 impl std::fmt::Display for ClientError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ClientError::NotRunning => write!(f, "OpenLocalServer is not running"),
+            ClientError::NotRunning => write!(f, "OLS is not running"),
             ClientError::Io(e) => write!(f, "{e}"),
         }
     }
@@ -249,7 +249,7 @@ pub fn serve(core: Core, paths: &AppPaths, kind: &str) -> Result<ControlServer, 
                         s
                     }
                     Err(e) => {
-                        let _ = ready_tx.send(Err(format!("another OpenLocalServer already owns the control pipe ({e})")));
+                        let _ = ready_tx.send(Err(format!("another OLS already owns the control pipe ({e})")));
                         return;
                     }
                 };

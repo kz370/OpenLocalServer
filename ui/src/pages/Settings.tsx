@@ -201,7 +201,7 @@ export function SettingsPage() {
     <div className="flex flex-col gap-5">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-        <p className="text-sm text-muted-foreground">OpenLocalServer {version && `v${version}`}</p>
+        <p className="text-sm text-muted-foreground">OLS {version && `v${version}`}</p>
       </div>
 
       <ErrorCard error={error} onDismiss={() => setError(null)} />
@@ -353,7 +353,7 @@ export function SettingsPage() {
                 <CardDescription>Servers keep running from the system tray after you close the window.</CardDescription>
               </CardHeader>
               <CardContent>
-                <SwitchRow checked={startup.with_windows} onChange={(v) => set({ with_windows: v })} title="Start with Windows" hint="Adds OpenLocalServer to your account's startup list (no administrator rights needed)." />
+                <SwitchRow checked={startup.with_windows} onChange={(v) => set({ with_windows: v })} title="Start with Windows" hint="Adds OLS to your account's startup list (no administrator rights needed)." />
                 <SwitchRow checked={startup.start_minimized} onChange={(v) => set({ start_minimized: v })} title="Start minimized to the tray" hint="Every launch, whether you open it yourself or Windows starts it with your account." />
                 <SwitchRow checked={startup.close_to_tray} onChange={(v) => set({ close_to_tray: v })} title="Closing the window keeps running in the tray" hint="Use Quit in the tray menu to stop everything." />
                 <SwitchRow checked={startup.notifications} onChange={(v) => set({ notifications: v })} title="Desktop notifications" hint="When a process crashes, an install finishes, or a Quick App completes." />

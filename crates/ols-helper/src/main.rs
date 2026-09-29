@@ -1,10 +1,10 @@
-//! `ols-helper` — the only part of OpenLocalServer that ever runs elevated (§138, §142).
+//! `ols-helper` — the only part of OLS that ever runs elevated (§138, §142).
 //!
 //! It accepts a small, *closed* set of commands and validates every argument before
 //! touching anything, so a compromised or buggy caller can't turn it into a general
 //! "run this as admin" tool:
 //!
-//!   hosts-apply <ip>=<host> [...]   replace the OpenLocalServer block in the hosts file
+//!   hosts-apply <ip>=<host> [...]   replace the OLS block in the hosts file
 //!   hosts-remove                    delete that block
 //!   nrpt-add <.suffix> 127.0.0.1    make Windows resolve `*.suffix` through our local DNS
 //!   nrpt-remove <.suffix>           undo that

@@ -334,7 +334,7 @@ pub fn heidisql_args_for_executable(
 }
 
 /// Starts a GUI tool detached: not supervised, because the user drives it and closing
-/// OpenLocalServer shouldn't kill their open database window. `verbatim` args are appended
+/// OLS shouldn't kill their open database window. `verbatim` args are appended
 /// exactly as written (Windows) instead of being re-quoted.
 pub fn launch(executable: &str, args: &[String], verbatim: bool) -> Result<(), String> {
     let mut cmd = std::process::Command::new(executable);

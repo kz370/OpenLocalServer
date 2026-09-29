@@ -72,7 +72,7 @@ fn send_test_email(port: u16) {
     expect_reply!();
     send!("DATA");
     expect_reply!();
-    send!("Subject: OpenLocalServer Stage 5 smoke test\r\n\r\nIf you can read this, Mailpit captured it.\r\n.");
+    send!("Subject: OLS Stage 5 smoke test\r\n\r\nIf you can read this, Mailpit captured it.\r\n.");
     expect_reply!();
     send!("QUIT");
     expect_reply!();

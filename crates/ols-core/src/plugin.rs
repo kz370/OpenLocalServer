@@ -345,7 +345,11 @@ fn run_check(h: &HealthCheck) -> Result<(), String> {
     }
     let _ = stream.set_read_timeout(Some(timeout));
     let _ = stream.set_write_timeout(Some(timeout));
-    write!(stream, "GET {path} HTTP/1.0\r\nHost: {host}\r\nUser-Agent: OpenLocalServer\r\nConnection: close\r\n\r\n").map_err(|e| e.to_string())?;
+    write!(
+        stream,
+        "GET {path} HTTP/1.0\r\nHost: {host}\r\nUser-Agent: OLS\r\nConnection: close\r\n\r\n"
+    )
+    .map_err(|e| e.to_string())?;
     let mut head = [0u8; 32];
     let n = stream
         .read(&mut head)
@@ -571,7 +575,7 @@ impl Inner {
             }
         };
         if problem.is_none() && manifest.kind == "wasm" {
-            problem = Some("This plugin runs code in a sandbox, which this version of OpenLocalServer doesn't have yet. It can't be turned on.".into());
+            problem = Some("This plugin runs code in a sandbox, which this version of OLS doesn't have yet. It can't be turned on.".into());
         }
         let state = states.get(&manifest.id).cloned().unwrap_or_default();
         let approved = problem.is_none()

@@ -766,7 +766,7 @@ function TunnelEditor({
         )}
         {t.provider === 'cloudflare' && !!t.public_hostname && <Toggle checked={!!t.autostart} onChange={(v) => set({ autostart: v })} label="Reconnect automatically" hint="Restart the named tunnel after a network interruption or process exit." />}
         <div className="flex flex-col gap-3 rounded-lg border border-border p-3">
-          <Toggle checked={protect} onChange={setProtect} label="Ask visitors for a username and password" hint="Checked by OpenLocalServer itself, so it works with every provider." />
+          <Toggle checked={protect} onChange={setProtect} label="Ask visitors for a username and password" hint="Checked by OLS itself, so it works with every provider." />
           {protect && (
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Username">

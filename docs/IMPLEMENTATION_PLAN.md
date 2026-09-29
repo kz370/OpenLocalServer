@@ -1,4 +1,4 @@
-# OpenLocalServer — Implementation Plan
+# OLS — Implementation Plan
 
 This file has two parts:
 
@@ -66,12 +66,12 @@ have not been run, and the new screens have not all been checked in the running 
 - **Projects and Sites are one page** (built 2026-09-26, aaPanel style): the Sites page is one table, a row per site plus projects that have no domain yet. Each row's Settings button opens a large dialog with a side menu: site settings, web server config and Servers (start, stop or restart the web server, PHP, the site's app and services), then the project's overview and tools (environment, terminal, commands such as artisan, .env, Git, workers, snapshots, repair, mail, Composer, Node, Python, Xdebug). The web server and certificates are on a separate Web server page.
 
 ### Changed (2026-09-26)
-- **No macOS.** OpenLocalServer targets Windows, and Linux last (Stage 20). macOS work is dropped from the plan.
+- **No macOS.** OLS targets Windows, and Linux last (Stage 20). macOS work is dropped from the plan.
 - **Linux moved to the end**: stages after 15 are now 16 plugins, 17 hardening (Windows 1.0), 18 k6, 19 AI,
   20 Linux (2.0).
 
 ### Deviations from the plan
-- Product name *OpenLocalServer*; crates `ols-core`, `ols-helper` and `ols-cli` (binary `ols`); no separate
+- Product name *OLS*; crates `ols-core`, `ols-helper` and `ols-cli` (binary `ols`); no separate
   `platform` or `catalog` crates yet. Project manifests live in `.openlocalserver/`.
 - The CLI talks to the app over a named pipe with a per-session token in `control.json`; when the app is closed,
   the CLI starts `ols daemon`, which hands over to the app when the app starts.
@@ -84,7 +84,7 @@ have not been run, and the new screens have not all been checked in the running 
 
 ## Context
 
-`I:\Development\OpenLocalServer` holds only `OpenLocalServer_Master_SRS_v4.md` (174 sections): a free, open-source,
+`I:\Development\OpenLocalServer` holds only `OLS_Master_SRS_v4.md` (174 sections): a free, open-source,
 cross-platform local dev environment manager (XAMPP/Laragon successor) built on Tauri 2 + Rust +
 TypeScript + SQLite. Nothing is implemented yet. This plan turns the SRS into ordered, shippable stages
 that follow the SRS release train (§164 MVP 0.1 → §165 0.2 → §166 0.3 → §167 1.0).
@@ -97,7 +97,7 @@ Decisions taken:
 - **Excluded from this plan:** Docker integration, WSL integration, container orchestration, and the rest
   of §168 "Future Features" (remote envs, cloud deploy). Nothing in the plan depends on them. §168's AI
   diagnostics were excluded at first and are now Stage 19 (added 2026-09-26).
-- **Added beyond SRS:** OpenLocalServer integrates **HeidiSQL** (MySQL/MariaDB/SQLite GUI) and **pgAdmin 4**
+- **Added beyond SRS:** OLS integrates **HeidiSQL** (MySQL/MariaDB/SQLite GUI) and **pgAdmin 4**
   (PostgreSQL GUI) and can open them already connected to a project database.
   - It **first detects** an existing install on the system.
   - It downloads a tool only when the tool is missing **and** the user confirms.
@@ -230,7 +230,7 @@ registry), minijinja, clap, tauri-specta. UI: xterm.js, CodeMirror 6 (Stage 9).
      - Default dirs (`Program Files\HeidiSQL`, `Program Files\pgAdmin 4`) and PATH.
      - Scoop, Chocolatey, and winget install locations.
      - A user-chosen path in Settings.
-  2. **Found:** register that install as the tool and use it. OpenLocalServer never modifies it (§126).
+  2. **Found:** register that install as the tool and use it. OLS never modifies it (§126).
   3. **Not found:** show "HeidiSQL not installed" with **[Download & Install]**, **[Locate manually]**, and
      **[Skip]**. Nothing downloads without that click.
   4. **Download path:** the catalog entry goes through the Package Manager (HTTPS + SHA-256 verify).
@@ -239,7 +239,7 @@ registry), minijinja, clap, tauri-specta. UI: xterm.js, CodeMirror 6 (Stage 9).
   5. Detection re-runs on app start and from a "Rescan" button. A missing tool shows as unavailable instead of
      triggering a download.
   - **Connect without exposing passwords:**
-    - HeidiSQL: OpenLocalServer writes a session entry to HeidiSQL's settings.
+    - HeidiSQL: OLS writes a session entry to HeidiSQL's settings.
     - pgAdmin: servers go in through a `servers.json` import plus a passfile.
   - Project/database actions: "Open in HeidiSQL" and "Open in pgAdmin", already connected to that database.
   - Tool definitions carry detection rules (registry keys, paths, exe name), so plugins can add more tools later.
@@ -253,7 +253,7 @@ registry), minijinja, clap, tauri-specta. UI: xterm.js, CodeMirror 6 (Stage 9).
   - After the user confirms the download, the tool installs and opens connected to a test DB.
 
 ### Stage 6 — Domains, hosts, Local CA, HTTPS, Nginx, app servers
-- `ols-helper` v1: delimited OpenLocalServer block in the hosts file. Closed command set with validated input.
+- `ols-helper` v1: delimited OLS block in the hosts file. Closed command set with validated input.
 - `DomainManager` (§44–48): templates, subdomains, port mappings, and conflict detection.
 - Local CA (§50): key protected by restrictive ACLs (§142). Trusted in the Windows CurrentUser Root store after user confirmation.
 - `CertificateManager` (§51): generate/renew/revoke/regenerate, expiry and trust checks, and the full detail view
@@ -383,7 +383,7 @@ load tester, a single binary).
   threshold shows as a failed run.
 
 ### Stage 19 — AI assistant (bring your own model)
-Opt-in and off by default. OpenLocalServer ships no model and no account; the user points it at one.
+Opt-in and off by default. OLS ships no model and no account; the user points it at one.
 
 **Providers.** One `AiProvider` interface over the OpenAI chat-completions API (streaming, and tool calls where
 the model supports them), so every provider is the same code with a different base URL and key:
@@ -489,7 +489,7 @@ official binaries for PHP, MariaDB and the rest. Everything before it keeps the 
 - **UAC prompt fatigue**: per-operation helper in 0.1. Consider an optional installed helper service later.
 - **Ports 80/443** may be taken by IIS or Skype. The PortManager reports the owner and offers alternate ports.
 - **License**: pick at Stage 0. HeidiSQL (GPL) and pgAdmin (PostgreSQL licence) are downloaded, not bundled, so
-  OpenLocalServer's own license is unaffected.
+  OLS's own license is unaffected.
 
 ## Verification (per stage)
 - `cargo test --workspace`, `cargo test --features integration` (real binaries, temp home, test ports),

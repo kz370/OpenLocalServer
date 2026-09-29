@@ -212,7 +212,7 @@ pub fn send_test_mail(port: u16, to: &str) -> Result<(), String> {
     send("DATA\r\n")?;
     expect(&mut reader, 354, "DATA")?;
     send(&format!(
-        "From: OpenLocalServer <test@openlocalserver.test>\r\nTo: <{to}>\r\nSubject: OpenLocalServer test message\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nIf you can read this in Mailpit, mail from your projects will arrive.\r\n.\r\n"
+        "From: OLS <test@openlocalserver.test>\r\nTo: <{to}>\r\nSubject: OLS test message\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nIf you can read this in Mailpit, mail from your projects will arrive.\r\n.\r\n"
     ))?;
     expect(&mut reader, 250, "the message")?;
     let _ = send("QUIT\r\n");
@@ -460,9 +460,7 @@ mod tests {
         send_test_mail(port, "dev@example.test").unwrap();
         let seen = server.join().unwrap();
         assert!(seen.iter().any(|l| l == "RCPT TO:<dev@example.test>"));
-        assert!(seen
-            .iter()
-            .any(|l| l == "Subject: OpenLocalServer test message"));
+        assert!(seen.iter().any(|l| l == "Subject: OLS test message"));
     }
 
     #[test]

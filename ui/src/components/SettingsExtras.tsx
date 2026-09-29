@@ -178,7 +178,7 @@ function CpuLimitField({
         <Field label="Path to cpulimit.exe" hint="Only needed when it is not beside the app — a portable copy, or a dev build run from target\.">
           <Input
             value={limits.cpu_limiter_path ?? ''}
-            placeholder="C:\Program Files\Open Local Server\cpulimit.exe"
+            placeholder="C:\OpenLocalServer\cpulimit.exe"
             onChange={(e) => onChange({ cpu_limiter_path: e.target.value.trim() || null })}
           />
         </Field>
@@ -334,7 +334,9 @@ export function AboutCard() {
         <div className="flex items-center gap-4">
           <img src={mark} alt="" className="size-12 rounded-xl shadow-sm shadow-teal-500/30" />
           <div>
-            <h2 className="text-lg font-semibold tracking-tight text-foreground">OpenLocalServer</h2>
+            <h2 className="text-lg font-semibold tracking-tight text-foreground">
+              OLS <span className="font-normal text-muted-foreground">(Open Local Server)</span>
+            </h2>
             <div className="mt-1 flex items-center gap-2">
               {version ? <Badge variant="secondary">v{version}</Badge> : null}
               <Badge variant="outline">GPL-3.0-only</Badge>
@@ -414,10 +416,10 @@ export function SettingsBackupsCard() {
               variant="ghost"
               disabled={busy !== null}
               onClick={async () => {
-                if (!(await confirmAction('Restore these settings? The current ones are backed up first. Restart OpenLocalServer afterwards to load them.', 'Restore settings'))) return
+                if (!(await confirmAction('Restore these settings? The current ones are backed up first. Restart OLS to load them.', 'Restore settings'))) return
                 await run(`restore:${b.id}`, async () => {
                   await runCommand({ type: 'restore_settings', id: b.id })
-                  setMessage('Restored. Restart OpenLocalServer to load them.')
+                  setMessage('Restored. Restart OLS to load them.')
                   await load()
                 })
               }}

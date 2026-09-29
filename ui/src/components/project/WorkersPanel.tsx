@@ -68,7 +68,7 @@ export function WorkersPanel({ projectId }: { projectId: string }) {
       <section className="flex flex-col gap-2">
         {procfile && (
           <div className="flex items-center justify-between gap-3 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
-            <p className="text-sm"><span className="font-medium">{procfile.source} found</span><span className="text-muted-foreground"> · Import its processes into OpenLocalServer</span></p>
+            <p className="text-sm"><span className="font-medium">{procfile.source} found</span><span className="text-muted-foreground"> · Import its processes into OLS</span></p>
             <Button size="sm" variant="secondary" onClick={() => setProcfileOpen(true)}>Preview import</Button>
           </div>
         )}
@@ -159,7 +159,7 @@ export function WorkersPanel({ projectId }: { projectId: string }) {
             <Plus /> Add task
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground">Tasks run while OpenLocalServer is open. A run that is still going is never started twice.</p>
+        <p className="text-xs text-muted-foreground">Tasks run while OLS is open. A run that is still going is never started twice.</p>
         {tasks.map((t) => (
           <div key={t.task.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
             <div className="min-w-0">

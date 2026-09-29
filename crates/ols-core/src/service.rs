@@ -837,11 +837,7 @@ impl ServiceManager {
         let (exe, port) = match engine {
             "mariadb" => ("mariadb.exe", primary_port("mariadb")),
             "postgres" => ("psql.exe", primary_port("postgres")),
-            other => {
-                return Err(format!(
-                    "{other} is not a SQL engine OpenLocalServer manages"
-                ))
-            }
+            other => return Err(format!("{other} is not a SQL engine OLS manages")),
         };
         let version = self
             .runtimes

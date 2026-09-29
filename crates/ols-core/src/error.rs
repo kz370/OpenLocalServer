@@ -87,10 +87,7 @@ impl From<&CoreError> for Diagnostic {
             CoreError::Io(e) => Diagnostic {
                 problem: "A file operation failed.".into(),
                 cause: e.to_string(),
-                fix: Some(
-                    "Check that OpenLocalServer has permission to write to its data directory."
-                        .into(),
-                ),
+                fix: Some("Check that OLS has permission to write to its data directory.".into()),
             },
             CoreError::Json(e) => Diagnostic {
                 problem: "Settings could not be read or written.".into(),
@@ -102,10 +99,7 @@ impl From<&CoreError> for Diagnostic {
             CoreError::Db(e) => Diagnostic {
                 problem: "The local database failed.".into(),
                 cause: e.clone(),
-                fix: Some(
-                    "Check that OpenLocalServer can write to its data directory, then restart."
-                        .into(),
-                ),
+                fix: Some("Check that OLS can write to its data directory, then restart.".into()),
             },
             CoreError::UnknownKey(k) => Diagnostic {
                 problem: format!("Setting \"{k}\" does not exist."),

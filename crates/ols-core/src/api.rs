@@ -1,6 +1,6 @@
 //! The localhost HTTP API (§137, Stage 17). Off by default. When on, it listens on `127.0.0.1` only
 //! and answers `POST /v1/command` with the same `CoreCommand` JSON the CLI and the app use, so
-//! scripts and CI can drive OpenLocalServer without the desktop window.
+//! scripts and CI can drive OLS without the desktop window.
 //!
 //! - **A bearer token is required.** Only its SHA-256 is stored; the token itself is shown once, when
 //!   it is generated. Generating a new one revokes the old one immediately.

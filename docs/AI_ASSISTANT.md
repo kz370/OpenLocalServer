@@ -1,6 +1,6 @@
 # AI assistant
 
-Stage 19. Optional, off by default, and bring your own model: OpenLocalServer ships no model and needs no account.
+Stage 19. Optional, off by default, and bring your own model: OLS ships no model and needs no account.
 
 ## Setting up
 

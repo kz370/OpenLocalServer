@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use directories::ProjectDirs;
 
-/// Environment variable that overrides every OpenLocalServer path.
+/// Environment variable that overrides every OLS path.
 /// Used by tests and CI so nothing touches a real machine's actual environment.
 pub const HOME_ENV_VAR: &str = "OLS_HOME";
 

@@ -1527,7 +1527,7 @@ impl Planner<'_> {
                         )
                     })
                     .unwrap_or_else(|| "another program".into());
-                self.conflict("port", true, format!("{} needs port {port}, which {who} is using.", status.name), "Stop that program yourself (OpenLocalServer never stops programs it didn't start), then plan again.");
+                self.conflict("port", true, format!("{} needs port {port}, which {who} is using.", status.name), "Stop that program yourself (OLS never stops programs it didn't start), then plan again.");
             }
         }
         self.step(

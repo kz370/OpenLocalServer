@@ -1,5 +1,5 @@
-//! Project Manager (§40 — Stage 4). A project is a folder OpenLocalServer knows about, plus
-//! whatever OpenLocalServer can read from it. Registering a project never writes into it.
+//! Project Manager (§40 — Stage 4). A project is a folder OLS knows about, plus
+//! whatever OLS can read from it. Registering a project never writes into it.
 
 use std::path::PathBuf;
 

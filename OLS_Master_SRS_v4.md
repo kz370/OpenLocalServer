@@ -1,8 +1,8 @@
-# OpenLocalServer --- Master Software Requirements Specification
+# OLS --- Master Software Requirements Specification
 
 **Document Version:** 4.0\
 **Status:** Final Consolidated Master SRS\
-**Product:** OpenLocalServer\
+**Product:** OLS\
 **Product Type:** Free, open-source, cross-platform local development
 environment platform\
 **Target Platforms:** Windows, macOS, Linux\
@@ -13,11 +13,11 @@ React/Vue/Svelte + SQLite
 
 # 1. Executive Summary
 
-OpenLocalServer is a free and open-source desktop development environment
+OLS is a free and open-source desktop development environment
 manager inspired by tools such as XAMPP and Laragon, but designed as a
 much broader and more extensible platform.
 
-OpenLocalServer provides one place to install, configure, run, diagnose, and
+OLS provides one place to install, configure, run, diagnose, and
 reproduce complete local development environments.
 
 It manages:
@@ -75,19 +75,19 @@ It manages:
 
 The central product principle is:
 
-> **A project declares the environment it needs, and OpenLocalServer makes that
+> **A project declares the environment it needs, and OLS makes that
 > environment available locally.**
 
 ------------------------------------------------------------------------
 
 # 2. Vision
 
-OpenLocalServer should make this workflow simple:
+OLS should make this workflow simple:
 
 ``` text
 Clone Project
       ↓
-Open in OpenLocalServer
+Open in OLS
       ↓
 Detect Requirements
       ↓
@@ -127,7 +127,7 @@ manually.
 
 # 3. Product Goals
 
-OpenLocalServer shall:
+OLS shall:
 
 1.  Be free to use.
 2.  Be open source.
@@ -169,7 +169,7 @@ OpenLocalServer shall:
 
 # 4. Non-Goals
 
-OpenLocalServer is not intended to:
+OLS is not intended to:
 
 -   Replace a full IDE.
 -   Replace Git.
@@ -295,7 +295,7 @@ Xdebug
 # 7. Architecture
 
 ``` text
-                         OpenLocalServer
+                         OLS
                             │
                ┌────────────┴────────────┐
                │                         │
@@ -379,7 +379,7 @@ Sensitive operations should use a dedicated privileged helper.
 
 # 9. Runtime Management
 
-Runtime management is a core OpenLocalServer feature.
+Runtime management is a core OLS feature.
 
 Supported initial runtimes:
 
@@ -600,7 +600,7 @@ PHP 8.3
 
 # 19. Runtime-Aware Terminal
 
-A terminal opened from a OpenLocalServer project must expose the project's
+A terminal opened from an OLS project must expose the project's
 selected runtime.
 
 Example:
@@ -702,7 +702,7 @@ Each should support:
 
 # 23. Web-Server Site Configuration
 
-OpenLocalServer must expose project-specific web-server configuration as a
+OLS must expose project-specific web-server configuration as a
 first-class feature.
 
 For Nginx:
@@ -746,7 +746,7 @@ routing
 
 # 24. Site Enable / Disable
 
-OpenLocalServer should provide a GUI equivalent to traditional
+OLS should provide a GUI equivalent to traditional
 site-enable/site-disable workflows.
 
 Example:
@@ -799,7 +799,7 @@ Editor capabilities:
 
 # 26. Generated vs Manual Configuration
 
-OpenLocalServer must track whether a configuration is:
+OLS must track whether a configuration is:
 
 ``` text
 Managed
@@ -809,15 +809,15 @@ Manual
 
 ### Managed
 
-OpenLocalServer owns the configuration.
+OLS owns the configuration.
 
 ### Advanced
 
-OpenLocalServer generates the base configuration but permits manual changes.
+OLS generates the base configuration but permits manual changes.
 
 ### Manual
 
-The user owns the configuration and OpenLocalServer must not overwrite it
+The user owns the configuration and OLS must not overwrite it
 without explicit confirmation.
 
 ------------------------------------------------------------------------
@@ -836,7 +836,7 @@ Regenerating it may overwrite those changes.
 [Cancel]
 ```
 
-OpenLocalServer must not silently destroy manual configuration.
+OLS must not silently destroy manual configuration.
 
 ------------------------------------------------------------------------
 
@@ -870,7 +870,7 @@ Caddy should use its native validation mechanism.
 
 # 29. Configuration History
 
-OpenLocalServer should optionally retain configuration versions.
+OLS should optionally retain configuration versions.
 
 Example:
 
@@ -1047,7 +1047,7 @@ Project C → PostgreSQL 17
 Project D → MongoDB 8
 ```
 
-If instances cannot safely share a port/data directory, OpenLocalServer must
+If instances cannot safely share a port/data directory, OLS must
 create separate instances.
 
 ------------------------------------------------------------------------
@@ -1250,7 +1250,7 @@ Simple mode:
 Advanced mode:
 
 -   Local DNS resolver
--   Dynamic OpenLocalServer domains
+-   Dynamic OLS domains
 -   Wildcard resolution
 
 ------------------------------------------------------------------------
@@ -1291,7 +1291,7 @@ https://admin.shop.test
 
 # 50. Local Certificate Authority
 
-OpenLocalServer should provide a local development CA.
+OLS should provide a local development CA.
 
 ``` text
 OpenLocalServer Local CA
@@ -1380,7 +1380,7 @@ Example:
 ``` text
 https://shop.test
        ↓
-OpenLocalServer Tunnel
+OLS Tunnel
        ↓
 Public Internet
        ↓
@@ -1402,7 +1402,7 @@ Use cases:
 
 # 55. Tunnel Provider Architecture
 
-OpenLocalServer must use a provider abstraction.
+OLS must use a provider abstraction.
 
 Potential adapters may support services such as:
 
@@ -1486,7 +1486,7 @@ https://public-example.example
 
 # 59. Tunnel Security
 
-OpenLocalServer must:
+OLS must:
 
 -   Clearly show when a project is public.
 -   Show the public URL.
@@ -1533,9 +1533,9 @@ Last request:
 
 # 61. Mail Development --- Mailpit
 
-Mailpit is a mandatory first-class OpenLocalServer service.
+Mailpit is a mandatory first-class OLS service.
 
-OpenLocalServer should manage Mailpit like other local services.
+OLS should manage Mailpit like other local services.
 
 ------------------------------------------------------------------------
 
@@ -1575,7 +1575,7 @@ mail:
   enabled: true
 ```
 
-OpenLocalServer may automatically configure framework variables such as:
+OLS may automatically configure framework variables such as:
 
 ``` text
 MAIL_HOST=127.0.0.1
@@ -1678,7 +1678,7 @@ Application
 └── Mailpit
 ```
 
-OpenLocalServer should calculate startup order and wait for dependencies to
+OLS should calculate startup order and wait for dependencies to
 become healthy.
 
 ------------------------------------------------------------------------
@@ -1856,7 +1856,7 @@ Tunnel
 
 # 75. Conflict Detection
 
-OpenLocalServer must detect:
+OLS must detect:
 
 -   Port conflicts
 -   Runtime conflicts
@@ -2185,7 +2185,7 @@ Community catalog
 
 # 88. Quick App Catalog Sources
 
-OpenLocalServer should support:
+OLS should support:
 
 ``` text
 Built-in Catalog
@@ -2303,7 +2303,7 @@ Delete History Entry
 
 # 94. External Editor Integration
 
-OpenLocalServer should **not embed a full code editor such as Notepad++ inside
+OLS should **not embed a full code editor such as Notepad++ inside
 the application**.
 
 Instead, it should integrate with editors installed on the user's
@@ -2330,7 +2330,7 @@ The system should remain extensible.
 
 # 96. Notepad++ Integration
 
-On Windows, OpenLocalServer should detect an installed Notepad++ executable.
+On Windows, OLS should detect an installed Notepad++ executable.
 
 The user can choose:
 
@@ -2341,7 +2341,7 @@ Settings
 → Notepad++
 ```
 
-OpenLocalServer should not require a fixed installation path.
+OLS should not require a fixed installation path.
 
 Possible installation locations must be detected.
 
@@ -2395,7 +2395,7 @@ editor:
     - "{{file}}"
 ```
 
-OpenLocalServer should support placeholders such as:
+OLS should support placeholders such as:
 
 ``` text
 {{file}}
@@ -2454,7 +2454,7 @@ Open Logs
 
 # 102. Database GUI Integration
 
-OpenLocalServer does not need to become a full database IDE.
+OLS does not need to become a full database IDE.
 
 Instead, it should support external database tools.
 
@@ -2612,7 +2612,7 @@ Display:
 8025     Mailpit UI
 ```
 
-OpenLocalServer must detect conflicts before starting services.
+OLS must detect conflicts before starting services.
 
 It must not automatically kill unrelated processes.
 
@@ -2644,7 +2644,7 @@ Sensitive values must be redacted.
 
 # 111. Webhook Tester
 
-Because OpenLocalServer includes tunneling, it should provide a webhook
+Because OLS includes tunneling, it should provide a webhook
 workflow:
 
 ``` text
@@ -2708,7 +2708,7 @@ ols doctor
 Example:
 
 ``` text
-OpenLocalServer Doctor
+OLS Doctor
 
 ✓ Operating system supported
 ✓ PHP available
@@ -2740,7 +2740,7 @@ A project should have:
 [Repair Environment]
 ```
 
-OpenLocalServer should:
+OLS should:
 
 1.  Diagnose.
 2.  Explain detected issues.
@@ -2773,7 +2773,7 @@ Detected process:
 Options:
 
 [Inspect Process]
-[Change OpenLocalServer HTTPS Port]
+[Change OLS HTTPS Port]
 [Retry]
 ```
 
@@ -2804,7 +2804,7 @@ Health must represent technical state, not a subjective score.
 
 Centralized logs:
 
--   OpenLocalServer
+-   OLS
 -   Nginx
 -   Apache
 -   Caddy
@@ -2873,7 +2873,7 @@ Notify users about:
 Example:
 
 ``` text
-OpenLocalServer
+OLS
 
 ● Nginx
 ● MySQL
@@ -2896,7 +2896,7 @@ Exit
 Settings:
 
 ``` text
-[x] Start OpenLocalServer with system
+[x] Start OLS with system
 [x] Start selected services
 [x] Minimize to tray
 ```
@@ -2953,8 +2953,8 @@ Where supported by the OS:
 ``` text
 Right-click project folder
 
-Open with OpenLocalServer
-Create OpenLocalServer Environment
+Open with OLS
+Create OLS Environment
 Start Project
 Open Terminal
 ```
@@ -2977,13 +2977,13 @@ Basic features:
 -   Branch list
 -   Open repository
 
-OpenLocalServer should not replace Git clients for advanced Git workflows.
+OLS should not replace Git clients for advanced Git workflows.
 
 ------------------------------------------------------------------------
 
 # 126. Import Existing Environments
 
-OpenLocalServer should eventually detect and import environments from:
+OLS should eventually detect and import environments from:
 
 ``` text
 XAMPP
@@ -3000,11 +3000,11 @@ The user should be offered:
 
 ``` text
 Register Existing Installation
-Use OpenLocalServer Managed Installation
+Use OLS Managed Installation
 Ignore
 ```
 
-OpenLocalServer must not modify an existing installation without confirmation.
+OLS must not modify an existing installation without confirmation.
 
 ------------------------------------------------------------------------
 
@@ -3028,7 +3028,7 @@ No unnecessary repeated downloads.
 
 # 128. Offline Mode
 
-Once components are cached, OpenLocalServer should support as much offline
+Once components are cached, OLS should support as much offline
 operation as practical.
 
 Offline capabilities may include:
@@ -3074,7 +3074,7 @@ Support:
 -   Configuration backups
 -   Environment backups
 -   Certificate metadata backups
--   OpenLocalServer settings backups
+-   OLS settings backups
 
 Destructive operations should offer backup opportunities.
 
@@ -3248,7 +3248,7 @@ State-changing operations must require authorization.
 
 # 138. Security
 
-OpenLocalServer controls:
+OLS controls:
 
 -   Processes
 -   Files
@@ -3436,7 +3436,7 @@ Runtime/service updates remain independently controlled.
 Conceptual:
 
 ``` text
-OpenLocalServer/
+OLS/
 ├── app/
 ├── runtimes/
 │   ├── php/
@@ -3803,7 +3803,7 @@ Redis
 Mailpit
 ```
 
-OpenLocalServer should detect and satisfy these automatically where possible.
+OLS should detect and satisfy these automatically where possible.
 
 ------------------------------------------------------------------------
 
@@ -3927,7 +3927,7 @@ Clone Environment
 Project B
 ```
 
-OpenLocalServer should adjust:
+OLS should adjust:
 
 -   Project name
 -   Paths
@@ -3960,7 +3960,7 @@ cd project
 ols setup
 ```
 
-OpenLocalServer reconstructs the environment.
+OLS reconstructs the environment.
 
 ------------------------------------------------------------------------
 
@@ -4005,7 +4005,7 @@ Test:
 ## End-to-End
 
 ``` text
-Install OpenLocalServer
+Install OLS
  ↓
 Create Quick App
  ↓
@@ -4060,7 +4060,7 @@ Use:
 
 # 162. Performance Requirements
 
-OpenLocalServer should:
+OLS should:
 
 -   Start quickly.
 -   Remain responsive.
@@ -4075,7 +4075,7 @@ OpenLocalServer should:
 
 # 163. Reliability Requirements
 
-OpenLocalServer should:
+OLS should:
 
 -   Recover from service crashes.
 -   Preserve valid previous configuration.
@@ -4221,7 +4221,7 @@ Potential future capabilities:
 
 # 169. Product Differentiation
 
-OpenLocalServer differentiates itself through:
+OLS differentiates itself through:
 
 1.  Per-project runtime versions.
 2.  Multiple PHP versions simultaneously.
@@ -4261,7 +4261,7 @@ OpenLocalServer differentiates itself through:
 
 # 170. Critical Product Principle
 
-OpenLocalServer must not become:
+OLS must not become:
 
 ``` text
 A GUI that launches random shell scripts.
@@ -4270,7 +4270,7 @@ A GUI that launches random shell scripts.
 It must be:
 
 ``` text
-                         OpenLocalServer
+                         OLS
                             │
                  ┌──────────┴──────────┐
                  │                     │
@@ -4385,7 +4385,7 @@ Mailpit
 The ideal workflow:
 
 ``` text
-Install OpenLocalServer
+Install OLS
         ↓
 Open existing project
         ↓
@@ -4428,7 +4428,7 @@ Optionally start public tunnel
 
 ``` text
 ┌──────────────────────────────────────────────────────────────┐
-│ OpenLocalServer                                                     │
+│ OLS                                                     │
 ├──────────────────────────────────────────────────────────────┤
 │ Environment: HEALTHY                                         │
 │                                                              │
@@ -4466,7 +4466,7 @@ Optionally start public tunnel
 
 # 174. Definition of Success
 
-OpenLocalServer is successful when a developer can take a new or existing
+OLS is successful when a developer can take a new or existing
 project and go from:
 
 ``` text
@@ -4495,5 +4495,5 @@ The system must remain:
 -   Developer-focused
 -   Maintainable
 
-OpenLocalServer should feel like a complete local development operating
+OLS should feel like a complete local development operating
 environment rather than a simple collection of local web servers.

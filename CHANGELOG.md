@@ -5,6 +5,25 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- The app is now **OLS** (Open Local Server) everywhere a user sees the name: window title, sidebar,
+  settings, dialogs, the built-in welcome site, the assistant's system prompt, and the documentation.
+  Display only — nothing about behaviour, install layout, project manifests, or stored data changed.
+- The requirements document is now `OLS_Master_SRS_v4.md`.
+- Product identity guidance, including the identifiers that are deliberately frozen and why, is in
+  [`docs/BRAND.md`](./docs/BRAND.md).
+
+### Not changed
+These keep their existing names on purpose. Each is read back from a user's machine on a later run, and
+renaming it would orphan live state with no way to recover it. See `docs/BRAND.md` §4.3 for the full table.
+- Install folder (`C:\OpenLocalServer`), executable name, Inno Setup `AppId`.
+- The helper Windows service and its named pipe.
+- The keyring service name — it is the addressing key for every stored secret, and the old name cannot be
+  written to without the old name, so a rename would destroy every stored password and token.
+- The delimited block in the hosts file, and the NRPT rule comment.
+- The CA common name, which is already in users' certificate trust stores.
+- The `.openlocalserver/` manifest folder, which is committed to users' own repositories.
+
 ## [1.0.0] — 2026-09-29
 
 First public release. Full notes: [`release-notes/v1.0.0.md`](./release-notes/v1.0.0.md).

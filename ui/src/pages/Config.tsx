@@ -17,9 +17,9 @@ import { useAction } from '@/lib/hooks'
 import { confirmThen } from '@/lib/confirm'
 
 const OWNERSHIP_INFO: Record<Ownership, { label: string; blurb: string }> = {
-  managed: { label: 'Managed', blurb: 'OpenLocalServer writes this file from the site settings. Hand edits are reported as drift.' },
-  advanced: { label: 'Advanced', blurb: 'OpenLocalServer writes the file and includes your own snippet inside it. Your snippet is never overwritten.' },
-  manual: { label: 'Manual', blurb: 'You own the whole file. OpenLocalServer validates and reloads it but never rewrites it.' },
+  managed: { label: 'Managed', blurb: 'OLS writes this file from the site settings. Hand edits are reported as drift.' },
+  advanced: { label: 'Advanced', blurb: 'OLS writes the file and includes your own snippet inside it. Your snippet is never overwritten.' },
+  manual: { label: 'Manual', blurb: 'You own the whole file. OLS validates and reloads it but never rewrites it.' },
 }
 
 /** A file is only unique by hostname + part + server: every server has its own main config. */

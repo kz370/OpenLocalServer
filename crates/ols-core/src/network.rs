@@ -35,7 +35,7 @@ pub struct NetworkStatus {
 const NEEDS_INTERNET: &[&str] = &[
     "Installing or updating runtimes, services and tools",
     "Plugin and catalog downloads",
-    "Checking for a new version of OpenLocalServer",
+    "Checking for a new version of OLS",
     "Public tunnels",
     "AI providers that run outside this computer (a local model still works)",
 ];

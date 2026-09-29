@@ -1996,10 +1996,7 @@ impl Inner {
         }
         stats.sites = sites;
 
-        let mut places = vec![(
-            "OpenLocalServer data".to_string(),
-            self.paths.root().to_path_buf(),
-        )];
+        let mut places = vec![("OLS data".to_string(), self.paths.root().to_path_buf())];
         places.extend(
             self.string_list(PROJECT_ROOTS)
                 .into_iter()
@@ -2144,7 +2141,7 @@ impl Inner {
     pub fn log_sources(&self) -> Vec<LogSource> {
         let mut out = vec![LogSource {
             id: "app".into(),
-            name: "OpenLocalServer".into(),
+            name: "OLS".into(),
             kind: "app".into(),
         }];
         // Every web server writes its own logs, not just the configured default,

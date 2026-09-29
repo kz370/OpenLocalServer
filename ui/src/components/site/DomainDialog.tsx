@@ -642,7 +642,7 @@ export function DomainSettings({
               hint="Self-signed certificates on the target are accepted."
             />
             {!d.kind.upstream_host && (
-              <Field label="Start command (optional)" hint="OpenLocalServer supervises it and passes PORT. Example: npm run dev">
+              <Field label="Start command (optional)" hint="OLS supervises it and passes PORT. Example: npm run dev">
                 <Input value={appLine} onChange={(e) => setAppLine(e.target.value)} placeholder="npm run dev" />
               </Field>
             )}

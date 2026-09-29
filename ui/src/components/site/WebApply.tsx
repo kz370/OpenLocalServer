@@ -47,7 +47,7 @@ export function DriftDialog({ web }: { web: Web }) {
       open={driftOpen && driftedHosts.length > 0}
       onClose={() => setDriftOpen(false)}
       title="Config files were edited by hand"
-      description="These sites' generated config no longer matches what OpenLocalServer wrote, so it left them alone."
+      description="These sites' generated config no longer matches what OLS wrote, so it left them alone."
       footer={
         <>
           <Button variant="ghost" onClick={() => setDriftOpen(false)}>

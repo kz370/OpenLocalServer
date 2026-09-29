@@ -447,7 +447,7 @@ function SqlEngine({ engine, service, ...toolProps }: { engine: 'mariadb' | 'pos
           <Card className="lg:order-last lg:col-span-2">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm">Backups</CardTitle>
-              <CardDescription>SQL dumps kept by OpenLocalServer. Restoring first saves the current database as a new backup, so it can be undone.</CardDescription>
+              <CardDescription>SQL dumps kept by OLS. Restoring first saves the current database as a new backup, so it can be undone.</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-2">
               {note && <p className="text-xs text-success">{note}</p>}

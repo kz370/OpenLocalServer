@@ -4,7 +4,7 @@
 
 use keyring::Entry;
 
-/// The keyring "service" namespace every OpenLocalServer secret is stored under, so it
+/// The keyring "service" namespace every OLS secret is stored under, so it
 /// shows up as one recognizable group in the OS credential manager rather than scattered
 /// entries.
 const SERVICE_NAME: &str = "OpenLocalServer";

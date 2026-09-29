@@ -51,7 +51,7 @@ export function ApiCard() {
           {status.running ? <Badge variant="success">on</Badge> : <Badge variant="outline">off</Badge>}
         </CardTitle>
         <CardDescription>
-          Drives OpenLocalServer over HTTP from a script or a CI job, with no desktop window open. Off by default, and on 127.0.0.1 only.
+          Drives OLS over HTTP from a script or a CI job, with no desktop window open. Off by default, and on 127.0.0.1 only.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -173,7 +173,7 @@ export function SystemCard() {
         <CardTitle className="flex items-center gap-2">
           <ShieldCheck className="size-4" /> Windows integration, support and privacy
         </CardTitle>
-        <CardDescription>OpenLocalServer sends nothing anywhere: there is no telemetry and no analytics code in this build.</CardDescription>
+        <CardDescription>OLS sends nothing anywhere: there is no telemetry and no analytics code in this build.</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <ErrorCard error={error} onDismiss={() => setError(null)} />
@@ -183,7 +183,7 @@ export function SystemCard() {
               <div className="flex items-center gap-2 font-medium">
                 <TerminalSquare className="size-4" /> Explorer right-click menu {menu.installed ? <Badge variant="success">installed</Badge> : <Badge variant="outline">off</Badge>}
               </div>
-              <p className="text-muted-foreground">Adds "Add to OpenLocalServer" and "Set up with OpenLocalServer" to a folder's menu. Only for your user; no administrator prompt.</p>
+              <p className="text-muted-foreground">Adds "Add to OLS" and "Set up with OLS" to a folder's menu. Only for your user; no administrator prompt.</p>
             </div>
             <Button variant="secondary" disabled={busy !== null || (!menu.installed && !menu.cli_path)} onClick={() => run('menu', async () => { const r = await runCommand({ type: menu.installed ? 'remove_shell_menu' : 'install_shell_menu' }); if (r.type === 'shell_menu') setMenu(r.status) })}>
               {menu.installed ? 'Remove' : 'Add to Explorer'}
@@ -202,7 +202,7 @@ export function SystemCard() {
             variant="secondary"
             disabled={busy !== null}
             onClick={async () => {
-              const dest = await save({ title: 'Save the support bundle', defaultPath: 'openlocalserver-support.zip', filters: [{ name: 'Zip', extensions: ['zip'] }] })
+              const dest = await save({ title: 'Save the support bundle', defaultPath: 'ols-support.zip', filters: [{ name: 'Zip', extensions: ['zip'] }] })
               if (dest) await run('bundle', async () => { await runCommand({ type: 'export_support_bundle', dest }); setBundle(dest) })
             }}
           >

@@ -15,7 +15,7 @@ import { waitForProcessExit } from '@/lib/wait'
 
 const PRESETS = [
   { label: 'ping (10s)', executable: 'ping', args: '127.0.0.1 -n 10' },
-  { label: 'echo hello', executable: 'cmd', args: '/C echo hello from OpenLocalServer' },
+  { label: 'echo hello', executable: 'cmd', args: '/C echo hello from OLS' },
   { label: 'exit 1 (crash demo)', executable: 'cmd', args: '/C exit 1' },
 ]
 

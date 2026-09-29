@@ -47,7 +47,7 @@ export function DoctorDialog({ open, onClose }: { open: boolean; onClose: () => 
       open={open}
       onClose={() => busy === null && onClose()}
       title="Doctor"
-      description="Everything OpenLocalServer depends on, checked in one go (also `ols doctor`)."
+      description="Everything OLS depends on, checked in one go (also `ols doctor`)."
       wide
       footer={
         <>

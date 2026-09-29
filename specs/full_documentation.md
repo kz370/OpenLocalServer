@@ -1,7 +1,7 @@
-# OpenLocalServer — Full Documentation
+# OLS — Full Documentation
 
 ## 1. Introduction
-OpenLocalServer is a Windows-local development environment manager. It downloads and runs PHP, Node, databases, caches, mail, and web servers, gives each project isolated runtimes plus own `.test` domain with trusted local HTTPS, without manual system edits. Pre-release, stage 15/20. Portable `data/` beside exe; `OLS_HOME` overrides paths.
+OLS is a Windows-local development environment manager. It downloads and runs PHP, Node, databases, caches, mail, and web servers, gives each project isolated runtimes plus own `.test` domain with trusted local HTTPS, without manual system edits. Pre-release, stage 15/20. Portable `data/` beside exe; `OLS_HOME` overrides paths.
 
 Scope: runtimes (PHP/Node/Python/Composer), databases (MariaDB/Postgres/Mongo/Redis/SQLite), web (Nginx/Apache/Caddy), projects (detect/setup/env/git/workers/scheduler/snapshots), domains + TLS + DNS, tunnels, diagnostics/doctor, plugins, quick-apps/commands, AI assist, local API, CLI, updater.
 
