@@ -1,7 +1,7 @@
 import { Copy, Minus, Square, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
-import { useServerStopped } from '@/lib/hooks'
+import { useAppMarkPath } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 
 function isTauri(): boolean {
@@ -10,7 +10,8 @@ function isTauri(): boolean {
 
 export function Titlebar() {
   const [maximized, setMaximized] = useState(false)
-  const stopped = useServerStopped()
+  // Same four colourways (light/dark × running/stopped) the tray and taskbar use.
+  const mark = useAppMarkPath()
 
   useEffect(() => {
     if (!isTauri()) return
@@ -39,9 +40,10 @@ export function Titlebar() {
       className="flex h-9 shrink-0 select-none items-center gap-2 border-b border-sidebar-border bg-sidebar px-3"
     >
       <span className="flex items-center gap-2 text-xs font-medium text-sidebar-foreground">
-        {/* Same green/red pair the tray, the taskbar and the sidebar use. */}
+        {/* Same four colourways (light/dark × running/stopped) the tray and the
+            taskbar use. */}
         <img
-          src={stopped ? '/favicon-stopped.svg' : '/favicon.svg'}
+          src={mark}
           alt=""
           className="size-4 rounded"
           aria-hidden

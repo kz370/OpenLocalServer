@@ -162,6 +162,8 @@ export function DomainSettings({
   })
   const [rootTouched, setRootTouched] = useState(false)
   const [domainTouched, setDomainTouched] = useState(false)
+  /** Set once the user types a localhost prefix, so a later project-name change leaves it alone. */
+  const [prefixTouched, setPrefixTouched] = useState(false)
   /** Set once the user types a project name, so a later projects-changed event leaves it alone. */
   const projectNameTouched = useRef(false)
   const [parentDir, setParentDir] = useState(defaultParent || '')
@@ -190,6 +192,7 @@ export function DomainSettings({
     setShowApps(false)
     setRootTouched(false)
     setDomainTouched(false)
+    setPrefixTouched(!!domain.path_prefix)
     projectNameTouched.current = false
     setAppLine(domain?.app ? [domain.app.executable, ...domain.app.args].join(' ') : '')
     if (!domain.project_id) setProjectName('')
@@ -285,10 +288,18 @@ export function DomainSettings({
       (p) => p.name.toLowerCase() === trimmed.toLowerCase() || p.id.toLowerCase() === trimmed.toLowerCase()
     )
 
+    // Auto-fill localhost/<prefix> from the same slug, until the user types one.
+    // Capped at 40 and restricted to the characters `validate_path_prefix` accepts,
+    // so the autofill can never produce a prefix the backend would then refuse.
+    const newPrefix = !prefixTouched
+      ? (slug && slug.length <= 40 ? slug : null)
+      : (d.path_prefix ?? null)
+
     setD((cur) => ({
       ...cur,
       hostname: newHost,
       root: newRoot,
+      path_prefix: newPrefix,
       project_id: matched ? matched.id : null,
     }))
 
@@ -412,7 +423,7 @@ export function DomainSettings({
       {isNew && (
         <FormSection title="Source" hint="Enter a project name to automatically fill the domain and folder, or create a new app.">
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Project (optional)" hint="Folder and domain fill automatically">
+            <Field label="Project (optional)" hint="Folder, domain and localhost path fill automatically">
               <Input
                 value={projectName}
                 onChange={(e) => onProjectNameChange(e.target.value)}
@@ -500,7 +511,7 @@ export function DomainSettings({
           hint={
             d.path_prefix
               ? `In addition to ${d.hostname || 'its domain'}, this site answers at http://localhost:${httpPort}/${d.path_prefix}/ — the same app, same PHP, same proxy target.`
-              : 'Optional. One path segment, like "shop" for http://localhost/shop/. Leave empty for domain-only.'
+              : 'Optional. One path segment, like "shop" for http://localhost/shop/. Fills from the project name until you type one. Leave empty for domain-only.'
           }
           error={pathPrefixError}
         >
@@ -508,7 +519,10 @@ export function DomainSettings({
             <span className="shrink-0 font-mono text-xs text-muted-foreground">localhost/{httpPort}/</span>
             <Input
               value={d.path_prefix ?? ''}
-              onChange={(e) => set({ path_prefix: e.target.value })}
+              onChange={(e) => {
+                setPrefixTouched(true)
+                set({ path_prefix: e.target.value })
+              }}
               placeholder="shop"
               className="min-w-0 flex-1 font-mono"
             />

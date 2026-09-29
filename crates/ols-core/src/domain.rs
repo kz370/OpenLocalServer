@@ -280,11 +280,15 @@ fn home_domain(dir: &Path) -> Domain {
 /// Writes the welcome page. Never overwrites: hand edits survive updates.
 fn write_home_page(dir: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)?;
-    // The exact official logo bytes (ui/public/favicon.svg, also the sidebar
-    // header mark) so the page reuses the real brand, never a redraw.
-    let logo = dir.join("logo.svg");
-    if !logo.exists() {
-        std::fs::write(logo, LOGO_SVG)?;
+    // The exact official logo bytes (ui/public/favicon*.svg, also the in-app mark)
+    // so the page reuses the real brand, never a redraw. Both colourways are
+    // written because the page has its own theme toggle and no way to be told
+    // which one is active.
+    for (name, bytes) in [("logo.svg", LOGO_SVG), ("logo-dark.svg", LOGO_SVG_DARK)] {
+        let path = dir.join(name);
+        if !path.exists() {
+            std::fs::write(path, bytes)?;
+        }
     }
     let index = dir.join("index.html");
     if !index.exists() {
@@ -293,16 +297,19 @@ fn write_home_page(dir: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Exact bytes of the official application logo.
+/// Exact bytes of the official application logo, per theme. The welcome page is a
+/// plain static page with its own theme toggle, so it carries both colourways
+/// rather than being told which one is active.
 const LOGO_SVG: &[u8] = include_bytes!("../../../ui/public/favicon.svg");
+const LOGO_SVG_DARK: &[u8] = include_bytes!("../../../ui/public/favicon-dark.svg");
 
 /// Marker of the currently shipped welcome page.
-const HOME_VERSION_MARKER: &str = "<!-- home v5 -->";
+const HOME_VERSION_MARKER: &str = "<!-- home v6 -->";
 
 /// Markers of older shipped pages (v1 teal cards, v1.5 centered hero, v2 brand,
-/// v3 brand, v4 brand). A page carrying one of these was never hand-edited, so it
-/// is safe to refresh — v5 is what re-seeds `logo.svg` with the current green
-/// app icon for installs still showing the previous mark.
+/// v3 brand, v4 brand, v5 brand). A page carrying one of these was never
+/// hand-edited, so it is safe to refresh — v6 is what seeds the current green
+/// app icon in both theme colourways for installs still showing an older mark.
 const HOME_LEGACY_MARKERS: &[&str] = &[
     "max-width: 720px",
     "OPENLOCALSERVER",
@@ -310,6 +317,7 @@ const HOME_LEGACY_MARKERS: &[&str] = &[
     "created once, on first install",
     "<!-- home v3 -->",
     "<!-- home v4 -->",
+    "<!-- home v5 -->",
 ];
 
 /// Replaces a stock older welcome page with the current one. Returns true when
@@ -328,6 +336,7 @@ fn upgrade_home_page(paths: &AppPaths) -> bool {
     }
     std::fs::create_dir_all(&dir)
         .and_then(|_| std::fs::write(dir.join("logo.svg"), LOGO_SVG))
+        .and_then(|_| std::fs::write(dir.join("logo-dark.svg"), LOGO_SVG_DARK))
         .and_then(|_| std::fs::write(&index, HOME_PAGE))
         .is_ok()
 }
@@ -416,7 +425,7 @@ const HOME_PAGE: &str = r##"<!doctype html>
 <!-- home v5 -->
 <div class="wrap">
   <header class="top">
-    <div class="brand"><img src="logo.svg" alt="Open Local Server logo">Open Local Server</div>
+    <div class="brand"><img data-mark src="logo.svg" alt="Open Local Server logo">Open Local Server</div>
     <nav class="top" aria-label="Primary">
       <a href="https://github.com/kz370/OpenLocalServer">Documentation</a>
       <a href="https://github.com/kz370/OpenLocalServer">GitHub</a>
@@ -446,7 +455,7 @@ const HOME_PAGE: &str = r##"<!doctype html>
     <div class="node n1"><b><span class="tick"></span>PHP</b><span>8.x</span></div>
     <div class="node n2"><b><span class="tick"></span>Node.js</b><span>20.x+</span></div>
     <div class="node n3"><b><span class="tick"></span>Python</b><span>3.x</span></div>
-    <div class="core"><img src="logo.svg" alt=""></div>
+    <div class="core"><img data-mark src="logo.svg" alt=""></div>
     <div class="node n4"><b><span class="tick"></span>Local Domains</b><span>*.test, *.localhost</span></div>
     <div class="node n5"><b><span class="tick"></span>Trusted HTTPS</b><span>Automatic SSL</span></div>
     <div class="node n6"><b><span class="tick"></span>Databases</b><span>MySQL, MariaDB, PostgreSQL, Redis</span></div>
@@ -480,7 +489,7 @@ const HOME_PAGE: &str = r##"<!doctype html>
 </main>
 <footer>
   <div class="wrap">
-    <div class="brand"><img src="logo.svg" alt="Open Local Server logo">Open Local Server</div>
+    <div class="brand"><img data-mark src="logo.svg" alt="Open Local Server logo">Open Local Server</div>
     <nav aria-label="Footer">
       <a href="https://github.com/kz370/OpenLocalServer">Documentation</a>
       <a href="https://github.com/kz370/OpenLocalServer">GitHub</a>
@@ -492,7 +501,14 @@ const HOME_PAGE: &str = r##"<!doctype html>
 <script>
 (function () {
   var key = 'ols-home-theme';
-  function paint(t) { document.documentElement.setAttribute('data-theme', t); }
+  function paint(t) {
+    document.documentElement.setAttribute('data-theme', t);
+    // The mark ships in both colourways so it stays readable on the theme the page
+    // is actually painted in — the same swap the app, tray and taskbar do.
+    var src = t === 'dark' ? 'logo-dark.svg' : 'logo.svg';
+    var marks = document.querySelectorAll('img[data-mark]');
+    for (var i = 0; i < marks.length; i++) marks[i].setAttribute('src', src);
+  }
   try {
     var saved = localStorage.getItem(key);
     if (saved === 'dark' || saved === 'light') paint(saved);
@@ -877,6 +893,13 @@ mod tests {
             .data_dir()
             .join("home")
             .join("logo.svg")
+            .is_file());
+        // Both colourways, because the page picks one from its own theme toggle.
+        assert!(home
+            .paths
+            .data_dir()
+            .join("home")
+            .join("logo-dark.svg")
             .is_file());
 
         // Second load: no duplicate, page kept.
