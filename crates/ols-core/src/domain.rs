@@ -315,14 +315,16 @@ const LOGO_SVG: &[u8] = include_bytes!("../../../ui/public/favicon.svg");
 const LOGO_SVG_DARK: &[u8] = include_bytes!("../../../ui/public/favicon-dark.svg");
 
 /// Marker of the currently shipped welcome page.
-const HOME_VERSION_MARKER: &str = "<!-- home v7 -->";
+const HOME_VERSION_MARKER: &str = "<!-- home v9 -->";
 
 /// Markers of older shipped pages (v1 teal cards, v1.5 centered hero, v2 brand,
-/// v3 brand, v4 brand, v5 brand, v6 pre-rebrand brand). A page carrying one of
-/// these was never hand-edited, so it is safe to refresh — v7 is what carries
-/// the OLS name. v6 is listed because the rebrand changed only the wording, so
-/// a v6 page is still stock: an install that never opened its welcome site
-/// should see the new name, and a page a user edited should be left alone.
+/// v3 brand, v4 brand, v5 brand, v6 pre-rebrand brand, v7 acronym tab title with
+/// no tab icon, v8 expanded title and themed tab icon). A page carrying one of
+/// these was never hand-edited, so it is safe to refresh — v9 is what names the
+/// product in full in the header and footer instead of the bare acronym. v6 is
+/// listed because the rebrand changed only the wording, so a v6 page is still
+/// stock: an install that never opened its welcome site should see the new
+/// design, and a page a user edited should be left alone.
 const HOME_LEGACY_MARKERS: &[&str] = &[
     "max-width: 720px",
     "OPENLOCALSERVER",
@@ -332,6 +334,8 @@ const HOME_LEGACY_MARKERS: &[&str] = &[
     "<!-- home v4 -->",
     "<!-- home v5 -->",
     "<!-- home v6 -->",
+    "<!-- home v7 -->",
+    "<!-- home v8 -->",
 ];
 
 /// Replaces a stock older welcome page with the current one. Returns true when
@@ -362,7 +366,20 @@ const HOME_PAGE: &str = r##"<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OLS — local development, simplified</title>
+<title>Open Local Server — local development, simplified</title>
+<!-- The tab icon follows the page theme, the same swap the marks do, so a dark
+     window never shows a tab the browser has to invert. A `media` query cannot
+     do it on its own: the toggle overrides the OS setting, so the href is set in
+     the head before first paint, from the stored choice when there is one. -->
+<link id="favicon" rel="icon" type="image/svg+xml" href="logo.svg">
+<script>
+(function () {
+  var t;
+  try { t = localStorage.getItem('ols-home-theme'); } catch (e) {}
+  if (t !== 'dark' && t !== 'light' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) t = 'dark';
+  document.getElementById('favicon').setAttribute('href', t === 'dark' ? 'logo-dark.svg' : 'logo.svg');
+})();
+</script>
 <style>
   :root {
     --teal: #0d9488; --teal-dark: #0b6e64; --ink: #0f2e2b; --muted: #5b6f6c;
@@ -436,10 +453,10 @@ const HOME_PAGE: &str = r##"<!doctype html>
 </style>
 </head>
 <body>
-<!-- home v7 -->
+<!-- home v9 -->
 <div class="wrap">
   <header class="top">
-    <div class="brand"><img data-mark src="logo.svg" alt="OLS logo">OLS</div>
+    <div class="brand"><img data-mark src="logo.svg" alt="OLS logo">Open Local Server</div>
     <nav class="top" aria-label="Primary">
       <a href="https://github.com/kz370/OpenLocalServer">Documentation</a>
       <a href="https://github.com/kz370/OpenLocalServer">GitHub</a>
@@ -503,7 +520,7 @@ const HOME_PAGE: &str = r##"<!doctype html>
 </main>
 <footer>
   <div class="wrap">
-    <div class="brand"><img data-mark src="logo.svg" alt="OLS logo">OLS</div>
+    <div class="brand"><img data-mark src="logo.svg" alt="OLS logo">Open Local Server</div>
     <nav aria-label="Footer">
       <a href="https://github.com/kz370/OpenLocalServer">Documentation</a>
       <a href="https://github.com/kz370/OpenLocalServer">GitHub</a>
@@ -522,6 +539,8 @@ const HOME_PAGE: &str = r##"<!doctype html>
     var src = t === 'dark' ? 'logo-dark.svg' : 'logo.svg';
     var marks = document.querySelectorAll('img[data-mark]');
     for (var i = 0; i < marks.length; i++) marks[i].setAttribute('src', src);
+    var fav = document.getElementById('favicon');
+    if (fav) fav.setAttribute('href', src);
   }
   try {
     var saved = localStorage.getItem(key);
@@ -1129,11 +1148,11 @@ mod tests {
     }
 
     #[test]
-    fn a_pre_rebrand_welcome_page_is_refreshed_to_the_new_name() {
-        // The rebrand bumped the page to v7, so an install still carrying the stock
-        // v6 page must see the new name. The refresh only fires on a recognised
-        // marker, so without `<!-- home v6 -->` in HOME_LEGACY_MARKERS this
-        // install would keep the old wording forever and nothing would say so.
+    fn a_pre_rebrand_welcome_page_is_refreshed_to_the_current_page() {
+        // The page moved to v8, so an install still carrying the stock v6 page must
+        // see the current one. The refresh only fires on a recognised marker, so
+        // without `<!-- home v6 -->` in HOME_LEGACY_MARKERS this install would keep
+        // the old page forever and nothing would say so.
         let home = crate::test_support::isolated_home();
         DomainStore::load(&home.paths).unwrap();
         let index = home.paths.data_dir().join("home").join("index.html");
@@ -1146,7 +1165,66 @@ mod tests {
         let html = std::fs::read_to_string(&index).unwrap();
         assert!(html.contains(HOME_VERSION_MARKER));
         assert!(html.contains("OLS"));
-        assert!(!html.contains("Open Local Server"));
+    }
+
+    #[test]
+    fn a_v7_page_is_refreshed_so_the_tab_title_and_icon_reach_existing_installs() {
+        // v7 shipped the acronym tab title and no icon at all. Without
+        // `<!-- home v7 -->` in HOME_LEGACY_MARKERS, every install that already
+        // opened the welcome page would keep that tab title forever.
+        let home = crate::test_support::isolated_home();
+        DomainStore::load(&home.paths).unwrap();
+        let index = home.paths.data_dir().join("home").join("index.html");
+        std::fs::write(
+            &index,
+            "<html><head><title>OLS — local development, simplified</title></head>\
+             <body><!-- home v7 --></body></html>",
+        )
+        .unwrap();
+        DomainStore::load(&home.paths).unwrap();
+        let html = std::fs::read_to_string(&index).unwrap();
+        assert!(html.contains(HOME_VERSION_MARKER));
+        assert!(html.contains("<title>Open Local Server — local development, simplified</title>"));
+    }
+
+    #[test]
+    fn a_v8_page_is_refreshed_so_the_expanded_brand_reaches_existing_installs() {
+        // v8 fixed the tab title and left the header and footer reading a bare "OLS".
+        // Without `<!-- home v8 -->` in HOME_LEGACY_MARKERS every install that already
+        // opened the welcome page would keep that wordmark forever.
+        let home = crate::test_support::isolated_home();
+        DomainStore::load(&home.paths).unwrap();
+        let index = home.paths.data_dir().join("home").join("index.html");
+        std::fs::write(
+            &index,
+            "<html><body><!-- home v8 --><div class=\"brand\"><img src=\"logo.svg\" alt=\"OLS logo\">OLS</div></body></html>",
+        )
+        .unwrap();
+        DomainStore::load(&home.paths).unwrap();
+        let html = std::fs::read_to_string(&index).unwrap();
+        assert!(html.contains(HOME_VERSION_MARKER));
+        assert!(html.contains(r#"alt="OLS logo">Open Local Server</div>"#));
+    }
+
+    #[test]
+    fn the_shipped_page_carries_a_themed_tab_icon() {
+        // The page paints its own theme, so a `media`-scoped icon alone would go
+        // stale the moment the toggle overrides the OS setting. Both the pre-paint
+        // script and the toggle must drive the same `#favicon` href.
+        let home = crate::test_support::isolated_home();
+        DomainStore::load(&home.paths).unwrap();
+        let html =
+            std::fs::read_to_string(home.paths.data_dir().join("home").join("index.html")).unwrap();
+        assert!(
+            html.contains(r#"<link id="favicon" rel="icon" type="image/svg+xml" href="logo.svg">"#)
+        );
+        let pre_paint = html
+            .find("document.getElementById('favicon').setAttribute('href'")
+            .expect("pre-paint script");
+        let toggle = html
+            .find("if (fav) fav.setAttribute('href', src);")
+            .expect("toggle");
+        assert!(pre_paint < toggle, "pre-paint script must come first");
     }
 
     #[test]
