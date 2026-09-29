@@ -39,6 +39,23 @@ Compression=lzma
 SolidCompression=yes
 ArchitecturesInstallIn64BitMode=x64compatible
 WizardStyle=modern
+; An upgrade could not replace the app while it was running: Windows locks a
+; running image, so the installer would either fail on [Files] or leave the old
+; exe in place and the "update" would silently do nothing. These three settings
+; are the whole fix. Inno asks Restart Manager to close the app, waits for the
+; lock to clear, and relaunches the new copy when it is done.
+;
+; AppMutex is NOT an arbitrary name: tauri-plugin-single-instance creates a
+; named mutex "{identifier}-sim" (see the plugin's platform_impl\windows.rs),
+; and the app identifier is dev.openlocalserver.app. Rename either and this
+; stops matching, so the app runs through the upgrade again and the files are
+; never replaced. The ols-helper.exe that ships beside it is not part of the
+; mutex, which is why it is in the close filter too.
+AppMutex=dev.openlocalserver.app-sim
+CloseApplications=yes
+CloseApplicationsFilter=*.exe|*.dll|ols-helper.exe|cpulimit.exe
+RestartApplications=yes
+RestartApplicationsIfNeededByRun=no
 
 [Files]
 Source: "{#SourceExe}"; DestDir: "{app}"; Flags: ignoreversion
