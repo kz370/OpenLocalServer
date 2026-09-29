@@ -8,7 +8,7 @@ use crate::db;
 use crate::error::CoreError;
 use crate::paths::AppPaths;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SettingsService {
     paths: AppPaths,
     values: BTreeMap<String, Value>,

@@ -1858,9 +1858,16 @@ impl Core {
                 Ok(R::Ok)
             }
             C::GetProjectDetail { id } => {
-                let detail = i
-                    .project_detail(&id)
-                    .ok_or_else(|| CoreError::InvalidProjectPath(id.clone()))?;
+                // The store has no such id, which in practice means the site still points at a
+                // project that was removed. `InvalidProjectPath` claimed the id "is not a
+                // directory on disk", which is a different problem and left the user guessing.
+                let detail = i.project_detail(&id).ok_or_else(|| {
+                    CoreError::failed_fix(
+                        "This site has no project any more.",
+                        format!("No project is registered under the id {id}, so its settings cannot be read."),
+                        "Register the folder again on the Projects page, or pick another project in this site's settings.",
+                    )
+                })?;
                 Ok(R::ProjectDetail {
                     detail: Box::new(detail),
                 })

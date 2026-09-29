@@ -3,6 +3,8 @@ Tauri run_command | uses | Core::dispatch
 Core::dispatch | uses | Inner managers
 Inner | uses | ProcessSupervisor
 Inner | uses | RuntimeManager
+Inner::project_detail | snapshots | SettingsService + CustomInstallStore (clones, then releases both locks before build_detail's file I/O and version probes — an unreachable project path must not stall other commands)
+Inner | locks_via | app::lock (poisoned guard recovered, not unwrapped: one panic while a lock was held used to make every later read panic for the rest of the session)
 Inner | uses | ServiceManager
 Inner | uses | WebManager
 Inner | uses | DomainStore
@@ -60,7 +62,7 @@ SitesPage | uses | ConfirmAction (the dialog title names the site or project; th
 UseWeb.deleteSite | uses | remove_domain + apply_web (row removed optimistically, apply run behind an `applying` flag)
 RuntimesPage | uses | TechIcon (runtime ID resolves to brand or generic glyph; Memcached uses its symbol-only logo, Redis keeps its brand mark)
 ServicesWidget | uses | DashboardPage.useAction (so a failed service action reaches the page ErrorCard)
-SiteDialog | uses | CoreClient (get_domain once per trigger, unchanged read dropped — it seeds DomainSettings)
+SiteDialog | uses | CoreClient (get_domain once per trigger, unchanged read dropped — it seeds DomainSettings; both gating reads are deadline-bounded and surface their Diagnostic, and the project id comes from the get_domain answer rather than racing the caller's)
 TerminalComp | uses | TerminalManager
 EnvEditor | uses | EnvFile (via Core)
 Sidebar | uses | CoreClient (list_tunnels)

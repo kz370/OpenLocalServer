@@ -5,9 +5,9 @@ Core | Central dispatcher facade over Inner.
 CoreCommand | Enum (~150 variants) covering all UI/CLI/API operations.
 CoreResponse | Tagged response enum for every command.
 CoreError/Diagnostic | User-facing error shape {problem,cause,fix}.
-Inner | Arc-shared state holding all managers.
+Inner | Arc-shared state holding all managers. State locks are taken through `app::lock`, which recovers a poisoned guard instead of unwrapping it — a `std::sync::Mutex` stays poisoned for the process after any panic while held, so unwrapping turned one failure into every later read panicking too. `project_detail` clones SettingsService/CustomInstallStore (both `Clone`) and drops the guards before `build_detail` does file I/O and version probes, so an unreachable project folder cannot stall other commands.
 AppPaths | OLS_HOME-aware path resolver (certs/data/settings).
-SettingsService | SQLite key-value store (app.db settings table).
+SettingsService | SQLite key-value store (app.db settings table). Cloneable so a read can release the store lock before doing slow work.
 Db | Central SQLite store (app.db, WAL): settings table + generic docs collections for all Vec-stores.
 Secrets | OS keyring wrapper (set/get/delete).
 ProcessSupervisor | Owns child processes, tree-kill, output ring, restart policy. wait_for_spawn/wait_for_exit let a caller block until a spawn is decided or a process is gone; a spawn error is kept on the record and pushed into the output ring, so a process that never started still has a readable reason.
@@ -31,7 +31,7 @@ PhpPools | Per-version php-cgi FastCGI pools + extension management.
 NodePm | Lockfile/packageManager detector + corepack switch.
 ComposerReader | composer.json/lock merger, vendor/scripts reporter.
 VenvTools | Python venv finder + create-args builder.
-CustomInstallStore | User-pinned exe paths winning over detection.
+CustomInstallStore | User-pinned exe paths winning over detection. Cloneable for the same reason as SettingsService.
 Resolver | Version precedence manifest>detected>global.
 Detector | Marker-file framework detection + workspace scan.
 PluginManager | Declarative plugin.yaml installer/validator.
@@ -109,8 +109,8 @@ ProcessesPage | Raw process manager + system stats.
 SettingsPage | General/sites/startup/AI/API/resources/backups/about.
 
 --- FRONTEND components/lib ---
-CoreClient (core.ts) | Single invoke('run_command') wrapper + all types.
-UseWeb | Shared web state hook (4s poll). Owns optimistic removal: `deleteSite`/`removeProjectFromList` drop the row at once, track it in `removing`, run the apply behind it under `applying`, and re-read the store on failure so a failed command puts the row back and a failed apply never leaves a deleted row on screen.
+CoreClient (core.ts) | Single invoke('run_command') wrapper + all types. `runCommandWithin(command, ms)` is the same call under a deadline, rejecting with a Diagnostic that names the command; used by every read whose result gates rendered content, because a command that never answers is otherwise indistinguishable from a slow one and leaves the page on its loading state for good.
+UseWeb | Shared web state hook (4s poll). Owns optimistic removal: `deleteSite`/`removeProjectFromList` drop the row at once, track it in `removing`, run the apply behind it under `applying`, and re-read the store on failure so a failed command puts the row back and a failed apply never leaves a deleted row on screen. Every fire-and-forget read here (projects refresh, runtime catalog, unmanaged PHP versions, the `projects-changed` handler) ends in an explicit `.catch`: they only decorate other pages, so a failure is dropped, but dropped on purpose.
 AiBus/AiHost/AiButton | Global AI dialog bus + runner + gate.
 ConfirmBus/ConfirmHost | Global confirm modal bus.
 WaitHelpers | Poll-until-real (service/web/process).
@@ -118,7 +118,7 @@ NavBus | Cross-page openProject event bus.
 ThemeProvider | system/light/dark with localStorage.
 CommandPalette | Ctrl+K fuzzy global_search palette.
 Sidebar | Persistent navigation drawer with static category groups, active item highlight, theme switcher, and public tunnel badge.
-SiteDialog | Tabbed project editor (env/terminal/git/workers/snapshots/...). get_domain is fetched once per trigger and an unchanged read is dropped, so a tab bounce cannot re-seed the settings form under the user.
+SiteDialog | Tabbed project editor (env/terminal/git/workers/snapshots/...). get_domain is fetched once per trigger and an unchanged read is dropped, so a tab bounce cannot re-seed the settings form under the user. Both gating reads (`get_domain`, `get_project_detail`) are 20s-deadline-bounded through `runCommandWithin` and report their Diagnostic in an ErrorCard with a Retry, so "Reading the site/project…" is a state that always ends. The project id comes from the `get_domain` answer (`siteProjectId`) rather than racing the id the caller arrived with, which used to fire two detail reads and leave the loser's spinner standing.
 DomainDialog/DomainSettings | Add-site modal (Source project name text input auto-fills domain/folder; Address/Serves/Options) sharing FormSection + form-size Dialog with QuickApps Wizard; footer via Dialog prop, submitRef. The form re-seeds on a change to the domain's contents only, never on the `projects` prop's identity (a watcher event) or a typed project name, so an unsaved server pin is not discarded and then saved back as the stale value.
 TerminalComp | xterm.js bridge to TerminalManager (lineHeight 1.3 + windowsMode so WebView2 Consolas descenders never clip; explicit light-on-black theme + visible cursor + "[starting shell…]" hint so slow startup never looks dead).
 EnvEditor | .env table editor with diff.

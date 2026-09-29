@@ -21,6 +21,7 @@ pub struct CustomInstall {
     pub path: String,
 }
 
+#[derive(Debug, Clone)]
 pub struct CustomInstallStore {
     paths: AppPaths,
     entries: Vec<CustomInstall>,

@@ -53,3 +53,4 @@ QuickApp recipe YAML:
 
 Schemas/interfaces (TypeScript core.ts mirrors Rust):
 - CoreCommand (tagged union, ~200 variants), CoreResponse, Diagnostic{problem,cause,fix}, DashboardData, DomainSummary, HealthItem, WebStatus, CertInfo, ServiceStatus, ProjectDetail.
+- SettingsService and CustomInstallStore derive Clone. A read that must do slow work clones the store and releases its lock rather than holding it across that work, so lock scope is part of the model's contract, not just of the call site.
