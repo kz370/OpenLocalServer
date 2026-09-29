@@ -167,7 +167,7 @@ export function GitPanel({ projectId }: { projectId: string }) {
         <div className={cn('rounded-lg border p-2', output.ok ? 'border-border' : 'border-destructive/40 bg-destructive/5')}>
           <div className="flex justify-between gap-2">
             <pre className="whitespace-pre-wrap break-all font-mono text-[11px]">{output.text}</pre>
-            <button className="shrink-0 text-xs text-muted-foreground hover:text-foreground" onClick={() => setOutput(null)}>
+            <button className="shrink-0 cursor-pointer text-xs text-muted-foreground hover:text-foreground" onClick={() => setOutput(null)}>
               Dismiss
             </button>
           </div>

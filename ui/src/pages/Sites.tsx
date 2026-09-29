@@ -64,7 +64,7 @@ function StatusDot({ site, running }: { site: DomainSummary | null; running: boo
 
 export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   const web = useWeb()
-  const { projects, domains, status, busy, error, setError, run, apply, refresh, refreshProjects, installedPhp } = web
+  const { projects, domains, status, busy, error, setError, run, apply, refresh, refreshProjects, installedPhp, removing, applying } = web
   const defaultServer = status?.default_server
 
   const [target, setTarget] = useState<SiteTarget | null>(null)
@@ -168,11 +168,13 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   }
 
   async function removeProject(p: Project) {
-    if (!(await confirmAction(`Remove ${p.name} from OpenLocalServer?\n\nYour project files are not deleted, and its sites stay. It won't be re-added by folder scans — add the folder again to bring it back.`))) return
-    await run('remove', async () => {
-      await runCommand({ type: 'remove_project', id: p.id })
-      await refreshProjects()
-    })
+    const ok = await confirmAction(
+      `Your project files are not deleted, and its sites stay. It won't be re-added by folder scans — add the folder again to bring it back.`,
+      `Remove ${p.name}?`,
+      'Remove from list',
+    )
+    if (!ok) return
+    await run(`remove:${p.id}`, () => web.removeProjectFromList(p.id))
   }
 
   async function saveNew(d: Domain) {
@@ -224,20 +226,36 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       items.push({ label: 'Add a domain', icon: <Plus />, onSelect: () => setTarget({ hostname: null, projectId: p.id, tab: 'settings' }) })
     }
     items.push('separator')
-    if (d)
+    // One way off the list, not two: deleting a site takes it off the list, and the
+    // project behind it goes with it when that was its last site. A row with no domain
+    // has no site to delete, so it is removed as the project it is.
+    if (d) {
+      const key = d.hostname
       items.push({
         label: 'Delete site',
         icon: <Trash2 />,
         danger: true,
+        disabled: removing.has(key) || busy === `delete:${key}`,
         onSelect: async () => {
-          if (!(await confirmAction(`Delete ${d.hostname}? Its certificate is revoked and its config removed. The project folder is not touched.`))) return
-          void run('delete', async () => {
-            await runCommand({ type: 'remove_domain', hostname: d.hostname })
-            await apply()
-          })
+          const last = p ? ` ${p.name} leaves the list with it.` : ''
+          const ok = await confirmAction(
+            `Its certificate is revoked and its config file is removed.${last} The project folder is not touched.`,
+            `Delete ${d.hostname}?`,
+            'Delete site',
+          )
+          if (!ok) return
+          await run(`delete:${key}`, () => web.deleteSite(key))
         },
       })
-    if (p) items.push({ label: 'Remove project from the list', icon: <FolderMinus />, danger: !d, onSelect: () => void removeProject(p) })
+    } else if (p) {
+      items.push({
+        label: 'Remove from list',
+        icon: <FolderMinus />,
+        danger: true,
+        disabled: removing.has(p.id) || busy === `remove:${p.id}`,
+        onSelect: () => void removeProject(p),
+      })
+    }
     return items
   }
 
@@ -250,7 +268,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {status && !status.running && domains.length > 0 && (
-            <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => run('apply', () => apply())} title="Sites can't be opened while the web server is stopped">
+            <Button size="sm" variant="outline" disabled={busy === 'apply'} onClick={() => run('apply', () => apply())} title="Sites can't be opened while the web server is stopped">
               {busy === 'apply' ? <Spinner /> : <Play />} Start web server
             </Button>
           )}
@@ -272,9 +290,14 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       {message && (
         <p className="text-sm text-muted-foreground">
           {message}{' '}
-          <button className="underline" onClick={() => setMessage(null)}>
+          <button className="cursor-pointer underline" onClick={() => setMessage(null)}>
             Dismiss
           </button>
+        </p>
+      )}
+      {applying && (
+        <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
+          <Spinner /> Updating the web-server configuration…
         </p>
       )}
       <ApplyReportCard web={web} />
@@ -313,8 +336,11 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                 const { site: d, project: p } = r
                 const openSettings = () => setTarget({ hostname: d?.hostname ?? null, projectId: p?.id ?? null })
                 const folder = d?.folder ?? p?.path
+                // A row mid-removal dims and says so, so deleting never looks like a click
+                // that did nothing.
+                const pending = removing.has(d?.hostname ?? p?.id ?? '')
                 return (
-                  <TableRow key={r.key}>
+                  <TableRow key={r.key} aria-busy={pending} className={pending ? 'opacity-50 transition-opacity' : undefined}>
                     <TableCell className="min-w-0">
                       {/* The two icon buttons sit in their own column, centred against
                           the name *and* the sub-line below it. */}
@@ -395,7 +421,13 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                         <Button size="sm" variant="ghost" className="h-8 w-8 cursor-pointer px-0" onClick={openSettings} title="Settings" aria-label={`Settings for ${d?.hostname ?? p?.name}`}>
                           <Settings2 className="size-3.5" />
                         </Button>
-                        <ActionMenu label={`More actions for ${d?.hostname ?? p?.name}`} items={menuFor(r)} />
+                        {pending ? (
+                          <span className="flex h-8 w-8 items-center justify-center" title="Removing…" role="status">
+                            <Spinner />
+                          </span>
+                        ) : (
+                          <ActionMenu label={`More actions for ${d?.hostname ?? p?.name}`} items={menuFor(r)} />
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>

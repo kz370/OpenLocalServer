@@ -14,7 +14,7 @@ export function ApplyReportCard({ web }: { web: Web }) {
         <CardTitle className="text-sm">
           {reports.length === 1 ? `Applied to ${reports[0].server}` : `Applied to ${reports.length} web servers`}
         </CardTitle>
-        <button className="text-xs text-muted-foreground" onClick={() => setReports([])}>
+        <button className="cursor-pointer text-xs text-muted-foreground hover:text-foreground" onClick={() => setReports([])}>
           Dismiss
         </button>
       </CardHeader>

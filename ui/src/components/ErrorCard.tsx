@@ -10,7 +10,7 @@ export function ErrorCard({ error, onDismiss }: { error: Diagnostic | null; onDi
       <CardHeader className="flex-row items-start justify-between space-y-0">
         <CardTitle className="text-destructive">{error.problem}</CardTitle>
         {onDismiss && (
-          <button onClick={onDismiss} className="text-xs text-muted-foreground hover:text-foreground">
+          <button onClick={onDismiss} className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
             Dismiss
           </button>
         )}

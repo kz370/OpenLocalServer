@@ -29,7 +29,27 @@ export function useWeb() {
   const [customPhp, setCustomPhp] = useState<string[]>([])
   const [reports, setReports] = useState<ApplyReport[]>([])
   const [driftOpen, setDriftOpen] = useState(false)
+  /** Hostnames and project ids whose row is mid-removal, so the page can show it. */
+  const [removing, setRemoving] = useState<ReadonlySet<string>>(new Set())
+  const [applying, setApplying] = useState(false)
   const action = useAction()
+
+  const markRemoving = (key: string, on = true) =>
+    setRemoving((current) => {
+      const next = new Set(current)
+      if (on) next.add(key)
+      else next.delete(key)
+      return next
+    })
+
+  async function applyTracked() {
+    setApplying(true)
+    try {
+      await apply()
+    } finally {
+      setApplying(false)
+    }
+  }
 
   async function refresh(updateConfig = false) {
     const [s, c, d, k, a] = await Promise.all([
@@ -90,6 +110,47 @@ export function useWeb() {
     await refresh(true)
   }
 
+  /**
+   * Deleting a site re-renders every config file, runs the web server's own validator and
+   * reloads it — seconds of work. The row leaves the list at once and the slow half runs
+   * behind it, with `applying` telling the page to say so, instead of the row sitting
+   * there looking untouched while the user waits.
+   */
+  async function deleteSite(hostname: string) {
+    if (removing.has(hostname)) return
+    markRemoving(hostname)
+    setDomains((list) => list.filter((d) => d.hostname !== hostname))
+    try {
+      await runCommand({ type: 'remove_domain', hostname })
+      // The project behind the site leaves the list with it when that was its last site.
+      await refreshProjects()
+      await applyTracked()
+    } catch (e) {
+      // Whatever went wrong, the store is the truth: re-read it so a failed command
+      // puts the row back and a failed apply doesn't leave a deleted row on screen.
+      await refresh().catch(() => undefined)
+      await refreshProjects().catch(() => undefined)
+      throw e
+    } finally {
+      markRemoving(hostname, false)
+    }
+  }
+
+  /** Takes a project off the list. Its files are never touched. */
+  async function removeProjectFromList(id: string) {
+    if (removing.has(id)) return
+    markRemoving(id)
+    setProjects((list) => list.filter((p) => p.id !== id))
+    try {
+      await runCommand({ type: 'remove_project', id })
+    } catch (e) {
+      await refreshProjects().catch(() => undefined)
+      throw e
+    } finally {
+      markRemoving(id, false)
+    }
+  }
+
   const installedPhp = [...new Set([...catalog.filter((c) => c.id === 'php' && c.installed).map((c) => c.version), ...customPhp])]
   /** Hostnames whose generated config was edited by hand, across every server. */
   const driftedHosts = reports.flatMap((r) => r.drifted)
@@ -108,6 +169,10 @@ export function useWeb() {
     driftedHosts,
     driftOpen,
     setDriftOpen,
+    removing,
+    applying,
+    deleteSite,
+    removeProjectFromList,
     refresh: () => refresh(),
     /** Re-reads the stored config, so a settings save clears the drafts that produced it. */
     refreshConfig: () => refresh(true),
