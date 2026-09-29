@@ -284,22 +284,26 @@ export function DomainSettings({
     }))
 
     if (matched && !rootTouched) {
-      void runCommand({ type: 'get_project_detail', id: matched.id }).then((detail) => {
-        if (detail.type === 'project_detail') {
-          let root = matched.path
-          const fw = detail.detail.detection.framework
-          const sub = detail.detail.detection.doc_root ?? (fw === 'laravel' || fw === 'symfony' ? 'public' : null)
-          if (sub) root = `${matched.path}\\${sub}`
-          let kind: Domain['kind'] | null = null
-          if (fw === 'laravel' || fw === 'symfony' || fw === 'word_press' || fw === 'generic_php') kind = { type: 'php', version: null }
-          else if (fw === 'node' || fw === 'fast_api' || fw === 'django' || fw === 'flask') kind = { type: 'proxy', upstream_port: 3000 }
-          setD((cur) => ({
-            ...cur,
-            root,
-            kind: kind ?? cur.kind,
-          }))
-        }
-      })
+      // Best-effort autofill: the form stays usable if the read fails, so the failure is
+      // swallowed on purpose — but it must be swallowed here, not left to reject unhandled.
+      void runCommand({ type: 'get_project_detail', id: matched.id })
+        .then((detail) => {
+          if (detail.type === 'project_detail') {
+            let root = matched.path
+            const fw = detail.detail.detection.framework
+            const sub = detail.detail.detection.doc_root ?? (fw === 'laravel' || fw === 'symfony' ? 'public' : null)
+            if (sub) root = `${matched.path}\\${sub}`
+            let kind: Domain['kind'] | null = null
+            if (fw === 'laravel' || fw === 'symfony' || fw === 'word_press' || fw === 'generic_php') kind = { type: 'php', version: null }
+            else if (fw === 'node' || fw === 'fast_api' || fw === 'django' || fw === 'flask') kind = { type: 'proxy', upstream_port: 3000 }
+            setD((cur) => ({
+              ...cur,
+              root,
+              kind: kind ?? cur.kind,
+            }))
+          }
+        })
+        .catch(() => undefined)
     }
   }
 

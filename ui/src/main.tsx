@@ -22,3 +22,10 @@ requestAnimationFrame(() => {
     void emit('ols:ui-ready').catch(() => undefined)
   })
 })
+
+// Without a listener a rejected `runCommand` is dropped on the floor: the page that was
+// waiting on it keeps its loading state forever and the reason is never stated. This is
+// the last net under any call site that forgets a `.catch`.
+window.addEventListener('unhandledrejection', (e) => {
+  console.error('unhandled rejection', e.reason)
+})

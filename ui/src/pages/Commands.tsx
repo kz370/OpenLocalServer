@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
-import { ErrorCard } from '@/components/ErrorCard'
+import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -169,17 +169,23 @@ export function CommandsPage() {
     setFramework('')
     setSources(id ? (sourceCache.get(id) ?? []) : [])
     if (!id) return
-    runCommand({ type: 'get_project_detail', id }).then((r) => r.type === 'project_detail' && setFramework(r.detail.detection.framework))
+    // The framework only picks a few rows; a failed read must not reject into nowhere, and it
+    // must not hang either — `loadSources` below is the real work and reports its own errors.
+    void runCommand({ type: 'get_project_detail', id })
+      .then((r) => r.type === 'project_detail' && setFramework(r.detail.detection.framework))
+      .catch((e) => setError(asDiagnostic(e)))
     void run('discover', () => loadSources(id))
   }
 
   useEffect(() => {
-    runCommand({ type: 'list_projects' }).then((r) => {
-      if (r.type === 'projects') {
-        setProjects(r.projects)
-        if (r.projects[0]) pickProject(r.projects[0].id)
-      }
-    })
+    runCommand({ type: 'list_projects' })
+      .then((r) => {
+        if (r.type === 'projects') {
+          setProjects(r.projects)
+          if (r.projects[0]) pickProject(r.projects[0].id)
+        }
+      })
+      .catch((e) => setError(asDiagnostic(e)))
     refresh().catch(() => undefined)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

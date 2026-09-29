@@ -77,24 +77,27 @@ export function useWeb() {
     let unlisten: (() => void) | undefined
     void listen('projects-changed', () => {
       if (!alive) return
-      void refreshProjects()
-      void refresh()
+      void refreshProjects().catch(() => undefined)
+      void refresh().catch(() => undefined)
     }).then((dispose) => {
       if (alive) unlisten = dispose
       else dispose()
     })
-    void refreshProjects()
+    void refreshProjects().catch(() => undefined)
     // Laragon-style: new folders in your projects folder show up as <name>.test.
     runCommand({ type: 'sync_auto_domains' })
       .then((r) => {
         if (r.type === 'count' && r.count > 0) void refresh()
       })
       .catch(() => undefined)
-    runCommand({ type: 'list_runtime_catalog' }).then((r) => r.type === 'runtime_catalog' && setCatalog(r.entries))
-    // PHP versions registered from elsewhere (Laragon, XAMPP, ...) serve sites too.
-    runCommand({ type: 'list_custom_installs' }).then(
-      (r) => r.type === 'custom_installs' && setCustomPhp(r.entries.filter((c) => c.id === 'php' && c.label).map((c) => c.label)),
-    )
+    // The catalog and the unmanaged PHP versions only decorate other pages, so a failed read
+    // leaves them empty. It still has to be caught: an unhandled rejection here is silent.
+    runCommand({ type: 'list_runtime_catalog' })
+      .then((r) => r.type === 'runtime_catalog' && setCatalog(r.entries))
+      .catch(() => undefined)
+    runCommand({ type: 'list_custom_installs' })
+      .then((r) => r.type === 'custom_installs' && setCustomPhp(r.entries.filter((c) => c.id === 'php' && c.label).map((c) => c.label)))
+      .catch(() => undefined)
     return () => {
       alive = false
       unlisten?.()

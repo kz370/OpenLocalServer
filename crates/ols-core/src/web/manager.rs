@@ -186,6 +186,11 @@ fn port_owner(process_name: Option<String>, pid: Option<u32>) -> String {
     }
 }
 
+/// A generated-config hash to record once an apply has written and validated the files:
+/// `(server id, hostname, sha-256 of what is now on disk)`. The caller commits these, so
+/// the apply itself never needs the domain store.
+pub type HashUpdate = (String, String, String);
+
 /// The enabled sites one server renders. A site is served by exactly one server: its own
 /// `server` override, or the default when it has none.
 pub fn sites_for_server(cfg: &WebConfig, domains: &[Domain], server_id: &str) -> Vec<Domain> {
@@ -457,14 +462,21 @@ impl WebManager {
     /// Renders, validates and starts every server that should be serving, one after the
     /// other. Each server's rollback is its own, so a bad config for one never touches
     /// the others.
+    ///
+    /// Works from a snapshot of the domains rather than the live store: writing files,
+    /// running the validator and (re)starting a server can take seconds, and holding the
+    /// store lock that long would block every read — including the UI's status poll. The
+    /// hashes to record come back in `hashes` for the caller to commit once the lock is
+    /// free again. A change made while an apply runs is picked up by the next one.
     pub fn apply(
         &self,
         ctx: &ApplyContext,
-        domains: &mut DomainStore,
+        domains: &[Domain],
+        hashes: &mut Vec<HashUpdate>,
     ) -> Result<Vec<ApplyReport>, CoreError> {
         let mut out = Vec::new();
         for id in self.apply_targets(ctx.cfg) {
-            out.push(self.apply_one(ctx, domains, &id)?);
+            out.push(self.apply_one(ctx, domains, &id, hashes)?);
         }
         self.finish_global(ctx, domains, &mut out);
         Ok(out)
@@ -474,8 +486,9 @@ impl WebManager {
     pub fn apply_one(
         &self,
         ctx: &ApplyContext,
-        domains: &mut DomainStore,
+        domains: &[Domain],
         server_id: &str,
+        hashes: &mut Vec<HashUpdate>,
     ) -> Result<ApplyReport, CoreError> {
         let cfg = ctx.cfg;
         let server = server_by_id(server_id)
@@ -494,10 +507,10 @@ impl WebManager {
             ..Default::default()
         };
 
-        let all = domains.list();
+        let all = domains;
         // Exclusive binding: a site is rendered on its assigned server and no other, so
         // the files of the other servers for that host are removed below.
-        let enabled = sites_for_server(cfg, &all, server.id());
+        let enabled = sites_for_server(cfg, all, server.id());
         for d in &enabled {
             if let Some(want) = d.server.as_deref() {
                 if !SERVER_IDS.contains(&want) {
@@ -709,12 +722,9 @@ impl WebManager {
             )));
         }
 
-        // Config is good: record the hashes so future hand-edits show up as drift.
+        // Config is good: hand back the hashes so future hand-edits show up as drift.
         for (host, hash) in new_hashes {
-            if let Some(mut d) = domains.get(&host) {
-                d.generated_hashes.insert(server.id().to_string(), hash);
-                let _ = domains.update(d);
-            }
+            hashes.push((server.id().to_string(), host, hash));
         }
 
         // 5. Start (or gracefully reload). A server with no sites of its own opens no
@@ -732,13 +742,8 @@ impl WebManager {
 
     /// Steps that are about the machine, not one server: site app processes and name
     /// resolution run once for every enabled site, whichever server renders it (§3.2).
-    fn finish_global(
-        &self,
-        ctx: &ApplyContext,
-        domains: &DomainStore,
-        reports: &mut [ApplyReport],
-    ) {
-        let enabled: Vec<Domain> = domains.list().into_iter().filter(|d| d.enabled).collect();
+    fn finish_global(&self, ctx: &ApplyContext, domains: &[Domain], reports: &mut [ApplyReport]) {
+        let enabled: Vec<Domain> = domains.iter().filter(|d| d.enabled).cloned().collect();
         let Some(report) = reports.last_mut() else {
             return;
         };
@@ -1902,14 +1907,15 @@ mod tests {
     fn every_server_lists_its_own_main_config() {
         let home = crate::test_support::isolated_home();
         // list_configs resolves a layout per server, which needs that runtime installed.
-        for (id, version, binary) in [
-            ("nginx", "1.0.0", "nginx.exe"),
-            ("apache", "1.0.0", "bin/httpd.exe"),
-            ("caddy", "1.0.0", "caddy.exe"),
-        ] {
-            let dir = home.paths.runtimes_dir().join(id).join(version);
-            std::fs::create_dir_all(dir.join(binary).parent().unwrap()).unwrap();
-            std::fs::write(dir.join(binary), b"").unwrap();
+        // Installed means "the catalog's binary exists under runtimes/<id>/<version>", so
+        // the runtime is faked from the catalog itself rather than from a made-up version.
+        for m in crate::catalog::builtin_catalog()
+            .into_iter()
+            .filter(|m| SERVER_IDS.contains(&m.id))
+        {
+            let dir = home.paths.runtimes_dir().join(m.id).join(m.version);
+            std::fs::create_dir_all(dir.join(m.binary).parent().unwrap()).unwrap();
+            std::fs::write(dir.join(m.binary), b"").unwrap();
         }
         let mgr = test_manager(&home);
         let cfg = test_config("nginx");

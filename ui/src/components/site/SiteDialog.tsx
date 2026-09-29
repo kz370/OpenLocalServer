@@ -22,13 +22,13 @@ import {
 } from 'lucide-react'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 
-import { ErrorCard } from '@/components/ErrorCard'
+import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
 import { ProjectShortcuts } from '@/components/OpenWithMenu'
 import { ProjectTools, TOOL_TABS, type ToolTab } from '@/components/ProjectTools'
 import { TechIcon } from '@/components/TechIcon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { type CoreCommand, type Domain, type ProcessEvent, type ProjectDetail, runCommand } from '@/core'
+import { type CoreCommand, type Diagnostic, type Domain, type ProcessEvent, type ProjectDetail, runCommand, runCommandWithin } from '@/core'
 import { useAnimatedClose } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 import type { Web } from '@/lib/web'
@@ -76,6 +76,9 @@ const SOURCE_LABEL: Record<string, string> = {
   none: 'not resolved',
 }
 
+/** How long a read that gates this dialog may stay pending before it is called a failure. */
+const READ_TIMEOUT_MS = 20_000
+
 /**
  * aaPanel-style site settings: one large dialog with a side menu. The site's own settings and
  * web server config come first, then everything the project behind it offers.
@@ -85,12 +88,20 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
   const { projects, installedPhp, run, apply, busy, error, setError } = web
   const [tab, setTab] = useState<SiteTab>(target.tab ?? (target.hostname ? 'settings' : 'overview'))
   const [domain, setDomain] = useState<Domain | null>(null)
+  const [domainError, setDomainError] = useState<Diagnostic | null>(null)
   const [detail, setDetail] = useState<ProjectDetail | null>(null)
+  const [detailError, setDetailError] = useState<Diagnostic | null>(null)
+  /** Bumped to re-read the project after a failed one, without closing the dialog. */
+  const [detailTick, setDetailTick] = useState(0)
   const [runOutput, setRunOutput] = useState<string[]>([])
   const [runningProcessId, setRunningProcessId] = useState<number | null>(null)
   const [toolsTick, setToolsTick] = useState(0)
 
-  const projectId = domain?.project_id ?? target.projectId
+  // `get_domain` is the authority on which project a site belongs to, so its answer replaces
+  // the id the caller guessed rather than racing it: without this the two effects below each
+  // fire on their own idea of the project and the loser wins the spinner.
+  const [siteProjectId, setSiteProjectId] = useState<string | null>(target.projectId)
+  const projectId = domain?.project_id ?? siteProjectId
   const project = projects.find((p) => p.id === projectId) ?? null
 
   // Re-read the site whenever its settings are shown: the config tab can change ownership and blocks.
@@ -104,11 +115,17 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
     if (!target.hostname) return
     if (tab !== 'settings' && loadedFor.current === target.hostname) return
     let current = true
-    void runCommand({ type: 'get_domain', hostname: target.hostname }).then((r) => {
-      if (!current || r.type !== 'domain') return
-      loadedFor.current = target.hostname
-      setDomain((cur) => (cur && JSON.stringify(cur) === JSON.stringify(r.domain) ? cur : r.domain))
-    })
+    void runCommandWithin({ type: 'get_domain', hostname: target.hostname }, READ_TIMEOUT_MS)
+      .then((r) => {
+        if (!current || r.type !== 'domain') return
+        loadedFor.current = target.hostname
+        setDomain((cur) => (cur && JSON.stringify(cur) === JSON.stringify(r.domain) ? cur : r.domain))
+        setSiteProjectId(r.domain.project_id)
+      })
+      .catch((e) => {
+        // Without this the rejection vanished and the tab sat on "Reading the site…" for good.
+        if (current) setDomainError(asDiagnostic(e))
+      })
     return () => {
       current = false
     }
@@ -116,15 +133,23 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
 
   useEffect(() => {
     setDetail(null)
+    setDetailError(null)
     if (!projectId) return
     let current = true
-    runCommand({ type: 'get_project_detail', id: projectId }).then((res) => {
-      if (current && res.type === 'project_detail') setDetail(res.detail)
-    })
+    // A read that never settles must not leave `detail` null forever: that null *is* the
+    // "Reading the project…" state, so an unanswered command is indistinguishable from a
+    // slow one. The deadline turns it into a stated failure.
+    void runCommandWithin({ type: 'get_project_detail', id: projectId }, READ_TIMEOUT_MS)
+      .then((res) => {
+        if (current && res.type === 'project_detail') setDetail(res.detail)
+      })
+      .catch((e) => {
+        if (current) setDetailError(asDiagnostic(e))
+      })
     return () => {
       current = false
     }
-  }, [projectId])
+  }, [projectId, detailTick])
 
   useEffect(() => {
     const unlisten = listen<ProcessEvent>('process-event', (event) => {
@@ -254,6 +279,15 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
 
           <div className="flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-5">
             <ErrorCard error={error} onDismiss={() => setError(null)} />
+            <ErrorCard error={domainError} onDismiss={() => setDomainError(null)} />
+            <ErrorCard error={detailError} onDismiss={() => setDetailError(null)} />
+            {detailError && (
+              <div>
+                <Button variant="secondary" size="sm" onClick={() => setDetailTick((n) => n + 1)}>
+                  Try reading the project again
+                </Button>
+              </div>
+            )}
             {tab === 'settings' &&
               (settingsDomain ? (
                 <DomainSettings
@@ -270,7 +304,7 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
                     </Button>
                   )}
                 />
-              ) : (
+              ) : domainError ? null : (
                 <p className="text-sm text-muted-foreground">Reading the site…</p>
               ))}
 
@@ -279,7 +313,7 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
             {tab === 'servers' && <ServersPanel web={web} hostname={target.hostname} />}
             {tab === 'logs' && <SiteLogs hostname={target.hostname} projectId={projectId} projectName={project?.name ?? null} />}
 
-            {isProjectTab && !detail && <p className="text-sm text-muted-foreground">Reading the project…</p>}
+            {isProjectTab && !detail && !detailError && <p className="text-sm text-muted-foreground">Reading the project…</p>}
             {tab === 'overview' && detail && <ProjectOverview detail={detail} onRun={startProcess} />}
             {tab === 'commands' && detail && <ProjectCommands key={detail.project.id} projectId={detail.project.id} framework={detail.detection.framework} onShowIssues={() => setTab('logs')} />}
             {isProjectTab && tab !== 'overview' && tab !== 'commands' && detail && (

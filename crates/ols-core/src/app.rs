@@ -704,18 +704,39 @@ impl Inner {
         self.domains.lock().unwrap().update(domain)
     }
 
+    /// Deletes a site and takes it off the list for good. When it was the last site of
+    /// its project, the project leaves the list too, so the row the user clicked really
+    /// does disappear. Their files are never touched. The folder joins the skip list
+    /// (§`PROJECT_SKIP`) so folder rescans don't bring the project back.
     pub fn remove_domain(&self, hostname: &str) -> Result<(), CoreError> {
         let mut domains = self.domains.lock().unwrap();
         let was_auto = domains
             .get(hostname)
             .is_some_and(|d| d.project_id.is_some());
+        // The project goes too when this was its last site; another site of the same
+        // project keeps it on the list.
+        let orphan_project = domains
+            .get(hostname)
+            .and_then(|d| d.project_id.clone())
+            .filter(|project_id| {
+                !domains
+                    .list()
+                    .iter()
+                    .any(|d| d.hostname != hostname && d.project_id.as_ref() == Some(project_id))
+            });
         domains.remove(hostname)?;
+        // Released before anything else locks the project store: a summary read takes
+        // projects first and domains second, and holding both ways round deadlocks.
+        drop(domains);
         if was_auto {
             // Deleted on purpose: automatic domains must not bring it back.
             self.edit_string_list(AUTO_SKIP, |list| list.push(hostname.to_string()))?;
         }
         let _ = self.certs.revoke(hostname);
         self.web.restart_app(hostname);
+        if let Some(id) = orphan_project {
+            let _ = self.remove_project(&id);
+        }
         Ok(())
     }
 
@@ -987,6 +1008,11 @@ impl Inner {
 
     /// Applies every running web server. One report per server; a failure in one never
     /// rolls back or stops another.
+    ///
+    /// The domain store is locked only long enough to take a snapshot: rendering files,
+    /// running each server's validator and (re)starting it can take seconds, and holding
+    /// the lock that long blocked reads (`list_domains` runs on a UI poll) for the whole
+    /// apply. Generated-config hashes are committed afterwards, under the lock again.
     pub fn apply_web(&self, overwrite: &[String]) -> Result<Vec<ApplyReport>, CoreError> {
         let cfg = self.web_config();
         Self::require_distinct_ports(&cfg)?;
@@ -1005,8 +1031,11 @@ impl Inner {
             runtime_bin: &runtime_bin,
             overwrite,
         };
-        let mut domains = self.domains.lock().unwrap();
-        self.web.apply(&ctx, &mut domains)
+        let snapshot = self.domains.lock().unwrap().list();
+        let mut hashes = Vec::new();
+        let reports = self.web.apply(&ctx, &snapshot, &mut hashes)?;
+        self.record_generated_hashes(&hashes)?;
+        Ok(reports)
     }
 
     /// Applies a single web server, for "Start" on one row of the Services page.
@@ -1032,8 +1061,32 @@ impl Inner {
             runtime_bin: &runtime_bin,
             overwrite,
         };
+        let snapshot = self.domains.lock().unwrap().list();
+        let mut hashes = Vec::new();
+        let report = self
+            .web
+            .apply_one(&ctx, &snapshot, server_id, &mut hashes)?;
+        self.record_generated_hashes(&hashes)?;
+        Ok(report)
+    }
+
+    /// Stores the hashes an apply produced, so a hand-edited config file is reported as
+    /// drift on the next apply instead of being silently overwritten.
+    fn record_generated_hashes(
+        &self,
+        hashes: &[crate::web::manager::HashUpdate],
+    ) -> Result<(), CoreError> {
+        if hashes.is_empty() {
+            return Ok(());
+        }
         let mut domains = self.domains.lock().unwrap();
-        self.web.apply_one(&ctx, &mut domains, server_id)
+        for (server, host, hash) in hashes {
+            if let Some(mut d) = domains.get(host) {
+                d.generated_hashes.insert(server.clone(), hash.clone());
+                let _ = domains.update(d);
+            }
+        }
+        Ok(())
     }
 
     /// Two servers pointed at one port can never both start, so the clash is refused
@@ -3540,5 +3593,196 @@ mod startup_visibility_tests {
             inner.setting_bool("startup.minimized", true),
             args(&["app.exe"])
         ));
+    }
+}
+
+#[cfg(test)]
+mod apply_concurrency_tests {
+    use super::*;
+    use std::sync::mpsc;
+    use std::time::{Duration, Instant};
+
+    fn inner() -> (Arc<Inner>, crate::test_support::IsolatedHome) {
+        let home = crate::test_support::isolated_home();
+        let settings = crate::settings::SettingsService::load(&home.paths).unwrap();
+        (Inner::new(settings, home.paths.clone()).unwrap(), home)
+    }
+
+    /// A PHP site bound to a project, so applying it resolves the project's runtime —
+    /// which reads the project store, and is therefore where a test can park an apply.
+    fn php_site_on_a_project(inner: &Inner, home: &crate::test_support::IsolatedHome) {
+        let dir = home.paths.data_dir().join("www").join("app");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("index.php"), "<?php echo 1;").unwrap();
+        let project = inner
+            .projects
+            .lock()
+            .unwrap()
+            .register(&dir.display().to_string())
+            .unwrap();
+        let mut domains = inner.domains.lock().unwrap();
+        let mut site = domains
+            .get(crate::domain::HOME_HOSTNAME)
+            .expect("the built-in home site is seeded");
+        site.hostname = "app.test".into();
+        site.project_id = Some(project.id.clone());
+        site.root = dir.display().to_string();
+        site.kind = crate::domain::SiteKind::Php { version: None };
+        domains.add(site).unwrap();
+    }
+
+    /// Deleting a site takes it off the list, and the project behind it goes with it once
+    /// it has no sites left — otherwise the row the user just deleted reappears as
+    /// "project only". Nothing on disk is touched.
+    #[test]
+    fn deleting_a_site_takes_its_last_project_off_the_list() {
+        let (inner, home) = inner();
+        let dir = home.paths.data_dir().join("www").join("app");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("index.php"), "<?php echo 1;").unwrap();
+        let project = inner
+            .projects
+            .lock()
+            .unwrap()
+            .register(&dir.display().to_string())
+            .unwrap();
+        let site = |host: &str| Domain {
+            hostname: host.into(),
+            project_id: Some(project.id.clone()),
+            root: dir.display().to_string(),
+            kind: crate::domain::SiteKind::Php { version: None },
+            https: false,
+            redirect_https: false,
+            wildcard: false,
+            enabled: true,
+            ownership: crate::domain::Ownership::Managed,
+            app: None,
+            blocks: crate::domain::SiteBlocks::default(),
+            generated_hashes: Default::default(),
+            public_domain: None,
+            tunnel_id: None,
+            server: None,
+        };
+        {
+            let mut domains = inner.domains.lock().unwrap();
+            domains.add(site("one.test")).unwrap();
+            domains.add(site("two.test")).unwrap();
+        }
+
+        // One of two sites left: the project stays.
+        inner.remove_domain("one.test").unwrap();
+        assert!(inner.projects.lock().unwrap().get(&project.id).is_some());
+        assert!(inner.domains.lock().unwrap().get("two.test").is_some());
+
+        // The last one: both the site and the project leave the list.
+        inner.remove_domain("two.test").unwrap();
+        assert!(inner.projects.lock().unwrap().get(&project.id).is_none());
+        assert!(inner.domains.lock().unwrap().get("two.test").is_none());
+        assert!(
+            dir.exists(),
+            "deleting a site must not touch the project folder"
+        );
+    }
+
+    /// A running apply renders files, runs each server's validator and restarts it — seconds of
+    /// work. It must not hold the domain store for that time: `list_domains` runs on a UI
+    /// poll, and a page waiting seconds on every status refresh reads as a hung app.
+    #[test]
+    fn a_running_apply_leaves_the_domain_store_readable() {
+        let (inner, home) = inner();
+        php_site_on_a_project(&inner, &home);
+
+        // Hold the project store so the apply parks in `project_detail`, mid-apply.
+        let projects = inner.projects.lock().unwrap();
+        let (started_tx, started_rx) = mpsc::channel();
+        let (done_tx, done_rx) = mpsc::channel();
+        let worker = {
+            let inner = Arc::clone(&inner);
+            std::thread::spawn(move || {
+                started_tx.send(()).unwrap();
+                let result = inner.apply_web(&[]);
+                done_tx.send(result.is_ok()).unwrap();
+            })
+        };
+        started_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        // Give the apply time to get past its snapshot and park on the project store,
+        // so the probe below cannot win the race by arriving too early.
+        std::thread::sleep(Duration::from_millis(500));
+
+        // The apply cannot finish while we hold the project store, so anything it is
+        // holding right now is held for the whole apply, not for a moment.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut free = false;
+        while Instant::now() < deadline {
+            if let Ok(guard) = inner.domains.try_lock() {
+                drop(guard);
+                free = true;
+                break;
+            }
+            assert!(
+                done_rx.try_recv().is_err(),
+                "the apply finished, so it never really blocked"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        drop(projects);
+        worker.join().unwrap();
+        assert!(free, "the domain store stayed locked for the whole apply");
+    }
+
+    /// An apply no longer writes generated-config hashes itself — it hands them back and
+    /// the store is updated afterwards, without the apply still holding it. The hashes
+    /// have to land all the same, keyed per server, and a hostname the store no longer
+    /// knows is skipped rather than resurrected.
+    #[test]
+    fn generated_hashes_are_committed_after_the_apply() {
+        let (inner, _home) = inner();
+        {
+            let mut domains = inner.domains.lock().unwrap();
+            let mut site = domains.get(crate::domain::HOME_HOSTNAME).unwrap();
+            site.hostname = "static.test".into();
+            domains.add(site).unwrap();
+        }
+        inner
+            .record_generated_hashes(&[
+                (
+                    "nginx".to_string(),
+                    "static.test".to_string(),
+                    "aaa".to_string(),
+                ),
+                (
+                    "apache".to_string(),
+                    "static.test".to_string(),
+                    "bbb".to_string(),
+                ),
+                (
+                    "nginx".to_string(),
+                    "gone.test".to_string(),
+                    "ccc".to_string(),
+                ),
+            ])
+            .unwrap();
+
+        let hashes = inner
+            .domains
+            .lock()
+            .unwrap()
+            .get("static.test")
+            .unwrap()
+            .generated_hashes
+            .clone();
+        assert_eq!(hashes.get("nginx").map(String::as_str), Some("aaa"));
+        assert_eq!(hashes.get("apache").map(String::as_str), Some("bbb"));
+        assert!(inner.domains.lock().unwrap().get("gone.test").is_none());
+    }
+
+    /// Nothing to commit is the common case for a no-op apply, and must not take the
+    /// store lock at all.
+    #[test]
+    fn committing_no_hashes_does_not_touch_the_store() {
+        let (inner, _home) = inner();
+        let guard = inner.domains.try_lock().expect("the store is free");
+        inner.record_generated_hashes(&[]).unwrap();
+        drop(guard);
     }
 }

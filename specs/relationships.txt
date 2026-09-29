@@ -8,7 +8,8 @@ Inner | uses | WebManager
 Inner | uses | DomainStore
 Inner | uses | CertificateManager
 Inner | uses | ProjectStore
-WebManager | uses | DomainStore
+WebManager | uses | DomainStore (snapshot only: apply renders, validates and restarts outside the store lock, and returns generated-config hashes for Inner to commit)
+WebManager | returns | HashUpdate (server id, hostname, sha-256) to Inner::record_generated_hashes
 WebManager | uses | CertificateManager
 WebManager | uses | PhpPools
 WebManager | uses | DnsServer
@@ -55,6 +56,8 @@ Updater | uses | CatalogSources
 PluginManager | uses | Catalog
 WebConfig | resolves | Domain.server -> resolved_server(domain, cfg)
 SitesPage | uses | UseWeb hook
+SitesPage | uses | ConfirmAction (the dialog title names the site or project; the destructive button repeats the action)
+UseWeb.deleteSite | uses | remove_domain + apply_web (row removed optimistically, apply run behind an `applying` flag)
 RuntimesPage | uses | TechIcon (runtime ID resolves to brand or generic glyph; Memcached uses its symbol-only logo, Redis keeps its brand mark)
 ServicesWidget | uses | DashboardPage.useAction (so a failed service action reaches the page ErrorCard)
 SiteDialog | uses | CoreClient (get_domain once per trigger, unchanged read dropped — it seeds DomainSettings)
