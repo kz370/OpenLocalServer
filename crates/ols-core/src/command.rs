@@ -115,6 +115,16 @@ pub enum CoreCommand {
     RemoveProject {
         id: String,
     },
+    /// The deletion history shown in Settings: project folders and automatic sites the
+    /// user deleted, newest first. Empty when nothing has been deleted.
+    ListDeletedItems,
+    /// Drops one entry from the deletion history so scans and automatic domains see that
+    /// folder again. Files on disk are never touched.
+    ForgetDeletedItem {
+        value: String,
+    },
+    /// Empties the deletion history at once. Returns how many entries were dropped.
+    ClearDeletedItems,
     GetProjectDetail {
         id: String,
     },
@@ -1213,6 +1223,9 @@ pub enum CoreResponse {
     ProjectDetail {
         detail: Box<ProjectDetail>,
     },
+    DeletedItems {
+        items: Vec<crate::app::DeletedItem>,
+    },
     Services {
         services: Vec<ServiceStatus>,
     },
@@ -1835,12 +1848,16 @@ impl Core {
                     return Err(CoreError::InvalidProjectPath(path));
                 }
                 let candidates = crate::detection::scan_for_projects(&root);
+                // Read the skips before taking the project store, then judge every candidate
+                // the same way the watcher does: a folder the user deleted stays deleted
+                // whichever path spelling this scan happened to walk.
+                let skipped = i.project_skips();
                 let mut projects = i.projects.lock().unwrap();
                 let mut registered = Vec::with_capacity(candidates.len());
                 for candidate in candidates {
                     if let Some(s) = candidate.to_str() {
                         // Bulk scans don't resurrect folders removed from the list.
-                        if i.is_project_skipped(s) {
+                        if crate::app::skip_matches(&skipped, s) {
                             continue;
                         }
                         registered.push(projects.register(s)?);
@@ -1864,6 +1881,29 @@ impl Core {
             C::RemoveProject { id } => {
                 i.remove_project(&id)?;
                 Ok(R::Ok)
+            }
+            C::ListDeletedItems => Ok(R::DeletedItems {
+                items: i.list_deleted_items(),
+            }),
+            C::ForgetDeletedItem { value } => {
+                let value = value.trim();
+                if value.is_empty() {
+                    return Err(CoreError::failed_fix(
+                        "That deleted item could not be cleared.",
+                        "No folder or site name was given to remove from the deletion history.",
+                        "Reload Settings and try again.",
+                    ));
+                }
+                i.forget_deleted_item(value)?;
+                Ok(R::DeletedItems {
+                    items: i.list_deleted_items(),
+                })
+            }
+            C::ClearDeletedItems => {
+                i.clear_deleted_items()?;
+                Ok(R::DeletedItems {
+                    items: i.list_deleted_items(),
+                })
             }
             C::GetProjectDetail { id } => {
                 // The store has no such id, which in practice means the site still points at a

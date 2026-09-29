@@ -28,11 +28,12 @@ use crate::error::CoreError;
 
 const KEY: &str = "resources";
 
-/// Where `cpulimit.exe` is looked for, in order: the path the user configured, the
-/// directory of the running executable (where the installer puts it, and where
-/// `elevate::helper_path` looks for the helper), `OLS_CPULIMIT_PATH`, the standard
-/// per-user folder from the utility's own installer, then `PATH`. It is shipped, not
-/// downloaded at runtime; provenance and the pinned hash are in `vendor/cpulimit/`.
+/// Where `cpulimit.exe` is looked for, in order: the directory of the running executable
+/// (where the installer puts it, and where `elevate::helper_path` looks for the helper),
+/// then the path the user configured, then `OLS_CPULIMIT_PATH`, the standard per-user
+/// folder from the utility's own installer, then `PATH`. See [`ResourceLimits::find_cpu_limiter`]
+/// for why the sibling comes first. It is shipped, not downloaded at runtime; provenance and
+/// the pinned hash are in `vendor/cpulimit/`.
 const LIMITER_ENV: &str = "OLS_CPULIMIT_PATH";
 const LIMITER_EXE: &str = "cpulimit.exe";
 const LIMITER_HINT: &str =
@@ -188,30 +189,43 @@ impl ResourceLimits {
         Some(pct.clamp(1, 100))
     }
 
-    /// `cpulimit.exe` if it is installed. A configured path is authoritative, so a moved
-    /// or hand-built binary is still found; then the install folder the installer writes
-    /// to; then `OLS_CPULIMIT_PATH`, the utility's own per-user install folder, and
-    /// `PATH` for a dev build run from `target\`.
+    /// `cpulimit.exe` if it is installed.
+    ///
+    /// The copy beside the running executable wins, and that is deliberate. The installer
+    /// puts it there and the build hash-checks it, so it is the one binary we vouched for;
+    /// a `cpu_limiter_path` the user set once is stored in a settings database that a dev
+    /// build and an installed build share, so letting a stored path outrank the shipped
+    /// copy would leave an installed app pointing at whatever folder a dev build once
+    /// used. A configured path is therefore the fallback for when there is no sibling —
+    /// a portable copy kept elsewhere, or a hand-built utility — which is the only case
+    /// the UI offers the field in anyway.
+    ///
+    /// `OLS_CPULIMIT_PATH`, the utility's own per-user install folder and `PATH` follow,
+    /// for a dev build run from `target\` where nothing was ever installed.
     pub fn find_cpu_limiter(&self) -> Option<PathBuf> {
-        if let Some(p) = self
+        Self::find_cpu_limiter_from(
+            std::env::current_exe()
+                .ok()
+                .and_then(|e| e.parent().map(|p| p.to_path_buf())),
+            self,
+        )
+    }
+
+    /// The lookup itself, with the app's own directory passed in so the order is testable
+    /// without depending on where the test binary happens to live.
+    fn find_cpu_limiter_from(app_dir: Option<PathBuf>, limits: &ResourceLimits) -> Option<PathBuf> {
+        if let Some(candidate) = app_dir.map(|d| d.join(LIMITER_EXE)).filter(|p| p.is_file()) {
+            return Some(candidate);
+        }
+        if let Some(path) = limits
             .cpu_limiter_path
             .as_deref()
             .map(str::trim)
             .filter(|p| !p.is_empty())
+            .map(PathBuf::from)
+            .filter(|p| p.is_file())
         {
-            let path = PathBuf::from(p);
-            return path.is_file().then_some(path);
-        }
-        // The installer drops cpulimit.exe next to Open Local Server.exe, so a default
-        // install finds it here with nothing configured — same "beside the app" rule
-        // elevate::helper_path uses for the helper.
-        if let Ok(exe) = std::env::current_exe() {
-            if let Some(dir) = exe.parent() {
-                let candidate = dir.join(LIMITER_EXE);
-                if candidate.is_file() {
-                    return Some(candidate);
-                }
-            }
+            return Some(path);
         }
         if let Some(p) = std::env::var_os(LIMITER_ENV)
             .map(PathBuf::from)
@@ -249,10 +263,22 @@ impl ResourceLimits {
         program: &str,
         args: &[String],
     ) -> Result<Option<(String, Vec<String>)>, String> {
+        self.cap_process_with(self.find_cpu_limiter(), program, args)
+    }
+
+    /// `cap_process` with the search already done, so the "wanted but not installed" refusal
+    /// can be tested without depending on whether the machine running the tests happens to
+    /// have the utility somewhere.
+    fn cap_process_with(
+        &self,
+        limiter: Option<PathBuf>,
+        program: &str,
+        args: &[String],
+    ) -> Result<Option<(String, Vec<String>)>, String> {
         let Some(percent) = self.effective_cpu_percent() else {
             return Ok(None);
         };
-        let Some(limiter) = self.find_cpu_limiter() else {
+        let Some(limiter) = limiter else {
             return Err(LIMITER_HINT.to_string());
         };
         let mut capped = vec![percent.to_string(), program.to_string()];
@@ -475,7 +501,7 @@ mod tests {
             ..Default::default()
         };
         let err = l
-            .cap_process("redis-server.exe", &[])
+            .cap_process_with(None, "redis-server.exe", &[])
             .expect_err("a cap that cannot be applied must not look like success");
         assert!(
             err.contains("cpulimit"),
@@ -484,22 +510,70 @@ mod tests {
         assert!(l.validate().is_err(), "and a bad path is refused on save");
     }
 
-    /// The installer puts cpulimit.exe next to the app, so the directory of the running
-    /// executable is searched before anything the user would have to configure. Pointed at
-    /// a real file, that file is what comes back.
+    /// A saved path that no longer exists must not take the whole search down with it. It
+    /// used to: the lookup returned early on "that file is missing", so a stale setting
+    /// left the cap permanently dead even in an install that ships the utility beside the
+    /// app.
     #[test]
-    fn a_configured_path_is_used_verbatim() {
-        let dir = tempfile::tempdir().unwrap();
-        let limiter = dir.path().join("cpulimit.exe");
-        std::fs::write(&limiter, b"MZ").unwrap();
+    fn a_stale_saved_path_does_not_hide_the_copy_beside_the_app() {
+        let app = tempfile::tempdir().unwrap();
+        let shipped = app.path().join("cpulimit.exe");
+        std::fs::write(&shipped, b"MZ").unwrap();
         let l = ResourceLimits {
-            cpu_limiter_path: Some(limiter.display().to_string()),
+            cpu_percent: Some(30),
+            cpu_limiter_path: Some(r"C:\nowhere\cpulimit.exe".into()),
+            ..Default::default()
+        };
+        let (program, _) = l
+            .cap_process_with(
+                ResourceLimits::find_cpu_limiter_from(Some(app.path().to_path_buf()), &l),
+                "redis-server.exe",
+                &[],
+            )
+            .expect("the shipped copy is found despite the stale setting")
+            .expect("a cap was asked for");
+        assert_eq!(program, shipped.display().to_string());
+    }
+
+    /// The installer puts cpulimit.exe next to the app, and that copy is the one the
+    /// build hash-checked, so it wins over anything stored in settings. This matters
+    /// because the settings database is shared: a path a user saved while running a dev
+    /// build would otherwise keep an *installed* app pointing at that dev machine's folder.
+    #[test]
+    fn the_copy_beside_the_app_beats_a_path_saved_in_settings() {
+        let app = tempfile::tempdir().unwrap();
+        let other = tempfile::tempdir().unwrap();
+        let shipped = app.path().join("cpulimit.exe");
+        std::fs::write(&shipped, b"MZ").unwrap();
+        let saved = other.path().join("cpulimit.exe");
+        std::fs::write(&saved, b"MZ").unwrap();
+        let limits = ResourceLimits {
+            cpu_limiter_path: Some(saved.display().to_string()),
             ..Default::default()
         };
         assert_eq!(
-            l.find_cpu_limiter().expect("a file is found"),
-            limiter,
-            "the configured path wins, whatever else is installed"
+            ResourceLimits::find_cpu_limiter_from(Some(app.path().to_path_buf()), &limits),
+            Some(shipped),
+            "an installed app resolves the limiter it shipped with, not a stale setting"
+        );
+    }
+
+    /// With no copy beside the app, the path the user saved is what is used — the case the
+    /// Resources card offers that field for.
+    #[test]
+    fn a_configured_path_is_used_when_the_app_has_no_sibling_copy() {
+        let app = tempfile::tempdir().unwrap();
+        let other = tempfile::tempdir().unwrap();
+        let saved = other.path().join("cpulimit.exe");
+        std::fs::write(&saved, b"MZ").unwrap();
+        let limits = ResourceLimits {
+            cpu_limiter_path: Some(saved.display().to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            ResourceLimits::find_cpu_limiter_from(Some(app.path().to_path_buf()), &limits),
+            Some(saved),
+            "the escape hatch still works, and is the only thing it is for"
         );
     }
 }

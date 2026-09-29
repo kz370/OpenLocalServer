@@ -94,6 +94,79 @@ fn svc(msg: impl Into<String>) -> CoreError {
     CoreError::ServiceError(msg.into())
 }
 
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+/// One entry of the deletion history: a project folder or an automatic site the user
+/// deleted, kept so scans and automatic domains leave it alone. Clearing an entry only
+/// removes it from the history — it never touches the folder on disk.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeletedItem {
+    /// The skipped project path, or the skipped hostname.
+    pub value: String,
+    /// When the user deleted it, in milliseconds since the Unix epoch. Entries written
+    /// before this field existed report `0` and sort last.
+    pub deleted_at: u64,
+    /// "project" or "domain" — which skip list the entry came from.
+    pub kind: String,
+}
+
+impl DeletedItem {
+    pub fn is_project(&self) -> bool {
+        self.kind == "project"
+    }
+}
+
+/// A skip-list entry as stored: the value plus when it was recorded. Plain strings are
+/// still read (lists written by earlier versions), which is all they ever held.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct SkipEntry {
+    value: String,
+    deleted_at: u64,
+}
+
+impl SkipEntry {
+    fn reads_as(entry: &serde_json::Value) -> Option<Self> {
+        match entry {
+            serde_json::Value::String(v) => Some(Self {
+                value: v.clone(),
+                deleted_at: 0,
+            }),
+            serde_json::Value::Object(_) => serde_json::from_value(entry.clone()).ok(),
+            _ => None,
+        }
+    }
+}
+
+/// True when `path` is one of the skipped project folders, in either form.
+///
+/// Skips are stored the way `ProjectStore::register` writes paths — canonicalized, without
+/// the `\\?\` prefix — while a scan only has the path `read_dir` handed it, which is raw.
+/// A folder reached through a short name, a junction or a mapped drive only matches when
+/// both are compared.
+pub(crate) fn skip_matches(entries: &[SkipEntry], path: &str) -> bool {
+    if entries
+        .iter()
+        .any(|e| e.value.eq_ignore_ascii_case(path))
+    {
+        return true;
+    }
+    let dir = Path::new(path);
+    let canonical = std::fs::canonicalize(dir)
+        .map(|c| {
+            let s = c.display().to_string();
+            s.strip_prefix(r"\\?\").unwrap_or(&s).to_string()
+        })
+        .unwrap_or_else(|_| dir.display().to_string());
+    entries
+        .iter()
+        .any(|e| e.value.eq_ignore_ascii_case(path) || e.value.eq_ignore_ascii_case(&canonical))
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RequirementView {
     pub id: String,
@@ -728,7 +801,7 @@ impl Inner {
         }
         let hostname = domain.hostname.clone();
         let added = self.domains.lock().unwrap().add(domain)?;
-        self.edit_string_list(AUTO_SKIP, |list| list.retain(|h| h != &hostname))?;
+        self.remove_skip(AUTO_SKIP, &hostname)?;
         Ok(added)
     }
 
@@ -763,7 +836,7 @@ impl Inner {
         drop(domains);
         if was_auto {
             // Deleted on purpose: automatic domains must not bring it back.
-            self.edit_string_list(AUTO_SKIP, |list| list.push(hostname.to_string()))?;
+            self.push_skip(AUTO_SKIP, hostname)?;
         }
         let _ = self.certs.revoke(hostname);
         self.web.restart_app(hostname);
@@ -826,6 +899,112 @@ impl Inner {
         })
     }
 
+    /// Reads one skip list, oldest entries last. Values written by earlier versions were
+    /// plain strings and are read as entries with no timestamp.
+    fn skip_entries(&self, key: &str) -> Vec<SkipEntry> {
+        let s = self.settings.lock().unwrap();
+        s.get(key)
+            .and_then(|v| v.as_array())
+            .map(|a| a.iter().filter_map(SkipEntry::reads_as).collect())
+            .unwrap_or_default()
+    }
+
+    fn edit_skip_entries(
+        &self,
+        key: &str,
+        edit: impl FnOnce(&mut Vec<SkipEntry>),
+    ) -> Result<(), CoreError> {
+        let mut list = self.skip_entries(key);
+        let before = list.clone();
+        edit(&mut list);
+        // Same value twice keeps the newest timestamp, so a re-delete moves the entry up
+        // the history instead of duplicating it.
+        let mut merged: Vec<SkipEntry> = Vec::with_capacity(list.len());
+        for entry in list {
+            match merged
+                .iter_mut()
+                .find(|e| e.value.eq_ignore_ascii_case(&entry.value))
+            {
+                Some(existing) => existing.deleted_at = existing.deleted_at.max(entry.deleted_at),
+                None => merged.push(entry),
+            }
+        }
+        if merged != before {
+            self.settings
+                .lock()
+                .unwrap()
+                .set(key, serde_json::json!(merged))?;
+        }
+        Ok(())
+    }
+
+    /// Records `value` in `key`'s skip list unless it is already there.
+    fn push_skip(&self, key: &str, value: &str) -> Result<(), CoreError> {
+        let value = value.to_string();
+        let stamp = now_ms();
+        self.edit_skip_entries(key, move |list| {
+            match list
+                .iter_mut()
+                .find(|e| e.value.eq_ignore_ascii_case(&value))
+            {
+                Some(existing) => existing.deleted_at = stamp,
+                None => list.push(SkipEntry {
+                    value,
+                    deleted_at: stamp,
+                }),
+            }
+        })
+    }
+
+    fn remove_skip(&self, key: &str, value: &str) -> Result<(), CoreError> {
+        let value = value.to_string();
+        self.edit_skip_entries(key, move |list| {
+            list.retain(|e| !e.value.eq_ignore_ascii_case(&value))
+        })
+    }
+
+    /// The whole deletion history, newest first: deleted project folders and deleted
+    /// automatic sites, both of which stay hidden from scans until cleared.
+    pub fn list_deleted_items(&self) -> Vec<DeletedItem> {
+        let mut items: Vec<DeletedItem> = [PROJECT_SKIP, AUTO_SKIP]
+            .into_iter()
+            .flat_map(|key| {
+                let kind = if key == PROJECT_SKIP { "project" } else { "domain" };
+                self.skip_entries(key)
+                    .into_iter()
+                    .map(move |e| DeletedItem {
+                        value: e.value,
+                        deleted_at: e.deleted_at,
+                        kind: kind.to_string(),
+                    })
+            })
+            .collect();
+        items.sort_by(|a, b| b.deleted_at.cmp(&a.deleted_at));
+        items
+    }
+
+    /// Drops one entry from the history. The folder it names is not touched: the next scan
+    /// or automatic-domain sync picks it up again if it still exists on disk.
+    pub fn forget_deleted_item(&self, value: &str) -> Result<bool, CoreError> {
+        let before = self.list_deleted_items().len();
+        // Both lists can name the same value (a folder and the site it served), so clear
+        // it from both and report whether anything went.
+        for key in [PROJECT_SKIP, AUTO_SKIP] {
+            self.remove_skip(key, value)?;
+        }
+        Ok(self.list_deleted_items().len() < before)
+    }
+
+    /// Empties the deletion history. Nothing on disk changes; the next scan or sync simply
+    /// sees those folders again. Returns how many entries were dropped.
+    pub fn clear_deleted_items(&self) -> Result<usize, CoreError> {
+        let dropped = self.list_deleted_items().len();
+        for key in [PROJECT_SKIP, AUTO_SKIP] {
+            self.edit_skip_entries(key, |list| list.clear())?;
+        }
+        Ok(dropped)
+    }
+
     /// Removes a project from the list for good: its folder joins a skip list so
     /// folder rescans (watcher, restart, Scan) don't re-register it. Explicitly
     /// adding the folder again clears the skip.
@@ -838,27 +1017,25 @@ impl Inner {
             .map(|p| p.path.clone());
         self.projects.lock().unwrap().remove(id)?;
         if let Some(path) = path {
-            self.edit_string_list(PROJECT_SKIP, |list| {
-                if !list.iter().any(|p| p.eq_ignore_ascii_case(&path)) {
-                    list.push(path.clone());
-                }
-            })?;
+            self.push_skip(PROJECT_SKIP, &path)?;
         }
         Ok(())
     }
 
     /// True when the user removed this folder from the project list.
     pub(crate) fn is_project_skipped(&self, path: &str) -> bool {
-        self.string_list(PROJECT_SKIP)
-            .iter()
-            .any(|p| p.eq_ignore_ascii_case(path))
+        skip_matches(&self.skip_entries(PROJECT_SKIP), path)
+    }
+
+    /// The skipped project folders, read once so a scan can compare many paths without
+    /// re-locking settings for each one.
+    pub(crate) fn project_skips(&self) -> Vec<SkipEntry> {
+        self.skip_entries(PROJECT_SKIP)
     }
 
     /// Explicitly adding a folder again clears a previous removal.
     pub(crate) fn clear_project_skip(&self, path: &str) -> Result<(), CoreError> {
-        self.edit_string_list(PROJECT_SKIP, |list| {
-            list.retain(|p| !p.eq_ignore_ascii_case(path))
-        })
+        self.remove_skip(PROJECT_SKIP, path)
     }
 
     /// Laragon-style automatic domains (setting `domains.auto`, on by default): every
@@ -893,27 +1070,16 @@ impl Inner {
             let Ok(entries) = std::fs::read_dir(&root) else {
                 continue;
             };
-            let skipped = self.string_list(PROJECT_SKIP);
-            let is_skipped = |dir: &std::path::Path| {
-                let raw = dir.display().to_string();
-                // Registered paths are stored canonicalized; compare both forms.
-                let canonical = std::fs::canonicalize(dir)
-                    .map(|c| {
-                        let s = c.display().to_string();
-                        s.strip_prefix(r"\\?\").unwrap_or(&s).to_string()
-                    })
-                    .unwrap_or_else(|_| raw.clone());
-                skipped
-                    .iter()
-                    .any(|s| s.eq_ignore_ascii_case(&raw) || s.eq_ignore_ascii_case(&canonical))
-            };
+            // Read the skips before taking the project store: settings and projects are
+            // never held together (see the lock order at the top of this module).
+            let skipped = self.project_skips();
             let mut projects = self.projects.lock().unwrap();
             for e in entries.flatten() {
                 let dir = e.path();
                 let hidden = e.file_name().to_string_lossy().starts_with('.');
                 if dir.is_dir()
                     && !hidden
-                    && !is_skipped(&dir)
+                    && !skip_matches(&skipped, &dir.display().to_string())
                     && (crate::detection::looks_like_a_project(&dir) || has_index(&dir))
                 {
                     let _ = projects.register(&dir.display().to_string());
@@ -921,7 +1087,11 @@ impl Inner {
             }
         }
 
-        let skip = self.string_list(AUTO_SKIP);
+        let skip: Vec<String> = self
+            .skip_entries(AUTO_SKIP)
+            .into_iter()
+            .map(|e| e.value)
+            .collect();
         let default_tld = self
             .settings
             .lock()
@@ -1020,7 +1190,7 @@ impl Inner {
         self.web.rename_site_files(hostname, &renamed.hostname);
         let _ = self.certs.revoke(hostname);
         self.web.restart_app(hostname);
-        self.edit_string_list(AUTO_SKIP, |list| list.retain(|h| h != &renamed.hostname))?;
+        self.remove_skip(AUTO_SKIP, &renamed.hostname)?;
         Ok(renamed)
     }
 
