@@ -4410,10 +4410,10 @@ mod tests {
                 value: "   ".into(),
             })
             .unwrap_err();
-        let text = err.to_string();
         assert!(
-            text.contains("deletion history"),
-            "an empty value must be reported, not ignored: {text}"
+            err.problem.contains("could not be cleared")
+                && err.cause.contains("deletion history"),
+            "an empty value must be reported, not ignored: {err:?}"
         );
     }
 
