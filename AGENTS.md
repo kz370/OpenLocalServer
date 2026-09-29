@@ -29,3 +29,4 @@ cd ui && npm run lint && npm run build
 - Anything downloading a file must verify SHA-256.
 - Secrets stay in OS keyring; never in logs, files, or bundles.
 - Commit messages follow Conventional Commits (`feat:`, `fix:`, `docs:`).
+- never run cargo test if user is runing cargo tauri dev
