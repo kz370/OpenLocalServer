@@ -152,10 +152,21 @@ const
     holding the very exe it is about to overwrite, and the install reports
     success while the old version stays on disk. The legacy file is removed
     by PruneUnshippedFiles at ssPostInstall, which is the whole migration. }
-  LegacyAppExe = 'Open Local Server.exe';
-  DaemonExe   = 'openlocalserver.exe';
+  LegacyAppExe = 'OLS.exe';
+  DaemonExe   = 'OLS.exe';
   HelperExe   = 'ols-helper.exe';
   LimiterExe  = 'cpulimit.exe';
+  { The Start Menu folder an install made before the rename created. The group
+    name is NOT read from DefaultGroupName on an upgrade: Inno takes it from the
+    previous install's uninstaller (unins000.exe carries the name), so it runs
+    the old uninstaller to clear the old entries and then puts the new shortcut
+    back into the same folder. That is why a machine upgraded from the
+    pre-rename build keeps a Start Menu folder called "Open Local Server" and
+    the new shortcut lands in it -- the folder is the only user-visible place
+    the old name survives, and no [Setup] setting can change it, because it
+    would have to change the name the OLD uninstaller deletes from.
+    MigrateLegacyStartMenuGroup moves it after the install instead. }
+  LegacyGroupName = 'Open Local Server';
   UninstallKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#AppId}_is1';
   { A const, not #13#10 written inline: ISPP reads a line whose first character
     is # as a preprocessor directive, so a wrapped Pascal expression must never
@@ -710,6 +721,82 @@ begin
   end;
 end;
 
+{ Move the shortcuts out of the pre-rename Start Menu folder and delete it.
+  (Constants cannot be named inside a brace comment -- the closing brace of
+  one ends the comment -- so the group folder is described, not written.)
+
+  Runs at ssPostInstall, so [Icons] has already put the new shortcut in the
+  group folder and the old uninstaller has already removed its entry from the
+  legacy folder -- which is why the move can only ever be a collision with a
+  shortcut the user created, never with one this installer owns twice.
+
+  Deliberately narrow, because Start Menu folders are the user's space:
+    - only .lnk files, so a document folder the user filed there is left
+      exactly as it is;
+    - a name that already exists in the group folder is deleted rather than
+      overwritten, since this installer's copy is the one [Icons] just wrote;
+    - the legacy folder is removed only when it ends up empty, and never
+      recursively -- the empty folder is the cosmetic leftover being cleaned,
+      and a folder holding anything the user put there must survive.
+  Failures are logged, not raised: an installer that fails to tidy the Start
+  Menu has still installed the app correctly, and aborting here would undo a
+  successful install over a cosmetic problem. }
+procedure MigrateLegacyStartMenuGroup;
+var
+  LegacyDir: String;
+  GroupDir: String;
+  Entry: String;
+  Found: TFindRec;
+  Empty: Boolean;
+begin
+  GroupDir := RemoveBackslash(ExpandConstant('{group}'));
+  LegacyDir := AddBackslash(ExtractFileDir(GroupDir)) + LegacyGroupName;
+  { A machine whose group name never moved -- an install where DefaultGroupName
+    was already OLS -- puts the two on the same path. Nothing to migrate, and
+    without this every shortcut would be renamed onto itself. }
+  if CompareText(LegacyDir, GroupDir) = 0 then
+    Exit;
+  if not DirExists(LegacyDir) then
+    Exit;
+  if FindFirst(AddBackslash(LegacyDir) + '*.lnk', Found) then
+  begin
+    try
+      repeat
+        Entry := AddBackslash(LegacyDir) + Found.Name;
+        if FileExists(AddBackslash(GroupDir) + Found.Name) then
+          DeleteFile(Entry)
+        else if not RenameFile(Entry, AddBackslash(GroupDir) + Found.Name) then
+          Log('Could not move the legacy Start Menu shortcut ' + Entry);
+      until not FindNext(Found);
+    finally
+      FindClose(Found);
+    end;
+  end;
+  Empty := True;
+  if FindFirst(AddBackslash(LegacyDir) + '*', Found) then
+  begin
+    try
+      repeat
+        if (Found.Name <> '.') and (Found.Name <> '..') then
+        begin
+          Empty := False;
+          Break;
+        end;
+      until not FindNext(Found);
+    finally
+      FindClose(Found);
+    end;
+  end;
+  if Empty then
+  begin
+    if not RemoveDir(LegacyDir) then
+      Log('Could not remove the empty legacy Start Menu folder ' + LegacyDir);
+  end
+  else
+    Log('Legacy Start Menu folder left in place, it is not empty: ' +
+        LegacyDir);
+end;
+
 { A procedure, for the same reason as InitializeWizard above: in this version of
   Setup the event has no Boolean result, and a `function` form is rejected as an
   invalid prototype. }
@@ -720,6 +807,7 @@ begin
   if CurStep = ssPostInstall then
   begin
     PruneUnshippedFiles;
+    MigrateLegacyStartMenuGroup;
     { The [Run] entry below is skipped on a silent install, and the in-app
       update is exactly that case -- updater::install_update spawns the setup
       with no wizard at all -- so nothing would bring the app back. Doing it
