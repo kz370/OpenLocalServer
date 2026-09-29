@@ -4,12 +4,12 @@
 ; that one is owned by tauri.conf.json's `identifier` and cannot be derived
 ; from here, so the comment on it is the link.
 #define AppId "dev.openlocalserver.app"
-#define AppName "Open Local Server"
+#define AppName "OLS"
 #ifndef AppVersion
   #define AppVersion "0.0.1"
 #endif
 #ifndef SourceExe
-  #define SourceExe "..\release\Open Local Server.exe"
+  #define SourceExe "..\release\OLS.exe"
 #endif
 #ifndef LibDir
   #define LibDir "..\target\release"
@@ -55,8 +55,8 @@ PrivilegesRequiredOverridesAllowed=commandline dialog
 AllowNoIcons=yes
 DisableProgramGroupPage=no
 OutputDir={#OutputDir}
-OutputBaseFilename=Open-Local-Server-{#AppVersion}-setup
-UninstallDisplayIcon={app}\Open Local Server.exe
+OutputBaseFilename=OLS-{#AppVersion}-setup
+UninstallDisplayIcon={app}\OLS.exe
 SetupIconFile=..\src-tauri\icons\icon.ico
 Compression=lzma
 SolidCompression=yes
@@ -86,7 +86,7 @@ WizardStyle=modern
 ;
 ; AppMutex was here first and was removed. It is the wrong tool twice over:
 ; Restart Manager cannot see the daemon (above), and AppMutex makes Setup put up
-; its own "Setup has detected that Open Local Server is currently running"
+; its own "Setup has detected that OLS is currently running"
 ; prompt -- a second question about a thing the [Code] section has already asked
 ; about with an explanation attached. Under /SUPPRESSMSGBOXES that prompt
 ; silently defaults to Cancel and the install dies there, which is how it was
@@ -116,11 +116,11 @@ Source: "..\src-tauri\icons\icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"
 
 [Icons]
-Name: "{autoprograms}\{#AppName}"; Filename: "{app}\Open Local Server.exe"; IconFilename: "{app}\icon.ico"; WorkingDir: "{app}"
-Name: "{autodesktop}\{#AppName}"; Filename: "{app}\Open Local Server.exe"; IconFilename: "{app}\icon.ico"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autoprograms}\{#AppName}"; Filename: "{app}\OLS.exe"; IconFilename: "{app}\icon.ico"; WorkingDir: "{app}"
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\OLS.exe"; IconFilename: "{app}\icon.ico"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-; The "Launch Open Local Server" checkbox on the final page, ticked by default.
+; The "Launch OLS" checkbox on the final page, ticked by default.
 ; `postinstall` is what draws the checkbox at all -- without it this is a silent
 ; post-install run. It points at {app}, never at a shortcut, so the copy that
 ; was just installed is the one that opens; a shortcut can still point at an
@@ -143,7 +143,16 @@ Filename: "{app}\{#AppName}.exe"; Description: "Launch {#AppName}"; WorkingDir: 
   causes that look identical from the outside. }
 
 const
-  AppExe      = 'Open Local Server.exe';
+  AppExe      = 'OLS.exe';
+  { The name this app shipped under before the rename. It is still the image
+    name of every install made before it, and it is the name of the file a
+    pre-rename build is running right now -- so every check below that asks
+    "is the app running?" has to ask about both. Asking only about OLS.exe
+    means an upgrade onto a pre-rename install does not see the process
+    holding the very exe it is about to overwrite, and the install reports
+    success while the old version stays on disk. The legacy file is removed
+    by PruneUnshippedFiles at ssPostInstall, which is the whole migration. }
+  LegacyAppExe = 'Open Local Server.exe';
   DaemonExe   = 'openlocalserver.exe';
   HelperExe   = 'ols-helper.exe';
   LimiterExe  = 'cpulimit.exe';
@@ -178,8 +187,13 @@ begin
     { Trust the key only if the app is actually in it. A test install into a
       scratch folder or TEMP records that folder forever (UsePreviousAppDir),
       and installing on top of it would leave the real install untouched --
-      which is precisely the bug this whole change set is about. }
-    if (Dir <> '') and FileExists(AddBackslash(Dir) + AppExe) then
+      which is precisely the bug this whole change set is about. Both names
+      count as the app: a machine whose install predates the rename holds
+      LegacyAppExe, and testing only for OLS.exe would report that install as
+      absent -- which is the one answer that silently produces two copies. }
+    if (Dir <> '') and
+       (FileExists(AddBackslash(Dir) + AppExe) or
+        FileExists(AddBackslash(Dir) + LegacyAppExe)) then
       Result := Dir;
   end;
 end;
@@ -379,8 +393,14 @@ end;
 function AnyAppRunningHere: String;
 begin
   Result := '';
+  if ImageRunningInApp(LegacyAppExe) then
+    Result := LegacyAppExe;
   if ImageRunningInApp(AppExe) then
-    Result := AppExe;
+  begin
+    if Result <> '' then
+      Result := Result + ' and ';
+    Result := Result + AppExe;
+  end;
   if ImageRunningInApp(DaemonExe) then
   begin
     if Result <> '' then
@@ -440,13 +460,16 @@ var
   Running: String;
 begin
   { Before the directory is known, this can only ask about the image names --
-    so it is deliberately phrased as a question, not a claim. }
-  if not (ImageRunning(AppExe) or ImageRunning(DaemonExe)) then
+    so it is deliberately phrased as a question, not a claim. LegacyAppExe is
+    in the test because an install that predates the rename is running under
+    that name, and it holds the file [Files] is about to write. }
+  if not (ImageRunning(AppExe) or ImageRunning(LegacyAppExe) or
+          ImageRunning(DaemonExe)) then
   begin
     Result := True;
     Exit;
   end;
-  Result := MsgBox('Open Local Server is running and has to be closed to ' +
+  Result := MsgBox('OLS is running and has to be closed to ' +
     'install.' + NL + NL +
     'It will be closed, along with its services, and the installer will ' +
     'continue. Anything it has not finished is reported the next time it ' +
@@ -459,6 +482,7 @@ begin
     the early kill. }
   if Result then
   begin
+    KillByImageNameGlobal(LegacyAppExe);
     KillByImageNameGlobal(AppExe);
     KillByImageNameGlobal(DaemonExe);
     KillByImageNameGlobal(HelperExe);
@@ -507,14 +531,14 @@ begin
     Exit;
   end;
   if AllowRedirect then
-    Result := MsgBox('Open Local Server is already installed in' + NL + NL +
+    Result := MsgBox('OLS is already installed in' + NL + NL +
       DetectedDir + NL + NL +
       'Install over that copy, instead of the folder on the next page?' + NL +
       NL + 'Installing somewhere else leaves two copies, and the one you ' +
       'keep starting is the one that would not have been updated.',
       mbConfirmation, MB_YESNO) = IDYES
   else
-    Result := MsgBox('Open Local Server is already installed in' + NL + NL +
+    Result := MsgBox('OLS is already installed in' + NL + NL +
       DetectedDir + NL + NL +
       'This installer is installing into a different folder:' + NL + NL +
       Target + NL + NL +
@@ -599,8 +623,14 @@ begin
     runs from Program Files and is not even in the file list being written --
     is left strictly alone. }
   Stubborn := '';
+  if not StopAppImage(LegacyAppExe) then
+    Stubborn := LegacyAppExe;
   if not StopAppImage(AppExe) then
-    Stubborn := AppExe;
+  begin
+    if Stubborn <> '' then
+      Stubborn := Stubborn + ' and ';
+    Stubborn := Stubborn + AppExe;
+  end;
   if not StopAppImage(DaemonExe) then
   begin
     if Stubborn <> '' then
@@ -615,7 +645,7 @@ begin
   end;
   if Stubborn <> '' then
   begin
-    Result := 'Open Local Server could not be closed: ' + Stubborn +
+    Result := 'OLS could not be closed: ' + Stubborn +
       ' is still running from ' + ExpandConstant('{app}') + '.' + NL + NL +
       'Its files are locked. Close it from the tray or the taskbar and run ' +
       'the installer again -- installing now would leave the old version in ' +
@@ -635,7 +665,16 @@ end;
   goes on running old code. Deliberately narrow: files only (never recursing --
   a portable install keeps its data\ folder beside the exe and deleting that
   would destroy the user's projects) and only the two extensions this installer
-  ever writes. }
+  ever writes.
+
+  This is also the whole migration for the exe rename, and it is worth being
+  explicit about why it is safe: LegacyAppExe is deliberately NOT in the
+  Shipped list below, so an install that predates the rename has that file
+  deleted here -- at ssPostInstall, which only runs after PrepareToInstall
+  confirmed the image is closed, so the delete cannot hit a locked file. Left
+  in place it would be worse than untidy: two OLS exes in one folder, the old
+  one still holding the single-instance mutex, and the user's existing Start
+  menu shortcut still launching the version that was just replaced. }
 procedure PruneUnshippedFiles;
 var
   Found: TFindRec;

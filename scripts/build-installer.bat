@@ -6,7 +6,12 @@ rem Handles: tool checks, stale deps, running-app locks (retry), version
 rem parsing, staging, optional Inno Setup (v6/v7), artifact verification.
 
 set "ROOT=%~dp0..\"
-set "APPNAME=Open Local Server"
+rem The shipped app is OLS: the staged exe, and therefore the process name the
+rem user sees in Task Manager, is OLS.exe. The cargo bin stays `openlocalserver`
+rem (docs/BRAND.md 4.3), so a dev build out of target\ still runs as
+rem openlocalserver.exe -- LEGACY_EXE covers that and the pre-rename install.
+set "APPNAME=OLS"
+set "LEGACY_EXE=Open Local Server"
 set "CARGO_BIN=openlocalserver"
 set "HELPER_BIN=ols-helper"
 set "UI=%ROOT%ui"
@@ -75,23 +80,17 @@ if not exist "%UI%\package.json" (
   echo     Fix: run from a full repo checkout.
   goto :fail
 )
-rem Refuse to build over a running app: Windows locks the exe and the
-rem copy below would silently (or loudly) fail. The same lock is why the
-rem in-app update has to close the app first (installer\open-local-server.iss
-rem CloseApplications/AppMutex, and updater::install_update exits after it
-rem spawns the installer) -- so an install that reports success and leaves
-rem the old version on disk means the app was never closed, not that the
-rem update was skipped.
-tasklist /FI "IMAGENAME eq %APPNAME%.exe" 2>nul | find /I "%APPNAME%.exe" >nul
+rem Refuse to build over a running app: Windows locks the exe, and the
+rem staging copy below would silently (or loudly) fail. The same lock is why
+rem the in-app update has to close the app first (installer\open-local-server.iss
+rem CloseApplications, and updater::install_update exits after it spawns the
+rem installer) -- so an install that reports success and leaves the old
+rem version on disk means the app was never closed, not that the update was
+rem skipped.
+call :app_running
 if not errorlevel 1 (
-  echo [x] Problem: %APPNAME%.exe is running - check the system tray.
+  echo [x] Problem: the app is running - check the system tray.
   echo     Fix: right-click the tray icon, Quit, then run this again.
-  goto :fail
-)
-tasklist /FI "IMAGENAME eq %CARGO_BIN%.exe" 2>nul | find /I "%CARGO_BIN%.exe" >nul
-if not errorlevel 1 (
-  echo [x] Problem: %CARGO_BIN%.exe is running.
-  echo     Fix: stop it via tray icon Quit or Task Manager, then run this again.
   goto :fail
 )
 echo       tools ok (cargo, node).
@@ -108,7 +107,7 @@ rem Cargo never deletes old build output, so target\ only grows
 rem (it reached 146 GB once). Wipe it when it passes the limit;
 rem the next build is then a full ~10-15 minute rebuild. Set
 rem CACHE_LIMIT_GB beforehand to change the limit.
-if not defined CACHE_LIMIT_GB set CACHE_LIMIT_GB=8
+if not defined CACHE_LIMIT_GB set CACHE_LIMIT_GB=80
 set "CACHE_GB=0"
 for /f %%s in ('powershell -NoProfile -Command "if (Test-Path '%TARGET%\..') { [int]((Get-ChildItem '%TARGET%\..' -Recurse -Force -File -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum / 1GB) } else { 0 }"') do set "CACHE_GB=%%s"
 echo       Rust build cache: %CACHE_GB% GB (limit %CACHE_LIMIT_GB% GB)
@@ -220,7 +219,7 @@ rem Flat lines, not a block: %VAR% inside a parenthesised block is expanded when
 rem block is parsed, so a value set by a for/f in the same block reads back empty. The
 rem staged copy is re-hashed, not just the source, because this is the file that ships.
 if not defined VERIFY_FAIL call :hash_matches "%STAGED_CPULIMIT%" || goto :fail
-set "SETUP=%DIST%\Open-Local-Server-%VERSION%-setup.exe"
+set "SETUP=%DIST%\OLS-%VERSION%-setup.exe"
 if defined ISCC (
   if not exist "%SETUP%" (
     echo [x] Missing "%SETUP%" - ISCC ran but produced no setup file.
@@ -257,16 +256,10 @@ rem visible before it ships.
 echo       staged from:
 for %%f in ("%EXE%" "%HELPER_EXE%") do echo         %%~nxf  %%~t  %%~zf bytes
 echo       (run "full" to rebuild these from the current source)
-tasklist /FI "IMAGENAME eq %APPNAME%.exe" 2>nul | find /I "%APPNAME%.exe" >nul
+call :app_running
 if not errorlevel 1 (
-  echo [x] Problem: %APPNAME%.exe is running - check the system tray.
+  echo [x] Problem: the app is running - check the system tray.
   echo     Fix: right-click the tray icon, Quit, then run this again.
-  goto :fail
-)
-tasklist /FI "IMAGENAME eq %CARGO_BIN%.exe" 2>nul | find /I "%CARGO_BIN%.exe" >nul
-if not errorlevel 1 (
-  echo [x] Problem: %CARGO_BIN%.exe is running.
-  echo     Fix: stop it via tray icon Quit or Task Manager, then run this again.
   goto :fail
 )
 if not exist "%EXE%" (
@@ -367,6 +360,23 @@ echo [x] Problem: "%HM_PATH%" does not match the pinned hash.
 echo     Expected: %CPULIMIT_SHA%
 echo     Got:      %HM_SHA%
 echo     Fix: reinstall the binary per vendor\cpulimit\README.md and update CPULIMIT_SHA in this script in the same commit.
+exit /b 1
+
+
+rem True (errorlevel 0) when any copy of the app is running.
+rem All three names, not just the shipped one: OLS.exe is what this script
+rem stages, but a dev build out of target\ runs as the cargo bin
+rem (openlocalserver.exe) and an install made before the rename runs as
+rem "Open Local Server.exe". Any of the three holds a lock on the file the
+rem staging copy is about to overwrite, and a lock on a name this script
+rem never asks about is an install that reports success and changes nothing.
+rem :app_running is a subroutine, not inline, because both build modes need
+rem the same list and a second copy of it is how the two drift apart.
+:app_running
+for %%n in ("%APPNAME%.exe" "%LEGACY_EXE%.exe" "%CARGO_BIN%.exe") do (
+  tasklist /FI "IMAGENAME eq %%~n" 2>nul | find /I "%%~n" >nul
+  if not errorlevel 1 exit /b 0
+)
 exit /b 1
 
 

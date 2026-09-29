@@ -451,7 +451,7 @@ const HOME_PAGE: &str = r##"<!doctype html>
 <main class="wrap">
   <div class="hero">
     <span class="badge">🚀 Local Development, Simplified</span>
-    <h1><span class="acronym">OLS</span> <span class="name">(Open Local Server)</span></h1>
+    <h1><span class="os">Open</span> <span class="ls">Local Server</span></h1>
     <h2>Everything you need for local development.</h2>
     <p class="sub">Run PHP, Node.js, Python and more — with automatic local domains, trusted HTTPS, databases, and zero cloud setup.</p>
     <div class="cta">

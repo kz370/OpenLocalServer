@@ -30,7 +30,7 @@ in `specs/runtime.md`. The app does not download this at runtime; it only looks 
 
 ## Where it goes
 
-`installer/open-local-server.iss` installs it next to `Open Local Server.exe`, and
+`installer/open-local-server.iss` installs it next to `OLS.exe`, and
 `scripts/build-installer.bat` stages it beside the portable executable. The app finds it there
 first (`resources.rs::find_cpu_limiter` checks the current exe's directory before anything else),
 so a default install needs no configuration. A portable copy, a dev build and an install all

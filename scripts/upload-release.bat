@@ -4,11 +4,16 @@ cd /d "%~dp0.."
 
 rem Publish a GitHub release of this repo from the files scripts\build-installer.bat
 rem put in release\<version>\:
-rem   Open-Local-Server-<version>-setup.exe   uploaded as-is
-rem   Open Local Server.exe + ols-helper.exe + *.dll   zipped as portable
-rem   Open-Local-Server-<version>-SHA256SUMS.txt       checksums for both
+rem   OLS-<version>-setup.exe                 uploaded as-is
+rem   OLS.exe + ols-helper.exe + *.dll        zipped as portable
+rem   OLS-<version>-SHA256SUMS.txt            checksums for both
 rem Release notes come from release-notes\<tag>.md, the commit message from
 rem commit-message.txt (git-ignored, rewrite it for each release).
+rem
+rem Artifact names all start with OLS, matching the app name (docs/BRAND.md
+rem 4.4 R3). The two release/ globs below still accept the pre-rename
+rem Open-Local-Server-* name so a dist folder built before the rename can
+rem still be published; a fresh build only ever produces OLS-*.
 rem
 rem Usage: scripts\upload-release.bat [tag] [mode]   (e.g. scripts\upload-release.bat v1.0.0 full)
 rem Modes: full = binaries + release notes, notes-only = release notes only.
@@ -34,17 +39,23 @@ rem /o-d sorts by date descending, so the first hit is the newest build. The
 rem folder name IS the version, so nothing has to be parsed out of a filename.
 set "DIST="
 for /f "delims=" %%D in ('dir /b /a-d /o-d /ad "%DISTROOT%\*" 2^>nul') do (
+  if not defined DIST if exist "%DISTROOT%\%%D\OLS-*-setup.exe" (
+    set "DIST=%DISTROOT%\%%D"
+    set "VERSION=%%D"
+  )
+)
+if not defined DIST for /f "delims=" %%D in ('dir /b /a-d /o-d /ad "%DISTROOT%\*" 2^>nul') do (
   if not defined DIST if exist "%DISTROOT%\%%D\Open-Local-Server-*-setup.exe" (
     set "DIST=%DISTROOT%\%%D"
     set "VERSION=%%D"
   )
 )
 if not defined DIST (
-  echo No %DISTROOT%\<version>\Open-Local-Server-*-setup.exe found and no tag given.
+  echo No %DISTROOT%\<version>\OLS-*-setup.exe found and no tag given.
   echo Run scripts\build-installer.bat first.
   exit /b 1
 )
-set "SETUP=Open-Local-Server-%VERSION%-setup.exe"
+set "SETUP=OLS-%VERSION%-setup.exe"
 set "TAG=v%VERSION%"
 goto :tag_ready
 
@@ -55,36 +66,51 @@ set "VERSION=%VERSION: =%"
 set "VERSION=%VERSION:"=%"
 set "TAG=v%VERSION%"
 set "DIST=%DISTROOT%\%VERSION%"
-rem Find the actual setup file on disk (tolerates the old leading-space name).
-set "SETUP=Open-Local-Server-%VERSION%-setup.exe"
+rem Find the actual setup file on disk. Both spellings are tried because a
+rem dist folder built before the rename holds the Open-Local-Server-* one and
+rem there is no reason to refuse to publish it -- the tag is what identifies
+rem the release, not the filename.
+set "SETUP=OLS-%VERSION%-setup.exe"
 if /i "%MODE%"=="notes-only" goto :tag_ready
 if not exist "%DIST%\%SETUP%" (
   set "SETUP="
-  for /f "delims=" %%F in ('dir /b /a-d /o-d "%DIST%\Open-Local-Server-*-setup.exe" 2^>nul') do if not defined SETUP set "SETUP=%%F"
-  if not defined SETUP (
-    echo No %DIST%\Open-Local-Server-*-setup.exe found.
-    echo Run scripts\build-installer.bat first.
-    exit /b 1
+  for /f "delims=" %%F in ('dir /b /a-d /o-d "%DIST%\OLS-*-setup.exe" 2^>nul') do if not defined SETUP set "SETUP=%%F"
+)
+if not defined SETUP (
+  set "SETUP=Open-Local-Server-%VERSION%-setup.exe"
+  if not exist "%DIST%\%SETUP%" (
+    set "SETUP="
+    for /f "delims=" %%F in ('dir /b /a-d /o-d "%DIST%\Open-Local-Server-*-setup.exe" 2^>nul') do if not defined SETUP set "SETUP=%%F"
   )
+)
+if not defined SETUP (
+  echo No %DIST%\OLS-*-setup.exe found.
+  echo Run scripts\build-installer.bat first.
+  exit /b 1
 )
 
 :tag_ready
 echo Using tag %TAG% (version %VERSION%, mode %MODE%)
 
 set "SETUPPATH=%DIST%\%SETUP%"
-set "ZIP=Open-Local-Server-%VERSION%-portable-win-x64.zip"
+set "ZIP=OLS-%VERSION%-portable-win-x64.zip"
 set "ZIPPATH=%TEMP%\%ZIP%"
-set "STAGE=%TEMP%\open-local-server-portable"
-set "SUMS=Open-Local-Server-%VERSION%-SHA256SUMS.txt"
+set "STAGE=%TEMP%\ols-portable"
+set "SUMS=OLS-%VERSION%-SHA256SUMS.txt"
 set "SUMSPATH=%DIST%\%SUMS%"
-set "MAIN_EXE=Open Local Server.exe"
+rem The app exe, then the one it shipped as before the rename. A dist folder
+rem built by an older build-installer.bat still has the legacy name and is
+rem still publishable; the check below accepts whichever is present, because
+rem refusing to release a build that is otherwise complete helps nobody.
+set "MAIN_EXE=OLS.exe"
+set "LEGACY_EXE=Open Local Server.exe"
 set "HELPER_EXE=ols-helper.exe"
 
 where gh >nul 2>&1 || (echo GitHub CLI "gh" not found. & exit /b 1)
 where git >nul 2>&1 || (echo git not found. & exit /b 1)
 if /i "%MODE%"=="notes-only" goto :commit_step
 if not exist "%SETUPPATH%" (echo Missing %SETUPPATH% - run scripts\build-installer.bat first. & exit /b 1)
-if not exist "%DIST%\%MAIN_EXE%" (echo Missing %DIST%\%MAIN_EXE% - run scripts\build-installer.bat first. & exit /b 1)
+if not exist "%DIST%\%MAIN_EXE%" if not exist "%DIST%\%LEGACY_EXE%" (echo Missing %DIST%\%MAIN_EXE% - run scripts\build-installer.bat first. & exit /b 1)
 if not exist "%DIST%\%HELPER_EXE%" (echo Missing %DIST%\%HELPER_EXE% - run scripts\build-installer.bat first. & exit /b 1)
 
 :commit_step
@@ -117,7 +143,14 @@ rem Only the portable files go in the zip, not the setup exe next to them.
 echo Zipping portable version...
 if exist "%STAGE%" rmdir /s /q "%STAGE%"
 mkdir "%STAGE%" || (echo Could not create %STAGE%. & exit /b 1)
-copy /y "%DIST%\%MAIN_EXE%" "%STAGE%\" >nul || (echo Could not copy %MAIN_EXE%. & exit /b 1)
+rem Whichever name this dist was built under, the zip carries one main exe.
+rem Copying both would be wrong: two app exes in a portable zip is the same
+rem two-copies problem the installer's two-install guard exists for.
+if exist "%DIST%\%MAIN_EXE%" (
+  copy /y "%DIST%\%MAIN_EXE%" "%STAGE%\" >nul || (echo Could not copy %MAIN_EXE%. & exit /b 1)
+) else (
+  copy /y "%DIST%\%LEGACY_EXE%" "%STAGE%\" >nul || (echo Could not copy %LEGACY_EXE%. & exit /b 1)
+)
 copy /y "%DIST%\%HELPER_EXE%" "%STAGE%\" >nul || (echo Could not copy %HELPER_EXE%. & exit /b 1)
 for %%d in ("%DIST%\*.dll") do copy /y "%%~d" "%STAGE%\" >nul || (echo Could not copy %%~nxd. & exit /b 1)
 if exist "%ZIPPATH%" del /f /q "%ZIPPATH%"

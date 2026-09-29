@@ -8,15 +8,22 @@ and the project follows [Semantic Versioning](https://semver.org/).
 ### Changed
 - The app is now **OLS** (Open Local Server) everywhere a user sees the name: window title, sidebar,
   settings, dialogs, the built-in welcome site, the assistant's system prompt, and the documentation.
-  Display only — nothing about behaviour, install layout, project manifests, or stored data changed.
+- The executable is now **`OLS.exe`**, so the process name in Task Manager, the Start menu entry and
+  the desktop shortcut read OLS too. The installer, the portable zip and the SHA256SUMS file follow
+  (`OLS-<version>-setup.exe`, `OLS-<version>-portable-win-x64.zip`, `OLS-<version>-SHA256SUMS.txt`).
+  An existing install upgrades in place: the installer detects the app under its old name, closes it,
+  writes `OLS.exe` and removes the old executable. No settings, sites, secrets, service or
+  certificate move, and nothing about how it works changed.
 - The requirements document is now `OLS_Master_SRS_v4.md`.
 - Product identity guidance, including the identifiers that are deliberately frozen and why, is in
-  [`docs/BRAND.md`](./docs/BRAND.md).
+  [`docs/BRAND.md`](./docs/BRAND.md). The exe rename is recorded in §4.5, including the one thing
+  that would have broken silently without it — a pre-rename install holding the file being replaced.
 
 ### Not changed
 These keep their existing names on purpose. Each is read back from a user's machine on a later run, and
 renaming it would orphan live state with no way to recover it. See `docs/BRAND.md` §4.3 for the full table.
-- Install folder (`C:\OpenLocalServer`), executable name, Inno Setup `AppId`.
+- Install folder (`C:\OpenLocalServer`), Inno Setup `AppId`, the helper install folder.
+- The `openlocalserver.exe` daemon binary, which is not the app and was never renamed.
 - The helper Windows service and its named pipe.
 - The keyring service name — it is the addressing key for every stored secret, and the old name cannot be
   written to without the old name, so a rename would destroy every stored password and token.
