@@ -87,15 +87,17 @@ export function Field({
   label,
   hint,
   error,
+  className,
   children,
 }: {
   label: string
   hint?: string
   error?: string
+  className?: string
   children: React.ReactNode
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1.5">
+    <div className={cn('flex min-w-0 flex-col gap-1.5', className)}>
       <label className="text-xs font-medium text-muted-foreground">{label}</label>
       {children}
       {error ? (

@@ -160,23 +160,30 @@ function ServiceBanner({ service, name }: { service?: ServiceStatus; name: strin
   )
 }
 
-function OpenDatabaseButton({ engine, database = null, path = null, dbTools, externalTools, defaultTools, setDefaultTool }: DatabaseToolProps & { engine: string; database?: string | null; path?: string | null }) {
-  const [note, setNote] = useState<string | null>(null)
-  const { busy, error, setError, run } = useAction()
-  const choices = [
+function toolChoices(engine: string, dbTools: DbTool[], externalTools: ExternalTool[]) {
+  return [
     ...dbTools.filter((tool) => tool.engines.includes(engine) && tool.found_path),
     ...externalTools.filter((tool) => tool.engines.includes(engine)).map((tool) => ({ id: tool.id, name: tool.name, found_path: tool.executable, engines: tool.engines })),
   ]
+}
+
+function OpenDatabaseButton({ engine, database = null, path = null, dbTools, externalTools, defaultTools, setDefaultTool, showToolSelect = true }: DatabaseToolProps & { engine: string; database?: string | null; path?: string | null; showToolSelect?: boolean }) {
+  const [note, setNote] = useState<string | null>(null)
+  const { busy, error, setError, run } = useAction()
+  const choices = toolChoices(engine, dbTools, externalTools)
   const selectedTool = defaultTools[engine] ?? ''
+  const toolName = choices.find((tool) => tool.id === selectedTool)?.name ?? 'tool'
 
   return (
     <span className="inline-flex flex-col items-end gap-1">
       <span className="inline-flex items-center gap-1">
-        <Select aria-label={`Default ${engine} database tool`} className="h-8 w-36 text-xs" value={selectedTool} onChange={(event) => { void setDefaultTool(engine, event.target.value).catch((e) => setError(e as Diagnostic)) }}>
-          <option value="">Automatic tool</option>
-          {choices.map((tool) => <option key={tool.id} value={tool.id}>{tool.name}</option>)}
-        </Select>
-        <Button size="sm" variant="secondary" disabled={busy !== null} onClick={() => run('open', async () => {
+        {showToolSelect && (
+          <Select aria-label={`Default ${engine} database tool`} className="h-7 w-32 shrink-0 text-xs" value={selectedTool} onChange={(event) => { void setDefaultTool(engine, event.target.value).catch((e) => setError(e as Diagnostic)) }}>
+            <option value="">Automatic tool</option>
+            {choices.map((tool) => <option key={tool.id} value={tool.id}>{tool.name}</option>)}
+          </Select>
+        )}
+        <Button size="sm" variant="secondary" className="h-7 px-2 text-xs" disabled={busy !== null} onClick={() => run('open', async () => {
           setNote(null)
           if (engine === 'mongodb' && selectedTool === 'nosqlbooster') {
             const connection = await runCommand({ type: 'get_connection_info', engine, database, path })
@@ -202,7 +209,7 @@ function OpenDatabaseButton({ engine, database = null, path = null, dbTools, ext
           if (engine === 'mongodb' && selectedTool === 'nosqlbooster') setNote((current) => current ?? 'MongoDB connection URI copied. In NoSQLBooster, choose Connect → From URI and paste.')
           if (engine === 'redis' && selectedTool === 'tinyrdm') setNote((current) => current ?? 'Redis URI copied (redis://127.0.0.1:6379). Paste it if the tool asks for a connection.')
         })}>
-          <ExternalLink className="size-3.5" /> Open in
+          <ExternalLink className="size-3.5" /> Open in {toolName}
         </Button>
       </span>
       {note && <span className="max-w-80 text-right text-xs text-muted-foreground">{note}</span>}
@@ -223,6 +230,7 @@ function SqlEngine({ engine, service, ...toolProps }: { engine: 'mariadb' | 'pos
   const [note, setNote] = useState<string | null>(null)
   const { busy, error, setError, run } = useAction()
   const running = !!service?.running
+  const dbChoices = toolChoices(engine, toolProps.dbTools, toolProps.externalTools)
 
   async function refresh() {
     if (!running) return
@@ -244,8 +252,21 @@ function SqlEngine({ engine, service, ...toolProps }: { engine: 'mariadb' | 'pos
       {running && (
         <div className="grid items-start gap-4 lg:grid-cols-2">
           <Card>
-            <CardHeader className="pb-2">
+            <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
               <CardTitle className="text-sm">Databases</CardTitle>
+              {dbChoices.length > 0 && (
+                <Select
+                  aria-label={`Default ${engine} database tool`}
+                  className="h-7 w-40 shrink-0 text-xs"
+                  value={toolProps.defaultTools[engine] ?? ''}
+                  onChange={(event) => void toolProps.setDefaultTool(engine, event.target.value).catch((e) => setError(e as Diagnostic))}
+                >
+                  <option value="">Automatic tool</option>
+                  {dbChoices.map((tool) => (
+                    <option key={tool.id} value={tool.id}>{tool.name}</option>
+                  ))}
+                </Select>
+              )}
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
               <div className="flex gap-2">
@@ -255,30 +276,20 @@ function SqlEngine({ engine, service, ...toolProps }: { engine: 'mariadb' | 'pos
                 </Button>
               </div>
               {dbs.length > 0 && (
-                <Table>
-                  <TableHeader>
-                    <TableRow className="hover:bg-transparent">
-                      <TableHead>Database</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {dbs.map((d) => (
-                      <TableRow key={d}>
-                        <TableCell className="py-1.5 font-medium">{d}</TableCell>
-                        <TableCell className="py-1.5 text-right">
-                          <span className="inline-flex flex-wrap justify-end gap-1">
-                            <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => run('backup', async () => { const r = await runCommand({ type: 'backup_database', engine, database: d }); if (r.type === 'text') setNote(`Backup saved to ${r.text}`); await refresh() })}>
-                              {busy === 'backup' ? <Spinner /> : <Archive className="size-3.5" />} Back up
-                            </Button>
-                            <Button size="sm" variant="ghost" onClick={() => run('info', async () => { const r = await runCommand({ type: 'get_connection_info', engine, database: d, path: null }); if (r.type === 'connection') setInfo(r.info) })}>Connection</Button>
-                            <OpenDatabaseButton engine={engine} database={d} {...toolProps} />
-                          </span>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                <div className="divide-y divide-border overflow-hidden rounded-lg border border-border">
+                  {dbs.map((d) => (
+                    <div key={d} className="flex items-center justify-between gap-2 px-3 py-1">
+                      <span className="truncate text-sm font-medium">{d}</span>
+                      <span className="flex shrink-0 items-center gap-0.5">
+                        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" title="Back up this database" disabled={busy !== null} onClick={() => run('backup', async () => { const r = await runCommand({ type: 'backup_database', engine, database: d }); if (r.type === 'text') setNote(`Backup saved to ${r.text}`); await refresh() })}>
+                          {busy === 'backup' ? <Spinner /> : <Archive className="size-3.5" />} Back up
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" title="Show connection details" onClick={() => run('info', async () => { const r = await runCommand({ type: 'get_connection_info', engine, database: d, path: null }); if (r.type === 'connection') setInfo(r.info) })}>Connection</Button>
+                        <OpenDatabaseButton engine={engine} database={d} {...toolProps} showToolSelect={false} />
+                      </span>
+                    </div>
+                  ))}
+                </div>
               )}
               {dbs.length === 0 && <p className="text-sm text-muted-foreground">No databases yet.</p>}
               {info && (
@@ -343,19 +354,25 @@ function SqlEngine({ engine, service, ...toolProps }: { engine: 'mariadb' | 'pos
               {backups.length === 0 && <p className="text-sm text-muted-foreground">No backups yet. Use “Back up” next to a database.</p>}
             </CardContent>
           </Card>
-          <Card>
+          <Card className="@container">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm">Users</CardTitle>
               <CardDescription>Passwords are kept in the Windows credential store, never on disk.</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
-              <div className="grid gap-2 sm:grid-cols-3">
-                <Input value={user.user} onChange={(e) => setUser({ ...user, user: e.target.value })} placeholder="user" />
-                <Input type="password" value={user.password} onChange={(e) => setUser({ ...user, password: e.target.value })} placeholder="password" />
-                <Input value={user.database} onChange={(e) => setUser({ ...user, database: e.target.value })} placeholder="database" />
+              <div className="grid grid-cols-1 gap-2 @lg:grid-cols-3">
+                <Field label="User">
+                  <Input value={user.user} onChange={(e) => setUser({ ...user, user: e.target.value })} placeholder="user" />
+                </Field>
+                <Field label="Password">
+                  <Input type="password" value={user.password} onChange={(e) => setUser({ ...user, password: e.target.value })} placeholder="password" />
+                </Field>
+                <Field label="Database">
+                  <Input value={user.database} onChange={(e) => setUser({ ...user, database: e.target.value })} placeholder="database" />
+                </Field>
               </div>
               <div>
-                <Button size="sm" disabled={!user.user || !user.password || !user.database || busy !== null} onClick={() => run('user', async () => { await runCommand({ type: 'create_db_user', engine, ...user }); setUser({ user: '', password: '', database: '' }); await refresh() })}>
+                <Button size="sm" className="w-full @lg:w-auto" disabled={!user.user || !user.password || !user.database || busy !== null} onClick={() => run('user', async () => { await runCommand({ type: 'create_db_user', engine, ...user }); setUser({ user: '', password: '', database: '' }); await refresh() })}>
                   Create user with full access to that database
                 </Button>
               </div>
