@@ -280,19 +280,30 @@ fn home_domain(dir: &Path) -> Domain {
 /// Writes the welcome page. Never overwrites: hand edits survive updates.
 fn write_home_page(dir: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)?;
+    let index = dir.join("index.html");
+    if !index.exists() {
+        std::fs::write(&index, HOME_PAGE)?;
+    }
     // The exact official logo bytes (ui/public/favicon*.svg, also the in-app mark)
     // so the page reuses the real brand, never a redraw. Both colourways are
     // written because the page has its own theme toggle and no way to be told
     // which one is active.
+    //
+    // A missing logo is always written. An existing one is rewritten only while
+    // the page is still the stock design *this* build ships — the logo is a
+    // generated asset, so a repaint has to reach an install that already has one,
+    // or every existing user keeps the old mark forever while a fresh install
+    // gets the new one. Once someone edits the page the marker is gone, and from
+    // then on the logo is theirs and is left alone, same as the page itself.
+    let stock_page = std::fs::read_to_string(&index)
+        .map(|html| html.contains(HOME_VERSION_MARKER))
+        .unwrap_or(false);
     for (name, bytes) in [("logo.svg", LOGO_SVG), ("logo-dark.svg", LOGO_SVG_DARK)] {
         let path = dir.join(name);
-        if !path.exists() {
+        let current = std::fs::read(&path).ok();
+        if current.as_deref() != Some(bytes) && (current.is_none() || stock_page) {
             std::fs::write(path, bytes)?;
         }
-    }
-    let index = dir.join("index.html");
-    if !index.exists() {
-        std::fs::write(index, HOME_PAGE)?;
     }
     Ok(())
 }
@@ -1084,6 +1095,37 @@ mod tests {
         assert!(std::fs::read_to_string(&index)
             .unwrap()
             .contains("do not touch"));
+    }
+
+    #[test]
+    fn a_repaint_reaches_a_stock_welcome_page_but_not_a_hand_edited_one() {
+        // The logo is a generated asset seeded from ui/public/favicon*.svg, so a
+        // repaint has to overwrite the copy an install already has. Otherwise the
+        // old mark survives forever on every existing install while a fresh one
+        // gets the new mark, and nothing reports the difference. The guard is the
+        // stock page marker: once the page is edited, the logo is the user's.
+        let home = crate::test_support::isolated_home();
+        DomainStore::load(&home.paths).unwrap();
+        let dir = home.paths.data_dir().join("home");
+        let index = dir.join("index.html");
+        let logo = dir.join("logo.svg");
+
+        // Stand in for the previous artwork: a stock page whose logo is not the
+        // one this build ships.
+        std::fs::write(&logo, b"<svg>previous mark</svg>").unwrap();
+        std::fs::write(&index, HOME_PAGE).unwrap();
+        DomainStore::load(&home.paths).unwrap();
+        assert_eq!(
+            std::fs::read(&logo).unwrap(),
+            LOGO_SVG,
+            "a stock page must pick up the current mark"
+        );
+
+        // Same stale logo, but the page was edited: the mark is left alone.
+        std::fs::write(&logo, b"<svg>my mark</svg>").unwrap();
+        std::fs::write(&index, "<html><body>mine, do not touch</body></html>").unwrap();
+        DomainStore::load(&home.paths).unwrap();
+        assert_eq!(std::fs::read(&logo).unwrap(), b"<svg>my mark</svg>");
     }
 
     #[test]
