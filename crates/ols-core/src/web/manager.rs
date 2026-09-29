@@ -26,7 +26,7 @@ use crate::exec::run_capture;
 use crate::paths::AppPaths;
 use crate::php::{PhpPools, PoolStatus};
 use crate::port::{check_port, PortStatus};
-use crate::process::{ProcessId, ProcessSpec, ProcessSupervisor};
+use crate::process::{ProcessId, ProcessSpec, ProcessSupervisor, RestartPolicy};
 use crate::runtime::RuntimeManager;
 
 /// How a caller (the Core) resolves things only it knows: which PHP a project wants, and
@@ -194,6 +194,33 @@ pub fn sites_for_server(cfg: &WebConfig, domains: &[Domain], server_id: &str) ->
         .filter(|d| d.enabled && resolved_server(d, cfg) == server_id)
         .cloned()
         .collect()
+}
+
+/// Every PHP version any enabled site needs, across *all* servers, not just one.
+///
+/// `apply` renders the servers one after another and they share a single set of FastCGI
+/// pools, so a per-server keep set is wrong: Apache's pass would retain only Apache's
+/// versions and stop the pool nginx's sites were still pointing at, which left those sites
+/// answering `connect() failed (10061) ... while connecting to upstream` against a port
+/// nothing was listening on any more.
+fn php_versions_across_servers(
+    ctx: &ApplyContext,
+    domains: &[Domain],
+    pick: &dyn Fn(Option<&str>) -> Option<String>,
+) -> Vec<String> {
+    let mut versions: Vec<String> = Vec::new();
+    for d in domains.iter().filter(|d| d.enabled) {
+        let SiteKind::Php { version } = effective_kind(d) else {
+            continue;
+        };
+        let wanted = version.or_else(|| (ctx.php_for)(d));
+        if let Some(picked) = pick(wanted.as_deref()) {
+            if !versions.contains(&picked) {
+                versions.push(picked);
+            }
+        }
+    }
+    versions
 }
 
 impl WebManager {
@@ -487,7 +514,6 @@ impl WebManager {
         // 1. PHP pools for every version a PHP site needs.
         let mut pool_specs: BTreeMap<String, PoolSpec> = BTreeMap::new();
         let mut site_pools: HashMap<String, (String, Vec<u16>)> = HashMap::new();
-        let mut versions_in_use = Vec::new();
         let mut site_php: HashMap<String, String> = HashMap::new();
         for d in &enabled {
             let SiteKind::Php { version } = effective_kind(d) else {
@@ -508,9 +534,11 @@ impl WebManager {
             });
             site_pools.insert(d.hostname.clone(), (pool_id, ports_for_version));
             site_php.insert(d.hostname.clone(), picked.clone());
-            versions_in_use.push(picked);
         }
-        self.php.retain(&versions_in_use);
+        self.php
+            .retain(&php_versions_across_servers(ctx, &all, &|v| {
+                self.php.pick_version(v)
+            }));
         self.state.lock().unwrap().site_php = site_php;
 
         // 2. Certificates, then the rendered site files.
@@ -1613,7 +1641,15 @@ pub fn build_app_spec(
         args,
         cwd: Some(app.cwd.clone()),
         env,
-        restart: None,
+        // A dev server that dies takes its site down with it: the web server keeps serving
+        // the `proxy_pass` upstream and answers every request with 502 until something
+        // respawns it. `sync_apps` only runs on a config apply, so without a restart policy
+        // a single crash (bad build, port taken, OOM) meant a dead site until the user
+        // noticed and pressed restart. Bounded like every other managed process.
+        restart: Some(RestartPolicy {
+            max_retries: 5,
+            delay_ms: 1000,
+        }),
     })
 }
 
@@ -1676,6 +1712,71 @@ mod tests {
     }
 
     #[test]
+    fn retaining_pools_spans_every_server_so_one_server_cannot_stop_anothers_pool() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut on_nginx = static_domain(dir.path());
+        on_nginx.hostname = "a.test".into();
+        on_nginx.kind = SiteKind::Php {
+            version: Some("8.1".into()),
+        };
+        let mut on_apache = static_domain(dir.path());
+        on_apache.hostname = "b.test".into();
+        on_apache.kind = SiteKind::Php {
+            version: Some("8.4".into()),
+        };
+        on_apache.server = Some("apache".into());
+
+        let installed: Vec<String> = vec!["8.1.34".into(), "8.4.26".into()];
+        let pick = |wanted: Option<&str>| crate::php::pick_version(&installed, wanted);
+        let cfg = test_config("nginx");
+        let php_for = |_: &Domain| None;
+        let ctx = ApplyContext {
+            cfg: &cfg,
+            php_for: &php_for,
+            runtime_bin: &|_, _| None,
+            overwrite: &[],
+        };
+
+        // The bug: rendering Apache alone must still keep nginx's 8.1 pool alive, because
+        // nginx's sites keep a `fastcgi_pass` pointing at it.
+        let all = vec![on_nginx, on_apache];
+        assert_eq!(sites_for_server(&cfg, &all, "nginx").len(), 1);
+        assert_eq!(sites_for_server(&cfg, &all, "apache").len(), 1);
+
+        let mut kept = php_versions_across_servers(&ctx, &all, &pick);
+        kept.sort();
+        assert_eq!(
+            kept,
+            vec!["8.1.34".to_string(), "8.4.26".to_string()],
+            "every enabled site's PHP version must survive one server's apply"
+        );
+    }
+
+    #[test]
+    fn a_disabled_site_does_not_pin_a_php_pool_open() {
+        let mut d = static_domain(std::path::Path::new("."));
+        d.hostname = "off.test".into();
+        d.kind = SiteKind::Php {
+            version: Some("8.1".into()),
+        };
+        d.enabled = false;
+        let installed: Vec<String> = vec!["8.1.34".into(), "8.4.26".into()];
+        let pick = |wanted: Option<&str>| crate::php::pick_version(&installed, wanted);
+        let cfg = test_config("nginx");
+        let php_for = |_: &Domain| None;
+        let ctx = ApplyContext {
+            cfg: &cfg,
+            php_for: &php_for,
+            runtime_bin: &|_, _| None,
+            overwrite: &[],
+        };
+        assert!(
+            php_versions_across_servers(&ctx, std::slice::from_ref(&d), &pick).is_empty(),
+            "a disabled site must not pin a pool open"
+        );
+    }
+
+    #[test]
     fn app_spec_puts_the_runtime_first_on_path_and_sets_port() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("npm.cmd"), "@echo off").unwrap();
@@ -1697,6 +1798,28 @@ mod tests {
         assert!(spec.env.iter().any(|(k, v)| k == "PORT" && v == "5173"));
         let path = &spec.env.iter().find(|(k, _)| k == "PATH").unwrap().1;
         assert!(path.starts_with(&dir.path().display().to_string()));
+    }
+
+    #[test]
+    fn app_spec_restarts_on_crash_so_a_dead_app_does_not_502_forever() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("npm.cmd"), "@echo off").unwrap();
+        let app = AppSpec {
+            executable: "npm".into(),
+            args: vec!["run".into(), "dev".into()],
+            cwd: "C:/app".into(),
+            runtime: Some("node".into()),
+        };
+        let spec = build_app_spec("c.test", &app, Some(5173), Some(dir.path())).unwrap();
+
+        let policy = spec
+            .restart
+            .expect("a crashed dev server must be brought back, not left 502");
+        assert!(policy.max_retries > 0);
+        assert!(
+            policy.delay_ms > 0,
+            "retries need a backoff, not a hot loop"
+        );
     }
 
     #[test]

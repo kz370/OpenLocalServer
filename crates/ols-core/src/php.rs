@@ -3,8 +3,10 @@
 //! `a.test` can run 8.1 while `b.test` runs 8.4 on the same machine at the same time.
 
 use std::collections::{BTreeMap, HashMap};
+use std::net::TcpStream;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
@@ -259,10 +261,93 @@ impl PhpPools {
             Pool {
                 version: version.to_string(),
                 ports: ports.clone(),
-                processes,
+                processes: processes.clone(),
             },
         );
-        Ok(ports)
+        drop(pools);
+        self.verify_pool(version, &ports, &processes)
+    }
+
+    /// §11: a pool only counts as started once its ports actually accept connections.
+    ///
+    /// `supervisor.start` returns as soon as the spawn is *queued*, so without this the
+    /// caller would hand nginx a `fastcgi_pass` pointing at a `php-cgi` that failed on its
+    /// php.ini, could not bind, or died on a missing DLL — and every PHP site on that
+    /// version answered `connect() failed (10061) ... while connecting to upstream`. The
+    /// pool is torn down on failure so the next apply builds it cleanly instead of finding
+    /// a half-dead pool through the map.
+    fn verify_pool(
+        &self,
+        version: &str,
+        ports: &[u16],
+        processes: &[ProcessId],
+    ) -> Result<Vec<u16>, String> {
+        let timeout = Duration::from_secs(10);
+        let mut problem = None;
+        for (&port, &id) in ports.iter().zip(processes) {
+            if let Err(why) = self.await_worker(id, port, timeout) {
+                problem = Some((port, why));
+                break;
+            }
+        }
+        if let Some((port, why)) = problem {
+            self.discard_pool(version);
+            return Err(format!(
+                "PHP {version} could not start its FastCGI pool: {why} (port {port}). \
+                 Every {version} site will answer 502 until this is fixed. \
+                 Check that php-cgi.exe runs with this install's php.ini: open a terminal, \
+                 set PHPRC to {} and run \"php-cgi.exe -b 127.0.0.1:{port}\" to see the error.",
+                self.ini_dir(version).display()
+            ));
+        }
+        Ok(ports.to_vec())
+    }
+
+    /// Stops a pool and forgets it, so the next `ensure` starts from scratch.
+    fn discard_pool(&self, version: &str) {
+        if let Some(pool) = self.pools.lock().unwrap().remove(version) {
+            for id in pool.processes {
+                self.supervisor.stop(id);
+            }
+        }
+    }
+
+    /// Waits for `port` to answer, failing as soon as the worker is gone.
+    fn await_worker(&self, id: ProcessId, port: u16, timeout: Duration) -> Result<(), String> {
+        let started = Instant::now();
+        loop {
+            if !self.supervisor.is_alive(id) {
+                let out = self.supervisor.recent_output(id);
+                let text = out
+                    .iter()
+                    .rev()
+                    .take(4)
+                    .rev()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                return Err(if text.is_empty() {
+                    format!("the worker on port {port} exited immediately")
+                } else {
+                    text
+                });
+            }
+            if TcpStream::connect_timeout(
+                &([127, 0, 0, 1], port).into(),
+                Duration::from_millis(200),
+            )
+            .is_ok()
+            {
+                return Ok(());
+            }
+            if started.elapsed() > timeout {
+                return Err(format!(
+                    "nothing answered on port {port} within {}s",
+                    timeout.as_secs()
+                ));
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
     }
 
     /// Restarts a running pool so it picks up a changed php.ini; a pool that isn't
