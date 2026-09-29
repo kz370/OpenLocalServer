@@ -49,6 +49,11 @@ export function Titlebar() {
           aria-hidden
         />
         OLS
+        {/* The window is the one surface that is always on screen, so it carries the
+            full name and not just the short mark — "OLS" alone means nothing the first
+            time someone sees it. The expansion is muted, and the same treatment the
+            About card already uses, so the two read as one brand. */}
+        <span className="font-normal text-foreground/70">(Open Local Server)</span>
       </span>
       <div data-tauri-drag-region className="min-w-0 flex-1" />
       {isTauri() && (

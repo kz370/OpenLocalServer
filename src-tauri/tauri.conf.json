@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Open Local Server",
+        "title": "OLS (Open Local Server)",
         "url": "index.html",
         "visible": false,
         "width": 1180,

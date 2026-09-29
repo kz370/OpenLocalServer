@@ -81,6 +81,7 @@ SiteDialog | uses | CoreClient (get_domain once per trigger, unchanged read drop
 TerminalComp | uses | TerminalManager
 EnvEditor | uses | EnvFile (via Core)
 Sidebar | uses | CoreClient (list_tunnels)
+Titlebar | uses | useAppMarkPath (the same running/stopped colourway the tray and taskbar paint), and carries the full product name so the app identifies itself without the user having to open About
 LoadTestRunner | uses | ProcessSupervisor
 DaemonRunner | uses | ScheduleStore ticker
 HelperService | uses | HelperMain execute

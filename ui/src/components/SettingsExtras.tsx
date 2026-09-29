@@ -335,7 +335,7 @@ export function AboutCard() {
           <img src={mark} alt="" className="size-12 rounded-xl shadow-sm shadow-teal-500/30" />
           <div>
             <h2 className="text-lg font-semibold tracking-tight text-foreground">
-              OLS <span className="font-normal text-muted-foreground">(Open Local Server)</span>
+              OLS <span className="font-normal text-foreground/70">(Open Local Server)</span>
             </h2>
             <div className="mt-1 flex items-center gap-2">
               {version ? <Badge variant="secondary">v{version}</Badge> : null}
