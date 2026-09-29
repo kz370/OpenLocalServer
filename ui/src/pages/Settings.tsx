@@ -1,9 +1,10 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Archive, ExternalLink, FolderPlus, FolderSearch, FolderTree, Gauge, Globe, Info, Power, Settings2, ShieldCheck, Sparkles, Stethoscope, Trash2 } from 'lucide-react'
+import { Archive, ExternalLink, FolderPlus, FolderSearch, FolderTree, Gauge, Globe, History, Info, Power, Settings2, ShieldCheck, Sparkles, Stethoscope, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { AiCard } from '@/components/ai/AiSettings'
 import { ErrorCard } from '@/components/ErrorCard'
+import { ExcludedSitesCard } from '@/components/ExcludedSitesCard'
 import { ApiCard, SystemCard, UpdatesCard } from '@/components/ReleaseCards'
 import { AboutCard, ResourcesCard, SettingsBackupsCard } from '@/components/SettingsExtras'
 import { Spinner } from '@/components/Spinner'
@@ -18,11 +19,12 @@ import { useAction } from '@/lib/hooks'
 import { invalidateDefaultTldCache } from '@/lib/sites'
 import { cn } from '@/lib/utils'
 
-type Section = 'general' | 'sites' | 'roots' | 'startup' | 'diagnostics' | 'ai' | 'resources' | 'backups' | 'about'
+type Section = 'general' | 'sites' | 'roots' | 'deleted' | 'startup' | 'diagnostics' | 'ai' | 'resources' | 'backups' | 'about'
 const SECTIONS: { id: Section; label: string; icon: typeof Globe }[] = [
   { id: 'general', label: 'General', icon: Settings2 },
   { id: 'sites', label: 'Sites & domains', icon: Globe },
   { id: 'roots', label: 'Root folders', icon: FolderTree },
+  { id: 'deleted', label: 'Excluded sites', icon: History },
   { id: 'startup', label: 'Startup & tray', icon: Power },
   { id: 'diagnostics', label: 'Diagnostics', icon: Stethoscope },
   { id: 'ai', label: 'AI', icon: Sparkles },
@@ -336,6 +338,8 @@ export function SettingsPage() {
               </CardContent>
             </Card>
           )}
+
+          {section === 'deleted' && <ExcludedSitesCard />}
 
           {section === 'startup' && (
             <Card>

@@ -4331,7 +4331,8 @@ mod tests {
             .into_iter()
             .find(|p| p.name == "Shop")
             .expect("the scanned folder is registered");
-        core.dispatch(CoreCommand::RemoveProject { id: shop.id }).unwrap();
+        core.dispatch(CoreCommand::RemoveProject { id: shop.id })
+            .unwrap();
 
         let items = |core: &Core| -> Vec<crate::app::DeletedItem> {
             match core.dispatch(CoreCommand::ListDeletedItems).unwrap() {
@@ -4349,7 +4350,10 @@ mod tests {
             path: www.display().to_string(),
         })
         .unwrap();
-        assert!(projects(&core).is_empty(), "a deleted folder was re-registered");
+        assert!(
+            projects(&core).is_empty(),
+            "a deleted folder was re-registered"
+        );
 
         // Clearing that one entry is what unblocks it.
         match core
@@ -4411,8 +4415,7 @@ mod tests {
             })
             .unwrap_err();
         assert!(
-            err.problem.contains("could not be cleared")
-                && err.cause.contains("deletion history"),
+            err.problem.contains("could not be cleared") && err.cause.contains("deletion history"),
             "an empty value must be reported, not ignored: {err:?}"
         );
     }

@@ -982,7 +982,7 @@ impl Inner {
                     })
             })
             .collect();
-        items.sort_by(|a, b| b.deleted_at.cmp(&a.deleted_at));
+        items.sort_by_key(|i| std::cmp::Reverse(i.deleted_at));
         items
     }
 

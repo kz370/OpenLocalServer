@@ -134,6 +134,16 @@ export interface Project {
   path: string
 }
 
+/** One entry of the deletion history shown in Settings. */
+export interface DeletedItem {
+  /** The skipped project path, or the skipped hostname. */
+  value: string
+  /** Milliseconds since the Unix epoch; 0 for entries written before this was tracked. */
+  deleted_at: number
+  /** 'project' or 'domain'. */
+  kind: string
+}
+
 export interface ProjectDetail {
   project: Project
   detection: DetectionResult
@@ -609,6 +619,9 @@ export type CoreCommand =
   | { type: 'list_projects' }
   | { type: 'sync_auto_domains' }
   | { type: 'remove_project'; id: string }
+  | { type: 'list_deleted_items' }
+  | { type: 'forget_deleted_item'; value: string }
+  | { type: 'clear_deleted_items' }
   | { type: 'get_project_detail'; id: string }
   | { type: 'run_in_project'; project_id: string; runtime_id: string; args: string[] }
   | { type: 'list_services' }
@@ -921,6 +934,7 @@ export type CoreResponse =
   | { type: 'project'; project: Project }
   | { type: 'projects'; projects: Project[] }
   | { type: 'project_detail'; detail: ProjectDetail }
+  | { type: 'deleted_items'; items: DeletedItem[] }
   | { type: 'services'; services: ServiceStatus[] }
   | { type: 'db_backups'; backups: DbBackup[] }
   | { type: 'shortcuts'; shortcuts: Shortcut[] }

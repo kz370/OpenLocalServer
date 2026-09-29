@@ -233,8 +233,16 @@ impl ResourceLimits {
         {
             return Some(p);
         }
-        // A dev build launched from target\debug has no such sibling, so a build the user
-        // installed with the utility's own install.bat is still found.
+        // A dev build run from target\debug has no installed sibling, and pointing it at
+        // whatever copy happens to sit in %LOCALAPPDATA% makes the Resources card show a
+        // path that has nothing to do with this checkout. CARGO_MANIFEST_DIR is fixed at
+        // compile time, so this is the vendored binary this build was made from — the same
+        // bytes the installer ships, and the same one the build hash-checks. On a user's
+        // machine the baked path does not exist, so this never fires outside a checkout.
+        if let Some(dev) = repo_limiter() {
+            return Some(dev);
+        }
+        // Last resort: a build installed with the utility's own install.bat.
         if let Some(local) = std::env::var_os("LOCALAPPDATA") {
             let candidate = PathBuf::from(local)
                 .join("Programs")
@@ -306,6 +314,15 @@ pub fn logical_cores() -> u32 {
     std::thread::available_parallelism()
         .map(|n| n.get() as u32)
         .unwrap_or(1)
+}
+
+/// The vendored binary in this checkout, for a dev build run from `target\`. `None`
+/// anywhere else, because the path was fixed at compile time and only exists on a machine
+/// that has the repository.
+fn repo_limiter() -> Option<PathBuf> {
+    let candidate =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../vendor/cpulimit/cpulimit.exe");
+    candidate.is_file().then_some(candidate)
 }
 
 /// What the Resources card needs to tell the truth about the CPU limit: whether one is
@@ -535,10 +552,23 @@ mod tests {
         assert_eq!(program, shipped.display().to_string());
     }
 
-    /// The installer puts cpulimit.exe next to the app, and that copy is the one the
-    /// build hash-checked, so it wins over anything stored in settings. This matters
-    /// because the settings database is shared: a path a user saved while running a dev
-    /// build would otherwise keep an *installed* app pointing at that dev machine's folder.
+    /// A dev build has no installed sibling, and the useful answer is the binary this
+    /// checkout vendored — the same one the build hash-checks and the installer ships —
+    /// rather than whatever copy happens to sit in %LOCALAPPDATA%.
+    #[test]
+    fn a_dev_build_resolves_the_vendored_binary_not_a_stray_install() {
+        let vendored = repo_limiter().expect("this checkout has the vendored binary");
+        assert!(
+            vendored.ends_with("vendor/cpulimit/cpulimit.exe"),
+            "the dev fallback is the vendored copy, got {}",
+            vendored.display()
+        );
+    }
+
+    /// The copy beside the app beats everything, including a path saved in settings. This
+    /// matters because the settings database is shared: a path a user saved while running
+    /// a dev build would otherwise keep an *installed* app pointing at that dev machine's
+    /// folder.
     #[test]
     fn the_copy_beside_the_app_beats_a_path_saved_in_settings() {
         let app = tempfile::tempdir().unwrap();

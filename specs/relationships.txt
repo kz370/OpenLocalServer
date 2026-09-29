@@ -3,7 +3,7 @@ Tauri run_command | uses | Core::dispatch
 Core::dispatch | uses | Inner managers
 Inner | uses | ProcessSupervisor
 vendor/cpulimit | ships_as | {app}\cpulimit.exe (installer/open-local-server.iss; hashed by scripts/build-installer.bat on the source and again on the staged copy)
-resources::find_cpu_limiter | resolves | cpulimit.exe in the current exe's directory (what the installer ships), then cpu_limiter_path, OLS_CPULIMIT_PATH, %LOCALAPPDATA%\Programs\cpulimit, PATH
+resources::find_cpu_limiter | resolves | cpulimit.exe in the current exe's directory (what the installer ships), then cpu_limiter_path, OLS_CPULIMIT_PATH, the repo's vendor/cpulimit copy (dev builds), %LOCALAPPDATA%\Programs\cpulimit, PATH
 Inner | uses | RuntimeManager
 Inner::project_detail | snapshots | SettingsService + CustomInstallStore (clones, then releases both locks before build_detail's file I/O and version probes — an unreachable project path must not stall other commands)
 Inner | locks_via | app::lock (poisoned guard recovered, not unwrapped: one panic while a lock was held used to make every later read panic for the rest of the session)
