@@ -5,6 +5,55 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-09-29
+
+Full notes: [`release-notes/v1.1.0.md`](./release-notes/v1.1.0.md).
+
+### Added
+- CPU limits in Settings > Resources, applied through the `cpulimit` utility, which is now
+  vendored in `vendor/cpulimit/` and installed next to the app. The limit is a share of the
+  whole CPU or a thread count (mutually exclusive, converted against the machine's logical
+  cores, rounded up), and a cap that cannot be applied is refused by name rather than
+  silently dropped. Applies to databases, caches, mail, custom services and all three web servers.
+- `CoreCommand::StopAll`: one definition of "Stop all" (tunnels, workers, web stack and PHP
+  pools, services, then a 10s reap) shared by the tray, the Dashboard and the HTTP `operate`
+  allow-list, naming any process the OS refuses to kill.
+- An `ExcludedSitesCard` for excluded sites and project folders.
+- SSH key detection, listing and selection in project imports.
+- App icons built from master images by script; brand marks for pgAdmin, HeidiSQL, Memcached
+  and Mailpit; theme-aware logo handling.
+- Per-service log sources, so a service opens on its own log.
+
+### Fixed
+- A `localhost/<prefix>` route sent every request to the site domain, so the route was
+  unreachable on any site with TLS and "Redirect to HTTPS" on. Nginx, Apache and Caddy now
+  proxy to the site's HTTPS vhost with SNI and send `X-Forwarded-Prefix`.
+- The add-site form's localhost path had no autofill; it now follows the project name, like the
+  site folder and the domain, and writes nothing for a slug too long to be valid.
+- The window could be revealed transparent before the UI painted; the pre-paint period now
+  paints the app background.
+- Dashboard and Web server pages crowded their controls between `lg` and `xl`; layouts are fluid
+  and the Services card keeps its state, name and five colour-coded actions at every width.
+- Two commands named "Stop all" had different scopes, so a stopped stack could still hold PHP
+  pools and leave the status mark green.
+- A site settings page could hang on "Reading the project…" forever: gating reads now have a
+  deadline, a catch, an error state and a Retry.
+- A poisoned core mutex kept panicking every later command; a poisoned guard is recovered.
+- Database backup refused any database name containing `-`, `.` or a space; only names that
+  cannot become a file name are refused.
+- Helper service replies can no longer block indefinitely.
+- Site removal: the row disappears at once, the domain store is not held across a multi-second
+  apply, the project goes with its last site, and the confirm dialog names what it deletes.
+
+### Changed
+- Multiple web servers, each with its own HTTP/HTTPS ports, instead of a single pair.
+- Configurable default TLD with project-name autofill in the domain dialog.
+- State storage is SQLite (`data/app.db`), with DB Browser integration.
+
+## [1.0.0] — 2026-09-27
+
+First public release. Full notes: [`release-notes/v1.0.0.md`](./release-notes/v1.0.0.md).
+
 ### Changed
 - The app is OpenLocalServer everywhere: the documents no longer use the working name DevForge.
 - The Sites list shows only Open and Settings per site; the other actions are in a menu.
