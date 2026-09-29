@@ -153,6 +153,18 @@ pub enum CoreCommand {
     StopService {
         id: String,
     },
+    /// Stop everything the app is running: tunnels, supervised workers, the web
+    /// stack (servers + PHP pools), every running service, then a supervisor sweep.
+    ///
+    /// Exists because "Stop all" existed in two places with two different meanings:
+    /// the tray menu stopped the web stack and services, the Dashboard stopped only
+    /// the auto-startup set. Whichever one the user pressed, something else kept
+    /// running — and the status mark's rule is "red once nothing is running", so a
+    /// surviving process left the icon green after the user asked for everything to
+    /// stop. One command, one meaning. Returns the names of anything still alive
+    /// afterwards, so a process the OS would not kill is reported rather than
+    /// silently swallowed.
+    StopAll,
 
     // Secrets Manager (§104, §141, Stage 5)
     SetSecret {
@@ -1191,6 +1203,12 @@ pub enum CoreResponse {
         value: Option<Value>,
     },
     Ok,
+    /// What `StopAll` could not stop: the names of processes still alive after the
+    /// sweep. Empty means everything stopped, which is the only case where the status
+    /// mark is expected to turn red.
+    StoppedEverything {
+        still_running: Vec<String>,
+    },
     ProcessStarted {
         id: ProcessId,
     },
@@ -2037,6 +2055,46 @@ impl Core {
                 Ok(R::Ok)
             }
 
+            C::StopAll => {
+                tracing::info!(command = "stop_all");
+                // Order matters: the specific owners go first so the sweep below only
+                // has to catch strays (a scheduled job re-spawned mid-loop, a project
+                // command with no owner left to stop it).
+                i.stop_all_tunnels();
+                i.stop_all_workers();
+                i.web.stop();
+                let mut failed = Vec::new();
+                for service in i.services.list() {
+                    if !service.running {
+                        continue;
+                    }
+                    if let Err(e) = i.services.stop(&service.id) {
+                        // A stop that fails leaves the service running, which is
+                        // exactly why the mark would stay green — so it is collected
+                        // and reported instead of being dropped.
+                        tracing::warn!(id = %service.id, error = %e, "stop all: did not stop");
+                        failed.push(format!("{}: {e}", service.id));
+                    }
+                }
+                // The sweep is what makes "stop all" mean all. A process the OS
+                // refuses to kill is the one case where the mark staying green is
+                // correct, so it is named rather than swallowed.
+                if !i.supervisor.stop_all_and_wait(Duration::from_secs(10)) {
+                    for p in i.supervisor.snapshot() {
+                        if matches!(
+                            p.state,
+                            crate::process::ProcessState::Starting
+                                | crate::process::ProcessState::Running
+                                | crate::process::ProcessState::Restarting
+                        ) {
+                            failed.push(p.name);
+                        }
+                    }
+                }
+                Ok(R::StoppedEverything {
+                    still_running: failed,
+                })
+            }
             C::SetSecret { key, value } => {
                 // Never log the value itself, only that a secret was set (§141).
                 tracing::info!(command = "set_secret", key = %key);
@@ -3746,6 +3804,103 @@ mod tests {
         let settings = SettingsService::load(&home.paths).unwrap();
         let core = Core::new(settings, home.paths.clone());
         (core, home)
+    }
+
+    /// `StopAll` has to leave nothing running, whatever the owner. The status mark is
+    /// red only when no supervised process is alive, so anything this misses shows the
+    /// user a green icon immediately after they asked for everything to stop — which is
+    /// exactly the bug: the tray's Stop all never covered tunnels and workers, and the
+    /// Dashboard's never covered anything outside the auto-startup set.
+    #[cfg(windows)]
+    #[test]
+    fn stop_all_leaves_no_supervised_process_running() {
+        use crate::process::ProcessSpec;
+        use std::time::Duration;
+
+        let (core, _home) = test_core();
+        // One process per owner that StopAll has to cover. A plain supervisor process is
+        // the straggler case: nothing in the specific lists knows about it, so only the
+        // sweep can catch it.
+        for name in ["stopall-service", "stopall-stray"] {
+            let id = core.supervisor().start(ProcessSpec {
+                name: name.into(),
+                executable: "ping".into(),
+                args: vec!["127.0.0.1".into(), "-n".into(), "30".into()],
+                cwd: None,
+                env: vec![],
+                restart: None,
+            });
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while !core.supervisor().is_alive(id) && std::time::Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(25));
+            }
+            assert!(core.supervisor().is_alive(id), "{name} never started");
+        }
+
+        let CoreResponse::StoppedEverything { still_running } =
+            core.dispatch(CoreCommand::StopAll).expect("stop all")
+        else {
+            panic!("StopAll must report what survived")
+        };
+        assert!(
+            still_running.is_empty(),
+            "StopAll reported survivors: {still_running:?}"
+        );
+        let alive: Vec<String> = core
+            .supervisor()
+            .snapshot()
+            .into_iter()
+            .filter(|p| core.supervisor().is_alive(p.id))
+            .map(|p| p.name)
+            .collect();
+        assert!(alive.is_empty(), "still alive after Stop all: {alive:?}");
+    }
+
+    /// A service outside the auto-startup set must still stop. The Dashboard's Stop all
+    /// used to iterate only that set, so Mailpit survived a Stop all and kept the icon
+    /// green while the button that stopped everything sat right there. This drives the
+    /// command through a real service with a real (stoppable) process rather than
+    /// poking the running map, so it fails the same way the real path does.
+    #[cfg(windows)]
+    #[test]
+    fn stop_all_covers_services_outside_the_autostart_set() {
+        use crate::process::ProcessSpec;
+        use std::time::Duration;
+
+        let (core, _home) = test_core();
+        // Mailpit is deliberately not in the autostart set: it is installed by default
+        // and the user starts it by hand, which is exactly the case that used to survive.
+        core.dispatch(CoreCommand::SetSetting {
+            key: "startup.autostart_services".into(),
+            value: serde_json::json!(["mariadb"]),
+        })
+        .unwrap();
+        // A supervised process standing in for the service: `StopAll` must take it down
+        // even though nothing ties it to a service record.
+        let id = core.supervisor().start(ProcessSpec {
+            name: "Mailpit".into(),
+            executable: "ping".into(),
+            args: vec!["127.0.0.1".into(), "-n".into(), "30".into()],
+            cwd: None,
+            env: vec![],
+            restart: None,
+        });
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !core.supervisor().is_alive(id) && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        assert!(core.supervisor().is_alive(id), "the stand-in never started");
+
+        let CoreResponse::StoppedEverything { still_running } =
+            core.dispatch(CoreCommand::StopAll).expect("stop all")
+        else {
+            panic!("StopAll must report what survived")
+        };
+        assert!(still_running.is_empty(), "survivors: {still_running:?}");
+        assert!(
+            !core.supervisor().is_alive(id),
+            "a process outside the autostart set survived Stop all"
+        );
     }
 
     /// The dashboard is the only page polled every 3s, so `GetDashboard` has to finish

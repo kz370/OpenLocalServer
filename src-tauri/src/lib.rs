@@ -479,26 +479,42 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
                     });
                 }
                 "stop_all" => {
-                    core.inner().web.stop();
-                    for service in core
-                        .services()
-                        .list()
-                        .into_iter()
-                        .filter(|service| service.running)
-                    {
-                        // A stop that fails leaves the service running, which is
-                        // exactly why the mark would stay green — so it is said out loud
-                        // instead of being dropped.
-                        if let Err(e) = core.services().stop(&service.id) {
-                            notify(
-                                app,
+                    // One definition of "stop everything" (CoreCommand::StopAll), shared
+                    // with the Dashboard's Stop all. It used to exist here alone and only
+                    // covered the web stack and services, so a worker or a service
+                    // outside the auto-startup set survived and held the status mark
+                    // green after the user asked for everything to stop.
+                    //
+                    // Off the menu thread: the command waits up to 10s per service and
+                    // sweeps for another 10s, which would otherwise freeze the window
+                    // and the tray's own menu for the whole thing.
+                    let core = core.clone();
+                    let handle = app.clone();
+                    std::thread::spawn(move || {
+                        match core.dispatch(CoreCommand::StopAll) {
+                            Ok(CoreResponse::StoppedEverything { still_running })
+                                if !still_running.is_empty() =>
+                            {
+                                notify(
+                                    &handle,
+                                    &core,
+                                    "Something did not stop",
+                                    &format!(
+                                        "Still running after Stop all: {}",
+                                        still_running.join(", ")
+                                    ),
+                                );
+                            }
+                            Ok(_) => {}
+                            Err(e) => notify(
+                                &handle,
                                 &core,
-                                "A service did not stop",
-                                &format!("{}: {e}", service.id),
-                            );
+                                "Stop all failed",
+                                &format!("{} — {}", e.problem, e.cause),
+                            ),
                         }
-                    }
-                    refresh_tray(app, &core);
+                        refresh_tray(&handle, &core);
+                    });
                 }
                 "web_stop" => {
                     core.inner().web.stop();

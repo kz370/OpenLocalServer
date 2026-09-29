@@ -96,6 +96,7 @@ const READ_PREFIXES: &[&str] = &[
 const OPERATE: &[&str] = &[
     "start_service",
     "stop_service",
+    "stop_all",
     "restart_service",
     "apply_web",
     "stop_web",

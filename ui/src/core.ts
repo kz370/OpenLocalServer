@@ -627,6 +627,12 @@ export type CoreCommand =
   | { type: 'list_services' }
   | { type: 'start_service'; id: string }
   | { type: 'stop_service'; id: string }
+  /**
+   * Stop everything: tunnels, supervised workers, the web stack (servers + PHP pools)
+   * and every running service, then a supervisor sweep. Answers with whatever survived,
+   * which is empty in the only case where the status mark can reach red.
+   */
+  | { type: 'stop_all' }
   | { type: 'list_db_tools' }
   | { type: 'open_db_tool'; id: string }
   | { type: 'set_custom_install'; id: string; label: string; path: string }
@@ -924,6 +930,7 @@ export type CoreResponse =
   | { type: 'pong'; version: string }
   | { type: 'setting'; key: string; value: unknown | null }
   | { type: 'ok' }
+  | { type: 'stopped_everything'; still_running: string[] }
   | { type: 'process_started'; id: ProcessId }
   | { type: 'processes'; processes: ProcessInfo[] }
   | { type: 'process_output'; id: ProcessId; lines: string[] }

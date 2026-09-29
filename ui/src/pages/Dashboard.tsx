@@ -108,12 +108,26 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
             size="sm"
             className={`h-8 min-w-28 rounded-md px-3 text-[13px] font-medium [&_svg]:size-3.5 ${hasAutoRunning ? 'bg-destructive/10 text-destructive hover:bg-destructive/15 hover:text-destructive dark:bg-destructive/[0.18] dark:text-red-300/90 dark:hover:bg-destructive/25' : ''}`}
             disabled={busy !== null || !autoConfigured}
-            title={autoConfigured ? 'Only auto-startup services (Settings → Startup)' : 'No auto-startup services set (Settings → Startup)'}
+            title={
+              autoConfigured
+                ? 'Stop every running service, worker, tunnel and the web stack'
+                : 'No auto-startup services set (Settings → Startup)'
+            }
             onClick={() =>
               hasAutoRunning
                 ? run('stop-all', async () => {
-                    await Promise.all(autoRunning.map((service) => runCommand({ type: 'stop_service', id: service.id })))
-                    await Promise.all(autoRunning.map((service) => waitForService(service.id, 'stopped')))
+                    // The same command the tray's Stop all uses, so "Stop all" means one
+                    // thing everywhere: everything stops, and the status mark can reach
+                    // red. It used to stop only the auto-startup set, which left Mailpit
+                    // and any worker running and the icon green.
+                    const res = await runCommand({ type: 'stop_all' })
+                    if (res.type === 'stopped_everything' && res.still_running.length > 0) {
+                      throw {
+                        problem: 'Something did not stop.',
+                        cause: `Still running after Stop all: ${res.still_running.join(', ')}`,
+                        fix: 'Close it from Task Manager and press Stop all again.',
+                      }
+                    }
                     await refresh()
                     setDiagToken((t) => t + 1)
                   })

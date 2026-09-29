@@ -86,6 +86,8 @@ DaemonRunner | uses | ScheduleStore ticker
 HelperService | uses | HelperMain execute
 TauriApp | depends_on | ols-helper (install/service)
 TauriApp | uses | ServiceManager.list (running/stopped half of the status mark, includes the web servers)
+TauriApp | uses | ProcessSupervisor.stop_all_and_wait (inside CoreCommand::StopAll: the sweep that guarantees "Stop all" leaves nothing running, so the mark can actually reach red)
+DashboardPage | dispatches | CoreCommand::StopAll (same command as the tray menu's Stop all; it used to iterate only the autostart set, so Mailpit and any worker survived and kept the mark green)
 TauriApp | uses | ProcessSupervisor.is_alive (the status mark's rule for a supervised process, the same one any_running/prune_finished use)
 TauriApp | listens_on | UI ThemeProvider `ols:theme` (resolved light/dark, the other half of the mark's colourway; the tray and taskbar cannot read localStorage, so the UI reports it)
 TauriApp | repaints_on | both halves independently — the mark cache keys on (red, dark), so a theme flip does not disturb the running/stopped state and vice versa
