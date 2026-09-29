@@ -128,6 +128,11 @@ impl WebServer for Caddy {
             .filter_map(|s| s.path_prefix.as_deref().map(|p| (s, p)))
         {
             let (site, prefix) = site;
+            // A site with TLS answers its plain-HTTP vhost with a redirect to HTTPS, so
+            // such a site is reached over the HTTPS vhost instead: proxying to the HTTP
+            // port sent every prefixed request to `https://<site domain>` and the
+            // localhost route was unreachable for exactly those sites.
+            let tls = site.tls.is_some();
             out.push_str(&format!("    # {}\n", site.hostname));
             out.push_str(&format!("    redir /{prefix} /{prefix}/ 308\n"));
             out.push_str(&format!("    @p{prefix} path /{prefix}/*\n"));
@@ -135,9 +140,15 @@ impl WebServer for Caddy {
             out.push_str(&format!("        uri strip_prefix /{prefix}\n"));
             out.push_str(&format!(
                 "        reverse_proxy 127.0.0.1:{} {{\n",
-                ports.http
+                if tls { ports.https } else { ports.http }
             ));
             out.push_str(&format!("            header_up Host {}\n", site.hostname));
+            if tls {
+                out.push_str(&format!("            transport http {{\n                tls_server_name {}\n                tls_insecure_skip_verify\n            }}\n", site.hostname));
+            }
+            out.push_str(&format!(
+                "            header_up X-Forwarded-Prefix /{prefix}\n"
+            ));
             out.push_str("        }\n");
             out.push_str("    }\n");
         }
@@ -291,6 +302,48 @@ mod tests {
         assert!(cfg.contains("tls \"C:/c/cert.pem\" \"C:/c/key.pem\""));
         assert!(cfg.contains("php_fastcgi 127.0.0.1:10820 127.0.0.1:10821"));
         assert!(cfg.contains("root * \"C:/sites/shop\""));
+    }
+
+    #[test]
+    fn a_tls_site_is_proxied_to_over_https_so_its_own_redirect_does_not_bite() {
+        // The site answers its `http://` vhost with `redir https://...` and nothing
+        // else, so proxying the localhost route to the HTTP port sent every prefixed
+        // request to the site domain and the route never rendered a page.
+        let mut a = site(
+            Backend::Php {
+                pool: "php_82".into(),
+                ports: vec![10820],
+            },
+            true,
+            true,
+        );
+        a.path_prefix = Some("shop".into());
+        let cfg = Caddy.render_path_routes(
+            &[a],
+            Ports {
+                http: 80,
+                https: 443,
+            },
+        );
+        assert!(cfg.contains("reverse_proxy 127.0.0.1:443 {"));
+        assert!(cfg.contains("tls_server_name shop.test"));
+        assert!(cfg.contains("header_up Host shop.test"));
+        assert!(cfg.contains("header_up X-Forwarded-Prefix /shop"));
+    }
+
+    #[test]
+    fn a_site_without_tls_still_takes_the_plain_http_vhost() {
+        let mut a = site(Backend::Static, false, false);
+        a.path_prefix = Some("shop".into());
+        let cfg = Caddy.render_path_routes(
+            &[a],
+            Ports {
+                http: 80,
+                https: 443,
+            },
+        );
+        assert!(cfg.contains("reverse_proxy 127.0.0.1:80 {"));
+        assert!(!cfg.contains("tls_server_name"));
     }
 
     #[test]

@@ -207,22 +207,40 @@ impl WebServer for Apache {
             .filter_map(|s| s.path_prefix.as_deref().map(|p| (s, p)))
         {
             let (site, prefix) = site;
+            // A site with TLS answers its plain-HTTP vhost with a redirect to HTTPS, so
+            // such a site is reached over the HTTPS vhost instead: proxying to the HTTP
+            // port sent every prefixed request to `https://<site domain>` and the
+            // localhost route was unreachable for exactly those sites.
+            let tls = site.tls.is_some();
+            let (scheme, port) = if tls {
+                ("https", ports.https)
+            } else {
+                ("http", ports.http)
+            };
             out.push_str(&format!("\n    # {}\n", site.hostname));
             out.push_str(&format!("    RedirectMatch 301 ^/{prefix}/?$ /{prefix}/\n"));
             out.push_str(&format!("    <Location /{prefix}/>\n"));
             // The trailing slash on the target is what strips the prefix: Apache replaces
             // the matched path with it, so `/shop/index.php` arrives as `/index.php`.
             out.push_str(&format!(
-                "        ProxyPass /{prefix}/ http://127.0.0.1:{}/\n",
-                ports.http
+                "        ProxyPass /{prefix}/ {scheme}://127.0.0.1:{port}/\n"
             ));
             out.push_str(&format!(
-                "        ProxyPassReverse /{prefix}/ http://127.0.0.1:{}/\n",
-                ports.http
+                "        ProxyPassReverse /{prefix}/ {scheme}://127.0.0.1:{port}/\n"
             ));
+            if tls {
+                out.push_str("        SSLProxyEngine on\n");
+                out.push_str("        SSLProxyVerifyPeer off\n");
+                out.push_str("        SSLProxyCheckPeerName off\n");
+            }
             out.push_str(&format!(
                 "        RequestHeader set Host \"{}\"\n",
                 site.hostname
+            ));
+            // The prefix is stripped on the way in; without this an application rebuilds
+            // every absolute URL without `/<prefix>` and the browser leaves the route.
+            out.push_str(&format!(
+                "        RequestHeader set X-Forwarded-Prefix \"/{prefix}\"\n"
             ));
             out.push_str("    </Location>\n");
         }
@@ -397,6 +415,36 @@ mod tests {
         assert!(cfg.contains("SSLCertificateFile \"C:/c/cert.pem\""));
         assert!(cfg.contains("SetHandler \"proxy:balancer://ols_php_84/\""));
         assert!(cfg.contains("DocumentRoot \"C:/sites/shop\""));
+    }
+
+    #[test]
+    fn a_tls_site_is_proxied_to_over_https_so_its_own_redirect_does_not_bite() {
+        // The site answers its `127.0.0.1:80` vhost with `RewriteRule ^ https://...` and
+        // nothing else, so proxying the localhost route to the HTTP port sent every
+        // prefixed request to the site domain and the route never rendered a page.
+        let mut a = site(
+            Backend::Php {
+                pool: "php_84".into(),
+                ports: vec![10840],
+            },
+            true,
+            true,
+        );
+        a.path_prefix = Some("shop".into());
+        let cfg = Apache.render_path_routes(&[a], PORTS);
+        assert!(cfg.contains("ProxyPass /shop/ https://127.0.0.1:443/"));
+        assert!(cfg.contains("ProxyPassReverse /shop/ https://127.0.0.1:443/"));
+        assert!(cfg.contains("SSLProxyEngine on"));
+        assert!(cfg.contains("RequestHeader set X-Forwarded-Prefix \"/shop\""));
+    }
+
+    #[test]
+    fn a_site_without_tls_still_takes_the_plain_http_vhost() {
+        let mut a = site(Backend::Static, false, false);
+        a.path_prefix = Some("shop".into());
+        let cfg = Apache.render_path_routes(&[a], PORTS);
+        assert!(cfg.contains("ProxyPass /shop/ http://127.0.0.1:80/"));
+        assert!(!cfg.contains("SSLProxyEngine"));
     }
 
     #[test]

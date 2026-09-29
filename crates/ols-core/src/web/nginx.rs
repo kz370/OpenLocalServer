@@ -163,6 +163,18 @@ impl WebServer for Nginx {
     /// prefixed URL is answered by exactly the config the site already has — PHP pools,
     /// proxy upstreams, `Advanced` snippets and headers included — instead of a second
     /// copy of that logic that could drift from it.
+    ///
+    /// "The site's own vhost" is the one that *serves* it. A site with TLS and
+    /// "Redirect to HTTPS" on answers its plain-HTTP vhost with nothing but
+    /// `return 301 https://$host$request_uri`, and `$host` is the site hostname this
+    /// route just set — so proxying to the HTTP port sent every prefixed request to
+    /// `https://<site domain>` and the localhost route was unreachable for exactly the
+    /// sites most likely to want it. Such a site is therefore reached over its HTTPS
+    /// vhost, with SNI so the right `server` block answers.
+    ///
+    /// `X-Forwarded-Prefix` is sent because the prefix is stripped on the way in: without
+    /// it an application rebuilds every absolute URL without `/<prefix>` and the browser
+    /// leaves the prefixed route on its first link.
     fn render_path_routes(&self, sites: &[SiteSpec], ports: Ports) -> String {
         let mut out = String::new();
         out.push_str(MANAGED_HEADER);
@@ -177,6 +189,7 @@ impl WebServer for Nginx {
             .filter_map(|s| s.path_prefix.as_deref().map(|p| (s, p)))
         {
             let (site, prefix) = site;
+            let tls = site.tls.is_some();
             out.push('\n');
             out.push_str(&format!("    # {}\n", site.hostname));
             // `http://localhost/shop` is a directory, not a page: send it to `shop/`
@@ -186,12 +199,24 @@ impl WebServer for Nginx {
             ));
             out.push_str(&format!("    location /{prefix}/ {{\n"));
             out.push_str(&format!(
-                "        proxy_pass http://127.0.0.1:{}/;\n",
-                ports.http
+                "        proxy_pass {}://127.0.0.1:{}/;\n",
+                if tls { "https" } else { "http" },
+                if tls { ports.https } else { ports.http }
             ));
+            if tls {
+                // The certificate is issued for the site hostname by the app's own local
+                // CA, and nginx has no reason to hold that CA: this hop never leaves the
+                // loopback interface, and the name is checked against the certificate below.
+                out.push_str("        proxy_ssl_server_name on;\n");
+                out.push_str(&format!("        proxy_ssl_name {};\n", site.hostname));
+                out.push_str("        proxy_ssl_verify off;\n");
+            }
             out.push_str(&format!(
                 "        proxy_set_header Host {};\n",
                 site.hostname
+            ));
+            out.push_str(&format!(
+                "        proxy_set_header X-Forwarded-Prefix /{prefix};\n"
             ));
             out.push_str(&proxy_directives_tail("        ", false));
             out.push_str("    }\n");
@@ -405,6 +430,47 @@ mod tests {
         assert!(out.contains("location = /shop { return 301 /shop/; }"));
         // Anything else under localhost is not a site and must not land on one.
         assert!(out.contains("location / { return 404; }"));
+    }
+
+    #[test]
+    fn a_tls_site_is_proxied_to_over_https_so_its_own_redirect_does_not_bite() {
+        // A site with TLS and "Redirect to HTTPS" answers its plain-HTTP vhost with
+        // `return 301 https://$host$request_uri` and nothing else. Proxied to the HTTP
+        // port, `$host` is the site hostname this route just set, so every prefixed
+        // request was answered with a redirect to the site domain and the localhost
+        // route never rendered a page. The HTTPS vhost is the one that serves it.
+        let mut a = site(
+            Backend::Php {
+                pool: "php_81".into(),
+                ports: vec![10811],
+            },
+            true,
+            true,
+        );
+        a.path_prefix = Some("shop".into());
+        let out = Nginx.render_path_routes(&[a], PORTS);
+        assert!(out.contains("proxy_pass https://127.0.0.1:443/;"));
+        // SNI, or the first `server` block on the port would answer instead.
+        assert!(out.contains("proxy_ssl_server_name on;"));
+        assert!(out.contains("proxy_ssl_name shop.test;"));
+        assert!(out.contains("proxy_ssl_verify off;"));
+    }
+
+    #[test]
+    fn a_site_without_tls_still_takes_the_plain_http_vhost() {
+        let mut a = site(Backend::Static, false, false);
+        a.path_prefix = Some("shop".into());
+        let out = Nginx.render_path_routes(&[a], PORTS);
+        assert!(out.contains("proxy_pass http://127.0.0.1:80/;"));
+        assert!(!out.contains("proxy_ssl_server_name"));
+    }
+
+    #[test]
+    fn the_stripped_prefix_is_advertised_so_urls_are_rebuilt_with_it() {
+        let mut a = site(Backend::Static, false, false);
+        a.path_prefix = Some("shop".into());
+        let out = Nginx.render_path_routes(&[a], PORTS);
+        assert!(out.contains("proxy_set_header X-Forwarded-Prefix /shop;"));
     }
 
     #[test]

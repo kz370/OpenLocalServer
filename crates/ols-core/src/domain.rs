@@ -422,7 +422,7 @@ const HOME_PAGE: &str = r##"<!doctype html>
 </style>
 </head>
 <body>
-<!-- home v5 -->
+<!-- home v6 -->
 <div class="wrap">
   <header class="top">
     <div class="brand"><img data-mark src="logo.svg" alt="Open Local Server logo">Open Local Server</div>
