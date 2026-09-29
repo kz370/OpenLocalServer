@@ -55,6 +55,7 @@ Updater | uses | CatalogSources
 PluginManager | uses | Catalog
 WebConfig | resolves | Domain.server -> resolved_server(domain, cfg)
 SitesPage | uses | UseWeb hook
+RuntimesPage | uses | TechIcon (runtime ID resolves to brand or generic glyph; Memcached uses its symbol-only logo, Redis keeps its brand mark)
 ServicesWidget | uses | DashboardPage.useAction (so a failed service action reaches the page ErrorCard)
 SiteDialog | uses | CoreClient (get_domain once per trigger, unchanged read dropped — it seeds DomainSettings)
 TerminalComp | uses | TerminalManager

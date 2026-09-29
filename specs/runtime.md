@@ -1,7 +1,7 @@
 # RUNTIME
 
 ## Files to Process
-Total meaningful source files: 204 (excluding target/, node_modules/, .git/, dist/, data/services/postgres runtime data, icon bulk).
+Total meaningful source files: 205 (excluding target/, node_modules/, .git/, dist/, data/services/postgres runtime data, icon bulk).
 
 ### Rust core (crates/ols-core/src, 73 files)
 - src/lib.rs, app.rs, command.rs, control.rs, api.rs, paths.rs, settings.rs, secrets.rs, db.rs
@@ -48,6 +48,7 @@ All 205 files listed above processed via 4 parallel analysis agents (rust-core, 
 - [2026-09-26] Diagrams written
 - [2026-09-26] Developer guide + API reference written
 - [2026-09-26] Coverage + consistency + English checks passed
+- [2026-09-29] fix: Memcached now uses the symbol-only form of its logo on the Runtimes page instead of borrowing Redis's brand mark; specs updated (full documentation, catalog, relationships); Files Processed 205.
 - [2026-09-26] Specs-sync mandate added: AGENTS.md created, CONTRIBUTING.md patched — code change requires specs update in same PR
 - [2026-09-27] feat: Settings About section (AboutCard: name, backend ping version, GPL-3.0-only, stack) + version 1.0.0 (workspace Cargo, tauri.conf, README badge); no IPC change; catalog SettingsPage line updated; Files Processed still 202
 - [2026-09-27] fix: port holder lookup no longer surfaces tasklist INFO text as process name (stale-PID race), holder cache TTL 15s→5s; Services shows live holder + retry hint; Dashboard services rows regain per-service Start/Stop; Mailpit Open uses open_url; diagnostics auto-rescan

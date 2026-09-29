@@ -74,8 +74,6 @@ const BRANDS: Record<string, SimpleIcon> = {
   mongodb: siMongodb,
   postgres: siPostgresql,
   redis: siRedis,
-  // simple-icons has no Memcached mark, so it borrows Redis' cache-family tile.
-  memcached: siRedis,
   sqlite: siSqlite,
   git: siGit,
 }
@@ -116,6 +114,16 @@ const REDIS_CLIENT = (
   </svg>
 )
 
+/** Memcached's supplied symbol-only logo, scaled to the runtime icon slot. */
+const MEMCACHED_MARK = (
+  <svg viewBox="0 0 24 24" role="img" aria-label="Memcached">
+    <rect x="1" y="1" width="22" height="22" rx="5.2" fill="#756b6d" />
+    <path d="M5.1 19.1 6.2 5.3h3.1l2.7 5.3 2.7-5.3h3.1l1.1 13.8h-3.2l-.6-7.8-3.1 5.2-3.1-5.2-.6 7.8z" fill="#36a69f" />
+    <circle cx="10.3" cy="19.2" r=".85" fill="#f05d67" />
+    <circle cx="14.5" cy="19.2" r=".85" fill="#f05d67" />
+  </svg>
+)
+
 /** Generic stand-ins for ids without a brand. */
 const GENERIC: Record<string, ReactNode> = {
   all: <Layers />,
@@ -125,6 +133,7 @@ const GENERIC: Record<string, ReactNode> = {
   proxy: <ArrowLeftRight />,
   'reverse-proxy': <ArrowLeftRight />,
   other: <Package />,
+  memcached: MEMCACHED_MARK,
   mailpit: ENVELOPE,
   mail: ENVELOPE,
   tinyrdm: REDIS_CLIENT,

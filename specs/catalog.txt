@@ -101,7 +101,7 @@ ConfigPage | Config files + history diff/restore + ownership.
 TunnelsPage | Tunnel CRUD + inspector + webhook tester.
 DatabasesPage | Per-engine DB/users/backups + external tools (Redis one-click via Tiny RDM).
 ServicesPage | Mail/DB services + CustomServices child.
-RuntimesPage | Side-by-side versions + PHP dialogs; vendor feed refresh for the ONLINE_CATALOGS ids (TechIcon per runtime: mailpit envelope, git brand, others simple-icons); Pause/Resume/Stop on every download in flight.
+RuntimesPage | Side-by-side versions + PHP dialogs; vendor feed refresh for the ONLINE_CATALOGS ids (TechIcon per runtime: Memcached symbol-only logo, Redis brand mark, Mailpit envelope, Git and other available brand marks); Pause/Resume/Stop on every download in flight.
 ProfilesPage | Env template CRUD + yaml editor.
 PluginsPage | Plugins + signed catalog sources.
 LogsPage | Unified logs with severity regex + AI ask (error/warn picker, timestamp-blind dedupe with ×count, overlong pick spills to .log file via read_excerpt).
