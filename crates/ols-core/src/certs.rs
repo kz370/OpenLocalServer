@@ -237,6 +237,7 @@ mod tests {
             public_domain: None,
             tunnel_id: None,
             server: None,
+            path_prefix: None,
         }
     }
 

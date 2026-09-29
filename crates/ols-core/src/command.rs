@@ -1472,6 +1472,9 @@ pub enum CoreResponse {
     },
     Resources {
         limits: crate::resources::ResourceLimits,
+        /// Whether a wanted CPU limit can actually be applied on this machine, so the
+        /// Resources card can say so instead of claiming Windows has no CPU cap.
+        cpu: crate::resources::CpuCapStatus,
     },
     TunnelProviders {
         providers: Vec<crate::tunnel::ProviderInfo>,
@@ -3203,11 +3206,13 @@ impl Core {
             }),
             C::GetResourceLimits => Ok(R::Resources {
                 limits: i.resource_limits(),
+                cpu: i.resource_limits().cpu_cap_status(),
             }),
             C::SetResourceLimits { limits } => {
                 i.set_resource_limits(limits)?;
                 Ok(R::Resources {
                     limits: i.resource_limits(),
+                    cpu: i.resource_limits().cpu_cap_status(),
                 })
             }
 
@@ -3735,6 +3740,7 @@ mod tests {
                     public_domain: None,
                     tunnel_id: None,
                     server: None,
+                    path_prefix: None,
                 })
                 .unwrap();
         }
@@ -3839,6 +3845,7 @@ mod tests {
                 public_domain: None,
                 tunnel_id: None,
                 server: None,
+                path_prefix: None,
             };
         let proxy = || crate::domain::SiteKind::Proxy {
             upstream_port: 3000,
@@ -4009,6 +4016,7 @@ mod tests {
             public_domain: None,
             tunnel_id: None,
             server: None,
+            path_prefix: None,
         };
         // Written straight to the store: AddDomain would reject a folder that doesn't exist.
         core.inner().domains.lock().unwrap().add(domain).ok();
@@ -4151,6 +4159,7 @@ mod tests {
             public_domain: None,
             tunnel_id: None,
             server: None,
+            path_prefix: None,
         };
         core.dispatch(CoreCommand::AddDomain {
             domain: domain("old.test"),
@@ -4349,6 +4358,7 @@ mod tests {
             public_domain: None,
             tunnel_id: None,
             server: None,
+            path_prefix: None,
         };
         domain.blocks.headers.push(HeaderRule {
             name: "X-Test".into(),

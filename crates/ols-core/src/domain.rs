@@ -185,6 +185,11 @@ pub struct Domain {
     /// the default server; a site is rendered on exactly one server, never both.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub server: Option<String>,
+    /// Also serve this site at `localhost/<path_prefix>` (§55), alongside its own domain.
+    /// One leading segment, lowercase letters, digits and `-`/`_` — it becomes a URL path
+    /// in a generated config, so nothing exotic may get through.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path_prefix: Option<String>,
 }
 
 /// Rejects a per-site server id that isn't one we ship. A blank value means "use the
@@ -198,6 +203,40 @@ pub fn validate_domain_server(server: Option<&str>) -> Result<Option<String>, Co
              Pick Default, Nginx, Apache or Caddy."
         ))),
     }
+}
+
+/// Normalizes the `localhost/<prefix>` path a site is also served under (§55). A blank
+/// value means "no path route" and is stored as `None`. The value lands as a URL path
+/// segment in a generated config, so it is one segment of safe characters and nothing
+/// that could escape the prefix (`..`, `/`, `\`) or change the request's meaning.
+pub fn validate_path_prefix(prefix: Option<&str>) -> Result<Option<String>, CoreError> {
+    let Some(raw) = prefix.map(str::trim) else {
+        return Ok(None);
+    };
+    if raw.is_empty() {
+        return Ok(None);
+    }
+    let bad = |why: &str| {
+        Err(CoreError::DomainError(format!(
+            "\"{raw}\" cannot be used as a localhost path: {why}"
+        )))
+    };
+    if raw.len() > 40 {
+        return bad("keep it under 40 characters");
+    }
+    if raw.contains('/') || raw.contains('\\') {
+        return bad("it is one path segment, with no '/' in it");
+    }
+    if raw == "." || raw == ".." {
+        return bad("'.' and '..' are reserved");
+    }
+    if !raw
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
+    {
+        return bad("use lowercase letters, digits, '-' and '_' only");
+    }
+    Ok(Some(raw.to_string()))
 }
 
 /// The server that actually renders this site: its own override, or the default one.
@@ -234,6 +273,7 @@ fn home_domain(dir: &Path) -> Domain {
         public_domain: None,
         tunnel_id: None,
         server: None,
+        path_prefix: None,
     }
 }
 
@@ -529,6 +569,8 @@ impl DomainStore {
         domain.hostname = domain.hostname.trim().to_ascii_lowercase();
         validate_hostname(&domain.hostname)?;
         domain.server = validate_domain_server(domain.server.as_deref())?;
+        domain.path_prefix = validate_path_prefix(domain.path_prefix.as_deref())?;
+        self.check_path_prefix_taken(&domain)?;
         if let Some(host) = domain.public_domain.as_mut() {
             *host = host.trim().to_ascii_lowercase();
             validate_hostname(host)?;
@@ -559,6 +601,8 @@ impl DomainStore {
     pub fn update(&mut self, mut domain: Domain) -> Result<Domain, CoreError> {
         validate_kind(&domain.kind)?;
         domain.server = validate_domain_server(domain.server.as_deref())?;
+        domain.path_prefix = validate_path_prefix(domain.path_prefix.as_deref())?;
+        self.check_path_prefix_taken(&domain)?;
         if let Some(host) = domain.public_domain.as_mut() {
             *host = host.trim().to_ascii_lowercase();
             validate_hostname(host)?;
@@ -634,6 +678,26 @@ impl DomainStore {
             }
         }
         None
+    }
+
+    /// Two sites cannot share one `localhost/<prefix>`: they would answer on the same
+    /// path and only one of them could win, so the second is refused with the name of
+    /// the site that already holds it.
+    fn check_path_prefix_taken(&self, candidate: &Domain) -> Result<(), CoreError> {
+        let Some(prefix) = candidate.path_prefix.as_deref() else {
+            return Ok(());
+        };
+        if let Some(other) = self
+            .domains
+            .iter()
+            .find(|d| d.hostname != candidate.hostname && d.path_prefix.as_deref() == Some(prefix))
+        {
+            return Err(CoreError::DomainError(format!(
+                "localhost/{prefix} is already used by {}. Give this site a different path.",
+                other.hostname
+            )));
+        }
+        Ok(())
     }
 
     fn persist(&self) -> Result<(), CoreError> {
@@ -732,6 +796,7 @@ mod tests {
             public_domain: None,
             tunnel_id: None,
             server: None,
+            path_prefix: None,
         }
     }
 
@@ -942,6 +1007,83 @@ mod tests {
         assert!(store.add(d.clone()).is_err());
         d.server = Some("apache".into());
         assert_eq!(store.add(d).unwrap().server.as_deref(), Some("apache"));
+    }
+
+    #[test]
+    fn a_path_prefix_is_normalized_trimmed_and_survives_a_reload() {
+        let home = crate::test_support::isolated_home();
+        let mut store = DomainStore::load(&home.paths).unwrap();
+        let mut d = domain("shop.test");
+        d.path_prefix = Some("  shop_2  ".into());
+        assert_eq!(
+            store.add(d.clone()).unwrap().path_prefix.as_deref(),
+            Some("shop_2")
+        );
+        // A blank value means "no path route" and is stored as such, so the form and
+        // the config agree instead of the file carrying an empty prefix.
+        let mut blank = domain("api.test");
+        blank.path_prefix = Some("   ".into());
+        assert_eq!(store.add(blank).unwrap().path_prefix, None);
+        assert_eq!(
+            store.get("shop.test").unwrap().path_prefix.as_deref(),
+            Some("shop_2")
+        );
+    }
+
+    #[test]
+    fn a_path_prefix_that_could_escape_or_change_the_request_is_refused() {
+        assert!(validate_path_prefix(Some("")).unwrap().is_none());
+        assert!(validate_path_prefix(None).unwrap().is_none());
+        assert!(validate_path_prefix(Some("shop")).is_ok());
+        assert!(validate_path_prefix(Some("shop-2_app")).is_ok());
+        // A `/` would make it a path tree, and the rest would land in a generated config
+        // as a URL path where they could mean something other than a folder name.
+        assert!(validate_path_prefix(Some("a/b")).is_err());
+        assert!(validate_path_prefix(Some("a\\b")).is_err());
+        assert!(validate_path_prefix(Some("..")).is_err());
+        assert!(validate_path_prefix(Some(".")).is_err());
+        assert!(validate_path_prefix(Some("Shop")).is_err());
+        assert!(validate_path_prefix(Some("a b")).is_err());
+        assert!(validate_path_prefix(Some("a;b")).is_err());
+    }
+
+    #[test]
+    fn two_sites_cannot_claim_the_same_localhost_path() {
+        // They would answer on one path and only one could win, so the second is refused
+        // with the name of the site already holding it.
+        let home = crate::test_support::isolated_home();
+        let mut store = DomainStore::load(&home.paths).unwrap();
+        let mut first = domain("shop.test");
+        first.path_prefix = Some("site".into());
+        store.add(first).unwrap();
+
+        let mut second = domain("api.test");
+        second.path_prefix = Some("site".into());
+        let err = store.add(second).unwrap_err().to_string();
+        assert!(err.contains("localhost/site"), "{err}");
+        assert!(err.contains("shop.test"), "{err}");
+
+        // Renaming the first site frees the path again.
+        let mut renamed = store.get("shop.test").unwrap();
+        renamed.path_prefix = None;
+        store.update(renamed).unwrap();
+        let mut third = domain("api.test");
+        third.path_prefix = Some("site".into());
+        assert!(store.add(third).is_ok());
+    }
+
+    #[test]
+    fn a_site_may_keep_its_own_path_when_edited() {
+        // `check_path_prefix_taken` skips the site being edited, so re-saving a site
+        // without changing anything must not report a conflict with itself.
+        let home = crate::test_support::isolated_home();
+        let mut store = DomainStore::load(&home.paths).unwrap();
+        let mut d = domain("shop.test");
+        d.path_prefix = Some("site".into());
+        let saved = store.add(d).unwrap();
+        let mut edited = saved.clone();
+        edited.https = false;
+        assert!(store.update(edited).is_ok());
     }
 
     #[test]

@@ -277,6 +277,8 @@ export interface Domain {
   tunnel_id?: string | null
   /** Web server that renders this site: its own override, or the default. */
   server?: string | null
+  /** Also served at `localhost/<path_prefix>`, alongside the site's own domain (§55). */
+  path_prefix?: string | null
 }
 
 export interface ProcfilePreview {
@@ -300,6 +302,10 @@ export interface DomainSummary {
   public_domain?: string | null
   /** Web server that renders this site: its own override, or the default. */
   server: string
+  /** Also served at `localhost/<path_prefix>`, alongside the site's own domain (§55). */
+  path_prefix?: string | null
+  /** HTTP port of the server that renders this site, for the localhost URL. */
+  http_port?: number
 }
 
 /** Ports a server is stored with. The default server always binds 80/443 instead. */
@@ -997,7 +1003,7 @@ export type CoreResponse =
   | { type: 'cloned'; result: CloneResult }
   | { type: 'settings_backups'; backups: SettingsBackup[] }
   | { type: 'settings_backup'; backup: SettingsBackup }
-  | { type: 'resources'; limits: ResourceLimits }
+  | { type: 'resources'; limits: ResourceLimits; cpu: CpuCapStatus }
   | { type: 'tunnel_providers'; providers: TunnelProvider[] }
   | { type: 'tunnels'; tunnels: TunnelStatus[] }
   | { type: 'tunnel'; tunnel: TunnelStatus }
@@ -1454,10 +1460,27 @@ export interface ResourceLimits {
   redis_maxmemory_mb: number | null
   memcached_max_memory_mb: number | null
   mongodb_cache_mb: number | null
+  /** Total CPU as a share of every core (1–100). Mutually exclusive with cpu_threads. */
+  cpu_percent: number | null
+  /** The same cap as a thread count, converted against this machine's logical cores. */
+  cpu_threads: number | null
+  /** An explicit cpulimit.exe path, for a build the search does not find. */
+  cpu_limiter_path: string | null
   node_max_old_space_mb: number | null
   max_worker_count: number | null
   max_processes: number | null
   k6_max_vus: number | null
+}
+
+/** Whether a wanted CPU cap can actually be applied, so the UI never claims a limit that is not in force. */
+export interface CpuCapStatus {
+  wanted: boolean
+  /** cpulimit.exe when found; null means a wanted cap cannot be applied. */
+  limiter_path: string | null
+  logical_cores: number
+  /** The percentage the cap will be applied at, or null when unset. */
+  effective_percent: number | null
+  hint: string
 }
 
 // ---- Stage 14: tunnels and traffic ---------------------------------------------------

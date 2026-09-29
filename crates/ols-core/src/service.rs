@@ -351,7 +351,7 @@ impl ServiceManager {
                 def.name
             ));
         }
-        Ok(self.start_capped(ProcessSpec {
+        self.start_capped(ProcessSpec {
             name: def.name.clone(),
             executable: def.executable.clone(),
             args: def.args.clone(),
@@ -363,7 +363,7 @@ impl ServiceManager {
                     max_retries: 3,
                     delay_ms: 2000,
                 }),
-        })?)
+        })
     }
 
     /// Drops bookkeeping for services whose process is gone. A service that exits
@@ -975,16 +975,19 @@ impl ServiceManager {
             )?;
             // PostgreSQL 15+ no longer lets an ordinary user create tables in `public`;
             // owning the database restores that without granting anything server-wide.
-            return self.run_sql(
-                engine,
-                &format!("ALTER DATABASE \"{database}\" OWNER TO \"{user}\""),
-            );
+            return self
+                .run_sql(
+                    engine,
+                    &format!("ALTER DATABASE \"{database}\" OWNER TO \"{user}\""),
+                )
+                .map(|_| ());
         }
         let u = sql_string(user);
         self.run_sql(
             engine,
             &format!("GRANT ALL PRIVILEGES ON `{database}`.* TO {u}@'localhost'; FLUSH PRIVILEGES"),
-        )
+        )?;
+        Ok(())
     }
 
     pub fn list_databases(&self, engine: &str) -> Result<Vec<String>, String> {

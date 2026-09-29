@@ -121,6 +121,11 @@ pub struct DomainSummary {
     pub public_domain: Option<String>,
     /// Web server that renders this site: its own override, or the default.
     pub server: String,
+    /// Also served at `localhost/<path_prefix>` (§55), when one is set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path_prefix: Option<String>,
+    /// HTTP port of the server that renders this site, so the UI can build the localhost URL.
+    pub http_port: u16,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -639,6 +644,10 @@ impl Inner {
                 folder: site_folder(&d, &projects),
                 public_domain: d.public_domain.clone(),
                 server: crate::domain::resolved_server(&d, &cfg),
+                path_prefix: d.path_prefix.clone(),
+                http_port: cfg
+                    .effective_ports(&crate::domain::resolved_server(&d, &cfg))
+                    .http,
             })
             .collect()
     }
@@ -960,6 +969,7 @@ impl Inner {
                 public_domain: None,
                 tunnel_id: None,
                 server: None,
+                path_prefix: None,
             };
             match self.add_domain(domain) {
                 Ok(d) => {
@@ -2659,6 +2669,7 @@ impl Inner {
                     public_domain: None,
                     tunnel_id: None,
                     server: None,
+                    path_prefix: None,
                 };
                 let cfg = self.web_config();
                 let url = self.site_url(&domain, &cfg);
@@ -3785,6 +3796,7 @@ mod apply_concurrency_tests {
             public_domain: None,
             tunnel_id: None,
             server: None,
+            path_prefix: None,
         };
         {
             let mut domains = inner.domains.lock().unwrap();

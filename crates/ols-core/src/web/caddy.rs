@@ -114,6 +114,38 @@ impl WebServer for Caddy {
         out
     }
 
+    /// One site block for every `localhost/<prefix>` route on this server (§55). Each
+    /// route rewrites to the site's own vhost on the same server, prefix stripped, so the
+    /// prefixed URL is answered by exactly the config that site already has.
+    fn render_path_routes(&self, sites: &[SiteSpec], ports: Ports) -> String {
+        let mut out = String::new();
+        out.push_str(MANAGED_HEADER);
+        out.push_str("# localhost/<prefix> routes. Each is served by that site's own vhost.\n\n");
+        out.push_str(&format!("http://localhost:{} {{\n", ports.http));
+
+        for site in sites
+            .iter()
+            .filter_map(|s| s.path_prefix.as_deref().map(|p| (s, p)))
+        {
+            let (site, prefix) = site;
+            out.push_str(&format!("    # {}\n", site.hostname));
+            out.push_str(&format!("    redir /{prefix} /{prefix}/ 308\n"));
+            out.push_str(&format!("    @p{prefix} path /{prefix}/*\n"));
+            out.push_str(&format!("    handle @p{prefix} {{\n"));
+            out.push_str(&format!("        uri strip_prefix /{prefix}\n"));
+            out.push_str(&format!(
+                "        reverse_proxy 127.0.0.1:{} {{\n",
+                ports.http
+            ));
+            out.push_str(&format!("            header_up Host {}\n", site.hostname));
+            out.push_str("        }\n");
+            out.push_str("    }\n");
+        }
+        out.push_str("    respond 404\n");
+        out.push_str("}\n");
+        out
+    }
+
     fn prepare(&self, layout: &ServerLayout) -> std::io::Result<()> {
         std::fs::create_dir_all(&layout.prefix)?;
         std::fs::create_dir_all(&layout.logs_dir)?;
@@ -233,6 +265,7 @@ mod tests {
             custom_snippet: None,
             public_domain: None,
             forwarded_tls: false,
+            path_prefix: None,
         }
     }
 

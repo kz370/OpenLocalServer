@@ -45,14 +45,17 @@ export function ApiCard() {
           {status.running ? <Badge variant="success">on</Badge> : <Badge variant="outline">off</Badge>}
         </CardTitle>
         <CardDescription>
-          Lets scripts and CI drive OpenLocalServer over HTTP on this computer only. Every request needs the token; web pages are refused. Secrets, settings, plugins and running arbitrary programs are never available through it.
+          Drives OpenLocalServer over HTTP from a script or a CI job, with no desktop window open. Off by default. It listens on 127.0.0.1 only, so nothing on your network can reach it.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <ErrorCard error={error} onDismiss={() => setError(null)} />
         {status.error && <p className="text-sm text-warning">{status.error}</p>}
         <div className="grid gap-4 sm:grid-cols-3">
-          <Field label="Port">
+          <Field
+            label="Port"
+            hint="The port it listens on. Only this computer can connect. Changing it needs Apply port."
+          >
             <NumberInput
               label="API port"
               min={1024}
@@ -61,7 +64,10 @@ export function ApiCard() {
               onChange={(n) => setPort(n === null ? '' : String(n))}
             />
           </Field>
-          <Field label="What it may do" hint="Read-only can list and look; operate can also start, stop and apply.">
+          <Field
+            label="What it may do"
+            hint="Read only answers questions. Operate also starts, stops, applies and installs. It never widens anything else — see below."
+          >
             <Select value={status.settings.mode} onChange={(e) => apply(status.settings.enabled, e.target.value as 'read_only' | 'operate')}>
               <option value="read_only">Read only</option>
               <option value="operate">Operate</option>
@@ -88,7 +94,11 @@ export function ApiCard() {
               Turn off
             </Button>
           ) : (
-            <Button disabled={busy !== null || !status.token_set} onClick={() => apply(true)} title={status.token_set ? '' : 'Make a token first'}>
+            <Button
+              disabled={busy !== null || !status.token_set}
+              onClick={() => apply(true)}
+              title={status.token_set ? '' : 'Make a token first — the API cannot start without one'}
+            >
               Turn on
             </Button>
           )}
@@ -98,6 +108,16 @@ export function ApiCard() {
             </Button>
           )}
         </div>
+        {status.token_set && !status.settings.enabled && (
+          <p className="text-xs text-muted-foreground">
+            A token is saved and the API is off. It only starts listening when you press Turn on.
+          </p>
+        )}
+        {!status.token_set && (
+          <p className="text-xs text-muted-foreground">
+            No token yet. Only a SHA-256 hash of it is kept, so a token shown here can never be shown again — copy it before you close this card.
+          </p>
+        )}
         {token && (
           <div className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
             <p className="mb-2">Copy this token now. It is not stored and can't be shown again.</p>
@@ -109,9 +129,35 @@ export function ApiCard() {
             </div>
           </div>
         )}
-        <p className="text-xs text-muted-foreground">
-          Example: <code>curl -H "Authorization: Bearer TOKEN" -H "Content-Type: application/json" -d "{'{"type":"list_projects"}'}" {status.url}/v1/command</code>
-        </p>
+        <div className="flex flex-col gap-2 rounded-lg border border-border/60 bg-muted/20 p-3 text-[13px] leading-relaxed text-muted-foreground">
+          <p className="font-medium text-foreground">Sending a command</p>
+          <p>
+            One endpoint, <code className="font-mono text-xs">POST /v1/command</code>, taking the same JSON the CLI and this app use. Send it as{' '}
+            <code className="font-mono text-xs">Authorization: Bearer &lt;token&gt;</code>; anything without that header is refused.
+          </p>
+          <pre className="overflow-x-auto rounded bg-muted px-2 py-1.5 font-mono text-[11px] leading-relaxed text-foreground">
+{`curl ${status.url}/v1/command \\
+  -H "Authorization: Bearer YOUR_TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d '{"type":"list_projects"}'`}
+          </pre>
+        </div>
+        <div className="flex flex-col gap-2 text-[13px] leading-relaxed text-muted-foreground">
+          <p className="font-medium text-foreground">What it can never do, in either mode</p>
+          <ul className="flex list-disc flex-col gap-1 pl-5">
+            <li>Read or change a stored secret, or any setting — including this API's own.</li>
+            <li>Run an arbitrary program or shell command.</li>
+            <li>Install or enable a plugin, add a catalog source, or install an app update.</li>
+            <li>Store an AI provider key, make a site or a tunnel public, or change Windows.</li>
+          </ul>
+          <p>
+            A browser cannot use it: a request carrying an <code className="font-mono text-xs">Origin</code> header, or a{' '}
+            <code className="font-mono text-xs">Host</code> that is not this loopback address and port, is refused — that closes DNS-rebinding, where a web page you visit could otherwise reach it. Request bodies are capped at 1 MB.
+          </p>
+          <p>
+            <code className="font-mono text-xs">Operate</code> is a fixed short list, not a deny list: starting and stopping services, workers and the web server, applying the web config, installing runtimes, taking snapshots, backing up a database. A command nobody added stays unreachable until it is.
+          </p>
+        </div>
       </CardContent>
     </Card>
   )

@@ -1,4 +1,4 @@
-import { Activity, Archive, Boxes, Copy, Database, ExternalLink, Gauge, History, Info, Leaf, RotateCcw, Settings2 } from 'lucide-react'
+import { Activity, Archive, Boxes, Copy, Cpu, Database, ExternalLink, Gauge, History, Info, Leaf, RotateCcw, Settings2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
@@ -6,13 +6,15 @@ import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Field, Select } from '@/components/ui/form'
 import { NumberInput } from '@/components/ui/input'
-import { type ResourceLimits, type SettingsBackup, runCommand } from '@/core'
+import { type CpuCapStatus, type ResourceLimits, type SettingsBackup, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
 import { formatBytes, timeAgo, useAction } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 
-type LimitKey = keyof ResourceLimits
+/** Only the numeric limits render as fields; `cpu_limiter_path` is a string and is not one. */
+type LimitKey = Exclude<keyof ResourceLimits, 'cpu_limiter_path'>
 interface LimitDef {
   key: LimitKey
   label: string
@@ -43,6 +45,9 @@ const EMPTY_LIMITS: ResourceLimits = {
   redis_maxmemory_mb: null,
   memcached_max_memory_mb: null,
   mongodb_cache_mb: null,
+  cpu_percent: null,
+  cpu_threads: null,
+  cpu_limiter_path: null,
   node_max_old_space_mb: null,
   max_worker_count: null,
   max_processes: null,
@@ -85,22 +90,118 @@ function LimitField({ def, value, onChange }: { def: LimitDef; value: number | n
   )
 }
 
+/**
+ * §129 CPU cap. A percentage is a share of *all* cores, which is the one thing people
+ * get wrong ("20% should be half a core" — it is a fifth of the whole machine), so the
+ * threads mode converts against the real core count and the hint states both numbers.
+ * The cap is applied by the external `cpulimit` utility, so a wanted cap with no utility
+ * on disk is stated here rather than quietly not applied at the next start.
+ */
+function CpuLimitField({
+  limits,
+  cpu,
+  onChange,
+}: {
+  limits: ResourceLimits
+  cpu: CpuCapStatus
+  onChange: (patch: Partial<ResourceLimits>) => void
+}) {
+  const mode: 'off' | 'percent' | 'threads' = limits.cpu_percent !== null ? 'percent' : limits.cpu_threads !== null ? 'threads' : 'off'
+  const value = mode === 'percent' ? limits.cpu_percent : mode === 'threads' ? limits.cpu_threads : null
+  const cores = Math.max(1, cpu.logical_cores)
+  const effective = mode === 'percent' ? value : mode === 'threads' && value !== null ? Math.min(100, Math.ceil((value * 100) / cores)) : null
+  const setMode = (next: string) => {
+    if (next === 'off') onChange({ cpu_percent: null, cpu_threads: null })
+    else if (next === 'percent') onChange({ cpu_percent: value ?? 50, cpu_threads: null })
+    else onChange({ cpu_percent: null, cpu_threads: value ?? 1 })
+  }
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field
+          label="How to measure the cap"
+          hint="Threads is the easier number: 2 means about half of two cores, whatever this machine has."
+        >
+          <Select value={mode} onChange={(e) => setMode(e.target.value)}>
+            <option value="off">No CPU limit</option>
+            <option value="percent">Percentage of the whole CPU</option>
+            <option value="threads">Number of threads</option>
+          </Select>
+        </Field>
+        {mode !== 'off' ? (
+          <Field
+            label={mode === 'percent' ? 'Limit' : 'Threads'}
+            hint={
+              effective === null
+                ? undefined
+                : mode === 'percent'
+                  ? `${effective}% of all ${cores} ${cores === 1 ? 'core' : 'cores'}. A cap above what the program can use on its own has no effect.`
+                  : `${effective}% of all ${cores} ${cores === 1 ? 'core' : 'cores'} — about ${value} full ${cores === 1 ? 'core' : 'core'}${value === 1 ? '' : 's'}.`
+            }
+          >
+            <NumberInput
+              label={mode === 'percent' ? 'CPU percentage' : 'CPU threads'}
+              min={1}
+              max={mode === 'percent' ? 100 : cores}
+              value={value}
+              placeholder="Not set"
+              onChange={(n) =>
+                onChange(mode === 'percent' ? { cpu_percent: n !== null && n > 0 ? n : null } : { cpu_threads: n !== null && n > 0 ? n : null })
+              }
+            />
+          </Field>
+        ) : null}
+      </div>
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        Applied to every service and web server the app starts. The cap holds even for processes they spawn.
+      </p>
+      {mode !== 'off' ? (
+        cpu.limiter_path ? (
+          <p className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Badge variant="secondary" className="shrink-0">
+              <Cpu aria-hidden="true" className="size-3" /> cpulimit
+            </Badge>
+            <span className="min-w-0 truncate" title={cpu.limiter_path}>
+              {cpu.limiter_path}
+            </span>
+          </p>
+        ) : (
+          <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-[13px] text-warning">
+            <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            <span>
+              This cap cannot be applied yet: <code className="font-mono text-xs">cpulimit.exe</code> was not found, so a start would be refused. {cpu.hint}
+            </span>
+          </div>
+        )
+      ) : null}
+    </div>
+  )
+}
+
 /** §129: optional memory and process limits. Blank means the program's own default. */
 export function ResourcesCard() {
   const [limits, setLimits] = useState<ResourceLimits | null>(null)
+  const [cpu, setCpu] = useState<CpuCapStatus | null>(null)
   const [saved, setSaved] = useState(false)
   const { busy, error, setError, run } = useAction()
   const load = useCallback(async () => {
     const r = await runCommand({ type: 'get_resource_limits' })
-    if (r.type === 'resources') setLimits(r.limits)
+    if (r.type === 'resources') {
+      setLimits(r.limits)
+      setCpu(r.cpu)
+    }
   }, [])
   useEffect(() => {
     void load()
   }, [load])
-  if (!limits) return null
+  if (!limits || !cpu) return null
   const set = (key: LimitKey, v: number | null) => {
     setSaved(false)
     setLimits({ ...limits, [key]: v })
+  }
+  const patch = (p: Partial<ResourceLimits>) => {
+    setSaved(false)
+    setLimits({ ...limits, ...p })
   }
   return (
     <Card className="border-border/60 bg-card">
@@ -110,7 +211,7 @@ export function ResourcesCard() {
             <Gauge className="mt-0.5 size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
             <div>
               <h2 className="text-[15px] font-semibold tracking-tight text-foreground">Resources</h2>
-              <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">Optional resource limits. Changes apply the next time each service starts.</p>
+              <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">Optional limits on memory, CPU and process count. Blank means the program's own default, and every change applies the next time a service starts.</p>
             </div>
           </div>
           <Button
@@ -126,12 +227,20 @@ export function ResourcesCard() {
           </Button>
         </div>
 
-        <div className="flex items-center gap-2 rounded-lg border border-sky-500/25 bg-sky-500/10 px-3 py-2 text-[13px] text-sky-200/90">
-          <Info className="size-4 shrink-0" aria-hidden="true" />
-          CPU limits are not available on Windows.
-        </div>
-
         <ErrorCard error={error} onDismiss={() => setError(null)} />
+
+        <section className="flex flex-col gap-4 border-t border-border/60 pt-6">
+          <div className="flex items-start gap-3">
+            <Cpu className="mt-0.5 size-5 shrink-0 text-amber-400" aria-hidden="true" />
+            <div>
+              <h3 className="text-[14px] font-semibold text-foreground">CPU</h3>
+              <p className="mt-0.5 text-[13px] leading-relaxed text-muted-foreground">
+                How much CPU a service may use while it runs. Applies to databases, caches, mail and the web servers.
+              </p>
+            </div>
+          </div>
+          <CpuLimitField limits={limits} cpu={cpu} onChange={patch} />
+        </section>
 
         <section className="flex flex-col gap-4 border-t border-border/60 pt-6">
           <div className="flex items-start gap-3">
@@ -185,7 +294,10 @@ export function ResourcesCard() {
               onClick={() =>
                 run('limits', async () => {
                   const r = await runCommand({ type: 'set_resource_limits', limits })
-                  if (r.type === 'resources') setLimits(r.limits)
+                  if (r.type === 'resources') {
+                    setLimits(r.limits)
+                    setCpu(r.cpu)
+                  }
                   setSaved(true)
                 })
               }

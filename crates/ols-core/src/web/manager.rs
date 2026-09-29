@@ -16,7 +16,7 @@ use sha2::{Digest, Sha256};
 
 use super::{
     server_by_id, Backend, Invocation, PoolSpec, Ports, ServerLayout, SiteSpec, WebConfig,
-    WebServer, SERVER_IDS,
+    WebServer, PATH_ROUTES_STEM, SERVER_IDS,
 };
 use crate::certs::CertificateManager;
 use crate::dns::DnsServer;
@@ -251,7 +251,6 @@ impl WebManager {
                 apps: HashMap::new(),
                 dns: None,
                 site_php: HashMap::new(),
-                pools: HashMap::new(),
             }),
             limits: Mutex::new(Default::default()),
         }
@@ -567,6 +566,7 @@ impl WebManager {
 
         // 2. Certificates, then the rendered site files.
         let mut rendered: Vec<(Domain, String)> = Vec::new();
+        let mut path_specs: Vec<SiteSpec> = Vec::new();
         for d in &enabled {
             let tls = if d.https {
                 Some(self.certs.ensure_for(d).map_err(werr)?)
@@ -596,9 +596,14 @@ impl WebManager {
                 custom_snippet,
                 public_domain: d.public_domain.clone(),
                 forwarded_tls: false,
+                path_prefix: d.path_prefix.clone(),
             };
+            path_specs.push(spec.clone());
             rendered.push((d.clone(), server.render_site(&spec, ports)));
         }
+        // All `localhost/<prefix>` routes share one Host, so they live in one file (§55).
+        // A server with no route at all gets no file, and an existing one is removed below.
+        let path_routes_text = server.render_path_routes(&path_specs, ports);
         let pools_vec: Vec<PoolSpec> = pool_specs.into_values().collect();
         let main_text = server.render_main(&layout, ports, &pools_vec);
 
@@ -616,6 +621,22 @@ impl WebManager {
         let mut new_hashes: Vec<(String, String)> = Vec::new();
         let mut plan: Vec<(PathBuf, String, Option<String>)> =
             vec![(main_path.clone(), main_text, None)];
+        let mut stale_paths: Vec<PathBuf> = Vec::new();
+
+        // The path-routes file is ours alone, so it is rewritten whenever its content
+        // changes and dropped when the last route is removed. It is not hashed: it has no
+        // hostname of its own, and there is nothing for a user to hand-edit.
+        let path_routes_path = layout.path_routes_file(ext);
+        remember(&path_routes_path);
+        if !path_specs.is_empty() {
+            if std::fs::read_to_string(&path_routes_path).ok().as_deref()
+                != Some(path_routes_text.as_str())
+            {
+                plan.push((path_routes_path.clone(), path_routes_text, None));
+            }
+        } else if path_routes_path.exists() {
+            stale_paths.push(path_routes_path);
+        }
 
         for (d, text) in &rendered {
             let path = layout.site_file(ext, &d.hostname);
@@ -679,11 +700,14 @@ impl WebManager {
         }
 
         // Stale site files (deleted or disabled domains) are removed, archived first.
+        // The path-routes file lives in the same directory and matches the extension, but
+        // it belongs to no hostname, so it is never swept up here.
         let keep: Vec<String> = enabled
             .iter()
             .map(|d| format!("{}.{ext}", d.hostname))
+            .chain(std::iter::once(format!("{}.{ext}", PATH_ROUTES_STEM)))
             .collect();
-        let mut stale: Vec<PathBuf> = Vec::new();
+        let mut stale: Vec<PathBuf> = std::mem::take(&mut stale_paths);
         if let Ok(entries) = std::fs::read_dir(&layout.sites_dir) {
             for e in entries.flatten() {
                 let name = e.file_name().to_string_lossy().to_string();
@@ -1701,6 +1725,7 @@ mod tests {
             public_domain: None,
             tunnel_id: None,
             server: None,
+            path_prefix: None,
         }
     }
 

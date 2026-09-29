@@ -115,6 +115,7 @@ fn domain(host: &str, root: &std::path::Path, kind: SiteKind) -> Domain {
         tunnel_id: None,
         server: None,
         public_domain: None,
+        path_prefix: None,
     }
 }
 

@@ -36,6 +36,7 @@ export function newDomain(): Domain {
     blocks: emptyBlocks,
     generated_hashes: {},
     server: null,
+    path_prefix: null,
   }
 }
 
@@ -370,6 +371,7 @@ export function DomainSettings({
     }
     if (!out.https) out.redirect_https = false
     if (!out.hostname) return setErr('Enter a domain like shop.test')
+    if (pathPrefixError) return setErr(pathPrefixError)
     if (!out.root) return setErr('Choose the site folder')
     if (out.public_domain && !out.tunnel_id) return setErr('Choose a saved named Cloudflare tunnel for the public domain')
     onSave(out)
@@ -385,6 +387,19 @@ export function DomainSettings({
   ]
   const host = d.hostname.trim().toLowerCase()
   const localTld = /\.(test|local|localhost|dev\.test)$/.test(host)
+  // Mirrors validate_path_prefix in ols-core: the same value lands as a URL path in a
+  // generated config, so it is one segment of safe characters and nothing that could
+  // escape the prefix. Checked here so the reason shows next to the field, and again in
+  // Rust because this one is only a convenience.
+  const rawPrefix = (d.path_prefix ?? '').trim()
+  const pathPrefixError =
+    rawPrefix === '' || /^[a-z0-9_-]{1,40}$/.test(rawPrefix)
+      ? undefined
+      : rawPrefix.length > 40
+        ? 'Keep it under 40 characters.'
+        : rawPrefix !== rawPrefix.toLowerCase()
+          ? 'Use lowercase letters, digits, "-" and "_" only.'
+          : 'One path segment: no "/", spaces or punctuation.'
 
   return (
     <div className="flex flex-col gap-5">
@@ -478,6 +493,25 @@ export function DomainSettings({
             <Button variant="secondary" onClick={browseRoot} className="shrink-0">
               <FolderSearch /> Browse
             </Button>
+          </div>
+        </Field>
+        <Field
+          label="Also serve at localhost/…"
+          hint={
+            d.path_prefix
+              ? `In addition to ${d.hostname || 'its domain'}, this site answers at http://localhost:${httpPort}/${d.path_prefix}/ — the same app, same PHP, same proxy target.`
+              : 'Optional. One path segment, like "shop" for http://localhost/shop/. Leave empty for domain-only.'
+          }
+          error={pathPrefixError}
+        >
+          <div className="flex items-center gap-2">
+            <span className="shrink-0 font-mono text-xs text-muted-foreground">localhost/{httpPort}/</span>
+            <Input
+              value={d.path_prefix ?? ''}
+              onChange={(e) => set({ path_prefix: e.target.value })}
+              placeholder="shop"
+              className="min-w-0 flex-1 font-mono"
+            />
           </div>
         </Field>
         <Field

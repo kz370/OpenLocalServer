@@ -252,6 +252,8 @@ pub struct SiteSpec {
     pub custom_snippet: Option<PathBuf>,
     pub public_domain: Option<String>,
     pub forwarded_tls: bool,
+    /// Also served at `localhost/<prefix>` (§55), alongside this site's own vhost.
+    pub path_prefix: Option<String>,
 }
 
 impl SiteSpec {
@@ -298,7 +300,15 @@ impl ServerLayout {
     pub fn custom_file(&self, ext: &str, hostname: &str) -> PathBuf {
         self.custom_dir.join(format!("{hostname}.{ext}"))
     }
+    /// The one file holding every `localhost/<prefix>` route on this server (§55).
+    pub fn path_routes_file(&self, ext: &str) -> PathBuf {
+        self.sites_dir.join(format!("{PATH_ROUTES_STEM}.{ext}"))
+    }
 }
+
+/// File stem of the per-server `localhost/<prefix>` routes file (§55). It is not a
+/// hostname, so nothing addresses it as one and the stale-file sweep skips it.
+pub const PATH_ROUTES_STEM: &str = "_ols_paths";
 
 /// One line-per-command description of how to drive a server binary.
 pub struct Invocation {
@@ -316,6 +326,14 @@ pub trait WebServer: Send + Sync {
     /// Renders the top-level config that pulls in every site file.
     fn render_main(&self, layout: &ServerLayout, ports: Ports, pools: &[PoolSpec]) -> String;
     fn render_site(&self, site: &SiteSpec, ports: Ports) -> String;
+    /// The one block that answers every `localhost/<prefix>` route on this server (§55).
+    ///
+    /// All of those requests carry the same `Host: localhost`, so they cannot be split
+    /// across per-site files the way domains are: the first `server_name localhost` on a
+    /// port would answer for all of them and the rest would never be reached. This is
+    /// therefore one file for the whole server, listing a route per site that asked for
+    /// one, each serving that site's own root/backend under its prefix.
+    fn render_path_routes(&self, sites: &[SiteSpec], ports: Ports) -> String;
     /// One-time filesystem preparation (create dirs, copy mime.types, ...).
     fn prepare(&self, layout: &ServerLayout) -> std::io::Result<()>;
     fn validate(&self, layout: &ServerLayout) -> Invocation;

@@ -12,6 +12,8 @@ Inner | uses | CertificateManager
 Inner | uses | ProjectStore
 WebManager | uses | DomainStore (snapshot only: apply renders, validates and restarts outside the store lock, and returns generated-config hashes for Inner to commit)
 WebManager | returns | HashUpdate (server id, hostname, sha-256) to Inner::record_generated_hashes
+WebManager | renders | one `localhost/<prefix>` routes file per server (all those requests share one Host, so they cannot be per-site files), each route proxying to its own site's vhost
+DomainStore | validates | Domain.path_prefix (one safe path segment, unique across sites — two sites on one path could not both answer)
 WebManager | uses | CertificateManager
 WebManager | uses | PhpPools
 WebManager | uses | DnsServer
@@ -24,6 +26,8 @@ PhpPools | uses | ProcessSupervisor
 PhpPools | uses | XdebugConfig
 ServiceManager | uses | RuntimeManager
 ServiceManager | uses | ProcessSupervisor (start waits for the spawn to be decided via wait_for_spawn and keeps the OS reason; stop waits for exit via wait_for_exit)
+ServiceManager | uses | ResourceLimits (§129 CPU cap, applied in start_capped by wrapping the spawn in cpulimit; a wanted cap with no utility on disk refuses the start)
+WebManager | uses | ResourceLimits (the same §129 CPU cap, applied when a web server is spawned)
 ServiceManager | uses | PortChecker
 ServiceManager | uses | WebManager (proxied web rows: list/status/start/stop/is_running delegate, no duplicated state)
 ServiceManager | uses | CustomServiceStore
@@ -62,6 +66,10 @@ SitesPage | uses | ConfirmAction (the dialog title names the site or project; th
 UseWeb.deleteSite | uses | remove_domain + apply_web (row removed optimistically, apply run behind an `applying` flag)
 RuntimesPage | uses | TechIcon (runtime ID resolves to brand or generic glyph; Memcached uses its symbol-only logo, Redis keeps its brand mark, pgAdmin/HeidiSQL/Tiny RDM/Mailpit are drawn marks so no GUI tool falls through to the generic glyph)
 ServicesWidget | uses | DashboardPage.useAction (so a failed service action reaches the page ErrorCard)
+ServicesPage | uses | ServiceIconAction (shared with ServicesWidget, so both offer the same five service actions)
+ServicesPage | uses | App.openLogs (View Logs opens the Logs page on that service's log_source)
+ServicesPage | sends | startup services through start_service, which applies a web server's config before starting it
+Inner::run_autostart | applies | each web server named in startup.autostart_services, then starts it (the removed "start the web server" switch is only read once, to seed that list)
 ServicesWidget | lays_out | its rows as a 5-track grid that becomes two lines between lg and xl (controls under the name) so the controls never clip and the name is never truncated away; single line below lg and from xl up
 SiteDialog | uses | CoreClient (get_domain once per trigger, unchanged read dropped — it seeds DomainSettings; both gating reads are deadline-bounded and surface their Diagnostic, and the project id comes from the get_domain answer rather than racing the caller's)
 TerminalComp | uses | TerminalManager

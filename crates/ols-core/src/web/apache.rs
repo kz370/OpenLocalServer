@@ -190,6 +190,47 @@ impl WebServer for Apache {
         out
     }
 
+    /// One vhost for every `localhost/<prefix>` route on this server (§55). Each route
+    /// proxies to the site's own vhost on the same server with the prefix stripped, so
+    /// the prefixed URL is answered by exactly the config that site already has.
+    fn render_path_routes(&self, sites: &[SiteSpec], ports: Ports) -> String {
+        let mut out = String::new();
+        out.push_str(MANAGED_HEADER);
+        out.push_str("# localhost/<prefix> routes. Each is served by that site's own vhost.\n\n");
+        out.push_str(&format!("<VirtualHost 127.0.0.1:{}>\n", ports.http));
+        out.push_str("    ServerName localhost\n");
+        // Without this a bare `/shop` 404s instead of reaching the route below.
+        out.push_str("    Alias / \"/\"\n");
+
+        for site in sites
+            .iter()
+            .filter_map(|s| s.path_prefix.as_deref().map(|p| (s, p)))
+        {
+            let (site, prefix) = site;
+            out.push_str(&format!("\n    # {}\n", site.hostname));
+            out.push_str(&format!("    RedirectMatch 301 ^/{prefix}/?$ /{prefix}/\n"));
+            out.push_str(&format!("    <Location /{prefix}/>\n"));
+            // The trailing slash on the target is what strips the prefix: Apache replaces
+            // the matched path with it, so `/shop/index.php` arrives as `/index.php`.
+            out.push_str(&format!(
+                "        ProxyPass /{prefix}/ http://127.0.0.1:{}/\n",
+                ports.http
+            ));
+            out.push_str(&format!(
+                "        ProxyPassReverse /{prefix}/ http://127.0.0.1:{}/\n",
+                ports.http
+            ));
+            out.push_str(&format!(
+                "        RequestHeader set Host \"{}\"\n",
+                site.hostname
+            ));
+            out.push_str("    </Location>\n");
+        }
+        out.push_str("\n    <Location />\n        Require all denied\n    </Location>\n");
+        out.push_str("</VirtualHost>\n");
+        out
+    }
+
     fn prepare(&self, layout: &ServerLayout) -> std::io::Result<()> {
         std::fs::create_dir_all(layout.prefix.join("conf"))?;
         std::fs::create_dir_all(&layout.logs_dir)?;
@@ -327,6 +368,7 @@ mod tests {
             custom_snippet: None,
             public_domain: None,
             forwarded_tls: false,
+            path_prefix: None,
         }
     }
 

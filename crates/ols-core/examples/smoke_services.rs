@@ -172,6 +172,8 @@ fn main() {
         CoreCommand::CreateDatabase {
             engine: "mariadb".into(),
             name: "smoke_test_db".into(),
+            user: None,
+            password: None,
         },
     );
     println!("[smoke] CREATE DATABASE smoke_test_db succeeded");

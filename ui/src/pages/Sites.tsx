@@ -1,5 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Activity, Check, Code2, Copy, ExternalLink, FolderMinus, FolderOpen, FolderPlus, FolderSearch, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2 } from 'lucide-react'
+import { Activity, Check, Code2, Copy, ExternalLink, FolderMinus, FolderOpen, FolderPlus, FolderSearch, Globe, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
@@ -46,8 +46,13 @@ const GROUPS: { id: Group; label: string; icon: string }[] = [
 const groupOf = (r: Row): Group => r.site?.group ?? 'none'
 
 /** Compact status: coloured dot + short label; full meaning shows on hover. */
-function StatusDot({ site, running }: { site: DomainSummary | null; running: boolean }) {
-  const [label, color, text] = !site
+/** The `localhost/<prefix>` URL for a site that asked for one (§55). The port is the one
+ * its own server binds, so a site pinned to a non-default server is reachable there. */
+function localhostUrl(site: DomainSummary): string {
+  return `http://localhost:${site.http_port ?? 80}/${site.path_prefix}/`
+}
+
+function StatusDot({ site, running }: { site: DomainSummary | null; running: boolean }) {  const [label, color, text] = !site
     ? ['Project only: no domain yet', 'border border-muted-foreground/60 bg-transparent', 'No domain']
     : !site.enabled
       ? ['Disabled', 'bg-warning', 'Disabled']
@@ -390,6 +395,29 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                             >
                               <ExternalLink className="size-3.5" />
                             </Button>
+                            {d.path_prefix && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="size-7 shrink-0 cursor-pointer self-center px-0"
+                                title={
+                                  !d.enabled
+                                    ? 'The site is disabled'
+                                    : !status?.running
+                                      ? 'Start the web server first'
+                                      : `Open localhost/${d.path_prefix}/`
+                                }
+                                aria-label={`Open localhost/${d.path_prefix}`}
+                                disabled={!d.enabled || !status?.running}
+                                onClick={() =>
+                                  run('open-path', () =>
+                                    runCommand({ type: 'open_url', url: localhostUrl(d) }),
+                                  )
+                                }
+                              >
+                                <Globe className="size-3.5" />
+                              </Button>
+                            )}
                             <Button
                               size="sm"
                               variant="ghost"
@@ -413,6 +441,11 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                       {d?.public_domain && (
                         <div className="mt-0.5 text-[11px] text-warning" title={`Public through Cloudflare: ${d.public_domain}`}>
                           Public
+                        </div>
+                      )}
+                      {d?.path_prefix && (
+                        <div className="mt-0.5 font-mono text-[11px] text-muted-foreground" title={`Also served at ${localhostUrl(d)}`}>
+                          /{d.path_prefix}
                         </div>
                       )}
                     </TableCell>

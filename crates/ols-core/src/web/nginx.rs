@@ -156,6 +156,51 @@ impl WebServer for Nginx {
         out
     }
 
+    /// One `server` block for every `localhost/<prefix>` route on this server (§55).
+    ///
+    /// Each route proxies to the site's own vhost on the same server, with the prefix
+    /// stripped and the site's hostname as `Host`. Going through the real vhost means the
+    /// prefixed URL is answered by exactly the config the site already has — PHP pools,
+    /// proxy upstreams, `Advanced` snippets and headers included — instead of a second
+    /// copy of that logic that could drift from it.
+    fn render_path_routes(&self, sites: &[SiteSpec], ports: Ports) -> String {
+        let mut out = String::new();
+        out.push_str(MANAGED_HEADER);
+        out.push_str("# localhost/<prefix> routes for the sites below.\n");
+        out.push_str("# Each one is served by that site's own vhost on this server.\n\n");
+        out.push_str("server {\n");
+        out.push_str(&format!("    listen 127.0.0.1:{};\n", ports.http));
+        out.push_str("    server_name localhost 127.0.0.1;\n");
+
+        for site in sites
+            .iter()
+            .filter_map(|s| s.path_prefix.as_deref().map(|p| (s, p)))
+        {
+            let (site, prefix) = site;
+            out.push('\n');
+            out.push_str(&format!("    # {}\n", site.hostname));
+            // `http://localhost/shop` is a directory, not a page: send it to `shop/`
+            // so the site's own relative links resolve.
+            out.push_str(&format!(
+                "    location = /{prefix} {{ return 301 /{prefix}/; }}\n"
+            ));
+            out.push_str(&format!("    location /{prefix}/ {{\n"));
+            out.push_str(&format!(
+                "        proxy_pass http://127.0.0.1:{}/;\n",
+                ports.http
+            ));
+            out.push_str(&format!(
+                "        proxy_set_header Host {};\n",
+                site.hostname
+            ));
+            out.push_str(&proxy_directives_tail("        ", false));
+            out.push_str("    }\n");
+        }
+        out.push_str("\n    location / { return 404; }\n");
+        out.push_str("}\n");
+        out
+    }
+
     fn prepare(&self, layout: &ServerLayout) -> std::io::Result<()> {
         std::fs::create_dir_all(layout.prefix.join("conf"))?;
         std::fs::create_dir_all(&layout.logs_dir)?;
@@ -272,6 +317,15 @@ fn proxy_directives(upstream: &str, indent: &str, forwarded_tls: bool) -> String
     out.push_str(&format!("{indent}proxy_pass {upstream};\n"));
     out.push_str(&format!("{indent}proxy_http_version 1.1;\n"));
     out.push_str(&format!("{indent}proxy_set_header Host $host;\n"));
+    out.push_str(&proxy_directives_tail(indent, forwarded_tls));
+    out
+}
+
+/// Everything a proxied request needs after its destination and `Host` are set: the
+/// client address, the forwarded-scheme header, WebSocket upgrade and the read timeout.
+/// Shared by the per-site `proxy_pass` and the `localhost/<prefix>` routes (§55).
+fn proxy_directives_tail(indent: &str, forwarded_tls: bool) -> String {
+    let mut out = String::new();
     out.push_str(&format!(
         "{indent}proxy_set_header X-Real-IP $remote_addr;\n"
     ));
@@ -318,6 +372,7 @@ mod tests {
             custom_snippet: None,
             public_domain: None,
             forwarded_tls: false,
+            path_prefix: None,
         }
     }
 
@@ -325,6 +380,40 @@ mod tests {
         http: 80,
         https: 443,
     };
+
+    #[test]
+    fn one_server_block_serves_every_localhost_path_route() {
+        // All these routes share `Host: localhost`, so they cannot be split across files
+        // the way domains are: the first `server_name localhost` on the port would answer
+        // for all of them. One block, one `location` per site.
+        let mut a = site(Backend::Static, false, false);
+        a.path_prefix = Some("shop".into());
+        let mut b = site(Backend::Static, false, false);
+        b.hostname = "api.test".into();
+        b.path_prefix = Some("api".into());
+        let out = Nginx.render_path_routes(&[a, b], PORTS);
+        assert_eq!(out.matches("server {").count(), 1);
+        assert!(out.contains("server_name localhost 127.0.0.1;"));
+        assert!(out.contains("location /shop/ {"));
+        assert!(out.contains("location /api/ {"));
+        // The site's own vhost answers, with the prefix stripped by the trailing slash
+        // on the proxy target and the site named as the Host.
+        assert!(out.contains("proxy_pass http://127.0.0.1:80/;"));
+        assert!(out.contains("proxy_set_header Host shop.test;"));
+        assert!(out.contains("proxy_set_header Host api.test;"));
+        // A bare `/shop` is a folder, not a page.
+        assert!(out.contains("location = /shop { return 301 /shop/; }"));
+        // Anything else under localhost is not a site and must not land on one.
+        assert!(out.contains("location / { return 404; }"));
+    }
+
+    #[test]
+    fn a_site_with_no_path_route_gets_no_location() {
+        // The seed site and any site that never asked for a path must not appear here.
+        let out = Nginx.render_path_routes(&[site(Backend::Static, false, false)], PORTS);
+        assert!(!out.contains("location /shop/"));
+        assert_eq!(out.matches("server {").count(), 1);
+    }
 
     #[test]
     fn php_site_routes_php_to_its_pool_over_https() {

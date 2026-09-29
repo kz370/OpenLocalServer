@@ -5,7 +5,6 @@ import { useEffect, useState } from 'react'
 import { CustomServices } from '@/components/CustomServices'
 import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
 import { ServiceIconAction } from '@/components/ServiceIconAction'
-import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
 import { TechIcon } from '@/components/TechIcon'
 import { Badge } from '@/components/ui/badge'
@@ -46,11 +45,6 @@ export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => v
     const interval = setInterval(refresh, 3000)
     return () => clearInterval(interval)
   }, [])
-
-  async function toggle(service: ServiceStatus) {
-    if (service.running && !(await confirmAction(`Stop ${service.name}? Anything connected to it will be disconnected.`))) return
-    await act(service, service.running ? 'stop' : 'start')
-  }
 
   /** The full per-service suite, same set the Dashboard offers (§ see ServicesWidget).
    * `busy` is keyed `svc:<id>:<action>` so the spinner sits on the control that was
@@ -318,6 +312,9 @@ function ServiceTable({
                     </ServiceIconAction>
                     <ServiceIconAction
                       title={`Restart ${s.name}`}
+                      // Restart is a stop followed by a start, so it is available whether or
+                      // not the service is up right now — the same rule the Dashboard uses.
+                      disabled={false}
                       spinning={busy === `svc:${s.id}:restart`}
                       iconColor="text-amber-400"
                       onClick={() => onAct(s, 'restart')}
