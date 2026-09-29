@@ -518,7 +518,7 @@ impl Inner {
             .unwrap_or_else(|| default.to_string())
     }
 
-    fn default_projects_dir(&self) -> PathBuf {
+    pub(crate) fn default_projects_dir(&self) -> PathBuf {
         if let Some(dir) = self
             .settings
             .lock()
@@ -528,7 +528,11 @@ impl Inner {
             .map(str::trim)
             .filter(|s| !s.is_empty())
         {
-            return PathBuf::from(dir);
+            // The value arrives through the generic `set_setting`, so a folder inside the
+            // app may be stored relative (`sites/shop`) or, from an older build, as the
+            // absolute path the install had at the time. Either way it resolves against
+            // where the app lives now, so moving the install moves this default with it.
+            return self.paths.decode_root(dir);
         }
         self.paths.sites_dir()
     }

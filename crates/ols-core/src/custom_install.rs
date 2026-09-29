@@ -17,7 +17,9 @@ pub struct CustomInstall {
     pub id: String,
     /// A version label for versioned runtimes ("8.1"); empty for single-path tools.
     pub label: String,
-    /// Full path to the executable itself.
+    /// Full path to the executable itself. Persisted relative when it points inside the
+    /// app (a managed runtime under `<install>\runtimes`, say) and absolute otherwise, so
+    /// a moved install keeps its own tools; expanded to a full path on load either way.
     pub path: String,
 }
 
@@ -29,7 +31,14 @@ pub struct CustomInstallStore {
 
 impl CustomInstallStore {
     pub fn load(paths: &AppPaths) -> Result<Self, CoreError> {
-        let entries = crate::db::load_docs(paths, "custom_installs")?;
+        let mut entries: Vec<CustomInstall> = crate::db::load_docs(paths, "custom_installs")?;
+        // A tool inside the app travels with it: a renamed or relocated install must not
+        // leave every pinned runtime pointing at a path that no longer exists, which reads
+        // as "this runtime is not installed" rather than as what happened. A tool the user
+        // installed elsewhere keeps its own path untouched.
+        for e in entries.iter_mut() {
+            e.path = paths.decode_root(&e.path).display().to_string();
+        }
         Ok(Self {
             paths: paths.clone(),
             entries,
@@ -95,12 +104,21 @@ impl CustomInstallStore {
     }
 
     fn persist(&self) -> Result<(), CoreError> {
-        let refs: Vec<(String, &CustomInstall)> = self
+        let rows: Vec<(String, serde_json::Value)> = self
             .entries
             .iter()
-            .map(|e| (format!("{}|{}", e.id, e.label), e))
+            .map(|e| {
+                let mut stored = e.clone();
+                stored.path = self.paths.encode_root(std::path::Path::new(&e.path));
+                // A flat struct of strings and a String always serializes; a failure here
+                // would be a bug in `CustomInstall`, not a condition to report.
+                (
+                    format!("{}|{}", e.id, e.label),
+                    serde_json::to_value(&stored).unwrap_or(serde_json::Value::Null),
+                )
+            })
             .collect();
-        crate::db::save_docs(&self.paths, "custom_installs", &refs)
+        crate::db::save_values(&self.paths, "custom_installs", &rows)
     }
 }
 
@@ -199,6 +217,55 @@ mod tests {
             store.resolve("php", None).is_none(),
             "ambiguous — must not silently pick one"
         );
+    }
+
+    #[test]
+    fn a_tool_inside_the_app_is_stored_relative_and_survives_the_app_moving() {
+        let home = crate::test_support::isolated_home();
+        // A managed runtime the app installed itself, under <root>/runtimes.
+        let exe = home.paths.runtimes_dir().join("php-8.4").join("php.exe");
+        std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
+        std::fs::write(&exe, b"fake").unwrap();
+        {
+            let mut store = CustomInstallStore::load(&home.paths).unwrap();
+            store.set("php", "8.4", exe.to_str().unwrap()).unwrap();
+        }
+        let rows: Vec<CustomInstall> =
+            crate::db::load_docs(&home.paths, "custom_installs").unwrap();
+        assert_eq!(rows[0].path, "data/runtimes/php-8.4/php.exe");
+
+        // The install moved: db and runtimes come along, the old path is gone.
+        let moved = AppPaths::resolve_at(&home.paths.root().with_extension("moved"));
+        moved.ensure_dirs().unwrap();
+        std::fs::copy(home.paths.db_file(), moved.db_file()).unwrap();
+        let moved_exe = moved.runtimes_dir().join("php-8.4").join("php.exe");
+        std::fs::create_dir_all(moved_exe.parent().unwrap()).unwrap();
+        std::fs::rename(&exe, &moved_exe).unwrap();
+
+        let store = CustomInstallStore::load(&moved).unwrap();
+        let found = store.find("php", "8.4").unwrap();
+        assert_eq!(found.path, moved_exe.display().to_string());
+        assert!(
+            PathBuf::from(&found.path).is_file(),
+            "a moved install must not report its own runtime as missing"
+        );
+    }
+
+    #[test]
+    fn a_tool_the_user_installed_elsewhere_keeps_its_own_path() {
+        let home = crate::test_support::isolated_home();
+        let outside = std::env::temp_dir().join(format!("ols-tool-{}.exe", std::process::id()));
+        std::fs::write(&outside, b"fake").unwrap();
+        {
+            let mut store = CustomInstallStore::load(&home.paths).unwrap();
+            store
+                .set("heidisql", "", outside.to_str().unwrap())
+                .unwrap();
+        }
+        let rows: Vec<CustomInstall> =
+            crate::db::load_docs(&home.paths, "custom_installs").unwrap();
+        assert_eq!(rows[0].path, outside.display().to_string());
+        let _ = std::fs::remove_file(&outside);
     }
 
     #[test]

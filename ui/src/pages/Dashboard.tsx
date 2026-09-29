@@ -11,7 +11,7 @@ import type { Page } from '@/components/layout/Sidebar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { type DashboardData, type Diagnostic, type HealthItem, type ServerAvailability, type ServiceStatus, type StartupSettings, type SystemStats, runCommand } from '@/core'
+import { type DashboardData, type Diagnostic, type HealthItem, type ServerAvailability, type ServiceStatus, type SystemStats, runCommand } from '@/core'
 import { formatBytes, useAction, usePoll } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 import { waitForService } from '@/lib/wait'
@@ -24,7 +24,6 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
   const [diagToken, setDiagToken] = useState(0)
   const [stats, setStats] = useState<SystemStats | null>(null)
   const [accessLines, setAccessLines] = useState<string[]>([])
-  const [startup, setStartup] = useState<StartupSettings | null>(null)
   const { busy, error, setError, run } = useAction()
 
   usePoll(async () => {
@@ -53,12 +52,6 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
     if (r?.type === 'log_lines') setAccessLines(r.lines)
   }, 5000)
 
-  // Start/Stop all acts only on auto-startup set (Settings → Startup).
-  usePoll(async () => {
-    const r = await runCommand({ type: 'get_startup_settings' }).catch(() => null)
-    if (r?.type === 'startup') setStartup(r.settings)
-  }, 5000)
-
   const refresh = async () => {
     const res = await runCommand({ type: 'get_dashboard' })
     if (res.type === 'dashboard') setData(res.data)
@@ -66,14 +59,21 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
 
   const web = data?.web
   const runningServices = data?.services.filter((s) => s.running) ?? []
-  const autoIds = startup?.autostart_services ?? []
-  const autoRunning = runningServices.filter((s) => autoIds.includes(s.id))
-  const autoStopped = (data?.services ?? []).filter((s) => s.installed && !s.running && autoIds.includes(s.id))
-  // A web server in the autostart list is a service like any other here, so Start/Stop all
-  // covers it with no second switch: `start_service` already renders and reloads a web
-  // server's site config before binding its ports.
-  const hasAutoRunning = autoRunning.length > 0
-  const autoConfigured = autoIds.length > 0
+  const stoppable = (data?.services ?? []).filter((s) => s.installed && !s.running)
+  // Both halves of this button answer "what is true now", never "what is in a list in
+  // Settings". It used to key off `startup.autostart_services`, which is empty on a default
+  // install: the button was then disabled for good with nothing running and nothing wrong,
+  // and a service started by hand — Mailpit is the usual one, installed by default and
+  // almost never in that list — still read "Start all". Neither reading matched the
+  // Services card two inches below it.
+  //
+  // It is also one control, so its two actions are one pair. "Stop all" is `stop_all`,
+  // which stops every service, worker, tunnel and the web stack, so "Start all" starts
+  // every installed service rather than only the autostart subset — otherwise pressing
+  // Stop all and then Start all left a different set running than before.
+  // The web stack counts as running on its own: PHP pools and the DNS server are not
+  // services in the list, and Stop all stops them too.
+  const hasRunning = runningServices.length > 0 || web?.running === true
   const problems = data?.health.filter((h) => h.status !== 'ok') ?? []
 
   return (
@@ -104,17 +104,19 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
             {busy === 'apply' ? <Spinner /> : <Play />} {busy === 'apply' ? (web?.running ? 'Applying…' : 'Starting…') : web?.running ? 'Re-apply web config' : 'Start web server'}
           </Button>
           <Button
-            variant={hasAutoRunning ? 'secondary' : 'default'}
+            variant={hasRunning ? 'secondary' : 'default'}
             size="sm"
-            className={`h-8 min-w-28 rounded-md px-3 text-[13px] font-medium [&_svg]:size-3.5 ${hasAutoRunning ? 'bg-destructive/10 text-destructive hover:bg-destructive/15 hover:text-destructive dark:bg-destructive/[0.18] dark:text-red-300/90 dark:hover:bg-destructive/25' : ''}`}
-            disabled={busy !== null || !autoConfigured}
+            className={`h-8 min-w-28 rounded-md px-3 text-[13px] font-medium [&_svg]:size-3.5 ${hasRunning ? 'bg-destructive/10 text-destructive hover:bg-destructive/15 hover:text-destructive dark:bg-destructive/[0.18] dark:text-red-300/90 dark:hover:bg-destructive/25' : ''}`}
+            disabled={busy !== null || (!hasRunning && stoppable.length === 0)}
             title={
-              autoConfigured
+              hasRunning
                 ? 'Stop every running service, worker, tunnel and the web stack'
-                : 'No auto-startup services set (Settings → Startup)'
+                : stoppable.length > 0
+                  ? `Start ${stoppable.length} stopped service${stoppable.length === 1 ? '' : 's'}`
+                  : 'Every installed service is already running'
             }
             onClick={() =>
-              hasAutoRunning
+              hasRunning
                 ? run('stop-all', async () => {
                     // The same command the tray's Stop all uses, so "Stop all" means one
                     // thing everywhere: everything stops, and the status mark can reach
@@ -132,8 +134,15 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
                     setDiagToken((t) => t + 1)
                   })
                 : run('start-all', async () => {
-                    await Promise.all(autoStopped.map((service) => runCommand({ type: 'start_service', id: service.id })))
-                    await Promise.all(autoStopped.map((service) => waitForService(service.id, 'running')))
+                    // Re-read the service list first: `stoppable` is one poll old, and a
+                    // service started by hand since then must not be started twice.
+                    const current = await runCommand({ type: 'get_dashboard' })
+                    if (current.type === 'dashboard') setData(current.data)
+                    const targets = (current.type === 'dashboard' ? current.data.services : []).filter(
+                      (s) => s.installed && !s.running,
+                    )
+                    await Promise.all(targets.map((service) => runCommand({ type: 'start_service', id: service.id })))
+                    await Promise.all(targets.map((service) => waitForService(service.id, 'running')))
                     await refresh()
                     setDiagToken((t) => t + 1)
                   })
@@ -141,12 +150,12 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
           >
             {busy === 'stop-all' || busy === 'start-all' ? (
               <Spinner />
-            ) : hasAutoRunning ? (
+            ) : hasRunning ? (
               <StopIcon />
             ) : (
               <Play />
             )}{' '}
-            {busy === 'stop-all' ? 'Stopping all…' : busy === 'start-all' ? 'Starting all…' : hasAutoRunning ? 'Stop all' : 'Start all'}
+            {busy === 'stop-all' ? 'Stopping all…' : busy === 'start-all' ? 'Starting all…' : hasRunning ? 'Stop all' : 'Start all'}
           </Button>
         </div>
       </div>

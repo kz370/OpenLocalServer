@@ -1689,6 +1689,14 @@ impl Core {
                     Some(serde_json::Value::String(
                         i.sites_dir().display().to_string(),
                     ))
+                } else if key == "quickapps.projects_dir" {
+                    // Answer with the folder it resolves to, never the stored form: the
+                    // UI shows this value in a text input and offers it as the parent for
+                    // a new project, so a stored `sites/shop` would be shown to the user
+                    // as if it were a path on disk.
+                    Some(serde_json::Value::String(
+                        i.default_projects_dir().display().to_string(),
+                    ))
                 } else {
                     i.settings.lock().unwrap().get(&key).cloned()
                 };
@@ -1717,6 +1725,19 @@ impl Core {
                         )));
                     }
                 }
+                // A default projects folder inside the app is stored relative, so a
+                // renamed or moved install keeps the same default. A blank value still
+                // means "unset" and falls back to the sites folder, so it is left alone.
+                let value = if key == "quickapps.projects_dir" {
+                    match value.as_str() {
+                        Some(dir) if !dir.trim().is_empty() => serde_json::Value::String(
+                            i.paths.encode_root(std::path::Path::new(dir.trim())),
+                        ),
+                        _ => value,
+                    }
+                } else {
+                    value
+                };
                 i.settings.lock().unwrap().set(key.clone(), value.clone())?;
                 if let (Some(id), Some(version)) = (
                     key.strip_prefix("runtime.")
@@ -4642,6 +4663,68 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    /// The default projects folder is the one setting that points inside the app, so it is
+    /// stored relative. The UI must still only ever see a real path: it renders this value
+    /// in a text input and offers it as the parent folder for a new project.
+    #[test]
+    fn a_projects_dir_inside_the_app_is_stored_relative_and_answered_absolute() {
+        let (core, home) = test_core();
+        let wanted = home.paths.sites_dir().join("work");
+        std::fs::create_dir_all(&wanted).unwrap();
+
+        core.dispatch(CoreCommand::SetSetting {
+            key: "quickapps.projects_dir".into(),
+            value: serde_json::Value::String(wanted.display().to_string()),
+        })
+        .unwrap();
+
+        // On disk, relative. Read past the service, since the command layer decodes it.
+        let stored = crate::db::load_settings(&home.paths)
+            .unwrap()
+            .get("quickapps.projects_dir")
+            .and_then(|v| v.as_str().map(str::to_string))
+            .unwrap_or_default();
+        assert_eq!(stored, "sites/work");
+
+        // Through the command the UI uses, absolute.
+        let CoreResponse::Setting { value, .. } = core
+            .dispatch(CoreCommand::GetSetting {
+                key: "quickapps.projects_dir".into(),
+            })
+            .unwrap()
+        else {
+            panic!("expected a setting response");
+        };
+        assert_eq!(
+            value.and_then(|v| v.as_str().map(str::to_string)),
+            Some(wanted.display().to_string())
+        );
+    }
+
+    /// A blank value must keep meaning "unset, use the sites folder" — it is the default,
+    /// and the field is a text input the user clears.
+    #[test]
+    fn a_blank_projects_dir_still_falls_back_to_the_sites_folder() {
+        let (core, home) = test_core();
+        core.dispatch(CoreCommand::SetSetting {
+            key: "quickapps.projects_dir".into(),
+            value: serde_json::Value::String("   ".into()),
+        })
+        .unwrap();
+        let CoreResponse::Setting { value, .. } = core
+            .dispatch(CoreCommand::GetSetting {
+                key: "quickapps.projects_dir".into(),
+            })
+            .unwrap()
+        else {
+            panic!("expected a setting response");
+        };
+        assert_eq!(
+            value.and_then(|v| v.as_str().map(str::to_string)),
+            Some(home.paths.sites_dir().display().to_string())
+        );
     }
 
     #[test]

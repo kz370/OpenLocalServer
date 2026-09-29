@@ -248,13 +248,17 @@ impl AppPaths {
     /// The folder a stored root points at, with an app-relative one re-anchored to where
     /// the app lives now.
     pub fn decode_root(&self, stored: &str) -> PathBuf {
+        // The stored form uses forward slashes so it is readable and identical on every
+        // platform; joining one onto a Windows base would otherwise leave a path spelled
+        // `C:\app/data/runtimes/php\php.exe` that still works but reads as two different
+        // folders to a user and to anything comparing the string.
         let rest = stored
             .strip_prefix(Self::SITES_PREFIX)
-            .map(|r| self.sites_dir().join(r))
+            .map(|r| join_relative(&self.sites_dir(), r))
             .or_else(|| {
                 stored
                     .strip_prefix(Self::DATA_PREFIX)
-                    .map(|r| self.root.join(r))
+                    .map(|r| join_relative(&self.root, r))
             });
         match rest {
             Some(p) => p,
@@ -291,13 +295,23 @@ impl AppPaths {
             return original;
         };
         for base in [self.sites_dir(), self.data_dir()] {
-            let candidate = base.join(&tail);
+            let candidate = join_relative(&base, &tail);
             if candidate.is_dir() {
                 return candidate;
             }
         }
         original
     }
+}
+
+/// Appends a stored, forward-slash-separated relative path to `base`, one segment at a
+/// time. Joining the whole string at once would leave `C:\app/data/runtimes/php\php.exe`
+/// on Windows: it still resolves, but a path spelled with two different separators reads
+/// as two folders to a user and to anything comparing the string.
+fn join_relative(base: &Path, rel: &str) -> PathBuf {
+    rel.split('/')
+        .filter(|s| !s.is_empty())
+        .fold(base.to_path_buf(), |p, seg| p.join(seg))
 }
 
 /// `path` relative to `base`, as forward slashes, when it really is inside it.

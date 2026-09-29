@@ -40,3 +40,4 @@ release/*
 
 # Isolated worktrees (sdd)
 .worktrees/
+.kilo/kilo.jsonc
