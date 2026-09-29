@@ -88,14 +88,34 @@ pub fn service_available() -> bool {
     via_service(&["version".to_string()]).is_some_and(|r| r.is_ok())
 }
 
-/// Sends one command to the helper service. `None` when the service isn't there.
+/// The version the resident helper service is running.
 ///
-/// The reply is read with a deadline: a helper that accepted the connection and then
-/// wedged (or was killed mid-request) used to block here forever. That froze the caller —
-/// `apply_web` holds the web state lock across this — so every later command queued behind
-/// it and the whole app went blank. A helper that cannot answer in time is treated as
-/// unavailable, and the caller falls back to running the change itself.
-fn via_service(args: &[String]) -> Option<Result<(), String>> {
+/// Installing the service *copies* the helper into an admin-only folder, and nothing
+/// re-copies it afterwards. So an app update — or an install moved to a different folder —
+/// leaves the service running whatever version was current when it was first installed, and
+/// the app goes on talking to an elevated half it no longer matches. The service answers
+/// `version` over the pipe for exactly this question.
+pub fn service_version() -> Option<String> {
+    let reply = service_reply(&["version".to_string()])?;
+    if reply.code != 0 {
+        return None;
+    }
+    (!reply.message.is_empty()).then_some(reply.message)
+}
+
+/// Whether the installed service is out of date with the app it is serving.
+///
+/// `None` when the service is not answering at all: that is a missing service, which the
+/// UI already offers to install, and reporting it as "out of date" would send the user
+/// looking for a version difference that is not the problem.
+pub fn service_is_stale() -> Option<bool> {
+    service_version().map(|v| v != env!("CARGO_PKG_VERSION"))
+}
+
+/// One request to the service pipe and the reply it parsed, with the same deadline
+/// `via_service` uses. Split out because the version query needs the message, which
+/// `via_service` deliberately drops.
+fn service_reply(args: &[String]) -> Option<ServiceReply> {
     use std::io::{Read, Write};
     const REPLY_TIMEOUT: Duration = Duration::from_secs(10);
     let mut pipe = std::fs::OpenOptions::new()
@@ -125,13 +145,37 @@ fn via_service(args: &[String]) -> Option<Result<(), String>> {
         }
     }
     let v: serde_json::Value = serde_json::from_slice(reply.split(|b| *b == b'\n').next()?).ok()?;
-    let code = v.get("code").and_then(|c| c.as_i64()).unwrap_or(1);
-    let message = v
-        .get("message")
-        .and_then(|m| m.as_str())
-        .unwrap_or_default()
-        .to_string();
-    Some(if code == 0 { Ok(()) } else { Err(message) })
+    Some(ServiceReply {
+        code: v.get("code").and_then(|c| c.as_i64()).unwrap_or(1),
+        message: v
+            .get("message")
+            .and_then(|m| m.as_str())
+            .unwrap_or_default()
+            .to_string(),
+    })
+}
+
+/// What the service answered: `0` is success, and `message` carries either the version
+/// (for `version`) or the reason (for a real command).
+struct ServiceReply {
+    code: i64,
+    message: String,
+}
+
+/// Sends one command to the helper service. `None` when the service isn't there.
+///
+/// The reply is read with a deadline: a helper that accepted the connection and then
+/// wedged (or was killed mid-request) used to block here forever. That froze the caller —
+/// `apply_web` holds the web state lock across this — so every later command queued behind
+/// it and the whole app went blank. A helper that cannot answer in time is treated as
+/// unavailable, and the caller falls back to running the change itself.
+fn via_service(args: &[String]) -> Option<Result<(), String>> {
+    let reply = service_reply(args)?;
+    Some(if reply.code == 0 {
+        Ok(())
+    } else {
+        Err(reply.message)
+    })
 }
 
 #[cfg(windows)]

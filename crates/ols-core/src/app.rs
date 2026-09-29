@@ -3370,6 +3370,37 @@ fn registry_run_value() -> Option<String> {
         .then(|| String::from_utf8_lossy(&out.stdout).to_string())
 }
 
+/// The executable the startup entry names, or `None` when there is no entry.
+///
+/// `reg query` prints a table, not a bare value, so the path is the tail of the value
+/// row: everything after the type column. Anything that does not look like a path
+/// returns `None` rather than a guess — a startup entry this app did not write is not
+/// ours to interpret, and a wrong guess here would rewrite a working entry.
+#[cfg(windows)]
+fn registry_run_target() -> Option<String> {
+    parse_run_target(&registry_run_value()?)
+}
+
+/// Pulls the executable path out of a `reg query` value row.
+///
+/// Windows paths contain spaces, so the value is written quoted; but whether the quote
+/// characters survive into the stored value depends on how `reg add` was given the
+/// argument, so both spellings are accepted. Splitting on whitespace instead would
+/// truncate `C:\Program Files\Open Local Server\…` to `C:\Program`.
+fn parse_run_target(blob: &str) -> Option<String> {
+    let line = blob.lines().find(|l| l.contains(REG_VALUE))?;
+    let row = line.split_once(REG_VALUE)?.1.trim();
+    if let Some(quoted) = row
+        .split_once('"')
+        .and_then(|(_, rest)| rest.split_once('"'))
+    {
+        return (!quoted.0.is_empty()).then(|| quoted.0.to_string());
+    }
+    // Unquoted: everything after the type column is the value, spaces included.
+    let value = row.strip_prefix("REG_SZ")?.trim();
+    (!value.is_empty()).then(|| value.to_string())
+}
+
 #[cfg(windows)]
 fn set_start_with_windows(enabled: bool) -> Result<(), String> {
     let mut cmd = std::process::Command::new("reg");
@@ -3423,23 +3454,38 @@ pub fn should_start_hidden(start_minimized: bool, args: impl IntoIterator<Item =
     start_minimized || args.into_iter().any(|a| a == FORCE_MINIMIZED_ARG)
 }
 
-/// Rewrites the startup entry when it is stale. An entry written by an earlier
-/// build still carries `--minimized`, which would hide the window even with the
-/// preference off — the opposite of what the user then chose. The entry itself is
-/// left alone when it is missing, so a build without autostart is not changed
-/// behind the user's back. Failures are logged, never fatal: a bad registry value
-/// must not stop the app from starting.
+/// Rewrites the startup entry when it is stale. Two kinds of staleness, both silent
+/// failures the user would otherwise only notice as "it never starts by itself".
+///
+/// 1. An entry written by an earlier build carries `--minimized`, which would hide the
+///    window even with the preference off — the opposite of what the user then chose.
+/// 2. An entry whose executable no longer exists, because the install folder was renamed
+///    or moved. `set_start_with_windows` bakes the absolute exe path into the value, so
+///    the entry survives a move as a valid-looking command pointing at nothing. The
+///    rewrite points it at the copy that is actually running, which is the only one the
+///    user can have meant.
+///
+/// A missing entry is left alone, so a build without autostart is not turned on behind
+/// the user's back. Failures are logged, never fatal: a bad registry value must not stop
+/// the app from starting.
 pub fn migrate_startup_entry() {
     #[cfg(windows)]
     {
         let Some(current) = registry_run_value() else {
             return;
         };
-        if !current.contains("--minimized") {
+        let dead = registry_run_target().filter(|target| !Path::new(target).exists());
+        if !current.contains("--minimized") && dead.is_none() {
             return;
         }
+        if let Some(target) = dead.as_deref() {
+            tracing::info!(
+                target,
+                "the startup entry points at an executable that is gone; repointing it"
+            );
+        }
         match set_start_with_windows(true) {
-            Ok(()) => tracing::info!("rewrote the startup entry without the old --minimized flag"),
+            Ok(()) => tracing::info!("rewrote the startup entry to the running executable"),
             Err(e) => tracing::warn!(error = %e, "could not rewrite the startup entry"),
         }
     }
@@ -3990,6 +4036,48 @@ mod startup_visibility_tests {
                 !should_start_hidden(false, args(&["app.exe", other])),
                 "{other} hid the window"
             );
+        }
+    }
+
+    /// The startup entry's path has to survive the spaces in a Windows install folder,
+    /// because that folder is exactly what a user renames or moves. Splitting the row on
+    /// whitespace would truncate `C:\Program Files\…` to `C:\Program` and the move check
+    /// would then test a path that never existed — always "gone", rewriting the entry on
+    /// every launch.
+    #[test]
+    fn the_startup_entry_path_keeps_its_spaces() {
+        let blob = "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\r\n\
+                    OpenLocalServer    REG_SZ    \"C:\\Program Files\\Open Local Server\\Open Local Server.exe\"\r\n";
+        assert_eq!(
+            parse_run_target(blob).as_deref(),
+            Some(r"C:\Program Files\Open Local Server\Open Local Server.exe")
+        );
+    }
+
+    /// `reg add` may or may not keep the quote characters in the stored value depending
+    /// on how it was invoked, so both spellings have to read back the same path.
+    #[test]
+    fn an_unquoted_startup_entry_is_read_too() {
+        let blob = "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\r\n\
+                    OpenLocalServer    REG_SZ    C:\\Tools\\OLS\\Open Local Server.exe\r\n";
+        assert_eq!(
+            parse_run_target(blob).as_deref(),
+            Some(r"C:\Tools\OLS\Open Local Server.exe")
+        );
+    }
+
+    /// An entry this app did not write must be left alone. Guessing a path here would
+    /// rewrite somebody else's working startup entry, so anything unrecognisable is None.
+    #[test]
+    fn an_unrecognisable_startup_entry_yields_nothing() {
+        for blob in [
+            "",
+            "ERROR: The system was unable to find the specified registry key or value.\r\n",
+            "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\r\n",
+            "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\r\n\
+             OpenLocalServer    REG_SZ\r\n",
+        ] {
+            assert_eq!(parse_run_target(blob), None, "{blob:?}");
         }
     }
 

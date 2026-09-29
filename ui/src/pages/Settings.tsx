@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SettingRow, SwitchRow, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
-import { type EditorInfo, type ServiceStatus, type StartupSettings, runCommand } from '@/core'
+import { type EditorInfo, type HelperService, type ServiceStatus, type StartupSettings, runCommand } from '@/core'
 import { confirmThen } from '@/lib/confirm'
 import { useAction } from '@/lib/hooks'
 import { invalidateDefaultTldCache } from '@/lib/sites'
@@ -58,7 +58,7 @@ export function SettingsPage() {
   const [rootFolders, setRootFolders] = useState<string[]>([])
   const [defaultTld, setDefaultTld] = useState('local')
   const [customTld, setCustomTld] = useState('')
-  const [helper, setHelper] = useState<boolean | null>(null)
+  const [helper, setHelper] = useState<HelperService | null>(null)
   const [version, setVersion] = useState('')
   const [saved, setSaved] = useState<string | null>(null)
   const [section, setSection] = useState<Section>('general')
@@ -69,7 +69,7 @@ export function SettingsPage() {
     runCommand({ type: 'list_services' }).then((r) => r.type === 'services' && setServices(r.services))
     runCommand({ type: 'ping' }).then((r) => r.type === 'pong' && setVersion(r.version))
     runCommand({ type: 'list_editors' }).then((r) => r.type === 'editors' && setEditors(r.editors))
-    runCommand({ type: 'get_helper_service' }).then((r) => r.type === 'helper_service' && setHelper(r.installed))
+    runCommand({ type: 'get_helper_service' }).then((r) => r.type === 'helper_service' && setHelper(r))
     void Promise.all([getString('editor'), getString('editor.command')]).then(([id, cmd]) => {
       setEditor(cmd)
       setEditorId(cmd ? 'custom' : id || 'vscode')
@@ -167,22 +167,27 @@ export function SettingsPage() {
     <div className="flex items-center gap-3">
       {helper === null ? (
         <Badge variant="secondary">Checking…</Badge>
-      ) : helper ? (
+      ) : helper.outdated ? (
+        <Badge variant="warning">Installed · version {helper.version} (app is {version})</Badge>
+      ) : helper.installed ? (
         <Badge variant="success">Installed · no more prompts</Badge>
       ) : (
         <Badge variant="outline">Not installed</Badge>
       )}
-      {helper === false && (
-        <Button size="sm" disabled={busy !== null} onClick={() => run('helper', async () => { const r = await runCommand({ type: 'install_helper_service' }); if (r.type === 'helper_service') setHelper(r.installed) })}>
-          {busy === 'helper' ? <Spinner /> : <ShieldCheck />} Install (asks once)
+      {/* The service runs a *copy* of the helper, and nothing refreshes that copy on an
+          update or a move, so an out-of-date one is offered the same reinstall as a
+          missing one — it is the same fix and the same single prompt. */}
+      {helper !== null && (!helper.installed || helper.outdated) && (
+        <Button size="sm" disabled={busy !== null} onClick={() => run('helper', async () => { const r = await runCommand({ type: 'install_helper_service' }); if (r.type === 'helper_service') setHelper(r) })}>
+          {busy === 'helper' ? <Spinner /> : <ShieldCheck />} {helper.outdated ? 'Update (asks once)' : 'Install (asks once)'}
         </Button>
       )}
-      {helper && (
+      {helper?.installed && (
         <Button
           size="sm"
           variant="ghost"
           disabled={busy !== null}
-          onClick={() => confirmThen('Remove the administrator helper?\nWindows will ask for approval again on every domain change.', () => run('helper', async () => { const r = await runCommand({ type: 'uninstall_helper_service' }); if (r.type === 'helper_service') setHelper(r.installed) }))}
+          onClick={() => confirmThen('Remove the administrator helper?\nWindows will ask for approval again on every domain change.', () => run('helper', async () => { const r = await runCommand({ type: 'uninstall_helper_service' }); if (r.type === 'helper_service') setHelper(r) }))}
         >
           {busy === 'helper' ? <Spinner /> : null} Remove
         </Button>

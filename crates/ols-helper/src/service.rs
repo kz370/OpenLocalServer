@@ -29,10 +29,29 @@ use windows_service::{define_windows_service, service_dispatcher};
 pub const SERVICE_NAME: &str = "OpenLocalServerHelper";
 pub const PIPE_NAME: &str = r"\\.\pipe\OpenLocalServerHelper";
 
-/// Where the installed service binary lives: admin-only, unlike the app's own folder.
+/// Where the installed service binary lives: an admin-only folder, never the app's own.
+///
+/// The copy is deliberate. A LocalSystem service that ran the app's own `ols-helper.exe`
+/// would be a privilege escalation: a portable install sits in a folder the signed-in user
+/// can write, and anything they can replace there the service would execute as SYSTEM. So
+/// the elevated half is a separate copy in a folder only an administrator can write.
+///
+/// Because it is a copy, nothing re-copies it when the app is updated or moved, so the two
+/// can drift apart; the app asks the service which version it is over the pipe
+/// (`elevate::service_version`) and offers a reinstall when they differ.
+///
+/// The location is resolved rather than spelled out. `C:\Program Files` is only the last
+/// resort: on a 64-bit Windows a 32-bit process sees `ProgramFiles` redirected to
+/// `ProgramFiles (x86)`, and on a machine where Program Files has been moved to another
+/// drive both names point nowhere. `ProgramW6432` is the un-redirected one.
 fn install_dir() -> PathBuf {
-    let root = std::env::var_os("ProgramFiles")
-        .map(PathBuf::from)
+    let root = ["ProgramW6432", "ProgramFiles", "ProgramFiles(x86)"]
+        .iter()
+        .find_map(|k| {
+            std::env::var_os(k)
+                .filter(|v| !v.is_empty())
+                .map(PathBuf::from)
+        })
         .unwrap_or_else(|| PathBuf::from(r"C:\Program Files"));
     root.join("OpenLocalServer")
 }
@@ -328,6 +347,46 @@ mod pipe {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The elevated copy must not land somewhere a 32-bit process cannot see, nor be
+    /// spelled out literally. A 32-bit build reading `ProgramFiles` gets
+    /// `ProgramFiles (x86)` redirected at it, so on 64-bit Windows the copy would go to a
+    /// different tree than the one the 64-bit service manager would be told about.
+    #[test]
+    fn the_install_folder_follows_program_files_including_the_unredirected_one() {
+        let dir = install_dir();
+        assert_eq!(
+            dir.file_name().and_then(|n| n.to_str()),
+            Some("OpenLocalServer")
+        );
+        let parent = dir.parent().expect("a parent folder").display().to_string();
+        if std::env::var_os("ProgramW6432").is_some() {
+            assert!(
+                parent.contains("Program Files"),
+                "expected the 64-bit Program Files, got {parent}"
+            );
+            assert!(
+                !parent.contains("(x86)"),
+                "a 32-bit process was redirected into Program Files (x86): {parent}"
+            );
+        }
+    }
+
+    /// The folder has to be one only an administrator can write: a LocalSystem service
+    /// running a binary out of a user-writable folder is a privilege escalation. This is
+    /// the reason the helper is copied at all, so it is worth a test that names it.
+    #[test]
+    fn the_install_folder_is_not_the_apps_own_folder() {
+        let dir = install_dir();
+        assert_ne!(
+            dir,
+            std::env::current_exe()
+                .ok()
+                .and_then(|e| e.parent().map(|p| p.to_path_buf()))
+                .unwrap_or_default(),
+            "the service must not run the app's own copy"
+        );
+    }
 
     #[test]
     fn pipe_round_trip_answers_version_and_rejects_bad_commands() {

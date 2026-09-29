@@ -84,6 +84,8 @@ Sidebar | uses | CoreClient (list_tunnels)
 LoadTestRunner | uses | ProcessSupervisor
 DaemonRunner | uses | ScheduleStore ticker
 HelperService | uses | HelperMain execute
+TauriApp | asks | HelperService for its `version` over the pipe, so an updated or moved app can see that the elevated half it is about to call is an older copy (the copy is only refreshed by a reinstall)
+Inner | rewrites | the Windows startup entry when its executable no longer exists, pointing it at the running copy; a missing entry is never created
 TauriApp | depends_on | ols-helper (install/service)
 TauriApp | uses | ServiceManager.list (running/stopped half of the status mark, includes the web servers)
 TauriApp | uses | ProcessSupervisor.stop_all_and_wait (inside CoreCommand::StopAll: the sweep that guarantees "Stop all" leaves nothing running, so the mark can actually reach red)

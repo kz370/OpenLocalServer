@@ -1385,6 +1385,13 @@ pub enum CoreResponse {
     },
     HelperService {
         installed: bool,
+        /// The version the resident service reports, when it answers.
+        version: Option<String>,
+        /// The service is running a different version than this app. The service is a
+        /// *copy* of the helper in an admin-only folder, and nothing re-copies it when the
+        /// app is updated or moved, so the two drift apart silently. `None` when the
+        /// service is not answering, which is "not installed", not "out of date".
+        outdated: Option<bool>,
     },
     SystemStats {
         stats: Box<crate::monitor::SystemStats>,
@@ -1622,6 +1629,20 @@ pub enum CoreResponse {
         steps: Vec<crate::repair::RepairStep>,
     },
     // @@responses-end
+}
+
+/// The admin helper service's state, asked once. `installed` and `outdated` are asked
+/// together because both come from the same pipe round trip, and two calls could disagree:
+/// the service could stop between them, leaving the card saying "installed" and "out of
+/// date" for a service that is no longer there.
+fn helper_service_status() -> CoreResponse {
+    let version = crate::elevate::service_version();
+    let outdated = version.as_deref().map(|v| v != env!("CARGO_PKG_VERSION"));
+    CoreResponse::HelperService {
+        installed: version.is_some(),
+        outdated,
+        version,
+    }
 }
 
 /// A cheap handle onto the shared application state. Cloning shares everything.
@@ -2844,20 +2865,14 @@ impl Core {
             C::GetMigrationProgress => Ok(R::MigrationProgress {
                 progress: i.migration.snapshot(),
             }),
-            C::GetHelperService => Ok(R::HelperService {
-                installed: crate::elevate::service_available(),
-            }),
+            C::GetHelperService => Ok(helper_service_status()),
             C::InstallHelperService => {
                 crate::elevate::install_service().map_err(CoreError::ServiceError)?;
-                Ok(R::HelperService {
-                    installed: crate::elevate::service_available(),
-                })
+                Ok(helper_service_status())
             }
             C::UninstallHelperService => {
                 crate::elevate::uninstall_service().map_err(CoreError::ServiceError)?;
-                Ok(R::HelperService {
-                    installed: crate::elevate::service_available(),
-                })
+                Ok(helper_service_status())
             }
 
             // ---- Stage 11

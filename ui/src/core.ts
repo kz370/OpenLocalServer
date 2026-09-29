@@ -597,6 +597,18 @@ export interface StartupSettings {
   close_to_tray: boolean
 }
 
+/**
+ * The resident administrator helper. It runs a *copy* of `ols-helper` in an admin-only
+ * folder, so it can be older than the app it serves after an update or a move.
+ * `outdated: null` means the service is not answering, which is "not installed" rather
+ * than "out of date" — the two need different words on screen.
+ */
+export interface HelperService {
+  installed: boolean
+  version: string | null
+  outdated: boolean | null
+}
+
 export type CoreCommand =
   | { type: 'ping' }
   | { type: 'get_setting'; key: string }
@@ -987,7 +999,7 @@ export type CoreResponse =
   | { type: 'startup'; settings: StartupSettings }
   | { type: 'editors'; editors: EditorInfo[] }
   | { type: 'count'; count: number }
-  | { type: 'helper_service'; installed: boolean }
+  | { type: 'helper_service'; installed: boolean; version: string | null; outdated: boolean | null }
   | { type: 'system_stats'; stats: SystemStats }
   | { type: 'migration_sources'; sources: MigrationSource[] }
   | { type: 'migrated'; results: MigratedDb[] }
