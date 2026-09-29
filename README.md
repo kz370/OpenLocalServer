@@ -111,6 +111,22 @@
 - **Exposure confirmation**, optional password, public badge, one-click stop.
 - **Traffic inspector:** forwarding proxy, redacted log (500 cap), replay, webhook tester.
 
+**Provider binaries are found, not installed.** Put the program on `PATH` or in a
+known location before starting a tunnel:
+
+```powershell
+winget install --id Cloudflare.cloudflared   # cloudflared -> <prefix>.trycloudflare.com
+winget install --id ngrok.ngrok               # ngrok     -> needs an authtoken
+```
+
+- Searched: anything on `PATH`, plus `C:\Program Files\cloudflared\` and
+  `C:\Program Files (x86)\cloudflared\`.
+- ngrok additionally needs its authtoken saved in the app (Tunnels → ngrok →
+  token); it is kept in Windows Credential Manager, never in a file or log.
+- The inspector captures normal HTTP requests only. WebSocket upgrades and
+  streamed/chunked responses pass through without being logged, replayed or fed
+  to the webhook tester.
+
 ### 🤖 CLI, API & Automation
 
 - **CLI (`ols`):** `setup [--dry-run] | doctor | repair | status | start | stop`, plus `project | runtime | service | tunnel | worker | snapshot | quick-command | search`; background **daemon** keeps working with GUI closed.
