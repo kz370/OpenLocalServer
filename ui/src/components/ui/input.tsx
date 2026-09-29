@@ -37,12 +37,20 @@ export interface NumberInputProps extends Omit<React.InputHTMLAttributes<HTMLInp
  * means the same affordance is always visible, on every platform.
  */
 const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
-  ({ className, value, onChange, min, max, step = 1, label = 'value', id, disabled, ...props }, ref) => {    // The field keeps its own text while focused so a half-typed number is not
+  ({ className, value, onChange, min, max, step = 1, label = 'value', id, disabled, ...props }, ref) => {
+    // The field keeps its own text while focused so a half-typed number is not
     // rewritten under the cursor; the number is parsed on every keystroke.
     const [text, setText] = React.useState(value === null ? '' : String(value))
     const [editing, setEditing] = React.useState(false)
+    // Set by the stepper (arrow keys and the chevron buttons). The field stays
+    // focused across a step, so without this the props change lands but the text
+    // is left behind and the box shows the old number until blur.
+    const stepped = React.useRef(false)
     React.useEffect(() => {
-      if (!editing) setText(value === null ? '' : String(value))
+      if (!editing || stepped.current) {
+        stepped.current = false
+        setText(value === null ? '' : String(value))
+      }
     }, [value, editing])
 
     const clamp = (n: number) => Math.min(max ?? Infinity, Math.max(min ?? -Infinity, n))
@@ -60,8 +68,14 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
 
     const bump = (dir: 1 | -1) => {
       if (disabled) return
-      const base = value ?? (min ?? 0)
-      onChange(clamp(base + dir * step))
+      // Step from the number on screen, so the text, the value and the stepper
+      // never disagree while a half-typed number sits in the field.
+      const shown = text.trim() === '' || text.trim() === '-' ? NaN : Number(text)
+      const base = Number.isFinite(shown) ? shown : (value ?? min ?? 0)
+      const next = Math.trunc(clamp(base + dir * step))
+      stepped.current = true
+      setText(String(next))
+      onChange(next)
     }
 
     return (
@@ -81,8 +95,12 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
           spellCheck={false}
           value={text}
           disabled={disabled}
-          onFocus={() => setEditing(true)}
+          onFocus={() => {
+            stepped.current = false
+            setEditing(true)
+          }}
           onBlur={() => {
+            stepped.current = false
             setEditing(false)
             if (text.trim() !== '' && Number.isFinite(Number(text))) setText(String(Math.trunc(Number(text))))
           }}

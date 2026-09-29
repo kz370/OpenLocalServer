@@ -39,6 +39,7 @@ Total meaningful source files: 205 (excluding target/, node_modules/, .git/, dis
 All 205 files listed above processed via 4 parallel analysis agents (rust-core, UI frontend, tauri-cli-helper, docs-catalogs) on 2026-09-26, plus db.rs added 2026-09-27, scripts/prepare-icon-source.ps1 added 2026-09-28, and scripts/build-ui.ps1 added 2026-09-28.
 
 ## Log
+- [2026-09-29] fix: NumberInput stepped its value but not its text — arrow keys and the chevron buttons called onChange while the field kept the focus, and the sync effect was gated on `!editing`, so the box kept showing the old number until blur. A step now rewrites the text from the new value (a `stepped` ref lets a step through the focus gate, cleared on focus/blur) and steps from the number on screen, clamped and truncated; specs (catalog, full documentation) updated; no IPC change; Files Processed still 205.
 - [2026-09-26] Initialization completed
 - [2026-09-26] File discovery completed (25881 raw files, 202 meaningful after excluding target/node_modules/.git/dist/data-postgres/icons)
 - [2026-09-26] Parallel deep analysis completed (4 agents)
