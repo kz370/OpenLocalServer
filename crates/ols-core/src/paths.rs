@@ -217,6 +217,101 @@ impl AppPaths {
         }
         Ok(())
     }
+
+    // ------------------------------------------------- portable site roots (§ portability)
+    //
+    // A site the user made inside the app's own `sites` folder belongs to the app, not to
+    // the drive it happens to sit on: storing its absolute root meant that renaming the
+    // install folder, or moving it to another drive, turned every such site into
+    // "folder does not exist" even though its files moved along with the app. Those roots
+    // are stored relative to a fixed prefix instead, and expanded again on load. A root
+    // outside the app (a real project folder) stays absolute — that path is the user's to
+    // own, and the app has no business rewriting it.
+
+    /// Prefix marking a stored root relative to the sites folder.
+    const SITES_PREFIX: &'static str = "sites/";
+    /// Prefix marking a stored root relative to the data folder.
+    const DATA_PREFIX: &'static str = "data/";
+
+    /// How a site root is written to the database: relative when it lives inside the app,
+    /// absolute when it lives anywhere else.
+    pub fn encode_root(&self, path: &Path) -> String {
+        if let Some(rel) = strip_prefix_ci(path, &self.sites_dir()) {
+            return format!("{}{}", Self::SITES_PREFIX, rel);
+        }
+        if let Some(rel) = strip_prefix_ci(path, &self.data_dir()) {
+            return format!("{}{}", Self::DATA_PREFIX, rel);
+        }
+        path.display().to_string()
+    }
+
+    /// The folder a stored root points at, with an app-relative one re-anchored to where
+    /// the app lives now.
+    pub fn decode_root(&self, stored: &str) -> PathBuf {
+        let rest = stored
+            .strip_prefix(Self::SITES_PREFIX)
+            .map(|r| self.sites_dir().join(r))
+            .or_else(|| {
+                stored
+                    .strip_prefix(Self::DATA_PREFIX)
+                    .map(|r| self.root.join(r))
+            });
+        match rest {
+            Some(p) => p,
+            // Absolute: it was written by this app, so it is the app's own folder that
+            // moved. Re-anchor it to the same relative spot under the current install, and
+            // keep the stored value when nothing there exists — an install whose data was
+            // deleted has to keep reporting the site as missing rather than silently
+            // pointing somewhere else.
+            None => self.reanchor_root(stored),
+        }
+    }
+
+    /// Finds the site root that moved with the app. The old absolute path still ends in
+    /// `sites/<name>` or `data/<name>`, so that tail is looked for under the current
+    /// install; an unrecognizable path is returned unchanged.
+    fn reanchor_root(&self, stored: &str) -> PathBuf {
+        let original = PathBuf::from(stored);
+        if original.is_dir() {
+            return original;
+        }
+        let components: Vec<_> = original
+            .components()
+            .filter_map(|c| c.as_os_str().to_str())
+            .collect();
+        let tail = components
+            .iter()
+            .rposition(|c| {
+                c.eq_ignore_ascii_case("sites")
+                    || c.eq_ignore_ascii_case("data")
+                    || c.eq_ignore_ascii_case("home")
+            })
+            .map(|i| components[i..].join("/"));
+        let Some(tail) = tail else {
+            return original;
+        };
+        for base in [self.sites_dir(), self.data_dir()] {
+            let candidate = base.join(&tail);
+            if candidate.is_dir() {
+                return candidate;
+            }
+        }
+        original
+    }
+}
+
+/// `path` relative to `base`, as forward slashes, when it really is inside it.
+/// Comparison is case-insensitive: Windows paths are, and two spellings of one folder
+/// must not read as "outside the app" and get frozen into the database.
+fn strip_prefix_ci(path: &Path, base: &Path) -> Option<String> {
+    let path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let base = std::fs::canonicalize(base).unwrap_or_else(|_| base.to_path_buf());
+    let rel = path.strip_prefix(&base).ok()?;
+    let rel = rel.to_str()?.replace('\\', "/");
+    if rel.is_empty() || rel == "." {
+        return None;
+    }
+    Some(rel)
 }
 
 /// `dir` (created if needed) when files can actually be written there.

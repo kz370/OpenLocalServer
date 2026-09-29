@@ -553,11 +553,39 @@ impl DomainStore {
             }
             seeded = true;
         }
+        // The home site is the one site the app owns end to end: its folder is always
+        // `<data>/home`, never a folder the user picked, so it is re-anchored rather than
+        // reported missing. `write_home_page` never overwrites, so a hand-edited welcome
+        // page survives a re-anchor.
+        let mut rebased = false;
+        if let Some(home) = domains.iter_mut().find(|d| d.hostname == HOME_HOSTNAME) {
+            let dir = paths.data_dir().join("home");
+            let current = dir.display().to_string();
+            if home.root != current {
+                home.root = current;
+                // The config that hash belonged to was written for the old folder.
+                home.generated_hashes.clear();
+                rebased = true;
+            }
+            let _ = write_home_page(&dir);
+        }
+        // A root inside the app may have been written by an older build as an absolute
+        // path, or by this one relative. Either way it is expanded to where the app lives
+        // now, so a renamed or relocated install keeps its own sites. Roots outside the
+        // app (a real project folder) are left exactly as stored.
+        for d in domains.iter_mut() {
+            let resolved = paths.decode_root(&d.root);
+            if resolved.display().to_string() != d.root {
+                d.root = resolved.display().to_string();
+                d.generated_hashes.clear();
+                rebased = true;
+            }
+        }
         let store = Self {
             paths: paths.clone(),
             domains,
         };
-        if seeded {
+        if seeded || rebased {
             store.persist()?;
         }
         // Roll out new welcome-page designs to installs seeded by older
@@ -719,12 +747,18 @@ impl DomainStore {
     }
 
     fn persist(&self) -> Result<(), CoreError> {
-        let items: Vec<(String, &Domain)> = self
-            .domains
-            .iter()
-            .map(|d| (d.hostname.clone(), d))
-            .collect();
-        db::save_docs(&self.paths, "domains", &items)
+        // Written back relative when the root is one of the app's own folders, so moving
+        // the install moves the site with it instead of stranding it at a dead path.
+        let mut rows: Vec<(String, serde_json::Value)> = Vec::with_capacity(self.domains.len());
+        for d in &self.domains {
+            let mut stored = d.clone();
+            stored.root = self.paths.encode_root(Path::new(&d.root));
+            rows.push((
+                d.hostname.clone(),
+                serde_json::to_value(&stored).map_err(|e| CoreError::Db(e.to_string()))?,
+            ));
+        }
+        db::save_values(&self.paths, "domains", &rows)
     }
 }
 
@@ -928,6 +962,103 @@ mod tests {
         let store = DomainStore::load(&home.paths).unwrap();
         assert!(store.get(HOME_HOSTNAME).is_some());
         assert!(store.get(LEGACY_HOME_HOSTNAME).is_none());
+    }
+
+    #[test]
+    fn a_renamed_install_folder_reanchors_the_home_site_root() {
+        let home = crate::test_support::isolated_home();
+        DomainStore::load(&home.paths).unwrap();
+        // The install folder moved: the stored absolute root no longer exists, and the
+        // files now live under a different root.
+        let moved = home.paths.root().join("moved");
+        std::fs::create_dir_all(&moved).unwrap();
+        std::fs::rename(home.paths.data_dir().join("home"), moved.join("home")).unwrap();
+        let store = DomainStore::load(&home.paths).unwrap();
+        let site = store.get(HOME_HOSTNAME).unwrap();
+        assert_eq!(
+            site.root,
+            home.paths.data_dir().join("home").display().to_string()
+        );
+        assert!(
+            std::path::Path::new(&site.root).is_dir(),
+            "the re-anchored root must exist, or diagnostics keeps reporting it missing"
+        );
+        assert!(home
+            .paths
+            .data_dir()
+            .join("home")
+            .join("index.html")
+            .is_file());
+    }
+
+    #[test]
+    fn a_site_inside_the_sites_folder_is_stored_relative_to_the_app() {
+        let home = crate::test_support::isolated_home();
+        let mut store = DomainStore::load(&home.paths).unwrap();
+        let dir = home.paths.sites_dir().join("shop");
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut site = home_domain(&dir);
+        site.hostname = "shop.test".into();
+        store.add(site).unwrap();
+
+        // On disk it is relative: move the app and the site still resolves.
+        let rows: Vec<Domain> = db::load_docs(&home.paths, "domains").unwrap();
+        let shop = rows.iter().find(|d| d.hostname == "shop.test").unwrap();
+        assert_eq!(shop.root, "sites/shop");
+        // In memory every consumer still sees a full path.
+        assert_eq!(
+            store.get("shop.test").unwrap().root,
+            dir.display().to_string()
+        );
+    }
+
+    #[test]
+    fn a_site_outside_the_app_keeps_its_own_absolute_path() {
+        let home = crate::test_support::isolated_home();
+        let mut store = DomainStore::load(&home.paths).unwrap();
+        let outside = std::env::temp_dir().join(format!("ols-site-{}", std::process::id()));
+        std::fs::create_dir_all(&outside).unwrap();
+        let mut site = home_domain(&outside);
+        site.hostname = "outside.test".into();
+        store.add(site).unwrap();
+        let rows: Vec<Domain> = db::load_docs(&home.paths, "domains").unwrap();
+        let stored = rows.iter().find(|d| d.hostname == "outside.test").unwrap();
+        assert_eq!(stored.root, outside.display().to_string());
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    #[test]
+    fn an_app_relative_site_survives_the_app_moving_to_a_new_root() {
+        let home = crate::test_support::isolated_home();
+        {
+            let mut store = DomainStore::load(&home.paths).unwrap();
+            let dir = home.paths.sites_dir().join("shop");
+            std::fs::create_dir_all(&dir).unwrap();
+            let mut site = home_domain(&dir);
+            site.hostname = "shop.test".into();
+            store.add(site).unwrap();
+        }
+        // The install was moved: the database and the site files come along, the old
+        // paths stop existing. `resolve_at` is a second AppPaths over a different root,
+        // which is exactly that — no env var, so the isolation lock stays with the first
+        // home.
+        let moved_root = home.paths.root().with_extension("moved");
+        let moved = AppPaths::resolve_at(&moved_root);
+        moved.ensure_dirs().unwrap();
+        std::fs::copy(home.paths.db_file(), moved.db_file()).unwrap();
+        std::fs::create_dir_all(moved.sites_dir().join("shop")).unwrap();
+        std::fs::rename(
+            home.paths.sites_dir().join("shop"),
+            moved.sites_dir().join("shop"),
+        )
+        .unwrap();
+
+        let store = DomainStore::load(&moved).unwrap();
+        assert_eq!(
+            store.get("shop.test").unwrap().root,
+            moved.sites_dir().join("shop").display().to_string()
+        );
+        assert!(Path::new(&store.get("shop.test").unwrap().root).is_dir());
     }
 
     #[test]

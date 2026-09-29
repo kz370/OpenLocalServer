@@ -91,6 +91,8 @@ DashboardPage | dispatches | CoreCommand::StopAll (same command as the tray menu
 TauriApp | uses | ProcessSupervisor.is_alive (the status mark's rule for a supervised process, the same one any_running/prune_finished use)
 TauriApp | listens_on | UI ThemeProvider `ols:theme` (resolved light/dark, the other half of the mark's colourway; the tray and taskbar cannot read localStorage, so the UI reports it)
 TauriApp | repaints_on | both halves independently — the mark cache keys on (red, dark), so a theme flip does not disturb the running/stopped state and vice versa
+DomainStore | persists | Domain.root relative to the app when it is one of the app's own folders (`sites/<name>`, `data/<name>`), absolute otherwise, and expands it again on load — so a moved install keeps its own sites while a real project folder is never rewritten
+DomainStore | re-anchors | the built-in `openlocalserver.test` root to `<data>/home` on every load, so a renamed or relocated install does not report the home site as a missing folder
 DomainStore | seeds | home page logo.svg + logo-dark.svg from ui/public/favicon.svg + favicon-dark.svg (exact official brand bytes, both colourways because the page's own theme toggle picks one)
 TauriApp | waits_on | UI main.tsx `ols:ui-ready` (window revealed after first paint; 5s fallback, by which time the `booting` background is still on the canvas if React never painted, so no reveal path can show a transparent frame)
 TauriApp | reads | ols-core `app::should_start_hidden` (startup.minimized preference decides on every launch; --minimized only forces)

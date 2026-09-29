@@ -125,6 +125,28 @@ where
     Ok(())
 }
 
+/// [`save_docs`] for rows already serialized, so a caller can rewrite one field per row
+/// on its way to the database without cloning every document twice.
+pub fn save_values(
+    paths: &AppPaths,
+    collection: &str,
+    items: &[(String, serde_json::Value)],
+) -> Result<(), CoreError> {
+    let mut conn = connect(paths)?;
+    let tx = conn.transaction().map_err(map_err)?;
+    tx.execute("DELETE FROM docs WHERE collection=?1", params![collection])
+        .map_err(map_err)?;
+    for (id, item) in items {
+        tx.execute(
+            "INSERT INTO docs(collection, id, data) VALUES(?1, ?2, ?3)",
+            params![collection, id, item.to_string()],
+        )
+        .map_err(map_err)?;
+    }
+    tx.commit().map_err(map_err)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
