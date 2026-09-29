@@ -106,16 +106,28 @@ fn reveal_window_on_ui_ready(app: &AppHandle) {
     });
 }
 
-/// The green mark is the app's official icon; the red one is the same art in the
-/// "nothing is running" colour. Both are shipped next to the bundle icons so the
-/// tray, the taskbar and the window can switch between them at runtime.
-const TRAY_ICON_GREEN: &[u8] = include_bytes!("../icons/32x32.png");
-const TRAY_ICON_RED: &[u8] = include_bytes!("../icons/red/32x32.png");
-const WINDOW_ICON_GREEN: &[u8] = include_bytes!("../icons/128x128.png");
-const WINDOW_ICON_RED: &[u8] = include_bytes!("../icons/red/128x128.png");
+/// The mark is one artwork in four colourways: light/dark theme, and green while
+/// at least one service runs versus red once everything is stopped. All four are
+/// shipped next to the bundle icons so the tray, the taskbar and the window can
+/// switch between them at runtime.
+const TRAY_ICON_LIGHT_RUNNING: &[u8] = include_bytes!("../icons/32x32.png");
+const TRAY_ICON_LIGHT_STOPPED: &[u8] = include_bytes!("../icons/red/32x32.png");
+const TRAY_ICON_DARK_RUNNING: &[u8] = include_bytes!("../icons/dark/32x32.png");
+const TRAY_ICON_DARK_STOPPED: &[u8] = include_bytes!("../icons/dark/red/32x32.png");
+const WINDOW_ICON_LIGHT_RUNNING: &[u8] = include_bytes!("../icons/128x128.png");
+const WINDOW_ICON_LIGHT_STOPPED: &[u8] = include_bytes!("../icons/red/128x128.png");
+const WINDOW_ICON_DARK_RUNNING: &[u8] = include_bytes!("../icons/dark/128x128.png");
+const WINDOW_ICON_DARK_STOPPED: &[u8] = include_bytes!("../icons/dark/red/128x128.png");
 
-/// What the tray and window currently show, so a state change only repaints once.
-static ICON_SHOWS_RED: Mutex<Option<bool>> = Mutex::new(None);
+/// What the tray and window currently show, so a change only repaints once.
+/// Both halves are cached: a theme flip repaints without touching the service
+/// state, and a service state change repaints without touching the theme.
+static ICON_SHOWS: Mutex<Option<(bool, bool)>> = Mutex::new(None);
+
+/// Theme the UI last reported, so a status repaint lands on the right colourway.
+/// The UI owns the theme (it is a UI-local setting with no core counterpart), so
+/// this starts from what the OS reports and is corrected by `ols:theme`.
+static THEME_IS_DARK: AtomicBool = AtomicBool::new(false);
 
 fn decode_icon(bytes: &[u8]) -> Option<tauri::image::Image<'static>> {
     tauri::image::Image::from_bytes(bytes).ok()
@@ -125,13 +137,15 @@ fn decode_icon(bytes: &[u8]) -> Option<tauri::image::Image<'static>> {
 /// `ols:status-icon`, the mark inside the app. `force` repaints even when the mark
 /// is already showing.
 fn apply_status_icon(app: &AppHandle, red: bool, force: bool) {
-    if !force && *ICON_SHOWS_RED.lock().unwrap_or_else(|e| e.into_inner()) == Some(red) {
+    let dark = THEME_IS_DARK.load(Ordering::Relaxed);
+    if !force && *ICON_SHOWS.lock().unwrap_or_else(|e| e.into_inner()) == Some((red, dark)) {
         return;
     }
-    let (tray_bytes, window_bytes) = if red {
-        (TRAY_ICON_RED, WINDOW_ICON_RED)
-    } else {
-        (TRAY_ICON_GREEN, WINDOW_ICON_GREEN)
+    let (tray_bytes, window_bytes) = match (red, dark) {
+        (false, false) => (TRAY_ICON_LIGHT_RUNNING, WINDOW_ICON_LIGHT_RUNNING),
+        (true, false) => (TRAY_ICON_LIGHT_STOPPED, WINDOW_ICON_LIGHT_STOPPED),
+        (false, true) => (TRAY_ICON_DARK_RUNNING, WINDOW_ICON_DARK_RUNNING),
+        (true, true) => (TRAY_ICON_DARK_STOPPED, WINDOW_ICON_DARK_STOPPED),
     };
     // Paint first, remember second. Latching the state before the repaint meant a
     // tray that did not exist yet, a decode that failed, or a `set_icon` that
@@ -156,11 +170,23 @@ fn apply_status_icon(app: &AppHandle, red: bool, force: bool) {
     // Only a real tray repaint may be cached. Otherwise the next clock tick retries,
     // which is what recovers a mark that raced the tray's own creation.
     if painted || force {
-        *ICON_SHOWS_RED.lock().unwrap_or_else(|e| e.into_inner()) = Some(red);
+        *ICON_SHOWS.lock().unwrap_or_else(|e| e.into_inner()) = Some((red, dark));
     }
     // The webview needs the value even when nothing was repainted, and a window that
     // mounts late has to be told what the mark currently says.
     let _ = app.emit("ols:status-icon", red);
+}
+
+/// Repaints after the UI reports a theme flip. Only the colourway changes, so the
+/// running/stopped state is re-read rather than remembered by the caller.
+fn set_theme_icon(app: &AppHandle, core: Option<&Core>, dark: bool) {
+    if THEME_IS_DARK.swap(dark, Ordering::Relaxed) == dark {
+        return;
+    }
+    match core {
+        Some(core) => apply_status_icon(app, status_mark(Some(core)), false),
+        None => apply_status_icon(app, false, true),
+    }
 }
 
 /// The mark is green while at least one managed process is running — a service or
@@ -639,6 +665,30 @@ pub fn run() {
         .manage(core)
         .setup(move |app| {
             let core = setup_core;
+
+            // The theme lives in the UI (localStorage, no core counterpart), so the
+            // UI reports the resolved theme and the native marks follow it. Seeded
+            // from the OS so the tray is not painted light for a frame on a dark
+            // desktop before the webview answers.
+            if let Ok(theme) = app.handle().window("main").map(|w| w.theme()) {
+                THEME_IS_DARK.store(
+                    matches!(theme, tauri::Theme::Dark),
+                    Ordering::Relaxed,
+                );
+            }
+            let theme_handle = app.handle().clone();
+            let theme_core = core.clone();
+            app.listen("ols:theme", move |event| {
+                let Some(dark) = event
+                    .payload_json::<String>()
+                    .ok()
+                    .filter(|t| t == "dark" || t == "light")
+                    .map(|t| t == "dark")
+                else {
+                    return;
+                };
+                set_theme_icon(&theme_handle, Some(&theme_core), dark);
+            });
 
             let process_handle = app.handle().clone();
             let process_core = core.clone();

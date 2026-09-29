@@ -7,6 +7,10 @@ resources::find_cpu_limiter | resolves | cpulimit.exe in the current exe's direc
 Inner | uses | RuntimeManager
 Inner::project_detail | snapshots | SettingsService + CustomInstallStore (clones, then releases both locks before build_detail's file I/O and version probes — an unreachable project path must not stall other commands)
 Inner | locks_via | app::lock (poisoned guard recovered, not unwrapped: one panic while a lock was held used to make every later read panic for the rest of the session)
+Inner | owns | deletion history over settings projects.removed + domains.auto_skip (list_deleted_items / forget_deleted_item / clear_deleted_items)
+Inner::skip_matches | decides | project-scoped: watcher sync, sync_auto_domains and scan_and_register_projects all ask it, comparing the raw path and its canonicalized form against a skip entry so a deleted folder cannot be re-registered through another path spelling
+ExcludedSitesCard | reads | list_deleted_items, writes via forget_deleted_item{value} / clear_deleted_items (no dialog per row; Clear all confirmed)
+ExcludedSitesCard | clears_entry_means | the next scan_and_register_projects or sync_auto_domains re-registers — the card never re-adds anything itself, and no command here deletes files
 Inner | uses | ServiceManager
 Inner | uses | WebManager
 Inner | uses | DomainStore
