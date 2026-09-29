@@ -1,8 +1,9 @@
 import { AlertTriangle, CheckCircle2, FileText, Home, Play, RefreshCw, Rocket, RotateCw, XCircle } from 'lucide-react'
-import { type ReactNode, memo, useMemo, useState } from 'react'
+import { memo, useMemo, useState } from 'react'
 
 import { DiagnosticsCard } from '@/components/DiagnosticsCard'
 import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
+import { ServiceIconAction } from '@/components/ServiceIconAction'
 import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
 import { TechIcon } from '@/components/TechIcon'
@@ -13,7 +14,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { type DashboardData, type Diagnostic, type HealthItem, type ServerAvailability, type ServiceStatus, type StartupSettings, type SystemStats, runCommand } from '@/core'
 import { formatBytes, useAction, usePoll } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
-import { waitForService, waitForWebStopped } from '@/lib/wait'
+import { waitForService } from '@/lib/wait'
 import { confirmAction } from '@/lib/confirm'
 
 /** §173 / §116 / §101: what's running, what's wrong, and one-click ways to act on it. */
@@ -68,9 +69,11 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
   const autoIds = startup?.autostart_services ?? []
   const autoRunning = runningServices.filter((s) => autoIds.includes(s.id))
   const autoStopped = (data?.services ?? []).filter((s) => s.installed && !s.running && autoIds.includes(s.id))
-  const autoWebRunning = !!startup?.autostart_web && !!web?.running
-  const hasAutoRunning = autoWebRunning || autoRunning.length > 0
-  const autoConfigured = !!startup?.autostart_web || autoIds.length > 0
+  // A web server in the autostart list is a service like any other here, so Start/Stop all
+  // covers it with no second switch: `start_service` already renders and reloads a web
+  // server's site config before binding its ports.
+  const hasAutoRunning = autoRunning.length > 0
+  const autoConfigured = autoIds.length > 0
   const problems = data?.health.filter((h) => h.status !== 'ok') ?? []
 
   return (
@@ -109,19 +112,12 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
             onClick={() =>
               hasAutoRunning
                 ? run('stop-all', async () => {
-                    await Promise.all([
-                      ...(autoWebRunning ? [runCommand({ type: 'stop_web' })] : []),
-                      ...autoRunning.map((service) => runCommand({ type: 'stop_service', id: service.id })),
-                    ])
-                    await Promise.all([
-                      ...(autoWebRunning ? [waitForWebStopped()] : []),
-                      ...autoRunning.map((service) => waitForService(service.id, 'stopped')),
-                    ])
+                    await Promise.all(autoRunning.map((service) => runCommand({ type: 'stop_service', id: service.id })))
+                    await Promise.all(autoRunning.map((service) => waitForService(service.id, 'stopped')))
                     await refresh()
                     setDiagToken((t) => t + 1)
                   })
                 : run('start-all', async () => {
-                    if (startup?.autostart_web && !web?.running) await runCommand({ type: 'apply_web', overwrite: [] })
                     await Promise.all(autoStopped.map((service) => runCommand({ type: 'start_service', id: service.id })))
                     await Promise.all(autoStopped.map((service) => waitForService(service.id, 'running')))
                     await refresh()
@@ -408,7 +404,7 @@ function ServicesWidget({
               </span>
               <ServiceStatus state={state} />
               <span className="flex shrink-0 items-center gap-0.5 lg:col-start-2 lg:row-start-2 lg:col-span-3 xl:col-start-5 xl:row-start-1 xl:col-span-1 xl:justify-end">
-                <IconAction
+                <ServiceIconAction
                   title={`Start ${s.name}`}
                   disabled={busy !== null || !s.installed || s.running}
                   spinning={working && busy === `svc:${s.id}:start`}
@@ -416,8 +412,8 @@ function ServicesWidget({
                   iconColor="text-emerald-400"
                 >
                   <Play className="size-3.5" />
-                </IconAction>
-                <IconAction
+                </ServiceIconAction>
+                <ServiceIconAction
                   title={`Stop ${s.name}`}
                   disabled={busy !== null || !s.installed || !s.running}
                   spinning={working && busy === `svc:${s.id}:stop`}
@@ -425,8 +421,8 @@ function ServicesWidget({
                   iconColor="text-destructive/70"
                 >
                   <StopIcon className="size-3.5" />
-                </IconAction>
-                <IconAction
+                </ServiceIconAction>
+                <ServiceIconAction
                   title="Restart"
                   disabled={busy !== null || !s.installed}
                   spinning={working && busy === `svc:${s.id}:restart`}
@@ -434,8 +430,8 @@ function ServicesWidget({
                   iconColor="text-amber-400"
                 >
                   <RotateCw className="size-3.5" />
-                </IconAction>
-                <IconAction
+                </ServiceIconAction>
+                <ServiceIconAction
                   title="Reload config"
                   disabled={busy !== null || !s.installed || s.kind !== 'web'}
                   spinning={working && busy === `svc:${s.id}:reload`}
@@ -443,15 +439,15 @@ function ServicesWidget({
                   iconColor="text-sky-400"
                 >
                   <RefreshCw className="size-3.5" />
-                </IconAction>
-                <IconAction
+                </ServiceIconAction>
+                <ServiceIconAction
                   title="Logs"
                   disabled={busy !== null || !s.installed || !s.log_source}
                   onClick={() => s.log_source && onOpenLogs(s.log_source)}
                   iconColor="text-violet-400"
                 >
                   <FileText className="size-3.5" />
-                </IconAction>
+                </ServiceIconAction>
               </span>
             </div>
           )
@@ -477,46 +473,6 @@ function ServiceStatus({ state }: { state: WidgetState }) {
       <span className={cn('size-1.5 shrink-0 rounded-full', config.dot)} />
       <span className={cn('truncate text-xs tabular-nums', config.text)}>{config.label}</span>
     </span>
-  )
-}
-
-function IconAction({
-  title,
-  disabled,
-  spinning,
-  onClick,
-  children,
-  iconColor,
-}: {
-  title: string
-  disabled: boolean
-  spinning?: boolean
-  onClick: () => void
-  children: ReactNode
-  iconColor?: string
-}) {
-  return (
-    <Button
-      size="sm"
-      variant="ghost"
-      className={cn(
-        'size-7 shrink-0 cursor-pointer rounded-md p-0 transition-colors',
-        // Enabled: the action's own colour, dimmed slightly until hover. Disabled:
-        // flat grey with no hover response, so "you cannot do this right now" reads
-        // at a glance instead of looking like a live button.
-        disabled
-          ? 'cursor-not-allowed bg-muted/30 text-muted-foreground/45 disabled:opacity-100 hover:bg-muted/30 hover:text-muted-foreground/45'
-          : iconColor
-            ? `opacity-70 hover:bg-muted/60 hover:opacity-100 ${iconColor} hover:${iconColor}`
-            : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
-      )}
-      title={title}
-      aria-label={title}
-      disabled={disabled}
-      onClick={onClick}
-    >
-      {spinning ? <Spinner className="size-3.5" /> : children}
-    </Button>
   )
 }
 
@@ -739,3 +695,4 @@ function HealthRow({ item }: { item: HealthItem }) {
     </div>
   )
 }
+

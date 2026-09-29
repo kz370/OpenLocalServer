@@ -293,6 +293,11 @@ pub enum CoreCommand {
     CreateDatabase {
         engine: String,
         name: String,
+        /// `None` = connect as the engine's root/postgres superuser, which is how the
+        /// bundled servers are provisioned. `Some` = also create this user, owned by the
+        /// new database, and remember its password in the OS credential store.
+        user: Option<String>,
+        password: Option<String>,
     },
     ListDatabases {
         engine: String,
@@ -2331,9 +2336,14 @@ impl Core {
             }
 
             // ---- Stage 10
-            C::CreateDatabase { engine, name } => {
+            C::CreateDatabase {
+                engine,
+                name,
+                user,
+                password,
+            } => {
                 i.services
-                    .create_database(&engine, &name)
+                    .create_database_with_user(&engine, &name, user.as_deref(), password.as_deref())
                     .map_err(CoreError::ServiceError)?;
                 Ok(R::Ok)
             }

@@ -57,7 +57,7 @@ DnsServer | UDP wildcard A->127.0.0.1 for suffix list.
 HealthChecker | DNS->TCP->TLS->Cert->HTTP chain.
 TunnelManager | Provider abstraction (cf/ngrok/lt) + confirm gate.
 Inspector | Forwarding proxy + redacted traffic log (500 cap).
-DbBackup | mysqldump/pg_dump backup/restore with safety copy.
+DbBackup | mysqldump/pg_dump backup/restore with safety copy; file name stem is the database name, so only names a Windows file cannot hold (/ \ : * ? " < > |, control chars, leading dot, >120) are rejected — `-`, `.`, spaces and non-ASCII back up fine.
 SqliteStore | WAL-safe sqlite3 .backup + integrity_check registry.
 Migrator | Laragon/XAMPP/Wamp scanner + live-dump importer.
 ProjectStore | Folder registry, ID=SHA256(path)[..16].
@@ -100,7 +100,7 @@ so the narrow window answers "is the web server up?" before the load graphs.
 WebServerPage | Server/ports/certs tabs. Each settings card owns its own Save and its own dirty state — `defaultDirty` (default_server, php_workers, dns_port) and `portsDirty` (per-server http/https pairs) — so an edit in one card never raises the other card's button, and each button writes only its own keys. Saves are settings-only and never call apply_web: php_workers is read only in apply_one and dns_port only in sync_dns, so both are inert until the server is started, and a save while stopped says so next to the header buttons. Both saves end in refreshConfig() so the stored config re-reads and the draft that produced it clears. The ports tab rows are a 4-column grid `minmax(0,1fr) 5.5rem 5.5rem 7rem` (fixed port columns, not proportional) so HTTP/HTTPS inputs and the site-count note land on the same columns in every row at every width; a port input is padded down to fit 6 characters, and the note is an h-9 items-center cell rather than a padding nudge. A status badge inside a row-layout CardHeader carries shrink-0 + whitespace-nowrap — squeezed, it wrapped "● Running" onto two lines and stretched the header.
 ConfigPage | Config files + history diff/restore + ownership.
 TunnelsPage | Tunnel CRUD + inspector + webhook tester.
-DatabasesPage | Per-engine DB/users/backups + external tools (Redis one-click via Tiny RDM). SQL database list = dense one-line rows (name + Back up/Connection/Open in), one shared tool Select in the card header; user form is a container query on the Users card (3 rows below the card's own 32rem).
+DatabasesPage | Per-engine DB/users/backups + external tools (Redis one-click via Tiny RDM). SQL database list = dense one-line rows (name + Back up/Connection + icon-only Open button whose title/aria-label is "Open <db> with <tool>"), one shared "Open with" tool Select in the card header; user form is a container query on the Users card (3 rows below the card's own 32rem).
 ServicesPage | Mail/DB services + CustomServices child.
 RuntimesPage | Side-by-side versions + PHP dialogs; vendor feed refresh for the ONLINE_CATALOGS ids (TechIcon per runtime: Memcached symbol-only logo, Redis brand mark, Mailpit envelope, Git and other available brand marks); Pause/Resume/Stop on every download in flight.
 ProfilesPage | Env template CRUD + yaml editor.

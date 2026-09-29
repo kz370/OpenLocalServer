@@ -576,7 +576,6 @@ export interface LogSource {
 export interface StartupSettings {
   with_windows: boolean
   start_minimized: boolean
-  autostart_web: boolean
   autostart_services: string[]
   notifications: boolean
   close_to_tray: boolean
@@ -650,7 +649,7 @@ export type CoreCommand =
   | { type: 'read_config_history'; hostname: string; id: string }
   | { type: 'restore_config_history'; hostname: string; id: string }
   | { type: 'export_web_config'; hostname: string; part: ConfigPart; dest: string }
-  | { type: 'create_database'; engine: string; name: string }
+  | { type: 'create_database'; engine: string; name: string; user?: string | null; password?: string | null }
   | { type: 'list_databases'; engine: string }
   | { type: 'list_custom_services' }
   | { type: 'save_custom_service'; service: CustomServiceDef }

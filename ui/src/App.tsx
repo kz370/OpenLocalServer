@@ -77,7 +77,7 @@ export default function App() {
         {page === 'webserver' && <WebServerPage initialTab={webServerTab} />}
         {page === 'tunnels' && <TunnelsPage />}
         {page === 'databases' && <DatabasesPage />}
-        {page === 'services' && <ServicesPage />}
+        {page === 'services' && <ServicesPage onOpenLogs={openLogs} />}
         {page === 'runtimes' && <RuntimesPage />}
         {page === 'profiles' && <ProfilesPage />}
         {page === 'plugins' && <PluginsPage />}

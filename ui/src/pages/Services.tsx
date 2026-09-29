@@ -1,9 +1,10 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { ExternalLink, FolderSearch, Play } from 'lucide-react'
+import { ExternalLink, FileText, FolderSearch, Play, RefreshCw, RotateCw } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { CustomServices } from '@/components/CustomServices'
 import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
+import { ServiceIconAction } from '@/components/ServiceIconAction'
 import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
 import { TechIcon } from '@/components/TechIcon'
@@ -17,7 +18,9 @@ import { waitForService } from '@/lib/wait'
 import { cn } from '@/lib/utils'
 import { confirmAction } from '@/lib/confirm'
 
-export function ServicesPage() {
+type ServiceAction = 'start' | 'stop' | 'restart' | 'reload'
+
+export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => void }) {
   const [services, setServices] = useState<ServiceStatus[]>([])
   const [dbTools, setDbTools] = useState<DbTool[]>([])
   const [dbName, setDbName] = useState('my_app')
@@ -46,11 +49,28 @@ export function ServicesPage() {
 
   async function toggle(service: ServiceStatus) {
     if (service.running && !(await confirmAction(`Stop ${service.name}? Anything connected to it will be disconnected.`))) return
+    await act(service, service.running ? 'stop' : 'start')
+  }
+
+  /** The full per-service suite, same set the Dashboard offers (§ see ServicesWidget).
+   * `busy` is keyed `svc:<id>:<action>` so the spinner sits on the control that was
+   * pressed and the other four stay usable, rather than the whole row going dead. */
+  async function act(service: ServiceStatus, action: ServiceAction) {
+    if (action === 'stop' && !(await confirmAction(`Stop ${service.name}? Anything connected to it will be disconnected.`))) return
+    if (action === 'restart' && service.running && !(await confirmAction(`Restart ${service.name}? Anything connected to it will be disconnected.`))) return
     setError(null)
-    setBusy(service.id)
+    setBusy(`svc:${service.id}:${action}`)
     try {
-      await runCommand({ type: service.running ? 'stop_service' : 'start_service', id: service.id })
-      await waitForService(service.id, service.running ? 'stopped' : 'running')
+      if (action === 'reload') {
+        // A web server reloads its config in place: no dropped connections.
+        await runCommand({ type: 'apply_web', overwrite: [] })
+      } else if (action === 'restart') {
+        await runCommand({ type: 'restart_service', id: service.id })
+        await waitForService(service.id, 'running')
+      } else {
+        await runCommand({ type: action === 'start' ? 'start_service' : 'stop_service', id: service.id })
+        await waitForService(service.id, action === 'start' ? 'running' : 'stopped')
+      }
       await refresh()
     } catch (err) {
       setError(asDiagnostic(err))
@@ -124,7 +144,8 @@ export function ServicesPage() {
           <ServiceTable
             services={webServers}
             busy={busy}
-            onToggle={toggle}
+            onAct={act}
+            onOpenLogs={onOpenLogs}
             onError={setError}
             portLabel={(s) => (s.port === 80 ? '80 / 443 (default)' : s.port === null ? '—' : `${s.port} (custom)`)}
           />
@@ -136,7 +157,7 @@ export function ServicesPage() {
           <CardTitle className="text-sm">Services</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <ServiceTable services={otherServices} busy={busy} onToggle={toggle} onError={setError} />
+          <ServiceTable services={otherServices} busy={busy} onAct={act} onOpenLogs={onOpenLogs} onError={setError} />
         </CardContent>
       </Card>
 
@@ -203,17 +224,19 @@ export function ServicesPage() {
   )
 }
 
-/** One start/stop table. Shared by the web servers and the other services. */
+/** One action table. Shared by the web servers and the other services. */
 function ServiceTable({
   services,
   busy,
-  onToggle,
+  onAct,
+  onOpenLogs,
   onError,
   portLabel,
 }: {
   services: ServiceStatus[]
   busy: string | null
-  onToggle: (s: ServiceStatus) => void
+  onAct: (s: ServiceStatus, action: ServiceAction) => void
+  onOpenLogs: (source: string) => void
   onError: (e: Diagnostic) => void
   portLabel?: (s: ServiceStatus) => string
 }) {
@@ -274,21 +297,51 @@ function ServiceTable({
                   </button>
                 )}
                 {s.installed && (
-                  <Button size="sm" variant="secondary" disabled={busy === s.id} onClick={() => onToggle(s)}>
-                    {busy === s.id ? (
-                      <>
-                        <Spinner /> {s.running ? 'Stopping…' : 'Starting…'}
-                      </>
-                    ) : s.running ? (
-                      <>
-                        <StopIcon /> Stop
-                      </>
-                    ) : (
-                      <>
-                        <Play /> Start
-                      </>
-                    )}
-                  </Button>
+                  <span className="flex items-center justify-end gap-0.5">
+                    <ServiceIconAction
+                      title={`Start ${s.name}`}
+                      disabled={s.running}
+                      spinning={busy === `svc:${s.id}:start`}
+                      iconColor="text-emerald-400"
+                      onClick={() => onAct(s, 'start')}
+                    >
+                      <Play className="size-3.5" />
+                    </ServiceIconAction>
+                    <ServiceIconAction
+                      title={`Stop ${s.name}`}
+                      disabled={!s.running}
+                      spinning={busy === `svc:${s.id}:stop`}
+                      iconColor="text-destructive/70"
+                      onClick={() => onAct(s, 'stop')}
+                    >
+                      <StopIcon />
+                    </ServiceIconAction>
+                    <ServiceIconAction
+                      title={`Restart ${s.name}`}
+                      spinning={busy === `svc:${s.id}:restart`}
+                      iconColor="text-amber-400"
+                      onClick={() => onAct(s, 'restart')}
+                    >
+                      <RotateCw className="size-3.5" />
+                    </ServiceIconAction>
+                    <ServiceIconAction
+                      title={`Reload ${s.name} config`}
+                      disabled={s.kind !== 'web'}
+                      spinning={busy === `svc:${s.id}:reload`}
+                      iconColor="text-sky-400"
+                      onClick={() => onAct(s, 'reload')}
+                    >
+                      <RefreshCw className="size-3.5" />
+                    </ServiceIconAction>
+                    <ServiceIconAction
+                      title={`View ${s.name} logs`}
+                      disabled={!s.log_source}
+                      iconColor="text-violet-400"
+                      onClick={() => s.log_source && onOpenLogs(s.log_source)}
+                    >
+                      <FileText className="size-3.5" />
+                    </ServiceIconAction>
+                  </span>
                 )}
               </div>
             </TableCell>

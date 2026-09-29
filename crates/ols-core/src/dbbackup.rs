@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::exec::{hide_window, run_capture};
 use crate::paths::AppPaths;
-use crate::service::{is_safe_identifier, ServiceManager};
+use crate::service::ServiceManager;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DbBackup {
@@ -75,6 +75,26 @@ pub fn list(paths: &AppPaths, engine: &str, database: Option<&str>) -> Vec<DbBac
     found
 }
 
+/// Windows will not put these in a file name, and a `/` or `..` in a database name would let
+/// a backup file climb out of this engine's backup folder. Everything else is a legal database
+/// name and a legal file name (`-`, `.`, spaces, accents), so backups allow it: the name reaches
+/// the dump tool as a process argument, never as SQL text.
+fn file_stem(database: &str) -> Result<String, String> {
+    let name = database.trim();
+    let bad = |c: char| {
+        matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') || c.is_control()
+    };
+    if name.is_empty() {
+        return Err("no database was named. Click Back up next to a database in the list.".into());
+    }
+    if name.len() > 120 || name.starts_with('.') || name.chars().any(bad) {
+        return Err(format!(
+            "\"{database}\" cannot be backed up: a backup is a file named after the database, and that name holds characters a Windows file name will not accept (/ \\ : * ? \" < > |). Rename the database to letters, digits, - or _, then back up again."
+        ));
+    }
+    Ok(name.to_string())
+}
+
 fn new_backup_path(paths: &AppPaths, engine: &str, database: &str) -> Result<PathBuf, String> {
     let dir = backups_dir(paths, engine);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -97,9 +117,7 @@ pub fn backup(
     database: &str,
 ) -> Result<PathBuf, String> {
     check_engine(engine)?;
-    if !is_safe_identifier(database) {
-        return Err("database name must be alphanumeric/underscore only".into());
-    }
+    let stem = file_stem(database)?;
     if !services.is_running(engine) {
         return Err(format!("{engine} is not running. Start it first."));
     }
@@ -113,7 +131,7 @@ pub fn backup(
                 .unwrap_or("the dump tool")
         ));
     }
-    let dest = new_backup_path(paths, engine, database)?;
+    let dest = new_backup_path(paths, engine, &stem)?;
     let dest_arg = dest.display().to_string();
     let port_s = port.to_string();
     let args: Vec<String> = if engine == "postgres" {
@@ -174,9 +192,7 @@ pub fn restore(
     file: &Path,
 ) -> Result<Option<PathBuf>, String> {
     check_engine(engine)?;
-    if !is_safe_identifier(database) {
-        return Err("database name must be alphanumeric/underscore only".into());
-    }
+    let _stem = file_stem(database)?;
     if !file.is_file() {
         return Err(format!("{} does not exist", file.display()));
     }
@@ -279,6 +295,34 @@ pub fn delete(paths: &AppPaths, engine: &str, file: &Path) -> Result<(), String>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn file_stem_allows_real_database_names() {
+        for name in ["shop", "shop_test", "code-nova", "shop 2", "متجري", "a.b"] {
+            assert_eq!(file_stem(name).unwrap(), name, "{name} should back up");
+        }
+    }
+
+    #[test]
+    fn file_stem_rejects_names_a_file_cannot_hold() {
+        assert!(file_stem("").unwrap_err().contains("no database was named"));
+        assert!(file_stem("   ")
+            .unwrap_err()
+            .contains("no database was named"));
+        for name in [
+            "../escape",
+            "a/b",
+            "a\\b",
+            "c:name",
+            ".hidden",
+            "a*b?",
+            "a\u{0}b",
+            &"x".repeat(200),
+        ] {
+            let err = file_stem(name).unwrap_err();
+            assert!(err.contains("Rename"), "{name} -> {err}");
+        }
+    }
 
     #[test]
     fn names_round_trip_and_reject_other_files() {

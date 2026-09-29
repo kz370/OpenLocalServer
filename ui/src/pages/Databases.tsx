@@ -1,6 +1,6 @@
 import { open, save } from '@tauri-apps/plugin-dialog'
-import { Archive, ExternalLink, FolderSearch, Import, Plus, RotateCcw, Trash2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { Archive, ExternalLink, FolderSearch, Import, Info, Plus, RotateCcw, Trash2 } from 'lucide-react'
+import { Fragment, useEffect, useState } from 'react'
 
 import { Spinner } from '@/components/Spinner'
 import { ErrorCard } from '@/components/ErrorCard'
@@ -178,12 +178,28 @@ function OpenDatabaseButton({ engine, database = null, path = null, dbTools, ext
     <span className="inline-flex flex-col items-end gap-1">
       <span className="inline-flex items-center gap-1">
         {showToolSelect && (
-          <Select aria-label={`Default ${engine} database tool`} className="h-7 w-32 shrink-0 text-xs" value={selectedTool} onChange={(event) => { void setDefaultTool(engine, event.target.value).catch((e) => setError(e as Diagnostic)) }}>
-            <option value="">Automatic tool</option>
-            {choices.map((tool) => <option key={tool.id} value={tool.id}>{tool.name}</option>)}
-          </Select>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">Open with</span>
+            <Select
+              aria-label={`Open ${engine} databases with`}
+              title={`Open ${engine} databases with`}
+              className="h-7 w-32 shrink-0 text-xs"
+              value={selectedTool}
+              onChange={(event) => { void setDefaultTool(engine, event.target.value).catch((e) => setError(e as Diagnostic)) }}
+            >
+              <option value="">Automatic tool</option>
+              {choices.map((tool) => <option key={tool.id} value={tool.id}>{tool.name}</option>)}
+            </Select>
+          </span>
         )}
-        <Button size="sm" variant="secondary" className="h-7 px-2 text-xs" disabled={busy !== null} onClick={() => run('open', async () => {
+        <Button
+          size="sm"
+          variant="secondary"
+          className="size-7 shrink-0 p-0"
+          aria-label={`Open ${database ?? path ?? 'database'} with ${toolName}`}
+          title={`Open ${database ?? path ?? 'database'} with ${toolName}`}
+          disabled={busy !== null}
+          onClick={() => run('open', async () => {
           setNote(null)
           if (engine === 'mongodb' && selectedTool === 'nosqlbooster') {
             const connection = await runCommand({ type: 'get_connection_info', engine, database, path })
@@ -209,12 +225,71 @@ function OpenDatabaseButton({ engine, database = null, path = null, dbTools, ext
           if (engine === 'mongodb' && selectedTool === 'nosqlbooster') setNote((current) => current ?? 'MongoDB connection URI copied. In NoSQLBooster, choose Connect → From URI and paste.')
           if (engine === 'redis' && selectedTool === 'tinyrdm') setNote((current) => current ?? 'Redis URI copied (redis://127.0.0.1:6379). Paste it if the tool asks for a connection.')
         })}>
-          <ExternalLink className="size-3.5" /> Open in {toolName}
+          {busy === 'open' ? <Spinner /> : <ExternalLink className="size-3.5" />}
         </Button>
       </span>
       {note && <span className="max-w-80 text-right text-xs text-muted-foreground">{note}</span>}
       {error && <span className="text-xs text-destructive">{error.problem}</span>}
     </span>
+  )
+}
+
+function ConnectionDetails({ engine, database, path = null }: { engine: string; database: string | null; path?: string | null }) {
+  const [info, setInfo] = useState<ConnectionInfo | null>(null)
+  const [copied, setCopied] = useState<'uri' | null>(null)
+  const { error, setError } = useAction()
+  useEffect(() => {
+    runCommand({ type: 'get_connection_info', engine, database, path })
+      .then((r) => {
+        if (r.type === 'connection') setInfo(r.info)
+      })
+      .catch((e) => setError(e as Diagnostic))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engine, database, path])
+
+  if (error) {
+    return <p className="px-3 py-2 text-xs text-destructive">{error.problem}{error.cause ? ` — ${error.cause}` : ''}{error.fix ? ` ${error.fix}` : ''}</p>
+  }
+  if (!info) {
+    return <p className="px-3 py-2 text-xs text-muted-foreground">Reading connection details…</p>
+  }
+  const fields = [
+    ['Engine', info.engine],
+    ['Host', info.host],
+    ['Port', info.port === null ? '—' : String(info.port)],
+    ['User', info.user ?? '—'],
+    ['Database', info.database ?? '—'],
+    ['File', info.path],
+  ].filter(([, value]) => value !== null && value !== '') as [string, string][]
+  return (
+    <div className="space-y-1.5 bg-muted/40 px-3 py-2 text-xs">
+      <p className="font-medium text-foreground">Connection details</p>
+      <dl className="grid grid-cols-[4.5rem_1fr] gap-x-2 gap-y-0.5">
+        {fields.map(([label, value]) => (
+          <div key={label} className="contents">
+            <dt className="text-muted-foreground">{label}</dt>
+            <dd className="font-mono break-all">{value}</dd>
+          </div>
+        ))}
+      </dl>
+      <div className="flex items-center gap-2">
+        <code className="min-w-0 flex-1 font-mono break-all">{info.uri}</code>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 shrink-0 px-1.5 text-xs"
+          title="Copy the connection URI"
+          onClick={() => {
+            void navigator.clipboard
+              .writeText(info.uri)
+              .then(() => setCopied('uri'))
+              .catch(() => setCopied(null))
+          }}
+        >
+          {copied === 'uri' ? 'Copied' : 'Copy URI'}
+        </Button>
+      </div>
+    </div>
   )
 }
 
@@ -224,8 +299,10 @@ function SqlEngine({ engine, service, ...toolProps }: { engine: 'mariadb' | 'pos
   const [dbs, setDbs] = useState<string[]>([])
   const [users, setUsers] = useState<DbUser[]>([])
   const [newDb, setNewDb] = useState('')
+  const [newDbCreds, setNewDbCreds] = useState<'root' | 'custom'>('root')
+  const [dbUser, setDbUser] = useState({ user: '', password: '' })
   const [user, setUser] = useState({ user: '', password: '', database: '' })
-  const [info, setInfo] = useState<ConnectionInfo | null>(null)
+  const [openDb, setOpenDb] = useState<string | null>(null)
   const [backups, setBackups] = useState<DbBackup[]>([])
   const [note, setNote] = useState<string | null>(null)
   const { busy, error, setError, run } = useAction()
@@ -255,50 +332,116 @@ function SqlEngine({ engine, service, ...toolProps }: { engine: 'mariadb' | 'pos
             <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
               <CardTitle className="text-sm">Databases</CardTitle>
               {dbChoices.length > 0 && (
-                <Select
-                  aria-label={`Default ${engine} database tool`}
-                  className="h-7 w-40 shrink-0 text-xs"
-                  value={toolProps.defaultTools[engine] ?? ''}
-                  onChange={(event) => void toolProps.setDefaultTool(engine, event.target.value).catch((e) => setError(e as Diagnostic))}
-                >
-                  <option value="">Automatic tool</option>
-                  {dbChoices.map((tool) => (
-                    <option key={tool.id} value={tool.id}>{tool.name}</option>
-                  ))}
-                </Select>
+                <span className="inline-flex shrink-0 items-center gap-1.5">
+                  <span className="text-xs text-muted-foreground">Open with</span>
+                  <Select
+                    aria-label={`Open ${ENGINE_NAMES[engine]} databases with`}
+                    title={`Open ${ENGINE_NAMES[engine]} databases with`}
+                    className="h-7 w-32 shrink-0 text-xs"
+                    value={toolProps.defaultTools[engine] ?? ''}
+                    onChange={(event) => void toolProps.setDefaultTool(engine, event.target.value).catch((e) => setError(e as Diagnostic))}
+                  >
+                    <option value="">Automatic tool</option>
+                    {dbChoices.map((tool) => (
+                      <option key={tool.id} value={tool.id}>{tool.name}</option>
+                    ))}
+                  </Select>
+                </span>
               )}
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
               <div className="flex gap-2">
                 <Input value={newDb} onChange={(e) => setNewDb(e.target.value)} placeholder="new_database" />
-                <Button disabled={!newDb || busy !== null} onClick={() => run('db', async () => { await runCommand({ type: 'create_database', engine, name: newDb }); setNewDb(''); await refresh() })}>
+                <Button
+                  disabled={!newDb || busy !== null || (newDbCreds === 'custom' && (!dbUser.user || !dbUser.password))}
+                  onClick={() =>
+                    run('db', async () => {
+                      await runCommand({
+                        type: 'create_database',
+                        engine,
+                        name: newDb,
+                        user: newDbCreds === 'custom' ? dbUser.user : null,
+                        password: newDbCreds === 'custom' ? dbUser.password : null,
+                      })
+                      setNewDb('')
+                      setDbUser({ user: '', password: '' })
+                      setNote(
+                        newDbCreds === 'custom'
+                          ? `Database "${newDb}" and user "${dbUser.user}" created. The password is in the Windows credential store.`
+                          : `Database "${newDb}" created (or already existed), owned by the ${engine === 'postgres' ? 'postgres' : 'root'} account.`,
+                      )
+                      await refresh()
+                    })
+                  }
+                >
                   <Plus /> Create
                 </Button>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Select
+                  aria-label="Who owns the new database"
+                  title="Who owns the new database"
+                  className="h-8 w-full text-xs"
+                  value={newDbCreds}
+                  onChange={(e) => setNewDbCreds(e.target.value as 'root' | 'custom')}
+                >
+                  <option value="root">Sign in as {engine === 'postgres' ? 'postgres' : 'root'} (no password)</option>
+                  <option value="custom">Create a user with a password I choose</option>
+                </Select>
+                {newDbCreds === 'custom' && (
+                  <div className="flex flex-wrap gap-2">
+                    <Input
+                      aria-label="New database user name"
+                      className="w-40"
+                      value={dbUser.user}
+                      onChange={(e) => setDbUser({ ...dbUser, user: e.target.value })}
+                      placeholder="app_user"
+                    />
+                    <Input
+                      aria-label="Password for the new user"
+                      type="password"
+                      autoComplete="new-password"
+                      className="w-48"
+                      value={dbUser.password}
+                      onChange={(e) => setDbUser({ ...dbUser, password: e.target.value })}
+                      placeholder="password"
+                    />
+                    <span className="self-center text-xs text-muted-foreground">
+                      Owns the new database only. Kept in the Windows credential store, never on disk.
+                    </span>
+                  </div>
+                )}
               </div>
               {dbs.length > 0 && (
                 <div className="divide-y divide-border overflow-hidden rounded-lg border border-border">
                   {dbs.map((d) => (
-                    <div key={d} className="flex items-center justify-between gap-2 px-3 py-1">
+                    <Fragment key={d}>
+                      <div className="flex items-center justify-between gap-2 px-3 py-1">
                       <span className="truncate text-sm font-medium">{d}</span>
                       <span className="flex shrink-0 items-center gap-0.5">
                         <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" title="Back up this database" disabled={busy !== null} onClick={() => run('backup', async () => { const r = await runCommand({ type: 'backup_database', engine, database: d }); if (r.type === 'text') setNote(`Backup saved to ${r.text}`); await refresh() })}>
                           {busy === 'backup' ? <Spinner /> : <Archive className="size-3.5" />} Back up
                         </Button>
-                        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" title="Show connection details" onClick={() => run('info', async () => { const r = await runCommand({ type: 'get_connection_info', engine, database: d, path: null }); if (r.type === 'connection') setInfo(r.info) })}>Connection</Button>
+                        <Button
+                          size="sm"
+                          variant={openDb === d ? 'secondary' : 'ghost'}
+                          className="h-7 w-7 shrink-0 p-0"
+                          aria-label={`Connection details for ${d}`}
+                          aria-expanded={openDb === d}
+                          title="Show connection details (host, port, user, URI)"
+                          onClick={() => setOpenDb(openDb === d ? null : d)}
+                        >
+                          <Info className="size-3.5" />
+                        </Button>
                         <OpenDatabaseButton engine={engine} database={d} {...toolProps} showToolSelect={false} />
                       </span>
-                    </div>
+                      </div>
+                      {openDb === d && <ConnectionDetails engine={engine} database={d} />}
+                    </Fragment>
                   ))}
                 </div>
               )}
               {dbs.length === 0 && <p className="text-sm text-muted-foreground">No databases yet.</p>}
-              {info && (
-                <div className="rounded-lg bg-muted/40 p-3 font-mono text-xs">
-                  host {info.host} · port {info.port} · user {info.user}
-                  <br />
-                  {info.uri}
-                </div>
-              )}
             </CardContent>
           </Card>
           <Card className="lg:order-last lg:col-span-2">

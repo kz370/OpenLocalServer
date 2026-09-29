@@ -2,12 +2,22 @@
 //!
 //! - database / cache memory, passed to each server as its own setting when it starts
 //!   (MariaDB's buffer pool, PostgreSQL's shared buffers, Redis' maxmemory, MongoDB's cache);
+//! - CPU, capped through the `cpulimit` utility from kz370/win-utils, which puts the
+//!   service in a Windows job object with a hard CPU rate cap — see [`cpu_cap`];
 //! - Node's heap size, through `NODE_OPTIONS` for every project command;
 //! - how many copies one queue worker may run, and how many processes the app may start.
 //!
-//! Platform limits are respected rather than faked: Windows has no simple per-process CPU
-//! cap without Job Objects, so there is no CPU setting. Changes apply the next time a
-//! service starts; the UI says so.
+//! CPU was left out before because Windows has no per-process CPU cap without Job Objects.
+//! It is not missing any more, but it is still not something this crate does itself: the
+//! cap is `cpulimit.exe <percent> <program> <args>`, an external utility. So the limit is
+//! only honoured when that utility is on disk, and the UI is told plainly when it is not
+//! instead of the cap being silently dropped. Changes apply the next time a service starts.
+//!
+//! A percentage is a share of *total* CPU across all cores, not of one core — the same
+//! meaning `cpulimit` gives it, passed through unchanged. Capping something to about one
+//! core on an 8-core machine is therefore 12%, not 100%.
+
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
@@ -15,6 +25,15 @@ use crate::app::Inner;
 use crate::error::CoreError;
 
 const KEY: &str = "resources";
+
+/// Where `cpulimit.exe` is looked for, in order. The utility is never downloaded: an
+/// installer puts it at `%LOCALAPPDATA%\Programs\cpulimit`, and a user can point at any
+/// build through `cpu_limiter_path` or `OLS_CPULIMIT_PATH`.
+const LIMITER_ENV: &str = "OLS_CPULIMIT_PATH";
+const LIMITER_EXE: &str = "cpulimit.exe";
+const LIMITER_HINT: &str =
+    "CPU limits need the cpulimit utility (kz370/win-utils). Run its install.bat, or set the \
+     path to cpulimit.exe in Resources.";
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ResourceLimits {
@@ -28,6 +47,18 @@ pub struct ResourceLimits {
     pub memcached_max_memory_mb: Option<u32>,
     #[serde(default)]
     pub mongodb_cache_mb: Option<u32>,
+    /// Total CPU the service may use, as a percentage of every core on the machine
+    /// (1–100). Applied through the external `cpulimit` utility; see the module docs.
+    #[serde(default)]
+    pub cpu_percent: Option<u32>,
+    /// The same cap expressed in threads: `threads / logical cores` of the machine, so the
+    /// user does not have to work out the percentage for their own CPU. Mutually exclusive
+    /// with `cpu_percent` — `validate` refuses a set with both.
+    #[serde(default)]
+    pub cpu_threads: Option<u32>,
+    /// An explicit path to `cpulimit.exe`, for a build installed somewhere the search misses.
+    #[serde(default)]
+    pub cpu_limiter_path: Option<String>,
     #[serde(default)]
     pub node_max_old_space_mb: Option<u32>,
     #[serde(default)]
@@ -66,6 +97,28 @@ impl ResourceLimits {
             "Memcached memory (MB)",
         )?;
         check(self.mongodb_cache_mb, 256, 65536, "The MongoDB cache (MB)")?;
+        if self.cpu_percent.is_some() && self.cpu_threads.is_some() {
+            return Err(
+                "Set the CPU limit as either a percentage or a number of threads, not both".into(),
+            );
+        }
+        check(self.cpu_percent, 1, 100, "The CPU limit (%)")?;
+        check(
+            self.cpu_threads,
+            1,
+            logical_cores(),
+            "The CPU limit (threads)",
+        )?;
+        if self
+            .cpu_limiter_path
+            .as_deref()
+            .is_some_and(|p| !p.trim().is_empty() && !PathBuf::from(p).is_file())
+        {
+            return Err(format!(
+                "cpulimit.exe was not found at {}",
+                self.cpu_limiter_path.as_deref().unwrap_or_default()
+            ));
+        }
         check(self.node_max_old_space_mb, 64, 65536, "Node memory (MB)")?;
         check(
             self.max_worker_count,
@@ -116,6 +169,115 @@ impl ResourceLimits {
             _ => Vec::new(),
         }
     }
+
+    /// The cap as `cpulimit` takes it: a whole-number percentage of all cores, or `None`
+    /// when no CPU limit is set. Threads are converted against the machine's own core
+    /// count and rounded up, so asking for one thread on a 6-core box gives 17% (≈1.02
+    /// cores) rather than 16% (0.96 of a core, which the rate cap then rounds to 1).
+    pub fn effective_cpu_percent(&self) -> Option<u32> {
+        if let Some(p) = self.cpu_percent {
+            return Some(p.clamp(1, 100));
+        }
+        let threads = self.cpu_threads?;
+        let cores = logical_cores();
+        let pct = threads.saturating_mul(100).div_ceil(cores.max(1));
+        Some(pct.clamp(1, 100))
+    }
+
+    /// `cpulimit.exe` if it is installed. A configured path is authoritative, so a moved
+    /// or hand-built binary is still found; failing that, the standard per-user install
+    /// folder from the utility's own installer, then `PATH`.
+    pub fn find_cpu_limiter(&self) -> Option<PathBuf> {
+        if let Some(p) = self
+            .cpu_limiter_path
+            .as_deref()
+            .map(str::trim)
+            .filter(|p| !p.is_empty())
+        {
+            let path = PathBuf::from(p);
+            return path.is_file().then_some(path);
+        }
+        if let Some(p) = std::env::var_os(LIMITER_ENV)
+            .map(PathBuf::from)
+            .filter(|p| p.is_file())
+        {
+            return Some(p);
+        }
+        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+            let candidate = PathBuf::from(local)
+                .join("Programs")
+                .join("cpulimit")
+                .join(LIMITER_EXE);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+        std::env::var_os("PATH").and_then(|path| {
+            std::env::split_paths(&path)
+                .map(|dir| dir.join(LIMITER_EXE))
+                .find(|p| p.is_file())
+        })
+    }
+
+    /// Wraps a process so it runs under the CPU cap: `cpulimit <percent> <program> <args>`.
+    /// `cpulimit` exits with the program's own exit code and stays alive for its whole
+    /// life, so the supervisor's stop/restart bookkeeping keeps working unchanged.
+    ///
+    /// `Ok(None)` means "no cap wanted" or "no cap possible" — a limit that cannot be
+    /// applied is never silently pretended to be in force. `Err` is the case where the
+    /// user asked for a cap, the utility is missing, and the reason says how to get it.
+    pub fn cap_process(
+        &self,
+        program: &str,
+        args: &[String],
+    ) -> Result<Option<(String, Vec<String>)>, String> {
+        let Some(percent) = self.effective_cpu_percent() else {
+            return Ok(None);
+        };
+        let Some(limiter) = self.find_cpu_limiter() else {
+            return Err(LIMITER_HINT.to_string());
+        };
+        let mut capped = vec![percent.to_string(), program.to_string()];
+        capped.extend(args.iter().cloned());
+        Ok(Some((limiter.display().to_string(), capped)))
+    }
+
+    /// Whether a CPU limit set here can actually be applied, and why not when it cannot.
+    /// The Resources card renders this instead of the old "not available on Windows" note.
+    pub fn cpu_cap_status(&self) -> CpuCapStatus {
+        CpuCapStatus {
+            wanted: self.effective_cpu_percent().is_some(),
+            limiter_path: self.find_cpu_limiter().map(|p| p.display().to_string()),
+            logical_cores: logical_cores(),
+            effective_percent: self.effective_cpu_percent(),
+            hint: LIMITER_HINT.to_string(),
+        }
+    }
+}
+
+/// Logical cores on this machine. `available_parallelism` respects a process affinity
+/// mask, which is the right answer for a cap: the user is capping this machine as the
+/// app sees it, not every core the hardware has.
+pub fn logical_cores() -> u32 {
+    std::thread::available_parallelism()
+        .map(|n| n.get() as u32)
+        .unwrap_or(1)
+}
+
+/// What the Resources card needs to tell the truth about the CPU limit: whether one is
+/// wanted, whether the utility to apply it is installed, and the percentage a thread
+/// count works out to on this machine.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CpuCapStatus {
+    /// A CPU limit is set in the settings (as a percentage or as threads).
+    pub wanted: bool,
+    /// `cpulimit.exe` when found; `None` means a wanted cap cannot be applied.
+    pub limiter_path: Option<String>,
+    pub logical_cores: u32,
+    /// The percentage the cap will actually be applied at, or `None` when unset.
+    pub effective_percent: Option<u32>,
+    /// How to install the utility. Always filled in, so the card can say the way out.
+    pub hint: String,
 }
 
 impl Inner {
@@ -134,7 +296,8 @@ impl Inner {
             .lock()
             .unwrap()
             .set(KEY.to_string(), serde_json::to_value(&limits)?)?;
-        self.services.set_limits(limits);
+        self.services.set_limits(limits.clone());
+        self.web.set_limits(limits);
         Ok(())
     }
 
@@ -197,5 +360,109 @@ mod tests {
         .validate()
         .is_err());
         assert!(ResourceLimits::default().validate().is_ok());
+    }
+
+    /// A percentage is a share of every core, so a thread count has to be converted
+    /// against the machine's own core count and rounded up — one thread on a 6-core box is
+    /// 17%, and 16% would be under the core the user asked for.
+    #[test]
+    fn threads_become_a_percentage_of_total_cpu() {
+        let cores = logical_cores().max(1);
+        let l = ResourceLimits {
+            cpu_threads: Some(1),
+            ..Default::default()
+        };
+        let pct = l.effective_cpu_percent().expect("a thread count is a cap");
+        assert_eq!(pct, (100u32).div_ceil(cores));
+        assert!(pct >= 1 && pct <= 100, "a cap is always in range");
+
+        let all = ResourceLimits {
+            cpu_threads: Some(cores),
+            ..Default::default()
+        };
+        assert_eq!(all.effective_cpu_percent(), Some(100));
+    }
+
+    #[test]
+    fn a_percentage_is_passed_through_and_a_cap_needs_only_one_of_the_two() {
+        assert_eq!(
+            ResourceLimits {
+                cpu_percent: Some(25),
+                ..Default::default()
+            }
+            .effective_cpu_percent(),
+            Some(25)
+        );
+        assert_eq!(
+            ResourceLimits {
+                cpu_percent: Some(0),
+                ..Default::default()
+            }
+            .validate(),
+            Err("The CPU limit (%) must be between 1 and 100".into())
+        );
+        let both = ResourceLimits {
+            cpu_percent: Some(25),
+            cpu_threads: Some(2),
+            ..Default::default()
+        };
+        assert!(both.validate().is_err(), "two ways to say the same thing");
+        assert!(
+            ResourceLimits {
+                cpu_threads: Some(logical_cores() + 1),
+                ..Default::default()
+            }
+            .validate()
+            .is_err(),
+            "more threads than the machine has cores"
+        );
+    }
+
+    /// The wrap is `cpulimit <percent> <program> <args>` — the utility stays in front for
+    /// the whole life of the service, and the real program's arguments follow untouched.
+    #[test]
+    fn a_cap_wraps_the_program_in_cpulimit() {
+        let dir = tempfile::tempdir().unwrap();
+        let limiter = dir.path().join("cpulimit.exe");
+        std::fs::write(&limiter, b"MZ").unwrap();
+        let l = ResourceLimits {
+            cpu_percent: Some(30),
+            cpu_limiter_path: Some(limiter.display().to_string()),
+            ..Default::default()
+        };
+        let (program, args) = l
+            .cap_process("redis-server.exe", &["--port".into(), "6379".into()])
+            .expect("the cap can be applied")
+            .expect("a cap was asked for");
+        assert_eq!(program, limiter.display().to_string());
+        assert_eq!(args, ["30", "redis-server.exe", "--port", "6379"]);
+    }
+
+    #[test]
+    fn no_cap_asked_for_adds_nothing() {
+        assert_eq!(
+            ResourceLimits::default()
+                .cap_process("redis-server.exe", &["--port".into(), "6379".into()]),
+            Ok(None)
+        );
+    }
+
+    /// A wanted cap that cannot be applied is an error naming the way out — never a silent
+    /// start of an uncapped service the UI would still describe as limited.
+    #[test]
+    fn a_wanted_cap_without_the_utility_is_refused_with_the_fix() {
+        let l = ResourceLimits {
+            cpu_percent: Some(30),
+            cpu_limiter_path: Some(r"C:\nowhere\cpulimit.exe".into()),
+            ..Default::default()
+        };
+        let err = l
+            .cap_process("redis-server.exe", &[])
+            .expect_err("a cap that cannot be applied must not look like success");
+        assert!(
+            err.contains("cpulimit"),
+            "the message names the utility: {err}"
+        );
+        assert!(l.validate().is_err(), "and a bad path is refused on save");
     }
 }

@@ -144,7 +144,9 @@ pub struct LogSource {
 pub struct StartupSettings {
     pub with_windows: bool,
     pub start_minimized: bool,
-    pub autostart_web: bool,
+    /// Every service to start with the app, web servers included. A web server in this
+    /// list is applied (config rendered and validated) before it starts, so it answers
+    /// for the user's sites rather than only holding a port.
     pub autostart_services: Vec<String>,
     pub notifications: bool,
     pub close_to_tray: bool,
@@ -351,6 +353,7 @@ impl Inner {
         core.start_projects_watcher();
         core.sync_php_external();
         core.services.set_limits(core.resource_limits());
+        core.web.set_limits(core.resource_limits());
         {
             // The Services page shows the web servers too, but they keep running through
             // `WebManager` — this only hands it over for listing and probing.
@@ -1391,9 +1394,12 @@ impl Inner {
     // ---------------------------------------------------------- startup (§121)
 
     pub fn startup_settings(&self) -> StartupSettings {
+        // Read first: `web_config` takes the same settings lock, so it cannot be called
+        // while the guard below is held.
+        let default_web = self.web_config().default_server.clone();
         let s = self.settings.lock().unwrap();
         let b = |k: &str, d: bool| s.get(k).and_then(|v| v.as_bool()).unwrap_or(d);
-        let services = s
+        let mut services: Vec<String> = s
             .get("startup.services")
             .and_then(|v| v.as_array())
             .map(|a| {
@@ -1402,10 +1408,20 @@ impl Inner {
                     .collect()
             })
             .unwrap_or_default();
+        // The old "start the web server with the app" switch is gone (§121). A user who
+        // had it on meant "my sites answer after a restart", so that intent is carried
+        // over once: the default web server joins the autostart list, which now applies
+        // the config before starting it.
+        if b("startup.web", false)
+            && !services
+                .iter()
+                .any(|id| crate::web::SERVER_IDS.contains(&id.as_str()))
+        {
+            services.push(default_web);
+        }
         StartupSettings {
             with_windows: registry_run_value().is_some(),
             start_minimized: b("startup.minimized", true),
-            autostart_web: b("startup.web", false),
             autostart_services: services,
             notifications: b("notifications.enabled", true),
             close_to_tray: b("startup.close_to_tray", true),
@@ -1416,7 +1432,6 @@ impl Inner {
         {
             let mut s = self.settings.lock().unwrap();
             s.set("startup.minimized", serde_json::json!(new.start_minimized))?;
-            s.set("startup.web", serde_json::json!(new.autostart_web))?;
             s.set(
                 "startup.services",
                 serde_json::json!(new.autostart_services),
@@ -1449,14 +1464,24 @@ impl Inner {
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
         let startup = self.startup_settings();
+        // A web server in the autostart list is applied, not just spawned: rendering and
+        // validating its config is what makes the user's sites answer. `ServiceManager::start`
+        // on a web server id only launches the process against whatever config is on disk,
+        // which is what the removed "start the web server" switch used to do separately.
+        let mut web_applied = false;
         for id in &startup.autostart_services {
-            if let Err(e) = self.services.start(id) {
+            let result: Result<(), String> = if crate::web::SERVER_IDS.contains(&id.as_str()) {
+                self.apply_web_server(id, &[])
+                    .map(|_| ())
+                    .map_err(|e| e.to_string())
+            } else {
+                self.services.start(id).map(|_| ())
+            };
+            if let Err(e) = result {
                 tracing::warn!(service = %id, error = %e, "autostart: service did not start");
             }
-        }
-        if startup.autostart_web {
-            if let Err(e) = self.apply_web(&[]) {
-                tracing::warn!(error = %e, "autostart: web server did not start");
+            if crate::web::SERVER_IDS.contains(&id.as_str()) {
+                web_applied = true;
             }
         }
         let tunnels: Vec<_> = self
@@ -1469,7 +1494,7 @@ impl Inner {
                     && t.config.public_hostname.is_some()
             })
             .collect();
-        if !tunnels.is_empty() && !startup.autostart_web {
+        if !tunnels.is_empty() && !web_applied {
             if let Err(e) = self.apply_web(&[]) {
                 tracing::warn!(error = %e, "autostart: web server for public domains did not start");
             }

@@ -246,6 +246,26 @@ impl ServiceManager {
         self.limits.lock().unwrap().service_args(id)
     }
 
+    /// Starts a service under the CPU cap from Settings → Resources (§129).
+    ///
+    /// The cap is the external `cpulimit` utility in front of the real program, so the
+    /// supervisor's record still names this service (`name` is kept) and `cpulimit` sits
+    /// in the process tree for as long as the service runs, which is what makes stop,
+    /// restart and crash recovery behave exactly as they did uncapped. A wanted cap whose
+    /// utility is missing is an `Err` naming the fix — never a start that quietly runs
+    /// uncapped while the UI says it is limited.
+    fn start_capped(&self, spec: ProcessSpec) -> Result<ProcessId, String> {
+        let limits = self.limits.lock().unwrap().clone();
+        match limits.cap_process(&spec.executable, &spec.args)? {
+            Some((executable, args)) => Ok(self.supervisor.start(ProcessSpec {
+                executable,
+                args,
+                ..spec
+            })),
+            None => Ok(self.supervisor.start(spec)),
+        }
+    }
+
     /// The built-in services, then the user's own (§67), then the web servers.
     pub fn list(&self) -> Vec<ServiceStatus> {
         let custom: Vec<String> = self
@@ -331,7 +351,7 @@ impl ServiceManager {
                 def.name
             ));
         }
-        Ok(self.supervisor.start(ProcessSpec {
+        Ok(self.start_capped(ProcessSpec {
             name: def.name.clone(),
             executable: def.executable.clone(),
             args: def.args.clone(),
@@ -343,7 +363,7 @@ impl ServiceManager {
                     max_retries: 3,
                     delay_ms: 2000,
                 }),
-        }))
+        })?)
     }
 
     /// Drops bookkeeping for services whose process is gone. A service that exits
@@ -604,15 +624,14 @@ impl ServiceManager {
         let db_file = self.paths.services_dir().join("mailpit").join("mailpit.db");
         std::fs::create_dir_all(db_file.parent().unwrap()).map_err(|e| e.to_string())?;
 
-        let id = self.supervisor.start(ProcessSpec {
+        self.start_capped(ProcessSpec {
             name: "Mailpit".into(),
             executable: binary.display().to_string(),
             args: vec!["--db-file".into(), db_file.display().to_string()],
             cwd: None,
             env: vec![],
             restart: None,
-        });
-        Ok(id)
+        })
     }
 
     /// MariaDB (§31, Stage 10): the MySQL-compatible server, on the standard 3306.
@@ -651,7 +670,7 @@ impl ServiceManager {
             }
         }
 
-        Ok(self.supervisor.start(ProcessSpec {
+        self.start_capped(ProcessSpec {
             name: "MariaDB".into(),
             executable: mariadbd.display().to_string(),
             args: vec![
@@ -666,7 +685,7 @@ impl ServiceManager {
             cwd: Some(install_dir.display().to_string()),
             env: vec![],
             restart: None,
-        }))
+        })
     }
 
     /// MongoDB (§31, Stage 10): connection info, logs (process output), health (port probe).
@@ -678,7 +697,7 @@ impl ServiceManager {
         let data_dir = self.paths.services_dir().join("mongodb").join("data");
         std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
 
-        Ok(self.supervisor.start(ProcessSpec {
+        self.start_capped(ProcessSpec {
             name: "MongoDB".into(),
             executable: mongod.display().to_string(),
             args: vec![
@@ -695,7 +714,7 @@ impl ServiceManager {
             cwd: None,
             env: vec![],
             restart: None,
-        }))
+        })
     }
 
     /// PostgreSQL (§31, Stage 5). Trust authentication on loopback only: fine for a local dev
@@ -734,7 +753,7 @@ impl ServiceManager {
             }
         }
 
-        Ok(self.supervisor.start(ProcessSpec {
+        self.start_capped(ProcessSpec {
             name: "PostgreSQL".into(),
             executable: postgres.display().to_string(),
             args: vec![
@@ -751,7 +770,7 @@ impl ServiceManager {
             cwd: Some(install_dir.display().to_string()),
             env: vec![],
             restart: None,
-        }))
+        })
     }
 
     /// Redis (§31, Stage 5), from the community Windows build. Loopback only, snapshots go to
@@ -764,7 +783,7 @@ impl ServiceManager {
         let data_dir = self.paths.services_dir().join("redis").join("data");
         std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
 
-        Ok(self.supervisor.start(ProcessSpec {
+        self.start_capped(ProcessSpec {
             name: "Redis".into(),
             executable: server.display().to_string(),
             args: vec![
@@ -779,7 +798,7 @@ impl ServiceManager {
             cwd: Some(data_dir.display().to_string()),
             env: vec![],
             restart: None,
-        }))
+        })
     }
 
     /// Memcached, from the community Windows port. Loopback only and capped in memory, the
@@ -792,7 +811,7 @@ impl ServiceManager {
         let data_dir = self.paths.services_dir().join("memcached");
         std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
 
-        Ok(self.supervisor.start(ProcessSpec {
+        self.start_capped(ProcessSpec {
             name: "Memcached".into(),
             executable: server.display().to_string(),
             args: vec![
@@ -807,7 +826,7 @@ impl ServiceManager {
             cwd: Some(data_dir.display().to_string()),
             env: vec![],
             restart: None,
-        }))
+        })
     }
 
     // ------------------------------------------------------------- SQL clients (§32–33)
@@ -909,6 +928,63 @@ impl ServiceManager {
         }
         self.run_sql(engine, &format!("CREATE DATABASE IF NOT EXISTS `{name}`"))
             .map(|_| ())
+    }
+
+    /// Creating a database with a login of its own, or with none.
+    ///
+    /// The bundled engines are provisioned with a passwordless superuser on loopback, so
+    /// `user: None` is the normal case and connects as that superuser. A user who wants a
+    /// credential of their own passes `user` and `password`; the database is created and
+    /// the user is made its owner, so the app connects as that user alone and never needs
+    /// superuser rights. A half-supplied pair is refused rather than silently creating a
+    /// database nobody can log into.
+    pub fn create_database_with_user(
+        &self,
+        engine: &str,
+        name: &str,
+        user: Option<&str>,
+        password: Option<&str>,
+    ) -> Result<(), String> {
+        match (user, password) {
+            (None, None) => self.create_database(engine, name),
+            (Some(u), Some(p)) => {
+                self.create_user(engine, u, p, name)?;
+                // `create_user` creates the database for MySQL in the same batch; PostgreSQL
+                // creates it separately and takes ownership away, so both need the database
+                // to exist before the grant means anything.
+                self.create_database(engine, name)?;
+                self.grant_database(engine, u, name)
+            }
+            (Some(u), None) => Err(format!(
+                "\"{u}\" was given without a password, so the account would be unusable. \
+                 Enter a password, or create the database with the {engine} root account."
+            )),
+            (None, Some(_)) => Err(format!(
+                "a password was given without a user name, so there is nothing to attach it to. \
+                 Enter the user name too, or create the database with the {engine} root account."
+            )),
+        }
+    }
+
+    /// Full rights on one database for one user, on a database that already exists.
+    fn grant_database(&self, engine: &str, user: &str, database: &str) -> Result<(), String> {
+        if engine == "postgres" {
+            self.run_sql(
+                engine,
+                &format!("GRANT ALL PRIVILEGES ON DATABASE \"{database}\" TO \"{user}\""),
+            )?;
+            // PostgreSQL 15+ no longer lets an ordinary user create tables in `public`;
+            // owning the database restores that without granting anything server-wide.
+            return self.run_sql(
+                engine,
+                &format!("ALTER DATABASE \"{database}\" OWNER TO \"{user}\""),
+            );
+        }
+        let u = sql_string(user);
+        self.run_sql(
+            engine,
+            &format!("GRANT ALL PRIVILEGES ON `{database}`.* TO {u}@'localhost'; FLUSH PRIVILEGES"),
+        )
     }
 
     pub fn list_databases(&self, engine: &str) -> Result<Vec<String>, String> {

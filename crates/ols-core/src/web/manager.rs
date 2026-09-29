@@ -158,6 +158,10 @@ pub struct WebManager {
     certs: Arc<CertificateManager>,
     php: Arc<PhpPools>,
     state: Mutex<State>,
+    /// Settings → Resources (§129). Memory limits are per-server program flags; the CPU
+    /// limit is applied by wrapping the server in the `cpulimit` utility, which is why it
+    /// has to happen here at spawn time rather than being another command-line flag.
+    limits: Mutex<crate::resources::ResourceLimits>,
 }
 
 fn sha_hex(text: &str) -> String {
@@ -247,8 +251,15 @@ impl WebManager {
                 apps: HashMap::new(),
                 dns: None,
                 site_php: HashMap::new(),
+                pools: HashMap::new(),
             }),
+            limits: Mutex::new(Default::default()),
         }
+    }
+
+    /// The CPU cap from Settings → Resources, applied to the next server start.
+    pub fn set_limits(&self, limits: crate::resources::ResourceLimits) {
+        *self.limits.lock().unwrap() = limits;
     }
 
     pub fn certs(&self) -> &Arc<CertificateManager> {
@@ -826,10 +837,20 @@ impl WebManager {
         }
 
         let inv = server.start(layout);
+        let executable = layout.binary.display().to_string();
+        // A wanted CPU cap whose utility is missing must not turn into an uncapped server
+        // that still reads as limited, so this returns the same refusal ServiceManager does.
+        let capped = self
+            .limits
+            .lock()
+            .unwrap()
+            .cap_process(&executable, &inv.args)
+            .map_err(werr)?;
+        let (executable, args) = capped.unwrap_or((executable, inv.args));
         let process = self.supervisor.start(ProcessSpec {
             name: server.name().to_string(),
-            executable: layout.binary.display().to_string(),
-            args: inv.args,
+            executable,
+            args,
             cwd: Some(inv.cwd.display().to_string()),
             env: vec![],
             restart: None,
