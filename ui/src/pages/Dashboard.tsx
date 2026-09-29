@@ -163,7 +163,7 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
       )}
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card className="order-2 lg:order-none">
+        <Card className="order-2 min-w-0 lg:order-none">
           <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
             <div>
               <CardTitle className="text-sm">Overview</CardTitle>
@@ -230,7 +230,7 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
         {/* In windowed (single-column) mode the Web server card leads, then Overview,
             then Services. In the 2-column layout it stacks above Services in the right
             column, so both columns share a top and a bottom edge with Overview. */}
-        <div className="contents lg:flex lg:flex-col lg:gap-4">
+        <div className="contents min-w-0 lg:flex lg:flex-col lg:gap-4">
           <Card className="order-1 lg:order-none">
             <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm">Web server</CardTitle>
@@ -268,7 +268,7 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
             </CardContent>
           </Card>
 
-          <div className="order-3 flex min-h-0 flex-1 flex-col lg:order-none">
+          <div className="order-3 flex min-h-0 min-w-0 flex-1 flex-col lg:order-none">
             <ServicesWidget
               services={data?.services ?? null}
               webServers={data?.web?.servers ?? null}
@@ -364,7 +364,7 @@ function ServicesWidget({
   }
 
   return (
-    <Card className="flex flex-1 flex-col overflow-hidden py-0">
+    <Card className="flex w-full min-w-0 flex-1 flex-col overflow-hidden py-0">
       <CardHeader className="flex-row items-center justify-between space-y-0 px-3 py-2.5">
         <div className="flex min-w-0 items-baseline gap-2">
           <CardTitle className="text-sm">Services</CardTitle>
@@ -384,15 +384,21 @@ function ServicesWidget({
              <div
                key={s.id}
                className={cn(
-                 'grid grid-cols-[1.25rem_minmax(0,1fr)_5.5rem_6.5rem_auto] items-center gap-x-3 px-3 h-9 transition-colors hover:bg-muted/25',
+                 // In the windowed band (`lg` to `xl`) the card is one half of a two-column
+                 // grid and cannot hold five controls, a port and a state on one line: the
+                 // name, the only flexible field, was truncated away to make room. There the
+                 // row becomes two lines — name, port and state on top, the actions on their
+                 // own line under the name. Narrower and wider than that band there is room
+                 // for one line, and the actions sit at the end of it.
+                 'grid grid-cols-[1.25rem_minmax(0,1fr)_5.5rem_auto_auto] items-center gap-x-3 px-3 h-9 transition-colors hover:bg-muted/25',
+                 'lg:grid-cols-[1.25rem_minmax(0,1fr)_5.5rem_auto] lg:grid-rows-[auto_auto] lg:h-auto lg:gap-y-0.5 lg:py-1.5',
+                 'xl:grid-cols-[1.25rem_minmax(0,1fr)_5.5rem_auto_auto] xl:grid-rows-1 xl:py-0 xl:h-9',
                  i > 0 && 'border-t border-border/60'
                )}
              >
               <span className={cn('shrink-0', !s.installed && 'opacity-40 grayscale')}>
                 <TechIcon id={s.id} className="size-4" />
               </span>
-              {/* The name is the row's only flexible field, so it is what gives way when
-                  the window is too narrow for the rest. */}
               <span className="min-w-0 truncate text-[13px] font-medium">{s.name}</span>
               <span
                 className="text-right font-mono text-xs tabular-nums text-muted-foreground"
@@ -401,7 +407,7 @@ function ServicesWidget({
                 {s.port === null ? '—' : s.port}
               </span>
               <ServiceStatus state={state} />
-              <span className="flex items-center justify-end gap-0.5">
+              <span className="flex shrink-0 items-center gap-0.5 lg:col-start-2 lg:row-start-2 lg:col-span-3 xl:col-start-5 xl:row-start-1 xl:col-span-1 xl:justify-end">
                 <IconAction
                   title={`Start ${s.name}`}
                   disabled={busy !== null || !s.installed || s.running}
@@ -465,9 +471,11 @@ function ServiceStatus({ state }: { state: WidgetState }) {
     missing: { dot: 'bg-muted-foreground/30', text: 'text-muted-foreground/70', label: 'Not installed' },
   }[state]
   return (
-    <span className="inline-flex items-center gap-1.5" title={config.label}>
+    // The dot and the word both show: the two-line row leaves the horizontal room for
+    // them, and the full state is in the tooltip as well.
+    <span className="inline-flex min-w-0 items-center gap-1.5" title={config.label}>
       <span className={cn('size-1.5 shrink-0 rounded-full', config.dot)} />
-      <span className={cn('text-xs tabular-nums', config.text)}>{config.label}</span>
+      <span className={cn('truncate text-xs tabular-nums', config.text)}>{config.label}</span>
     </span>
   )
 }

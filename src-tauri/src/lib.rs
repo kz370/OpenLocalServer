@@ -76,7 +76,9 @@ static MAIN_WINDOW_REVEALED: AtomicBool = AtomicBool::new(false);
 /// frame on screen for as long as the bundle takes to load. The UI emits
 /// `ols:ui-ready` after its first paint and the window is shown then. The timer is
 /// the safety net — a UI error must never leave a running app with no window and no
-/// explanation, so the window is revealed anyway after a few seconds.
+/// explanation, so the window is revealed anyway after a few seconds. The page paints
+/// the app background until that first frame (`booting` in `index.html`), so a reveal
+/// that beats the UI still shows a solid window rather than a transparent one.
 fn reveal_window_on_ui_ready(app: &AppHandle) {
     let reveal = |app: &AppHandle| {
         if MAIN_WINDOW_REVEALED.swap(true, Ordering::SeqCst) {

@@ -19,6 +19,10 @@ createRoot(document.getElementById('root')!).render(
 // has actually presented it before the window is shown.
 requestAnimationFrame(() => {
   requestAnimationFrame(() => {
+    // The boot background stays until here, so any earlier reveal — the Rust fallback
+    // timer, or a slow first paint — still shows the app's background rather than a
+    // see-through frame. Removed in the same frame the reveal is requested.
+    document.documentElement.classList.remove('booting')
     void emit('ols:ui-ready').catch(() => undefined)
   })
 })

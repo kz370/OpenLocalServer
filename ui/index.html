@@ -20,6 +20,12 @@
         } catch (e) {
           /* private mode: fall back to the light theme */
         }
+        // The app window is transparent and is created hidden, then revealed once the
+        // UI reports it has painted. Until React mounts there is nothing painted, so
+        // `booting` keeps the page on the app's own background: an early reveal (the
+        // Rust fallback timer) then shows a solid window instead of a see-through one.
+        // `main.tsx` drops the class on the first painted frame.
+        document.documentElement.classList.add('booting')
       })()
     </script>
   </head>

@@ -164,6 +164,10 @@ export function DomainSettings({
   /** Set once the user types a project name, so a later projects-changed event leaves it alone. */
   const projectNameTouched = useRef(false)
   const [parentDir, setParentDir] = useState(defaultParent || '')
+  // The configured sites directory, kept separately from `parentDir` so the folder
+  // placeholder can name the real default location even when no parent was passed in
+  // and the lookup has not answered yet.
+  const [defaultSitesDir, setDefaultSitesDir] = useState('')
   const kindType = d.kind.type
   const [appLine, setAppLine] = useState('')
   const [defaultTld, setDefaultTld] = useState('local')
@@ -213,8 +217,12 @@ export function DomainSettings({
   }, [])
 
   useEffect(() => {
-    if (!parentDir) void getDefaultSitesDir().then((p) => p && setParentDir(p))
-  }, [parentDir])
+    void getDefaultSitesDir().then((p) => {
+      if (!p) return
+      setDefaultSitesDir(p)
+      setParentDir((cur) => cur || p)
+    })
+  }, [])
 
   useEffect(() => {
     if (defaultParent) setParentDir(defaultParent)
@@ -457,7 +465,14 @@ export function DomainSettings({
             <Input
               value={d.root}
               onChange={(e) => onRootChange(e.target.value)}
-              placeholder={parentDir ? buildSitePath(parentDir, 'shop') : 'C:\\Sites\\shop\\public'}
+              placeholder={(() => {
+                // The placeholder is the path this dialog would actually write: the
+                // default sites directory (or the parent the caller chose) plus a sample
+                // folder. It used to fall back to a hardcoded `C:\Sites\shop\public`,
+                // which named a location the app never uses.
+                const base = parentDir || defaultSitesDir
+                return base ? buildSitePath(base, 'shop') : ''
+              })()}
               className="min-w-0 flex-1"
             />
             <Button variant="secondary" onClick={browseRoot} className="shrink-0">

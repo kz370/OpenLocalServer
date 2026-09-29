@@ -255,9 +255,12 @@ export function SettingsPage() {
                     </Button>
                   </div>
                 </SettingRow>
-                <SettingRow stacked title="Where new projects are created" hint="Quick Apps, Git clone and imports default here. Leave blank for <install>\sites. Each dialog can still change folder name or location.">
+                <SettingRow stacked title="Where new projects are created" hint={`Quick Apps, Git clone and imports default here. Leave blank to use ${sitesDir || '<install>\\sites'}. Each dialog can still change folder name or location.`}>
                   <div className="flex gap-2">
-                    <Input value={projectsDir} onChange={(e) => setProjectsDir(e.target.value)} placeholder="C:\Users\you\Sites" />
+                    {/* The blank case is the common one, and it resolves to the real
+                        installed sites folder — the row above already shows it — so that
+                        is what the placeholder names, not a sample user path. */}
+                    <Input value={projectsDir} onChange={(e) => setProjectsDir(e.target.value)} placeholder={sitesDir || undefined} />
                     <Button variant="secondary" onClick={async () => { const p = await open({ directory: true }); if (p && !Array.isArray(p)) setProjectsDir(p) }}>
                       <FolderSearch /> Browse
                     </Button>

@@ -114,6 +114,47 @@ const REDIS_CLIENT = (
   </svg>
 )
 
+/**
+ * pgAdmin: an elephant head inside a desktop window — a Postgres *client*, not the
+ * PostgreSQL server. Drawn here because simple-icons has no pgAdmin brand, and the
+ * plain `postgres` mark there reads as the runtime, not the tool you open databases
+ * with, so the two are told apart by the window frame as well as by the styling.
+ */
+const PGADMIN = (
+  <svg viewBox="0 0 24 24" role="img" aria-label="pgAdmin">
+    <rect x="2.5" y="4" width="19" height="16" rx="2.2" fill="currentColor" fillOpacity="0.14" />
+    <rect x="2.5" y="4" width="19" height="16" rx="2.2" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    <path d="M2.5 8.4h19" stroke="currentColor" strokeWidth="1.5" />
+    <g transform="translate(5.3 7.2) scale(0.52)" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="10.2" cy="9.4" r="5.6" strokeWidth="3" />
+      <path d="M7.6 5.4c-2 .4-3.2 2-3.2 4 0 2.1 1.5 3.7 3.4 4" strokeWidth="2.6" opacity="0.7" />
+      <path d="M13.4 8.6c1.6 0 2.7 1.1 2.7 2.5 0 1.7-.9 2.7-1.7 3.8-.5.7-.3 1.6.4 2 .8.4 1.7 0 2.1-.8" strokeWidth="3" />
+      <path d="M14.6 12.4c1.1.5 2.1.3 2.8-.4" strokeWidth="2.4" opacity="0.85" />
+    </g>
+    <circle cx="11.3" cy="11.7" r="0.75" fill="currentColor" />
+  </svg>
+)
+
+/**
+ * HeidiSQL: a plain round badge filled with the brand's green-to-white gradient —
+ * no glyph inside it, because the mark *is* the disc. It is also the reason the two
+ * elephant tools stay apart: pgAdmin is a stroked head in a window frame, this is a
+ * filled circle, so neither reads as the other. simple-icons has no HeidiSQL brand.
+ * The gradient id is fixed: every instance paints the same ramp, so one definition
+ * is enough however many rows render it.
+ */
+const HEIDISQL = (
+  <svg viewBox="0 0 24 24" role="img" aria-label="HeidiSQL">
+    <defs>
+      <linearGradient id="heidisql-disc" x1="3" y1="3" x2="21" y2="21" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stopColor="#2fa24c" />
+        <stop offset="1" stopColor="#ffffff" />
+      </linearGradient>
+    </defs>
+    <circle cx="12" cy="12" r="11" fill="url(#heidisql-disc)" />
+  </svg>
+)
+
 /** Memcached's supplied symbol-only logo, scaled to the runtime icon slot. */
 const MEMCACHED_MARK = (
   <svg viewBox="0 0 24 24" role="img" aria-label="Memcached">
@@ -134,6 +175,8 @@ const GENERIC: Record<string, ReactNode> = {
   'reverse-proxy': <ArrowLeftRight />,
   other: <Package />,
   memcached: MEMCACHED_MARK,
+  pgadmin: PGADMIN,
+  heidisql: HEIDISQL,
   mailpit: ENVELOPE,
   mail: ENVELOPE,
   tinyrdm: REDIS_CLIENT,

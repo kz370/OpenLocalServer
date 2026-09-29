@@ -130,6 +130,15 @@
   #root {
     background: transparent !important;
   }
+  /* Boot frame, before React has painted anything: the app background, not nothing.
+     The class is added by the pre-paint script in index.html and removed by main.tsx
+     once the first frame is presented, so the window's rounded corners stay
+     transparent for its whole life and never show an empty frame. Painted on `html`,
+     which propagates to the canvas and so covers the whole window. */
+  html.booting {
+    min-height: 100%;
+    background: var(--background) !important;
+  }
   body {
     @apply text-foreground;
     font-family:

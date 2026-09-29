@@ -60,8 +60,9 @@ WebConfig | resolves | Domain.server -> resolved_server(domain, cfg)
 SitesPage | uses | UseWeb hook
 SitesPage | uses | ConfirmAction (the dialog title names the site or project; the destructive button repeats the action)
 UseWeb.deleteSite | uses | remove_domain + apply_web (row removed optimistically, apply run behind an `applying` flag)
-RuntimesPage | uses | TechIcon (runtime ID resolves to brand or generic glyph; Memcached uses its symbol-only logo, Redis keeps its brand mark)
+RuntimesPage | uses | TechIcon (runtime ID resolves to brand or generic glyph; Memcached uses its symbol-only logo, Redis keeps its brand mark, pgAdmin/HeidiSQL/Tiny RDM/Mailpit are drawn marks so no GUI tool falls through to the generic glyph)
 ServicesWidget | uses | DashboardPage.useAction (so a failed service action reaches the page ErrorCard)
+ServicesWidget | lays_out | its rows as a 5-track grid that becomes two lines between lg and xl (controls under the name) so the controls never clip and the name is never truncated away; single line below lg and from xl up
 SiteDialog | uses | CoreClient (get_domain once per trigger, unchanged read dropped — it seeds DomainSettings; both gating reads are deadline-bounded and surface their Diagnostic, and the project id comes from the get_domain answer rather than racing the caller's)
 TerminalComp | uses | TerminalManager
 EnvEditor | uses | EnvFile (via Core)
@@ -72,5 +73,5 @@ HelperService | uses | HelperMain execute
 TauriApp | depends_on | ols-helper (install/service)
 TauriApp | uses | ServiceManager.list (green/red status icon, includes the web servers)
 TauriApp | uses | ProcessSupervisor.is_alive (the status mark's rule for a supervised process, the same one any_running/prune_finished use)
-TauriApp | waits_on | UI main.tsx `ols:ui-ready` (window revealed after first paint; 5s fallback)
+TauriApp | waits_on | UI main.tsx `ols:ui-ready` (window revealed after first paint; 5s fallback, by which time the `booting` background is still on the canvas if React never painted, so no reveal path can show a transparent frame)
 TauriApp | reads | ols-core `app::should_start_hidden` (startup.minimized preference decides on every launch; --minimized only forces)
