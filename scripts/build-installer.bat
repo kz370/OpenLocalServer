@@ -16,9 +16,13 @@ set "CARGO_BIN=openlocalserver"
 set "HELPER_BIN=ols-helper"
 rem The command line. It ships with the app: the Explorer right-click menu is
 rem written to run it, and shell_menu.rs find_cli only looks beside the app or on
-rem PATH -- so an install without it has no working menu at all. olsc, shipped
-rem beside it, is what keeps the documented `ols <command>` resolving to the CLI
-rem instead of to OLS.exe.
+rem PATH -- so an install without it has no working menu at all.
+rem Two names, and they are not the same thing: CLI_PKG is what cargo is asked for
+rem (the package, which matches its directory), CLI_BIN is what people type (the
+rem binary). They differ because the package name is a repository detail and the
+rem command name is the product -- `olsc`, not `ols`, because the app ships as
+rem OLS.exe and Windows does not tell two file names apart by case.
+set "CLI_PKG=ols-cli"
 set "CLI_BIN=olsc"
 set "UI=%ROOT%ui"
 set "TARGET=%ROOT%target\release"
@@ -157,7 +161,7 @@ rem Update trust baked into every build: the PUBLIC key is safe to ship.
 rem A pre-set OLS_UPDATE_PUBKEY in the environment always wins.
 if not defined OLS_UPDATE_PUBKEY set "OLS_UPDATE_PUBKEY=RWQTa5rn3AFu8SRjdSvz7VsUi/pRNNdk2FPuCbmgSZMV+veJMB9XCiys"
 pushd "%ROOT%"
-cargo build -p %CARGO_BIN% -p %HELPER_BIN% -p %CLI_BIN% --release --jobs %JOBS%
+cargo build -p %CARGO_BIN% -p %HELPER_BIN% -p %CLI_PKG% --release --jobs %JOBS%
 set "BUILD_ERR=%ERRORLEVEL%"
 popd
 if not "%BUILD_ERR%"=="0" (
@@ -178,7 +182,7 @@ if not exist "%HELPER_EXE%" (
 if not exist "%CLI_EXE%" (
   echo [x] Problem: %CLI_BIN%.exe missing from target\release after build. The
   echo           installer ships it and the Explorer right-click menu runs it.
-  echo     Fix: run cargo build -p %CLI_BIN% --release manually to see why.
+  echo     Fix: run cargo build -p %CLI_PKG% --release manually to see why.
   goto :fail
 )
 
