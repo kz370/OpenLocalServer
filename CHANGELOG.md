@@ -5,6 +5,29 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-09-30
+
+Feature release. Full notes: [`release-notes/v1.2.0.md`](./release-notes/v1.2.0.md).
+
+### Added
+- WordPress admin sign-in with no password. A project whose folder holds a WordPress install
+  (`wp-config.php`, `wp-admin/index.php`, or `wp-includes` + `wp-content`, checked on disk) gets a
+  **WP Admin** action in its Sites row menu. It writes one temporary must-use plugin carrying a
+  128-bit token and a five-minute window; WordPress turns the token into a session cookie for the
+  chosen administrator and the helper deletes itself. The link works once, from loopback only. No
+  password is read, asked for, shown or stored, `wp-config.php` is never opened, and the site
+  database is never touched.
+- "Cancel pending WP sign-in" removes a link that was made but never used; a helper left behind by a
+  crash is swept on the next listing, along with any helper whose expiry cannot be read.
+- The WordPress sign-in screen uses the app's own theme tokens (light and dark) and follows the
+  colourway the app is showing rather than the operating system's.
+- New commands `list_wp_projects`, `wp_sign_in{project_id,hostname,theme}`, `wp_sign_in_revoke{project_id}`.
+  All three are local-only: absent from the HTTP API allow-list and the AI command allow-list.
+- `olsc repair --dry-run` prints the plan and changes nothing — findings as before, then a count of
+  what would run (safe, destructive, manual), with nothing dispatched.
+- `scripts\upload-release.bat` gains `full-force-tag` (option 3): `full`, plus re-pointing the release
+  tag at the newest commit on `master`. Only the tag moves, never branch history.
+
 ## [1.1.1] — 2026-09-30
 
 Fix release. Full notes: [`release-notes/v1.1.1.md`](./release-notes/v1.1.1.md).
