@@ -110,6 +110,16 @@ pub fn forward_to_cli(args: &[String]) -> Result<i32, Diagnostic> {
                 .into(),
         ),
     })?;
+    // This process's own output has to be pointed at the caller's console before
+    // anything is written, and that is the part a GUI-subsystem build cannot skip.
+    // Measured: from cmd, `ols status` printed; from PowerShell — where the terminal
+    // is a ConPTY — the same command returned to the prompt having printed nothing,
+    // because the handles this process inherited from PowerShell do not answer a
+    // write. `AttachConsole` joins it to the console that started it and
+    // `SetStdHandle` points the three standard handles there, so the re-emission below
+    // has somewhere to go. Called first, before the child exists and before any
+    // output, because the standard handles are read once and cached.
+    attach_parent_console();
     // A prompt is answered on this process's stdin, and a command that needs one
     // (`ols setup` with no --yes) reads from the terminal it was typed into. The
     // child is given this process's standard input rather than null, or every
@@ -120,6 +130,20 @@ pub fn forward_to_cli(args: &[String]) -> Result<i32, Diagnostic> {
         .stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
+    // CREATE_NO_WINDOW, and it is not cosmetic. A release build is a GUI-subsystem
+    // program, so it is never attached to a console, and a console-subsystem child
+    // started from a process with no console is given one of its own -- a window that
+    // appears and is gone, which is what `ols status` did after the piping fix: the
+    // output was right and a blank terminal flashed up in front of it. Piping the
+    // streams does not prevent that allocation; this flag is what does. The child
+    // needs no console anyway, because both its outputs are pipes read here and its
+    // input is this process's.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        child.creation_flags(CREATE_NO_WINDOW);
+    }
     let mut child = child.spawn().map_err(|e| Diagnostic {
         problem: format!("{} could not be started.", cli.display()),
         cause: e.to_string(),
@@ -176,6 +200,44 @@ pub fn forward_to_cli(args: &[String]) -> Result<i32, Diagnostic> {
     }
     Ok(status.code().unwrap_or(1))
 }
+
+/// Joins this process to the console of whoever started it, and points its standard
+/// handles there.
+///
+/// A release build is a GUI-subsystem program, so it is never given a console, and the
+/// three handles it inherits do not reliably answer a write — from `cmd` they do, from
+/// PowerShell's ConPTY they do not, which is the whole of the difference between
+/// `ols status` printing and `ols status` returning a bare prompt. `AttachConsole` is
+/// what joins the parent's console; `SetStdHandle` then points this process at it, and
+/// the drain threads below write through those.
+///
+/// Failing is the normal case for a launch with nowhere to print — a shortcut, the
+/// Explorer — and needs no handling. `AttachConsole` also fails with
+/// `ERROR_ACCESS_DENIED` when the process already has a console, and that is not a
+/// failure here either: the handles are then already the right ones, which is why
+/// this does not return early on failure.
+#[cfg(windows)]
+fn attach_parent_console() {
+    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+    use windows_sys::Win32::System::Console::{
+        AttachConsole, GetStdHandle, SetStdHandle, ATTACH_PARENT_PROCESS, STD_ERROR_HANDLE,
+        STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
+    };
+    unsafe {
+        AttachConsole(ATTACH_PARENT_PROCESS);
+        for which in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+            let handle = GetStdHandle(which);
+            // 0 means "no console" and INVALID_HANDLE_VALUE means the request failed;
+            // SetStdHandle with either would replace a working handle with nothing.
+            if !handle.is_null() && !std::ptr::eq(handle, INVALID_HANDLE_VALUE) {
+                SetStdHandle(which, handle);
+            }
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn attach_parent_console() {}
 
 /// Reads one line, appending it (newline included) to `into`. `BufRead::read_line`
 /// needs valid UTF-8 and fails outright on anything else, and this stream is whatever
