@@ -16,8 +16,10 @@ rem Open-Local-Server-* name so a dist folder built before the rename can
 rem still be published; a fresh build only ever produces OLS-*.
 rem
 rem Usage: scripts\upload-release.bat [tag] [mode]   (e.g. scripts\upload-release.bat v1.0.0 full)
-rem Modes: full = binaries + release notes, notes-only = release notes only.
-rem No mode given = ask 1 or 2. No tag given = the newest release\<version>\
+rem Modes: full = binaries + release notes, notes-only = release notes only,
+rem full-force-tag = full, plus move tag %TAG% onto local master and force-push
+rem it, so the release points at the latest source code.
+rem No mode given = ask 1, 2 or 3. No tag given = the newest release\<version>\
 rem folder wins and the tag is v<version>.
 set "DISTROOT=release"
 set "TAG=%~1"
@@ -25,10 +27,12 @@ set "MODE=%~2"
 if "%MODE%"=="" call :ask_mode || exit /b 1
 if /i "%MODE%"=="1" set "MODE=full"
 if /i "%MODE%"=="2" set "MODE=notes-only"
+if /i "%MODE%"=="3" set "MODE=full-force-tag"
 if /i "%MODE%"=="notes" set "MODE=notes-only"
 if /i "%MODE%"=="full" goto :mode_ok
 if /i "%MODE%"=="notes-only" goto :mode_ok
-echo Unknown mode "%MODE%". Use full or notes-only.
+if /i "%MODE%"=="full-force-tag" goto :mode_ok
+echo Unknown mode "%MODE%". Use full, notes-only or full-force-tag.
 exit /b 1
 
 :mode_ok
@@ -138,6 +142,15 @@ echo Nothing new to commit.
 echo Pushing...
 git push origin HEAD || (echo Push failed. & exit /b 1)
 
+rem Mode 3: the release must point at the newest source, so re-point the tag
+rem at local master and force-push it. --force only moves the tag, never
+rem rewrites history on the branch.
+if /i not "%MODE%"=="full-force-tag" goto :no_force_tag
+echo Re-pointing %TAG% at master and force-pushing the tag...
+git tag -f "%TAG%" master || (echo git tag -f failed. & exit /b 1)
+git push origin "%TAG%" --force || (echo Force-push of %TAG% failed. & exit /b 1)
+:no_force_tag
+
 if /i "%MODE%"=="notes-only" goto :notes_only
 rem Only the portable files go in the zip, not the setup exe next to them.
 echo Zipping portable version...
@@ -238,13 +251,16 @@ rem Prompt for upload mode when the second argument is missing.
 echo Select upload mode:
 echo   1 - full: binaries + release notes
 echo   2 - notes-only: release notes only
+echo   3 - full-force-tag: binaries + notes, tag re-pointed at master ^(force^)
 set "CHOICE="
-set /p "CHOICE=Enter 1 or 2 [1]: "
+set /p "CHOICE=Enter 1, 2 or 3 [1]: "
 if "%CHOICE%"=="" set "CHOICE=1"
 if "%CHOICE%"=="1" set "MODE=full" & exit /b 0
 if "%CHOICE%"=="2" set "MODE=notes-only" & exit /b 0
+if "%CHOICE%"=="3" set "MODE=full-force-tag" & exit /b 0
 if /i "%CHOICE%"=="full" set "MODE=full" & exit /b 0
 if /i "%CHOICE%"=="notes-only" set "MODE=notes-only" & exit /b 0
+if /i "%CHOICE%"=="full-force-tag" set "MODE=full-force-tag" & exit /b 0
 echo Invalid choice. & exit /b 1
 
 rem Append SHA-256 of %1 to %2. No parens in echoes: this file uses
