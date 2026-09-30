@@ -134,7 +134,13 @@ pub fn forward_to_cli(args: &[String]) -> Result<i32, Diagnostic> {
         let mut r = std::io::BufReader::new(r);
         std::thread::spawn(move || {
             let mut line = String::new();
-            while read_line_lossy(&mut r, &mut line) {
+            while {
+                // Cleared per line, not once: `read_line_lossy` appends, and a buffer
+                // left holding every line so far prints the whole output again for
+                // each one — which reads as the command repeating itself.
+                line.clear();
+                read_line_lossy(&mut r, &mut line)
+            } {
                 print!("{line}");
                 let _ = std::io::stdout().flush();
             }
@@ -144,7 +150,10 @@ pub fn forward_to_cli(args: &[String]) -> Result<i32, Diagnostic> {
         let mut r = std::io::BufReader::new(r);
         std::thread::spawn(move || {
             let mut line = String::new();
-            while read_line_lossy(&mut r, &mut line) {
+            while {
+                line.clear();
+                read_line_lossy(&mut r, &mut line)
+            } {
                 eprint!("{line}");
                 let _ = std::io::stderr().flush();
             }
@@ -230,31 +239,36 @@ mod tests {
     }
 
     /// The output is what the whole fix is for, so the reader that carries it is
-    /// pinned on the two things that lose it: a byte sequence that is not UTF-8 (a
-    /// service is free to print one) and a last line with no newline on it, which is
-    /// what a command killed mid-print leaves behind.
+    /// pinned on the three things that lose or duplicate it: a byte sequence that is
+    /// not UTF-8 (a service is free to print one), a last line with no newline on it,
+    /// which is what a command killed mid-print leaves behind, and a buffer carried
+    /// over between lines, which prints the whole output again for every line.
     #[test]
     fn the_output_reader_keeps_bad_bytes_and_an_unterminated_last_line() {
         let raw: &[u8] = b"first\n\xff\xfe not utf-8\nlast without newline";
         let mut r = std::io::BufReader::new(raw);
+        // The same loop the two threads run, clear included, so the duplication this
+        // test exists to catch cannot be reintroduced by fixing the test instead.
         let mut got = String::new();
         let mut line = String::new();
-        let mut lines = Vec::new();
-        while read_line_lossy(&mut r, &mut line) {
-            lines.push(std::mem::take(&mut line));
+        while {
+            line.clear();
+            read_line_lossy(&mut r, &mut line)
+        } {
+            got.push_str(&line);
         }
-        for l in &lines {
-            got.push_str(l);
-        }
-        assert_eq!(lines.len(), 3, "every line survives");
-        assert_eq!(lines[0], "first\n");
+        assert_eq!(
+            got.matches("first").count(),
+            1,
+            "a line is not printed twice"
+        );
         assert!(
-            lines[1].contains('\u{fffd}'),
+            got.contains('\u{fffd}'),
             "a bad byte is replaced, not dropped"
         );
-        // No trailing newline and still returned — read_line would have done the same,
-        // but only because the input happened to be valid UTF-8 up to that point.
-        assert_eq!(lines[2], "last without newline");
-        assert!(got.contains("first"));
+        assert!(got.contains("not utf-8"), "the rest of that line survives");
+        // No trailing newline and still kept — read_line would have managed the same,
+        // but only because this input happens to be valid UTF-8 up to that point.
+        assert!(got.ends_with("last without newline"));
     }
 }
