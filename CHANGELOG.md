@@ -19,7 +19,11 @@ Incremental release. Product as described in 1.0.0 is unchanged. Full notes:
 ### Fixed
 - Explorer right-click entries opened OLS instead of adding the folder, because `ols.exe` and `OLS.exe` are the
   same file on Windows. The CLI is now `ols-cli.exe`, looked up by name and refused if it is the running app.
-- The installer now ships `ols-cli.exe` plus an `ols.cmd` shim, so `ols <command>` works on a clean machine.
+- The `ols` command opened the app instead of running the command line. Within one folder cmd resolves by `PATHEXT`
+  and `.EXE` comes before `.CMD`, so the `ols.cmd` shim could never win against `OLS.exe` — `ols --version` printed
+  nothing and exited 0. There is no shim any more: the app hands any argument that is not its own to `ols-cli.exe`
+  before it starts and exits with the CLI's exit code, so `ols` works with the GUI closed and nothing has to be on
+  PATH beyond the install folder.
 - The shell menu card no longer reports "installed" while every entry points at the app; it checks the command
   it actually wrote.
 - Explorer entries use the app's `icon.ico` instead of falling back to the console icon.

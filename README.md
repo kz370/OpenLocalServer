@@ -274,7 +274,7 @@ OpenLocalServer/
 │   │                    # Diagnostics, QuickApp, Plugin
 │   ├── ols-helper/      # Elevated helper — hosts/NRPT/service via UAC or
 │   │                    # LocalSystem named pipe (closed validated set)
-│   └── ols-cli/         # CLI (`ols` on PATH, `ols-cli.exe` beside the app) — drives app or background daemon
+│   └── ols-cli/         # CLI (`ols-cli.exe` beside the app; `ols` reaches it through `OLS.exe`) — drives app or background daemon
 ├── src-tauri/           # Tauri 2 shell — window, tray, single IPC `run_command`
 ├── ui/src/              # React 19 + Vite 8 + Tailwind 4 + shadcn/ui,
 │   │                    # CodeMirror 6, xterm.js, `core.ts` IPC wrapper
