@@ -217,29 +217,33 @@ p {
 
 .brand {
   display: flex;
-  align-items: center;
-  gap: 9px;
+  align-items: baseline;
+  gap: 8px;
   color: var(--fg);
-  font-weight: 680;
-  letter-spacing: -0.02em;
-  font-size: 15px;
   white-space: nowrap;
-}
-
-.brand:hover {
-  color: var(--fg);
 }
 
 .brand img {
   width: 26px;
   height: 26px;
   border-radius: 6px;
+  align-self: center;
 }
 
-.brand span em {
+.brand b {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* The acronym and its expansion, set as one lockup: the mark already carries
+   "OLS", so the wordmark beside it is the product's own titlebar name. */
+.brand em {
   font-style: normal;
+  font-size: 13px;
+  font-weight: 450;
   color: var(--fg-dim);
-  font-weight: 500;
+  letter-spacing: -0.005em;
 }
 
 .nav__links {

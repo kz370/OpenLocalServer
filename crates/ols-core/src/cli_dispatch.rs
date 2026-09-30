@@ -78,10 +78,12 @@ pub fn find_cli() -> Option<PathBuf> {
 
 /// Hands the arguments to the command line and answers with its exit code.
 ///
-/// The child inherits this process's console, so what it prints lands in the terminal
-/// the person typed `ols` into. On Windows that inheritance needs one step the app
-/// does not otherwise have a reason to take, and without it the answer is lost
-/// silently — a worse version of the same bug: see [`attach_parent_console`].
+/// The child's three standard handles are handed to it explicitly rather than left to
+/// inheritance, which is what makes the answer visible: a release build is a
+/// GUI-subsystem program, so it has no console of its own, and a console program
+/// started from one with nothing but inheritance writes into a window that flashes up
+/// and closes. That was measured — the child ran, exited 0 and printed nothing, and
+/// `ols --version > out.txt` left the file empty. See [`console_handles`].
 pub fn forward_to_cli(args: &[String]) -> Result<i32, Diagnostic> {
     let cli = find_cli().ok_or_else(|| Diagnostic {
         problem: format!(
@@ -94,9 +96,16 @@ pub fn forward_to_cli(args: &[String]) -> Result<i32, Diagnostic> {
                 .into(),
         ),
     })?;
-    attach_parent_console();
-    std::process::Command::new(&cli)
-        .args(args)
+    let handles = console_handles();
+    let mut child = std::process::Command::new(&cli);
+    child.args(args);
+    if let Some(h) = &handles {
+        child
+            .stdin(ConsoleHandles::stdio(&h.input))
+            .stdout(ConsoleHandles::stdio(&h.output))
+            .stderr(ConsoleHandles::stdio(&h.error));
+    }
+    child
         .status()
         .map(|s| s.code().unwrap_or(1))
         .map_err(|e| Diagnostic {
@@ -108,46 +117,89 @@ pub fn forward_to_cli(args: &[String]) -> Result<i32, Diagnostic> {
         })
 }
 
-/// Attaches this process to the console of whoever started it, so the command line's
-/// output is written where the person is looking.
+/// The caller's three console streams, once this process has attached to them.
 ///
-/// A release build is a GUI-subsystem program (`#![windows_subsystem = "windows"]`),
-/// so it has no console of its own and its standard handles are empty. Without
-/// `AttachConsole`, the console program started below writes into a window that
-/// flashes up and closes before it can be read. `SetStdHandle` then points this
-/// process's standard handles at the newly available console, which is also what the
-/// child inherits.
-///
-/// Failing is the normal case here and needs no handling: there is no parent console
-/// when the app was started from a shortcut or the Explorer, and that is a launch with
-/// no output to go anywhere in the first place. `AttachConsole` also fails with
-/// `ERROR_ACCESS_DENIED` when this process already has a console, which is likewise not
-/// worth acting on.
+/// Owned handles rather than borrowed ones: they are handed to a child process, and
+/// `Stdio` takes ownership, so the process that spawned it has to let go of them.
 #[cfg(windows)]
-fn attach_parent_console() {
+pub struct ConsoleHandles {
+    input: std::os::windows::io::OwnedHandle,
+    output: std::os::windows::io::OwnedHandle,
+    error: std::os::windows::io::OwnedHandle,
+}
+
+#[cfg(windows)]
+impl ConsoleHandles {
+    /// A stream for the child, cloned from the handle kept here.
+    ///
+    /// The clone is `DuplicateHandle` underneath, and it is what the child is given —
+    /// a `Stdio` built from the handle itself would take it away from the field it
+    /// came from, and the second call would have nothing left to hand over.
+    fn stdio(handle: &std::os::windows::io::OwnedHandle) -> std::process::Stdio {
+        std::process::Stdio::from(
+            handle
+                .try_clone()
+                .expect("a console handle can always be duplicated"),
+        )
+    }
+}
+
+/// The caller's console, attached to this process, as handles to pass on.
+///
+/// `AttachConsole` is what joins a GUI-subsystem process to the console of whoever
+/// started it, and `SetStdHandle` points this process's own standard handles at the
+/// newly available console — which is what lets the caller print a `Diagnostic` here
+/// if the command line cannot be found at all. The returned handles are the third
+/// part: they are what the child is given, which is the only reliable way to get its
+/// output to the terminal, and the only way a redirect like `ols status > out.txt`
+/// works at all, since the handle it needs is the shell's, not the console's.
+///
+/// `None` unless all three are there. A console that answers for one stream and not
+/// the others is not a case worth guessing at, and a half-set-up hand-over is how a
+/// command ends up printing nothing — the child simply inherits instead. `AttachConsole`
+/// also fails with `ERROR_ACCESS_DENIED` when the process already has a console, and
+/// that is not a failure here: the handles are still the right ones.
+#[cfg(windows)]
+fn console_handles() -> Option<ConsoleHandles> {
+    use std::os::windows::io::{FromRawHandle, OwnedHandle};
+
     use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
     use windows_sys::Win32::System::Console::{
         AttachConsole, GetStdHandle, SetStdHandle, ATTACH_PARENT_PROCESS, STD_ERROR_HANDLE,
         STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
     };
     unsafe {
-        if AttachConsole(ATTACH_PARENT_PROCESS) == 0 {
-            return;
-        }
-        for which in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
-            // A handle of 0 means "no console", and INVALID_HANDLE_VALUE means the
-            // request failed; SetStdHandle with either would replace a working handle
-            // with nothing.
+        AttachConsole(ATTACH_PARENT_PROCESS);
+        // A handle of 0 means "no console", and INVALID_HANDLE_VALUE means the
+        // request failed; SetStdHandle with either would replace a working handle
+        // with nothing.
+        let take = |which| {
             let handle = GetStdHandle(which);
-            if !handle.is_null() && !std::ptr::eq(handle, INVALID_HANDLE_VALUE) {
-                SetStdHandle(which, handle);
+            if handle.is_null() || std::ptr::eq(handle, INVALID_HANDLE_VALUE) {
+                return None;
             }
+            SetStdHandle(which, handle);
+            Some(OwnedHandle::from_raw_handle(handle.cast()))
+        };
+        match (
+            take(STD_INPUT_HANDLE),
+            take(STD_OUTPUT_HANDLE),
+            take(STD_ERROR_HANDLE),
+        ) {
+            (Some(input), Some(output), Some(error)) => Some(ConsoleHandles {
+                input,
+                output,
+                error,
+            }),
+            _ => None,
         }
     }
 }
 
 #[cfg(not(windows))]
-fn attach_parent_console() {}
+fn console_handles() -> Option<()> {
+    None
+}
 
 #[cfg(test)]
 mod tests {

@@ -4,12 +4,19 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>OLS — Open Local Server</title>
-    <link rel="canonical" href="website/index.html" />
+    <link rel="canonical" href="./" />
     <meta
       name="description"
-      content="OLS is a local development environment manager for Windows. It installs and supervises runtimes, gives every project its own .test domain with trusted HTTPS, and runs databases, mail and caches behind one core — from a desktop app, the ols CLI, or a local HTTP API."
+      content="Open Local Server (OLS) is a local development environment manager for Windows. It installs and supervises runtimes, gives every project its own .test domain with trusted HTTPS, and runs databases, mail and caches behind one core — from a desktop app, the ols command line, or a local HTTP API."
     />
     <meta name="color-scheme" content="dark" />
+    <!--
+      Bump the version in the download URLs and the copy with every release.
+      scripts/upload-release.bat publishes OLS-<version>-setup.exe,
+      OLS-<version>-portable-win-x64.zip and OLS-<version>-SHA256SUMS.txt, and
+      /releases/latest/download/<asset> resolves against the newest release, so the
+      name in the URL is the only thing that needs changing.
+    -->
     <meta name="theme-color" content="#12181a" />
     <link rel="icon" href="website/assets/img/favicon.svg" type="image/svg+xml" />
     <link rel="preload" href="website/assets/img/dashboard.webp" as="image" />
@@ -18,7 +25,7 @@
     <meta property="og:type" content="website" />
     <meta
       property="og:description"
-      content="Runtimes, sites, databases and trusted HTTPS for Windows local development. One core engine, three front doors: desktop GUI, ols CLI, local HTTP API."
+      content="Open Local Server: runtimes, sites, databases and trusted HTTPS for Windows local development. One core engine, three front doors: desktop app, ols command line, local HTTP API."
     />
     <meta property="og:image" content="website/assets/img/dashboard.webp" />
   </head>
@@ -31,7 +38,7 @@
       <div class="nav__inner">
         <a class="brand" href="#top">
           <img src="website/assets/img/logo.svg" alt="" width="26" height="26" />
-          OLS <em>/ Open Local Server</em>
+          <b>OLS</b><em>Open Local Server</em>
         </a>
         <nav aria-label="Main">
           <ul class="nav__links" id="nav-links">
@@ -80,9 +87,9 @@
               OLS
             </h1>
             <p class="hero__lede">
-              A local development environment manager for Windows. OLS installs
-              and supervises runtimes, gives every project its own
-              <code>.test</code> domain with trusted HTTPS, and keeps databases,
+              Open Local Server is a local development environment manager for
+              Windows. It installs and supervises runtimes, gives every project its
+              own <code>.test</code> domain with trusted HTTPS, and keeps databases,
               mail and caches behind one core engine.
             </p>
             <div class="hero__actions">
@@ -103,9 +110,11 @@
               </a>
             </div>
             <p class="hero__note">
-              Windows 10 / 11, 64-bit. One installer,
-              <code>OLS-&lt;version&gt;-setup.exe</code>, checked against
-              <code>OLS-&lt;version&gt;-SHA256SUMS.txt</code>.
+              Windows 10 / 11, 64-bit. <code>OLS-1.1.0-setup.exe</code>, a
+              <a href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-1.1.0-portable-win-x64.zip">portable zip</a>,
+              and <a href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-1.1.0-SHA256SUMS.txt">SHA-256 sums</a>
+              to check either against. Source on
+              <a href="https://github.com/kz370/OpenLocalServer">GitHub</a>.
             </p>
             <ul class="facts">
               <li>
@@ -232,9 +241,10 @@
                 that a project can override.
               </p>
               <ul>
-                <li>PHP 8.1, 8.3 and 8.4; Node 22 and 24; Composer; Python venvs; portable Git; k6</li>
-                <li>Per-version extensions, Xdebug and PECL; corepack for npm, pnpm, yarn</li>
-                <li>Downloads verified against vendor SHA-256; scan a folder or locate one executable to bring your own</li>
+                <li>Multiple versions of PHP and Node side by side, plus Composer, Python venvs, portable Git and k6</li>
+                <li>Any PHP, Node or Python already on this machine: scan a folder, or locate one executable</li>
+                <li>Per-version extensions, Xdebug and PECL; corepack for npm, pnpm and yarn</li>
+                <li>Downloads verified against vendor SHA-256; plugins can add more runtimes</li>
               </ul>
             </article>
 
@@ -264,7 +274,7 @@
                 diff.
               </p>
               <ul>
-                <li>Nginx 1.28, Apache 2.4, Caddy 2.11 — move a site between them</li>
+                <li>Nginx, Apache and Caddy — move a site from one to another</li>
                 <li>Managed, Advanced and Manual modes; validate before reload, roll back on failure</li>
                 <li>Drift detection plus config history with diff and restore</li>
               </ul>
@@ -294,7 +304,7 @@
               <h3>Databases &amp; services</h3>
               <p>Engines, users and backups managed per project, with mail capture.</p>
               <ul>
-                <li>MariaDB 11.4, PostgreSQL 17, MongoDB, Redis, Mailpit, SQLite</li>
+                <li>MariaDB, PostgreSQL, MongoDB, Redis, Memcached, Mailpit, SQLite</li>
                 <li>Per-engine database and user management, connection details, backup and restore with a safety copy first</li>
                 <li>One-click GUIs: HeidiSQL, pgAdmin 4, NoSQLBooster, Tiny RDM</li>
                 <li>Import databases from other common Windows stacks without an SQL dump</li>
@@ -532,8 +542,8 @@
             <div class="step">
               <h3>Install the app</h3>
               <p>
-                Run <code>OLS-&lt;version&gt;-setup.exe</code> from the releases page
-                and open OLS. Windows 10 or 11, 64-bit.
+                Run the downloaded <code>OLS-1.1.0-setup.exe</code> and open OLS.
+                Windows 10 or 11, 64-bit.
               </p>
             </div>
             <div class="step">
@@ -837,6 +847,13 @@
             </a>
             <a
               class="btn btn--ghost"
+              href="https://github.com/kz370/OpenLocalServer"
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1-.7 0-.7 0-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2 0-.4-.5-1.6.2-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.7 18.3 5 18.3 5c.7 1.6.2 2.8.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .5" /></svg>
+              Repository
+            </a>
+            <a
+              class="btn btn--ghost"
               href="https://github.com/kz370/OpenLocalServer/blob/master/README.md"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -856,7 +873,7 @@
           <div class="footer__about">
             <a class="brand" href="#top">
               <img src="website/assets/img/logo.svg" alt="" width="26" height="26" />
-              OLS <em>/ Open Local Server</em>
+              <b>OLS</b><em>Open Local Server</em>
             </a>
             <p>
               A local development environment manager for Windows. Runtimes, sites,
@@ -887,7 +904,7 @@
             <h4>Project</h4>
             <ul>
               <li><a href="https://github.com/kz370/OpenLocalServer">GitHub</a></li>
-              <li><a href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-1.1.0-setup.exe">Releases</a></li>
+              <li><a href="https://github.com/kz370/OpenLocalServer/releases">Releases</a></li>
               <li><a href="https://github.com/kz370/OpenLocalServer/issues">Issues</a></li>
               <li><a href="https://github.com/kz370/OpenLocalServer/blob/master/CONTRIBUTING.md">Contributing</a></li>
               <li><a href="https://github.com/kz370/OpenLocalServer/blob/master/SECURITY.md">Security</a></li>
