@@ -1,6 +1,6 @@
 # OLS (Open Local Server)
 
-> A modern local development environment manager for Windows — runtimes, sites, databases, and trusted HTTPS, without touching your system by hand.
+> A free, open-source local development environment manager for Windows — runtimes, sites, databases, and trusted HTTPS, without touching your system by hand.
 
 [![Build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/kz370/OpenLocalServer/actions)
 [![Version](https://img.shields.io/badge/version-1.1.0-blue)](./CHANGELOG.md)
@@ -9,12 +9,29 @@
 [![Tauri](https://img.shields.io/badge/shell-Tauri_2-orange)](./src-tauri/tauri.conf.json)
 [![Rust](https://img.shields.io/badge/backend-Rust-red)](./crates/ols-core)
 
-**OLS** (Open Local Server) is the successor to XAMPP / Laragon with broader runtime coverage and full extensibility. Every project gets isolated runtimes, its own `.test` domain, and trusted local HTTPS. One core engine (`ols-core`) powers three front doors: desktop GUI, CLI (`ols`), and local HTTP API.
+**OLS** (Open Local Server) is an all-in-one local development environment for Windows with broad runtime coverage and full extensibility. Every project gets isolated runtimes, its own `.test` domain, and trusted local HTTPS. One core engine (`ols-core`) powers three front doors: desktop GUI, CLI (`ols`), and local HTTP API.
+
+**Free, open source, and no limit on the number of sites.**
+
+## Why I built it
+
+I found plenty of free tools, but none of them had everything I wanted in one place. So I built one that does, first of all for myself. It is not made for profit, just to have the tool I wanted and to share it. It is and will stay completely free.
+
+It is still in the early stages, so expect rough edges. Feedback and bug reports are very welcome.
 
 ## Contents
 
-- [Tour](#tour) · [Runtimes](#runtimes--toolchain) · [Sites & HTTPS](#sites-web-servers--https) · [Projects](#projects--reproducible-environments) · [Databases & Services](#databases--services) · [Dashboard & Monitoring](#dashboard--monitoring) · [Sharing](#sharing--tunnels) · [Automation](#cli-api--automation)
-- [Getting Started](#getting-started) · [Usage](#usage) · [Project Structure](#project-structure) · [Contributing](#contributing) · [License](#license)
+- [Download](#-download) · [Tour](#tour) · [Runtimes](#runtimes--toolchain) · [Sites & HTTPS](#sites-web-servers--https) · [Projects](#projects--reproducible-environments) · [Databases & Services](#databases--services) · [Dashboard & Monitoring](#dashboard--monitoring) · [Sharing](#sharing--tunnels) · [Automation](#cli-api--automation)
+- [Getting Started](#getting-started) · [Usage](#usage) · [Project Structure](#project-structure) · [Built for AI](#-built-for-ai-built-to-be-forked) · [Contributing](#contributing) · [License](#license)
+
+---
+
+## 📥 Download
+
+Grab the latest installer from the [Releases page](https://github.com/kz370/OpenLocalServer/releases).
+
+- **The app itself comes empty.** Nothing is bundled. From the interface you download only the runtimes, web servers, and databases you need, or point OLS to ones you already have.
+- **SmartScreen:** the installer isn't code-signed yet, so Windows SmartScreen may show a warning. Click **More info**, then **Run anyway**.
 
 ---
 
@@ -64,16 +81,17 @@
 ### 📦 Runtimes & Toolchain
 
 - **Side-by-side versions** per runtime with a **version manager** dialog: search, install, default badge, per-version path display.
-- **Managed lineup:** PHP NTS 8.1–8.5 (per-version extensions, Xdebug per version, PECL), Node 22/24 (corepack npm/pnpm/yarn), Composer, Python venvs, portable Git, k6.
+- **Managed lineup:** PHP NTS 8.1–8.5 (per-version extensions, Xdebug per version, PECL), Node 22/24 (corepack npm/pnpm/yarn), Composer, Python venvs, portable Git, k6 (load testing).
 - **Online catalogs** per runtime (vendor sources, 24h cache, background refresh) + **SHA-256 verified** downloads, resume-safe cache, atomic extract.
 - **Bring your own:** scan a folder for existing PHP installs, or register one executable (PHP/Node/Python) by locating the file.
 - **Resolution order:** project manifest pin > auto-detected > global default. Changing a default never touches project files.
 
 ### 🌐 Sites, Web Servers & HTTPS
 
-- Any domain + wildcard subdomains; Laragon-style automatic `<folder>.test`; static sites; **reverse proxy** to any host:port.
+- **Add a site from inside the app:** pick a folder, add a **root folder** so every project inside it becomes a site automatically, or add one straight from a **Git repository**.
+- **Unlimited sites.** Any domain + wildcard subdomains; automatic `<folder>.test`; static sites; **reverse proxy** to any host:port. Run on a domain, on localhost, or both at the same time.
 - **Trusted local HTTPS:** on-device CA, 397-day leaf certs, auto-renew under 30 days, SAN-aware reuse.
-- **Per-site PHP version**; unpinned sites follow the global default.
+- **Per-site PHP version and per-site web server:** each site can run on its own PHP version and its own server (Nginx, Apache, or Caddy); unpinned sites follow the global default.
 - **Nginx 1.28 / Apache 2.4 / Caddy 2.11** with generated configs; Managed / Advanced / Manual modes; validate-before-reload with rollback; **drift detection**; config history with diff + restore.
 - Built-in **wildcard DNS** for `.test` / `.localhost` / `.internal`; optional elevated helper for hosts/NRPT (no repeated UAC prompts).
 
@@ -82,32 +100,33 @@
 - **Auto-detection:** framework + version from `composer.json`, `package.json`, `manage.py`, markers; workspace scan.
 - **Manifests** (`.openlocalserver/*.yaml`): environment, services, commands, lock file.
 - **14-step setup pipeline:** resolve → plan → conflict report → dry-run → apply, journaled with **rollback** and file lock.
-- **Profiles** (Development / Testing / Debugging / Demo), **snapshots** (zip, clone, import/export), `.env` lossless editor (comments/order/CRLF preserved).
+- **Profiles** (Development / Testing / Debugging / Demo), **snapshots and backups** (zip, clone, import/export), `.env` lossless editor (comments/order/CRLF preserved).
 - **Quick Apps:** 13 built-in recipes (Laravel, Symfony, WordPress, Express, React/Vite, Vue, Next.js, Django, FastAPI, static…) — validate → plan review → run with history.
-- **Quick Commands + project commands:** discovered Composer/npm scripts with one-click run and output ring.
+- **Quick Commands + project commands:** discovered Composer/npm scripts with one-click run and output ring, plus ready-made commands for Laravel, Node, and Python projects.
 
 ### 🗄️ Databases & Services
 
-- **Engines:** MariaDB 11.4 (per-series data folders), PostgreSQL 17, MongoDB, Redis (`redis-windows`), Mailpit, SQLite.
+- **Engines:** MariaDB 11.4 (per-series data folders), PostgreSQL 17, MongoDB, Redis (`redis-windows`), Memcached, Mailpit, SQLite.
 - Per-engine **DB + user management**, connection details, **backup/restore** (safety copy first), SQLite `.backup` + integrity checks.
 - **One-click external GUIs:** HeidiSQL, pgAdmin 4, NoSQLBooster, Tiny RDM (auto-detected, Redis URI copy).
 - **Importers:** Laragon / XAMPP / WampServer databases without SQL dumps (live-dump importer).
 - Service lifecycle with TCP health, Mailpit mail capture per framework (`.env` planner with diff preview).
+- **Resource limits per service:** cap RAM, CPU, and process count for each service, plus engine settings such as the MariaDB buffer pool.
 
 ### 📊 Dashboard & Monitoring
 
-- **Services card:** all 9 built-ins in a fixed order — start/stop/restart/reload/logs colour-coded per action, and anything unavailable right now shown flat grey instead of looking clickable. In a narrow window the **Web server** card moves above Overview; side by side it sits above Services.
+- **Services card:** all built-ins in a fixed order — start/stop/restart/reload/logs colour-coded per action, and anything unavailable right now shown flat grey instead of looking clickable. In a narrow window the **Web server** card moves above Overview; side by side it sits above Services.
 - **Ports tab:** one aligned row per server (icon, name, HTTP, HTTPS, site count) with fixed-width port fields sized to five digits; a server that is the default shows its 80/443 fields locked rather than editable.
 - **Number fields:** ports, worker counts, memory limits and IDE ports all use an in-app stepper (rounded chevrons, app palette, arrow keys work) rather than the browser's default arrows.
 - **Overview:** sites/projects counts, resource donuts (CPU/RAM/disk), **traffic graph** from web access log (30-bucket, hover inspector).
 - **Diagnostics card:** findings as Problem/Cause/Fix, safe one-click **auto-repair**, ignore list, AI explain per finding.
 - **Doctor:** full report + repair planner; every error is `Diagnostic{problem, cause, fix}`.
-- **Logs page:** unified severity-aware viewer (search/filter/export/clear); **Processes page:** raw process manager + system stats; per-site usage rollups.
+- **Logs page:** unified severity-aware viewer (search/filter/export/clear); send logs to the AI assistant to explain an error. **Processes page:** raw process manager + system stats; per-site usage rollups.
 - Command palette (`Ctrl+Shift+P`), global search (`Ctrl+K`).
 
 ### 🔗 Sharing & Tunnels
 
-- Providers: **Cloudflare, ngrok, LocalTunnel, Tailscale** (abstraction + confirm gate).
+- Providers: **Cloudflare, ngrok, LocalTunnel, Tailscale** (abstraction + confirm gate). LocalTunnel needs no account, though it doesn't always work.
 - **Exposure confirmation**, optional password, public badge, one-click stop.
 - **Traffic inspector:** forwarding proxy, redacted log (500 cap), replay, webhook tester.
 
@@ -131,15 +150,17 @@ winget install --id ngrok.ngrok               # ngrok     -> needs an authtoken
 
 - **CLI (`ols`):** `setup [--dry-run] | doctor | repair | status | start | stop`, plus `project | runtime | service | tunnel | worker | snapshot | quick-command | search`; background **daemon** keeps working with GUI closed.
 - **Local HTTP API** (`127.0.0.1:7420`): same `CoreCommand` JSON, bearer token, origin reject, read-only vs operate scopes.
-- **Workers** (queue registry, max 16, Procfile.dev import), **scheduler** (cron, 1-min tick, no overlap), **terminal** (portable-pty shells with runtime PATH-first, max 8).
+- **Workers** (queue registry, max 16, Procfile.dev import), **scheduled tasks** (cron, 1-min tick, no overlap), **terminal** (portable-pty shells with runtime PATH-first, max 8).
 - **Git manager:** status/stage/commit/branches/pull/push/remotes/stash/clone with credential helper.
-- **k6 load testing** (VU cap, JSON metrics), **AI assistant** (LM Studio / Hugging Face / OpenRouter / OpenAI-compatible) with scoped permissions.
+- **k6 load testing** (VU cap, JSON metrics), **AI assistant** (runs locally with LM Studio, or connect Hugging Face / OpenRouter / any OpenAI-compatible provider) with scoped permissions.
 - **Plugins:** declarative `plugin.yaml` (runtimes, quick apps, detections, health checks) via **minisign-signed catalogs**, re-verified each load.
 - **Self-updater** (signed `latest.json` + SHA check), tray icon, notifications, start with Windows, leftover-server cleanup, memory limits. See [docs/PLUGINS.md](./docs/PLUGINS.md), [docs/API.md](./docs/API.md), [docs/AI_ASSISTANT.md](./docs/AI_ASSISTANT.md).
 
 ---
 
 ## 🚀 Getting Started
+
+Most people only need the installer from the [Download](#-download) section. The steps below are for building from source.
 
 ### Prerequisites
 
@@ -232,7 +253,7 @@ ols search "mailpit"        # global search
 
 ### Typical flow in GUI
 
-1. **Add project** — register or scan folder → framework auto-detected
+1. **Add project** — register or scan a folder, or add from a Git repository → framework auto-detected
 2. **Setup** — review 14-step plan → Apply (rollback on failure)
 3. **Open site** — `https://myapp.test` with trusted cert, per-site PHP
 4. **Develop** — `.env` editor, terminal, Git tab, logs, Mailpit for mail
@@ -287,6 +308,18 @@ HTTP API ─────┘         |
 
 ---
 
+## 🤖 Built for AI, built to be forked
+
+The whole project is documented so an AI agent can understand it and keep building it:
+
+- [`specs/`](./specs) is the single source of truth: architecture, catalog, data models, API reference, diagrams.
+- [`AGENTS.md`](./AGENTS.md) tells an agent how the project works, what to do, and what to avoid.
+- [`docs/`](./docs) and the [Master SRS](./OLS_Master_SRS_v4.md) explain the plan and the requirements.
+
+Fork it, point your own AI agent (Claude Code, Cursor, or any other) at the repo, and turn it into the tool you want.
+
+---
+
 ## 🤝 Contributing
 
 Contributions welcome. Please read [CONTRIBUTING.md](./CONTRIBUTING.md) and the [Code of Conduct](./CODE_OF_CONDUCT.md) first.
@@ -308,6 +341,8 @@ cd ui; npm run lint; npm run build
 ## 📄 License
 
 GPL-3.0-only — see [LICENSE](./LICENSE). See [SECURITY.md](./SECURITY.md) for reporting policy.
+
+Feel free to use the code, edit it, and make your own version.
 
 ---
 

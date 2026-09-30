@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+  <head><meta charset="utf-8" /><title>shot</title>
+    <style>html,body{margin:0;background:#000;overflow:hidden}iframe{border:0;display:block}</style>
+  </head>
+  <body>
+    <iframe id="f" src="index.html"></iframe>
+    <script>
+      var f = document.getElementById("f");
+      var y = Number(new URLSearchParams(location.search).get("y") || 0);
+      var h = Number(new URLSearchParams(location.search).get("h") || 2000);
+      f.style.width = "1440px";
+      f.style.height = h + "px";
+      f.addEventListener("load", function () {
+        f.contentDocument.documentElement.style.scrollBehavior = "auto";
+        f.contentWindow.scrollTo({ top: y, left: 0, behavior: "instant" });
+        f.contentDocument.dispatchEvent(new Event("scroll"));
+      });
+    </script>
+  </body>
+</html>
