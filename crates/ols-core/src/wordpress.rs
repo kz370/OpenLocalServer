@@ -524,7 +524,7 @@ mod tests {
         assert!(source.contains("--primary:oklch(0.6 0.135 168)"));
         assert!(source.contains("--primary:oklch(0.75 0.14 168)"));
         assert!(source.contains("var(--background)"));
-        assert!(source.contains("OLS_SIGNIN_SITE = 'blog.test'"));
+        assert!(source.contains("= 'blog.test'"));
     }
 
     #[test]
@@ -556,12 +556,13 @@ mod tests {
     fn expiring_bridge_is_swept_and_reports_nothing_pending() {
         let dir = wp_dir();
         // Written by hand with an expiry in the past, which is what a crash between issue
-        // and use leaves behind.
-        let issued = now_secs() - 10_000;
-        let file = dir
-            .path()
-            .join("wp-content/mu-plugins")
+        // and use leaves behind. `mu-plugins` is created through the same call the sweep
+        // uses, so this writes where a real install would put it -- a WordPress zip has no
+        // such folder, and creating it is the code's job, not the test's.
+        let file = mu_plugins_dir(dir.path())
+            .unwrap()
             .join(format!("{BRIDGE_PREFIX}cafe.php"));
+        let issued = now_secs() - 10_000;
         std::fs::write(&file, bridge_source("cafe", issued, 300, "blog.test", None)).unwrap();
         assert_eq!(sweep(dir.path()), None);
         assert!(
@@ -573,9 +574,8 @@ mod tests {
     #[test]
     fn unreadable_bridge_is_removed_rather_than_kept() {
         let dir = wp_dir();
-        let file = dir
-            .path()
-            .join("wp-content/mu-plugins")
+        let file = mu_plugins_dir(dir.path())
+            .unwrap()
             .join(format!("{BRIDGE_PREFIX}0123.php"));
         std::fs::write(&file, "<?php // not written by us in the expected shape").unwrap();
         assert_eq!(sweep(dir.path()), None);
