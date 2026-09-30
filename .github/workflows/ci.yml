@@ -6,8 +6,11 @@ name: CI
 #
 #   workflow_dispatch  -- run it when you want it (a re-run of a flaky job, a bisect, a
 #                         verification pass after a local-only change). Builds, never publishes.
-#   push on a v* tag   -- the release tag is the point at which the artifacts are wanted, and
-#                         it runs test -> build -> publish in that order.
+#   push on a release-v* tag -- the release tag is the point at which the artifacts are wanted,
+#                         and it runs test -> build -> publish in that order. The `release-`
+#                         prefix is what makes the trigger deliberate: an ordinary `v1.1.1`
+#                         push is a version bump, not a request to burn 20 minutes of CI and
+#                         publish. The tag has to say release to publish.
 #
 # Build and publish are jobs in *this* workflow rather than two workflows sharing the tag
 # trigger. Two workflows on one tag start at the same instant, so the publisher either races
@@ -23,7 +26,7 @@ name: CI
 on:
   push:
     tags:
-      - 'release-*'
+      - 'release-v*'
   workflow_dispatch:
 
 # Two runs of this workflow on the same ref must not overlap: they would build the same
@@ -92,10 +95,11 @@ jobs:
 
   publish:
     name: Publish release
-    # Runs only for a tag. A manual dispatch builds and verifies but publishes nothing,
-    # because there is no version to publish: the tag is what names the release, and the
-    # whole point of a tag is that somebody meant it.
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Runs only for a release-v* tag. A manual dispatch builds and verifies but publishes
+    # nothing, because there is no version to publish: the tag is what names the release, and the
+    # whole point of a tag is that somebody meant it. The prefix has to be in the job gate too,
+    # not just the trigger, or a manual dispatch on a `release-v*` branch would publish.
+    if: startsWith(github.ref, 'refs/tags/release-v')
     needs: build
     runs-on: windows-latest
     # Only this job may write. The test and build jobs keep the read-only default, so a
@@ -121,8 +125,14 @@ jobs:
         id: vars
         run: |
           $tag = "${{ github.ref_name }}"
-          if ($tag -notmatch '^v\d+\.\d+\.\d+$') { throw "Tag '$tag' is not v<major>.<minor>.<patch>." }
-          $version = $tag.Substring(1)
+          # The `release-` prefix is required, not decorative: it is the only thing separating a
+          # deliberate release from a version bump someone tagged by habit. It is stripped before
+          # the version is used, because the build names its artifacts from Cargo.toml and the
+          # updater compares version numbers, neither of which has ever heard of the prefix.
+          if ($tag -notmatch '^release-v(\d+\.\d+\.\d+)$') {
+            throw "Tag '$tag' is not release-v<major>.<minor>.<patch>. Without the release- prefix this workflow never runs, and the publish job refuses it anyway."
+          }
+          $version = $Matches[1]
           # The build reads the version out of Cargo.toml and names the artifacts with it, so
           # a tag that disagrees with Cargo.toml would publish a binary labelled as a version
           # it is not -- an updater would then offer it as newer than it is. Refuse instead.
@@ -132,7 +142,9 @@ jobs:
           }
           "tag=$tag" >> $env:GITHUB_OUTPUT
           "version=$version" >> $env:GITHUB_OUTPUT
-          "notes=release-notes/$tag.md" >> $env:GITHUB_OUTPUT
+          # Notes are named by version, not by tag: the prefix is a trigger convention, and
+          # release-notes\v1.1.1.md is the file that already exists.
+          "notes=release-notes/v$version.md" >> $env:GITHUB_OUTPUT
 
       - name: Restore the staged folder
         run: |
