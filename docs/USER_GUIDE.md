@@ -11,22 +11,22 @@
   `.env`, Git, workers, snapshots, repair and load testing.
 - **Commands** lists what a project offers (Artisan, Composer, npm scripts).
 - **Quick Apps** creates a new project from a recipe (Laravel, WordPress, Vite, Django…). Each recipe shows what it will run first.
-- **Profiles** and `ols setup` rebuild an environment from `.openlocalserver/environment.yaml`.
+- **Profiles** and `olsc setup` rebuild an environment from `.openlocalserver/environment.yaml`.
 - **Tunnels** make a site public on purpose; the first start asks for confirmation.
 - **Plugins** add runtimes (Go, Bun, Java, .NET), Quick Apps, detections and health checks. See [PLUGINS.md](PLUGINS.md).
 - **Ctrl+K** searches everything and runs commands.
 
 ## The command line
-`ols status`, `ols start`, `ols stop`, `ols doctor`, `ols repair`, `ols setup`, `ols project …`, `ols service …`,
-`ols plugin …`, `ols catalog …`, `ols test load`, `ols ai …`, `ols api …`, `ols update …`, `ols support-bundle`.
+`olsc status`, `olsc start`, `olsc stop`, `olsc doctor`, `olsc repair`, `olsc setup`, `olsc project …`, `olsc service …`,
+`olsc plugin …`, `olsc catalog …`, `olsc test load`, `olsc ai …`, `olsc api …`, `olsc update …`, `olsc support-bundle`.
 `ols <command> --help` explains each. The CLI talks to the app when it is open and starts a background core otherwise.
 
 ## When something is wrong
-Run **Doctor** (command palette) or `ols doctor`. It lists problems as Problem, Cause, Fix. **Settings → Windows
+Run **Doctor** (command palette) or `olsc doctor`. It lists problems as Problem, Cause, Fix. **Settings → Windows
 integration, support and privacy → Save bundle** writes a redacted zip for a bug report.
 
 ## Privacy
-OLS sends nothing anywhere on its own: no telemetry, no analytics. It contacts the internet only when you
+olsc sends nothing anywhere on its own: no telemetry, no analytics. It contacts the internet only when you
 install or update something, refresh a catalog, check for updates, start a tunnel, or use an AI provider you configured.
 
 ## AI assistant (optional)

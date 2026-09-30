@@ -9,7 +9,7 @@
 [![Tauri](https://img.shields.io/badge/shell-Tauri_2-orange)](./src-tauri/tauri.conf.json)
 [![Rust](https://img.shields.io/badge/backend-Rust-red)](./crates/ols-core)
 
-**OLS** (Open Local Server) is an all-in-one local development environment for Windows with broad runtime coverage and full extensibility. Every project gets isolated runtimes, its own `.test` domain, and trusted local HTTPS. One core engine (`ols-core`) powers three front doors: desktop GUI, CLI (`ols`), and local HTTP API.
+**OLS** (Open Local Server) is an all-in-one local development environment for Windows with broad runtime coverage and full extensibility. Every project gets isolated runtimes, its own `.test` domain, and trusted local HTTPS. One core engine (`ols-core`) powers three front doors: desktop GUI, CLI (`olsc`), and local HTTP API.
 
 **Free, open source, and no limit on the number of sites.**
 
@@ -148,7 +148,7 @@ winget install --id ngrok.ngrok               # ngrok     -> needs an authtoken
 
 ### 🤖 CLI, API & Automation
 
-- **CLI (`ols`):** `setup [--dry-run] | doctor | repair | status | start | stop`, plus `project | runtime | service | tunnel | worker | snapshot | quick-command | search`; background **daemon** keeps working with GUI closed.
+- **CLI (`olsc`):** `setup [--dry-run] | doctor | repair | status | start | stop`, plus `project | runtime | service | tunnel | worker | snapshot | quick-command | search`; background **daemon** keeps working with GUI closed.
 - **Local HTTP API** (`127.0.0.1:7420`): same `CoreCommand` JSON, bearer token, origin reject, read-only vs operate scopes.
 - **Workers** (queue registry, max 16, Procfile.dev import), **scheduled tasks** (cron, 1-min tick, no overlap), **terminal** (portable-pty shells with runtime PATH-first, max 8).
 - **Git manager:** status/stage/commit/branches/pull/push/remotes/stash/clone with credential helper.
@@ -224,31 +224,31 @@ git clone https://github.com/example/my-laravel-app.git
 cd my-laravel-app
 
 # Full environment setup: runtimes → DB → domain → DNS → SSL → mail → workers
-ols setup
+olsc setup
 
 # Preview plan without applying
-ols setup --dry-run
+olsc setup --dry-run
 
 # Check health, auto-fix safe issues
-ols doctor
-ols repair
+olsc doctor
+olsc repair
 ```
 
 ### Daily commands
 
 ```powershell
-ols status                  # services, sites, runtimes
-ols start                   # start all enabled services
-ols stop                    # stop all
+olsc status                  # services, sites, runtimes
+olsc start                   # start all enabled services
+olsc stop                    # stop all
 
-ols project list            # registered projects
-ols service list            # MariaDB, Postgres, Redis, Mailpit…
-ols runtime list            # installed PHP/Node versions
+olsc project list            # registered projects
+olsc service list            # MariaDB, Postgres, Redis, Mailpit…
+olsc runtime list            # installed PHP/Node versions
 
-ols tunnel start --provider cloudflared --port 443
-ols worker run --queue default
-ols snapshot create --name "before-upgrade"
-ols search "mailpit"        # global search
+olsc tunnel start --provider cloudflared --port 443
+olsc worker run --queue default
+olsc snapshot create --name "before-upgrade"
+olsc search "mailpit"        # global search
 ```
 
 ### Typical flow in GUI
@@ -274,7 +274,7 @@ OpenLocalServer/
 │   │                    # Diagnostics, QuickApp, Plugin
 │   ├── ols-helper/      # Elevated helper — hosts/NRPT/service via UAC or
 │   │                    # LocalSystem named pipe (closed validated set)
-│   └── ols-cli/         # CLI (`ols-cli.exe` beside the app; `ols` reaches it through `OLS.exe`) — drives app or background daemon
+│   └── ols-cli/         # CLI (`olsc.exe` beside the app) — drives the app or a background daemon
 ├── src-tauri/           # Tauri 2 shell — window, tray, single IPC `run_command`
 ├── ui/src/              # React 19 + Vite 8 + Tailwind 4 + shadcn/ui,
 │   │                    # CodeMirror 6, xterm.js, `core.ts` IPC wrapper
@@ -298,7 +298,7 @@ OpenLocalServer/
 
 ```text
 GUI (React) ──┐
-CLI (ols) ────┼──> Core::dispatch(CoreCommand) -> Inner (Arc-shared state)
+CLI (olsc) ────┼──> Core::dispatch(CoreCommand) -> Inner (Arc-shared state)
 HTTP API ─────┘         |
                         v
               Managers: Runtime, Service, Web, Domain, Certs,
@@ -340,7 +340,7 @@ cd ui; npm run lint; npm run build
 
 ## 🧾 Third-Party Notices
 
-OLS is GPL-3.0-only (see [LICENSE](./LICENSE)).
+olsc is GPL-3.0-only (see [LICENSE](./LICENSE)).
 
 **The installer ships OLS only — no third-party software is bundled.** Runtimes, web servers, and databases are downloaded by you on demand from the vendor and SHA-256 verified, and are installed into OLS-managed folders you can delete at any time. Tunnel binaries are neither downloaded nor installed — OLS only finds them already on your `PATH` (see [Tunnels](#-sharing--tunnels)).
 

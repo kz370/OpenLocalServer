@@ -18,10 +18,10 @@ Incremental release. Product as described in 1.0.0 is unchanged. Full notes:
 
 ### Fixed
 - Explorer right-click entries opened OLS instead of adding the folder, because `ols.exe` and `OLS.exe` are the
-  same file on Windows. The CLI is now `ols-cli.exe`, looked up by name and refused if it is the running app.
+  same file on Windows. The CLI is now `olsc.exe`, looked up by name and refused if it is the running app.
 - The `ols` command opened the app instead of running the command line. Within one folder cmd resolves by `PATHEXT`
-  and `.EXE` comes before `.CMD`, so the `ols.cmd` shim could never win against `OLS.exe` — `ols --version` printed
-  nothing and exited 0. There is no shim any more: the app hands any argument that is not its own to `ols-cli.exe`
+  and `.EXE` comes before `.CMD`, so the `ols.cmd` shim could never win against `OLS.exe` — `olsc --version` printed
+  nothing and exited 0. There is no shim any more: the app hands any argument that is not its own to `olsc.exe`
   before it starts and exits with the CLI's exit code, so `ols` works with the GUI closed and nothing has to be on
   PATH beyond the install folder.
 - The shell menu card no longer reports "installed" while every entry points at the app; it checks the command
@@ -56,7 +56,7 @@ First public release. Full notes: [`release-notes/v1.0.0.md`](./release-notes/v1
   k6 script, ask the logs, explain a webhook and write a handler, suggest commit messages, and describe a setup
   in plain words. Secrets are hidden before anything is sent, a prompt preview shows what goes out, a provider
   outside this computer needs a confirmation per request, and proposed steps are limited to an allowlist and run
-  only after you approve them. `ols ai status|on|off|test|ask|explain`.
+  only after you approve them. `olsc ai status|on|off|test|ask|explain`.
 - Project manifests in `.openlocalserver/` (environment, services, commands and a lock file), and an environment
   setup with a plan, conflict detection, a dry run and rollback of safe changes on failure.
 - `ols` command line (`setup`, `doctor`, `repair`, `status`, `start`, `stop`, `project`, `runtime`, `service`,

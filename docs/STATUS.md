@@ -18,7 +18,7 @@ Release 1.1   Stages 18–19  ████████████████�
 Release 2.0   Stage 20      ░░░░░░░░░░░░░░░░░░░░  Linux, last
 ```
 
-OLS targets Windows; Linux comes last (release 2.0). macOS is not planned.
+olsc targets Windows; Linux comes last (release 2.0). macOS is not planned.
 
 ## What works today
 
@@ -43,7 +43,7 @@ OLS targets Windows; Linux comes last (release 2.0). macOS is not planned.
 - **Reproducible environments (0.3):** `.openlocalserver/` manifests (environment, services, commands, lock file),
   a setup plan with conflicts, dry run and apply with rollback, profiles, modes (Development / Testing / Debugging /
   Demo), queue workers, a scheduler, snapshots, settings backups, environment export/import and cloning.
-- **Command line:** `ols setup`, `ols doctor`, `ols repair`, `ols status`, `ols start|stop`, and `project`, `runtime`,
+- **Command line:** `olsc setup`, `olsc doctor`, `olsc repair`, `olsc status`, `olsc start|stop`, and `project`, `runtime`,
   `service`, `tunnel`, `worker`, `snapshot`, `quick-command`, `search`. It drives the open app, or starts a
   background daemon when the app is closed.
 - **Tunnels:** Cloudflare, ngrok and LocalTunnel with a first-exposure confirmation, optional
@@ -75,7 +75,7 @@ Everything planned for 0.3 is built (stages 12–15). Limits worth knowing:
 | Item | Notes |
 |---|---|
 | Tunnels | Provider programs (cloudflared, ngrok) are found or located by hand, not downloaded. WebSockets and streamed responses don't pass through the traffic inspector yet |
-| Scheduler | Runs while the app or `ols daemon` is open; there is no system-level scheduled task |
+| Scheduler | Runs while the app or `olsc daemon` is open; there is no system-level scheduled task |
 | Resource limits | Memory limits apply at the next service start; there is no CPU limit (Windows has no simple per-program cap) |
 | Control channel | Windows named pipe only until the Linux stage (20) |
 
@@ -120,7 +120,7 @@ Everything planned for 0.3 is built (stages 12–15). Limits worth knowing:
   inspector proxy end to end, tunnel safety, repair, a real-git round trip, the control channel). The CLI was run
   against a temporary home. The new screens (Environment, Git, Workers, Snapshots, Repair tabs; Tunnels and
   Profiles pages; command palette; doctor) pass type-checking but haven't been checked visually. Real tunnel
-  providers, `ols daemon` hand-over to the app, and a setup that installs runtimes have not been run end to end.
+  providers, `olsc daemon` hand-over to the app, and a setup that installs runtimes have not been run end to end.
 
 ## Technical debt
 
@@ -131,6 +131,6 @@ Everything planned for 0.3 is built (stages 12–15). Limits worth knowing:
 
 ## Suggested order from here
 
-1. Look at every new screen in the running app; try a tunnel with cloudflared and `ols setup` on a real project.
+1. Look at every new screen in the running app; try a tunnel with cloudflared and `olsc setup` on a real project.
 2. Verify the installer (bundle `ols.exe` beside the app), run the clean-VM gate, and release 0.1.
 3. Release 1.0 work: plugins, updater, Linux. (The Sites page now holds projects too, aaPanel style, built 2026-09-26 and only type-checked; the web server and certificates moved to a "Web server" page.)

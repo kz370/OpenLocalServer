@@ -1,6 +1,6 @@
 # The local HTTP API
 
-Off by default. Turn it on in Settings → Local API, or `ols api enable`.
+Off by default. Turn it on in Settings → Local API, or `olsc api enable`.
 
 - Listens on `127.0.0.1` only (default port 7420).
 - Every request needs `Authorization: Bearer <token>`. The token is shown once when you make it; only its hash is

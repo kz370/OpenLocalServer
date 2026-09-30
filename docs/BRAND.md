@@ -8,7 +8,7 @@ Status: proposed. Supersedes nothing yet; `specs/` untouched because this is a d
 
 **OLS** is the product name. `Open Local Server` becomes the expansion, used only where a reader will not know the acronym.
 
-The reason this is cheap: the acronym already exists in the codebase. `ols-core`, `ols-helper`, `ols-cli`, the `ols` binary, `OLS_HOME`, `C:\Tools\OLS` in the test fixtures. Nothing internal has to move. What changes is which name is *presented* to a user.
+The reason this is cheap: the acronym already exists in the codebase. `ols-core`, `ols-helper`, `olsc`, the `ols` binary, `OLS_HOME`, `C:\Tools\OLS` in the test fixtures. Nothing internal has to move. What changes is which name is *presented* to a user.
 
 The reverse would be expensive. Renaming `ols-*` crates to `openlocalserver-*` would touch every `Cargo.toml`, every `use` statement, and break the crate names people already depend on from Cargo.lock. Do not do that.
 
@@ -22,12 +22,12 @@ The reverse would be expensive. Renaming `ols-*` crates to `openlocalserver-*` w
 | First mention in prose | `OLS (Open Local Server)` | Once per document, then `OLS`. |
 | Repo name | `OLS` | GitHub redirects the old name; do the rename in one commit. |
 | Crate names | `ols-*` | Unchanged. |
-| Verb | "OLS runs", "OLS wrote", "OLS supervises" | Subject is the product, not "the app". |
+| Verb | "olsc runs", "olsc wrote", "olsc supervises" | Subject is the product, not "the app". |
 | Adjective | "OLS-managed" | e.g. OLS-managed installation. |
 
 ### Expansion rule
 
-Write the expansion when the audience has not seen the product before: landing pages, release announcements for a new audience, installer welcome text, error messages aimed at a first-run user. Skip it everywhere else. "OLS is the successor to XAMPP" — fine. "Restart OLS to load them" — fine.
+Write the expansion when the audience has not seen the product before: landing pages, release announcements for a new audience, installer welcome text, error messages aimed at a first-run user. Skip it everywhere else. "olsc is the successor to XAMPP" — fine. "Restart OLS to load them" — fine.
 
 ---
 
@@ -76,7 +76,7 @@ The UI is Tailwind with Radix primitives. There is no brand typeface and there s
 
 ### 3.1 Position
 
-OLS is a tool that does not make you ask for permission. It installs runtimes, edits the hosts file, trusts a certificate authority, and runs a LocalSystem service. The product's job is to make that safe enough that the developer stops noticing.
+olsc is a tool that does not make you ask for permission. It installs runtimes, edits the hosts file, trusts a certificate authority, and runs a LocalSystem service. The product's job is to make that safe enough that the developer stops noticing.
 
 The tone follows from that: **plain, specific, and finished.** Not clever, not apologetic, not corporate.
 
@@ -86,9 +86,9 @@ The tone follows from that: **plain, specific, and finished.** Not clever, not a
 
 **State cause and fix together.** This is already a product rule, not just a writing rule — see AGENTS.md §3, `Diagnostic{problem,cause,fix}`. Every user-visible error names what broke, why, and what to do. Copy inherits this.
 
-**Never blame the user.** "OLS could not read `C:\Program Files\OLS\config.yaml` — the file is owned by another process. Close OLS Helper in Services and retry." Not "You don't have permission."
+**Never blame the user.** "olsc could not read `C:\Program Files\OLS\config.yaml` — the file is owned by another process. Close OLS Helper in Services and retry." Not "You don't have permission."
 
-**Short sentences. Active voice. Present tense.** "OLS starts Nginx." Not "Nginx will be started by OLS."
+**Short sentences. Active voice. Present tense.** "olsc starts Nginx." Not "Nginx will be started by OLS."
 
 **Say what happened, then what happens next.** Not both in one clause.
 
@@ -112,7 +112,7 @@ Prefer the domain words the user already uses. "Service" over "managed process."
 |---|---|
 | "Everything OpenLocalServer depends on, checked in one go" | "Everything OLS depends on, checked in one go" |
 | "Start with Windows — Adds OpenLocalServer to your account's startup list" | "Start with Windows — Adds OLS to your account's startup list" |
-| "OpenLocalServer will not silently destroy manual configuration." | "OLS never overwrites configuration you edited by hand." |
+| "OpenLocalServer will not silently destroy manual configuration." | "olsc never overwrites configuration you edited by hand." |
 | "Restart OpenLocalServer afterwards to load them." | "Restart OLS to load them." |
 | "The user owns the whole file." | "You own the whole file." |
 
@@ -188,7 +188,7 @@ Five releases. Each one ships.
 
 **R3 — Installer and release surface.** Rename the setup file to `OLS-{version}-setup.exe`, the portable zip and the SHA256SUMS file to match, and the app exe to `OLS.exe` (see §4.5 for why the exe was safe to move and what carries the old name). Keep `AppId`, `DefaultDirName` and `DaemonExe` exactly as they are, and leave a comment at each saying so and pointing at this table. Rename the repo to `OLS`; GitHub redirects the old path. Update the URLs in `Cargo.toml` and `ReleaseCards.tsx`.
 
-**R4 — Deprecation notice.** No renames. In-app banner and a release-notes entry: "OLS is the new name for Open Local Server. Nothing is changing about how it works or where your data lives." The `legacy_root` migration already in `paths.rs` is the precedent for how the project tells users that a location moved.
+**R4 — Deprecation notice.** No renames. In-app banner and a release-notes entry: "olsc is the new name for Open Local Server. Nothing is changing about how it works or where your data lives." The `legacy_root` migration already in `paths.rs` is the precedent for how the project tells users that a location moved.
 
 **R5 — Optional, probably never.** Renaming any Tier 2 identifier requires a migration routine per identifier, a test per migration, and a release note that says which data moved. The keyring entry in `secrets.rs` cannot be migrated at all — a service name is the addressing key, and the old one cannot be written to without the old name. Renaming it destroys every stored secret on every machine. **Leave it.**
 

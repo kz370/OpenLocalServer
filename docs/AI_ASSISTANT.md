@@ -32,13 +32,13 @@ this computer.
 5. **Commit messages** from the staged changes.
 6. **Plain-language palette**: "a Laravel site with Redis called shop" becomes a Quick App step to confirm.
 
-Command line: `ols ai status`, `on`, `off`, `test [provider]`, `ask "..."` (`--feature palette`, `--log web:error`),
+Command line: `olsc ai status`, `on`, `off`, `test [provider]`, `ask "..."` (`--feature palette`, `--log web:error`),
 `explain <finding>`. Add `--preview` to see what would be sent, `--yes` to allow a provider outside this computer, and
 `--apply` to run the proposed steps without asking.
 
 ## Privacy and safety
 
-- **Nothing is sent unless you ask.** Every request starts from a button (or `ols ai`), and **Show what will be sent**
+- **Nothing is sent unless you ask.** Every request starts from a button (or `olsc ai`), and **Show what will be sent**
   displays the exact prompt first.
 - **Everything is redacted**: `.env` values, passwords, tokens, keys, cookies, signatures and the home folder name, using the
   same rules as the logs and the support bundle. The same applies to what the model reads through its tools.

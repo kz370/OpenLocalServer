@@ -44,28 +44,28 @@ Selected CoreCommands (type strings mirror Rust variants):
 - AI/Updater/ misc: `ai_get_state`, `ai_preview`, `ai_start`, `ai_job`, `ai_cancel`, `get_updater_status`, `check_update`, `download_update`, `install_update`, `export_support_bundle`, `doctor`
 
 ## CLI (`ols`)
-Global `--json` for raw pretty JSON. Auto-starts `ols daemon` when app closed (detached process, 30s pipe wait).
-- `ols start|stop|restart|status`
-- `ols setup [--path] [--dry-run] [-y]`
-- `ols doctor` | `ols repair [project] [-y]`
-- `ols project list|add <path>|remove <name>|start|stop|clone <url> <path>`
-- `ols runtime list|install <id> [version]` (45min timeout, 2s poll)
-- `ols php use <version>`
-- `ols service list|start|stop|restart|logs -n 100` (`logs` resolves the service's `log_source` first)
-- `ols domain list` | `ols certificate list`
-- `ols tunnel list|start <name> [-y]|stop`
-- `ols quick-app list` | `ols quick-command list|run <id> [--project]`
-- `ols worker list|start|stop` | `ols snapshot list|create --label`
-- `ols plugin list|install|enable|disable|remove`
-- `ols catalog list|add|remove|refresh|install`
-- `ols api status|enable [--port] [--operate]|disable|token`
-- `ols update check|download|install`
-- `ols test load [--site] [--profile smoke]`
-- `ols ai status|on|off|test|ask|explain`
-- `ols support-bundle <dest>` | `ols network` | `ols daemon [--stop]`
+Global `--json` for raw pretty JSON. Auto-starts `olsc daemon` when app closed (detached process, 30s pipe wait).
+- `olsc start|stop|restart|status`
+- `olsc setup [--path] [--dry-run] [-y]`
+- `olsc doctor` | `olsc repair [project] [-y]`
+- `olsc project list|add <path>|remove <name>|start|stop|clone <url> <path>`
+- `olsc runtime list|install <id> [version]` (45min timeout, 2s poll)
+- `olsc php use <version>`
+- `olsc service list|start|stop|restart|logs -n 100` (`logs` resolves the service's `log_source` first)
+- `olsc domain list` | `olsc certificate list`
+- `olsc tunnel list|start <name> [-y]|stop`
+- `olsc quick-app list` | `olsc quick-command list|run <id> [--project]`
+- `olsc worker list|start|stop` | `olsc snapshot list|create --label`
+- `olsc plugin list|install|enable|disable|remove`
+- `olsc catalog list|add|remove|refresh|install`
+- `olsc api status|enable [--port] [--operate]|disable|token`
+- `olsc update check|download|install`
+- `olsc test load [--site] [--profile smoke]`
+- `olsc ai status|on|off|test|ask|explain`
+- `olsc support-bundle <dest>` | `olsc network` | `olsc daemon [--stop]`
 
 ## HTTP API
-Disabled by default. Enable via Settings -> Local API or `ols api enable`. Binds `127.0.0.1:7420` only. Auth `Authorization: Bearer ols_...` (only hash stored). Rejects `Origin` header and non-loopback Host. Body cap 1MB. Read-only mode allows `list_*/get_*/check_*`, diagnostics, git status/log, read_log. Operate mode adds start/stop/apply/install/register/snapshot/backup.
+Disabled by default. Enable via Settings -> Local API or `olsc api enable`. Binds `127.0.0.1:7420` only. Auth `Authorization: Bearer ols_...` (only hash stored). Rejects `Origin` header and non-loopback Host. Body cap 1MB. Read-only mode allows `list_*/get_*/check_*`, diagnostics, git status/log, read_log. Operate mode adds start/stop/apply/install/register/snapshot/backup.
 ```bash
 curl -H "Authorization: Bearer ols_..." http://127.0.0.1:7420/v1/ping
 curl -H "Authorization: Bearer ols_..." -H "Content-Type: application/json" \
@@ -82,7 +82,7 @@ All layers return Diagnostic: `problem` (short), `cause` (root), `fix` (actionab
 await runCommand({ type: 'start_service', id: 'mariadb' });
 ```
 ```bash
-ols project add C:\\Sites\\shop
-ols setup --path C:\\Sites\\shop --dry-run
-ols service start mariadb
+olsc project add C:\\Sites\\shop
+olsc setup --path C:\\Sites\\shop --dry-run
+olsc service start mariadb
 ```

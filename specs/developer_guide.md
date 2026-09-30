@@ -20,7 +20,7 @@ Managed binaries downloaded on demand with SHA-256 verify; never run unverified 
 
 ## Debugging
 - Logs: `data/logs/ols-core.log` (JSON daily rolling, secrets redacted). UI Logs page polls `list_log_sources` / `read_log` every 1.5s; filter by severity regex.
-- Diagnostics: Dashboard DiagnosticsCard (`run_diagnostics`), DoctorDialog (`doctor`), CLI `ols doctor`. Every error shaped `{problem,cause,fix}`.
+- Diagnostics: Dashboard DiagnosticsCard (`run_diagnostics`), DoctorDialog (`doctor`), CLI `olsc doctor`. Every error shaped `{problem,cause,fix}`.
 - Processes page shows raw supervisor state + output ring (200 lines); system stats poll 2s.
 - Health: Sites page per-site `health_check` runs DNS->TCP->TLS->Cert->HTTP chain with per-step detail.
 - Common traps: port busy -> PortChecker reports owner via netstat/tasklist (never kills); web invalid -> old config kept + error; drift -> hash detect, preserve hand edits, flag badge.
@@ -29,7 +29,7 @@ Managed binaries downloaded on demand with SHA-256 verify; never run unverified 
 ## Extension Guide
 - New CoreCommand: add variant in `command.rs`, implement in `app.rs` Inner method, return CoreResponse, expose in `core.ts` types, call via `runCommand`. No direct manager access from UI.
 - New runtime: add pin in `catalog.rs` (HTTPS URL + 64-hex SHA256), probe logic in `runtime.rs`, UI row in Runtimes page. Remote catalogs need minisign key.
-- New plugin: write `plugin.yaml` (id/name/version/permissions/contributes), `ols plugin install <folder|zip>`; permissions gate exact list; manifest change voids approval.
+- New plugin: write `plugin.yaml` (id/name/version/permissions/contributes), `olsc plugin install <folder|zip>`; permissions gate exact list; manifest change voids approval.
 - New quick-app: YAML in `catalog/quick-apps/` following schema (variables/steps/files/env/post_create/domain); validate via strict schema + Minijinja strict undefined.
 - New web server: implement `WebServer` trait (render_main/render_site/validate/start/reload/stop), register in `server_by_id`, add UI tab.
 - New tunnel provider: implement `TunnelProvider` trait (authenticate/create/start/stop/status/url/logs), register in TunnelManager.

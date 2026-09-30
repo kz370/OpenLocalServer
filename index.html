@@ -7,7 +7,7 @@
     <link rel="canonical" href="./" />
     <meta
       name="description"
-      content="Open Local Server (OLS) is a local development environment manager for Windows. It installs and supervises runtimes, gives every project its own .test domain with trusted HTTPS, and runs databases, mail and caches behind one core — from a desktop app, the ols command line, or a local HTTP API."
+      content="Open Local Server (OLS) is a local development environment manager for Windows. It installs and supervises runtimes, gives every project its own .test domain with trusted HTTPS, and runs databases, mail and caches behind one core — from a desktop app, the olsc command line, or a local HTTP API."
     />
     <meta name="color-scheme" content="dark" />
     <!--
@@ -25,7 +25,7 @@
     <meta property="og:type" content="website" />
     <meta
       property="og:description"
-      content="Open Local Server: runtimes, sites, databases and trusted HTTPS for Windows local development. One core engine, three front doors: desktop app, ols command line, local HTTP API."
+      content="Open Local Server: runtimes, sites, databases and trusted HTTPS for Windows local development. One core engine, three front doors: desktop app, olsc command line, local HTTP API."
     />
     <meta property="og:image" content="website/assets/img/dashboard.webp" />
   </head>
@@ -38,7 +38,7 @@
       <div class="nav__inner">
         <a class="brand" href="#top">
           <img src="website/assets/img/logo.svg" alt="" width="26" height="26" />
-          <b>OLS</b><em>Open Local Server</em>
+          <b>olsc</b><em>Open Local Server</em>
         </a>
         <nav aria-label="Main">
           <ul class="nav__links" id="nav-links">
@@ -196,7 +196,7 @@
                 </span>
                 <span>
                   <b>Command line</b>
-                  <small>ols setup · doctor · status</small>
+                  <small>olsc setup · doctor · status</small>
                 </span>
               </div>
               <div class="door">
@@ -361,7 +361,7 @@
               <h3>CLI, API &amp; automation</h3>
               <p>The same engine, reachable the way your tools expect.</p>
               <ul>
-                <li>Ships as <code>ols-cli.exe</code> and is reached through the app, so <code>ols</code> works with the GUI closed, through a background core</li>
+                <li>Ships as <code>olsc.exe</code> beside the app, so <code>olsc</code> works with the GUI closed, through a background core</li>
                 <li>Local HTTP API with a bearer token and read-only vs operate scopes</li>
                 <li>Queue workers, a cron scheduler with no overlapping runs, and portable-pty terminals</li>
                 <li>Git manager, k6 load testing, a signed self-updater and declarative plugins</li>
@@ -570,30 +570,31 @@
           </div>
 
           <div class="optional reveal">
-            <h3 class="optional__title">Optional: the <code>ols</code> command</h3>
+            <h3 class="optional__title">Optional: the <code>olsc</code> command</h3>
             <p>
-              The install folder holds <code>OLS.exe</code> and
-              <code>ols-cli.exe</code>. Given an argument that is not its own, the app
-              hands it to the command line and exits with the command's exit code — so
-              <code>ols</code> and <code>OLS</code> are the same program on Windows,
-              and there is no second name to install. The installer does not add that
-              folder to your <code>PATH</code>, which is why <code>ols</code> can come
-              back as "not recognised". Pick whichever of these suits you:
+              The install folder holds <code>OLS.exe</code>, the app, and
+              <code>olsc.exe</code>, the command line — two separate programs with two
+              separate names. (<code>olsc</code> rather than <code>ols</code> because
+              Windows does not tell file names apart by case: the app is
+              <code>OLS.exe</code>, so anything called <code>ols</code> finds the app
+              and opens a window instead of running a command.) The installer does not
+              add that folder to your <code>PATH</code>, which is why <code>olsc</code>
+              can come back as "not recognised". Pick whichever of these suits you:
             </p>
             <ul class="optional__list">
               <li>
                 <b>Add the folder to PATH</b> — Windows <b>Settings → System → About →
                 Advanced system settings → Environment Variables</b>, add
                 <code>C:\OpenLocalServer</code> under <b>Path</b>, then open a new
-                terminal. <code>ols status</code> works from there on.
+                terminal. <code>olsc status</code> works from there on.
               </li>
               <li>
                 <b>Call it by its full path</b> — no change to the machine:
-                <code>C:\OpenLocalServer\OLS.exe status</code>
+                <code>C:\OpenLocalServer\olsc.exe status</code>
               </li>
             </ul>
             <p class="optional__foot">
-              <code>ols</code> talks to the app while it is open and starts a
+              <code>olsc</code> talks to the app while it is open and starts a
               background core when it is not, so it behaves the same either way.
             </p>
           </div>
@@ -603,22 +604,22 @@
               <h3>Everyday commands</h3>
               <div class="code">
                 <div class="code__bar">
-                  <b>ols</b>
+                  <b>olsc</b>
                   <button class="code__copy" type="button">Copy</button>
                 </div>
-<pre><code><span class="k">ols</span> status                      <span class="c"># services, sites, runtimes</span>
-<span class="k">ols</span> start                       <span class="c"># start every enabled service</span>
-<span class="k">ols</span> stop                        <span class="c"># stop everything</span>
-<span class="k">ols</span> doctor                     <span class="c"># problems as Problem / Cause / Fix</span>
+<pre><code><span class="k">olsc</span> status                      <span class="c"># services, sites, runtimes</span>
+<span class="k">olsc</span> start                       <span class="c"># start every enabled service</span>
+<span class="k">olsc</span> stop                        <span class="c"># stop everything</span>
+<span class="k">olsc</span> doctor                     <span class="c"># problems as Problem / Cause / Fix</span>
 
-<span class="k">ols</span> project list                <span class="c"># registered projects</span>
-<span class="k">ols</span> service list                <span class="c"># MariaDB, Postgres, Redis, Mailpit…</span>
-<span class="k">ols</span> runtime list                <span class="c"># installed PHP and Node versions</span>
+<span class="k">olsc</span> project list                <span class="c"># registered projects</span>
+<span class="k">olsc</span> service list                <span class="c"># MariaDB, Postgres, Redis, Mailpit…</span>
+<span class="k">olsc</span> runtime list                <span class="c"># installed PHP and Node versions</span>
 
-<span class="k">ols</span> tunnel start <span class="p">--provider</span> cloudflared <span class="p">--port</span> 443
-<span class="k">ols</span> worker run <span class="p">--queue</span> default
-<span class="k">ols</span> snapshot create <span class="p">--name</span> <span class="s">"before-upgrade"</span>
-<span class="k">ols</span> search <span class="s">"mailpit"</span></code></pre>
+<span class="k">olsc</span> tunnel start <span class="p">--provider</span> cloudflared <span class="p">--port</span> 443
+<span class="k">olsc</span> worker run <span class="p">--queue</span> default
+<span class="k">olsc</span> snapshot create <span class="p">--name</span> <span class="s">"before-upgrade"</span>
+<span class="k">olsc</span> search <span class="s">"mailpit"</span></code></pre>
               </div>
               <h3 class="spaced">A project, end to end</h3>
               <div class="code">
@@ -631,14 +632,14 @@
 <span class="k">cd</span> my-laravel-app
 
 <span class="c"># Runtimes, database, domain, DNS, SSL, mail, workers</span>
-<span class="k">ols</span> setup
+<span class="k">olsc</span> setup
 
 <span class="c"># Preview the plan without applying it</span>
-<span class="k">ols</span> setup <span class="p">--dry-run</span>
+<span class="k">olsc</span> setup <span class="p">--dry-run</span>
 
 <span class="c"># Health, then safe fixes</span>
-<span class="k">ols</span> doctor
-<span class="k">ols</span> repair</code></pre>
+<span class="k">olsc</span> doctor
+<span class="k">olsc</span> repair</code></pre>
               </div>
             </div>
 
@@ -703,7 +704,7 @@
                 <div><dt>Core</dt><dd>Rust · <code>ols-core</code> · Tokio</dd></div>
                 <div><dt>Shell</dt><dd>Tauri 2 · tray · single IPC command</dd></div>
                 <div><dt>Frontend</dt><dd>React 19 · Vite 8 · Tailwind 4 · shadcn/ui · CodeMirror 6 · xterm.js</dd></div>
-                <div><dt>CLI</dt><dd><code>ols-cli.exe</code> beside the app; <code>ols</code> reaches it through <code>OLS.exe</code> once the install folder is on <code>PATH</code></dd></div>
+                <div><dt>CLI</dt><dd><code>olsc</code> — a separate program beside the app; works once the install folder is on <code>PATH</code></dd></div>
                 <div><dt>Helper</dt><dd><code>ols-helper</code> — hosts, NRPT and services over a named pipe or one UAC prompt</dd></div>
                 <div><dt>State</dt><dd>SQLite <code>app.db</code>; <code>OLS_HOME</code> overrides every path</dd></div>
                 <div><dt>Platform</dt><dd>Windows 10 / 11, 64-bit. Linux is planned last; macOS is not planned.</dd></div>
@@ -759,7 +760,7 @@
                 <div class="diag">
                   <div class="problem"><b>Problem</b><span>Port 3306 is already used by mysqld.exe (PID 4120).</span></div>
                   <div class="cause"><b>Cause</b><span>A second MariaDB data folder is running from an older install.</span></div>
-                  <div class="fix"><b>Fix</b><span>ols repair stops the orphan and reassigns the port. Review the plan, then apply.</span></div>
+                  <div class="fix"><b>Fix</b><span>olsc repair stops the orphan and reassigns the port. Review the plan, then apply.</span></div>
                 </div>
               </div>
             </div>
@@ -873,12 +874,12 @@
           <div class="footer__about">
             <a class="brand" href="#top">
               <img src="website/assets/img/logo.svg" alt="" width="26" height="26" />
-              <b>OLS</b><em>Open Local Server</em>
+              <b>olsc</b><em>Open Local Server</em>
             </a>
             <p>
               A local development environment manager for Windows. Runtimes, sites,
               databases and trusted HTTPS, with one core engine behind a desktop app,
-              the <code>ols</code> CLI and a local HTTP API.
+              the <code>olsc</code> CLI and a local HTTP API.
             </p>
           </div>
           <div>

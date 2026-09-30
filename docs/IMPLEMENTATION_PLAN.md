@@ -4,7 +4,7 @@ This file has two parts:
 
 1. **Progress** — where the build stands, kept up to date as work lands.
 2. **The original plan** — the staged plan the project started from. Crate names match the code
-   (`ols-core`, `ols-helper`, `ols-cli`); the CLI is `ols`, and project manifests live in `.openlocalserver/`.
+   (`ols-core`, `ols-helper`, `olsc`); the CLI is `ols`, and project manifests live in `.openlocalserver/`.
 
 ---
 
@@ -30,14 +30,14 @@ have not been run, and the new screens have not all been checked in the running 
 | 9 Web config, reverse proxy, wildcards | Done | — |
 | 10 More servers and databases | Done | — |
 | **11 Runtime depth + diagnostics** | **Built** | Xdebug, Composer, corepack, Python venv, `DiagnosticEngine` v1 and the `.env` editor exist; screens not yet checked in the running app |
-| 12 CLI, manifests, reproducible setup | Built | `ols` CLI over a per-user, per-install named pipe (auto-starts `ols daemon` when the app is closed); full manifest schema, lock file, setup plan / dry run / apply with rollback of safe changes, conflict detection. The 0.3 gate has not been run |
+| 12 CLI, manifests, reproducible setup | Built | `ols` CLI over a per-user, per-install named pipe (auto-starts `olsc daemon` when the app is closed); full manifest schema, lock file, setup plan / dry run / apply with rollback of safe changes, conflict detection. The 0.3 gate has not been run |
 | 13 Profiles, modes, workers, scheduler, snapshots | Built | 8 built-in profiles plus your own (import/export), 4 modes; queue workers; cron scheduler (runs while the app or daemon is open); snapshots, settings backups, environment import/export and cloning |
 | 14 Tunnels + traffic | Built | Cloudflare, ngrok, LocalTunnel; first-exposure confirmation, internal-port refusal, access control in our own proxy; traffic inspector with redaction, replay and a webhook tester. Real providers not yet exercised end to end (needs their programs installed) |
 | 15 Power UX + repair | Built | Command palette and global search (Ctrl+Shift+P / Ctrl+K), doctor, project diagnostics and repair, Git repository manager (portable Git in the catalog), resource limits |
 | 16 Plugins + catalogs | Built (2026-09-26) | Declarative plugins with permissions, 4 built-in runtime plugins (Go, Bun, Java, .NET), minisign-signed catalogs. Not done: WASM code plugins, DB/service/tool plugins, Ruby, a default catalog and key. See [PLUGINS.md](PLUGINS.md) |
 | 17 Release hardening | Built (2026-09-26) | Signed updater, localhost HTTP API, Explorer menu, offline indicator, support bundle, machine diagnostics, security review ([SECURITY_REVIEW.md](SECURITY_REVIEW.md)). Not done: update signing key, code-signed installer, 1.0 E2E on a clean VM |
-| 18 Load testing with k6 | Built (2026-09-26) | k6 in the catalog, scripts, generator, live results, saved runs, `ols test load`. Not done: Quick Command entry, CPU cap, run against a real site in the app. See [LOAD_TESTING.md](LOAD_TESTING.md) |
-| 19 AI assistant | Built (2026-09-26) | OpenAI-compatible providers (LM Studio, Ollama, Hugging Face, OpenRouter, custom) with streaming, read-only tools, redaction, a prompt preview, an allowlisted approve-to-run plan, all six features, `ols ai`. Not done: run against a real model, per-answer cost for providers other than OpenRouter, rendering the answer as Markdown. See [AI_ASSISTANT.md](AI_ASSISTANT.md) |
+| 18 Load testing with k6 | Built (2026-09-26) | k6 in the catalog, scripts, generator, live results, saved runs, `olsc test load`. Not done: Quick Command entry, CPU cap, run against a real site in the app. See [LOAD_TESTING.md](LOAD_TESTING.md) |
+| 19 AI assistant | Built (2026-09-26) | OpenAI-compatible providers (LM Studio, Ollama, Hugging Face, OpenRouter, custom) with streaming, read-only tools, redaction, a prompt preview, an allowlisted approve-to-run plan, all six features, `olsc ai`. Not done: run against a real model, per-answer cost for providers other than OpenRouter, rendering the answer as Markdown. See [AI_ASSISTANT.md](AI_ASSISTANT.md) |
 | 20 (release 2.0, Linux) | Not started | Last |
 
 ### Done early or beyond the plan
@@ -71,11 +71,11 @@ have not been run, and the new screens have not all been checked in the running 
   20 Linux (2.0).
 
 ### Deviations from the plan
-- Product name *OLS*; crates `ols-core`, `ols-helper` and `ols-cli` (binary `ols-cli`; `ols` reaches it through
+- Product name *OLS*; crates `ols-core`, `ols-helper` and `olsc` (binary `olsc`; `ols` reaches it through
   `OLS.exe`, which hands over any argument that is not its own — see `cli_dispatch`); no separate
   `platform` or `catalog` crates yet. Project manifests live in `.openlocalserver/`.
 - The CLI talks to the app over a named pipe with a per-session token in `control.json`; when the app is closed,
-  the CLI starts `ols daemon`, which hands over to the app when the app starts.
+  the CLI starts `olsc daemon`, which hands over to the app when the app starts.
 - Persistent state is JSON files under the data directory rather than SQLite + migrations.
 - The data directory is portable: `data/` beside the executable (or the repo in debug builds).
 
@@ -114,7 +114,7 @@ Deliverable on approval: copy this plan into the repo as `docs/IMPLEMENTATION_PL
    it. The UI never spawns processes (§8.2).
 2. **Single process owner.** The Tauri app hosts the core and the Process Supervisor. It opens a local control
    channel (Windows named pipe; Unix socket later) that requires a per-session token. The CLI talks to it, or
-   starts a headless core (`ols daemon`) when the GUI isn't running.
+   starts a headless core (`olsc daemon`) when the GUI isn't running.
 3. **Privilege separation (§8.5, §138).** `ols-helper` accepts a small, closed JSON command set
    (hosts block, NRPT DNS rule, later service install). On Windows it is launched per operation via
    `ShellExecute runas` (UAC). The main app never runs elevated.
@@ -135,7 +135,7 @@ openlocalserver/
 │   ├── ols-core/      # domain + managers (§147 modules, §149 services)
 │   ├── ols-platform/  # traits + windows/ impl (macos/, linux/ later)
 │   ├── ols-helper/    # privileged helper binary
-│   ├── ols-cli/       # clap CLI (Stage 12)
+│   ├── olsc/       # clap CLI (Stage 12)
 │   └── ols-catalog/   # package/service/tool/quick-app schema + built-in catalog data
 ├── src-tauri/              # Tauri 2 shell: IPC bindings, tray, windows
 ├── ui/                     # React app (§148 feature folders)
@@ -322,8 +322,8 @@ registry), minijinja, clap, tauri-specta. UI: xterm.js, CodeMirror 6 (Stage 9).
 ## RELEASE 0.3 (SRS §166)
 
 ### Stage 12 — CLI, manifests, reproducible setup
-- `ols-cli` (§136) over the control channel.
-- Manifests (§71): environment, services, and commands. Lock file (§72), `ols setup` (§73, §159),
+- `olsc` (§136) over the control channel.
+- Manifests (§71): environment, services, and commands. Lock file (§72), `olsc setup` (§73, §159),
   `--dry-run` (§77), Environment Plan preview (§76), and rollback (§78).
 - Environment Resolver pipeline (§74) and full conflict detection (§75), including file ownership.
 
@@ -341,7 +341,7 @@ registry), minijinja, clap, tauri-specta. UI: xterm.js, CodeMirror 6 (Stage 9).
 
 ### Stage 15 — Power UX + repair
 - Command palette (§122) and global search (§123).
-- Automatic repair (§114), explained diagnostics (§115), and `ols doctor` (§113).
+- Automatic repair (§114), explained diagnostics (§115), and `olsc doctor` (§113).
 - **Git repository manager** (§125, expanded 2026-09-26): per-project repo view inside the app. Clone into a new
   site, status and changed files, branches (create/switch/delete), stage and commit, pull/push/fetch, diff, log,
   remotes, stash, and `.gitignore` help. Credentials go through the Secrets Manager. Uses the system Git, or a
@@ -377,7 +377,7 @@ load tester, a single binary).
   or, deliberately, against a running tunnel's public URL. Refuse hosts that aren't the project's own sites.
 - **Live results**: k6's JSON output streamed into the UI (requests/s, p50/p95/p99 latency, error rate, VUs,
   checks), thresholds as pass/fail, and each run kept with its summary so runs can be compared.
-- **Quick Command and CLI**: `ols test load [project] [script]`, exit code from the thresholds, so CI can use it.
+- **Quick Command and CLI**: `olsc test load [project] [script]`, exit code from the thresholds, so CI can use it.
 - **Safety**: CPU/VU limits from Settings → Resources, a stop button, and a warning before pointing k6 at a
   public tunnel (that sends real traffic through the provider).
 - **Exit**: a Laravel project gets a generated smoke test, runs it from the Environment tab and the CLI, and a failed
@@ -419,7 +419,7 @@ per-feature choice of provider (for example a local model for logs, a larger one
 5. **Commit messages** from the staged diff in the Git tab.
 6. **Plain-language palette**: "a Laravel site with Redis called shop" becomes a Quick App or setup plan to confirm.
 
-**CLI**: `ols ai ask "..."`, `ols ai explain <finding>`.
+**CLI**: `olsc ai ask "..."`, `olsc ai explain <finding>`.
 **Tests**: a mock OpenAI-compatible server; redaction and allowlist tests; no test calls a real provider.
 **Exit**: with LM Studio running a local model, a failing web-server start is explained and fixed after one
 approval; the same works with OpenRouter; with only local providers configured, nothing leaves the computer.

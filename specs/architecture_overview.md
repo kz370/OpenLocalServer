@@ -1,7 +1,7 @@
 # Architecture Overview — OLS
 
 ## Project Type
-OLS is a local development environment manager for Windows. Successor to XAMPP / Laragon with broader runtime coverage and extensibility. Each project gets isolated runtimes, own domain, trusted local HTTPS, without manual system edits. Status: pre-release, stage 15/20 built.
+olsc is a local development environment manager for Windows. Successor to XAMPP / Laragon with broader runtime coverage and extensibility. Each project gets isolated runtimes, own domain, trusted local HTTPS, without manual system edits. Status: pre-release, stage 15/20 built.
 
 ## Technologies Used
 - **Backend:** Rust (edition 2021, stable), Tokio full runtime, tracing + tracing-appender, serde / serde_json / serde_yaml, reqwest (rustls), sha2/sha1, zip, minijinja, regex, rcgen + rustls, portable-pty, sysinfo, chrono, hyper, minisign-verify, notify, keyring, directories, clap 4.
@@ -39,7 +39,7 @@ Key patterns:
 | Web | ols-core: web/*, domain, ca, certs, hosts, dns, health, tunnel, inspector | Domains, TLS, servers, exposure |
 | Data | ols-core: dbbackup, sqlite, migrate | Databases, files, migration |
 | Project | ols-core: project, project_tools, manifest, profiles, setup, snapshots, envfile, command_catalog, git, shortcuts, editors, terminal, shell_menu, procfile, loadtest, xdebug, quickapp/* | Projects, envs, automation |
-| CLI | ols-cli | `ols` on PATH (`ols-cli.exe` beside the app), daemon mode |
+| CLI | olsc | `ols` on PATH (`olsc.exe` beside the app), daemon mode |
 | Helper | ols-helper | Elevated hosts/NRPT/service pipe |
 | Shell | src-tauri | Tauri window, tray, single IPC `run_command`, events |
 | UI | ui/src | React pages, components, `core.ts` IPC wrapper |
@@ -58,7 +58,7 @@ Key patterns:
 
 ## Service Relationships
 - UI -> Tauri `run_command` -> Core::dispatch -> Inner managers -> ProcessSupervisor -> OS processes.
-- CLI -> control pipe -> app Core, or auto-spawn `ols daemon` when app closed.
+- CLI -> control pipe -> app Core, or auto-spawn `olsc daemon` when app closed.
 - WebManager depends on: DomainStore, Certs, PhpPools, DnsServer, Hosts (via helper), RuntimeManager, ProcessSupervisor, WebConfig. ServiceManager depends on WebManager only to list and probe the web servers.
 - ServiceManager depends on: RuntimeManager, ProcessSupervisor, Port checker, CustomServiceStore.
 - Setup pipeline depends on: Detection, Manifest, Resolver, Domain, Workers, Scheduler, QuickApp commands; wrapped in Journal.

@@ -25,7 +25,7 @@ review didn't have.
 - **Updater**: nothing runs on its own. A manifest without a valid signature from the update key is refused; the
   installer must match the SHA-256 in the signed manifest; only a file the updater downloaded into its own folder
   can be started.
-- **Explorer menu**: per user (`HKCU`), runs only the OLS command line (`ols-cli.exe`, never the app image) with the folder Explorer passes.
+- **Explorer menu**: per user (`HKCU`), runs only the OLS command line (`olsc.exe`, never the app image) with the folder Explorer passes.
 - **Support bundle**: redacted text only; no `.env`, keys, secrets or project files.
 
 ## Not done

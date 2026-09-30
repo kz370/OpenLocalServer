@@ -59,7 +59,7 @@ Paths (`binary`, `archive_root`, `quick_apps`, markers) must stay inside their f
 ## Installing
 
 - The Plugins page: **From folder** or **From .zip**.
-- CLI: `ols plugin install <folder|zip>`, then `ols plugin enable <id>` (shows the permissions and asks).
+- CLI: `olsc plugin install <folder|zip>`, then `olsc plugin enable <id>` (shows the permissions and asks).
 - A zip is unpacked with every path checked (no writing outside the plugin folder), up to 500 files and 50 MB.
 - Plugins live in `data/plugins/<id>/`.
 
@@ -85,7 +85,7 @@ same address plus `.minisig`:
 - Quick App sources in a catalog are pointers only: importing one goes through the normal untrusted-until-approved flow.
 - Sign a catalog with `minisign -Sm catalog.json`. `https://` addresses and local files (a share) both work.
 
-CLI: `ols catalog add|list|refresh|remove|install`.
+CLI: `olsc catalog add|list|refresh|remove|install`.
 
 ## Not done yet
 

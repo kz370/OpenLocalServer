@@ -3232,6 +3232,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ols-cli"
+version = "1.1.0"
+dependencies = [
+ "clap",
+ "ols-core",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
 name = "ols-core"
 version = "1.1.0"
 dependencies = [
@@ -3283,16 +3293,6 @@ dependencies = [
  "tempfile",
  "windows-service",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "olsc"
-version = "1.1.0"
-dependencies = [
- "clap",
- "ols-core",
- "serde_json",
- "tracing",
 ]
 
 [[package]]
