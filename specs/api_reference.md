@@ -47,7 +47,7 @@ Selected CoreCommands (type strings mirror Rust variants):
 Global `--json` for raw pretty JSON. Auto-starts `olsc daemon` when app closed (detached process, 30s pipe wait).
 - `olsc start|stop|restart|status`
 - `olsc setup [--path] [--dry-run] [-y]`
-- `olsc doctor` | `olsc repair [project] [-y]`
+- `olsc doctor` | `olsc repair [project] [--dry-run] [-y]` — `repair --dry-run` prints the plan (findings, safe/destructive/manual counts) and sends no `ApplyRepair`; `--json --dry-run` prints the raw `RepairPlan`.
 - `olsc project list|add <path>|remove <name>|start|stop|clone <url> <path>`
 - `olsc runtime list|install <id> [version]` (45min timeout, 2s poll)
 - `olsc php use <version>`

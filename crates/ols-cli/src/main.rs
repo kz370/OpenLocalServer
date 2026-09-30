@@ -51,6 +51,9 @@ enum Cmd {
     /// Diagnose and fix what is safe (§114); a project name limits it to that project.
     Repair {
         project: Option<String>,
+        /// Show the fixes that would run; change nothing.
+        #[arg(long)]
+        dry_run: bool,
         #[arg(short, long)]
         yes: bool,
     },
@@ -730,7 +733,11 @@ fn run(ctx: &Ctx, cmd: Cmd) -> R<()> {
                 }
             }
         }
-        Cmd::Repair { project, yes } => {
+        Cmd::Repair {
+            project,
+            dry_run,
+            yes,
+        } => {
             let pid = project.map(|p| ctx.project_id(&p)).transpose()?;
             let CoreResponse::RepairPlan { plan } = ctx.call(CoreCommand::PlanRepair {
                 project_id: pid.clone(),
@@ -738,6 +745,13 @@ fn run(ctx: &Ctx, cmd: Cmd) -> R<()> {
             else {
                 return Ok(());
             };
+            if ctx.json && dry_run {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&plan).unwrap_or_default()
+                );
+                return Ok(());
+            }
             if plan.findings.is_empty() {
                 println!("Nothing to repair.");
                 return Ok(());
@@ -756,6 +770,15 @@ fn run(ctx: &Ctx, cmd: Cmd) -> R<()> {
                 );
             }
             let safe = plan.actions.iter().filter(|a| !a.destructive).count();
+            let destructive = plan.actions.len() - safe;
+            if dry_run {
+                println!(
+                    "\nDry run: nothing was changed. {safe} safe fix(es) and {} destructive one(s) would run; {} issue(s) need a manual fix.",
+                    destructive,
+                    plan.manual.len()
+                );
+                return Ok(());
+            }
             if safe == 0 {
                 println!("\nNothing here can be fixed automatically.");
                 return Ok(());

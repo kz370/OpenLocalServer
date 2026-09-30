@@ -14,5 +14,5 @@ rem The hosts-file helper must sit beside the app, and `cargo tauri dev` only bu
 cargo build -p ols-helper
 if errorlevel 1 exit /b 1
 
-cargo tauri dev
+cpulimit 60 cargo tauri dev
 endlocal
