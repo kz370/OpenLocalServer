@@ -5,7 +5,7 @@ OLS is a Windows-local development environment manager. It downloads and runs PH
 
 Scope: runtimes (PHP/Node/Python/Composer), databases (MariaDB/Postgres/Mongo/Redis/SQLite), web (Nginx/Apache/Caddy), projects (detect/setup/env/git/workers/scheduler/snapshots), domains + TLS + DNS, tunnels, diagnostics/doctor, plugins, quick-apps/commands, AI assist, local API, CLI, updater.
 
-Version: 1.0.0 (workspace `Cargo.toml` and `src-tauri/tauri.conf.json`; release notes in `release-notes/v1.0.0.md`, change summary in `CHANGELOG.md`). `ui/package.json` stays at 0.0.0 — it is a private workspace root and never shipped.
+Version: 1.1.0 (workspace `Cargo.toml` and `src-tauri/tauri.conf.json`; release notes in `release-notes/v1.1.0.md`, change summary in `CHANGELOG.md`). `ui/package.json` stays at 0.0.0 — it is a private workspace root and never shipped.
 
 ## 2. Architecture
 One core, many front doors. `ols-core` holds all logic behind `Core::dispatch(CoreCommand)`. Tauri shell exposes single IPC `run_command`; CLI talks over named-pipe control channel (auto-spawns daemon); HTTP API posts same JSON to `127.0.0.1:7420/v1/command`.

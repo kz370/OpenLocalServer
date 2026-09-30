@@ -3,7 +3,7 @@
 > A modern local development environment manager for Windows — runtimes, sites, databases, and trusted HTTPS, without touching your system by hand.
 
 [![Build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/kz370/OpenLocalServer/actions)
-[![Version](https://img.shields.io/badge/version-1.0.0-blue)](./CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.1.0-blue)](./CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-0078D6)](./docs/STATUS.md)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue)](./LICENSE)
 [![Tauri](https://img.shields.io/badge/shell-Tauri_2-orange)](./src-tauri/tauri.conf.json)

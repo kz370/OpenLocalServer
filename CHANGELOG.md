@@ -5,31 +5,29 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Changed
-- The app is now **OLS** (Open Local Server) everywhere a user sees the name: window title, sidebar,
-  settings, dialogs, the built-in welcome site, the assistant's system prompt, and the documentation.
-- The executable is now **`OLS.exe`**, so the process name in Task Manager, the Start menu entry and
-  the desktop shortcut read OLS too. The installer, the portable zip and the SHA256SUMS file follow
-  (`OLS-<version>-setup.exe`, `OLS-<version>-portable-win-x64.zip`, `OLS-<version>-SHA256SUMS.txt`).
-  An existing install upgrades in place: the installer detects the app under its old name, closes it,
-  writes `OLS.exe` and removes the old executable. No settings, sites, secrets, service or
-  certificate move, and nothing about how it works changed.
-- The requirements document is now `OLS_Master_SRS_v4.md`.
-- Product identity guidance, including the identifiers that are deliberately frozen and why, is in
-  [`docs/BRAND.md`](./docs/BRAND.md). The exe rename is recorded in §4.5, including the one thing
-  that would have broken silently without it — a pre-rename install holding the file being replaced.
+## [1.1.0] — 2026-09-30
 
-### Not changed
-These keep their existing names on purpose. Each is read back from a user's machine on a later run, and
-renaming it would orphan live state with no way to recover it. See `docs/BRAND.md` §4.3 for the full table.
-- Install folder (`C:\OpenLocalServer`), Inno Setup `AppId`, the helper install folder.
-- The `openlocalserver.exe` daemon binary, which is not the app and was never renamed.
-- The helper Windows service and its named pipe.
-- The keyring service name — it is the addressing key for every stored secret, and the old name cannot be
-  written to without the old name, so a rename would destroy every stored password and token.
-- The delimited block in the hosts file, and the NRPT rule comment.
-- The CA common name, which is already in users' certificate trust stores.
-- The `.openlocalserver/` manifest folder, which is committed to users' own repositories.
+Incremental release. Product as described in 1.0.0 is unchanged. Full notes:
+[`release-notes/v1.1.0.md`](./release-notes/v1.1.0.md).
+
+### Added
+- Bulk site management on the Sites page: select with checkboxes, then enable/disable, add auto domains, move to
+  another web server, or delete. Backed by `bulk_set_domains_enabled`, `bulk_set_domain_server` and
+  `bulk_remove_domains`, which return one `CoreResponse::Bulk` result naming what changed and what was skipped.
+- Pagination on the Sites list.
+
+### Fixed
+- Explorer right-click entries opened OLS instead of adding the folder, because `ols.exe` and `OLS.exe` are the
+  same file on Windows. The CLI is now `ols-cli.exe`, looked up by name and refused if it is the running app.
+- The installer now ships `ols-cli.exe` plus an `ols.cmd` shim, so `ols <command>` works on a clean machine.
+- The shell menu card no longer reports "installed" while every entry points at the app; it checks the command
+  it actually wrote.
+- Explorer entries use the app's `icon.ico` instead of falling back to the console icon.
+- Folders on network shares can be added from the right-click menu. Explorer passes `UNC\server\share` and the
+  core produced that same unusable spelling; both are fixed, and a local folder named `UNC…` is left alone.
+- The Setup window's "Read the docs" link opens externally via `open_url`.
+- Legacy Start menu entries are cleaned up on upgrade.
+- Daemon shutdown logs a service the OS refuses to stop, instead of dropping it.
 
 ## [1.0.0] — 2026-09-29
 
@@ -123,3 +121,27 @@ First public release. Full notes: [`release-notes/v1.0.0.md`](./release-notes/v1
   XAMPP or WampServer MySQL can still be imported into it.
 - The Sites list shows only Open and Settings per site; the other actions are in a menu.
 - The import dialog's password field sits beside its button.
+- The app is now **OLS** (Open Local Server) everywhere a user sees the name: window title, sidebar,
+  settings, dialogs, the built-in welcome site, the assistant's system prompt, and the documentation.
+- The executable is now **`OLS.exe`**, so the process name in Task Manager, the Start menu entry and
+  the desktop shortcut read OLS too. The installer, the portable zip and the SHA256SUMS file follow
+  (`OLS-<version>-setup.exe`, `OLS-<version>-portable-win-x64.zip`, `OLS-<version>-SHA256SUMS.txt`).
+  An existing install upgrades in place: the installer detects the app under its old name, closes it,
+  writes `OLS.exe` and removes the old executable. No settings, sites, secrets, service or
+  certificate move, and nothing about how it works changed.
+- The requirements document is now `OLS_Master_SRS_v4.md`.
+- Product identity guidance, including the identifiers that are deliberately frozen and why, is in
+  [`docs/BRAND.md`](./docs/BRAND.md). The exe rename is recorded in §4.5, including the one thing
+  that would have broken silently without it — a pre-rename install holding the file being replaced.
+
+### Not changed
+These keep their existing names on purpose. Each is read back from a user's machine on a later run, and
+renaming it would orphan live state with no way to recover it. See `docs/BRAND.md` §4.3 for the full table.
+- Install folder (`C:\OpenLocalServer`), Inno Setup `AppId`, the helper install folder.
+- The `openlocalserver.exe` daemon binary, which is not the app and was never renamed.
+- The helper Windows service and its named pipe.
+- The keyring service name — it is the addressing key for every stored secret, and the old name cannot be
+  written to without the old name, so a rename would destroy every stored password and token.
+- The delimited block in the hosts file, and the NRPT rule comment.
+- The CA common name, which is already in users' certificate trust stores.
+- The `.openlocalserver/` manifest folder, which is committed to users' own repositories.
