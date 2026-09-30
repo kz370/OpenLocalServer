@@ -46,7 +46,7 @@
         <div class="nav__cta">
           <a
             class="btn btn--primary btn--sm"
-            href="https://github.com/kz370/OpenLocalServer/releases/latest"
+            href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-1.1.0-setup.exe"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" />
@@ -88,7 +88,7 @@
             <div class="hero__actions">
               <a
                 class="btn btn--primary"
-                href="https://github.com/kz370/OpenLocalServer/releases/latest"
+                href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-1.1.0-setup.exe"
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" />
@@ -104,7 +104,8 @@
             </div>
             <p class="hero__note">
               Windows 10 / 11, 64-bit. One installer,
-              <code>OLS-&lt;version&gt;-setup.exe</code>, plus a portable zip.
+              <code>OLS-&lt;version&gt;-setup.exe</code>, checked against
+              <code>OLS-&lt;version&gt;-SHA256SUMS.txt</code>.
             </p>
             <ul class="facts">
               <li>
@@ -151,17 +152,15 @@
             <div class="eyebrow">What is this</div>
             <h2>One environment per project, without hand-editing your machine</h2>
             <p>
-              XAMPP and Laragon give you a global stack: one PHP, one database, one
-              <code>htdocs</code> folder everybody shares. The next project needs a
-              different PHP version, so you change the global one and break the first
-              project.
+              Other local stacks give you one PHP, one database and one shared web
+              root, and the next project that needs a different PHP version changes
+              it for everybody.
             </p>
             <p>
-              <strong>OLS is the successor to that model.</strong> It keeps multiple
-              runtimes side by side, pins a version to the project that needs it,
-              generates the web server configuration, provisions the database, issues
-              a certificate your browser already trusts, and registers the domain so
-              it resolves without you touching the hosts file.
+              <strong>OLS keeps one environment per project instead.</strong> Multiple
+              runtimes sit side by side, a version is pinned to the project that needs
+              it, and the web server configuration, the database, the certificate and
+              the domain registration are all done for you.
             </p>
             <p>
               Every error it shows is a <code>Diagnostic</code> — what broke, why, and
@@ -233,7 +232,7 @@
                 that a project can override.
               </p>
               <ul>
-                <li>PHP NTS 8.1–8.5, Node 22/24, Composer, Python venvs, portable Git, k6</li>
+                <li>PHP 8.1, 8.3 and 8.4; Node 22 and 24; Composer; Python venvs; portable Git; k6</li>
                 <li>Per-version extensions, Xdebug and PECL; corepack for npm, pnpm, yarn</li>
                 <li>Downloads verified against vendor SHA-256; scan a folder or locate one executable to bring your own</li>
               </ul>
@@ -249,7 +248,7 @@
                 trusts.
               </p>
               <ul>
-                <li>Any domain plus wildcard subdomains; automatic Laragon-style <code>&lt;folder&gt;.test</code></li>
+                <li>Any domain plus wildcard subdomains; a folder gets an automatic <code>&lt;folder&gt;.test</code> domain</li>
                 <li>On-device CA, 397-day leaf certificates, auto-renew under 30 days left</li>
                 <li>Built-in wildcard DNS for <code>.test</code>, <code>.localhost</code> and <code>.internal</code>; optional elevated helper for everything else</li>
               </ul>
@@ -298,7 +297,7 @@
                 <li>MariaDB 11.4, PostgreSQL 17, MongoDB, Redis, Mailpit, SQLite</li>
                 <li>Per-engine database and user management, connection details, backup and restore with a safety copy first</li>
                 <li>One-click GUIs: HeidiSQL, pgAdmin 4, NoSQLBooster, Tiny RDM</li>
-                <li>Import Laragon, XAMPP and WampServer databases without an SQL dump</li>
+                <li>Import databases from other common Windows stacks without an SQL dump</li>
               </ul>
             </article>
 
@@ -352,7 +351,7 @@
               <h3>CLI, API &amp; automation</h3>
               <p>The same engine, reachable the way your tools expect.</p>
               <ul>
-                <li><code>ols</code> on PATH — works with the GUI closed, through a background daemon</li>
+                <li>Ships as <code>ols-cli.exe</code> and is reached through the app, so <code>ols</code> works with the GUI closed, through a background core</li>
                 <li>Local HTTP API with a bearer token and read-only vs operate scopes</li>
                 <li>Queue workers, a cron scheduler with no overlapping runs, and portable-pty terminals</li>
                 <li>Git manager, k6 load testing, a signed self-updater and declarative plugins</li>
@@ -423,12 +422,12 @@
                     <span class="shot__title">Sites</span>
                   </div>
                   <div class="shot__img">
-                    <img src="website/assets/img/sites.webp" width="1920" height="1158" loading="lazy" alt="The Sites page: one table of sites and projects, each row showing its domain, project folder, PHP or static badge, HTTPS state and row actions, with filters for all, PHP, static HTML and no domain." />
+                    <img src="website/assets/img/sites.webp" width="1920" height="1032" loading="lazy" alt="The Sites page: one table of sites and projects with a checkbox on every row, one row selected and a bulk bar offering Enable, Add auto domain, Disable, a web server dropdown with Move sites, Delete and Clear. Filters for all, PHP and static HTML, and rows-per-page and page controls at the foot of the table." />
                   </div>
                 </figure>
                 <p class="panel__caption">
                   <b>Sites</b>
-                  <span>One table for sites and projects. Each row opens its domain, web config, servers, terminal, <code>.env</code>, Git, workers, snapshots, repair and load testing. Select rows to enable, disable, re-point or delete in bulk.</span>
+                  <span>One table for sites and projects. Tick rows and the bulk bar appears — enable, disable, add auto domains, move them to another web server, or delete — and a batch reports what changed and what it skipped. Each row's own settings open its web config, servers, terminal, <code>.env</code>, Git, workers, snapshots, repair and load testing.</span>
                 </p>
               </div>
 
@@ -492,7 +491,7 @@
                 </figure>
                 <p class="panel__caption">
                   <b>Databases</b>
-                  <span>Engines, databases and users with the connection details to paste. Backup takes a safety copy first; SQLite runs <code>.backup</code> and an integrity check. Existing Laragon, XAMPP and WampServer databases import live, without a dump file.</span>
+                  <span>Engines, databases and users with the connection details to paste. Backup takes a safety copy first; SQLite runs <code>.backup</code> and an integrity check. Databases from other common Windows stacks import live, without a dump file.</span>
                 </p>
               </div>
 
@@ -521,10 +520,11 @@
         <div class="wrap">
           <div class="section__head reveal">
             <div class="eyebrow">Getting started</div>
-            <h2>Install, or build it yourself</h2>
+            <h2>Four steps, all inside the app</h2>
             <p>
-              The installer is the shortest path. The source build is four commands
-              if you want to work on OLS.
+              Everything below is done in the desktop app. The command line is
+              optional and there is a section below for it, because most of the work
+              is not terminal work.
             </p>
           </div>
 
@@ -532,8 +532,8 @@
             <div class="step">
               <h3>Install the app</h3>
               <p>
-                Run <code>OLS-&lt;version&gt;-setup.exe</code> from the releases page.
-                Windows 10 or 11, 64-bit.
+                Run <code>OLS-&lt;version&gt;-setup.exe</code> from the releases page
+                and open OLS. Windows 10 or 11, 64-bit.
               </p>
             </div>
             <div class="step">
@@ -559,9 +559,58 @@
             </div>
           </div>
 
+          <div class="optional reveal">
+            <h3 class="optional__title">Optional: the <code>ols</code> command</h3>
+            <p>
+              The install folder holds <code>OLS.exe</code> and
+              <code>ols-cli.exe</code>. Given an argument that is not its own, the app
+              hands it to the command line and exits with the command's exit code — so
+              <code>ols</code> and <code>OLS</code> are the same program on Windows,
+              and there is no second name to install. The installer does not add that
+              folder to your <code>PATH</code>, which is why <code>ols</code> can come
+              back as "not recognised". Pick whichever of these suits you:
+            </p>
+            <ul class="optional__list">
+              <li>
+                <b>Add the folder to PATH</b> — Windows <b>Settings → System → About →
+                Advanced system settings → Environment Variables</b>, add
+                <code>C:\OpenLocalServer</code> under <b>Path</b>, then open a new
+                terminal. <code>ols status</code> works from there on.
+              </li>
+              <li>
+                <b>Call it by its full path</b> — no change to the machine:
+                <code>C:\OpenLocalServer\OLS.exe status</code>
+              </li>
+            </ul>
+            <p class="optional__foot">
+              <code>ols</code> talks to the app while it is open and starts a
+              background core when it is not, so it behaves the same either way.
+            </p>
+          </div>
+
           <div class="start-grid reveal">
             <div class="panelbox">
-              <h3>Take a project from clone to running</h3>
+              <h3>Everyday commands</h3>
+              <div class="code">
+                <div class="code__bar">
+                  <b>ols</b>
+                  <button class="code__copy" type="button">Copy</button>
+                </div>
+<pre><code><span class="k">ols</span> status                      <span class="c"># services, sites, runtimes</span>
+<span class="k">ols</span> start                       <span class="c"># start every enabled service</span>
+<span class="k">ols</span> stop                        <span class="c"># stop everything</span>
+<span class="k">ols</span> doctor                     <span class="c"># problems as Problem / Cause / Fix</span>
+
+<span class="k">ols</span> project list                <span class="c"># registered projects</span>
+<span class="k">ols</span> service list                <span class="c"># MariaDB, Postgres, Redis, Mailpit…</span>
+<span class="k">ols</span> runtime list                <span class="c"># installed PHP and Node versions</span>
+
+<span class="k">ols</span> tunnel start <span class="p">--provider</span> cloudflared <span class="p">--port</span> 443
+<span class="k">ols</span> worker run <span class="p">--queue</span> default
+<span class="k">ols</span> snapshot create <span class="p">--name</span> <span class="s">"before-upgrade"</span>
+<span class="k">ols</span> search <span class="s">"mailpit"</span></code></pre>
+              </div>
+              <h3 class="spaced">A project, end to end</h3>
               <div class="code">
                 <div class="code__bar">
                   <b>PowerShell</b>
@@ -581,29 +630,11 @@
 <span class="k">ols</span> doctor
 <span class="k">ols</span> repair</code></pre>
               </div>
-              <h3 class="spaced">Everyday commands</h3>
-              <div class="code">
-                <div class="code__bar">
-                  <b>ols</b>
-                  <button class="code__copy" type="button">Copy</button>
-                </div>
-<pre><code><span class="k">ols</span> status                      <span class="c"># services, sites, runtimes</span>
-<span class="k">ols</span> start                       <span class="c"># start every enabled service</span>
-<span class="k">ols</span> stop                        <span class="c"># stop everything</span>
-
-<span class="k">ols</span> project list                <span class="c"># registered projects</span>
-<span class="k">ols</span> service list                <span class="c"># MariaDB, Postgres, Redis, Mailpit…</span>
-<span class="k">ols</span> runtime list                <span class="c"># installed PHP and Node versions</span>
-
-<span class="k">ols</span> tunnel start <span class="p">--provider</span> cloudflared <span class="p">--port</span> 443
-<span class="k">ols</span> worker run <span class="p">--queue</span> default
-<span class="k">ols</span> snapshot create <span class="p">--name</span> <span class="s">"before-upgrade"</span>
-<span class="k">ols</span> search <span class="s">"mailpit"</span></code></pre>
-              </div>
             </div>
 
             <div class="panelbox">
               <h3>Build from source</h3>
+              <p>For working on OLS itself. Nothing in the four steps above needs this.</p>
               <div class="code">
                 <div class="code__bar">
                   <b>Prerequisites</b>
@@ -662,7 +693,7 @@
                 <div><dt>Core</dt><dd>Rust · <code>ols-core</code> · Tokio</dd></div>
                 <div><dt>Shell</dt><dd>Tauri 2 · tray · single IPC command</dd></div>
                 <div><dt>Frontend</dt><dd>React 19 · Vite 8 · Tailwind 4 · shadcn/ui · CodeMirror 6 · xterm.js</dd></div>
-                <div><dt>CLI</dt><dd><code>ols</code> on PATH, <code>ols-cli.exe</code> beside the app</dd></div>
+                <div><dt>CLI</dt><dd><code>ols-cli.exe</code> beside the app; <code>ols</code> reaches it through <code>OLS.exe</code> once the install folder is on <code>PATH</code></dd></div>
                 <div><dt>Helper</dt><dd><code>ols-helper</code> — hosts, NRPT and services over a named pipe or one UAC prompt</dd></div>
                 <div><dt>State</dt><dd>SQLite <code>app.db</code>; <code>OLS_HOME</code> overrides every path</dd></div>
                 <div><dt>Platform</dt><dd>Windows 10 / 11, 64-bit. Linux is planned last; macOS is not planned.</dd></div>
@@ -754,11 +785,18 @@
                   <small>kz370/OpenLocalServer</small>
                 </span>
               </a>
-              <a href="https://github.com/kz370/OpenLocalServer/releases/latest">
+              <a href="https://github.com/kz370/OpenLocalServer/releases">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></svg>
                 <span>
                   <b>Releases</b>
                   <small>Installer, portable zip, checksums</small>
+                </span>
+              </a>
+              <a href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-1.1.0-SHA256SUMS.txt">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 12l2 2 4-4" /><rect x="3" y="4" width="18" height="16" rx="2" /></svg>
+                <span>
+                  <b>Verify a download</b>
+                  <small>OLS-1.1.0-SHA256SUMS.txt</small>
                 </span>
               </a>
               <a href="https://github.com/kz370/OpenLocalServer/blob/master/CONTRIBUTING.md">
@@ -790,7 +828,7 @@
           <div class="cta__actions">
             <a
               class="btn btn--primary"
-              href="https://github.com/kz370/OpenLocalServer/releases/latest"
+              href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-1.1.0-setup.exe"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" />
@@ -799,7 +837,7 @@
             </a>
             <a
               class="btn btn--ghost"
-              href="https://github.com/kz370/OpenLocalServer#readme"
+              href="https://github.com/kz370/OpenLocalServer/blob/master/README.md"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M4 4h11l5 5v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z" />
@@ -849,7 +887,7 @@
             <h4>Project</h4>
             <ul>
               <li><a href="https://github.com/kz370/OpenLocalServer">GitHub</a></li>
-              <li><a href="https://github.com/kz370/OpenLocalServer/releases/latest">Releases</a></li>
+              <li><a href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-1.1.0-setup.exe">Releases</a></li>
               <li><a href="https://github.com/kz370/OpenLocalServer/issues">Issues</a></li>
               <li><a href="https://github.com/kz370/OpenLocalServer/blob/master/CONTRIBUTING.md">Contributing</a></li>
               <li><a href="https://github.com/kz370/OpenLocalServer/blob/master/SECURITY.md">Security</a></li>

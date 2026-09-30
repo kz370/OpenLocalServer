@@ -16,9 +16,9 @@ set "CARGO_BIN=openlocalserver"
 set "HELPER_BIN=ols-helper"
 rem The command line. It ships with the app: the Explorer right-click menu is
 rem written to run it, and shell_menu.rs find_cli only looks beside the app or on
-rem PATH -- so an install without it has no working menu at all. ols.cmd, shipped
-rem beside it, is what keeps the documented `ols <command>` resolving to the CLI
-rem instead of to OLS.exe.
+rem PATH -- so an install without it has no working menu at all. `ols <command>`
+rem reaches it through OLS.exe, which forwards anything it does not own as an app
+rem argument (crates/ols-core/src/cli_dispatch.rs).
 set "CLI_BIN=ols-cli"
 set "UI=%ROOT%ui"
 set "TARGET=%ROOT%target\release"

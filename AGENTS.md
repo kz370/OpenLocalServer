@@ -30,3 +30,4 @@ cd ui && npm run lint && npm run build
 - Secrets stay in OS keyring; never in logs, files, or bundles.
 - Commit messages follow Conventional Commits (`feat:`, `fix:`, `docs:`).
 - never run cargo test if user is runing cargo tauri dev
+- when using images as refs always use webp extention

@@ -8,6 +8,7 @@ pub mod ca;
 pub mod catalog;
 pub mod catalogs;
 pub mod certs;
+pub mod cli_dispatch;
 pub mod command;
 pub mod command_catalog;
 pub mod composer;

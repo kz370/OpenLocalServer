@@ -977,6 +977,61 @@ p {
   align-items: start;
 }
 
+/* The CLI is a second door, not the main one: it gets its own panel rather than
+   being folded into the install steps. */
+.optional {
+  margin-bottom: 22px;
+  padding: 22px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-lg);
+  background: oklch(1 0 0 / 2%);
+}
+
+.optional__title {
+  font-size: 16.5px;
+  letter-spacing: -0.02em;
+}
+
+.optional > p {
+  margin-top: 10px;
+  color: var(--fg-muted);
+  font-size: 14.5px;
+  max-width: 76ch;
+}
+
+.optional__list {
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 10px;
+}
+
+.optional__list li {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--fg-muted);
+  font-size: 14px;
+}
+
+.optional__list b {
+  display: block;
+  color: var(--fg);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.optional__list code {
+  color: var(--primary);
+}
+
+.optional__foot {
+  font-size: 13.5px !important;
+  color: var(--fg-dim) !important;
+}
+
 .panelbox {
   padding: 20px;
   border: 1px solid var(--line);

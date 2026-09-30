@@ -2,12 +2,16 @@
 //! to the right-click menu of a folder (and of its background). Per user (`HKCU\Software\Classes`), so no
 //! administrator prompt; it only ever runs the `ols` command line, which does the work through the core.
 //! Removing it deletes exactly the keys added here.
+//!
+//! Which program that is comes from [`crate::cli_dispatch`], which also decides what
+//! happens when the command line is reached through the name the app owns.
 
 use serde::{Deserialize, Serialize};
 
 use std::path::Path;
 
 use crate::app::Inner;
+use crate::cli_dispatch::{find_cli, CLI_EXE as CLI};
 use crate::error::CoreError;
 
 const ROOTS: [&str; 2] = [
@@ -23,45 +27,6 @@ pub struct ShellMenuStatus {
     /// The `ols` program the entries run, when it can be found.
     pub cli_path: Option<String>,
     pub supported: bool,
-}
-
-/// The CLI's file name. Not `ols.exe`: the app ships as `OLS.exe`, Windows does not
-/// tell two names apart by case, and a lookup by that name finds the app.
-const CLI: &str = if cfg!(windows) {
-    "ols-cli.exe"
-} else {
-    "ols-cli"
-};
-
-/// Where the CLI is: beside the app, or on PATH.
-///
-/// The running executable is never the answer, whatever it is called. The app and
-/// the CLI are different programs that ship into the same folder, and Windows file
-/// names differ only in case, so a lookup that accepted "the file next to me named
-/// `ols.exe`" found the *app* and wrote it into the menu: "Add to OLS" then launched
-/// OLS instead of registering the folder, with no error anywhere. The comparison is
-/// on canonical paths so a differently-spelled path to the same file is still caught.
-fn find_cli() -> Option<std::path::PathBuf> {
-    let name = CLI;
-    let me = std::env::current_exe()
-        .ok()
-        .and_then(|p| std::fs::canonicalize(p).ok());
-    let is_me = |p: &std::path::Path| match std::fs::canonicalize(p) {
-        Ok(c) => me.as_deref() != Some(c.as_path()),
-        // Cannot resolve it, so it cannot be shown to be the running exe either.
-        Err(_) => true,
-    };
-    if let Ok(exe) = std::env::current_exe() {
-        let beside = exe.with_file_name(name);
-        if beside.is_file() && is_me(&beside) {
-            return Some(beside);
-        }
-    }
-    std::env::var_os("PATH").and_then(|p| {
-        std::env::split_paths(&p)
-            .map(|d| d.join(name))
-            .find(|f| f.is_file() && is_me(f))
-    })
 }
 
 /// The icon the menu entries show.
@@ -274,26 +239,6 @@ mod tests {
         assert_eq!(menu_icon(&cli), cli.display().to_string());
         std::fs::write(dir.join("icon.ico"), b"x").unwrap();
         assert_eq!(menu_icon(&cli), dir.join("icon.ico").display().to_string());
-    }
-
-    /// The lookup that caused it. Two independent mistakes, so two checks: the name
-    /// must not be one Windows can confuse with the app's, and the lookup must not
-    /// return the running executable even if something *is* sitting there under it.
-    #[test]
-    fn the_cli_name_cannot_be_the_app_image() {
-        let cli = CLI.to_ascii_lowercase();
-        assert_ne!(cli, "ols.exe", "the CLI cannot be named like the app");
-        assert_ne!(cli, "openlocalserver.exe");
-    }
-
-    #[test]
-    fn find_cli_never_returns_the_running_executable() {
-        let me = std::env::current_exe().expect("test binary path");
-        if let Some(found) = find_cli() {
-            let a = std::fs::canonicalize(&found).unwrap_or_else(|_| found.clone());
-            let b = std::fs::canonicalize(&me).unwrap_or_else(|_| me.clone());
-            assert_ne!(a, b, "find_cli returned the running executable");
-        }
     }
 
     /// The card showed "installed" over a menu that ran the app, because the status

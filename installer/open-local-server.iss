@@ -110,10 +110,13 @@ Source: "{#SourceExe}"; DestDir: "{app}"; Flags: ignoreversion
 ; the app folder is not on PATH it could not work either. Named ols-cli.exe because
 ; the app itself is OLS.exe and Windows would not tell the two apart otherwise.
 Source: "{#LibDir}\ols-cli.exe"; DestDir: "{app}"; Flags: ignoreversion
-; `ols.cmd` forwards the documented `ols <command>` to ols-cli.exe, so the command
-; name in the docs keeps working wherever the app folder is on PATH -- and, just as
-; importantly, `ols` on PATH no longer opens the app.
-Source: "ols.cmd"; DestDir: "{app}"; Flags: ignoreversion
+; There used to be an `ols.cmd` shim here, to keep the documented `ols <command>`
+; working. It could not: within one directory cmd resolves by PATHEXT, and .EXE comes
+; before .CMD, so `ols` in the install folder was the app every time (measured -- it
+; printed nothing and exited 0, while `ols.cmd --version` printed the version). The
+; app now answers for the command line itself, before it starts anything
+; (crates/ols-core/src/cli_dispatch.rs, src-tauri/src/main.rs), so the shim would be
+; a second spelling of one command that only works in some folders.
 Source: "{#LibDir}\ols-helper.exe"; DestDir: "{app}"; Flags: ignoreversion
 ; The CPU limiter for Settings > Resources (§129). Shipped next to the app because
 ; resources::find_cpu_limiter looks in the current exe's directory first, so a
@@ -169,9 +172,6 @@ const
     detected and the app was asked about twice. }
   DaemonExe   = 'ols-cli.exe';
   HelperExe   = 'ols-helper.exe';
-  { Kept in the prune allow-list at ssPostInstall, or the prune would delete the
-    shim [Files] has just written. }
-  CliShim     = 'ols.cmd';
   LimiterExe  = 'cpulimit.exe';
   { The Start Menu folder an install made before the rename created. The group
     name is NOT read from DefaultGroupName on an upgrade: Inno takes it from the
