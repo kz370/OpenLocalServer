@@ -1,9 +1,36 @@
 name: CI
 
+# Not on every push. A full release build is ~20 minutes, so running it on every commit to
+# master spent that time re-verifying commits that changed a paragraph of documentation, and
+# the queue of superseded runs was the real cost. Two triggers, both deliberate:
+#
+#   workflow_dispatch  -- run it when you want it (a re-run of a flaky job, a bisect, a
+#                         verification pass after a local-only change). Builds, never publishes.
+#   push on a v* tag   -- the release tag is the point at which the artifacts are wanted, and
+#                         it runs test -> build -> publish in that order.
+#
+# Build and publish are jobs in *this* workflow rather than two workflows sharing the tag
+# trigger. Two workflows on one tag start at the same instant, so the publisher either races
+# the builder (and fails, because the artifacts are not there yet) or has to poll the API
+# waiting for a run it did not start. Here `needs` is the ordering: the publish job cannot
+# begin until the build job has finished, and the artifacts come from the same run, so there
+# is no race to handle and no second build path.
+#
+# Nothing checks master automatically. That is the trade: a red suite is found when you ask
+# or when you tag, not the moment you push. If that trade is wrong, add `pull_request:` back
+# rather than adding push back -- PR builds catch problems before the tag, which is the point
+# of building at all.
 on:
   push:
-    branches: [master]
-  pull_request:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+# Two runs of this workflow on the same ref must not overlap: they would build the same
+# release into the same directory and, on a tag, both would try to publish it.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -58,4 +85,243 @@ jobs:
         with:
           name: ols-windows
           if-no-files-found: error
-          path: release/*/*.exe
+          # Everything the script staged, not just the exes: the release workflow builds the
+          # portable zip from these, and the side-by-side DLLs are part of it. Narrowing this
+          # to *.exe produced an artifact the portable package could not be made from.
+          path: release/*/*
+
+  publish:
+    name: Publish release
+    # Runs only for a tag. A manual dispatch builds and verifies but publishes nothing,
+    # because there is no version to publish: the tag is what names the release, and the
+    # whole point of a tag is that somebody meant it.
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: windows-latest
+    # Only this job may write. The test and build jobs keep the read-only default, so a
+    # compromised build step cannot publish a release.
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The full history so the tag is a real ref rather than a detached name.
+          fetch-depth: 0
+
+      - name: Download the artifacts this run just built
+        uses: actions/download-artifact@v4
+        with:
+          name: ols-windows
+          path: downloaded
+
+      - name: Resolve tag, version and commit
+        id: vars
+        run: |
+          $tag = "${{ github.ref_name }}"
+          if ($tag -notmatch '^v\d+\.\d+\.\d+$') { throw "Tag '$tag' is not v<major>.<minor>.<patch>." }
+          $version = $tag.Substring(1)
+          # The build reads the version out of Cargo.toml and names the artifacts with it, so
+          # a tag that disagrees with Cargo.toml would publish a binary labelled as a version
+          # it is not -- an updater would then offer it as newer than it is. Refuse instead.
+          $declared = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
+          if ($declared -ne $version) {
+            throw "Tag is $tag but Cargo.toml declares $declared. Build the tag you are going to publish, or fix the version first."
+          }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "notes=release-notes/$tag.md" >> $env:GITHUB_OUTPUT
+
+      - name: Restore the staged folder
+        run: |
+          $version = "${{ steps.vars.outputs.version }}"
+          # upload-artifact flattens to the common ancestor of what it matched, so the version
+          # folder arrives as downloaded\<version>\, not downloaded\release\<version>\. The
+          # paths below are the ones build-installer.bat and upload-release.bat use, so the
+          # folder is put back under release\ and every later step can speak in those names.
+          $staged = Get-ChildItem downloaded -Recurse -Directory |
+            Where-Object { $_.Name -eq $version } | Select-Object -First 1
+          if (-not $staged) {
+            $seen = (Get-ChildItem downloaded -Recurse -File | Select-Object -First 10 -ExpandProperty FullName) -join ', '
+            throw "No $version folder in the artifact. Files seen: $seen"
+          }
+          $dist = "release\$version"
+          Remove-Item $dist -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory release | Out-Null
+          Move-Item $staged.FullName $dist
+          Get-ChildItem $dist | Select-Object Name, Length
+
+      - name: Verify the setup exe is the one this version names
+        shell: pwsh
+        run: |
+          $version = "${{ steps.vars.outputs.version }}"
+          $dist = "release\$version"
+          $setup = Join-Path $dist "OLS-$version-setup.exe"
+          # Same check build-installer.bat's own :verify makes, re-made here because the
+          # artifact crossed a process boundary: the staging it verified is not the staging
+          # this job got. An artifact that lost its setup file is a red build, not a release.
+          foreach ($required in @("OLS.exe", "ols-helper.exe", "cpulimit.exe")) {
+            if (-not (Test-Path (Join-Path $dist $required))) { throw "Missing $required in $dist" }
+          }
+          if (-not (Test-Path $setup)) { throw "Missing $setup" }
+          Get-ChildItem $dist | ForEach-Object { "{0,-28} {1,12:N0} bytes" -f $_.Name, $_.Length }
+
+      - name: Package the portable build
+        run: |
+          $version = "${{ steps.vars.outputs.version }}"
+          $dist = "release\$version"
+          $stage = "portable"
+          $zip = "OLS-$version-portable-win-x64.zip"
+          # The zip carries one app exe, the helper and the DLLs -- never the setup exe
+          # beside them, and never both app names. Two app exes in one folder is the same
+          # two-copies problem installer/open-local-server.iss guards against.
+          Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory $stage | Out-Null
+          Copy-Item (Join-Path $dist 'OLS.exe') $stage
+          Copy-Item (Join-Path $dist 'ols-helper.exe') $stage
+          Copy-Item (Join-Path $dist '*.dll') $stage -ErrorAction SilentlyContinue
+          Remove-Item $zip -Force -ErrorAction SilentlyContinue
+          Compress-Archive -Path "$stage\*" -DestinationPath $zip
+          Remove-Item $stage -Recurse -Force
+
+      - name: Write the checksums
+        run: |
+          $version = "${{ steps.vars.outputs.version }}"
+          $dist = "release\$version"
+          $sums = Join-Path $dist "OLS-$version-SHA256SUMS.txt"
+          # Repo safety rule: anything downloadable is verified by SHA-256. These cover the
+          # two files a user downloads; the release page shows them for the same reason.
+          $setup = Join-Path $dist "OLS-$version-setup.exe"
+          $zip = "OLS-$version-portable-win-x64.zip"
+          $lines = @(
+            "$((Get-FileHash $setup -Algorithm SHA256).Hash.ToLower())  $(Split-Path $setup -Leaf)"
+            "$((Get-FileHash $zip  -Algorithm SHA256).Hash.ToLower())  $zip"
+          )
+          Set-Content -Path $sums -Value $lines
+          Get-Content $sums
+
+      - name: Install minisign
+        # Only needed for latest.json, so a failure here is reported and the release still
+        # ships without an updater manifest rather than dying before any asset is uploaded.
+        # The signing step below is where a missing minisign actually bites, and it says so.
+        continue-on-error: true
+        run: choco install minisign --yes --no-progress --limit-output
+
+      - name: Write and sign the update manifest
+        id: manifest
+        env:
+          MINISIGN_KEY_B64: ${{ secrets.OLS_MINISIGN_KEY }}
+        run: |
+          $version = "${{ steps.vars.outputs.version }}"
+          $tag = "${{ steps.vars.outputs.tag }}"
+          $dist = "release\$version"
+          $setup = Join-Path $dist "OLS-$version-setup.exe"
+          $latest = Join-Path $dist 'latest.json'
+
+          if (-not $env:MINISIGN_KEY_B64) {
+            Write-Output "::warning title=No updater manifest::OLS_MINISIGN_KEY is not set, so latest.json is not written and the in-app updater will 404. The release itself is unaffected."
+            "written=false" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+          # The key is a base64 secret so it never lands in the repo or in a log. It is written
+          # to the runner's own temp and removed in the same step; a private key left on a
+          # hosted runner is a signing key on somebody else's disk.
+          $keyPath = Join-Path $env:RUNNER_TEMP 'ols-update.key'
+          try {
+            [IO.File]::WriteAllBytes($keyPath, [Convert]::FromBase64String($env:MINISIGN_KEY_B64))
+            if (-not (Test-Path $keyPath)) { throw 'Signing key was not written.' }
+
+            $notes = ''
+            $notesFile = "${{ steps.vars.outputs.notes }}"
+            if (Test-Path $notesFile) { $notes = Get-Content $notesFile -Raw }
+            $manifest = [ordered]@{
+              version   = $version
+              notes     = $notes
+              pub_date  = (Get-Date -Format 'yyyy-MM-dd')
+              platforms = [ordered]@{
+                'windows-x86_64' = [ordered]@{
+                  url    = "https://github.com/${{ github.repository }}/releases/download/$tag/$(Split-Path $setup -Leaf)"
+                  sha256 = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
+                  size   = (Get-Item $setup).Length
+                }
+              }
+            }
+            # Same field order and shape as scripts\upload-release.bat writes, byte for byte:
+            # the updater parses one manifest format and there is no reason for the build
+            # pipeline and the release pipeline to disagree about it.
+            $manifest | ConvertTo-Json -Depth 5 | Out-String | ForEach-Object { [IO.File]::WriteAllText($latest, $_) }
+            & minisign -Sm $latest -s $keyPath -x "$latest.minisig" -f
+            if ($LASTEXITCODE -ne 0) { throw 'minisign failed to sign latest.json' }
+            Get-Content $latest
+          }
+          finally {
+            if (Test-Path $keyPath) { Remove-Item $keyPath -Force }
+          }
+          "written=true" >> $env:GITHUB_OUTPUT
+
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ steps.vars.outputs.tag }}"
+          $version = "${{ steps.vars.outputs.version }}"
+          $dist = "release\$version"
+          $notes = "${{ steps.vars.outputs.notes }}"
+          $assets = @(
+            (Join-Path $dist "OLS-$version-setup.exe"),
+            "OLS-$version-portable-win-x64.zip",
+            (Join-Path $dist "OLS-$version-SHA256SUMS.txt")
+          )
+          # The manifest only goes up if it was actually written and signed. An unsigned or
+          # half-written latest.json is worse than none: the updater would 404 on it, or worse,
+          # serve one that no signature check can vouch for.
+          if ("${{ steps.manifest.outputs.written }}" -eq 'true') {
+            $assets += (Join-Path $dist 'latest.json')
+            $assets += (Join-Path $dist 'latest.json.minisig')
+          }
+
+          $exists = $null -ne (gh release view $tag --json tagName 2>$null)
+          if (-not $exists) {
+            # Release notes come from release-notes\<tag>.md when it exists, and from
+            # GitHub's generated notes otherwise -- the same rule upload-release.bat uses.
+            if (Test-Path $notes) {
+              gh release create $tag --title $tag --notes-file $notes @assets
+            } else {
+              Write-Output "::warning title=No release notes::No $notes, using GitHub generated notes."
+              gh release create $tag --title $tag --generate-notes @assets
+            }
+          } else {
+            gh release upload --clobber $tag @assets
+            if (Test-Path $notes) { gh release edit $tag --notes-file $notes }
+          }
+          if ($LASTEXITCODE -ne 0) { throw "gh release failed with exit code $LASTEXITCODE" }
+
+      - name: Summary
+        run: |
+          $version = "${{ steps.vars.outputs.version }}"
+          $tag = "${{ steps.vars.outputs.tag }}"
+          $dist = "release\$version"
+          $sha = (Get-FileHash (Join-Path $dist "OLS-$version-setup.exe") -Algorithm SHA256).Hash.ToLower()
+          $manifest = "${{ steps.manifest.outputs.written }}"
+          # Written to $env:GITHUB_STEP_SUMMARY rather than the log: this is the one screen a
+          # human reads after publishing, and it has to survive a scrolled-back log.
+          $lines = @(
+            "## $tag published"
+            ""
+            "Built and verified in this run; the artifacts were reused as staged, not rebuilt."
+            "https://github.com/${{ github.repository }}/releases/tag/$tag"
+            ""
+            "| File | SHA-256 |"
+            "| --- | --- |"
+            "| OLS-$version-setup.exe | ``$sha`` |"
+          )
+          if ($manifest -eq 'true') {
+            $lines += ""
+            $lines += "Updater manifest: latest.json signed and attached."
+          } else {
+            $lines += ""
+            $lines += "Updater manifest: **not written** (no OLS_MINISIGN_KEY secret) -- the in-app updater will not see this version."
+          }
+          $lines -join [Environment]::NewLine | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8
