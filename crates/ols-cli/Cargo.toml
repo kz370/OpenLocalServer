@@ -1,18 +1,19 @@
 [package]
-name = "ols-cli"
+name = "olsc"
 description = "OLS command line: drives the running app (or a background daemon)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
-# Named `ols-cli`, not `ols`, because the app itself ships as `OLS.exe` and Windows
+# Named `olsc`, not `ols`, because the app itself ships as `OLS.exe` and Windows
 # file names differ only in case: a binary called `ols.exe` beside it *is* the app.
 # Anything that looks up "the CLI next to me" would then find the app and hand it the
 # CLI's work — which is what the Explorer right-click menu did, and why "Add to OLS"
-# opened OLS instead of registering the folder. `installer/ols.cmd` keeps the
-# documented `ols <command>` working on PATH.
+# opened OLS instead of registering the folder. `olsc` is also why there is no shim:
+# a `ols.cmd` beside the app could never win, because within one directory cmd resolves
+# by PATHEXT and `.EXE` comes before `.CMD`. The CLI is its own command, plainly named.
 [[bin]]
-name = "ols-cli"
+name = "olsc"
 path = "src/main.rs"
 
 [dependencies]

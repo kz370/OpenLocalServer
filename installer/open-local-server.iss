@@ -72,7 +72,7 @@ WizardStyle=modern
 ;      in the destination folder -- matched by PATH, not by name, because a
 ;      process by the same name from a different install is not in the way. It
 ;      has to: the app has a second process that holds a very binary being
-;      overwritten and ships no file under the app's own name, `ols-cli.exe`
+;      overwritten and ships no file under the app's own name, `olsc.exe`
 ;      running in daemon mode, auto-spawned detached by the CLI
 ;      (crates/ols-cli/src/main.rs, spawn_daemon). Restart Manager is only told
 ;      about the files in [Files], so it never learns about that one.
@@ -107,16 +107,9 @@ Source: "{#SourceExe}"; DestDir: "{app}"; Flags: ignoreversion
 ; The command line. It has to ship: the Explorer right-click menu is written to run
 ; it (shell_menu.rs find_cli), and find_cli only looks beside the app or on PATH --
 ; so without this file the menu could not be installed at all, and on a machine where
-; the app folder is not on PATH it could not work either. Named ols-cli.exe because
+; the app folder is not on PATH it could not work either. Named `olsc.exe`, not `ols.exe`, because
 ; the app itself is OLS.exe and Windows would not tell the two apart otherwise.
-Source: "{#LibDir}\ols-cli.exe"; DestDir: "{app}"; Flags: ignoreversion
-; There used to be an `ols.cmd` shim here, to keep the documented `ols <command>`
-; working. It could not: within one directory cmd resolves by PATHEXT, and .EXE comes
-; before .CMD, so `ols` in the install folder was the app every time (measured -- it
-; printed nothing and exited 0, while `ols.cmd --version` printed the version). The
-; app now answers for the command line itself, before it starts anything
-; (crates/ols-core/src/cli_dispatch.rs, src-tauri/src/main.rs), so the shim would be
-; a second spelling of one command that only works in some folders.
+Source: "{#LibDir}\olsc.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#LibDir}\ols-helper.exe"; DestDir: "{app}"; Flags: ignoreversion
 ; The CPU limiter for Settings > Resources (§129). Shipped next to the app because
 ; resources::find_cpu_limiter looks in the current exe's directory first, so a
@@ -167,11 +160,13 @@ const
     by PruneUnshippedFiles at ssPostInstall, which is the whole migration. }
   LegacyAppExe = 'OLS.exe';
   { The background service. It is the *CLI* in daemon mode, spawned detached by
-    `ols-cli.exe daemon` (crates/ols-cli/src/main.rs, spawn_daemon), so its image is
-    ols-cli.exe -- it was AppExe here, which meant the daemon was never actually
+    `olsc.exe daemon` (crates/ols-cli/src/main.rs, spawn_daemon), so its image is
+    olsc.exe -- it was AppExe here, which meant the daemon was never actually
     detected and the app was asked about twice. }
-  DaemonExe   = 'ols-cli.exe';
+  DaemonExe   = 'olsc.exe';
   HelperExe   = 'ols-helper.exe';
+  { Kept in the prune allow-list at ssPostInstall, or the prune would delete the
+    shim [Files] has just written. }
   LimiterExe  = 'cpulimit.exe';
   { The Start Menu folder an install made before the rename created. The group
     name is NOT read from DefaultGroupName on an upgrade: Inno takes it from the

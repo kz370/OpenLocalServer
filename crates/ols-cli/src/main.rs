@@ -1,7 +1,7 @@
-//! `ols`: the OLS command line (§136).
+//! `olsc`: the OLS command line (§136).
 //!
 //! Every command is a `CoreCommand` sent over the local control channel to whoever owns
-//! the core: the desktop app when it is open, otherwise a background `ols daemon` that is
+//! the core: the desktop app when it is open, otherwise a background `olsc daemon` that is
 //! started on demand. The CLI never manages anything itself (architecture decision 1).
 
 use std::io::{IsTerminal, Write};
@@ -15,7 +15,7 @@ use ols_core::control::{self, ClientError};
 use ols_core::{AppPaths, Diagnostic};
 
 #[derive(Parser)]
-#[command(name = "ols", version, about = "OLS from the command line", long_about = None)]
+#[command(name = "olsc", version, about = "OLS from the command line", long_about = None)]
 struct Cli {
     /// Print the raw JSON response instead of text.
     #[arg(long, global = true)]
@@ -98,10 +98,10 @@ enum Cmd {
     SupportBundle { dest: PathBuf },
     /// Whether the internet is reachable.
     Network,
-    /// Tests: `ols test load` runs a k6 load test (§ Stage 18).
+    /// Tests: `olsc test load` runs a k6 load test (§ Stage 18).
     #[command(subcommand)]
     Test(TestCmd),
-    /// The AI assistant (opt-in, bring your own model): `ols ai ask`, `ols ai explain`.
+    /// The AI assistant (opt-in, bring your own model): `olsc ai ask`, `olsc ai explain`.
     #[command(subcommand)]
     Ai(AiCmd),
     // @@cli-cmds
@@ -348,7 +348,7 @@ enum AiCmd {
         /// logs (default) or palette.
         #[arg(long, default_value = "logs")]
         feature: String,
-        /// Read these logs (ids from `ols status`/the Logs page, e.g. web:error). Default: app and web error.
+        /// Read these logs (ids from `olsc status`/the Logs page, e.g. web:error). Default: app and web error.
         #[arg(long = "log")]
         logs: Vec<String>,
         #[command(flatten)]
@@ -459,7 +459,7 @@ impl Ctx {
             .iter()
             .find(|p| p.id == name || p.name.eq_ignore_ascii_case(name))
             .map(|p| p.id.clone())
-            .ok_or_else(|| format!("no project named \"{name}\" (see `ols project list`)"))
+            .ok_or_else(|| format!("no project named \"{name}\" (see `olsc project list`)"))
     }
 
     /// The project for a folder, registering it when it isn't one yet.
@@ -614,10 +614,10 @@ fn daemon(paths: &AppPaths, stop: bool) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    tracing::info!("ols daemon running");
+    tracing::info!("olsc daemon running");
     ols_core::scheduler::start_clock(core.inner());
     server.wait_for_shutdown();
-    tracing::info!("ols daemon handing over / stopping");
+    tracing::info!("olsc daemon handing over / stopping");
     let i = core.inner();
     i.stop_all_tunnels();
     i.stop_all_workers();
@@ -723,7 +723,7 @@ fn run(ctx: &Ctx, cmd: Cmd) -> R<()> {
                     print!("{}", ols_core::repair::doctor_text(&report));
                     if report.errors > 0 {
                         return Err(format!(
-                            "{} error(s) found; `ols repair` fixes what it safely can",
+                            "{} error(s) found; `olsc repair` fixes what it safely can",
                             report.errors
                         ));
                     }
@@ -1244,7 +1244,7 @@ fn project(ctx: &Ctx, cmd: ProjectCmd) -> R<()> {
                 auth: None,
             })? {
                 println!(
-                    "{} is ready at {}. Next: cd there and run `ols setup`.",
+                    "{} is ready at {}. Next: cd there and run `olsc setup`.",
                     project.name, project.path
                 );
             }
@@ -1272,7 +1272,7 @@ fn install(ctx: &Ctx, id: &str, version: Option<&str>) -> R<()> {
             .map(|e| e.version.clone())
             .collect();
         if have.is_empty() {
-            format!("\"{id}\" is not in the catalog (see `ols runtime list`)")
+            format!("\"{id}\" is not in the catalog (see `olsc runtime list`)")
         } else {
             format!(
                 "{id} {} is not available; available: {}",
@@ -1485,7 +1485,7 @@ fn tunnel(ctx: &Ctx, cmd: TunnelCmd) -> R<()> {
             }
             let _ = r;
             println!(
-                "Started; the provider hasn't given an address yet. Check with `ols tunnel list`."
+                "Started; the provider hasn't given an address yet. Check with `olsc tunnel list`."
             );
         }
         TunnelCmd::Stop { name } => {
@@ -1698,7 +1698,7 @@ fn catalog(ctx: &Ctx, cmd: CatalogCmd) -> R<()> {
                 public_key,
             })?;
             show(ctx, r);
-            println!("Added. Run `ols catalog refresh` to download it.");
+            println!("Added. Run `olsc catalog refresh` to download it.");
         }
         CatalogCmd::Remove { id } => show(ctx, ctx.call(CoreCommand::RemoveCatalogSource { id })?),
         CatalogCmd::Refresh { id } => show(ctx, ctx.call(CoreCommand::RefreshCatalogs { id })?),
@@ -1843,7 +1843,7 @@ fn load_test(
         return Err("unexpected reply".into());
     };
     if !overview.k6.installed {
-        return Err("k6 isn't installed: run `ols runtime install k6`".into());
+        return Err("k6 isn't installed: run `olsc runtime install k6`".into());
     }
     let mut env: Vec<(String, String)> = Vec::new();
     for v in &vars {
@@ -1972,7 +1972,7 @@ fn ai_cmd(ctx: &Ctx, cmd: AiCmd) -> R<()> {
                 if st.settings.enabled {
                     "on"
                 } else {
-                    "off (turn it on with `ols ai on`)"
+                    "off (turn it on with `olsc ai on`)"
                 }
             );
             if st.settings.providers.is_empty() {
