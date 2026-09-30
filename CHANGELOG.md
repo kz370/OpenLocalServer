@@ -5,6 +5,32 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.1] — 2026-09-30
+
+Fix release. Full notes: [`release-notes/v1.1.1.md`](./release-notes/v1.1.1.md).
+
+### Fixed
+- The command line runs through the app executable. `ols.exe` and `OLS.exe` are the same file on
+  Windows, so the Explorer right-click entry opened the app instead of adding the folder and
+  `ols --version` printed nothing and exited 0. The CLI is now `olsc.exe`, looked up by name and
+  refused if it is the running image; the `ols.cmd` shim is gone, because within one directory
+  cmd resolves by `PATHEXT` and `.EXE` comes before `.CMD`.
+- CLI output was doubled or swallowed in GUI builds: the parent console is attached for the child
+  process and the line buffer cleared between runs.
+- Clearing a folder from the deletion history did not clear it. The entry was compared as a raw
+  string while the stored value was the canonicalized path, so a `..` segment, a short name or a
+  junction — and always a GitHub runner, whose `%TEMP%` is a short name — left the entry in place
+  and the folder skipped. Both sides are now resolved before comparing. The same defect appended
+  a duplicate history entry when one folder was deleted again through another spelling.
+- The setup referenced a CLI package name the `olsc` rename had already removed.
+
+### Changed
+- Releases are built and published on GitHub: one workflow runs the same
+  `scripts\build-installer.bat` as a local release (same stages, same SHA-256 verification) and
+  publishes the setup exe, the portable zip, `OLS-<version>-SHA256SUMS.txt` and the signed
+  `latest.json`. Nothing runs on a push to `master`; a build runs on request, a release on a
+  `v*` tag.
+
 ## [1.1.0] — 2026-09-30
 
 Incremental release. Product as described in 1.0.0 is unchanged. Full notes:
