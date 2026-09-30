@@ -22,7 +22,7 @@ It is still in the early stages, so expect rough edges. Feedback and bug reports
 ## Contents
 
 - [Download](#-download) · [Tour](#tour) · [Runtimes](#runtimes--toolchain) · [Sites & HTTPS](#sites-web-servers--https) · [Projects](#projects--reproducible-environments) · [Databases & Services](#databases--services) · [Dashboard & Monitoring](#dashboard--monitoring) · [Sharing](#sharing--tunnels) · [Automation](#cli-api--automation)
-- [Getting Started](#getting-started) · [Usage](#usage) · [Project Structure](#project-structure) · [Built for AI](#-built-for-ai-built-to-be-forked) · [Contributing](#contributing) · [License](#license)
+- [Getting Started](#getting-started) · [Usage](#usage) · [Project Structure](#project-structure) · [Built for AI](#-built-for-ai-built-to-be-forked) · [Contributing](#contributing) · [Third-Party Notices](#-third-party-notices) · [License](#license)
 
 ---
 
@@ -335,6 +335,50 @@ cd ui; npm run lint; npm run build
 - **Specs-sync mandate:** `specs/` is source of truth. Any behavior change must update matching `specs/` files in same PR + append log line to `specs/runtime.md`. Behavior PR without spec update gets rejected. See [AGENTS.md](./AGENTS.md).
 - **Safety:** user errors use `Diagnostic{problem,cause,fix}` · downloads verify SHA-256 · secrets in OS keyring only, never logs/files/bundles.
 - **Commits:** Conventional Commits (`feat:`, `fix:`, `docs:` …).
+
+---
+
+## 🧾 Third-Party Notices
+
+OLS is GPL-3.0-only (see [LICENSE](./LICENSE)).
+
+**The installer ships OLS only — no third-party software is bundled.** Runtimes, web servers, and databases are downloaded by you on demand from the vendor and SHA-256 verified, and are installed into OLS-managed folders you can delete at any time. Tunnel binaries are neither downloaded nor installed — OLS only finds them already on your `PATH` (see [Tunnels](#-sharing--tunnels)).
+
+### Downloaded on demand (NOT part of the installer)
+
+| Component | License | Source |
+| :--- | :--- | :--- |
+| PHP (NTS 8.1–8.5) | PHP License 3.01 | windows.php.net |
+| Composer | MIT | getcomposer.org |
+| Node.js 22 / 24 | MIT | nodejs.org |
+| corepack / npm / pnpm / yarn | MIT | nodejs.org |
+| Portable Git | GPL-2.0-only | git-scm.com/downloads |
+| Python | PSF License | python.org |
+| k6 | AGPL-3.0-only | grafana.com/docs/k6 |
+| Nginx 1.28 | BSD-2-Clause | nginx.org |
+| Apache httpd 2.4 | Apache-2.0 | httpd.apache.org |
+| Caddy 2.11 | Apache-2.0 | caddyserver.com |
+| MariaDB 11.4 | GPL-2.0-only | mariadb.org |
+| PostgreSQL 17 | PostgreSQL License | postgresql.org |
+| MongoDB | SSPL-1.0 | mongodb.com |
+| Redis (`redis-windows`) | RSALv2 / SSPLv1 | redis.io |
+| Memcached | BSD-3-Clause | memcached.org |
+| Mailpit | MIT | github.com/axllent/mailpit |
+| HeidiSQL | GPL-3.0-only | heidisql.com |
+| pgAdmin 4 | PostgreSQL License | pgadmin.org |
+| NoSQLBooster | MIT | nosqlbooster.com |
+| Tiny RDM | MIT | github.com/rvigster/TinyRDM |
+| cloudflared | Apache-2.0 | github.com/cloudflare/cloudflared |
+| ngrok | Apache-2.0 | github.com/ngrok/ngrok |
+| localtunnel | MIT | github.com/localtunnel/localtunnel |
+| Tailscale | BSD-3-Clause | tailscale.com |
+
+### Notes
+
+- Everything above runs as a **separate process in a separate folder**, is never linked into the OLS binary, and is removed when you uninstall it. Each project license applies to its own install.
+- Redis and MongoDB are source-available, not OSI-approved.
+- Tunnel provider binaries (cloudflared, ngrok) are **found on `PATH`, never downloaded or installed** by OLS.
+- Licenses come from upstream vendor metadata; re-verify at release time.
 
 ---
 
