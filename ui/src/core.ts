@@ -134,6 +134,20 @@ export interface Project {
   path: string
 }
 
+/**
+ * A registered project the backend found to be a WordPress install, with the site that
+ * serves it. Read on the Sites page to decide which rows get a "WP Admin" action.
+ */
+export interface WpProject {
+  project_id: string
+  name: string
+  /** Null when the project has no domain yet: there is no URL to hand the browser. */
+  hostname: string | null
+  url: string | null
+  /** Unix seconds a one-time sign-in link still works until; null when none is pending. */
+  pending_until: number | null
+}
+
 /** One entry of the deletion history shown in Settings. */
 export interface DeletedItem {
   /** The skipped project path, or the skipped hostname. */
@@ -636,6 +650,9 @@ export type CoreCommand =
   | { type: 'clear_deleted_items' }
   | { type: 'get_project_detail'; id: string }
   | { type: 'run_in_project'; project_id: string; runtime_id: string; args: string[] }
+  | { type: 'list_wp_projects' }
+  | { type: 'wp_sign_in'; project_id: string; hostname?: string; theme?: 'light' | 'dark' }
+  | { type: 'wp_sign_in_revoke'; project_id: string }
   | { type: 'list_services' }
   | { type: 'start_service'; id: string }
   | { type: 'stop_service'; id: string }
@@ -956,6 +973,8 @@ export type CoreResponse =
   | { type: 'project'; project: Project }
   | { type: 'projects'; projects: Project[] }
   | { type: 'project_detail'; detail: ProjectDetail }
+  | { type: 'wp_projects'; projects: WpProject[] }
+  | { type: 'wp_sign_in'; url: string; expires_at: number }
   | { type: 'deleted_items'; items: DeletedItem[] }
   | { type: 'services'; services: ServiceStatus[] }
   | { type: 'db_backups'; backups: DbBackup[] }

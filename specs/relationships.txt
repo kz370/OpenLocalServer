@@ -30,6 +30,10 @@ Inner | uses | WebManager
 Inner | uses | DomainStore
 Inner | uses | CertificateManager
 Inner | uses | ProjectStore
+Inner::wp_projects | decides_from | wordpress::describe (folder on disk: wp-config.php / wp-admin/index.php / wp-includes+wp-content), then fills hostname+url from the project's first enabled Domain and pending_until from wordpress::sweep (which deletes expired and unparseable bridges as it goes)
+Inner::wp_signin | requires | WebManager::is_running + one of the project's enabled Domains (a project with no domain has no URL to hand a browser), then wordpress::issue writes the single bridge; the token URL is returned and never traced
+Inner::wp_signin_revoke | calls | wordpress::revoke — the pending bridge file IS the capability, so deleting it is the whole cancellation
+SitesPage | reads | list_wp_projects (which rows show "WP Admin"), wp_sign_in + open_url (click), wp_sign_in_revoke ("Cancel pending WP sign-in"); re-reads on every projects change
 WebManager | uses | DomainStore (snapshot only: apply renders, validates and restarts outside the store lock, and returns generated-config hashes for Inner to commit)
 WebManager | returns | HashUpdate (server id, hostname, sha-256) to Inner::record_generated_hashes
 WebManager | renders | one `localhost/<prefix>` routes file per server (all those requests share one Host, so they cannot be per-site files), each route proxying to its own site's vhost

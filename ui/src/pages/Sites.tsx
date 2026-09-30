@@ -1,5 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Activity, Check, Code2, Copy, ExternalLink, FolderMinus, FolderOpen, FolderPlus, FolderSearch, Globe, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2 } from 'lucide-react'
+import { Activity, Check, Code2, Copy, ExternalLink, FolderMinus, FolderOpen, FolderPlus, FolderSearch, Globe, KeyRound, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
@@ -20,9 +20,10 @@ import { Input } from '@/components/ui/input'
 import { ActionMenu, type MenuItem } from '@/components/ui/menu'
 import { Pagination } from '@/components/ui/pagination'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { type Domain, type DomainSummary, type HealthReport, type Project, runCommand } from '@/core'
+import { type Domain, type DomainSummary, type HealthReport, type Project, type WpProject, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
 import { onOpenProject, takePendingProject } from '@/lib/nav'
+import { useTheme } from '@/lib/theme'
 import { useWeb } from '@/lib/web'
 import { Wizard } from '@/pages/QuickApps'
 
@@ -71,6 +72,9 @@ function StatusDot({ site, running }: { site: DomainSummary | null; running: boo
 
 export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   const web = useWeb()
+  // The WordPress sign-in screen lives outside this window, so it is told which colourway
+  // the app is showing rather than left to guess from the browser.
+  const { resolvedTheme } = useTheme()
   const { projects, domains, status, busy, error, setError, run, apply, refresh, refreshProjects, installedPhp, removing, applying } = web
   const defaultServer = status?.default_server
 
@@ -90,6 +94,19 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(25)
   const [bulkServerChoice, setBulkServerChoice] = useState('')
+  // WordPress projects, straight from the folders on disk: this is what decides which rows
+  // get a "WP Admin" action. Re-read when the project list changes, so a folder added or
+  // deleted elsewhere gains or loses the action without a reload.
+  const [wpProjects, setWpProjects] = useState<WpProject[]>([])
+
+  const refreshWpProjects = async () => {
+    const r = await runCommand({ type: 'list_wp_projects' })
+    if (r.type === 'wp_projects') setWpProjects(r.projects)
+  }
+
+  useEffect(() => {
+    void refreshWpProjects().catch(() => undefined)
+  }, [projects])
 
   // The command palette and search open a project or a site (and a section) from anywhere.
   useEffect(() => {
@@ -408,6 +425,37 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     if (folder) items.push({ label: 'Open project folder', icon: <FolderOpen />, hint: folder, onSelect: () => void run('open', () => runCommand({ type: 'open_path', path: folder })) })
     if (folder) items.push({ label: 'Open folder in code editor', icon: <Code2 />, hint: folder, onSelect: () => void run('code', () => runCommand({ type: 'open_in_editor', path: folder })) })
     if (p) items.push({ label: 'Terminal', icon: <SquareTerminal />, onSelect: () => setTarget({ hostname: d?.hostname ?? null, projectId: p.id, tab: 'terminal' }) })
+    // WordPress gets a passwordless admin entry. The backend answers with a link that works
+    // once, from this machine, for a few minutes; no password is read, asked for or stored.
+    const wp = p ? wpProjects.find((w) => w.project_id === p.id) : undefined
+    if (wp && p) {
+      const projectId = p.id
+      items.push({
+        label: 'WP Admin',
+        icon: <KeyRound />,
+        hint: wp.url ? `One-time sign-in on ${wp.url.replace(/\/$/, '')} — no password needed` : 'This project has no domain yet',
+        disabled: !wp.url || busy === `wp:${projectId}`,
+        onSelect: () =>
+          void run(`wp:${projectId}`, async () => {
+            const signin = await runCommand({ type: 'wp_sign_in', project_id: projectId, hostname: d?.hostname ?? undefined, theme: resolvedTheme })
+            if (signin.type !== 'wp_sign_in') return
+            await runCommand({ type: 'open_url', url: signin.url })
+            await refreshWpProjects().catch(() => undefined)
+          }),
+      })
+      if (wp.pending_until)
+        items.push({
+          label: 'Cancel pending WP sign-in',
+          icon: <X />,
+          hint: 'Deletes the temporary link before it is used',
+          disabled: busy === `wp-revoke:${projectId}`,
+          onSelect: () =>
+            void run(`wp-revoke:${projectId}`, async () => {
+              await runCommand({ type: 'wp_sign_in_revoke', project_id: projectId })
+              await refreshWpProjects().catch(() => undefined)
+            }),
+        })
+    }
     if (d) {
       items.push({
         label: 'Health check',

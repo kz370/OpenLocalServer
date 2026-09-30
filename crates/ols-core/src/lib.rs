@@ -72,6 +72,7 @@ pub mod tunnel;
 pub mod updater;
 pub mod venv;
 pub mod web;
+pub mod wordpress;
 pub mod workers;
 pub mod xdebug;
 

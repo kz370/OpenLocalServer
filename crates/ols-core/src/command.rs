@@ -136,6 +136,26 @@ pub enum CoreCommand {
         runtime_id: String,
         args: Vec<String>,
     },
+    /// Every registered project that is a WordPress install, with the site that serves
+    /// it. The Sites page reads this to decide which rows get a "WP Admin" action; the
+    /// answer comes from the folder on disk, never from the project's name.
+    ListWpProjects,
+    /// Writes a one-time admin sign-in bridge for a WordPress project and answers with the
+    /// link to open. No password is read, asked for or changed: WordPress turns a random,
+    /// short-lived token into a session cookie itself, once, from this machine.
+    WpSignIn {
+        project_id: String,
+        /// Which of the project's sites to open. `None` takes the first enabled one.
+        hostname: Option<String>,
+        /// The colourway the app is showing ("light" | "dark"), so the WordPress sign-in
+        /// screen matches the window that opened it. `None` leaves it to the browser.
+        theme: Option<String>,
+    },
+    /// Cancels a pending one-time sign-in link. Removes the temporary helper file, so a
+    /// link that was never clicked cannot be used later.
+    WpSignInRevoke {
+        project_id: String,
+    },
 
     // Service Manager (§22, §31, §61–68, Stage 5)
     ListServices,
@@ -1260,6 +1280,15 @@ pub enum CoreResponse {
     ProjectDetail {
         detail: Box<ProjectDetail>,
     },
+    WpProjects {
+        projects: Vec<crate::wordpress::WpProject>,
+    },
+    /// The one-time link to open in the browser. It carries the token, so this response is
+    /// never logged, cached or written to disk by the app.
+    WpSignIn {
+        url: String,
+        expires_at: u64,
+    },
     DeletedItems {
         items: Vec<crate::app::DeletedItem>,
     },
@@ -2010,6 +2039,24 @@ impl Core {
                 Ok(R::ProjectDetail {
                     detail: Box::new(detail),
                 })
+            }
+            C::ListWpProjects => Ok(R::WpProjects {
+                projects: i.wp_projects(),
+            }),
+            C::WpSignIn {
+                project_id,
+                hostname,
+                theme,
+            } => {
+                let signin = i.wp_signin(&project_id, hostname.as_deref(), theme.as_deref())?;
+                Ok(R::WpSignIn {
+                    url: signin.url,
+                    expires_at: signin.expires_at,
+                })
+            }
+            C::WpSignInRevoke { project_id } => {
+                i.wp_signin_revoke(&project_id)?;
+                Ok(R::Ok)
             }
             C::RunInProject {
                 project_id,
