@@ -9,35 +9,53 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  rust:
-    name: Rust (Windows)
+  test:
+    name: Test
     runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Tests stay on Windows because they are Windows tests: temp paths, the hosts file
+      # and the file locks they exercise only mean what they say on the platform the app
+      # ships on, and a Linux runner would pass the spellings this suite exists to check.
+      - name: Tests
+        run: cargo test -p ols-core -p ols-helper
+
+  build:
+    name: Build (Windows)
+    runs-on: windows-latest
+    needs: test
+    defaults:
+      run:
+        shell: cmd
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
-      - name: Clippy
-        run: cargo clippy -p ols-core -p ols-helper --all-targets
-      - name: Tests
-        run: cargo test -p ols-core -p ols-helper
-
-  ui:
-    name: UI
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ui
-    steps:
-      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: ui/package-lock.json
-      - run: npm ci
-      - name: Lint
-        run: npm run lint
-      - name: Type-check and build
-        run: npm run build
+      - name: Install Inno Setup
+        run: choco install innosetup --yes --no-progress --limit-output
+      - name: Lint and format check
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy -p ols-core -p ols-helper --all-targets
+      - name: Build
+        env:
+          # The script caps itself at half the threads otherwise, which wastes a runner.
+          BUILD_JOBS: 4
+          CACHE_LIMIT_GB: 20
+        # Same script, same checks and same artifact verification as a local release.
+        run: scripts\build-installer.bat full
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ols-windows
+          if-no-files-found: error
+          path: release/*/*.exe

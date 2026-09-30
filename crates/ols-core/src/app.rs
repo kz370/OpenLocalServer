@@ -149,6 +149,58 @@ fn normalize_skip_path(path: &str) -> String {
     path.strip_prefix(r"\\?\").unwrap_or(path).to_string()
 }
 
+/// True when `value` can only be a filesystem path: a rooted path, a drive, or anything
+/// with a separator. A bare automatic-domain name (`app1.local`) is not one, and resolving
+/// a bare name against the working directory could match a folder that happens to share it.
+fn is_path_like(value: &str) -> bool {
+    Path::new(value).is_absolute() || value.contains(['\\', '/', ':'])
+}
+
+/// Resolves a path to a comparable form, falling back to canonicalizing its *parent* when
+/// the leaf itself is gone.
+///
+/// The fallback is the case that matters for clearing: a folder deleted from disk before its
+/// history entry is cleared cannot be canonicalized at all, so a whole-path resolve on both
+/// sides fails and the two spellings are compared raw again — the clear silently does nothing.
+/// The parent usually outlives the leaf, and a short name is expanded at every level, so
+/// canonicalizing the parent and reattaching the file name still collapses the two spellings.
+fn comparable_path(value: &str) -> Option<String> {
+    if let Ok(c) = std::fs::canonicalize(value) {
+        return Some(normalize_skip_path(&c.display().to_string()));
+    }
+    let path = Path::new(value);
+    let parent = path.parent()?;
+    let name = path.file_name()?;
+    let parent = std::fs::canonicalize(parent).ok()?;
+    Some(normalize_skip_path(
+        &parent.join(name).display().to_string(),
+    ))
+}
+
+/// One folder, whatever either side spells it: the canonicalized path `ProjectStore::register`
+/// wrote, and the raw spelling a scan or a caller holds.
+///
+/// Same rule as `skip_matches`, applied the other way round. `skip_matches` compares an
+/// entry against a scan's path; this compares a caller-supplied value against an entry, so
+/// clearing an entry has to resolve both sides too. On Windows a short name
+/// (`C:\Users\RUNNER~1\...`) is a different string from the long name `canonicalize`
+/// returns, so comparing the strings alone left the entry in place: the settings page said
+/// it had cleared it, the history still listed it, and the folder stayed skipped.
+fn same_skip_entry(entry: &SkipEntry, value: &str) -> bool {
+    let stored = normalize_skip_path(&entry.value);
+    let asked = normalize_skip_path(value);
+    if stored.eq_ignore_ascii_case(&asked) {
+        return true;
+    }
+    if !is_path_like(&stored) || !is_path_like(&asked) {
+        return false;
+    }
+    match (comparable_path(&stored), comparable_path(&asked)) {
+        (Some(a), Some(b)) => a.eq_ignore_ascii_case(&b),
+        _ => false,
+    }
+}
+
 /// True when `path` is one of the skipped project folders, in either form.
 ///
 /// Skips are stored the way `ProjectStore::register` writes paths — canonicalized — while a
@@ -962,10 +1014,7 @@ impl Inner {
         // the history instead of duplicating it.
         let mut merged: Vec<SkipEntry> = Vec::with_capacity(list.len());
         for entry in list {
-            match merged
-                .iter_mut()
-                .find(|e| e.value.eq_ignore_ascii_case(&entry.value))
-            {
+            match merged.iter_mut().find(|e| same_skip_entry(e, &entry.value)) {
                 Some(existing) => existing.deleted_at = existing.deleted_at.max(entry.deleted_at),
                 None => merged.push(entry),
             }
@@ -984,10 +1033,7 @@ impl Inner {
         let value = value.to_string();
         let stamp = now_ms();
         self.edit_skip_entries(key, move |list| {
-            match list
-                .iter_mut()
-                .find(|e| e.value.eq_ignore_ascii_case(&value))
-            {
+            match list.iter_mut().find(|e| same_skip_entry(e, &value)) {
                 Some(existing) => existing.deleted_at = stamp,
                 None => list.push(SkipEntry {
                     value,
@@ -1000,7 +1046,7 @@ impl Inner {
     fn remove_skip(&self, key: &str, value: &str) -> Result<(), CoreError> {
         let value = value.to_string();
         self.edit_skip_entries(key, move |list| {
-            list.retain(|e| !e.value.eq_ignore_ascii_case(&value))
+            list.retain(|e| !same_skip_entry(e, &value))
         })
     }
 
@@ -3973,6 +4019,106 @@ mod project_skip_tests {
         let items = inner.list_deleted_items();
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].value, app.display().to_string());
+    }
+
+    /// The settings page clears a history entry with the spelling it has on screen, while the
+    /// stored entry is the canonicalized path `register` wrote. On Windows those are different
+    /// strings whenever the path has more than one — a short name, a `..` segment, a junction —
+    /// so the entry survived the clear, the history still listed it, and the folder below stayed
+    /// skipped: the scan registered nothing and the user was told the restore had worked.
+    #[test]
+    fn clearing_a_history_entry_by_another_spelling_of_the_path_works() {
+        let (inner, home) = inner();
+        let root = home.paths.data_dir().join("www");
+        let app = project_dir(&root, "app1");
+        inner
+            .remember_projects_root(&root.display().to_string())
+            .unwrap();
+        inner.sync_auto_domains().unwrap();
+        let id = inner.projects.lock().unwrap().list()[0].id.clone();
+        inner.remove_project(&id).unwrap();
+
+        // A second spelling of the same folder that still resolves, so this fails on any
+        // machine rather than only where the temp path happens to be an 8.3 short name.
+        let detour = root.join("app1").join("..").join("app1");
+        let detour = detour.display().to_string();
+        assert_ne!(detour, app.display().to_string());
+        assert!(std::fs::canonicalize(&detour).is_ok());
+        assert!(
+            inner.forget_deleted_item(&detour).unwrap(),
+            "clearing the entry by another spelling of its path left it in the history"
+        );
+        assert!(inner.list_deleted_items().is_empty());
+        inner.sync_auto_domains().unwrap();
+        assert_eq!(
+            inner.projects.lock().unwrap().list().len(),
+            1,
+            "the folder was still skipped after the history said it was cleared"
+        );
+    }
+
+    /// `same_skip_entry` is the compare the clear, the record and the merge all use, so the
+    /// rule is pinned directly instead of only through one round trip. The last half is the
+    /// one that would otherwise be a new bug: a bare domain name must not be resolved against
+    /// the working directory, where a folder of the same name would make it match.
+    #[test]
+    fn a_history_entry_matches_another_spelling_of_its_own_path_and_nothing_else() {
+        let (inner, home) = inner();
+        let root = home.paths.data_dir().join("www");
+        let app = project_dir(&root, "app1");
+        let canonical = std::fs::canonicalize(&app).unwrap();
+        inner
+            .push_skip(PROJECT_SKIP, &canonical.display().to_string())
+            .unwrap();
+        let entries = inner.skip_entries(PROJECT_SKIP);
+        assert_eq!(entries.len(), 1, "one folder must not become two entries");
+
+        let detour = root.join("app1").join("..").join("app1");
+        assert!(same_skip_entry(&entries[0], &detour.display().to_string()));
+        // Case-insensitive, on the full path: that compare predates this fix.
+        assert!(same_skip_entry(
+            &entries[0],
+            &canonical.display().to_string().to_uppercase()
+        ));
+        assert!(!same_skip_entry(&entries[0], "app2"));
+        assert!(!same_skip_entry(&entries[0], "app1"));
+
+        // Re-deleting the same folder through the other spelling updates the entry rather
+        // than appending a duplicate, so the history cannot grow every time it is used.
+        inner
+            .push_skip(PROJECT_SKIP, &detour.display().to_string())
+            .unwrap();
+        assert_eq!(inner.skip_entries(PROJECT_SKIP).len(), 1);
+    }
+
+    /// The common order of operations: the user removes the project, then deletes the folder,
+    /// then clears it from the history. Nothing is on disk to canonicalize by the third step,
+    /// so a resolve that needs the whole path fails and the entry survives — the same silent
+    /// no-op as before, one step later. The parent directory is still there to resolve.
+    #[test]
+    fn clearing_an_entry_whose_folder_is_already_deleted_works() {
+        let (inner, home) = inner();
+        let root = home.paths.data_dir().join("www");
+        let app = project_dir(&root, "app1");
+        inner
+            .remember_projects_root(&root.display().to_string())
+            .unwrap();
+        inner.sync_auto_domains().unwrap();
+        let id = inner.projects.lock().unwrap().list()[0].id.clone();
+        inner.remove_project(&id).unwrap();
+        std::fs::remove_dir_all(&app).unwrap();
+        assert!(!app.exists());
+
+        // Spelled through `..`, so this still depends on the two sides being resolved rather
+        // than compared: the exact stored string would match on the plain compare.
+        let detour = root.join("..").join("www").join("app1");
+        let detour = detour.display().to_string();
+        assert_ne!(detour, app.display().to_string());
+        assert!(
+            inner.forget_deleted_item(&detour).unwrap(),
+            "clearing an entry for a folder that no longer exists left it in the history"
+        );
+        assert!(inner.list_deleted_items().is_empty());
     }
 
     /// A folder reached through a different spelling of the same path — a short name, a
