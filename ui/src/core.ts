@@ -663,6 +663,9 @@ export type CoreCommand =
   | { type: 'update_domain'; domain: Domain }
   | { type: 'remove_domain'; hostname: string }
   | { type: 'set_domain_enabled'; hostname: string; enabled: boolean }
+  | { type: 'bulk_set_domains_enabled'; hostnames: string[]; enabled: boolean }
+  | { type: 'bulk_remove_domains'; hostnames: string[] }
+  | { type: 'bulk_set_domain_server'; hostnames: string[]; server: string | null }
   | { type: 'duplicate_domain'; hostname: string; new_hostname: string }
   | { type: 'rename_domain'; hostname: string; new_hostname: string }
   | { type: 'suggest_domain'; project_id: string; template: string }
@@ -999,6 +1002,9 @@ export type CoreResponse =
   | { type: 'startup'; settings: StartupSettings }
   | { type: 'editors'; editors: EditorInfo[] }
   | { type: 'count'; count: number }
+  /** What a bulk site edit did. `skipped` names every site the batch refused and why, so
+   *  a partly applied edit is reported rather than looking like it fully worked. */
+  | { type: 'bulk'; changed: number; skipped: string[] }
   | { type: 'helper_service'; installed: boolean; version: string | null; outdated: boolean | null }
   | { type: 'system_stats'; stats: SystemStats }
   | { type: 'migration_sources'; sources: MigrationSource[] }

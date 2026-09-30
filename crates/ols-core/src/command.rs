@@ -238,6 +238,25 @@ pub enum CoreCommand {
         hostname: String,
         enabled: bool,
     },
+    /// One batch, one apply: a group of sites is turned on or off together. Sites that
+    /// cannot change (the built-in home site going off, a hostname that is no longer
+    /// there) are reported in the `Bulk` response instead of failing the whole edit.
+    BulkSetDomainsEnabled {
+        hostnames: Vec<String>,
+        enabled: bool,
+    },
+    /// Deletes a group of sites in one go. Destructive: it skips the built-in home site
+    /// and names it in the response rather than refusing the batch.
+    BulkRemoveDomains {
+        hostnames: Vec<String>,
+    },
+    /// Pins a group of sites to one web server, or puts them all back on the default
+    /// when `server` is `None`. An unknown server id refuses the whole batch before
+    /// anything is written.
+    BulkSetDomainServer {
+        hostnames: Vec<String>,
+        server: Option<String>,
+    },
     DuplicateDomain {
         hostname: String,
         new_hostname: String,
@@ -1383,6 +1402,13 @@ pub enum CoreResponse {
     Count {
         count: usize,
     },
+    /// What a bulk site edit did: how many sites changed, and one line per site it
+    /// refused. `skipped` is never silently dropped — a batch that landed on twenty of
+    /// twenty-five sites has to say which five it left alone and why.
+    Bulk {
+        changed: usize,
+        skipped: Vec<String>,
+    },
     HelperService {
         installed: bool,
         /// The version the resident service reports, when it answers.
@@ -1935,9 +1961,14 @@ impl Core {
             C::SyncAutoDomains => Ok(R::Count {
                 count: i.sync_auto_domains()?,
             }),
-            C::ListProjects => Ok(R::Projects {
-                projects: i.projects.lock().unwrap().list(),
-            }),
+            C::ListProjects => {
+                // Same outside-change re-read as `ListDomains`: a folder registered from
+                // the right-click menu is written by another process.
+                i.reload_external_changes();
+                Ok(R::Projects {
+                    projects: i.projects.lock().unwrap().list(),
+                })
+            }
             C::RemoveProject { id } => {
                 i.remove_project(&id)?;
                 Ok(R::Ok)
@@ -2247,9 +2278,17 @@ impl Core {
             C::GetWebConfig => Ok(R::WebConfig {
                 config: i.web_config(),
             }),
-            C::ListDomains => Ok(R::Domains {
-                domains: i.domain_summaries(),
-            }),
+            C::ListDomains => {
+                // Picks up a site the Explorer right-click menu or the `ols` command line
+                // added while the app was running: that write came from another process,
+                // so the in-memory store has to be re-read before it is reported.
+                if i.reload_external_changes() {
+                    tracing::info!("re-read the stores after an outside change");
+                }
+                Ok(R::Domains {
+                    domains: i.domain_summaries(),
+                })
+            }
             C::GetDomain { hostname } => {
                 let d = i.domains.lock().unwrap().get(&hostname).ok_or_else(|| {
                     CoreError::DomainError(format!("{hostname} is not a known domain"))
@@ -2274,6 +2313,34 @@ impl Core {
             C::SetDomainEnabled { hostname, enabled } => {
                 i.set_domain_enabled(&hostname, enabled)?;
                 Ok(R::Ok)
+            }
+            C::BulkSetDomainsEnabled { hostnames, enabled } => {
+                tracing::info!(
+                    command = "bulk_set_domains_enabled",
+                    sites = hostnames.len(),
+                    enabled
+                );
+                let out = i.set_domains_enabled(&hostnames, enabled)?;
+                Ok(R::Bulk {
+                    changed: out.changed,
+                    skipped: out.skipped,
+                })
+            }
+            C::BulkRemoveDomains { hostnames } => {
+                tracing::info!(command = "bulk_remove_domains", sites = hostnames.len());
+                let out = i.remove_domains(&hostnames)?;
+                Ok(R::Bulk {
+                    changed: out.changed,
+                    skipped: out.skipped,
+                })
+            }
+            C::BulkSetDomainServer { hostnames, server } => {
+                tracing::info!(command = "bulk_set_domain_server", sites = hostnames.len(), server = ?server);
+                let out = i.set_domain_servers(&hostnames, server.as_deref())?;
+                Ok(R::Bulk {
+                    changed: out.changed,
+                    skipped: out.skipped,
+                })
             }
             C::RenameDomain {
                 hostname,

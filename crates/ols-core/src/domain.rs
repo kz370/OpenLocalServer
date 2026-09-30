@@ -558,6 +558,22 @@ const HOME_PAGE: &str = r##"<!doctype html>
 </html>
 "##;
 
+/// What a bulk change actually did. `changed` counts the sites that took the edit;
+/// `skipped` is one line per site that did not, naming the site and the reason, so a
+/// partly applied batch is reported instead of quietly landing half-way.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct BulkOutcome {
+    pub changed: usize,
+    pub skipped: Vec<String>,
+}
+
+impl BulkOutcome {
+    /// Records a refusal as `<hostname> <reason>`, so the message reads as a sentence.
+    pub fn skip(&mut self, hostname: &str, reason: &str) {
+        self.skipped.push(format!("{hostname} {reason}"));
+    }
+}
+
 pub struct DomainStore {
     paths: AppPaths,
     domains: Vec<Domain>,
@@ -714,6 +730,90 @@ impl DomainStore {
         self.domains[idx] = domain.clone();
         self.persist()?;
         Ok(domain)
+    }
+
+    /// Turns a whole group of sites on or off in one write.
+    ///
+    /// A batch is never all-or-nothing: a hostname that is not in the store comes back in
+    /// `skipped` with the reason, and the rest still go through. Giving up on all thirty
+    /// changes because one row in the selection was stale would leave the user with
+    /// nothing done and no idea why. The built-in home site is never disabled — it is what
+    /// the app itself is reachable on — so it is refused with that reason.
+    pub fn bulk_set_enabled(
+        &mut self,
+        hostnames: &[String],
+        enabled: bool,
+    ) -> Result<BulkOutcome, CoreError> {
+        let mut outcome = BulkOutcome::default();
+        for hostname in hostnames {
+            match self.domains.iter_mut().find(|d| &d.hostname == hostname) {
+                None => outcome.skip(hostname, "is not a known domain"),
+                Some(d) if d.hostname == HOME_HOSTNAME && !enabled => {
+                    outcome.skip(hostname, "is the built-in home site, which stays on")
+                }
+                Some(d) => {
+                    d.enabled = enabled;
+                    outcome.changed += 1;
+                }
+            }
+        }
+        self.persist_if_changed(outcome.changed)?;
+        Ok(outcome)
+    }
+
+    /// Pins a whole group of sites to one web server, or puts them all back on the
+    /// default when `server` is `None`. Same partial-failure contract as
+    /// [`Self::bulk_set_enabled`]: one bad hostname is reported, the others are pinned.
+    /// The server id is checked once for the whole batch, so a typo refuses every site
+    /// before anything is written rather than after half of them are.
+    pub fn bulk_set_server(
+        &mut self,
+        hostnames: &[String],
+        server: Option<&str>,
+    ) -> Result<BulkOutcome, CoreError> {
+        let server = validate_domain_server(server)?;
+        let mut outcome = BulkOutcome::default();
+        for hostname in hostnames {
+            match self.domains.iter_mut().find(|d| &d.hostname == hostname) {
+                None => outcome.skip(hostname, "is not a known domain"),
+                Some(d) => {
+                    d.server = server.clone();
+                    outcome.changed += 1;
+                }
+            }
+        }
+        self.persist_if_changed(outcome.changed)?;
+        Ok(outcome)
+    }
+
+    /// Deletes a group of sites, one write each, and reports the ones it refused. Each
+    /// deletion goes through [`Self::remove`], so the home site is protected here too and
+    /// the certificate, skip-list and project-orphaning side effects in `Inner` still run
+    /// per site.
+    pub fn bulk_remove(&mut self, hostnames: &[String]) -> Result<BulkOutcome, CoreError> {
+        let mut outcome = BulkOutcome::default();
+        for hostname in hostnames {
+            if hostname == HOME_HOSTNAME {
+                outcome.skip(hostname, "is built in and can't be deleted");
+                continue;
+            }
+            if !self.domains.iter().any(|d| &d.hostname == hostname) {
+                outcome.skip(hostname, "is not a known domain");
+                continue;
+            }
+            self.remove(hostname)?;
+            outcome.changed += 1;
+        }
+        Ok(outcome)
+    }
+
+    /// A batch that changed nothing is not worth a write, so an all-skipped bulk edit
+    /// leaves the store file exactly as it was.
+    fn persist_if_changed(&self, changed: usize) -> Result<(), CoreError> {
+        if changed > 0 {
+            return self.persist();
+        }
+        Ok(())
     }
 
     pub fn remove(&mut self, hostname: &str) -> Result<(), CoreError> {
@@ -1268,6 +1368,91 @@ mod tests {
         assert!(store.get(HOME_HOSTNAME).is_some());
         let reloaded = DomainStore::load(&home.paths).unwrap();
         assert!(reloaded.get(HOME_HOSTNAME).is_some());
+    }
+
+    /// A bulk edit is partial, not all-or-nothing: one stale hostname in the selection is
+    /// reported and the rest of the batch still lands. That is the whole point of the
+    /// outcome — the user sees which sites were left alone and why.
+    #[test]
+    fn a_bulk_enable_says_which_sites_it_refused_and_still_changes_the_rest() {
+        let home = crate::test_support::isolated_home();
+        let mut store = DomainStore::load(&home.paths).unwrap();
+        store.add(domain("a.test")).unwrap();
+        store.add(domain("b.test")).unwrap();
+
+        let out = store
+            .bulk_set_enabled(
+                &["a.test".into(), "gone.test".into(), HOME_HOSTNAME.into()],
+                false,
+            )
+            .unwrap();
+        assert_eq!(out.changed, 1);
+        assert_eq!(out.skipped.len(), 2);
+        assert!(out.skipped.iter().any(|s| s.contains("gone.test")));
+        assert!(out.skipped.iter().any(|s| s.contains(HOME_HOSTNAME)));
+
+        assert!(!store.get("a.test").unwrap().enabled);
+        // The home site is what the app is reachable on, so it stays on.
+        assert!(store.get(HOME_HOSTNAME).unwrap().enabled);
+        // And the change survived the write, because the batch was not read-only.
+        let reloaded = DomainStore::load(&home.paths).unwrap();
+        assert!(!reloaded.get("a.test").unwrap().enabled);
+    }
+
+    #[test]
+    fn a_bulk_server_pin_writes_every_site_and_clears_back_to_the_default() {
+        let home = crate::test_support::isolated_home();
+        let mut store = DomainStore::load(&home.paths).unwrap();
+        store.add(domain("a.test")).unwrap();
+        store.add(domain("b.test")).unwrap();
+
+        let out = store
+            .bulk_set_server(&["a.test".into(), "b.test".into()], Some("apache"))
+            .unwrap();
+        assert_eq!(out.changed, 2);
+        assert!(out.skipped.is_empty());
+        assert_eq!(
+            store.get("a.test").unwrap().server.as_deref(),
+            Some("apache")
+        );
+
+        store
+            .bulk_set_server(&["a.test".into(), "b.test".into()], None)
+            .unwrap();
+        let reloaded = DomainStore::load(&home.paths).unwrap();
+        assert!(reloaded.get("a.test").unwrap().server.is_none());
+        assert!(reloaded.get("b.test").unwrap().server.is_none());
+    }
+
+    /// A typo in the server id must not leave half the batch pinned: the id is checked
+    /// once, up front, so the whole batch is refused before anything is written.
+    #[test]
+    fn a_bulk_server_pin_refuses_the_whole_batch_on_an_unknown_server() {
+        let home = crate::test_support::isolated_home();
+        let mut store = DomainStore::load(&home.paths).unwrap();
+        store.add(domain("a.test")).unwrap();
+
+        assert!(store
+            .bulk_set_server(&["a.test".into(), "b.test".into()], Some("iis"))
+            .is_err());
+        assert!(store.get("a.test").unwrap().server.is_none());
+    }
+
+    #[test]
+    fn a_bulk_delete_leaves_the_home_site_and_names_it() {
+        let home = crate::test_support::isolated_home();
+        let mut store = DomainStore::load(&home.paths).unwrap();
+        store.add(domain("a.test")).unwrap();
+        store.add(domain("b.test")).unwrap();
+
+        let out = store
+            .bulk_remove(&["a.test".into(), HOME_HOSTNAME.into(), "b.test".into()])
+            .unwrap();
+        assert_eq!(out.changed, 2);
+        assert_eq!(out.skipped.len(), 1);
+        assert!(out.skipped[0].contains(HOME_HOSTNAME));
+        assert!(store.get("a.test").is_none());
+        assert!(store.get(HOME_HOSTNAME).is_some());
     }
 
     fn web_config(default_server: &str) -> crate::web::WebConfig {

@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::certs::CertificateManager;
 use crate::custom_install::CustomInstallStore;
 use crate::dbtools::{self, ExternalToolStore};
-use crate::domain::{AppSpec, Domain, DomainStore, Ownership, SiteBlocks, SiteKind};
+use crate::domain::{AppSpec, BulkOutcome, Domain, DomainStore, Ownership, SiteBlocks, SiteKind};
 use crate::error::CoreError;
 use crate::health::{self, HealthReport, HealthTarget};
 use crate::paths::AppPaths;
@@ -636,6 +636,44 @@ impl Inner {
     /// lock is recovered rather than unwrapped: one panic while a lock was held used to make
     /// every later read panic too, which surfaced as a page stuck loading for the whole
     /// session.
+    /// Re-reads the stores when another process wrote to `app.db` under us, and gives the
+    /// projects that arrived their automatic sites.
+    ///
+    /// The Explorer right-click menu and the `ols` command line run in their own process
+    /// and write the same database the app has cached in memory, so a site added that way
+    /// used to stay invisible until the app was restarted. The check is one single-row
+    /// read of the writer marker, so every list of sites and projects can afford it.
+    ///
+    /// The re-read is followed by [`Self::sync_auto_domains`], because a project arriving
+    /// from outside is exactly what that call turns into a `<folder>.<tld>` site — reading
+    /// the rows back on its own would list a project with no domain and leave the user
+    /// wondering why their new folder is not a site yet.
+    pub fn reload_external_changes(&self) -> bool {
+        if !crate::db::changed_externally(&self.paths) {
+            return false;
+        }
+        // One store at a time, each released before the next is taken: the lock order at
+        // the top of this module forbids holding settings and projects together.
+        match ProjectStore::load(&self.paths) {
+            Ok(store) => *lock(&self.projects) = store,
+            Err(e) => tracing::warn!(%e, "projects could not be re-read after an outside change"),
+        }
+        match DomainStore::load(&self.paths) {
+            Ok(store) => *lock(&self.domains) = store,
+            // A store that will not load must not replace one that does: the list the user
+            // is looking at stays as it was.
+            Err(e) => tracing::warn!(%e, "domains could not be re-read after an outside change"),
+        }
+        if let Ok(store) = SettingsService::load(&self.paths) {
+            *lock(&self.settings) = store;
+        }
+        // Every lock is released by now, so this may take them again in its own order.
+        if let Err(e) = self.sync_auto_domains() {
+            tracing::warn!(%e, "automatic domains could not be synced after an outside change");
+        }
+        true
+    }
+
     pub fn project_detail(&self, id: &str) -> Option<ProjectDetail> {
         let project = lock(&self.projects).get(id)?;
         let settings = lock(&self.settings).clone();
@@ -1106,6 +1144,7 @@ impl Inner {
         let auto_template = format!("{{project}}.{default_tld}");
         let projects = self.projects.lock().unwrap().list();
         let mut created = 0;
+        let mut created_hosts: Vec<String> = Vec::new();
         for p in projects {
             let path = Path::new(&p.path);
             let (taken, linked) = {
@@ -1147,12 +1186,38 @@ impl Inner {
                 Ok(d) => {
                     tracing::info!(hostname = %d.hostname, project = %p.name, "created an automatic domain");
                     created += 1;
+                    created_hosts.push(d.hostname);
                 }
                 Err(e) => tracing::warn!(project = %p.name, error = %e, "automatic domain skipped"),
             }
         }
-        if created > 0 && self.web.is_running() {
-            self.apply_web(&[])?;
+        if created > 0 {
+            // A site whose name does not resolve is not a working site, so the new names
+            // go into the hosts file here too. Names the built-in DNS already answers for
+            // are left out, and `hosts::ensure` returns early when everything is already
+            // listed — so a folder dropped into a projects folder costs a read in the
+            // common case, and at most one elevation prompt across the whole install.
+            let wanted: Vec<String> = {
+                let domains = self.domains.lock().unwrap();
+                created_hosts
+                    .iter()
+                    .filter(|h| {
+                        domains.get(h).is_some_and(|d| d.enabled) && !self.web.dns_covers(h)
+                    })
+                    .cloned()
+                    .collect()
+            };
+            if !wanted.is_empty() {
+                if let Err(e) = crate::hosts::ensure(&wanted) {
+                    // Not fatal: the site exists and the web server will render it. The
+                    // name simply will not resolve until someone runs Sync hosts, so the
+                    // reason is logged rather than raised at a folder watcher.
+                    tracing::warn!(%e, "the hosts file could not be updated for the new sites");
+                }
+            }
+            if self.web.is_running() {
+                self.apply_web(&[])?;
+            }
         }
         Ok(created)
     }
@@ -1313,6 +1378,48 @@ impl Inner {
         d.enabled = enabled;
         domains.update(d)?;
         Ok(())
+    }
+
+    /// One batch, one store write. Sites that cannot change are named in the outcome
+    /// instead of failing the whole edit — see `DomainStore::bulk_set_enabled`.
+    pub fn set_domains_enabled(
+        &self,
+        hostnames: &[String],
+        enabled: bool,
+    ) -> Result<BulkOutcome, CoreError> {
+        self.domains
+            .lock()
+            .unwrap()
+            .bulk_set_enabled(hostnames, enabled)
+    }
+
+    /// Pins a group of sites to one web server, or back to the default when `server` is
+    /// `None`. One store write for the batch; the caller still runs a single `ApplyWeb`
+    /// afterwards, so a forty-site repaint re-renders the configs once, not forty times.
+    pub fn set_domain_servers(
+        &self,
+        hostnames: &[String],
+        server: Option<&str>,
+    ) -> Result<BulkOutcome, CoreError> {
+        self.domains
+            .lock()
+            .unwrap()
+            .bulk_set_server(hostnames, server)
+    }
+
+    /// Deletes a group of sites. Each one goes through [`Self::remove_domain`], so the
+    /// certificate revocation, skip-list entry and project-orphaning rules are the same
+    /// ones a single delete follows. A site that cannot go is reported and the rest are
+    /// still deleted: half a batch the user asked for beats none of it.
+    pub fn remove_domains(&self, hostnames: &[String]) -> Result<BulkOutcome, CoreError> {
+        let mut outcome = BulkOutcome::default();
+        for hostname in hostnames {
+            match self.remove_domain(hostname) {
+                Ok(()) => outcome.changed += 1,
+                Err(e) => outcome.skip(hostname, &e.to_string()),
+            }
+        }
+        Ok(outcome)
     }
 
     pub fn write_web_config(
@@ -3620,6 +3727,93 @@ mod project_skip_tests {
         let home = crate::test_support::isolated_home();
         let settings = crate::settings::SettingsService::load(&home.paths).unwrap();
         (Inner::new(settings, home.paths.clone()).unwrap(), home)
+    }
+
+    /// A site added from the Explorer right-click menu is written by another process, so
+    /// the running app has to notice the database moved under it. Without the re-read the
+    /// new site stayed invisible until a restart, which is what made the menu look broken.
+    #[test]
+    fn a_site_added_by_another_process_shows_up_without_a_restart() {
+        let (inner, home) = inner();
+        let root = home.paths.data_dir().join("www");
+        let app1 = project_dir(&root, "app1");
+        inner
+            .remember_projects_root(&root.display().to_string())
+            .unwrap();
+        inner.sync_auto_domains().unwrap();
+        let before: Vec<String> = inner
+            .domain_summaries()
+            .into_iter()
+            .map(|d| d.hostname)
+            .collect();
+        assert!(before.iter().any(|h| h.starts_with("app1")));
+
+        // Stand in for the `ols project add` the right-click menu runs: a second process
+        // writing straight to the database, with this app still holding the old rows.
+        {
+            let mut projects = ProjectStore::load(&home.paths).unwrap();
+            projects.register(&app1.display().to_string()).unwrap();
+        }
+        project_dir(&root, "app2");
+        crate::db::simulate_foreign_write(&home.paths);
+
+        assert!(inner.reload_external_changes());
+        let hosts: Vec<String> = inner
+            .domain_summaries()
+            .into_iter()
+            .map(|d| d.hostname)
+            .collect();
+        assert!(
+            hosts.iter().any(|h| h.starts_with("app2")),
+            "the outside project's site is missing: {hosts:?}"
+        );
+    }
+
+    /// The app's own writes must not read as somebody else's, or every save would throw
+    /// the in-memory stores away and re-read them.
+    #[test]
+    fn the_apps_own_writes_are_not_mistaken_for_an_outside_change() {
+        let (inner, home) = inner();
+        let root = home.paths.data_dir().join("www");
+        project_dir(&root, "app1");
+        inner
+            .remember_projects_root(&root.display().to_string())
+            .unwrap();
+        inner.sync_auto_domains().unwrap();
+        for _ in 0..3 {
+            assert!(!inner.reload_external_changes());
+        }
+    }
+
+    /// A site whose name is not in the hosts file does not resolve, so the folder the
+    /// user just dropped in is a row in the table and nothing else. The new names go into
+    /// the hosts file as they are created, which is what makes the domain actually work.
+    #[test]
+    fn a_new_automatic_domain_is_added_to_the_hosts_file() {
+        let home = crate::test_support::isolated_home();
+        let hosts = home.paths.data_dir().join("hosts");
+        std::fs::write(&hosts, "127.0.0.1 localhost\n").unwrap();
+        // SAFETY: single-threaded test setup; the variable is process-global and no other
+        // test in this binary reads it concurrently in a way that matters here.
+        unsafe { std::env::set_var("OLS_HOSTS_FILE", &hosts) };
+        let root = home.paths.data_dir().join("www");
+        project_dir(&root, "app1");
+
+        let settings = crate::settings::SettingsService::load(&home.paths).unwrap();
+        let inner = Inner::new(settings, home.paths.clone()).unwrap();
+        inner
+            .remember_projects_root(&root.display().to_string())
+            .unwrap();
+        assert_eq!(inner.sync_auto_domains().unwrap(), 1);
+
+        let written = std::fs::read_to_string(&hosts).unwrap();
+        assert!(
+            written.contains("app1.local"),
+            "the new domain never reached the hosts file: {written}"
+        );
+        // The user's own entries are never touched (§75).
+        assert!(written.contains("127.0.0.1 localhost"));
+        unsafe { std::env::remove_var("OLS_HOSTS_FILE") };
     }
 
     fn project_dir(root: &std::path::Path, name: &str) -> std::path::PathBuf {

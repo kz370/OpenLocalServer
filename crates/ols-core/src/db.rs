@@ -19,6 +19,65 @@ fn map_err(e: rusqlite::Error) -> CoreError {
     CoreError::Db(e.to_string())
 }
 
+/// Settings key holding the process id of whoever wrote `app.db` last.
+///
+/// The app caches its stores in memory and reloads them on start, but the Explorer
+/// right-click menu and the `ols` command line write the same database from a *separate*
+/// process. Without this marker the running app cannot tell its own writes from someone
+/// else's, and a site added from the right-click menu stayed invisible until a restart.
+///
+/// The writer is identified by process id rather than by file time on purpose: under WAL
+/// a commit lands in `app.db-wal` and a later checkpoint moves `app.db` again, so the
+/// timestamps of the files do not line up with the writes and comparing them reported the
+/// app's own saves as outside changes.
+const LAST_WRITER_KEY: &str = "db.last_writer";
+
+/// True when another process has written to `app.db` since this one last looked.
+///
+/// One single-row read, which is cheap enough to sit in front of every list of sites and
+/// projects. Returns true only when a write came from elsewhere; the caller is expected
+/// to re-read its stores and stop asking until the next write.
+pub fn changed_externally(paths: &AppPaths) -> bool {
+    let Ok(Some(writer)) = read_setting(paths, LAST_WRITER_KEY) else {
+        // No marker yet: nothing has ever recorded a writer, so nothing changed.
+        return false;
+    };
+    writer
+        .as_str()
+        .is_some_and(|pid| pid != std::process::id().to_string())
+}
+
+/// One settings row, or `None` when it was never written. The targeted read
+/// [`changed_externally`] needs; loading the whole table for a single key is waste.
+fn read_setting(paths: &AppPaths, key: &str) -> Result<Option<Value>, CoreError> {
+    let conn = connect(paths)?;
+    let mut stmt = conn
+        .prepare("SELECT value FROM settings WHERE key=?1")
+        .map_err(map_err)?;
+    let mut rows = stmt
+        .query_map(params![key], |row| row.get::<_, String>(0))
+        .map_err(map_err)?;
+    match rows.next() {
+        None => Ok(None),
+        Some(row) => {
+            let raw = row.map_err(map_err)?;
+            Ok(Some(serde_json::from_str(&raw).unwrap_or(Value::Null)))
+        }
+    }
+}
+
+/// Stamps the database as written by this process. Called on every commit: a single
+/// indexed upsert against a table that already exists, next to the write that caused it.
+fn note_write(paths: &AppPaths) {
+    if let Err(e) = save_setting_raw(
+        paths,
+        LAST_WRITER_KEY,
+        &Value::from(std::process::id().to_string()),
+    ) {
+        tracing::warn!(%e, "could not record which process wrote the database");
+    }
+}
+
 /// Open (creating dirs + file) and init schema. Sets WAL, FK, busy timeout.
 pub fn connect(paths: &AppPaths) -> Result<Connection, CoreError> {
     paths.ensure_dirs()?;
@@ -62,6 +121,14 @@ pub fn load_settings(
 }
 
 pub fn save_setting(paths: &AppPaths, key: &str, value: &Value) -> Result<(), CoreError> {
+    save_setting_raw(paths, key, value)?;
+    note_write(paths);
+    Ok(())
+}
+
+/// The upsert itself, without the writer stamp. Split out so [`note_write`] can record
+/// its own row without the two writing over each other.
+fn save_setting_raw(paths: &AppPaths, key: &str, value: &Value) -> Result<(), CoreError> {
     let conn = connect(paths)?;
     let raw = serde_json::to_string(value)?;
     conn.execute(
@@ -122,6 +189,7 @@ where
         .map_err(map_err)?;
     }
     tx.commit().map_err(map_err)?;
+    note_write(paths);
     Ok(())
 }
 
@@ -144,7 +212,15 @@ pub fn save_values(
         .map_err(map_err)?;
     }
     tx.commit().map_err(map_err)?;
+    note_write(paths);
     Ok(())
+}
+
+/// Stamps the database as written by a *different* process, so the outside-change path
+/// can be exercised without spawning one. `0` is never a real process id.
+#[cfg(test)]
+pub fn simulate_foreign_write(paths: &AppPaths) {
+    save_setting_raw(paths, LAST_WRITER_KEY, &Value::from("0")).unwrap();
 }
 
 #[cfg(test)]

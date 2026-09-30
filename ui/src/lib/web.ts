@@ -6,6 +6,7 @@ import {
   type CaInfo,
   type CatalogEntry,
   type CertInfo,
+  type CoreCommand,
   type DomainSummary,
   type Project,
   type WebConfig,
@@ -13,6 +14,12 @@ import {
   runCommand,
 } from '@/core'
 import { useAction, usePoll } from '@/lib/hooks'
+
+/** What a bulk site edit did: how many sites changed, and one line per site it refused. */
+export interface BulkOutcome {
+  changed: number
+  skipped: string[]
+}
 
 /**
  * The web server's state and the "apply" step every site change ends with. Shared by the
@@ -154,6 +161,68 @@ export function useWeb() {
     }
   }
 
+  /**
+   * The three bulk site edits. Each one is a single backend call and a single apply: a
+   * forty-site repaint re-renders every config once, not once per site. Rows leave the
+   * list (or flip their dot) at once and the slow half runs behind them, exactly like
+   * `deleteSite`, so a batch never looks like a click that did nothing.
+   *
+   * A batch is partial by design — the backend reports the sites it refused, and that
+   * list is returned to the caller so the page can say which rows were left alone.
+   */
+  async function runBulk(
+    keys: readonly string[],
+    command: CoreCommand,
+    optimistic: (list: DomainSummary[]) => DomainSummary[],
+  ): Promise<BulkOutcome> {
+    if (keys.length === 0) return { changed: 0, skipped: [] }
+    keys.forEach((key) => markRemoving(key))
+    setDomains(optimistic)
+    try {
+      const res = await runCommand(command)
+      const outcome: BulkOutcome = res.type === 'bulk' ? { changed: res.changed, skipped: res.skipped } : { changed: 0, skipped: [] }
+      // The store is the truth after a partial batch: re-read it so a refused site is on
+      // screen again rather than left showing a change that never happened.
+      await refresh().catch(() => undefined)
+      await refreshProjects().catch(() => undefined)
+      await applyTracked()
+      return outcome
+    } catch (e) {
+      await refresh().catch(() => undefined)
+      await refreshProjects().catch(() => undefined)
+      throw e
+    } finally {
+      keys.forEach((key) => markRemoving(key, false))
+    }
+  }
+
+  function setDomainsEnabled(hostnames: readonly string[], enabled: boolean): Promise<BulkOutcome> {
+    return runBulk(hostnames, { type: 'bulk_set_domains_enabled', hostnames: [...hostnames], enabled }, (list) =>
+      list.map((d) => (hostnames.includes(d.hostname) ? { ...d, enabled } : d)),
+    )
+  }
+
+  function setDomainsServer(hostnames: readonly string[], server: string | null): Promise<BulkOutcome> {
+    return runBulk(
+      hostnames,
+      { type: 'bulk_set_domain_server', hostnames: [...hostnames], server },
+      // A summary always names the server that renders the site, never "no server": a
+      // cleared pin (`server: null` in the command) means the default server from here on.
+      // Its port is not knowable before the reload that follows, so `http_port` keeps its
+      // old value for the frame or two until `refresh` puts the real one back.
+      (list) => {
+        const resolved = server ?? cfg?.default_server ?? ''
+        return list.map((d) => (hostnames.includes(d.hostname) ? { ...d, server: resolved } : d))
+      },
+    )
+  }
+
+  function deleteSites(hostnames: readonly string[]): Promise<BulkOutcome> {
+    return runBulk(hostnames, { type: 'bulk_remove_domains', hostnames: [...hostnames] }, (list) =>
+      list.filter((d) => !hostnames.includes(d.hostname)),
+    )
+  }
+
   const installedPhp = [...new Set([...catalog.filter((c) => c.id === 'php' && c.installed).map((c) => c.version), ...customPhp])]
   /** Hostnames whose generated config was edited by hand, across every server. */
   const driftedHosts = reports.flatMap((r) => r.drifted)
@@ -175,7 +244,10 @@ export function useWeb() {
     removing,
     applying,
     deleteSite,
+    deleteSites,
     removeProjectFromList,
+    setDomainsEnabled,
+    setDomainsServer,
     refresh: () => refresh(),
     /** Re-reads the stored config, so a settings save clears the drafts that produced it. */
     refreshConfig: () => refresh(true),

@@ -75,6 +75,7 @@ pub fn is_destructive(cmd: &CoreCommand) -> bool {
         CoreCommand::ApplyWeb { overwrite } => !overwrite.is_empty(),
         CoreCommand::RestoreDatabase { .. }
         | CoreCommand::RemoveDomain { .. }
+        | CoreCommand::BulkRemoveDomains { .. }
         | CoreCommand::RestoreSnapshot { .. }
         | CoreCommand::RevokeCertificate { .. } => true,
         _ => false,
