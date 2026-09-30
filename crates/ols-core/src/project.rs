@@ -32,7 +32,16 @@ pub struct ProjectDetail {
 
 /// Strips Windows' `\\?\` extended-length path prefix, if present. A no-op on any other
 /// shape of path (including non-Windows paths, which never have this prefix).
+///
+/// A share is the case that matters. For a network folder `canonicalize()` answers
+/// `\\?\UNC\server\share\path`, and that is *not* `\\server\share\path` with a prefix
+/// on it — dropping the prefix alone leaves `UNC\server\share\path`, which names
+/// nothing. So the UNC form is rewritten rather than stripped, and a project on a
+/// share is stored and displayed as a path that can be opened again.
 fn strip_verbatim_prefix(path: &str) -> String {
+    if let Some(unc) = path.strip_prefix(r"\\?\UNC\") {
+        return format!(r"\\{unc}");
+    }
     path.strip_prefix(r"\\?\").unwrap_or(path).to_string()
 }
 
@@ -220,6 +229,21 @@ mod tests {
             project.name
         );
         assert_eq!(project.name, "shop");
+    }
+
+    /// A share is the case the plain prefix-strip gets wrong: `\\?\UNC\server\share`
+    /// minus the prefix is `UNC\server\share`, which is not a path. The stored path has
+    /// to be openable, because it is what the Explorer menu, the site folder and the
+    /// `ols` command all hand back to the filesystem.
+    #[test]
+    fn a_verbatim_unc_path_keeps_its_leading_separators() {
+        assert_eq!(
+            strip_verbatim_prefix(r"\\?\UNC\server\share\project"),
+            r"\\server\share\project"
+        );
+        assert_eq!(strip_verbatim_prefix(r"\\?\C:\shop"), r"C:\shop");
+        assert_eq!(strip_verbatim_prefix(r"C:\shop"), r"C:\shop");
+        assert_eq!(strip_verbatim_prefix(r"\\server\share"), r"\\server\share");
     }
 
     #[test]

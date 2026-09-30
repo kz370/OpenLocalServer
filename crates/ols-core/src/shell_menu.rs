@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use std::path::Path;
+
 use crate::app::Inner;
 use crate::error::CoreError;
 
@@ -60,6 +62,28 @@ fn find_cli() -> Option<std::path::PathBuf> {
             .map(|d| d.join(name))
             .find(|f| f.is_file() && is_me(f))
     })
+}
+
+/// The icon the menu entries show.
+///
+/// The app's own `icon.ico`, which the installer puts in the same folder as the CLI.
+/// The entries run the CLI, and the CLI carries no icon resource of its own -- a Rust
+/// binary is a console program as far as Explorer is concerned -- so pointing `Icon`
+/// at it drew the generic console picture next to both entries, which is how the menu
+/// ended up with a broken-looking icon next to a name that is not a program anyone
+/// recognises. The .ico is what the app itself is drawn from, and it is beside the CLI
+/// because that is the only folder both are guaranteed to share.
+fn menu_icon(cli: &Path) -> String {
+    let dir = cli.parent().unwrap_or(cli);
+    let ico = dir.join("icon.ico");
+    if ico.is_file() {
+        ico.display().to_string()
+    } else {
+        // No .ico beside the CLI: the app's own image is the next best thing, and on
+        // a dev build (where the CLI is not installed next to anything) it is the only
+        // one there is.
+        cli.display().to_string()
+    }
 }
 
 /// The command each entry runs; `%V` is the folder Explorer passes.
@@ -164,12 +188,13 @@ impl Inner {
             )
         })?;
         let cli = cli.display().to_string();
+        let icon = menu_icon(Path::new(&cli));
         let result = (|| -> Result<(), String> {
             for root in ROOTS {
                 for (key, label, command) in commands(&cli) {
                     let base = format!("{root}\\{key}");
                     reg(&["add", &base, "/ve", "/d", label, "/f"])?;
-                    reg(&["add", &base, "/v", "Icon", "/d", &cli, "/f"])?;
+                    reg(&["add", &base, "/v", "Icon", "/d", &icon, "/f"])?;
                     reg(&[
                         "add",
                         &format!("{base}\\command"),
@@ -236,6 +261,19 @@ mod tests {
         );
         assert!(c[1].2.contains("setup --path \"%V\""));
         assert!(c.iter().all(|(k, _, _)| k.starts_with("OpenLocalServer.")));
+    }
+
+    /// The entries run the CLI, so the icon cannot come from it.
+    #[test]
+    fn the_menu_icon_is_the_apps_ico_not_the_console_exe() {
+        let home = crate::test_support::isolated_home();
+        let dir = home.paths.root().join("install");
+        std::fs::create_dir_all(&dir).unwrap();
+        let cli = dir.join(CLI);
+        // No .ico yet: the CLI is the fallback, which is what a dev build has.
+        assert_eq!(menu_icon(&cli), cli.display().to_string());
+        std::fs::write(dir.join("icon.ico"), b"x").unwrap();
+        assert_eq!(menu_icon(&cli), dir.join("icon.ico").display().to_string());
     }
 
     /// The lookup that caused it. Two independent mistakes, so two checks: the name

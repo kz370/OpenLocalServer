@@ -464,9 +464,20 @@ impl Ctx {
 
     /// The project for a folder, registering it when it isn't one yet.
     fn project_for_path(&self, path: &Path) -> R<(String, String)> {
+        let path = &explorer_path(path);
         let full = std::fs::canonicalize(path).map_err(|e| format!("{}: {e}", path.display()))?;
         let full = full.display().to_string();
-        let full = full.strip_prefix(r"\\?\").unwrap_or(&full).to_string();
+        // canonicalize answers with the \\?\ spelling, which the filesystem accepts but
+        // a person should never have to read: it is what the project row, the site
+        // folder and the error messages all show. A share comes back as
+        // `\\?\UNC\server\share`, and that one cannot simply lose its prefix -- what is
+        // left, `UNC\server\share`, is not a path -- so it is rewritten. Both forms are
+        // handled here rather than in the core because this string is also what the
+        // stored projects are compared against.
+        let full = match full.strip_prefix(r"\\?\UNC\") {
+            Some(unc) => format!(r"\\{unc}"),
+            None => full.strip_prefix(r"\\?\").unwrap_or(&full).to_string(),
+        };
         let CoreResponse::Projects { projects } = self.call(CoreCommand::ListProjects)? else {
             return Err("unexpected reply".into());
         };
@@ -481,6 +492,29 @@ impl Ctx {
             _ => Err("unexpected reply".into()),
         }
     }
+}
+
+/// A path as Explorer spells it.
+///
+/// For a folder on a network share, Explorer substitutes `%V` with
+/// `UNC\server\share\path` rather than `\\server\share\path` -- the same folder, in a
+/// spelling that is not a path to anything, so the Explorer right-click menu
+/// ("Add to OLS", "Set up with OLS") refused every shared folder with "that path is not
+/// a directory on disk" while the folder was sitting right there. The rewrite is here,
+/// at the one place the CLI takes a path from whatever called it, rather than in the
+/// core: the core is given paths by the app, which has no `%V` to expand, and a
+/// general "accept this odd spelling" rule there would be a rule with no caller.
+fn explorer_path(path: &Path) -> PathBuf {
+    let s = path.as_os_str().to_string_lossy();
+    if s.starts_with(r"\\?\") {
+        return path.to_path_buf();
+    }
+    for prefix in [r"UNC\", "UNC/"] {
+        if let Some(rest) = s.strip_prefix(prefix) {
+            return PathBuf::from(format!(r"\\{rest}"));
+        }
+    }
+    path.to_path_buf()
 }
 
 fn confirm(question: &str) -> bool {
@@ -591,7 +625,13 @@ fn daemon(paths: &AppPaths, stop: bool) -> ExitCode {
     i.web.stop();
     for s in core.services().list() {
         if s.running {
-            core.services().stop(&s.id);
+            // Not `let _ =`. A stop that did not take leaves the process running with
+            // nothing owning it, and the daemon is shutting down, so the log is the
+            // only place that fact can still be reported. Same rule as the desktop
+            // app's own shutdown.
+            if let Err(e) = core.services().stop(&s.id) {
+                tracing::warn!(service = %s.id, %e, "service was still running when the daemon stopped");
+            }
         }
     }
     control::close(paths);
@@ -2243,3 +2283,40 @@ fn ai_run(ctx: &Ctx, request: ols_core::ai::AiRequest, run: AiRun) -> R<()> {
     Ok(())
 }
 // @@cli-fns
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Explorer passes a shared folder as `UNC\server\share\path`, which is why the
+    /// right-click menu refused every folder on a network drive.
+    #[test]
+    fn a_unc_path_from_explorer_is_rewritten_to_a_real_one() {
+        assert_eq!(
+            explorer_path(Path::new(r"UNC\Kz370s\g\Downloads")),
+            PathBuf::from(r"\\Kz370s\g\Downloads")
+        );
+        assert_eq!(
+            explorer_path(Path::new("UNC/Kz370s/g/Downloads")),
+            PathBuf::from(r"\\Kz370s\g\Downloads")
+        );
+    }
+
+    #[test]
+    fn ordinary_paths_are_left_alone() {
+        for p in [
+            r"C:\Users\you\Sites\shop",
+            r"\\server\share\folder",
+            r"\\?\C:\very\long\path",
+            r"relative\folder",
+            r"\\?\UNC\server\share\folder",
+        ] {
+            assert_eq!(explorer_path(Path::new(p)), PathBuf::from(p), "{p}");
+        }
+        // A local folder whose name merely starts with the letters is not a share.
+        assert_eq!(
+            explorer_path(Path::new(r"C:\UNC\folder")),
+            PathBuf::from(r"C:\UNC\folder")
+        );
+    }
+}
