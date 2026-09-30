@@ -126,14 +126,13 @@ export function ApiCard() {
           <span>
             One endpoint: <code className="font-mono text-xs">POST {status.url}/v1/command</code>, same JSON the CLI and this app use.
           </span>
-          <a
-            href={DOCS_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 text-primary hover:underline"
+          <Button
+            variant="link"
+            className="h-auto gap-1 p-0 text-[13px] font-normal"
+            onClick={() => runCommand({ type: 'open_url', url: DOCS_URL }).catch(setError)}
           >
             <BookOpen aria-hidden="true" className="size-3.5" /> Read the docs
-          </a>
+          </Button>
         </div>
       </CardContent>
     </Card>
