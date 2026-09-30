@@ -711,7 +711,6 @@ var
 begin
   Shipped := '|' + Lowercase(AppExe) + '|' + Lowercase(DaemonExe) + '|' +
              Lowercase(HelperExe) + '|' + Lowercase(LimiterExe) + '|' +
-             Lowercase(CliShim) + '|' +
              'icon.ico|unins000.exe|unins000.dat|';
   if FindFirst(ExpandConstant('{app}\*'), Found) then
   begin
