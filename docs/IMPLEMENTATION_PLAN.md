@@ -71,7 +71,7 @@ have not been run, and the new screens have not all been checked in the running 
   20 Linux (2.0).
 
 ### Deviations from the plan
-- Product name *OLS*; crates `ols-core`, `ols-helper` and `ols-cli` (binary `ols`); no separate
+- Product name *OLS*; crates `ols-core`, `ols-helper` and `ols-cli` (binary `ols-cli`, with an `ols.cmd` shim so `ols` still works); no separate
   `platform` or `catalog` crates yet. Project manifests live in `.openlocalserver/`.
 - The CLI talks to the app over a named pipe with a per-session token in `control.json`; when the app is closed,
   the CLI starts `ols daemon`, which hands over to the app when the app starts.

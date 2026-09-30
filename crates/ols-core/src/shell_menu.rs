@@ -23,19 +23,42 @@ pub struct ShellMenuStatus {
     pub supported: bool,
 }
 
-/// Where `ols.exe` is: beside the app, or on PATH.
+/// The CLI's file name. Not `ols.exe`: the app ships as `OLS.exe`, Windows does not
+/// tell two names apart by case, and a lookup by that name finds the app.
+const CLI: &str = if cfg!(windows) {
+    "ols-cli.exe"
+} else {
+    "ols-cli"
+};
+
+/// Where the CLI is: beside the app, or on PATH.
+///
+/// The running executable is never the answer, whatever it is called. The app and
+/// the CLI are different programs that ship into the same folder, and Windows file
+/// names differ only in case, so a lookup that accepted "the file next to me named
+/// `ols.exe`" found the *app* and wrote it into the menu: "Add to OLS" then launched
+/// OLS instead of registering the folder, with no error anywhere. The comparison is
+/// on canonical paths so a differently-spelled path to the same file is still caught.
 fn find_cli() -> Option<std::path::PathBuf> {
-    let name = if cfg!(windows) { "ols.exe" } else { "ols" };
+    let name = CLI;
+    let me = std::env::current_exe()
+        .ok()
+        .and_then(|p| std::fs::canonicalize(p).ok());
+    let is_me = |p: &std::path::Path| match std::fs::canonicalize(p) {
+        Ok(c) => me.as_deref() != Some(c.as_path()),
+        // Cannot resolve it, so it cannot be shown to be the running exe either.
+        Err(_) => true,
+    };
     if let Ok(exe) = std::env::current_exe() {
         let beside = exe.with_file_name(name);
-        if beside.is_file() {
+        if beside.is_file() && is_me(&beside) {
             return Some(beside);
         }
     }
     std::env::var_os("PATH").and_then(|p| {
         std::env::split_paths(&p)
             .map(|d| d.join(name))
-            .find(|f| f.is_file())
+            .find(|f| f.is_file() && is_me(f))
     })
 }
 
@@ -49,6 +72,51 @@ fn commands(cli: &str) -> [(&'static str, &'static str, String); 2] {
             format!("cmd.exe /k \"\"{cli}\" setup --path \"%V\"\""),
         ),
     ]
+}
+
+/// The program out of a stored command line, i.e. `C:\OLS\ols-cli.exe` out of
+/// `"C:\OLS\ols-cli.exe" project add "%V"`. An unquoted program is the run up to
+/// the first space, which is what the shell itself does.
+#[cfg(any(windows, test))]
+fn command_program(command: &str) -> Option<&str> {
+    let t = command.trim();
+    match t.strip_prefix('"') {
+        Some(rest) => rest.split('"').next(),
+        None => t.split(' ').next().filter(|p| !p.is_empty()),
+    }
+}
+
+/// Whether a stored command line still runs the CLI.
+///
+/// Keys alone are not enough. An entry written before the rename, or by any build
+/// whose lookup found the app, launches OLS instead of the CLI, and the keys read as
+/// installed — so the card shows "installed" and offers only Remove, and the menu
+/// stays broken with nothing to click. The name is what distinguishes them, and it
+/// is compared without case because Windows does.
+#[cfg(any(windows, test))]
+fn command_runs_the_cli(command: &str) -> bool {
+    let Some(program) = command_program(command) else {
+        return false;
+    };
+    std::path::Path::new(program)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n.eq_ignore_ascii_case(CLI))
+}
+
+/// The `(Default)` value out of `reg query ... /ve` output.
+///
+/// Only the first line is read. reg.exe wraps a long `REG_SZ` across lines, but what
+/// is compared is the program at the front of the value and the wrap lands on a word
+/// boundary, so the leading `"C:\...\ols-cli.exe"` is always in the first line — and
+/// guessing at the rest of a wrapped line is a worse way to answer this question than
+/// not answering it.
+#[cfg(any(windows, test))]
+fn reg_value(out: &str) -> Option<String> {
+    out.lines()
+        .find(|l| l.contains("(Default)") && l.contains("REG_SZ"))
+        .and_then(|l| l.split_once("REG_SZ"))
+        .map(|(_, v)| v.trim().to_string())
 }
 
 #[cfg(windows)]
@@ -67,9 +135,19 @@ fn reg(args: &[&str]) -> Result<String, String> {
 #[cfg(windows)]
 impl Inner {
     pub fn shell_menu_status(&self) -> ShellMenuStatus {
-        let installed = ROOTS
+        let keys = ROOTS
             .iter()
             .all(|r| reg(&["query", &format!("{r}\\{ADD}")]).is_ok());
+        // A menu whose entry runs something other than the CLI is not installed for
+        // any purpose the user cares about, so the card says so and offers Add again.
+        let installed = keys
+            && ROOTS.iter().all(|r| {
+                reg(&["query", &format!("{r}\\{ADD}\\command"), "/ve"])
+                    .ok()
+                    .as_deref()
+                    .and_then(reg_value)
+                    .is_some_and(|v| command_runs_the_cli(&v))
+            });
         ShellMenuStatus {
             installed,
             cli_path: find_cli().map(|p| p.display().to_string()),
@@ -82,7 +160,7 @@ impl Inner {
             CoreError::failed_fix(
                 "The Explorer menu wasn't added.",
                 "The `ols` command line program wasn't found next to the app or on PATH.",
-                "Reinstall OLS, or add the folder holding ols.exe to PATH.",
+                "Reinstall OLS, or add the folder holding ols-cli.exe to PATH.",
             )
         })?;
         let cli = cli.display().to_string();
@@ -151,9 +229,68 @@ mod tests {
 
     #[test]
     fn entries_run_only_the_cli_with_the_chosen_folder() {
-        let c = commands(r"C:\Program Files\OLS\ols.exe");
-        assert_eq!(c[0].2, r#""C:\Program Files\OLS\ols.exe" project add "%V""#);
+        let c = commands(r"C:\Program Files\OLS\ols-cli.exe");
+        assert_eq!(
+            c[0].2,
+            r#""C:\Program Files\OLS\ols-cli.exe" project add "%V""#
+        );
         assert!(c[1].2.contains("setup --path \"%V\""));
         assert!(c.iter().all(|(k, _, _)| k.starts_with("OpenLocalServer.")));
+    }
+
+    /// The lookup that caused it. Two independent mistakes, so two checks: the name
+    /// must not be one Windows can confuse with the app's, and the lookup must not
+    /// return the running executable even if something *is* sitting there under it.
+    #[test]
+    fn the_cli_name_cannot_be_the_app_image() {
+        let cli = CLI.to_ascii_lowercase();
+        assert_ne!(cli, "ols.exe", "the CLI cannot be named like the app");
+        assert_ne!(cli, "openlocalserver.exe");
+    }
+
+    #[test]
+    fn find_cli_never_returns_the_running_executable() {
+        let me = std::env::current_exe().expect("test binary path");
+        if let Some(found) = find_cli() {
+            let a = std::fs::canonicalize(&found).unwrap_or_else(|_| found.clone());
+            let b = std::fs::canonicalize(&me).unwrap_or_else(|_| me.clone());
+            assert_ne!(a, b, "find_cli returned the running executable");
+        }
+    }
+
+    /// The card showed "installed" over a menu that ran the app, because the status
+    /// asked the registry whether the keys existed and never what they pointed at.
+    /// The two lines below are exactly what a broken install holds.
+    #[test]
+    fn a_menu_pointing_at_the_app_is_not_reported_as_installed() {
+        assert!(!command_runs_the_cli(
+            r#""I:\OLS\ols.exe" project add "%V""#
+        ));
+        assert!(!command_runs_the_cli(
+            r#""C:\Program Files\OLS\Open Local Server.exe" project add "%V""#
+        ));
+        assert!(command_runs_the_cli(
+            r#""I:\OLS\ols-cli.exe" project add "%V""#
+        ));
+        // Case is the whole point: Windows does not distinguish the two names.
+        assert!(command_runs_the_cli(
+            r#""I:\OLS\OLS-CLI.EXE" project add "%V""#
+        ));
+        // The second entry runs cmd.exe, which is correct and must not be read as a
+        // broken CLI; the first entry is the one that decides.
+        assert!(!command_runs_the_cli(
+            r#"cmd.exe /k ""C:\OLS\ols-cli.exe" setup --path "%V"""#
+        ));
+        assert!(!command_runs_the_cli(""));
+    }
+
+    #[test]
+    fn the_registry_value_is_read_out_of_reg_query_output() {
+        let out = "\r\nHKEY_CURRENT_USER\\Software\\Classes\\Directory\\shell\\OpenLocalServer.Add\\command\r\n    (Default)    REG_SZ    \"I:\\OLS\\ols-cli.exe\" project add \"%V\"\r\n\r\n";
+        let v = reg_value(out).expect("value");
+        assert_eq!(v, r#""I:\OLS\ols-cli.exe" project add "%V""#);
+        assert!(command_runs_the_cli(&v));
+        // A key with no (Default) line is not a command.
+        assert!(reg_value("HKEY_CURRENT_USER\\x\n    (Default)    REG_DWORD    0x1\n").is_none());
     }
 }

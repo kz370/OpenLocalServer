@@ -14,10 +14,17 @@ set "APPNAME=OLS"
 set "LEGACY_EXE=Open Local Server"
 set "CARGO_BIN=openlocalserver"
 set "HELPER_BIN=ols-helper"
+rem The command line. It ships with the app: the Explorer right-click menu is
+rem written to run it, and shell_menu.rs find_cli only looks beside the app or on
+rem PATH -- so an install without it has no working menu at all. ols.cmd, shipped
+rem beside it, is what keeps the documented `ols <command>` resolving to the CLI
+rem instead of to OLS.exe.
+set "CLI_BIN=ols-cli"
 set "UI=%ROOT%ui"
 set "TARGET=%ROOT%target\release"
 set "EXE=%TARGET%\%CARGO_BIN%.exe"
 set "HELPER_EXE=%TARGET%\%HELPER_BIN%.exe"
+set "CLI_EXE=%TARGET%\%CLI_BIN%.exe"
 set "DISTROOT=%ROOT%release"
 rem The CPU limiter for Settings > Resources (§129). Vendored, not built: see
 rem vendor\cpulimit\README.md for provenance. It is hash-checked on every build
@@ -39,6 +46,7 @@ rem capture a literal %DIST%.
 set "DIST=%DISTROOT%\%VERSION%"
 set "STAGED=%DIST%\%APPNAME%.exe"
 set "STAGED_HELPER=%DIST%\%HELPER_BIN%.exe"
+set "STAGED_CLI=%DIST%\%CLI_BIN%.exe"
 set "STAGED_CPULIMIT=%DIST%\cpulimit.exe"
 
 
@@ -149,7 +157,7 @@ rem Update trust baked into every build: the PUBLIC key is safe to ship.
 rem A pre-set OLS_UPDATE_PUBKEY in the environment always wins.
 if not defined OLS_UPDATE_PUBKEY set "OLS_UPDATE_PUBKEY=RWQTa5rn3AFu8SRjdSvz7VsUi/pRNNdk2FPuCbmgSZMV+veJMB9XCiys"
 pushd "%ROOT%"
-cargo build -p %CARGO_BIN% -p %HELPER_BIN% --release --jobs %JOBS%
+cargo build -p %CARGO_BIN% -p %HELPER_BIN% -p %CLI_BIN% --release --jobs %JOBS%
 set "BUILD_ERR=%ERRORLEVEL%"
 popd
 if not "%BUILD_ERR%"=="0" (
@@ -167,11 +175,18 @@ if not exist "%HELPER_EXE%" (
   echo     Fix: run cargo build -p %HELPER_BIN% --release manually to see why.
   goto :fail
 )
+if not exist "%CLI_EXE%" (
+  echo [x] Problem: %CLI_BIN%.exe missing from target\release after build. The
+  echo           installer ships it and the Explorer right-click menu runs it.
+  echo     Fix: run cargo build -p %CLI_BIN% --release manually to see why.
+  goto :fail
+)
 
 if not exist "%DIST%" mkdir "%DIST%"
 rem Copy with retries: antivirus or a just-exited app can hold the file briefly.
 call :copy_retry "%EXE%" "%STAGED%" || goto :fail
 call :copy_retry "%HELPER_EXE%" "%STAGED_HELPER%" || goto :fail
+call :copy_retry "%CLI_EXE%" "%STAGED_CLI%" || goto :fail
 call :stage_cpulimit || goto :fail
 for %%d in ("%TARGET%\*.dll") do if exist "%%~d" (
   call :copy_retry "%%~d" "%DIST%\%%~nxd" || goto :fail
@@ -211,7 +226,7 @@ if not exist "%STAGED_HELPER%" (
   echo [x] Missing "%STAGED_HELPER%"
   set "VERIFY_FAIL=1"
 )
-if not exist "%STAGED_CPULIMIT%" (
+if not exist "%STAGED_CLI%" (
   echo [x] Missing "%STAGED_CPULIMIT%" - Settings > Resources cannot cap CPU without it.
   set "VERIFY_FAIL=1"
 )
@@ -231,11 +246,11 @@ if defined ISCC (
 if defined VERIFY_FAIL goto :fail
 echo.
 echo       Artifacts:
-for %%f in ("%STAGED%" "%STAGED_HELPER%" "%STAGED_CPULIMIT%") do echo       %%~nxf - %%~zf bytes
+for %%f in ("%STAGED%" "%STAGED_HELPER%" "%STAGED_CLI%" "%STAGED_CPULIMIT%") do echo       %%~nxf - %%~zf bytes
 if exist "%SETUP%" for %%f in ("%SETUP%") do echo       %%~nxf - %%~zf bytes
 echo.
 echo       SHA-256:
-for %%f in ("%STAGED%" "%STAGED_HELPER%" "%STAGED_CPULIMIT%") do call :show_hash "%%~f"
+for %%f in ("%STAGED%" "%STAGED_HELPER%" "%STAGED_CLI%" "%STAGED_CPULIMIT%") do call :show_hash "%%~f"
 if exist "%SETUP%" call :show_hash "%SETUP%"
 echo.
 echo === Done: %APPNAME% %VERSION% ===
@@ -254,7 +269,7 @@ rem which is the whole reason a release can look "older than the source":
 rem nothing here recompiles. Print what is being staged so a stale build is
 rem visible before it ships.
 echo       staged from:
-for %%f in ("%EXE%" "%HELPER_EXE%") do echo         %%~nxf  %%~t  %%~zf bytes
+for %%f in ("%EXE%" "%HELPER_EXE%" "%CLI_EXE%") do echo         %%~nxf  %%~t  %%~zf bytes
 echo       (run "full" to rebuild these from the current source)
 call :app_running
 if not errorlevel 1 (
@@ -272,9 +287,15 @@ if not exist "%HELPER_EXE%" (
   echo     Fix: run scripts\build-installer.bat full first to build it.
   goto :fail
 )
+if not exist "%CLI_EXE%" (
+  echo [x] Problem: %CLI_BIN%.exe missing from target\release.
+  echo     Fix: run scripts\build-installer.bat full first to build it.
+  goto :fail
+)
 if not exist "%DIST%" mkdir "%DIST%"
 call :copy_retry "%EXE%" "%STAGED%" || goto :fail
 call :copy_retry "%HELPER_EXE%" "%STAGED_HELPER%" || goto :fail
+call :copy_retry "%CLI_EXE%" "%STAGED_CLI%" || goto :fail
 call :stage_cpulimit || goto :fail
 for %%d in ("%TARGET%\*.dll") do if exist "%%~d" (
   call :copy_retry "%%~d" "%DIST%\%%~nxd" || goto :fail

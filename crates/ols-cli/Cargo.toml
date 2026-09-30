@@ -5,8 +5,14 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+# Named `ols-cli`, not `ols`, because the app itself ships as `OLS.exe` and Windows
+# file names differ only in case: a binary called `ols.exe` beside it *is* the app.
+# Anything that looks up "the CLI next to me" would then find the app and hand it the
+# CLI's work — which is what the Explorer right-click menu did, and why "Add to OLS"
+# opened OLS instead of registering the folder. `installer/ols.cmd` keeps the
+# documented `ols <command>` working on PATH.
 [[bin]]
-name = "ols"
+name = "ols-cli"
 path = "src/main.rs"
 
 [dependencies]

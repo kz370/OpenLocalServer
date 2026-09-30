@@ -39,7 +39,7 @@ Key patterns:
 | Web | ols-core: web/*, domain, ca, certs, hosts, dns, health, tunnel, inspector | Domains, TLS, servers, exposure |
 | Data | ols-core: dbbackup, sqlite, migrate | Databases, files, migration |
 | Project | ols-core: project, project_tools, manifest, profiles, setup, snapshots, envfile, command_catalog, git, shortcuts, editors, terminal, shell_menu, procfile, loadtest, xdebug, quickapp/* | Projects, envs, automation |
-| CLI | ols-cli | `ols` command, daemon mode |
+| CLI | ols-cli | `ols` on PATH (`ols-cli.exe` beside the app), daemon mode |
 | Helper | ols-helper | Elevated hosts/NRPT/service pipe |
 | Shell | src-tauri | Tauri window, tray, single IPC `run_command`, events |
 | UI | ui/src | React pages, components, `core.ts` IPC wrapper |
