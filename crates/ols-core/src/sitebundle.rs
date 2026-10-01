@@ -959,19 +959,22 @@ fn import_site(
         .map(|d| d.hostname)
         .collect();
     if options.config && on_conflict == OnConflict::Update && !existing.is_empty() {
-        update_existing(inner, h, content, cipher, src, &existing, options)
+        update_existing(inner, h, &manifest, src, site, content, cipher, &existing, options)
     } else {
         create_new(inner, h, src, site, content, cipher, name, options)
     }
 }
 
 /// Update mode: a snapshot of what is there now, then the bundle's version on top.
+#[allow(clippy::too_many_arguments)]
 fn update_existing(
     inner: &Inner,
     h: &TaskHandle,
+    manifest: &BundleManifest,
+    src: &Path,
+    site: &BundleSite,
     content: SnapshotContent,
     cipher: Option<&BundleCipher>,
-    src: &Path,
     existing: &[String],
     options: &crate::snapshots::RestoreOptions,
 ) -> Result<BundleSiteResult, CoreError> {
@@ -1007,6 +1010,16 @@ fn update_existing(
 
     let mut changes = vec![format!("snapshot {} taken first", safety.id)];
     let mut problems = Vec::new();
+    // Project files, onto the existing folder: an update that only rewrote settings left the
+    // site's code behind at whatever the previous copy was, which reads as "the import did
+    // nothing" for a WordPress site whose whole content is files.
+    let root = PathBuf::from(&project.path);
+    if options.files && site.file_count > 0 {
+        match inner.extract_files(src, &root, &format!("{}/files", site.dir), Some(h)) {
+            Ok(n) => changes.push(format!("{n} project file(s) unpacked")),
+            Err(e) => problems.push(format!("project files: {e}")),
+        }
+    }
     if options.config {
         inner.apply_config(
             &content,

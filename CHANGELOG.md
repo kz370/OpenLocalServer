@@ -5,6 +5,31 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.0.1] — 2026-10-01
+
+Patch release. Full notes: [`release-notes/v2.0.1.md`](./release-notes/v2.0.1.md). No new commands, settings or
+data models — this is the bundle import of 2.0.0 made trustworthy on a real site.
+
+### Fixed
+- Importing a bundle under the name a site already has no longer creates a second site: rewriting the project slug
+  inside its own hostname came out unchanged and fell through to the branch meant for a hostname carrying no
+  project name, so `worpress-test` also arrived as `worpress-test.worpress-test`.
+- A database the import is about to load into is kept as `<name>_bkp` (`_bkp-2`, `_bkp-3` if those are taken)
+  instead of being merged into, and the rename is reported in the site's own report. `ALTER DATABASE ... RENAME TO`
+  on PostgreSQL; on MariaDB, which has no `RENAME DATABASE`, a dump-and-copy.
+- A WordPress site's database is found from `wp-config.php` (`DB_NAME`, and `DB_HOST`'s port for the engine), so a
+  bundle of a WordPress project carries data instead of configuration only.
+- Database names may contain `-` and `.`, which is what the WordPress catalog produces from a project slug; quote
+  characters, backslashes and spaces are still refused.
+- Import and export progress counts what is actually being copied — zip entries while writing, files and dumps
+  while reading, plus bytes — so the bar moves instead of sitting still and jumping.
+- Database service cards no longer wrap their status pill and push the connection URI past the card edge.
+
+### Changed
+- Background tasks have their own page under Monitor; Processes is services and processes only.
+- A site can state what a backup of it copies, and a plan that would back up nothing is refused.
+- An external DB explorer is recognised for every engine it was registered for.
+
 ## [2.0.0] — 2026-10-01
 
 Feature release. Full notes: [`release-notes/v2.0.0.md`](./release-notes/v2.0.0.md).

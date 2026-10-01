@@ -3288,7 +3288,7 @@ dependencies = [
 
 [[package]]
 name = "ols-cli"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "clap",
  "ols-core",
@@ -3298,7 +3298,7 @@ dependencies = [
 
 [[package]]
 name = "ols-core"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "argon2",
  "base64 0.23.1",
@@ -3343,7 +3343,7 @@ dependencies = [
 
 [[package]]
 name = "ols-helper"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "ols-core",
  "serde_json",
@@ -3372,7 +3372,7 @@ checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 
 [[package]]
 name = "openlocalserver"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "ols-core",
  "serde",
