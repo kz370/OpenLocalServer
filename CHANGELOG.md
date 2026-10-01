@@ -5,6 +5,40 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.0.0] — 2026-10-01
+
+Feature release. Full notes: [`release-notes/v2.0.0.md`](./release-notes/v2.0.0.md).
+
+### Added
+- Site bundles: export one or many sites to a single `*.olsbundle.zip` and import it back, with independent
+  switches for settings, `.env` files, databases and project files, and an optional password that seals the
+  `.env` files and the database dumps. Sites sharing a project travel as one entry. An import previews which
+  hostnames clash before anything is created, and `update` takes a "Before import" snapshot first, so it is
+  reversible; `rename` adjusts hostname, database and port through the same machinery a clone uses.
+- Background tasks: `export_sites` and `import_sites` answer with a task id instead of blocking. The Processes
+  page gains a Background tasks tab with per-step progress, cancel, and a per-item report. New `task-event`
+  broadcast; new commands `list_tasks`, `cancel_task`, `dismiss_task`, `clear_finished_tasks`,
+  `preview_site_bundle`.
+- Automatic backups: project snapshots and database dumps on a schedule with a keep count (`auto_backup`,
+  `auto_backup_state`). App-wide or chosen-sites scope; under chosen sites each site sets its own period, keep
+  count and copy set. Retention only deletes paths a pass recorded, so a manual backup is never removed.
+  New commands `get_auto_backup`, `set_auto_backup`, `set_site_auto_backup`, `run_auto_backup`.
+- Desktop notifications for Windows: app-owned toasts for crashed processes, finished installs, finished Quick
+  Apps, completed auto-fixes and hidden launches. Off by default (`notifications.enabled`).
+- `TechIcon`/`ServiceMark`: one shared service mark across the Dashboard, Services and Databases banner.
+
+### Changed
+- The project page holding snapshots is Backups, not Snapshots — a database dump belongs next to the snapshot
+  that records its database.
+- A site's backup on/off switch is shown greyed with the way out while the app-wide plan covers everything,
+  rather than reporting success and changing nothing.
+- Tray service rows carry state as a `●`/`○` glyph in the label (Win32 renders a menu bitmap over the item text).
+
+### Fixed
+- Backup and Restore spinners are keyed per row, so backing up one database no longer spins every sibling's
+  button.
+- Desktop alerts wear the app's AppUserModelID and icon instead of PowerShell's.
+
 ## [1.2.0] — 2026-09-30
 
 Feature release. Full notes: [`release-notes/v1.2.0.md`](./release-notes/v1.2.0.md).
