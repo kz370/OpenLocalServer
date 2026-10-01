@@ -83,6 +83,8 @@ pub struct Inner {
     pub api: crate::api::ApiState,
     pub loadtests: crate::loadtest::LoadRuns,
     pub ai: crate::ai::AiJobs,
+    /// §164: the background work the Processes page lists, with per-task progress.
+    pub tasks: crate::tasks::TaskManager,
     /// Finding ids already attempted by automatic diagnostics during this app session.
     pub auto_fix_attempted: Mutex<HashSet<String>>,
     /// Last automatic-fix failures, shown in the corresponding diagnostic's details.
@@ -474,6 +476,7 @@ impl Inner {
             api: Default::default(),
             loadtests: Default::default(),
             ai: Default::default(),
+            tasks: Default::default(),
             auto_fix_attempted: Mutex::new(HashSet::new()),
             auto_fix_failures: Mutex::new(HashMap::new()),
             project_events,

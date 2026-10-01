@@ -3,6 +3,7 @@ import { FolderSearch, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
+import { TechIcon } from '@/components/TechIcon'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog } from '@/components/ui/dialog'
@@ -111,10 +112,13 @@ export function CustomServices({ onChanged }: { onChanged: () => void }) {
         {!draft && <ErrorCard error={error} onDismiss={() => setError(null)} />}
         {services.map((s) => (
           <div key={s.id} className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-1.5 text-sm">
-            <div className="min-w-0">
-              <div className="font-medium">{s.name}</div>
-              <div className="truncate font-mono text-xs text-muted-foreground">
-                {s.executable} {s.args.join(' ')}
+            <div className="flex min-w-0 items-center gap-2">
+              <TechIcon id="custom" className="size-4 shrink-0 opacity-90" />
+              <div className="min-w-0">
+                <div className="font-medium">{s.name}</div>
+                <div className="truncate font-mono text-xs text-muted-foreground">
+                  {s.executable} {s.args.join(' ')}
+                </div>
               </div>
             </div>
             <span className="flex shrink-0 gap-1">

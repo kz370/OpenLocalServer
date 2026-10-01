@@ -252,7 +252,7 @@ fn zip_options() -> zip::write::SimpleFileOptions {
 }
 
 /// Project files relative to `root`, skipping rebuildable folders and `.git`.
-fn project_files(root: &Path) -> Vec<PathBuf> {
+pub(crate) fn project_files(root: &Path) -> Vec<PathBuf> {
     fn walk(dir: &Path, root: &Path, out: &mut Vec<PathBuf>) {
         let Ok(rd) = std::fs::read_dir(dir) else {
             return;
@@ -618,7 +618,7 @@ impl Inner {
             let project = self.projects.lock().unwrap().get(project_id).ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
             let root = PathBuf::from(&project.path);
             if opts.files && content.file_count > 0 {
-                match self.extract_files(&file, &root) {
+                match self.extract_files(&file, &root, "files") {
                     Ok(n) => r.restored.push(format!("{n} project file(s)")),
                     Err(e) => r.problems.push(format!("files: {e}")),
                 }
@@ -635,14 +635,21 @@ impl Inner {
                 }
             }
             if opts.databases {
-                self.restore_dumps(&file, &content, None, &mut r.restored, &mut r.problems);
+                self.restore_dumps(&file, &content.databases, None, None, &mut r.restored, &mut r.problems);
             }
             Ok(())
         })?;
         Ok(r)
     }
 
-    fn extract_files(&self, zip_path: &Path, root: &Path) -> Result<usize, String> {
+    /// Unpacks the zip's `prefix` entries into `root`. `enclosed_name()` is what keeps a
+    /// bundle entry named `../../secrets` inside the folder it was meant for.
+    pub(crate) fn extract_files(
+        &self,
+        zip_path: &Path,
+        root: &Path,
+        prefix: &str,
+    ) -> Result<usize, String> {
         let mut zip =
             zip::ZipArchive::new(std::fs::File::open(zip_path).map_err(|e| e.to_string())?)
                 .map_err(|e| e.to_string())?;
@@ -652,7 +659,7 @@ impl Inner {
             let Some(rel) = entry.enclosed_name() else {
                 continue;
             };
-            let Ok(rel) = rel.strip_prefix("files") else {
+            let Ok(rel) = rel.strip_prefix(prefix) else {
                 continue;
             };
             if rel.as_os_str().is_empty() || entry.is_dir() {
@@ -671,10 +678,13 @@ impl Inner {
     }
 
     /// Loads each included dump; `rename` maps old database names to new ones (clones).
-    fn restore_dumps(
+    /// `cipher` is set when the zip's dumps are sealed, which is how a site bundle keeps its
+    /// passwords private without sealing the source files beside them.
+    pub(crate) fn restore_dumps(
         &self,
         zip_path: &Path,
-        content: &SnapshotContent,
+        dbs: &[DatabaseMeta],
+        cipher: Option<&crate::crypto::BundleCipher>,
         rename: Option<&BTreeMap<String, String>>,
         done: &mut Vec<String>,
         problems: &mut Vec<String>,
@@ -685,7 +695,7 @@ impl Inner {
         let Ok(mut zip) = zip::ZipArchive::new(f) else {
             return;
         };
-        for db in &content.databases {
+        for db in dbs {
             let Some(dump) = &db.dump else { continue };
             let target = rename
                 .and_then(|m| m.get(&db.name))
@@ -698,11 +708,23 @@ impl Inner {
                     .cache_dir()
                     .join(format!("restore-{}-{}.sql", db.engine, target));
                 std::fs::create_dir_all(self.paths.cache_dir()).map_err(|e| e.to_string())?;
-                std::io::copy(
-                    &mut entry,
-                    &mut std::fs::File::create(&tmp).map_err(|e| e.to_string())?,
-                )
-                .map_err(|e| e.to_string())?;
+                match cipher {
+                    // A sealed dump is read whole, opened, then written: there is no
+                    // streaming AEAD to stream into.
+                    Some(c) => {
+                        let mut sealed = Vec::new();
+                        entry.read_to_end(&mut sealed).map_err(|e| e.to_string())?;
+                        let plain = c.open(&sealed).map_err(|e| e.to_string())?;
+                        std::fs::write(&tmp, plain).map_err(|e| e.to_string())?;
+                    }
+                    None => {
+                        std::io::copy(
+                            &mut entry,
+                            &mut std::fs::File::create(&tmp).map_err(|e| e.to_string())?,
+                        )
+                        .map_err(|e| e.to_string())?;
+                    }
+                }
                 if !self.services.is_running(&db.engine) {
                     self.start_service_and_wait(&db.engine, &mut |_| {})?;
                 }
@@ -726,7 +748,7 @@ impl Inner {
     }
 
     /// Writes a snapshot's configuration onto `project`, adjusted for a clone when asked.
-    fn apply_config(
+    pub(crate) fn apply_config(
         &self,
         c: &SnapshotContent,
         project: &Project,
@@ -927,7 +949,7 @@ impl Inner {
         })
     }
 
-    fn free_project_name(&self, base: &str) -> String {
+    pub(crate) fn free_project_name(&self, base: &str) -> String {
         let projects = self.projects.lock().unwrap().list();
         let taken = |n: &str| {
             projects.iter().any(|p| p.name.eq_ignore_ascii_case(n))
@@ -973,7 +995,9 @@ impl Inner {
                     target.display()
                 )));
             }
-            let n = self.extract_files(&zip_path, &target).map_err(err)?;
+            let n = self
+                .extract_files(&zip_path, &target, "files")
+                .map_err(err)?;
             changes.push(format!("{n} project file(s) unpacked"));
         } else {
             std::fs::create_dir_all(&target)?;
@@ -1119,7 +1143,14 @@ impl Inner {
                 .iter()
                 .map(|d| (d.name.clone(), adjust.db(&d.name)))
                 .collect();
-            self.restore_dumps(zip, content, Some(&rename), &mut changes, problems);
+            self.restore_dumps(
+                zip,
+                &content.databases,
+                None,
+                Some(&rename),
+                &mut changes,
+                problems,
+            );
         }
         let _ = self.sync_auto_domains();
         Ok(CloneResult {
@@ -1258,8 +1289,9 @@ fn adjust_back(adjust: &Adjust, new_host: &str, c: &SnapshotContent) -> String {
         .unwrap_or_else(|| new_host.to_string())
 }
 
-/// How a clone differs from its source (§158): name, paths, sites, databases, ports.
-struct Adjust {
+/// How a clone differs from its source (§158): name, paths, sites, databases, ports. Also
+/// how a renamed site import differs from the bundle it came from (§165).
+pub(crate) struct Adjust {
     old_slug: String,
     new_slug: String,
     old_path: String,
@@ -1270,7 +1302,9 @@ struct Adjust {
 }
 
 impl Adjust {
-    fn none() -> Self {
+    /// The identity adjustment, used when restoring onto what is already there: nothing is
+    /// renamed, so a restore writes back exactly what was recorded.
+    pub(crate) fn none() -> Self {
         Self {
             old_slug: String::new(),
             new_slug: String::new(),
@@ -1282,11 +1316,11 @@ impl Adjust {
         }
     }
 
-    fn is_none(&self) -> bool {
+    pub(crate) fn is_none(&self) -> bool {
         self.new_slug.is_empty()
     }
 
-    fn new(c: &SnapshotContent, new_name: &str, new_path: &Path, inner: &Inner) -> Self {
+    pub(crate) fn new(c: &SnapshotContent, new_name: &str, new_path: &Path, inner: &Inner) -> Self {
         let old_slug = crate::domain::slugify(&c.project.name);
         let new_slug = crate::domain::slugify(new_name);
         let dbs = c
@@ -1359,7 +1393,7 @@ impl Adjust {
         }
     }
 
-    fn host(&self, h: &str) -> String {
+    pub(crate) fn host(&self, h: &str) -> String {
         if self.is_none() {
             return h.to_string();
         }
@@ -1369,7 +1403,7 @@ impl Adjust {
             .unwrap_or_else(|| rename_host(h, &self.old_slug, &self.new_slug))
     }
 
-    fn host_in_url(&self, url: &str) -> String {
+    pub(crate) fn host_in_url(&self, url: &str) -> String {
         let mut out = url.to_string();
         for (old, new) in &self.hosts {
             out = out.replace(old.as_str(), new);
@@ -1380,18 +1414,18 @@ impl Adjust {
         out
     }
 
-    fn db(&self, name: &str) -> String {
+    pub(crate) fn db(&self, name: &str) -> String {
         self.dbs
             .get(name)
             .cloned()
             .unwrap_or_else(|| name.to_string())
     }
 
-    fn port(&self, p: u16) -> u16 {
+    pub(crate) fn port(&self, p: u16) -> u16 {
         self.ports.get(&p).copied().unwrap_or(p)
     }
 
-    fn path(&self, p: &str) -> String {
+    pub(crate) fn path(&self, p: &str) -> String {
         if self.is_none() || self.old_path.is_empty() {
             return p.to_string();
         }
@@ -1403,7 +1437,7 @@ impl Adjust {
     }
 
     /// `.env` values that name the old project.
-    fn env(&self, text: &str) -> String {
+    pub(crate) fn env(&self, text: &str) -> String {
         let mut out = text.to_string();
         let get = |key: &str| {
             text.lines().find_map(|l| {
@@ -1425,7 +1459,7 @@ impl Adjust {
         out
     }
 
-    fn describe(&self) -> Vec<String> {
+    pub(crate) fn describe(&self) -> Vec<String> {
         let mut out = Vec::new();
         for (a, b) in &self.hosts {
             if a != b {

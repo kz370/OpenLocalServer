@@ -78,6 +78,10 @@ pub fn is_destructive(cmd: &CoreCommand) -> bool {
         | CoreCommand::BulkRemoveDomains { .. }
         | CoreCommand::RestoreSnapshot { .. }
         | CoreCommand::RevokeCertificate { .. } => true,
+        // An import onto an existing site replaces its configuration; a new site adds one.
+        CoreCommand::ImportSites { on_conflict, .. } => {
+            *on_conflict == crate::sitebundle::OnConflict::Update
+        }
         _ => false,
     }
 }

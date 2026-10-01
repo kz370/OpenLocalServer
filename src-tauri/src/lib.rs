@@ -369,10 +369,70 @@ fn navigate(app: &AppHandle, route: &str) {
     let _ = app.emit("ols:navigate", route);
 }
 
+/// The mark a tray menu item wears for the state it is in: filled while it is up,
+/// hollow while it is down. A glyph rather than a picture, and not for lack of
+/// trying: `muda` puts an `IconMenuItem`'s image on the item with `MIIM_BITMAP`,
+/// which Win32 renders *in place of* the label (`MFT_BITMAP` is documented as
+/// valid only in a menu bar), so an image here would cost the service its name
+/// and leave a row of unlabelled squares. Both glyphs are in Segoe UI, so the
+/// label survives on every platform the tray ships on.
+fn state_glyph(running: bool) -> &'static str {
+    if running {
+        "●"
+    } else {
+        "○"
+    }
+}
+
+/// `name (start)` with the state mark in front, which is what every service row in
+/// the tray says — the Databases and Services submenus, and the Mailpit row.
+fn service_label(name: &str, running: bool) -> String {
+    format!(
+        "{} {} ({})",
+        state_glyph(running),
+        name,
+        if running { "stop" } else { "start" }
+    )
+}
+
+/// A submenu title that says whether anything under it is up: `● Databases (2)` or
+/// `○ Databases`. The count is what tells a user with five submenus open which one
+/// to look in, and it is the same number the tooltip reports.
+fn submenu_title(label: &str, running: usize) -> String {
+    if running == 0 {
+        format!("{label} — none running")
+    } else {
+        format!("{} {label} ({running})", state_glyph(true))
+    }
+}
+
+/// The tooltip, which is the one place in the tray that can say more than a word
+/// per service: how many are up, and how many could be.
+fn tray_tooltip(core: &Core) -> String {
+    let services = core.services().list();
+    let running = services.iter().filter(|s| s.running).count();
+    format!("OpenLocalServer — {running} of {} running", services.len())
+}
+
 fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
+    // One list read feeds the marks, the submenu titles and the tooltip below, so the
+    // three can never disagree about how many services are up.
+    let service_rows = core.services().list();
+    let web_up = service_rows.iter().any(|s| s.kind == "web" && s.running);
+    let sql_up = service_rows
+        .iter()
+        .filter(|s| s.kind == "sql" || s.kind == "document")
+        .filter(|s| s.running)
+        .count();
+    let other_up = service_rows
+        .iter()
+        .filter(|s| s.kind == "mail" || s.kind == "cache")
+        .filter(|s| s.running)
+        .count();
+
     let open = MenuItem::with_id(app, "open", "Open OpenLocalServer", true, None::<&str>)?;
-    let start_all = MenuItem::with_id(app, "start_all", "Start all", true, None::<&str>)?;
-    let stop_all = MenuItem::with_id(app, "stop_all", "Stop all", true, None::<&str>)?;
+    let start_all = MenuItem::with_id(app, "start_all", "▶ Start all", true, None::<&str>)?;
+    let stop_all = MenuItem::with_id(app, "stop_all", "■ Stop all", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
 
     let mut site_items: Vec<Box<dyn tauri::menu::IsMenuItem<Wry>>> = Vec::new();
@@ -403,8 +463,14 @@ fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
         site_items.iter().map(|item| item.as_ref()).collect();
     let sites = Submenu::with_items(app, "Sites", true, &site_refs)?;
 
-    let web_start = MenuItem::with_id(app, "web_start", "Start / reload", true, None::<&str>)?;
-    let web_stop = MenuItem::with_id(app, "web_stop", "Stop", true, None::<&str>)?;
+    let web_start = MenuItem::with_id(
+        app,
+        "web_start",
+        if web_up { "↻ Reload" } else { "▶ Start" },
+        true,
+        None::<&str>,
+    )?;
+    let web_stop = MenuItem::with_id(app, "web_stop", "■ Stop", true, None::<&str>)?;
     let active_server = core.inner().web_config().default_server;
     let mut server_items = Vec::new();
     for server in ["nginx", "apache", "caddy"] {
@@ -426,7 +492,11 @@ fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
         MenuItem::with_id(app, "web_config", "Open config folder", true, None::<&str>)?;
     let web = Submenu::with_items(
         app,
-        "Web server",
+        &if web_up {
+            "● Web server"
+        } else {
+            "○ Web server"
+        },
         true,
         &[&web_start, &web_stop, &server_switch, &web_config],
     )?;
@@ -445,17 +515,11 @@ fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
     )?;
 
     let mut database_items: Vec<Box<dyn tauri::menu::IsMenuItem<Wry>>> = Vec::new();
-    for service in core
-        .services()
-        .list()
-        .into_iter()
+    for service in service_rows
+        .iter()
         .filter(|service| service.kind == "sql" || service.kind == "document")
     {
-        let label = format!(
-            "{} ({})",
-            service.name,
-            if service.running { "stop" } else { "start" }
-        );
+        let label = service_label(&service.name, service.running);
         database_items.push(Box::new(MenuItem::with_id(
             app,
             &format!("db:{}", service.id),
@@ -473,20 +537,19 @@ fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
     )?));
     let database_refs: Vec<&dyn tauri::menu::IsMenuItem<Wry>> =
         database_items.iter().map(|item| item.as_ref()).collect();
-    let databases = Submenu::with_items(app, "Databases", true, &database_refs)?;
+    let databases = Submenu::with_items(
+        app,
+        &submenu_title("Databases", sql_up),
+        true,
+        &database_refs,
+    )?;
 
     let mut service_items: Vec<Box<dyn tauri::menu::IsMenuItem<Wry>>> = Vec::new();
-    for service in core
-        .services()
-        .list()
-        .into_iter()
+    for service in service_rows
+        .iter()
         .filter(|service| service.kind == "mail" || service.kind == "cache")
     {
-        let label = format!(
-            "{} ({})",
-            service.name,
-            if service.running { "stop" } else { "start" }
-        );
+        let label = service_label(&service.name, service.running);
         service_items.push(Box::new(MenuItem::with_id(
             app,
             &format!("service:{}", service.id),
@@ -504,7 +567,12 @@ fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
     )?));
     let service_refs: Vec<&dyn tauri::menu::IsMenuItem<Wry>> =
         service_items.iter().map(|item| item.as_ref()).collect();
-    let services = Submenu::with_items(app, "Services", true, &service_refs)?;
+    let services = Submenu::with_items(
+        app,
+        &submenu_title("Services", other_up),
+        true,
+        &service_refs,
+    )?;
 
     let quick_apps = MenuItem::with_id(app, "quick_apps", "Recipes", true, None::<&str>)?;
     let quick = Submenu::with_items(app, "Quick App", true, &[&quick_apps])?;
@@ -539,6 +607,12 @@ fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
 fn refresh_tray(app: &AppHandle, core: &Core) {
     if let (Some(tray), Ok(menu)) = (app.tray_by_id("main"), tray_menu(app, core)) {
         let _ = tray.set_menu(Some(menu));
+        // The tooltip counts what is up, so it is refreshed with the menu that
+        // reports the same thing. It is not refreshed during shutdown, or it would
+        // put the running count back over the "stopping" line.
+        if !SHUTDOWN_IN_PROGRESS.load(Ordering::SeqCst) {
+            let _ = tray.set_tooltip(Some(tray_tooltip(core).as_str()));
+        }
     }
     sync_status_icon(app, core);
 }
@@ -547,7 +621,7 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
     let menu = tray_menu(app, &core)?;
     let menu_core = core.clone();
     let mut builder = TrayIconBuilder::with_id("main")
-        .tooltip("OpenLocalServer")
+        .tooltip(tray_tooltip(&core))
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(move |app, event| {
@@ -887,6 +961,31 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 while project_events.recv().await.is_ok() {
                     let _ = projects_handle.emit("projects-changed", ());
+                }
+            });
+
+            // §164: background tasks (site bundle export / import) publish their whole
+            // view on every change, so the Processes page renders straight from the event
+            // and re-reads the list if it ever falls behind.
+            let task_handle = app.handle().clone();
+            let task_core = core.clone();
+            let mut task_events = core.inner().tasks.subscribe();
+            tauri::async_runtime::spawn(async move {
+                while let Ok(event) = task_events.recv().await {
+                    let _ = task_handle.emit("task-event", &event);
+                    if let ols_core::tasks::TaskEvent::Finished { task } = &event {
+                        if task.problems.is_empty() {
+                            notify(
+                                &task_core,
+                                if task.state == ols_core::tasks::TaskState::Cancelled {
+                                    "Task stopped"
+                                } else {
+                                    "Task finished"
+                                },
+                                &task.title,
+                            );
+                        }
+                    }
                 }
             });
 

@@ -6,7 +6,7 @@ import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
 import { ServiceIconAction } from '@/components/ServiceIconAction'
 import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
-import { TechIcon } from '@/components/TechIcon'
+import { ServiceMark, type ServiceState } from '@/components/TechIcon'
 import type { Page } from '@/components/layout/Sidebar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -415,8 +415,8 @@ function ServicesWidget({
                  i > 0 && 'border-t border-border/60'
                )}
              >
-              <span className={cn('shrink-0', !s.installed && 'opacity-40 grayscale')}>
-                <TechIcon id={s.id} className="size-4" />
+              <span className="shrink-0">
+                <ServiceMark id={s.id} state={state} className="size-4 [&>svg]:size-3" />
               </span>
               <span className="min-w-0 truncate text-[13px] font-medium">{s.name}</span>
               <span
@@ -480,7 +480,7 @@ function ServicesWidget({
   )
 }
 
-type WidgetState = 'running' | 'stopped' | 'unhealthy' | 'missing'
+type WidgetState = ServiceState
 
 function ServiceStatus({ state }: { state: WidgetState }) {
   const config = {

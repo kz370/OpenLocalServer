@@ -42,6 +42,10 @@ pub enum CoreError {
     #[error("{0}")]
     TunnelError(String),
 
+    /// Site bundles: exporting, importing, and the password that unlocks them (§165).
+    #[error("{0}")]
+    BundleError(String),
+
     /// Plugins, catalogs, updates, load tests and the AI assistant: says what was being done.
     #[error("{problem}: {cause}")]
     Failed {
@@ -151,6 +155,15 @@ impl From<&CoreError> for Diagnostic {
                 problem: "The tunnel operation failed.".into(),
                 cause: msg.clone(),
                 fix: Some("Check the tunnel's log on the Tunnels page.".into()),
+            },
+            CoreError::BundleError(msg) => Diagnostic {
+                problem: "The site bundle could not be read or written.".into(),
+                cause: msg.clone(),
+                fix: Some(
+                    "Check the destination folder, and for an import that the file is an OLS site \
+                     bundle exported by this version."
+                        .into(),
+                ),
             },
             CoreError::Failed {
                 problem,

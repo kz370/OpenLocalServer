@@ -6,7 +6,7 @@ import { CustomServices } from '@/components/CustomServices'
 import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
 import { ServiceIconAction } from '@/components/ServiceIconAction'
 import { StopIcon } from '@/components/StopIcon'
-import { TechIcon } from '@/components/TechIcon'
+import { TechIcon, ServiceMark } from '@/components/TechIcon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -14,7 +14,6 @@ import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { type DbTool, type Diagnostic, type PortStatus, type ServiceStatus, runCommand } from '@/core'
 import { waitForService } from '@/lib/wait'
-import { cn } from '@/lib/utils'
 import { confirmAction } from '@/lib/confirm'
 
 type ServiceAction = 'start' | 'stop' | 'restart' | 'reload'
@@ -249,9 +248,10 @@ function ServiceTable({
           <TableRow key={s.id}>
             <TableCell>
               <span className="flex items-center gap-2">
-                <span className={cn('shrink-0', !s.installed && 'opacity-40 grayscale')}>
-                  <TechIcon id={s.id} />
-                </span>
+                <ServiceMark
+                  id={s.id}
+                  state={!s.installed ? 'missing' : s.running ? (s.healthy === false ? 'unhealthy' : 'running') : 'stopped'}
+                />
                 <span className="font-medium">{s.name}</span>
               </span>
             </TableCell>

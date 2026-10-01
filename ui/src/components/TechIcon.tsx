@@ -165,6 +165,41 @@ const MEMCACHED_MARK = (
   </svg>
 )
 
+/** NoSQLBooster: MongoDB's leaf in a desktop window — a Mongo *client*, told from the
+ * MongoDB server mark by the window frame, the same way pgAdmin is told from Postgres. */
+const NOSQLBOOSTER = (
+  <svg viewBox="0 0 24 24" role="img" aria-label="NoSQLBooster">
+    <rect x="2.5" y="4" width="19" height="16" rx="2.2" fill="currentColor" fillOpacity="0.14" />
+    <rect x="2.5" y="4" width="19" height="16" rx="2.2" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    <path d="M2.5 8.4h19" stroke="currentColor" strokeWidth="1.5" />
+    <path
+      d="M15.6 10.6c0 3.4-2.1 5.6-5.4 5.6-1 0-1.9-.2-2.7-.7 1.9-.2 3-1 3.7-2.3-1 .1-1.8-.3-2.4-1.1.4 0 .7-.1 1-.3-.9-.5-1.3-1.3-1.3-2.4 0-.3.1-.6.2-.9-.8.6-1.2 1.4-1.2 2.5 0 2 1.4 3.4 3.4 3.4h.4c-.1.2-.1.4-.1.6 0 1.1.9 2 2 2 1 0 1.8-.6 2.2-1.4.4-.8.5-1.7.5-2.6z"
+      fill="currentColor"
+    />
+  </svg>
+)
+
+/** DB Browser for SQLite: a database cylinder over a table grid, so it reads as a
+ * browser rather than as the SQLite engine it opens. simple-icons has no brand for it. */
+const DBBROWSER = (
+  <svg viewBox="0 0 24 24" role="img" aria-label="DB Browser for SQLite">
+    <ellipse cx="12" cy="6.4" rx="7.4" ry="2.9" fill="currentColor" fillOpacity="0.3" stroke="currentColor" strokeWidth="1.5" />
+    <path d="M4.6 6.4v5c0 1.6 3.3 2.9 7.4 2.9s7.4-1.3 7.4-2.9v-5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    <path d="M4.6 11.4v5c0 1.6 3.3 2.9 7.4 2.9s7.4-1.3 7.4-2.9v-5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    <path d="M8.4 17.6h2.8M13.6 17.6h2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity="0.7" />
+  </svg>
+)
+
+/** MongoDB Compass: the compass rose the tool is named for — a needle, not the leaf. */
+const COMPASS = (
+  <svg viewBox="0 0 24 24" role="img" aria-label="MongoDB Compass">
+    <circle cx="12" cy="12" r="9.2" fill="none" stroke="currentColor" strokeWidth="1.6" />
+    <path d="M15.6 8.4 13.4 13.4 8.4 15.6l2.2-5z" fill="currentColor" />
+    <path d="M8.4 8.4 10.6 13.4l5 2.2-2.2-5z" fill="currentColor" fillOpacity="0.35" />
+    <circle cx="12" cy="12" r="1.15" fill="currentColor" />
+  </svg>
+)
+
 /** Generic stand-ins for ids without a brand. */
 const GENERIC: Record<string, ReactNode> = {
   all: <Layers />,
@@ -180,6 +215,9 @@ const GENERIC: Record<string, ReactNode> = {
   mailpit: ENVELOPE,
   mail: ENVELOPE,
   tinyrdm: REDIS_CLIENT,
+  nosqlbooster: NOSQLBOOSTER,
+  dbbrowser: DBBROWSER,
+  compass: COMPASS,
 }
 
 /** Near-black brand colours vanish on a dark background; those follow the text colour. */
@@ -210,6 +248,52 @@ export function TechTile({ id, className }: { id: string; className?: string }) 
   return (
     <span className={cn('flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted', className)} style={tint ? { backgroundColor: tint } : undefined}>
       <TechIcon id={id} className="size-5" />
+    </span>
+  )
+}
+
+/**
+ * What a service row is doing, as one word. The service's own mark says which
+ * service; this says whether it is up, so a row is readable from the icon alone.
+ */
+export type ServiceState = 'running' | 'unhealthy' | 'stopped' | 'missing'
+
+const STATE_DOT: Record<ServiceState, string> = {
+  running: 'bg-emerald-500',
+  unhealthy: 'bg-amber-500',
+  stopped: 'bg-muted-foreground/50',
+  missing: 'bg-muted-foreground/25',
+}
+
+const STATE_RING: Record<ServiceState, string> = {
+  running: 'ring-emerald-500/30',
+  unhealthy: 'ring-amber-500/30',
+  stopped: 'ring-transparent',
+  missing: 'ring-muted-foreground/25',
+}
+
+/**
+ * A service's mark wearing its state: the brand glyph, a ring in the state's colour
+ * and a corner dot. `missing` also greys the glyph, so a service with no install is
+ * told apart from one that is merely stopped — the two need different actions, and
+ * the row has to say which before you read it.
+ *
+ * Shared by the Dashboard widget and the Services page so a service looks the same
+ * in both, the way the five row actions already do.
+ */
+export function ServiceMark({ id, state, className }: { id: string; state: ServiceState; className?: string }) {
+  return (
+    <span
+      className={cn(
+        'relative inline-flex size-5 shrink-0 items-center justify-center rounded-md ring-1',
+        STATE_RING[state],
+        state === 'missing' && 'opacity-45 grayscale',
+        className,
+      )}
+      title={state}
+    >
+      <TechIcon id={id} className="size-3.5" />
+      <span className={cn('absolute -right-0.5 -bottom-0.5 size-2 rounded-full ring-2 ring-background', STATE_DOT[state])} />
     </span>
   )
 }

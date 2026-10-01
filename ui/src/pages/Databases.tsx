@@ -5,7 +5,7 @@ import { Fragment, useEffect, useState } from 'react'
 import { Spinner } from '@/components/Spinner'
 import { ErrorCard } from '@/components/ErrorCard'
 import { MigrateDialog } from '@/components/MigrateDialog'
-import { TechIcon } from '@/components/TechIcon'
+import { ServiceMark, TechIcon } from '@/components/TechIcon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -133,7 +133,13 @@ function ServiceBanner({ service, name }: { service?: ServiceStatus; name: strin
       <Card>
         <CardContent className="flex items-center justify-between gap-3 pt-4">
           <div className="text-sm">
-            <span className="font-medium">{name}</span>{' '}
+            <span className="flex items-center gap-2">
+              <ServiceMark
+                id={service.id}
+                state={!service.installed ? 'missing' : service.running ? (service.healthy === false ? 'unhealthy' : 'running') : 'stopped'}
+              />
+              <span className="font-medium">{name}</span>
+            </span>{' '}
             {!service.installed ? <Badge variant="outline">not installed (Runtimes page)</Badge> : service.running ? <Badge variant="success">● Running on port {service.port}</Badge> : <Badge variant="secondary">Stopped</Badge>}
             {service.connection && <div className="mt-1 font-mono text-xs text-muted-foreground">{service.connection}</div>}
           </div>

@@ -16,6 +16,10 @@ tokio = { version = "1", features = ["rt-multi-thread", "process", "io-util", "s
 reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls"] }
 sha2 = "0.10"
 zip = { version = "2", default-features = false, features = ["deflate"] }
+# Password encryption for exported site bundles (§165): Argon2id turns the export password
+# into a key, ChaCha20-Poly1305 seals the sensitive entries with it.
+argon2 = "0.5"
+chacha20poly1305 = "0.10"
 futures-util = "0.3"
 serde_yaml_ng = "0.10"
 rusqlite = { version = "0.32", features = ["bundled"] }

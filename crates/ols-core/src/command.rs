@@ -3,6 +3,7 @@
 //! The UI/CLI never talks to individual managers directly.
 
 use std::collections::BTreeMap;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -32,6 +33,32 @@ use crate::sqlite::{IntegrityResult, SqliteInfo};
 use crate::web::manager::{ApplyReport, ConfigFile, ConfigPart, ConfigVersion, WebStatus};
 use crate::web::WebConfig;
 use crate::xdebug::{XdebugReport, XdebugSettings};
+
+/// How a background task's worker ended (§164). A stop the user asked for is reported as a
+/// stop, not as a failure — the work that did finish is already in the task's own results.
+fn report<T>(h: &crate::tasks::TaskHandle, r: Result<T, CoreError>) {
+    match r {
+        Ok(_) => h.succeed(),
+        Err(e) => {
+            if h.cancel_requested() {
+                h.end_step(Some("stopped".into()));
+                h.finish_cancelled();
+                return;
+            }
+            let d = Diagnostic::from(&e);
+            h.problem(d.cause.clone());
+            h.fail(d);
+        }
+    }
+}
+
+/// A file's name, for a task title that must stay one line long.
+fn file_name(path: &str) -> String {
+    Path::new(path)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.to_string())
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -890,6 +917,40 @@ pub enum CoreCommand {
     RestoreSettings {
         id: String,
     },
+
+    // ---- Site bundles: exporting and importing whole sites (§165) -------------------
+    /// Writes one bundle for the picked sites and answers at once with the task id to
+    /// watch it by. `password` seals the `.env` files and database dumps.
+    ExportSites {
+        hostnames: Vec<String>,
+        options: crate::sitebundle::BundleOptions,
+        /// A folder; one bundle per export, named after the site(s).
+        dest: String,
+        password: Option<String>,
+    },
+    /// Reads a bundle for review, before anything is created.
+    PreviewSiteBundle {
+        source: String,
+    },
+    /// Imports a bundle. `on_conflict` decides what happens to a hostname that already
+    /// exists; updating one takes a snapshot of the current state first.
+    ImportSites {
+        source: String,
+        password: Option<String>,
+        on_conflict: crate::sitebundle::OnConflict,
+        /// The base name for a renamed import; blank means "pick a free one".
+        name: Option<String>,
+        options: crate::snapshots::RestoreOptions,
+    },
+    /// §164: the background task list, newest first.
+    ListTasks,
+    CancelTask {
+        id: String,
+    },
+    DismissTask {
+        id: String,
+    },
+    ClearFinishedTasks,
     GetResourceLimits,
     SetResourceLimits {
         limits: crate::resources::ResourceLimits,
@@ -1574,6 +1635,22 @@ pub enum CoreResponse {
     },
     SettingsBackup {
         backup: crate::snapshots::SettingsBackup,
+    },
+    /// A background task was started; watch it on the Processes page.
+    TaskStarted {
+        id: String,
+    },
+    Tasks {
+        tasks: Vec<crate::tasks::TaskView>,
+    },
+    SiteBundlePreview {
+        preview: Box<crate::sitebundle::BundlePreview>,
+    },
+    SiteBundleExported {
+        summary: Box<crate::sitebundle::BundleSummary>,
+    },
+    SiteBundleImported {
+        result: Box<crate::sitebundle::BundleImportResult>,
     },
     Resources {
         limits: crate::resources::ResourceLimits,
@@ -3472,6 +3549,102 @@ impl Core {
             C::RestoreSettings { id } => Ok(R::SettingsBackup {
                 backup: i.restore_settings(&id)?,
             }),
+
+            // ---- site bundles (§165) ------------------------------------------------
+            // Both of these answer with a task id instead of a result: an export of twenty
+            // sites and an import that restores a database are not what a click should wait
+            // for, and the Processes page is where the user watches them.
+            C::ExportSites {
+                hostnames,
+                options,
+                dest,
+                password,
+            } => {
+                let title = if hostnames.len() == 1 {
+                    format!("Exporting {}", hostnames[0])
+                } else {
+                    format!("Exporting {} sites", hostnames.len())
+                };
+                let inner = Arc::clone(&self.inner);
+                let total = hostnames.len();
+                // The task's "what it works on" is shown on its row, and the closure takes
+                // the folder with it, so the title borrows a copy.
+                let shown = dest.clone();
+                let id = i
+                    .tasks
+                    .start("export_sites", &title, &shown, total, move |h| {
+                        let r = crate::sitebundle::export(
+                            &inner,
+                            &h,
+                            &hostnames,
+                            options,
+                            &dest,
+                            password.as_deref(),
+                        );
+                        report(
+                            &h,
+                            r.map(|s| {
+                                h.result(format!("{} ({} KB)", s.path, s.size_bytes / 1024));
+                                s
+                            }),
+                        );
+                    });
+                Ok(R::TaskStarted { id })
+            }
+            C::PreviewSiteBundle { source } => Ok(R::SiteBundlePreview {
+                preview: Box::new(crate::sitebundle::preview(i, &source)?),
+            }),
+            C::ImportSites {
+                source,
+                password,
+                on_conflict,
+                name,
+                options,
+            } => {
+                let title = format!("Importing {}", file_name(&source));
+                let inner = Arc::clone(&self.inner);
+                let shown = source.clone();
+                let id = i.tasks.start("import_sites", &title, &shown, 1, move |h| {
+                    let r = crate::sitebundle::import_bundle(
+                        &inner,
+                        &h,
+                        &source,
+                        password.as_deref(),
+                        on_conflict,
+                        name.as_deref(),
+                        options,
+                    );
+                    report(&h, r);
+                });
+                Ok(R::TaskStarted { id })
+            }
+            C::ListTasks => Ok(R::Tasks {
+                tasks: i.tasks.list(),
+            }),
+            C::CancelTask { id } => {
+                if !i.tasks.cancel(&id) {
+                    return Err(CoreError::Failed {
+                        problem: "That task is not running.".into(),
+                        cause: format!("Task {id} has already finished, or was never started."),
+                        fix: None,
+                    });
+                }
+                Ok(R::Ok)
+            }
+            C::DismissTask { id } => {
+                if !i.tasks.dismiss(&id) {
+                    return Err(CoreError::Failed {
+                        problem: "That task is still running.".into(),
+                        cause: format!("Task {id} has not finished, so it is still needed."),
+                        fix: Some("Stop it first, or wait for it to finish.".into()),
+                    });
+                }
+                Ok(R::Ok)
+            }
+            C::ClearFinishedTasks => {
+                i.tasks.clear_finished();
+                Ok(R::Ok)
+            }
             C::GetResourceLimits => Ok(R::Resources {
                 limits: i.resource_limits(),
                 cpu: i.resource_limits().cpu_cap_status(),

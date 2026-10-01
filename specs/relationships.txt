@@ -107,6 +107,12 @@ CoreCommand::ListDomains / ListProjects | calls | Inner.reload_external_changes 
 RuntimesPage | uses | TechIcon (runtime ID resolves to brand or generic glyph; Memcached uses its symbol-only logo, Redis keeps its brand mark, pgAdmin/HeidiSQL/Tiny RDM/Mailpit are drawn marks so no GUI tool falls through to the generic glyph)
 ServicesWidget | uses | DashboardPage.useAction (so a failed service action reaches the page ErrorCard)
 ServicesPage | uses | ServiceIconAction (shared with ServicesWidget, so both offer the same five service actions)
+ServicesPage | uses | TechIcon.ServiceMark (the service row's mark wears its state, so the icon alone says running/unhealthy/stopped/missing; shared with ServicesWidget and the Databases ServiceBanner so a service looks the same in all three)
+ServicesWidget | uses | TechIcon.ServiceMark (the row's logo is the state mark rather than a bare brand glyph; `WidgetState` is an alias of the shared `ServiceState`, so the widget's four states and the mark's four states cannot drift)
+DatabasesPage ServiceBanner | uses | TechIcon.ServiceMark (a service banner now carries the same state mark as the Services rows instead of naming the engine in text alone)
+CustomServices | uses | TechIcon id=custom (a custom service row carries the generic custom mark, so the list reads as service definitions and not as loose paths)
+TauriApp tray menu | uses | Core.services().list (one read per build, feeding the row glyphs, the submenu counts and the tooltip, so the three cannot disagree on what is running)
+
 ServicesPage | uses | App.openLogs (View Logs opens the Logs page on that service's log_source)
 ServicesPage | sends | startup services through start_service, which applies a web server's config before starting it
 Inner::run_autostart | applies | each web server named in startup.autostart_services, then starts it (the removed "start the web server" switch is only read once, to seed that list)
