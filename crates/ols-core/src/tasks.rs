@@ -412,7 +412,7 @@ impl TaskManager {
             .lock()
             .iter()
             .find(|t| t.lock().id == id)
-            .map(|t| Arc::clone(t))
+            .map(Arc::clone)
         else {
             return false;
         };

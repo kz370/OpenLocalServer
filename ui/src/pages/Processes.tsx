@@ -5,9 +5,11 @@ import { useEffect, useRef, useState } from 'react'
 import { Spinner } from '@/components/Spinner'
 import { SystemMonitor } from '@/components/SystemMonitor'
 import { StopIcon } from '@/components/StopIcon'
+import { TasksPanel } from '@/components/TasksPanel'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Tabs } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { type Diagnostic, type PortStatus, type ProcessEvent, type ProcessInfo, type SystemStats, runCommand } from '@/core'
 import { formatBytes, usePoll } from '@/lib/hooks'
@@ -20,6 +22,7 @@ const PRESETS = [
 ]
 
 export function ProcessesPage() {
+  const [tab, setTab] = useState<'tasks' | 'services'>('tasks')
   const [processes, setProcesses] = useState<ProcessInfo[]>([])
   const [outputs, setOutputs] = useState<Record<number, string[]>>({})
   const [selected, setSelected] = useState<number | null>(null)
@@ -46,6 +49,15 @@ export function ProcessesPage() {
   usePoll(async () => {
     const r = await runCommand({ type: 'get_system_stats' }).catch(() => null)
     if (r?.type === 'system_stats') setStats(r.stats)
+  }, 2000)
+
+  const runningCount = processes.filter((p) => isLive(p.state)).length
+  // The tab this page shows is badged with what is running, so work started from the Sites
+  // page is still visible from the Services tab.
+  const [runningTasks, setRunningTasks] = useState(0)
+  usePoll(async () => {
+    const r = await runCommand({ type: 'list_tasks' }).catch(() => null)
+    if (r?.type === 'tasks') setRunningTasks(r.tasks.filter((t) => t.state === 'running').length)
   }, 2000)
 
   useEffect(() => {
@@ -119,12 +131,25 @@ export function ProcessesPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Processes</h1>
         <p className="text-sm text-muted-foreground">
-          The Process Supervisor: start, stop, watch live output, and crash-restart (§107–108).
+          Background work the app runs for you — imports, exports, snapshots — and the services it supervises.
         </p>
       </div>
 
       <SystemMonitor stats={stats} />
 
+      <Tabs
+        value={tab}
+        onChange={setTab}
+        tabs={[
+          { id: 'tasks' as const, label: 'Background tasks', badge: runningTasks || undefined },
+          { id: 'services' as const, label: 'Services & processes', badge: runningCount || undefined },
+        ]}
+      />
+
+      {tab === 'tasks' ? (
+        <TasksPanel />
+      ) : (
+        <>
       <Card>
         <CardHeader>
           <CardTitle>Start a managed process</CardTitle>
@@ -292,6 +317,8 @@ export function ProcessesPage() {
             <p className="text-sm">{error.cause}</p>
           </CardContent>
         </Card>
+      )}
+        </>
       )}
     </div>
   )

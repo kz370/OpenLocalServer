@@ -332,8 +332,8 @@ pub fn export(
 ) -> Result<BundleSummary, CoreError> {
     if options.is_empty() {
         return Err(err(
-            "nothing was selected to export: choose at least settings, environment files, \
-             databases or project files",
+            "the bundle would be empty: choose at least Site settings, .env files, Database or \
+             Project files",
         ));
     }
     if hostnames.is_empty() {
@@ -553,6 +553,30 @@ fn write_bundle(
         let mut zip = zip::ZipWriter::new(std::fs::File::create(&tmp)?);
         for site in sites {
             let dir = site.dir();
+            // Only the databases this bundle actually carries. The project's manifest lists
+            // every database it has, but a name with no dump behind it would import as a
+            // registered database with nothing in it — which reads as a broken import rather
+            // than as a bundle that was asked not to include one.
+            let mut carried: Vec<DatabaseMeta> = Vec::new();
+            for (name, bytes) in &site.databases {
+                let entry = format!("{dir}/databases/{name}{}", sealed_suffix(cipher.is_some()));
+                zip.start_file(entry.as_str(), zip_options())
+                    .map_err(|e| err(e.to_string()))?;
+                zip.write_all(bytes)?;
+                let engine_db = name.trim_end_matches(".sql");
+                if let Some(d) = site
+                    .content
+                    .databases
+                    .iter()
+                    .find(|d| format!("{}-{}", d.engine, d.name) == engine_db)
+                {
+                    carried.push(DatabaseMeta {
+                        engine: d.engine.clone(),
+                        name: d.name.clone(),
+                        dump: Some(entry),
+                    });
+                }
+            }
             let mut meta = BundleSite {
                 dir: dir.clone(),
                 project_id: site.content.project.id.clone(),
@@ -561,7 +585,7 @@ fn write_bundle(
                 hostnames: site.hostnames.clone(),
                 settings: String::new(),
                 env_files: Vec::new(),
-                databases: site.content.databases.clone(),
+                databases: carried.clone(),
                 file_count: site.files.len(),
             };
 
@@ -575,17 +599,6 @@ fn write_bundle(
                     entry,
                     sealed: cipher.is_some(),
                 });
-            }
-            for (name, bytes) in &site.databases {
-                let entry = format!("{dir}/databases/{name}{}", sealed_suffix(cipher.is_some()));
-                zip.start_file(entry.as_str(), zip_options())
-                    .map_err(|e| err(e.to_string()))?;
-                zip.write_all(bytes)?;
-                for d in meta.databases.iter_mut() {
-                    if d.dump.is_none() {
-                        d.dump = Some(entry.clone());
-                    }
-                }
             }
             for (rel, path) in &site.files {
                 let entry = format!("{dir}/files/{rel}");
@@ -602,9 +615,7 @@ fn write_bundle(
             content.options.env = false;
             content.env_files.clear();
             content.file_count = site.files.len();
-            for d in content.databases.iter_mut() {
-                d.dump = None;
-            }
+            content.databases = carried;
             meta.settings = serde_json::to_string(&content)?;
             manifest.sites.push(meta);
         }

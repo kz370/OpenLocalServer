@@ -1862,6 +1862,13 @@ impl Core {
                     Some(serde_json::Value::String(
                         i.sites_dir().display().to_string(),
                     ))
+                } else if key == "paths.backups_dir" {
+                    // The folder exports land in by default, resolved rather than
+                    // concatenated in the UI: it follows a moved or portable install, and
+                    // the answer is the one `backups_dir` actually uses.
+                    Some(serde_json::Value::String(
+                        i.paths.backups_dir().display().to_string(),
+                    ))
                 } else if key == "quickapps.projects_dir" {
                     // Answer with the folder it resolves to, never the stored form: the
                     // UI shows this value in a text input and offers it as the parent for
@@ -3583,9 +3590,8 @@ impl Core {
                         );
                         report(
                             &h,
-                            r.map(|s| {
+                            r.inspect(|s| {
                                 h.result(format!("{} ({} KB)", s.path, s.size_bytes / 1024));
-                                s
                             }),
                         );
                     });

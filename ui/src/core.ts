@@ -960,6 +960,13 @@ export type CoreCommand =
   | { type: 'ai_job'; job_id: string }
   | { type: 'ai_cancel'; job_id: string }
   | { type: 'ai_apply'; actions: CoreCommand[]; confirm_destructive: boolean }
+  | { type: 'export_sites'; hostnames: string[]; options: BundleOptions; dest: string; password: string | null }
+  | { type: 'preview_site_bundle'; source: string }
+  | { type: 'import_sites'; source: string; password: string | null; on_conflict: OnConflict; name: string | null; options: RestoreOptions }
+  | { type: 'list_tasks' }
+  | { type: 'cancel_task'; id: string }
+  | { type: 'dismiss_task'; id: string }
+  | { type: 'clear_finished_tasks' }
   // @@ts-commands-end
 
 export type CoreResponse =
@@ -1105,6 +1112,10 @@ export type CoreResponse =
   | { type: 'ai_prompt'; prompt: AiPrompt }
   | { type: 'ai_job'; job: AiJobView }
   | { type: 'ai_applied'; steps: { label: string; ok: boolean; detail: string }[] }
+  | { type: 'task_started'; id: string }
+  | { type: 'tasks'; tasks: TaskView[] }
+  | { type: 'site_bundle_preview'; preview: BundlePreview }
+  | { type: 'site_bundle_imported'; result: BundleImportResult }
   // @@ts-responses-end
 
 export interface MigrationSource {
@@ -1517,6 +1528,97 @@ export interface SettingsBackup {
   created_ms: number
   size_bytes: number
 }
+
+/** §165: what a site bundle carries. Data is asked for, not assumed. */
+export interface BundleOptions {
+  /** The site record, project manifest, workers, scheduled tasks, tunnels and mode. */
+  settings: boolean
+  /** `.env` files — where the application's passwords and keys live. */
+  env: boolean
+  /** SQL dumps of the site's MariaDB / PostgreSQL database. */
+  databases: boolean
+  /** The project's own files, without node_modules, vendor and the like. */
+  files: boolean
+}
+
+/** What to do about a site name that already exists. */
+export type OnConflict = { type: 'update' } | { type: 'rename' }
+
+export interface BundlePreviewSite {
+  project_name: string
+  hostnames: string[]
+  /** Hostnames that already exist — the ones the update / rename choice is about. */
+  existing: string[]
+  /** A free hostname for each, which is what a rename import would use. */
+  suggested: string[]
+  summary: string[]
+}
+
+export interface BundlePreview {
+  source: string
+  label: string
+  created_ms: number
+  encrypted: boolean
+  options: BundleOptions
+  sites: BundlePreviewSite[]
+  problems: string[]
+}
+
+export interface BundleSiteResult {
+  project_name: string
+  action: 'created' | 'updated' | 'skipped'
+  hostnames: string[]
+  /** The snapshot taken before an update, so it can be put back. */
+  safety_snapshot: string | null
+  changes: string[]
+  problems: string[]
+}
+
+export interface BundleImportResult {
+  sites: BundleSiteResult[]
+  unlocked: boolean
+}
+
+/** §164: one background task's state, published whole on every change. */
+export type TaskState = 'running' | 'succeeded' | 'failed' | 'cancelled'
+
+export type StepState = 'running' | 'done' | 'failed' | 'skipped'
+
+export interface TaskStep {
+  label: string
+  state: StepState
+  detail: string | null
+}
+
+export interface TaskProgress {
+  done: number
+  /** 0 when the total is not known, which is an indeterminate bar rather than a full one. */
+  total: number
+  bytes: number
+  bytes_total: number | null
+}
+
+export interface TaskView {
+  id: string
+  kind: string
+  title: string
+  target: string
+  state: TaskState
+  steps: TaskStep[]
+  progress: TaskProgress
+  results: string[]
+  /** Collected, never raised: one bad database does not cost the rest of the export. */
+  problems: string[]
+  error: Diagnostic | null
+  started_ms: number
+  finished_ms: number | null
+  cancel_requested: boolean
+}
+
+export type TaskEvent =
+  | { kind: 'started'; task: TaskView }
+  | { kind: 'progress'; task: TaskView }
+  | { kind: 'finished'; task: TaskView }
 
 /** Which projects an automatic backup covers: every project, or only the listed ones. */
 export type AutoBackupScope = 'app' | 'site'

@@ -1,11 +1,12 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Activity, Check, Code2, Copy, ExternalLink, FolderMinus, FolderOpen, FolderPlus, FolderSearch, Globe, KeyRound, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2, X } from 'lucide-react'
+import { Activity, Check, Code2, Copy, Download, ExternalLink, FolderMinus, FolderOpen, FolderPlus, FolderSearch, Globe, KeyRound, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
 import type { Page } from '@/components/layout/Sidebar'
 import { GitCloneButton, ImportEnvironmentButton } from '@/components/project/ProjectImports'
 import { DomainDialog, newDomain } from '@/components/site/DomainDialog'
+import { SiteExportDialog, SiteImportButton } from '@/components/site/SiteBundle'
 import { SiteDialog, type SiteTarget } from '@/components/site/SiteDialog'
 import { ApplyReportCard, DriftDialog } from '@/components/site/WebApply'
 import { Spinner } from '@/components/Spinner'
@@ -94,6 +95,8 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(25)
   const [bulkServerChoice, setBulkServerChoice] = useState('')
+  /** Which sites the export dialog is open for: one row, or the whole selection. */
+  const [exportFor, setExportFor] = useState<string[] | null>(null)
   // WordPress projects, straight from the folders on disk: this is what decides which rows
   // get a "WP Admin" action. Re-read when the project list changes, so a folder added or
   // deleted elsewhere gains or loses the action without a reload.
@@ -173,6 +176,8 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     })
 
   const pickedCount = pickedKeys.length
+  /** Only site rows have a hostname, and a hostname is what a bundle is keyed by. */
+  const pickedHostnames = pickedRows.map((r) => r.site?.hostname).filter((h): h is string => !!h)
   /** Rows that have no site yet: the only ones "Add auto domain" can do anything to. */
   const noDomainCount = pickedRows.filter((r) => !r.site).length
   // Enable and Disable are each hidden when they would change nothing: a disabled button
@@ -468,6 +473,12 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
           }),
       })
       if (d.has_app) items.push({ label: 'Restart app process', icon: <RefreshCw />, onSelect: () => void run('restart', () => runCommand({ type: 'restart_site_app', hostname: d.hostname })) })
+      items.push({
+        label: 'Export to bundle…',
+        icon: <Download />,
+        hint: 'Its settings, .env files, database and files — pick what goes in',
+        onSelect: () => setExportFor([d.hostname]),
+      })
       items.push(
         'separator',
         {
@@ -559,6 +570,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
           </Button>
           <GitCloneButton defaultParent={effectiveParent} onDone={adopt} />
           <ImportEnvironmentButton defaultParent={effectiveParent} onDone={adopt} />
+          <SiteImportButton onWatch={() => onNavigate('processes')} />
         </div>
       </div>
 
@@ -622,6 +634,16 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                   </Select>
                   <Button size="sm" variant="outline" className="h-8" disabled={busyBulk || !bulkServerChoice} onClick={() => void movePickedToServer()}>
                     Move sites
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8"
+                    disabled={pickedHostnames.length === 0}
+                    onClick={() => setExportFor(pickedHostnames)}
+                    title="Export the selected sites into one bundle"
+                  >
+                    <Download /> Export
                   </Button>
                   <Button size="sm" variant="outline" className="h-8 text-destructive hover:bg-destructive/10" disabled={busyBulk} onClick={() => void bulkDelete()}>
                     <Trash2 /> Delete
@@ -868,6 +890,18 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       )}
 
       <DriftDialog web={web} />
+
+      {/* One dialog for both entry points: a row's "Export to bundle…" and the bulk bar's
+          Export. Rendered once, because two copies would each own their own state. */}
+      <SiteExportDialog
+        isOpen={exportFor !== null}
+        hostnames={exportFor ?? []}
+        onClose={() => setExportFor(null)}
+        onWatch={() => {
+          setExportFor(null)
+          onNavigate('processes')
+        }}
+      />
 
       <Dialog
         open={!!health}

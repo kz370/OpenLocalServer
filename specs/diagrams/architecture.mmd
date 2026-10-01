@@ -19,3 +19,8 @@ graph TB
   SVC --> PROC
   PROJ --> SETUP[SetupPlanner]
   SETUP --> JOUR[Journal]
+  INNER --> TASKS[TaskManager]
+  TASKS --> TEVENT[task-event]
+  INNER --> BUNDLE[SiteBundler]
+  BUNDLE --> CRYPTO[BundleCipher]
+  BUNDLE --> JOUR

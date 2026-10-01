@@ -37,7 +37,7 @@ Key patterns:
 | Runtime | ols-core: catalog, catalogs, runtime, php, nodepm, composer, venv, custom_install, resolver, detection, plugin, updater | Install, resolve, extend runtimes |
 | Services | ols-core: service, custom_service, dbtools, mail, monitor, workers, scheduler | Background servers, workers, cron |
 | Web | ols-core: web/*, domain, ca, certs, hosts, dns, health, tunnel, inspector | Domains, TLS, servers, exposure |
-| Data | ols-core: dbbackup, sqlite, migrate | Databases, files, migration |
+| Data | ols-core: dbbackup, sqlite, migrate, sitebundle, crypto, tasks | Databases, files, migration, site bundles, their password sealing, background-task registry |
 | Project | ols-core: project, project_tools, manifest, profiles, setup, snapshots, envfile, command_catalog, git, shortcuts, editors, terminal, shell_menu, procfile, loadtest, xdebug, quickapp/* | Projects, envs, automation |
 | CLI | olsc | `ols` on PATH (`olsc.exe` beside the app), daemon mode |
 | Helper | ols-helper | Elevated hosts/NRPT/service pipe |
@@ -45,7 +45,7 @@ Key patterns:
 | UI | ui/src | React pages, components, `core.ts` IPC wrapper |
 
 ## Infrastructure Components
-- ProcessSupervisor (own Tokio runtime, broadcast events: process-event, terminal-event, runtime-event).
+- ProcessSupervisor (own Tokio runtime, broadcast events: process-event, terminal-event, runtime-event, task-event).
 - RuntimeManager (download -> SHA256 verify -> extract, PATH probe cache, broadcast).
 - ServiceManager (MariaDB/Postgres/Mongo/Redis/Mailpit lifecycle, TCP health probe).
 - WebManager (render -> validate -> backup -> apply -> reload -> health; rollback on validator fail). One pipeline run per web server, each with its own process, ports and config files; a rollback is scoped to the server that failed.
@@ -55,6 +55,8 @@ Key patterns:
 - TunnelManager (cloudflare/ngrok/localtunnel) + Inspector proxy (500 req cap, redacted).
 - Scheduler (1-min tick, cron/every_*, no overlap), Workers (max 16 copies), TerminalManager (portable-pty, max 8).
 - Control channel (named pipe + token in control.json), HTTP API (127.0.0.1:7420, bearer SHA256, read_only/operate).
+- TaskManager (§164): in-memory background tasks, one record plus one thread each, published whole over `task-event`; the Processes page lists them with per-task steps and progress. The heavy commands (`export_sites`, `import_sites`) answer with a task id rather than a result, because an export of twenty sites and a database restore are not what a click should wait for.
+- SiteBundler (§165): one zip per export holding any mix of settings, `.env` files, database dumps and project files for any number of sites, grouped by project; `.env` and dumps are optionally sealed under an export password (Argon2id + ChaCha20-Poly1305), an import onto an existing site takes a snapshot first, and the whole feature is local-only (absent from the HTTP `operate` and AI allow-lists).
 
 ## Service Relationships
 - UI -> Tauri `run_command` -> Core::dispatch -> Inner managers -> ProcessSupervisor -> OS processes.
