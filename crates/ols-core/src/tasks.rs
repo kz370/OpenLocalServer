@@ -686,17 +686,28 @@ mod tests {
     #[test]
     fn progress_is_reported_with_the_current_step() {
         let manager = TaskManager::new();
-        let id = manager.start("t", "Two steps", "", 2, |h| {
+        // The worker parks on its second step instead of returning from it. Returning left the
+        // task's fate to the `FinishGuard`, which closes a running step as `Failed` — so the
+        // predicate below was a race, and it only ever passed because a *broken* guard left the
+        // task `Running` forever. A test that needs a task to still be running has to keep it
+        // running, rather than rely on nothing stopping it.
+        let (tx_resume, rx_resume) = mpsc::channel::<()>();
+        let id = manager.start("t", "Two steps", "", 2, move |h| {
             h.begin_step("Dumping databases");
             h.advance(1);
             h.end_step(Some("done".into()));
             h.begin_step("Writing the bundle");
+            let _ = rx_resume.recv();
+            h.succeed();
         });
         let view = wait_for(&manager, &id, |t| {
             t.steps.len() == 2 && t.steps[1].state == StepState::Running
         });
         assert_eq!(view.current_step(), Some("Writing the bundle"));
         assert_eq!(view.progress.fraction(), Some(0.5));
+        assert_eq!(view.state, TaskState::Running, "and it is still going");
+        let _ = tx_resume.send(());
+        wait_for(&manager, &id, |t| t.state.is_finished());
     }
 
     #[test]
