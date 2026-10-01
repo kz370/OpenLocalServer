@@ -167,6 +167,12 @@ function AutoBackupSection({ project, onChanged }: { project: Project; onChanged
   const covered = mine.some((site) => site.enabled)
   const plan = status?.settings
   const perSite = plan?.scope === 'site'
+  /**
+   * The plan is on and covers everything, so this site's switch would save a value the app-wide
+   * plan overrides: the switch is shown for its state, not as an offer, and is disabled so it
+   * reads as inert rather than as a second answer to a question Settings already answered.
+   */
+  const rowLocked = !!plan?.enabled && !perSite
 
   async function saveSite(hostname: string, patch: Partial<AutoBackupSiteSettings>) {
     const current = mine.find((s) => s.hostname === hostname)
@@ -223,9 +229,15 @@ function AutoBackupSection({ project, onChanged }: { project: Project; onChanged
           <Toggle
             checked={site.enabled}
             onChange={(enabled) => void saveSite(site.hostname, { enabled })}
-            disabled={busy}
+            disabled={busy || rowLocked}
             label={site.hostname}
-            hint={perSite ? 'A snapshot records the project, so one site switched on covers this project.' : undefined}
+            hint={
+              rowLocked
+                ? 'Managed by Settings — set the scope to chosen sites to switch this site on or off here.'
+                : perSite
+                  ? 'A snapshot records the project, so one site switched on covers this project.'
+                  : undefined
+            }
           />
           {site.enabled && (
             <>
