@@ -8,7 +8,7 @@ import { EnvironmentPanel } from '@/components/project/EnvironmentPanel'
 import { GitPanel } from '@/components/project/GitPanel'
 import { LoadPanel } from '@/components/project/LoadPanel'
 import { RepairPanel } from '@/components/project/RepairPanel'
-import { SnapshotsPanel } from '@/components/project/SnapshotsPanel'
+import { BackupsPanel } from '@/components/project/BackupsPanel'
 import { WorkersPanel } from '@/components/project/WorkersPanel'
 import { XdebugDialog } from '@/components/XdebugDialog'
 import { Badge } from '@/components/ui/badge'
@@ -29,7 +29,7 @@ import {
 import { useAction } from '@/lib/hooks'
 import { confirmThen } from '@/lib/confirm'
 
-export type ToolTab = 'environment' | 'terminal' | 'env' | 'git' | 'workers' | 'snapshots' | 'repair' | 'mail' | 'composer' | 'node' | 'python' | 'xdebug' | 'load'
+export type ToolTab = 'environment' | 'terminal' | 'env' | 'git' | 'workers' | 'backups' | 'repair' | 'mail' | 'composer' | 'node' | 'python' | 'xdebug' | 'load'
 
 /** The project tools, in the order the site dialog lists them. */
 export const TOOL_TABS: { id: ToolTab; label: string }[] = [
@@ -38,7 +38,7 @@ export const TOOL_TABS: { id: ToolTab; label: string }[] = [
   { id: 'env', label: '.env' },
   { id: 'git', label: 'Git' },
   { id: 'workers', label: 'Workers' },
-  { id: 'snapshots', label: 'Snapshots' },
+  { id: 'backups', label: 'Backups' },
   { id: 'repair', label: 'Repair' },
   { id: 'mail', label: 'Mail' },
   { id: 'composer', label: 'Composer' },
@@ -83,7 +83,7 @@ export function ProjectTools({ detail, start, refreshKey, tab }: { detail: Proje
       {tab === 'terminal' && <ProjectTerminal projectId={id} />}
       {tab === 'git' && <GitPanel projectId={id} />}
       {tab === 'workers' && <WorkersPanel projectId={id} />}
-      {tab === 'snapshots' && <SnapshotsPanel project={detail.project} />}
+      {tab === 'backups' && <BackupsPanel project={detail.project} />}
       {tab === 'repair' && <RepairPanel projectId={id} />}
       {tab === 'env' && <EnvEditor projectId={id} />}
       {tab === 'mail' && <MailPanel projectId={id} />}

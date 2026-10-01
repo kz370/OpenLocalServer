@@ -1,7 +1,7 @@
 // Cross-page navigation for the command palette and search: open a site or project (optionally on
 // one of its tool tabs) without threading callbacks through every page.
 
-export type ProjectTab = 'environment' | 'terminal' | 'env' | 'git' | 'workers' | 'snapshots' | 'repair' | 'mail' | 'composer' | 'node' | 'python' | 'xdebug' | 'load'
+export type ProjectTab = 'environment' | 'terminal' | 'env' | 'git' | 'workers' | 'backups' | 'repair' | 'mail' | 'composer' | 'node' | 'python' | 'xdebug' | 'load'
 
 export interface OpenProject {
   id: string

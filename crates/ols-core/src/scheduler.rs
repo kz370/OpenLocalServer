@@ -445,7 +445,10 @@ pub fn start_clock(inner: &Arc<Inner>) {
             let secs = Local::now().second() as u64;
             std::thread::sleep(Duration::from_secs(60 - secs.min(59)) + Duration::from_millis(200));
             match weak.upgrade() {
-                Some(inner) => inner.scheduler_tick(),
+                Some(inner) => {
+                    inner.scheduler_tick();
+                    crate::auto_backup::clock_tick(&inner);
+                }
                 None => return,
             }
         })

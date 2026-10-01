@@ -11,7 +11,8 @@ use ols_core::{
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Listener, Manager, WindowEvent, Wry};
-use tauri_plugin_notification::NotificationExt;
+
+mod notify;
 
 /// The single front door from the UI into the application core (architecture decision 1).
 /// The UI never calls a manager directly — every action is a `CoreCommand` routed through here.
@@ -42,12 +43,12 @@ fn notifications_enabled(core: &Core) -> bool {
     core.inner().setting_bool("notifications.enabled", true)
 }
 
-/// §119: a native notification, unless the user turned them off.
-fn notify(app: &AppHandle, core: &Core, title: &str, body: &str) {
+/// §119: a desktop alert of our own, unless the user turned them off.
+fn notify(core: &Core, title: &str, body: &str) {
     if !notifications_enabled(core) {
         return;
     }
-    let _ = app.notification().builder().title(title).body(body).show();
+    notify::show(title, body);
 }
 
 fn show_main_window(app: &AppHandle) {
@@ -256,7 +257,6 @@ fn begin_shutdown(app: &AppHandle, core: Core) {
             }
             if !notified {
                 notify(
-                    &app,
                     &core,
                     "Still stopping",
                     "OpenLocalServer will keep waiting and exit when its managed processes stop.",
@@ -462,8 +462,8 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
                     let handle = app.clone();
                     std::thread::spawn(move || {
                         match core.inner().apply_web(&[]) {
-                            Ok(_) => notify(&handle, &core, "Web server", "Sites are up to date."),
-                            Err(e) => notify(&handle, &core, "Web server failed", &e.to_string()),
+                            Ok(_) => notify(&core, "Web server", "Sites are up to date."),
+                            Err(e) => notify(&core, "Web server failed", &e.to_string()),
                         }
                         if event.id.as_ref() == "start_all" {
                             for service in core
@@ -496,7 +496,6 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
                                 if !still_running.is_empty() =>
                             {
                                 notify(
-                                    &handle,
                                     &core,
                                     "Something did not stop",
                                     &format!(
@@ -507,7 +506,6 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
                             }
                             Ok(_) => {}
                             Err(e) => notify(
-                                &handle,
                                 &core,
                                 "Stop all failed",
                                 &format!("{} — {}", e.problem, e.cause),
@@ -575,7 +573,6 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
                     {
                         if let Err(e) = core.services().stop(service_id) {
                             notify(
-                                app,
                                 &core,
                                 "A service did not stop",
                                 &format!("{service_id}: {e}"),
@@ -674,7 +671,6 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_notification::init())
         .manage(core)
         .setup(move |app| {
             let core = setup_core;
@@ -688,6 +684,23 @@ pub fn run() {
                     THEME_IS_DARK.store(matches!(theme, tauri::Theme::Dark), Ordering::Relaxed);
                 }
             }
+
+            // Desktop alerts are raised by the app itself, under its own Windows identity
+            // and wearing the mark the tray is currently painting — without both, a toast
+            // arrives as "Windows PowerShell" or with no icon at all.
+            let alert_dir = core.inner().paths.data_dir();
+            notify::init(
+                &app.config().identifier.clone(),
+                &app
+                    .config()
+                    .product_name
+                    .clone()
+                    .unwrap_or_else(|| "OLS".to_string()),
+                &alert_dir,
+                THEME_IS_DARK.load(Ordering::Relaxed),
+            );
+            let theme_alert_dir = alert_dir.clone();
+
             let theme_handle = app.handle().clone();
             let theme_core = core.clone();
             app.listen("ols:theme", move |event| {
@@ -697,6 +710,8 @@ pub fn run() {
                     _ => return,
                 };
                 set_theme_icon(&theme_handle, &theme_core, dark);
+                // An alert raised after this carries the new colourway too.
+                notify::set_theme(&theme_alert_dir, dark);
             });
 
             let process_handle = app.handle().clone();
@@ -722,7 +737,6 @@ pub fn run() {
                             .map(|p| p.name)
                             .unwrap_or_default();
                         notify(
-                            &process_handle,
                             &process_core,
                             "A process stopped unexpectedly",
                             &name,
@@ -748,7 +762,6 @@ pub fn run() {
                     let _ = runtime_handle.emit("runtime-event", &event);
                     match &event {
                         RuntimeEvent::Installed { id, version, .. } => notify(
-                            &runtime_handle,
                             &runtime_core,
                             "Installed",
                             &format!("{id} {version} is ready"),
@@ -758,14 +771,12 @@ pub fn run() {
                             version,
                             message,
                         } => notify(
-                            &runtime_handle,
                             &runtime_core,
                             "Install failed",
                             &format!("{id} {version}: {message}"),
                         ),
                         // A stop is deliberate — say so, don't style it as a failure.
                         RuntimeEvent::Cancelled { id, version } => notify(
-                            &runtime_handle,
                             &runtime_core,
                             "Install stopped",
                             &format!("{id} {version} download was stopped"),
@@ -784,7 +795,6 @@ pub fn run() {
             });
 
             // Quick App runs: notify once when each finishes.
-            let run_handle = app.handle().clone();
             let run_core = core.clone();
             std::thread::spawn(move || {
                 let mut announced = std::collections::HashSet::new();
@@ -799,7 +809,7 @@ pub fn run() {
                                 ),
                                 Some(e) => (format!("{} failed", run.app_name), e),
                             };
-                            notify(&run_handle, &run_core, &title, &body);
+                            notify(&run_core, &title, &body);
                         }
                     }
                 }
@@ -826,13 +836,11 @@ pub fn run() {
                 // Say so, or a launch with no window reads as an app that failed to
                 // start. The tray icon can also be in the Windows overflow area,
                 // which is invisible until the user opens it.
-                let hidden_app = app.handle().clone();
                 let hidden_core = core.clone();
                 std::thread::spawn(move || {
                     // Give the tray icon a moment to exist under its own taskbar entry.
                     std::thread::sleep(Duration::from_secs(2));
                     notify(
-                        &hidden_app,
                         &hidden_core,
                         "Running in the system tray",
                         "OpenLocalServer started minimized. Click the tray icon to open the window.",
@@ -851,14 +859,12 @@ pub fn run() {
                     for result in autostart_core.auto_fix_diagnostics() {
                         if result.ok {
                             notify(
-                                &auto_fix_app,
                                 &autostart_core,
                                 "Diagnostics",
                                 &format!("Fixed: {}", result.problem),
                             );
                         } else {
                             notify(
-                                &auto_fix_app,
                                 &autostart_core,
                                 "Automatic fix failed",
                                 &format!("{}: {}", result.problem, result.detail),

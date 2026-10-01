@@ -5,7 +5,7 @@ olsc is a local development environment manager for Windows. Successor to XAMPP 
 
 ## Technologies Used
 - **Backend:** Rust (edition 2021, stable), Tokio full runtime, tracing + tracing-appender, serde / serde_json / serde_yaml, reqwest (rustls), sha2/sha1, zip, minijinja, regex, rcgen + rustls, portable-pty, sysinfo, chrono, hyper, minisign-verify, notify, keyring, directories, clap 4.
-- **Desktop shell:** Tauri 2.11.6, tauri-plugin-dialog, tauri-plugin-notification, tauri-plugin-single-instance, tray-icon.
+- **Desktop shell:** Tauri 2.11.6, tauri-plugin-dialog, tauri-plugin-single-instance, tray-icon; desktop alerts are built by the app itself on the `windows` crate (WinRT toast), not by a notification plugin.
 - **Frontend:** TypeScript, React 19, Vite 8, Tailwind CSS 4, shadcn/ui (Radix), CodeMirror 6, xterm.js 5 + fit addon, lucide-react, Tauri API 2.11.
 - **Managed runtimes:** PHP NTS 8.1–8.5 + Xdebug + Composer, Node 22/24 + corepack (npm/pnpm/yarn), Python venv, MariaDB 11.4, PostgreSQL, MongoDB, Redis (redis-windows), Mailpit, Nginx 1.28, Apache 2.4, Caddy 2.11, SQLite, k6, portable Git, HeidiSQL / pgAdmin / NoSQLBooster / Tiny RDM (Redis one-click).
 - **Storage:** single SQLite file (`app.db`, WAL) under portable `data/` directory; settings as key/value rows, collections as JSON blobs. `OLS_HOME` env overrides all paths.

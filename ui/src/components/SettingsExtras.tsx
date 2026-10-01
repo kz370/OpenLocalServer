@@ -1,4 +1,4 @@
-import { Activity, Archive, Boxes, Copy, Cpu, Database, ExternalLink, Gauge, History, Info, Leaf, RotateCcw, Settings2 } from 'lucide-react'
+import { Activity, Archive, Boxes, Copy, Cpu, Database, ExternalLink, Gauge, History, Info, Leaf, RotateCcw, Settings2, Timer } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
@@ -6,9 +6,10 @@ import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Field, Select } from '@/components/ui/form'
+import { CronFields } from '@/components/ui/cron-fields'
+import { Field, Select, SettingRow, Toggle } from '@/components/ui/form'
 import { NumberInput, Input } from '@/components/ui/input'
-import { type CpuCapStatus, type ResourceLimits, type SettingsBackup, runCommand } from '@/core'
+import { type AutoBackupSettings, type AutoBackupStatus, type CpuCapStatus, type ResourceLimits, type SettingsBackup, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
 import { formatBytes, timeAgo, useAction, useAppMarkPath } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
@@ -386,7 +387,7 @@ export function SettingsBackupsCard() {
         <CardTitle className="flex items-center gap-2">
           <Archive className="size-4" /> Settings backups
         </CardTitle>
-        <CardDescription>Projects, sites, services, Quick Apps and Commands, profiles, workers, schedules, tunnels and certificate details. Project snapshots are on each project's Snapshots tab.</CardDescription>
+        <CardDescription>Projects, sites, services, Quick Apps and Commands, profiles, workers, schedules, tunnels and certificate details. A project's own snapshots and automatic backups are on its Backups tab.</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         <ErrorCard error={error} onDismiss={() => setError(null)} />
@@ -428,6 +429,248 @@ export function SettingsBackupsCard() {
             </Button>
           </div>
         ))}
+      </CardContent>
+    </Card>
+  )
+}
+
+const PERIODS = [
+  { id: 'every_hour', schedule: 'hourly', label: 'Every hour' },
+  { id: 'every_day', schedule: 'daily', label: 'Every day (00:00)' },
+  { id: 'every_week', schedule: 'weekly', label: 'Every Sunday (00:00)' },
+  { id: 'every_month', schedule: 'monthly', label: 'On the 1st of the month (00:00)' },
+  { id: 'custom', schedule: '', label: 'Custom (cron)' },
+]
+
+/** §130: sites (snapshots) and databases, taken on a schedule, capped at a number to keep. */
+export function AutoBackupCard() {
+  const [status, setStatus] = useState<AutoBackupStatus | null>(null)
+  const [period, setPeriod] = useState('every_day')
+  const [saved, setSaved] = useState<string | null>(null)
+  const { busy, error, setError, run } = useAction()
+
+  const load = useCallback(async () => {
+    const r = await runCommand({ type: 'get_auto_backup' })
+    if (r.type === 'auto_backup') {
+      setStatus(r.status)
+      setPeriod(PERIODS.find((p) => p.schedule === r.status.settings.schedule)?.id ?? 'custom')
+    }
+  }, [])
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  if (!status) return null
+  const s = status.settings
+  const set = (patch: Partial<AutoBackupSettings>) => setStatus({ ...status, settings: { ...s, ...patch } })
+
+  const save = (patch: Partial<AutoBackupSettings>) =>
+    run('save', async () => {
+      const r = await runCommand({ type: 'set_auto_backup', settings: { ...s, ...patch } })
+      if (r.type === 'auto_backup') {
+        setStatus(r.status)
+        setSaved('Saved.')
+        setTimeout(() => setSaved(null), 2500)
+      }
+    })
+
+  const pickPeriod = (id: string) => {
+    setPeriod(id)
+    const preset = PERIODS.find((p) => p.id === id)
+    if (preset?.schedule) set({ schedule: preset.schedule })
+  }
+
+  const chosen = status.sites.filter((site) => site.enabled)
+  const loose = chosen.filter((site) => !site.project_id).length
+  const perSite = s.scope === 'site'
+  const keptTotal = Object.values(status.kept).reduce((sum, n) => sum + n, 0)
+  const last = status.last_run
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Timer className="size-4" /> Automatic backups
+        </CardTitle>
+        <CardDescription>
+          Takes project snapshots and database dumps on a timetable, while OLS is open. Automatic backups are deleted oldest-first once the limit is reached; backups you take by hand are never touched.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <ErrorCard error={error} onDismiss={() => setError(null)} />
+
+        <Toggle
+          checked={s.enabled}
+          onChange={(enabled) => save({ enabled })}
+          label="Back up automatically"
+          hint={
+            status.next_run_ms
+              ? `Next run ${timeAgo(status.next_run_ms).replace(' ago', ' from now')}`
+              : 'Off. Nothing is taken until you turn this on.'
+          }
+        />
+
+        <div>
+          <SettingRow title="What to back up" hint="Sites are snapshotted; databases are dumped. Each can be left out.">
+            <div className="flex flex-col gap-1.5">
+              <Toggle checked={s.snapshots} onChange={(snapshots) => save({ snapshots })} label="Sites (snapshots)" />
+              <Toggle checked={s.databases} onChange={(databases) => save({ databases })} label="All databases" />
+            </div>
+          </SettingRow>
+
+          {s.snapshots && (
+            <>
+              <SettingRow title="Snapshot contents" hint="Database data is dumped separately, so it is not also packed into the zip.">
+                <div className="flex flex-col gap-1.5">
+                  <Toggle checked={s.include_files} onChange={(include_files) => save({ include_files })} label="Project files" />
+                  <Toggle checked={s.include_env} onChange={(include_env) => save({ include_env })} label=".env files (hold passwords and keys)" />
+                </div>
+              </SettingRow>
+
+              <SettingRow
+                title="Which sites"
+                stacked
+                hint="Each site decides for itself: open the site's settings dialog and turn on its Backups tab. A site is backed up through the project behind it, so a project with three sites is one backup."
+              >
+                <div className="flex flex-col gap-1">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="auto-backup-scope"
+                      checked={s.scope === 'app'}
+                      onChange={() => save({ scope: 'app' })}
+                    />
+                    Every project and database in OLS
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="auto-backup-scope"
+                      checked={s.scope === 'site'}
+                      onChange={() => save({ scope: 'site' })}
+                    />
+                    Only the sites that asked for it
+                  </label>
+                  {s.scope === 'site' && (
+                    <div className="mt-1 rounded-md border border-border/60 p-2 text-xs text-muted-foreground">
+                      {chosen.length === 0 ? (
+                        <p>
+                          No site has asked yet. Open a site, switch to its <span className="text-foreground">Backups</span> tab and
+                          turn on its automatic backup.
+                        </p>
+                      ) : (
+                        <>
+                          <p>
+                            {chosen.length} of {status.sites.length} site{status.sites.length === 1 ? '' : 's'} asked:{' '}
+                            {chosen.map((site) => site.hostname).join(', ')}
+                          </p>
+                          <p className="mt-1">
+                            Each of them sets its own period and how many to keep on its Backups page.
+                          </p>
+                          {loose > 0 && (
+                            <p className="mt-1 text-destructive">
+                              {loose} of them belong to no project yet, so a snapshot has nothing to record. Point them at a
+                              project on their settings tab.
+                            </p>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </SettingRow>
+            </>
+          )}
+
+          <SettingRow
+            title="How often"
+            hint={
+              perSite
+                ? 'Each site sets its own period on its own Backups page, so this number is not used.'
+                : period === 'custom'
+                  ? 'Five fields, each accepting * for every value.'
+                  : undefined
+            }
+          >
+            {perSite ? (
+              <p className="max-w-64 text-sm text-muted-foreground">Set per site, on the site's Backups page</p>
+            ) : period === 'custom' ? (
+              <CronFields value={s.schedule} onCommit={(expression) => save({ schedule: expression })} />
+            ) : (
+              <Select value={period} onChange={(e) => pickPeriod(e.target.value)} className="w-48" aria-label="Backup period">
+                {PERIODS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </SettingRow>
+
+          <SettingRow
+            title="How many to keep"
+            hint={
+              perSite
+                ? 'Each site keeps its own count, on its own Backups page.'
+                : keptTotal
+                  ? `${keptTotal} automatic backup(s) on disk right now.`
+                  : 'Oldest automatic backups are deleted once the limit is reached.'
+            }
+          >
+            {perSite ? (
+              <p className="max-w-64 text-sm text-muted-foreground">Set per site, on the site's Backups page</p>
+            ) : (
+              <NumberInput
+                value={s.keep}
+                min={1}
+                max={200}
+                onChange={(keep) => set({ keep: keep ?? 1 })}
+                onBlur={() => save({})}
+                className="w-24"
+                label="Backups to keep"
+              />
+            )}
+          </SettingRow>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant="secondary"
+            disabled={busy !== null}
+            onClick={() =>
+              run('now', async () => {
+                const r = await runCommand({ type: 'run_auto_backup' })
+                if (r.type === 'auto_backup_run') await load()
+              })
+            }
+          >
+            {busy === 'now' ? <Spinner /> : <Archive />} Back up now
+          </Button>
+          {status.running && <span className="text-sm text-muted-foreground">A backup is already running.</span>}
+          {saved && <span className="text-sm text-success">{saved}</span>}
+        </div>
+
+        {last && (
+          <div className="flex flex-col gap-1.5 rounded-lg border border-border px-3 py-2 text-sm">
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-medium">Last run {timeAgo(last.finished_ms)}</span>
+              <Badge variant={last.problems.length ? 'destructive' : 'secondary'}>
+                {last.problems.length ? `${last.problems.length} problem(s)` : 'Everything backed up'}
+              </Badge>
+            </div>
+            {last.created.length > 0 && <div className="text-xs text-muted-foreground">Wrote {last.created.join(', ')}.</div>}
+            {last.removed.length > 0 && (
+              <div className="text-xs text-muted-foreground">
+                Deleted {last.removed.length} backup(s) past the limit: {last.removed.join(', ')}
+              </div>
+            )}
+            {last.problems.map((problem) => (
+              <p key={problem} className="text-xs text-destructive">
+                {problem}
+              </p>
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   )

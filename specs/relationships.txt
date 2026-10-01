@@ -52,6 +52,16 @@ ServiceManager | uses | RuntimeManager
 ServiceManager | uses | ProcessSupervisor (start waits for the spawn to be decided via wait_for_spawn and keeps the OS reason; stop waits for exit via wait_for_exit)
 ServiceManager | uses | ResourceLimits (§129 CPU cap, applied in start_capped by wrapping the spawn in cpulimit; a wanted cap with no utility on disk refuses the start)
 WebManager | uses | ResourceLimits (the same §129 CPU cap, applied when a web server is spawned)
+scheduler::start_clock | calls | auto_backup::clock_tick (the §130 minute loop, after scheduler_tick; the work goes to its own thread so a slow dump cannot delay a scheduled task)
+auto_backup::Inner::run_auto_backup | uses | snapshots::create_snapshot (label `auto`, with the database dump left out of the zip — the standalone dump is the one that is retained), dbbackup::backup (MariaDB/PostgreSQL, server started first when installed but stopped), sqlite::backup (WAL-safe .backup of each registered file)
+auto_backup::Inner::set_auto_backup_settings | refuses | a plan that could not run (an unparseable schedule, a keep count outside 1..=200, nothing selected to back up)
+auto_backup::Inner::set_site_auto_backup | refuses | a hostname no site owns, and (while the plan covers everything) drops the site's own period and keep rather than storing a value the plan overrides
+auto_backup::Inner::auto_backup_targets | reports | two sites of one project asking for different periods (a snapshot is a project's, so one period runs for both) instead of picking one in silence
+auto_backup::AutoBackupState | deletes_only | paths it recorded, bucketed per project / per SQL database / per SQLite file, so retention never touches a backup the user took by hand
+auto_backup | writes_to | the folders the manual backups already use (data/snapshots/<project>/, data/backups/<engine>/, beside the SQLite file), so the existing lists, restore dialogs and delete buttons find automatic backups with no extra wiring
+auto_backup | excluded_from | the HTTP `operate` allow-list and the AI command allow-list (a plan and a retention count are the user's own, not an operation a remote caller triggers)
+ui BackupsPanel | reads | AutoBackupStatus.sites filtered to its own project, and writes each site's AutoBackupSiteSettings (its period and keep) when the plan is scoped to chosen sites
+ui SettingsExtras AutoBackupCard | owns | the app-wide plan only; with the site scope it says the period and keep are set per site rather than offering a number nothing reads
 ServiceManager | uses | PortChecker
 ServiceManager | uses | WebManager (proxied web rows: list/status/start/stop/is_running delegate, no duplicated state)
 ServiceManager | uses | CustomServiceStore
@@ -125,3 +135,6 @@ DomainStore | re-anchors | the built-in `openlocalserver.test` root to `<data>/h
 DomainStore | seeds | home page logo.svg + logo-dark.svg from ui/public/favicon.svg + favicon-dark.svg (exact official brand bytes, both colourways because the page's own theme toggle picks one); rewritten when they differ from the shipped bytes and the page is still stock, left alone once the page is hand-edited
 TauriApp | waits_on | UI main.tsx `ols:ui-ready` (window revealed after first paint; 5s fallback, by which time the `booting` background is still on the canvas if React never painted, so no reveal path can show a transparent frame)
 TauriApp | reads | ols-core `app::should_start_hidden` (startup.minimized preference decides on every launch; --minimized only forces)
+TauriApp | raises | desktop alerts itself, under its own AppUserModelID `dev.openlocalserver.app` and with `icons/{32x32,dark/32x32}.png` as `appLogoOverride` (a toast with no id renders as "Windows PowerShell", and an unplaced toast image renders as a banner)
+TauriApp notify | reads | `notifications.enabled` (Settings > Startup, default on; every alert path checks it before showing)
+TauriApp notify | writes | `HKCU\Software\Classes\AppUserModelId\dev.openlocalserver.app` (DisplayName, IconUri) and `<data>/notification-icon.png`; the latter is rewritten on `ols:theme` so an alert carries the colourway the tray is painting

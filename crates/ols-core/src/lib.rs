@@ -4,6 +4,7 @@
 pub mod ai;
 pub mod api;
 pub mod app;
+pub mod auto_backup;
 pub mod ca;
 pub mod catalog;
 pub mod catalogs;

@@ -894,6 +894,18 @@ pub enum CoreCommand {
     SetResourceLimits {
         limits: crate::resources::ResourceLimits,
     },
+    /// §130: the automatic backup plan, when it next runs, and the last pass.
+    GetAutoBackup,
+    SetAutoBackup {
+        settings: crate::auto_backup::AutoBackupSettings,
+    },
+    /// One site's own backup settings, made in that site's Backups page.
+    SetSiteAutoBackup {
+        hostname: String,
+        site: crate::auto_backup::AutoBackupSiteSettings,
+    },
+    /// Runs the automatic backup pass right now, on the same rules the clock would use.
+    RunAutoBackup,
 
     // ---- Stage 14: tunnels and traffic (§56–60, §110–111) --------------------------
     ListTunnelProviders,
@@ -1568,6 +1580,14 @@ pub enum CoreResponse {
         /// Whether a wanted CPU limit can actually be applied on this machine, so the
         /// Resources card can say so instead of claiming Windows has no CPU cap.
         cpu: crate::resources::CpuCapStatus,
+    },
+    /// §159: the plan, when it next runs, how many automatic backups are kept, and the
+    /// last pass's result.
+    AutoBackup {
+        status: Box<crate::auto_backup::AutoBackupStatus>,
+    },
+    AutoBackupRun {
+        run: Box<crate::auto_backup::AutoBackupRun>,
     },
     TunnelProviders {
         providers: Vec<crate::tunnel::ProviderInfo>,
@@ -3461,6 +3481,31 @@ impl Core {
                 Ok(R::Resources {
                     limits: i.resource_limits(),
                     cpu: i.resource_limits().cpu_cap_status(),
+                })
+            }
+            C::GetAutoBackup => Ok(R::AutoBackup {
+                status: Box::new(i.auto_backup_status()),
+            }),
+            C::SetAutoBackup { settings } => {
+                tracing::info!(
+                    command = "set_auto_backup",
+                    enabled = settings.enabled,
+                    keep = settings.keep
+                );
+                Ok(R::AutoBackup {
+                    status: Box::new(i.set_auto_backup_settings(settings)?),
+                })
+            }
+            C::SetSiteAutoBackup { hostname, site } => {
+                tracing::info!(command = "set_site_auto_backup", hostname = %hostname, enabled = site.enabled);
+                Ok(R::AutoBackup {
+                    status: Box::new(i.set_site_auto_backup(&hostname, site)?),
+                })
+            }
+            C::RunAutoBackup => {
+                tracing::info!(command = "run_auto_backup");
+                Ok(R::AutoBackupRun {
+                    run: Box::new(i.run_auto_backup()?),
                 })
             }
 

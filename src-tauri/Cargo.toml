@@ -26,7 +26,19 @@ serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 tauri = { version = "2.11.6", features = ["tray-icon", "image-png"] }
 tauri-plugin-dialog = "2"
-tauri-plugin-notification = "2"
 tauri-plugin-single-instance = "2"
 tracing = "0.1"
 ols-core = { path = "../crates/ols-core" }
+
+[target.'cfg(windows)'.dependencies]
+# Only for the Windows notification identity (AppUserModelID + its HKCU entries) and the
+# toast itself.
+windows = { version = "0.61", features = [
+  "Data_Xml_Dom",
+  "Foundation",
+  "UI_Notifications",
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_System_Registry",
+  "Win32_UI_Shell",
+] }

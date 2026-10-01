@@ -864,6 +864,10 @@ export type CoreCommand =
   | { type: 'restore_settings'; id: string }
   | { type: 'get_resource_limits' }
   | { type: 'set_resource_limits'; limits: ResourceLimits }
+  | { type: 'get_auto_backup' }
+  | { type: 'set_auto_backup'; settings: AutoBackupSettings }
+  | { type: 'set_site_auto_backup'; hostname: string; site: AutoBackupSiteSettings }
+  | { type: 'run_auto_backup' }
   // Stage 14
   | { type: 'list_tunnel_providers' }
   | { type: 'list_tunnels' }
@@ -1062,6 +1066,8 @@ export type CoreResponse =
   | { type: 'settings_backups'; backups: SettingsBackup[] }
   | { type: 'settings_backup'; backup: SettingsBackup }
   | { type: 'resources'; limits: ResourceLimits; cpu: CpuCapStatus }
+  | { type: 'auto_backup'; status: AutoBackupStatus }
+  | { type: 'auto_backup_run'; run: AutoBackupRun }
   | { type: 'tunnel_providers'; providers: TunnelProvider[] }
   | { type: 'tunnels'; tunnels: TunnelStatus[] }
   | { type: 'tunnel'; tunnel: TunnelStatus }
@@ -1510,6 +1516,69 @@ export interface SettingsBackup {
   path: string
   created_ms: number
   size_bytes: number
+}
+
+/** Which projects an automatic backup covers: every project, or only the listed ones. */
+export type AutoBackupScope = 'app' | 'site'
+
+/** §130: what automatic backups take, how often, and how many they keep. */
+export interface AutoBackupSettings {
+  enabled: boolean
+  scope: AutoBackupScope
+  /** Cron expression, or a name the scheduler knows: `daily`, `hourly`, `weekly`, … */
+  schedule: string
+  keep: number
+  snapshots: boolean
+  include_env: boolean
+  include_files: boolean
+  databases: boolean
+}
+
+/** One site's own backup settings, as its Backups page leaves them. */
+export interface AutoBackupSiteSettings {
+  enabled: boolean
+  /** This site's own period; null means it follows the app-wide plan. */
+  schedule: string | null
+  /** This site's own keep count; null means it follows the app-wide plan. */
+  keep: number | null
+}
+
+/** One site's backup settings, and what they mean right now. */
+export interface AutoBackupSite {
+  hostname: string
+  /** The project a snapshot would record, when the site belongs to one. */
+  project_id: string | null
+  project_name: string | null
+  enabled: boolean
+  schedule: string | null
+  keep: number | null
+  /** The period that runs now: the site's own, or the plan's. */
+  effective_schedule: string
+  effective_keep: number
+  /** The plan covers the whole app, so the site's own period and keep are not in force. */
+  managed_by_plan: boolean
+}
+
+/** What one automatic backup pass wrote, deleted and could not do. */
+export interface AutoBackupRun {
+  started_ms: number
+  finished_ms: number
+  created: string[]
+  removed: string[]
+  problems: string[]
+}
+
+export interface AutoBackupStatus {
+  settings: AutoBackupSettings
+  /** "daily at 00:00", "every 15 minutes", … */
+  description: string
+  next_run_ms: number | null
+  running: boolean
+  last_run: AutoBackupRun | null
+  /** How many automatic backups are actually kept per project or database. */
+  kept: Record<string, number>
+  /** Every known site and whether it asked to be backed up. */
+  sites: AutoBackupSite[]
 }
 
 export interface ResourceLimits {

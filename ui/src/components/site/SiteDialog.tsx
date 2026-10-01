@@ -49,7 +49,7 @@ const TAB_ICON: Record<Exclude<SiteTab, 'settings' | 'config' | 'htaccess' | 'se
   env: <FileKey2 />,
   git: <GitBranch />,
   workers: <ListRestart />,
-  snapshots: <Camera />,
+  backups: <Camera />,
   repair: <Wrench />,
   mail: <Mail />,
   composer: <TechIcon id="composer" />,
@@ -209,7 +209,7 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
   // Commands sit right after the terminal: both run things in the project.
   const toolItems = TOOL_TABS.flatMap((t) => (t.id === 'terminal' ? [t, { id: 'commands' as SiteTab, label: 'Commands' }] : [t]))
   // Tooling (mail, runtimes, testing) lives under its own heading: it is not project setup.
-  const PROJECT_TOOL_IDS: SiteTab[] = ['environment', 'terminal', 'commands', 'env', 'git', 'workers', 'snapshots', 'repair']
+  const PROJECT_TOOL_IDS: SiteTab[] = ['environment', 'terminal', 'commands', 'env', 'git', 'workers', 'backups', 'repair']
   const DEV_TOOL_IDS: SiteTab[] = ['mail', 'composer', 'node', 'python', 'xdebug', 'load']
   const projectItems: { id: SiteTab; label: string }[] = projectId
     ? [{ id: 'overview', label: 'Overview' }, ...toolItems.filter((t) => PROJECT_TOOL_IDS.includes(t.id as SiteTab))]

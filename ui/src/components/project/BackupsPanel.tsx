@@ -1,20 +1,22 @@
 import { save, open } from '@tauri-apps/plugin-dialog'
-import { Camera, Copy, Download, History, Trash2 } from 'lucide-react'
+import { Camera, Copy, Download, History, Timer, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
 import { Spinner } from '@/components/Spinner'
+import { CronFields } from '@/components/ui/cron-fields'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
 import { Field, Select, Toggle } from '@/components/ui/form'
-import { Input } from '@/components/ui/input'
-import { type CloneResult, type Project, type RestoreOptions, type RestoreResult, type SnapshotInfo, type SnapshotOptions, runCommand } from '@/core'
+import { Input, NumberInput } from '@/components/ui/input'
+import { type AutoBackupSiteSettings, type AutoBackupStatus, type CloneResult, type Diagnostic, type Project, type RestoreOptions, type RestoreResult, type SnapshotInfo, type SnapshotOptions, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
 import { formatBytes, timeAgo, useAction } from '@/lib/hooks'
 
-/** §130–132, §158: snapshots of a project, restoring them, exporting, and cloning the environment. */
-export function SnapshotsPanel({ project }: { project: Project }) {
+/** §130–132, §158: backups of a project — the automatic plan, snapshots, restoring,
+ * exporting, and cloning the environment. */
+export function BackupsPanel({ project }: { project: Project }) {
   const [snapshots, setSnapshots] = useState<SnapshotInfo[]>([])
   const [label, setLabel] = useState('')
   const [opts, setOpts] = useState<SnapshotOptions>({ env: true, databases: false, files: false })
@@ -33,6 +35,8 @@ export function SnapshotsPanel({ project }: { project: Project }) {
   return (
     <div className="flex flex-col gap-5">
       <ErrorCard error={error} onDismiss={() => setError(null)} />
+
+      <AutoBackupSection project={project} onChanged={load} />
 
       <section className="flex flex-col gap-3 rounded-lg border border-border p-3">
         <h3 className="flex items-center gap-2 text-sm font-medium">
@@ -75,6 +79,7 @@ export function SnapshotsPanel({ project }: { project: Project }) {
             <div className="min-w-0">
               <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
                 {s.label || 'Snapshot'}
+                {s.label === 'auto' && <Badge variant="secondary">automatic</Badge>}
                 <span className="text-xs font-normal text-muted-foreground">
                   {timeAgo(s.created_ms)} · {formatBytes(s.size_bytes)}
                 </span>
@@ -124,6 +129,192 @@ export function SnapshotsPanel({ project }: { project: Project }) {
       {cloning && <CloneDialog project={project} onClose={() => setCloning(false)} />}
     </div>
   )
+}
+
+/** Periods offered per site, in the words the scheduler already uses. */
+const PERIODS = [
+  { id: 'hourly', label: 'Every hour' },
+  { id: 'daily', label: 'Every day (00:00)' },
+  { id: 'weekly', label: 'Every Sunday (00:00)' },
+  { id: 'monthly', label: 'On the 1st of the month (00:00)' },
+]
+
+/**
+ * §130: this project's automatic backups, kept next to the snapshots they produce rather
+ * than on a settings page where the sites are not in view. Each site carries its own
+ * period and keep count — not every site is equally worth an hourly backup — but only when
+ * the app-wide plan is scoped to chosen sites; when the plan covers everything, the plan's
+ * numbers are what run and this page says so instead of offering an edit that would do
+ * nothing.
+ */
+function AutoBackupSection({ project, onChanged }: { project: Project; onChanged: () => Promise<void> }) {
+  const [status, setStatus] = useState<AutoBackupStatus | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<Diagnostic | null>(null)
+  /** Hostnames whose custom cron field is open. Local only until an expression is typed. */
+  const [custom, setCustom] = useState<Set<string>>(() => new Set())
+
+  const load = useCallback(async () => {
+    const r = await runCommand({ type: 'get_auto_backup' })
+    if (r.type === 'auto_backup') setStatus(r.status)
+  }, [])
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const mine = (status?.sites ?? []).filter((site) => site.project_id === project.id)
+  const covered = mine.some((site) => site.enabled)
+  const plan = status?.settings
+  const perSite = plan?.scope === 'site'
+
+  async function saveSite(hostname: string, patch: Partial<AutoBackupSiteSettings>) {
+    const current = mine.find((s) => s.hostname === hostname)
+    if (!current) return
+    setBusy(true)
+    setError(null)
+    try {
+      const r = await runCommand({
+        type: 'set_site_auto_backup',
+        hostname,
+        site: { enabled: patch.enabled ?? current.enabled, schedule: 'schedule' in patch ? patch.schedule ?? null : current.schedule, keep: 'keep' in patch ? patch.keep ?? null : current.keep },
+      })
+      if (r.type === 'auto_backup') setStatus(r.status)
+      await onChanged()
+    } catch (e) {
+      setError(e as Diagnostic)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="flex flex-col gap-3 rounded-lg border border-border p-3">
+      <h3 className="flex items-center gap-2 text-sm font-medium">
+        <Timer className="size-4" /> Automatic backups
+      </h3>
+      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <p className="text-xs text-muted-foreground">
+        {!plan
+          ? 'Reading the plan…'
+          : !plan.enabled
+            ? 'Automatic backups are switched off for the whole app, so nothing is taken on a schedule. Turn them on in Settings → Backups.'
+            : perSite
+              ? 'Each site sets its own period and how many backups to keep, below. Sites of the same project share a snapshot, so give them the same numbers.'
+              : `The plan covers every project and database ${status?.description}, keeping ${plan.keep} of each, and manages that for every site. Set it to chosen sites in Settings → Backups to give a site its own period.`}
+      </p>
+      {mine.length === 0 && (
+        <p className="text-sm text-muted-foreground">This project has no site yet, so there is nothing to cover.</p>
+      )}
+      {mine.map((site) => (
+        <div key={site.hostname} className="flex flex-col gap-2 rounded-md border border-border/60 p-3">
+          <Toggle
+            checked={site.enabled}
+            onChange={(enabled) => void saveSite(site.hostname, { enabled })}
+            disabled={busy}
+            label={site.hostname}
+            hint={perSite ? 'A snapshot records the project, so one site switched on covers this project.' : undefined}
+          />
+          {site.enabled && (
+            <div className="flex flex-wrap items-end gap-4 pl-1">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-muted-foreground" htmlFor={`period-${site.hostname}`}>
+                  How often
+                </label>
+                {perSite ? (
+                  <>
+                    <Select
+                      id={`period-${site.hostname}`}
+                      className="w-64"
+                      value={
+                        custom.has(site.hostname)
+                          ? 'custom'
+                          : site.schedule && !PERIODS.some((p) => p.id === site.schedule)
+                            ? 'custom'
+                            : site.schedule ?? ''
+                      }
+                      disabled={busy}
+                      onChange={(e) => {
+                        const value = e.target.value
+                        if (value === 'custom') {
+                          // Opening the custom field is not itself a change: nothing is
+                          // stored until an expression is typed, so a half-typed cron can
+                          // never become a plan that cannot run.
+                          setCustom((prev) => new Set(prev).add(site.hostname))
+                          return
+                        }
+                        setCustom((prev) => {
+                          const next = new Set(prev)
+                          next.delete(site.hostname)
+                          return next
+                        })
+                        void saveSite(site.hostname, { schedule: value || null })
+                      }}
+                    >
+                      <option value="">Use the app default</option>
+                      {PERIODS.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.label}
+                        </option>
+                      ))}
+                      <option value="custom">Custom (cron)…</option>
+                    </Select>
+                    {custom.has(site.hostname) && (
+                      <CronFields
+                        value={site.schedule ?? site.effective_schedule}
+                        disabled={busy}
+                        onCommit={(expression) => void saveSite(site.hostname, { schedule: expression })}
+                      />
+                    )}
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Managed by Settings — {describeLocal(site.effective_schedule)}</p>
+                )}
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-muted-foreground" htmlFor={`keep-${site.hostname}`}>
+                  How many to keep
+                </label>
+                {perSite ? (
+                  <NumberInput
+                    id={`keep-${site.hostname}`}
+                    className="w-24"
+                    label="Backups to keep"
+                    min={1}
+                    max={200}
+                    value={site.keep}
+                    placeholder={String(site.effective_keep)}
+                    disabled={busy}
+                    onChange={(keep) => void saveSite(site.hostname, { keep })}
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground">Managed by Settings — {site.effective_keep}</p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+      {covered && perSite && (
+        <p className="text-xs text-muted-foreground">
+          Covered. The next pass happens while OLS is open; old automatic backups are deleted past the keep count, and
+          anything you took by hand is never touched.
+        </p>
+      )}
+    </section>
+  )
+}
+
+/** The schedule words the core uses, for the read-only case where only the plan knows. */
+function describeLocal(schedule: string): string {
+  return cronWords[schedule] ?? schedule
+}
+
+const cronWords: Record<string, string> = {
+  '* * * * *': 'every minute',
+  '0 * * * *': 'every hour',
+  '0 0 * * *': 'every day at 00:00',
+  '0 0 * * 0': 'every Sunday at 00:00',
+  '0 0 1 * *': 'on the 1st of the month at 00:00',
 }
 
 function RestoreDialog({ project, snapshot, onClose, onDone }: { project: Project; snapshot: SnapshotInfo; onClose: () => void; onDone: () => Promise<void> }) {

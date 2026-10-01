@@ -6,7 +6,7 @@ import { AiCard } from '@/components/ai/AiSettings'
 import { ErrorCard } from '@/components/ErrorCard'
 import { ExcludedSitesCard } from '@/components/ExcludedSitesCard'
 import { ApiCard, SystemCard, UpdatesCard } from '@/components/ReleaseCards'
-import { AboutCard, ResourcesCard, SettingsBackupsCard } from '@/components/SettingsExtras'
+import { AboutCard, AutoBackupCard, ResourcesCard, SettingsBackupsCard } from '@/components/SettingsExtras'
 import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -391,7 +391,12 @@ export function SettingsPage() {
 
           {section === 'ai' && <AiCard />}
           {section === 'resources' && <ResourcesCard />}
-          {section === 'backups' && <SettingsBackupsCard />}
+          {section === 'backups' && (
+            <>
+              <AutoBackupCard />
+              <SettingsBackupsCard />
+            </>
+          )}
           {section === 'about' && <AboutCard />}
 
           {showSave && (
