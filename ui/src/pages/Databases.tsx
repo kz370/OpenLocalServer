@@ -131,21 +131,31 @@ function ServiceBanner({ service, name }: { service?: ServiceStatus; name: strin
     <>
       <ErrorCard error={error} onDismiss={() => setError(null)} />
       <Card>
-        <CardContent className="flex items-center justify-between gap-3 pt-4">
-          <div className="text-sm">
-            <span className="flex items-center gap-2">
+        {/* flex-wrap + min-w-0 + shrink-0 on the badge: a squeezed flex row used to
+            wrap "● Running on port 3306" out of its pill and push the connection URI
+            past the card edge. */}
+        <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-4">
+          <div className="min-w-0 flex-1 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
               <ServiceMark
                 id={service.id}
                 state={!service.installed ? 'missing' : service.running ? (service.healthy === false ? 'unhealthy' : 'running') : 'stopped'}
               />
               <span className="font-medium">{name}</span>
-            </span>{' '}
-            {!service.installed ? <Badge variant="outline">not installed (Runtimes page)</Badge> : service.running ? <Badge variant="success">● Running on port {service.port}</Badge> : <Badge variant="secondary">Stopped</Badge>}
-            {service.connection && <div className="mt-1 font-mono text-xs text-muted-foreground">{service.connection}</div>}
+              {!service.installed ? (
+                <Badge variant="outline" className="shrink-0 whitespace-nowrap">not installed (Runtimes page)</Badge>
+              ) : service.running ? (
+                <Badge variant="success" className="shrink-0 whitespace-nowrap">● Running on port {service.port}</Badge>
+              ) : (
+                <Badge variant="secondary" className="shrink-0 whitespace-nowrap">Stopped</Badge>
+              )}
+            </div>
+            {service.connection && <div className="mt-1 min-w-0 break-all font-mono text-xs text-muted-foreground">{service.connection}</div>}
           </div>
           {service.installed && (
             <Button
               size="sm"
+              className="shrink-0"
               disabled={busy}
               onClick={async () => {
                 if (service.running && !(await confirmAction(`Stop ${service.name}? Anything connected to it will be disconnected.`))) return
@@ -557,9 +567,9 @@ function Mongo({ service, ...toolProps }: { service?: ServiceStatus } & Database
     <div className="flex flex-col gap-4">
       <ServiceBanner service={service} name="MongoDB" />
       <Card>
-        <CardContent className="flex items-center justify-between gap-3 pt-4 text-sm">
-          <div>
-            Health: {service?.running ? (service.healthy ? <Badge variant="success">answering</Badge> : <Badge variant="warning">not answering</Badge>) : <Badge variant="secondary">stopped</Badge>}
+        <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-4 text-sm">
+          <div className="min-w-0">
+            Health: {service?.running ? (service.healthy ? <Badge variant="success" className="shrink-0 whitespace-nowrap">answering</Badge> : <Badge variant="warning" className="shrink-0 whitespace-nowrap">not answering</Badge>) : <Badge variant="secondary" className="shrink-0 whitespace-nowrap">stopped</Badge>}
             <div className="mt-1 text-xs text-muted-foreground">Logs are on the Logs page (source: MongoDB).</div>
           </div>
           <OpenDatabaseButton engine="mongodb" {...toolProps} />
@@ -583,9 +593,9 @@ function Redis({ service, ...toolProps }: { service?: ServiceStatus } & Database
       <ServiceBanner service={service} name="Redis" />
       <ErrorCard error={error} onDismiss={() => setError(null)} />
       <Card>
-        <CardContent className="flex items-center justify-between gap-3 pt-4 text-sm">
-          <div>
-            Health: {service?.running ? (service.healthy ? <Badge variant="success">answering</Badge> : <Badge variant="warning">not answering</Badge>) : <Badge variant="secondary">stopped</Badge>}
+        <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-4 text-sm">
+          <div className="min-w-0">
+            Health: {service?.running ? (service.healthy ? <Badge variant="success" className="shrink-0 whitespace-nowrap">answering</Badge> : <Badge variant="warning" className="shrink-0 whitespace-nowrap">not answering</Badge>) : <Badge variant="secondary" className="shrink-0 whitespace-nowrap">stopped</Badge>}
             <div className="mt-1 text-xs text-muted-foreground">Logs are on the Logs page (source: Redis).</div>
           </div>
           <OpenDatabaseButton engine="redis" {...toolProps} />
@@ -593,7 +603,7 @@ function Redis({ service, ...toolProps }: { service?: ServiceStatus } & Database
       </Card>
       <Card>
         <CardContent className="flex flex-col gap-2 pt-4 text-sm">
-          {info && <div className="rounded-lg bg-muted/40 p-3 font-mono text-xs">host {info.host} · port {info.port}<br />{info.uri}</div>}
+          {info && <div className="min-w-0 rounded-lg bg-muted/40 p-3 font-mono text-xs break-all">host {info.host} · port {info.port}<br />{info.uri}</div>}
           <p className="text-xs text-muted-foreground">
             Runs the Windows build of Redis from the Runtimes page (the community redis-windows project). It listens on 127.0.0.1 only. Logs are on the Logs page (source: Redis).
           </p>
@@ -618,13 +628,13 @@ function Memcached({ service }: { service?: ServiceStatus }) {
       <ServiceBanner service={service} name="Memcached" />
       <ErrorCard error={error} onDismiss={() => setError(null)} />
       <Card>
-        <CardContent className="flex items-center justify-between gap-3 pt-4 text-sm">
-          <div>
+        <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-4 text-sm">
+          <div className="min-w-0">
             Health:{' '}
             {service?.running ? (
-              service.healthy ? <Badge variant="success">answering</Badge> : <Badge variant="warning">not answering</Badge>
+              service.healthy ? <Badge variant="success" className="shrink-0 whitespace-nowrap">answering</Badge> : <Badge variant="warning" className="shrink-0 whitespace-nowrap">not answering</Badge>
             ) : (
-              <Badge variant="secondary">stopped</Badge>
+              <Badge variant="secondary" className="shrink-0 whitespace-nowrap">stopped</Badge>
             )}
             <div className="mt-1 text-xs text-muted-foreground">Logs are on the Logs page (source: Memcached).</div>
           </div>
@@ -633,7 +643,7 @@ function Memcached({ service }: { service?: ServiceStatus }) {
       <Card>
         <CardContent className="flex flex-col gap-2 pt-4 text-sm">
           {info && (
-            <div className="rounded-lg bg-muted/40 p-3 font-mono text-xs">
+            <div className="min-w-0 rounded-lg bg-muted/40 p-3 font-mono text-xs break-all">
               host {info.host} · port {info.port}
               <br />
               {info.uri}
