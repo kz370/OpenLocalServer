@@ -109,15 +109,18 @@ fn new_backup_path(paths: &AppPaths, engine: &str, database: &str) -> Result<Pat
     }
 }
 
-/// Dumps one database. The server has to be running.
-pub fn backup(
+/// Dumps one database to a chosen path. The server has to be running.
+///
+/// Split out of [`backup`] so a *move* can reuse the same dump shape without leaving a file in
+/// the user's backups list — the file is a temporary, not something they asked to keep.
+pub fn dump_to(
     services: &ServiceManager,
-    paths: &AppPaths,
     engine: &str,
     database: &str,
-) -> Result<PathBuf, String> {
+    dest: &Path,
+) -> Result<(), String> {
     check_engine(engine)?;
-    let stem = file_stem(database)?;
+    let _stem = file_stem(database)?;
     if !services.is_running(engine) {
         return Err(format!("{engine} is not running. Start it first."));
     }
@@ -131,7 +134,6 @@ pub fn backup(
                 .unwrap_or("the dump tool")
         ));
     }
-    let dest = new_backup_path(paths, engine, &stem)?;
     let dest_arg = dest.display().to_string();
     let port_s = port.to_string();
     let args: Vec<String> = if engine == "postgres" {
@@ -176,10 +178,88 @@ pub fn backup(
     };
     let out = run_capture(&tool, &args, None, &[], Duration::from_secs(60 * 30));
     if !out.success() {
-        let _ = std::fs::remove_file(&dest);
+        let _ = std::fs::remove_file(dest);
         return Err(format!("backup failed: {}", out.combined()));
     }
+    Ok(())
+}
+
+/// Dumps one database. The server has to be running.
+pub fn backup(
+    services: &ServiceManager,
+    paths: &AppPaths,
+    engine: &str,
+    database: &str,
+) -> Result<PathBuf, String> {
+    let dest = new_backup_path(paths, engine, &file_stem(database)?)?;
+    dump_to(services, engine, database, &dest)?;
     Ok(dest)
+}
+
+/// Loads a dump file into a database that already exists, without touching anything else —
+/// no safety copy, because the caller owns the database's state (a *move* has just emptied
+/// it on purpose, and a backup of an empty database is noise).
+pub fn load_into(
+    services: &ServiceManager,
+    engine: &str,
+    database: &str,
+    file: &Path,
+) -> Result<(), String> {
+    check_engine(engine)?;
+    if !file.is_file() {
+        return Err(format!("{} does not exist", file.display()));
+    }
+    if !services.is_running(engine) {
+        return Err(format!("{engine} is not running. Start it first."));
+    }
+    let (client, port) = services.sql_client(engine)?;
+    let file_arg = file.display().to_string();
+    let port_s = port.to_string();
+    let mut cmd = Command::new(&client);
+    if engine == "postgres" {
+        cmd.args([
+            "-U",
+            "postgres",
+            "-h",
+            "127.0.0.1",
+            "-p",
+            port_s.as_str(),
+            "-X",
+            "-q",
+            "-v",
+            "ON_ERROR_STOP=1",
+            "-d",
+            database,
+            "-f",
+            file_arg.as_str(),
+        ]);
+        cmd.stdin(Stdio::null());
+    } else {
+        cmd.args([
+            "-u",
+            "root",
+            "-h",
+            "127.0.0.1",
+            "-P",
+            port_s.as_str(),
+            "--default-character-set=utf8mb4",
+            database,
+        ]);
+        cmd.stdin(Stdio::from(
+            std::fs::File::open(file).map_err(|e| e.to_string())?,
+        ));
+    }
+    hide_window(&mut cmd);
+    let out = cmd
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| format!("could not run {}: {e}", client.display()))?;
+    if !out.status.success() {
+        let detail = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        return Err(format!("load failed: {detail}"));
+    }
+    Ok(())
 }
 
 /// Loads a backup into `database` (created when missing), replacing its tables. Returns the

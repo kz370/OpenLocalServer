@@ -909,7 +909,16 @@ impl ServiceManager {
         }
     }
 
-    /// Renames a database in place, keeping its data. `from` must exist; `to` must not.
+    /// Moves a database's contents under a new name, leaving nothing behind at the old one.
+    ///
+    /// MariaDB has **no** `RENAME DATABASE` and no `RENAME SCHEMA` — those are MySQL-only, and
+    /// asking for one gets `ERROR 1064` back, which is exactly what the first version of the
+    /// `_bkp` rule did. So a MariaDB move is a copy: dump, load into the new name, drop the old.
+    /// PostgreSQL does have `ALTER DATABASE ... RENAME TO`, which is a catalog update and costs
+    /// nothing, so that path stays the statement it always was.
+    ///
+    /// The copy is what a "rename" has to be here, and it is the same shape as the bundle import's
+    /// own restore, which is why `dump_to`/`load_into` are the primitives both use.
     pub fn rename_database(&self, engine: &str, from: &str, to: &str) -> Result<(), String> {
         if !is_safe_identifier(from) || !is_safe_identifier(to) {
             return Err("database name must be alphanumeric/underscore only".into());
@@ -917,12 +926,14 @@ impl ServiceManager {
         if from == to {
             return Ok(());
         }
-        if !self.list_databases(engine)?.iter().any(|d| d == from) {
+        let existing = self.list_databases(engine)?;
+        if !existing.iter().any(|d| d == from) {
             return Err(format!("there is no {engine} database called {from}"));
         }
-        if self.list_databases(engine)?.iter().any(|d| d == to) {
+        if existing.iter().any(|d| d == to) {
             return Err(format!("{engine} already has a database called {to}"));
         }
+
         if engine == "postgres" {
             return self
                 .run_sql(
@@ -931,7 +942,37 @@ impl ServiceManager {
                 )
                 .map(|_| ());
         }
-        self.run_sql(engine, &format!("RENAME DATABASE `{from}` TO `{to}`"))
+
+        let tmp = self
+            .paths
+            .cache_dir()
+            .join(format!("move-{engine}-{from}.sql"));
+        std::fs::create_dir_all(self.paths.cache_dir()).map_err(|e| e.to_string())?;
+        crate::dbbackup::dump_to(self, engine, from, &tmp)
+            .map_err(|e| format!("could not read {from} to move it: {e}"))?;
+        // The new name is created first and dropped again if the copy fails, so a half-moved
+        // database never sits under a name the caller was told is free.
+        self.create_database(engine, to)?;
+        let loaded = crate::dbbackup::load_into(self, engine, to, &tmp);
+        let _ = std::fs::remove_file(&tmp);
+        loaded.map_err(|e| {
+            let _ = self.drop_database(engine, to);
+            format!("could not copy {from} to {to}: {e}")
+        })?;
+        self.drop_database(engine, from)
+    }
+
+    /// Removes a database and everything in it.
+    pub fn drop_database(&self, engine: &str, name: &str) -> Result<(), String> {
+        if !is_safe_identifier(name) {
+            return Err("database name must be alphanumeric/underscore only".into());
+        }
+        if engine == "postgres" {
+            return self
+                .run_sql(engine, &format!("DROP DATABASE \"{name}\" WITH (FORCE)"))
+                .map(|_| ());
+        }
+        self.run_sql(engine, &format!("DROP DATABASE `{name}`"))
             .map(|_| ())
     }
 

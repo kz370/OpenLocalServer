@@ -792,8 +792,10 @@ impl Inner {
                 // §165: a database that is already there is moved aside, not merged into.
                 // Loading a dump over a live database leaves whatever the dump does not
                 // mention behind, so the result is neither the bundle nor the old site. The
-                // old one is renamed `<name>_bkp` (and `_bkp-2`, `_bkp-3` if those are taken)
-                // so it is still there to look at, and the dump lands in a clean database.
+                // old one becomes `<name>_bkp` (`_bkp-2`, `_bkp-3` if those are taken) so it
+                // is still there to look at, and the dump lands in a clean database. The move
+                // itself is a dump-and-copy, because MariaDB has no `RENAME DATABASE` — see
+                // `ServiceManager::rename_database` for why that is not the statement.
                 let existing = self.services.list_databases(&db.engine).unwrap_or_default();
                 if existing.iter().any(|d| d == &target) {
                     let kept = crate::service::free_name_among(&format!("{target}_bkp"), &existing);
@@ -804,14 +806,10 @@ impl Inner {
                     ));
                 }
                 self.services.create_database(&db.engine, &target)?;
-                let r = crate::dbbackup::restore(
-                    &self.services,
-                    &self.paths,
-                    &db.engine,
-                    &target,
-                    &tmp,
-                )
-                .map(|_| ());
+                // `load_into`, not `restore`: the database was just created empty, so a
+                // "safety backup of what was there" would be a dump of nothing, written into
+                // the user's backups list and then thrown away.
+                let r = crate::dbbackup::load_into(&self.services, &db.engine, &target, &tmp);
                 let _ = std::fs::remove_file(&tmp);
                 r
             })();
@@ -1608,6 +1606,16 @@ mod tests {
         assert_eq!(
             crate::wordpress::database(dir.path()).map(|(e, _)| e),
             Some("postgres".to_string())
+        );
+        // The other legal PHP shape, with no space around the comma.
+        std::fs::write(
+            dir.path().join("wp-config.php"),
+            "<?php\ndefine('DB_NAME','wp_shop');\n",
+        )
+        .unwrap();
+        assert_eq!(
+            crate::wordpress::database(dir.path()),
+            Some(("mariadb".to_string(), "wp_shop".to_string()))
         );
         std::fs::write(dir.path().join("wp-config.php"), "<?php\n").unwrap();
         assert_eq!(crate::wordpress::database(dir.path()), None);

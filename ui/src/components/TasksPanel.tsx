@@ -1,5 +1,5 @@
 import { AlertTriangle, CheckCircle2, CircleSlash, X } from 'lucide-react'
-import { type Ref, useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
 
 import { Spinner } from '@/components/Spinner'
@@ -53,51 +53,60 @@ export function TasksPanel() {
   const running = tasks.filter((t) => t.state === 'running')
   const finished = tasks.filter((t) => t.state !== 'running')
 
-  // Starting an import or export sends the user here to watch it, and the task they came for
-  // is the running one at the top of the list — which sits below the system monitor and the
-  // tab strip. Without this the page opens scrolled at the top and the progress they asked to
-  // see is off the screen. Scrolled once per task, not per poll, so the list cannot fight the
-  // user for the scrollbar.
-  const lead = running[0]
-  const leadRef = useRef<HTMLDivElement>(null)
+  // Starting an import or export sends the user here to watch it, and the work they came for
+  // is this card — which sits under the system monitor and the tab strip. Two things this got
+  // wrong when it was pointed at the running row instead: the row is the first thing in the
+  // card, so aiming at it aims at the card's own top edge, and it fired while the card was
+  // still laying out its rows, when the offset it would scroll to was not the final one. So
+  // the card is the target and the scroll is repeated on the next frame. Keyed on the set of
+  // running tasks rather than one of them, and only when that set changes, so the 1s poll can
+  // never yank the page out from under the user mid-scroll.
+  const panelRef = useRef<HTMLDivElement>(null)
+  const runningKey = running.map((t) => t.id).join(',')
   const scrolledFor = useRef<string | null>(null)
   useEffect(() => {
-    if (!lead || scrolledFor.current === lead.id) return
-    scrolledFor.current = lead.id
-    leadRef.current?.scrollIntoView({ block: 'center' })
-  }, [lead])
+    if (!runningKey || scrolledFor.current === runningKey) return
+    scrolledFor.current = runningKey
+    const card = panelRef.current
+    if (!card) return
+    card.scrollIntoView({ block: 'start' })
+    const frame = requestAnimationFrame(() => card.scrollIntoView({ block: 'start' }))
+    return () => cancelAnimationFrame(frame)
+  }, [runningKey])
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-sm">
-          Background tasks · {running.length} running, {finished.length} finished
-        </CardTitle>
-        <CardDescription>
-          Imports, exports and snapshots the app runs for you. Each row shows its own steps; a finished task keeps its
-          report until you clear it.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3">
-        {tasks.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No background work yet.</p>
-        ) : (
-          tasks.map((t) => <TaskRow key={t.id} task={t} leadRef={t.id === lead?.id ? leadRef : undefined} />)
-        )}
-        {finished.length > 0 && (
-          <div className="flex justify-end">
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-7 text-xs"
-              onClick={() => void runCommand({ type: 'clear_finished_tasks' }).then(() => refresh())}
-            >
-              Clear finished
-            </Button>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+    <div ref={panelRef}>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">
+            Background tasks · {running.length} running, {finished.length} finished
+          </CardTitle>
+          <CardDescription>
+            Imports, exports and snapshots the app runs for you. Each row shows its own steps; a finished task keeps its
+            report until you clear it.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          {tasks.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No background work yet.</p>
+          ) : (
+            tasks.map((t) => <TaskRow key={t.id} task={t} />)
+          )}
+          {finished.length > 0 && (
+            <div className="flex justify-end">
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 text-xs"
+                onClick={() => void runCommand({ type: 'clear_finished_tasks' }).then(() => refresh())}
+              >
+                Clear finished
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   )
 }
 
@@ -116,7 +125,7 @@ const STEP_MARK: Record<string, string> = {
   skipped: 'text-muted-foreground',
 }
 
-function TaskRow({ task, leadRef }: { task: TaskView; leadRef?: Ref<HTMLDivElement> }) {
+function TaskRow({ task }: { task: TaskView }) {
   const [busy, setBusy] = useState(false)
   const live = task.state === 'running'
   const { done, total, bytes, bytes_total } = task.progress
@@ -132,7 +141,7 @@ function TaskRow({ task, leadRef }: { task: TaskView; leadRef?: Ref<HTMLDivEleme
   }
 
   return (
-    <div ref={leadRef} className="rounded-lg border border-border p-3">
+    <div className="rounded-lg border border-border p-3">
       <div className="flex flex-wrap items-center gap-2">
         {live ? <Spinner className="size-3.5" /> : <StateIcon state={task.state} />}
         <span className="min-w-0 flex-1 truncate text-sm font-medium" title={task.title}>

@@ -445,14 +445,15 @@ pub fn database(dir: &Path) -> Option<(String, String)> {
     let value = |key: &str| {
         let marker = format!("'{key}'");
         let start = text.find(&marker)? + marker.len();
-        let rest = &text[start..];
-        let rest = rest.trim_start().strip_prefix(',')?;
+        let rest = text[start..].trim_start();
+        // `define( 'DB_NAME', 'shop' );` puts a comma between the key and the value;
+        // `define('DB_NAME','shop');` puts nothing. Both are legal PHP and a wp-config.php
+        // this has to read may be either, so the separator is optional rather than assumed.
         let rest = rest
-            .trim_start()
-            .strip_prefix('>')
-            .unwrap_or(rest.trim_start());
-        let rest = rest.trim_start().strip_prefix('=')?;
-        let rest = rest.trim_start();
+            .strip_prefix(',')
+            .or_else(|| rest.strip_prefix('='))
+            .unwrap_or(rest)
+            .trim_start();
         let quote = rest.chars().next()?;
         if quote != '\'' && quote != '"' {
             return None;
