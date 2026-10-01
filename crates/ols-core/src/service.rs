@@ -125,13 +125,26 @@ pub struct WebServers {
     pub domains: DomainsFn,
 }
 
-/// Names that go into SQL as identifiers can't be bound as parameters, so only plain
-/// names are accepted at all.
+/// Names that go into SQL as identifiers can't be bound as parameters, so they are quoted
+/// rather than passed safely — which means the name must not contain the quote character of
+/// the engine it is going to, and nothing a reader would be misled by.
+///
+/// `-` and `.` are allowed because OLS creates databases this way itself: the WordPress
+/// catalog names a database after the project slug, so a project called `blog` gets
+/// `blog-dev`, not `blog_dev`. Refusing those made the app unable to create, move or drop a
+/// database it had made — which is exactly what an import of a WordPress site hits, since it
+/// loads the name out of the site's own `wp-config.php` rather than inventing one.
 pub fn is_safe_identifier(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 64
-        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
 }
+
+/// What a database name is allowed to hold, for the error a user actually reads.
+const IDENTIFIER_HINT: &str =
+    "database name must be letters, digits, '_', '-' or '.' only (max 64)";
 
 /// Single-quoted literal for PostgreSQL, where backslashes are ordinary characters.
 fn pg_string(value: &str) -> String {
@@ -921,7 +934,7 @@ impl ServiceManager {
     /// own restore, which is why `dump_to`/`load_into` are the primitives both use.
     pub fn rename_database(&self, engine: &str, from: &str, to: &str) -> Result<(), String> {
         if !is_safe_identifier(from) || !is_safe_identifier(to) {
-            return Err("database name must be alphanumeric/underscore only".into());
+            return Err(IDENTIFIER_HINT.into());
         }
         if from == to {
             return Ok(());
@@ -965,7 +978,7 @@ impl ServiceManager {
     /// Removes a database and everything in it.
     pub fn drop_database(&self, engine: &str, name: &str) -> Result<(), String> {
         if !is_safe_identifier(name) {
-            return Err("database name must be alphanumeric/underscore only".into());
+            return Err(IDENTIFIER_HINT.into());
         }
         if engine == "postgres" {
             return self
@@ -983,7 +996,7 @@ impl ServiceManager {
 
     pub fn create_database(&self, engine: &str, name: &str) -> Result<(), String> {
         if !is_safe_identifier(name) {
-            return Err("database name must be alphanumeric/underscore only".into());
+            return Err(IDENTIFIER_HINT.into());
         }
         if engine == "postgres" {
             // PostgreSQL has no `IF NOT EXISTS` for databases.
@@ -1092,10 +1105,10 @@ impl ServiceManager {
         database: &str,
     ) -> Result<(), String> {
         if !is_safe_identifier(user) {
-            return Err("user name must be alphanumeric/underscore only".into());
+            return Err("user name must be letters, digits or '_' only".into());
         }
         if !is_safe_identifier(database) {
-            return Err("database name must be alphanumeric/underscore only".into());
+            return Err(IDENTIFIER_HINT.into());
         }
         if password.is_empty() {
             return Err("a password is required".into());
@@ -1310,6 +1323,22 @@ mod tests {
         assert!(!is_safe_identifier("a b"));
         assert!(!is_safe_identifier("x; DROP DATABASE y"));
         assert!(!is_safe_identifier(&"a".repeat(65)));
+    }
+
+    #[test]
+    fn an_identifier_allows_the_names_ols_gives_its_own_databases() {
+        // The WordPress catalog names a database after the project slug, so a project called
+        // `blog-dev` has a database called `blog-dev`, and an import reads that name out of
+        // the site's own wp-config.php. Refusing `-` left the app unable to create, move or
+        // drop a database it had created itself.
+        for name in ["worpress-test", "blog-dev", "shop.v2", "wordpress_test"] {
+            assert!(is_safe_identifier(name), "{name} should be allowed");
+        }
+        // The quote characters of both engines stay refused: that is the part that matters,
+        // since these names are quoted into the statement rather than bound.
+        for name in ["a`b", "a\"b", "a'b", "a b", "a\\b", "a;b", "a/b"] {
+            assert!(!is_safe_identifier(name), "{name} should be refused");
+        }
     }
 
     #[test]

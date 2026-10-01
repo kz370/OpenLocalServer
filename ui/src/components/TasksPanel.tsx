@@ -1,5 +1,5 @@
 import { AlertTriangle, CheckCircle2, CircleSlash, X } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
 
 import { Spinner } from '@/components/Spinner'
@@ -53,30 +53,8 @@ export function TasksPanel() {
   const running = tasks.filter((t) => t.state === 'running')
   const finished = tasks.filter((t) => t.state !== 'running')
 
-  // Starting an import or export sends the user here to watch it, and the work they came for
-  // is this card — which sits under the system monitor and the tab strip. Two things this got
-  // wrong when it was pointed at the running row instead: the row is the first thing in the
-  // card, so aiming at it aims at the card's own top edge, and it fired while the card was
-  // still laying out its rows, when the offset it would scroll to was not the final one. So
-  // the card is the target and the scroll is repeated on the next frame. Keyed on the set of
-  // running tasks rather than one of them, and only when that set changes, so the 1s poll can
-  // never yank the page out from under the user mid-scroll.
-  const panelRef = useRef<HTMLDivElement>(null)
-  const runningKey = running.map((t) => t.id).join(',')
-  const scrolledFor = useRef<string | null>(null)
-  useEffect(() => {
-    if (!runningKey || scrolledFor.current === runningKey) return
-    scrolledFor.current = runningKey
-    const card = panelRef.current
-    if (!card) return
-    card.scrollIntoView({ block: 'start' })
-    const frame = requestAnimationFrame(() => card.scrollIntoView({ block: 'start' }))
-    return () => cancelAnimationFrame(frame)
-  }, [runningKey])
-
   return (
-    <div ref={panelRef}>
-      <Card>
+    <Card>
         <CardHeader>
           <CardTitle className="text-sm">
             Background tasks · {running.length} running, {finished.length} finished
@@ -105,8 +83,7 @@ export function TasksPanel() {
             </div>
           )}
         </CardContent>
-      </Card>
-    </div>
+    </Card>
   )
 }
 

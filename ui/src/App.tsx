@@ -13,6 +13,7 @@ import { DatabasesPage } from '@/pages/Databases'
 import { WebServerPage } from '@/pages/WebServer'
 import { LogsPage } from '@/pages/Logs'
 import { ProcessesPage } from '@/pages/Processes'
+import { TasksPage } from '@/pages/Tasks'
 import { PluginsPage } from '@/pages/Plugins'
 import { ProfilesPage } from '@/pages/Profiles'
 import { SitesPage } from '@/pages/Sites'
@@ -53,7 +54,7 @@ export default function App() {
         return
       }
       const route = event.payload === 'quick-apps' ? 'quickapps' : event.payload === 'terminal' ? 'processes' : event.payload
-      if (['dashboard', 'sites', 'quickapps', 'commands', 'webserver', 'config', 'tunnels', 'databases', 'services', 'runtimes', 'profiles', 'plugins', 'logs', 'processes', 'settings'].includes(route)) {
+      if (['dashboard', 'sites', 'quickapps', 'commands', 'webserver', 'config', 'tunnels', 'databases', 'services', 'runtimes', 'profiles', 'plugins', 'logs', 'processes', 'tasks', 'settings'].includes(route)) {
         navigate(route as Page)
       }
     }).then((cleanup) => { unlisten = cleanup })
@@ -83,6 +84,7 @@ export default function App() {
         {page === 'plugins' && <PluginsPage />}
         {page === 'logs' && <LogsPage initialSource={logSource} />}
         {page === 'processes' && <ProcessesPage />}
+        {page === 'tasks' && <TasksPage />}
         {page === 'settings' && <SettingsPage />}
       </main>
       </div>

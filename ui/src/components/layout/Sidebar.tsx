@@ -6,6 +6,7 @@ import {
   HardDrive,
   Layers,
   LayoutDashboard,
+  ListChecks,
   Moon,
   Plug,
   Rocket,
@@ -43,6 +44,7 @@ export type Page =
   | 'runtimes'
   | 'logs'
   | 'processes'
+  | 'tasks'
   | 'settings'
 
 type NavItem = { id: Page; label: string; icon: typeof LayoutDashboard }
@@ -91,6 +93,7 @@ const NAV_GROUPS: { id: string; label: string; items: NavItem[] }[] = [
     items: [
       { id: 'logs', label: 'Logs', icon: ScrollText },
       { id: 'processes', label: 'Processes', icon: Terminal },
+      { id: 'tasks', label: 'Background tasks', icon: ListChecks },
     ],
   },
 ]

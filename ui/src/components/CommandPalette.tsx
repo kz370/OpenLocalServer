@@ -33,6 +33,7 @@ const PAGES: [Page, string][] = [
   ['plugins', 'Plugins'],
   ['logs', 'Logs'],
   ['processes', 'Processes'],
+  ['tasks', 'Background tasks'],
   ['settings', 'Settings'],
 ]
 

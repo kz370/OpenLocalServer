@@ -570,7 +570,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
           </Button>
           <GitCloneButton defaultParent={effectiveParent} onDone={adopt} />
           <ImportEnvironmentButton defaultParent={effectiveParent} onDone={adopt} />
-          <SiteImportButton onWatch={() => onNavigate('processes')} />
+          <SiteImportButton onWatch={() => onNavigate('tasks')} />
         </div>
       </div>
 
@@ -899,7 +899,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         onClose={() => setExportFor(null)}
         onWatch={() => {
           setExportFor(null)
-          onNavigate('processes')
+          onNavigate('tasks')
         }}
       />
 
