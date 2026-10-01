@@ -959,7 +959,7 @@ fn import_site(
         .map(|d| d.hostname)
         .collect();
     if options.config && on_conflict == OnConflict::Update && !existing.is_empty() {
-        update_existing(inner, h, &manifest, src, site, content, cipher, &existing, options)
+        update_existing(inner, h, src, site, content, cipher, &existing, options)
     } else {
         create_new(inner, h, src, site, content, cipher, name, options)
     }
@@ -970,7 +970,6 @@ fn import_site(
 fn update_existing(
     inner: &Inner,
     h: &TaskHandle,
-    manifest: &BundleManifest,
     src: &Path,
     site: &BundleSite,
     content: SnapshotContent,
@@ -1096,7 +1095,7 @@ fn create_new(
 
     let mut changes = Vec::new();
     let mut problems = Vec::new();
-    if options.config && site.file_count > 0 {
+    if options.files && site.file_count > 0 {
         if target.exists()
             && std::fs::read_dir(&target)
                 .map(|mut d| d.next().is_some())
@@ -1390,6 +1389,100 @@ mod tests {
             domains.iter().filter(|h| *h == host).count(),
             1,
             "the site is registered once: {domains:?}"
+        );
+    }
+
+    /// §165: importing onto an existing site updates it. That used to rewrite settings, `.env`
+    /// and the database while leaving the site's project files at whatever the previous copy
+    /// held — so a WordPress import reported "done" and the site kept its old content.
+    #[test]
+    fn updating_an_existing_site_also_unpacks_its_project_files() {
+        let home = crate::test_support::isolated_home();
+        let core = crate::command::Core::new(
+            crate::settings::SettingsService::load(&home.paths).unwrap(),
+            home.paths.clone(),
+        );
+        let dir = home.paths.root().join("shop");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("index.php"), "<?php // new").unwrap();
+        std::fs::write(dir.join("wp-content.txt"), "from the bundle").unwrap();
+        let _ = core.dispatch(crate::command::CoreCommand::RegisterProject {
+            path: dir.display().to_string(),
+        });
+        core.inner().sync_auto_domains().unwrap();
+        let host = "shop.local";
+        let inner = core.inner().clone();
+        let out = home.paths.root().join("out");
+        std::fs::create_dir_all(&out).unwrap();
+        let dest = out.display().to_string();
+        let manager = crate::tasks::TaskManager::new();
+        let exported = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let keep = exported.clone();
+        manager.start("export_sites", "Exporting", "", 0, move |h| {
+            let summary = export(
+                &inner,
+                &h,
+                &[host.to_string()],
+                BundleOptions {
+                    settings: true,
+                    env: true,
+                    databases: false,
+                    files: true,
+                },
+                &dest,
+                None,
+            )
+            .unwrap();
+            *keep.lock().unwrap() = Some(summary);
+            h.succeed();
+        });
+        let path = wait(&exported).path;
+
+        let site_dir = home.paths.root().join("shop");
+        // The site's copy drifts away from the bundle: this is what the update has to overwrite.
+        std::fs::write(site_dir.join("index.php"), "<?php // old").unwrap();
+        std::fs::remove_file(site_dir.join("wp-content.txt")).unwrap();
+
+        let inner = core.inner().clone();
+        let bundle = path.clone();
+        let imported = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let keep = imported.clone();
+        manager.start("import_sites", "Importing", "", 0, move |h| {
+            let r = import_bundle(
+                &inner,
+                &h,
+                &bundle,
+                None,
+                OnConflict::Update,
+                None,
+                crate::snapshots::RestoreOptions {
+                    config: true,
+                    env: true,
+                    databases: false,
+                    files: true,
+                },
+            )
+            .unwrap();
+            *keep.lock().unwrap() = Some(r);
+            h.succeed();
+        });
+        let result = wait(&imported);
+        let site = &result.sites[0];
+        assert_eq!(site.problems, Vec::<String>::new(), "{:?}", site.problems);
+        assert_eq!(site.action, "updated", "the colliding site was updated");
+        assert!(
+            site.changes.iter().any(|c| c.contains("project file")),
+            "the report says the files were unpacked: {:?}",
+            site.changes
+        );
+        let written = std::fs::read_to_string(dir.join("index.php")).unwrap();
+        assert!(
+            written.contains("new"),
+            "the bundle's file landed on disk: {written}"
+        );
+        assert!(
+            dir.join("wp-content.txt").exists(),
+            "every bundled file was unpacked, not just the first"
         );
     }
 
