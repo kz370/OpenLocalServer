@@ -9,6 +9,7 @@ import { ServiceMark, TechIcon } from '@/components/TechIcon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Field, Select, Tabs } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -177,9 +178,10 @@ function ServiceBanner({ service, name }: { service?: ServiceStatus; name: strin
 }
 
 function toolChoices(engine: string, dbTools: DbTool[], externalTools: ExternalTool[]) {
+  const serves = (engines: string[]) => engines.length === 0 || engines.includes(engine)
   return [
-    ...dbTools.filter((tool) => tool.engines.includes(engine) && tool.found_path),
-    ...externalTools.filter((tool) => tool.engines.includes(engine)).map((tool) => ({ id: tool.id, name: tool.name, found_path: tool.executable, engines: tool.engines })),
+    ...dbTools.filter((tool) => serves(tool.engines) && tool.found_path),
+    ...externalTools.filter((tool) => serves(tool.engines)).map((tool) => ({ id: tool.id, name: tool.name, found_path: tool.executable, engines: tool.engines })),
   ]
 }
 
@@ -728,9 +730,19 @@ function Sqlite(toolProps: DatabaseToolProps) {
   )
 }
 
+/** Every engine a registered tool may claim — mirrors `KNOWN_ENGINES` in `dbtools.rs`. */
+const TOOL_ENGINES = [
+  { id: 'mariadb', label: 'MariaDB' },
+  { id: 'postgres', label: 'PostgreSQL' },
+  { id: 'mongodb', label: 'MongoDB' },
+  { id: 'redis', label: 'Redis' },
+  { id: 'memcached', label: 'Memcached' },
+  { id: 'sqlite', label: 'SQLite' },
+] as const
+
 function Tools() {
   const [tools, setTools] = useState<ExternalTool[]>([])
-  const [draft, setDraft] = useState({ id: '', name: '', engines: 'mongodb', executable: '', args: '{uri}' })
+  const [draft, setDraft] = useState({ id: '', name: '', engines: [] as string[], executable: '', args: '{uri}' })
   const { busy, error, setError, run } = useAction()
 
   useEffect(() => {
@@ -742,26 +754,47 @@ function Tools() {
       <ErrorCard error={error} onDismiss={() => setError(null)} />
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm">Register a tool</CardTitle>
+          <CardTitle className="text-sm">Register a database explorer</CardTitle>
           <CardDescription>
-            Used by "Open in tool". Arguments can use {'{host} {port} {user} {database} {path} {uri}'}. Without a registered tool, MariaDB opens in HeidiSQL if it's installed; SQLite opens in DB Browser for SQLite, then HeidiSQL.
+            Any program that opens a database — an explorer of your own, or a vendor one — as long as it is an .exe. It is then
+            listed in “Open with” on every engine tab you tick, and chosen per engine by the dropdown there. Arguments can use{' '}
+            {'{host} {port} {user} {database} {path} {uri}'}. Without a registered tool, MariaDB opens in HeidiSQL if it's
+            installed; SQLite opens in DB Browser for SQLite, then HeidiSQL.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 sm:grid-cols-2">
-          <Field label="Id">
-            <Input value={draft.id} onChange={(e) => setDraft({ ...draft, id: e.target.value })} placeholder="compass" />
+          <Field label="Id" hint="Lower-case name, no spaces. Saving with an existing id replaces that tool.">
+            <Input value={draft.id} onChange={(e) => setDraft({ ...draft, id: e.target.value })} placeholder="custom_db_explorer" />
           </Field>
           <Field label="Name">
-            <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="MongoDB Compass" />
+            <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="My DB Explorer" />
           </Field>
-          <Field label="Engines" hint="Comma separated: mariadb, sqlite, mongodb, postgres, redis">
-            <Input value={draft.engines} onChange={(e) => setDraft({ ...draft, engines: e.target.value })} />
+          {/* Chips, not a comma-separated text box: a free-text engine list accepted
+              "MariaDB" or "mysql", which then matched no engine and left the tool
+              invisible on every page — a silent failure that read as a broken button. */}
+          <Field
+            className="sm:col-span-2"
+            label="Engines it opens"
+            hint="Tick the tabs it should appear on. None ticked offers it everywhere — the safe default, since a tool that can open nothing is never picked."
+          >
+            <div className="flex flex-wrap gap-x-4 gap-y-2">
+              {TOOL_ENGINES.map((e) => (
+                <label key={e.id} className="inline-flex items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={draft.engines.includes(e.id)}
+                    onChange={(on) => setDraft({ ...draft, engines: on ? [...draft.engines, e.id] : draft.engines.filter((x) => x !== e.id) })}
+                    label={`${e.label} — open with ${draft.name || 'this tool'}`}
+                  />
+                  {e.label}
+                </label>
+              ))}
+            </div>
           </Field>
-          <Field label="Arguments (space separated)">
+          <Field label="Arguments (space separated)" hint="Each space-separated word is one argument.">
             <Input value={draft.args} onChange={(e) => setDraft({ ...draft, args: e.target.value })} />
           </Field>
           <div className="sm:col-span-2">
-            <Field label="Program">
+            <Field label="Program" hint="The .exe to run. It must exist at that path.">
               <div className="flex gap-2">
                 <Input value={draft.executable} onChange={(e) => setDraft({ ...draft, executable: e.target.value })} />
                 <Button variant="secondary" onClick={async () => { const p = await open({ filters: [{ name: 'Program', extensions: ['exe'] }] }); if (p && !Array.isArray(p)) setDraft({ ...draft, executable: p }) }}>
@@ -778,7 +811,7 @@ function Tools() {
                   const tool: ExternalTool = {
                     id: draft.id,
                     name: draft.name,
-                    engines: draft.engines.split(',').map((s) => s.trim()).filter(Boolean),
+                    engines: draft.engines,
                     executable: draft.executable,
                     args: draft.args.split(/\s+/).filter(Boolean),
                   }
@@ -795,12 +828,14 @@ function Tools() {
       <Card>
         <CardContent className="flex flex-col gap-2 pt-4">
           {tools.map((t) => (
-            <div key={t.id} className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm">
-              <div>
+            <div key={t.id} className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2 text-sm">
+              <div className="min-w-0">
                 <div className="font-medium">{t.name}</div>
-                <div className="font-mono text-xs text-muted-foreground">{t.engines.join(', ')} · {t.executable}</div>
+                <div className="min-w-0 font-mono text-xs break-all text-muted-foreground">
+                  {t.engines.length === 0 ? 'every engine' : t.engines.join(', ')} · {t.executable}
+                </div>
               </div>
-              <Button size="sm" variant="ghost" onClick={() => confirmThen(`Remove ${t.name} from the tool list? The program itself is not uninstalled.`, () => run('rm', async () => { const r = await runCommand({ type: 'remove_external_tool', id: t.id }); if (r.type === 'external_tools') setTools(r.tools) }))}>
+              <Button size="sm" variant="ghost" className="shrink-0" title="Remove this tool" onClick={() => confirmThen(`Remove ${t.name} from the tool list? The program itself is not uninstalled.`, () => run('rm', async () => { const r = await runCommand({ type: 'remove_external_tool', id: t.id }); if (r.type === 'external_tools') setTools(r.tools) }))}>
                 <Trash2 className="size-3.5" />
               </Button>
             </div>

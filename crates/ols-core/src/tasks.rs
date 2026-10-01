@@ -265,6 +265,25 @@ impl TaskHandle {
         self.emit(TaskEventKind::Progress);
     }
 
+    /// A new phase of the same task, with its own denominator: the step changes and the count
+    /// starts at zero again. An export reads one item per site and then writes one item per
+    /// file, so one `total` for both would either stall at the site count or finish long
+    /// before the writing is done — which is exactly a bar that sits still and then jumps.
+    pub fn set_phase(&self, step: &str, total: usize) {
+        if self.cancel_requested() {
+            return;
+        }
+        {
+            let mut view = self.task.lock();
+            view.progress.step = step.to_string();
+            view.progress.total = total as u64;
+            view.progress.done = 0;
+            view.progress.bytes = 0;
+            view.progress.bytes_total = None;
+        }
+        self.emit(TaskEventKind::Progress);
+    }
+
     /// One item done. Throttled, so a 400-file copy does not publish 400 events.
     pub fn advance(&self, by: usize) {
         self.task.lock().progress.done += by;

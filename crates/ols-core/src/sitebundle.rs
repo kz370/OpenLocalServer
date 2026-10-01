@@ -1047,7 +1047,7 @@ fn create_new(
                 target.display()
             )));
         }
-        match inner.extract_files(src, &target, &format!("{}/files", site.dir)) {
+        match inner.extract_files(src, &target, &format!("{}/files", site.dir), Some(h)) {
             Ok(n) => {
                 changes.push(format!("{n} project file(s) unpacked"));
                 h.result(format!("{n} file(s) unpacked into {}", target.display()));

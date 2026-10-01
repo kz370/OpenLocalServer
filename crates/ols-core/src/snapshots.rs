@@ -25,6 +25,7 @@ use crate::error::CoreError;
 use crate::manifest;
 use crate::project::Project;
 use crate::quickapp::commands::QuickCommand;
+use crate::tasks::TaskHandle;
 use crate::web::manager::ConfigPart;
 
 const FORMAT: u32 = 1;
@@ -618,7 +619,7 @@ impl Inner {
             let project = self.projects.lock().unwrap().get(project_id).ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
             let root = PathBuf::from(&project.path);
             if opts.files && content.file_count > 0 {
-                match self.extract_files(&file, &root, "files") {
+                match self.extract_files(&file, &root, "files", None) {
                     Ok(n) => r.restored.push(format!("{n} project file(s)")),
                     Err(e) => r.problems.push(format!("files: {e}")),
                 }
@@ -649,12 +650,31 @@ impl Inner {
         zip_path: &Path,
         root: &Path,
         prefix: &str,
+        h: Option<&TaskHandle>,
     ) -> Result<usize, String> {
         let mut zip =
             zip::ZipArchive::new(std::fs::File::open(zip_path).map_err(|e| e.to_string())?)
                 .map_err(|e| e.to_string())?;
+        // The zip knows every entry's uncompressed size, so the bar can show real bytes
+        // rather than waiting for the last file to land.
+        let wanted: Vec<(usize, u64)> = (0..zip.len())
+            .filter_map(|i| {
+                let e = zip.by_index(i).ok()?;
+                let rel = e.enclosed_name()?;
+                let rel = rel.strip_prefix(prefix).ok()?;
+                if rel.as_os_str().is_empty() || e.is_dir() {
+                    return None;
+                }
+                Some((i, e.size()))
+            })
+            .collect();
+        let total: u64 = wanted.iter().map(|(_, s)| *s).sum();
+        if let Some(h) = h {
+            h.set_bytes(0, Some(total));
+        }
         let mut n = 0;
-        for i in 0..zip.len() {
+        let mut done = 0u64;
+        for (i, size) in wanted {
             let mut entry = zip.by_index(i).map_err(|e| e.to_string())?;
             let Some(rel) = entry.enclosed_name() else {
                 continue;
@@ -662,9 +682,6 @@ impl Inner {
             let Ok(rel) = rel.strip_prefix(prefix) else {
                 continue;
             };
-            if rel.as_os_str().is_empty() || entry.is_dir() {
-                continue;
-            }
             let target = root.join(rel);
             if let Some(parent) = target.parent() {
                 std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -672,7 +689,13 @@ impl Inner {
             let mut out =
                 std::fs::File::create(&target).map_err(|e| format!("{}: {e}", target.display()))?;
             std::io::copy(&mut entry, &mut out).map_err(|e| e.to_string())?;
+            drop(out);
             n += 1;
+            done += size;
+            if let Some(h) = h {
+                h.advance(1);
+                h.set_bytes(done, Some(total));
+            }
         }
         Ok(n)
     }
@@ -688,6 +711,7 @@ impl Inner {
         rename: Option<&BTreeMap<String, String>>,
         done: &mut Vec<String>,
         problems: &mut Vec<String>,
+        h: Option<&TaskHandle>,
     ) {
         let Ok(f) = std::fs::File::open(zip_path) else {
             return;
@@ -727,6 +751,20 @@ impl Inner {
                 }
                 if !self.services.is_running(&db.engine) {
                     self.start_service_and_wait(&db.engine, &mut |_| {})?;
+                }
+                // §165: a database that is already there is moved aside, not merged into.
+                // Loading a dump over a live database leaves whatever the dump does not
+                // mention behind, so the result is neither the bundle nor the old site. The
+                // old one is renamed `<name>_bkp` (and `_bkp2`, `_bkp3` if those are taken)
+                // so it is still there to look at, and the dump lands in a clean database.
+                let existing = self.services.list_databases(&db.engine).unwrap_or_default();
+                if existing.iter().any(|d| d == &target) {
+                    let kept = self.services.free_database_name(&db.engine, &format!("{target}_bkp"));
+                    self.services.rename_database(&db.engine, &target, &kept)?;
+                    done.push(format!(
+                        "the {engine} database {target} already existed and was renamed {kept}",
+                        engine = db.engine
+                    ));
                 }
                 self.services.create_database(&db.engine, &target)?;
                 let r = crate::dbbackup::restore(
@@ -996,7 +1034,7 @@ impl Inner {
                 )));
             }
             let n = self
-                .extract_files(&zip_path, &target, "files")
+                .extract_files(&zip_path, &target, "files", None)
                 .map_err(err)?;
             changes.push(format!("{n} project file(s) unpacked"));
         } else {

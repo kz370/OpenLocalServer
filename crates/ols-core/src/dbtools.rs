@@ -168,12 +168,26 @@ use crate::service::ConnectionInfo;
 pub struct ExternalTool {
     pub id: String,
     pub name: String,
-    /// Engines this tool can open: "mariadb" | "sqlite" | "mongodb" | "postgres" | "redis".
+    /// Engines this tool can open: any id in [`KNOWN_ENGINES`]. An empty list means the
+    /// tool is offered for every engine, which is what a multi-protocol explorer wants.
     pub engines: Vec<String>,
     pub executable: String,
     /// Arguments with placeholders: {host} {port} {user} {database} {path} {uri}.
     pub args: Vec<String>,
 }
+
+/// Every engine id a registered tool may claim. These are the ids the Databases page
+/// passes as `engine`, so a tool naming anything else could never be reached from a page
+/// — it would save, then never appear in any "Open with" list, which reads as a broken
+/// button. The list is validated on save so that failure is loud and immediate.
+pub const KNOWN_ENGINES: &[&str] = &[
+    "mariadb",
+    "postgres",
+    "mongodb",
+    "redis",
+    "memcached",
+    "sqlite",
+];
 
 pub struct ExternalToolStore {
     paths: AppPaths,
@@ -193,24 +207,54 @@ impl ExternalToolStore {
         self.tools.clone()
     }
 
+    /// The tool to use when none is chosen: the first one registered for this engine.
+    /// A tool registered with no engines is offered everywhere but never picked here —
+    /// an engine-specific tool and the built-in default both rank above it, so a
+    /// catch-all cannot quietly displace HeidiSQL or pgAdmin.
     pub fn for_engine(&self, engine: &str) -> Option<&ExternalTool> {
         self.tools
             .iter()
-            .find(|t| t.engines.iter().any(|e| e == engine))
+            .find(|t| t.engines.iter().any(|e| e.eq_ignore_ascii_case(engine)))
     }
 
     pub fn get(&self, id: &str) -> Option<&ExternalTool> {
-        self.tools.iter().find(|t| t.id == id)
+        self.tools.iter().find(|t| t.id.eq_ignore_ascii_case(id))
     }
 
     /// Adds or replaces (by id) a tool. The executable must exist — a typo here would
-    /// otherwise only surface as a confusing failure at click time.
+    /// otherwise only surface as a confusing failure at click time. Engine ids are
+    /// normalized (trimmed, lowercased, de-duplicated) and checked against
+    /// [`KNOWN_ENGINES`]: a misspelt engine saves happily and then never matches any page,
+    /// which looks like the button is broken, so it is refused here with the way out
+    /// instead.
     pub fn save(&mut self, tool: ExternalTool) -> Result<(), CoreError> {
+        let mut tool = tool;
         if tool.id.trim().is_empty() || tool.name.trim().is_empty() {
             return Err(CoreError::ServiceError(
                 "a tool needs an id and a name".into(),
             ));
         }
+        tool.id = tool.id.trim().to_ascii_lowercase();
+        tool.name = tool.name.trim().to_string();
+        let mut engines: Vec<String> = Vec::with_capacity(tool.engines.len());
+        for raw in &tool.engines {
+            let e = raw.trim().to_ascii_lowercase();
+            if e.is_empty() || engines.contains(&e) {
+                continue;
+            }
+            if !KNOWN_ENGINES.contains(&e.as_str()) {
+                return Err(CoreError::failed_fix(
+                    format!("\"{}\" is not a database engine OLS has a page for.", raw.trim()),
+                    format!(
+                        "The engine ids are: {}. Anything else can never be opened from a page.",
+                        KNOWN_ENGINES.join(", ")
+                    ),
+                    "Pick the engines this tool opens from the list, or leave them all off to offer it everywhere.",
+                ));
+            }
+            engines.push(e);
+        }
+        tool.engines = engines;
         if !std::path::Path::new(&tool.executable).is_file() {
             return Err(CoreError::ServiceError(format!(
                 "{} does not exist",
@@ -225,7 +269,7 @@ impl ExternalToolStore {
     }
 
     pub fn remove(&mut self, id: &str) -> Result<(), CoreError> {
-        self.tools.retain(|t| t.id != id);
+        self.tools.retain(|t| !t.id.eq_ignore_ascii_case(id));
         self.persist()
     }
 
@@ -362,6 +406,7 @@ pub fn launch(executable: &str, args: &[String], verbatim: bool) -> Result<(), S
 #[cfg(test)]
 mod external_tool_tests {
     use super::*;
+    use crate::error::Diagnostic;
 
     fn info(engine: &str) -> ConnectionInfo {
         ConnectionInfo {
@@ -474,6 +519,89 @@ mod external_tool_tests {
         assert_eq!(
             ExternalToolStore::load(&home.paths).unwrap().list().len(),
             1
+        );
+    }
+
+    #[test]
+    fn save_normalizes_engines_and_refuses_an_id_no_page_uses() {
+        let home = crate::test_support::isolated_home();
+        let mut store = ExternalToolStore::load(&home.paths).unwrap();
+        let exe = home.paths.root().join("custom_db_explorer.exe");
+        std::fs::write(&exe, "x").unwrap();
+        let exe = exe.display().to_string();
+
+        store
+            .save(ExternalTool {
+                id: "  MyExplorer ".into(),
+                name: " My Explorer ".into(),
+                engines: vec!["MariaDB".into(), " mariadb ".into(), "SQLite".into()],
+                executable: exe.clone(),
+                args: vec!["{uri}".into()],
+            })
+            .unwrap();
+
+        let list = store.list();
+        assert_eq!(list[0].id, "myexplorer", "ids are trimmed and lowercased");
+        assert_eq!(list[0].name, "My Explorer");
+        assert_eq!(
+            list[0].engines,
+            vec!["mariadb".to_string(), "sqlite".to_string()],
+            "engines are lowercased and de-duplicated"
+        );
+        assert_eq!(
+            store.for_engine("MariaDB").map(|t| t.id.clone()),
+            Some("myexplorer".to_string()),
+            "lookup must not depend on the case either side was typed in"
+        );
+
+        let err = store
+            .save(ExternalTool {
+                id: "myexplorer".into(),
+                name: "My Explorer".into(),
+                engines: vec!["mysql".into()],
+                executable: exe,
+                args: vec![],
+            })
+            .unwrap_err();
+        let diag = Diagnostic::from(&err);
+        let said = format!(
+            "{} {} {}",
+            diag.problem,
+            diag.cause,
+            diag.fix.unwrap_or_default()
+        );
+        assert!(
+            said.contains("mariadb"),
+            "the refusal must name the ids that work: {said}"
+        );
+        assert_eq!(
+            store.list().len(),
+            1,
+            "a refused save must not disturb what is already registered"
+        );
+    }
+
+    #[test]
+    fn an_engine_less_tool_is_listed_everywhere_but_never_auto_picked() {
+        let home = crate::test_support::isolated_home();
+        let mut store = ExternalToolStore::load(&home.paths).unwrap();
+        let exe = home.paths.root().join("custom_db_explorer.exe");
+        std::fs::write(&exe, "x").unwrap();
+        store
+            .save(ExternalTool {
+                id: "custom_db_explorer".into(),
+                name: "My DB Explorer".into(),
+                engines: vec![],
+                executable: exe.display().to_string(),
+                args: vec!["{uri}".into()],
+            })
+            .unwrap();
+
+        assert!(store.for_engine("mariadb").is_none());
+        assert_eq!(
+            store.get("CUSTOM_DB_EXPLORER").map(|t| t.id.clone()),
+            Some("custom_db_explorer".to_string()),
+            "an explicit choice finds it whatever the case"
         );
     }
 }

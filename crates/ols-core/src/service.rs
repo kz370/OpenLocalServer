@@ -909,6 +909,41 @@ impl ServiceManager {
         }
     }
 
+    /// Renames a database in place, keeping its data. `from` must exist; `to` must not.
+    pub fn rename_database(&self, engine: &str, from: &str, to: &str) -> Result<(), String> {
+        if !is_safe_identifier(from) || !is_safe_identifier(to) {
+            return Err("database name must be alphanumeric/underscore only".into());
+        }
+        if from == to {
+            return Ok(());
+        }
+        if !self.list_databases(engine)?.iter().any(|d| d == from) {
+            return Err(format!("there is no {engine} database called {from}"));
+        }
+        if self.list_databases(engine)?.iter().any(|d| d == to) {
+            return Err(format!("{engine} already has a database called {to}"));
+        }
+        if engine == "postgres" {
+            return self
+                .run_sql(engine, &format!("ALTER DATABASE \"{from}\" RENAME TO \"{to}\""))
+                .map(|_| ());
+        }
+        self.run_sql(engine, &format!("RENAME DATABASE `{from}` TO `{to}`"))
+            .map(|_| ())
+    }
+
+    /// A name no database holds yet: `base`, then `base-2`, `base-3` and so on.
+    pub fn free_database_name(&self, engine: &str, base: &str) -> String {
+        let taken = self.list_databases(engine).unwrap_or_default();
+        if !taken.iter().any(|d| d == base) {
+            return base.to_string();
+        }
+        (2..)
+            .map(|i| format!("{base}-{i}"))
+            .find(|n| !taken.iter().any(|d| d == n))
+            .unwrap()
+    }
+
     pub fn create_database(&self, engine: &str, name: &str) -> Result<(), String> {
         if !is_safe_identifier(name) {
             return Err("database name must be alphanumeric/underscore only".into());
