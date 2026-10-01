@@ -1,5 +1,5 @@
 import { AlertTriangle, CheckCircle2, CircleSlash, X } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { type Ref, useCallback, useEffect, useRef, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
 
 import { Spinner } from '@/components/Spinner'
@@ -53,6 +53,20 @@ export function TasksPanel() {
   const running = tasks.filter((t) => t.state === 'running')
   const finished = tasks.filter((t) => t.state !== 'running')
 
+  // Starting an import or export sends the user here to watch it, and the task they came for
+  // is the running one at the top of the list — which sits below the system monitor and the
+  // tab strip. Without this the page opens scrolled at the top and the progress they asked to
+  // see is off the screen. Scrolled once per task, not per poll, so the list cannot fight the
+  // user for the scrollbar.
+  const lead = running[0]
+  const leadRef = useRef<HTMLDivElement>(null)
+  const scrolledFor = useRef<string | null>(null)
+  useEffect(() => {
+    if (!lead || scrolledFor.current === lead.id) return
+    scrolledFor.current = lead.id
+    leadRef.current?.scrollIntoView({ block: 'center' })
+  }, [lead])
+
   return (
     <Card>
       <CardHeader>
@@ -68,7 +82,7 @@ export function TasksPanel() {
         {tasks.length === 0 ? (
           <p className="text-sm text-muted-foreground">No background work yet.</p>
         ) : (
-          tasks.map((t) => <TaskRow key={t.id} task={t} />)
+          tasks.map((t) => <TaskRow key={t.id} task={t} leadRef={t.id === lead?.id ? leadRef : undefined} />)
         )}
         {finished.length > 0 && (
           <div className="flex justify-end">
@@ -102,7 +116,7 @@ const STEP_MARK: Record<string, string> = {
   skipped: 'text-muted-foreground',
 }
 
-function TaskRow({ task }: { task: TaskView }) {
+function TaskRow({ task, leadRef }: { task: TaskView; leadRef?: Ref<HTMLDivElement> }) {
   const [busy, setBusy] = useState(false)
   const live = task.state === 'running'
   const { done, total, bytes, bytes_total } = task.progress
@@ -118,7 +132,7 @@ function TaskRow({ task }: { task: TaskView }) {
   }
 
   return (
-    <div className="rounded-lg border border-border p-3">
+    <div ref={leadRef} className="rounded-lg border border-border p-3">
       <div className="flex flex-wrap items-center gap-2">
         {live ? <Spinner className="size-3.5" /> : <StateIcon state={task.state} />}
         <span className="min-w-0 flex-1 truncate text-sm font-medium" title={task.title}>

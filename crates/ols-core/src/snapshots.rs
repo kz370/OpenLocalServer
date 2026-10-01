@@ -320,6 +320,14 @@ fn read_zip_meta(path: &Path) -> Result<SnapshotContent, String> {
 
 /// Replaces whole-word occurrences of a slug in a hostname ("shop.test" → "shop-copy.test").
 fn rename_host(host: &str, old: &str, new: &str) -> String {
+    // Nothing to swap: the copy kept the project's own name, so this hostname is already the
+    // right one. Every label equal to `old` would be rewritten to itself and come out
+    // unchanged, and the "unchanged" case falls through to the prefix below — which is how an
+    // import of `wordpress-test` produced a second site `wordpress-test.wordpress-test.local`
+    // beside the real one.
+    if new.is_empty() || old == new {
+        return host.to_string();
+    }
     let labels: Vec<String> = host
         .split('.')
         .map(|l| {
@@ -404,22 +412,50 @@ impl Inner {
             .filter_map(|d| self.certs.info(&d.hostname))
             .collect();
         let mut databases = Vec::new();
-        if let Ok(Some(m)) = manifest::read_manifest(&root) {
-            if let Some(db) = m.database {
-                let engine = match db.engine.as_str() {
-                    "mysql" | "mariadb" => "mariadb",
-                    "postgresql" => "postgres",
-                    e => e,
-                };
-                if engine != "sqlite" {
-                    databases.push(DatabaseMeta {
-                        engine: engine.into(),
-                        name: db
-                            .name
-                            .unwrap_or_else(|| crate::setup::db_name_for(&project.name)),
-                        dump: None,
-                    });
-                }
+        // A site's database is whatever its configuration points at, in the order that knows
+        // most: the manifest, then a WordPress `wp-config.php` (no `.env` to read there), then
+        // the `.env` keys Laravel and the rest use. Missing it means an export that carries
+        // configuration but no data, and an import that silently restores nothing.
+        let declared = manifest::read_manifest(&root)
+            .ok()
+            .flatten()
+            .and_then(|m| m.database);
+        let declared = declared.or_else(|| {
+            crate::wordpress::database(&root).map(|(engine, name)| manifest::DatabaseManifest {
+                engine,
+                version: None,
+                name: Some(name),
+            })
+        });
+        let declared = declared.or_else(|| {
+            let conn = crate::setup::env_value(&root, "DB_CONNECTION")?;
+            let engine = match conn.as_str() {
+                "mysql" | "mariadb" => "mariadb",
+                "pgsql" | "postgres" | "postgresql" => "postgres",
+                "sqlite" => "sqlite",
+                "mongodb" => "mongodb",
+                _ => return None,
+            };
+            Some(manifest::DatabaseManifest {
+                engine: engine.into(),
+                version: None,
+                name: crate::setup::env_value(&root, "DB_DATABASE").filter(|n| !n.is_empty()),
+            })
+        });
+        if let Some(db) = declared {
+            let engine = match db.engine.as_str() {
+                "mysql" | "mariadb" => "mariadb",
+                "postgresql" => "postgres",
+                e => e,
+            };
+            if engine != "sqlite" {
+                databases.push(DatabaseMeta {
+                    engine: engine.into(),
+                    name: db
+                        .name
+                        .unwrap_or_else(|| crate::setup::db_name_for(&project.name)),
+                    dump: None,
+                });
             }
         }
         let sqlite = self
@@ -636,7 +672,7 @@ impl Inner {
                 }
             }
             if opts.databases {
-                self.restore_dumps(&file, &content.databases, None, None, &mut r.restored, &mut r.problems);
+                self.restore_dumps(&file, &content.databases, None, None, &mut r.restored, &mut r.problems, None);
             }
             Ok(())
         })?;
@@ -703,6 +739,7 @@ impl Inner {
     /// Loads each included dump; `rename` maps old database names to new ones (clones).
     /// `cipher` is set when the zip's dumps are sealed, which is how a site bundle keeps its
     /// passwords private without sealing the source files beside them.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn restore_dumps(
         &self,
         zip_path: &Path,
@@ -755,11 +792,11 @@ impl Inner {
                 // §165: a database that is already there is moved aside, not merged into.
                 // Loading a dump over a live database leaves whatever the dump does not
                 // mention behind, so the result is neither the bundle nor the old site. The
-                // old one is renamed `<name>_bkp` (and `_bkp2`, `_bkp3` if those are taken)
+                // old one is renamed `<name>_bkp` (and `_bkp-2`, `_bkp-3` if those are taken)
                 // so it is still there to look at, and the dump lands in a clean database.
                 let existing = self.services.list_databases(&db.engine).unwrap_or_default();
                 if existing.iter().any(|d| d == &target) {
-                    let kept = self.services.free_database_name(&db.engine, &format!("{target}_bkp"));
+                    let kept = crate::service::free_name_among(&format!("{target}_bkp"), &existing);
                     self.services.rename_database(&db.engine, &target, &kept)?;
                     done.push(format!(
                         "the {engine} database {target} already existed and was renamed {kept}",
@@ -781,6 +818,9 @@ impl Inner {
             match result {
                 Ok(()) => done.push(format!("database {target} ({})", db.engine)),
                 Err(e) => problems.push(format!("database {target}: {e}")),
+            }
+            if let Some(h) = h {
+                h.advance(1);
             }
         }
     }
@@ -1188,6 +1228,7 @@ impl Inner {
                 Some(&rename),
                 &mut changes,
                 problems,
+                None,
             );
         }
         let _ = self.sync_auto_domains();
@@ -1520,6 +1561,68 @@ impl Adjust {
 mod tests {
     use super::*;
     use crate::command::{Core, CoreCommand, CoreResponse};
+
+    #[test]
+    fn an_import_that_keeps_the_name_keeps_the_hostname() {
+        // Importing `wordpress-test` under its own name must not invent a second site:
+        // rewriting a label for itself produced `wordpress-test.wordpress-test.test`.
+        assert_eq!(
+            rename_host("wordpress-test.test", "wordpress-test", "wordpress-test"),
+            "wordpress-test.test"
+        );
+        assert_eq!(
+            rename_host("wordpress-test.test", "wordpress-test", ""),
+            "wordpress-test.test"
+        );
+        // A real rename still replaces the label, and still prefixes a name without one.
+        assert_eq!(
+            rename_host("wordpress-test.test", "wordpress-test", "wp2"),
+            "wp2.test"
+        );
+        assert_eq!(
+            rename_host("blog.test", "wordpress-test", "wp2"),
+            "wp2.blog.test"
+        );
+    }
+
+    #[test]
+    fn a_wordpress_site_is_found_by_its_wp_config() {
+        // §165: WordPress keeps its database in wp-config.php, so a site with no manifest and
+        // no .env still has to be recognised — otherwise the export carries no dump.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("wp-config.php"),
+            "<?php\ndefine( 'DB_NAME', 'wp_shop' );\ndefine( 'DB_USER', 'root' );\ndefine( 'DB_HOST', '127.0.0.1:3306' );\n",
+        )
+        .unwrap();
+        assert_eq!(
+            crate::wordpress::database(dir.path()),
+            Some(("mariadb".to_string(), "wp_shop".to_string()))
+        );
+        // A PostgreSQL port says PostgreSQL; nothing to declare means nothing to find.
+        std::fs::write(
+            dir.path().join("wp-config.php"),
+            "<?php\ndefine( 'DB_NAME', 'wp_shop' );\ndefine( 'DB_HOST', '127.0.0.1:5432' );\n",
+        )
+        .unwrap();
+        assert_eq!(
+            crate::wordpress::database(dir.path()).map(|(e, _)| e),
+            Some("postgres".to_string())
+        );
+        std::fs::write(dir.path().join("wp-config.php"), "<?php\n").unwrap();
+        assert_eq!(crate::wordpress::database(dir.path()), None);
+    }
+
+    #[test]
+    fn a_backup_database_name_steps_past_the_ones_already_taken() {
+        let free = |taken: &[&str]| {
+            let list: Vec<String> = taken.iter().map(|s| s.to_string()).collect();
+            crate::service::free_name_among("shop_bkp", &list)
+        };
+        assert_eq!(free(&[]), "shop_bkp");
+        assert_eq!(free(&["shop_bkp"]), "shop_bkp-2");
+        assert_eq!(free(&["shop_bkp", "shop_bkp-2"]), "shop_bkp-3");
+    }
 
     fn core() -> (Core, crate::test_support::IsolatedHome) {
         let home = crate::test_support::isolated_home();

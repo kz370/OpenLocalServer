@@ -273,10 +273,10 @@ impl TaskHandle {
         if self.cancel_requested() {
             return;
         }
+        self.begin_step(step);
         {
             let mut view = self.task.lock();
-            view.progress.step = step.to_string();
-            view.progress.total = total as u64;
+            view.progress.total = total;
             view.progress.done = 0;
             view.progress.bytes = 0;
             view.progress.bytes_total = None;
@@ -600,6 +600,30 @@ mod tests {
         assert_eq!(view.steps[0].state, StepState::Done);
         assert_eq!(view.steps[0].detail.as_deref(), Some("2 site(s)"));
         assert!(view.finished_ms.is_some());
+    }
+
+    #[test]
+    fn a_new_phase_starts_its_own_count() {
+        // §165: an export reads one item per site, then writes one per file. One denominator
+        // for both is what made the bar sit still and then jump.
+        let manager = TaskManager::new();
+        let id = manager.start("export_sites", "Exporting", "", 0, |h| {
+            h.set_phase("Reading site configuration", 3);
+            h.advance(3);
+            h.set_phase("Writing the bundle", 10);
+            h.advance(4);
+            h.set_bytes(400, Some(1000));
+            h.end_step(Some("4 of 10".into()));
+            h.succeed();
+        });
+        let view = wait_for(&manager, &id, |t| t.state.is_finished());
+        assert_eq!(view.progress.done, 4);
+        assert_eq!(view.progress.total, 10);
+        assert_eq!(view.progress.fraction(), Some(0.4));
+        assert_eq!(view.progress.bytes, 400);
+        assert_eq!(view.progress.bytes_total, Some(1000));
+        assert_eq!(view.steps.len(), 2, "each phase is a step the list shows");
+        assert_eq!(view.current_step(), None);
     }
 
     #[test]

@@ -376,7 +376,7 @@ pub fn export(
 
     // Gathered first, written second: a dump that fails must not leave a half-written zip
     // whose manifest claims it is complete.
-    h.begin_step("Reading site configuration");
+    h.set_phase("Reading site configuration", selected.len());
     let mut prepared: Vec<PreparedSite> = Vec::new();
     for g in &selected {
         // Between sites, never mid-dump: the item in flight is finished, the rest is not.
@@ -401,8 +401,14 @@ pub fn export(
         )));
     }
 
-    h.begin_step("Writing the bundle");
-    let manifest = write_bundle(&file, &prepared, options, cipher.as_ref(), salt.as_deref())?;
+    let manifest = write_bundle(
+        &file,
+        &prepared,
+        options,
+        cipher.as_ref(),
+        salt.as_deref(),
+        h,
+    )?;
     summary.size_bytes = std::fs::metadata(&file).map(|m| m.len()).unwrap_or(0);
     summary.sha256 = sha256_of(&file);
     summary.sites = manifest
@@ -533,6 +539,7 @@ fn write_bundle(
     options: BundleOptions,
     cipher: Option<&BundleCipher>,
     salt: Option<&str>,
+    h: &TaskHandle,
 ) -> Result<BundleManifest, CoreError> {
     let tmp = file.with_extension("part");
     let mut manifest = BundleManifest {
@@ -550,6 +557,15 @@ fn write_bundle(
         sha256: None,
     };
     let result = (|| -> Result<(), CoreError> {
+        // The write is counted per entry, not per site: copying a thousand project files
+        // behind one site is the part that takes time, and a bar that counts sites sits at
+        // one step for the whole of it.
+        let items: usize = sites
+            .iter()
+            .map(|s| s.databases.len() + s.env.len() + s.files.len() + 1)
+            .sum();
+        h.set_phase("Writing the bundle", items);
+        let mut written = 0usize;
         let mut zip = zip::ZipWriter::new(std::fs::File::create(&tmp)?);
         for site in sites {
             let dir = site.dir();
@@ -563,6 +579,8 @@ fn write_bundle(
                 zip.start_file(entry.as_str(), zip_options())
                     .map_err(|e| err(e.to_string()))?;
                 zip.write_all(bytes)?;
+                written += 1;
+                h.advance(1);
                 let engine_db = name.trim_end_matches(".sql");
                 if let Some(d) = site
                     .content
@@ -594,6 +612,8 @@ fn write_bundle(
                 zip.start_file(entry.as_str(), zip_options())
                     .map_err(|e| err(e.to_string()))?;
                 zip.write_all(bytes)?;
+                written += 1;
+                h.advance(1);
                 meta.env_files.push(BundleEnvFile {
                     name: name.clone(),
                     entry,
@@ -608,6 +628,8 @@ fn write_bundle(
                     &mut std::fs::File::open(path).map_err(|e| err(format!("{rel}: {e}")))?,
                     &mut zip,
                 )?;
+                written += 1;
+                h.advance(1);
             }
 
             // The configuration document, with the bytes that now live in the zip removed.
@@ -618,11 +640,14 @@ fn write_bundle(
             content.databases = carried;
             meta.settings = serde_json::to_string(&content)?;
             manifest.sites.push(meta);
+            written += 1;
+            h.advance(1);
         }
         zip.start_file(META, zip_options())
             .map_err(|e| err(e.to_string()))?;
         zip.write_all(serde_json::to_string_pretty(&manifest)?.as_bytes())?;
         zip.finish().map_err(|e| err(e.to_string()))?;
+        tracing::debug!(items = written, "site bundle entries written");
         Ok(())
     })();
     if let Err(e) = result {
@@ -852,8 +877,20 @@ pub fn import_bundle(
     let manifest = read_manifest(source)?;
     let cipher = manifest.cipher(password)?;
     let src = PathBuf::from(source);
-    // The bar counts sites, and only the manifest knows how many there are.
-    h.set_total(manifest.sites.len());
+    // The bar counts everything the import still has to do, which the manifest already knows:
+    // the sites, the files inside them and the dumps to load. Counting only sites left the bar
+    // at one step through the whole of a file copy or a database restore — the "stuck at 0, then
+    // full" the Processes page showed.
+    let work: usize = manifest
+        .sites
+        .iter()
+        .map(|s| {
+            1 + s.file_count
+                + s.env_files.len()
+                + s.databases.iter().filter(|d| d.dump.is_some()).count()
+        })
+        .sum();
+    h.set_phase("Importing sites", work.max(manifest.sites.len()));
     let mut result = BundleImportResult {
         unlocked: cipher.is_some(),
         sites: Vec::new(),
@@ -922,7 +959,7 @@ fn import_site(
         .map(|d| d.hostname)
         .collect();
     if options.config && on_conflict == OnConflict::Update && !existing.is_empty() {
-        update_existing(inner, content, cipher, src, &existing, options)
+        update_existing(inner, h, content, cipher, src, &existing, options)
     } else {
         create_new(inner, h, src, site, content, cipher, name, options)
     }
@@ -931,6 +968,7 @@ fn import_site(
 /// Update mode: a snapshot of what is there now, then the bundle's version on top.
 fn update_existing(
     inner: &Inner,
+    h: &TaskHandle,
     content: SnapshotContent,
     cipher: Option<&BundleCipher>,
     src: &Path,
@@ -984,6 +1022,7 @@ fn update_existing(
                 Ok(_) => changes.push(format!("{name} written")),
                 Err(e) => problems.push(format!("{name}: {e}")),
             }
+            h.advance(1);
         }
     }
     if options.databases {
@@ -993,7 +1032,15 @@ fn update_existing(
             .filter(|d| d.dump.is_some())
             .cloned()
             .collect();
-        inner.restore_dumps(src, &dumps, cipher, None, &mut changes, &mut problems);
+        inner.restore_dumps(
+            src,
+            &dumps,
+            cipher,
+            None,
+            &mut changes,
+            &mut problems,
+            Some(h),
+        );
     }
     Ok(BundleSiteResult {
         project_name: project.name.clone(),
@@ -1104,6 +1151,7 @@ fn create_new(
                 Ok(()) => changes.push(format!("{file} written")),
                 Err(e) => problems.push(format!("{file}: {e}")),
             }
+            h.advance(1);
         }
     }
     if options.databases {
@@ -1119,6 +1167,7 @@ fn create_new(
             Some(&rename),
             &mut changes,
             &mut problems,
+            Some(h),
         );
     }
     let _ = inner.sync_auto_domains();
@@ -1221,6 +1270,125 @@ mod tests {
             h.succeed();
         });
         let _ = home;
+    }
+
+    #[test]
+    fn an_import_under_the_same_name_keeps_one_site_and_its_hostname() {
+        // §165: importing `wordpress-test` under its own name produced two sites,
+        // `wordpress-test` and `wordpress-test.wordpress-test`. The doubled one came from
+        // rewriting the hostname's label for itself.
+        let home = crate::test_support::isolated_home();
+        let core = crate::command::Core::new(
+            crate::settings::SettingsService::load(&home.paths).unwrap(),
+            home.paths.clone(),
+        );
+        let dir = home.paths.root().join("wordpress-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("index.php"), "<?php").unwrap();
+        std::fs::write(dir.join(".env"), "APP_ENV=local\n").unwrap();
+        let id = match core.dispatch(crate::command::CoreCommand::RegisterProject {
+            path: dir.display().to_string(),
+        }) {
+            Ok(crate::command::CoreResponse::Project { project }) => project.id,
+            other => panic!("expected a project, got {other:?}"),
+        };
+        core.inner().sync_auto_domains().unwrap();
+        let host = "wordpress-test.local";
+        let inner = core.inner().clone();
+        let out = home.paths.root().join("out");
+        std::fs::create_dir_all(&out).unwrap();
+        let dest = out.display().to_string();
+        let manager = crate::tasks::TaskManager::new();
+        let exported = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let keep = exported.clone();
+        manager.start("export_sites", "Exporting", "", 0, move |h| {
+            let summary = export(
+                &inner,
+                &h,
+                &[host.to_string()],
+                BundleOptions {
+                    settings: true,
+                    env: true,
+                    databases: false,
+                    files: true,
+                },
+                &dest,
+                None,
+            )
+            .unwrap();
+            *keep.lock().unwrap() = Some(summary);
+            h.succeed();
+        });
+        let path = wait(&exported).path;
+
+        // The site is taken away again, so the import finds its own name free — the case that
+        // produced two sites: the real one and `wordpress-test.wordpress-test`.
+        core.inner().remove_domain(host).unwrap();
+        core.inner().projects.lock().unwrap().remove(&id).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        let inner = core.inner().clone();
+        let bundle = path.clone();
+        let imported = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let keep = imported.clone();
+        manager.start("import_sites", "Importing", "", 0, move |h| {
+            let r = import_bundle(
+                &inner,
+                &h,
+                &bundle,
+                None,
+                OnConflict::Rename,
+                Some("wordpress-test"),
+                crate::snapshots::RestoreOptions {
+                    config: true,
+                    env: true,
+                    databases: false,
+                    files: true,
+                },
+            )
+            .unwrap();
+            *keep.lock().unwrap() = Some(r);
+            h.succeed();
+        });
+        let result = wait(&imported);
+        let site = &result.sites[0];
+        assert_eq!(site.problems, Vec::<String>::new(), "{:?}", site.problems);
+        assert_eq!(
+            site.hostnames,
+            vec![host.to_string()],
+            "the hostname is kept, not doubled"
+        );
+        let domains = core
+            .inner()
+            .domains
+            .lock()
+            .unwrap()
+            .list()
+            .into_iter()
+            .map(|d| d.hostname)
+            .collect::<Vec<_>>();
+        assert!(
+            !domains
+                .iter()
+                .any(|h| h.contains("wordpress-test.wordpress-test")),
+            "no doubled site was created: {domains:?}"
+        );
+        assert_eq!(
+            domains.iter().filter(|h| *h == host).count(),
+            1,
+            "the site is registered once: {domains:?}"
+        );
+    }
+
+    /// The worker closure runs on another thread, so the value it leaves is waited for.
+    fn wait<T: Send + 'static>(slot: &std::sync::Arc<std::sync::Mutex<Option<T>>>) -> T {
+        for _ in 0..600 {
+            if let Some(v) = slot.lock().unwrap().take() {
+                return v;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        panic!("the task never finished");
     }
 
     #[test]

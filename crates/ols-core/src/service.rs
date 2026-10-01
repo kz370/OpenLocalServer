@@ -925,23 +925,19 @@ impl ServiceManager {
         }
         if engine == "postgres" {
             return self
-                .run_sql(engine, &format!("ALTER DATABASE \"{from}\" RENAME TO \"{to}\""))
+                .run_sql(
+                    engine,
+                    &format!("ALTER DATABASE \"{from}\" RENAME TO \"{to}\""),
+                )
                 .map(|_| ());
         }
         self.run_sql(engine, &format!("RENAME DATABASE `{from}` TO `{to}`"))
             .map(|_| ())
     }
 
-    /// A name no database holds yet: `base`, then `base-2`, `base-3` and so on.
+    /// A name nothing holds yet: `base`, then `base-2`, `base-3` and so on.
     pub fn free_database_name(&self, engine: &str, base: &str) -> String {
-        let taken = self.list_databases(engine).unwrap_or_default();
-        if !taken.iter().any(|d| d == base) {
-            return base.to_string();
-        }
-        (2..)
-            .map(|i| format!("{base}-{i}"))
-            .find(|n| !taken.iter().any(|d| d == n))
-            .unwrap()
+        free_name_among(base, &self.list_databases(engine).unwrap_or_default())
     }
 
     pub fn create_database(&self, engine: &str, name: &str) -> Result<(), String> {
@@ -1197,6 +1193,19 @@ impl ServiceManager {
             other => Err(format!("unknown database engine: {other}")),
         }
     }
+}
+
+/// The first of `base`, `base-2`, `base-3`... that `taken` does not hold. Split out from
+/// [`ServiceManager::free_database_name`] so the stepping can be tested without a running
+/// engine, and reused wherever a database name has to be chosen around the ones already there.
+pub fn free_name_among(base: &str, taken: &[String]) -> String {
+    if !taken.iter().any(|d| d == base) {
+        return base.to_string();
+    }
+    (2..)
+        .map(|i| format!("{base}-{i}"))
+        .find(|n| !taken.iter().any(|d| d == n))
+        .unwrap_or_else(|| base.to_string())
 }
 
 fn kind_of(id: &str) -> &'static str {

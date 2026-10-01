@@ -433,6 +433,49 @@ pub fn issue(
 
 /// Describes `dir` for the project list: whether it is WordPress, and whether a bridge is
 /// still waiting to be used.
+/// The database a WordPress install points at, as `(engine, name)`.
+///
+/// WordPress keeps its credentials in `wp-config.php`, not in a `.env`, so the manifest and
+/// the `.env` both come up empty for a site OLS installed — and a bundle that finds no
+/// database exports no dump, which reads on import as "the database was not restored".
+/// `DB_HOST`'s port is what separates MariaDB from PostgreSQL; MySQL's default port means
+/// MariaDB, which is what OLS bundles.
+pub fn database(dir: &Path) -> Option<(String, String)> {
+    let text = std::fs::read_to_string(dir.join("wp-config.php")).ok()?;
+    let value = |key: &str| {
+        let marker = format!("'{key}'");
+        let start = text.find(&marker)? + marker.len();
+        let rest = &text[start..];
+        let rest = rest.trim_start().strip_prefix(',')?;
+        let rest = rest
+            .trim_start()
+            .strip_prefix('>')
+            .unwrap_or(rest.trim_start());
+        let rest = rest.trim_start().strip_prefix('=')?;
+        let rest = rest.trim_start();
+        let quote = rest.chars().next()?;
+        if quote != '\'' && quote != '"' {
+            return None;
+        }
+        let rest = &rest[quote.len_utf8()..];
+        let end = rest.find(quote)?;
+        Some(rest[..end].to_string())
+    };
+    let name = value("DB_NAME").filter(|n| !n.trim().is_empty())?;
+    let host = value("DB_HOST").unwrap_or_default();
+    let engine = if host
+        .rsplit(':')
+        .next()
+        .and_then(|p| p.trim().parse::<u16>().ok())
+        == Some(5432)
+    {
+        "postgres"
+    } else {
+        "mariadb"
+    };
+    Some((engine.to_string(), name.trim().to_string()))
+}
+
 pub fn describe(project_id: &str, name: &str, dir: &Path) -> Option<WpProject> {
     if !is_wordpress(dir) {
         return None;

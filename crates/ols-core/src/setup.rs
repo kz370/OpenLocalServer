@@ -215,7 +215,7 @@ pub fn db_name_for(name: &str) -> String {
 }
 
 /// Reads one `KEY=value` from a project's `.env`, if it has one.
-fn env_value(project: &Path, key: &str) -> Option<String> {
+pub fn env_value(project: &Path, key: &str) -> Option<String> {
     let text = std::fs::read_to_string(project.join(".env")).ok()?;
     text.lines().find_map(|l| {
         let (k, v) = l.trim().split_once('=')?;
