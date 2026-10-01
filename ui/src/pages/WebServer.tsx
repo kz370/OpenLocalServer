@@ -2,6 +2,7 @@ import { Lock, Play, RefreshCw, ShieldCheck, Trash2, Check } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
+import { SaveButton } from '@/components/SaveButton'
 import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
 import { TechTile } from '@/components/TechIcon'
@@ -56,18 +57,20 @@ export function WebServerPage({ initialTab = 'server' }: { initialTab?: 'server'
         </div>
         <div className="flex flex-col items-end gap-2">
           <div className="flex gap-2">
-            <Button
-              disabled={busy !== null}
+            <SaveButton
+              action={web}
+              name="apply"
+              busyLabel={status?.running ? 'Applying…' : 'Starting…'}
+              savedLabel={status?.running ? 'Applied' : 'Started'}
               onClick={() =>
-                run('apply', async () => {
+                void run('apply', async () => {
                   setSavedWhileStopped(false)
                   await apply()
                 })
               }
             >
-              {busy === 'apply' ? <Spinner /> : <Play />}{' '}
-              {busy === 'apply' ? (status?.running ? 'Applying…' : 'Starting…') : status?.running ? 'Apply changes' : 'Start web server'}
-            </Button>
+              <Play /> {status?.running ? 'Apply changes' : 'Start web server'}
+            </SaveButton>
             {status?.running && (
               <Button
                 variant="outline"

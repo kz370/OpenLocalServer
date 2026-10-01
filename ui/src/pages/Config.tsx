@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { AiButton } from '@/components/ai/AiButton'
 import { CodeEditor, DiffView, type EditorLanguage } from '@/components/CodeEditor'
 import { ErrorCard } from '@/components/ErrorCard'
+import { SaveButton } from '@/components/SaveButton'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -194,7 +195,8 @@ export function ConfigFilePane({
   const [saved, setSaved] = useState('')
   const [notice, setNotice] = useState<string | null>(null)
   const [pendingOwnership, setPendingOwnership] = useState<Ownership | null>(null)
-  const { busy, error, setError, run } = useAction()
+  const action = useAction()
+  const { busy, error, setError, run } = action
   const ownHistory = useConfigHistory(history ? null : file.hostname)
   const hist = history ?? ownHistory
   // The file names its own server: a main config exists once per server, and a site file
@@ -305,9 +307,9 @@ export function ConfigFilePane({
               <ShieldCheck /> Validate
             </Button>
             {editable && (
-              <Button size="sm" disabled={!dirty || busy !== null} onClick={() => run('save', saveFile)}>
+              <SaveButton action={action} name="save" size="sm" disabled={!dirty} busyLabel="Saving…" onClick={() => void run('save', saveFile)}>
                 <Save /> Save and reload
-              </Button>
+              </SaveButton>
             )}
           </div>
         </CardContent>
@@ -631,7 +633,8 @@ function formatSize(bytes: number): string {
 /** §23: the common blocks as forms; raw editing stays in the Editor tab. */
 function StructuredEditor({ hostname, onApplied }: { hostname: string; onApplied: () => void }) {
   const [domain, setDomain] = useState<Domain | null>(null)
-  const { busy, error, setError, run } = useAction()
+  const action = useAction()
+  const { error, setError, run } = action
   const [done, setDone] = useState<string | null>(null)
 
   useEffect(() => {
@@ -701,10 +704,13 @@ function StructuredEditor({ hostname, onApplied }: { hostname: string; onApplied
       </Section>
 
       <div className="flex items-center gap-3">
-        <Button
-          disabled={busy !== null}
+        <SaveButton
+          action={action}
+          name="save-blocks"
+          busyLabel="Saving…"
+          savedLabel="Saved and applied"
           onClick={() =>
-            run('save-blocks', async () => {
+            void run('save-blocks', async () => {
               setDone(null)
               await runCommand({ type: 'update_domain', domain })
               const r = await runCommand({ type: 'apply_web', overwrite: [] })
@@ -714,7 +720,7 @@ function StructuredEditor({ hostname, onApplied }: { hostname: string; onApplied
           }
         >
           Save and apply
-        </Button>
+        </SaveButton>
         {done && <span className="text-sm text-muted-foreground">{done}</span>}
       </div>
       <Field label="Field values">

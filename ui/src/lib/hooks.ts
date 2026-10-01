@@ -32,15 +32,30 @@ export function usePoll(fn: () => void | Promise<void>, ms: number) {
   }, [ms])
 }
 
-/** Wraps an async action with busy + error state, so every button reports failures the same way. */
+/**
+ * Wraps an async action with busy + error state, so every button reports failures the same
+ * way, and remembers which key last finished successfully.
+ *
+ * `saved` is what makes a save feel like it happened: a command that answers in 80 ms gives
+ * the eye nothing at all, so the button is pressed and the screen is unchanged and the user
+ * presses it again. It holds the key for {@link SAVED_FLASH_MS} and then clears itself, and
+ * `<SaveButton>` turns that into a "Saved" mark on the button itself.
+ */
 export function useAction() {
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<Diagnostic | null>(null)
+  const [saved, setSaved] = useState<string | null>(null)
+  const flash = useRef<ReturnType<typeof setTimeout>>(undefined)
+  useEffect(() => () => clearTimeout(flash.current), [])
   const run = useCallback(async <T,>(key: string, fn: () => Promise<T>): Promise<T | undefined> => {
     setBusy(key)
     setError(null)
     try {
-      return await fn()
+      const r = await fn()
+      clearTimeout(flash.current)
+      setSaved(key)
+      flash.current = setTimeout(() => setSaved(null), SAVED_FLASH_MS)
+      return r
     } catch (e) {
       setError(asDiagnostic(e))
       return undefined
@@ -48,8 +63,11 @@ export function useAction() {
       setBusy(null)
     }
   }, [])
-  return { busy, error, setError, run }
+  return { busy, error, setError, saved, run }
 }
+
+/** How long a "Saved" mark stays on a button before it clears itself. */
+export const SAVED_FLASH_MS = 1600
 
 export function timeAgo(ms: number): string {
   const s = Math.max(0, Math.round((Date.now() - ms) / 1000))
