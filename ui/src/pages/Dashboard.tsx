@@ -3,6 +3,7 @@ import { memo, useMemo, useState } from 'react'
 
 import { DiagnosticsCard } from '@/components/DiagnosticsCard'
 import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
+import { SaveButton } from '@/components/SaveButton'
 import { ServiceIconAction } from '@/components/ServiceIconAction'
 import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
@@ -24,7 +25,8 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
   const [diagToken, setDiagToken] = useState(0)
   const [stats, setStats] = useState<SystemStats | null>(null)
   const [accessLines, setAccessLines] = useState<string[]>([])
-  const { busy, error, setError, run } = useAction()
+  const action = useAction()
+  const { busy, error, setError, run } = action
 
   usePoll(async () => {
     try {
@@ -88,21 +90,24 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
             <Rocket /> New from Quick App
           </Button>
           <div aria-hidden className="mx-1 h-5 w-px bg-border" />
-          <Button
+          <SaveButton
+            action={action}
+            name="apply"
             variant="secondary"
             size="sm"
             className="h-8 rounded-md px-3 text-[13px] font-medium [&_svg]:size-3.5"
-            disabled={busy !== null}
+            busyLabel={web?.running ? 'Applying…' : 'Starting…'}
+            savedLabel={web?.running ? 'Applied' : 'Started'}
             onClick={() =>
-              run('apply', async () => {
+              void run('apply', async () => {
                 await runCommand({ type: 'apply_web', overwrite: [] })
                 await refresh()
                 setDiagToken((t) => t + 1)
               })
             }
           >
-            {busy === 'apply' ? <Spinner /> : <Play />} {busy === 'apply' ? (web?.running ? 'Applying…' : 'Starting…') : web?.running ? 'Re-apply web config' : 'Start web server'}
-          </Button>
+            <Play /> {web?.running ? 'Re-apply web config' : 'Start web server'}
+          </SaveButton>
           <Button
             variant={hasRunning ? 'secondary' : 'default'}
             size="sm"

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { AiButton } from '@/components/ai/AiButton'
 import { CodeEditor } from '@/components/CodeEditor'
 import { ErrorCard } from '@/components/ErrorCard'
+import { SaveButton } from '@/components/SaveButton'
 import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -55,7 +56,8 @@ export function EnvironmentPanel({ projectId }: { projectId: string }) {
   const [report, setReport] = useState<SetupReport | null>(null)
   const [editing, setEditing] = useState(false)
   const [saveAs, setSaveAs] = useState<string | null>(null)
-  const { busy, error, setError, run } = useAction()
+  const action = useAction()
+  const { busy, error, setError, run } = action
 
   const load = useCallback(async () => {
     const [m, p, md] = await Promise.all([
@@ -180,11 +182,14 @@ export function EnvironmentPanel({ projectId }: { projectId: string }) {
               <Button size="sm" variant="ghost" onClick={() => setText(info.text ?? '')} disabled={text === (info.text ?? '')}>
                 Revert
               </Button>
-              <Button
+              <SaveButton
+                action={action}
+                name="save"
                 size="sm"
-                disabled={busy !== null || text === (info.text ?? '')}
+                disabled={text === (info.text ?? '')}
+                busyLabel="Saving…"
                 onClick={() =>
-                  run('save', async () => {
+                  void run('save', async () => {
                     await runCommand({ type: 'save_manifest_text', project_id: projectId, text })
                     await load()
                     setPlan(null)
@@ -192,7 +197,7 @@ export function EnvironmentPanel({ projectId }: { projectId: string }) {
                 }
               >
                 <Save /> Save manifest
-              </Button>
+              </SaveButton>
             </div>
           </div>
         )}
@@ -342,9 +347,9 @@ export function EnvironmentPanel({ projectId }: { projectId: string }) {
                 <Button size="sm" variant="ghost" onClick={() => apply(true)} disabled={busy !== null} title="Check the plan without changing anything (ols setup --dry-run)">
                   Dry run
                 </Button>
-                <Button size="sm" onClick={() => apply(false)} disabled={busy !== null || !plan.ok || plan.steps.every((s) => s.done)}>
-                  {busy === 'apply' ? <Spinner /> : <Play />} Apply
-                </Button>
+                <SaveButton action={action} name="apply" size="sm" busyLabel="Applying…" savedLabel="Applied" disabled={!plan.ok || plan.steps.every((s) => s.done)} onClick={() => void apply(false)}>
+                  <Play /> Apply
+                </SaveButton>
               </>
             )}
           </div>

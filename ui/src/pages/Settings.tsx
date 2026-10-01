@@ -7,6 +7,7 @@ import { ErrorCard } from '@/components/ErrorCard'
 import { ExcludedSitesCard } from '@/components/ExcludedSitesCard'
 import { ApiCard, SystemCard, UpdatesCard } from '@/components/ReleaseCards'
 import { AboutCard, AutoBackupCard, ResourcesCard, SettingsBackupsCard } from '@/components/SettingsExtras'
+import { SaveButton } from '@/components/SaveButton'
 import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -62,7 +63,8 @@ export function SettingsPage() {
   const [version, setVersion] = useState('')
   const [saved, setSaved] = useState<string | null>(null)
   const [section, setSection] = useState<Section>('general')
-  const { busy, error, setError, run } = useAction()
+  const action = useAction()
+  const { busy, error, setError, run } = action
 
   useEffect(() => {
     runCommand({ type: 'get_startup_settings' }).then((r) => r.type === 'startup' && setStartup(r.settings))
@@ -405,7 +407,7 @@ export function SettingsPage() {
 
           {showSave && (
             <div className="flex items-center gap-3">
-              <Button disabled={busy !== null} onClick={() => run('save', saveAll)}>Save settings</Button>
+              <SaveButton action={action} name="save" busyLabel="Saving…" onClick={() => void run('save', saveAll)}>Save settings</SaveButton>
               {saved && <span className="text-sm text-success">{saved}</span>}
             </div>
           )}

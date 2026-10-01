@@ -2,6 +2,7 @@ import { Download } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
+import { SaveButton } from '@/components/SaveButton'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
@@ -24,7 +25,8 @@ export function XdebugDialog({ version, onClose }: { version: string | null; onC
   const [report, setReport] = useState<XdebugReport | null>(null)
   const [draft, setDraft] = useState<XdebugSettings | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const { busy, error, setError, run } = useAction()
+  const action = useAction()
+  const { busy, error, setError, run } = action
 
   // Mounted with key={version}, so state starts fresh for each version.
   useEffect(() => {
@@ -64,17 +66,21 @@ export function XdebugDialog({ version, onClose }: { version: string | null; onC
           <Button variant="ghost" onClick={onClose}>
             Close
           </Button>
-          <Button
-            disabled={busy !== null || !draft || !report?.installed}
+          <SaveButton
+            action={action}
+            name="save"
+            disabled={!draft || !report?.installed}
+            busyLabel="Saving…"
+            savedLabel="Saved"
             onClick={() =>
-              run('save', async () => {
+              void run('save', async () => {
                 apply(await runCommand({ type: 'set_xdebug', version, settings: draft! }))
                 setNotice('Saved. PHP was restarted with the new settings.')
               })
             }
           >
             Save
-          </Button>
+          </SaveButton>
         </>
       }
     >

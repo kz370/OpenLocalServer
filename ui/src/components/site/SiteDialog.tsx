@@ -25,6 +25,7 @@ import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
 import { ProjectShortcuts } from '@/components/OpenWithMenu'
 import { ProjectTools, TOOL_TABS, type ToolTab } from '@/components/ProjectTools'
+import { SaveButton } from '@/components/SaveButton'
 import { TechIcon } from '@/components/TechIcon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -298,10 +299,10 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
                   installedPhp={installedPhp}
                   onSave={(d) => run('save', () => save(d))}
                   busy={busy !== null}
-                  actions={(submit, b) => (
-                    <Button disabled={b} onClick={submit}>
+                  actions={(submit) => (
+                    <SaveButton action={web} name="save" busyLabel="Saving…" savedLabel="Saved and applied" onClick={submit}>
                       {target.hostname ? 'Save and apply' : 'Add and apply'}
-                    </Button>
+                    </SaveButton>
                   )}
                 />
               ) : domainError ? null : (
