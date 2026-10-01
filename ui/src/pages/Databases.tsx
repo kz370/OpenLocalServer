@@ -305,6 +305,8 @@ function SqlEngine({ engine, service, ...toolProps }: { engine: 'mariadb' | 'pos
   const [openDb, setOpenDb] = useState<string | null>(null)
   const [backups, setBackups] = useState<DbBackup[]>([])
   const [note, setNote] = useState<string | null>(null)
+  const [busyDb, setBusyDb] = useState<string | null>(null)
+  const [busyBackup, setBusyBackup] = useState<string | null>(null)
   const { busy, error, setError, run } = useAction()
   const running = !!service?.running
   const dbChoices = toolChoices(engine, toolProps.dbTools, toolProps.externalTools)
@@ -419,8 +421,8 @@ function SqlEngine({ engine, service, ...toolProps }: { engine: 'mariadb' | 'pos
                       <div className="flex items-center justify-between gap-2 px-3 py-1">
                       <span className="truncate text-sm font-medium">{d}</span>
                       <span className="flex shrink-0 items-center gap-0.5">
-                        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" title="Back up this database" disabled={busy !== null} onClick={() => run('backup', async () => { const r = await runCommand({ type: 'backup_database', engine, database: d }); if (r.type === 'text') setNote(`Backup saved to ${r.text}`); await refresh() })}>
-                          {busy === 'backup' ? <Spinner /> : <Archive className="size-3.5" />} Back up
+                        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" title="Back up this database" disabled={busy !== null} onClick={() => { setBusyDb(d); void run('backup', async () => { const r = await runCommand({ type: 'backup_database', engine, database: d }); if (r.type === 'text') setNote(`Backup saved to ${r.text}`); await refresh() }).finally(() => setBusyDb(null)) }}>
+                          {busyDb === d ? <Spinner /> : <Archive className="size-3.5" />} Back up
                         </Button>
                         <Button
                           size="sm"
@@ -475,14 +477,15 @@ function SqlEngine({ engine, service, ...toolProps }: { engine: 'mariadb' | 'pos
                               disabled={busy !== null}
                               onClick={async () => {
                                 if (!(await confirmAction(`Restore "${b.database}" from this backup? The tables in it are replaced. The current data is backed up first.`))) return
+                                setBusyBackup(b.file)
                                 void run('restore', async () => {
                                   const r = await runCommand({ type: 'restore_database', engine, database: b.database, file: b.file })
                                   setNote(r.type === 'text' && r.text ? `Restored. The previous data is saved at ${r.text}` : 'Restored.')
                                   await refresh()
-                                })
+                                }).finally(() => setBusyBackup(null))
                               }}
                             >
-                              {busy === 'restore' ? <Spinner /> : <RotateCcw className="size-3.5" />} Restore
+                              {busyBackup === b.file ? <Spinner /> : <RotateCcw className="size-3.5" />} Restore
                             </Button>
                             <Button size="sm" variant="ghost" title="Delete this backup" disabled={busy !== null} onClick={() => confirmThen('Delete this backup file?', () => run('delete', async () => { await runCommand({ type: 'delete_db_backup', engine, file: b.file }); await refresh() }))}>
                               <Trash2 className="size-3.5" />

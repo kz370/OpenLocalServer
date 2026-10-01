@@ -31,8 +31,9 @@ tracing = "0.1"
 ols-core = { path = "../crates/ols-core" }
 
 [target.'cfg(windows)'.dependencies]
-# Only for the Windows notification identity (AppUserModelID + its HKCU entries) and the
-# toast itself.
+# Only for the Windows notification identity (AppUserModelID + its HKCU entries), the
+# toast itself, and the taskbar/Alt+Tab icon slot (WM_SETICON/ICON_BIG), which Tauri has
+# no call for.
 windows = { version = "0.61", features = [
   "Data_Xml_Dom",
   "Foundation",
@@ -45,4 +46,5 @@ windows = { version = "0.61", features = [
   "Win32_UI_Shell",
   "Win32_UI_Shell_Common",
   "Win32_UI_Shell_PropertiesSystem",
+  "Win32_UI_WindowsAndMessaging",
 ] }

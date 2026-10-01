@@ -134,6 +134,98 @@ fn decode_icon(bytes: &[u8]) -> Option<tauri::image::Image<'static>> {
     tauri::image::Image::from_bytes(bytes).ok()
 }
 
+/// The taskbar/Alt+Tab icon, held so the handle outlives the `WM_SETICON` that used it.
+/// A window never owns the icon it was given, so the previous handle is destroyed only
+/// once a new one has replaced it. Stored as the raw pointer value because `HICON` is a
+/// bare `*mut c_void`, which is not `Send` and so cannot sit in a shared static.
+#[cfg(windows)]
+static TASKBAR_ICON: Mutex<Option<usize>> = Mutex::new(None);
+
+/// Windows reads the taskbar button and Alt+Tab entry from `WM_GETICON(ICON_BIG)`, which
+/// is set once when the window is created from the bundle icon — so a runtime
+/// `Window::set_icon` repaints the title bar and the small icon and leaves the taskbar
+/// showing the light mark forever. Tauri exposes no call for the big slot (its Windows
+/// path sends `ICON_SMALL` only), so the message is sent directly here.
+///
+/// Windows wants a DIB: premultiplied-free BGRA for the colour plane plus a 1bpp AND
+/// mask whose rows are padded to four bytes. The mark carries its own alpha, so the mask
+/// is filled from the inverse of it, exactly as the windowing layer builds its own.
+#[cfg(windows)]
+fn set_taskbar_icon(window: &tauri::WebviewWindow, image: &tauri::image::Image<'_>) {
+    use windows::Win32::Foundation::{LPARAM, WPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        CreateIcon, DestroyIcon, SendMessageW, HICON, ICON_BIG, WM_SETICON,
+    };
+
+    let hwnd = match window.hwnd() {
+        Ok(hwnd) => hwnd,
+        Err(e) => return tracing::warn!(error = %e, "the window handle was unavailable"),
+    };
+    let (width, height) = (image.width() as usize, image.height() as usize);
+    if width == 0 || height == 0 {
+        return tracing::warn!("the taskbar mark decoded to an empty image");
+    }
+    let rgba = image.rgba();
+    let mask_row = width.div_ceil(32) * 4;
+    let mut colour = Vec::with_capacity(width * height * 4);
+    let mut mask = vec![0u8; mask_row * height];
+    for y in 0..height {
+        for x in 0..width {
+            let pixel = (y * width + x) * 4;
+            let [r, g, b, a] = [
+                rgba[pixel],
+                rgba[pixel + 1],
+                rgba[pixel + 2],
+                rgba[pixel + 3],
+            ];
+            colour.extend_from_slice(&[b, g, r, a]);
+            if a < 128 {
+                mask[y * mask_row + x / 8] |= 0x80 >> (x % 8);
+            }
+        }
+    }
+
+    // SAFETY: `colour` and `mask` are exactly `width * height * 4` and `mask_row * height`
+    // bytes and outlive the call, which only reads them.
+    let created = unsafe {
+        CreateIcon(
+            None,
+            width as i32,
+            height as i32,
+            1,
+            32,
+            mask.as_ptr(),
+            colour.as_ptr(),
+        )
+    };
+    let icon = match created {
+        Ok(icon) => icon,
+        Err(e) => return tracing::warn!(error = %e, "the taskbar mark could not be built"),
+    };
+
+    // SAFETY: `hwnd` is the live window handle and `icon` is a freshly created HICON, which
+    // is exactly what `WM_SETICON` takes as an `LPARAM`. The handle is stored below, so it
+    // stays valid after the send.
+    unsafe {
+        SendMessageW(
+            hwnd,
+            WM_SETICON,
+            Some(WPARAM(ICON_BIG as usize)),
+            Some(LPARAM(icon.0 as isize)),
+        );
+    }
+
+    let mut slot = TASKBAR_ICON.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(previous) = slot.replace(icon.0 as usize) {
+        // SAFETY: `previous` was created by `CreateIcon` in this function and is no longer
+        // the window's icon, so nothing else can be holding it.
+        let _ = unsafe { DestroyIcon(HICON(previous as *mut _)) };
+    }
+}
+
+#[cfg(not(windows))]
+fn set_taskbar_icon(_window: &tauri::WebviewWindow, _image: &tauri::image::Image<'_>) {}
+
 /// Paints the status mark on the tray icon, the main window (taskbar) and, through
 /// `ols:status-icon`, the mark inside the app. `force` repaints even when the mark
 /// is already showing.
@@ -163,9 +255,13 @@ fn apply_status_icon(app: &AppHandle, red: bool, force: bool) {
     }
     if let Some(icon) = decode_icon(window_bytes) {
         if let Some(window) = app.get_webview_window("main") {
-            if let Err(e) = window.set_icon(icon) {
+            // `set_icon` only reaches the small icon slot, which the title bar reads and
+            // the taskbar does not, so the big slot the taskbar and Alt+Tab read is set
+            // alongside it. Without this the taskbar keeps the bundle icon for the session.
+            if let Err(e) = window.set_icon(icon.clone()) {
                 tracing::warn!(error = %e, "the window icon could not be repainted");
             }
+            set_taskbar_icon(&window, &icon);
         }
     }
     // Only a real tray repaint may be cached. Otherwise the next clock tick retries,
