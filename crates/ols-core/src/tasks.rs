@@ -182,6 +182,15 @@ pub struct TaskHandle {
 }
 
 impl TaskHandle {
+    /// A second handle to the same task, for the drop guard. Both are cheap — one `Arc` —
+    /// and the guard needs its own because the worker is given the other one by value and a
+    /// worker that unwinds never returns it.
+    fn sharing(&self) -> Self {
+        TaskHandle {
+            task: Arc::clone(&self.task),
+        }
+    }
+
     pub fn id(&self) -> String {
         self.task.lock().id.clone()
     }
@@ -489,10 +498,14 @@ impl TaskManager {
         std::thread::Builder::new()
             .name(format!("ols-{kind}"))
             .spawn(move || {
-                let mut guard = FinishGuard {
-                    handle: Some(handle),
+                // The guard keeps its own handle rather than taking the worker's: `work` is
+                // given the handle by value, so on a panic or an early return it never comes
+                // back, and a guard holding nothing has nothing to fail the task with. That
+                // left a panicking worker running forever — a spinner with nothing behind it.
+                let _guard = FinishGuard {
+                    handle: Some(handle.sharing()),
                 };
-                work(guard.handle.take().expect("the guard holds the handle"));
+                work(handle);
             })
             .map(|_| ())
             .unwrap_or_else(|e| {
@@ -643,13 +656,31 @@ mod tests {
     #[test]
     fn a_worker_that_checks_for_a_stop_reports_the_recovery() {
         let manager = TaskManager::new();
-        let id = manager.start("t", "Stops", "", 1, |h| {
+        // The check has to happen *after* a stop was asked for, so the worker parks until the
+        // test has cancelled. Reading it on a task nobody cancelled asserts that a task which
+        // was never asked to stop reports that it was.
+        let (tx_ready, rx_ready) = mpsc::channel::<()>();
+        let (tx_resume, rx_resume) = mpsc::channel::<()>();
+        let id = manager.start("t", "Stops", "", 1, move |h| {
+            let _ = tx_ready.send(());
+            let _ = rx_resume.recv();
             let e = h.check_cancelled().unwrap_err();
             assert!(e.to_string().contains("stopped"));
             h.finish_cancelled();
         });
+
+        rx_ready
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the worker reached the check");
+        assert!(manager.cancel(&id), "a running task can be stopped");
+        let _ = tx_resume.send(());
+
         let view = wait_for(&manager, &id, |t| t.state.is_finished());
         assert_eq!(view.state, TaskState::Cancelled);
+        assert!(
+            view.error.is_none(),
+            "a stop the user asked for is not a failure to explain"
+        );
     }
 
     #[test]

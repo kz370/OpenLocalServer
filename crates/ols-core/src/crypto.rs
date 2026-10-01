@@ -101,7 +101,11 @@ impl BundleCipher {
     /// The inverse of `seal`. Every byte is checked, so a damaged entry is refused rather
     /// than half-read.
     pub fn open(&self, blob: &[u8]) -> Result<Vec<u8>, CryptoError> {
-        if blob.len() <= NONCE_LEN + 16 {
+        // The shortest blob an AEAD can produce is a nonce and a tag with no ciphertext, which
+        // is what sealing an empty entry gives. Comparing with `<=` rejected exactly that one
+        // legal shape, so an empty `.env` file could be written into a bundle and never read
+        // back out of it.
+        if blob.len() < NONCE_LEN + 16 {
             return Err(CryptoError::Format("the sealed entry is too short".into()));
         }
         let cipher = ChaCha20Poly1305::new(&self.key);
@@ -151,7 +155,10 @@ pub fn to_hex(bytes: &[u8]) -> String {
 /// The bytes a hex string stands for. An odd length leaves a one-character tail, which
 /// cannot be a byte, so it is rejected rather than padded.
 pub fn from_hex(text: &str) -> Option<Vec<u8>> {
-    if !text.is_ascii() {
+    if !text.is_ascii() || !text.len().is_multiple_of(2) {
+        // The odd case is checked here rather than left to `chunks(2)`, which would hand the
+        // one-character tail to the radix parser on its own — and `"c"` is a valid hex byte, so
+        // "abc" parsed as `[0xab, 0x0c]` and read back as something the caller never wrote.
         return None;
     }
     let mut out = Vec::with_capacity(text.len() / 2);
