@@ -164,7 +164,7 @@ export function SettingsPage() {
   )
 
   const helperField = (
-    <div className="flex items-center gap-3">
+    <div className="flex flex-wrap items-center gap-3">
       {helper === null ? (
         <Badge variant="secondary">Checking…</Badge>
       ) : helper.outdated ? (
@@ -234,7 +234,11 @@ export function SettingsPage() {
                   <SettingRow title="Code editor" hint="Sites, projects and config files open here. Only editors installed on this PC are listed.">
                     {editorField}
                   </SettingRow>
+                  {/* Stacked: the badge plus two buttons are wider than the side-by-side
+                      control column, and a control that wide squeezed the title into a
+                      one-character-wide column. */}
                   <SettingRow
+                    stacked
                     title="Administrator helper"
                     hint="Windows only lets administrators change how domain names resolve. The helper is a small background service that does it for the app, so Windows asks you once, when it's installed, instead of on every change."
                   >

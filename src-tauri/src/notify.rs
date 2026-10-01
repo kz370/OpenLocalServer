@@ -7,15 +7,17 @@
 //! Every alert therefore arrived titled "Windows PowerShell" with the PowerShell icon.
 //!
 //! The toast is built here instead. The identity is always the app's `identifier` from
-//! `tauri.conf.json`, and `init` claims it for this process and registers the `HKCU`
-//! entries Windows needs to resolve a name and an icon for it. The artwork is the same
+//! `tauri.conf.json`, and `init` claims it for this process, registers the `HKCU` entries
+//! Windows needs to resolve a name and an icon for it, and gives it the Start Menu shortcut
+//! an installed app gets from its installer — without that shortcut the shell treats every
+//! alert as a notification *group*, which is what puts a timestamp header above the app name
+//! and centres the name instead of leaving it at the left edge. The artwork is the same
 //! 32x32 mark the tray and the window are painting, written to the app data directory
 //! because Windows reads toast images from disk — and it is set as `appLogoOverride`,
 //! the small corner mark, not as the large image slot, which turns every alert into a
 //! banner.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::OnceLock;
 
 use windows::core::HSTRING;
@@ -36,12 +38,6 @@ static REGISTERED: OnceLock<String> = OnceLock::new();
 
 static ICON: OnceLock<PathBuf> = OnceLock::new();
 
-/// Windows keys notifications by tag and group. Reusing either one makes a new alert a
-/// *replacement* of the old one, and a replacement keeps the original group's timestamp --
-/// so the banner grows a "9 days ago" header above the app name and the name stops sitting
-/// at the left edge. Every alert therefore gets its own pair.
-static ALERT_SEQ: AtomicU32 = AtomicU32::new(0);
-
 fn identity() -> &'static str {
     REGISTERED.get().map(String::as_str).unwrap_or(APP_ID)
 }
@@ -53,12 +49,17 @@ fn wide(text: &str) -> Vec<u16> {
 
 /// Claims the notification identity for this process, writes the artwork for the current
 /// theme into `data_dir` and registers both under
-/// `HKCU\Software\Classes\AppUserModelId\<identifier>`. Runs once at startup. A failure
-/// here costs a plainer toast, never a missing one, so nothing is escalated into an error.
+/// `HKCU\Software\Classes\AppUserModelId\<identifier>`, plus the Start Menu shortcut an
+/// installed app gets from its installer. Runs once at startup. A failure here costs a
+/// plainer toast, never a missing one, so nothing is escalated into an error.
 pub fn init(identifier: &str, display_name: &str, data_dir: &Path, dark: bool) {
     let icon = set_theme(data_dir, dark);
     if REGISTERED.set(identifier.to_string()).is_err() {
         return;
+    }
+    #[cfg(windows)]
+    {
+        install_shortcut(identifier, display_name);
     }
     #[cfg(windows)]
     {
@@ -119,6 +120,86 @@ pub fn init(identifier: &str, display_name: &str, data_dir: &Path, dark: bool) {
     let _ = display_name;
 }
 
+/// Puts a Start Menu entry for this executable in front of the shell, carrying the same
+/// AppUserModelID. An installed app has one from its installer; a development build has
+/// nothing, and a toast whose identity has no shortcut is not treated as a normal app's —
+/// it arrives as a notification group, which is what drew a timestamp header above the
+/// app name and centred the name instead of leaving it at the left edge.
+///
+/// On its own thread because COM wants an apartment per thread and the caller is the main
+/// one. Rewritten every launch, since the executable that built the last one is often gone
+/// after a rebuild.
+#[cfg(windows)]
+fn install_shortcut(identifier: &str, display_name: &str) {
+    use windows::core::{Interface, GUID};
+    use windows::Win32::Foundation::PROPERTYKEY;
+    use windows::Win32::System::Com::StructuredStorage::PROPVARIANT;
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CoTaskMemFree, IPersistFile, CLSCTX_INPROC_SERVER,
+        COINIT_APARTMENTTHREADED,
+    };
+    use windows::Win32::UI::Shell::PropertiesSystem::IPropertyStore;
+    use windows::Win32::UI::Shell::{
+        FOLDERID_Programs, IShellLinkW, SHGetKnownFolderPath, KF_FLAG_DEFAULT,
+    };
+
+    const SHELL_LINK: GUID = GUID::from_u128(0x00021401_0000_0000_C000_000000000046);
+    /// `System.AppUserModel.ID`, which is how a shortcut claims an identity.
+    const APP_USER_MODEL_ID: PROPERTYKEY = PROPERTYKEY {
+        fmtid: GUID::from_u128(0x9F4C2855_9F79_4B39_A8D0_E1D42DE1D5F3),
+        pid: 5,
+    };
+
+    let (identifier, display_name) = (identifier.to_string(), display_name.to_string());
+    std::thread::spawn(move || {
+        // SAFETY: COM is initialised on this thread and never uninitialised, which is what
+        // an apartment thread is for. `link` is released with the thread's COM scope, and
+        // the folder path from SHGetKnownFolderPath is freed explicitly below.
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+            let exe = match std::env::current_exe() {
+                Ok(exe) => exe,
+                Err(e) => {
+                    return tracing::warn!(error = %e, "the alert shortcut needs an executable path")
+                }
+            };
+            let folder = match SHGetKnownFolderPath(&FOLDERID_Programs, KF_FLAG_DEFAULT, None) {
+                Ok(folder) => folder,
+                Err(e) => {
+                    return tracing::warn!(error = %e, "the Start Menu folder could not be read")
+                }
+            };
+            let link = PathBuf::from(String::from_utf16_lossy(folder.as_wide()));
+            CoTaskMemFree(Some(folder.0 as *const std::ffi::c_void));
+            let target = link.join(format!("{display_name}.lnk"));
+
+            let shell_link: IShellLinkW = match CoCreateInstance(
+                &SHELL_LINK,
+                None::<&windows::core::IUnknown>,
+                CLSCTX_INPROC_SERVER,
+            ) {
+                Ok(shell_link) => shell_link,
+                Err(e) => {
+                    return tracing::warn!(error = %e, "the alert shortcut could not be created")
+                }
+            };
+            let written = shell_link
+                .SetPath(&HSTRING::from(exe.to_string_lossy().as_ref()))
+                .and_then(|()| {
+                    let store: IPropertyStore = shell_link.cast()?;
+                    store.SetValue(&APP_USER_MODEL_ID, &PROPVARIANT::from(identifier.as_str()))
+                })
+                .and_then(|()| {
+                    let persist: IPersistFile = shell_link.cast()?;
+                    persist.Save(&HSTRING::from(target.to_string_lossy().as_ref()), true)
+                });
+            if let Err(e) = written {
+                tracing::warn!(error = %e, "the alert shortcut could not be saved");
+            }
+        }
+    });
+}
+
 /// Points the alerts at the mark for the current theme and returns its path. Called on
 /// every theme flip, because the mark the tray paints changes with it.
 pub fn set_theme(data_dir: &Path, dark: bool) -> PathBuf {
@@ -135,37 +216,28 @@ pub fn set_theme(data_dir: &Path, dark: bool) -> PathBuf {
 
 /// Raises one alert. Off the calling thread: building a Windows toast talks to WinRT and
 /// can take a moment, and the callers are the tray and supervisor threads.
+///
+/// The toast carries no `<image>`. The mark beside the message came from
+/// `placement="appLogoOverride"`, and Windows draws that slot inline with the text as well
+/// as the app's own mark in the header — the app looked like it had two logos, the second
+/// one large. The header icon is read from the registered identity instead, which is the
+/// same file, so dropping the image loses nothing.
 pub fn show(title: &str, body: &str) {
     let title = title.to_string();
     let body = body.to_string();
     let app_id = identity().to_string();
-    let icon = ICON.get().cloned();
     std::thread::spawn(move || {
-        let seq = ALERT_SEQ.fetch_add(1, Ordering::Relaxed);
-        let image = match icon {
-            // Windows reads toast images from disk, as a file URI. Backslashes are not
-            // valid in one, and a raw path silently drops the artwork.
-            Some(icon) => format!(
-                r#"<image placement="appLogoOverride" src="file:///{}" alt="OLS" />"#,
-                icon.to_string_lossy()
-                    .replace('\\', "/")
-                    .trim_start_matches("file:///")
-            ),
-            None => String::new(),
-        };
         let xml = format!(
             concat!(
-                r#"<toast Tag="ols{0}" Group="ols{0}" Duration="short">"#,
+                r#"<toast Duration="short">"#,
                 r#"<visual><binding template="ToastGeneric">"#,
-                r#"<text>{1}</text><text>{2}</text>{3}"#,
+                r#"<text>{0}</text><text>{1}</text>"#,
                 "</binding></visual>",
                 r#"<audio src="ms-winsoundevent:Notification.Default" />"#,
                 "</toast>"
             ),
-            seq,
             escape(&title),
-            escape(&body),
-            image
+            escape(&body)
         );
         if let Err(e) = present(&app_id, &xml) {
             tracing::warn!(error = %e, "the desktop alert could not be raised");

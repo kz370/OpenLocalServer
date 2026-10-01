@@ -34,11 +34,28 @@ pub fn helper_path() -> Option<PathBuf> {
     None
 }
 
+/// What is missing, why, and what to do about it. A bare "not found" is the one message a
+/// user cannot act on: an installed build ships the helper beside the app, and only a
+/// development build has to build it first.
+fn helper_missing() -> String {
+    let name = if cfg!(windows) {
+        "ols-helper.exe"
+    } else {
+        "ols-helper"
+    };
+    format!(
+        "The administrator helper ({name}) was not found next to the application, so the \
+         changes that need administrator rights cannot run. An installed build ships it \
+         beside the app; in a development build run `cargo build -p ols-helper` in the \
+         project folder and try again."
+    )
+}
+
 pub fn run_helper(args: &[String]) -> Result<(), String> {
     if let Some(result) = via_service(args) {
         return result;
     }
-    let helper = helper_path().ok_or("ols-helper was not found next to the application")?;
+    let helper = helper_path().ok_or_else(helper_missing)?;
 
     let direct = crate::exec::run_capture(&helper, args, None, &[], Duration::from_secs(30));
     match direct.exit_code {
@@ -73,13 +90,13 @@ pub const SERVICE_PIPE: &str = r"\\.\pipe\OpenLocalServerHelper";
 
 /// Installs the helper service (one UAC prompt). Afterwards nothing prompts again.
 pub fn install_service() -> Result<(), String> {
-    let helper = helper_path().ok_or("ols-helper was not found next to the application")?;
+    let helper = helper_path().ok_or_else(helper_missing)?;
     elevated(&helper, &["install-service".to_string()])
 }
 
 /// Removes the helper service (one UAC prompt); changes then prompt each time again.
 pub fn uninstall_service() -> Result<(), String> {
-    let helper = helper_path().ok_or("ols-helper was not found next to the application")?;
+    let helper = helper_path().ok_or_else(helper_missing)?;
     elevated(&helper, &["uninstall-service".to_string()])
 }
 
