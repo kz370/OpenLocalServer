@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { AiButton } from '@/components/ai/AiButton'
 import { ErrorCard } from '@/components/ErrorCard'
 import { Spinner } from '@/components/Spinner'
+import { SaveButton } from '@/components/SaveButton'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
@@ -200,7 +201,8 @@ function Changes({ projectId, status, reload }: { projectId: string; status: Git
   const [message, setMessage] = useState('')
   const [amend, setAmend] = useState(false)
   const [ignoreKind, setIgnoreKind] = useState('')
-  const { busy, error, setError, run } = useAction()
+  const action = useAction()
+  const { busy, error, setError, run } = action
   const staged = status.files.filter((f) => f.staged)
   const unstaged = status.files.filter((f) => f.unstaged)
 
@@ -302,18 +304,22 @@ function Changes({ projectId, status, reload }: { projectId: string; status: Git
                 />
               )}
             </div>
-            <Button
-              disabled={busy !== null || (!message.trim() && !amend)}
+            <SaveButton
+              action={action}
+              name="commit"
+              disabled={!message.trim() && !amend}
+              busyLabel="Committing…"
+              savedLabel="Committed"
               onClick={() =>
-                act('commit', async () => {
+                void act('commit', async () => {
                   await runCommand({ type: 'git_commit', project_id: projectId, message, amend })
                   setMessage('')
                   setAmend(false)
                 })
               }
             >
-              {busy === 'commit' ? <Spinner /> : <GitCommitHorizontal />} Commit {staged.length > 0 && `${staged.length} file${staged.length === 1 ? '' : 's'}`}
-            </Button>
+              <GitCommitHorizontal /> Commit {staged.length > 0 && `${staged.length} file${staged.length === 1 ? '' : 's'}`}
+            </SaveButton>
           </div>
         </div>
       )}

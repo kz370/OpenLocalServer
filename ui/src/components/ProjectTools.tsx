@@ -8,6 +8,7 @@ import { EnvironmentPanel } from '@/components/project/EnvironmentPanel'
 import { GitPanel } from '@/components/project/GitPanel'
 import { LoadPanel } from '@/components/project/LoadPanel'
 import { RepairPanel } from '@/components/project/RepairPanel'
+import { SaveButton } from '@/components/SaveButton'
 import { BackupsPanel } from '@/components/project/BackupsPanel'
 import { WorkersPanel } from '@/components/project/WorkersPanel'
 import { XdebugDialog } from '@/components/XdebugDialog'
@@ -111,7 +112,8 @@ function MailPanel({ projectId }: { projectId: string }) {
   const [checks, setChecks] = useState<MailCheck[]>([])
   const [to, setTo] = useState('dev@example.test')
   const [message, setMessage] = useState<string | null>(null)
-  const { busy, error, setError, run } = useAction()
+  const action = useAction()
+  const { error, setError, run } = action
 
   const load = useCallback(async () => {
     const [p, c] = await Promise.all([
@@ -174,11 +176,15 @@ function MailPanel({ projectId }: { projectId: string }) {
           )}
           {plan.changes.length > 0 && (
             <div className="flex items-center gap-2">
-              <Button
+              <SaveButton
+                action={action}
+                name="apply"
                 size="sm"
-                disabled={plan.up_to_date || busy !== null}
+                busyLabel="Applying…"
+                savedLabel="Applied"
+                disabled={plan.up_to_date}
                 onClick={() =>
-                  run('apply', async () => {
+                  void run('apply', async () => {
                     const r = await runCommand({ type: 'apply_mailpit_env', project_id: projectId, file: '.env' })
                     if (r.type === 'mail_env_plan') setPlan(r.plan)
                     setMessage('.env updated. The previous version is kept in the .env editor’s history.')
@@ -187,7 +193,7 @@ function MailPanel({ projectId }: { projectId: string }) {
                 }
               >
                 {plan.up_to_date ? 'Already pointing at Mailpit' : `Apply ${changed.length} change${changed.length === 1 ? '' : 's'}`}
-              </Button>
+              </SaveButton>
               <span className="text-xs text-muted-foreground">Only the lines above are touched.</span>
             </div>
           )}
@@ -198,19 +204,23 @@ function MailPanel({ projectId }: { projectId: string }) {
         <h3 className="text-sm font-medium">Send a test message</h3>
         <div className="flex items-center gap-2">
           <Input className="w-64" value={to} onChange={(e) => setTo(e.target.value)} placeholder="dev@example.test" />
-          <Button
+          <SaveButton
+            action={action}
+            name="send"
             size="sm"
             variant="secondary"
-            disabled={!to || busy !== null}
+            busyLabel="Sending…"
+            savedLabel="Sent"
+            disabled={!to}
             onClick={() =>
-              run('send', async () => {
+              void run('send', async () => {
                 const r = await runCommand({ type: 'send_test_mail', to })
                 if (r.type === 'text') setMessage(r.text)
               })
             }
           >
             <Send className="size-3.5" /> Send
-          </Button>
+          </SaveButton>
         </div>
       </div>
       {message && <p className="text-sm text-success">{message}</p>}

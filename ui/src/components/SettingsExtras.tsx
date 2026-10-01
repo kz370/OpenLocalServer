@@ -2,6 +2,7 @@ import { Activity, Archive, Boxes, Copy, Cpu, Database, ExternalLink, Gauge, His
 import { useCallback, useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
+import { SaveButton } from '@/components/SaveButton'
 import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -193,7 +194,8 @@ export function ResourcesCard() {
   const [limits, setLimits] = useState<ResourceLimits | null>(null)
   const [cpu, setCpu] = useState<CpuCapStatus | null>(null)
   const [saved, setSaved] = useState(false)
-  const { busy, error, setError, run } = useAction()
+  const action = useAction()
+  const { busy, error, setError, run } = action
   const load = useCallback(async () => {
     const r = await runCommand({ type: 'get_resource_limits' })
     if (r.type === 'resources') {
@@ -298,11 +300,14 @@ export function ResourcesCard() {
             >
               Cancel
             </Button>
-            <Button
-              disabled={busy !== null}
+<SaveButton
+              action={action}
+              name="limits"
               className="bg-emerald-500 text-zinc-950 hover:bg-emerald-400"
+              busyLabel="Saving…"
+              savedLabel="Saved"
               onClick={() =>
-                run('limits', async () => {
+                void run('limits', async () => {
                   const r = await runCommand({ type: 'set_resource_limits', limits })
                   if (r.type === 'resources') {
                     setLimits(r.limits)
@@ -312,8 +317,8 @@ export function ResourcesCard() {
                 })
               }
             >
-              {busy ? <Spinner /> : null} Save limits
-            </Button>
+              Save limits
+            </SaveButton>
           </div>
         </div>
         {saved && <span className="text-sm text-success">Saved. Restart a service to apply its limit.</span>}
@@ -447,7 +452,8 @@ export function AutoBackupCard() {
   const [status, setStatus] = useState<AutoBackupStatus | null>(null)
   const [period, setPeriod] = useState('every_day')
   const [saved, setSaved] = useState<string | null>(null)
-  const { busy, error, setError, run } = useAction()
+  const action = useAction()
+  const { error, setError, run } = action
 
   const load = useCallback(async () => {
     const r = await runCommand({ type: 'get_auto_backup' })
@@ -634,18 +640,21 @@ export function AutoBackupCard() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <Button
+          <SaveButton
+            action={action}
+            name="now"
             variant="secondary"
-            disabled={busy !== null}
+            busyLabel="Running…"
+            savedLabel="Done"
             onClick={() =>
-              run('now', async () => {
+              void run('now', async () => {
                 const r = await runCommand({ type: 'run_auto_backup' })
                 if (r.type === 'auto_backup_run') await load()
               })
             }
           >
-            {busy === 'now' ? <Spinner /> : <Archive />} Back up now
-          </Button>
+            <Archive /> Back up now
+          </SaveButton>
           {status.running && <span className="text-sm text-muted-foreground">A backup is already running.</span>}
           {saved && <span className="text-sm text-success">{saved}</span>}
         </div>

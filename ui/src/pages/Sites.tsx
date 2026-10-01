@@ -8,6 +8,7 @@ import { GitCloneButton, ImportEnvironmentButton } from '@/components/project/Pr
 import { DomainDialog, newDomain } from '@/components/site/DomainDialog'
 import { SiteExportDialog, SiteImportButton } from '@/components/site/SiteBundle'
 import { SiteDialog, type SiteTarget } from '@/components/site/SiteDialog'
+import { SaveButton } from '@/components/SaveButton'
 import { ApplyReportCard, DriftDialog } from '@/components/site/WebApply'
 import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
@@ -555,9 +556,9 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {status && !status.running && domains.length > 0 && (
-            <Button size="sm" variant="outline" disabled={busy === 'apply'} onClick={() => run('apply', () => apply())} title="Sites can't be opened while the web server is stopped">
-              {busy === 'apply' ? <Spinner /> : <Play />} Start web server
-            </Button>
+            <SaveButton action={web} name="apply" size="sm" variant="outline" busyLabel="Starting…" savedLabel="Started" onClick={() => void run('apply', () => apply())} title="Sites can't be opened while the web server is stopped">
+              <Play /> Start web server
+            </SaveButton>
           )}
           <Button size="sm" onClick={() => setAdding(newDomain())}>
             <Plus /> Add site

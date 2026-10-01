@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { CodeEditor } from '@/components/CodeEditor'
 import { ErrorCard } from '@/components/ErrorCard'
+import { SaveButton } from '@/components/SaveButton'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Select, Tabs } from '@/components/ui/form'
@@ -26,7 +27,8 @@ export function EnvEditor({ projectId }: { projectId: string }) {
   const [other, setOther] = useState('')
   const [diff, setDiff] = useState<EnvDiffRow[] | null>(null)
   const [newFile, setNewFile] = useState('')
-  const { busy, error, setError, run } = useAction()
+  const action = useAction()
+  const { busy, error, setError, run } = action
 
   const applyView = (v: EnvFileView) => {
     setView(v)
@@ -234,9 +236,9 @@ export function EnvEditor({ projectId }: { projectId: string }) {
             <div className="flex flex-col gap-2">
               <CodeEditor value={raw} onChange={setRaw} language="text" height="320px" />
               <div className="flex items-center gap-2">
-                <Button size="sm" disabled={!dirty || busy !== null} onClick={() => send({ type: 'save_env_file', project_id: projectId, file: view.name, content: raw })}>
+                <SaveButton action={action} name="env" size="sm" disabled={!dirty} busyLabel="Saving…" savedLabel="Saved" onClick={() => void send({ type: 'save_env_file', project_id: projectId, file: view.name, content: raw })}>
                   Save
-                </Button>
+                </SaveButton>
                 <Button size="sm" variant="ghost" disabled={!dirty} onClick={() => setRaw(view.content)}>
                   Discard changes
                 </Button>

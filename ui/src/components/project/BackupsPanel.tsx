@@ -3,6 +3,7 @@ import { Camera, Copy, Download, History, Timer, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
+import { SaveButton } from '@/components/SaveButton'
 import { Spinner } from '@/components/Spinner'
 import { CronFields } from '@/components/ui/cron-fields'
 import { Badge } from '@/components/ui/badge'
@@ -22,7 +23,8 @@ export function BackupsPanel({ project }: { project: Project }) {
   const [opts, setOpts] = useState<SnapshotOptions>({ env: true, databases: false, files: false })
   const [restoring, setRestoring] = useState<SnapshotInfo | null>(null)
   const [cloning, setCloning] = useState(false)
-  const { busy, error, setError, run } = useAction()
+  const action = useAction()
+  const { error, setError, run } = action
 
   const load = useCallback(async () => {
     const r = await runCommand({ type: 'list_snapshots', project_id: project.id })
@@ -52,19 +54,22 @@ export function BackupsPanel({ project }: { project: Project }) {
         </div>
         <div className="flex flex-wrap gap-2">
           <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Before the upgrade" className="h-8 min-w-0 flex-1 sm:max-w-72" />
-          <Button
+          <SaveButton
+            action={action}
+            name="snap"
             size="sm"
-            disabled={busy !== null}
+            busyLabel="Taking…"
+            savedLabel="Taken"
             onClick={() =>
-              run('snap', async () => {
+              void run('snap', async () => {
                 await runCommand({ type: 'create_snapshot', project_id: project.id, label: label.trim() || 'Snapshot', options: opts })
                 setLabel('')
                 await load()
               })
             }
           >
-            {busy === 'snap' ? <Spinner /> : <Camera />} Take snapshot
-          </Button>
+            <Camera /> Take snapshot
+          </SaveButton>
           <Button size="sm" variant="secondary" onClick={() => setCloning(true)}>
             <Copy /> Clone environment…
           </Button>
