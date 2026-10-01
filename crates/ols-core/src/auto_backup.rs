@@ -9,7 +9,9 @@
 //! - **What is copied** is chosen: each project gets a snapshot (its `.env` files and its
 //!   own files are optional — they can hold secrets or be large), and every database in
 //!   scope gets a dump: SQL dumps for MariaDB and PostgreSQL, `.bak` copies for the
-//!   registered SQLite files.
+//!   registered SQLite files. Under the `app` scope these are the plan's three switches; the
+//!   `site` scope hands all three to the site, so one site's secrets can be left out while
+//!   its neighbour's code and data are copied.
 //! - **How often** is a schedule — the same cron expressions and names the scheduler uses
 //!   (`daily`, `0 3 * * *`, `every 12 hours` → no, names only: `every_minute`, `hourly`,
 //!   `daily`, `weekly`, `monthly`, …). It is checked by the clock the app already runs
@@ -102,10 +104,12 @@ pub struct AutoBackupSettings {
     pub databases: bool,
 }
 
-/// What one site records, kept in the site's own Backups page. `schedule` and `keep` are
+/// What one site records, kept in the site's own Backups page. Every field but `enabled` is
 /// `None` while the site follows the app-wide plan, and set once the plan is scoped to
 /// chosen sites — a busy site wants an hourly backup and a forgotten one wants a monthly
-/// one, and one number for both is a number that is wrong for at least one of them.
+/// one, and one number for both is a number that is wrong for at least one of them. The
+/// same holds for what gets copied: a site whose files hold secrets wants them out while
+/// its neighbour's are fine, and one app-wide switch cannot say both.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct AutoBackupSiteSettings {
     pub enabled: bool,
@@ -115,6 +119,15 @@ pub struct AutoBackupSiteSettings {
     /// How many of this site's backups to keep.
     #[serde(default)]
     pub keep: Option<u32>,
+    /// Put this project's own files in its snapshot, for this site only.
+    #[serde(default)]
+    pub include_files: Option<bool>,
+    /// Put this project's `.env*` files in its snapshot, for this site only.
+    #[serde(default)]
+    pub include_env: Option<bool>,
+    /// Dump this project's databases, for this site only.
+    #[serde(default)]
+    pub databases: Option<bool>,
 }
 
 impl AutoBackupSiteSettings {
@@ -131,7 +144,22 @@ impl AutoBackupSiteSettings {
                 self.keep.unwrap_or(0)
             ));
         }
+        // A site on with nothing to copy would take a config-only snapshot every period and
+        // call it a backup, so it is refused with the way out rather than quietly hollow.
+        if self.enabled && self.copies_nothing() {
+            return Err(format!(
+                "Automatic backups for {hostname} are switched on but nothing is selected to copy. Turn on project files, .env files, or databases — or switch its automatic backups off."
+            ));
+        }
         Ok(())
+    }
+
+    /// Every copy this site asked to leave out. `None` means "follow the plan", which is
+    /// never "copy nothing" — only three explicit `false` answers add up to nothing.
+    fn copies_nothing(&self) -> bool {
+        self.include_files == Some(false)
+            && self.include_env == Some(false)
+            && self.databases == Some(false)
     }
 
     /// The site's own number, or the plan's.
@@ -246,12 +274,23 @@ pub struct AutoBackupSite {
     pub schedule: Option<String>,
     /// This site's own keep count, when it has one.
     pub keep: Option<u32>,
+    /// This site's own "copy the project's files" answer, when it has one.
+    pub include_files: Option<bool>,
+    /// This site's own "copy the project's `.env` files" answer, when it has one.
+    pub include_env: Option<bool>,
+    /// This site's own "dump the project's databases" answer, when it has one.
+    pub databases: Option<bool>,
     /// What the site runs at *now*: its own value, or the plan's. The UI shows this even
     /// when the site has no value of its own, so the page never hides the effective period.
     pub effective_schedule: String,
     pub effective_keep: u32,
-    /// The plan covers the whole app, so this site's own period and keep are not in force
-    /// and the UI must not offer to edit them.
+    /// What actually gets copied for this site right now, resolved from its own answers or
+    /// the plan's. The page shows these so an untouched site is never a mystery.
+    pub effective_include_files: bool,
+    pub effective_include_env: bool,
+    pub effective_databases: bool,
+    /// The plan covers the whole app, so this site's own period, keep count and contents
+    /// are not in force and the UI must not offer to edit them.
     pub managed_by_plan: bool,
 }
 
@@ -275,12 +314,16 @@ pub struct AutoBackupStatus {
 
 // ------------------------------------------------------------------------ buckets
 
-/// One project to back up, at the period and keep count that apply to it. Under the `app`
-/// scope these are the plan's; under the `site` scope they are the covered site's own.
+/// One project to back up, at the period, keep count and contents that apply to it. Under
+/// the `app` scope these are the plan's; under the `site` scope they are the covered
+/// site's own.
 struct BackupTarget {
     project: Project,
     schedule: String,
     keep: u32,
+    include_files: bool,
+    include_env: bool,
+    databases: bool,
 }
 
 fn snapshot_bucket(project_id: &str) -> String {
@@ -293,6 +336,27 @@ fn sql_bucket(engine: &str, database: &str) -> String {
 
 fn sqlite_bucket(path: &str) -> String {
     format!("sqlite:{}", path.to_lowercase())
+}
+
+/// Two sites of one project disagreeing about what gets copied, rather than about when.
+fn s_disagrees_on_contents(a: &AutoBackupSite, b: &AutoBackupSite) -> bool {
+    a.include_files != b.include_files
+        || a.include_env != b.include_env
+        || a.databases != b.databases
+}
+
+/// What a site asked for, in words the warning can carry.
+fn describe_contents(files: bool, env: bool, databases: bool) -> &'static str {
+    match (files, env, databases) {
+        (true, true, true) => "project files, .env files and databases",
+        (true, true, false) => "project files and .env files, no databases",
+        (true, false, true) => "project files and databases, no .env files",
+        (true, false, false) => "project files only",
+        (false, true, true) => ".env files and databases, no project files",
+        (false, true, false) => ".env files only",
+        (false, false, true) => "databases only",
+        (false, false, false) => "nothing but configuration",
+    }
 }
 
 impl AutoBackupState {
@@ -414,6 +478,28 @@ fn sqlite_targets(
         .collect()
 }
 
+/// The SQLite files this pass would actually copy: in scope, and owned by a project that
+/// wants its databases dumped. A file no project owns follows the plan, exactly as its SQL
+/// counterpart does. Called twice when the shell is missing — once to try, once to learn
+/// whether there was anything to complain about — and it only reads, so that is cheap.
+fn sqlite_in_scope<'a>(
+    inner: &Inner,
+    settings: &AutoBackupSettings,
+    projects: &[Project],
+    target_of: impl Fn(Option<&str>) -> Option<&'a BackupTarget>,
+) -> Vec<(String, Option<String>)> {
+    sqlite_targets(inner, settings, projects)
+        .into_iter()
+        .filter(
+            |(_, owner)| match (owner.as_deref(), target_of(owner.as_deref())) {
+                (Some(_), Some(target)) => target.databases,
+                (Some(_), None) => false,
+                (None, _) => settings.databases,
+            },
+        )
+        .collect()
+}
+
 // ------------------------------------------------------------------------ the run
 
 impl Inner {
@@ -504,9 +590,15 @@ impl Inner {
                 AutoBackupSite {
                     effective_schedule: own.schedule_or(&settings.schedule).to_string(),
                     effective_keep: own.keep_or(settings.keep),
+                    effective_include_files: own.include_files.unwrap_or(settings.include_files),
+                    effective_include_env: own.include_env.unwrap_or(settings.include_env),
+                    effective_databases: own.databases.unwrap_or(settings.databases),
                     enabled: own.enabled,
                     schedule: own.schedule.clone(),
                     keep: own.keep,
+                    include_files: own.include_files,
+                    include_env: own.include_env,
+                    databases: own.databases,
                     managed_by_plan,
                     hostname: d.hostname,
                     project_id: d.project_id.clone(),
@@ -532,12 +624,16 @@ impl Inner {
             )));
         }
         let mut site = site;
-        // A period is only the site's own business when the plan is scoped to chosen sites;
-        // with the whole app covered, the plan's numbers are what run, and a per-site
-        // number kept here would be a second answer to the same question.
+        // A period and a set of contents are only the site's own business when the plan is
+        // scoped to chosen sites; with the whole app covered, the plan's numbers are what
+        // run, and a per-site number kept here would be a second answer to the same
+        // question.
         if self.auto_backup_settings().scope == AutoBackupScope::App {
             site.schedule = None;
             site.keep = None;
+            site.include_files = None;
+            site.include_env = None;
+            site.databases = None;
         }
         site.validate(&hostname).map_err(svc)?;
         let mut opt_ins = self.auto_backup_opt_ins();
@@ -611,10 +707,10 @@ impl Inner {
         }
     }
 
-    /// The projects a plan covers, each with the period and keep count it runs at. Under
-    /// the `app` scope every project runs at the plan's numbers. Under the `site` scope it
-    /// is every project behind a site that asked, each at its own site's numbers — a
-    /// snapshot is a project's, so when two sites of one project disagree the first
+    /// The projects a plan covers, each with the period, keep count and contents it runs
+    /// at. Under the `app` scope every project runs at the plan's numbers. Under the `site`
+    /// scope it is every project behind a site that asked, each at its own site's answers —
+    /// a snapshot is a project's, so when two sites of one project disagree the first
     /// (alphabetically, so the answer is stable) is used and the disagreement is said out
     /// loud rather than resolved silently. A site with no project cannot be snapshotted,
     /// and says so rather than being quietly counted.
@@ -630,6 +726,9 @@ impl Inner {
                 .map(|project| BackupTarget {
                     schedule: settings.schedule.clone(),
                     keep: settings.keep,
+                    include_files: settings.include_files,
+                    include_env: settings.include_env,
+                    databases: settings.databases,
                     project,
                 })
                 .collect();
@@ -655,12 +754,31 @@ impl Inner {
                 continue;
             }
             let first = sites[0];
-            if let Some(other) = sites
-                .iter()
-                .find(|s| s.schedule != first.schedule || s.keep != first.keep)
-            {
+            // What the project's copy and its dumps disagree on cannot be split either: the
+            // zip holds the whole project and the dumps belong to the project that declares
+            // them, so one answer runs for both sites and the clash is named.
+            if let Some(other) = sites.iter().find(|s| {
+                s.schedule != first.schedule
+                    || s.keep != first.keep
+                    || s.include_files != first.include_files
+                    || s.include_env != first.include_env
+                    || s.databases != first.databases
+            }) {
+                let contents = if s_disagrees_on_contents(first, other) {
+                    format!(
+                        " with the contents of {} ({}).",
+                        other.hostname,
+                        describe_contents(
+                            other.effective_include_files,
+                            other.effective_include_env,
+                            other.effective_databases,
+                        )
+                    )
+                } else {
+                    String::new()
+                };
                 run.problems.push(format!(
-                    "{} and {} are sites of the same project, and a snapshot holds the whole project, so one period runs for both ({}). Give them the same period and keep count on their Backups pages.",
+                    "{} and {} are sites of the same project, and a snapshot holds the whole project, so one period runs for both ({}){contents} Give them the same settings on their Backups pages.",
                     first.hostname,
                     other.hostname,
                     describe(first.effective_schedule.as_str())
@@ -669,6 +787,9 @@ impl Inner {
             out.push(BackupTarget {
                 schedule: first.effective_schedule.clone(),
                 keep: first.effective_keep,
+                include_files: first.effective_include_files,
+                include_env: first.effective_include_env,
+                databases: first.effective_databases,
                 project,
             });
         }
@@ -733,15 +854,17 @@ impl Inner {
         let projects: Vec<Project> = targets.iter().map(|t| t.project.clone()).collect();
 
         if settings.snapshots {
-            let options = SnapshotOptions {
-                env: settings.include_env,
-                // The data lives in the dumps below, so it is not repeated inside the zip.
-                databases: false,
-                files: settings.include_files,
-            };
             for target in &targets {
                 let id = target.project.id.clone();
                 let name = target.project.name.clone();
+                // Each project is packed at its own site's answers, not the plan's: two sites
+                // of two projects can want different things.
+                let options = SnapshotOptions {
+                    env: target.include_env,
+                    // The data lives in the dumps below, so it is not repeated inside the zip.
+                    databases: false,
+                    files: target.include_files,
+                };
                 match self.create_snapshot(&id, LABEL, options) {
                     Ok(info) => {
                         run.created.push(format!("snapshot {name}"));
@@ -756,17 +879,24 @@ impl Inner {
             }
         }
 
-        if settings.databases {
+        // Whether a database is dumped is the owning project's answer. A database with no
+        // project behind it — the whole-app scope, where every database the app knows is in
+        // play — follows the plan.
+        let target_of = |owner: Option<&str>| -> Option<&BackupTarget> {
+            owner.and_then(|id| targets.iter().find(|t| t.project.id == id))
+        };
+        let any_target_dumps = targets.iter().any(|t| t.databases) || settings.databases;
+        if any_target_dumps {
             // A database belongs to the project that declares it, so its dumps are capped
             // by that project's own keep count; with the whole app covered they follow the
             // plan's.
             for (engine, database, owner) in sql_targets(self, &settings, &projects, &mut run) {
+                let target = target_of(owner.as_deref());
+                if target.is_some_and(|t| !t.databases) {
+                    continue;
+                }
                 let bucket = sql_bucket(&engine, &database);
-                let keep = owner
-                    .as_deref()
-                    .and_then(|id| targets.iter().find(|t| t.project.id == id))
-                    .map(|t| t.keep)
-                    .unwrap_or(settings.keep);
+                let keep = target.map_or(settings.keep, |t| t.keep);
                 match self.dump_sql(&engine, &database) {
                     Ok(path) => {
                         run.created.push(format!("{engine}/{database}"));
@@ -778,17 +908,13 @@ impl Inner {
                 }
             }
             if let Ok(exe) = self.sqlite3_path() {
-                for (path, owner) in sqlite_targets(self, &settings, &projects) {
+                for (path, owner) in sqlite_in_scope(self, &settings, &projects, target_of) {
                     let bucket = sqlite_bucket(&path);
                     let name = Path::new(&path)
                         .file_name()
                         .map(|n| n.to_string_lossy().to_string())
                         .unwrap_or_else(|| path.clone());
-                    let keep = owner
-                        .as_deref()
-                        .and_then(|id| targets.iter().find(|t| t.project.id == id))
-                        .map(|t| t.keep)
-                        .unwrap_or(settings.keep);
+                    let keep = target_of(owner.as_deref()).map_or(settings.keep, |t| t.keep);
                     match crate::sqlite::backup(&exe, Path::new(&path)) {
                         Ok(dest) => {
                             run.created.push(format!("sqlite {name}"));
@@ -801,7 +927,9 @@ impl Inner {
                         Err(e) => run.problems.push(format!("Backup of {name} failed: {e}")),
                     }
                 }
-            } else {
+            } else if !sqlite_in_scope(self, &settings, &projects, target_of).is_empty() {
+                // Only said when a file would have been copied: an install with no SQLite
+                // file registered has nothing to complain about.
                 run.problems.push(
                     "SQLite files were left out: the sqlite3 command-line shell is not in this install. Reinstall OLS, or back these files up by hand."
                         .into(),
@@ -1039,6 +1167,7 @@ mod tests {
                     enabled: true,
                     schedule: Some("hourly".into()),
                     keep: Some(3),
+                    ..Default::default()
                 },
             })
             .unwrap()
@@ -1112,11 +1241,13 @@ mod tests {
                 enabled: true,
                 schedule: Some("every other tuesday".into()),
                 keep: None,
+                ..Default::default()
             },
             AutoBackupSiteSettings {
                 enabled: true,
                 schedule: None,
                 keep: Some(0),
+                ..Default::default()
             },
         ] {
             let err = core
@@ -1153,6 +1284,7 @@ mod tests {
                     enabled: true,
                     schedule: Some("monthly".into()),
                     keep: Some(1),
+                    ..Default::default()
                 },
             })
             .unwrap()
@@ -1218,6 +1350,7 @@ mod tests {
                     enabled: true,
                     schedule: schedule.map(str::to_string),
                     keep: None,
+                    ..Default::default()
                 },
             })
             .unwrap();
@@ -1425,5 +1558,248 @@ mod tests {
             run.problems
         );
         assert!(run.created.is_empty());
+    }
+
+    /// What a project's newest `auto` snapshot actually packed, which is the only honest
+    /// answer to "did my site's setting take effect".
+    fn packed(core: &Core, project_id: &str) -> SnapshotOptions {
+        core.inner()
+            .list_snapshots(project_id)
+            .into_iter()
+            .find(|s| s.label == LABEL)
+            .unwrap_or_else(|| panic!("no automatic snapshot for {project_id}"))
+            .options
+    }
+
+    #[test]
+    fn a_site_owns_what_gets_copied_when_the_plan_covers_chosen_sites() {
+        let (core, home) = core();
+        let (shop, hostname) = project(&core, &home.paths.data_dir().join("shop"));
+        core.dispatch(CoreCommand::SetAutoBackup {
+            settings: AutoBackupSettings {
+                enabled: true,
+                scope: AutoBackupScope::Site,
+                // The plan would copy everything; the site is about to say otherwise.
+                include_files: true,
+                include_env: true,
+                databases: false,
+                ..Default::default()
+            },
+        })
+        .unwrap();
+        let CoreResponse::AutoBackup { status } = core
+            .dispatch(CoreCommand::SetSiteAutoBackup {
+                hostname: hostname.clone(),
+                site: AutoBackupSiteSettings {
+                    enabled: true,
+                    include_files: Some(true),
+                    include_env: Some(false),
+                    databases: Some(false),
+                    ..Default::default()
+                },
+            })
+            .unwrap()
+        else {
+            panic!()
+        };
+        let site = status
+            .sites
+            .iter()
+            .find(|s| s.hostname == hostname)
+            .unwrap();
+        assert_eq!(site.include_files, Some(true));
+        assert_eq!(site.include_env, Some(false));
+        assert_eq!(site.databases, Some(false));
+        assert!(site.effective_include_files);
+        assert!(!site.effective_include_env);
+        assert!(!site.effective_databases);
+        assert!(!site.managed_by_plan, "the site is allowed to decide");
+
+        // The pass honours the site, not the plan.
+        core.dispatch(CoreCommand::RunAutoBackup).unwrap();
+        let options = packed(&core, &shop.id);
+        assert!(options.files, "the site asked for its files");
+        assert!(!options.env, "the site left its .env files out");
+    }
+
+    #[test]
+    fn the_app_wide_plan_owns_the_contents_when_it_covers_everything() {
+        let (core, home) = core();
+        let (_, hostname) = project(&core, &home.paths.data_dir().join("shop"));
+        core.dispatch(CoreCommand::SetAutoBackup {
+            settings: AutoBackupSettings {
+                enabled: true,
+                scope: AutoBackupScope::App,
+                include_files: true,
+                include_env: false,
+                databases: false,
+                ..Default::default()
+            },
+        })
+        .unwrap();
+        // A per-site answer here would be a second answer to the same question, one of which
+        // silently does nothing — so it is not stored, exactly as the period is not.
+        let CoreResponse::AutoBackup { status } = core
+            .dispatch(CoreCommand::SetSiteAutoBackup {
+                hostname: hostname.clone(),
+                site: AutoBackupSiteSettings {
+                    enabled: true,
+                    include_files: Some(false),
+                    include_env: Some(true),
+                    databases: Some(true),
+                    ..Default::default()
+                },
+            })
+            .unwrap()
+        else {
+            panic!()
+        };
+        let site = status
+            .sites
+            .iter()
+            .find(|s| s.hostname == hostname)
+            .unwrap();
+        assert_eq!(site.include_files, None);
+        assert_eq!(site.include_env, None);
+        assert_eq!(site.databases, None);
+        assert!(site.effective_include_files, "the plan copies files");
+        assert!(!site.effective_include_env, "the plan leaves .env out");
+        assert!(!site.effective_databases);
+        assert!(site.managed_by_plan, "the page must not offer to edit it");
+    }
+
+    #[test]
+    fn two_projects_are_backed_up_with_different_contents() {
+        let (core, home) = core();
+        let (shop_project, shop) = project(&core, &home.paths.data_dir().join("shop"));
+        let (blog_project, blog) = project(&core, &home.paths.data_dir().join("blog"));
+        core.dispatch(CoreCommand::SetAutoBackup {
+            settings: AutoBackupSettings {
+                enabled: true,
+                scope: AutoBackupScope::Site,
+                include_files: true,
+                include_env: true,
+                databases: false,
+                ..Default::default()
+            },
+        })
+        .unwrap();
+        for (hostname, files) in [(shop, true), (blog, false)] {
+            core.dispatch(CoreCommand::SetSiteAutoBackup {
+                hostname,
+                site: AutoBackupSiteSettings {
+                    enabled: true,
+                    include_files: Some(files),
+                    ..Default::default()
+                },
+            })
+            .unwrap();
+        }
+        core.dispatch(CoreCommand::RunAutoBackup).unwrap();
+        assert!(packed(&core, &shop_project.id).files);
+        assert!(
+            !packed(&core, &blog_project.id).files,
+            "one site's files must not ride along in another's backup"
+        );
+    }
+
+    #[test]
+    fn a_site_that_leaves_out_everything_is_refused_with_a_way_out() {
+        let (core, home) = core();
+        let (_, hostname) = project(&core, &home.paths.data_dir().join("shop"));
+        core.dispatch(CoreCommand::SetAutoBackup {
+            settings: AutoBackupSettings {
+                enabled: true,
+                scope: AutoBackupScope::Site,
+                ..Default::default()
+            },
+        })
+        .unwrap();
+        let err = core
+            .dispatch(CoreCommand::SetSiteAutoBackup {
+                hostname: hostname.clone(),
+                site: AutoBackupSiteSettings {
+                    enabled: true,
+                    include_files: Some(false),
+                    include_env: Some(false),
+                    databases: Some(false),
+                    ..Default::default()
+                },
+            })
+            .unwrap_err()
+            .cause;
+        assert!(err.contains("nothing is selected to copy"), "{err}");
+        assert!(err.contains(&hostname), "the message names the site: {err}");
+
+        // Following the plan is never "copy nothing", so an untouched site is still allowed.
+        core.dispatch(CoreCommand::SetSiteAutoBackup {
+            hostname,
+            site: AutoBackupSiteSettings {
+                enabled: true,
+                ..Default::default()
+            },
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn sites_of_one_project_that_disagree_about_contents_are_named() {
+        let (core, home) = core();
+        let (shop, first) = project(&core, &home.paths.data_dir().join("shop"));
+        let second = "shop-two.test";
+        core.inner()
+            .add_domain(Domain {
+                hostname: second.into(),
+                project_id: Some(shop.id.clone()),
+                root: home.paths.data_dir().join("shop").display().to_string(),
+                kind: SiteKind::Static,
+                https: false,
+                redirect_https: false,
+                wildcard: false,
+                enabled: true,
+                ownership: Ownership::Managed,
+                app: None,
+                blocks: Default::default(),
+                generated_hashes: Default::default(),
+                public_domain: None,
+                tunnel_id: None,
+                server: None,
+                path_prefix: None,
+            })
+            .unwrap();
+        core.dispatch(CoreCommand::SetAutoBackup {
+            settings: AutoBackupSettings {
+                enabled: true,
+                scope: AutoBackupScope::Site,
+                databases: false,
+                ..Default::default()
+            },
+        })
+        .unwrap();
+        // Same period, same keep — they only disagree about what gets copied.
+        for (host, files) in [(first.clone(), true), (second.into(), false)] {
+            core.dispatch(CoreCommand::SetSiteAutoBackup {
+                hostname: host,
+                site: AutoBackupSiteSettings {
+                    enabled: true,
+                    include_files: Some(files),
+                    ..Default::default()
+                },
+            })
+            .unwrap();
+        }
+        let CoreResponse::AutoBackupRun { run } =
+            core.dispatch(CoreCommand::RunAutoBackup).unwrap()
+        else {
+            panic!()
+        };
+        let warning = run
+            .problems
+            .iter()
+            .find(|p| p.contains("same project"))
+            .expect("the disagreement is said out loud");
+        assert!(warning.contains("contents of"), "{warning}");
+        assert!(warning.contains(second), "{warning}");
+        assert_eq!(run.created, vec!["snapshot shop"], "one snapshot, not two");
     }
 }

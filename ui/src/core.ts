@@ -1541,6 +1541,12 @@ export interface AutoBackupSiteSettings {
   schedule: string | null
   /** This site's own keep count; null means it follows the app-wide plan. */
   keep: number | null
+  /** This site's own "copy the project's files" answer; null follows the plan. */
+  include_files: boolean | null
+  /** This site's own "copy the project's .env files" answer; null follows the plan. */
+  include_env: boolean | null
+  /** This site's own "dump the project's databases" answer; null follows the plan. */
+  databases: boolean | null
 }
 
 /** One site's backup settings, and what they mean right now. */
@@ -1552,10 +1558,17 @@ export interface AutoBackupSite {
   enabled: boolean
   schedule: string | null
   keep: number | null
+  include_files: boolean | null
+  include_env: boolean | null
+  databases: boolean | null
   /** The period that runs now: the site's own, or the plan's. */
   effective_schedule: string
   effective_keep: number
-  /** The plan covers the whole app, so the site's own period and keep are not in force. */
+  /** What actually gets copied for this site right now. */
+  effective_include_files: boolean
+  effective_include_env: boolean
+  effective_databases: boolean
+  /** The plan covers the whole app, so the site's own period, keep and contents are not in force. */
   managed_by_plan: boolean
 }
 

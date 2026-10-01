@@ -4,13 +4,14 @@
 #   scripts\build-app-icons.bat
 #   pwsh -File scripts/build-app-icons.ps1 [-Tool auto|magick|ffmpeg]
 #
-# Sources: assets/icon.webp (running, light), assets/stop-icon.webp (stopped,
+#   Sources: assets/icon.webp (running, light), assets/stop-icon.webp (stopped,
 # light), assets/icon-dark.webp (running, dark). The stopped-dark twin is derived
 # from the dark running master by rotating its plate hue onto the light red's
 # measured hue, so the two pairs stay one artwork in two colourways.
 #
 # Everything downstream is generated, never hand-edited: the tauri bundle set, the
-# tray/window sizes, and the self-contained SVGs the UI and the welcome page read.
+# tray/window sizes, the dark .ico the Start Menu shortcut and the taskbar button
+# read, and the self-contained SVGs the UI and the welcome page read.
 #
 # Raster work goes through whichever of ImageMagick or ffmpeg is installed;
 # `-Tool` pins one. Both backends read the plate the same way (a circular mean
@@ -193,6 +194,35 @@ Write-Output 'bundle  src-tauri/icons (light running)'
 Write-Sizes (Join-Path $src 'icon-light-stopped.png') (Join-Path $icons 'red') 'light stopped (services stopped)'
 Write-Sizes (Join-Path $src 'icon-dark-running.png') (Join-Path $icons 'dark') 'dark running'
 Write-Sizes (Join-Path $src 'icon-dark-stopped.png') (Join-Path $icons 'dark/red') 'dark stopped (services stopped)'
+
+# The dark colourway also needs a real .ico, and not as a bundle: the Start Menu shortcut
+# points its own IconLocation at it, and the taskbar button takes the taskbar mark from
+# that shortcut rather than from the window (see the shortcut section of src-tauri/src/
+# notify.rs). `IShellLink::SetIconLocation` wants an icon *resource*, so a .png there
+# leaves the button blank — this has to be a genuine multi-size .ico.
+#
+# 128 down to 16 rather than the 256 the bundle set carries: a shortcut is never drawn
+# larger than a Start Menu tile, and the entry sizes dominate the file.
+$darkIco = Join-Path $icons 'dark/icon.ico'
+if ($Tool -eq 'magick') {
+  magick (Join-Path $src 'icon-dark-running.png') -define icon:auto-resize=128,64,48,32,24,16 -strip $darkIco
+  if ($LASTEXITCODE -ne 0) { throw "magick failed for the dark .ico" }
+}
+else {
+  # ffmpeg writes no .ico, so the sizes are emitted one by one and packed by magick if it
+  # happens to be present; without it the dark .ico is left for a machine that has it,
+  # and the shortcut falls back to the executable's own (light) icon rather than breaking.
+  if (Test-Tool 'magick') {
+    magick (Join-Path $src 'icon-dark-running.png') -define icon:auto-resize=128,64,48,32,24,16 -strip $darkIco
+    if ($LASTEXITCODE -ne 0) { throw "magick failed for the dark .ico" }
+  }
+  else {
+    Write-Warning 'no ImageMagick: icons/dark/icon.ico not rebuilt, so the taskbar keeps the executable icon'
+  }
+}
+if (Test-Path $darkIco) {
+  Write-Output "ico     $darkIco ($((Get-Item -LiteralPath $darkIco).Length) bytes, 16-128px, the shortcut/taskbar mark)"
+}
 
 Write-SvgMark (Join-Path $icons '128x128.png') (Join-Path $public 'favicon.svg') @(
   'Official mark, light theme: the green server-and-globe app icon from',

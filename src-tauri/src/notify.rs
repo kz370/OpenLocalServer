@@ -34,6 +34,25 @@ const ICON_DARK: &[u8] = include_bytes!("../icons/dark/32x32.png");
 
 const ICON_FILE: &str = "notification-icon.png";
 
+/// The mark the Start Menu shortcut carries, and therefore the one the taskbar button
+/// shows. Written once from the dark colourway and never rewritten.
+///
+/// This is a separate file from `ICON_FILE` on purpose. That one is rewritten on every
+/// theme flip so a toast wears the current colourway; the shortcut's icon is read by the
+/// shell, which caches it, so a file whose bytes change under it would either go stale or
+/// resolve to nothing. The shell also prefers the shortcut over the registered `IconUri`,
+/// so this is the file the taskbar actually reads — and because it is an artefact of the
+/// registered identity rather than of the window, no `WM_SETICON` can change it
+/// mid-session. One fixed colourway is therefore the only thing the shell can be given,
+/// and the dark one is what reads on a dark taskbar.
+///
+/// It has to be a real `.ico`: `IShellLink::SetIconLocation` takes an icon *resource*
+/// path, and a bare PNG is not one, so pointing it at a `.png` leaves the taskbar button
+/// blank. Regenerated from the dark running master by `scripts/build-app-icons.ps1`.
+const SHORTCUT_ICON: &[u8] = include_bytes!("../icons/dark/icon.ico");
+
+const SHORTCUT_ICON_FILE: &str = "shortcut-icon.ico";
+
 static REGISTERED: OnceLock<String> = OnceLock::new();
 
 static ICON: OnceLock<PathBuf> = OnceLock::new();
@@ -59,7 +78,7 @@ pub fn init(identifier: &str, display_name: &str, data_dir: &Path, dark: bool) {
     }
     #[cfg(windows)]
     {
-        install_shortcut(identifier, display_name);
+        install_shortcut(identifier, display_name, data_dir.join(SHORTCUT_ICON_FILE));
     }
     #[cfg(windows)]
     {
@@ -129,9 +148,15 @@ pub fn init(identifier: &str, display_name: &str, data_dir: &Path, dark: bool) {
 /// On its own thread because COM wants an apartment per thread and the caller is the main
 /// one. Rewritten every launch, since the executable that built the last one is often gone
 /// after a rebuild.
+///
+/// The icon is set explicitly rather than left to the executable. A shortcut with no icon
+/// of its own shows the target's embedded icon, which is the bundle mark baked into the
+/// binary at build time, and that is what the taskbar button then shows — so the tray, the
+/// title bar and the taskbar could disagree with no way to fix it, because the shell
+/// resolves the button through this registered identity rather than through the window.
 #[cfg(windows)]
-fn install_shortcut(identifier: &str, display_name: &str) {
-    use windows::core::{Interface, GUID};
+fn install_shortcut(identifier: &str, display_name: &str, shortcut_icon: PathBuf) {
+    use windows::core::{Interface, GUID, PCWSTR};
     use windows::Win32::Foundation::PROPERTYKEY;
     use windows::Win32::System::Com::StructuredStorage::PROPVARIANT;
     use windows::Win32::System::Com::{
@@ -150,6 +175,10 @@ fn install_shortcut(identifier: &str, display_name: &str) {
         pid: 5,
     };
 
+    // The thread outlives this call, so the two borrowed strings are copied into it.
+    // `shortcut_icon` is already an owned `PathBuf`, which is why it is taken by value: a
+    // `move` closure over a borrowed `&Path` would let the data die while the shell was
+    // still writing to it.
     let (identifier, display_name) = (identifier.to_string(), display_name.to_string());
     std::thread::spawn(move || {
         // SAFETY: COM is initialised on this thread and never uninitialised, which is what
@@ -170,8 +199,14 @@ fn install_shortcut(identifier: &str, display_name: &str) {
                 }
             };
             let link = PathBuf::from(String::from_utf16_lossy(folder.as_wide()));
-            CoTaskMemFree(Some(folder.0 as *const std::ffi::c_void));
+            CoTaskMemFree(Some(folder.0 as *const core::ffi::c_void));
             let target = link.join(format!("{display_name}.lnk"));
+
+            // Written before the shortcut so the shell can load it the moment it resolves
+            // the link. A stale copy is fine: the bytes never change.
+            if std::fs::write(&shortcut_icon, SHORTCUT_ICON).is_err() {
+                tracing::warn!("the shortcut icon could not be written");
+            }
 
             let shell_link: IShellLinkW = match CoCreateInstance(
                 &SHELL_LINK,
@@ -183,8 +218,13 @@ fn install_shortcut(identifier: &str, display_name: &str) {
                     return tracing::warn!(error = %e, "the alert shortcut could not be created")
                 }
             };
+            // Named rather than inlined: `SetIconLocation` takes the pointer, so the buffer
+            // has to outlive the call visibly instead of relying on a temporary that happens
+            // to live until the end of the statement.
+            let icon_path = wide(&shortcut_icon.to_string_lossy());
             let written = shell_link
                 .SetPath(&HSTRING::from(exe.to_string_lossy().as_ref()))
+                .and_then(|()| shell_link.SetIconLocation(PCWSTR(icon_path.as_ptr()), 0))
                 .and_then(|()| {
                     let store: IPropertyStore = shell_link.cast()?;
                     store.SetValue(&APP_USER_MODEL_ID, &PROPVARIANT::from(identifier.as_str()))

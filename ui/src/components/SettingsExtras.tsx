@@ -511,7 +511,7 @@ export function AutoBackupCard() {
         />
 
         <div>
-          <SettingRow title="What to back up" hint="Sites are snapshotted; databases are dumped. Each can be left out.">
+          <SettingRow title="What to back up" hint="Sites are snapshotted; databases are dumped. Each can be left out. Set the scope to chosen sites below and each site makes these three choices for itself instead.">
             <div className="flex flex-col gap-1.5">
               <Toggle checked={s.snapshots} onChange={(snapshots) => save({ snapshots })} label="Sites (snapshots)" />
               <Toggle checked={s.databases} onChange={(databases) => save({ databases })} label="All databases" />
@@ -520,7 +520,7 @@ export function AutoBackupCard() {
 
           {s.snapshots && (
             <>
-              <SettingRow title="Snapshot contents" hint="Database data is dumped separately, so it is not also packed into the zip.">
+              <SettingRow title="Snapshot contents" hint="Database data is dumped separately, so it is not also packed into the zip. Under the chosen-sites scope each site picks these for itself.">
                 <div className="flex flex-col gap-1.5">
                   <Toggle checked={s.include_files} onChange={(include_files) => save({ include_files })} label="Project files" />
                   <Toggle checked={s.include_env} onChange={(include_env) => save({ include_env })} label=".env files (hold passwords and keys)" />

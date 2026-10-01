@@ -141,10 +141,11 @@ const PERIODS = [
 
 /**
  * §130: this project's automatic backups, kept next to the snapshots they produce rather
- * than on a settings page where the sites are not in view. Each site carries its own
- * period and keep count — not every site is equally worth an hourly backup — but only when
- * the app-wide plan is scoped to chosen sites; when the plan covers everything, the plan's
- * numbers are what run and this page says so instead of offering an edit that would do
+ * than on a settings page where the sites are not in view. Each site carries its own period,
+ * keep count and choice of what gets copied — not every site is equally worth an hourly
+ * backup, and one site's `.env` files are not every site's business — but only when the
+ * app-wide plan is scoped to chosen sites; when the plan covers everything, the plan's
+ * answers are what run and this page says so instead of offering an edit that would do
  * nothing.
  */
 function AutoBackupSection({ project, onChanged }: { project: Project; onChanged: () => Promise<void> }) {
@@ -173,10 +174,22 @@ function AutoBackupSection({ project, onChanged }: { project: Project; onChanged
     setBusy(true)
     setError(null)
     try {
+      // The command replaces the site's whole entry, so every field it does not mention is
+      // sent as the value it already holds — a patch to the period must not silently reset
+      // the contents back to following the plan.
+      const pick = <K extends keyof AutoBackupSiteSettings>(key: K) =>
+        (key in patch ? (patch[key] ?? null) : current[key]) as AutoBackupSiteSettings[K]
       const r = await runCommand({
         type: 'set_site_auto_backup',
         hostname,
-        site: { enabled: patch.enabled ?? current.enabled, schedule: 'schedule' in patch ? patch.schedule ?? null : current.schedule, keep: 'keep' in patch ? patch.keep ?? null : current.keep },
+        site: {
+          enabled: patch.enabled ?? current.enabled,
+          schedule: pick('schedule'),
+          keep: pick('keep'),
+          include_files: pick('include_files'),
+          include_env: pick('include_env'),
+          databases: pick('databases'),
+        },
       })
       if (r.type === 'auto_backup') setStatus(r.status)
       await onChanged()
@@ -199,7 +212,7 @@ function AutoBackupSection({ project, onChanged }: { project: Project; onChanged
           : !plan.enabled
             ? 'Automatic backups are switched off for the whole app, so nothing is taken on a schedule. Turn them on in Settings → Backups.'
             : perSite
-              ? 'Each site sets its own period and how many backups to keep, below. Sites of the same project share a snapshot, so give them the same numbers.'
+              ? 'Each site sets its own period, how many backups to keep, and what gets copied, below. Sites of the same project share a snapshot, so give them the same settings.'
               : `The plan covers every project and database ${status?.description}, keeping ${plan.keep} of each, and manages that for every site. Set it to chosen sites in Settings → Backups to give a site its own period.`}
       </p>
       {mine.length === 0 && (
@@ -215,6 +228,7 @@ function AutoBackupSection({ project, onChanged }: { project: Project; onChanged
             hint={perSite ? 'A snapshot records the project, so one site switched on covers this project.' : undefined}
           />
           {site.enabled && (
+            <>
             <div className="flex flex-wrap items-end gap-4 pl-1">
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-medium text-muted-foreground" htmlFor={`period-${site.hostname}`}>
@@ -291,6 +305,48 @@ function AutoBackupSection({ project, onChanged }: { project: Project; onChanged
                 )}
               </div>
             </div>
+            <div className="flex flex-col gap-1.5 pl-1">
+              <span className="text-xs font-medium text-muted-foreground">What to copy</span>
+              {perSite ? (
+                <div className="flex flex-col gap-1.5">
+                  <Toggle
+                    checked={site.effective_include_files}
+                    onChange={(include_files) => void saveSite(site.hostname, { include_files })}
+                    disabled={busy}
+                    label="Project files"
+                    hint={site.include_files === null ? 'Following Settings right now.' : undefined}
+                  />
+                  <Toggle
+                    checked={site.effective_include_env}
+                    onChange={(include_env) => void saveSite(site.hostname, { include_env })}
+                    disabled={busy}
+                    label=".env files (hold passwords and keys)"
+                    hint={site.include_env === null ? 'Following Settings right now.' : undefined}
+                  />
+                  <Toggle
+                    checked={site.effective_databases}
+                    onChange={(databases) => void saveSite(site.hostname, { databases })}
+                    disabled={busy}
+                    label="Databases"
+                    hint={
+                      site.databases === null
+                        ? 'Following Settings right now. MariaDB and PostgreSQL are dumped; SQLite files are copied.'
+                        : 'MariaDB and PostgreSQL are dumped; SQLite files are copied.'
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Database data is written as its own dump beside the snapshot, not packed into the zip. Leave all three
+                    off and the site takes configuration only.
+                  </p>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Managed by Settings —{' '}
+                  {describeContents(site.effective_include_files, site.effective_include_env, site.effective_databases)}
+                </p>
+              )}
+            </div>
+            </>
           )}
         </div>
       ))}
@@ -307,6 +363,18 @@ function AutoBackupSection({ project, onChanged }: { project: Project; onChanged
 /** The schedule words the core uses, for the read-only case where only the plan knows. */
 function describeLocal(schedule: string): string {
   return cronWords[schedule] ?? schedule
+}
+
+/** What a set of copy answers actually copies, for the read-only case. */
+function describeContents(files: boolean, env: boolean, databases: boolean): string {
+  if (files && env && databases) return 'project files, .env files and databases'
+  if (files && env) return 'project files and .env files'
+  if (files && databases) return 'project files and databases'
+  if (files) return 'project files only'
+  if (env && databases) return '.env files and databases'
+  if (env) return '.env files only'
+  if (databases) return 'databases only'
+  return 'configuration only'
 }
 
 const cronWords: Record<string, string> = {
