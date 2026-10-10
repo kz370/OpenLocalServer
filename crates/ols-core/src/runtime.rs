@@ -1132,29 +1132,47 @@ fn mongodb_asset(value: &serde_json::Value, version: &str) -> Option<(String, St
 }
 
 fn linked_download_url(page: &str, filename_prefix: &str, version: &str) -> Option<String> {
-    for segment in page.split(filename_prefix).skip(1) {
-        let Some(end) = segment.find(".zip") else {
-            continue;
-        };
-        let filename = format!("{}{}.zip", filename_prefix, &segment[..end]);
-        if !filename.contains(version) {
-            continue;
-        }
-        let position = page.find(&filename)?;
-        let before = &page[..position];
-        let href_at = before.rfind("href=")? + 5;
-        let quote = before[href_at..].chars().next()?;
+    for segment in page.split("href=").skip(1) {
+        let quote = segment.chars().next()?;
         if quote != '\'' && quote != '"' {
             continue;
         }
-        let href = before[href_at + 1..].split(quote).next()?;
-        if href.starts_with("http://") || href.starts_with("https://") {
-            return Some(href.to_string());
+        let href = segment[1..].split(quote).next()?;
+        if !href.ends_with(".zip") {
+            continue;
         }
-        if href.starts_with('/') {
-            return Some(format!("https://www.apachelounge.com{href}"));
+        let filename = href.rsplit('/').next().unwrap_or(href);
+        if filename.starts_with(filename_prefix)
+            && filename.contains(version)
+            && !filename.to_ascii_lowercase().contains("win32")
+        {
+            if href.starts_with("http://") || href.starts_with("https://") {
+                return Some(href.to_string());
+            }
+            if href.starts_with('/') {
+                return Some(format!("https://www.apachelounge.com{href}"));
+            }
+            return Some(format!("https://www.apachelounge.com/download/{href}"));
         }
-        return Some(format!("https://www.apachelounge.com/download/{href}"));
+    }
+    None
+}
+
+fn parse_apache_sha256(text: &str) -> Option<String> {
+    let mut lines = text.lines();
+    while let Some(line) = lines.next() {
+        if line.contains("SHA256") {
+            for next in lines.by_ref() {
+                let trimmed = next.trim().to_ascii_lowercase();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                if trimmed.len() == 64 && trimmed.chars().all(|c| c.is_ascii_hexdigit()) {
+                    return Some(trimmed);
+                }
+                break;
+            }
+        }
     }
     None
 }
@@ -1248,7 +1266,11 @@ fn owned_manifest(m: PackageManifest) -> OwnedManifest {
 }
 
 async fn fetch_text(http: &reqwest::Client, url: &str) -> Result<String, String> {
-    let response = http.get(url).send().await.map_err(|e| e.to_string())?;
+    let mut request = http.get(url);
+    if let Some(referer) = crate::catalog::download_referer(url) {
+        request = request.header(reqwest::header::REFERER, referer);
+    }
+    let response = request.send().await.map_err(|e| e.to_string())?;
     if !response.status().is_success() {
         return Err(format!("{url}: HTTP {}", response.status()));
     }
@@ -1375,7 +1397,11 @@ be updated."
             let url = linked_download_url(&page, "httpd-", version).ok_or_else(|| {
                 format!("Apache Lounge no longer lists a Windows archive for {version}")
             })?;
-            (url, String::new(), "Apache24".into(), "bin/httpd.exe")
+            let sha = match fetch_text(http, &format!("{url}.txt")).await {
+                Ok(sums) => parse_apache_sha256(&sums).unwrap_or_default(),
+                Err(_) => String::new(),
+            };
+            (url, sha, "Apache24".into(), "bin/httpd.exe")
         }
         "composer" => {
             let checksum_url =
@@ -1827,17 +1853,24 @@ restarts the download from the beginning.",
     let archive_path_for_blocking = archive_path.clone();
     let scratch_dir_for_blocking = scratch_dir.clone();
     let archive_root = manifest.archive_root.to_string();
-    let single_file_name = (!manifest.url.ends_with(".zip")).then(|| manifest.binary.to_string());
+    let is_zip = manifest
+        .url
+        .split('?')
+        .next()
+        .unwrap_or(&manifest.url)
+        .ends_with(".zip");
+    let single_file_name = (!is_zip).then(|| manifest.binary.to_string());
     let extracted = tokio::task::spawn_blocking(move || match single_file_name {
         // A non-archive download (e.g. composer.phar) is the runtime itself — "extract"
         // just means copying it into place under its final name.
         Some(name) => {
-            std::fs::create_dir_all(&scratch_dir_for_blocking)?;
-            std::fs::copy(
-                &archive_path_for_blocking,
-                scratch_dir_for_blocking.join(name),
-            )
-            .map(|_| ())
+            let target = scratch_dir_for_blocking.join(name);
+            if let Some(parent) = target.parent() {
+                std::fs::create_dir_all(parent)?;
+            } else {
+                std::fs::create_dir_all(&scratch_dir_for_blocking)?;
+            }
+            std::fs::copy(&archive_path_for_blocking, target).map(|_| ())
         }
         None => extract_zip(
             &archive_path_for_blocking,
@@ -2572,5 +2605,76 @@ mod tests {
         );
         assert!(!manifest.sha256.is_empty());
         assert_eq!(manifest.binary, "bin/mariadbd.exe");
+    }
+
+    #[test]
+    fn linked_download_url_extracts_full_zip_url_and_skips_win32() {
+        let html = r#"
+            <pre><img src="/images/hot.gif" alt="[Apache VS18 Win64 Binary]"> <a 
+            href="/download/VS18/binaries/httpd-2.4.69-261002-Win64-VS18.zip">httpd-2.4.69-261002-Win64-VS18.zip</a>               
+                    2 Oct '26  14.156k
+              <a href="/download/VS18/binaries/httpd-2.4.69-261002-Win64-VS18.zip.asc"><b>PGP</b></a> Signature, SHA1-SHA512 <a 
+            href="/download/VS18/binaries/httpd-2.4.69-261002-Win64-VS18.zip.txt" target="_blank" ><b>Checksums</b></a></pre>
+            <img src="/images/hot.gif" alt="[Apache vs18 Win32 Binary]"> <a 
+            href="/download/VS18/binaries/httpd-2.4.69-261002-win32-vs18.zip">httpd-2.4.69-261002-win32-vs18.zip</a>
+        "#;
+        let url = linked_download_url(html, "httpd-", "2.4.69");
+        assert_eq!(
+            url.as_deref(),
+            Some("https://www.apachelounge.com/download/VS18/binaries/httpd-2.4.69-261002-Win64-VS18.zip")
+        );
+    }
+
+    #[test]
+    fn parse_apache_sha256_extracts_checksum() {
+        let text = r#"
+Checksums created with GPGHash by SmartJuwel
+
+SHA1-Checksum for: httpd-2.4.69-261002-Win64-VS18.zip:
+D7B557581787727CA222C6A5FF0E9E6FA6029893
+
+SHA256-Checksum for: httpd-2.4.69-261002-Win64-VS18.zip:
+CA272E0B75ABAD78B1E4029A0753B20FF2232D2D857E8EEBEEA5D469C5776977
+
+SHA512-Checksum for: httpd-2.4.69-261002-Win64-VS18.zip:
+B5198796E28FD985225DF36CB3E65226A423BB48DF5B111C91439C59D558FD9DB1868F838C927E79B7A30B7B0C1C6FA0E4BEA767A3908A5187745158E22E9269
+        "#;
+        assert_eq!(
+            parse_apache_sha256(text).as_deref(),
+            Some("ca272e0b75abad78b1e4029a0753b20ff2232d2d857e8eebeea5d469c5776977")
+        );
+    }
+
+    #[test]
+    #[ignore]
+    fn apache_resolves_a_real_release_to_a_verified_windows_zip() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let http = reqwest::Client::builder()
+            .user_agent("OLS")
+            .build()
+            .unwrap();
+        let version = "2.4.69";
+        let manifest = rt
+            .block_on(resolve_online_manifest(&http, "apache", version))
+            .unwrap_or_else(|e| panic!("Apache {version} must resolve: {e}"));
+        assert!(manifest.url.ends_with(".zip"), "url: {}", manifest.url);
+        assert!(
+            manifest.url.starts_with("https://"),
+            "a download must be HTTPS: {}",
+            manifest.url
+        );
+        assert_eq!(
+            manifest.sha256.len(),
+            64,
+            "Apache Lounge publishes a SHA-256 and it must be used to verify the download"
+        );
+        assert_eq!(
+            manifest.sha256,
+            "ca272e0b75abad78b1e4029a0753b20ff2232d2d857e8eebeea5d469c5776977"
+        );
+        assert_eq!(manifest.binary, "bin/httpd.exe");
     }
 }

@@ -26,7 +26,7 @@ name: CI
 on:
   push:
     tags:
-      - 'release-v*'
+      - 'v*'
   workflow_dispatch:
 
 # Two runs of this workflow on the same ref must not overlap: they would build the same
