@@ -145,14 +145,14 @@ const CATALOG: &[PackageManifest] = &[
     PackageManifest {
         id: "apache",
         name: "Apache HTTP Server",
-        version: "2.4.68",
+        version: "2.4.69",
         platform: "windows",
         architecture: "x64",
-        url: "https://www.apachelounge.com/download/VS18/binaries/httpd-2.4.68-260920-Win64-VS18.zip",
-        // Apache Lounge publishes PGP signatures only; SHA-256 self-pinned from a direct
-        // HTTPS download. (The host serves the zip only when a Referer is sent — see
-        // `download_referer`.)
-        sha256: "f6dcf17d08aa32721ae418cd818c157e4c521c9e889b758646fb64287f1d56e3",
+        url: "https://www.apachelounge.com/download/VS18/binaries/httpd-2.4.69-261002-Win64-VS18.zip",
+        // Apache Lounge publishes SHA-256 checksum sidecars; verified against the official
+        // archive and publisher's checksum file. (The host serves the zip only when a Referer
+        // is sent — see `download_referer`.)
+        sha256: "ca272e0b75abad78b1e4029a0753b20ff2232d2d857e8eebeea5d469c5776977",
         archive_root: "Apache24",
         binary: "bin/httpd.exe",
     },

@@ -5,6 +5,13 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.0.2] — 2026-10-10
+
+Patch release. Full notes: [`release-notes/v2.0.2.md`](./release-notes/v2.0.2.md).
+
+### Fixed
+- Fixed Apache HTTP Server installation failures (checksum mismatch on 2.4.68 and download path resolution error on 2.4.69).
+
 ## [2.0.1] — 2026-10-01
 
 Patch release. Full notes: [`release-notes/v2.0.1.md`](./release-notes/v2.0.1.md). No new commands, settings or
