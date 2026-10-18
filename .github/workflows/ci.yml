@@ -5,12 +5,10 @@ name: CI
 # the queue of superseded runs was the real cost. Two triggers, both deliberate:
 #
 #   workflow_dispatch  -- run it when you want it (a re-run of a flaky job, a bisect, a
-#                         verification pass after a local-only change). Builds, never publishes.
-#   push on a release-v* tag -- the release tag is the point at which the artifacts are wanted,
-#                         and it runs test -> build -> publish in that order. The `release-`
-#                         prefix is what makes the trigger deliberate: an ordinary `v1.1.1`
-#                         push is a version bump, not a request to burn 20 minutes of CI and
-#                         publish. The tag has to say release to publish.
+#                         verification pass after a local-only change). Builds, and optionally
+#                         publishes if the `publish` input is enabled.
+#   push on a v* or release-v* tag -- the release tag is the point at which the artifacts are wanted,
+#                         and it runs test -> build -> publish in that order.
 #
 # Build and publish are jobs in *this* workflow rather than two workflows sharing the tag
 # trigger. Two workflows on one tag start at the same instant, so the publisher either races
@@ -27,7 +25,13 @@ on:
   push:
     tags:
       - 'v*'
+      - 'release-v*'
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish release to GitHub Releases'
+        type: boolean
+        default: false
 
 # Two runs of this workflow on the same ref must not overlap: they would build the same
 # release into the same directory and, on a tag, both would try to publish it.
@@ -95,11 +99,12 @@ jobs:
 
   publish:
     name: Publish release
-    # Runs only for a release-v* tag. A manual dispatch builds and verifies but publishes
-    # nothing, because there is no version to publish: the tag is what names the release, and the
-    # whole point of a tag is that somebody meant it. The prefix has to be in the job gate too,
-    # not just the trigger, or a manual dispatch on a `release-v*` branch would publish.
-    if: startsWith(github.ref, 'refs/tags/release-v')
+    # Runs when triggered by a release tag (v* or release-v*) or when manually dispatched with publish: true.
+    # Manual dispatches without the publish input build and verify but publish nothing.
+    if: |
+      startsWith(github.ref, 'refs/tags/v') ||
+      startsWith(github.ref, 'refs/tags/release-v') ||
+      (github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true'))
     needs: build
     runs-on: windows-latest
     # Only this job may write. The test and build jobs keep the read-only default, so a
@@ -124,26 +129,28 @@ jobs:
       - name: Resolve tag, version and commit
         id: vars
         run: |
-          $tag = "${{ github.ref_name }}"
-          # The `release-` prefix is required, not decorative: it is the only thing separating a
-          # deliberate release from a version bump someone tagged by habit. It is stripped before
-          # the version is used, because the build names its artifacts from Cargo.toml and the
-          # updater compares version numbers, neither of which has ever heard of the prefix.
-          if ($tag -notmatch '^release-v(\d+\.\d+\.\d+)$') {
-            throw "Tag '$tag' is not release-v<major>.<minor>.<patch>. Without the release- prefix this workflow never runs, and the publish job refuses it anyway."
+          $refName = "${{ github.ref_name }}"
+          $declared = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
+
+          if ($refName -match '^(?:release-)?v?(\d+\.\d+\.\d+)$') {
+            $version = $Matches[1]
+            $tag = $refName
+          } elseif ('${{ github.event_name }}' -eq 'workflow_dispatch' -and ('${{ inputs.publish }}' -eq 'true' -or '${{ github.event.inputs.publish }}' -eq 'true')) {
+            $version = $declared
+            $tag = "v$version"
+          } else {
+            throw "Ref '$refName' is not a valid release tag (e.g. v<major>.<minor>.<patch> or release-v<major>.<minor>.<patch>)."
           }
-          $version = $Matches[1]
+
           # The build reads the version out of Cargo.toml and names the artifacts with it, so
           # a tag that disagrees with Cargo.toml would publish a binary labelled as a version
           # it is not -- an updater would then offer it as newer than it is. Refuse instead.
-          $declared = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
           if ($declared -ne $version) {
-            throw "Tag is $tag but Cargo.toml declares $declared. Build the tag you are going to publish, or fix the version first."
+            throw "Ref is $refName (resolved version $version) but Cargo.toml declares $declared. Build the version you are going to publish, or fix the version first."
           }
           "tag=$tag" >> $env:GITHUB_OUTPUT
           "version=$version" >> $env:GITHUB_OUTPUT
-          # Notes are named by version, not by tag: the prefix is a trigger convention, and
-          # release-notes\v1.1.1.md is the file that already exists.
+          # Notes are named by version, not by tag: release-notes/v<version>.md is the file that already exists.
           "notes=release-notes/v$version.md" >> $env:GITHUB_OUTPUT
 
       - name: Restore the staged folder
