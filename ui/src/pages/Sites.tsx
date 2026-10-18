@@ -1,5 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Activity, Check, Code2, Copy, Download, ExternalLink, FolderMinus, FolderOpen, FolderPlus, FolderSearch, Globe, KeyRound, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2, X } from 'lucide-react'
+import { Activity, Check, CircleOff, Code2, Copy, Download, ExternalLink, FolderMinus, FolderOpen, FolderPlus, FolderSearch, Globe, KeyRound, List, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
@@ -677,15 +677,15 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
             )}
             <Tabs
               tabs={[
-                { id: 'enabled', label: 'Enabled', badge: matches.filter((r) => r.site?.enabled).length },
-                { id: 'disabled', label: 'Disabled', badge: matches.filter((r) => r.site && !r.site.enabled).length },
+                { id: 'enabled', label: 'Enabled', badge: matches.filter((r) => r.site?.enabled).length, icon: <Check className="size-3.5 text-emerald-500" /> },
+                { id: 'disabled', label: 'Disabled', badge: matches.filter((r) => r.site && !r.site.enabled).length, icon: <CircleOff className="size-3.5 text-rose-500" /> },
                 ...groupsPresent.map((g) => ({
                   id: g.id as SiteFilter,
                   label: g.label,
                   badge: matches.filter((r) => groupOf(r) === g.id).length,
                   icon: <TechIcon id={g.icon} className="size-3.5" />,
                 })),
-                { id: 'all', label: 'All', badge: matches.length },
+                { id: 'all', label: 'All', badge: matches.length, icon: <List className="size-3.5 text-sky-500" /> },
               ]}
               value={activeFilter}
               onChange={setFilter}
