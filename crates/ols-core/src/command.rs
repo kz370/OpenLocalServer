@@ -1877,40 +1877,66 @@ impl Core {
                 version: env!("CARGO_PKG_VERSION").to_string(),
             }),
             C::GetSetting { key } => {
-                let value =
-                    if key == "paths.sites_dir" {
-                        Some(serde_json::Value::String(
-                            i.sites_dir().display().to_string(),
-                        ))
-                    } else if key == "paths.backups_dir" {
-                        // The folder exports land in by default, resolved rather than
-                        // concatenated in the UI: it follows a moved or portable install, and
-                        // the answer is the one `backups_dir` actually uses.
-                        Some(serde_json::Value::String(
-                            i.paths.backups_dir().display().to_string(),
-                        ))
-                    } else if key == "quickapps.projects_dir" {
-                        // Answer with the folder it resolves to, never the stored form: the
-                        // UI shows this value in a text input and offers it as the parent for
-                        // a new project, so a stored `sites/shop` would be shown to the user
-                        // as if it were a path on disk.
-                        Some(serde_json::Value::String(
-                            i.default_projects_dir().display().to_string(),
-                        ))
-                    } else if key == crate::app::PROJECT_IGNORED_FOLDERS {
-                        let s = i.settings.lock().unwrap();
-                        Some(s.get(&key).cloned().unwrap_or_else(|| {
-                            serde_json::json!(crate::app::DEFAULT_IGNORED_FOLDERS)
-                        }))
-                    } else {
-                        i.settings.lock().unwrap().get(&key).cloned()
+                let value = if key == "paths.sites_dir" {
+                    Some(serde_json::Value::String(
+                        i.sites_dir().display().to_string(),
+                    ))
+                } else if key == "paths.backups_dir" {
+                    // The folder exports land in by default, resolved rather than
+                    // concatenated in the UI: it follows a moved or portable install, and
+                    // the answer is the one `backups_dir` actually uses.
+                    Some(serde_json::Value::String(
+                        i.paths.backups_dir().display().to_string(),
+                    ))
+                } else if key == "quickapps.projects_dir" {
+                    // Answer with the folder it resolves to, never the stored form: the
+                    // UI shows this value in a text input and offers it as the parent for
+                    // a new project, so a stored `sites/shop` would be shown to the user
+                    // as if it were a path on disk.
+                    Some(serde_json::Value::String(
+                        i.default_projects_dir().display().to_string(),
+                    ))
+                } else if key == crate::app::PROJECT_IGNORED_FOLDERS {
+                    let s = i.settings.lock().unwrap();
+                    let val = s
+                        .get(&key)
+                        .cloned()
+                        .unwrap_or_else(|| serde_json::json!(crate::app::DEFAULT_IGNORED_FOLDERS));
+                    let val = match val.as_array() {
+                        Some(arr)
+                            if arr.iter().any(|v| {
+                                v.as_str().map(|s| !s.trim().is_empty()).unwrap_or(false)
+                            }) =>
+                        {
+                            val
+                        }
+                        _ => serde_json::json!(crate::app::DEFAULT_IGNORED_FOLDERS),
                     };
+                    Some(val)
+                } else {
+                    i.settings.lock().unwrap().get(&key).cloned()
+                };
                 Ok(R::Setting { value, key })
             }
             C::SetSetting { key, value } => {
                 // Redact before it ever reaches the log, per §141 — settings can hold secrets.
                 let logged_value = crate::logging::redact_value(&key, &value.to_string());
                 tracing::info!(command = "set_setting", key = %key, value = %logged_value);
+                if key == crate::app::PROJECT_IGNORED_FOLDERS {
+                    let has_valid = match value.as_array() {
+                        Some(arr) => arr
+                            .iter()
+                            .any(|v| v.as_str().map(|s| !s.trim().is_empty()).unwrap_or(false)),
+                        None => false,
+                    };
+                    if !has_valid {
+                        return Err(CoreError::failed_fix(
+                            "Cannot empty ignored folders.",
+                            "At least one ignored folder must remain so deleted sites and excluded projects have a designated directory.",
+                            "Keep at least one folder name (such as 'excluded_sites') in the ignored folders list.",
+                        ));
+                    }
+                }
                 if let Some(id) = key
                     .strip_prefix("runtime.")
                     .and_then(|k| k.strip_suffix(".global"))

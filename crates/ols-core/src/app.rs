@@ -1040,13 +1040,23 @@ impl Inner {
     }
 
     /// Folders the app must never scan or read. Defaults to `["excluded_sites"]`.
+    /// Guaranteed to return at least one valid folder name.
     pub fn ignored_folders(&self) -> Vec<String> {
         let s = self.settings.lock().unwrap();
         match s.get(PROJECT_IGNORED_FOLDERS).and_then(|v| v.as_array()) {
-            Some(a) => a
-                .iter()
-                .filter_map(|v| v.as_str().map(str::to_string))
-                .collect(),
+            Some(a) => {
+                let filtered: Vec<String> = a
+                    .iter()
+                    .filter_map(|v| v.as_str().map(str::to_string))
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                if filtered.is_empty() {
+                    vec!["excluded_sites".to_string()]
+                } else {
+                    filtered
+                }
+            }
             None => vec!["excluded_sites".to_string()],
         }
     }

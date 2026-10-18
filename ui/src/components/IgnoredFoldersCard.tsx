@@ -24,7 +24,8 @@ export function IgnoredFoldersCard() {
   const load = useCallback(async () => {
     const r = await runCommand({ type: 'get_setting', key: 'projects.ignored_folders' })
     if (r.type === 'setting' && Array.isArray(r.value)) {
-      setFolders(r.value.filter((v): v is string => typeof v === 'string'))
+      const list = r.value.filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
+      setFolders(list.length > 0 ? list : DEFAULT_IGNORED)
     } else {
       setFolders(DEFAULT_IGNORED)
     }
@@ -40,9 +41,18 @@ export function IgnoredFoldersCard() {
   }
 
   async function saveList(next: string[], msg: string) {
-    const r = await runCommand({ type: 'set_setting', key: 'projects.ignored_folders', value: next })
+    const filtered = next.map((f) => f.trim()).filter((f) => f.length > 0)
+    if (filtered.length === 0) {
+      setError({
+        problem: 'Cannot empty ignored folders.',
+        cause: 'At least one ignored folder must remain so deleted sites and excluded projects have a designated directory.',
+        fix: 'Keep at least one folder name in the list, or click Reset default.',
+      })
+      return
+    }
+    const r = await runCommand({ type: 'set_setting', key: 'projects.ignored_folders', value: filtered })
     if (r.type === 'ok') {
-      setFolders(next)
+      setFolders(filtered)
       flash(msg)
       await runCommand({ type: 'sync_auto_domains' }).catch(() => undefined)
     } else {
@@ -82,6 +92,15 @@ export function IgnoredFoldersCard() {
   }
 
   async function handleRemove(folder: string) {
+    const current = folders ?? DEFAULT_IGNORED
+    if (current.length <= 1) {
+      setError({
+        problem: 'Cannot delete the last ignored folder.',
+        cause: 'At least one ignored folder must remain so deleted and excluded sites have a safe directory.',
+        fix: 'Add another ignored folder first before removing this one, or rename it instead.',
+      })
+      return
+    }
     const ok = await confirmAction(
       `OpenLocalServer will scan "${folder}" and its subfolders for projects and automatic domains again.`,
       `Stop ignoring "${folder}"?`,
@@ -89,7 +108,6 @@ export function IgnoredFoldersCard() {
     )
     if (!ok) return
     await run(`remove:${folder}`, async () => {
-      const current = folders ?? DEFAULT_IGNORED
       const next = current.filter((f) => f.toLowerCase() !== folder.toLowerCase())
       await saveList(next, `Stopped ignoring "${folder}".`)
     })
@@ -247,11 +265,19 @@ export function IgnoredFoldersCard() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="size-7 px-0 text-muted-foreground hover:text-destructive"
-                            disabled={busy !== null}
+                            className={`size-7 px-0 text-muted-foreground ${folders.length <= 1 ? 'cursor-not-allowed opacity-30 hover:text-muted-foreground' : 'hover:text-destructive'}`}
+                            disabled={busy !== null || folders.length <= 1}
                             onClick={() => void handleRemove(folder)}
-                            title={`Remove "${folder}" from ignored list`}
-                            aria-label={`Remove ${folder}`}
+                            title={
+                              folders.length <= 1
+                                ? 'At least one ignored folder must remain and cannot be deleted'
+                                : `Remove "${folder}" from ignored list`
+                            }
+                            aria-label={
+                              folders.length <= 1
+                                ? `Cannot delete ${folder} (at least one ignored folder must remain)`
+                                : `Remove ${folder}`
+                            }
                           >
                             {busy === `remove:${folder}` ? <Spinner /> : <Trash2 className="size-3.5" />}
                           </Button>
@@ -262,6 +288,12 @@ export function IgnoredFoldersCard() {
                 )
               })}
             </div>
+          )}
+
+          {folders.length <= 1 && (
+            <p className="text-xs text-muted-foreground">
+              At least one ignored folder must remain so deleted and excluded sites have a designated directory.
+            </p>
           )}
 
           <div className="flex gap-2">
