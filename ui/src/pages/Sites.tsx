@@ -37,6 +37,7 @@ interface Row {
 }
 
 type Group = DomainSummary['group'] | 'none'
+type SiteFilter = 'enabled' | 'disabled' | 'all' | Group
 
 /** Website types in display order; a type with no sites is not listed. */
 const GROUPS: { id: Group; label: string; icon: string }[] = [
@@ -87,7 +88,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   const [dupOf, setDupOf] = useState<string | null>(null)
   const [dupName, setDupName] = useState('')
   const [query, setQuery] = useState('')
-  const [group, setGroup] = useState<'all' | Group>('all')
+  const [filter, setFilter] = useState<SiteFilter>('enabled')
   const [message, setMessage] = useState<string | null>(null)
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null)
   // Bulk selection. Only site rows are picked — a project with no domain yet has nothing
@@ -132,16 +133,27 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     ...projects.filter((p) => !domains.some((d) => d.project_id === p.id)).map((p) => ({ key: `project:${p.id}`, site: null, project: p })),
   ].sort((a, b) => (a.site?.hostname ?? a.project?.name ?? '').localeCompare(b.site?.hostname ?? b.project?.name ?? ''))
 
+  const matchesQuery = (r: Row, term: string) =>
+    !term || `${r.site?.hostname ?? ''} ${r.project?.name ?? ''} ${r.site?.folder ?? r.project?.path ?? ''}`.toLowerCase().includes(term)
   const q = query.trim().toLowerCase()
-  const matches = rows.filter((r) => !q || `${r.site?.hostname ?? ''} ${r.project?.name ?? ''} ${r.site?.folder ?? r.project?.path ?? ''}`.toLowerCase().includes(q))
+  const matches = rows.filter((r) => matchesQuery(r, q))
   const groupsPresent = GROUPS.filter((g) => rows.some((r) => groupOf(r) === g.id))
-  const activeGroup = group === 'all' || groupsPresent.some((g) => g.id === group) ? group : 'all'
-  const visible = activeGroup === 'all' ? matches : matches.filter((r) => groupOf(r) === activeGroup)
+  const activeFilter =
+    filter === 'enabled' || filter === 'disabled' || filter === 'all' || groupsPresent.some((g) => g.id === filter)
+      ? filter
+      : 'all'
+  const matchesFilter = (r: Row, selected: SiteFilter) => {
+    if (selected === 'enabled') return r.site?.enabled === true
+    if (selected === 'disabled') return !!r.site && !r.site.enabled
+    if (selected === 'all') return true
+    return groupOf(r) === selected
+  }
+  const visible = matches.filter((r) => matchesFilter(r, activeFilter))
   const onSearch = (value: string) => {
     setQuery(value)
-    // A search covers every type: if the open tab has no hit, show all tabs' hits instead.
+    // A search covers every filter: if the open tab has no hit, show all matching rows.
     const term = value.trim().toLowerCase()
-    if (term && activeGroup !== 'all' && !rows.some((r) => groupOf(r) === activeGroup && `${r.site?.hostname ?? ''} ${r.project?.name ?? ''}`.toLowerCase().includes(term))) setGroup('all')
+    if (term && activeFilter !== 'all' && !rows.some((r) => matchesQuery(r, term) && matchesFilter(r, activeFilter))) setFilter('all')
   }
 
   // ---- bulk selection and paging -------------------------------------------------
@@ -489,7 +501,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
           onSelect: () =>
             void run(`toggle:${d.hostname}`, async () => {
               await runCommand({ type: 'set_domain_enabled', hostname: d.hostname, enabled: !d.enabled })
-              await apply()
+              await Promise.all([apply(), refresh()])
             }),
         },
         {
@@ -665,16 +677,18 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
             )}
             <Tabs
               tabs={[
-                { id: 'all' as 'all' | Group, label: 'All', badge: matches.length },
+                { id: 'enabled', label: 'Enabled', badge: matches.filter((r) => r.site?.enabled).length },
+                { id: 'disabled', label: 'Disabled', badge: matches.filter((r) => r.site && !r.site.enabled).length },
                 ...groupsPresent.map((g) => ({
-                  id: g.id as 'all' | Group,
+                  id: g.id as SiteFilter,
                   label: g.label,
                   badge: matches.filter((r) => groupOf(r) === g.id).length,
                   icon: <TechIcon id={g.icon} className="size-3.5" />,
                 })),
+                { id: 'all', label: 'All', badge: matches.length },
               ]}
-              value={activeGroup}
-              onChange={setGroup}
+              value={activeFilter}
+              onChange={setFilter}
             />
           </div>
           <Table wrapperClassName="rounded-none">
