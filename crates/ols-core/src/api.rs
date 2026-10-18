@@ -67,6 +67,10 @@ const NEVER: &[&str] = &[
     "install_update",
     "install_shell_menu",
     "remove_shell_menu",
+    "delete_site",
+    "bulk_delete_sites",
+    "delete_project",
+    "rename_ignored_folder",
 ];
 
 /// Prefixes of commands that only look.

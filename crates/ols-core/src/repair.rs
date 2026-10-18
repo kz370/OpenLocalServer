@@ -76,6 +76,9 @@ pub fn is_destructive(cmd: &CoreCommand) -> bool {
         CoreCommand::RestoreDatabase { .. }
         | CoreCommand::RemoveDomain { .. }
         | CoreCommand::BulkRemoveDomains { .. }
+        | CoreCommand::DeleteSite { .. }
+        | CoreCommand::BulkDeleteSites { .. }
+        | CoreCommand::DeleteProject { .. }
         | CoreCommand::RestoreSnapshot { .. }
         | CoreCommand::RevokeCertificate { .. } => true,
         // An import onto an existing site replaces its configuration; a new site adds one.

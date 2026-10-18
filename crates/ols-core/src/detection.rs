@@ -66,8 +66,23 @@ pub fn looks_like_a_project(dir: &Path) -> bool {
 /// separate repos, not a search through every nested node_modules) for folders that look
 /// like projects. If `root` itself looks like a project, it's included too.
 pub fn scan_for_projects(root: &Path) -> Vec<std::path::PathBuf> {
+    scan_for_projects_with_ignored(root, &[])
+}
+
+/// Scans the immediate children of `root`, completely ignoring any folder whose name
+/// matches any entry in `ignored` (case-insensitive). The app never reads or scans
+/// inside ignored folders.
+pub fn scan_for_projects_with_ignored(root: &Path, ignored: &[String]) -> Vec<std::path::PathBuf> {
+    let is_ignored = |p: &Path| -> bool {
+        if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
+            if ignored.iter().any(|ig| ig.eq_ignore_ascii_case(name)) {
+                return true;
+            }
+        }
+        false
+    };
     let mut found = Vec::new();
-    if looks_like_a_project(root) {
+    if !is_ignored(root) && looks_like_a_project(root) {
         found.push(root.to_path_buf());
     }
     let Ok(entries) = std::fs::read_dir(root) else {
@@ -75,7 +90,7 @@ pub fn scan_for_projects(root: &Path) -> Vec<std::path::PathBuf> {
     };
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.is_dir() && looks_like_a_project(&path) {
+        if path.is_dir() && !is_ignored(&path) && looks_like_a_project(&path) {
             found.push(path);
         }
     }
@@ -317,5 +332,25 @@ mod tests {
         // scan of `outer` should find nothing, not recurse and find `inner-app`.
         let found = scan_for_projects(&outer);
         assert!(found.is_empty());
+    }
+
+    #[test]
+    fn scan_ignores_configured_folders_like_excluded_sites() {
+        let tmp = tempfile::tempdir().unwrap();
+        let app = tmp.path().join("my-app");
+        let excluded = tmp.path().join("excluded_sites");
+        let nested_in_excluded = excluded.join("old-app");
+
+        std::fs::create_dir_all(&app).unwrap();
+        std::fs::write(app.join("package.json"), "{}").unwrap();
+
+        std::fs::create_dir_all(&nested_in_excluded).unwrap();
+        std::fs::write(nested_in_excluded.join("package.json"), "{}").unwrap();
+        // Also make excluded_sites itself look like a project just in case
+        std::fs::write(excluded.join("package.json"), "{}").unwrap();
+
+        let found = scan_for_projects_with_ignored(tmp.path(), &["excluded_sites".to_string()]);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0], app);
     }
 }

@@ -1,5 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Activity, Check, CircleOff, Code2, Copy, Download, ExternalLink, FolderMinus, FolderOpen, FolderPlus, FolderSearch, Globe, KeyRound, List, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2, X } from 'lucide-react'
+import { Activity, Check, CircleOff, Code2, Copy, Download, ExternalLink, EyeOff, FolderOpen, FolderPlus, FolderSearch, Globe, KeyRound, List, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
@@ -300,15 +300,6 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     })
   }
 
-  async function removeProject(p: Project) {
-    const ok = await confirmAction(
-      `Your project files are not deleted, and its sites stay. It won't be re-added by folder scans — add the folder again to bring it back.`,
-      `Remove ${p.name}?`,
-      'Remove from list',
-    )
-    if (!ok) return
-    await run(`remove:${p.id}`, () => web.removeProjectFromList(p.id))
-  }
 
   async function saveNew(d: Domain) {
     await runCommand({ type: 'add_domain', domain: d })
@@ -402,19 +393,48 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     })
   }
 
+  async function bulkHideExclude() {
+    if (pickedCount === 0) return
+    const names = pickedCount <= 3 ? pickedRows.map((r) => r.site?.hostname ?? r.project?.name).join(', ') : `these ${pickedCount} rows`
+    const ok = await confirmAction(
+      `Each site's certificate is revoked and its config file is removed. Projects behind a site leave the list. Project folders on disk are never touched, and stay hidden until cleared in Settings > Hide/Exclude.`,
+      `Hide/Exclude ${names}?`,
+      'Hide/Exclude',
+    )
+    if (!ok) return
+    await run('bulk', async () => {
+      const hostnames = pickedRows.map((r) => r.site?.hostname).filter((h): h is string => !!h)
+      const projectIds = pickedRows.filter((r) => !r.site).map((r) => r.project!.id)
+      const skipped: string[] = []
+      let changed = 0
+      if (hostnames.length > 0) {
+        const out = await web.hideSites(hostnames)
+        changed += out.changed
+        skipped.push(...out.skipped)
+      }
+      for (const id of projectIds) {
+        try {
+          await web.hideProjectFromList(id)
+          changed += 1
+        } catch (e) {
+          skipped.push(`${projects.find((p) => p.id === id)?.name ?? id} could not be hidden: ${e instanceof Error ? e.message : String(e)}`)
+        }
+      }
+      reportBulk('Hidden/Excluded', changed, skipped)
+      setPicked(new Set())
+    })
+  }
+
   async function bulkDelete() {
     if (pickedCount === 0) return
     const names = pickedCount <= 3 ? pickedRows.map((r) => r.site?.hostname ?? r.project?.name).join(', ') : `these ${pickedCount} rows`
     const ok = await confirmAction(
-      `Each site's certificate is revoked and its config file is removed. Projects behind a site leave the list when that was their last site. Project folders are never touched.`,
+      `Selected sites and projects will be moved into an "excluded_sites" folder in the same directory instead of permanently deleting them. Certificates are revoked and web configs are removed.`,
       `Delete ${names}?`,
       'Delete',
     )
     if (!ok) return
     await run('bulk', async () => {
-      // Two different things: a site row is deleted, and a project row with no domain
-      // yet is only taken off the list. Both are one call each, and both leave the files
-      // alone, so a mixed selection is not a reason to refuse the whole batch.
       const hostnames = pickedRows.map((r) => r.site?.hostname).filter((h): h is string => !!h)
       const projectIds = pickedRows.filter((r) => !r.site).map((r) => r.project!.id)
       const skipped: string[] = []
@@ -426,10 +446,10 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       }
       for (const id of projectIds) {
         try {
-          await web.removeProjectFromList(id)
+          await web.deleteProject(id)
           changed += 1
         } catch (e) {
-          skipped.push(`${projects.find((p) => p.id === id)?.name ?? id} could not be taken off the list: ${e instanceof Error ? e.message : String(e)}`)
+          skipped.push(`${projects.find((p) => p.id === id)?.name ?? id} could not be deleted: ${e instanceof Error ? e.message : String(e)}`)
         }
       }
       reportBulk('Deleted', changed, skipped)
@@ -526,20 +546,31 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       )
     }
     items.push('separator')
-    // One way off the list, not two: deleting a site takes it off the list, and the
-    // project behind it goes with it when that was its last site. A row with no domain
-    // has no site to delete, so it is removed as the project it is.
     if (d) {
       const key = d.hostname
+      items.push({
+        label: 'Hide/Exclude',
+        icon: <EyeOff />,
+        disabled: removing.has(key) || busy === `hide:${key}`,
+        onSelect: async () => {
+          const last = p ? ` ${p.name} leaves the list with it.` : ''
+          const ok = await confirmAction(
+            `Its certificate is revoked and its config file is removed.${last} The project folder on disk is not touched. It stays hidden until cleared in Settings > Hide/Exclude.`,
+            `Hide/Exclude ${d.hostname}?`,
+            'Hide/Exclude',
+          )
+          if (!ok) return
+          await run(`hide:${key}`, () => web.hideSite(key))
+        },
+      })
       items.push({
         label: 'Delete site',
         icon: <Trash2 />,
         danger: true,
         disabled: removing.has(key) || busy === `delete:${key}`,
         onSelect: async () => {
-          const last = p ? ` ${p.name} leaves the list with it.` : ''
           const ok = await confirmAction(
-            `Its certificate is revoked and its config file is removed.${last} The project folder is not touched.`,
+            `Moves the project into an "excluded_sites" folder in the same directory instead of permanently deleting it. Certificate is revoked and server configuration is removed.`,
             `Delete ${d.hostname}?`,
             'Delete site',
           )
@@ -549,11 +580,33 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       })
     } else if (p) {
       items.push({
-        label: 'Remove from list',
-        icon: <FolderMinus />,
+        label: 'Hide/Exclude',
+        icon: <EyeOff />,
+        disabled: removing.has(p.id) || busy === `hide:${p.id}`,
+        onSelect: async () => {
+          const ok = await confirmAction(
+            `"${p.name}" leaves the list, but its folder on disk is not touched. It stays hidden until cleared in Settings > Hide/Exclude.`,
+            `Hide/Exclude ${p.name}?`,
+            'Hide/Exclude',
+          )
+          if (!ok) return
+          await run(`hide:${p.id}`, () => web.hideProjectFromList(p.id))
+        },
+      })
+      items.push({
+        label: 'Delete project',
+        icon: <Trash2 />,
         danger: true,
-        disabled: removing.has(p.id) || busy === `remove:${p.id}`,
-        onSelect: () => void removeProject(p),
+        disabled: removing.has(p.id) || busy === `delete:${p.id}`,
+        onSelect: async () => {
+          const ok = await confirmAction(
+            `Moves "${p.name}" into an "excluded_sites" folder in the same directory instead of permanently deleting it.`,
+            `Delete ${p.name}?`,
+            'Delete project',
+          )
+          if (!ok) return
+          await run(`delete:${p.id}`, () => web.deleteProject(p.id))
+        },
       })
     }
     return items
@@ -658,7 +711,10 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                   >
                     <Download /> Export
                   </Button>
-                  <Button size="sm" variant="outline" className="h-8 text-destructive hover:bg-destructive/10" disabled={busyBulk} onClick={() => void bulkDelete()}>
+                  <Button size="sm" variant="outline" className="h-8" disabled={busyBulk} onClick={() => void bulkHideExclude()} title="Hide/exclude selected sites without touching project files">
+                    <EyeOff /> Hide/Exclude
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-8 text-destructive hover:bg-destructive/10" disabled={busyBulk} onClick={() => void bulkDelete()} title="Move selected sites into an excluded_sites folder">
                     <Trash2 /> Delete
                   </Button>
                   <Button size="sm" variant="ghost" className="h-8" disabled={busyBulk} onClick={() => setPicked(new Set())}>

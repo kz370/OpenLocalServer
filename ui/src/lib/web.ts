@@ -126,18 +126,19 @@ export function useWeb() {
    * behind it, with `applying` telling the page to say so, instead of the row sitting
    * there looking untouched while the user waits.
    */
+  /**
+   * Deleting a site moves its folder into an `excluded_sites` folder in the same directory,
+   * revokes its certificate, re-renders config files and reloads the web server.
+   */
   async function deleteSite(hostname: string) {
     if (removing.has(hostname)) return
     markRemoving(hostname)
     setDomains((list) => list.filter((d) => d.hostname !== hostname))
     try {
-      await runCommand({ type: 'remove_domain', hostname })
-      // The project behind the site leaves the list with it when that was its last site.
+      await runCommand({ type: 'delete_site', hostname })
       await refreshProjects()
       await applyTracked()
     } catch (e) {
-      // Whatever went wrong, the store is the truth: re-read it so a failed command
-      // puts the row back and a failed apply doesn't leave a deleted row on screen.
       await refresh().catch(() => undefined)
       await refreshProjects().catch(() => undefined)
       throw e
@@ -146,8 +147,44 @@ export function useWeb() {
     }
   }
 
-  /** Takes a project off the list. Its files are never touched. */
-  async function removeProjectFromList(id: string) {
+  /**
+   * Hide/Exclude a site from OpenLocalServer: revokes cert and config, but files on disk
+   * are completely untouched. Rescans ignore it until cleared in Settings > Hide/Exclude.
+   */
+  async function hideSite(hostname: string) {
+    if (removing.has(hostname)) return
+    markRemoving(hostname)
+    setDomains((list) => list.filter((d) => d.hostname !== hostname))
+    try {
+      await runCommand({ type: 'remove_domain', hostname })
+      await refreshProjects()
+      await applyTracked()
+    } catch (e) {
+      await refresh().catch(() => undefined)
+      await refreshProjects().catch(() => undefined)
+      throw e
+    } finally {
+      markRemoving(hostname, false)
+    }
+  }
+
+  /** Deletes a project by moving its folder into an `excluded_sites` folder in the same directory. */
+  async function deleteProject(id: string) {
+    if (removing.has(id)) return
+    markRemoving(id)
+    setProjects((list) => list.filter((p) => p.id !== id))
+    try {
+      await runCommand({ type: 'delete_project', id })
+    } catch (e) {
+      await refreshProjects().catch(() => undefined)
+      throw e
+    } finally {
+      markRemoving(id, false)
+    }
+  }
+
+  /** Hide/Exclude a project from the list. Its files are never touched. */
+  async function hideProjectFromList(id: string) {
     if (removing.has(id)) return
     markRemoving(id)
     setProjects((list) => list.filter((p) => p.id !== id))
@@ -161,14 +198,11 @@ export function useWeb() {
     }
   }
 
+  /** Backwards compatibility alias for hideProjectFromList */
+  const removeProjectFromList = hideProjectFromList
+
   /**
-   * The three bulk site edits. Each one is a single backend call and a single apply: a
-   * forty-site repaint re-renders every config once, not once per site. Rows leave the
-   * list (or flip their dot) at once and the slow half runs behind them, exactly like
-   * `deleteSite`, so a batch never looks like a click that did nothing.
-   *
-   * A batch is partial by design — the backend reports the sites it refused, and that
-   * list is returned to the caller so the page can say which rows were left alone.
+   * Bulk site edits. Each one is a single backend call and a single apply.
    */
   async function runBulk(
     keys: readonly string[],
@@ -181,8 +215,6 @@ export function useWeb() {
     try {
       const res = await runCommand(command)
       const outcome: BulkOutcome = res.type === 'bulk' ? { changed: res.changed, skipped: res.skipped } : { changed: 0, skipped: [] }
-      // The store is the truth after a partial batch: re-read it so a refused site is on
-      // screen again rather than left showing a change that never happened.
       await refresh().catch(() => undefined)
       await refreshProjects().catch(() => undefined)
       await applyTracked()
@@ -206,10 +238,6 @@ export function useWeb() {
     return runBulk(
       hostnames,
       { type: 'bulk_set_domain_server', hostnames: [...hostnames], server },
-      // A summary always names the server that renders the site, never "no server": a
-      // cleared pin (`server: null` in the command) means the default server from here on.
-      // Its port is not knowable before the reload that follows, so `http_port` keeps its
-      // old value for the frame or two until `refresh` puts the real one back.
       (list) => {
         const resolved = server ?? cfg?.default_server ?? ''
         return list.map((d) => (hostnames.includes(d.hostname) ? { ...d, server: resolved } : d))
@@ -218,6 +246,12 @@ export function useWeb() {
   }
 
   function deleteSites(hostnames: readonly string[]): Promise<BulkOutcome> {
+    return runBulk(hostnames, { type: 'bulk_delete_sites', hostnames: [...hostnames] }, (list) =>
+      list.filter((d) => !hostnames.includes(d.hostname)),
+    )
+  }
+
+  function hideSites(hostnames: readonly string[]): Promise<BulkOutcome> {
     return runBulk(hostnames, { type: 'bulk_remove_domains', hostnames: [...hostnames] }, (list) =>
       list.filter((d) => !hostnames.includes(d.hostname)),
     )
@@ -245,6 +279,10 @@ export function useWeb() {
     applying,
     deleteSite,
     deleteSites,
+    deleteProject,
+    hideSite,
+    hideSites,
+    hideProjectFromList,
     removeProjectFromList,
     setDomainsEnabled,
     setDomainsServer,

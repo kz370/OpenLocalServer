@@ -1,10 +1,11 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Archive, ExternalLink, FolderPlus, FolderSearch, FolderTree, Gauge, Globe, History, Info, Power, Settings2, ShieldCheck, Sparkles, Stethoscope, Trash2 } from 'lucide-react'
+import { Archive, ExternalLink, EyeOff, FolderPlus, FolderSearch, FolderTree, Gauge, Globe, Info, Power, Settings2, ShieldCheck, Sparkles, Stethoscope, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { AiCard } from '@/components/ai/AiSettings'
 import { ErrorCard } from '@/components/ErrorCard'
 import { ExcludedSitesCard } from '@/components/ExcludedSitesCard'
+import { IgnoredFoldersCard } from '@/components/IgnoredFoldersCard'
 import { ApiCard, SystemCard, UpdatesCard } from '@/components/ReleaseCards'
 import { AboutCard, AutoBackupCard, ResourcesCard, SettingsBackupsCard } from '@/components/SettingsExtras'
 import { SaveButton } from '@/components/SaveButton'
@@ -25,7 +26,7 @@ const SECTIONS: { id: Section; label: string; icon: typeof Globe }[] = [
   { id: 'general', label: 'General', icon: Settings2 },
   { id: 'sites', label: 'Sites & domains', icon: Globe },
   { id: 'roots', label: 'Root folders', icon: FolderTree },
-  { id: 'deleted', label: 'Excluded sites', icon: History },
+  { id: 'deleted', label: 'Hide/Exclude', icon: EyeOff },
   { id: 'startup', label: 'Startup & tray', icon: Power },
   { id: 'diagnostics', label: 'Diagnostics', icon: Stethoscope },
   { id: 'ai', label: 'AI', icon: Sparkles },
@@ -322,35 +323,43 @@ export function SettingsPage() {
           )}
 
           {section === 'roots' && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">Root folders</CardTitle>
-                <CardDescription>Only these folders are watched for immediate child project folders. Projects inside them are detected automatically.</CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-3">
-                <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium">Default sites folder</p>
-                    <p className="truncate text-xs text-muted-foreground">{sitesDir}</p>
+            <>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Root folders</CardTitle>
+                  <CardDescription>Only these folders are watched for immediate child project folders. Projects inside them are detected automatically.</CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-3">
+                  <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium">Default sites folder</p>
+                      <p className="truncate text-xs text-muted-foreground">{sitesDir}</p>
+                    </div>
+                    <Badge variant="secondary">Default</Badge>
                   </div>
-                  <Badge variant="secondary">Default</Badge>
-                </div>
-                {rootFolders.filter((root) => root.toLowerCase() !== sitesDir.toLowerCase()).map((root) => (
-                  <div key={root} className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
-                    <p className="min-w-0 truncate text-sm">{root}</p>
-                    <Button size="icon" variant="ghost" title="Remove root folder" aria-label={`Remove ${root}`} onClick={() => removeRootFolder(root)}>
-                      <Trash2 />
-                    </Button>
-                  </div>
-                ))}
-                <Button variant="secondary" className="self-start" onClick={addRootFolder}>
-                  <FolderPlus /> Add root folder
-                </Button>
-              </CardContent>
-            </Card>
+                  {rootFolders.filter((root) => root.toLowerCase() !== sitesDir.toLowerCase()).map((root) => (
+                    <div key={root} className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
+                      <p className="min-w-0 truncate text-sm">{root}</p>
+                      <Button size="icon" variant="ghost" title="Remove root folder" aria-label={`Remove ${root}`} onClick={() => removeRootFolder(root)}>
+                        <Trash2 />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button variant="secondary" className="self-start" onClick={addRootFolder}>
+                    <FolderPlus /> Add root folder
+                  </Button>
+                </CardContent>
+              </Card>
+              <IgnoredFoldersCard />
+            </>
           )}
 
-          {section === 'deleted' && <ExcludedSitesCard />}
+          {section === 'deleted' && (
+            <>
+              <IgnoredFoldersCard />
+              <ExcludedSitesCard />
+            </>
+          )}
 
           {section === 'startup' && (
             <Card>

@@ -84,20 +84,20 @@ export function ExcludedSitesCard() {
       <ErrorCard error={error} onDismiss={() => setError(null)} />
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm">Excluded sites</CardTitle>
+          <CardTitle className="text-sm">Hide/Exclude</CardTitle>
           <CardDescription>
-            Removing a site or a project folder keeps it out of folder scans and automatic domains. Clear an entry here to
-            let it come back; the files on disk are never touched.
+            Sites and project folders hidden from folder scans and automatic domains via Hide/Exclude. Clear an entry here to
+            let it come back; files on disk are never touched.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           {items.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nothing is excluded. Sites and project folders you remove will appear here.</p>
+            <p className="text-sm text-muted-foreground">Nothing is hidden or excluded. Sites and project folders you hide/exclude will appear here.</p>
           ) : (
             <>
               <div className="flex items-center justify-between gap-3" aria-live="polite">
                 <span className="text-xs text-muted-foreground">
-                  {items.length} excluded {items.length === 1 ? 'entry' : 'entries'}
+                  {items.length} hidden {items.length === 1 ? 'entry' : 'entries'}
                 </span>
                 <Button size="sm" variant="ghost" className="text-destructive" disabled={busy !== null} onClick={clearAll}>
                   <Trash2 className="size-3.5" /> Clear all

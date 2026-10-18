@@ -942,6 +942,50 @@ impl Inner {
         Ok(())
     }
 
+    /// Deletes a site by moving its project folder into an `excluded_sites` folder
+    /// in the same directory instead of permanently deleting it.
+    /// Revokes its certificate, removes its web configuration, and unregisters the site.
+    pub fn delete_site(&self, hostname: &str) -> Result<(), CoreError> {
+        if hostname == "openlocalserver.test" {
+            return Err(CoreError::failed_fix(
+                "openlocalserver.test cannot be deleted.",
+                "openlocalserver.test is the built-in home site required by OpenLocalServer.",
+                "Delete other custom sites instead.",
+            ));
+        }
+        let (orphan_project, folder_to_move) = {
+            let mut domains = self.domains.lock().unwrap();
+            let domain = domains.get(hostname).ok_or_else(|| {
+                CoreError::DomainError(format!("{hostname} is not a known domain"))
+            })?;
+            let projects = self.projects.lock().unwrap().list();
+            let folder = site_folder(&domain, &projects);
+            let orphan_project = domain.project_id.clone().filter(|project_id| {
+                !domains
+                    .list()
+                    .iter()
+                    .any(|d| d.hostname != hostname && d.project_id.as_ref() == Some(project_id))
+            });
+            domains.remove(hostname)?;
+            (orphan_project, folder)
+        };
+
+        let _ = self.certs.revoke(hostname);
+        self.web.restart_app(hostname);
+
+        if let Some(ref id) = orphan_project {
+            let _ = self.projects.lock().unwrap().remove(id);
+        }
+
+        let folder_path = PathBuf::from(&folder_to_move);
+        if folder_path.is_dir() {
+            let excluded_folder = self.primary_excluded_folder();
+            let _ = move_to_excluded_dir(&folder_path, &excluded_folder)?;
+        }
+
+        Ok(())
+    }
+
     // ------------------------------------------------------- automatic domains
 
     fn string_list(&self, key: &str) -> Vec<String> {
@@ -993,6 +1037,85 @@ impl Inner {
                 list.push(root.to_string());
             }
         })
+    }
+
+    /// Folders the app must never scan or read. Defaults to `["excluded_sites"]`.
+    pub fn ignored_folders(&self) -> Vec<String> {
+        let s = self.settings.lock().unwrap();
+        match s.get(PROJECT_IGNORED_FOLDERS).and_then(|v| v.as_array()) {
+            Some(a) => a
+                .iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect(),
+            None => vec!["excluded_sites".to_string()],
+        }
+    }
+
+    /// Primary folder name to use when moving deleted sites/projects.
+    pub fn primary_excluded_folder(&self) -> String {
+        let list = self.ignored_folders();
+        if list
+            .iter()
+            .any(|f| f.eq_ignore_ascii_case("excluded_sites"))
+        {
+            "excluded_sites".to_string()
+        } else if let Some(first) = list.first() {
+            first.clone()
+        } else {
+            "excluded_sites".to_string()
+        }
+    }
+
+    /// Renames a folder in the ignored list and also renames any matching folder
+    /// on disk inside registered root folders.
+    pub fn rename_ignored_folder(&self, old_name: &str, new_name: &str) -> Result<(), CoreError> {
+        let old_name = old_name.trim();
+        let new_name = new_name.trim();
+        if new_name.is_empty() {
+            return Err(CoreError::failed_fix(
+                "Folder name cannot be blank.",
+                "An ignored folder name must contain at least one character.",
+                "Enter a non-empty folder name.",
+            ));
+        }
+        if new_name.contains('/') || new_name.contains('\\') {
+            return Err(CoreError::failed_fix(
+                "Invalid folder name.",
+                format!("'{new_name}' contains path separators."),
+                "Enter a single folder name without slashes or backslashes.",
+            ));
+        }
+        let mut list = self.ignored_folders();
+        if list
+            .iter()
+            .any(|f| f.eq_ignore_ascii_case(new_name) && !f.eq_ignore_ascii_case(old_name))
+        {
+            return Err(CoreError::failed_fix(
+                "Folder name already in ignored list.",
+                format!("'{new_name}' is already being ignored."),
+                "Choose a unique folder name.",
+            ));
+        }
+        if let Some(pos) = list.iter().position(|f| f.eq_ignore_ascii_case(old_name)) {
+            list[pos] = new_name.to_string();
+        } else {
+            list.push(new_name.to_string());
+        }
+        self.settings
+            .lock()
+            .unwrap()
+            .set(PROJECT_IGNORED_FOLDERS, serde_json::json!(list))?;
+
+        // If the folder exists on disk in any root folder, rename it too
+        for root in self.string_list(PROJECT_ROOTS) {
+            let root_path = PathBuf::from(root);
+            let old_dir = root_path.join(old_name);
+            let new_dir = root_path.join(new_name);
+            if old_dir.is_dir() && !new_dir.exists() {
+                let _ = std::fs::rename(&old_dir, &new_dir);
+            }
+        }
+        Ok(())
     }
 
     /// Reads one skip list, oldest entries last. Values written by earlier versions were
@@ -1112,6 +1235,26 @@ impl Inner {
         self.projects.lock().unwrap().remove(id)?;
         if let Some(path) = path {
             self.push_skip(PROJECT_SKIP, &path)?;
+        }
+        Ok(())
+    }
+
+    /// Deletes a project without a domain by moving its folder into an `excluded_sites` folder
+    /// in the same directory instead of permanently deleting it.
+    pub fn delete_project(&self, id: &str) -> Result<(), CoreError> {
+        let path_str = {
+            let mut projects = self.projects.lock().unwrap();
+            let p = projects.get(id).ok_or_else(|| {
+                CoreError::InvalidProjectPath(format!("{id} is not a registered project"))
+            })?;
+            let path = p.path.clone();
+            projects.remove(id)?;
+            path
+        };
+        let folder_path = PathBuf::from(&path_str);
+        if folder_path.is_dir() {
+            let excluded_folder = self.primary_excluded_folder();
+            let _ = move_to_excluded_dir(&folder_path, &excluded_folder)?;
         }
         Ok(())
     }
@@ -1271,6 +1414,7 @@ impl Inner {
                 .unwrap()
                 .set(PROJECT_ROOTS, serde_json::json!(roots))?;
         }
+        let ignored = self.ignored_folders();
         for root in self.string_list(PROJECT_ROOTS) {
             let Ok(entries) = std::fs::read_dir(&root) else {
                 continue;
@@ -1281,9 +1425,12 @@ impl Inner {
             let mut projects = self.projects.lock().unwrap();
             for e in entries.flatten() {
                 let dir = e.path();
-                let hidden = e.file_name().to_string_lossy().starts_with('.');
+                let file_name = e.file_name().to_string_lossy().to_string();
+                let hidden = file_name.starts_with('.');
+                let is_ignored = ignored.iter().any(|ig| ig.eq_ignore_ascii_case(&file_name));
                 if dir.is_dir()
                     && !hidden
+                    && !is_ignored
                     && !skip_matches(&skipped, &dir.display().to_string())
                     && (crate::detection::looks_like_a_project(&dir) || has_index(&dir))
                 {
@@ -1580,6 +1727,25 @@ impl Inner {
         let mut outcome = BulkOutcome::default();
         for hostname in hostnames {
             match self.remove_domain(hostname) {
+                Ok(()) => outcome.changed += 1,
+                Err(e) => outcome.skip(hostname, &e.to_string()),
+            }
+        }
+        Ok(outcome)
+    }
+
+    /// Deletes a group of sites by moving their folders into `excluded_sites` in their respective directories.
+    pub fn delete_sites(&self, hostnames: &[String]) -> Result<BulkOutcome, CoreError> {
+        let mut outcome = BulkOutcome::default();
+        for hostname in hostnames {
+            if hostname == "openlocalserver.test" {
+                outcome.skip(
+                    hostname,
+                    "openlocalserver.test is the built-in home site, which cannot be deleted.",
+                );
+                continue;
+            }
+            match self.delete_site(hostname) {
                 Ok(()) => outcome.changed += 1,
                 Err(e) => outcome.skip(hostname, &e.to_string()),
             }
@@ -3858,6 +4024,87 @@ const AUTO_SKIP: &str = "domains.auto_skip";
 /// Folders the user removed from the project list. Folder rescans must not
 /// re-register them; only explicitly adding the folder brings one back.
 const PROJECT_SKIP: &str = "projects.removed";
+pub const PROJECT_IGNORED_FOLDERS: &str = "projects.ignored_folders";
+pub const DEFAULT_IGNORED_FOLDERS: &[&str] = &["excluded_sites"];
+
+fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let entry_path = entry.path();
+        let dest_path = dst.join(entry.file_name());
+        if entry_path.is_dir() {
+            copy_dir_recursive(&entry_path, &dest_path)?;
+        } else {
+            std::fs::copy(&entry_path, &dest_path)?;
+        }
+    }
+    Ok(())
+}
+
+fn move_to_excluded_dir(path: &Path, excluded_folder_name: &str) -> Result<PathBuf, CoreError> {
+    if !path.is_dir() {
+        return Err(CoreError::failed_fix(
+            format!("Folder does not exist: {}", path.display()),
+            "The site project directory could not be found on disk.",
+            "Verify the folder exists or remove the broken site from the list.",
+        ));
+    }
+    let parent = path.parent().ok_or_else(|| {
+        CoreError::failed_fix(
+            format!("Cannot exclude root directory: {}", path.display()),
+            "A filesystem root has no parent directory to create an excluded folder in.",
+            "Projects must be located inside a subdirectory.",
+        )
+    })?;
+    let file_name = path.file_name().ok_or_else(|| {
+        CoreError::failed_fix(
+            format!("Invalid folder name: {}", path.display()),
+            "Could not determine the folder name to move.",
+            "Verify the project path is valid.",
+        )
+    })?;
+    let file_name_str = file_name.to_string_lossy().to_string();
+    let excluded_dir = parent.join(excluded_folder_name);
+    if !excluded_dir.exists() {
+        std::fs::create_dir_all(&excluded_dir).map_err(|e| {
+            CoreError::failed_fix(
+                format!("Could not create '{excluded_folder_name}' folder."),
+                format!("Failed creating directory {}: {e}", excluded_dir.display()),
+                "Check folder permissions on the parent directory.",
+            )
+        })?;
+    }
+    let mut dest = excluded_dir.join(&file_name_str);
+    if dest.exists() {
+        let mut counter = 1;
+        loop {
+            let candidate = excluded_dir.join(format!("{file_name_str}-{counter}"));
+            if !candidate.exists() {
+                dest = candidate;
+                break;
+            }
+            counter += 1;
+        }
+    }
+
+    if let Err(e) = std::fs::rename(path, &dest) {
+        if let Err(copy_err) =
+            copy_dir_recursive(path, &dest).and_then(|_| std::fs::remove_dir_all(path))
+        {
+            return Err(CoreError::failed_fix(
+                format!("Could not move project folder to {excluded_folder_name}."),
+                format!(
+                    "Moving {} to {} failed: rename error ({e}), copy error ({copy_err})",
+                    path.display(),
+                    dest.display()
+                ),
+                "Ensure no running process or editor is holding a lock on the project files.",
+            ));
+        }
+    }
+    Ok(dest)
+}
 
 fn has_index(dir: &Path) -> bool {
     ["index.php", "index.html", "index.htm"]

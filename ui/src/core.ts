@@ -645,6 +645,8 @@ export type CoreCommand =
   | { type: 'list_projects' }
   | { type: 'sync_auto_domains' }
   | { type: 'remove_project'; id: string }
+  | { type: 'delete_project'; id: string }
+  | { type: 'rename_ignored_folder'; old_name: string; new_name: string }
   | { type: 'list_deleted_items' }
   | { type: 'forget_deleted_item'; value: string }
   | { type: 'clear_deleted_items' }
@@ -679,9 +681,11 @@ export type CoreCommand =
   | { type: 'add_domain'; domain: Domain }
   | { type: 'update_domain'; domain: Domain }
   | { type: 'remove_domain'; hostname: string }
+  | { type: 'delete_site'; hostname: string }
   | { type: 'set_domain_enabled'; hostname: string; enabled: boolean }
   | { type: 'bulk_set_domains_enabled'; hostnames: string[]; enabled: boolean }
   | { type: 'bulk_remove_domains'; hostnames: string[] }
+  | { type: 'bulk_delete_sites'; hostnames: string[] }
   | { type: 'bulk_set_domain_server'; hostnames: string[]; server: string | null }
   | { type: 'duplicate_domain'; hostname: string; new_hostname: string }
   | { type: 'rename_domain'; hostname: string; new_hostname: string }

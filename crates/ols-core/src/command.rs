@@ -142,6 +142,16 @@ pub enum CoreCommand {
     RemoveProject {
         id: String,
     },
+    /// Deletes a project by moving its folder into an `excluded_sites` folder
+    /// in the same directory instead of permanently deleting it.
+    DeleteProject {
+        id: String,
+    },
+    /// Renames a folder in the ignored list and renames matching folders in root directories.
+    RenameIgnoredFolder {
+        old_name: String,
+        new_name: String,
+    },
     /// The deletion history shown in Settings: project folders and automatic sites the
     /// user deleted, newest first. Empty when nothing has been deleted.
     ListDeletedItems,
@@ -281,6 +291,11 @@ pub enum CoreCommand {
     RemoveDomain {
         hostname: String,
     },
+    /// Deletes a site by moving its project folder into an `excluded_sites` folder
+    /// in the same directory instead of permanently deleting it.
+    DeleteSite {
+        hostname: String,
+    },
     SetDomainEnabled {
         hostname: String,
         enabled: bool,
@@ -295,6 +310,10 @@ pub enum CoreCommand {
     /// Deletes a group of sites in one go. Destructive: it skips the built-in home site
     /// and names it in the response rather than refusing the batch.
     BulkRemoveDomains {
+        hostnames: Vec<String>,
+    },
+    /// Deletes a group of sites by moving their folders into `excluded_sites` in their respective directories.
+    BulkDeleteSites {
         hostnames: Vec<String>,
     },
     /// Pins a group of sites to one web server, or puts them all back on the default
@@ -1858,28 +1877,34 @@ impl Core {
                 version: env!("CARGO_PKG_VERSION").to_string(),
             }),
             C::GetSetting { key } => {
-                let value = if key == "paths.sites_dir" {
-                    Some(serde_json::Value::String(
-                        i.sites_dir().display().to_string(),
-                    ))
-                } else if key == "paths.backups_dir" {
-                    // The folder exports land in by default, resolved rather than
-                    // concatenated in the UI: it follows a moved or portable install, and
-                    // the answer is the one `backups_dir` actually uses.
-                    Some(serde_json::Value::String(
-                        i.paths.backups_dir().display().to_string(),
-                    ))
-                } else if key == "quickapps.projects_dir" {
-                    // Answer with the folder it resolves to, never the stored form: the
-                    // UI shows this value in a text input and offers it as the parent for
-                    // a new project, so a stored `sites/shop` would be shown to the user
-                    // as if it were a path on disk.
-                    Some(serde_json::Value::String(
-                        i.default_projects_dir().display().to_string(),
-                    ))
-                } else {
-                    i.settings.lock().unwrap().get(&key).cloned()
-                };
+                let value =
+                    if key == "paths.sites_dir" {
+                        Some(serde_json::Value::String(
+                            i.sites_dir().display().to_string(),
+                        ))
+                    } else if key == "paths.backups_dir" {
+                        // The folder exports land in by default, resolved rather than
+                        // concatenated in the UI: it follows a moved or portable install, and
+                        // the answer is the one `backups_dir` actually uses.
+                        Some(serde_json::Value::String(
+                            i.paths.backups_dir().display().to_string(),
+                        ))
+                    } else if key == "quickapps.projects_dir" {
+                        // Answer with the folder it resolves to, never the stored form: the
+                        // UI shows this value in a text input and offers it as the parent for
+                        // a new project, so a stored `sites/shop` would be shown to the user
+                        // as if it were a path on disk.
+                        Some(serde_json::Value::String(
+                            i.default_projects_dir().display().to_string(),
+                        ))
+                    } else if key == crate::app::PROJECT_IGNORED_FOLDERS {
+                        let s = i.settings.lock().unwrap();
+                        Some(s.get(&key).cloned().unwrap_or_else(|| {
+                            serde_json::json!(crate::app::DEFAULT_IGNORED_FOLDERS)
+                        }))
+                    } else {
+                        i.settings.lock().unwrap().get(&key).cloned()
+                    };
                 Ok(R::Setting { value, key })
             }
             C::SetSetting { key, value } => {
@@ -2066,7 +2091,8 @@ impl Core {
                 if !root.is_dir() {
                     return Err(CoreError::InvalidProjectPath(path));
                 }
-                let candidates = crate::detection::scan_for_projects(&root);
+                let ignored = i.ignored_folders();
+                let candidates = crate::detection::scan_for_projects_with_ignored(&root, &ignored);
                 // Read the skips before taking the project store, then judge every candidate
                 // the same way the watcher does: a folder the user deleted stays deleted
                 // whichever path spelling this scan happened to walk.
@@ -2104,6 +2130,14 @@ impl Core {
             }
             C::RemoveProject { id } => {
                 i.remove_project(&id)?;
+                Ok(R::Ok)
+            }
+            C::DeleteProject { id } => {
+                i.delete_project(&id)?;
+                Ok(R::Ok)
+            }
+            C::RenameIgnoredFolder { old_name, new_name } => {
+                i.rename_ignored_folder(&old_name, &new_name)?;
                 Ok(R::Ok)
             }
             C::ListDeletedItems => Ok(R::DeletedItems {
@@ -2461,6 +2495,10 @@ impl Core {
                 i.remove_domain(&hostname)?;
                 Ok(R::Ok)
             }
+            C::DeleteSite { hostname } => {
+                i.delete_site(&hostname)?;
+                Ok(R::Ok)
+            }
             C::SetDomainEnabled { hostname, enabled } => {
                 i.set_domain_enabled(&hostname, enabled)?;
                 Ok(R::Ok)
@@ -2480,6 +2518,14 @@ impl Core {
             C::BulkRemoveDomains { hostnames } => {
                 tracing::info!(command = "bulk_remove_domains", sites = hostnames.len());
                 let out = i.remove_domains(&hostnames)?;
+                Ok(R::Bulk {
+                    changed: out.changed,
+                    skipped: out.skipped,
+                })
+            }
+            C::BulkDeleteSites { hostnames } => {
+                tracing::info!(command = "bulk_delete_sites", sites = hostnames.len());
+                let out = i.delete_sites(&hostnames)?;
                 Ok(R::Bulk {
                     changed: out.changed,
                     skipped: out.skipped,
@@ -5200,5 +5246,59 @@ mod tests {
             }
             _ => panic!(),
         }
+    }
+
+    #[test]
+    fn delete_site_moves_folder_to_excluded_sites() {
+        let (core, _home) = test_core();
+        let tmp = tempfile::tempdir().unwrap();
+        let project_dir = tmp.path().join("my-site");
+        std::fs::create_dir_all(&project_dir).unwrap();
+        std::fs::write(project_dir.join("index.html"), "<h1>Hello</h1>").unwrap();
+
+        let project = match core
+            .dispatch(CoreCommand::RegisterProject {
+                path: project_dir.display().to_string(),
+            })
+            .unwrap()
+        {
+            CoreResponse::Project { project } => project,
+            _ => panic!("expected Project"),
+        };
+
+        let hostname = "test-site.local".to_string();
+        core.dispatch(CoreCommand::AddDomain {
+            domain: crate::domain::Domain {
+                hostname: hostname.clone(),
+                project_id: Some(project.id.clone()),
+                root: project_dir.display().to_string(),
+                kind: crate::domain::SiteKind::Static,
+                https: false,
+                redirect_https: false,
+                wildcard: false,
+                enabled: true,
+                ownership: Default::default(),
+                app: None,
+                blocks: Default::default(),
+                generated_hashes: Default::default(),
+                public_domain: None,
+                tunnel_id: None,
+                server: None,
+                path_prefix: None,
+            },
+        })
+        .unwrap();
+
+        assert!(project_dir.exists());
+        core.dispatch(CoreCommand::DeleteSite {
+            hostname: hostname.clone(),
+        })
+        .unwrap();
+
+        // Project folder was moved into excluded_sites in the same directory
+        assert!(!project_dir.exists());
+        let excluded_dir = tmp.path().join("excluded_sites").join("my-site");
+        assert!(excluded_dir.exists());
+        assert!(excluded_dir.join("index.html").exists());
     }
 }
