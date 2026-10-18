@@ -1,4 +1,4 @@
-import { ArrowLeftRight, Blocks, FileCode2, Layers, Package, Wrench } from 'lucide-react'
+import { ArrowLeftRight, Blocks, FileCode2, FolderCode, Layers, Package, Wrench } from 'lucide-react'
 import type { ReactNode } from 'react'
 import {
   type SimpleIcon,
@@ -209,6 +209,8 @@ const GENERIC: Record<string, ReactNode> = {
   proxy: <ArrowLeftRight />,
   'reverse-proxy': <ArrowLeftRight />,
   other: <Package />,
+  none: <FolderCode className="text-muted-foreground/80" />,
+  'no-domain': <FolderCode className="text-muted-foreground/80" />,
   memcached: MEMCACHED_MARK,
   pgadmin: PGADMIN,
   heidisql: HEIDISQL,
