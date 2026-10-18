@@ -46,7 +46,7 @@ const GROUPS: { id: Group; label: string; icon: string }[] = [
   { id: 'python', label: 'Python', icon: 'python' },
   { id: 'static', label: 'Static HTML', icon: 'static' },
   { id: 'proxy', label: 'Reverse proxy', icon: 'proxy' },
-  { id: 'none', label: 'No domain', icon: 'static' },
+  { id: 'none', label: 'No domain', icon: 'none' },
 ]
 
 const groupOf = (r: Row): Group => r.site?.group ?? 'none'
@@ -814,9 +814,12 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                                 </span>
                               </>
                             ) : (
-                              <span className="truncate" title={folder}>
-                                no domain yet · {folder}
-                              </span>
+                              <>
+                                <TechIcon id="none" className="size-3.5 shrink-0 text-muted-foreground/75" />
+                                <span className="truncate" title={folder}>
+                                  no domain yet · {folder}
+                                </span>
+                              </>
                             )}
                           </div>
                         </div>

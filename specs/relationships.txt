@@ -23,8 +23,11 @@ Inner::project_detail | snapshots | SettingsService + CustomInstallStore (clones
 Inner | locks_via | app::lock (poisoned guard recovered, not unwrapped: one panic while a lock was held used to make every later read panic for the rest of the session)
 Inner | owns | deletion history over settings projects.removed + domains.auto_skip (list_deleted_items / forget_deleted_item / clear_deleted_items)
 Inner::skip_matches | decides | project-scoped: watcher sync, sync_auto_domains and scan_and_register_projects all ask it, comparing the raw path and its canonicalized form against a skip entry so a deleted folder cannot be re-registered through another path spelling
-ExcludedSitesCard | reads | list_deleted_items, writes via forget_deleted_item{value} / clear_deleted_items (no dialog per row; Clear all confirmed)
+Inner::delete_site / delete_project / delete_sites | moves | site/project directory to <parent>/excluded_sites/<folder> (with -1, -2 suffix on collision), revokes certificates, bounces web server, and removes domain/project from the store
+Inner::ignored_folders / rename_ignored_folder | controls | folder names ignored by detection and auto domain sync (default ["excluded_sites"]); rename updates setting and renames disk folders across configured roots
+ExcludedSitesCard | reads | list_deleted_items, writes via forget_deleted_item{value} / clear_deleted_items (no dialog per row; Clear all confirmed; labelled Hide/Exclude)
 ExcludedSitesCard | clears_entry_means | the next scan_and_register_projects or sync_auto_domains re-registers — the card never re-adds anything itself, and no command here deletes files
+IgnoredFoldersCard | manages | projects.ignored_folders setting (add, remove, rename via rename_ignored_folder, reset to default excluded_sites)
 Inner | uses | ServiceManager
 Inner | uses | WebManager
 Inner | uses | DomainStore
@@ -98,9 +101,10 @@ WebConfig | resolves | Domain.server -> resolved_server(domain, cfg)
 SitesPage | uses | UseWeb hook
 SitesPage | uses | ConfirmAction (the dialog title names the site or project; the destructive button repeats the action)
 SitesPage | filters rows by | Enabled (default), Disabled, website type, or All (last); status filters include sites only, and search falls back to All when the current filter has no match
-UseWeb.deleteSite | uses | remove_domain + apply_web (row removed optimistically, apply run behind an `applying` flag)
-SitesPage | uses | Checkbox (one per row, site or not) and Pagination (page controls only; the caller owns `page`/`perPage` and the slice)
-UseWeb.runBulk | uses | bulk_set_domains_enabled / bulk_set_domain_server / bulk_remove_domains + ONE apply_web (one backend call and one repaint for the whole batch, so forty sites render the config once, not forty times)
+UseWeb.deleteSite / deleteSites / deleteProject | uses | delete_site / bulk_delete_sites / delete_project (moves project folder to excluded_sites/, row removed optimistically, apply run behind an `applying` flag)
+UseWeb.hideSite / hideSites / hideProjectFromList | uses | remove_domain / bulk_remove_domains / remove_project (leaves files untouched on disk, adds to skip lists)
+SitesPage | uses | Checkbox (one per row, site or not) and Pagination (page controls only; the caller owns `page`/`perPage` and the slice); renders subtle FolderCode icon for projects without a domain
+UseWeb.runBulk | uses | bulk_set_domains_enabled / bulk_set_domain_server / bulk_delete_sites / bulk_remove_domains + ONE apply_web (one backend call and one repaint for the whole batch, so forty sites render the config once, not forty times)
 Inner.set_domains_enabled / set_domain_servers / remove_domains | uses | DomainStore.bulk_set_enabled / bulk_set_server / bulk_remove (one store write per batch; `remove_domains` goes through the single-site `remove_domain` so the cert, skip-list and project-orphaning rules are unchanged)
 Inner.sync_auto_domains | uses | hosts::ensure (a site whose name does not resolve is not a working site, so new hostnames go into the hosts file too; names the built-in DNS already answers for are left out, and `ensure` returns early when everything is already listed)
 Inner.reload_external_changes | reads | db.changed_externally (the `db.last_writer` process id) and re-loads ProjectStore + DomainStore + SettingsService, then re-runs sync_auto_domains — this is how a site added by the Explorer right-click menu or the `ols` command line reaches the running app without a restart

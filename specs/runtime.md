@@ -1,7 +1,7 @@
 # RUNTIME
 
 ## Files to Process
-Total meaningful source files: 227 (excluding target/, node_modules/, .git/, dist/, data/services/postgres runtime data, icon bulk).
+Total meaningful source files: 228 (excluding target/, node_modules/, .git/, dist/, data/services/postgres runtime data, icon bulk).
 
 ### Rust core (crates/ols-core/src, 79 files)
 - src/lib.rs, app.rs, command.rs, control.rs, api.rs, paths.rs, settings.rs, secrets.rs, db.rs
@@ -27,7 +27,7 @@ Total meaningful source files: 227 (excluding target/, node_modules/, .git/, dis
 - src/components/layout/Sidebar.tsx, layout/Titlebar.tsx, CommandPalette.tsx, ConfirmHost.tsx, ai/AiHost.tsx, ai/AiButton.tsx, ai/AiSettings.tsx
 - src/components/site/SiteDialog.tsx, site/DomainDialog.tsx, site/ServersPanel.tsx, site/SiteLogs.tsx, site/HtaccessEditor.tsx, site/WebApply.tsx, site/SiteBundle.tsx
 - src/components/project/EnvironmentPanel.tsx, project/GitPanel.tsx, project/LoadPanel.tsx, project/ProjectCommands.tsx, project/ProjectImports.tsx, project/RepairPanel.tsx, project/SnapshotsPanel.tsx, project/WorkersPanel.tsx
-- src/components/ProjectTools.tsx, ReleaseCards.tsx, SettingsExtras.tsx, ExcludedSitesCard.tsx, CustomServices.tsx, DiagnosticsCard.tsx, DoctorDialog.tsx, EnvEditor.tsx, CodeEditor.tsx, Terminal.tsx, SystemMonitor.tsx, MigrateDialog.tsx, OpenWithMenu.tsx, PhpExtensionsDialog.tsx, XdebugDialog.tsx, ErrorCard.tsx, Spinner.tsx, StopIcon.tsx, TechIcon.tsx, TasksPanel.tsx, SaveButton.tsx
+- src/components/ProjectTools.tsx, ReleaseCards.tsx, SettingsExtras.tsx, ExcludedSitesCard.tsx, IgnoredFoldersCard.tsx, CustomServices.tsx, DiagnosticsCard.tsx, DoctorDialog.tsx, EnvEditor.tsx, CodeEditor.tsx, Terminal.tsx, SystemMonitor.tsx, MigrateDialog.tsx, OpenWithMenu.tsx, PhpExtensionsDialog.tsx, XdebugDialog.tsx, ErrorCard.tsx, Spinner.tsx, StopIcon.tsx, TechIcon.tsx, TasksPanel.tsx, SaveButton.tsx
 - src/components/ui/button.tsx, card.tsx, dialog.tsx, input.tsx, form.tsx, table.tsx, menu.tsx, switch.tsx, badge.tsx, checkbox.tsx, pagination.tsx
 - src/lib/ai.ts, confirm.ts, hooks.ts, nav.ts, theme.tsx, utils.ts, wait.ts, web.ts
 
@@ -50,7 +50,10 @@ ui/src/pages/Sites.tsx processed 2026-10-18; Files Processed is now 226, matchin
 
 release-notes/v2.1.0.md added 2026-10-18; Files Processed is now 227, matching Files to Process.
 
+ui/src/components/IgnoredFoldersCard.tsx added 2026-10-18; Files Processed is now 228, matching Files to Process.
+
 ## Log
+- [2026-10-18] feat(sites,settings): added move-to-excluded_sites deletion, configurable ignored folders, renamed existing skip-list deletion to Hide/Exclude, and added subtle FolderCode icon for domain-less projects. Deleting a site or project folder moves it to `<parent>/excluded_sites/<folder>` (collision-avoiding with numeric suffixes), revokes certs, and removes records from the database. Configurable ignored folders (`projects.ignored_folders`, default `["excluded_sites"]`) skips matching directories during scans and domain sync, with add, remove, and rename controls (renaming updates disk directories across configured roots). The existing delete method leaving files untouched is renamed to Hide/Exclude in Sites and Settings. Domain-less projects now render a subtle `FolderCode` icon instead of the HTML5 brand logo. Updated release-notes/v2.1.0.md and CHANGELOG.md. Verified with `cd ui && npm run lint && npm run build` and `cargo fmt --all`. Files Processed 227 -> 228.
 - [2026-10-18] chore(release): version 2.1.0, a feature release for the Sites status filters and Caddy admin-port conflict fix. Added `release-notes/v2.1.0.md`, the CHANGELOG section, and updated the four version sources together: workspace `Cargo.toml`, the four workspace package entries in `Cargo.lock`, Tauri config, and README badge. No IPC command or data model changed. Verified with `cargo fmt --all --check` and `cargo metadata --locked --format-version 1 --no-deps`. Files Processed 226 -> 227.
 - [2026-10-18] fix(caddy): Caddy startup could fail before binding its site ports when another process already held OLS's fixed admin endpoint at `127.0.0.1:20019`. The endpoint is now a stable localhost port derived from the Caddy install prefix, and the generated config plus reload and stop commands share that address, allowing separate Caddy installs to coexist. Regression test verifies address stability, per-install separation, and lifecycle-command consistency. Updated catalog and full documentation. No IPC or data model change; Files Processed remains 226. Verified with `cargo fmt --all` and the focused Caddy tests.
 - [2026-10-18] polish(ui): added a sky-blue list icon to the Sites page's All tab. Updated its UI documentation/catalog. Behavior and data model unchanged. Verified with `cd ui; npm run build`. Files Processed remains 226.

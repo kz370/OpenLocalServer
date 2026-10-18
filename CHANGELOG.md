@@ -10,6 +10,10 @@ and the project follows [Semantic Versioning](https://semver.org/).
 Feature release. Full notes: [`release-notes/v2.1.0.md`](./release-notes/v2.1.0.md).
 
 ### Added
+- Deleting a site or project now moves its folder into an `excluded_sites` subfolder in the same directory (with automated collision resolution) instead of permanent deletion.
+- Configurable ignored folders (`projects.ignored_folders`, default `["excluded_sites"]`) in Settings with add, remove, and rename options (renaming updates disk directories across project roots).
+- Renamed the existing skip-list delete method to **Hide/Exclude** in Sites and Settings.
+- Subtle `FolderCode` icon for projects with no domain yet instead of the HTML5 brand logo.
 - The Sites page opens on **Enabled** and adds a **Disabled** tab, followed by site-type filters and **All**. Status counts follow search, and site status changes move rows to the corresponding tab immediately.
 - Enabled, Disabled, and All tabs have distinct colored icons for quick recognition.
 
