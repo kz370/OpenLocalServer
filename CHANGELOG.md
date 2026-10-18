@@ -5,6 +5,17 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.1.0] — 2026-10-18
+
+Feature release. Full notes: [`release-notes/v2.1.0.md`](./release-notes/v2.1.0.md).
+
+### Added
+- The Sites page opens on **Enabled** and adds a **Disabled** tab, followed by site-type filters and **All**. Status counts follow search, and site status changes move rows to the corresponding tab immediately.
+- Enabled, Disabled, and All tabs have distinct colored icons for quick recognition.
+
+### Fixed
+- Caddy no longer depends on the shared fixed admin port `127.0.0.1:20019`. It uses a stable localhost admin address derived from its install path for startup, reload, and stop, avoiding conflicts with other Caddy instances.
+
 ## [2.0.2] — 2026-10-10
 
 Patch release. Full notes: [`release-notes/v2.0.2.md`](./release-notes/v2.0.2.md).

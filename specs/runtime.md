@@ -1,7 +1,7 @@
 # RUNTIME
 
 ## Files to Process
-Total meaningful source files: 226 (excluding target/, node_modules/, .git/, dist/, data/services/postgres runtime data, icon bulk).
+Total meaningful source files: 227 (excluding target/, node_modules/, .git/, dist/, data/services/postgres runtime data, icon bulk).
 
 ### Rust core (crates/ols-core/src, 79 files)
 - src/lib.rs, app.rs, command.rs, control.rs, api.rs, paths.rs, settings.rs, secrets.rs, db.rs
@@ -48,7 +48,10 @@ All 217 files listed above processed via 4 parallel analysis agents (rust-core, 
 
 ui/src/pages/Sites.tsx processed 2026-10-18; Files Processed is now 226, matching Files to Process.
 
+release-notes/v2.1.0.md added 2026-10-18; Files Processed is now 227, matching Files to Process.
+
 ## Log
+- [2026-10-18] chore(release): version 2.1.0, a feature release for the Sites status filters and Caddy admin-port conflict fix. Added `release-notes/v2.1.0.md`, the CHANGELOG section, and updated the four version sources together: workspace `Cargo.toml`, the four workspace package entries in `Cargo.lock`, Tauri config, and README badge. No IPC command or data model changed. Verified with `cargo fmt --all --check` and `cargo metadata --locked --format-version 1 --no-deps`. Files Processed 226 -> 227.
 - [2026-10-18] fix(caddy): Caddy startup could fail before binding its site ports when another process already held OLS's fixed admin endpoint at `127.0.0.1:20019`. The endpoint is now a stable localhost port derived from the Caddy install prefix, and the generated config plus reload and stop commands share that address, allowing separate Caddy installs to coexist. Regression test verifies address stability, per-install separation, and lifecycle-command consistency. Updated catalog and full documentation. No IPC or data model change; Files Processed remains 226. Verified with `cargo fmt --all` and the focused Caddy tests.
 - [2026-10-18] polish(ui): added a sky-blue list icon to the Sites page's All tab. Updated its UI documentation/catalog. Behavior and data model unchanged. Verified with `cd ui; npm run build`. Files Processed remains 226.
 - [2026-10-18] polish(ui): colored the Sites status-tab icons green for Enabled and red for Disabled. Updated the corresponding UI documentation/catalog. Behavior and data model unchanged. Files Processed remains 226.
