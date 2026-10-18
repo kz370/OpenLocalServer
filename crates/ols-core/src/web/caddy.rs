@@ -11,8 +11,16 @@ use super::{
 
 pub struct Caddy;
 
-/// Not Caddy's default 2019, which other tools (and a second Caddy) commonly hold.
-const ADMIN_ADDR: &str = "127.0.0.1:20019";
+/// Give each OLS install its own stable admin port: a fixed port conflicts with any other
+/// Caddy instance on the machine, while reload and stop need to find this server again.
+fn admin_addr(layout: &ServerLayout) -> String {
+    let path = layout.prefix.to_string_lossy().to_lowercase();
+    let hash = path.bytes().fold(0x811c_9dc5_u32, |hash, byte| {
+        (hash ^ u32::from(byte)).wrapping_mul(0x0100_0193)
+    });
+    let port = 30_000 + (hash % 20_000) as u16;
+    format!("127.0.0.1:{port}")
+}
 
 impl Caddy {
     fn invocation(layout: &ServerLayout, sub: &[&str]) -> Invocation {
@@ -52,7 +60,7 @@ impl WebServer for Caddy {
         out.push_str(&format!("    https_port {}\n", ports.https));
         out.push_str("    default_bind 127.0.0.1\n");
         out.push_str("    auto_https off\n");
-        out.push_str(&format!("    admin {ADMIN_ADDR}\n"));
+        out.push_str(&format!("    admin {}\n", admin_addr(layout)));
         out.push_str(&format!(
             "    log {{\n        output file \"{}\"\n        level WARN\n    }}\n",
             cfg_path(&layout.logs_dir.join("error.log"))
@@ -174,15 +182,15 @@ impl WebServer for Caddy {
     fn reload(&self, layout: &ServerLayout) -> Option<Invocation> {
         let mut inv = Self::invocation(layout, &["reload"]);
         inv.args
-            .extend(["--address".to_string(), ADMIN_ADDR.to_string()]);
+            .extend(["--address".to_string(), admin_addr(layout)]);
         Some(inv)
     }
-    fn stop(&self, _layout: &ServerLayout) -> Option<Invocation> {
+    fn stop(&self, layout: &ServerLayout) -> Option<Invocation> {
         Some(Invocation {
             args: vec![
                 "stop".to_string(),
                 "--address".to_string(),
-                ADMIN_ADDR.to_string(),
+                admin_addr(layout),
             ],
             cwd: PathBuf::from("."),
         })
@@ -367,6 +375,8 @@ mod tests {
         assert!(cfg.contains("auto_https off"));
         assert!(cfg.contains("default_bind 127.0.0.1"));
         assert!(cfg.contains("http_port 8080"));
+        assert!(cfg.contains(&format!("admin {}\n", admin_addr(&layout))));
+        assert_ne!(admin_addr(&layout), "127.0.0.1:20019");
         assert!(cfg.contains("import \"C:/ols/web/caddy/sites/*.caddy\""));
     }
 
@@ -383,5 +393,39 @@ mod tests {
         let v = Caddy.validate(&layout);
         assert_eq!(v.args[0], "validate");
         assert!(v.args.contains(&"caddyfile".to_string()));
+    }
+
+    #[test]
+    fn caddy_admin_address_is_stable_per_install_and_used_by_lifecycle_commands() {
+        let layout = ServerLayout {
+            install_dir: "C:/caddy".into(),
+            prefix: "C:/ols/web/caddy".into(),
+            sites_dir: "C:/ols/web/caddy/sites".into(),
+            custom_dir: "C:/ols/web/caddy/custom".into(),
+            logs_dir: "C:/ols/web/caddy/logs".into(),
+            binary: "C:/caddy/caddy.exe".into(),
+        };
+        let expected = admin_addr(&layout);
+        assert_eq!(admin_addr(&layout), expected);
+        assert!(Caddy
+            .reload(&layout)
+            .unwrap()
+            .args
+            .ends_with(&["--address".to_string(), expected.clone(),]));
+        assert!(Caddy
+            .stop(&layout)
+            .unwrap()
+            .args
+            .ends_with(&["--address".to_string(), expected.clone(),]));
+
+        let other_install = ServerLayout {
+            install_dir: "C:/caddy".into(),
+            prefix: "D:/another-ols/web/caddy".into(),
+            sites_dir: "D:/another-ols/web/caddy/sites".into(),
+            custom_dir: "D:/another-ols/web/caddy/custom".into(),
+            logs_dir: "D:/another-ols/web/caddy/logs".into(),
+            binary: "C:/caddy/caddy.exe".into(),
+        };
+        assert_ne!(admin_addr(&layout), admin_addr(&other_install));
     }
 }
