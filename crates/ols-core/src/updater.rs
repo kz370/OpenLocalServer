@@ -24,6 +24,8 @@ use crate::error::CoreError;
 const KEY: &str = "updater";
 const DEFAULT_ENDPOINT: &str =
     "https://github.com/kz370/OpenLocalServer/releases/latest/download/latest.json";
+pub const DEFAULT_PUBKEY: &str =
+    "RWQTa5rn3AFu8SRjdSvz7VsUi/pRNNdk2FPuCbmgSZMV+veJMB9XCiys";
 const MAX_INSTALLER: usize = 600 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -172,7 +174,12 @@ impl Inner {
     fn update_key(&self) -> String {
         let s = self.updater_settings();
         if s.public_key.trim().is_empty() {
-            option_env!("OLS_UPDATE_PUBKEY").unwrap_or("").to_string()
+            let compiled = option_env!("OLS_UPDATE_PUBKEY").unwrap_or("");
+            if !compiled.trim().is_empty() {
+                compiled.to_string()
+            } else {
+                DEFAULT_PUBKEY.to_string()
+            }
         } else {
             s.public_key
         }

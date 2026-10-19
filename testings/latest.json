@@ -1,0 +1,17 @@
+{
+  "version": "99.9.9",
+  "notes": "Test update \u2014 fake release for update flow testing.",
+  "pub_date": "2026-10-19",
+  "platforms": {
+    "windows-x86_64": {
+      "url": "https://reconstruction-manitoba-loved-trusted.trycloudflare.com/fake-installer.exe",
+      "sha256": "62e7b2bc8febe456ce94f1a287bdbada1541a82a01153e450280f25b3c11b40c",
+      "size": 223232
+    },
+    "windows-aarch64": {
+      "url": "https://reconstruction-manitoba-loved-trusted.trycloudflare.com/fake-installer.exe",
+      "sha256": "62e7b2bc8febe456ce94f1a287bdbada1541a82a01153e450280f25b3c11b40c",
+      "size": 223232
+    }
+  }
+}

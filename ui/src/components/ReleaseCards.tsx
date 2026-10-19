@@ -1,5 +1,5 @@
 import { save } from '@tauri-apps/plugin-dialog'
-import { ArrowDownToLine, BookOpen, CheckCircle, Copy, Download, ExternalLink, FileText, KeyRound, RefreshCw, Rocket, ShieldCheck, TerminalSquare, Wifi } from 'lucide-react'
+import { ArrowDownToLine, BookOpen, CheckCircle, Copy, Download, ExternalLink, FileText, KeyRound, RefreshCw, Rocket, Settings2, ShieldCheck, TerminalSquare, Wifi } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, Select } from '@/components/ui/form'
-import { NumberInput } from '@/components/ui/input'
+import { Input, NumberInput } from '@/components/ui/input'
 import { type ApiStatus, type NetworkStatus, type ShellMenuStatus, type UpdateInfo, type UpdaterStatus, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
 import { useAction } from '@/lib/hooks'
@@ -144,8 +144,14 @@ export function ApiCard() {
  *  unless the signature matches. The public key must be compiled in (OLS_UPDATE_PUBKEY)
  *  or entered in Settings for a check to succeed. */
 export function UpdatesCard() {
+  const DEFAULT_ENDPOINT = 'https://github.com/kz370/OpenLocalServer/releases/latest/download/latest.json'
+  const DEFAULT_PUBKEY = 'RWQTa5rn3AFu8SRjdSvz7VsUi/pRNNdk2FPuCbmgSZMV+veJMB9XCiys'
+
   const [status, setStatus] = useState<UpdaterStatus | null>(null)
   const [info, setInfo] = useState<UpdateInfo | null>(null)
+  const [showConfig, setShowConfig] = useState(false)
+  const [endpointInput, setEndpointInput] = useState('')
+  const [publicKeyInput, setPublicKeyInput] = useState('')
   const { busy, error, setError, run } = useAction()
 
   const RELEASES_URL = 'https://github.com/kz370/OpenLocalServer/releases/latest'
@@ -156,7 +162,9 @@ export function UpdatesCard() {
       .then((r) => {
         if (r.type === 'updater_status') {
           setStatus(r.status)
-          if (r.status.last) setInfo(r.status.last)
+          setEndpointInput(r.status.settings.endpoint || DEFAULT_ENDPOINT)
+          setPublicKeyInput(r.status.settings.public_key || DEFAULT_PUBKEY)
+          setInfo(r.status.last ?? null)
         }
       })
       .catch(setError)
@@ -164,6 +172,7 @@ export function UpdatesCard() {
 
   const checkForUpdates = () =>
     run('check', async () => {
+      setError(null)
       const r = await runCommand({ type: 'check_update' })
       if (r.type === 'update') {
         setInfo(r.update)
@@ -172,6 +181,7 @@ export function UpdatesCard() {
 
   const downloadUpdate = () =>
     run('download', async () => {
+      setError(null)
       const r = await runCommand({ type: 'download_update' })
       if (r.type === 'update') setInfo(r.update)
     })
@@ -188,6 +198,40 @@ export function UpdatesCard() {
     })
   }
 
+  const saveSettings = () =>
+    run('save_settings', async () => {
+      setError(null)
+      const r = await runCommand({
+        type: 'set_updater_settings',
+        endpoint: endpointInput.trim() || DEFAULT_ENDPOINT,
+        public_key: publicKeyInput.trim() || DEFAULT_PUBKEY,
+      })
+      if (r.type === 'updater_status') {
+        setStatus(r.status)
+        setEndpointInput(r.status.settings.endpoint)
+        setPublicKeyInput(r.status.settings.public_key)
+        setInfo(r.status.last ?? null)
+        setShowConfig(false)
+      }
+    })
+
+  const resetSettings = () =>
+    run('save_settings', async () => {
+      setError(null)
+      const r = await runCommand({
+        type: 'set_updater_settings',
+        endpoint: DEFAULT_ENDPOINT,
+        public_key: DEFAULT_PUBKEY,
+      })
+      if (r.type === 'updater_status') {
+        setStatus(r.status)
+        setEndpointInput(DEFAULT_ENDPOINT)
+        setPublicKeyInput(DEFAULT_PUBKEY)
+        setInfo(null)
+        setShowConfig(false)
+      }
+    })
+
   const fmt = (bytes: number) => {
     if (bytes === 0) return ''
     const mb = bytes / 1024 / 1024
@@ -202,9 +246,13 @@ export function UpdatesCard() {
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
           <Download className="size-4" /> Updates
-          {info && !info.available && <Badge variant="success">Up to date</Badge>}
-          {hasUpdate && !isDownloaded && <Badge variant="warning">Update available</Badge>}
-          {hasUpdate && isDownloaded && <Badge variant="warning">Ready to install</Badge>}
+          {isDownloaded ? (
+            <Badge variant="success">Ready to install</Badge>
+          ) : hasUpdate ? (
+            <Badge variant="warning">Update available</Badge>
+          ) : info && !info.available ? (
+            <Badge variant="success">Up to date</Badge>
+          ) : null}
         </CardTitle>
         <CardDescription>
           {status ? `Current version: v${status.current}` : 'New versions, installers and checksums are published on the releases page.'}
@@ -213,28 +261,90 @@ export function UpdatesCard() {
       <CardContent className="flex flex-col gap-4">
         <ErrorCard error={error} onDismiss={() => setError(null)} />
 
-
-        {/* Update available banner */}
-        {hasUpdate && info && (
-          <div className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
-            <p className="font-medium text-warning">v{info.latest} is available{fmt(info.size)}</p>
-            {info.date && <p className="mt-0.5 text-muted-foreground">Released {info.date}</p>}
-            {info.notes && <p className="mt-1 text-foreground/80">{info.notes}</p>}
+        {/* When downloaded and verified: show ONE unified ready banner */}
+        {isDownloaded && info && (
+          <div className="rounded-lg border border-success/40 bg-success/10 p-3.5 text-sm">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="size-4 shrink-0 text-success" />
+                <span className="font-semibold text-success">
+                  v{info.latest} is verified and ready to install
+                </span>
+                <span className="text-xs text-muted-foreground">{fmt(info.size)}</span>
+              </div>
+              {info.date && <span className="text-xs text-muted-foreground">Released {info.date}</span>}
+            </div>
+            {info.notes && <p className="mt-2 text-xs leading-relaxed text-foreground/80">{info.notes}</p>}
           </div>
         )}
 
-        {/* Up-to-date banner */}
-        {info && !info.available && (
+        {/* When update available but NOT yet downloaded: show ONE available banner */}
+        {hasUpdate && !isDownloaded && info && (
+          <div className="rounded-lg border border-warning/40 bg-warning/10 p-3.5 text-sm">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ArrowDownToLine className="size-4 shrink-0 text-warning" />
+                <span className="font-semibold text-warning">v{info.latest} is available</span>
+                <span className="text-xs text-muted-foreground">{fmt(info.size)}</span>
+              </div>
+              {info.date && <span className="text-xs text-muted-foreground">Released {info.date}</span>}
+            </div>
+            {info.notes && <p className="mt-2 text-xs leading-relaxed text-foreground/80">{info.notes}</p>}
+          </div>
+        )}
+
+        {/* Up-to-date banner (only when checked and no update is available) */}
+        {info && !info.available && !hasUpdate && (
           <div className="flex items-center gap-2 text-sm text-success">
             <CheckCircle className="size-4" />
             You are on the latest version (v{info.latest}).
           </div>
         )}
 
-        {/* Downloaded, ready to install */}
-        {isDownloaded && (
-          <div className="rounded-md border border-success/40 bg-success/10 p-3 text-sm text-success">
-            Installer downloaded and verified. Ready to install v{info?.latest}.
+        {/* Source configuration panel */}
+        {showConfig && (
+          <div className="flex flex-col gap-3 rounded-lg border border-border/70 bg-accent/20 p-3.5 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="font-medium text-foreground">Update Source Settings</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={resetSettings}
+                disabled={busy !== null}
+              >
+                Reset to default
+              </Button>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs text-muted-foreground" htmlFor="updater-endpoint">
+                Update Manifest URL (HTTPS)
+              </label>
+              <Input
+                id="updater-endpoint"
+                value={endpointInput}
+                onChange={(e) => setEndpointInput(e.target.value)}
+                placeholder="https://..."
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs text-muted-foreground" htmlFor="updater-pubkey">
+                Minisign Public Key (leave empty to use compiled-in key)
+              </label>
+              <Input
+                id="updater-pubkey"
+                value={publicKeyInput}
+                onChange={(e) => setPublicKeyInput(e.target.value)}
+                placeholder="RWS..."
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button size="sm" variant="secondary" onClick={() => setShowConfig(false)}>
+                Cancel
+              </Button>
+              <Button size="sm" onClick={saveSettings} disabled={busy !== null}>
+                {busy === 'save_settings' ? <Spinner /> : null} Save settings
+              </Button>
+            </div>
           </div>
         )}
 
@@ -274,6 +384,15 @@ export function UpdatesCard() {
               Install now
             </Button>
           )}
+
+          {/* Configure source toggle */}
+          <Button
+            variant="ghost"
+            onClick={() => setShowConfig((v) => !v)}
+            id="configure-update-source-btn"
+          >
+            <Settings2 className="size-4" /> {showConfig ? 'Hide source' : 'Configure source'}
+          </Button>
 
           {/* Always offer a direct link */}
           <Button
