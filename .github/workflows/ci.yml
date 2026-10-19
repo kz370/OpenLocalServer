@@ -222,11 +222,11 @@ jobs:
           Get-Content $sums
 
       - name: Install minisign
-        # Only needed for latest.json, so a failure here is reported and the release still
-        # ships without an updater manifest rather than dying before any asset is uploaded.
-        # The signing step below is where a missing minisign actually bites, and it says so.
-        continue-on-error: true
-        run: choco install minisign --yes --no-progress --limit-output
+        run: |
+          choco install minisign --yes --no-progress --limit-output
+          if (Test-Path 'C:\ProgramData\chocolatey\bin') {
+            "C:\ProgramData\chocolatey\bin" >> $env:GITHUB_PATH
+          }
 
       - name: Write and sign the update manifest
         id: manifest
@@ -240,16 +240,26 @@ jobs:
           $latest = Join-Path $dist 'latest.json'
 
           if (-not $env:MINISIGN_KEY_B64) {
-            Write-Output "::warning title=No updater manifest::OLS_MINISIGN_KEY is not set, so latest.json is not written and the in-app updater will 404. The release itself is unaffected."
-            "written=false" >> $env:GITHUB_OUTPUT
-            exit 0
+            throw "OLS_MINISIGN_KEY secret is not configured in GitHub repository secrets! Cannot generate and sign latest.json for auto-updates."
           }
-          # The key is a base64 secret so it never lands in the repo or in a log. It is written
+
+          $minisign = (Get-Command minisign -ErrorAction SilentlyContinue)?.Source
+          if (-not $minisign -and (Test-Path 'C:\ProgramData\chocolatey\bin\minisign.exe')) {
+            $minisign = 'C:\ProgramData\chocolatey\bin\minisign.exe'
+          }
+          if (-not $minisign) { throw 'minisign executable not found in PATH or Chocolatey bin' }
+
+          # The key is a secret so it never lands in the repo or in a log. It is written
           # to the runner's own temp and removed in the same step; a private key left on a
           # hosted runner is a signing key on somebody else's disk.
           $keyPath = Join-Path $env:RUNNER_TEMP 'ols-update.key'
           try {
-            [IO.File]::WriteAllBytes($keyPath, [Convert]::FromBase64String($env:MINISIGN_KEY_B64))
+            $rawKey = $env:MINISIGN_KEY_B64.Trim()
+            if ($rawKey.StartsWith('untrusted comment')) {
+              [IO.File]::WriteAllText($keyPath, $rawKey)
+            } else {
+              [IO.File]::WriteAllBytes($keyPath, [Convert]::FromBase64String($rawKey))
+            }
             if (-not (Test-Path $keyPath)) { throw 'Signing key was not written.' }
 
             $notes = ''
@@ -271,7 +281,7 @@ jobs:
             # the updater parses one manifest format and there is no reason for the build
             # pipeline and the release pipeline to disagree about it.
             $manifest | ConvertTo-Json -Depth 5 | Out-String | ForEach-Object { [IO.File]::WriteAllText($latest, $_) }
-            & minisign -Sm $latest -s $keyPath -x "$latest.minisig" -f
+            & $minisign -Sm $latest -s $keyPath -x "$latest.minisig"
             if ($LASTEXITCODE -ne 0) { throw 'minisign failed to sign latest.json' }
             Get-Content $latest
           }
