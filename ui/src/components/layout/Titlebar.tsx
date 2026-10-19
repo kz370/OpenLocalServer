@@ -1,7 +1,6 @@
 import { Copy, Minus, Square, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
 
-import { useAppMarkPath } from '@/lib/hooks'
+import { useAppMarkPath, useWindowState } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 
 function isTauri(): boolean {
@@ -9,23 +8,9 @@ function isTauri(): boolean {
 }
 
 export function Titlebar() {
-  const [maximized, setMaximized] = useState(false)
+  const { maximized } = useWindowState()
   // Same four colourways (light/dark × running/stopped) the tray and taskbar use.
   const mark = useAppMarkPath()
-
-  useEffect(() => {
-    if (!isTauri()) return
-    let unlisten: (() => void) | undefined
-    void (async () => {
-      const { getCurrentWindow } = await import('@tauri-apps/api/window')
-      const win = getCurrentWindow()
-      setMaximized(await win.isMaximized().catch(() => false))
-      unlisten = await win.onResized(async () => {
-        setMaximized(await win.isMaximized().catch(() => false))
-      })
-    })()
-    return () => unlisten?.()
-  }, [])
 
   const action = (fn: (win: Awaited<ReturnType<typeof import('@tauri-apps/api/window').getCurrentWindow>>) => void) => async () => {
     if (!isTauri()) return

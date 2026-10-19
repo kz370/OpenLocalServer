@@ -44,7 +44,13 @@ export function dedupeKey(line: string): string {
 }
 
 /** §117: every log source in one place, live tail, search, filter, copy, export. */
-export function LogsPage({ initialSource }: { initialSource?: string | null }) {
+export function LogsPage({
+  initialSource,
+  onSourceChange,
+}: {
+  initialSource?: string | null
+  onSourceChange?: (source: string) => void
+}) {
   const [sources, setSources] = useState<LogSource[]>([])
   /** What the picker is on. `initialSource` wins until the user picks something
    *  else, so opening logs for a service lands on that service. */

@@ -290,28 +290,55 @@ export function findFaIcon(nameOrClass?: string | null): FaIconDef | undefined {
   return FA_ICONS.find((i) => i.id === cleaned || i.name.toLowerCase() === cleaned)
 }
 
-/** Renders an offline Font Awesome icon with crisp SVG path. */
+/**
+ * Parses an icon spec that may optionally encode a custom color:
+ * e.g. "rocket", "rocket|crimson", "server|#00b4d8", or "code|rgba(59, 130, 246, 0.85)".
+ */
+export function parseIconSpec(spec?: string | null): { name: string; color?: string } {
+  if (!spec) return { name: '' }
+  const idx = spec.indexOf('|')
+  if (idx === -1) {
+    return { name: spec.trim() }
+  }
+  return {
+    name: spec.substring(0, idx).trim(),
+    color: spec.substring(idx + 1).trim() || undefined,
+  }
+}
+
+/** Formats an icon identifier and optional custom color into a persistable spec string. */
+export function buildIconSpec(name: string, color?: string | null): string {
+  const cleanColor = color?.trim()
+  return cleanColor ? `${name.trim()}|${cleanColor}` : name.trim()
+}
+
+/** Renders an offline Font Awesome icon with crisp SVG path and custom color support (name, hex, rgba). */
 export function FontAwesomeIcon({
   name,
+  color,
   className = 'size-4',
   style,
 }: {
   name: string
+  color?: string
   className?: string
   style?: React.CSSProperties
 }) {
-  const icon = findFaIcon(name)
+  const parsed = parseIconSpec(name)
+  const icon = findFaIcon(parsed.name)
   if (!icon) {
     // If not found in the custom FA catalog, render the default internet icon as a graceful fallback
     return <DefaultInternetIcon className={className} />
   }
+
+  const activeColor = color ?? parsed.color ?? icon.color
 
   return (
     <svg
       viewBox={icon.viewBox ?? '0 0 512 512'}
       fill="currentColor"
       className={cn('shrink-0 select-none inline-block', className)}
-      style={{ color: icon.color, ...style }}
+      style={{ color: activeColor, ...style }}
       aria-label={icon.name}
       role="img"
     >
@@ -324,14 +351,15 @@ export function FontAwesomeIcon({
  * Main SiteLogo component.
  * Priority:
  * 1. iconImage: local `ols_site_icon.webp` file in project directory (data URL)
+ *    Rendered square with border radius, subtle shadow, and object-cover.
  * 2. icon: Font Awesome icon name (offline version)
- * 3. Default: Colorful, modern internet icon
+ * 3. Default: Clean, colorful modern internet globe icon (no box/border)
  */
 export function SiteLogo({
   icon,
   iconImage,
   hostname,
-  className = 'size-4',
+  className,
 }: {
   icon?: string | null
   iconImage?: string | null
@@ -343,7 +371,10 @@ export function SiteLogo({
       <img
         src={iconImage}
         alt={hostname ? `Logo for ${hostname}` : 'Site logo'}
-        className={cn('shrink-0 select-none rounded object-contain', className)}
+        className={cn(
+          'shrink-0 select-none aspect-square rounded-md object-cover shadow-xs border border-border/60 overflow-hidden bg-muted/20',
+          className || 'size-7.5',
+        )}
         onError={(e) => {
           // If image fails to load or corrupted, hide and fallback handled by parent
           e.currentTarget.style.display = 'none'
@@ -353,8 +384,8 @@ export function SiteLogo({
   }
 
   if (icon) {
-    return <FontAwesomeIcon name={icon} className={className} />
+    return <FontAwesomeIcon name={icon} className={cn('size-6', className)} />
   }
 
-  return <DefaultInternetIcon className={className} />
+  return <DefaultInternetIcon className={cn('size-6', className)} />
 }

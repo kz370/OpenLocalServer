@@ -20,7 +20,13 @@ import { useWeb } from '@/lib/web'
 import { waitForWebStopped } from '@/lib/wait'
 import { ConfigPage } from '@/pages/Config'
 
-export function WebServerPage({ initialTab = 'server' }: { initialTab?: 'server' | 'config' | 'certs' }) {
+export function WebServerPage({
+  initialTab = 'server',
+  onTabChange,
+}: {
+  initialTab?: 'server' | 'config' | 'certs'
+  onTabChange?: (tab: 'server' | 'config' | 'certs') => void
+}) {
   const web = useWeb()
   const { status, cfg, certs, ca, projects, busy, error, setError, run, refresh, refreshConfig, apply } = web
   const [tab, setTab] = useState<'server' | 'config' | 'certs'>(initialTab)
@@ -116,7 +122,10 @@ export function WebServerPage({ initialTab = 'server' }: { initialTab?: 'server'
           { id: 'certs', label: 'Certificates', badge: certs.length },
         ]}
         value={tab}
-        onChange={setTab}
+        onChange={(next) => {
+          setTab(next)
+          onTabChange?.(next)
+        }}
       />
 
       {tab === 'server' && cfg && status && (

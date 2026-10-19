@@ -7,6 +7,7 @@ import {
   FolderKanban,
   GitBranch,
   Globe,
+  Image as ImageIcon,
   Layers,
   LayoutDashboard,
   ListRestart,
@@ -38,11 +39,12 @@ import { SiteConfigTab } from '@/pages/Config'
 import { HtaccessEditor } from './HtaccessEditor'
 import { DomainSettings, newDomain } from './DomainDialog'
 import { ServersPanel } from './ServersPanel'
+import { SiteLogoPanel } from './SiteLogoPanel'
 import { SiteLogs } from './SiteLogs'
 
-export type SiteTab = 'settings' | 'config' | 'htaccess' | 'servers' | 'logs' | 'overview' | 'commands' | ToolTab
+export type SiteTab = 'settings' | 'icon' | 'config' | 'htaccess' | 'servers' | 'logs' | 'overview' | 'commands' | ToolTab
 
-const TAB_ICON: Record<Exclude<SiteTab, 'settings' | 'config' | 'htaccess' | 'servers' | 'logs'>, ReactNode> = {
+const TAB_ICON: Record<Exclude<SiteTab, 'settings' | 'icon' | 'config' | 'htaccess' | 'servers' | 'logs'>, ReactNode> = {
   overview: <LayoutDashboard />,
   environment: <Layers />,
   terminal: <SquareTerminal />,
@@ -61,7 +63,7 @@ const TAB_ICON: Record<Exclude<SiteTab, 'settings' | 'config' | 'htaccess' | 'se
 }
 
 /** Tabs that belong to the project, not the site. */
-const SITE_TABS: SiteTab[] = ['settings', 'config', 'htaccess', 'servers', 'logs']
+const SITE_TABS: SiteTab[] = ['settings', 'icon', 'config', 'htaccess', 'servers', 'logs']
 
 /** What the site dialog shows: a site, a project without a site yet, or a site and its project. */
 export interface SiteTarget {
@@ -202,6 +204,7 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
 
   const siteItems: { id: SiteTab; label: string; icon: ReactNode }[] = [
     { id: 'settings', label: target.hostname ? 'Site settings' : 'Add a domain', icon: <Settings2 /> },
+    { id: 'icon', label: 'Site logo / icon', icon: <ImageIcon /> },
     ...(target.hostname ? [{ id: 'config' as SiteTab, label: 'Web server config', icon: <FileCode2 /> }] : []),
     ...(target.hostname && domain?.kind.type === 'php' ? [{ id: 'htaccess' as SiteTab, label: '.htaccess', icon: <FileCode2 /> }] : []),
     { id: 'servers', label: 'Servers', icon: <ServerCog /> },
@@ -308,6 +311,31 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
               ) : domainError ? null : (
                 <p className="text-sm text-muted-foreground">Reading the site…</p>
               ))}
+
+            {tab === 'icon' && (
+              <div className="flex flex-col gap-4">
+                <div className="border-b pb-3">
+                  <h3 className="text-base font-semibold">Site Logo & Icon</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Customize the logo or icon for {title}. Upload a photo from your PC or choose an offline Font Awesome icon.
+                  </p>
+                </div>
+                <SiteLogoPanel
+                  hostname={target.hostname}
+                  folder={project?.path ?? domain?.root ?? ''}
+                  displayName={title}
+                  initialIcon={domain?.icon ?? null}
+                  initialImage={project?.icon_image ?? null}
+                  onUpdated={async () => {
+                    if (target.hostname) {
+                      const r = await runCommand({ type: 'get_domain', hostname: target.hostname })
+                      if (r.type === 'domain') setDomain(r.domain)
+                    }
+                    await Promise.all([web.refresh(), web.refreshProjects()])
+                  }}
+                />
+              </div>
+            )}
 
             {tab === 'config' && target.hostname && <SiteConfigTab hostname={target.hostname} />}
             {tab === 'htaccess' && target.hostname && <HtaccessEditor hostname={target.hostname} />}

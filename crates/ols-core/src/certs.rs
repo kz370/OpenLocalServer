@@ -238,6 +238,7 @@ mod tests {
             tunnel_id: None,
             server: None,
             path_prefix: None,
+            icon: None,
         }
     }
 

@@ -5364,6 +5364,7 @@ mod tests {
             tunnel_id: None,
             server: None,
             path_prefix: None,
+            icon: None,
         };
         domain.blocks.headers.push(HeaderRule {
             name: "X-Test".into(),
@@ -5501,6 +5502,7 @@ mod tests {
                 tunnel_id: None,
                 server: None,
                 path_prefix: None,
+                icon: None,
             },
         })
         .unwrap();

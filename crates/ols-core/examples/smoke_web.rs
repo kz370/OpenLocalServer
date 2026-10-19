@@ -116,6 +116,7 @@ fn domain(host: &str, root: &std::path::Path, kind: SiteKind) -> Domain {
         server: None,
         public_domain: None,
         path_prefix: None,
+        icon: None,
     }
 }
 

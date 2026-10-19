@@ -1072,6 +1072,7 @@ mod tests {
                 tunnel_id: None,
                 server: None,
                 path_prefix: None,
+                icon: None,
             })
             .unwrap();
         (project, hostname)
@@ -1328,6 +1329,7 @@ mod tests {
                 tunnel_id: None,
                 server: None,
                 path_prefix: None,
+                icon: None,
             })
             .unwrap();
         core.dispatch(CoreCommand::SetAutoBackup {
@@ -1520,6 +1522,7 @@ mod tests {
                     tunnel_id: None,
                     server: None,
                     path_prefix: None,
+                    icon: None,
                 },
             })
             .unwrap()
@@ -1765,6 +1768,7 @@ mod tests {
                 tunnel_id: None,
                 server: None,
                 path_prefix: None,
+                icon: None,
             })
             .unwrap();
         core.dispatch(CoreCommand::SetAutoBackup {

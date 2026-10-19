@@ -1,5 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Activity, Camera, Check, CircleOff, Code2, Copy, Download, ExternalLink, EyeOff, FolderOpen, FolderPlus, FolderSearch, Globe, KeyRound, List, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2, X } from 'lucide-react'
+import { Activity, Check, CircleOff, Code2, Copy, Download, ExternalLink, EyeOff, FolderOpen, FolderPlus, FolderSearch, Globe, Image as ImageIcon, KeyRound, List, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
@@ -512,9 +512,9 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       if (d.has_app) items.push({ label: 'Restart app process', icon: <RefreshCw />, onSelect: () => void run('restart', () => runCommand({ type: 'restart_site_app', hostname: d.hostname })) })
       items.push({
         label: 'Site logo / icon…',
-        icon: <Camera />,
+        icon: <ImageIcon />,
         hint: 'Custom ols_site_icon.webp or offline Font Awesome icon',
-        onSelect: () => setLogoTarget(r),
+        onSelect: () => setTarget({ hostname: d.hostname, projectId: p?.id ?? null, tab: 'icon' }),
       })
       items.push({
         label: 'Export to bundle…',
@@ -547,9 +547,9 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       items.push(
         {
           label: 'Site logo / icon…',
-          icon: <Camera />,
+          icon: <ImageIcon />,
           hint: 'Custom ols_site_icon.webp in project folder',
-          onSelect: () => setLogoTarget(r),
+          onSelect: () => setTarget({ hostname: null, projectId: p.id, tab: 'icon' }),
         },
         {
           label: 'Add auto domain',
@@ -809,17 +809,17 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation()
-                            setLogoTarget(r)
+                            setTarget({ hostname: d?.hostname ?? null, projectId: p?.id ?? null, tab: 'icon' })
                           }}
-                          className="group flex size-6 shrink-0 cursor-pointer items-center justify-center rounded transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                          title="Change site logo / icon"
+                          className="group flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md transition-all hover:scale-105 active:scale-95 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          title="Change site logo / icon in site settings"
                           aria-label={`Change logo for ${d?.hostname ?? p?.name}`}
                         >
                           <SiteLogo
                             icon={d?.icon}
                             iconImage={d?.icon_image ?? p?.icon_image}
                             hostname={d?.hostname ?? p?.name}
-                            className="size-5"
+                            className={d?.icon_image ?? p?.icon_image ? 'size-8' : 'size-6'}
                           />
                         </button>
 

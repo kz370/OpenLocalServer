@@ -1,7 +1,7 @@
 # RUNTIME
 
 ## Files to Process
-Total meaningful source files: 228 (excluding target/, node_modules/, .git/, dist/, data/services/postgres runtime data, icon bulk).
+Total meaningful source files: 231 (excluding target/, node_modules/, .git/, dist/, data/services/postgres runtime data, icon bulk).
 
 ### Rust core (crates/ols-core/src, 79 files)
 - src/lib.rs, app.rs, command.rs, control.rs, api.rs, paths.rs, settings.rs, secrets.rs, db.rs
@@ -21,13 +21,13 @@ Total meaningful source files: 228 (excluding target/, node_modules/, .git/, dis
 - crates/ols-helper/src/main.rs, crates/ols-helper/src/service.rs, crates/ols-helper/Cargo.toml
 - src-tauri/src/lib.rs, src-tauri/src/main.rs, src-tauri/src/notify.rs, src-tauri/Cargo.toml, src-tauri/tauri.conf.json, src-tauri/capabilities/default.json
 
-### Frontend (ui/src, ~87 files)
+### Frontend (ui/src, ~90 files)
 - package.json, vite.config.ts, index.html, tsconfig*.json, src/main.tsx, src/App.tsx, src/core.ts, src/index.css
 - src/pages/Dashboard.tsx, Sites.tsx, QuickApps.tsx, Commands.tsx, WebServer.tsx, Config.tsx, Tunnels.tsx, Databases.tsx, Processes.tsx, Tasks.tsx, Services.tsx, Runtimes.tsx, Profiles.tsx, Plugins.tsx, Logs.tsx, Processes.tsx, Settings.tsx
 - src/components/layout/Sidebar.tsx, layout/Titlebar.tsx, CommandPalette.tsx, ConfirmHost.tsx, ai/AiHost.tsx, ai/AiButton.tsx, ai/AiSettings.tsx
-- src/components/site/SiteDialog.tsx, site/DomainDialog.tsx, site/ServersPanel.tsx, site/SiteLogs.tsx, site/HtaccessEditor.tsx, site/WebApply.tsx, site/SiteBundle.tsx
+- src/components/site/SiteDialog.tsx, site/DomainDialog.tsx, site/ServersPanel.tsx, site/SiteLogs.tsx, site/HtaccessEditor.tsx, site/WebApply.tsx, site/SiteBundle.tsx, site/SiteLogoPanel.tsx, site/SiteLogoDialog.tsx
 - src/components/project/EnvironmentPanel.tsx, project/GitPanel.tsx, project/LoadPanel.tsx, project/ProjectCommands.tsx, project/ProjectImports.tsx, project/RepairPanel.tsx, project/SnapshotsPanel.tsx, project/WorkersPanel.tsx
-- src/components/ProjectTools.tsx, ReleaseCards.tsx, SettingsExtras.tsx, ExcludedSitesCard.tsx, IgnoredFoldersCard.tsx, CustomServices.tsx, DiagnosticsCard.tsx, DoctorDialog.tsx, EnvEditor.tsx, CodeEditor.tsx, Terminal.tsx, SystemMonitor.tsx, MigrateDialog.tsx, OpenWithMenu.tsx, PhpExtensionsDialog.tsx, XdebugDialog.tsx, ErrorCard.tsx, Spinner.tsx, StopIcon.tsx, TechIcon.tsx, TasksPanel.tsx, SaveButton.tsx
+- src/components/SiteLogo.tsx, src/components/ProjectTools.tsx, ReleaseCards.tsx, SettingsExtras.tsx, ExcludedSitesCard.tsx, IgnoredFoldersCard.tsx, CustomServices.tsx, DiagnosticsCard.tsx, DoctorDialog.tsx, EnvEditor.tsx, CodeEditor.tsx, Terminal.tsx, SystemMonitor.tsx, MigrateDialog.tsx, OpenWithMenu.tsx, PhpExtensionsDialog.tsx, XdebugDialog.tsx, ErrorCard.tsx, Spinner.tsx, StopIcon.tsx, TechIcon.tsx, TasksPanel.tsx, SaveButton.tsx
 - src/components/ui/button.tsx, card.tsx, dialog.tsx, input.tsx, form.tsx, table.tsx, menu.tsx, switch.tsx, badge.tsx, checkbox.tsx, pagination.tsx
 - src/lib/ai.ts, confirm.ts, hooks.ts, nav.ts, theme.tsx, utils.ts, wait.ts, web.ts
 
@@ -52,7 +52,14 @@ release-notes/v2.1.0.md added 2026-10-18; Files Processed is now 227, matching F
 
 ui/src/components/IgnoredFoldersCard.tsx added 2026-10-18; Files Processed is now 228, matching Files to Process.
 
+ui/src/components/SiteLogo.tsx added 2026-10-19; Files Processed is now 229, matching Files to Process.
+
+ui/src/components/site/SiteLogoPanel.tsx added 2026-10-19; Files Processed is now 230, matching Files to Process.
+
+ui/src/components/site/SiteLogoDialog.tsx added 2026-10-19; Files Processed is now 231, matching Files to Process.
+
 ## Log
+- [2026-10-19] feat(sites,ui): added site logo & icon support with custom photo upload, Font Awesome offline icons with color customization, site settings page integration, and smooth glitch-free updates. Sites table rows render the site logo/icon vertically centered next to a vertical divider and the hostname (`[Checkbox] [SiteLogo] | [Hostname & Details]`). Clicking the logo or selecting 'Site logo / icon…' opens SiteDialog on its dedicated 'Site logo / icon' tab (`ImageIcon`), embedding `SiteLogoPanel`. Custom images are converted client-side to WebP and saved in the project root as `ols_site_icon.webp` via `SetSiteIconImage` (removed via `RemoveSiteIconImage`), rendered as square `size-8`/`size-7.5` `rounded-md shadow-xs object-cover` elements. Offline Font Awesome SVGs support custom color customization (color names, hex, rgba encoded as `name|color` in `Domain.icon`) with an interactive swatch, text input, and quick color presets. The fallback icon is a crisp cyan wireframe internet globe (Tabler world style, `#00b4d8`/`#06b6d4`, naked stroke with no surrounding border/box). Fixed layout-shifting glitch where banner unmounting shifted the dialog content violently; now uses optimistic local updates and a fixed-space inline `Saved ✓` indicator. Specs: runtime.md, catalog.txt, relationships.txt, data_models.txt, api_reference.md, full_documentation.md. Files Processed 228 -> 231.
 - [2026-10-19] fix(settings,sites): made `ols_excluded_sites` the default and required ignored folder. Settings reads and scans always include it; the UI hides its rename/delete controls, while `SetSetting` and `rename_ignored_folder` reject attempts to remove or rename it. Site/project deletion now moves into `ols_excluded_sites/`, and the UI/specs describe the protected destination. Existing other ignored-folder names are preserved. Files Processed remains 228.
 - [2026-10-18] fix(settings,ui): enforced that at least one ignored folder must always remain in `projects.ignored_folders`. Removing the last ignored folder is prevented in the UI (trash button disabled with clear tooltip, and `handleRemove` guards with a Diagnostic error) and backend `SetSetting` returns a Diagnostic error if an empty list is passed. `GetSetting` and `Inner::ignored_folders` guarantee fallback to `["excluded_sites"]` if an empty array is encountered. Files Processed remains 228.
 - [2026-10-18] fix(ci): fixed Publish release job being skipped on GitHub Actions. The push tag trigger previously matched `v*` while the publish job condition strictly demanded `refs/tags/release-v` and threw if the tag did not start with `release-v`. Updated workflow triggers to accept both `v*` and `release-v*`, added a `publish` boolean input to `workflow_dispatch`, updated the publish gate condition to allow release tags or manual publish dispatches, and generalized version/tag resolution in the PowerShell step. Files Processed remains 228.

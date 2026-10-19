@@ -171,3 +171,10 @@ SitesPage | renders | SiteExportDialog once (opened from a row's "Export to bund
 ProcessesPage | shows | TasksPanel (the §164 list) beside the process supervisor, under two tabs each badged with what is running, so work started elsewhere is still counted
 ui/src/components/TasksPanel.tsx | reads | `task-event` (whole task every time — there is no delta to reconcile) patched over one `list_tasks` read, with a 1s poll so a reloaded webview catches up rather than sitting on a stale row
 ui/src/components/site/SiteBundle.tsx | reads | `paths.backups_dir` for the export destination default, and `preview_site_bundle` before anything is created so the update/rename choice is made on which hostnames actually clash
+SitesPage | uses | SiteLogo (renders site custom photo icon, font-awesome offline vector, or cyan globe fallback next to vertical divider and site name)
+SitesPage | opens | SiteDialog (with active tab 'icon' when user clicks the row's SiteLogo button or selects Site logo / icon…)
+SiteDialog | uses | SiteLogoPanel (renders dedicated site logo & icon management on the 'icon' tab)
+SiteLogoDialog | uses | SiteLogoPanel (renders SiteLogoPanel in a modal dialog)
+SiteLogoPanel | uses | SiteLogo (live preview of table row header with instant optimistic updates)
+SiteLogoPanel | dispatches | CoreCommand::SetDomainIcon, CoreCommand::SetSiteIconImage, CoreCommand::RemoveSiteIconImage, CoreCommand::ReadImageFile
+

@@ -4059,7 +4059,7 @@ const BASE64_ALPHABET: &[u8; 64] =
     b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 pub fn to_base64(data: &[u8]) -> String {
-    let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
     for chunk in data.chunks(3) {
         let b0 = chunk[0];
         let b1 = *chunk.get(1).unwrap_or(&0);
@@ -4096,7 +4096,7 @@ pub fn from_base64(input: &str) -> Result<Vec<u8>, String> {
     if input.is_empty() {
         return Ok(Vec::new());
     }
-    if input.len() % 4 != 0 {
+    if !input.len().is_multiple_of(4) {
         return Err("Base64 string length must be a multiple of 4".into());
     }
 
@@ -5012,6 +5012,7 @@ mod apply_concurrency_tests {
             tunnel_id: None,
             server: None,
             path_prefix: None,
+            icon: None,
         };
         {
             let mut domains = inner.domains.lock().unwrap();

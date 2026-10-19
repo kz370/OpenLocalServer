@@ -1,6 +1,5 @@
 //! Times the read-only commands the UI polls. Uses the real app data dir.
 use ols_core::{AppPaths, Core, CoreCommand, SettingsService};
-use std::time::Instant;
 
 fn main() {
     eprintln!("1. Resolving paths");

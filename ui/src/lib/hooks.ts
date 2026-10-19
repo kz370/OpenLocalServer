@@ -88,6 +88,76 @@ export function formatBytes(n: number): string {
 export const MODAL_MS = 160
 
 /**
+ * Tracks window display state (windowed, maximized, fullscreen).
+ * Window mode (floating restored window) applies custom rounded corners and borders;
+ * maximized and fullscreen modes remove them (`rounded-none border-0`) so the webview
+ * seamlessly fills the monitor without cutout corners or redundant borders.
+ */
+export function useWindowState() {
+  const [isWindowed, setIsWindowed] = useState(true)
+  const [maximized, setMaximized] = useState(false)
+  const [fullscreen, setFullscreen] = useState(false)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    if (!('__TAURI_INTERNALS__' in window)) {
+      const update = () => {
+        const isFull = !!document.fullscreenElement
+        setFullscreen(isFull)
+        setIsWindowed(!isFull)
+      }
+      update()
+      document.addEventListener('fullscreenchange', update)
+      window.addEventListener('resize', update)
+      return () => {
+        document.removeEventListener('fullscreenchange', update)
+        window.removeEventListener('resize', update)
+      }
+    }
+
+    let alive = true
+    let unlisten: (() => void) | undefined
+
+    void (async () => {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window')
+      const win = getCurrentWindow()
+
+      const check = async () => {
+        if (!alive) return
+        const [isMax, isFull] = await Promise.all([
+          win.isMaximized().catch(() => false),
+          win.isFullscreen().catch(() => false),
+        ])
+        if (!alive) return
+        setMaximized(isMax)
+        setFullscreen(isFull)
+        setIsWindowed(!isMax && !isFull)
+      }
+
+      await check()
+
+      unlisten = await win.onResized(() => {
+        void check()
+        setTimeout(() => void check(), 50)
+      })
+
+      window.addEventListener('resize', () => {
+        void check()
+        setTimeout(() => void check(), 50)
+      })
+    })()
+
+    return () => {
+      alive = false
+      unlisten?.()
+    }
+  }, [])
+
+  return { isWindowed, maximized, fullscreen }
+}
+
+/**
  * True when nothing is running, so the app can show the red mark. The backend owns
  * the decision (it also drives the tray and taskbar) and pushes it as
  * `ols:status-icon`; without Tauri it falls back to "not stopped".
