@@ -1,5 +1,5 @@
 import { save } from '@tauri-apps/plugin-dialog'
-import { BookOpen, Copy, Download, ExternalLink, FileText, KeyRound, ShieldCheck, TerminalSquare, Wifi } from 'lucide-react'
+import { ArrowDownToLine, BookOpen, CheckCircle, Copy, Download, ExternalLink, FileText, KeyRound, RefreshCw, Rocket, ShieldCheck, TerminalSquare, Wifi } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, Select } from '@/components/ui/form'
 import { NumberInput } from '@/components/ui/input'
-import { type ApiStatus, type NetworkStatus, type ShellMenuStatus, runCommand } from '@/core'
+import { type ApiStatus, type NetworkStatus, type ShellMenuStatus, type UpdateInfo, type UpdaterStatus, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
 import { useAction } from '@/lib/hooks'
 
@@ -139,24 +139,155 @@ export function ApiCard() {
   )
 }
 
-/** Updates live on the releases page; the app just links out. */
+/** §145 (Stage 17) — Signed update check, download and install.
+ *  The backend fetches and verifies the minisign manifest; nothing is downloaded or run
+ *  unless the signature matches. The public key must be compiled in (OLS_UPDATE_PUBKEY)
+ *  or entered in Settings for a check to succeed. */
 export function UpdatesCard() {
+  const [status, setStatus] = useState<UpdaterStatus | null>(null)
+  const [info, setInfo] = useState<UpdateInfo | null>(null)
+  const { busy, error, setError, run } = useAction()
+
+  const RELEASES_URL = 'https://github.com/kz370/OpenLocalServer/releases/latest'
+
+  // Load the last known state on mount.
+  useEffect(() => {
+    runCommand({ type: 'get_updater_status' })
+      .then((r) => {
+        if (r.type === 'updater_status') {
+          setStatus(r.status)
+          if (r.status.last) setInfo(r.status.last)
+        }
+      })
+      .catch(setError)
+  }, [setError])
+
+  const checkForUpdates = () =>
+    run('check', async () => {
+      const r = await runCommand({ type: 'check_update' })
+      if (r.type === 'update') {
+        setInfo(r.update)
+      }
+    })
+
+  const downloadUpdate = () =>
+    run('download', async () => {
+      const r = await runCommand({ type: 'download_update' })
+      if (r.type === 'update') setInfo(r.update)
+    })
+
+  const installUpdate = async () => {
+    const ok = await confirmAction(
+      'The installer will start and this window will close. Save any unsaved work first.',
+      'Install update now?',
+      'Install',
+    )
+    if (!ok) return
+    await run('install', async () => {
+      await runCommand({ type: 'install_update' })
+    })
+  }
+
+  const fmt = (bytes: number) => {
+    if (bytes === 0) return ''
+    const mb = bytes / 1024 / 1024
+    return mb >= 1 ? ` · ${mb.toFixed(1)} MB` : ` · ${(bytes / 1024).toFixed(0)} KB`
+  }
+
+  const hasUpdate = info?.available ?? false
+  const isDownloaded = !!info?.downloaded
+
   return (
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
           <Download className="size-4" /> Updates
+          {info && !info.available && <Badge variant="success">Up to date</Badge>}
+          {hasUpdate && !isDownloaded && <Badge variant="warning">Update available</Badge>}
+          {hasUpdate && isDownloaded && <Badge variant="warning">Ready to install</Badge>}
         </CardTitle>
-        <CardDescription>New versions, installers and checksums are published on the releases page.</CardDescription>
+        <CardDescription>
+          {status ? `Current version: v${status.current}` : 'New versions, installers and checksums are published on the releases page.'}
+        </CardDescription>
       </CardHeader>
-      <CardContent>
-        <Button variant="secondary" onClick={() => runCommand({ type: 'open_url', url: 'https://github.com/kz370/OpenLocalServer/releases/latest' }).catch(() => undefined)}>
-          <ExternalLink /> Open releases page
-        </Button>
+      <CardContent className="flex flex-col gap-4">
+        <ErrorCard error={error} onDismiss={() => setError(null)} />
+
+
+        {/* Update available banner */}
+        {hasUpdate && info && (
+          <div className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
+            <p className="font-medium text-warning">v{info.latest} is available{fmt(info.size)}</p>
+            {info.date && <p className="mt-0.5 text-muted-foreground">Released {info.date}</p>}
+            {info.notes && <p className="mt-1 text-foreground/80">{info.notes}</p>}
+          </div>
+        )}
+
+        {/* Up-to-date banner */}
+        {info && !info.available && (
+          <div className="flex items-center gap-2 text-sm text-success">
+            <CheckCircle className="size-4" />
+            You are on the latest version (v{info.latest}).
+          </div>
+        )}
+
+        {/* Downloaded, ready to install */}
+        {isDownloaded && (
+          <div className="rounded-md border border-success/40 bg-success/10 p-3 text-sm text-success">
+            Installer downloaded and verified. Ready to install v{info?.latest}.
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Check */}
+          <Button
+            variant="secondary"
+            disabled={busy !== null}
+            onClick={checkForUpdates}
+            id="check-for-updates-btn"
+          >
+            {busy === 'check' ? <Spinner /> : <RefreshCw />}
+            Check for updates
+          </Button>
+
+          {/* Download — only when an update is available and not yet downloaded */}
+          {hasUpdate && !isDownloaded && (
+            <Button
+              variant="secondary"
+              disabled={busy !== null}
+              onClick={downloadUpdate}
+              id="download-update-btn"
+            >
+              {busy === 'download' ? <Spinner /> : <ArrowDownToLine />}
+              Download update
+            </Button>
+          )}
+
+          {/* Install — only when the installer is ready */}
+          {isDownloaded && (
+            <Button
+              disabled={busy !== null}
+              onClick={installUpdate}
+              id="install-update-btn"
+            >
+              {busy === 'install' ? <Spinner /> : <Rocket />}
+              Install now
+            </Button>
+          )}
+
+          {/* Always offer a direct link */}
+          <Button
+            variant="ghost"
+            onClick={() => runCommand({ type: 'open_url', url: RELEASES_URL }).catch(() => undefined)}
+          >
+            <ExternalLink /> Releases page
+          </Button>
+        </div>
       </CardContent>
     </Card>
   )
 }
+
 
 /** §124 (Explorer menu) and the support bundle, plus what "privacy" means here. */
 export function SystemCard() {
