@@ -178,7 +178,14 @@ export function LogsPage({
 
       <Card>
         <CardContent className="flex flex-wrap items-center gap-3 pt-4">
-          <Select value={source} onChange={(e) => setChosen(e.target.value)} className="w-72">
+          <Select
+            value={source}
+            onChange={(e) => {
+              setChosen(e.target.value)
+              onSourceChange?.(e.target.value)
+            }}
+            className="w-72"
+          >
             {/* A source can be gone by the time this renders (the service stopped,
                 its Quick App run ended), so keep it selectable instead of showing
                 a blank picker for a source we are still reading. */}
