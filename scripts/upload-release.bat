@@ -17,7 +17,7 @@ rem still be published; a fresh build only ever produces OLS-*.
 rem
 rem Usage: scripts\upload-release.bat [tag] [mode]   (e.g. scripts\upload-release.bat v1.0.0 full)
 rem Modes: full = binaries + release notes, notes-only = release notes only,
-rem full-force-tag = full, plus move tag %TAG% onto local master and force-push
+rem full-force-tag = full, plus move tag %TAG% onto local main and force-push
 rem it, so the release points at the latest source code.
 rem No mode given = ask 1, 2 or 3. No tag given = the newest release\<version>\
 rem folder wins and the tag is v<version>.
@@ -143,7 +143,7 @@ echo Pushing...
 git push origin HEAD || (echo Push failed. & exit /b 1)
 
 rem Mode 3: the release must point at the newest source, so re-point the tag
-rem at local master and force-push it. --force only moves the tag, never
+rem at local main and force-push it. --force only moves the tag, never
 rem rewrites history on the branch.
 rem
 rem The tag here stays plain v<version>: this script publishes the release
@@ -151,8 +151,8 @@ rem itself with gh, and .github\workflows\ci.yml only auto-publishes on a
 rem release-v* tag. A v* push is therefore a version bump that costs no CI.
 rem Use release-v<version> when you want CI to build and publish for you.
 if /i not "%MODE%"=="full-force-tag" goto :no_force_tag
-echo Re-pointing %TAG% at master and force-pushing the tag...
-git tag -f "%TAG%" master || (echo git tag -f failed. & exit /b 1)
+echo Re-pointing %TAG% at main and force-pushing the tag...
+git tag -f "%TAG%" main || (echo git tag -f failed. & exit /b 1)
 git push origin "%TAG%" --force || (echo Force-push of %TAG% failed. & exit /b 1)
 :no_force_tag
 
@@ -256,7 +256,7 @@ rem Prompt for upload mode when the second argument is missing.
 echo Select upload mode:
 echo   1 - full: binaries + release notes
 echo   2 - notes-only: release notes only
-echo   3 - full-force-tag: binaries + notes, tag re-pointed at master ^(force^)
+echo   3 - full-force-tag: binaries + notes, tag re-pointed at main ^(force^)
 set "CHOICE="
 set /p "CHOICE=Enter 1, 2 or 3 [1]: "
 if "%CHOICE%"=="" set "CHOICE=1"

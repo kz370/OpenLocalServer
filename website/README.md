@@ -59,9 +59,7 @@ for `1\.1\.0` on `index.html` finds every one.
   as marketing.
 - **`Diagnostic{problem,cause,fix}`** is how the product explains a failure, so it
   is how the site explains one too.
-- **Links to the repository use `blob/master`**, which is the default branch. The
-  app's own `ReleaseCards.tsx` opens `blob/main/docs/API.md`, which is wrong on this
-  repository — a separate bug.
+- **Links to the repository use `blob/main`**, which is the default branch.
 - **Do not name competing tools on the page.** The comparison is made in general
   terms ("other local stacks", "other common Windows stacks"), not by name.
 

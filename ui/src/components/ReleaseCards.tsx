@@ -17,7 +17,7 @@ import { useAction } from '@/lib/hooks'
  * endpoint contract, the mode lists and the security rules are documented, because a
  * settings card is the wrong place for a reference and a wall of text there is a wall
  * of text every user has to scroll past. */
-const DOCS_URL = 'https://github.com/kz370/OpenLocalServer/blob/master/docs/API.md'
+const DOCS_URL = 'https://github.com/kz370/OpenLocalServer/blob/main/docs/API.md'
 
 /** §137: the local HTTP API. Off by default, token only, read-only unless switched to operate. */
 export function ApiCard() {
