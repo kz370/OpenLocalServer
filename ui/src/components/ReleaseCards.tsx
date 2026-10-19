@@ -144,8 +144,8 @@ export function ApiCard() {
  *  unless the signature matches. The public key must be compiled in (OLS_UPDATE_PUBKEY)
  *  or entered in Settings for a check to succeed. */
 export function UpdatesCard() {
+  const isDev = import.meta.env.DEV
   const DEFAULT_ENDPOINT = 'https://github.com/kz370/OpenLocalServer/releases/latest/download/latest.json'
-  const DEFAULT_PUBKEY = 'RWQTa5rn3AFu8SRjdSvz7VsUi/pRNNdk2FPuCbmgSZMV+veJMB9XCiys'
 
   const [status, setStatus] = useState<UpdaterStatus | null>(null)
   const [info, setInfo] = useState<UpdateInfo | null>(null)
@@ -163,7 +163,7 @@ export function UpdatesCard() {
         if (r.type === 'updater_status') {
           setStatus(r.status)
           setEndpointInput(r.status.settings.endpoint || DEFAULT_ENDPOINT)
-          setPublicKeyInput(r.status.settings.public_key || DEFAULT_PUBKEY)
+          setPublicKeyInput(r.status.settings.public_key || '')
           setInfo(r.status.last ?? null)
         }
       })
@@ -204,7 +204,7 @@ export function UpdatesCard() {
       const r = await runCommand({
         type: 'set_updater_settings',
         endpoint: endpointInput.trim() || DEFAULT_ENDPOINT,
-        public_key: publicKeyInput.trim() || DEFAULT_PUBKEY,
+        public_key: publicKeyInput.trim(),
       })
       if (r.type === 'updater_status') {
         setStatus(r.status)
@@ -221,12 +221,12 @@ export function UpdatesCard() {
       const r = await runCommand({
         type: 'set_updater_settings',
         endpoint: DEFAULT_ENDPOINT,
-        public_key: DEFAULT_PUBKEY,
+        public_key: '',
       })
       if (r.type === 'updater_status') {
         setStatus(r.status)
         setEndpointInput(DEFAULT_ENDPOINT)
-        setPublicKeyInput(DEFAULT_PUBKEY)
+        setPublicKeyInput('')
         setInfo(null)
         setShowConfig(false)
       }
@@ -240,6 +240,15 @@ export function UpdatesCard() {
 
   const hasUpdate = info?.available ?? false
   const isDownloaded = !!info?.downloaded
+
+  // Friendly error message instead of raw crypto / internal network errors
+  const displayError = error
+    ? {
+      problem: 'Unable to check for updates right now.',
+      cause: 'There was a problem contacting the update service or verifying the release files.',
+      fix: 'Please check your internet connection, or download the installer manually from the GitHub Releases page.',
+    }
+    : null
 
   return (
     <Card>
@@ -259,7 +268,7 @@ export function UpdatesCard() {
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <ErrorCard error={error} onDismiss={() => setError(null)} />
+        <ErrorCard error={displayError} onDismiss={() => setError(null)} />
 
         {/* When downloaded and verified: show ONE unified ready banner */}
         {isDownloaded && info && (
@@ -301,11 +310,11 @@ export function UpdatesCard() {
           </div>
         )}
 
-        {/* Source configuration panel */}
-        {showConfig && (
+        {/* Source configuration panel — development only */}
+        {isDev && showConfig && (
           <div className="flex flex-col gap-3 rounded-lg border border-border/70 bg-accent/20 p-3.5 text-sm">
             <div className="flex items-center justify-between">
-              <span className="font-medium text-foreground">Update Source Settings</span>
+              <span className="font-medium text-foreground">Update Source Settings (Dev Only)</span>
               <Button
                 variant="ghost"
                 size="sm"
@@ -328,13 +337,13 @@ export function UpdatesCard() {
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-xs text-muted-foreground" htmlFor="updater-pubkey">
-                Minisign Public Key (leave empty to use compiled-in key)
+                Minisign Public Key (leave empty to use built-in app key)
               </label>
               <Input
                 id="updater-pubkey"
                 value={publicKeyInput}
                 onChange={(e) => setPublicKeyInput(e.target.value)}
-                placeholder="RWS..."
+                placeholder="Using built-in official key (leave empty)"
               />
             </div>
             <div className="flex justify-end gap-2 pt-1">
@@ -385,14 +394,16 @@ export function UpdatesCard() {
             </Button>
           )}
 
-          {/* Configure source toggle */}
-          <Button
-            variant="ghost"
-            onClick={() => setShowConfig((v) => !v)}
-            id="configure-update-source-btn"
-          >
-            <Settings2 className="size-4" /> {showConfig ? 'Hide source' : 'Configure source'}
-          </Button>
+          {/* Configure source toggle — development only */}
+          {isDev && (
+            <Button
+              variant="ghost"
+              onClick={() => setShowConfig((v) => !v)}
+              id="configure-update-source-btn"
+            >
+              <Settings2 className="size-4" /> {showConfig ? 'Hide source' : 'Configure source'}
+            </Button>
+          )}
 
           {/* Always offer a direct link */}
           <Button
@@ -468,7 +479,7 @@ export function useOnline(): NetworkStatus | null {
   const [status, setStatus] = useState<NetworkStatus | null>(null)
   useEffect(() => {
     let alive = true
-    const check = () => runCommand({ type: 'check_network', force: false }).then((r) => alive && r.type === 'network' && setStatus(r.status)).catch(() => {})
+    const check = () => runCommand({ type: 'check_network', force: false }).then((r) => alive && r.type === 'network' && setStatus(r.status)).catch(() => { })
     check()
     const t = setInterval(check, 30000)
     return () => {
