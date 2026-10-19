@@ -10,17 +10,20 @@ and the project follows [Semantic Versioning](https://semver.org/).
 Feature release. Full notes: [`release-notes/v2.2.0.md`](./release-notes/v2.2.0.md).
 
 ### Added
+- In-app updater in Settings (`Settings → Updates`) supporting checking, downloading, and installing verified releases.
 - Site logo and icon support in Sites page table rows with direct click-to-edit integration.
-- Custom photo upload with client-side WebP conversion (256x256), saved in project roots as `ols_site_icon.webp` and rendered as square `size-8`/`size-7.5` `rounded-md shadow-xs object-cover` elements.
-- Bundled offline Font Awesome icon catalog with full color customization (color picker swatch, text input for hex/rgba/names, 13 quick preset chips, reset color button), stored as `name|color` in domain configuration.
-- Clean cyan wireframe internet globe fallback (Tabler world style) when no custom icon or photo is selected.
-- Dedicated "Site logo / icon" tab in Site Settings dialog (`ImageIcon`) with live preview and optimistic local updates.
+- Custom image upload with automatic scaling and local WebP optimization.
+- Bundled offline Font Awesome icon catalog with full color customization (swatch picker, color presets, custom hex/CSS values).
+- Dedicated "Site logo / icon" tab in Site Settings dialog with live preview.
+- Page refresh (F5) preservation: keeps the user on their active page and subtabs instead of resetting to the Dashboard.
+
+### Changed & Improved
+- Borderless window styling with rounded corners that seamlessly adapt when maximized or in full screen.
+- Streamlined Updates card UX with clear status banners, direct release notes links, and helper service update support.
 
 ### Fixed
-- Removed outer window borders in windowed mode for a sleek borderless aesthetic with clean rounded corners (`rounded-xl`), automatically switching to `rounded-none` when maximized or in fullscreen mode so the webview fills display boundaries without cutout corners or redundant borders.
-- App route and active subtabs (WebServer subtab, Logs source) are preserved across page reloads and F5 refreshes via `window.location.hash` and `sessionStorage`, keeping the user on the active page instead of resetting to the dashboard.
-- Fixed layout glitch where success banners dynamically mounted/unmounted and shifted modal content vertically, replacing with an inline fixed-space `Saved ✓` indicator.
-- Fixed `Domain` struct test initializers in `ols-core` and examples for `icon: Option<String>`.
+- Fixed API documentation link in Settings → Local API to point to the master branch.
+- Eliminated modal layout shifts when saving site logo settings.
 
 ## [2.1.0] — 2026-10-18
 

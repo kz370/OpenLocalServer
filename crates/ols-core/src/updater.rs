@@ -24,8 +24,7 @@ use crate::error::CoreError;
 const KEY: &str = "updater";
 const DEFAULT_ENDPOINT: &str =
     "https://github.com/kz370/OpenLocalServer/releases/latest/download/latest.json";
-pub const DEFAULT_PUBKEY: &str =
-    "RWQTa5rn3AFu8SRjdSvz7VsUi/pRNNdk2FPuCbmgSZMV+veJMB9XCiys";
+pub const DEFAULT_PUBKEY: &str = "RWQTa5rn3AFu8SRjdSvz7VsUi/pRNNdk2FPuCbmgSZMV+veJMB9XCiys";
 const MAX_INSTALLER: usize = 600 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
