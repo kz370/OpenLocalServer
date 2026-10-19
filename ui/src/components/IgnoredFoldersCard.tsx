@@ -11,7 +11,7 @@ import { runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
 import { useAction } from '@/lib/hooks'
 
-const DEFAULT_IGNORED = ['excluded_sites']
+const DEFAULT_IGNORED = ['ols_excluded_sites']
 
 export function IgnoredFoldersCard() {
   const [folders, setFolders] = useState<string[] | null>(null)
@@ -45,8 +45,16 @@ export function IgnoredFoldersCard() {
     if (filtered.length === 0) {
       setError({
         problem: 'Cannot empty ignored folders.',
-        cause: 'At least one ignored folder must remain so deleted sites and excluded projects have a designated directory.',
-        fix: 'Keep at least one folder name in the list, or click Reset default.',
+        cause: `${DEFAULT_IGNORED[0]} must remain ignored so deleted sites and excluded projects stay out of scans.`,
+        fix: `Keep ${DEFAULT_IGNORED[0]} in the list, or click Reset default.`,
+      })
+      return
+    }
+    if (!filtered.some((folder) => folder.toLowerCase() === DEFAULT_IGNORED[0])) {
+      setError({
+        problem: 'Cannot remove the required ignored folder.',
+        cause: `${DEFAULT_IGNORED[0]} keeps deleted sites and excluded projects out of scans.`,
+        fix: `Keep ${DEFAULT_IGNORED[0]} in the ignored folders list.`,
       })
       return
     }
@@ -93,6 +101,14 @@ export function IgnoredFoldersCard() {
 
   async function handleRemove(folder: string) {
     const current = folders ?? DEFAULT_IGNORED
+    if (folder.toLowerCase() === DEFAULT_IGNORED[0]) {
+      setError({
+        problem: 'The required ignored folder cannot be deleted.',
+        cause: `${DEFAULT_IGNORED[0]} is reserved for deleted sites and projects.`,
+        fix: 'Keep this folder in the ignored list and remove a different folder instead.',
+      })
+      return
+    }
     if (current.length <= 1) {
       setError({
         problem: 'Cannot delete the last ignored folder.',
@@ -114,6 +130,7 @@ export function IgnoredFoldersCard() {
   }
 
   function startRename(index: number, folder: string) {
+    if (folder.toLowerCase() === DEFAULT_IGNORED[0]) return
     setEditingIndex(index)
     setEditingValue(folder)
   }
@@ -124,6 +141,15 @@ export function IgnoredFoldersCard() {
   }
 
   async function submitRename(oldName: string) {
+    if (oldName.toLowerCase() === DEFAULT_IGNORED[0]) {
+      cancelRename()
+      setError({
+        problem: 'The required ignored folder cannot be renamed.',
+        cause: `${DEFAULT_IGNORED[0]} is reserved for deleted sites and projects.`,
+        fix: 'Keep this folder name unchanged and rename a different ignored folder instead.',
+      })
+      return
+    }
     const newName = editingValue.trim()
     if (!newName || newName.toLowerCase() === oldName.toLowerCase()) {
       cancelRename()
@@ -166,7 +192,7 @@ export function IgnoredFoldersCard() {
 
   async function handleResetDefault() {
     await run('reset', async () => {
-      await saveList(DEFAULT_IGNORED, 'Restored default ignored folder (excluded_sites).')
+      await saveList([...DEFAULT_IGNORED], `Restored default ignored folder (${DEFAULT_IGNORED[0]}).`)
     })
   }
 
@@ -182,11 +208,11 @@ export function IgnoredFoldersCard() {
               <CardTitle className="text-sm">Ignored folders</CardTitle>
               <CardDescription>
                 Folders with these names are completely ignored during scans. The app never scans or reads their contents.
-                Deleted sites are moved to <code className="text-xs">excluded_sites</code> by default.
+                Deleted sites are moved to <code className="text-xs">{DEFAULT_IGNORED[0]}</code> by default.
               </CardDescription>
             </div>
-            {folders.length !== 1 || folders[0] !== 'excluded_sites' ? (
-              <Button size="sm" variant="ghost" className="h-8 gap-1.5 text-xs text-muted-foreground" onClick={handleResetDefault} disabled={busy !== null} title="Reset to excluded_sites default">
+            {folders.length !== 1 || folders[0] !== DEFAULT_IGNORED[0] ? (
+              <Button size="sm" variant="ghost" className="h-8 gap-1.5 text-xs text-muted-foreground" onClick={handleResetDefault} disabled={busy !== null} title={`Reset to ${DEFAULT_IGNORED[0]} default`}>
                 <RotateCcw className="size-3.5" /> Reset default
               </Button>
             ) : null}
@@ -244,44 +270,46 @@ export function IgnoredFoldersCard() {
                           <span className="truncate text-sm font-medium" title={folder}>
                             {folder}
                           </span>
-                          {folder.toLowerCase() === 'excluded_sites' && (
+                          {folder.toLowerCase() === DEFAULT_IGNORED[0] && (
                             <Badge variant="secondary" className="text-xs">
-                              Default
+                              Required
                             </Badge>
                           )}
                         </div>
-                        <div className="flex items-center gap-1">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="size-7 px-0 text-muted-foreground hover:text-foreground"
-                            disabled={busy !== null}
-                            onClick={() => startRename(idx, folder)}
-                            title={`Rename "${folder}"`}
-                            aria-label={`Rename ${folder}`}
-                          >
-                            <Pencil className="size-3.5" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className={`size-7 px-0 text-muted-foreground ${folders.length <= 1 ? 'cursor-not-allowed opacity-30 hover:text-muted-foreground' : 'hover:text-destructive'}`}
-                            disabled={busy !== null || folders.length <= 1}
-                            onClick={() => void handleRemove(folder)}
-                            title={
-                              folders.length <= 1
-                                ? 'At least one ignored folder must remain and cannot be deleted'
-                                : `Remove "${folder}" from ignored list`
-                            }
-                            aria-label={
-                              folders.length <= 1
-                                ? `Cannot delete ${folder} (at least one ignored folder must remain)`
-                                : `Remove ${folder}`
-                            }
-                          >
-                            {busy === `remove:${folder}` ? <Spinner /> : <Trash2 className="size-3.5" />}
-                          </Button>
-                        </div>
+                        {folder.toLowerCase() !== DEFAULT_IGNORED[0] && (
+                          <div className="flex items-center gap-1">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="size-7 px-0 text-muted-foreground hover:text-foreground"
+                              disabled={busy !== null}
+                              onClick={() => startRename(idx, folder)}
+                              title={`Rename "${folder}"`}
+                              aria-label={`Rename ${folder}`}
+                            >
+                              <Pencil className="size-3.5" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className={`size-7 px-0 text-muted-foreground ${folders.length <= 1 ? 'cursor-not-allowed opacity-30 hover:text-muted-foreground' : 'hover:text-destructive'}`}
+                              disabled={busy !== null || folders.length <= 1}
+                              onClick={() => void handleRemove(folder)}
+                              title={
+                                folders.length <= 1
+                                  ? 'At least one ignored folder must remain and cannot be deleted'
+                                  : `Remove "${folder}" from ignored list`
+                              }
+                              aria-label={
+                                folders.length <= 1
+                                  ? `Cannot delete ${folder} (at least one ignored folder must remain)`
+                                  : `Remove ${folder}`
+                              }
+                            >
+                              {busy === `remove:${folder}` ? <Spinner /> : <Trash2 className="size-3.5" />}
+                            </Button>
+                          </div>
+                        )}
                       </>
                     )}
                   </div>
@@ -290,11 +318,9 @@ export function IgnoredFoldersCard() {
             </div>
           )}
 
-          {folders.length <= 1 && (
-            <p className="text-xs text-muted-foreground">
-              At least one ignored folder must remain so deleted and excluded sites have a designated directory.
-            </p>
-          )}
+          <p className="text-xs text-muted-foreground">
+            {DEFAULT_IGNORED[0]} is required and cannot be renamed or deleted.
+          </p>
 
           <div className="flex gap-2">
             <div className="relative flex-1">
@@ -304,7 +330,7 @@ export function IgnoredFoldersCard() {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') void handleAdd()
                 }}
-                placeholder="Folder name to ignore (e.g. excluded_sites, archive)"
+                placeholder={`Folder name to ignore (e.g. ${DEFAULT_IGNORED[0]}, archive)`}
                 className="h-8 text-sm"
               />
             </div>

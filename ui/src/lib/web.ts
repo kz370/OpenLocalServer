@@ -127,7 +127,7 @@ export function useWeb() {
    * there looking untouched while the user waits.
    */
   /**
-   * Deleting a site moves its folder into an `excluded_sites` folder in the same directory,
+   * Deleting a site moves its folder into an `ols_excluded_sites` folder in the same directory,
    * revokes its certificate, re-renders config files and reloads the web server.
    */
   async function deleteSite(hostname: string) {
@@ -168,7 +168,7 @@ export function useWeb() {
     }
   }
 
-  /** Deletes a project by moving its folder into an `excluded_sites` folder in the same directory. */
+  /** Deletes a project by moving its folder into an `ols_excluded_sites` folder in the same directory. */
   async function deleteProject(id: string) {
     if (removing.has(id)) return
     markRemoving(id)

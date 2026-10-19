@@ -942,7 +942,7 @@ impl Inner {
         Ok(())
     }
 
-    /// Deletes a site by moving its project folder into an `excluded_sites` folder
+    /// Deletes a site by moving its project folder into an `ols_excluded_sites` folder
     /// in the same directory instead of permanently deleting it.
     /// Revokes its certificate, removes its web configuration, and unregisters the site.
     pub fn delete_site(&self, hostname: &str) -> Result<(), CoreError> {
@@ -1039,11 +1039,11 @@ impl Inner {
         })
     }
 
-    /// Folders the app must never scan or read. Defaults to `["excluded_sites"]`.
+    /// Folders the app must never scan or read. Always includes `ols_excluded_sites`.
     /// Guaranteed to return at least one valid folder name.
     pub fn ignored_folders(&self) -> Vec<String> {
         let s = self.settings.lock().unwrap();
-        match s.get(PROJECT_IGNORED_FOLDERS).and_then(|v| v.as_array()) {
+        let mut folders = match s.get(PROJECT_IGNORED_FOLDERS).and_then(|v| v.as_array()) {
             Some(a) => {
                 let filtered: Vec<String> = a
                     .iter()
@@ -1052,28 +1052,31 @@ impl Inner {
                     .filter(|s| !s.is_empty())
                     .collect();
                 if filtered.is_empty() {
-                    vec!["excluded_sites".to_string()]
+                    DEFAULT_IGNORED_FOLDERS
+                        .iter()
+                        .map(|name| (*name).to_string())
+                        .collect()
                 } else {
                     filtered
                 }
             }
-            None => vec!["excluded_sites".to_string()],
+            None => DEFAULT_IGNORED_FOLDERS
+                .iter()
+                .map(|name| (*name).to_string())
+                .collect(),
+        };
+        if !folders
+            .iter()
+            .any(|folder| folder.eq_ignore_ascii_case(OLS_EXCLUDED_FOLDER))
+        {
+            folders.push(OLS_EXCLUDED_FOLDER.to_string());
         }
+        folders
     }
 
     /// Primary folder name to use when moving deleted sites/projects.
     pub fn primary_excluded_folder(&self) -> String {
-        let list = self.ignored_folders();
-        if list
-            .iter()
-            .any(|f| f.eq_ignore_ascii_case("excluded_sites"))
-        {
-            "excluded_sites".to_string()
-        } else if let Some(first) = list.first() {
-            first.clone()
-        } else {
-            "excluded_sites".to_string()
-        }
+        OLS_EXCLUDED_FOLDER.to_string()
     }
 
     /// Renames a folder in the ignored list and also renames any matching folder
@@ -1081,6 +1084,15 @@ impl Inner {
     pub fn rename_ignored_folder(&self, old_name: &str, new_name: &str) -> Result<(), CoreError> {
         let old_name = old_name.trim();
         let new_name = new_name.trim();
+        if old_name.eq_ignore_ascii_case(OLS_EXCLUDED_FOLDER) {
+            return Err(CoreError::failed_fix(
+                "The required ignored folder cannot be renamed.",
+                format!(
+                    "'{OLS_EXCLUDED_FOLDER}' is reserved for safely deleted sites and projects."
+                ),
+                "Keep this folder name unchanged and rename a different ignored folder instead.",
+            ));
+        }
         if new_name.is_empty() {
             return Err(CoreError::failed_fix(
                 "Folder name cannot be blank.",
@@ -1249,7 +1261,7 @@ impl Inner {
         Ok(())
     }
 
-    /// Deletes a project without a domain by moving its folder into an `excluded_sites` folder
+    /// Deletes a project without a domain by moving its folder into an `ols_excluded_sites` folder
     /// in the same directory instead of permanently deleting it.
     pub fn delete_project(&self, id: &str) -> Result<(), CoreError> {
         let path_str = {
@@ -1744,7 +1756,7 @@ impl Inner {
         Ok(outcome)
     }
 
-    /// Deletes a group of sites by moving their folders into `excluded_sites` in their respective directories.
+    /// Deletes a group of sites by moving their folders into `ols_excluded_sites` in their respective directories.
     pub fn delete_sites(&self, hostnames: &[String]) -> Result<BulkOutcome, CoreError> {
         let mut outcome = BulkOutcome::default();
         for hostname in hostnames {
@@ -4035,7 +4047,8 @@ const AUTO_SKIP: &str = "domains.auto_skip";
 /// re-register them; only explicitly adding the folder brings one back.
 const PROJECT_SKIP: &str = "projects.removed";
 pub const PROJECT_IGNORED_FOLDERS: &str = "projects.ignored_folders";
-pub const DEFAULT_IGNORED_FOLDERS: &[&str] = &["excluded_sites"];
+pub const OLS_EXCLUDED_FOLDER: &str = "ols_excluded_sites";
+pub const DEFAULT_IGNORED_FOLDERS: &[&str] = &[OLS_EXCLUDED_FOLDER];
 
 fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dst)?;

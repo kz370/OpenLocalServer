@@ -142,7 +142,7 @@ pub enum CoreCommand {
     RemoveProject {
         id: String,
     },
-    /// Deletes a project by moving its folder into an `excluded_sites` folder
+    /// Deletes a project by moving its folder into an `ols_excluded_sites` folder
     /// in the same directory instead of permanently deleting it.
     DeleteProject {
         id: String,
@@ -291,7 +291,7 @@ pub enum CoreCommand {
     RemoveDomain {
         hostname: String,
     },
-    /// Deletes a site by moving its project folder into an `excluded_sites` folder
+    /// Deletes a site by moving its project folder into an `ols_excluded_sites` folder
     /// in the same directory instead of permanently deleting it.
     DeleteSite {
         hostname: String,
@@ -312,7 +312,7 @@ pub enum CoreCommand {
     BulkRemoveDomains {
         hostnames: Vec<String>,
     },
-    /// Deletes a group of sites by moving their folders into `excluded_sites` in their respective directories.
+    /// Deletes a group of sites by moving their folders into `ols_excluded_sites` in their respective directories.
     BulkDeleteSites {
         hostnames: Vec<String>,
     },
@@ -1897,22 +1897,7 @@ impl Core {
                         i.default_projects_dir().display().to_string(),
                     ))
                 } else if key == crate::app::PROJECT_IGNORED_FOLDERS {
-                    let s = i.settings.lock().unwrap();
-                    let val = s
-                        .get(&key)
-                        .cloned()
-                        .unwrap_or_else(|| serde_json::json!(crate::app::DEFAULT_IGNORED_FOLDERS));
-                    let val = match val.as_array() {
-                        Some(arr)
-                            if arr.iter().any(|v| {
-                                v.as_str().map(|s| !s.trim().is_empty()).unwrap_or(false)
-                            }) =>
-                        {
-                            val
-                        }
-                        _ => serde_json::json!(crate::app::DEFAULT_IGNORED_FOLDERS),
-                    };
-                    Some(val)
+                    Some(serde_json::json!(i.ignored_folders()))
                 } else {
                     i.settings.lock().unwrap().get(&key).cloned()
                 };
@@ -1926,14 +1911,39 @@ impl Core {
                     let has_valid = match value.as_array() {
                         Some(arr) => arr
                             .iter()
-                            .any(|v| v.as_str().map(|s| !s.trim().is_empty()).unwrap_or(false)),
+                            .any(|v| v.as_str().is_some_and(|folder| !folder.trim().is_empty())),
                         None => false,
                     };
                     if !has_valid {
                         return Err(CoreError::failed_fix(
                             "Cannot empty ignored folders.",
                             "At least one ignored folder must remain so deleted sites and excluded projects have a designated directory.",
-                            "Keep at least one folder name (such as 'excluded_sites') in the ignored folders list.",
+                            format!(
+                                "Keep '{}' and at least one valid folder name in the ignored folders list.",
+                                crate::app::OLS_EXCLUDED_FOLDER
+                            ),
+                        ));
+                    }
+                    let includes_required = value.as_array().is_some_and(|arr| {
+                        arr.iter().any(|v| {
+                            v.as_str().is_some_and(|folder| {
+                                folder
+                                    .trim()
+                                    .eq_ignore_ascii_case(crate::app::OLS_EXCLUDED_FOLDER)
+                            })
+                        })
+                    });
+                    if !includes_required {
+                        return Err(CoreError::failed_fix(
+                            "Cannot remove the required ignored folder.",
+                            format!(
+                                "'{}' is needed to keep deleted sites and projects out of scans.",
+                                crate::app::OLS_EXCLUDED_FOLDER
+                            ),
+                            format!(
+                                "Keep '{}' in the ignored folders list.",
+                                crate::app::OLS_EXCLUDED_FOLDER
+                            ),
                         ));
                     }
                 }
@@ -5066,6 +5076,47 @@ mod tests {
     }
 
     #[test]
+    fn required_ignored_folder_is_default_and_cannot_be_removed_or_renamed() {
+        let (core, _home) = test_core();
+        let get_ignored = || {
+            let CoreResponse::Setting { value, .. } = core
+                .dispatch(CoreCommand::GetSetting {
+                    key: crate::app::PROJECT_IGNORED_FOLDERS.into(),
+                })
+                .unwrap()
+            else {
+                panic!("expected a setting response");
+            };
+            value.unwrap()
+        };
+
+        assert_eq!(get_ignored(), serde_json::json!(["ols_excluded_sites"]));
+
+        core.dispatch(CoreCommand::SetSetting {
+            key: crate::app::PROJECT_IGNORED_FOLDERS.into(),
+            value: serde_json::json!(["ols_excluded_sites", "archive"]),
+        })
+        .unwrap();
+
+        assert!(core
+            .dispatch(CoreCommand::SetSetting {
+                key: crate::app::PROJECT_IGNORED_FOLDERS.into(),
+                value: serde_json::json!(["archive"]),
+            })
+            .is_err());
+        assert!(core
+            .dispatch(CoreCommand::RenameIgnoredFolder {
+                old_name: "ols_excluded_sites".into(),
+                new_name: "archive".into(),
+            })
+            .is_err());
+        assert_eq!(
+            get_ignored(),
+            serde_json::json!(["ols_excluded_sites", "archive"])
+        );
+    }
+
+    #[test]
     fn every_command_variant_round_trips_through_json_with_its_snake_case_tag() {
         // The UI builds these as JSON — a renamed field would silently break it.
         let cmd = CoreCommand::StartQuickApp {
@@ -5275,7 +5326,7 @@ mod tests {
     }
 
     #[test]
-    fn delete_site_moves_folder_to_excluded_sites() {
+    fn delete_site_moves_folder_to_ols_excluded_sites() {
         let (core, _home) = test_core();
         let tmp = tempfile::tempdir().unwrap();
         let project_dir = tmp.path().join("my-site");
@@ -5321,9 +5372,9 @@ mod tests {
         })
         .unwrap();
 
-        // Project folder was moved into excluded_sites in the same directory
+        // Project folder was moved into ols_excluded_sites in the same directory
         assert!(!project_dir.exists());
-        let excluded_dir = tmp.path().join("excluded_sites").join("my-site");
+        let excluded_dir = tmp.path().join("ols_excluded_sites").join("my-site");
         assert!(excluded_dir.exists());
         assert!(excluded_dir.join("index.html").exists());
     }

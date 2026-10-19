@@ -429,7 +429,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     if (pickedCount === 0) return
     const names = pickedCount <= 3 ? pickedRows.map((r) => r.site?.hostname ?? r.project?.name).join(', ') : `these ${pickedCount} rows`
     const ok = await confirmAction(
-      `Selected sites and projects will be moved into an "excluded_sites" folder in the same directory instead of permanently deleting them. Certificates are revoked and web configs are removed.`,
+      `Selected sites and projects will be moved into an "ols_excluded_sites" folder in the same directory instead of permanently deleting them. Certificates are revoked and web configs are removed.`,
       `Delete ${names}?`,
       'Delete',
     )
@@ -570,7 +570,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         disabled: removing.has(key) || busy === `delete:${key}`,
         onSelect: async () => {
           const ok = await confirmAction(
-            `Moves the project into an "excluded_sites" folder in the same directory instead of permanently deleting it. Certificate is revoked and server configuration is removed.`,
+            `Moves the project into an "ols_excluded_sites" folder in the same directory instead of permanently deleting it. Certificate is revoked and server configuration is removed.`,
             `Delete ${d.hostname}?`,
             'Delete site',
           )
@@ -600,7 +600,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         disabled: removing.has(p.id) || busy === `delete:${p.id}`,
         onSelect: async () => {
           const ok = await confirmAction(
-            `Moves "${p.name}" into an "excluded_sites" folder in the same directory instead of permanently deleting it.`,
+            `Moves "${p.name}" into an "ols_excluded_sites" folder in the same directory instead of permanently deleting it.`,
             `Delete ${p.name}?`,
             'Delete project',
           )
@@ -714,7 +714,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                   <Button size="sm" variant="outline" className="h-8" disabled={busyBulk} onClick={() => void bulkHideExclude()} title="Hide/exclude selected sites without touching project files">
                     <EyeOff /> Hide/Exclude
                   </Button>
-                  <Button size="sm" variant="outline" className="h-8 text-destructive hover:bg-destructive/10" disabled={busyBulk} onClick={() => void bulkDelete()} title="Move selected sites into an excluded_sites folder">
+                  <Button size="sm" variant="outline" className="h-8 text-destructive hover:bg-destructive/10" disabled={busyBulk} onClick={() => void bulkDelete()} title="Move selected sites into an ols_excluded_sites folder">
                     <Trash2 /> Delete
                   </Button>
                   <Button size="sm" variant="ghost" className="h-8" disabled={busyBulk} onClick={() => setPicked(new Set())}>
