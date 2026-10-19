@@ -190,6 +190,9 @@ pub struct Domain {
     /// in a generated config, so nothing exotic may get through.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path_prefix: Option<String>,
+    /// Optional Font Awesome icon identifier or class (e.g. "fa-wordpress" or "globe").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
 }
 
 /// Rejects a per-site server id that isn't one we ship. A blank value means "use the
@@ -274,6 +277,7 @@ fn home_domain(dir: &Path) -> Domain {
         tunnel_id: None,
         server: None,
         path_prefix: None,
+        icon: None,
     }
 }
 
@@ -982,6 +986,7 @@ mod tests {
             tunnel_id: None,
             server: None,
             path_prefix: None,
+            icon: None,
         }
     }
 

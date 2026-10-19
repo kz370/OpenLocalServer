@@ -20,6 +20,9 @@ pub struct Project {
     pub id: String,
     pub name: String,
     pub path: String,
+    /// Data URL (`data:image/webp;base64,...`) when `ols_site_icon.webp` exists in `path`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon_image: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,6 +100,7 @@ impl ProjectStore {
             id,
             name,
             path: canonical_str,
+            icon_image: None,
         };
         self.projects.push(project.clone());
         self.persist()?;

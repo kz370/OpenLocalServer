@@ -1600,6 +1600,7 @@ impl Planner<'_> {
             tunnel_id: None,
             server: None,
             path_prefix: None,
+            icon: None,
         };
         match existing {
             Some(d) if d.project_id.as_deref().is_some_and(|p| p != project_id) => {

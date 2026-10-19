@@ -252,6 +252,12 @@ pub struct DomainSummary {
     pub path_prefix: Option<String>,
     /// HTTP port of the server that renders this site, so the UI can build the localhost URL.
     pub http_port: u16,
+    /// Optional Font Awesome icon identifier or class (e.g. "fa-wordpress" or "globe").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    /// Data URL (`data:image/webp;base64,...`) when `ols_site_icon.webp` exists in `folder`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon_image: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -796,27 +802,33 @@ impl Inner {
             .unwrap()
             .list()
             .into_iter()
-            .map(|d| DomainSummary {
-                url: self.site_url(&d, &cfg),
-                hostname: d.hostname.clone(),
-                https: d.https,
-                kind: match d.kind {
-                    SiteKind::Php { .. } => "php",
-                    SiteKind::Proxy { .. } => "proxy",
-                    SiteKind::Static => "static",
+            .map(|d| {
+                let folder = site_folder(&d, &projects);
+                let icon_image = read_site_icon_image(&folder);
+                DomainSummary {
+                    url: self.site_url(&d, &cfg),
+                    hostname: d.hostname.clone(),
+                    https: d.https,
+                    kind: match d.kind {
+                        SiteKind::Php { .. } => "php",
+                        SiteKind::Proxy { .. } => "proxy",
+                        SiteKind::Static => "static",
+                    }
+                    .into(),
+                    enabled: d.enabled,
+                    project_id: d.project_id.clone(),
+                    has_app: d.app.is_some(),
+                    group: site_group(&d, &projects).into(),
+                    folder,
+                    public_domain: d.public_domain.clone(),
+                    server: crate::domain::resolved_server(&d, &cfg),
+                    path_prefix: d.path_prefix.clone(),
+                    http_port: cfg
+                        .effective_ports(&crate::domain::resolved_server(&d, &cfg))
+                        .http,
+                    icon: d.icon.clone(),
+                    icon_image,
                 }
-                .into(),
-                enabled: d.enabled,
-                project_id: d.project_id.clone(),
-                has_app: d.app.is_some(),
-                group: site_group(&d, &projects).into(),
-                folder: site_folder(&d, &projects),
-                public_domain: d.public_domain.clone(),
-                server: crate::domain::resolved_server(&d, &cfg),
-                path_prefix: d.path_prefix.clone(),
-                http_port: cfg
-                    .effective_ports(&crate::domain::resolved_server(&d, &cfg))
-                    .http,
             })
             .collect()
     }
@@ -1515,6 +1527,7 @@ impl Inner {
                 tunnel_id: None,
                 server: None,
                 path_prefix: None,
+                icon: None,
             };
             match self.add_domain(domain) {
                 Ok(d) => {
@@ -3299,6 +3312,7 @@ impl Inner {
                     tunnel_id: None,
                     server: None,
                     path_prefix: None,
+                    icon: None,
                 };
                 let cfg = self.web_config();
                 let url = self.site_url(&domain, &cfg);
@@ -4022,7 +4036,7 @@ fn site_group(d: &Domain, projects: &[crate::project::Project]) -> &'static str 
     }
 }
 
-fn site_folder(d: &Domain, projects: &[crate::project::Project]) -> String {
+pub fn site_folder(d: &Domain, projects: &[crate::project::Project]) -> String {
     if let Some(p) = d
         .project_id
         .as_ref()
@@ -4038,6 +4052,83 @@ fn site_folder(d: &Domain, projects: &[crate::project::Project]) -> String {
     match root.parent() {
         Some(parent) if docroot => parent.display().to_string(),
         _ => d.root.clone(),
+    }
+}
+
+const BASE64_ALPHABET: &[u8; 64] =
+    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+pub fn to_base64(data: &[u8]) -> String {
+    let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0];
+        let b1 = *chunk.get(1).unwrap_or(&0);
+        let b2 = *chunk.get(2).unwrap_or(&0);
+        out.push(BASE64_ALPHABET[(b0 >> 2) as usize] as char);
+        out.push(BASE64_ALPHABET[(((b0 & 0x03) << 4) | (b1 >> 4)) as usize] as char);
+        if chunk.len() > 1 {
+            out.push(BASE64_ALPHABET[(((b1 & 0x0f) << 2) | (b2 >> 6)) as usize] as char);
+        } else {
+            out.push('=');
+        }
+        if chunk.len() > 2 {
+            out.push(BASE64_ALPHABET[(b2 & 0x3f) as usize] as char);
+        } else {
+            out.push('=');
+        }
+    }
+    out
+}
+
+pub fn from_base64(input: &str) -> Result<Vec<u8>, String> {
+    fn decode_char(c: u8) -> Result<u8, String> {
+        match c {
+            b'A'..=b'Z' => Ok(c - b'A'),
+            b'a'..=b'z' => Ok(c - b'a' + 26),
+            b'0'..=b'9' => Ok(c - b'0' + 52),
+            b'+' => Ok(62),
+            b'/' => Ok(63),
+            _ => Err(format!("Invalid base64 character: {}", c as char)),
+        }
+    }
+
+    let input = input.trim().as_bytes();
+    if input.is_empty() {
+        return Ok(Vec::new());
+    }
+    if input.len() % 4 != 0 {
+        return Err("Base64 string length must be a multiple of 4".into());
+    }
+
+    let mut out = Vec::with_capacity(input.len() / 4 * 3);
+    for chunk in input.chunks(4) {
+        let b0 = decode_char(chunk[0])?;
+        let b1 = decode_char(chunk[1])?;
+        out.push((b0 << 2) | (b1 >> 4));
+        if chunk[2] != b'=' {
+            let b2 = decode_char(chunk[2])?;
+            out.push(((b1 & 0x0f) << 4) | (b2 >> 2));
+            if chunk[3] != b'=' {
+                let b3 = decode_char(chunk[3])?;
+                out.push(((b2 & 0x03) << 6) | b3);
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Reads `<folder>/ols_site_icon.webp` if present and returns a data URL.
+pub fn read_site_icon_image(folder: &str) -> Option<String> {
+    let path = Path::new(folder).join("ols_site_icon.webp");
+    if path.is_file() {
+        match std::fs::read(&path) {
+            Ok(bytes) if !bytes.is_empty() && bytes.len() <= 2 * 1024 * 1024 => {
+                Some(format!("data:image/webp;base64,{}", to_base64(&bytes)))
+            }
+            _ => None,
+        }
+    } else {
+        None
     }
 }
 

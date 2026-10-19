@@ -132,6 +132,7 @@ export interface Project {
   id: string
   name: string
   path: string
+  icon_image?: string | null
 }
 
 /**
@@ -303,6 +304,8 @@ export interface Domain {
   server?: string | null
   /** Also served at `localhost/<path_prefix>`, alongside the site's own domain (§55). */
   path_prefix?: string | null
+  /** Optional Font Awesome icon identifier or class (e.g. "fa-wordpress" or "globe"). */
+  icon?: string | null
 }
 
 export interface ProcfilePreview {
@@ -330,6 +333,10 @@ export interface DomainSummary {
   path_prefix?: string | null
   /** HTTP port of the server that renders this site, for the localhost URL. */
   http_port?: number
+  /** Optional Font Awesome icon identifier or class (e.g. "fa-wordpress" or "globe"). */
+  icon?: string | null
+  /** Data URL (`data:image/webp;base64,...`) when `ols_site_icon.webp` exists in `folder`. */
+  icon_image?: string | null
 }
 
 /** Ports a server is stored with. The default server always binds 80/443 instead. */
@@ -689,6 +696,10 @@ export type CoreCommand =
   | { type: 'bulk_set_domain_server'; hostnames: string[]; server: string | null }
   | { type: 'duplicate_domain'; hostname: string; new_hostname: string }
   | { type: 'rename_domain'; hostname: string; new_hostname: string }
+  | { type: 'set_domain_icon'; hostname: string; icon?: string | null }
+  | { type: 'set_site_icon_image'; hostname?: string | null; folder?: string | null; webp_base64: string }
+  | { type: 'remove_site_icon_image'; hostname?: string | null; folder?: string | null }
+  | { type: 'read_image_file'; path: string }
   | { type: 'suggest_domain'; project_id: string; template: string }
   | { type: 'apply_web'; overwrite: string[] }
   | { type: 'stop_web' }
@@ -1006,6 +1017,7 @@ export type CoreResponse =
   | { type: 'web_config'; config: WebConfig }
   | { type: 'domains'; domains: DomainSummary[] }
   | { type: 'domain'; domain: Domain }
+  | { type: 'image_file'; data_url: string }
   | { type: 'text'; text: string }
   | { type: 'applied'; reports: ApplyReport[] }
   | { type: 'ca_info'; info: CaInfo }

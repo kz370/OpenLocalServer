@@ -187,6 +187,7 @@ impl crate::app::Inner {
                     tunnel_id: None,
                     server: None,
                     path_prefix: None,
+                    icon: None,
                 };
                 self.domains.lock().unwrap().add(site)?;
             }

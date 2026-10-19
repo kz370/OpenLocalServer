@@ -331,6 +331,26 @@ pub enum CoreCommand {
         hostname: String,
         new_hostname: String,
     },
+    /// Update or clear a site's custom Font Awesome icon identifier.
+    SetDomainIcon {
+        hostname: String,
+        icon: Option<String>,
+    },
+    /// Save a WebP icon image into `<project_folder>/ols_site_icon.webp`.
+    SetSiteIconImage {
+        hostname: Option<String>,
+        folder: Option<String>,
+        webp_base64: String,
+    },
+    /// Remove `<project_folder>/ols_site_icon.webp`.
+    RemoveSiteIconImage {
+        hostname: Option<String>,
+        folder: Option<String>,
+    },
+    /// Reads an arbitrary image from disk into a data URL for client preview & WebP conversion.
+    ReadImageFile {
+        path: String,
+    },
     /// §48 templates: `{project}.test`, `api.{project}.test`, ...
     SuggestDomain {
         project_id: String,
@@ -1334,6 +1354,9 @@ pub enum CoreResponse {
         value: Option<Value>,
     },
     Ok,
+    ImageFile {
+        data_url: String,
+    },
     /// What `StopAll` could not stop: the names of processes still alive after the
     /// sweep. Empty means everything stopped, which is the only case where the status
     /// mark is expected to turn red.
@@ -2160,9 +2183,11 @@ impl Core {
                 // Same outside-change re-read as `ListDomains`: a folder registered from
                 // the right-click menu is written by another process.
                 i.reload_external_changes();
-                Ok(R::Projects {
-                    projects: i.projects.lock().unwrap().list(),
-                })
+                let mut projects = i.projects.lock().unwrap().list();
+                for p in &mut projects {
+                    p.icon_image = crate::app::read_site_icon_image(&p.path);
+                }
+                Ok(R::Projects { projects })
             }
             C::RemoveProject { id } => {
                 i.remove_project(&id)?;
@@ -2583,6 +2608,116 @@ impl Core {
                 Ok(R::Domain {
                     domain: Box::new(i.rename_domain(&hostname, &new_hostname)?),
                 })
+            }
+            C::SetDomainIcon { hostname, icon } => {
+                let mut domains = i.domains.lock().unwrap();
+                let mut d = domains.get(&hostname).ok_or_else(|| {
+                    CoreError::DomainError(format!("{hostname} is not a known domain"))
+                })?;
+                let clean_icon = icon.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+                d.icon = clean_icon;
+                domains.update(d)?;
+                Ok(R::Ok)
+            }
+            C::SetSiteIconImage {
+                hostname,
+                folder,
+                webp_base64,
+            } => {
+                let target_dir = if let Some(f) = folder.filter(|s| !s.trim().is_empty()) {
+                    std::path::PathBuf::from(f)
+                } else if let Some(h) = hostname {
+                    let d = i.domains.lock().unwrap().get(&h).ok_or_else(|| {
+                        CoreError::DomainError(format!("{h} is not a known domain"))
+                    })?;
+                    let projects = i.projects.lock().unwrap().list();
+                    std::path::PathBuf::from(crate::app::site_folder(&d, &projects))
+                } else {
+                    return Err(CoreError::DomainError(
+                        "Neither hostname nor folder was provided".into(),
+                    ));
+                };
+
+                if !target_dir.is_dir() {
+                    return Err(CoreError::DomainError(format!(
+                        "Folder does not exist: {}",
+                        target_dir.display()
+                    )));
+                }
+
+                let raw_b64 = if let Some(idx) = webp_base64.find(',') {
+                    &webp_base64[idx + 1..]
+                } else {
+                    &webp_base64
+                };
+                let bytes = crate::app::from_base64(raw_b64.trim()).map_err(|e| {
+                    CoreError::DomainError(format!("Invalid base64 image data: {e}"))
+                })?;
+
+                if bytes.len() > 10 * 1024 * 1024 {
+                    return Err(CoreError::DomainError(
+                        "Image data exceeds 10MB limit".into(),
+                    ));
+                }
+
+                let icon_path = target_dir.join("ols_site_icon.webp");
+                std::fs::write(&icon_path, &bytes).map_err(|e| {
+                    CoreError::DomainError(format!("Failed to write ols_site_icon.webp: {e}"))
+                })?;
+                Ok(R::Ok)
+            }
+            C::RemoveSiteIconImage { hostname, folder } => {
+                let target_dir = if let Some(f) = folder.filter(|s| !s.trim().is_empty()) {
+                    std::path::PathBuf::from(f)
+                } else if let Some(h) = hostname {
+                    let d = i.domains.lock().unwrap().get(&h).ok_or_else(|| {
+                        CoreError::DomainError(format!("{h} is not a known domain"))
+                    })?;
+                    let projects = i.projects.lock().unwrap().list();
+                    std::path::PathBuf::from(crate::app::site_folder(&d, &projects))
+                } else {
+                    return Err(CoreError::DomainError(
+                        "Neither hostname nor folder was provided".into(),
+                    ));
+                };
+
+                let icon_path = target_dir.join("ols_site_icon.webp");
+                if icon_path.exists() {
+                    let _ = std::fs::remove_file(icon_path);
+                }
+                Ok(R::Ok)
+            }
+            C::ReadImageFile { path } => {
+                let p = std::path::Path::new(&path);
+                if !p.is_file() {
+                    return Err(CoreError::DomainError(format!(
+                        "Image file does not exist: {path}"
+                    )));
+                }
+                let bytes = std::fs::read(p)
+                    .map_err(|e| CoreError::DomainError(format!("Failed to read file: {e}")))?;
+                if bytes.len() > 20 * 1024 * 1024 {
+                    return Err(CoreError::DomainError(
+                        "Image file exceeds 20MB limit".into(),
+                    ));
+                }
+                let ext = p
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+                let mime = match ext.as_str() {
+                    "webp" => "image/webp",
+                    "png" => "image/png",
+                    "jpg" | "jpeg" => "image/jpeg",
+                    "svg" => "image/svg+xml",
+                    "gif" => "image/gif",
+                    "bmp" => "image/bmp",
+                    "ico" => "image/x-icon",
+                    _ => "application/octet-stream",
+                };
+                let data_url = format!("data:{mime};base64,{}", crate::app::to_base64(&bytes));
+                Ok(R::ImageFile { data_url })
             }
             C::DuplicateDomain {
                 hostname,
@@ -4392,6 +4527,7 @@ mod tests {
                     tunnel_id: None,
                     server: None,
                     path_prefix: None,
+                    icon: None,
                 })
                 .unwrap();
         }
@@ -4497,6 +4633,7 @@ mod tests {
                 tunnel_id: None,
                 server: None,
                 path_prefix: None,
+                icon: None,
             };
         let proxy = || crate::domain::SiteKind::Proxy {
             upstream_port: 3000,
@@ -4668,6 +4805,7 @@ mod tests {
             tunnel_id: None,
             server: None,
             path_prefix: None,
+            icon: None,
         };
         // Written straight to the store: AddDomain would reject a folder that doesn't exist.
         core.inner().domains.lock().unwrap().add(domain).ok();
@@ -4811,6 +4949,7 @@ mod tests {
             tunnel_id: None,
             server: None,
             path_prefix: None,
+            icon: None,
         };
         core.dispatch(CoreCommand::AddDomain {
             domain: domain("old.test"),
