@@ -118,7 +118,7 @@ export function Sidebar({ page, onNavigate }: { page: Page; onNavigate: (p: Page
       <Icon className="size-4" />
       {label}
       {id === 'tunnels' && publicCount > 0 && (
-        <Badge variant="info" className="ml-auto text-[10px]" title="A site is public through a tunnel">
+        <Badge variant="success" className="ml-auto text-[10px]" title="A site is public through a tunnel">
           public
         </Badge>
       )}

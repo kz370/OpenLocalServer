@@ -1743,7 +1743,7 @@ export function SiteDomainsPanel({ domain: initialDomain, onSave, busy }: SiteDo
                       size="sm"
                       disabled={tunnelActionBusy}
                       onClick={handleStopSiteTunnel}
-                      className="h-7 px-2 text-xs text-muted-foreground hover:text-info gap-1.5 cursor-pointer"
+                      className="h-7 px-2 text-xs text-muted-foreground hover:text-emerald-500 dark:hover:text-emerald-400 gap-1.5 cursor-pointer"
                     >
                       <span>Stop</span>
                     </Button>
