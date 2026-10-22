@@ -178,6 +178,7 @@ SiteDialog | uses | SiteLogoPanel (renders dedicated site logo & icon management
 SiteLogoDialog | uses | SiteLogoPanel (renders SiteLogoPanel in a modal dialog)
 SiteLogoPanel | uses | SiteLogo (live preview of table row header with instant optimistic updates)
 SiteLogoPanel | dispatches | CoreCommand::SetDomainIcon, CoreCommand::SetSiteIconImage, CoreCommand::RemoveSiteIconImage, CoreCommand::ReadImageFile
+AskAiPage | renders | Markdown for completed and paced streaming assistant messages and for built-in manual sections; the feed auto-scrolls with revealed text above a pinned compact composer, Stop replaces Ask during generation, and three dots stand in until the first response text; user messages remain plain text with identity/time aligned above the right-hand bubble
 scripts/update-version.bat | delegates_to | scripts/update-version.ps1 via pwsh or powershell (UTF-8 console code page 65001)
 update-version.bat | delegates_to | scripts/update-version.bat %*
 scripts/update-version.ps1 | synchronizes | Cargo.toml, src-tauri/tauri.conf.json, ui/package.json, ui/package-lock.json, Cargo.lock, README.md, CHANGELOG.md, release-notes/v<version>.md

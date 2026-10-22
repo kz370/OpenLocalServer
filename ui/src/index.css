@@ -298,6 +298,13 @@ body {
 /* Custom rich markdown styling for Assistant and Manual */
 .prose-ols {
   line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.prose-ols > :first-child {
+  margin-top: 0;
+}
+.prose-ols > :last-child {
+  margin-bottom: 0;
 }
 .prose-ols h1, .prose-ols h2, .prose-ols h3, .prose-ols h4 {
   font-weight: 600;
@@ -337,6 +344,17 @@ body {
   padding: 0.15rem 0.35rem;
   border-radius: 0.25rem;
   border: 1px solid var(--border);
+}
+.prose-ols pre {
+  max-width: 100%;
+  margin: 0;
+  white-space: pre;
+}
+.prose-ols pre code {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  padding: 0;
 }
 
 .prose-ols blockquote {

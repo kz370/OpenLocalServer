@@ -13,6 +13,7 @@ import {
   Layers,
   MessageSquare,
   Printer,
+  RefreshCw,
   RotateCcw,
   Search,
   Send,
@@ -20,11 +21,12 @@ import {
   Square,
   Wrench,
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
 import type { Page } from '@/components/layout/Sidebar'
 import { Spinner } from '@/components/Spinner'
+import { Markdown } from '@/components/ui/Markdown'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -35,21 +37,63 @@ import { useAiState } from '@/lib/ai'
 import { confirmAction } from '@/lib/confirm'
 import { useAction } from '@/lib/hooks'
 
-const QUICK_QUESTIONS = [
-  'How do I create a WordPress or Laravel site?',
-  'How do custom domains and SSL certificates work?',
-  'How do I make my site public with Tunnels?',
-  'How do I switch PHP versions or toggle extensions?',
-  'How do I backup and export my sites with database dumps?',
-  'What is new in OpenLocalServer v2.3.0?',
-]
-
 interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
+  status?: 'pending' | 'failed' | 'done' | 'stopped'
+  question?: string
+  error?: string
   answer?: AiAnswer | null
   timestamp: number
+}
+
+function StreamingMarkdown({
+  content,
+  streaming,
+  onReveal,
+  className,
+}: {
+  content: string
+  streaming: boolean
+  onReveal: () => void
+  className?: string
+}) {
+  const [visibleContent, setVisibleContent] = useState(() => (streaming ? '' : content))
+  const hasStreamedRef = useRef(streaming)
+
+  useEffect(() => {
+    if (streaming) hasStreamedRef.current = true
+
+    if (!hasStreamedRef.current) {
+      setVisibleContent(content)
+      return
+    }
+
+    if (visibleContent.length >= content.length) {
+      if (!streaming) hasStreamedRef.current = false
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      setVisibleContent((current) => {
+        let nextIndex = current.length
+        for (let i = 0; i < 2 && nextIndex < content.length; i += 1) {
+          const codePoint = content.codePointAt(nextIndex)
+          nextIndex += codePoint !== undefined && codePoint > 0xffff ? 2 : 1
+        }
+        return content.slice(0, nextIndex)
+      })
+    }, 16)
+
+    return () => window.clearTimeout(timer)
+  }, [content, streaming, visibleContent])
+
+  useEffect(() => {
+    onReveal()
+  }, [onReveal, visibleContent])
+
+  return <Markdown content={visibleContent} className={className} />
 }
 
 export function AskAiPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
@@ -83,7 +127,11 @@ export function AskAiPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
 
   const aiState = useAiState()
   const { busy, error, setError, run } = useAction()
-  const chatBottomRef = useRef<HTMLDivElement>(null)
+  const chatFeedRef = useRef<HTMLDivElement>(null)
+  const scrollChatToBottom = useCallback(() => {
+    const feed = chatFeedRef.current
+    if (feed) feed.scrollTop = feed.scrollHeight
+  }, [])
 
   // Persist conversation history in session storage
   useEffect(() => {
@@ -97,9 +145,9 @@ export function AskAiPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   // Scroll to bottom when new messages arrive
   useEffect(() => {
     if (activeTab === 'chat') {
-      chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+      scrollChatToBottom()
     }
-  }, [messages, currentJob?.partial, activeTab])
+  }, [messages, currentJob?.partial, activeTab, scrollChatToBottom])
 
   // Fetch full user manual from backend
   useEffect(() => {
@@ -121,23 +169,26 @@ export function AskAiPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         .then((r) => {
           if (r.type === 'ai_job') {
             setCurrentJob(r.job)
-            if (r.job.state === 'done' && r.job.answer) {
-              setMessages((prev) => [
-                ...prev,
-                {
-                  id: r.job.id,
-                  role: 'assistant',
-                  content: r.job.answer?.text || r.job.partial,
-                  answer: r.job.answer,
-                  timestamp: Date.now(),
-                },
-              ])
-              if (r.job.answer.actions.length > 0) {
-                setPickedActions(r.job.answer.actions.filter((a) => !a.destructive).map((_, i) => i))
+            const job = r.job
+            if (job.state === 'running') {
+              setMessages((prev) => prev.map((m) =>
+                m.id === `job-${job.id}` ? { ...m, content: job.partial } : m))
+            }
+            if (job.state === 'done' && job.answer) {
+              const answer = job.answer
+              setMessages((prev) => prev.map((m) =>
+                m.id === `job-${job.id}`
+                  ? { ...m, content: answer.text, status: 'done', answer, timestamp: Date.now() }
+                  : m))
+              if (answer.actions.length > 0) {
+                setPickedActions(answer.actions.filter((a) => !a.destructive).map((_, i) => i))
               }
               setCurrentJob(null)
-            } else if (r.job.state === 'failed') {
-              setError({ problem: 'The assistant could not complete the answer.', cause: r.job.error ?? 'Unknown error', fix: 'Check your AI provider in Settings → AI assistant.' })
+            } else if (job.state === 'failed') {
+              setMessages((prev) => prev.map((m) =>
+                m.id === `job-${job.id}`
+                  ? { ...m, status: 'failed', error: job.error ?? 'No response from the provider.', timestamp: Date.now() }
+                  : m))
               setCurrentJob(null)
             }
           }
@@ -182,7 +233,21 @@ export function AskAiPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         confirm_remote: remoteOk,
       })
       if (r.type === 'ai_job') {
-        setCurrentJob(r.job)
+        const job = r.job
+        setCurrentJob(job)
+        if (job.state === 'running') {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `job-${job.id}`,
+              role: 'assistant',
+              content: job.partial,
+              status: 'pending',
+              question: trimmed,
+              timestamp: Date.now(),
+            },
+          ])
+        }
       }
     })
   }
@@ -207,11 +272,28 @@ export function AskAiPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     })
   }
 
-  const handleCancelJob = () => {
-    if (currentJob?.id) {
-      void runCommand({ type: 'ai_cancel', job_id: currentJob.id }).catch(() => undefined)
-      setCurrentJob(null)
+  const handleCancelJob = async () => {
+    const jobId = currentJob?.id
+    if (!jobId) return
+    try {
+      await runCommand({ type: 'ai_cancel', job_id: jobId })
+      setMessages((prev) => prev.map((m) =>
+        m.id === `job-${jobId}` && m.status === 'pending'
+          ? { ...m, status: 'stopped', timestamp: Date.now() }
+          : m))
+      setCurrentJob((job) => job?.id === jobId ? null : job)
+    } catch (cause) {
+      setError({
+        problem: 'The assistant could not stop generating.',
+        cause: cause instanceof Error ? cause.message : String(cause),
+        fix: 'Try stopping the response again.',
+      })
     }
+  }
+
+  const handleResend = (q: string) => {
+    setError(null)
+    askQuestion(q)
   }
 
   const handleClearHistory = () => {
@@ -302,7 +384,7 @@ export function AskAiPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   }, [manualMarkdown, manualSearch])
 
   return (
-    <div className="flex flex-col gap-6 max-w-6xl mx-auto pb-12">
+    <div className={`mx-auto flex max-w-6xl flex-col gap-6 ${activeTab === 'chat' ? 'h-full min-h-0 pb-3' : 'pb-12'}`}>
       {/* Top Header */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-4">
         <div>
@@ -389,7 +471,7 @@ export function AskAiPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
           }`}
         >
           <Layers className="size-4" />
-          Version 2.3.0 Notes (RAG)
+          Version 2.3.0 Notes
         </button>
       </div>
 
@@ -397,7 +479,7 @@ export function AskAiPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
 
       {/* TAB 1: ASK AI (CHAT) */}
       {activeTab === 'chat' && (
-        <div className="flex flex-col gap-5">
+        <div className="flex min-h-0 flex-1 flex-col gap-3">
           {!isAiReady && (
             <Card className="border-border bg-muted/20">
               <CardHeader className="pb-3">
@@ -424,127 +506,131 @@ export function AskAiPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
             </Card>
           )}
 
-          {/* Quick Starter Pills */}
-          <div className="flex flex-col gap-2">
-            <span className="text-xs font-medium text-muted-foreground">Common questions you can ask:</span>
-            <div className="flex flex-wrap gap-2">
-              {QUICK_QUESTIONS.map((q) => (
-                <button
-                  key={q}
-                  disabled={busy !== null || !isAiReady}
-                  onClick={() => askQuestion(q)}
-                  className="rounded-full border border-border bg-card px-3 py-1 text-xs text-foreground/80 transition-colors hover:border-teal-500 hover:bg-teal-500/5 hover:text-teal-600 dark:hover:text-teal-400 disabled:opacity-50"
-                >
-                  {q}
-                </button>
-              ))}
-            </div>
-          </div>
-
           {/* Chat Messages Feed */}
-          <div className="flex flex-col gap-4 rounded-xl border border-border bg-card/60 p-4 min-h-[340px] max-h-[520px] overflow-y-auto">
+          <div ref={chatFeedRef} className="flex min-h-[180px] min-w-0 flex-1 flex-col gap-4 overflow-y-auto rounded-xl border border-border bg-card/60 p-3">
             {messages.map((m) => (
               <div
                 key={m.id}
-                className={`flex gap-3 text-sm ${
-                  m.role === 'user' ? 'justify-end' : 'justify-start'
-                }`}
+                className={`flex min-w-0 gap-3 text-sm items-start ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 {m.role === 'assistant' && (
-                  <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-teal-500/15 text-teal-600 dark:text-teal-400">
+                  <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-teal-500/15 text-teal-600 dark:text-teal-400 mt-0.5">
                     <Bot className="size-4" />
                   </div>
                 )}
-                <div
-                  className={`flex flex-col gap-1.5 max-w-[85%] rounded-lg px-4 py-3 leading-relaxed ${
-                    m.role === 'user'
-                      ? 'bg-primary text-primary-foreground rounded-br-none'
-                      : 'border border-border bg-muted/40 text-foreground rounded-bl-none'
-                  }`}
-                >
-                  <div className="whitespace-pre-wrap font-sans text-xs sm:text-sm">
-                    {m.content}
-                  </div>
-
-                  {/* Actions attached to answer */}
-                  {m.answer && m.answer.actions.length > 0 && (
-                    <div className="mt-3 flex flex-col gap-2 rounded-md border border-border bg-card/80 p-3 text-xs">
-                      <p className="font-semibold text-foreground">Suggested executable steps (reviewed by safety gate):</p>
-                      {m.answer.actions.map((act, idx) => (
-                        <label key={idx} className="flex cursor-pointer items-start gap-2 text-muted-foreground">
-                          <Checkbox
-                            className="mt-0.5"
-                            checked={pickedActions.includes(idx)}
-                            onChange={(checked) =>
-                              setPickedActions((prev) =>
-                                checked ? [...prev, idx] : prev.filter((i) => i !== idx),
-                              )
-                            }
-                          />
-                          <span>
-                            <strong className="text-foreground">{act.label}</strong>
-                            {act.destructive && (
-                              <Badge variant="warning" className="ml-1.5 text-[10px]">
-                                replaces something
-                              </Badge>
+                <div className={`flex min-w-0 max-w-[85%] flex-col gap-1 ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
+                  {m.role === 'user' ? (
+                    <>
+                      <div className="flex items-center gap-2 self-end px-1 text-[10px] text-muted-foreground">
+                        <span className="font-medium text-foreground/80">You</span>
+                        <time>
+                          {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </time>
+                      </div>
+                      <div className="max-w-full break-words rounded-lg rounded-br-none bg-primary px-4 py-3 font-sans text-xs leading-relaxed text-primary-foreground shadow-sm whitespace-pre-wrap sm:text-sm">
+                        {m.content}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="min-w-0 max-w-full rounded-lg rounded-bl-none border border-border bg-muted/40 px-4 py-3 leading-relaxed text-foreground shadow-xs">
+                        <StreamingMarkdown
+                          content={m.content}
+                          streaming={m.status === 'pending'}
+                          onReveal={scrollChatToBottom}
+                          className="text-xs sm:text-sm"
+                        />
+                        {m.status === 'pending' ? (
+                          <>
+                            {!m.content.trim() && (
+                              <div role="status" aria-label="Assistant is thinking" className="mt-2 flex items-center gap-1.5 text-teal-600 dark:text-teal-400">
+                                {[0, 1, 2].map((dot) => (
+                                  <span
+                                    key={dot}
+                                    className="size-1.5 animate-bounce rounded-full bg-current"
+                                    style={{ animationDelay: `${dot * 120}ms` }}
+                                  />
+                                ))}
+                              </div>
                             )}
-                          </span>
-                        </label>
-                      ))}
-                      <Button
-                        size="sm"
-                        className="self-start mt-1"
-                        disabled={busy !== null || pickedActions.length === 0 || actionResults !== null}
-                        onClick={() => void handleApplyActions(m.answer!)}
-                      >
-                        {busy === 'apply' ? <Spinner /> : <Check />} Run {pickedActions.length} step{pickedActions.length === 1 ? '' : 's'}
-                      </Button>
-                      {actionResults && (
-                        <ul className="mt-2 flex flex-col gap-1 text-[11px]">
-                          {actionResults.map((r, ri) => (
-                            <li key={ri} className={r.ok ? 'text-success' : 'text-destructive'}>
-                              {r.ok ? '✓' : '✗'} {r.label}: {r.detail}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  )}
+                          </>
+                        ) : (
+                          <>
+                            {m.status === 'stopped' && (
+                              <p className="mt-1 text-[10px] text-muted-foreground">Response stopped.</p>
+                            )}
+                            {m.status === 'failed' && m.error && (
+                              <p className="text-[10px] text-destructive/90 mt-1">{m.error}</p>
+                            )}
+                            {m.status === 'failed' && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="self-start mt-2 h-7 px-2 text-xs text-destructive border-destructive/50 hover:bg-destructive/10"
+                                onClick={() => void handleResend(m.question ?? '')}
+                              >
+                                <RefreshCw className="size-3.5 mr-1" /> Resend
+                              </Button>
+                            )}
+                          </>
+                        )}
 
-                  <span className="text-[10px] opacity-60 self-end">
-                    {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </span>
+                        {/* Actions attached to answer */}
+                        {m.status === 'done' && m.answer && m.answer.actions.length > 0 && (
+                          <div className="mt-3 flex flex-col gap-2 rounded-md border border-border bg-card/80 p-3 text-xs">
+                            <p className="font-semibold text-foreground">Suggested executable steps (reviewed by safety gate):</p>
+                            {m.answer.actions.map((act, idx) => (
+                              <label key={idx} className="flex cursor-pointer items-start gap-2 text-muted-foreground">
+                                <Checkbox
+                                  className="mt-0.5"
+                                  checked={pickedActions.includes(idx)}
+                                  onChange={(checked) =>
+                                    setPickedActions((prev) =>
+                                      checked ? [...prev, idx] : prev.filter((i) => i !== idx),
+                                    )
+                                  }
+                                />
+                                <span>
+                                  <strong className="text-foreground">{act.label}</strong>
+                                  {act.destructive && (
+                                    <Badge variant="warning" className="ml-1.5 text-[10px]">
+                                      replaces something
+                                    </Badge>
+                                  )}
+                                </span>
+                              </label>
+                            ))}
+                            <Button
+                              size="sm"
+                              className="self-start mt-1"
+                              disabled={busy !== null || pickedActions.length === 0 || actionResults !== null}
+                              onClick={() => void handleApplyActions(m.answer!)}
+                            >
+                              {busy === 'apply' ? <Spinner /> : <Check />} Run {pickedActions.length} step{pickedActions.length === 1 ? '' : 's'}
+                            </Button>
+                            {actionResults && (
+                              <ul className="mt-2 flex flex-col gap-1 text-[11px]">
+                                {actionResults.map((r, ri) => (
+                                  <li key={ri} className={r.ok ? 'text-success' : 'text-destructive'}>
+                                    {r.ok ? '✓' : '✗'} {r.label}: {r.detail}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        )}
+
+                        {m.status !== 'pending' && (
+                          <time className="mt-2 block text-right text-[10px] text-muted-foreground">
+                            {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </time>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
-                {m.role === 'user' && (
-                  <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground text-xs font-semibold">
-                    You
-                  </div>
-                )}
               </div>
             ))}
-
-            {/* Live Streaming Indicator */}
-            {currentJob && currentJob.state === 'running' && (
-              <div className="flex gap-3 text-sm justify-start">
-                <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-teal-500/15 text-teal-600 dark:text-teal-400">
-                  <Bot className="size-4" />
-                </div>
-                <div className="flex flex-col gap-2 rounded-lg border border-border bg-muted/40 p-4 text-foreground max-w-[85%]">
-                  <p className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Spinner /> Reading OpenLocalServer RAG knowledge base & drafting answer…
-                  </p>
-                  {currentJob.partial && (
-                    <div className="whitespace-pre-wrap font-sans text-xs sm:text-sm">
-                      {currentJob.partial}
-                    </div>
-                  )}
-                  <Button variant="ghost" size="sm" className="self-start h-7 text-xs text-destructive" onClick={handleCancelJob}>
-                    <Square className="size-3" /> Stop generating
-                  </Button>
-                </div>
-              </div>
-            )}
-            <div ref={chatBottomRef} />
           </div>
 
           {/* Prompt Preview Card */}
@@ -574,14 +660,14 @@ export function AskAiPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
           )}
 
           {/* Question Input Bar */}
-          <div className="flex flex-col gap-2.5 rounded-xl border border-border bg-card p-3 shadow-xs">
+          <div className="shrink-0 rounded-xl border border-border bg-card p-2 shadow-md">
             {isAiReady && provider && !provider.local && (
-              <div className="flex items-center justify-between border-b border-border/60 pb-2">
+              <div className="mb-2 flex items-center justify-between border-b border-border/60 pb-2">
                 <Toggle
                   checked={remoteOk}
                   onChange={setRemoteOk}
-                  label={`Allow sending prompt to ${provider.name} (${new URL(provider.base_url).host})`}
-                  hint="Prompt leaves this PC. Secrets are scrubbed first."
+                  label={`Allow cloud AI (${provider.name})`}
+                  hint="Prompt leaves this PC; secrets are scrubbed."
                 />
                 <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={handlePreviewPrompt}>
                   {promptPreview ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
@@ -602,60 +688,50 @@ export function AskAiPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                     }
                   }
                 }}
-                disabled={busy !== null || !isAiReady}
+                disabled={busy !== null || currentJob?.state === 'running' || !isAiReady}
                 placeholder={
                   isAiReady
-                    ? 'Ask anything about OpenLocalServer, how to use features, troubleshoot, or configure web sites… (Press Enter to send)'
+                    ? 'Ask about OpenLocalServer…'
                     : 'Configure an AI provider in Settings → AI assistant to ask questions.'
                 }
-                rows={2}
-                className="resize-none font-sans text-sm"
+                rows={1}
+                className="h-10 min-h-10 max-h-28 min-w-0 flex-1 resize-none overflow-y-auto py-2 font-sans text-sm"
               />
 
-              <div className="flex flex-col gap-1.5 shrink-0">
-                <Button
-                  onClick={() => askQuestion(question)}
-                  disabled={
-                    busy !== null ||
-                    !isAiReady ||
-                    !question.trim() ||
-                    (provider && !provider.local && !remoteOk)
-                  }
-                  className="h-10 px-4"
-                >
-                  {busy === 'ask' ? <Spinner /> : <Send className="size-4" />}
-                  Ask
-                </Button>
+              <div className="flex shrink-0 items-center gap-1">
+                {currentJob?.state === 'running' ? (
+                  <Button variant="destructive" onClick={() => void handleCancelJob()} className="h-9 px-3">
+                    <Square className="size-3.5" />
+                    Stop
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={() => askQuestion(question)}
+                    disabled={
+                      busy !== null ||
+                      !isAiReady ||
+                      !question.trim() ||
+                      (provider && !provider.local && !remoteOk)
+                    }
+                    className="h-9 px-3"
+                  >
+                    {busy === 'ask' ? <Spinner /> : <Send className="size-4" />}
+                    Ask
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
-                  size="sm"
+                  size="icon"
                   title="Clear conversation history"
+                  aria-label="Clear conversation history"
                   onClick={handleClearHistory}
-                  className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                  className="size-9 text-muted-foreground hover:text-foreground"
                 >
-                  <RotateCcw className="size-3" />
-                  Clear
+                  <RotateCcw className="size-4" />
                 </Button>
               </div>
             </div>
 
-            {/* Quick Navigation Help Links */}
-            <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[11px] text-muted-foreground">
-              <span>Quick Jump:</span>
-              <button onClick={() => onNavigate('sites')} className="hover:text-foreground underline">Sites</button>
-              <span>·</span>
-              <button onClick={() => onNavigate('webserver')} className="hover:text-foreground underline">Web server</button>
-              <span>·</span>
-              <button onClick={() => onNavigate('databases')} className="hover:text-foreground underline">Databases</button>
-              <span>·</span>
-              <button onClick={() => onNavigate('runtimes')} className="hover:text-foreground underline">Runtimes</button>
-              <span>·</span>
-              <button onClick={() => onNavigate('tunnels')} className="hover:text-foreground underline">Tunnels</button>
-              <span>·</span>
-              <button onClick={() => onNavigate('logs')} className="hover:text-foreground underline">Logs</button>
-              <span>·</span>
-              <button onClick={() => onNavigate('settings')} className="hover:text-foreground underline">Settings</button>
-            </div>
           </div>
         </div>
       )}
@@ -707,9 +783,7 @@ export function AskAiPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                     </span>
                     {sec.title}
                   </h2>
-                  <div className="whitespace-pre-wrap font-sans text-muted-foreground text-xs sm:text-sm pl-8">
-                    {sec.content}
-                  </div>
+                  <Markdown content={sec.content} className="pl-8 text-xs sm:text-sm" />
                 </div>
               ))
             )}
