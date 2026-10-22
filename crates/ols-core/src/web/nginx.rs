@@ -398,6 +398,7 @@ mod tests {
             public_domain: None,
             forwarded_tls: false,
             path_prefix: None,
+            aliases: Vec::new(),
         }
     }
 

@@ -254,12 +254,20 @@ pub struct SiteSpec {
     pub forwarded_tls: bool,
     /// Also served at `localhost/<prefix>` (§55), alongside this site's own vhost.
     pub path_prefix: Option<String>,
+    /// Additional domain aliases pointing to this site.
+    pub aliases: Vec<String>,
 }
 
 impl SiteSpec {
-    /// Names the site answers to: the host, plus `*.host` when wildcard is on.
+    /// Names the site answers to: the host, any aliases, plus `*.host` when wildcard is on.
     pub fn server_names(&self) -> Vec<String> {
         let mut names = vec![self.hostname.clone()];
+        for alias in &self.aliases {
+            let clean = alias.trim();
+            if !clean.is_empty() && !names.contains(&clean.to_string()) {
+                names.push(clean.to_string());
+            }
+        }
         if self.wildcard {
             names.push(format!("*.{}", self.hostname));
         }

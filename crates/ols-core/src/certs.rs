@@ -21,6 +21,8 @@ struct CertMeta {
     issued_at: u64,
     expires_at: u64,
     project_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    provider: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -47,6 +49,8 @@ pub struct CertInfo {
     pub project_id: Option<String>,
     pub cert_path: String,
     pub key_path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,6 +64,7 @@ pub struct CaInfo {
 pub struct CertificateManager {
     ca: LocalCa,
     sites_dir: PathBuf,
+    paths: AppPaths,
 }
 
 /// Paths a web server config needs to reference.
@@ -74,6 +79,7 @@ impl CertificateManager {
         Self {
             ca: LocalCa::new(paths),
             sites_dir: paths.certs_dir().join("sites"),
+            paths: paths.clone(),
         }
     }
 
@@ -107,9 +113,15 @@ impl CertificateManager {
         }
     }
 
-    /// Names a domain's certificate must cover.
+    /// Names a domain's certificate must cover: primary hostname, aliases, and wildcard.
     pub fn names_for(domain: &Domain) -> Vec<String> {
         let mut names = vec![domain.hostname.clone()];
+        for alias in &domain.aliases {
+            let clean = alias.trim();
+            if !clean.is_empty() && !names.contains(&clean.to_string()) {
+                names.push(clean.to_string());
+            }
+        }
         if domain.wildcard {
             names.push(format!("*.{}", domain.hostname));
         }
@@ -120,45 +132,153 @@ impl CertificateManager {
     /// Reissues when missing, when the covered names changed (e.g. wildcard toggled), or
     /// when it's inside the renewal window (§51 renew).
     pub fn ensure_for(&self, domain: &Domain) -> Result<CertPaths, String> {
-        let names = Self::names_for(domain);
+        match domain.ssl_provider {
+            crate::domain::SslProvider::LocalCa => {
+                let names = Self::names_for(domain);
+                let paths = self.paths_for(&domain.hostname);
+                let reusable = self.read_meta(&domain.hostname).is_some_and(|m| {
+                    m.sans == names
+                        && paths.cert.is_file()
+                        && paths.key.is_file()
+                        && days_between(unix_now(), m.expires_at) > RENEW_WITHIN_DAYS
+                });
+                if reusable {
+                    return Ok(paths);
+                }
+                self.issue(domain)
+            }
+            crate::domain::SslProvider::Custom => {
+                let cert = domain.custom_cert_path.as_deref().unwrap_or("").trim();
+                let key = domain.custom_key_path.as_deref().unwrap_or("").trim();
+                if cert.is_empty() || key.is_empty() {
+                    return Err("Custom SSL requires both certificate and private key paths".into());
+                }
+                let cert_p = PathBuf::from(cert);
+                let key_p = PathBuf::from(key);
+                if !cert_p.is_file() {
+                    return Err(format!("Custom certificate file not found: {cert}"));
+                }
+                if !key_p.is_file() {
+                    return Err(format!("Custom private key file not found: {key}"));
+                }
+                let dir = self.dir_for(&domain.hostname);
+                let _ = std::fs::create_dir_all(&dir);
+                let now = unix_now();
+                let meta = CertMeta {
+                    hostname: domain.hostname.clone(),
+                    sans: Self::names_for(domain),
+                    issued_at: now,
+                    expires_at: now + 365 * 86_400,
+                    project_id: domain.project_id.clone(),
+                    provider: Some("custom".into()),
+                };
+                let _ = std::fs::write(
+                    dir.join("meta.json"),
+                    serde_json::to_string_pretty(&meta).unwrap_or_default(),
+                );
+                Ok(CertPaths {
+                    cert: cert_p,
+                    key: key_p,
+                })
+            }
+            crate::domain::SslProvider::LetsEncrypt => self.ensure_lets_encrypt(domain),
+        }
+    }
+
+    /// Ensures a Let's Encrypt certificate is issued or reused for `domain`.
+    pub fn ensure_lets_encrypt(&self, domain: &Domain) -> Result<CertPaths, String> {
         let paths = self.paths_for(&domain.hostname);
         let reusable = self.read_meta(&domain.hostname).is_some_and(|m| {
-            m.sans == names
-                && paths.cert.is_file()
+            paths.cert.is_file()
                 && paths.key.is_file()
                 && days_between(unix_now(), m.expires_at) > RENEW_WITHIN_DAYS
         });
         if reusable {
             return Ok(paths);
         }
-        self.issue(domain)
+        self.issue_lets_encrypt(domain)
     }
 
-    /// Unconditionally (re)generates the certificate (§51 regenerate).
-    pub fn issue(&self, domain: &Domain) -> Result<CertPaths, String> {
-        let names = Self::names_for(domain);
-        let issued = self.ca.issue_for(&names)?;
-        let dir = self.dir_for(&domain.hostname);
-        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    /// Issues a new Let's Encrypt certificate using ACME HTTP-01 challenge.
+    pub fn issue_lets_encrypt(&self, domain: &Domain) -> Result<CertPaths, String> {
+        crate::domain::validate_public_hostname(&domain.hostname).map_err(|e| e.to_string())?;
+
+        let account_key = self
+            .paths
+            .certs_dir()
+            .join("letsencrypt")
+            .join("account.key");
+        let doc_root = PathBuf::from(&domain.root);
+        let email = domain.lets_encrypt_email.as_deref();
 
         let paths = self.paths_for(&domain.hostname);
+        let mut client =
+            crate::acme::AcmeClient::new(None, &account_key).map_err(|e| e.to_string())?;
+
+        let issued = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                client
+                    .issue_certificate(&domain.hostname, &doc_root, email)
+                    .await
+            })
+        })
+        .map_err(|e| e.to_string())?;
+
+        let dir = self.dir_for(&domain.hostname);
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         std::fs::write(&paths.cert, issued.cert_pem).map_err(|e| e.to_string())?;
         crate::ca::write_key_restricted(&paths.key, issued.key_pem.as_bytes())?;
 
         let now = unix_now();
         let meta = CertMeta {
             hostname: domain.hostname.clone(),
-            sans: names,
+            sans: vec![domain.hostname.clone()],
             issued_at: now,
-            expires_at: now + crate::ca::LEAF_VALIDITY_DAYS * 86_400,
+            expires_at: now + 90 * 86_400,
             project_id: domain.project_id.clone(),
+            provider: Some("lets_encrypt".into()),
         };
         std::fs::write(
             dir.join("meta.json"),
             serde_json::to_string_pretty(&meta).map_err(|e| e.to_string())?,
         )
         .map_err(|e| e.to_string())?;
+
         Ok(paths)
+    }
+
+    /// Unconditionally (re)generates the certificate (§51 regenerate).
+    pub fn issue(&self, domain: &Domain) -> Result<CertPaths, String> {
+        match domain.ssl_provider {
+            crate::domain::SslProvider::LetsEncrypt => self.issue_lets_encrypt(domain),
+            crate::domain::SslProvider::Custom => self.ensure_for(domain),
+            crate::domain::SslProvider::LocalCa => {
+                let names = Self::names_for(domain);
+                let issued = self.ca.issue_for(&names)?;
+                let dir = self.dir_for(&domain.hostname);
+                std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+
+                let paths = self.paths_for(&domain.hostname);
+                std::fs::write(&paths.cert, issued.cert_pem).map_err(|e| e.to_string())?;
+                crate::ca::write_key_restricted(&paths.key, issued.key_pem.as_bytes())?;
+
+                let now = unix_now();
+                let meta = CertMeta {
+                    hostname: domain.hostname.clone(),
+                    sans: names,
+                    issued_at: now,
+                    expires_at: now + crate::ca::LEAF_VALIDITY_DAYS * 86_400,
+                    project_id: domain.project_id.clone(),
+                    provider: Some("local_ca".into()),
+                };
+                std::fs::write(
+                    dir.join("meta.json"),
+                    serde_json::to_string_pretty(&meta).map_err(|e| e.to_string())?,
+                )
+                .map_err(|e| e.to_string())?;
+                Ok(paths)
+            }
+        }
     }
 
     /// §51 revoke: deletes the certificate and key. The web server can no longer serve the
@@ -182,18 +302,28 @@ impl CertificateManager {
         } else {
             CertStatus::Valid
         };
+        let issuer = match meta.provider.as_deref() {
+            Some("lets_encrypt") => "Let's Encrypt Authority".to_string(),
+            Some("custom") => "Custom SSL Certificate".to_string(),
+            _ => CA_COMMON_NAME.to_string(),
+        };
+        let trusted = match meta.provider.as_deref() {
+            Some("lets_encrypt") | Some("custom") => true,
+            _ => self.ca.is_trusted(),
+        };
         Some(CertInfo {
             hostname: meta.hostname,
             sans: meta.sans,
-            issuer: CA_COMMON_NAME.to_string(),
+            issuer,
             issued_at: meta.issued_at,
             expires_at: meta.expires_at,
             days_left,
             status,
-            trusted: self.ca.is_trusted(),
+            trusted,
             project_id: meta.project_id,
             cert_path: paths.cert.display().to_string(),
             key_path: paths.key.display().to_string(),
+            provider: meta.provider,
         })
     }
 
@@ -239,7 +369,39 @@ mod tests {
             server: None,
             path_prefix: None,
             icon: None,
+            ssl_provider: crate::domain::SslProvider::LocalCa,
+            custom_cert_path: None,
+            custom_key_path: None,
+            lets_encrypt_email: None,
+            auto_broadcast: false,
+            broadcast_provider: None,
+            ..Default::default()
         }
+    }
+
+    #[test]
+    fn custom_ssl_uses_provided_files_and_writes_meta() {
+        let home = crate::test_support::isolated_home();
+        let mgr = CertificateManager::new(&home.paths);
+
+        let cert_file = home.paths.root().join("my-cert.pem");
+        let key_file = home.paths.root().join("my-key.pem");
+        std::fs::write(&cert_file, "fake cert data").unwrap();
+        std::fs::write(&key_file, "fake key data").unwrap();
+
+        let mut d = domain("mycustom.org", false);
+        d.ssl_provider = crate::domain::SslProvider::Custom;
+        d.custom_cert_path = Some(cert_file.display().to_string());
+        d.custom_key_path = Some(key_file.display().to_string());
+
+        let paths = mgr.ensure_for(&d).unwrap();
+        assert_eq!(paths.cert, cert_file);
+        assert_eq!(paths.key, key_file);
+
+        let info = mgr.info("mycustom.org").unwrap();
+        assert_eq!(info.issuer, "Custom SSL Certificate");
+        assert_eq!(info.provider.as_deref(), Some("custom"));
+        assert!(info.trusted);
     }
 
     #[test]

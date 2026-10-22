@@ -355,6 +355,7 @@ mod tests {
                 project_id: None,
                 cert_path: String::new(),
                 key_path: String::new(),
+                provider: None,
             }),
         });
         let failed: Vec<_> = report.steps.iter().filter(|s| !s.ok).collect();

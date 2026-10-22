@@ -258,6 +258,24 @@ pub struct DomainSummary {
     /// Data URL (`data:image/webp;base64,...`) when `ols_site_icon.webp` exists in `folder`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon_image: Option<String>,
+    /// SSL certificate provider: "local_ca", "lets_encrypt", "custom".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ssl_provider: Option<String>,
+    /// Whether automatic online broadcasting is active for this domain.
+    #[serde(default)]
+    pub auto_broadcast: bool,
+    /// Live public broadcast URL if connected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub broadcast_url: Option<String>,
+    /// Additional domain aliases pointing to this site.
+    #[serde(default)]
+    pub aliases: Vec<String>,
+    /// Dynamic DNS provider: "cloudflare", "duckdns", "custom", or None.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ddns_provider: Option<String>,
+    /// Last detected public IP synced to DNS.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ddns_last_ip: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -797,6 +815,7 @@ impl Inner {
     pub fn domain_summaries(&self) -> Vec<DomainSummary> {
         let cfg = self.web_config();
         let projects = self.projects.lock().unwrap().list();
+        let tunnels = self.list_tunnels();
         self.domains
             .lock()
             .unwrap()
@@ -805,6 +824,12 @@ impl Inner {
             .map(|d| {
                 let folder = site_folder(&d, &projects);
                 let icon_image = read_site_icon_image(&folder);
+                let broadcast_tunnel = tunnels.iter().find(|t| {
+                    (d.tunnel_id.as_deref() == Some(&t.config.id)
+                        || (d.project_id.is_some() && d.project_id == t.config.project_id))
+                        && (t.state == "connected" || t.state == "starting")
+                });
+                let broadcast_url = broadcast_tunnel.and_then(|t| t.public_url.clone());
                 DomainSummary {
                     url: self.site_url(&d, &cfg),
                     hostname: d.hostname.clone(),
@@ -828,6 +853,12 @@ impl Inner {
                         .http,
                     icon: d.icon.clone(),
                     icon_image,
+                    ssl_provider: Some(d.ssl_provider.to_string()),
+                    auto_broadcast: d.auto_broadcast,
+                    broadcast_url,
+                    aliases: d.aliases.clone(),
+                    ddns_provider: d.ddns_provider.clone(),
+                    ddns_last_ip: d.ddns_last_ip.clone(),
                 }
             })
             .collect()
@@ -1528,6 +1559,7 @@ impl Inner {
                 server: None,
                 path_prefix: None,
                 icon: None,
+                ..Default::default()
             };
             match self.add_domain(domain) {
                 Ok(d) => {
@@ -1653,7 +1685,86 @@ impl Inner {
         let mut hashes = Vec::new();
         let reports = self.web.apply(&ctx, &snapshot, &mut hashes)?;
         self.record_generated_hashes(&hashes)?;
+        self.ensure_broadcast_tunnels(&snapshot);
+        self.sync_all_ddns_background(&snapshot);
         Ok(reports)
+    }
+
+    /// Automatically ensures broadcast tunnels are configured and started for all domains with auto_broadcast = true.
+    pub fn ensure_broadcast_tunnels(&self, domains: &[Domain]) {
+        let cfg = self.web_config();
+        for d in domains {
+            if !d.enabled || !d.auto_broadcast {
+                continue;
+            }
+            let server_id = crate::domain::resolved_server(d, &cfg);
+            let ports = cfg.effective_ports(&server_id);
+            let target = format!("http://127.0.0.1:{}", ports.http);
+            let provider = d.broadcast_provider.as_deref().unwrap_or("cloudflare");
+
+            let existing = self.list_tunnels().into_iter().find(|t| {
+                d.tunnel_id.as_deref() == Some(&t.config.id)
+                    || (d.project_id.is_some()
+                        && d.project_id == t.config.project_id
+                        && t.config.target == target)
+            });
+
+            match existing {
+                Some(t) => {
+                    if t.state == "stopped" || t.state == "failed" {
+                        let _ = self.start_tunnel(&t.config.id, true);
+                    }
+                }
+                None => {
+                    let public_hostname = d.public_domain.clone().or_else(|| {
+                        if crate::domain::is_real_domain(&d.hostname) {
+                            Some(d.hostname.clone())
+                        } else {
+                            None
+                        }
+                    });
+                    let config = crate::tunnel::TunnelConfig {
+                        id: String::new(),
+                        project_id: d.project_id.clone(),
+                        name: format!("Broadcast {}", d.hostname),
+                        provider: provider.to_string(),
+                        target,
+                        auth_user: None,
+                        allow_internal: false,
+                        public_hostname,
+                        acknowledged: true,
+                        autostart: true,
+                    };
+                    if let Ok(saved) = self.save_tunnel(config) {
+                        let _ = self.start_tunnel(&saved.id, true);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Triggers a background sync of dynamic DNS for any enabled domains configured with DDNS.
+    pub fn sync_all_ddns_background(&self, domains: &[Domain]) {
+        let targets: Vec<Domain> = domains
+            .iter()
+            .filter(|d| {
+                d.enabled
+                    && d.ddns_provider
+                        .as_deref()
+                        .map(|p| !p.trim().is_empty())
+                        .unwrap_or(false)
+            })
+            .cloned()
+            .collect();
+        if targets.is_empty() {
+            return;
+        }
+
+        tokio::spawn(async move {
+            for d in targets {
+                let _ = crate::ddns::sync_domain_ddns(&d, false).await;
+            }
+        });
     }
 
     /// Applies a single web server, for "Start" on one row of the Services page.
@@ -2142,12 +2253,7 @@ impl Inner {
         let tunnels: Vec<_> = self
             .list_tunnels()
             .into_iter()
-            .filter(|t| {
-                t.config.autostart
-                    && t.config.acknowledged
-                    && t.config.provider == "cloudflare"
-                    && t.config.public_hostname.is_some()
-            })
+            .filter(|t| t.config.autostart && t.config.acknowledged)
             .collect();
         if !tunnels.is_empty() && !web_applied {
             if let Err(e) = self.apply_web(&[]) {
@@ -3313,6 +3419,7 @@ impl Inner {
                     server: None,
                     path_prefix: None,
                     icon: None,
+                    ..Default::default()
                 };
                 let cfg = self.web_config();
                 let url = self.site_url(&domain, &cfg);
@@ -5013,6 +5120,7 @@ mod apply_concurrency_tests {
             server: None,
             path_prefix: None,
             icon: None,
+            ..Default::default()
         };
         {
             let mut domains = inner.domains.lock().unwrap();

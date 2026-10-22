@@ -382,6 +382,11 @@ pub fn allowed(cmd: &CoreCommand) -> bool {
             | C::SyncHosts
             | C::TrustCa
             | C::RegenerateCertificate { .. }
+            | C::VerifySslFiles { .. }
+            | C::IssueLetsEncrypt { .. }
+            | C::SyncDdns { .. }
+            | C::DetectPublicIp
+            | C::SyncAllDdns { .. }
             | C::SetDomainEnabled { .. }
             | C::CreateDatabase { .. }
             | C::BackupDatabase { .. }

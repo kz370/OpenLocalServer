@@ -1,5 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Activity, Check, CircleOff, Code2, Copy, Download, ExternalLink, EyeOff, FolderOpen, FolderPlus, FolderSearch, Globe, Image as ImageIcon, KeyRound, List, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2, X } from 'lucide-react'
+import { Activity, Check, CircleOff, Code2, Copy, Download, ExternalLink, EyeOff, FolderOpen, FolderPlus, FolderSearch, Globe, Image as ImageIcon, KeyRound, List, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2, X, Zap } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
@@ -511,6 +511,12 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       })
       if (d.has_app) items.push({ label: 'Restart app process', icon: <RefreshCw />, onSelect: () => void run('restart', () => runCommand({ type: 'restart_site_app', hostname: d.hostname })) })
       items.push({
+        label: 'Domains & DNS…',
+        icon: <Globe />,
+        hint: 'Domain aliases, Dynamic DNS (Cloudflare/DuckDNS), SSL certificates',
+        onSelect: () => setTarget({ hostname: d.hostname, projectId: p?.id ?? null, tab: 'domains' }),
+      })
+      items.push({
         label: 'Site logo / icon…',
         icon: <ImageIcon />,
         hint: 'Custom ols_site_icon.webp or offline Font Awesome icon',
@@ -918,6 +924,43 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                     </TableCell>
                     <TableCell className="whitespace-nowrap">
                       <StatusDot site={d} running={!!status?.running} />
+                      {d?.ssl_provider === 'lets_encrypt' && (
+                        <div className="mt-0.5 text-[11px] font-medium text-emerald-500" title="Secured with Let's Encrypt">
+                          Let's Encrypt
+                        </div>
+                      )}
+                      {d?.ssl_provider === 'custom' && (
+                        <div className="mt-0.5 text-[11px] font-medium text-indigo-400" title="Custom SSL Certificate">
+                          Custom SSL
+                        </div>
+                      )}
+                      {d?.broadcast_url && (
+                        <a
+                          href={d.broadcast_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-0.5 inline-flex items-center gap-1 text-[11px] text-sky-400 hover:underline"
+                          title={`Broadcasting online: ${d.broadcast_url}`}
+                        >
+                          <Globe className="size-3" /> Online
+                        </a>
+                      )}
+                      {d?.ddns_provider && (
+                        <div
+                          className="mt-0.5 inline-flex items-center gap-1 text-[11px] text-amber-500 dark:text-amber-400 font-medium"
+                          title={`Dynamic DNS active via ${d.ddns_provider}${d.ddns_last_ip ? ` (IP: ${d.ddns_last_ip})` : ''}`}
+                        >
+                          <Zap className="size-3" /> DDNS ({d.ddns_provider})
+                        </div>
+                      )}
+                      {(d?.aliases ?? []).length > 0 && (
+                        <div
+                          className="mt-0.5 text-[11px] text-muted-foreground"
+                          title={`Aliases: ${d?.aliases?.join(', ')}`}
+                        >
+                          +{d?.aliases?.length} alias{d?.aliases?.length === 1 ? '' : 'es'}
+                        </div>
+                      )}
                       {d?.public_domain && (
                         <div className="mt-0.5 text-[11px] text-warning" title={`Public through Cloudflare: ${d.public_domain}`}>
                           Public

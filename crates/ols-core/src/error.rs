@@ -46,6 +46,14 @@ pub enum CoreError {
     #[error("{0}")]
     BundleError(String),
 
+    /// SSL certificate and ACME / Let's Encrypt errors.
+    #[error("{0}")]
+    CertError(String),
+
+    /// Dynamic DNS and public IP detection errors.
+    #[error("{0}")]
+    DdnsError(String),
+
     /// Plugins, catalogs, updates, load tests and the AI assistant: says what was being done.
     #[error("{problem}: {cause}")]
     Failed {
@@ -162,6 +170,22 @@ impl From<&CoreError> for Diagnostic {
                 fix: Some(
                     "Check the destination folder, and for an import that the file is an OLS site \
                      bundle exported by this version."
+                        .into(),
+                ),
+            },
+            CoreError::CertError(msg) => Diagnostic {
+                problem: "SSL certificate operation failed.".into(),
+                cause: msg.clone(),
+                fix: Some(
+                    "Make sure your domain is reachable from the internet or verify your SSL certificate and key files."
+                        .into(),
+                ),
+            },
+            CoreError::DdnsError(msg) => Diagnostic {
+                problem: "Dynamic DNS update failed.".into(),
+                cause: msg.clone(),
+                fix: Some(
+                    "Verify your network connection, API token, and provider zone settings in Site Settings."
                         .into(),
                 ),
             },

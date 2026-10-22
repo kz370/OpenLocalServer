@@ -597,6 +597,7 @@ impl WebManager {
                 public_domain: d.public_domain.clone(),
                 forwarded_tls: false,
                 path_prefix: d.path_prefix.clone(),
+                aliases: d.aliases.clone(),
             };
             path_specs.push(spec.clone());
             rendered.push((d.clone(), server.render_site(&spec, ports)));
@@ -1731,6 +1732,7 @@ mod tests {
             server: None,
             path_prefix: None,
             icon: None,
+            ..Default::default()
         }
     }
 

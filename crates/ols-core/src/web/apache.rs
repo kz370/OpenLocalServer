@@ -278,6 +278,12 @@ impl WebServer for Apache {
 fn head(site: &SiteSpec) -> String {
     let mut out = String::new();
     out.push_str(&format!("    ServerName {}\n", site.hostname));
+    for alias in &site.aliases {
+        let clean = alias.trim();
+        if !clean.is_empty() && clean != site.hostname {
+            out.push_str(&format!("    ServerAlias {clean}\n"));
+        }
+    }
     if site.wildcard {
         out.push_str(&format!("    ServerAlias *.{}\n", site.hostname));
     }
@@ -387,6 +393,7 @@ mod tests {
             public_domain: None,
             forwarded_tls: false,
             path_prefix: None,
+            aliases: Vec::new(),
         }
     }
 

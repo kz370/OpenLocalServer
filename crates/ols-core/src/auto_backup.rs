@@ -1073,6 +1073,7 @@ mod tests {
                 server: None,
                 path_prefix: None,
                 icon: None,
+                ..Default::default()
             })
             .unwrap();
         (project, hostname)
@@ -1330,6 +1331,7 @@ mod tests {
                 server: None,
                 path_prefix: None,
                 icon: None,
+                ..Default::default()
             })
             .unwrap();
         core.dispatch(CoreCommand::SetAutoBackup {
@@ -1523,6 +1525,7 @@ mod tests {
                     server: None,
                     path_prefix: None,
                     icon: None,
+                    ..Default::default()
                 },
             })
             .unwrap()
@@ -1769,6 +1772,7 @@ mod tests {
                 server: None,
                 path_prefix: None,
                 icon: None,
+                ..Default::default()
             })
             .unwrap();
         core.dispatch(CoreCommand::SetAutoBackup {

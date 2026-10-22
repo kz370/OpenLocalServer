@@ -1675,6 +1675,7 @@ mod tests {
             server: None,
             path_prefix: None,
             icon: None,
+            ..Default::default()
         };
         // Registering already gave it shop.test (automatic domains); make it ours either way.
         if core

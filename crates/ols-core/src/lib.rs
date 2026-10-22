@@ -1,6 +1,7 @@
 //! ols-core: the application core (§8.1). GUI, CLI, and the future local API are all
 //! front doors onto this crate — none of them talk to a manager directly.
 
+pub mod acme;
 pub mod ai;
 pub mod api;
 pub mod app;
@@ -19,6 +20,7 @@ pub mod custom_service;
 pub mod db;
 pub mod dbbackup;
 pub mod dbtools;
+pub mod ddns;
 pub mod detection;
 pub mod diagnostics;
 pub mod dns;

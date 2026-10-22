@@ -285,6 +285,8 @@ export interface SiteBlocks {
   upstreams: UpstreamGroup[]
   includes: string[]
 }
+export type SslProvider = 'local_ca' | 'lets_encrypt' | 'custom'
+
 export interface Domain {
   hostname: string
   project_id: string | null
@@ -306,6 +308,39 @@ export interface Domain {
   path_prefix?: string | null
   /** Optional Font Awesome icon identifier or class (e.g. "fa-wordpress" or "globe"). */
   icon?: string | null
+  /** SSL certificate provider: local root CA, Let's Encrypt automated ACME, or user's custom files. */
+  ssl_provider?: SslProvider
+  /** Absolute path to user's PEM certificate file when ssl_provider is custom. */
+  custom_cert_path?: string | null
+  /** Absolute path to user's PEM private key file when ssl_provider is custom. */
+  custom_key_path?: string | null
+  /** Optional contact email for Let's Encrypt account registration and expiry alerts. */
+  lets_encrypt_email?: string | null
+  /** Automatically broadcast this domain online via Cloudflare/Localtunnel/Tailscale tunnel. */
+  auto_broadcast?: boolean
+  /** Broadcast provider: 'cloudflare', 'localtunnel', or 'tailscale'. */
+  broadcast_provider?: string | null
+  /** Additional domain aliases pointing to this site. */
+  aliases?: string[]
+  /** Dynamic DNS provider: 'cloudflare' | 'duckdns' | 'custom' | null */
+  ddns_provider?: 'cloudflare' | 'duckdns' | 'custom' | null
+  /** API token / key for Dynamic DNS updates. */
+  ddns_token?: string | null
+  /** Zone ID override for Cloudflare or webhook URL for custom provider. */
+  ddns_zone_id?: string | null
+  /** Whether to proxy DNS traffic through Cloudflare (orange cloud). */
+  ddns_proxied?: boolean
+  /** Last IP successfully synced with DNS provider. */
+  ddns_last_ip?: string | null
+  /** Timestamp of last successful DDNS sync. */
+  ddns_last_synced_at?: number | null
+}
+
+export interface DdnsSyncResult {
+  hostname: string
+  ip: string
+  updated: boolean
+  message: string
 }
 
 export interface ProcfilePreview {
@@ -337,6 +372,18 @@ export interface DomainSummary {
   icon?: string | null
   /** Data URL (`data:image/webp;base64,...`) when `ols_site_icon.webp` exists in `folder`. */
   icon_image?: string | null
+  /** SSL certificate provider: local_ca, lets_encrypt, or custom. */
+  ssl_provider?: SslProvider
+  /** Whether the domain automatically broadcasts online. */
+  auto_broadcast?: boolean
+  /** Live public URL if currently broadcasted online. */
+  broadcast_url?: string | null
+  /** Additional domain aliases pointing to this site. */
+  aliases?: string[]
+  /** Dynamic DNS provider: cloudflare, duckdns, or custom. */
+  ddns_provider?: string | null
+  /** Last detected public IP synced to DNS. */
+  ddns_last_ip?: string | null
 }
 
 /** Ports a server is stored with. The default server always binds 80/443 instead. */
@@ -411,6 +458,7 @@ export interface CertInfo {
   project_id: string | null
   cert_path: string
   key_path: string
+  provider?: string | null
 }
 export interface HealthStep {
   name: string
@@ -712,6 +760,11 @@ export type CoreCommand =
   | { type: 'list_certificates' }
   | { type: 'regenerate_certificate'; hostname: string }
   | { type: 'revoke_certificate'; hostname: string }
+  | { type: 'verify_ssl_files'; cert_path: string; key_path: string }
+  | { type: 'issue_lets_encrypt'; hostname: string; email?: string | null }
+  | { type: 'sync_ddns'; hostname: string; force: boolean }
+  | { type: 'detect_public_ip' }
+  | { type: 'sync_all_ddns'; force: boolean }
   | { type: 'health_check'; hostname: string }
   | { type: 'list_web_configs' }
   | { type: 'read_web_config'; hostname: string | null; part: ConfigPart; server?: string }
@@ -756,12 +809,12 @@ export type CoreCommand =
   | { type: 'trust_quick_app_source'; origin: string }
   | { type: 'plan_quick_app'; id: string; values: Record<string, string> }
   | {
-      type: 'start_quick_app'
-      id: string
-      values: Record<string, string>
-      approval: 'once' | 'source' | null
-      allow_elevated: boolean
-    }
+    type: 'start_quick_app'
+    id: string
+    values: Record<string, string>
+    approval: 'once' | 'source' | null
+    allow_elevated: boolean
+  }
   | { type: 'get_quick_run'; id: string }
   | { type: 'list_quick_runs' }
   | { type: 'cancel_quick_run'; id: string }
@@ -982,7 +1035,7 @@ export type CoreCommand =
   | { type: 'cancel_task'; id: string }
   | { type: 'dismiss_task'; id: string }
   | { type: 'clear_finished_tasks' }
-  // @@ts-commands-end
+// @@ts-commands-end
 
 export type CoreResponse =
   | { type: 'pong'; version: string }
@@ -1022,6 +1075,11 @@ export type CoreResponse =
   | { type: 'applied'; reports: ApplyReport[] }
   | { type: 'ca_info'; info: CaInfo }
   | { type: 'certificates'; certs: CertInfo[] }
+  | { type: 'certificate'; cert: CertInfo }
+  | { type: 'ssl_verification'; valid: boolean; error: string | null }
+  | { type: 'ddns_sync'; result: DdnsSyncResult }
+  | { type: 'ddns_sync_all'; results: DdnsSyncResult[] }
+  | { type: 'public_ip'; ip: string }
   | { type: 'health'; report: HealthReport }
   | { type: 'configs'; files: ConfigFile[] }
   | { type: 'config_versions'; versions: ConfigVersion[] }
@@ -1132,7 +1190,7 @@ export type CoreResponse =
   | { type: 'tasks'; tasks: TaskView[] }
   | { type: 'site_bundle_preview'; preview: BundlePreview }
   | { type: 'site_bundle_imported'; result: BundleImportResult }
-  // @@ts-responses-end
+// @@ts-responses-end
 
 export interface MigrationSource {
   id: string

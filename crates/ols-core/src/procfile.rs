@@ -188,6 +188,7 @@ impl crate::app::Inner {
                     server: None,
                     path_prefix: None,
                     icon: None,
+                    ..Default::default()
                 };
                 self.domains.lock().unwrap().add(site)?;
             }

@@ -39,12 +39,13 @@ import { SiteConfigTab } from '@/pages/Config'
 import { HtaccessEditor } from './HtaccessEditor'
 import { DomainSettings, newDomain } from './DomainDialog'
 import { ServersPanel } from './ServersPanel'
+import { SiteDomainsPanel } from './SiteDomainsPanel'
 import { SiteLogoPanel } from './SiteLogoPanel'
 import { SiteLogs } from './SiteLogs'
 
-export type SiteTab = 'settings' | 'icon' | 'config' | 'htaccess' | 'servers' | 'logs' | 'overview' | 'commands' | ToolTab
+export type SiteTab = 'settings' | 'domains' | 'icon' | 'config' | 'htaccess' | 'servers' | 'logs' | 'overview' | 'commands' | ToolTab
 
-const TAB_ICON: Record<Exclude<SiteTab, 'settings' | 'icon' | 'config' | 'htaccess' | 'servers' | 'logs'>, ReactNode> = {
+const TAB_ICON: Record<Exclude<SiteTab, 'settings' | 'domains' | 'icon' | 'config' | 'htaccess' | 'servers' | 'logs'>, ReactNode> = {
   overview: <LayoutDashboard />,
   environment: <Layers />,
   terminal: <SquareTerminal />,
@@ -63,7 +64,7 @@ const TAB_ICON: Record<Exclude<SiteTab, 'settings' | 'icon' | 'config' | 'htacce
 }
 
 /** Tabs that belong to the project, not the site. */
-const SITE_TABS: SiteTab[] = ['settings', 'icon', 'config', 'htaccess', 'servers', 'logs']
+const SITE_TABS: SiteTab[] = ['settings', 'domains', 'icon', 'config', 'htaccess', 'servers', 'logs']
 
 /** What the site dialog shows: a site, a project without a site yet, or a site and its project. */
 export interface SiteTarget {
@@ -204,6 +205,7 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
 
   const siteItems: { id: SiteTab; label: string; icon: ReactNode }[] = [
     { id: 'settings', label: target.hostname ? 'Site settings' : 'Add a domain', icon: <Settings2 /> },
+    ...(target.hostname ? [{ id: 'domains' as SiteTab, label: 'Domains & DNS', icon: <Globe /> }] : []),
     { id: 'icon', label: 'Site logo / icon', icon: <ImageIcon /> },
     ...(target.hostname ? [{ id: 'config' as SiteTab, label: 'Web server config', icon: <FileCode2 /> }] : []),
     ...(target.hostname && domain?.kind.type === 'php' ? [{ id: 'htaccess' as SiteTab, label: '.htaccess', icon: <FileCode2 /> }] : []),
@@ -311,6 +313,17 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
               ) : domainError ? null : (
                 <p className="text-sm text-muted-foreground">Reading the site…</p>
               ))}
+
+            {tab === 'domains' && domain && (
+              <SiteDomainsPanel
+                domain={domain}
+                onSave={async (updated) => {
+                  await save(updated)
+                  setDomain(updated)
+                }}
+                busy={busy !== null}
+              />
+            )}
 
             {tab === 'icon' && (
               <div className="flex flex-col gap-4">

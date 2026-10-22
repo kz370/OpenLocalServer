@@ -1,5 +1,17 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { ArrowLeftRight, Braces, Check, CircleAlert, FileCode2, FileText, FolderSearch, Rocket } from 'lucide-react'
+import {
+  ArrowLeftRight,
+  Braces,
+  Check,
+  CircleAlert,
+  FileCode2,
+  FileText,
+  FolderSearch,
+  Globe,
+  KeyRound,
+  Rocket,
+  ShieldCheck,
+} from 'lucide-react'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 
 import { TechTile } from '@/components/TechIcon'
@@ -9,7 +21,7 @@ import { Field, FormSection, Select, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { buildSitePath, domainToFolderName, getDefaultSitesDir, getDefaultTld, slugify } from '@/lib/sites'
-import { type Domain, type Project, type QuickEntryView, type TunnelStatus, runCommand } from '@/core'
+import { type Domain, type Project, type QuickEntryView, type SslProvider, type TunnelStatus, runCommand } from '@/core'
 
 const emptyBlocks = { headers: [], redirects: [], mappings: [], upstreams: [], includes: [] }
 
@@ -37,6 +49,12 @@ export function newDomain(): Domain {
     generated_hashes: {},
     server: null,
     path_prefix: null,
+    ssl_provider: 'local_ca',
+    custom_cert_path: null,
+    custom_key_path: null,
+    lets_encrypt_email: null,
+    auto_broadcast: false,
+    broadcast_provider: 'cloudflare',
   }
 }
 
@@ -372,6 +390,82 @@ export function DomainSettings({
     }
   }
 
+  const [sslVerifying, setSslVerifying] = useState(false)
+  const [sslVerifyResult, setSslVerifyResult] = useState<{ valid: boolean; error: string | null } | null>(null)
+  const [acmeIssuing, setAcmeIssuing] = useState(false)
+  const [acmeResult, setAcmeResult] = useState<{ success: boolean; message: string } | null>(null)
+
+  async function browseCustomCert() {
+    const picked = await open({
+      multiple: false,
+      directory: false,
+      title: 'Select SSL Certificate (PEM / CRT)',
+      filters: [{ name: 'Certificate', extensions: ['crt', 'pem', 'cer'] }],
+    })
+    if (picked && typeof picked === 'string') {
+      set({ custom_cert_path: picked })
+      setSslVerifyResult(null)
+    }
+  }
+
+  async function browseCustomKey() {
+    const picked = await open({
+      multiple: false,
+      directory: false,
+      title: 'Select SSL Private Key (KEY / PEM)',
+      filters: [{ name: 'Private Key', extensions: ['key', 'pem'] }],
+    })
+    if (picked && typeof picked === 'string') {
+      set({ custom_key_path: picked })
+      setSslVerifyResult(null)
+    }
+  }
+
+  async function verifySslFiles() {
+    if (!d.custom_cert_path || !d.custom_key_path) return
+    setSslVerifying(true)
+    setSslVerifyResult(null)
+    try {
+      const resp = await runCommand({
+        type: 'verify_ssl_files',
+        cert_path: d.custom_cert_path,
+        key_path: d.custom_key_path,
+      })
+      if (resp.type === 'ssl_verification') {
+        setSslVerifyResult({ valid: resp.valid, error: resp.error })
+      }
+    } catch (e) {
+      setSslVerifyResult({ valid: false, error: String(e) })
+    } finally {
+      setSslVerifying(false)
+    }
+  }
+
+  async function issueLetsEncryptNow() {
+    if (!d.hostname) return
+    setAcmeIssuing(true)
+    setAcmeResult(null)
+    try {
+      const resp = await runCommand({
+        type: 'issue_lets_encrypt',
+        hostname: d.hostname.trim().toLowerCase(),
+        email: d.lets_encrypt_email || null,
+      })
+      if (resp.type === 'certificate') {
+        setAcmeResult({
+          success: true,
+          message: `Issued by ${resp.cert.issuer}. Valid for ${resp.cert.days_left} days.`,
+        })
+      } else {
+        setAcmeResult({ success: true, message: 'Certificate issued successfully.' })
+      }
+    } catch (e) {
+      setAcmeResult({ success: false, message: String(e) })
+    } finally {
+      setAcmeIssuing(false)
+    }
+  }
+
   function submit() {
     const out = { ...d, hostname: d.hostname.trim().toLowerCase() }
     if (out.kind.type === 'proxy' && appLine.trim()) {
@@ -381,7 +475,18 @@ export function DomainSettings({
       out.app = null
     }
     if (!out.https) out.redirect_https = false
-    if (!out.hostname) return setErr('Enter a domain like shop.test')
+    if (!out.ssl_provider) out.ssl_provider = 'local_ca'
+    if (out.https && out.ssl_provider === 'custom') {
+      if (!out.custom_cert_path) return setErr('Choose your custom SSL certificate file (.pem or .crt)')
+      if (!out.custom_key_path) return setErr('Choose your custom SSL private key file (.key or .pem)')
+    }
+    if (out.https && out.ssl_provider === 'lets_encrypt' && localTld) {
+      return setErr(`Let's Encrypt requires a real public domain. ${out.hostname} has a local TLD. Use Local CA instead.`)
+    }
+    if (out.auto_broadcast && !out.broadcast_provider) {
+      out.broadcast_provider = 'cloudflare'
+    }
+    if (!out.hostname) return setErr('Enter a domain like shop.test or mydomain.com')
     if (pathPrefixError) return setErr(pathPrefixError)
     if (!out.root) return setErr('Choose the site folder')
     if (out.public_domain && !out.tunnel_id) return setErr('Choose a saved named Cloudflare tunnel for the public domain')
@@ -471,11 +576,13 @@ export function DomainSettings({
           label="Domain"
           hint={
             host
-              ? `Opens at ${d.https ? 'https' : 'http'}://${host}${localTld ? '' : ' — use .test, .local or .localhost so it never clashes with a real website'}`
-              : 'Subdomains work too: api.shop.test routes independently of shop.test'
+              ? localTld
+                ? `Local development domain (${d.https ? 'https' : 'http'}://${host})`
+                : "Real public domain! You can secure it with Let's Encrypt or custom SSL and broadcast it online."
+              : 'Enter a local domain (shop.test, myapp.local) or a real public domain (example.com, api.site.org)'
           }
         >
-          <Input value={d.hostname} onChange={(e) => onDomainChange(e.target.value)} placeholder="shop.test, myapp.local, api.company.dev…" />
+          <Input value={d.hostname} onChange={(e) => onDomainChange(e.target.value)} placeholder="shop.test, myapp.local, api.company.dev, mysite.com…" />
         </Field>
         <Field
           label="Site folder"
@@ -650,18 +757,213 @@ export function DomainSettings({
         )}
       </FormSection>
 
-      <FormSection title="Options">
+      <FormSection title="HTTPS & SSL Certificate" hint="Choose the certificate provider to encrypt HTTPS traffic for this domain.">
         <div className="grid gap-2.5 sm:grid-cols-3">
           <div className="rounded-lg border border-border p-3">
-            <Toggle checked={d.https} onChange={(v) => set({ https: v, redirect_https: v ? d.redirect_https : false })} label="HTTPS" hint="A certificate from the local CA is created for this domain." />
+            <Toggle checked={d.https} onChange={(v) => set({ https: v, redirect_https: v ? d.redirect_https : false })} label="HTTPS" hint="Encrypt connections with SSL/TLS." />
           </div>
           <div className="rounded-lg border border-border p-3">
             <Toggle checked={d.redirect_https} disabled={!d.https} onChange={(v) => set({ redirect_https: v })} label="Redirect to HTTPS" hint="Turn off for projects that need plain HTTP." />
           </div>
           <div className="rounded-lg border border-border p-3">
-            <Toggle checked={d.wildcard} onChange={(v) => set({ wildcard: v })} label="Wildcard" hint={`Answers *.${host || 'domain'}; needs a one-time Windows DNS rule (you'll be asked to approve it).`} />
+            <Toggle checked={d.wildcard} onChange={(v) => set({ wildcard: v })} label="Wildcard" hint={`Answers *.${host || 'domain'}; needs a one-time Windows DNS rule.`} />
           </div>
         </div>
+
+        {d.https && (
+          <div className="mt-3 flex flex-col gap-3">
+            <Field label="SSL Provider" hint="Select whether to use the local CA, automated Let's Encrypt, or your own certificate files.">
+              <div className="grid gap-2.5 sm:grid-cols-3" role="radiogroup" aria-label="SSL Provider">
+                {[
+                  {
+                    id: 'local_ca' as SslProvider,
+                    title: 'Local Root CA',
+                    hint: 'Auto-signed by OLS CA. Pre-trusted by Windows & local browsers.',
+                    icon: <ShieldCheck className="size-4 text-emerald-400" />,
+                  },
+                  {
+                    id: 'lets_encrypt' as SslProvider,
+                    title: "Let's Encrypt (ACME)",
+                    hint: 'Free, automated trusted SSL for real public domains.',
+                    icon: <Globe className="size-4 text-sky-400" />,
+                  },
+                  {
+                    id: 'custom' as SslProvider,
+                    title: 'Custom SSL Files',
+                    hint: 'Bring your own PEM/CRT certificate and private key.',
+                    icon: <KeyRound className="size-4 text-indigo-400" />,
+                  },
+                ].map((p) => {
+                  const active = (d.ssl_provider ?? 'local_ca') === p.id
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => {
+                        set({ ssl_provider: p.id })
+                        setSslVerifyResult(null)
+                        setAcmeResult(null)
+                      }}
+                      className={cn(
+                        'flex flex-col items-start gap-1.5 rounded-lg border p-3 text-left transition-colors',
+                        active ? 'border-primary bg-accent text-accent-foreground ring-1 ring-primary/30' : 'border-border hover:bg-accent/40',
+                      )}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        {p.icon}
+                        <span className="text-[13px] font-medium">{p.title}</span>
+                      </div>
+                      <span className="text-xs leading-relaxed text-muted-foreground">{p.hint}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </Field>
+
+            {d.ssl_provider === 'lets_encrypt' && (
+              <div className="flex flex-col gap-3 rounded-lg border border-border bg-card/40 p-3.5">
+                <Field
+                  label="Contact Email (Optional)"
+                  hint="Let's Encrypt uses this address to notify you about critical certificate security or expiry notices."
+                >
+                  <Input
+                    type="email"
+                    value={d.lets_encrypt_email ?? ''}
+                    onChange={(e) => set({ lets_encrypt_email: e.target.value.trim() || null })}
+                    placeholder="admin@example.com"
+                  />
+                </Field>
+                <div className="flex items-center justify-between gap-2 pt-1">
+                  <span className="text-xs text-muted-foreground">
+                    Certificates are automatically requested and renewed via HTTP-01 challenge.
+                  </span>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={acmeIssuing || !d.hostname}
+                    onClick={issueLetsEncryptNow}
+                  >
+                    {acmeIssuing ? 'Requesting Let’s Encrypt…' : 'Issue Certificate Now'}
+                  </Button>
+                </div>
+                {acmeResult && (
+                  <p
+                    className={cn(
+                      'text-xs rounded p-2 border',
+                      acmeResult.success
+                        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                        : 'border-destructive/30 bg-destructive/10 text-destructive',
+                    )}
+                  >
+                    {acmeResult.message}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {d.ssl_provider === 'custom' && (
+              <div className="flex flex-col gap-3 rounded-lg border border-border bg-card/40 p-3.5">
+                <Field label="Certificate File (PEM / CRT)" hint="Full chain or server certificate file.">
+                  <div className="flex gap-2">
+                    <Input
+                      value={d.custom_cert_path ?? ''}
+                      onChange={(e) => {
+                        set({ custom_cert_path: e.target.value })
+                        setSslVerifyResult(null)
+                      }}
+                      placeholder="C:\path\to\fullchain.pem or site.crt"
+                      className="min-w-0 flex-1 font-mono text-xs"
+                    />
+                    <Button type="button" variant="secondary" onClick={browseCustomCert} className="shrink-0">
+                      <FolderSearch className="size-4" /> Browse
+                    </Button>
+                  </div>
+                </Field>
+                <Field label="Private Key File (KEY / PEM)" hint="Unencrypted RSA or ECDSA private key.">
+                  <div className="flex gap-2">
+                    <Input
+                      value={d.custom_key_path ?? ''}
+                      onChange={(e) => {
+                        set({ custom_key_path: e.target.value })
+                        setSslVerifyResult(null)
+                      }}
+                      placeholder="C:\path\to\privkey.pem or site.key"
+                      className="min-w-0 flex-1 font-mono text-xs"
+                    />
+                    <Button type="button" variant="secondary" onClick={browseCustomKey} className="shrink-0">
+                      <FolderSearch className="size-4" /> Browse
+                    </Button>
+                  </div>
+                </Field>
+                <div className="flex items-center justify-between gap-2 pt-1">
+                  <span className="text-xs text-muted-foreground">
+                    Verifies PEM syntax and that the private key matches the certificate public key.
+                  </span>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={sslVerifying || !d.custom_cert_path || !d.custom_key_path}
+                    onClick={verifySslFiles}
+                  >
+                    {sslVerifying ? 'Verifying…' : 'Verify SSL Files'}
+                  </Button>
+                </div>
+                {sslVerifyResult && (
+                  <p
+                    className={cn(
+                      'text-xs rounded p-2 border flex items-center gap-1.5',
+                      sslVerifyResult.valid
+                        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                        : 'border-destructive/30 bg-destructive/10 text-destructive',
+                    )}
+                  >
+                    {sslVerifyResult.valid ? (
+                      <>
+                        <Check className="size-3.5" /> Certificate and private key are valid and match!
+                      </>
+                    ) : (
+                      <>
+                        <CircleAlert className="size-3.5" /> {sslVerifyResult.error || 'Verification failed'}
+                      </>
+                    )}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </FormSection>
+
+      <FormSection title="Broadcast Online" hint="Instantly broadcast this project to the public internet using encrypted tunnels.">
+        <div className="rounded-lg border border-border p-3">
+          <Toggle
+            checked={!!d.auto_broadcast}
+            onChange={(v) => set({ auto_broadcast: v, broadcast_provider: d.broadcast_provider || 'cloudflare' })}
+            label="Broadcast online automatically"
+            hint="Automatically starts an encrypted online tunnel when OpenLocalServer runs so this project is live on the web."
+          />
+        </div>
+        {d.auto_broadcast && (
+          <div className="mt-3 flex flex-col gap-3 rounded-lg border border-border bg-card/40 p-3.5">
+            <Field label="Broadcast Provider" hint="Provider to route public internet traffic to your local web server.">
+              <Select
+                value={d.broadcast_provider ?? 'cloudflare'}
+                onChange={(e) => set({ broadcast_provider: e.target.value })}
+              >
+                <option value="cloudflare">Cloudflare Tunnel (Quick / Named)</option>
+                <option value="localtunnel">Localtunnel (Zero configuration, instant URL)</option>
+                <option value="tailscale">Tailscale Funnel (Direct secure mesh)</option>
+              </Select>
+            </Field>
+            <p className="text-xs text-muted-foreground">
+              When enabled, a tunnel is kept alive with autostart. Visitors from anywhere can access your local application.
+            </p>
+          </div>
+        )}
       </FormSection>
 
       {!isNew && (

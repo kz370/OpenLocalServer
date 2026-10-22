@@ -193,6 +193,101 @@ pub struct Domain {
     /// Optional Font Awesome icon identifier or class (e.g. "fa-wordpress" or "globe").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
+    /// SSL certificate provider: Local CA, Let's Encrypt, or Custom files.
+    #[serde(default)]
+    pub ssl_provider: SslProvider,
+    /// Path to custom SSL certificate file (PEM / CRT).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_cert_path: Option<String>,
+    /// Path to custom SSL private key file (PEM / KEY).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_key_path: Option<String>,
+    /// Contact email for Let's Encrypt account / expiry notifications.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lets_encrypt_email: Option<String>,
+    /// Automatically broadcast this domain/site online using a tunnel.
+    #[serde(default)]
+    pub auto_broadcast: bool,
+    /// Provider used for online broadcast ("cloudflare", "localtunnel", "tailscale").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub broadcast_provider: Option<String>,
+    /// Additional domain names (aliases) mapped to this same site.
+    #[serde(default)]
+    pub aliases: Vec<String>,
+    /// Dynamic DNS provider ("cloudflare", "duckdns", "custom", or None).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ddns_provider: Option<String>,
+    /// API token or secret key used for dynamic DNS record updates.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ddns_token: Option<String>,
+    /// Cloudflare zone id (optional override; auto-discovered if not set).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ddns_zone_id: Option<String>,
+    /// Cloudflare proxy flag (true = proxied via Cloudflare CDN).
+    #[serde(default)]
+    pub ddns_proxied: bool,
+    /// Last public IP that was successfully synced to DNS.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ddns_last_ip: Option<String>,
+    /// Unix timestamp (seconds) of the last successful DDNS update.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ddns_last_synced_at: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SslProvider {
+    #[default]
+    LocalCa,
+    LetsEncrypt,
+    Custom,
+}
+
+impl std::fmt::Display for SslProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::LocalCa => write!(f, "local_ca"),
+            Self::LetsEncrypt => write!(f, "lets_encrypt"),
+            Self::Custom => write!(f, "custom"),
+        }
+    }
+}
+
+impl Default for Domain {
+    fn default() -> Self {
+        Self {
+            hostname: String::new(),
+            project_id: None,
+            root: String::new(),
+            kind: SiteKind::Static,
+            https: false,
+            redirect_https: false,
+            wildcard: false,
+            enabled: true,
+            ownership: Ownership::Managed,
+            app: None,
+            blocks: SiteBlocks::default(),
+            generated_hashes: BTreeMap::new(),
+            public_domain: None,
+            tunnel_id: None,
+            server: None,
+            path_prefix: None,
+            icon: None,
+            ssl_provider: SslProvider::LocalCa,
+            custom_cert_path: None,
+            custom_key_path: None,
+            lets_encrypt_email: None,
+            auto_broadcast: false,
+            broadcast_provider: None,
+            aliases: Vec::new(),
+            ddns_provider: None,
+            ddns_token: None,
+            ddns_zone_id: None,
+            ddns_proxied: false,
+            ddns_last_ip: None,
+            ddns_last_synced_at: None,
+        }
+    }
 }
 
 /// Rejects a per-site server id that isn't one we ship. A blank value means "use the
@@ -278,6 +373,13 @@ fn home_domain(dir: &Path) -> Domain {
         server: None,
         path_prefix: None,
         icon: None,
+        ssl_provider: SslProvider::LocalCa,
+        custom_cert_path: None,
+        custom_key_path: None,
+        lets_encrypt_email: None,
+        auto_broadcast: false,
+        broadcast_provider: None,
+        ..Default::default()
     }
 }
 
@@ -669,7 +771,10 @@ impl DomainStore {
         validate_hostname(&domain.hostname)?;
         domain.server = validate_domain_server(domain.server.as_deref())?;
         domain.path_prefix = validate_path_prefix(domain.path_prefix.as_deref())?;
+        domain.broadcast_provider =
+            validate_broadcast_provider(domain.broadcast_provider.as_deref())?;
         self.check_path_prefix_taken(&domain)?;
+        validate_ssl_config(&domain)?;
         if let Some(host) = domain.public_domain.as_mut() {
             *host = host.trim().to_ascii_lowercase();
             validate_hostname(host)?;
@@ -701,7 +806,10 @@ impl DomainStore {
         validate_kind(&domain.kind)?;
         domain.server = validate_domain_server(domain.server.as_deref())?;
         domain.path_prefix = validate_path_prefix(domain.path_prefix.as_deref())?;
+        domain.broadcast_provider =
+            validate_broadcast_provider(domain.broadcast_provider.as_deref())?;
         self.check_path_prefix_taken(&domain)?;
+        validate_ssl_config(&domain)?;
         if let Some(host) = domain.public_domain.as_mut() {
             *host = host.trim().to_ascii_lowercase();
             validate_hostname(host)?;
@@ -899,7 +1007,7 @@ impl DomainStore {
     }
 }
 
-fn validate_public_hostname(host: &str) -> Result<(), CoreError> {
+pub fn validate_public_hostname(host: &str) -> Result<(), CoreError> {
     if ["test", "local", "localhost"]
         .iter()
         .any(|suffix| host == *suffix || host.ends_with(&format!(".{suffix}")))
@@ -909,6 +1017,60 @@ fn validate_public_hostname(host: &str) -> Result<(), CoreError> {
         ));
     }
     Ok(())
+}
+
+pub fn is_real_domain(host: &str) -> bool {
+    validate_public_hostname(host).is_ok()
+}
+
+pub fn validate_broadcast_provider(provider: Option<&str>) -> Result<Option<String>, CoreError> {
+    match provider.map(str::trim) {
+        None | Some("") => Ok(None),
+        Some("cloudflare") | Some("localtunnel") | Some("ngrok") => {
+            Ok(Some(provider.unwrap().trim().to_string()))
+        }
+        Some(s) => Err(CoreError::DomainError(format!(
+            "\"{s}\" is not a supported tunnel broadcast provider. Choose cloudflare, localtunnel, or ngrok."
+        ))),
+    }
+}
+
+pub fn validate_ssl_config(domain: &Domain) -> Result<(), CoreError> {
+    match domain.ssl_provider {
+        SslProvider::LocalCa => Ok(()),
+        SslProvider::Custom => {
+            let cert = domain.custom_cert_path.as_deref().unwrap_or("").trim();
+            let key = domain.custom_key_path.as_deref().unwrap_or("").trim();
+            if cert.is_empty() || key.is_empty() {
+                return Err(CoreError::DomainError(
+                    "Custom SSL requires both certificate and private key file paths".into(),
+                ));
+            }
+            if !std::path::Path::new(cert).is_file() {
+                return Err(CoreError::DomainError(format!(
+                    "Custom SSL certificate file not found: {cert}"
+                )));
+            }
+            if !std::path::Path::new(key).is_file() {
+                return Err(CoreError::DomainError(format!(
+                    "Custom SSL private key file not found: {key}"
+                )));
+            }
+            Ok(())
+        }
+        SslProvider::LetsEncrypt => {
+            validate_public_hostname(&domain.hostname)?;
+            if let Some(email) = domain.lets_encrypt_email.as_deref() {
+                let e = email.trim();
+                if !e.is_empty() && (!e.contains('@') || !e.contains('.')) {
+                    return Err(CoreError::DomainError(format!(
+                        "\"{email}\" is not a valid email address for Let's Encrypt notifications"
+                    )));
+                }
+            }
+            Ok(())
+        }
+    }
 }
 
 /// RFC-1123 hostname with at least two labels. Strict on purpose: the name lands in a
@@ -987,6 +1149,13 @@ mod tests {
             server: None,
             path_prefix: None,
             icon: None,
+            ssl_provider: SslProvider::LocalCa,
+            custom_cert_path: None,
+            custom_key_path: None,
+            lets_encrypt_email: None,
+            auto_broadcast: false,
+            broadcast_provider: None,
+            ..Default::default()
         }
     }
 
