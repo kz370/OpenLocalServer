@@ -58,7 +58,7 @@ impl WebServer for Caddy {
         out.push_str("{\n");
         out.push_str(&format!("    http_port {}\n", ports.http));
         out.push_str(&format!("    https_port {}\n", ports.https));
-        out.push_str("    default_bind 127.0.0.1\n");
+        out.push_str("    default_bind 0.0.0.0\n");
         out.push_str("    auto_https off\n");
         out.push_str(&format!("    admin {}\n", admin_addr(layout)));
         out.push_str(&format!(
@@ -374,7 +374,7 @@ mod tests {
             &[],
         );
         assert!(cfg.contains("auto_https off"));
-        assert!(cfg.contains("default_bind 127.0.0.1"));
+        assert!(cfg.contains("default_bind 0.0.0.0"));
         assert!(cfg.contains("http_port 8080"));
         assert!(cfg.contains(&format!("admin {}\n", admin_addr(&layout))));
         assert_ne!(admin_addr(&layout), "127.0.0.1:20019");

@@ -82,7 +82,7 @@ impl WebServer for Nginx {
 
         // A request for an unknown name must not silently land on the first site.
         out.push_str(&format!(
-            "    server {{\n        listen 127.0.0.1:{} default_server;\n        server_name _;\n        return 404;\n    }}\n\n",
+            "    server {{\n        listen 0.0.0.0:{} default_server;\n        server_name _;\n        return 404;\n    }}\n\n",
             ports.http
         ));
         out.push_str(&format!(
@@ -111,7 +111,7 @@ impl WebServer for Nginx {
 
         // Plain-HTTP server (§52): either the whole site, or a redirect to HTTPS.
         out.push_str("server {\n");
-        out.push_str(&format!("    listen 127.0.0.1:{};\n", ports.http));
+        out.push_str(&format!("    listen 0.0.0.0:{};\n", ports.http));
         out.push_str(&format!("    server_name {names};\n"));
         if site.tls.is_some() && site.redirect_https {
             out.push_str(&format!(
@@ -125,7 +125,7 @@ impl WebServer for Nginx {
 
         if let Some(tls) = &site.tls {
             out.push_str("\nserver {\n");
-            out.push_str(&format!("    listen 127.0.0.1:{} ssl;\n", ports.https));
+            out.push_str(&format!("    listen 0.0.0.0:{} ssl;\n", ports.https));
             out.push_str("    http2 on;\n");
             out.push_str(&format!("    server_name {names};\n"));
             out.push_str(&format!(
@@ -148,7 +148,7 @@ impl WebServer for Nginx {
             public.redirect_https = false;
             public.forwarded_tls = true;
             out.push_str("\nserver {\n");
-            out.push_str(&format!("    listen 127.0.0.1:{};\n", ports.http));
+            out.push_str(&format!("    listen 0.0.0.0:{};\n", ports.http));
             out.push_str(&format!("    server_name {host};\n"));
             out.push_str(&render_body(&public));
             out.push_str("}\n");
@@ -181,7 +181,7 @@ impl WebServer for Nginx {
         out.push_str("# localhost/<prefix> routes for the sites below.\n");
         out.push_str("# Each one is served by that site's own vhost on this server.\n\n");
         out.push_str("server {\n");
-        out.push_str(&format!("    listen 127.0.0.1:{};\n", ports.http));
+        out.push_str(&format!("    listen 0.0.0.0:{};\n", ports.http));
         out.push_str("    server_name localhost 127.0.0.1;\n");
 
         for site in sites
@@ -500,7 +500,7 @@ mod tests {
             cfg.contains("return 301 https://$host$request_uri;"),
             "http server must redirect"
         );
-        assert!(cfg.contains("listen 127.0.0.1:443 ssl;"));
+        assert!(cfg.contains("listen 0.0.0.0:443 ssl;"));
         assert!(cfg.contains("ssl_certificate \"C:/c/cert.pem\";"));
         assert!(cfg.contains("fastcgi_pass ols_php_81;"));
         assert!(cfg.contains("fastcgi_param HTTPS on;"));
@@ -534,7 +534,7 @@ mod tests {
             },
         );
         assert!(cfg.contains("return 301 https://$host:8443$request_uri;"));
-        assert!(cfg.contains("listen 127.0.0.1:8080;"));
+        assert!(cfg.contains("listen 0.0.0.0:8080;"));
     }
 
     #[test]

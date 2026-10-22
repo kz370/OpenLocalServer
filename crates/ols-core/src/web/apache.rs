@@ -76,8 +76,8 @@ impl WebServer for Apache {
             "PidFile \"{}\"\n",
             cfg_path(&layout.logs_dir.join("httpd.pid"))
         ));
-        out.push_str(&format!("Listen 127.0.0.1:{}\n", ports.http));
-        out.push_str(&format!("Listen 127.0.0.1:{}\n\n", ports.https));
+        out.push_str(&format!("Listen 0.0.0.0:{}\n", ports.http));
+        out.push_str(&format!("Listen 0.0.0.0:{}\n\n", ports.https));
 
         for module in MODULES {
             let present = layout
@@ -130,7 +130,7 @@ impl WebServer for Apache {
 
         // A request for an unknown name must not silently land on the first site.
         out.push_str(&format!(
-            "<VirtualHost 127.0.0.1:{}>\n    ServerName _default_.localhost\n    <Location />\n        Require all denied\n    </Location>\n</VirtualHost>\n\n",
+            "<VirtualHost 0.0.0.0:{}>\n    ServerName _default_.localhost\n    <Location />\n        Require all denied\n    </Location>\n</VirtualHost>\n\n",
             ports.http
         ));
         out.push_str(&format!(
@@ -146,7 +146,7 @@ impl WebServer for Apache {
         out.push_str(&format!("# site: {}\n\n", site.hostname));
 
         let redirect = site.tls.is_some() && site.redirect_https;
-        out.push_str(&format!("<VirtualHost 127.0.0.1:{}>\n", ports.http));
+        out.push_str(&format!("<VirtualHost 0.0.0.0:{}>\n", ports.http));
         out.push_str(&head(site));
         if redirect {
             out.push_str("    RewriteEngine On\n");
@@ -160,7 +160,7 @@ impl WebServer for Apache {
         out.push_str("</VirtualHost>\n");
 
         if let Some(tls) = &site.tls {
-            out.push_str(&format!("\n<VirtualHost 127.0.0.1:{}>\n", ports.https));
+            out.push_str(&format!("\n<VirtualHost 0.0.0.0:{}>\n", ports.https));
             out.push_str(&head(site));
             out.push_str("    SSLEngine on\n");
             out.push_str(&format!(
@@ -182,7 +182,7 @@ impl WebServer for Apache {
             public.redirect_https = false;
             public.public_domain = None;
             public.forwarded_tls = true;
-            out.push_str(&format!("\n<VirtualHost 127.0.0.1:{}>\n", ports.http));
+            out.push_str(&format!("\n<VirtualHost 0.0.0.0:{}>\n", ports.http));
             out.push_str(&head(&public));
             out.push_str(&body(&public));
             out.push_str("    RequestHeader set X-Forwarded-Proto \"https\"\n</VirtualHost>\n");
@@ -197,7 +197,7 @@ impl WebServer for Apache {
         let mut out = String::new();
         out.push_str(MANAGED_HEADER);
         out.push_str("# localhost/<prefix> routes. Each is served by that site's own vhost.\n\n");
-        out.push_str(&format!("<VirtualHost 127.0.0.1:{}>\n", ports.http));
+        out.push_str(&format!("<VirtualHost 0.0.0.0:{}>\n", ports.http));
         out.push_str("    ServerName localhost\n");
         // Without this a bare `/shop` 404s instead of reaching the route below.
         out.push_str("    Alias / \"/\"\n");
@@ -415,8 +415,8 @@ mod tests {
             ),
             PORTS,
         );
-        assert!(cfg.contains("<VirtualHost 127.0.0.1:80>"));
-        assert!(cfg.contains("<VirtualHost 127.0.0.1:443>"));
+        assert!(cfg.contains("<VirtualHost 0.0.0.0:80>"));
+        assert!(cfg.contains("<VirtualHost 0.0.0.0:443>"));
         assert!(cfg.contains("ServerAlias *.shop.test"));
         assert!(cfg.contains("RewriteRule ^ https://%{SERVER_NAME}%{REQUEST_URI} [R=301,L]"));
         assert!(cfg.contains("SSLCertificateFile \"C:/c/cert.pem\""));
