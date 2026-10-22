@@ -1698,19 +1698,25 @@ impl Inner {
                 continue;
             }
             let server_id = crate::domain::resolved_server(d, &cfg);
-            let ports = cfg.effective_ports(&server_id);
-            let target = format!("http://127.0.0.1:{}", ports.http);
+            let _ports = cfg.effective_ports(&server_id);
+            let target = d.url();
             let provider = d.broadcast_provider.as_deref().unwrap_or("cloudflare");
 
             let existing = self.list_tunnels().into_iter().find(|t| {
                 d.tunnel_id.as_deref() == Some(&t.config.id)
                     || (d.project_id.is_some()
                         && d.project_id == t.config.project_id
-                        && t.config.target == target)
+                        && t.config.provider.eq_ignore_ascii_case(provider))
+                    || (t.config.target.contains(&d.hostname)
+                        && t.config.provider.eq_ignore_ascii_case(provider))
             });
 
             match existing {
-                Some(t) => {
+                Some(mut t) => {
+                    if t.config.target.contains("127.0.0.1") {
+                        t.config.target = target.clone();
+                        let _ = self.save_tunnel(t.config.clone());
+                    }
                     if t.state == "stopped" || t.state == "failed" {
                         let _ = self.start_tunnel(&t.config.id, true);
                     }

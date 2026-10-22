@@ -262,6 +262,15 @@ impl SiteSpec {
     /// Names the site answers to: the host, any aliases, plus `*.host` when wildcard is on.
     pub fn server_names(&self) -> Vec<String> {
         let mut names = vec![self.hostname.clone()];
+        if let Some(pub_dom) = &self.public_domain {
+            let clean = pub_dom.trim();
+            if !clean.is_empty() && !names.contains(&clean.to_string()) {
+                names.push(clean.to_string());
+                if self.wildcard {
+                    names.push(format!("*.{clean}"));
+                }
+            }
+        }
         for alias in &self.aliases {
             let clean = alias.trim();
             if !clean.is_empty() && !names.contains(&clean.to_string()) {

@@ -304,6 +304,7 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
                   installedPhp={installedPhp}
                   onSave={(d) => run('save', () => save(d))}
                   busy={busy !== null}
+                  onOpenDomainsTab={target.hostname ? () => setTab('domains') : undefined}
                   actions={(submit) => (
                     <SaveButton action={web} name="save" busyLabel="Saving…" savedLabel="Saved and applied" onClick={submit}>
                       {target.hostname ? 'Save and apply' : 'Add and apply'}

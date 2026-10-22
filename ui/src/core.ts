@@ -322,8 +322,8 @@ export interface Domain {
   broadcast_provider?: string | null
   /** Additional domain aliases pointing to this site. */
   aliases?: string[]
-  /** Dynamic DNS provider: 'cloudflare' | 'duckdns' | 'custom' | null */
-  ddns_provider?: 'cloudflare' | 'duckdns' | 'custom' | null
+  /** Dynamic DNS provider (Cloudflare, GoDaddy, Namecheap, Duck DNS, No-IP, Porkbun, or ddclient provider). */
+  ddns_provider?: string | null
   /** API token / key for Dynamic DNS updates. */
   ddns_token?: string | null
   /** Zone ID override for Cloudflare or webhook URL for custom provider. */

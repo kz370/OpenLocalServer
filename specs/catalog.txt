@@ -55,7 +55,7 @@ CertificateManager | Per-domain cert lifecycle (reuse unless SAN change/<30d).
 HostsBlock | Idempotent BEGIN/END block transform.
 DnsServer | UDP wildcard A->127.0.0.1 for suffix list.
 HealthChecker | DNS->TCP->TLS->Cert->HTTP chain.
-TunnelManager | Provider abstraction (cf/ngrok/lt) + confirm gate.
+TunnelManager | Provider abstraction (cf/ngrok/lt) + confirm gate. Enforces at most one active tunnel instance per provider per site. Inspector targets the site's local hostname so web server virtual hosts match without 404.
 Inspector | Forwarding proxy + redacted traffic log (500 cap).
 DbBackup | mysqldump/pg_dump backup/restore with safety copy; file name stem is the database name, so only names a Windows file cannot hold (/ \ : * ? " < > |, control chars, leading dot, >120) are rejected — `-`, `.`, spaces and non-ASCII back up fine.
 SqliteStore | WAL-safe sqlite3 .backup + integrity_check registry.

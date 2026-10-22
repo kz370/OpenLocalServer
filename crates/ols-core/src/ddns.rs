@@ -36,6 +36,46 @@ fn is_private_ip(ip: &str) -> bool {
     }
 }
 
+/// Creates a standard HTTP client with a clear User-Agent header and configured timeout.
+fn http_client(timeout_secs: u64) -> Result<reqwest::Client, CoreError> {
+    reqwest::Client::builder()
+        .user_agent("OpenLocalServer/2.3.0 (https://openlocalserver.com; ddns)")
+        .timeout(Duration::from_secs(timeout_secs))
+        .build()
+        .map_err(|e| CoreError::DdnsError(format!("Failed to build HTTP client: {e}")))
+}
+
+/// Parses a Cloudflare API error response body into a human-readable message.
+fn parse_cloudflare_error(status: reqwest::StatusCode, raw_bytes: &[u8]) -> String {
+    if let Ok(val) = serde_json::from_slice::<Value>(raw_bytes) {
+        if let Some(errors) = val["errors"].as_array() {
+            let messages: Vec<String> = errors
+                .iter()
+                .filter_map(|e| {
+                    let msg = e["message"].as_str()?;
+                    if let Some(chain) = e["error_chain"].as_array() {
+                        let sub: Vec<&str> =
+                            chain.iter().filter_map(|c| c["message"].as_str()).collect();
+                        if !sub.is_empty() {
+                            return Some(format!("{msg} ({})", sub.join(", ")));
+                        }
+                    }
+                    Some(msg.to_string())
+                })
+                .collect();
+            if !messages.is_empty() {
+                return format!("HTTP {status}: {}", messages.join("; "));
+            }
+        }
+    }
+    let txt = String::from_utf8_lossy(raw_bytes);
+    if txt.trim().is_empty() {
+        format!("HTTP {status}")
+    } else {
+        format!("HTTP {status}: {txt}")
+    }
+}
+
 /// Query local network interfaces via OS command for an assigned public IPv4 address.
 fn detect_ip_from_os_interfaces() -> Option<String> {
     #[cfg(target_os = "windows")]
@@ -199,10 +239,189 @@ pub async fn sync_domain_ddns(domain: &Domain, force: bool) -> Result<DdnsSyncRe
             )
             .await?;
         }
+        "godaddy" => {
+            sync_godaddy(
+                &domain.hostname,
+                token,
+                domain.ddns_zone_id.as_deref(),
+                &current_ip,
+            )
+            .await?;
+        }
+        "namecheap" | "cheapdomain" => {
+            sync_namecheap(
+                &domain.hostname,
+                token,
+                domain.ddns_zone_id.as_deref(),
+                &current_ip,
+            )
+            .await?;
+        }
         "duckdns" => {
             sync_duckdns(&domain.hostname, token, &current_ip).await?;
         }
-        "custom" => {
+        "noip" => {
+            let (u, p) = parse_user_pass(token, domain.ddns_zone_id.as_deref())?;
+            let url = format!(
+                "https://dynupdate.no-ip.com/nic/update?hostname={}&myip={}",
+                domain.hostname, current_ip
+            );
+            sync_dyndns2_get(&url, Some((&u, &p)), None, &["good", "nochg"]).await?;
+        }
+        "porkbun" => {
+            sync_porkbun(
+                &domain.hostname,
+                token,
+                domain.ddns_zone_id.as_deref(),
+                &current_ip,
+            )
+            .await?;
+        }
+        "digitalocean" => {
+            sync_digitalocean(
+                &domain.hostname,
+                token,
+                domain.ddns_zone_id.as_deref(),
+                &current_ip,
+            )
+            .await?;
+        }
+        "hetzner" => {
+            sync_hetzner(
+                &domain.hostname,
+                token,
+                domain.ddns_zone_id.as_deref(),
+                &current_ip,
+            )
+            .await?;
+        }
+        "gandi" => {
+            sync_gandi(
+                &domain.hostname,
+                token,
+                domain.ddns_zone_id.as_deref(),
+                &current_ip,
+            )
+            .await?;
+        }
+        "ionos" => {
+            sync_ionos(
+                &domain.hostname,
+                token,
+                domain.ddns_zone_id.as_deref(),
+                &current_ip,
+            )
+            .await?;
+        }
+        "dyndns" => {
+            let (u, p) = parse_user_pass(token, domain.ddns_zone_id.as_deref())?;
+            let url = format!(
+                "https://members.dyndns.org/nic/update?hostname={}&myip={}",
+                domain.hostname, current_ip
+            );
+            sync_dyndns2_get(&url, Some((&u, &p)), None, &["good", "nochg"]).await?;
+        }
+        "dynu" => {
+            let url = format!(
+                "https://api.dynu.com/nic/update?hostname={}&myip={}&password={}",
+                domain.hostname, current_ip, token
+            );
+            sync_dyndns2_get(&url, None, None, &["good", "nochg"]).await?;
+        }
+        "he" | "hurricane_electric" => {
+            let url = format!(
+                "https://dyn.dns.he.net/nic/update?hostname={}&password={}&myip={}",
+                domain.hostname, token, current_ip
+            );
+            sync_dyndns2_get(&url, None, None, &["good", "nochg"]).await?;
+        }
+        "freedns" => {
+            let url = format!(
+                "https://freedns.afraid.org/dynamic/update.php?{}&address={}",
+                token, current_ip
+            );
+            sync_dyndns2_get(&url, None, None, &["updated", "has not changed"]).await?;
+        }
+        "desec" => {
+            let url = format!(
+                "https://update.dedyn.io/update?domains={}&ipv4={}",
+                domain.hostname, current_ip
+            );
+            sync_dyndns2_get(&url, None, Some(token), &["good", "nochg"]).await?;
+        }
+        "dynv6" => {
+            let url = format!(
+                "https://dynv6.com/api/update?hostname={}&token={}&ipv4={}",
+                domain.hostname, token, current_ip
+            );
+            sync_dyndns2_get(
+                &url,
+                None,
+                None,
+                &["addresses updated", "addresses unchanged"],
+            )
+            .await?;
+        }
+        "ovh" => {
+            let (u, p) = parse_user_pass(token, domain.ddns_zone_id.as_deref())?;
+            let url = format!(
+                "https://www.ovh.com/nic/update?system=dyndns&hostname={}&myip={}",
+                domain.hostname, current_ip
+            );
+            sync_dyndns2_get(&url, Some((&u, &p)), None, &["good", "nochg"]).await?;
+        }
+        "easydns" => {
+            let (u, p) = parse_user_pass(token, domain.ddns_zone_id.as_deref())?;
+            let url = format!(
+                "https://api.cp.easydns.com/dyn/nic/update?hostname={}&myip={}",
+                domain.hostname, current_ip
+            );
+            sync_dyndns2_get(&url, Some((&u, &p)), None, &["good", "nochg", "no error"]).await?;
+        }
+        "zoneedit" => {
+            let (u, p) = parse_user_pass(token, domain.ddns_zone_id.as_deref())?;
+            let url = format!(
+                "https://dynamic.zoneedit.com/auth/dynamic.html?host={}&dnsto={}",
+                domain.hostname, current_ip
+            );
+            sync_dyndns2_get(&url, Some((&u, &p)), None, &["success", "good", "nochg"]).await?;
+        }
+        "dnsexit" => {
+            let (u, p) = parse_user_pass(token, domain.ddns_zone_id.as_deref())?;
+            let url = format!(
+                "https://update.dnsexit.com/remoteupdate.sv?login={}&password={}&host={}&myip={}",
+                u, p, domain.hostname, current_ip
+            );
+            sync_dyndns2_get(&url, None, None, &["0: success", "1: ip", "ip is already"]).await?;
+        }
+        "changeip" => {
+            let (u, p) = parse_user_pass(token, domain.ddns_zone_id.as_deref())?;
+            let url = format!(
+                "https://nic.changeip.com/nic/update?hostname={}&myip={}",
+                domain.hostname, current_ip
+            );
+            sync_dyndns2_get(&url, Some((&u, &p)), None, &["good", "nochg"]).await?;
+        }
+        "directnic" => {
+            let (u, p) = parse_user_pass(token, domain.ddns_zone_id.as_deref())?;
+            let url = format!(
+                "https://directnic.com/dns/gateway/dyndns/?hostname={}&myip={}",
+                domain.hostname, current_ip
+            );
+            sync_dyndns2_get(&url, Some((&u, &p)), None, &["good", "nochg"]).await?;
+        }
+        "cloudns" => {
+            let url = if token.starts_with("http") {
+                format!("{}&ip={}", token, current_ip)
+            } else {
+                format!(
+                    "https://ipv4.cloudns.net/api/dynamicURL/?q={}&ip={}",
+                    token, current_ip
+                )
+            };
+            sync_dyndns2_get(&url, None, None, &["ok", "updated"]).await?;
+        }
+        "custom" | "webhook" => {
             let url = domain.ddns_zone_id.as_deref().unwrap_or("").trim();
             if url.is_empty() {
                 return Err(CoreError::DomainError(
@@ -213,7 +432,7 @@ pub async fn sync_domain_ddns(domain: &Domain, force: bool) -> Result<DdnsSyncRe
         }
         other => {
             return Err(CoreError::DomainError(format!(
-                "Unsupported DDNS provider: '{other}'. Supported: cloudflare, duckdns, custom"
+                "Unsupported DDNS provider: '{other}'"
             )));
         }
     }
@@ -232,17 +451,70 @@ async fn sync_cloudflare(
     zone_id: Option<&str>,
     ip: &str,
     proxied: bool,
-) -> Result<(), CoreError> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()
-        .map_err(|e| CoreError::DdnsError(e.to_string()))?;
+) -> Result<String, CoreError> {
+    let client = http_client(15)?;
 
-    // 1. Resolve Zone ID
-    let resolved_zone_id = if let Some(zid) = zone_id.filter(|z| !z.trim().is_empty()) {
-        zid.trim().to_string()
+    // 1. Resolve Zone ID and Zone apex name
+    let (resolved_zone_id, zone_name) = if let Some(zid) = zone_id.filter(|z| !z.trim().is_empty())
+    {
+        let clean = zid.trim().trim_matches('"');
+        if clean.contains('.') {
+            // User entered an apex domain name (e.g. "example.com") instead of hex zone ID
+            let url = format!("https://api.cloudflare.com/client/v4/zones?name={clean}");
+            let resp = client
+                .get(&url)
+                .bearer_auth(token)
+                .send()
+                .await
+                .map_err(|e| {
+                    CoreError::DdnsError(format!("Cloudflare API zone lookup failed: {e}"))
+                })?;
+            let status = resp.status();
+            let bytes = resp.bytes().await.map_err(|e| {
+                CoreError::DdnsError(format!("Failed to read Cloudflare zone response: {e}"))
+            })?;
+            if !status.is_success() {
+                return Err(CoreError::DdnsError(format!(
+                    "Cloudflare API zone lookup failed: {}",
+                    parse_cloudflare_error(status, &bytes)
+                )));
+            }
+            let body: Value = serde_json::from_slice(&bytes)
+                .map_err(|e| CoreError::DdnsError(format!("Invalid Cloudflare JSON: {e}")))?;
+            let zones = body["result"].as_array().ok_or_else(|| {
+                CoreError::DdnsError("Cloudflare zone response missing result array".into())
+            })?;
+            let z = zones.first().ok_or_else(|| {
+                CoreError::DomainError(format!(
+                    "No Cloudflare zone found for '{clean}'. Ensure your API token has Zone.DNS permissions."
+                ))
+            })?;
+            let id = z["id"].as_str().unwrap_or("").to_string();
+            let name = z["name"].as_str().unwrap_or(clean).to_string();
+            (id, Some(name))
+        } else {
+            // Hex zone ID - look up zone name to know its apex domain
+            let url = format!("https://api.cloudflare.com/client/v4/zones/{clean}");
+            let resp = client.get(&url).bearer_auth(token).send().await.ok();
+            let name = if let Some(r) = resp {
+                if r.status().is_success() {
+                    let b: Value = r
+                        .bytes()
+                        .await
+                        .ok()
+                        .and_then(|bs| serde_json::from_slice(&bs).ok())
+                        .unwrap_or_default();
+                    b["result"]["name"].as_str().map(str::to_string)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            (clean.to_string(), name)
+        }
     } else {
-        // Find zone by apex domain
+        // Auto-resolve zone from apex of hostname
         let parts: Vec<&str> = hostname.split('.').collect();
         let apex = if parts.len() >= 2 {
             parts[parts.len() - 2..].join(".")
@@ -258,36 +530,61 @@ async fn sync_cloudflare(
             .await
             .map_err(|e| CoreError::DdnsError(format!("Cloudflare API zone lookup failed: {e}")))?;
 
-        if !resp.status().is_success() {
+        let status = resp.status();
+        let bytes = resp.bytes().await.map_err(|e| {
+            CoreError::DdnsError(format!("Failed to read Cloudflare response: {e}"))
+        })?;
+
+        if !status.is_success() {
             return Err(CoreError::DdnsError(format!(
-                "Cloudflare API error HTTP {} during zone lookup",
-                resp.status()
+                "Cloudflare API zone lookup failed: {}",
+                parse_cloudflare_error(status, &bytes)
             )));
         }
 
-        let body: Value = serde_json::from_slice(&resp.bytes().await.map_err(|e| {
-            CoreError::DdnsError(format!("Failed to read Cloudflare response: {e}"))
-        })?)
-        .map_err(|e| CoreError::DdnsError(format!("Invalid Cloudflare JSON: {e}")))?;
+        let body: Value = serde_json::from_slice(&bytes)
+            .map_err(|e| CoreError::DdnsError(format!("Invalid Cloudflare JSON: {e}")))?;
 
         let zones = body["result"].as_array().ok_or_else(|| {
             CoreError::DdnsError("Cloudflare zone response missing result array".into())
         })?;
 
-        zones
-            .first()
-            .and_then(|z| z["id"].as_str())
-            .map(str::to_string)
-            .ok_or_else(|| {
-                CoreError::DomainError(format!(
-                    "No Cloudflare zone found for '{apex}'. Ensure your API token has Zone.DNS permissions."
-                ))
-            })?
+        let z = zones.first().ok_or_else(|| {
+            CoreError::DomainError(format!(
+                "No Cloudflare zone found for '{apex}'. Ensure your API token has Zone.DNS permissions, or enter the Zone ID in Site Settings."
+            ))
+        })?;
+        let id = z["id"].as_str().unwrap_or("").to_string();
+        let name = z["name"].as_str().unwrap_or(&apex).to_string();
+        (id, Some(name))
     };
 
-    // 2. Look up existing DNS A record for this hostname
+    // 2. Determine effective record name within the zone
+    let effective_record_name = if let Some(ref zn) = zone_name {
+        let clean = hostname.trim();
+        if clean.is_empty() || clean == "@" || clean.eq_ignore_ascii_case(zn) {
+            zn.clone()
+        } else if clean.ends_with(&format!(".{zn}")) {
+            clean.to_string()
+        } else if !clean.contains('.') {
+            format!("{clean}.{zn}")
+        } else if clean.ends_with(".test")
+            || clean.ends_with(".localhost")
+            || clean.ends_with(".example")
+            || clean.ends_with(".invalid")
+        {
+            // Local TLD with no explicit public domain -> update zone apex root domain
+            zn.clone()
+        } else {
+            clean.to_string()
+        }
+    } else {
+        hostname.to_string()
+    };
+
+    // 3. Look up existing DNS record for this record name
     let records_url = format!(
-        "https://api.cloudflare.com/client/v4/zones/{resolved_zone_id}/dns_records?type=A&name={hostname}"
+        "https://api.cloudflare.com/client/v4/zones/{resolved_zone_id}/dns_records?name={effective_record_name}"
     );
 
     let rec_resp = client
@@ -297,20 +594,43 @@ async fn sync_cloudflare(
         .await
         .map_err(|e| CoreError::DdnsError(format!("Cloudflare DNS record lookup failed: {e}")))?;
 
-    let rec_body: Value =
-        serde_json::from_slice(&rec_resp.bytes().await.map_err(|e| {
-            CoreError::DdnsError(format!("Failed to read DNS records response: {e}"))
-        })?)
+    let rec_status = rec_resp.status();
+    let rec_bytes = rec_resp
+        .bytes()
+        .await
+        .map_err(|e| CoreError::DdnsError(format!("Failed to read DNS records response: {e}")))?;
+
+    if !rec_status.is_success() {
+        return Err(CoreError::DdnsError(format!(
+            "Cloudflare DNS record lookup failed: {}",
+            parse_cloudflare_error(rec_status, &rec_bytes)
+        )));
+    }
+
+    let rec_body: Value = serde_json::from_slice(&rec_bytes)
         .map_err(|e| CoreError::DdnsError(format!("Invalid Cloudflare DNS JSON: {e}")))?;
 
+    if rec_body["success"].as_bool() == Some(false) {
+        return Err(CoreError::DdnsError(format!(
+            "Cloudflare DNS API error: {}",
+            parse_cloudflare_error(rec_status, &rec_bytes)
+        )));
+    }
+
     let records = rec_body["result"].as_array();
-    let existing_record_id = records
-        .and_then(|arr| arr.iter().find(|r| r["name"].as_str() == Some(hostname)))
-        .and_then(|r| r["id"].as_str());
+    let existing_record = records.and_then(|arr| {
+        arr.iter().find(|r| {
+            r["name"]
+                .as_str()
+                .map(|s| s.eq_ignore_ascii_case(&effective_record_name))
+                .unwrap_or(false)
+        })
+    });
+    let existing_record_id = existing_record.and_then(|r| r["id"].as_str());
 
     let record_payload = json!({
         "type": "A",
-        "name": hostname,
+        "name": effective_record_name,
         "content": ip,
         "ttl": 1, // Auto TTL
         "proxied": proxied,
@@ -330,10 +650,16 @@ async fn sync_cloudflare(
             .await
             .map_err(|e| CoreError::DdnsError(format!("Cloudflare DNS update failed: {e}")))?;
 
-        if !resp.status().is_success() {
-            let err_txt = resp.text().await.unwrap_or_default();
+        let resp_status = resp.status();
+        let resp_bytes = resp.bytes().await.map_err(|e| {
+            CoreError::DdnsError(format!("Failed to read Cloudflare update response: {e}"))
+        })?;
+
+        let resp_body: Value = serde_json::from_slice(&resp_bytes).unwrap_or_default();
+        if !resp_status.is_success() || resp_body["success"].as_bool() == Some(false) {
             return Err(CoreError::DdnsError(format!(
-                "Cloudflare DNS record update failed: {err_txt}"
+                "Cloudflare DNS record update failed: {}",
+                parse_cloudflare_error(resp_status, &resp_bytes)
             )));
         }
     } else {
@@ -349,22 +675,25 @@ async fn sync_cloudflare(
             .await
             .map_err(|e| CoreError::DdnsError(format!("Cloudflare DNS create failed: {e}")))?;
 
-        if !resp.status().is_success() {
-            let err_txt = resp.text().await.unwrap_or_default();
+        let resp_status = resp.status();
+        let resp_bytes = resp.bytes().await.map_err(|e| {
+            CoreError::DdnsError(format!("Failed to read Cloudflare creation response: {e}"))
+        })?;
+
+        let resp_body: Value = serde_json::from_slice(&resp_bytes).unwrap_or_default();
+        if !resp_status.is_success() || resp_body["success"].as_bool() == Some(false) {
             return Err(CoreError::DdnsError(format!(
-                "Cloudflare DNS record creation failed: {err_txt}"
+                "Cloudflare DNS record creation failed: {}",
+                parse_cloudflare_error(resp_status, &resp_bytes)
             )));
         }
     }
 
-    Ok(())
+    Ok(effective_record_name)
 }
 
 async fn sync_duckdns(hostname: &str, token: &str, ip: &str) -> Result<(), CoreError> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()
-        .map_err(|e| CoreError::DdnsError(e.to_string()))?;
+    let client = http_client(10)?;
 
     // Extract subdomain: "mytest.duckdns.org" -> "mytest"
     let sub = hostname
@@ -395,10 +724,7 @@ async fn sync_custom_webhook(
     token: &str,
     ip: &str,
 ) -> Result<(), CoreError> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()
-        .map_err(|e| CoreError::DdnsError(e.to_string()))?;
+    let client = http_client(10)?;
 
     let payload = json!({
         "hostname": hostname,
@@ -419,6 +745,528 @@ async fn sync_custom_webhook(
         return Err(CoreError::DdnsError(format!(
             "Custom DDNS webhook returned HTTP {}",
             resp.status()
+        )));
+    }
+
+    Ok(())
+}
+
+/// Helper to extract record name and apex domain from a hostname.
+/// e.g. "example.com" -> ("@", "example.com")
+/// e.g. "api.example.com" -> ("api", "example.com")
+/// e.g. "sub.dev.example.com" -> ("sub.dev", "example.com")
+fn split_domain_apex(hostname: &str) -> (String, String) {
+    let clean = hostname.trim_end_matches('.');
+    let parts: Vec<&str> = clean.split('.').collect();
+    if parts.len() <= 2 {
+        ("@".to_string(), clean.to_string())
+    } else {
+        let name = parts[0..parts.len() - 2].join(".");
+        let apex = parts[parts.len() - 2..].join(".");
+        (name, apex)
+    }
+}
+
+async fn sync_godaddy(
+    hostname: &str,
+    token: &str,
+    zone_or_secret: Option<&str>,
+    ip: &str,
+) -> Result<(), CoreError> {
+    let (key, secret) = if token.contains(':') {
+        let mut parts = token.splitn(2, ':');
+        (
+            parts.next().unwrap_or("").trim(),
+            parts.next().unwrap_or("").trim(),
+        )
+    } else if let Some(sec) = zone_or_secret.filter(|s| !s.trim().is_empty()) {
+        (token.trim(), sec.trim())
+    } else {
+        return Err(CoreError::DomainError(
+            "GoDaddy DDNS requires API Key and API Secret (enter 'key:secret' in token or Secret in the second field)".into(),
+        ));
+    };
+
+    let (record_name, mut apex) = split_domain_apex(hostname);
+    if token.contains(':') {
+        if let Some(custom_apex) = zone_or_secret.filter(|s| !s.trim().is_empty()) {
+            apex = custom_apex.trim().to_string();
+        }
+    }
+
+    let url = format!("https://api.godaddy.com/v1/domains/{apex}/records/A/{record_name}");
+    let client = http_client(10)?;
+
+    let payload = json!([
+        {
+            "data": ip,
+            "ttl": 600
+        }
+    ]);
+
+    let res = client
+        .put(&url)
+        .header("Authorization", format!("sso-key {key}:{secret}"))
+        .header("Content-Type", "application/json")
+        .body(payload.to_string())
+        .send()
+        .await
+        .map_err(|e| CoreError::DdnsError(format!("GoDaddy API request failed: {e}")))?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let text = res.text().await.unwrap_or_default();
+        return Err(CoreError::DdnsError(format!(
+            "GoDaddy API returned error HTTP {status}: {text}"
+        )));
+    }
+
+    Ok(())
+}
+
+async fn sync_namecheap(
+    hostname: &str,
+    token: &str,
+    zone_apex: Option<&str>,
+    ip: &str,
+) -> Result<(), CoreError> {
+    let (mut host, mut apex) = split_domain_apex(hostname);
+    if let Some(explicit_apex) = zone_apex.filter(|a| !a.trim().is_empty()) {
+        apex = explicit_apex.trim().to_string();
+        if hostname == apex {
+            host = "@".to_string();
+        } else if hostname.ends_with(&format!(".{apex}")) {
+            host = hostname.trim_end_matches(&format!(".{apex}")).to_string();
+        }
+    }
+
+    let url = format!(
+        "https://dynamicdns.park-your-domain.com/update?host={host}&domain={apex}&password={token}&ip={ip}"
+    );
+
+    let client = http_client(10)?;
+
+    let res = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| CoreError::DdnsError(format!("Namecheap DDNS request failed: {e}")))?;
+
+    let text = res.text().await.unwrap_or_default();
+    if text.contains("<ErrCount>0</ErrCount>") {
+        Ok(())
+    } else {
+        Err(CoreError::DdnsError(format!(
+            "Namecheap DDNS update failed: {text}"
+        )))
+    }
+}
+
+async fn sync_digitalocean(
+    hostname: &str,
+    token: &str,
+    zone_apex: Option<&str>,
+    ip: &str,
+) -> Result<(), CoreError> {
+    let (record_name, mut apex) = split_domain_apex(hostname);
+    if let Some(explicit_apex) = zone_apex.filter(|a| !a.trim().is_empty()) {
+        apex = explicit_apex.trim().to_string();
+    }
+
+    let client = http_client(10)?;
+
+    // 1. List existing A records for apex
+    let list_url = format!("https://api.digitalocean.com/v2/domains/{apex}/records?type=A");
+    let res = client
+        .get(&list_url)
+        .bearer_auth(token)
+        .send()
+        .await
+        .map_err(|e| CoreError::DdnsError(format!("DigitalOcean API request failed: {e}")))?;
+
+    if !res.status().is_success() {
+        let text = res.text().await.unwrap_or_default();
+        return Err(CoreError::DdnsError(format!(
+            "DigitalOcean list records failed: {text}"
+        )));
+    }
+
+    let bytes = res
+        .bytes()
+        .await
+        .map_err(|e| CoreError::DdnsError(format!("Failed to read DigitalOcean response: {e}")))?;
+    let data: Value = serde_json::from_slice(&bytes)
+        .map_err(|e| CoreError::DdnsError(format!("Invalid DigitalOcean response: {e}")))?;
+
+    let mut record_id: Option<u64> = None;
+    if let Some(records) = data["domain_records"].as_array() {
+        for r in records {
+            let r_name = r["name"].as_str().unwrap_or("");
+            if r_name == record_name || (record_name == "@" && r_name == apex) {
+                record_id = r["id"].as_u64();
+                break;
+            }
+        }
+    }
+
+    if let Some(id) = record_id {
+        // Update existing record
+        let update_url = format!("https://api.digitalocean.com/v2/domains/{apex}/records/{id}");
+        let update_payload = json!({ "data": ip });
+        let u_res = client
+            .put(&update_url)
+            .bearer_auth(token)
+            .header("Content-Type", "application/json")
+            .body(update_payload.to_string())
+            .send()
+            .await
+            .map_err(|e| CoreError::DdnsError(format!("DigitalOcean update record failed: {e}")))?;
+        if !u_res.status().is_success() {
+            let text = u_res.text().await.unwrap_or_default();
+            return Err(CoreError::DdnsError(format!(
+                "DigitalOcean update failed: {text}"
+            )));
+        }
+    } else {
+        // Create new record
+        let create_url = format!("https://api.digitalocean.com/v2/domains/{apex}/records");
+        let create_payload = json!({
+            "type": "A",
+            "name": record_name,
+            "data": ip,
+            "ttl": 300
+        });
+        let c_res = client
+            .post(&create_url)
+            .bearer_auth(token)
+            .header("Content-Type", "application/json")
+            .body(create_payload.to_string())
+            .send()
+            .await
+            .map_err(|e| CoreError::DdnsError(format!("DigitalOcean create record failed: {e}")))?;
+        if !c_res.status().is_success() {
+            let text = c_res.text().await.unwrap_or_default();
+            return Err(CoreError::DdnsError(format!(
+                "DigitalOcean create failed: {text}"
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+fn parse_user_pass(token: &str, zone_or_pass: Option<&str>) -> Result<(String, String), CoreError> {
+    if token.contains(':') {
+        let mut parts = token.splitn(2, ':');
+        Ok((
+            parts.next().unwrap_or("").trim().to_string(),
+            parts.next().unwrap_or("").trim().to_string(),
+        ))
+    } else if let Some(pass) = zone_or_pass.filter(|p| !p.trim().is_empty()) {
+        Ok((token.trim().to_string(), pass.trim().to_string()))
+    } else {
+        Err(CoreError::DomainError(
+            "This provider requires both Username/Key and Password/Secret (fill both fields or enter 'username:password')".into(),
+        ))
+    }
+}
+
+async fn sync_dyndns2_get(
+    url: &str,
+    auth: Option<(&str, &str)>,
+    bearer: Option<&str>,
+    success_substrings: &[&str],
+) -> Result<(), CoreError> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .user_agent("OpenLocalServer/2.3.0 support@openlocalserver.dev")
+        .build()
+        .map_err(|e| CoreError::DdnsError(e.to_string()))?;
+
+    let mut req = client.get(url);
+    if let Some((user, pass)) = auth {
+        req = req.basic_auth(user, Some(pass));
+    } else if let Some(token) = bearer {
+        req = req.bearer_auth(token);
+    }
+
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| CoreError::DdnsError(format!("Dynamic DNS update request failed: {e}")))?;
+
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+
+    if !status.is_success() {
+        return Err(CoreError::DdnsError(format!(
+            "Dynamic DNS server returned HTTP {status}: {text}"
+        )));
+    }
+
+    let lower = text.to_lowercase();
+    let matched = success_substrings.is_empty()
+        || success_substrings
+            .iter()
+            .any(|&s| lower.contains(&s.to_lowercase()));
+
+    if !matched {
+        return Err(CoreError::DdnsError(format!(
+            "Dynamic DNS update returned error response: {text}"
+        )));
+    }
+
+    Ok(())
+}
+
+async fn sync_porkbun(
+    hostname: &str,
+    token: &str,
+    zone_or_secret: Option<&str>,
+    ip: &str,
+) -> Result<(), CoreError> {
+    let (key, secret) = parse_user_pass(token, zone_or_secret)?;
+    let (sub, apex) = split_domain_apex(hostname);
+    let sub_str = if sub == "@" { "" } else { &sub };
+    let url = format!("https://api.porkbun.com/api/json/v3/dns/editByNameType/{apex}/A/{sub_str}");
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|e| CoreError::DdnsError(e.to_string()))?;
+
+    let payload = json!({
+        "apikey": key,
+        "secretapikey": secret,
+        "content": ip,
+        "ttl": "600",
+    });
+
+    let res = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .body(payload.to_string())
+        .send()
+        .await
+        .map_err(|e| CoreError::DdnsError(format!("Porkbun API request failed: {e}")))?;
+
+    let bytes = res
+        .bytes()
+        .await
+        .map_err(|e| CoreError::DdnsError(format!("Failed to read Porkbun response: {e}")))?;
+    let data: Value = serde_json::from_slice(&bytes)
+        .map_err(|e| CoreError::DdnsError(format!("Invalid Porkbun response: {e}")))?;
+
+    if data["status"].as_str() != Some("SUCCESS") {
+        return Err(CoreError::DdnsError(format!(
+            "Porkbun update failed: {}",
+            data["message"].as_str().unwrap_or("Unknown error")
+        )));
+    }
+
+    Ok(())
+}
+
+async fn sync_gandi(
+    hostname: &str,
+    token: &str,
+    zone_apex: Option<&str>,
+    ip: &str,
+) -> Result<(), CoreError> {
+    let (record_name, mut apex) = split_domain_apex(hostname);
+    if let Some(explicit_apex) = zone_apex.filter(|a| !a.trim().is_empty()) {
+        apex = explicit_apex.trim().to_string();
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|e| CoreError::DdnsError(e.to_string()))?;
+
+    let url = format!("https://api.gandi.net/v5/livedns/domains/{apex}/records/{record_name}/A");
+    let payload = json!({
+        "rrset_values": [ip],
+        "rrset_ttl": 300,
+    });
+
+    let res = client
+        .put(&url)
+        .header("Authorization", format!("Apikey {token}"))
+        .header("Content-Type", "application/json")
+        .body(payload.to_string())
+        .send()
+        .await
+        .map_err(|e| CoreError::DdnsError(format!("Gandi API request failed: {e}")))?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let text = res.text().await.unwrap_or_default();
+        return Err(CoreError::DdnsError(format!(
+            "Gandi API returned HTTP {status}: {text}"
+        )));
+    }
+
+    Ok(())
+}
+
+async fn sync_hetzner(
+    hostname: &str,
+    token: &str,
+    _zone_apex: Option<&str>,
+    ip: &str,
+) -> Result<(), CoreError> {
+    let (record_name, apex) = split_domain_apex(hostname);
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|e| CoreError::DdnsError(e.to_string()))?;
+
+    // 1. Find zone ID
+    let zones_url = format!("https://dns.hetzner.com/api/v1/zones?name={apex}");
+    let z_res = client
+        .get(&zones_url)
+        .header("Auth-API-Token", token)
+        .send()
+        .await
+        .map_err(|e| CoreError::DdnsError(format!("Hetzner zone lookup failed: {e}")))?;
+
+    let z_bytes = z_res
+        .bytes()
+        .await
+        .map_err(|e| CoreError::DdnsError(format!("Failed to read Hetzner zones: {e}")))?;
+    let z_data: Value = serde_json::from_slice(&z_bytes)
+        .map_err(|e| CoreError::DdnsError(format!("Invalid Hetzner zone JSON: {e}")))?;
+
+    let zone_id = z_data["zones"]
+        .as_array()
+        .and_then(|arr| arr.first())
+        .and_then(|z| z["id"].as_str())
+        .ok_or_else(|| CoreError::DomainError(format!("No Hetzner DNS zone found for '{apex}'")))?;
+
+    // 2. Find record ID
+    let recs_url = format!("https://dns.hetzner.com/api/v1/records?zone_id={zone_id}");
+    let r_res = client
+        .get(&recs_url)
+        .header("Auth-API-Token", token)
+        .send()
+        .await
+        .map_err(|e| CoreError::DdnsError(format!("Hetzner records lookup failed: {e}")))?;
+
+    let r_bytes = r_res
+        .bytes()
+        .await
+        .map_err(|e| CoreError::DdnsError(format!("Failed to read Hetzner records: {e}")))?;
+    let r_data: Value = serde_json::from_slice(&r_bytes)
+        .map_err(|e| CoreError::DdnsError(format!("Invalid Hetzner records JSON: {e}")))?;
+
+    let existing_id = r_data["records"].as_array().and_then(|arr| {
+        arr.iter().find_map(|r| {
+            if r["type"].as_str() == Some("A") && r["name"].as_str() == Some(&record_name) {
+                r["id"].as_str()
+            } else {
+                None
+            }
+        })
+    });
+
+    if let Some(rid) = existing_id {
+        let update_url = format!("https://dns.hetzner.com/api/v1/records/{rid}");
+        let payload = json!({
+            "zone_id": zone_id,
+            "type": "A",
+            "name": record_name,
+            "value": ip,
+            "ttl": 300
+        });
+        let res = client
+            .put(&update_url)
+            .header("Auth-API-Token", token)
+            .header("Content-Type", "application/json")
+            .body(payload.to_string())
+            .send()
+            .await
+            .map_err(|e| CoreError::DdnsError(format!("Hetzner update failed: {e}")))?;
+        if !res.status().is_success() {
+            let status = res.status();
+            let text = res.text().await.unwrap_or_default();
+            return Err(CoreError::DdnsError(format!(
+                "Hetzner update returned HTTP {status}: {text}"
+            )));
+        }
+    } else {
+        let create_url = "https://dns.hetzner.com/api/v1/records";
+        let payload = json!({
+            "zone_id": zone_id,
+            "type": "A",
+            "name": record_name,
+            "value": ip,
+            "ttl": 300
+        });
+        let res = client
+            .post(create_url)
+            .header("Auth-API-Token", token)
+            .header("Content-Type", "application/json")
+            .body(payload.to_string())
+            .send()
+            .await
+            .map_err(|e| CoreError::DdnsError(format!("Hetzner create failed: {e}")))?;
+        if !res.status().is_success() {
+            let status = res.status();
+            let text = res.text().await.unwrap_or_default();
+            return Err(CoreError::DdnsError(format!(
+                "Hetzner create returned HTTP {status}: {text}"
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+async fn sync_ionos(
+    hostname: &str,
+    token: &str,
+    zone_or_secret: Option<&str>,
+    ip: &str,
+) -> Result<(), CoreError> {
+    let (record_name, mut apex) = split_domain_apex(hostname);
+    if let Some(explicit_apex) = zone_or_secret.filter(|a| !a.trim().is_empty()) {
+        apex = explicit_apex.trim().to_string();
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|e| CoreError::DdnsError(e.to_string()))?;
+
+    // IONOS uses X-API-Key: <public_prefix>.<secret>
+    let api_key = if token.contains('.') {
+        token.to_string()
+    } else if let Some(sec) = zone_or_secret.filter(|s| !s.trim().is_empty()) {
+        format!("{token}.{sec}")
+    } else {
+        token.to_string()
+    };
+
+    let url = format!("https://api.hosting.ionos.com/dns/v1/dynamic/records");
+    let payload = json!({
+        "domains": [format!("{record_name}.{apex}")],
+        "ipv4": ip,
+    });
+
+    let res = client
+        .post(&url)
+        .header("X-API-Key", api_key)
+        .header("Content-Type", "application/json")
+        .body(payload.to_string())
+        .send()
+        .await
+        .map_err(|e| CoreError::DdnsError(format!("IONOS API request failed: {e}")))?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let text = res.text().await.unwrap_or_default();
+        return Err(CoreError::DdnsError(format!(
+            "IONOS API returned HTTP {status}: {text}"
         )));
     }
 

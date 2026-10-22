@@ -18,7 +18,7 @@ import {
   Send,
   Trash2,
 } from 'lucide-react'
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 
 import { AiButton } from '@/components/ai/AiButton'
 import { ErrorCard } from '@/components/ErrorCard'
@@ -197,6 +197,7 @@ export function TunnelsPage() {
           domains={domains}
           projects={projects}
           providers={providers}
+          existingTunnels={tunnels.map((x) => x.config)}
           onClose={() => setEditing(null)}
           onSaved={async (id) => {
             setEditing(null)
@@ -662,6 +663,7 @@ function TunnelEditor({
   domains,
   projects,
   providers,
+  existingTunnels = [],
   onClose,
   onSaved,
 }: {
@@ -669,6 +671,7 @@ function TunnelEditor({
   domains: DomainSummary[]
   projects: Project[]
   providers: TunnelProvider[]
+  existingTunnels?: TunnelConfig[]
   onClose: () => void
   onSaved: (id: string) => void
 }) {
@@ -680,6 +683,27 @@ function TunnelEditor({
   const siteTargets = domains.map((d) => d.url.replace(/\/$/, ''))
   const custom = !siteTargets.includes(t.target)
   const provider = providers.find((p) => p.id === t.provider)
+
+  const currentHost = t.target.replace(/^https?:\/\//, '').split('/')[0].split(':')[0].toLowerCase()
+  const takenProviders = useMemo(() => {
+    return existingTunnels
+      .filter(
+        (other) =>
+          other.id !== t.id &&
+          ((t.project_id && other.project_id === t.project_id) ||
+            other.target.replace(/^https?:\/\//, '').split('/')[0].split(':')[0].toLowerCase() === currentHost)
+      )
+      .map((other) => other.provider.toLowerCase())
+  }, [existingTunnels, t.id, t.target, t.project_id, currentHost])
+
+  const isDuplicateProvider = takenProviders.includes(t.provider.toLowerCase())
+  const duplicateTunnel = existingTunnels.find(
+    (other) =>
+      other.id !== t.id &&
+      other.provider.toLowerCase() === t.provider.toLowerCase() &&
+      ((t.project_id && other.project_id === t.project_id) ||
+        other.target.replace(/^https?:\/\//, '').split('/')[0].split(':')[0].toLowerCase() === currentHost)
+  )
 
   return (
     <Dialog
@@ -693,7 +717,7 @@ function TunnelEditor({
             Cancel
           </Button>
           <Button
-            disabled={busy !== null || !t.target.trim()}
+            disabled={busy !== null || !t.target.trim() || isDuplicateProvider}
             onClick={() =>
               run('save', async () => {
                 const r = await runCommand({ type: 'save_tunnel', tunnel: { ...t, auth_user: protect ? t.auth_user?.trim() || null : null } })
@@ -712,6 +736,17 @@ function TunnelEditor({
     >
       <div className="flex flex-col gap-4">
         <ErrorCard error={error} onDismiss={() => setError(null)} />
+        {isDuplicateProvider && (
+          <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-500">
+            <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold">Provider already in use for this site</p>
+              <p className="text-muted-foreground mt-0.5">
+                This site already has a {duplicateTunnel?.name ? `"${duplicateTunnel.name}"` : ''} tunnel using {provider?.name || t.provider}. A site can use multiple different providers (Cloudflare, Ngrok, Localtunnel), but only one instance of each.
+              </p>
+            </div>
+          </div>
+        )}
         <Field label="Site">
           <Select
             value={custom ? '__custom' : t.target}
@@ -751,12 +786,15 @@ function TunnelEditor({
         </div>
         <Field label="Provider" hint={provider?.note}>
           <Select value={t.provider} onChange={(e) => set({ provider: e.target.value })}>
-            {providers.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-                {p.path ? '' : ' (not installed)'}
-              </option>
-            ))}
+            {providers.map((p) => {
+              const isTaken = takenProviders.includes(p.id.toLowerCase())
+              return (
+                <option key={p.id} value={p.id} disabled={isTaken}>
+                  {p.name}
+                  {isTaken ? ' (Already active for this site)' : p.path ? '' : ' (not installed)'}
+                </option>
+              )
+            })}
           </Select>
         </Field>
         {t.provider === 'cloudflare' && provider?.token_saved && (

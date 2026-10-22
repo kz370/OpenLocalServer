@@ -290,6 +290,13 @@ impl Default for Domain {
     }
 }
 
+impl Domain {
+    pub fn url(&self) -> String {
+        let scheme = if self.https { "https" } else { "http" };
+        format!("{scheme}://{}", self.hostname)
+    }
+}
+
 /// Rejects a per-site server id that isn't one we ship. A blank value means "use the
 /// default" and is stored as such, so the form and the file agree.
 pub fn validate_domain_server(server: Option<&str>) -> Result<Option<String>, CoreError> {
@@ -780,18 +787,12 @@ impl DomainStore {
             validate_hostname(host)?;
             validate_public_hostname(host)?;
         }
-        if let Some(other) = self.domains.iter().find(|d| {
-            d.hostname == domain.hostname
-                || d.public_domain.as_deref() == Some(domain.hostname.as_str())
-                || domain.public_domain.as_deref().is_some_and(|host| {
-                    d.hostname == host || d.public_domain.as_deref() == Some(host)
-                })
-        }) {
-            return Err(CoreError::DomainError(format!(
-                "{} overlaps the existing site or public hostname {}",
-                domain.hostname, other.hostname
-            )));
-        }
+        normalize_and_validate_aliases(
+            &mut domain.aliases,
+            &domain.hostname,
+            domain.public_domain.as_deref(),
+        )?;
+        self.check_domain_conflicts(&domain, None)?;
         if let Some(reason) = self.conflict(&domain.hostname, domain.wildcard, None) {
             return Err(CoreError::DomainError(reason));
         }
@@ -815,23 +816,12 @@ impl DomainStore {
             validate_hostname(host)?;
             validate_public_hostname(host)?;
         }
-        if let Some(other) = self
-            .domains
-            .iter()
-            .filter(|d| d.hostname != domain.hostname)
-            .find(|d| {
-                d.hostname == domain.hostname
-                    || d.public_domain.as_deref() == Some(domain.hostname.as_str())
-                    || domain.public_domain.as_deref().is_some_and(|host| {
-                        d.hostname == host || d.public_domain.as_deref() == Some(host)
-                    })
-            })
-        {
-            return Err(CoreError::DomainError(format!(
-                "{} overlaps the existing site or public hostname {}",
-                domain.hostname, other.hostname
-            )));
-        }
+        normalize_and_validate_aliases(
+            &mut domain.aliases,
+            &domain.hostname,
+            domain.public_domain.as_deref(),
+        )?;
+        self.check_domain_conflicts(&domain, Some(&domain.hostname))?;
         let idx = self
             .domains
             .iter()
@@ -842,6 +832,45 @@ impl DomainStore {
         self.domains[idx] = domain.clone();
         self.persist()?;
         Ok(domain)
+    }
+
+    /// Checks that none of candidate's hostnames or aliases overlap with other existing domains.
+    fn check_domain_conflicts(
+        &self,
+        candidate: &Domain,
+        ignoring_hostname: Option<&str>,
+    ) -> Result<(), CoreError> {
+        let mut cand_names: Vec<&str> = vec![&candidate.hostname];
+        if let Some(ref p) = candidate.public_domain {
+            cand_names.push(p);
+        }
+        for a in &candidate.aliases {
+            cand_names.push(a);
+        }
+
+        for other in self
+            .domains
+            .iter()
+            .filter(|d| Some(d.hostname.as_str()) != ignoring_hostname)
+        {
+            let mut other_names: Vec<&str> = vec![&other.hostname];
+            if let Some(ref p) = other.public_domain {
+                other_names.push(p);
+            }
+            for a in &other.aliases {
+                other_names.push(a);
+            }
+
+            for cand in &cand_names {
+                if other_names.iter().any(|o| o.eq_ignore_ascii_case(cand)) {
+                    return Err(CoreError::DomainError(format!(
+                        "Domain name or alias '{cand}' is already registered to existing site '{}'",
+                        other.hostname
+                    )));
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Turns a whole group of sites on or off in one write.
@@ -1102,6 +1131,31 @@ pub fn validate_hostname(hostname: &str) -> Result<(), CoreError> {
             return bad("use lowercase letters, digits and '-' only");
         }
     }
+    Ok(())
+}
+
+/// Normalizes, validates, and deduplicates site aliases.
+/// Rejects invalid hostnames and drops aliases identical to the primary domain.
+pub fn normalize_and_validate_aliases(
+    aliases: &mut Vec<String>,
+    primary_hostname: &str,
+    public_domain: Option<&str>,
+) -> Result<(), CoreError> {
+    let mut normalized = Vec::new();
+    for alias in aliases.drain(..) {
+        let clean = alias.trim().to_ascii_lowercase();
+        if clean.is_empty() {
+            continue;
+        }
+        validate_hostname(&clean)?;
+        if clean == primary_hostname || public_domain.is_some_and(|p| p == clean) {
+            continue;
+        }
+        if !normalized.contains(&clean) {
+            normalized.push(clean);
+        }
+    }
+    *aliases = normalized;
     Ok(())
 }
 

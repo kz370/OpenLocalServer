@@ -456,6 +456,32 @@ fn parse_target(target: &str) -> Result<reqwest::Url, CoreError> {
     Ok(url)
 }
 
+fn is_same_site(a: &TunnelConfig, b: &TunnelConfig) -> bool {
+    // 1. If both specify project_id and they match
+    if let (Some(pa), Some(pb)) = (&a.project_id, &b.project_id) {
+        if !pa.trim().is_empty() && pa.trim().eq_ignore_ascii_case(pb.trim()) {
+            return true;
+        }
+    }
+    // 2. Compare target host/port
+    let ha = parse_target(&a.target)
+        .ok()
+        .and_then(|u| u.host_str().map(|h| (h.to_ascii_lowercase(), u.port())));
+    let hb = parse_target(&b.target)
+        .ok()
+        .and_then(|u| u.host_str().map(|h| (h.to_ascii_lowercase(), u.port())));
+    if let (Some((ha, pa)), Some((hb, pb))) = (ha, hb) {
+        if ha == hb && pa == pb {
+            return true;
+        }
+    }
+    // 3. Fallback comparison
+    a.target
+        .trim()
+        .trim_end_matches('/')
+        .eq_ignore_ascii_case(b.target.trim().trim_end_matches('/'))
+}
+
 impl Inner {
     pub fn tunnel_providers(&self) -> Vec<ProviderInfo> {
         providers()
@@ -549,6 +575,21 @@ impl Inner {
             );
         }
         let mut configs = self.tunnels.configs.lock().unwrap();
+
+        // Enforce: A site can only have at most one tunnel instance per provider
+        let duplicate = configs.iter().find(|x| {
+            x.id != c.id && x.provider.eq_ignore_ascii_case(&c.provider) && is_same_site(x, &c)
+        });
+        if let Some(dup) = duplicate {
+            let prov_name = provider(&c.provider)
+                .map(|p| p.name())
+                .unwrap_or(&c.provider);
+            return Err(err(format!(
+                "This site already has a {prov_name} tunnel (\"{dup_name}\"). A site can only have one tunnel per provider.",
+                dup_name = dup.name
+            )));
+        }
+
         match configs.iter_mut().find(|x| x.id == c.id) {
             Some(x) => {
                 // Changing where a tunnel points needs the confirmation again.
@@ -635,7 +676,22 @@ impl Inner {
         let url = parse_target(&c.target)?;
         let host = url.host_str().unwrap_or_default().to_string();
         let cfg = self.web_config();
-        let ours = self.domains.lock().unwrap().get(&host).is_some();
+        let domain_match = {
+            let doms = self.domains.lock().unwrap();
+            doms.get(&host).or_else(|| {
+                c.project_id.as_deref().and_then(|pid| {
+                    doms.list()
+                        .into_iter()
+                        .find(|d| d.project_id.as_deref() == Some(pid))
+                })
+            })
+        };
+        let actual_host = domain_match
+            .as_ref()
+            .map(|d| d.hostname.clone())
+            .unwrap_or_else(|| host.clone());
+        let ours =
+            domain_match.is_some() || self.domains.lock().unwrap().get(&actual_host).is_some();
         let resolve = ours.then(|| {
             std::net::SocketAddr::from((
                 [127, 0, 0, 1],
@@ -646,13 +702,13 @@ impl Inner {
                 },
             ))
         });
-        let routed_host = c
-            .public_hostname
-            .as_deref()
-            .filter(|h| !h.is_empty())
-            .unwrap_or(&host);
+        let target_host = if ours {
+            actual_host.clone()
+        } else {
+            host.clone()
+        };
         let base = if ours {
-            format!("{}://{routed_host}", url.scheme())
+            format!("{}://{actual_host}", url.scheme())
         } else {
             c.target.trim_end_matches('/').to_string()
         };
@@ -661,7 +717,7 @@ impl Inner {
             self.tunnels.runtime.clone(),
             Target {
                 base,
-                host: routed_host.to_string(),
+                host: target_host,
             },
             resolve,
             ca,
