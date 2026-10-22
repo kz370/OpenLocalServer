@@ -417,19 +417,35 @@ pub struct TunnelManager {
 
 impl TunnelManager {
     pub fn new(paths: &AppPaths) -> Self {
-        let configs = crate::db::load_docs(paths, "tunnels").unwrap_or_default();
+        let loaded: Vec<TunnelConfig> = crate::db::load_docs(paths, "tunnels").unwrap_or_default();
+        let mut configs: Vec<TunnelConfig> = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        let mut had_dups = false;
+        for c in loaded {
+            let prov = c.provider.trim().to_ascii_lowercase();
+            let site = tunnel_site_key(&c);
+            if seen.insert((site, prov)) {
+                configs.push(c);
+            } else {
+                had_dups = true;
+            }
+        }
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .thread_name("ols-inspector")
             .enable_all()
             .build()
             .expect("failed to start the tunnel runtime");
-        Self {
+        let mgr = Self {
             paths: paths.clone(),
             configs: Mutex::new(configs),
             live: Mutex::new(HashMap::new()),
             runtime: Arc::new(runtime),
+        };
+        if had_dups {
+            let _ = mgr.persist(&mgr.configs.lock().unwrap());
         }
+        mgr
     }
 
     fn persist(&self, configs: &[TunnelConfig]) -> Result<(), CoreError> {
@@ -456,30 +472,87 @@ fn parse_target(target: &str) -> Result<reqwest::Url, CoreError> {
     Ok(url)
 }
 
-fn is_same_site(a: &TunnelConfig, b: &TunnelConfig) -> bool {
-    // 1. If both specify project_id and they match
+/// Derives a normalized identity string for the site that this tunnel serves.
+/// Handles target URLs with local hostnames (e.g. `http://gymos.test`),
+/// target URLs with 127.0.0.1 where the site name is in `name` (e.g. `Broadcast gymos.test`),
+/// `public_hostname`, `project_id`, or generated slug.
+pub fn tunnel_site_key(t: &TunnelConfig) -> String {
+    // 1. If project_id is present and not empty
+    if let Some(ref p) = t.project_id {
+        let p_clean = p.trim().to_ascii_lowercase();
+        if !p_clean.is_empty() {
+            return format!("project:{p_clean}");
+        }
+    }
+    // 2. Check target host
+    if let Ok(u) = parse_target(&t.target) {
+        if let Some(h) = u.host_str() {
+            let h_clean = h.trim().to_ascii_lowercase();
+            if !matches!(
+                h_clean.as_str(),
+                "127.0.0.1" | "localhost" | "::1" | "[::1]"
+            ) && !h_clean.is_empty()
+            {
+                return format!("host:{h_clean}");
+            }
+        }
+    }
+    // 3. Check name (e.g. "Broadcast gymos.test" -> "gymos.test")
+    let name_clean = t
+        .name
+        .trim()
+        .strip_prefix("Broadcast ")
+        .or_else(|| t.name.trim().strip_prefix("broadcast "))
+        .unwrap_or(t.name.trim())
+        .trim()
+        .to_ascii_lowercase();
+    if !name_clean.is_empty()
+        && name_clean != "tunnel"
+        && !matches!(name_clean.as_str(), "127.0.0.1" | "localhost")
+    {
+        return format!("host:{name_clean}");
+    }
+    // 4. Check public_hostname
+    if let Some(ref ph) = t.public_hostname {
+        let ph_clean = ph.trim().to_ascii_lowercase();
+        if !ph_clean.is_empty() {
+            return format!("host:{ph_clean}");
+        }
+    }
+    // 5. Check id prefix (e.g. "broadcast-gymos-test-1234" -> "gymos-test")
+    let id_clean = t.id.trim().to_ascii_lowercase();
+    let stripped_id = id_clean.strip_prefix("broadcast-").unwrap_or(&id_clean);
+    if let Some((prefix, _)) = stripped_id.rsplit_once('-') {
+        if !prefix.is_empty() && prefix != "tunnel" {
+            return format!("slug:{prefix}");
+        }
+    }
+
+    // Fallback: full normalized target
+    format!(
+        "target:{}",
+        t.target.trim().trim_end_matches('/').to_ascii_lowercase()
+    )
+}
+
+pub fn is_same_site(a: &TunnelConfig, b: &TunnelConfig) -> bool {
+    let key_a = tunnel_site_key(a);
+    let key_b = tunnel_site_key(b);
+    if key_a == key_b {
+        return true;
+    }
+    // Direct project_id match
     if let (Some(pa), Some(pb)) = (&a.project_id, &b.project_id) {
         if !pa.trim().is_empty() && pa.trim().eq_ignore_ascii_case(pb.trim()) {
             return true;
         }
     }
-    // 2. Compare target host/port
-    let ha = parse_target(&a.target)
-        .ok()
-        .and_then(|u| u.host_str().map(|h| (h.to_ascii_lowercase(), u.port())));
-    let hb = parse_target(&b.target)
-        .ok()
-        .and_then(|u| u.host_str().map(|h| (h.to_ascii_lowercase(), u.port())));
-    if let (Some((ha, pa)), Some((hb, pb))) = (ha, hb) {
-        if ha == hb && pa == pb {
-            return true;
-        }
+    // Check if one's key is a slug of the other's host (e.g. "slug:gymos-test" and "host:gymos.test")
+    let norm = |k: &str| k.replace(['.', '-', '_', ':'], "");
+    if !key_a.is_empty() && !key_b.is_empty() && norm(&key_a) == norm(&key_b) {
+        return true;
     }
-    // 3. Fallback comparison
-    a.target
-        .trim()
-        .trim_end_matches('/')
-        .eq_ignore_ascii_case(b.target.trim().trim_end_matches('/'))
+    false
 }
 
 impl Inner {
@@ -920,7 +993,27 @@ impl Inner {
         })
     }
 
+    pub fn prune_duplicate_tunnels(&self) {
+        let mut to_remove = Vec::new();
+        {
+            let configs = self.tunnels.configs.lock().unwrap();
+            let mut seen: std::collections::HashSet<(String, String)> =
+                std::collections::HashSet::new();
+            for c in configs.iter() {
+                let site = tunnel_site_key(c);
+                let prov = c.provider.trim().to_ascii_lowercase();
+                if !seen.insert((site, prov)) {
+                    to_remove.push(c.id.clone());
+                }
+            }
+        }
+        for id in to_remove {
+            let _ = self.remove_tunnel(&id);
+        }
+    }
+
     pub fn list_tunnels(&self) -> Vec<TunnelStatus> {
+        self.prune_duplicate_tunnels();
         let ids: Vec<String> = self
             .tunnels
             .configs

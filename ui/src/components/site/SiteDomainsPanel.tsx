@@ -30,14 +30,15 @@ import {
   X,
   Zap,
 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { FormSection, Select, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
-import { type Domain, type SslProvider, runCommand } from '@/core'
+import { type Domain, type SslProvider, type TunnelStatus, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
+import { usePoll } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 
 export interface DdnsProviderDef {
@@ -306,6 +307,109 @@ export function SiteDomainsPanel({ domain: initialDomain, onSave, busy }: SiteDo
   const [verifyingSsl, setVerifyingSsl] = useState(false)
   const [sslVerifyResult, setSslVerifyResult] = useState<{ valid: boolean; error: string | null } | null>(null)
 
+  // Active broadcast tunnel state for this site
+  const [siteTunnel, setSiteTunnel] = useState<TunnelStatus | null>(null)
+  const [tunnelCopied, setTunnelCopied] = useState(false)
+  const [tunnelActionBusy, setTunnelActionBusy] = useState(false)
+
+  const refreshTunnel = useCallback(async () => {
+    try {
+      const res = await runCommand({ type: 'list_tunnels' })
+      if (res.type === 'tunnels') {
+        const cleanHost = domain.hostname.toLowerCase()
+        const cleanSlug = cleanHost.replace(/[^a-z0-9]/g, '')
+        const found = res.tunnels.find((t) => {
+          if (domain.tunnel_id && t.config.id === domain.tunnel_id) return true
+          if (domain.project_id && t.config.project_id === domain.project_id) return true
+          const target = t.config.target.toLowerCase()
+          const name = t.config.name.toLowerCase()
+          const id = t.config.id.toLowerCase()
+          if (target.includes(cleanHost)) return true
+          if (name.includes(cleanHost)) return true
+          if (id.includes(cleanSlug)) return true
+          return false
+        })
+        setSiteTunnel(found ?? null)
+      }
+    } catch {}
+  }, [domain.tunnel_id, domain.project_id, domain.hostname])
+
+  usePoll(refreshTunnel, 2500)
+
+  async function handleStartSiteTunnel() {
+    if (!siteTunnel) return
+    setTunnelActionBusy(true)
+    try {
+      await runCommand({
+        type: 'start_tunnel',
+        id: siteTunnel.config.id,
+        confirm_exposure: true,
+      })
+      await refreshTunnel()
+    } catch (e: any) {
+      console.error(e)
+    } finally {
+      setTunnelActionBusy(false)
+    }
+  }
+
+  async function handleStopSiteTunnel() {
+    if (!siteTunnel) return
+    setTunnelActionBusy(true)
+    try {
+      await runCommand({
+        type: 'stop_tunnel',
+        id: siteTunnel.config.id,
+      })
+      await refreshTunnel()
+    } catch (e: any) {
+      console.error(e)
+    } finally {
+      setTunnelActionBusy(false)
+    }
+  }
+
+  async function handleStartNewBroadcastTunnel() {
+    setTunnelActionBusy(true)
+    try {
+      const provider = domain.broadcast_provider || 'cloudflare'
+      const target = `${domain.https ? 'https' : 'http'}://${domain.hostname}`
+      const res = await runCommand({
+        type: 'save_tunnel',
+        tunnel: {
+          id: '',
+          project_id: domain.project_id ?? null,
+          name: `Broadcast ${domain.hostname}`,
+          provider,
+          target,
+          auth_user: null,
+          allow_internal: false,
+          public_hostname: domain.public_domain ?? null,
+          acknowledged: true,
+          autostart: true,
+        },
+      })
+      if (res.type === 'tunnel') {
+        await runCommand({
+          type: 'start_tunnel',
+          id: res.tunnel.config.id,
+          confirm_exposure: true,
+        })
+        await refreshTunnel()
+      }
+    } catch (e: any) {
+      console.error(e)
+    } finally {
+      setTunnelActionBusy(false)
+    }
+  }
+
+  function handleCopyTunnelUrl(url: string) {
+    navigator.clipboard.writeText(url)
+    setTunnelCopied(true)
+    setTimeout(() => setTunnelCopied(false), 2000)
+  }
+
   // Searchable DDNS provider state
   const [providerSearch, setProviderSearch] = useState('')
   const [isProviderSelectOpen, setIsProviderSelectOpen] = useState(false)
@@ -535,7 +639,7 @@ export function SiteDomainsPanel({ domain: initialDomain, onSave, busy }: SiteDo
         runCommand({
           type: 'sync_ddns',
           hostname: domain.hostname,
-          force: false,
+          force: true,
         })
           .then((res) => {
             if (res.type === 'ddns_sync') {
@@ -1346,16 +1450,16 @@ export function SiteDomainsPanel({ domain: initialDomain, onSave, busy }: SiteDo
                   </div>
                 )}
 
-                {/* Modem / Router NAT Loopback Notice & Solutions */}
+                {/* Modem / Router NAT Loopback & HTTP 522 Notice & Solutions */}
                 <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3.5 flex flex-col gap-2 mt-2">
                   <div className="flex items-start gap-2.5">
                     <AlertCircle className="size-4 text-amber-500 shrink-0 mt-0.5" />
                     <div className="flex flex-col gap-1 text-xs">
                       <span className="font-semibold text-amber-600 dark:text-amber-400">
-                        Does opening your domain load your modem or router login page?
+                        Getting HTTP Error 522 or seeing your router admin page?
                       </span>
                       <p className="text-muted-foreground text-[11px] leading-relaxed">
-                        When you set a domain to your Public IP and open it from inside your home network, most ISP routers don't support <strong>NAT Hairpinning (loopback)</strong> and intercept ports 80/443 to show the router's own admin page instead of forwarding to your PC.
+                        Dynamic DNS only updates your domain's IP address. For internet traffic to reach your PC, your router must forward ports 80 & 443 to this machine, and your ISP must allow inbound web traffic.
                       </p>
                     </div>
                   </div>
@@ -1363,28 +1467,28 @@ export function SiteDomainsPanel({ domain: initialDomain, onSave, busy }: SiteDo
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-2 pt-2 border-t border-amber-500/15 text-[11px]">
                     <div className="rounded-md border border-border/60 bg-background/60 p-2.5 flex flex-col gap-1">
                       <span className="font-semibold text-foreground flex items-center gap-1 text-[11px]">
-                        <Globe className="size-3 text-sky-400" /> 1. Quick Verification
+                        <Globe className="size-3 text-sky-400" /> 1. Why HTTP Error 522?
                       </span>
                       <p className="text-muted-foreground text-[10.5px]">
-                        Turn off Wi-Fi on your phone and open your domain over 4G/5G mobile data. External visitors will reach your site!
+                        Cloudflare couldn't reach your PC. This happens when router <strong>Port Forwarding (ports 80 & 443)</strong> is missing, your ISP blocks inbound web ports, or your connection is behind CGNAT.
                       </p>
                     </div>
 
                     <div className="rounded-md border border-border/60 bg-background/60 p-2.5 flex flex-col gap-1">
                       <span className="font-semibold text-foreground flex items-center gap-1 text-[11px]">
-                        <Zap className="size-3 text-amber-400" /> 2. Cloudflare Proxy
+                        <Zap className="size-3 text-amber-400" /> 2. Port Forwarding & SSL
                       </span>
                       <p className="text-muted-foreground text-[10.5px]">
-                        If using Cloudflare DDNS, turn ON <strong>Cloudflare Proxy (Orange Cloud)</strong>. Cloudflare CDN routes web traffic directly to your site, bypassing your router interface.
+                        In your router settings (192.168.1.1), forward ports <strong>80 & 443</strong> to your PC's local IP. In Cloudflare Dashboard, set SSL mode to <strong>Flexible</strong> or <strong>Full</strong>.
                       </p>
                     </div>
 
                     <div className="rounded-md border border-border/60 bg-background/60 p-2.5 flex flex-col gap-1">
                       <span className="font-semibold text-foreground flex items-center gap-1 text-[11px]">
-                        <ShieldCheck className="size-3 text-emerald-400" /> 3. Broadcast Online (Tunnel)
+                        <ShieldCheck className="size-3 text-emerald-400" /> 3. Recommended: Tunnel
                       </span>
                       <p className="text-muted-foreground text-[10.5px]">
-                        Enable <strong>Broadcast Online</strong> below with Cloudflare Tunnel or Tailscale. Tunnels establish outbound connections with <em>zero router port forwarding</em>.
+                        Skip port forwarding entirely: use <strong>Online Broadcast Tunnel</strong> below or a <strong>Cloudflare Zero Trust Tunnel</strong>. Tunnels connect outbound and bypass all firewalls and CGNAT!
                       </p>
                     </div>
                   </div>
@@ -1627,6 +1731,143 @@ export function SiteDomainsPanel({ domain: initialDomain, onSave, busy }: SiteDo
                 <option value="localtunnel">Localtunnel</option>
                 <option value="tailscale">Tailscale Funnel</option>
               </Select>
+            </div>
+          )}
+
+          {/* Active Tunnel Status & Public URL Card */}
+          {siteTunnel && (
+            <div className="flex flex-col gap-2.5 rounded-lg border border-border bg-card/60 p-3.5 shadow-xs">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="flex size-2 rounded-full relative">
+                    {siteTunnel.state === 'connected' ? (
+                      <>
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                        <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
+                      </>
+                    ) : siteTunnel.state === 'starting' ? (
+                      <span className="relative inline-flex size-2 rounded-full bg-amber-500 animate-pulse" />
+                    ) : siteTunnel.state === 'failed' ? (
+                      <span className="relative inline-flex size-2 rounded-full bg-destructive" />
+                    ) : (
+                      <span className="relative inline-flex size-2 rounded-full bg-muted-foreground" />
+                    )}
+                  </span>
+                  <span className="text-xs font-semibold capitalize text-foreground">
+                    {siteTunnel.state === 'connected'
+                      ? 'Tunnel Active & Online'
+                      : siteTunnel.state === 'starting'
+                      ? 'Connecting Tunnel…'
+                      : siteTunnel.state === 'failed'
+                      ? 'Tunnel Failed'
+                      : 'Tunnel Stopped'}
+                  </span>
+                  <Badge variant="outline" className="text-[10px] font-mono capitalize">
+                    {siteTunnel.config.provider}
+                  </Badge>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  {siteTunnel.state === 'stopped' || siteTunnel.state === 'failed' ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={tunnelActionBusy}
+                      onClick={handleStartSiteTunnel}
+                      className="h-7 px-2.5 text-xs gap-1.5 cursor-pointer"
+                    >
+                      <Zap className="size-3 text-emerald-500" />
+                      <span>Start Tunnel</span>
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={tunnelActionBusy}
+                      onClick={handleStopSiteTunnel}
+                      className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive gap-1.5 cursor-pointer"
+                    >
+                      <span>Stop</span>
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {siteTunnel.public_url ? (
+                <div className="flex items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">
+                  <Globe2 className="size-4 shrink-0 text-emerald-500" />
+                  <a
+                    href={siteTunnel.public_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      runCommand({ type: 'open_url', url: siteTunnel.public_url! })
+                    }}
+                    className="min-w-0 flex-1 truncate font-mono text-xs text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer font-medium"
+                    title={`Open ${siteTunnel.public_url}`}
+                  >
+                    {siteTunnel.public_url}
+                  </a>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs gap-1 cursor-pointer shrink-0 text-foreground hover:text-foreground"
+                    title="Copy public tunnel URL"
+                    onClick={() => handleCopyTunnelUrl(siteTunnel.public_url!)}
+                  >
+                    {tunnelCopied ? (
+                      <>
+                        <Check className="size-3.5 text-emerald-500" />
+                        <span className="text-emerald-500 text-[11px] font-medium">Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="size-3.5" />
+                        <span className="text-[11px]">Copy</span>
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 text-xs gap-1 cursor-pointer shrink-0"
+                    title="Open in browser"
+                    onClick={() => runCommand({ type: 'open_url', url: siteTunnel.public_url! })}
+                  >
+                    <ExternalLink className="size-3.5" />
+                    <span className="text-[11px]">Open</span>
+                  </Button>
+                </div>
+              ) : siteTunnel.state === 'starting' ? (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/40 rounded-md p-2">
+                  <RefreshCw className="size-3.5 animate-spin text-amber-500" />
+                  <span>Requesting public tunnel address from {siteTunnel.config.provider}…</span>
+                </div>
+              ) : siteTunnel.error ? (
+                <p className="text-xs text-destructive">{siteTunnel.error}</p>
+              ) : null}
+            </div>
+          )}
+
+          {!siteTunnel && domain.auto_broadcast && (
+            <div className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/20 p-3 text-xs">
+              <span className="text-muted-foreground">Broadcast tunnel will start automatically when web server starts.</span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={tunnelActionBusy}
+                onClick={handleStartNewBroadcastTunnel}
+                className="h-7 px-2.5 text-xs gap-1.5 cursor-pointer"
+              >
+                <Zap className="size-3 text-violet-400" />
+                <span>Broadcast Now</span>
+              </Button>
             </div>
           )}
         </div>

@@ -658,6 +658,20 @@ function WebhookTester({ tunnel, onSent }: { tunnel: TunnelStatus; onSent: (id: 
   )
 }
 
+function tunnelSiteKey(c: TunnelConfig): string {
+  if (c.project_id?.trim()) return `project:${c.project_id.trim().toLowerCase()}`
+  const targetHost = c.target.replace(/^https?:\/\//, '').split('/')[0].split(':')[0].toLowerCase()
+  if (targetHost && targetHost !== '127.0.0.1' && targetHost !== 'localhost' && targetHost !== '::1') {
+    return `host:${targetHost}`
+  }
+  const cleanName = c.name.replace(/^broadcast\s+/i, '').trim().toLowerCase()
+  if (cleanName && cleanName !== 'tunnel') {
+    return `host:${cleanName}`
+  }
+  if (c.public_hostname?.trim()) return `host:${c.public_hostname.trim().toLowerCase()}`
+  return `target:${c.target.trim().toLowerCase()}`
+}
+
 function TunnelEditor({
   initial,
   domains,
@@ -684,25 +698,19 @@ function TunnelEditor({
   const custom = !siteTargets.includes(t.target)
   const provider = providers.find((p) => p.id === t.provider)
 
-  const currentHost = t.target.replace(/^https?:\/\//, '').split('/')[0].split(':')[0].toLowerCase()
+  const currentKey = useMemo(() => tunnelSiteKey(t), [t])
   const takenProviders = useMemo(() => {
     return existingTunnels
-      .filter(
-        (other) =>
-          other.id !== t.id &&
-          ((t.project_id && other.project_id === t.project_id) ||
-            other.target.replace(/^https?:\/\//, '').split('/')[0].split(':')[0].toLowerCase() === currentHost)
-      )
+      .filter((other) => other.id !== t.id && tunnelSiteKey(other) === currentKey)
       .map((other) => other.provider.toLowerCase())
-  }, [existingTunnels, t.id, t.target, t.project_id, currentHost])
+  }, [existingTunnels, t.id, currentKey])
 
   const isDuplicateProvider = takenProviders.includes(t.provider.toLowerCase())
   const duplicateTunnel = existingTunnels.find(
     (other) =>
       other.id !== t.id &&
       other.provider.toLowerCase() === t.provider.toLowerCase() &&
-      ((t.project_id && other.project_id === t.project_id) ||
-        other.target.replace(/^https?:\/\//, '').split('/')[0].split(':')[0].toLowerCase() === currentHost)
+      tunnelSiteKey(other) === currentKey
   )
 
   return (

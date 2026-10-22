@@ -228,112 +228,144 @@ pub async fn sync_domain_ddns(domain: &Domain, force: bool) -> Result<DdnsSyncRe
         });
     }
 
-    match provider.to_ascii_lowercase().as_str() {
+    let target_hostname = domain
+        .public_domain
+        .as_deref()
+        .filter(|p| !p.trim().is_empty())
+        .or_else(|| {
+            domain
+                .aliases
+                .iter()
+                .find(|a| {
+                    let a = a.trim();
+                    !a.ends_with(".test")
+                        && !a.ends_with(".localhost")
+                        && !a.ends_with(".local")
+                        && !a.ends_with(".example")
+                        && a.contains('.')
+                })
+                .map(|s| s.as_str())
+        })
+        .unwrap_or(&domain.hostname);
+
+    let updated_record = match provider.to_ascii_lowercase().as_str() {
         "cloudflare" => {
             sync_cloudflare(
-                &domain.hostname,
+                target_hostname,
                 token,
                 domain.ddns_zone_id.as_deref(),
                 &current_ip,
                 domain.ddns_proxied,
             )
-            .await?;
+            .await?
         }
         "godaddy" => {
             sync_godaddy(
-                &domain.hostname,
+                target_hostname,
                 token,
                 domain.ddns_zone_id.as_deref(),
                 &current_ip,
             )
             .await?;
+            target_hostname.to_string()
         }
         "namecheap" | "cheapdomain" => {
             sync_namecheap(
-                &domain.hostname,
+                target_hostname,
                 token,
                 domain.ddns_zone_id.as_deref(),
                 &current_ip,
             )
             .await?;
+            target_hostname.to_string()
         }
         "duckdns" => {
-            sync_duckdns(&domain.hostname, token, &current_ip).await?;
+            sync_duckdns(target_hostname, token, &current_ip).await?;
+            target_hostname.to_string()
         }
         "noip" => {
             let (u, p) = parse_user_pass(token, domain.ddns_zone_id.as_deref())?;
             let url = format!(
                 "https://dynupdate.no-ip.com/nic/update?hostname={}&myip={}",
-                domain.hostname, current_ip
+                target_hostname, current_ip
             );
             sync_dyndns2_get(&url, Some((&u, &p)), None, &["good", "nochg"]).await?;
+            target_hostname.to_string()
         }
         "porkbun" => {
             sync_porkbun(
-                &domain.hostname,
+                target_hostname,
                 token,
                 domain.ddns_zone_id.as_deref(),
                 &current_ip,
             )
             .await?;
+            target_hostname.to_string()
         }
         "digitalocean" => {
             sync_digitalocean(
-                &domain.hostname,
+                target_hostname,
                 token,
                 domain.ddns_zone_id.as_deref(),
                 &current_ip,
             )
             .await?;
+            target_hostname.to_string()
         }
         "hetzner" => {
             sync_hetzner(
-                &domain.hostname,
+                target_hostname,
                 token,
                 domain.ddns_zone_id.as_deref(),
                 &current_ip,
             )
             .await?;
+            target_hostname.to_string()
         }
         "gandi" => {
             sync_gandi(
-                &domain.hostname,
+                target_hostname,
                 token,
                 domain.ddns_zone_id.as_deref(),
                 &current_ip,
             )
             .await?;
+            target_hostname.to_string()
         }
         "ionos" => {
             sync_ionos(
-                &domain.hostname,
+                target_hostname,
                 token,
                 domain.ddns_zone_id.as_deref(),
                 &current_ip,
             )
             .await?;
+            target_hostname.to_string()
         }
         "dyndns" => {
             let (u, p) = parse_user_pass(token, domain.ddns_zone_id.as_deref())?;
             let url = format!(
                 "https://members.dyndns.org/nic/update?hostname={}&myip={}",
-                domain.hostname, current_ip
+                target_hostname, current_ip
             );
             sync_dyndns2_get(&url, Some((&u, &p)), None, &["good", "nochg"]).await?;
+            target_hostname.to_string()
         }
         "dynu" => {
             let url = format!(
                 "https://api.dynu.com/nic/update?hostname={}&myip={}&password={}",
-                domain.hostname, current_ip, token
+                target_hostname, current_ip, token
             );
             sync_dyndns2_get(&url, None, None, &["good", "nochg"]).await?;
+            target_hostname.to_string()
         }
         "he" | "hurricane_electric" => {
             let url = format!(
                 "https://dyn.dns.he.net/nic/update?hostname={}&password={}&myip={}",
-                domain.hostname, token, current_ip
+                target_hostname, token, current_ip
             );
             sync_dyndns2_get(&url, None, None, &["good", "nochg"]).await?;
+            target_hostname.to_string()
         }
         "freedns" => {
             let url = format!(
@@ -341,18 +373,20 @@ pub async fn sync_domain_ddns(domain: &Domain, force: bool) -> Result<DdnsSyncRe
                 token, current_ip
             );
             sync_dyndns2_get(&url, None, None, &["updated", "has not changed"]).await?;
+            target_hostname.to_string()
         }
         "desec" => {
             let url = format!(
                 "https://update.dedyn.io/update?domains={}&ipv4={}",
-                domain.hostname, current_ip
+                target_hostname, current_ip
             );
             sync_dyndns2_get(&url, None, Some(token), &["good", "nochg"]).await?;
+            target_hostname.to_string()
         }
         "dynv6" => {
             let url = format!(
                 "https://dynv6.com/api/update?hostname={}&token={}&ipv4={}",
-                domain.hostname, token, current_ip
+                target_hostname, token, current_ip
             );
             sync_dyndns2_get(
                 &url,
@@ -361,54 +395,61 @@ pub async fn sync_domain_ddns(domain: &Domain, force: bool) -> Result<DdnsSyncRe
                 &["addresses updated", "addresses unchanged"],
             )
             .await?;
+            target_hostname.to_string()
         }
         "ovh" => {
             let (u, p) = parse_user_pass(token, domain.ddns_zone_id.as_deref())?;
             let url = format!(
                 "https://www.ovh.com/nic/update?system=dyndns&hostname={}&myip={}",
-                domain.hostname, current_ip
+                target_hostname, current_ip
             );
             sync_dyndns2_get(&url, Some((&u, &p)), None, &["good", "nochg"]).await?;
+            target_hostname.to_string()
         }
         "easydns" => {
             let (u, p) = parse_user_pass(token, domain.ddns_zone_id.as_deref())?;
             let url = format!(
                 "https://api.cp.easydns.com/dyn/nic/update?hostname={}&myip={}",
-                domain.hostname, current_ip
+                target_hostname, current_ip
             );
             sync_dyndns2_get(&url, Some((&u, &p)), None, &["good", "nochg", "no error"]).await?;
+            target_hostname.to_string()
         }
         "zoneedit" => {
             let (u, p) = parse_user_pass(token, domain.ddns_zone_id.as_deref())?;
             let url = format!(
                 "https://dynamic.zoneedit.com/auth/dynamic.html?host={}&dnsto={}",
-                domain.hostname, current_ip
+                target_hostname, current_ip
             );
             sync_dyndns2_get(&url, Some((&u, &p)), None, &["success", "good", "nochg"]).await?;
+            target_hostname.to_string()
         }
         "dnsexit" => {
             let (u, p) = parse_user_pass(token, domain.ddns_zone_id.as_deref())?;
             let url = format!(
                 "https://update.dnsexit.com/remoteupdate.sv?login={}&password={}&host={}&myip={}",
-                u, p, domain.hostname, current_ip
+                u, p, target_hostname, current_ip
             );
             sync_dyndns2_get(&url, None, None, &["0: success", "1: ip", "ip is already"]).await?;
+            target_hostname.to_string()
         }
         "changeip" => {
             let (u, p) = parse_user_pass(token, domain.ddns_zone_id.as_deref())?;
             let url = format!(
                 "https://nic.changeip.com/nic/update?hostname={}&myip={}",
-                domain.hostname, current_ip
+                target_hostname, current_ip
             );
             sync_dyndns2_get(&url, Some((&u, &p)), None, &["good", "nochg"]).await?;
+            target_hostname.to_string()
         }
         "directnic" => {
             let (u, p) = parse_user_pass(token, domain.ddns_zone_id.as_deref())?;
             let url = format!(
                 "https://directnic.com/dns/gateway/dyndns/?hostname={}&myip={}",
-                domain.hostname, current_ip
+                target_hostname, current_ip
             );
             sync_dyndns2_get(&url, Some((&u, &p)), None, &["good", "nochg"]).await?;
+            target_hostname.to_string()
         }
         "cloudns" => {
             let url = if token.starts_with("http") {
@@ -420,6 +461,7 @@ pub async fn sync_domain_ddns(domain: &Domain, force: bool) -> Result<DdnsSyncRe
                 )
             };
             sync_dyndns2_get(&url, None, None, &["ok", "updated"]).await?;
+            target_hostname.to_string()
         }
         "custom" | "webhook" => {
             let url = domain.ddns_zone_id.as_deref().unwrap_or("").trim();
@@ -428,20 +470,21 @@ pub async fn sync_domain_ddns(domain: &Domain, force: bool) -> Result<DdnsSyncRe
                     "Custom DDNS requires a webhook URL in the zone/endpoint field".into(),
                 ));
             }
-            sync_custom_webhook(url, &domain.hostname, token, &current_ip).await?;
+            sync_custom_webhook(url, target_hostname, token, &current_ip).await?;
+            target_hostname.to_string()
         }
         other => {
             return Err(CoreError::DomainError(format!(
                 "Unsupported DDNS provider: '{other}'"
             )));
         }
-    }
+    };
 
     Ok(DdnsSyncResult {
         hostname: domain.hostname.clone(),
         ip: current_ip.clone(),
         updated: true,
-        message: format!("DNS record successfully updated to {current_ip}"),
+        message: format!("DNS record '{updated_record}' successfully synchronized to {current_ip}"),
     })
 }
 
@@ -455,7 +498,8 @@ async fn sync_cloudflare(
     let client = http_client(15)?;
 
     // 1. Resolve Zone ID and Zone apex name
-    let (resolved_zone_id, zone_name) = if let Some(zid) = zone_id.filter(|z| !z.trim().is_empty())
+    let (resolved_zone_id, mut zone_name) = if let Some(zid) =
+        zone_id.filter(|z| !z.trim().is_empty())
     {
         let clean = zid.trim().trim_matches('"');
         if clean.contains('.') {
@@ -486,31 +530,46 @@ async fn sync_cloudflare(
             })?;
             let z = zones.first().ok_or_else(|| {
                 CoreError::DomainError(format!(
-                    "No Cloudflare zone found for '{clean}'. Ensure your API token has Zone.DNS permissions."
+                    "No Cloudflare zone found for '{clean}'. Ensure your API token has Zone.DNS permissions, or enter the 32-character hex Zone ID from Cloudflare Overview."
                 ))
             })?;
             let id = z["id"].as_str().unwrap_or("").to_string();
             let name = z["name"].as_str().unwrap_or(clean).to_string();
             (id, Some(name))
         } else {
-            // Hex zone ID - look up zone name to know its apex domain
+            // Hex zone ID - look up zone name
+            // Attempt 1: GET /zones/{clean} (requires Zone:Read permission)
+            let mut name = None;
             let url = format!("https://api.cloudflare.com/client/v4/zones/{clean}");
-            let resp = client.get(&url).bearer_auth(token).send().await.ok();
-            let name = if let Some(r) = resp {
-                if r.status().is_success() {
-                    let b: Value = r
-                        .bytes()
-                        .await
-                        .ok()
-                        .and_then(|bs| serde_json::from_slice(&bs).ok())
-                        .unwrap_or_default();
-                    b["result"]["name"].as_str().map(str::to_string)
-                } else {
-                    None
+            if let Ok(resp) = client.get(&url).bearer_auth(token).send().await {
+                if resp.status().is_success() {
+                    if let Ok(bytes) = resp.bytes().await {
+                        if let Ok(b) = serde_json::from_slice::<Value>(&bytes) {
+                            name = b["result"]["name"].as_str().map(str::to_string);
+                        }
+                    }
                 }
-            } else {
-                None
-            };
+            }
+            // Attempt 2: If Zone:Read is not granted (standard DDNS tokens only have Zone:DNS:Edit),
+            // probe GET /zones/{clean}/dns_records?per_page=1. Every DNS record object includes "zone_name"!
+            if name.is_none() {
+                let probe_url = format!(
+                    "https://api.cloudflare.com/client/v4/zones/{clean}/dns_records?per_page=1"
+                );
+                if let Ok(resp) = client.get(&probe_url).bearer_auth(token).send().await {
+                    if resp.status().is_success() {
+                        if let Ok(bytes) = resp.bytes().await {
+                            if let Ok(b) = serde_json::from_slice::<Value>(&bytes) {
+                                if let Some(recs) = b["result"].as_array() {
+                                    if let Some(first) = recs.first() {
+                                        name = first["zone_name"].as_str().map(str::to_string);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             (clean.to_string(), name)
         }
     } else {
@@ -521,6 +580,12 @@ async fn sync_cloudflare(
         } else {
             hostname.to_string()
         };
+
+        if apex.ends_with(".test") || apex.ends_with(".localhost") || apex.ends_with(".local") {
+            return Err(CoreError::DomainError(format!(
+                "'{hostname}' is a local domain. Please enter your Cloudflare Zone ID (or public apex domain) in Site Settings -> Dynamic DNS."
+            )));
+        }
 
         let url = format!("https://api.cloudflare.com/client/v4/zones?name={apex}");
         let resp = client
@@ -559,8 +624,52 @@ async fn sync_cloudflare(
         (id, Some(name))
     };
 
-    // 2. Determine effective record name within the zone
-    let effective_record_name = if let Some(ref zn) = zone_name {
+    // 2. Fetch existing DNS records from the zone to match or discover zone apex
+    let records_url = format!(
+        "https://api.cloudflare.com/client/v4/zones/{resolved_zone_id}/dns_records?per_page=100"
+    );
+
+    let rec_resp = client
+        .get(&records_url)
+        .bearer_auth(token)
+        .send()
+        .await
+        .map_err(|e| CoreError::DdnsError(format!("Cloudflare DNS records lookup failed: {e}")))?;
+
+    let rec_status = rec_resp.status();
+    let rec_bytes = rec_resp
+        .bytes()
+        .await
+        .map_err(|e| CoreError::DdnsError(format!("Failed to read DNS records response: {e}")))?;
+
+    if !rec_status.is_success() {
+        return Err(CoreError::DdnsError(format!(
+            "Cloudflare DNS records lookup failed: {}",
+            parse_cloudflare_error(rec_status, &rec_bytes)
+        )));
+    }
+
+    let rec_body: Value = serde_json::from_slice(&rec_bytes)
+        .map_err(|e| CoreError::DdnsError(format!("Invalid Cloudflare DNS JSON: {e}")))?;
+
+    if rec_body["success"].as_bool() == Some(false) {
+        return Err(CoreError::DdnsError(format!(
+            "Cloudflare DNS API error: {}",
+            parse_cloudflare_error(rec_status, &rec_bytes)
+        )));
+    }
+
+    let records_list = rec_body["result"].as_array().cloned().unwrap_or_default();
+
+    // If zone_name was not discovered yet, extract it from any record
+    if zone_name.is_none() {
+        if let Some(r) = records_list.first() {
+            zone_name = r["zone_name"].as_str().map(str::to_string);
+        }
+    }
+
+    // Determine effective record name within the zone
+    let mut effective_record_name = if let Some(ref zn) = zone_name {
         let clean = hostname.trim();
         if clean.is_empty() || clean == "@" || clean.eq_ignore_ascii_case(zn) {
             zn.clone()
@@ -582,51 +691,29 @@ async fn sync_cloudflare(
         hostname.to_string()
     };
 
-    // 3. Look up existing DNS record for this record name
-    let records_url = format!(
-        "https://api.cloudflare.com/client/v4/zones/{resolved_zone_id}/dns_records?name={effective_record_name}"
-    );
-
-    let rec_resp = client
-        .get(&records_url)
-        .bearer_auth(token)
-        .send()
-        .await
-        .map_err(|e| CoreError::DdnsError(format!("Cloudflare DNS record lookup failed: {e}")))?;
-
-    let rec_status = rec_resp.status();
-    let rec_bytes = rec_resp
-        .bytes()
-        .await
-        .map_err(|e| CoreError::DdnsError(format!("Failed to read DNS records response: {e}")))?;
-
-    if !rec_status.is_success() {
-        return Err(CoreError::DdnsError(format!(
-            "Cloudflare DNS record lookup failed: {}",
-            parse_cloudflare_error(rec_status, &rec_bytes)
-        )));
-    }
-
-    let rec_body: Value = serde_json::from_slice(&rec_bytes)
-        .map_err(|e| CoreError::DdnsError(format!("Invalid Cloudflare DNS JSON: {e}")))?;
-
-    if rec_body["success"].as_bool() == Some(false) {
-        return Err(CoreError::DdnsError(format!(
-            "Cloudflare DNS API error: {}",
-            parse_cloudflare_error(rec_status, &rec_bytes)
-        )));
-    }
-
-    let records = rec_body["result"].as_array();
-    let existing_record = records.and_then(|arr| {
-        arr.iter().find(|r| {
-            r["name"]
-                .as_str()
-                .map(|s| s.eq_ignore_ascii_case(&effective_record_name))
-                .unwrap_or(false)
+    // Find existing A record:
+    // 1. Exact match on effective_record_name
+    // 2. Or if effective_record_name is zone apex, match apex record
+    let existing_record = records_list
+        .iter()
+        .find(|r| {
+            r["type"].as_str() == Some("A")
+                && r["name"]
+                    .as_str()
+                    .is_some_and(|n| n.eq_ignore_ascii_case(&effective_record_name))
         })
-    });
-    let existing_record_id = existing_record.and_then(|r| r["id"].as_str());
+        .or_else(|| {
+            if let Some(ref zn) = zone_name {
+                records_list.iter().find(|r| {
+                    r["type"].as_str() == Some("A")
+                        && r["name"]
+                            .as_str()
+                            .is_some_and(|n| n.eq_ignore_ascii_case(zn))
+                })
+            } else {
+                None
+            }
+        });
 
     let record_payload = json!({
         "type": "A",
@@ -636,7 +723,19 @@ async fn sync_cloudflare(
         "proxied": proxied,
     });
 
-    if let Some(rid) = existing_record_id {
+    if let Some(r) = existing_record {
+        let rid = r["id"].as_str().unwrap_or_default();
+        let current_ip = r["content"].as_str().unwrap_or("");
+        let current_proxied = r["proxied"].as_bool().unwrap_or(false);
+        if let Some(name) = r["name"].as_str() {
+            effective_record_name = name.to_string();
+        }
+
+        // If IP and proxy setting already match, no update needed!
+        if current_ip == ip && current_proxied == proxied {
+            return Ok(effective_record_name);
+        }
+
         // Update existing record
         let update_url = format!(
             "https://api.cloudflare.com/client/v4/zones/{resolved_zone_id}/dns_records/{rid}"
@@ -682,9 +781,52 @@ async fn sync_cloudflare(
 
         let resp_body: Value = serde_json::from_slice(&resp_bytes).unwrap_or_default();
         if !resp_status.is_success() || resp_body["success"].as_bool() == Some(false) {
+            let err_msg = parse_cloudflare_error(resp_status, &resp_bytes);
+            // If Cloudflare reports the record already exists (e.g. error code 81057 / "identical record already exists"):
+            if err_msg.to_ascii_lowercase().contains("already exists") {
+                // Re-query records specifically for this name and update
+                let refetch_url = format!(
+                    "https://api.cloudflare.com/client/v4/zones/{resolved_zone_id}/dns_records?type=A&per_page=100"
+                );
+                if let Ok(refetch_resp) = client.get(&refetch_url).bearer_auth(token).send().await {
+                    if let Ok(refetch_bytes) = refetch_resp.bytes().await {
+                        if let Ok(b) = serde_json::from_slice::<Value>(&refetch_bytes) {
+                            if let Some(arr) = b["result"].as_array() {
+                                if let Some(found) = arr.iter().find(|x| {
+                                    x["type"].as_str() == Some("A")
+                                        && (x["name"].as_str().is_some_and(|n| {
+                                            n.eq_ignore_ascii_case(&effective_record_name)
+                                        }) || zone_name.as_deref().is_some_and(|zn| {
+                                            x["name"]
+                                                .as_str()
+                                                .is_some_and(|n| n.eq_ignore_ascii_case(zn))
+                                        }))
+                                }) {
+                                    let found_id = found["id"].as_str().unwrap_or_default();
+                                    let found_ip = found["content"].as_str().unwrap_or("");
+                                    let found_proxied = found["proxied"].as_bool().unwrap_or(false);
+                                    if found_ip == ip && found_proxied == proxied {
+                                        return Ok(effective_record_name);
+                                    }
+                                    let put_url = format!(
+                                        "https://api.cloudflare.com/client/v4/zones/{resolved_zone_id}/dns_records/{found_id}"
+                                    );
+                                    let _ = client
+                                        .put(&put_url)
+                                        .bearer_auth(token)
+                                        .header("Content-Type", "application/json")
+                                        .body(record_payload.to_string())
+                                        .send()
+                                        .await;
+                                    return Ok(effective_record_name);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             return Err(CoreError::DdnsError(format!(
-                "Cloudflare DNS record creation failed: {}",
-                parse_cloudflare_error(resp_status, &resp_bytes)
+                "Cloudflare DNS record creation failed: {err_msg}"
             )));
         }
     }

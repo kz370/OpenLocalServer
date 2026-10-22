@@ -1693,28 +1693,66 @@ impl Inner {
     /// Automatically ensures broadcast tunnels are configured and started for all domains with auto_broadcast = true.
     pub fn ensure_broadcast_tunnels(&self, domains: &[Domain]) {
         let cfg = self.web_config();
+        let all_tunnels = self.list_tunnels();
+
         for d in domains {
-            if !d.enabled || !d.auto_broadcast {
-                continue;
-            }
             let server_id = crate::domain::resolved_server(d, &cfg);
             let _ports = cfg.effective_ports(&server_id);
             let target = d.url();
             let provider = d.broadcast_provider.as_deref().unwrap_or("cloudflare");
 
-            let existing = self.list_tunnels().into_iter().find(|t| {
-                d.tunnel_id.as_deref() == Some(&t.config.id)
-                    || (d.project_id.is_some()
-                        && d.project_id == t.config.project_id
-                        && t.config.provider.eq_ignore_ascii_case(provider))
-                    || (t.config.target.contains(&d.hostname)
-                        && t.config.provider.eq_ignore_ascii_case(provider))
-            });
+            let d_slug = crate::domain::slugify(&d.hostname);
+            let mut matching: Vec<crate::tunnel::TunnelStatus> = all_tunnels
+                .iter()
+                .filter(|t| {
+                    if !t.config.provider.eq_ignore_ascii_case(provider) {
+                        return false;
+                    }
+                    d.tunnel_id.as_deref() == Some(&t.config.id)
+                        || (d.project_id.is_some() && d.project_id == t.config.project_id)
+                        || t.config
+                            .target
+                            .to_ascii_lowercase()
+                            .contains(&d.hostname.to_ascii_lowercase())
+                        || t.config
+                            .name
+                            .to_ascii_lowercase()
+                            .contains(&d.hostname.to_ascii_lowercase())
+                        || t.config.id.to_ascii_lowercase().contains(&d_slug)
+                })
+                .cloned()
+                .collect();
 
-            match existing {
+            if !d.enabled || !d.auto_broadcast {
+                continue;
+            }
+
+            if matching.len() > 1 {
+                let primary_idx = matching
+                    .iter()
+                    .position(|t| {
+                        d.tunnel_id.as_deref() == Some(&t.config.id) || t.state == "connected"
+                    })
+                    .unwrap_or(0);
+                let primary = matching.remove(primary_idx);
+                for extra in matching {
+                    let _ = self.remove_tunnel(&extra.config.id);
+                }
+                matching = vec![primary];
+            }
+
+            match matching.into_iter().next() {
                 Some(mut t) => {
+                    let mut needs_save = false;
                     if t.config.target.contains("127.0.0.1") {
                         t.config.target = target.clone();
+                        needs_save = true;
+                    }
+                    if d.public_domain.is_some() && t.config.public_hostname != d.public_domain {
+                        t.config.public_hostname = d.public_domain.clone();
+                        needs_save = true;
+                    }
+                    if needs_save {
                         let _ = self.save_tunnel(t.config.clone());
                     }
                     if t.state == "stopped" || t.state == "failed" {
