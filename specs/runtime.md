@@ -1,7 +1,7 @@
 # RUNTIME
 
 ## Files to Process
-Total meaningful source files: 232 (excluding target/, node_modules/, .git/, dist/, data/services/postgres runtime data, icon bulk).
+Total meaningful source files: 235 (excluding target/, node_modules/, .git/, dist/, data/services/postgres runtime data, icon bulk).
 
 ### Rust core (crates/ols-core/src, 79 files)
 - src/lib.rs, app.rs, command.rs, control.rs, api.rs, paths.rs, settings.rs, secrets.rs, db.rs
@@ -31,10 +31,10 @@ Total meaningful source files: 232 (excluding target/, node_modules/, .git/, dis
 - src/components/ui/button.tsx, card.tsx, dialog.tsx, input.tsx, form.tsx, table.tsx, menu.tsx, switch.tsx, badge.tsx, checkbox.tsx, pagination.tsx
 - src/lib/ai.ts, confirm.ts, hooks.ts, nav.ts, theme.tsx, utils.ts, wait.ts, web.ts
 
-### Docs / Config / Build (21 files)
+### Docs / Config / Build (24 files)
 - README.md, CONTRIBUTING.md, SECURITY.md, CHANGELOG.md, CODE_OF_CONDUCT.md, OLS_Master_SRS_v4.md
 - docs/API.md, IMPLEMENTATION_PLAN.md, STATUS.md, USER_GUIDE.md, PLUGINS.md, SECURITY_REVIEW.md, LOAD_TESTING.md, AI_ASSISTANT.md, BRAND.md, UX polish batch doc
-- Cargo.toml, Cargo.lock, scripts/dev.bat, scripts/build-installer.bat, scripts/build-inno-installer.bat, scripts/upload-release.bat, scripts/build-ui.ps1, scripts/build-app-icons.ps1, scripts/build-app-icons.bat, installer/open-local-server.iss, scripts/render-icon.mjs, scripts/prepare-icon-source.ps1
+- Cargo.toml, Cargo.lock, scripts/dev.bat, scripts/build-installer.bat, scripts/build-inno-installer.bat, scripts/upload-release.bat, scripts/build-ui.ps1, scripts/build-app-icons.ps1, scripts/build-app-icons.bat, installer/open-local-server.iss, scripts/render-icon.mjs, scripts/prepare-icon-source.ps1, scripts/update-version.bat, scripts/update-version.ps1, update-version.bat
 
 ### Project site (3 files)
 - index.html (the site, served from the repository root), website/assets/css/site.css, website/assets/js/site.js
@@ -60,7 +60,10 @@ ui/src/components/site/SiteLogoDialog.tsx added 2026-10-19; Files Processed is n
 
 release-notes/v2.2.0.md added 2026-10-19; Files Processed is now 232, matching Files to Process.
 
+scripts/update-version.bat, scripts/update-version.ps1, update-version.bat added 2026-10-22; Files Processed is now 235, matching Files to Process.
+
 ## Log
+- [2026-10-22] feat(scripts): added update-version.bat and update-version.ps1 (plus root update-version.bat convenience wrapper) to atomically update the project version across all manifests (Cargo.toml, src-tauri/tauri.conf.json, ui/package.json, ui/package-lock.json), lockfiles (workspace members in Cargo.lock), README badge, CHANGELOG.md, and scaffold release notes templates, with SemVer validation and cargo metadata verification. Files Processed 232 -> 235.
 - [2026-10-19] fix(ci): fixed updater manifest generation and signing in ci.yml. In `.github/workflows/ci.yml` publish job, configured `OLS_MINISIGN_KEY` repository secret, added Chocolatey bin path to `GITHUB_PATH` for reliable minisign binary discovery across steps, added fallback binary resolution for minisign, added dual raw-text and base64 secret key decoding, removed invalid `-f` flag on `minisign -Sm` sign command, and replaced silent skip with an explicit terminating error if the required signing key secret is not configured in repository secrets. Files Processed remains 232.
 - [2026-10-19] docs: switched repository default branch from master to main and removed master branch. Switched remote default branch to main via GitHub API, pruned and deleted local and remote master branches, and updated repository links (ReleaseCards.tsx DOCS_URL, index.html public site links, website/README.md), scripts/upload-release.bat (tag re-pointing), and specs (catalog.txt, full_documentation.md, relationships.txt) from master to main. Files Processed remains 232.
 - [2026-10-19] docs(release): streamlined v2.2.0.md release notes and CHANGELOG.md to focus on user-facing features and improvements while removing low-level CSS classes, internal encoding schemas, and developer-only implementation details. Files Processed remains 232.
