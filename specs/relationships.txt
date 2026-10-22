@@ -96,6 +96,7 @@ DbBackup | uses | ExecCapture
 SqliteStore | uses | ExecCapture
 GitTools | uses | ExecCapture
 Updater | uses | CatalogSources
+UpdatesCard | renders | UpdateInfo.notes as Markdown
 PluginManager | uses | Catalog
 WebConfig | resolves | Domain.server -> resolved_server(domain, cfg)
 SitesPage | uses | UseWeb hook

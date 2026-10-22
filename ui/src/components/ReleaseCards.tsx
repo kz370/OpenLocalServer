@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, Select } from '@/components/ui/form'
 import { Input, NumberInput } from '@/components/ui/input'
+import { Markdown } from '@/components/ui/Markdown'
 import { type ApiStatus, type NetworkStatus, type ShellMenuStatus, type UpdateInfo, type UpdaterStatus, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
 import { useAction } from '@/lib/hooks'
@@ -283,7 +284,7 @@ export function UpdatesCard() {
               </div>
               {info.date && <span className="text-xs text-muted-foreground">Released {info.date}</span>}
             </div>
-            {info.notes && <p className="mt-2 text-xs leading-relaxed text-foreground/80">{info.notes}</p>}
+            {info.notes && <Markdown content={info.notes} className="mt-2 text-xs leading-relaxed text-foreground/80" />}
           </div>
         )}
 
@@ -298,7 +299,7 @@ export function UpdatesCard() {
               </div>
               {info.date && <span className="text-xs text-muted-foreground">Released {info.date}</span>}
             </div>
-            {info.notes && <p className="mt-2 text-xs leading-relaxed text-foreground/80">{info.notes}</p>}
+            {info.notes && <Markdown content={info.notes} className="mt-2 text-xs leading-relaxed text-foreground/80" />}
           </div>
         )}
 
