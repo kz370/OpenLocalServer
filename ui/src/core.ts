@@ -1035,6 +1035,7 @@ export type CoreCommand =
   | { type: 'cancel_task'; id: string }
   | { type: 'dismiss_task'; id: string }
   | { type: 'clear_finished_tasks' }
+  | { type: 'get_app_guide'; version?: string | null }
 // @@ts-commands-end
 
 export type CoreResponse =
@@ -1190,6 +1191,7 @@ export type CoreResponse =
   | { type: 'tasks'; tasks: TaskView[] }
   | { type: 'site_bundle_preview'; preview: BundlePreview }
   | { type: 'site_bundle_imported'; result: BundleImportResult }
+  | { type: 'app_guide'; markdown: string; version: string }
 // @@ts-responses-end
 
 export interface MigrationSource {
@@ -2168,7 +2170,7 @@ export interface AiDetected {
 }
 
 export interface AiRequest {
-  feature: 'explain' | 'config' | 'logs' | 'traffic' | 'commit' | 'palette'
+  feature: 'explain' | 'config' | 'logs' | 'traffic' | 'commit' | 'palette' | 'app_guide'
   kind?: string
   project_id?: string | null
   question?: string | null

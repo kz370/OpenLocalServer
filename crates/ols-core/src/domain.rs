@@ -896,7 +896,7 @@ fn static_welcome_page(hostname: &str, root: &str) -> String {
 /// Generates a self-contained, responsive welcome page for a newly created PHP site.
 fn php_welcome_page(hostname: &str, root: &str) -> String {
     let host = escape_html(hostname);
-    let doc_root = escape_html(root);
+    let _doc_root = escape_html(root);
     format!(
         r##"<?php
 if (isset($_GET['phpinfo'])) {{

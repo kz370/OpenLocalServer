@@ -40,7 +40,10 @@ pub const FEATURES: &[(&str, &str)] = &[
     ("traffic", "Traffic and k6 scripts"),
     ("commit", "Commit messages"),
     ("palette", "Plain-language palette"),
+    ("app_guide", "Ask about the app"),
 ];
+
+pub const APP_GUIDE_MD: &str = include_str!("../catalog/user_manual.md");
 
 const MAX_ROUNDS: usize = 6;
 const MAX_ACTIONS: usize = 10;
@@ -1439,6 +1442,58 @@ impl Inner {
                 attachments.push(("Projects".into(), projects.join("\n")));
                 ("Turn the request into something the user can confirm. Prefer one start_quick_app step when a Quick App fits (use its id; put the user's wishes in values, and read the app with the tools when unsure of its fields). Otherwise say what to do by hand. Explain in one or two sentences.".to_string(), question)
             }
+            "app_guide" => {
+                let question =
+                    need(&req.question, "what you want to know about OpenLocalServer")?.to_string();
+                attachments.push((
+                    "OpenLocalServer User Manual (v2.3.0 Knowledge Base)".into(),
+                    APP_GUIDE_MD.to_string(),
+                ));
+
+                let mut env_facts = Vec::new();
+                let web = self
+                    .web
+                    .status(&self.web_config(), &self.domains.lock().unwrap().list());
+                env_facts.push(format!(
+                    "Active Web Server: {} (running: {}, http: {}, https: {})",
+                    web.default_server, web.running, web.http_port, web.https_port
+                ));
+
+                let domains = self.domain_summaries();
+                env_facts.push(format!("Registered Sites/Domains count: {}", domains.len()));
+                let site_names: Vec<String> =
+                    domains.iter().take(8).map(|d| d.hostname.clone()).collect();
+                if !site_names.is_empty() {
+                    env_facts.push(format!("Sample Domains: {}", site_names.join(", ")));
+                }
+
+                let svcs = self.services.list();
+                let running_svcs: Vec<String> = svcs
+                    .iter()
+                    .filter(|s| s.running)
+                    .map(|s| s.name.clone())
+                    .collect();
+                if !running_svcs.is_empty() {
+                    env_facts.push(format!("Running Services: {}", running_svcs.join(", ")));
+                }
+
+                let runtimes = self.runtimes.catalog();
+                let installed: Vec<String> = runtimes
+                    .iter()
+                    .filter(|r| r.installed)
+                    .map(|r| format!("{} {}", r.name, r.version))
+                    .collect();
+                if !installed.is_empty() {
+                    env_facts.push(format!("Installed Runtimes: {}", installed.join(", ")));
+                }
+
+                attachments.push(("User Live Environment Status".into(), env_facts.join("\n")));
+
+                (
+                    "You are the OpenLocalServer (OLS) Assistant. You help users understand how to use OpenLocalServer, how each feature works, how to configure web servers, domains, PHP/Node runtimes, databases, services, and tunnels.\n\nCRITICAL INSTRUCTIONS:\n1. Answer correctly, simply, and directly. Avoid long rambling or annoying walls of irrelevant technical jargon.\n2. Keep explanations clear, step-by-step, and easy to understand for beginners and pros alike.\n3. If the user asks how to do something, guide them to the right page or setting in OLS (e.g., Sites, Web server, Databases, Services, Runtimes, Tunnels, Settings).\n4. Refer to the attached OLS User Manual for exact facts. Do not invent non-existent features.".to_string(),
+                    question,
+                )
+            }
             other => {
                 return Err(fail(format!(
                     "'{other}' isn't something the assistant does"
@@ -1493,6 +1548,10 @@ impl Inner {
             attachments: labels,
             tools: if provider.tools { tool_names() } else { vec![] },
         })
+    }
+
+    pub fn app_guide(&self) -> String {
+        APP_GUIDE_MD.to_string()
     }
 }
 

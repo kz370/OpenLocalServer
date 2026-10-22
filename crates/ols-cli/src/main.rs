@@ -107,6 +107,11 @@ enum Cmd {
     /// The AI assistant (opt-in, bring your own model): `olsc ai ask`, `olsc ai explain`.
     #[command(subcommand)]
     Ai(AiCmd),
+    /// View the OpenLocalServer comprehensive user manual and operations guide.
+    Guide {
+        /// Specific version to view (default: current version).
+        version: Option<String>,
+    },
     // @@cli-cmds
     /// Run the core in the background without the window (started automatically when needed).
     Daemon {
@@ -1074,7 +1079,15 @@ fn run(ctx: &Ctx, cmd: Cmd) -> R<()> {
             public,
         }) => load_test(ctx, project, script, site, profile, vars, public)?,
         Cmd::Ai(c) => ai_cmd(ctx, c)?,
-        // @@cli-arms
+        Cmd::Guide { version } => {
+            let res = ctx.call(CoreCommand::GetAppGuide { version })?;
+            let CoreResponse::AppGuide { markdown, .. } = &res else {
+                return Err("unexpected reply".into());
+            };
+            if !ctx.print_json(&res) {
+                println!("{markdown}");
+            }
+        } // @@cli-arms
     }
     Ok(())
 }

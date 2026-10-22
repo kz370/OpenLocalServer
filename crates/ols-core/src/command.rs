@@ -1349,6 +1349,9 @@ pub enum CoreCommand {
         actions: Vec<CoreCommand>,
         confirm_destructive: bool,
     },
+    GetAppGuide {
+        version: Option<String>,
+    },
     // @@commands-end
 }
 
@@ -1858,6 +1861,10 @@ pub enum CoreResponse {
     },
     AiApplied {
         steps: Vec<crate::repair::RepairStep>,
+    },
+    AppGuide {
+        markdown: String,
+        version: String,
     },
     // @@responses-end
 }
@@ -4542,6 +4549,10 @@ impl Core {
                 confirm_destructive,
             } => Ok(R::AiApplied {
                 steps: self.ai_apply(actions, confirm_destructive),
+            }),
+            C::GetAppGuide { version: _ } => Ok(R::AppGuide {
+                markdown: i.app_guide(),
+                version: "2.3.0".to_string(),
             }),
             // @@arms-end
         }
