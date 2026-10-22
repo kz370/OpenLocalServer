@@ -1449,50 +1449,6 @@ export function SiteDomainsPanel({ domain: initialDomain, onSave, busy }: SiteDo
                     <span>{ddnsResult.message}</span>
                   </div>
                 )}
-
-                {/* Modem / Router NAT Loopback & HTTP 522 Notice & Solutions */}
-                <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3.5 flex flex-col gap-2 mt-2">
-                  <div className="flex items-start gap-2.5">
-                    <AlertCircle className="size-4 text-amber-500 shrink-0 mt-0.5" />
-                    <div className="flex flex-col gap-1 text-xs">
-                      <span className="font-semibold text-amber-600 dark:text-amber-400">
-                        Getting HTTP Error 522 or seeing your router admin page?
-                      </span>
-                      <p className="text-muted-foreground text-[11px] leading-relaxed">
-                        Dynamic DNS only updates your domain's IP address. For internet traffic to reach your PC, your router must forward ports 80 & 443 to this machine, and your ISP must allow inbound web traffic.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2 pt-2 border-t border-amber-500/15 text-[11px]">
-                    <div className="rounded-md border border-border/60 bg-background/60 p-2.5 flex flex-col gap-1">
-                      <span className="font-semibold text-foreground flex items-center gap-1 text-[11px]">
-                        <Globe className="size-3 text-sky-400" /> 1. Why HTTP Error 522?
-                      </span>
-                      <p className="text-muted-foreground text-[10.5px]">
-                        Cloudflare couldn't reach your PC. This happens when router <strong>Port Forwarding (ports 80 & 443)</strong> is missing, your ISP blocks inbound web ports, or your connection is behind CGNAT.
-                      </p>
-                    </div>
-
-                    <div className="rounded-md border border-border/60 bg-background/60 p-2.5 flex flex-col gap-1">
-                      <span className="font-semibold text-foreground flex items-center gap-1 text-[11px]">
-                        <Zap className="size-3 text-amber-400" /> 2. Port Forwarding & SSL
-                      </span>
-                      <p className="text-muted-foreground text-[10.5px]">
-                        In your router settings (192.168.1.1), forward ports <strong>80 & 443</strong> to your PC's local IP. In Cloudflare Dashboard, set SSL mode to <strong>Flexible</strong> or <strong>Full</strong>.
-                      </p>
-                    </div>
-
-                    <div className="rounded-md border border-border/60 bg-background/60 p-2.5 flex flex-col gap-1">
-                      <span className="font-semibold text-foreground flex items-center gap-1 text-[11px]">
-                        <ShieldCheck className="size-3 text-emerald-400" /> 3. Recommended: Tunnel
-                      </span>
-                      <p className="text-muted-foreground text-[10.5px]">
-                        Skip port forwarding entirely: use <strong>Online Broadcast Tunnel</strong> below or a <strong>Cloudflare Zero Trust Tunnel</strong>. Tunnels connect outbound and bypass all firewalls and CGNAT!
-                      </p>
-                    </div>
-                  </div>
-                </div>
               </div>
             </div>
           )}
@@ -1787,7 +1743,7 @@ export function SiteDomainsPanel({ domain: initialDomain, onSave, busy }: SiteDo
                       size="sm"
                       disabled={tunnelActionBusy}
                       onClick={handleStopSiteTunnel}
-                      className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive gap-1.5 cursor-pointer"
+                      className="h-7 px-2 text-xs text-muted-foreground hover:text-info gap-1.5 cursor-pointer"
                     >
                       <span>Stop</span>
                     </Button>

@@ -107,6 +107,7 @@ export function AiHost({ onNavigate }: { onNavigate: (p: Page) => void }) {
       open={ask !== null}
       onClose={close}
       wide
+      layer="ai"
       title={ask?.title ?? ''}
       description={ask?.description}
       footer={

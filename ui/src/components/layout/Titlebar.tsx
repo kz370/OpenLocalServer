@@ -22,7 +22,7 @@ export function Titlebar() {
     <header
       data-tauri-drag-region
       onDoubleClick={action((win) => void win.toggleMaximize().catch(() => undefined))}
-      className="flex h-9 shrink-0 select-none items-center gap-2 border-b border-sidebar-border bg-sidebar px-3"
+      className="relative z-[100] flex h-9 shrink-0 select-none items-center gap-2 border-b border-sidebar-border bg-sidebar px-3"
     >
       <span className="flex items-center gap-2 text-xs font-medium text-sidebar-foreground">
         {/* Same four colourways (light/dark × running/stopped) the tray and the

@@ -203,7 +203,7 @@ impl TunnelProvider for Cloudflare {
         }
     }
     fn find_url(&self, line: &str) -> Option<String> {
-        url_matching(line, ".trycloudflare.com")
+        url_matching(line, ".trycloudflare.com").filter(|u| !u.contains("api.trycloudflare.com"))
     }
     fn known_paths(&self) -> Vec<PathBuf> {
         vec![
@@ -1200,6 +1200,12 @@ mod tests {
         assert_eq!(
             Cloudflare.find_url("INF |  https://calm-sea-12.trycloudflare.com  |"),
             Some("https://calm-sea-12.trycloudflare.com".into())
+        );
+        assert_eq!(
+            Cloudflare.find_url(
+                "INF Requesting new quick tunnel from https://api.trycloudflare.com/tunnel"
+            ),
+            None
         );
         assert_eq!(
             Cloudflare.find_url("see https://www.cloudflare.com/website-terms/"),

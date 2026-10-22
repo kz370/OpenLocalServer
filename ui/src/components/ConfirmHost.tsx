@@ -39,7 +39,7 @@ export function ConfirmHost() {
       open={req !== null}
       onClose={() => answer(false)}
       title={req?.title ?? ''}
-      layer="top"
+      layer="confirm"
       footer={
         <>
           <Button variant="ghost" onClick={() => answer(false)}>

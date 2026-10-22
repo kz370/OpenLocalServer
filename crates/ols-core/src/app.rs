@@ -938,6 +938,12 @@ impl Inner {
                 "the document root must be a full folder path".into(),
             ));
         }
+        crate::domain::ensure_site_dir_and_welcome_file(&domain).map_err(|e| {
+            CoreError::DomainError(format!(
+                "could not prepare site directory '{}': {e}",
+                domain.root
+            ))
+        })?;
         let hostname = domain.hostname.clone();
         let added = self.domains.lock().unwrap().add(domain)?;
         self.remove_skip(AUTO_SKIP, &hostname)?;

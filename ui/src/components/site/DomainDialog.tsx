@@ -500,7 +500,9 @@ export function DomainSettings({
           label="Site folder"
           hint={
             d.root
-              ? `Will serve files from ${d.root}. Edit folder name or Browse different location.`
+              ? isNew && d.kind.type !== 'proxy'
+                ? `Will serve files from ${d.root}. The folder and welcome page will be created automatically if they don't exist.`
+                : `Will serve files from ${d.root}. Edit folder name or Browse different location.`
               : parentDir
                 ? `Defaults to ${parentDir}\\<domain>. Edit folder name or Browse different location.`
                 : 'Folder containing index.html, index.php or public assets.'

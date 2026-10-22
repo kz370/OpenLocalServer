@@ -56,8 +56,8 @@ const EMPTY: TunnelConfig = {
   autostart: false,
 }
 
-const STATE_BADGE: Record<TunnelStatus['state'], { label: string; variant: 'success' | 'warning' | 'destructive' | 'secondary' }> = {
-  connected: { label: 'Public', variant: 'destructive' },
+const STATE_BADGE: Record<TunnelStatus['state'], { label: string; variant: 'success' | 'warning' | 'destructive' | 'secondary' | 'info' }> = {
+  connected: { label: 'Public', variant: 'info' },
   starting: { label: 'Connecting…', variant: 'warning' },
   failed: { label: 'Failed', variant: 'destructive' },
   needs_confirmation: { label: 'Needs confirmation', variant: 'warning' },
@@ -132,14 +132,14 @@ export function TunnelsPage() {
       </div>
 
       {publicCount > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm" role="status">
-          <span className="flex items-center gap-2 font-medium text-destructive">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-info/40 bg-info/10 px-4 py-3 text-sm" role="status">
+          <span className="flex items-center gap-2 font-medium text-blue-600 dark:text-info">
             <Globe2 className="size-4" />
             {publicCount === 1 ? 'A site is public right now.' : `${publicCount} sites are public right now.`}
           </span>
           <Button
             size="sm"
-            variant="destructive"
+            variant="info"
             onClick={() =>
               run('stop-all', async () => {
                 for (const t of tunnels.filter((x) => x.state !== 'stopped')) await runCommand({ type: 'stop_tunnel', id: t.config.id })
@@ -217,7 +217,7 @@ export function TunnelsPage() {
               Cancel
             </Button>
             <Button
-              variant="destructive"
+              variant="info"
               onClick={async () => {
                 const t = confirming
                 setConfirming(null)
@@ -284,7 +284,7 @@ function TunnelCard({
   }, 2000)
 
   return (
-    <Card className={cn('transition-colors', t.state === 'connected' && 'border-destructive/50', selected && 'ring-1 ring-primary')}>
+    <Card className={cn('transition-colors', t.state === 'connected' && 'border-info/50', selected && 'ring-1 ring-primary')}>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -315,7 +315,7 @@ function TunnelCard({
       <CardContent className="flex flex-col gap-3">
         {t.public_url ? (
           <div className="flex min-w-0 items-center gap-2 rounded-lg bg-muted/60 px-3 py-2">
-            <Globe2 className="size-4 shrink-0 text-destructive" />
+            <Globe2 className="size-4 shrink-0 text-blue-600 dark:text-info" />
             <span className="min-w-0 flex-1 truncate font-mono text-sm" title={t.public_url}>
               {t.public_url}
             </span>
@@ -363,7 +363,7 @@ function TunnelCard({
 
         <div className="flex flex-wrap items-center gap-2">
           {running ? (
-            <Button size="sm" variant="destructive" onClick={onStop} disabled={busy === `stop:${id}`}>
+            <Button size="sm" variant="info" onClick={onStop} disabled={busy === `stop:${id}`}>
               {busy === `stop:${id}` ? <Spinner /> : <StopIcon />} Stop
             </Button>
           ) : (

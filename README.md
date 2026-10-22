@@ -94,6 +94,8 @@ Grab the latest installer from the [Releases page](https://github.com/kz370/Open
 - **Per-site PHP version and per-site web server:** each site can run on its own PHP version and its own server (Nginx, Apache, or Caddy); unpinned sites follow the global default.
 - **Nginx 1.28 / Apache 2.4 / Caddy 2.11** with generated configs; Managed / Advanced / Manual modes; validate-before-reload with rollback; **drift detection**; config history with diff + restore.
 - Built-in **wildcard DNS** for `.test` / `.localhost` / `.internal`; optional elevated helper for hosts/NRPT (no repeated UAC prompts).
+- **Custom Domains & Dynamic DNS (DDNS):** Support for 12+ providers (Cloudflare, DuckDNS, No-IP, Dynu, ClouDNS, HE.net, Route53, Namecheap, GoDaddy, Porkbun, DigitalOcean, and custom webhooks) with auto-sync and IP change detection.
+  - *Troubleshooting HTTP Error 522 / Router admin page:* Dynamic DNS only updates your domain's IP address. If Cloudflare returns Error 522 or visitors see your router login page, your router's port forwarding is missing, your ISP blocks inbound web traffic (ports 80/443), or you are behind CGNAT. To fix: forward ports 80 & 443 in your router settings to your PC's LAN IP, and set Cloudflare SSL mode to Flexible or Full. Alternatively, use OLS's built-in **Online Broadcast Tunnel** to bypass port forwarding and CGNAT completely with zero router configuration.
 
 ### 🧩 Projects & Reproducible Environments
 

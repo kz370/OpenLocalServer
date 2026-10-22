@@ -240,7 +240,7 @@ export function CommandPalette({ onNavigate, onDoctor }: { onNavigate: (p: Page)
   if (!mounted) return null
   let lastGroup = ''
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-[12vh]">
+    <div className="fixed top-9 inset-x-0 bottom-0 z-[60] flex items-start justify-center p-4 pt-[12vh]">
       <div data-state={state} className="modal-backdrop absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
       <div data-state={state} role="dialog" aria-modal="true" aria-label="Command palette" className="modal-panel relative flex max-h-[70vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
         <div className="flex items-center gap-2 border-b border-border px-4">

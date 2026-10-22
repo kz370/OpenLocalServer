@@ -30,6 +30,7 @@ import { SaveButton } from '@/components/SaveButton'
 import { TechIcon } from '@/components/TechIcon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { DialogDepthContext } from '@/components/ui/dialog'
 import { type CoreCommand, type Diagnostic, type Domain, type ProcessEvent, type ProjectDetail, runCommand, runCommandWithin } from '@/core'
 import { useAnimatedClose } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
@@ -227,20 +228,21 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
   const settingsDomain = target.hostname ? domain : { ...newDomain(), project_id: projectId }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div data-state={state} className="modal-backdrop absolute inset-0 bg-black/50" onClick={onClose} />
-      <div data-state={state} role="dialog" aria-modal="true" aria-label={`Settings for ${title}`} className="modal-panel relative flex h-[88vh] w-full max-w-6xl flex-col rounded-xl border border-border bg-card text-card-foreground shadow-2xl">
-        <div className="flex items-center justify-between gap-4 border-b border-border px-5 py-3">
-          <div className="flex min-w-0 items-center gap-2">
-            <Globe className="size-4 shrink-0 text-muted-foreground" />
-            <h2 className="truncate text-base font-semibold">{title}</h2>
-            {project && target.hostname && <span className="truncate text-sm text-muted-foreground">· {project.name}</span>}
-            {project && <span className="hidden truncate text-xs text-muted-foreground md:inline">{project.path}</span>}
+    <DialogDepthContext.Provider value={1}>
+      <div className="fixed top-9 inset-x-0 bottom-0 z-[60] flex items-center justify-center p-4">
+        <div data-state={state} className="modal-backdrop absolute inset-0 bg-black/50" onClick={onClose} />
+        <div data-state={state} role="dialog" aria-modal="true" aria-label={`Settings for ${title}`} className="modal-panel relative flex h-[88vh] w-full max-w-6xl flex-col rounded-xl border border-border bg-card text-card-foreground shadow-2xl">
+          <div data-tauri-drag-region className="flex items-center justify-between gap-4 border-b border-border px-5 py-3 select-none">
+            <div data-tauri-drag-region className="flex min-w-0 flex-1 items-center gap-2">
+              <Globe className="size-4 shrink-0 text-muted-foreground" />
+              <h2 data-tauri-drag-region className="truncate text-base font-semibold">{title}</h2>
+              {project && target.hostname && <span data-tauri-drag-region className="truncate text-sm text-muted-foreground">· {project.name}</span>}
+              {project && <span data-tauri-drag-region className="hidden truncate text-xs text-muted-foreground md:inline">{project.path}</span>}
+            </div>
+            <button onClick={onClose} className="rounded-md p-1 text-muted-foreground hover:bg-accent shrink-0 cursor-pointer" aria-label="Close">
+              <X className="size-4" />
+            </button>
           </div>
-          <button onClick={onClose} className="rounded-md p-1 text-muted-foreground hover:bg-accent" aria-label="Close">
-            <X className="size-4" />
-          </button>
-        </div>
 
         <div className="flex min-h-0 flex-1">
           <nav className="flex w-52 shrink-0 flex-col overflow-y-auto border-r border-border px-0 py-2" aria-label="Site settings sections">
@@ -372,6 +374,7 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
         </div>
       </div>
     </div>
+    </DialogDepthContext.Provider>
   )
 }
 
