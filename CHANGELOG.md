@@ -5,9 +5,22 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [2.3.0] — 2026-10-22
+## [2.3.0] — 2026-10-23
 
-Feature release. Full notes: [elease-notes/v2.3.0.md](./release-notes/v2.3.0.md).
+Feature release. Full notes: [`release-notes/v2.3.0.md`](./release-notes/v2.3.0.md).
+
+### Added
+- **Site Broadcast Controls**: Live broadcast status, one-click public URL copying, and start/stop controls integrated into the Site Domains panel.
+- **Dynamic DNS (DDNS)**: Multi-provider DNS synchronization for custom domains (with Cloudflare verified and tested), automated conflict resolution, and router troubleshooting.
+- **Automatic Welcome Page**: Automatically generates document root and index file (`index.html` or `index.php`) when adding new sites if none exists.
+
+### Changed & Improved
+- **Multi-Interface Web Binding**: Web servers (Nginx, Apache, Caddy) bind to `0.0.0.0` to support LAN requests and router port forwarding.
+- **Tunnel Constraints**: Enforced single-provider tunnel instance rules per site and automated duplicate pruning.
+
+### Fixed
+- **Host Header Routing**: Forwarded public host headers now properly route to virtual hosts across all web servers without falling through to 404.
+- **Domain Alias Confirmation**: Added safety confirmation dialog before deleting domain aliases.
 
 ## [2.2.0] — 2026-10-19
 
