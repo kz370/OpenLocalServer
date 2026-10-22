@@ -2,13 +2,10 @@ import {
   BookOpen,
   Bot,
   Check,
-  Compass,
   Copy,
   Download,
-  ExternalLink,
   Eye,
   EyeOff,
-  HelpCircle,
   Info,
   Layers,
   MessageSquare,
@@ -19,7 +16,6 @@ import {
   Send,
   Sparkles,
   Square,
-  Wrench,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
@@ -36,6 +32,7 @@ import { type AiAnswer, type AiJobView, type AiPrompt, type CoreCommand, runComm
 import { useAiState } from '@/lib/ai'
 import { confirmAction } from '@/lib/confirm'
 import { useAction } from '@/lib/hooks'
+import releaseNotes from '../../../release-notes/v2.3.0.md?raw'
 
 interface ChatMessage {
   id: string
@@ -791,89 +788,17 @@ export function AskAiPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         </div>
       )}
 
-      {/* TAB 3: VERSION 2.3.0 RAG HIGHLIGHTS */}
+      {/* TAB 3: VERSION 2.3.0 RELEASE NOTES */}
       {activeTab === 'version' && (
-        <div className="flex flex-col gap-4">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Sparkles className="size-4 text-teal-600 dark:text-teal-400" />
-                  What&rsquo;s New in OpenLocalServer v2.3.0 (RAG Specification)
-                </CardTitle>
-                <Badge variant="success">Current Release</Badge>
-              </div>
-              <CardDescription>
-                Detailed overview of the features, network capabilities, and enhancements introduced in version 2.3.0.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-6 text-sm">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="rounded-lg border border-border p-4 bg-muted/20 flex flex-col gap-2">
-                  <h3 className="font-semibold text-foreground flex items-center gap-2">
-                    <Compass className="size-4 text-teal-600" />
-                    Direct Site Broadcast Controls
-                  </h3>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    Live broadcast status, instant public tunnel controls, and one-click public URL copying are directly integrated into the Site Domains panel.
-                  </p>
-                  <Button variant="ghost" size="sm" className="self-start mt-auto text-xs px-2 h-7" onClick={() => onNavigate('sites')}>
-                    Open Sites Page <ExternalLink className="size-3 ml-1" />
-                  </Button>
-                </div>
-
-                <div className="rounded-lg border border-border p-4 bg-muted/20 flex flex-col gap-2">
-                  <h3 className="font-semibold text-foreground flex items-center gap-2">
-                    <Wrench className="size-4 text-teal-600" />
-                    Dynamic DNS (Cloudflare Sync)
-                  </h3>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    Multi-provider DNS synchronization for custom domains with verified Cloudflare API integration, conflict resolution, and automated router troubleshooting.
-                  </p>
-                  <Button variant="ghost" size="sm" className="self-start mt-auto text-xs px-2 h-7" onClick={() => onNavigate('sites')}>
-                    Manage Domains <ExternalLink className="size-3 ml-1" />
-                  </Button>
-                </div>
-
-                <div className="rounded-lg border border-border p-4 bg-muted/20 flex flex-col gap-2">
-                  <h3 className="font-semibold text-foreground flex items-center gap-2">
-                    <Layers className="size-4 text-teal-600" />
-                    Multi-Interface Web Binding (0.0.0.0)
-                  </h3>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    Nginx, Apache, and Caddy now bind to `0.0.0.0`, allowing phones, tablets, and LAN devices on your local Wi-Fi to access your local development sites directly via LAN IP.
-                  </p>
-                  <Button variant="ghost" size="sm" className="self-start mt-auto text-xs px-2 h-7" onClick={() => onNavigate('webserver')}>
-                    Web Server Config <ExternalLink className="size-3 ml-1" />
-                  </Button>
-                </div>
-
-                <div className="rounded-lg border border-border p-4 bg-muted/20 flex flex-col gap-2">
-                  <h3 className="font-semibold text-foreground flex items-center gap-2">
-                    <HelpCircle className="size-4 text-teal-600" />
-                    Auto Folder & Welcome Page Creation
-                  </h3>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    When registering new Static or Plain PHP sites, OLS automatically creates the target folder if missing and generates an initial responsive `index.html` or `index.php` welcome page.
-                  </p>
-                  <Button variant="ghost" size="sm" className="self-start mt-auto text-xs px-2 h-7" onClick={() => onNavigate('sites')}>
-                    Add New Site <ExternalLink className="size-3 ml-1" />
-                  </Button>
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-border p-4 flex flex-col gap-2 bg-card">
-                <h4 className="font-semibold text-foreground">Need help functioning the app?</h4>
-                <p className="text-xs text-muted-foreground">
-                  Switch to the <strong>Ask Assistant</strong> tab above to ask any specific question in natural language. The AI is grounded in the full v2.3.0 knowledge base and provides clean, step-by-step guidance without unnecessary fluff.
-                </p>
-                <Button size="sm" className="self-start mt-1" onClick={() => setActiveTab('chat')}>
-                  <MessageSquare className="size-3.5" />
-                  Ask AI About OpenLocalServer
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+        <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-5 shadow-xs sm:p-7">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 pb-4">
+            <div>
+              <h2 className="text-lg font-semibold tracking-tight">OpenLocalServer 2.3.0</h2>
+              <p className="mt-1 text-xs text-muted-foreground">Release notes · October 23, 2026</p>
+            </div>
+            <Badge variant="success">Current release</Badge>
+          </div>
+          <Markdown content={releaseNotes} className="text-sm" />
         </div>
       )}
     </div>
