@@ -111,6 +111,7 @@ Source: "{#SourceExe}"; DestDir: "{app}"; Flags: ignoreversion
 ; the app itself is OLS.exe and Windows would not tell the two apart otherwise.
 Source: "{#LibDir}\olsc.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#LibDir}\ols-helper.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#LibDir}\ols-mcp.exe"; DestDir: "{app}"; Flags: ignoreversion
 ; The CPU limiter for Settings > Resources (§129). Shipped next to the app because
 ; resources::find_cpu_limiter looks in the current exe's directory first, so a
 ; default install can cap CPU with nothing configured.

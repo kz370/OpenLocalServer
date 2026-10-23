@@ -79,7 +79,7 @@ jobs:
       - name: Lint and format check
         run: |
           cargo fmt --all -- --check
-          cargo clippy -p ols-core -p ols-helper --all-targets
+          cargo clippy -p ols-core -p ols-helper -p ols-mcp --all-targets
       - name: Build
         env:
           # The script caps itself at half the threads otherwise, which wastes a runner.
@@ -181,7 +181,7 @@ jobs:
           # Same check build-installer.bat's own :verify makes, re-made here because the
           # artifact crossed a process boundary: the staging it verified is not the staging
           # this job got. An artifact that lost its setup file is a red build, not a release.
-          foreach ($required in @("OLS.exe", "ols-helper.exe", "cpulimit.exe")) {
+          foreach ($required in @("OLS.exe", "ols-helper.exe", "ols-mcp.exe", "cpulimit.exe")) {
             if (-not (Test-Path (Join-Path $dist $required))) { throw "Missing $required in $dist" }
           }
           if (-not (Test-Path $setup)) { throw "Missing $setup" }
@@ -200,6 +200,7 @@ jobs:
           New-Item -ItemType Directory $stage | Out-Null
           Copy-Item (Join-Path $dist 'OLS.exe') $stage
           Copy-Item (Join-Path $dist 'ols-helper.exe') $stage
+          Copy-Item (Join-Path $dist 'ols-mcp.exe') $stage
           Copy-Item (Join-Path $dist '*.dll') $stage -ErrorAction SilentlyContinue
           Remove-Item $zip -Force -ErrorAction SilentlyContinue
           Compress-Archive -Path "$stage\*" -DestinationPath $zip

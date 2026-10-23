@@ -14,6 +14,7 @@ set "APPNAME=OLS"
 set "LEGACY_EXE=Open Local Server"
 set "CARGO_BIN=openlocalserver"
 set "HELPER_BIN=ols-helper"
+set "MCP_BIN=ols-mcp"
 rem The command line. It ships with the app: the Explorer right-click menu is
 rem written to run it, and shell_menu.rs find_cli only looks beside the app or on
 rem PATH -- so an install without it has no working menu at all.
@@ -28,7 +29,9 @@ set "UI=%ROOT%ui"
 set "TARGET=%ROOT%target\release"
 set "EXE=%TARGET%\%CARGO_BIN%.exe"
 set "HELPER_EXE=%TARGET%\%HELPER_BIN%.exe"
+set "MCP_EXE=%TARGET%\%MCP_BIN%.exe"
 set "CLI_EXE=%TARGET%\%CLI_BIN%.exe"
+set "STAGED_MCP=%DIST%\%MCP_BIN%.exe"
 set "DISTROOT=%ROOT%release"
 rem The CPU limiter for Settings > Resources (§129). Vendored, not built: see
 rem vendor\cpulimit\README.md for provenance. It is hash-checked on every build
@@ -161,7 +164,7 @@ rem Update trust baked into every build: the PUBLIC key is safe to ship.
 rem A pre-set OLS_UPDATE_PUBKEY in the environment always wins.
 if not defined OLS_UPDATE_PUBKEY set "OLS_UPDATE_PUBKEY=RWQTa5rn3AFu8SRjdSvz7VsUi/pRNNdk2FPuCbmgSZMV+veJMB9XCiys"
 pushd "%ROOT%"
-cargo build -p %CARGO_BIN% -p %HELPER_BIN% -p %CLI_PKG% --release --jobs %JOBS%
+cargo build -p %CARGO_BIN% -p %HELPER_BIN% -p %MCP_BIN% -p %CLI_PKG% --release --jobs %JOBS%
 set "BUILD_ERR=%ERRORLEVEL%"
 popd
 if not "%BUILD_ERR%"=="0" (
@@ -179,6 +182,11 @@ if not exist "%HELPER_EXE%" (
   echo     Fix: run cargo build -p %HELPER_BIN% --release manually to see why.
   goto :fail
 )
+if not exist "%MCP_EXE%" (
+  echo [x] Problem: %MCP_BIN%.exe missing from target\release after build.
+  echo     Fix: run cargo build -p %MCP_BIN% --release manually to see why.
+  goto :fail
+)
 if not exist "%CLI_EXE%" (
   echo [x] Problem: %CLI_BIN%.exe missing from target\release after build. The
   echo           installer ships it and the Explorer right-click menu runs it.
@@ -191,6 +199,7 @@ rem Copy with retries: antivirus or a just-exited app can hold the file briefly.
 call :copy_retry "%EXE%" "%STAGED%" || goto :fail
 call :copy_retry "%HELPER_EXE%" "%STAGED_HELPER%" || goto :fail
 call :copy_retry "%CLI_EXE%" "%STAGED_CLI%" || goto :fail
+call :copy_retry "%MCP_EXE%" "%STAGED_MCP%" || goto :fail
 call :stage_cpulimit || goto :fail
 for %%d in ("%TARGET%\*.dll") do if exist "%%~d" (
   call :copy_retry "%%~d" "%DIST%\%%~nxd" || goto :fail
@@ -300,6 +309,7 @@ if not exist "%DIST%" mkdir "%DIST%"
 call :copy_retry "%EXE%" "%STAGED%" || goto :fail
 call :copy_retry "%HELPER_EXE%" "%STAGED_HELPER%" || goto :fail
 call :copy_retry "%CLI_EXE%" "%STAGED_CLI%" || goto :fail
+call :copy_retry "%MCP_EXE%" "%STAGED_MCP%" || goto :fail
 call :stage_cpulimit || goto :fail
 for %%d in ("%TARGET%\*.dll") do if exist "%%~d" (
   call :copy_retry "%%~d" "%DIST%\%%~nxd" || goto :fail
