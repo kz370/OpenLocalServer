@@ -1,5 +1,5 @@
 use ols_core::{Core, CoreCommand, CoreResponse};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::io::{self, BufRead, Write};
 use std::sync::Arc;
@@ -61,12 +61,12 @@ fn mcp_tools() -> Vec<McpTool> {
     vec![
         McpTool {
             name: "ols_list_domains".into(),
-            description: Some("List all registered sites/domains.").into(),
+            description: Some("List all registered sites/domains.".to_string()),
             input_schema: json!({ "type": "object", "properties": {} }),
         },
         McpTool {
             name: "ols_get_domain".into(),
-            description: Some("Get complete configuration of one domain by hostname.").into(),
+            description: Some("Get complete configuration of one domain by hostname.".to_string()),
             input_schema: json!({
                 "type": "object",
                 "properties": { "hostname": { "type": "string" } },
@@ -75,7 +75,7 @@ fn mcp_tools() -> Vec<McpTool> {
         },
         McpTool {
             name: "ols_add_domain".into(),
-            description: Some("Create a new site/domain.").into(),
+            description: Some("Create a new site/domain.".to_string()),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -90,7 +90,7 @@ fn mcp_tools() -> Vec<McpTool> {
         },
         McpTool {
             name: "ols_update_domain".into(),
-            description: Some("Modify an existing site's config.").into(),
+            description: Some("Modify an existing site's config.".to_string()),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -105,7 +105,7 @@ fn mcp_tools() -> Vec<McpTool> {
         },
         McpTool {
             name: "ols_remove_domain".into(),
-            description: Some("Delete a site/domain (destructive).").into(),
+            description: Some("Delete a site/domain (destructive).".to_string()),
             input_schema: json!({
                 "type": "object",
                 "properties": { "hostname": { "type": "string" } },
@@ -114,7 +114,7 @@ fn mcp_tools() -> Vec<McpTool> {
         },
         McpTool {
             name: "ols_set_domain_enabled".into(),
-            description: Some("Enable or disable a site.").into(),
+            description: Some("Enable or disable a site.".to_string()),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -126,12 +126,12 @@ fn mcp_tools() -> Vec<McpTool> {
         },
         McpTool {
             name: "ols_list_services".into(),
-            description: Some("List all services with running state.").into(),
+            description: Some("List all services with running state.".to_string()),
             input_schema: json!({ "type": "object", "properties": {} }),
         },
         McpTool {
             name: "ols_start_service".into(),
-            description: Some("Start a service by id.").into(),
+            description: Some("Start a service by id.".to_string()),
             input_schema: json!({
                 "type": "object",
                 "properties": { "id": { "type": "string" } },
@@ -140,7 +140,7 @@ fn mcp_tools() -> Vec<McpTool> {
         },
         McpTool {
             name: "ols_stop_service".into(),
-            description: Some("Stop a service by id.").into(),
+            description: Some("Stop a service by id.".to_string()),
             input_schema: json!({
                 "type": "object",
                 "properties": { "id": { "type": "string" } },
@@ -149,7 +149,7 @@ fn mcp_tools() -> Vec<McpTool> {
         },
         McpTool {
             name: "ols_restart_service".into(),
-            description: Some("Restart a service by id.").into(),
+            description: Some("Restart a service by id.".to_string()),
             input_schema: json!({
                 "type": "object",
                 "properties": { "id": { "type": "string" } },
@@ -158,12 +158,12 @@ fn mcp_tools() -> Vec<McpTool> {
         },
         McpTool {
             name: "ols_list_tunnels".into(),
-            description: Some("List all public tunnels.").into(),
+            description: Some("List all public tunnels.".to_string()),
             input_schema: json!({ "type": "object", "properties": {} }),
         },
         McpTool {
             name: "ols_start_tunnel".into(),
-            description: Some("Start a tunnel by id.").into(),
+            description: Some("Start a tunnel by id.".to_string()),
             input_schema: json!({
                 "type": "object",
                 "properties": { "id": { "type": "string" } },
@@ -172,7 +172,7 @@ fn mcp_tools() -> Vec<McpTool> {
         },
         McpTool {
             name: "ols_stop_tunnel".into(),
-            description: Some("Stop a tunnel by id.").into(),
+            description: Some("Stop a tunnel by id.".to_string()),
             input_schema: json!({
                 "type": "object",
                 "properties": { "id": { "type": "string" } },
@@ -181,7 +181,7 @@ fn mcp_tools() -> Vec<McpTool> {
         },
         McpTool {
             name: "ols_list_databases".into(),
-            description: Some("List databases across engines.").into(),
+            description: Some("List databases across engines.".to_string()),
             input_schema: json!({
                 "type": "object",
                 "properties": { "engine": { "type": "string" } }
@@ -189,7 +189,7 @@ fn mcp_tools() -> Vec<McpTool> {
         },
         McpTool {
             name: "ols_create_database".into(),
-            description: Some("Create a new database.").into(),
+            description: Some("Create a new database.".to_string()),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -203,22 +203,24 @@ fn mcp_tools() -> Vec<McpTool> {
         },
         McpTool {
             name: "ols_apply_web".into(),
-            description: Some("Regenerate and reload the web server config.").into(),
+            description: Some("Regenerate and reload the web server config.".to_string()),
             input_schema: json!({ "type": "object", "properties": {} }),
         },
         McpTool {
             name: "ols_validate_web".into(),
-            description: Some("Validate the web server config without applying.").into(),
+            description: Some("Validate the web server config without applying.".to_string()),
             input_schema: json!({ "type": "object", "properties": {} }),
         },
         McpTool {
             name: "ols_list_tasks".into(),
-            description: Some("List background tasks and their statuses.").into(),
+            description: Some("List background tasks and their statuses.".to_string()),
             input_schema: json!({ "type": "object", "properties": {} }),
         },
         McpTool {
             name: "ols_run_command".into(),
-            description: Some("Run any OLS core command by name with JSON args (advanced).").into(),
+            description: Some(
+                "Run any OLS core command by name with JSON args (advanced).".to_string(),
+            ),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -301,7 +303,10 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
         "ols_stop_service" => C::StopService { id: req_str!("id") },
         "ols_restart_service" => C::RestartService { id: req_str!("id") },
         "ols_list_tunnels" => C::ListTunnels,
-        "ols_start_tunnel" => C::StartTunnel { id: req_str!("id"), confirm_exposure: false },
+        "ols_start_tunnel" => C::StartTunnel {
+            id: req_str!("id"),
+            confirm_exposure: false,
+        },
         "ols_stop_tunnel" => C::StopTunnel { id: req_str!("id") },
         "ols_list_databases" => C::ListDatabases {
             engine: req_str!("engine"),
@@ -328,10 +333,13 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
 /// Execute a `CoreCommand` against the OLS core and return the `CoreResponse`.
 async fn execute_command(core: Arc<Core>, cmd: CoreCommand) -> Result<CoreResponse, String> {
     let core_clone = core.clone();
-    spawn_blocking(move || core_clone.inner().dispatch(cmd))
-        .await
-        .map_err(|e| format!("command task failed: {e}"))?
-        .map_err(|e| format!("command error: {e}"))
+    spawn_blocking(move || {
+        core_clone
+            .dispatch(cmd)
+            .map_err(|e| format!("{}: {}", e.problem, e.cause))
+    })
+    .await
+    .map_err(|e| format!("command task failed: {e}"))?
 }
 
 /// Format a `CoreResponse` into a human-readable string for the MCP client.
@@ -407,7 +415,7 @@ fn format_response(response: &CoreResponse) -> String {
                 d.server.as_deref().unwrap_or("-"),
                 d.enabled,
                 d.https,
-                d.url
+                d.url()
             )
         }
         CoreResponse::Names { names } => {
@@ -460,23 +468,26 @@ async fn handle_request(core: Arc<Core>, req: JsonRpcRequest) -> JsonRpcResponse
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
             let args = req.params.get("arguments").cloned().unwrap_or(json!({}));
-            match build_command(name, &args)
-                .and_then(|cmd| execute_command(core.clone(), cmd).await)
-            {
-                Ok(response) => {
-                    let text = format_response(&response);
-                    JsonRpcResponse::ok(
-                        req.id,
-                        json!({ "content": [{ "type": "text", "text": text }] }),
-                    )
-                }
+            match build_command(name, &args) {
+                Ok(cmd) => match execute_command(core.clone(), cmd).await {
+                    Ok(response) => {
+                        let text = format_response(&response);
+                        JsonRpcResponse::ok(
+                            req.id,
+                            json!({ "content": [{ "type": "text", "text": text }] }),
+                        )
+                    }
+                    Err(e) => JsonRpcResponse::err(req.id, -32603, e),
+                },
                 Err(e) => JsonRpcResponse::err(req.id, -32603, e),
             }
         }
         "resources/list" => JsonRpcResponse::ok(req.id, json!({ "resources": [] })),
-        "resources/read" => JsonRpcResponse::err(req.id, -32601, "resources not supported".into()),
+        "resources/read" => {
+            JsonRpcResponse::err(req.id, -32601, "resources not supported".to_string())
+        }
         "prompts/list" => JsonRpcResponse::ok(req.id, json!({ "prompts": [] })),
-        "prompts/get" => JsonRpcResponse::err(req.id, -32601, "prompts not supported".into()),
+        "prompts/get" => JsonRpcResponse::err(req.id, -32601, "prompts not supported".to_string()),
         "ping" => JsonRpcResponse::ok(req.id, json!(null)),
         other => JsonRpcResponse::err(req.id, -32601, format!("method not found: {other}")),
     }
@@ -508,7 +519,7 @@ pub async fn run_stdio(core: Core) -> io::Result<()> {
     info!("ols-mcp server starting");
 
     loop {
-        let line = match read_line(&mut stdin)? {
+        let line = match read_line(&mut stdin).await? {
             Some(line) => line,
             None => break,
         };

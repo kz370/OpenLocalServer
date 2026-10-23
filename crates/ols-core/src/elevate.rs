@@ -5,23 +5,39 @@
 //!    that prompt is the last one. If the service can't be installed, the single command
 //!    runs elevated instead.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 const ACCESS_DENIED: i32 = 5;
 
-/// Where the helper binary lives: `OLS_HELPER_PATH`, else beside the running executable
-/// (how the installer lays it out), else beside the cargo `target/<profile>` dir tests run from.
+/// Where the helper binary lives: `OLS_HELPER_PATH`, then a freshly built copy in the
+/// workspace `target/release` or `target/debug` (so a dev build that rebuilt the helper
+/// is found before any stale copy beside an older app), then beside the running executable
+/// (how the installer lays it out), then beside the cargo `target/<profile>` dir tests run from.
 pub fn helper_path() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("OLS_HELPER_PATH") {
         return Some(p.into());
     }
-    let exe = std::env::current_exe().ok()?;
     let name = if cfg!(windows) {
         "ols-helper.exe"
     } else {
         "ols-helper"
     };
+    // Workspace target directories first: a helper rebuilt alongside the app (e.g. after
+    // `cargo build -p ols-helper`) should win over a stale copy shipped with an older
+    // installed release beside the exe. `CARGO_MANIFEST_DIR` is compile-time, so on a
+    // user's machine these paths don't exist and the lookup falls through to beside-exe.
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    if let Some(workspace_root) = manifest_dir.parent().and_then(|p| p.parent()) {
+        for profile in ["release", "debug"] {
+            let candidate = workspace_root.join("target").join(profile).join(name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    // Beside the running executable: installed builds ship ols-helper.exe next to OLS.exe.
+    let exe = std::env::current_exe().ok()?;
     let mut dir = exe.parent()?.to_path_buf();
     // `cargo test` binaries live in target/<profile>/deps.
     for _ in 0..2 {
@@ -89,9 +105,38 @@ pub fn run_helper(args: &[String]) -> Result<(), String> {
 pub const SERVICE_PIPE: &str = r"\\.\pipe\OpenLocalServerHelper";
 
 /// Installs the helper service (one UAC prompt). Afterwards nothing prompts again.
+///
+/// Before copying anything, the candidate helper's own `--version` is checked against
+/// the app's `CARGO_PKG_VERSION`. A stale copy beside an older install (for example a
+/// `target\debug\ols-helper.exe` left over from 2.2.0 while the app is 2.3.0) would
+/// otherwise be re-installed as the service and nothing would change. A mismatch is
+/// reported with an actionable message instead of silently installing the wrong version.
 pub fn install_service() -> Result<(), String> {
     let helper = helper_path().ok_or_else(helper_missing)?;
+    let expected = env!("CARGO_PKG_VERSION");
+    if let Some(actual) = helper_version(&helper) {
+        if actual != expected {
+            return Err(format!(
+                "the helper at {} is version {actual}, but this app is {expected}; \
+                 rebuild ols-helper first (`cargo build -p ols-helper`)",
+                helper.display()
+            ));
+        }
+    }
     elevated(&helper, &["install-service".to_string()])
+}
+
+/// Reads an `ols-helper` binary's version by running it with `--version` (un-elevated,
+/// so no UAC prompt). `None` when the binary can't be executed or doesn't answer.
+fn helper_version(helper: &Path) -> Option<String> {
+    let out = crate::exec::run_capture(
+        helper,
+        &["version".to_string()],
+        None,
+        &[],
+        Duration::from_secs(10),
+    );
+    (out.exit_code == Some(0) && !out.combined().is_empty()).then_some(out.combined())
 }
 
 /// Removes the helper service (one UAC prompt); changes then prompt each time again.
@@ -112,12 +157,22 @@ pub fn service_available() -> bool {
 /// leaves the service running whatever version was current when it was first installed, and
 /// the app goes on talking to an elevated half it no longer matches. The service answers
 /// `version` over the pipe for exactly this question.
+///
+/// Retries a few times because the service needs a moment after `install-service` starts it
+/// before the named pipe answers.
 pub fn service_version() -> Option<String> {
-    let reply = service_reply(&["version".to_string()])?;
-    if reply.code != 0 {
-        return None;
+    for _ in 0..25 {
+        if let Some(reply) = service_reply(&["version".to_string()]) {
+            if reply.code != 0 {
+                return None;
+            }
+            if !reply.message.is_empty() {
+                return Some(reply.message);
+            }
+        }
+        std::thread::sleep(Duration::from_millis(100));
     }
-    (!reply.message.is_empty()).then_some(reply.message)
+    None
 }
 
 /// Whether the installed service is out of date with the app it is serving.

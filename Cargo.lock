@@ -3358,6 +3358,7 @@ dependencies = [
 name = "ols-mcp"
 version = "2.3.0"
 dependencies = [
+ "anyhow",
  "ols-core",
  "serde",
  "serde_json",

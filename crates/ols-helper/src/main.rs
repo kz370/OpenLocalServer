@@ -152,6 +152,10 @@ fn main() -> ExitCode {
             Some("service") => Some(service::run()),
             Some("install-service") => Some(service::install()),
             Some("uninstall-service") => Some(service::uninstall()),
+            Some("version") => {
+                println!("{}", env!("CARGO_PKG_VERSION"));
+                Some(Ok(()))
+            }
             _ => None,
         };
         if let Some(result) = resident {
