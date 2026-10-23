@@ -1,11 +1,11 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Archive, ExternalLink, EyeOff, FolderPlus, FolderSearch, FolderTree, Gauge, Globe, Info, Power, Settings2, ShieldCheck, Sparkles, Stethoscope, Trash2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { Archive, Book, Copy, ExternalLink, EyeOff, FolderPlus, FolderSearch, FolderTree, Gauge, Globe, Info, Power, Settings2, ShieldCheck, Stethoscope, Trash2 } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
 
-import { AiCard } from '@/components/ai/AiSettings'
 import { ErrorCard } from '@/components/ErrorCard'
 import { ExcludedSitesCard } from '@/components/ExcludedSitesCard'
 import { IgnoredFoldersCard } from '@/components/IgnoredFoldersCard'
+import { Markdown } from '@/components/ui/Markdown'
 import { ApiCard, SystemCard, UpdatesCard } from '@/components/ReleaseCards'
 import { AboutCard, AutoBackupCard, ResourcesCard, SettingsBackupsCard } from '@/components/SettingsExtras'
 import { SaveButton } from '@/components/SaveButton'
@@ -13,6 +13,7 @@ import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import releaseNotes from '../../../release-notes/v2.3.0.md?raw'
 import { Select, SettingRow, SwitchRow, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { type EditorInfo, type HelperService, type ServiceStatus, type StartupSettings, runCommand } from '@/core'
@@ -21,7 +22,7 @@ import { useAction } from '@/lib/hooks'
 import { invalidateDefaultTldCache } from '@/lib/sites'
 import { cn } from '@/lib/utils'
 
-type Section = 'general' | 'sites' | 'roots' | 'deleted' | 'startup' | 'diagnostics' | 'ai' | 'resources' | 'backups' | 'about'
+type Section = 'general' | 'sites' | 'roots' | 'deleted' | 'startup' | 'diagnostics' | 'manual' | 'resources' | 'backups' | 'about'
 const SECTIONS: { id: Section; label: string; icon: typeof Globe }[] = [
   { id: 'general', label: 'General', icon: Settings2 },
   { id: 'sites', label: 'Sites & domains', icon: Globe },
@@ -29,7 +30,7 @@ const SECTIONS: { id: Section; label: string; icon: typeof Globe }[] = [
   { id: 'deleted', label: 'Hide/Exclude', icon: EyeOff },
   { id: 'startup', label: 'Startup & tray', icon: Power },
   { id: 'diagnostics', label: 'Diagnostics', icon: Stethoscope },
-  { id: 'ai', label: 'AI', icon: Sparkles },
+  { id: 'manual', label: 'User Manual', icon: Book },
   { id: 'resources', label: 'Resources', icon: Gauge },
   { id: 'backups', label: 'Backups', icon: Archive },
   { id: 'about', label: 'About', icon: Info },
@@ -64,6 +65,25 @@ export function SettingsPage() {
   const [version, setVersion] = useState('')
   const [saved, setSaved] = useState<string | null>(null)
   const [section, setSection] = useState<Section>('general')
+  const [manual, setManual] = useState<string | null>(null)
+  const [manualTab, setManualTab] = useState<'manual' | 'notes'>('manual')
+
+  const releaseNotesFiltered = useMemo(() => {
+    return releaseNotes
+      .split('\n')
+      .filter((line) => {
+        const l = line.toLowerCase()
+        return !(
+          l.includes('download setup') ||
+          l.includes('setup.exe') ||
+          l.includes('download ols') ||
+          l.includes('installer') ||
+          l.includes('msi') ||
+          l.includes('.exe')
+        )
+      })
+      .join('\n')
+  }, [])
   const action = useAction()
   const { busy, error, setError, run } = action
 
@@ -95,6 +115,13 @@ export function SettingsPage() {
       }
     })
   }, [])
+
+  useEffect(() => {
+    if (section !== 'manual') return
+    void runCommand({ type: 'get_app_guide', version: '2.3.0' }).then((r) => {
+      if (r.type === 'app_guide') setManual(r.markdown)
+    })
+  }, [section])
 
   async function saveAll() {
     if (!startup) return
@@ -404,7 +431,48 @@ export function SettingsPage() {
             </Card>
           )}
 
-          {section === 'ai' && <AiCard />}
+          {section === 'manual' && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">User Manual</CardTitle>
+                <CardDescription>
+                  Open Local Server user manual and release notes. Read how sites, databases, services,
+                  tunnels, runtimes and profiles work before you change anything.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-3">
+                <div className="flex gap-2 border-b border-border pb-1">
+                  <button
+                    className={cn(
+                      'flex flex-shrink-0 items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                      manualTab === 'manual' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
+                    )}
+                    onClick={() => setManualTab('manual')}
+                  >
+                    <Book className="size-4 shrink-0" /> User Manual
+                  </button>
+                  <button
+                    className={cn(
+                      'flex flex-shrink-0 items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                      manualTab === 'notes' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
+                    )}
+                    onClick={() => setManualTab('notes')}
+                  >
+                    <Copy className="size-4 shrink-0" /> {`Release Notes (v${version})`}
+                  </button>
+                </div>
+                <div className="flex-1 border rounded-lg p-4 text-sm leading-relaxed overflow-y-auto min-h-[300px]">
+                  {manualTab === 'notes' ? (
+                    <Markdown content={releaseNotesFiltered} className="prose prose-sm max-w-none" />
+                  ) : manual ? (
+                    <Markdown content={manual} className="prose prose-sm max-w-none" />
+                  ) : (
+                    <p className="text-muted-foreground">Loading manual…</p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
           {section === 'resources' && <ResourcesCard />}
           {section === 'backups' && (
             <>

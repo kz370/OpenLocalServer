@@ -239,7 +239,7 @@ export function UpdatesCard() {
     return mb >= 1 ? ` · ${mb.toFixed(1)} MB` : ` · ${(bytes / 1024).toFixed(0)} KB`
   }
 
-  const hasUpdate = info?.available ?? false
+  const hasUpdate = info?.status === 'update_available'
   const isDownloaded = !!info?.downloaded
 
   // Friendly error message instead of raw crypto / internal network errors
@@ -258,9 +258,11 @@ export function UpdatesCard() {
           <Download className="size-4" /> Updates
           {isDownloaded ? (
             <Badge variant="success">Ready to install</Badge>
-          ) : hasUpdate ? (
+          ) : info?.status === 'development_version' ? (
+            <Badge variant="destructive">Development version</Badge>
+          ) : info?.status === 'update_available' ? (
             <Badge variant="warning">Update available</Badge>
-          ) : info && !info.available ? (
+          ) : info?.status === 'up_to_date' ? (
             <Badge variant="success">Up to date</Badge>
           ) : null}
         </CardTitle>
@@ -304,7 +306,7 @@ export function UpdatesCard() {
         )}
 
         {/* Up-to-date banner (only when checked and no update is available) */}
-        {info && !info.available && !hasUpdate && (
+        {info?.status === 'up_to_date' && !isDownloaded && (
           <div className="flex items-center gap-2 text-sm text-success">
             <CheckCircle className="size-4" />
             You are on the latest version (v{info.latest}).

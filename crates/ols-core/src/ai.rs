@@ -2209,7 +2209,10 @@ mod tests {
         let (actions, rejected) = i.ai_check_plan(plan);
         let kinds: Vec<&str> = actions.iter().map(|a| a.label.as_str()).collect();
         assert_eq!(kinds, ["Start MariaDB", "Wipe", "Set host"], "{rejected:?}");
-        assert!(!actions[0].destructive && actions[1].destructive && actions[2].destructive, "restore_database and set_env_value need their own confirmation");
+        assert!(
+            !actions[0].destructive && actions[1].destructive && actions[2].destructive,
+            "restore_database and set_env_value need their own confirmation"
+        );
         assert_eq!(rejected.len(), 3, "{rejected:?}");
         assert!(
             rejected.iter().any(|r| r.contains("run_command"))
@@ -2782,7 +2785,9 @@ mod tests {
         let p = i.ai_prompt(&logs).unwrap();
         assert!(
             p.messages[0].content.contains("ols-plan")
-                && p.messages[0].content.contains("OpenLocalServer (OLS) Assistant"),
+                && p.messages[0]
+                    .content
+                    .contains("OpenLocalServer (OLS) Assistant"),
             "assistant answers propose plans"
         );
     }

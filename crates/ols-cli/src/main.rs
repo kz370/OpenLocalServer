@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 use clap::{Parser, Subcommand};
 use ols_core::command::{CoreCommand, CoreResponse};
 use ols_core::control::{self, ClientError};
+use ols_core::updater::UpdateStatus;
 use ols_core::{AppPaths, Diagnostic};
 
 #[derive(Parser)]
@@ -1824,15 +1825,24 @@ fn update(ctx: &Ctx, cmd: UpdateCmd) -> R<()> {
             let r = ctx.call(CoreCommand::CheckUpdate)?;
             if !ctx.print_json(&r) {
                 if let CoreResponse::Update { update } = r {
-                    if update.available {
-                        println!(
-                            "Version {} is available (you have {}). Signature verified.
+                    match update.status {
+                        UpdateStatus::UpdateAvailable => {
+                            println!(
+                                "Version {} is available (you have {}). Signature verified.
 {}",
-                            update.latest, update.current, update.notes
-                        );
-                        println!("Download it with: ols update download");
-                    } else {
-                        println!("You are up to date ({}).", update.current);
+                                update.latest, update.current, update.notes
+                            );
+                            println!("Download it with: ols update download");
+                        }
+                        UpdateStatus::UpToDate => {
+                            println!("You are up to date ({}).", update.current);
+                        }
+                        UpdateStatus::DevelopmentVersion => {
+                            println!(
+                                "Development version ({}) is newer than the online release ({}).",
+                                update.current, update.latest
+                            );
+                        }
                     }
                 }
             }

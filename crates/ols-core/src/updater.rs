@@ -13,8 +13,10 @@
 //!   "platforms": { "windows-x86_64": { "url": "https://.../OpenLocalServer_0.4.0_x64-setup.exe", "sha256": "...", "size": 12345678 } } }
 //! ```
 
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
+use semver::Version;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -62,10 +64,29 @@ struct Platform {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdaterStatus {
+    pub settings: UpdaterSettings,
+    pub current: String,
+    /// A public key is available, from this build or from Settings.
+    pub key_configured: bool,
+    pub last: Option<UpdateInfo>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum UpdateStatus {
+    /// Installed version is newer than the online release (a dev / pre-release build).
+    DevelopmentVersion,
+    /// Installed version matches the online release.
+    UpToDate,
+    /// Online release is newer than the installed version.
+    UpdateAvailable,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateInfo {
     pub current: String,
     pub latest: String,
-    pub available: bool,
+    pub status: UpdateStatus,
     pub notes: String,
     pub date: String,
     pub url: String,
@@ -73,15 +94,6 @@ pub struct UpdateInfo {
     pub size: u64,
     /// Where the verified installer is, once downloaded.
     pub downloaded: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdaterStatus {
-    pub settings: UpdaterSettings,
-    pub current: String,
-    /// A public key is available, from this build or from Settings.
-    pub key_configured: bool,
-    pub last: Option<UpdateInfo>,
 }
 
 fn platform_key() -> &'static str {
@@ -100,28 +112,36 @@ fn fail(msg: impl Into<String>) -> CoreError {
     )
 }
 
-/// `1.10.2` > `1.9.9`; missing parts count as 0 and a suffix (`-beta`) is ignored.
-pub fn newer(latest: &str, current: &str) -> bool {
-    let parts = |v: &str| -> Vec<u64> {
-        v.trim_start_matches('v')
+/// Compares installed vs online version using SemVer rules.
+/// Missing parts pad to 0 (`1.0` == `1.0.0`); a leading `v` is stripped;
+/// pre-release / build suffixes are ignored so comparison lands on the release tuple.
+/// Returns Greater when installed > online (development build), Equal when they match,
+/// Less when online is newer (an update is available).
+pub fn compare_versions(installed: &str, online: &str) -> Ordering {
+    let parse = |v: &str| -> Version {
+        let core = v
+            .trim_start_matches('v')
             .split(['-', '+'])
             .next()
-            .unwrap_or("")
-            .split('.')
-            .map(|p| p.parse().unwrap_or(0))
-            .collect()
+            .unwrap_or(v);
+        let parts: Vec<&str> = core.split('.').collect();
+        let padded = match parts.len() {
+            1 => format!("{}.0.0", parts[0]),
+            2 => format!("{}.{}.0", parts[0], parts[1]),
+            _ => core.to_string(),
+        };
+        Version::parse(&padded).unwrap_or(Version::new(0, 0, 0))
     };
-    let (a, b) = (parts(latest), parts(current));
-    for i in 0..a.len().max(b.len()) {
-        let (x, y) = (
-            a.get(i).copied().unwrap_or(0),
-            b.get(i).copied().unwrap_or(0),
-        );
-        if x != y {
-            return x > y;
-        }
+    parse(installed).cmp(&parse(online))
+}
+
+/// Turns an ordering into the user-facing update status.
+pub fn update_status(installed: &str, online: &str) -> UpdateStatus {
+    match compare_versions(installed, online) {
+        Ordering::Greater => UpdateStatus::DevelopmentVersion,
+        Ordering::Equal => UpdateStatus::UpToDate,
+        Ordering::Less => UpdateStatus::UpdateAvailable,
     }
-    false
 }
 
 /// Verifies a manifest and reads this platform's entry.
@@ -149,7 +169,7 @@ fn read_manifest(
     }
     Ok(UpdateInfo {
         current: current.into(),
-        available: newer(&m.version, current),
+        status: update_status(current, &m.version),
         latest: m.version,
         notes: m.notes,
         date: m.pub_date,
@@ -264,7 +284,7 @@ impl Inner {
     pub fn download_update(&self) -> Result<UpdateInfo, CoreError> {
         let mut info = self
             .last_update()
-            .filter(|i| i.available)
+            .filter(|i| matches!(i.status, UpdateStatus::UpdateAvailable))
             .ok_or_else(|| fail("check for an update first"))?;
         let bytes = self.runtimes.fetch(&info.url).map_err(fail)?;
         if bytes.len() > MAX_INSTALLER {
@@ -354,11 +374,29 @@ mod tests {
 
     #[test]
     fn versions_compare_numerically() {
-        assert!(newer("0.10.0", "0.9.9"));
-        assert!(newer("1.0", "0.99.99"));
-        assert!(!newer("0.3.0", "0.3.0"));
-        assert!(!newer("0.2.9", "0.3.0"));
-        assert!(newer("v1.2.1-beta", "1.2"));
+        assert_eq!(compare_versions("0.9.9", "0.10.0"), Ordering::Less);
+        assert_eq!(compare_versions("0.99.99", "1.0"), Ordering::Less);
+        assert_eq!(compare_versions("0.3.0", "0.3.0"), Ordering::Equal);
+        assert_eq!(compare_versions("0.3.0", "0.2.9"), Ordering::Greater);
+        assert_eq!(compare_versions("1.2", "v1.2.1-beta"), Ordering::Less);
+    }
+
+    #[test]
+    fn update_status_matches_ordering() {
+        assert_eq!(
+            update_status("0.9.9", "0.10.0"),
+            UpdateStatus::UpdateAvailable
+        );
+        assert_eq!(
+            update_status("0.10.0", "0.9.9"),
+            UpdateStatus::DevelopmentVersion
+        );
+        assert_eq!(update_status("0.3.0", "0.3.0"), UpdateStatus::UpToDate);
+        assert_eq!(
+            update_status("2.0.0", "1.9.9"),
+            UpdateStatus::DevelopmentVersion
+        );
+        assert_eq!(update_status("1.0", "1.0.1"), UpdateStatus::UpdateAvailable);
     }
 
     #[test]
@@ -366,7 +404,7 @@ mod tests {
         let m = manifest("9.9.9");
         let (key, sig) = sign(m.as_bytes(), "release");
         let info = read_manifest(&key, m.as_bytes(), &sig, "0.3.0").unwrap();
-        assert!(info.available);
+        assert_eq!(info.status, UpdateStatus::UpdateAvailable);
         assert_eq!(info.latest, "9.9.9");
         assert_eq!(info.sha256, "ab".repeat(32));
     }

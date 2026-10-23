@@ -2044,7 +2044,7 @@ export interface ApiStatus {
 export interface UpdateInfo {
   current: string
   latest: string
-  available: boolean
+  status: 'up_to_date' | 'update_available' | 'development_version'
   notes: string
   date: string
   url: string

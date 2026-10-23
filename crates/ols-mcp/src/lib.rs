@@ -1,0 +1,544 @@
+use ols_core::{Core, CoreCommand, CoreResponse};
+use serde::Deserialize;
+use serde_json::{json, Value};
+use std::io::{self, BufRead, Write};
+use std::sync::Arc;
+use tokio::task::spawn_blocking;
+use tracing::{error, info, warn};
+
+/// MCP JSON-RPC 2.0 request.
+#[derive(Debug, Deserialize)]
+struct JsonRpcRequest {
+    jsonrpc: String,
+    id: Value,
+    method: String,
+    #[serde(default)]
+    params: Value,
+}
+
+/// MCP JSON-RPC 2.0 response.
+#[derive(Debug, Serialize)]
+struct JsonRpcResponse {
+    jsonrpc: String,
+    id: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    result: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<Value>,
+}
+
+impl JsonRpcResponse {
+    fn ok(id: Value, result: Value) -> Self {
+        Self {
+            jsonrpc: "2.0".into(),
+            id,
+            result: Some(result),
+            error: None,
+        }
+    }
+
+    fn err(id: Value, code: i64, message: String) -> Self {
+        Self {
+            jsonrpc: "2.0".into(),
+            id,
+            result: None,
+            error: Some(json!({ "code": code, "message": message })),
+        }
+    }
+}
+
+/// MCP tool definition.
+#[derive(Debug, Clone, Serialize)]
+struct McpTool {
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    input_schema: Value,
+}
+
+/// Build the list of MCP tools exposed by OLS. Each tool wraps a `CoreCommand`
+/// variant so an LLM can discover and call app operations safely.
+fn mcp_tools() -> Vec<McpTool> {
+    vec![
+        McpTool {
+            name: "ols_list_domains".into(),
+            description: Some("List all registered sites/domains.").into(),
+            input_schema: json!({ "type": "object", "properties": {} }),
+        },
+        McpTool {
+            name: "ols_get_domain".into(),
+            description: Some("Get complete configuration of one domain by hostname.").into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": { "hostname": { "type": "string" } },
+                "required": ["hostname"]
+            }),
+        },
+        McpTool {
+            name: "ols_add_domain".into(),
+            description: Some("Create a new site/domain.").into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "hostname": { "type": "string" },
+                    "root": { "type": "string" },
+                    "php": { "type": "string" },
+                    "server": { "type": "string" },
+                    "enabled": { "type": "boolean" }
+                },
+                "required": ["hostname", "root"]
+            }),
+        },
+        McpTool {
+            name: "ols_update_domain".into(),
+            description: Some("Modify an existing site's config.").into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "hostname": { "type": "string" },
+                    "root": { "type": "string" },
+                    "php": { "type": "string" },
+                    "server": { "type": "string" },
+                    "enabled": { "type": "boolean" }
+                },
+                "required": ["hostname"]
+            }),
+        },
+        McpTool {
+            name: "ols_remove_domain".into(),
+            description: Some("Delete a site/domain (destructive).").into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": { "hostname": { "type": "string" } },
+                "required": ["hostname"]
+            }),
+        },
+        McpTool {
+            name: "ols_set_domain_enabled".into(),
+            description: Some("Enable or disable a site.").into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "hostname": { "type": "string" },
+                    "enabled": { "type": "boolean" }
+                },
+                "required": ["hostname", "enabled"]
+            }),
+        },
+        McpTool {
+            name: "ols_list_services".into(),
+            description: Some("List all services with running state.").into(),
+            input_schema: json!({ "type": "object", "properties": {} }),
+        },
+        McpTool {
+            name: "ols_start_service".into(),
+            description: Some("Start a service by id.").into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": { "id": { "type": "string" } },
+                "required": ["id"]
+            }),
+        },
+        McpTool {
+            name: "ols_stop_service".into(),
+            description: Some("Stop a service by id.").into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": { "id": { "type": "string" } },
+                "required": ["id"]
+            }),
+        },
+        McpTool {
+            name: "ols_restart_service".into(),
+            description: Some("Restart a service by id.").into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": { "id": { "type": "string" } },
+                "required": ["id"]
+            }),
+        },
+        McpTool {
+            name: "ols_list_tunnels".into(),
+            description: Some("List all public tunnels.").into(),
+            input_schema: json!({ "type": "object", "properties": {} }),
+        },
+        McpTool {
+            name: "ols_start_tunnel".into(),
+            description: Some("Start a tunnel by id.").into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": { "id": { "type": "string" } },
+                "required": ["id"]
+            }),
+        },
+        McpTool {
+            name: "ols_stop_tunnel".into(),
+            description: Some("Stop a tunnel by id.").into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": { "id": { "type": "string" } },
+                "required": ["id"]
+            }),
+        },
+        McpTool {
+            name: "ols_list_databases".into(),
+            description: Some("List databases across engines.").into(),
+            input_schema: json!({ "type": "object", "properties": {} }),
+        },
+        McpTool {
+            name: "ols_create_database".into(),
+            description: Some("Create a new database.").into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "engine": { "type": "string" },
+                    "name": { "type": "string" },
+                    "charset": { "type": "string" },
+                    "collation": { "type": "string" }
+                },
+                "required": ["engine", "name"]
+            }),
+        },
+        McpTool {
+            name: "ols_apply_web".into(),
+            description: Some("Regenerate and reload the web server config.").into(),
+            input_schema: json!({ "type": "object", "properties": {} }),
+        },
+        McpTool {
+            name: "ols_validate_web".into(),
+            description: Some("Validate the web server config without applying.").into(),
+            input_schema: json!({ "type": "object", "properties": {} }),
+        },
+        McpTool {
+            name: "ols_list_tasks".into(),
+            description: Some("List background tasks and their statuses.").into(),
+            input_schema: json!({ "type": "object", "properties": {} }),
+        },
+        McpTool {
+            name: "ols_health".into(),
+            description: Some("Get the overall system health report.").into(),
+            input_schema: json!({ "type": "object", "properties": {} }),
+        },
+        McpTool {
+            name: "ols_diagnose".into(),
+            description: Some("Run diagnostics and return findings.").into(),
+            input_schema: json!({ "type": "object", "properties": {} }),
+        },
+        McpTool {
+            name: "ols_run_command".into(),
+            description: Some("Run any OLS core command by name with JSON args (advanced).").into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "command": { "type": "string", "description": "CoreCommand variant name, e.g. AddDomain" },
+                    "args": { "type": "object", "description": "Command arguments as JSON" }
+                },
+                "required": ["command"]
+            }),
+        },
+    ]
+}
+
+/// Convert named tool + simple args into a `CoreCommand`.
+fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
+    use CoreCommand as C;
+
+    macro_rules! req_str {
+        ($k:expr) => {
+            args.get($k)
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| format!("missing required argument: {}", $k))?
+                .to_string()
+        };
+    }
+    macro_rules! opt_str {
+        ($k:expr) => {
+            args.get($k).and_then(|v| v.as_str()).map(|s| s.to_string())
+        };
+    }
+    macro_rules! opt_bool {
+        ($k:expr) => {
+            args.get($k).and_then(|v| v.as_bool())
+        };
+    }
+
+    Ok(match name {
+        "ols_list_domains" => C::ListDomains,
+        "ols_get_domain" => C::GetDomain { hostname: req_str!("hostname") },
+        "ols_add_domain" => {
+            let hostname = req_str!("hostname");
+            let domain = ols_core::domain::Domain {
+                hostname,
+                project_id: None,
+                root: req_str!("root"),
+                kind: ols_core::domain::SiteKind::Static,
+                https: false,
+                redirect_https: false,
+                wildcard: false,
+                enabled: opt_bool!("enabled").unwrap_or(true),
+                ownership: ols_core::domain::Ownership::User,
+                app: None,
+                blocks: ols_core::domain::SiteBlocks::default(),
+                generated_hashes: Default::default(),
+                public_domain: None,
+                tunnel_id: None,
+                server: opt_str!("server"),
+                path_prefix: None,
+                icon: None,
+                ssl_provider: ols_core::domain::SslProvider::Local,
+                custom_cert_path: None,
+                custom_key_path: None,
+                // remaining fields with defaults
+                ..Default::default()
+            };
+            C::AddDomain { domain }
+        }
+        "ols_update_domain" => {
+            let hostname = req_str!("hostname");
+            // Build a minimal Domain for update — OLS merges only changed fields.
+            let domain = ols_core::domain::Domain {
+                hostname,
+                project_id: None,
+                root: opt_str!("root").unwrap_or_default(),
+                kind: ols_core::domain::SiteKind::Static,
+                https: false,
+                redirect_https: false,
+                wildcard: false,
+                enabled: opt_bool!("enabled").unwrap_or(true),
+                ownership: ols_core::domain::Ownership::User,
+                app: None,
+                blocks: ols_core::domain::SiteBlocks::default(),
+                generated_hashes: Default::default(),
+                public_domain: None,
+                tunnel_id: None,
+                server: opt_str!("server"),
+                path_prefix: None,
+                icon: None,
+                ssl_provider: ols_core::domain::SslProvider::Local,
+                custom_cert_path: None,
+                custom_key_path: None,
+                ..Default::default()
+            };
+            C::UpdateDomain { domain }
+        }
+        "ols_remove_domain" => C::RemoveDomain { hostname: req_str!("hostname") },
+        "ols_set_domain_enabled" => C::SetDomainEnabled {
+            hostname: req_str!("hostname"),
+            enabled: opt_bool!("enabled").ok_or("missing required argument: enabled")?,
+        },
+        "ols_list_services" => C::ListServices,
+        "ols_start_service" => C::StartService { id: req_str!("id") },
+        "ols_stop_service" => C::StopService { id: req_str!("id") },
+        "ols_restart_service" => C::RestartService { id: req_str!("id") },
+        "ols_list_tunnels" => C::ListTunnels,
+        "ols_start_tunnel" => C::StartTunnel { id: req_str!("id") },
+        "ols_stop_tunnel" => C::StopTunnel { id: req_str!("id") },
+        "ols_list_databases" => C::ListDatabases {
+            engine: opt_str!("engine"),
+        },
+        "ols_create_database" => C::CreateDatabase {
+            engine: req_str!("engine"),
+            name: req_str!("name"),
+            charset: opt_str!("charset").unwrap_or_else(|| "utf8mb4".into()),
+            collation: opt_str!("collation").unwrap_or_else(|| "utf8mb4_unicode_ci".into()),
+        },
+        "ols_apply_web" => C::ApplyWeb { overwrite: vec![] },
+        "ols_validate_web" => C::ValidateWeb,
+        "ols_list_tasks" => C::ListTasks,
+        "ols_health" => C::Health,
+        "ols_diagnose" => C::Diagnose,
+        "ols_run_command" => {
+            let cmd_name = req_str!("command");
+            let cmd_args = args.get("args").cloned().unwrap_or(json!({}));
+            serde_json::from_value::<CoreCommand>(cmd_args)
+                .map_err(|e| format!("failed to deserialize command '{cmd_name}': {e}"))?
+        }
+        _ => return Err(format!("unknown tool: {name}")),
+    })
+}
+
+/// Execute a `CoreCommand` against the OLS core and return the `CoreResponse`.
+async fn execute_command(core: Arc<Core>, cmd: CoreCommand) -> Result<CoreResponse, String> {
+    let core_clone = core.clone();
+    spawn_blocking(move || core_clone.inner().dispatch(cmd))
+        .await
+        .map_err(|e| format!("command task failed: {e}"))?
+        .map_err(|e| format!("command error: {e}"))
+}
+
+/// Format a `CoreResponse` into a human-readable string for the MCP client.
+fn format_response(response: &CoreResponse) -> String {
+    match response {
+        CoreResponse::Domains { domains } => {
+            if domains.is_empty() {
+                "No domains registered.".into()
+            } else {
+                let mut out = String::from("Registered domains:\n");
+                for d in domains {
+                    out.push_str(&format!(
+                        "- {} ({}, {}, server: {}, ssl: {}, url: {})\n",
+                        d.hostname,
+                        d.group,
+                        if d.enabled { "enabled" } else { "disabled" },
+                        d.server,
+                        if d.https { "yes" } else { "no" },
+                        d.url
+                    ));
+                }
+                out
+            }
+        }
+        CoreResponse::ServiceStatuses { services } => {
+            if services.is_empty() {
+                "No services found.".into()
+            } else {
+                let mut out = String::from("Services:\n");
+                for s in services {
+                    out.push_str(&format!(
+                        "- {}: {}\n",
+                        s.id,
+                        if s.running { "running" } else { "stopped" }
+                    ));
+                }
+                out
+            }
+        }
+        CoreResponse::Tunnels { tunnels } => {
+            if tunnels.is_empty() {
+                "No tunnels configured.".into()
+            } else {
+                let mut out = String::from("Tunnels:\n");
+                for t in tunnels {
+                    out.push_str(&format!(
+                        "- {}: {} -> {} ({})\n",
+                        t.config.id, t.config.name, t.config.target, t.state
+                    ));
+                }
+                out
+            }
+        }
+        CoreResponse::Ok => "Done.".into(),
+        CoreResponse::Text { text } => text.clone(),
+        CoreResponse::Health { report } => {
+            format!("Health: {:?}", report)
+        }
+        other => format!("{:?}", other),
+    }
+}
+
+/// Handle a single JSON-RPC request.
+async fn handle_request(core: Arc<Core>, req: JsonRpcRequest) -> JsonRpcResponse {
+    match req.method.as_str() {
+        "initialize" => {
+            let result = json!({
+                "protocolVersion": "2024-11-05",
+                "capabilities": {
+                    "tools": { "listChanged": false },
+                    "resources": {},
+                    "prompts": {}
+                },
+                "serverInfo": {
+                    "name": "ols-mcp",
+                    "version": "2.3.0"
+                }
+            });
+            JsonRpcResponse::ok(req.id, result)
+        }
+        "initialized" => JsonRpcResponse::ok(req.id, json!(null)),
+        "tools/list" => {
+            let tools: Vec<Value> = mcp_tools()
+                .iter()
+                .map(|t| json!({
+                    "name": t.name,
+                    "description": t.description,
+                    "inputSchema": t.input_schema
+                }))
+                .collect();
+            JsonRpcResponse::ok(req.id, json!({ "tools": tools }))
+        }
+        "tools/call" => {
+            let name = req.params.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            let args = req.params.get("arguments").cloned().unwrap_or(json!({}));
+            match build_command(name, &args).and_then(|cmd| execute_command(core.clone(), cmd).await) {
+                Ok(response) => {
+                    let text = format_response(&response);
+                    JsonRpcResponse::ok(
+                        req.id,
+                        json!({ "content": [{ "type": "text", "text": text }] }),
+                    )
+                }
+                Err(e) => JsonRpcResponse::err(req.id, -32603, e),
+            }
+        }
+        "resources/list" => JsonRpcResponse::ok(req.id, json!({ "resources": [] })),
+        "resources/read" => JsonRpcResponse::err(req.id, -32601, "resources not supported".into()),
+        "prompts/list" => JsonRpcResponse::ok(req.id, json!({ "prompts": [] })),
+        "prompts/get" => JsonRpcResponse::err(req.id, -32601, "prompts not supported".into()),
+        "ping" => JsonRpcResponse::ok(req.id, json!(null)),
+        other => JsonRpcResponse::err(req.id, -32601, format!("method not found: {other}")),
+    }
+}
+
+/// Read a line from stdin, handling the case where stdin is closed.
+async fn read_line(stdin: &mut impl BufRead) -> io::Result<Option<String>> {
+    let mut line = String::new();
+    match stdin.read_line(&mut line)? {
+        0 => Ok(None),
+        _ => {
+            line.pop(); // remove trailing newline
+            if line.ends_with('\r') {
+                line.pop();
+            }
+            Ok(Some(line))
+        }
+    }
+}
+
+/// Run the MCP server over stdio. Reads JSON-RPC requests from stdin and writes
+/// responses to stdout.
+pub async fn run_stdio(core: Core) -> io::Result<()> {
+    let core = Arc::new(core);
+    let stdin = io::stdin();
+    let stdout = io::stdout();
+    let mut stdin = stdin.lock();
+    let mut stdout = stdout.lock();
+
+    info!("ols-mcp server starting");
+
+    loop {
+        let line = match read_line(&mut stdin)? {
+            Some(line) => line,
+            None => break,
+        };
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        let req: JsonRpcRequest = match serde_json::from_str(&line) {
+            Ok(r) => r,
+            Err(e) => {
+                warn!("failed to parse request: {e}");
+                let _ = writeln!(
+                    stdout,
+                    "{}",
+                    serde_json::to_string(&JsonRpcResponse::err(
+                        json!(null),
+                        -32700,
+                        format!("parse error: {e}"),
+                    ))
+                    .unwrap()
+                );
+                stdout.flush().ok();
+                continue;
+            }
+        };
+
+        let resp = handle_request(Arc::clone(&core), req).await;
+        let out = serde_json::to_string(&resp).unwrap();
+        let _ = writeln!(stdout, "{out}");
+        stdout.flush().ok();
+    }
+
+    info!("ols-mcp server stopped");
+    Ok(())
+}

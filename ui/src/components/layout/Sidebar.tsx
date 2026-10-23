@@ -14,7 +14,6 @@ import {
   Search,
   ServerCog,
   Settings,
-  Sparkles,
   Sun,
   SunMoon,
   Terminal,
@@ -32,7 +31,6 @@ import { useTheme } from '@/lib/theme'
 
 export type Page =
   | 'dashboard'
-  | 'askai'
   | 'sites'
   | 'quickapps'
   | 'commands'
@@ -53,7 +51,6 @@ type NavItem = { id: Page; label: string; icon: typeof LayoutDashboard }
 
 const DASHBOARD: NavItem = { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard }
 const SETTINGS: NavItem = { id: 'settings', label: 'Settings', icon: Settings }
-const ASK_AI: NavItem = { id: 'askai', label: 'Ask AI', icon: Sparkles }
 
 const NAV_GROUPS: { id: string; label: string; items: NavItem[] }[] = [
   {
@@ -192,7 +189,6 @@ export function Sidebar({ page, onNavigate }: { page: Page; onNavigate: (p: Page
       </nav>
 
       <div className="flex flex-col gap-0.5 border-t border-sidebar-border px-2 pt-2">
-        {navButton(ASK_AI)}
         {navButton(SETTINGS)}
       </div>
       <OfflineNotice status={network} />

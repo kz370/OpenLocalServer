@@ -9,7 +9,6 @@ import { Titlebar } from '@/components/layout/Titlebar'
 import { useWindowState } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 import { CommandsPage } from '@/pages/Commands'
-import { AskAiPage } from '@/pages/AskAi'
 import { DashboardPage } from '@/pages/Dashboard'
 import { DatabasesPage } from '@/pages/Databases'
 import { WebServerPage } from '@/pages/WebServer'
@@ -27,7 +26,6 @@ import { TunnelsPage } from '@/pages/Tunnels'
 
 const VALID_PAGES: readonly Page[] = [
   'dashboard',
-  'askai',
   'sites',
   'quickapps',
   'commands',
@@ -238,7 +236,6 @@ export default function App() {
         <DoctorDialog open={doctor} onClose={() => setDoctor(false)} />
         <main className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-6">
           {page === 'dashboard' && <DashboardPage onNavigate={navigate} onOpenLogs={openLogs} />}
-          {page === 'askai' && <AskAiPage onNavigate={navigate} />}
           {page === 'sites' && <SitesPage onNavigate={navigate} />}
           {page === 'quickapps' && <QuickAppsPage onNavigate={navigate} />}
           {page === 'commands' && <CommandsPage />}
