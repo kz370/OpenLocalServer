@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 use std::io::{self, BufRead, Write};
 use std::sync::Arc;
 use tokio::task::spawn_blocking;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 /// MCP JSON-RPC 2.0 request.
 #[derive(Debug, Deserialize)]
@@ -56,8 +56,7 @@ struct McpTool {
     input_schema: Value,
 }
 
-/// Build the list of MCP tools exposed by OLS. Each tool wraps a `CoreCommand`
-/// variant so an LLM can discover and call app operations safely.
+/// Build the list of MCP tools exposed by OLS.
 fn mcp_tools() -> Vec<McpTool> {
     vec![
         McpTool {
@@ -183,7 +182,10 @@ fn mcp_tools() -> Vec<McpTool> {
         McpTool {
             name: "ols_list_databases".into(),
             description: Some("List databases across engines.").into(),
-            input_schema: json!({ "type": "object", "properties": {} }),
+            input_schema: json!({
+                "type": "object",
+                "properties": { "engine": { "type": "string" } }
+            }),
         },
         McpTool {
             name: "ols_create_database".into(),
@@ -193,8 +195,8 @@ fn mcp_tools() -> Vec<McpTool> {
                 "properties": {
                     "engine": { "type": "string" },
                     "name": { "type": "string" },
-                    "charset": { "type": "string" },
-                    "collation": { "type": "string" }
+                    "user": { "type": "string" },
+                    "password": { "type": "string" }
                 },
                 "required": ["engine", "name"]
             }),
@@ -215,22 +217,12 @@ fn mcp_tools() -> Vec<McpTool> {
             input_schema: json!({ "type": "object", "properties": {} }),
         },
         McpTool {
-            name: "ols_health".into(),
-            description: Some("Get the overall system health report.").into(),
-            input_schema: json!({ "type": "object", "properties": {} }),
-        },
-        McpTool {
-            name: "ols_diagnose".into(),
-            description: Some("Run diagnostics and return findings.").into(),
-            input_schema: json!({ "type": "object", "properties": {} }),
-        },
-        McpTool {
             name: "ols_run_command".into(),
             description: Some("Run any OLS core command by name with JSON args (advanced).").into(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
-                    "command": { "type": "string", "description": "CoreCommand variant name, e.g. AddDomain" },
+                    "command": { "type": "string", "description": "CoreCommand variant name" },
                     "args": { "type": "object", "description": "Command arguments as JSON" }
                 },
                 "required": ["command"]
@@ -264,64 +256,42 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
 
     Ok(match name {
         "ols_list_domains" => C::ListDomains,
-        "ols_get_domain" => C::GetDomain { hostname: req_str!("hostname") },
+        "ols_get_domain" => C::GetDomain {
+            hostname: req_str!("hostname"),
+        },
         "ols_add_domain" => {
-            let hostname = req_str!("hostname");
-            let domain = ols_core::domain::Domain {
-                hostname,
-                project_id: None,
-                root: req_str!("root"),
-                kind: ols_core::domain::SiteKind::Static,
-                https: false,
-                redirect_https: false,
-                wildcard: false,
-                enabled: opt_bool!("enabled").unwrap_or(true),
-                ownership: ols_core::domain::Ownership::User,
-                app: None,
-                blocks: ols_core::domain::SiteBlocks::default(),
-                generated_hashes: Default::default(),
-                public_domain: None,
-                tunnel_id: None,
-                server: opt_str!("server"),
-                path_prefix: None,
-                icon: None,
-                ssl_provider: ols_core::domain::SslProvider::Local,
-                custom_cert_path: None,
-                custom_key_path: None,
-                // remaining fields with defaults
-                ..Default::default()
-            };
+            let mut domain: ols_core::domain::Domain = serde_json::from_value(args.clone())
+                .map_err(|e| format!("failed to parse domain args: {e}"))?;
+            domain.hostname = req_str!("hostname");
+            if let Some(root) = opt_str!("root") {
+                domain.root = root;
+            }
+            if let Some(server) = opt_str!("server") {
+                domain.server = Some(server);
+            }
+            if let Some(enabled) = opt_bool!("enabled") {
+                domain.enabled = enabled;
+            }
             C::AddDomain { domain }
         }
         "ols_update_domain" => {
-            let hostname = req_str!("hostname");
-            // Build a minimal Domain for update — OLS merges only changed fields.
-            let domain = ols_core::domain::Domain {
-                hostname,
-                project_id: None,
-                root: opt_str!("root").unwrap_or_default(),
-                kind: ols_core::domain::SiteKind::Static,
-                https: false,
-                redirect_https: false,
-                wildcard: false,
-                enabled: opt_bool!("enabled").unwrap_or(true),
-                ownership: ols_core::domain::Ownership::User,
-                app: None,
-                blocks: ols_core::domain::SiteBlocks::default(),
-                generated_hashes: Default::default(),
-                public_domain: None,
-                tunnel_id: None,
-                server: opt_str!("server"),
-                path_prefix: None,
-                icon: None,
-                ssl_provider: ols_core::domain::SslProvider::Local,
-                custom_cert_path: None,
-                custom_key_path: None,
-                ..Default::default()
-            };
+            let mut domain: ols_core::domain::Domain = serde_json::from_value(args.clone())
+                .map_err(|e| format!("failed to parse domain args: {e}"))?;
+            domain.hostname = req_str!("hostname");
+            if let Some(root) = opt_str!("root") {
+                domain.root = root;
+            }
+            if let Some(server) = opt_str!("server") {
+                domain.server = Some(server);
+            }
+            if let Some(enabled) = opt_bool!("enabled") {
+                domain.enabled = enabled;
+            }
             C::UpdateDomain { domain }
         }
-        "ols_remove_domain" => C::RemoveDomain { hostname: req_str!("hostname") },
+        "ols_remove_domain" => C::RemoveDomain {
+            hostname: req_str!("hostname"),
+        },
         "ols_set_domain_enabled" => C::SetDomainEnabled {
             hostname: req_str!("hostname"),
             enabled: opt_bool!("enabled").ok_or("missing required argument: enabled")?,
@@ -331,22 +301,20 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
         "ols_stop_service" => C::StopService { id: req_str!("id") },
         "ols_restart_service" => C::RestartService { id: req_str!("id") },
         "ols_list_tunnels" => C::ListTunnels,
-        "ols_start_tunnel" => C::StartTunnel { id: req_str!("id") },
+        "ols_start_tunnel" => C::StartTunnel { id: req_str!("id"), confirm_exposure: false },
         "ols_stop_tunnel" => C::StopTunnel { id: req_str!("id") },
         "ols_list_databases" => C::ListDatabases {
-            engine: opt_str!("engine"),
+            engine: req_str!("engine"),
         },
         "ols_create_database" => C::CreateDatabase {
             engine: req_str!("engine"),
             name: req_str!("name"),
-            charset: opt_str!("charset").unwrap_or_else(|| "utf8mb4".into()),
-            collation: opt_str!("collation").unwrap_or_else(|| "utf8mb4_unicode_ci".into()),
+            user: opt_str!("user"),
+            password: opt_str!("password"),
         },
         "ols_apply_web" => C::ApplyWeb { overwrite: vec![] },
         "ols_validate_web" => C::ValidateWeb,
         "ols_list_tasks" => C::ListTasks,
-        "ols_health" => C::Health,
-        "ols_diagnose" => C::Diagnose,
         "ols_run_command" => {
             let cmd_name = req_str!("command");
             let cmd_args = args.get("args").cloned().unwrap_or(json!({}));
@@ -388,7 +356,7 @@ fn format_response(response: &CoreResponse) -> String {
                 out
             }
         }
-        CoreResponse::ServiceStatuses { services } => {
+        CoreResponse::Services { services } => {
             if services.is_empty() {
                 "No services found.".into()
             } else {
@@ -417,10 +385,37 @@ fn format_response(response: &CoreResponse) -> String {
                 out
             }
         }
+        CoreResponse::Tasks { tasks } => {
+            if tasks.is_empty() {
+                "No tasks found.".into()
+            } else {
+                let mut out = String::from("Tasks:\n");
+                for t in tasks {
+                    out.push_str(&format!("- {}: {} ({:?})\n", t.id, t.kind, t.state));
+                }
+                out
+            }
+        }
         CoreResponse::Ok => "Done.".into(),
         CoreResponse::Text { text } => text.clone(),
-        CoreResponse::Health { report } => {
-            format!("Health: {:?}", report)
+        CoreResponse::Domain { domain } => {
+            let d = domain.as_ref();
+            format!(
+                "Domain {}: root={}, server={}, enabled={}, https={}\nurl={}",
+                d.hostname,
+                d.root,
+                d.server.as_deref().unwrap_or("-"),
+                d.enabled,
+                d.https,
+                d.url
+            )
+        }
+        CoreResponse::Names { names } => {
+            if names.is_empty() {
+                "None.".into()
+            } else {
+                names.join("\n")
+            }
         }
         other => format!("{:?}", other),
     }
@@ -448,18 +443,26 @@ async fn handle_request(core: Arc<Core>, req: JsonRpcRequest) -> JsonRpcResponse
         "tools/list" => {
             let tools: Vec<Value> = mcp_tools()
                 .iter()
-                .map(|t| json!({
-                    "name": t.name,
-                    "description": t.description,
-                    "inputSchema": t.input_schema
-                }))
+                .map(|t| {
+                    json!({
+                        "name": t.name,
+                        "description": t.description,
+                        "inputSchema": t.input_schema
+                    })
+                })
                 .collect();
             JsonRpcResponse::ok(req.id, json!({ "tools": tools }))
         }
         "tools/call" => {
-            let name = req.params.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            let name = req
+                .params
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             let args = req.params.get("arguments").cloned().unwrap_or(json!({}));
-            match build_command(name, &args).and_then(|cmd| execute_command(core.clone(), cmd).await) {
+            match build_command(name, &args)
+                .and_then(|cmd| execute_command(core.clone(), cmd).await)
+            {
                 Ok(response) => {
                     let text = format_response(&response);
                     JsonRpcResponse::ok(
@@ -479,13 +482,13 @@ async fn handle_request(core: Arc<Core>, req: JsonRpcRequest) -> JsonRpcResponse
     }
 }
 
-/// Read a line from stdin, handling the case where stdin is closed.
+/// Read a line from stdin.
 async fn read_line(stdin: &mut impl BufRead) -> io::Result<Option<String>> {
     let mut line = String::new();
     match stdin.read_line(&mut line)? {
         0 => Ok(None),
         _ => {
-            line.pop(); // remove trailing newline
+            line.pop();
             if line.ends_with('\r') {
                 line.pop();
             }
@@ -494,8 +497,7 @@ async fn read_line(stdin: &mut impl BufRead) -> io::Result<Option<String>> {
     }
 }
 
-/// Run the MCP server over stdio. Reads JSON-RPC requests from stdin and writes
-/// responses to stdout.
+/// Run the MCP server over stdio.
 pub async fn run_stdio(core: Core) -> io::Result<()> {
     let core = Arc::new(core);
     let stdin = io::stdin();

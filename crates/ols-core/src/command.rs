@@ -1597,11 +1597,11 @@ pub enum CoreResponse {
         installed: bool,
         /// The version the resident service reports, when it answers.
         version: Option<String>,
-        /// The service is running a different version than this app. The service is a
-        /// *copy* of the helper in an admin-only folder, and nothing re-copies it when the
-        /// app is updated or moved, so the two drift apart silently. `None` when the
-        /// service is not answering, which is "not installed", not "out of date".
-        outdated: Option<bool>,
+        /// SemVer comparison of the service copy against this app: `development_version`
+        /// when the service is newer (dev build), `up_to_date` when they match, or
+        /// `update_available` when the service is older. `None` when the service is not
+        /// answering, which is "not installed", not "out of date".
+        status: Option<crate::updater::UpdateStatus>,
     },
     SystemStats {
         stats: Box<crate::monitor::SystemStats>,
@@ -1875,10 +1875,12 @@ pub enum CoreResponse {
 /// date" for a service that is no longer there.
 fn helper_service_status() -> CoreResponse {
     let version = crate::elevate::service_version();
-    let outdated = version.as_deref().map(|v| v != env!("CARGO_PKG_VERSION"));
+    let status = version
+        .as_deref()
+        .map(|v| crate::updater::update_status(v, env!("CARGO_PKG_VERSION")));
     CoreResponse::HelperService {
         installed: version.is_some(),
-        outdated,
+        status,
         version,
     }
 }

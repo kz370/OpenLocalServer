@@ -4,6 +4,7 @@ members = [
     "crates/ols-core",
     "crates/ols-helper",
     "crates/ols-cli",
+    "crates/ols-mcp",
     "src-tauri",
 ]
 

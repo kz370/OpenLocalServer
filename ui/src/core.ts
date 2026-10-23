@@ -668,14 +668,17 @@ export interface StartupSettings {
 
 /**
  * The resident administrator helper. It runs a *copy* of `ols-helper` in an admin-only
- * folder, so it can be older than the app it serves after an update or a move.
- * `outdated: null` means the service is not answering, which is "not installed" rather
- * than "out of date" — the two need different words on screen.
+ * folder, so it can drift from the app it serves after an update or a move.
+ * `status: null` means the service is not answering, which is "not installed" rather
+ * than "out of date" — the two need different words on screen. `status` compares the
+ * service copy against this app with SemVer rules: `development_version` when the
+ * service is newer (dev build), `up_to_date` when they match, `update_available` when
+ * the service is older.
  */
 export interface HelperService {
   installed: boolean
   version: string | null
-  outdated: boolean | null
+  status: 'development_version' | 'up_to_date' | 'update_available' | null
 }
 
 export type CoreCommand =
@@ -1110,7 +1113,7 @@ export type CoreResponse =
   /** What a bulk site edit did. `skipped` names every site the batch refused and why, so
    *  a partly applied edit is reported rather than looking like it fully worked. */
   | { type: 'bulk'; changed: number; skipped: string[] }
-  | { type: 'helper_service'; installed: boolean; version: string | null; outdated: boolean | null }
+  | { type: 'helper_service'; installed: boolean; version: string | null; status: 'development_version' | 'up_to_date' | 'update_available' | null }
   | { type: 'system_stats'; stats: SystemStats }
   | { type: 'migration_sources'; sources: MigrationSource[] }
   | { type: 'migrated'; results: MigratedDb[] }

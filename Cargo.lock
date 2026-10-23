@@ -3355,6 +3355,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ols-mcp"
+version = "2.3.0"
+dependencies = [
+ "ols-core",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"

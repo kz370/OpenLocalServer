@@ -73,6 +73,7 @@ pub struct UpdaterStatus {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum UpdateStatus {
     /// Installed version is newer than the online release (a dev / pre-release build).
     DevelopmentVersion,

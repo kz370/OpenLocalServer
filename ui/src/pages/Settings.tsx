@@ -69,20 +69,35 @@ export function SettingsPage() {
   const [manualTab, setManualTab] = useState<'manual' | 'notes'>('manual')
 
   const releaseNotesFiltered = useMemo(() => {
-    return releaseNotes
-      .split('\n')
-      .filter((line) => {
-        const l = line.toLowerCase()
-        return !(
-          l.includes('download setup') ||
-          l.includes('setup.exe') ||
-          l.includes('download ols') ||
-          l.includes('installer') ||
-          l.includes('msi') ||
-          l.includes('.exe')
-        )
-      })
-      .join('\n')
+    const lines = releaseNotes.split('\n')
+    const out: string[] = []
+    let skipSection = false
+    for (const line of lines) {
+      const l = line.toLowerCase()
+      const isHeading = l.startsWith('#')
+      if (isHeading) {
+        // A new heading ends any skipped section.
+        skipSection = false
+        const heading = l.replace(/^#+\s*/, '').trim()
+        if (heading.toLowerCase() === 'upgrading') {
+          skipSection = true
+          continue
+        }
+      }
+      if (skipSection) continue
+      if (
+        l.includes('download setup') ||
+        l.includes('setup.exe') ||
+        l.includes('download ols') ||
+        l.includes('installer') ||
+        l.includes('msi') ||
+        l.includes('.exe')
+      ) {
+        continue
+      }
+      out.push(line)
+    }
+    return out.join('\n')
   }, [])
   const action = useAction()
   const { busy, error, setError, run } = action
@@ -197,7 +212,9 @@ export function SettingsPage() {
     <div className="flex flex-wrap items-center gap-3">
       {helper === null ? (
         <Badge variant="secondary">Checking…</Badge>
-      ) : helper.outdated ? (
+      ) : helper.status === 'development_version' ? (
+        <Badge variant="destructive">Development version · service {helper.version}, app {version}</Badge>
+      ) : helper.status === 'update_available' ? (
         <Badge variant="warning">Installed · version {helper.version} (app is {version})</Badge>
       ) : helper.installed ? (
         <Badge variant="success">Installed · no more prompts</Badge>
@@ -206,10 +223,11 @@ export function SettingsPage() {
       )}
       {/* The service runs a *copy* of the helper, and nothing refreshes that copy on an
           update or a move, so an out-of-date one is offered the same reinstall as a
-          missing one — it is the same fix and the same single prompt. */}
-      {helper !== null && (!helper.installed || helper.outdated) && (
+          missing one — it is the same fix and the same single prompt. A service newer
+          than the app (dev build) is a development version, not something to update. */}
+      {helper !== null && (!helper.installed || helper.status === 'update_available') && (
         <Button size="sm" disabled={busy !== null} onClick={() => run('helper', async () => { const r = await runCommand({ type: 'install_helper_service' }); if (r.type === 'helper_service') setHelper(r) })}>
-          {busy === 'helper' ? <Spinner /> : <ShieldCheck />} {helper.outdated ? 'Update (asks once)' : 'Install (asks once)'}
+          {busy === 'helper' ? <Spinner /> : <ShieldCheck />} {helper.status === 'update_available' ? 'Update (asks once)' : 'Install (asks once)'}
         </Button>
       )}
       {helper?.installed && (
