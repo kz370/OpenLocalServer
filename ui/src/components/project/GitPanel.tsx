@@ -1,7 +1,6 @@
 import { ArrowDown, ArrowUp, Download, GitBranch, GitCommitHorizontal, KeyRound, Minus, Plus, RefreshCw, Trash2, Undo2, Upload } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
-import { AiButton } from '@/components/ai/AiButton'
 import { ErrorCard } from '@/components/ErrorCard'
 import { Spinner } from '@/components/Spinner'
 import { SaveButton } from '@/components/SaveButton'
@@ -296,13 +295,6 @@ function Changes({ projectId, status, reload }: { projectId: string; status: Git
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <Toggle checked={amend} onChange={setAmend} label="Amend the last commit" />
-              {staged.length > 0 && (
-                <AiButton
-                  label="Suggest message"
-                  variant="secondary"
-                  ask={{ title: 'Suggest a commit message', description: 'Reads the staged changes.', request: { feature: 'commit', project_id: projectId }, question: 'none', onCommit: setMessage }}
-                />
-              )}
             </div>
             <SaveButton
               action={action}

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
 
-import { AiHost } from '@/components/ai/AiHost'
 import { CommandPalette } from '@/components/CommandPalette'
 import { ConfirmHost } from '@/components/ConfirmHost'
 import { DoctorDialog } from '@/components/DoctorDialog'
@@ -235,7 +234,6 @@ export default function App() {
       <div className="flex min-h-0 flex-1">
         <Sidebar page={page} onNavigate={navigate} />
         <ConfirmHost />
-        <AiHost onNavigate={navigate} />
         <CommandPalette onNavigate={navigate} onDoctor={openDoctor} />
         <DoctorDialog open={doctor} onClose={() => setDoctor(false)} />
         <main className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-6">

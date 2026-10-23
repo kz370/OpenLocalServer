@@ -44,7 +44,7 @@ export function AiCard() {
   const { busy, error, setError, run } = useAction()
 
   if (!state) return null
-  const { settings, features } = state
+  const { settings } = state
 
   const save = async (enabled: boolean, routes: Record<string, string>) => {
     const r = await runCommand({ type: 'ai_save_settings', enabled, features: routes })
@@ -162,32 +162,6 @@ export function AiCard() {
           </div>
         )}
 
-        {settings.providers.length > 0 && (
-          <div className="flex flex-col gap-2">
-            <div className="text-xs font-medium text-muted-foreground">Which provider each feature uses</div>
-            <p className="text-xs text-muted-foreground">For example a local model for logs and a larger one for config help. The first provider is used unless you choose another.</p>
-            <div className="grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-2 sm:max-w-xl">
-              {features.map((f) => (
-                <div key={f.id} className="contents">
-                  <span className="text-sm">{f.label}</span>
-                  <Select
-                    className="w-56"
-                    value={settings.features[f.id] ?? ''}
-                    disabled={busy !== null}
-                    onChange={(e) => run('route', () => save(settings.enabled, { ...settings.features, [f.id]: e.target.value }))}
-                  >
-                    <option value="">{settings.providers[0].name} (default)</option>
-                    {settings.providers.slice(1).map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </Select>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </CardContent>
 
       {editing && (

@@ -17,7 +17,7 @@ import {
   Sparkles,
   Square,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
 import type { Page } from '@/components/layout/Sidebar'
@@ -48,12 +48,10 @@ interface ChatMessage {
 function StreamingMarkdown({
   content,
   streaming,
-  onReveal,
   className,
 }: {
   content: string
   streaming: boolean
-  onReveal: () => void
   className?: string
 }) {
   const [visibleContent, setVisibleContent] = useState(() => (streaming ? '' : content))
@@ -63,6 +61,12 @@ function StreamingMarkdown({
     if (streaming) hasStreamedRef.current = true
 
     if (!hasStreamedRef.current) {
+      setVisibleContent(content)
+      return
+    }
+
+    // Streaming finished — flush everything so the plan block is fully visible.
+    if (!streaming && visibleContent !== content) {
       setVisibleContent(content)
       return
     }
@@ -86,10 +90,6 @@ function StreamingMarkdown({
     return () => window.clearTimeout(timer)
   }, [content, streaming, visibleContent])
 
-  useEffect(() => {
-    onReveal()
-  }, [onReveal, visibleContent])
-
   return <Markdown content={visibleContent} className={className} />
 }
 
@@ -100,7 +100,9 @@ export function AskAiPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   const [promptPreview, setPromptPreview] = useState<AiPrompt | null>(null)
   const [currentJob, setCurrentJob] = useState<AiJobView | null>(null)
   const [pickedActions, setPickedActions] = useState<number[]>([])
+  const [executedActions, setExecutedActions] = useState<number[]>([])
   const [actionResults, setActionResults] = useState<{ label: string; ok: boolean; detail: string }[] | null>(null)
+  const [pendingJobId, setPendingJobId] = useState<string | null>(null)
   const [manualMarkdown, setManualMarkdown] = useState<string>('')
   const [manualSearch, setManualSearch] = useState('')
   const [copiedManual, setCopiedManual] = useState(false)
@@ -116,7 +118,7 @@ export function AskAiPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         id: 'welcome',
         role: 'assistant',
         content:
-          "👋 Hello! I am your OpenLocalServer Assistant.\n\nI have complete knowledge of OpenLocalServer v2.3.0, including site configuration, web servers (Nginx/Apache/Caddy), PHP/Node/Python runtimes, databases, public tunnels, encrypted site bundles, and the new Dynamic DNS & broadcast controls.\n\nAsk me anything about how to use the app, or pick one of the quick starter questions below!",
+          "👋 Hello! I am your OpenLocalServer Assistant.\n\nI can answer questions about OpenLocalServer and take actions across the whole app — create sites, manage services, start tunnels, create databases, install runtimes, issue certificates, and more.\n\nEverything I propose shows up as a plan you review before anything runs. Destructive steps need a separate confirmation.\n\nTry asking:\n• \"Create a new site called myapp.test with PHP 8.3 and MariaDB\"\n• \"Start the Cloudflare tunnel for shop.test\"\n• \"Export a bundle for shop.test\"\n• \"Why is MariaDB not running?\"",
         timestamp: Date.now(),
       },
     ]
@@ -125,10 +127,6 @@ export function AskAiPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   const aiState = useAiState()
   const { busy, error, setError, run } = useAction()
   const chatFeedRef = useRef<HTMLDivElement>(null)
-  const scrollChatToBottom = useCallback(() => {
-    const feed = chatFeedRef.current
-    if (feed) feed.scrollTop = feed.scrollHeight
-  }, [])
 
   // Persist conversation history in session storage
   useEffect(() => {
@@ -139,12 +137,15 @@ export function AskAiPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     }
   }, [messages])
 
-  // Scroll to bottom when new messages arrive
+  // Scroll to bottom when new messages arrive (respect user scrolling up)
   useEffect(() => {
     if (activeTab === 'chat') {
-      scrollChatToBottom()
+      const feed = chatFeedRef.current
+      if (feed && feed.scrollHeight - feed.scrollTop <= feed.clientHeight + 2) {
+        feed.scrollTop = feed.scrollHeight
+      }
     }
-  }, [messages, currentJob?.partial, activeTab, scrollChatToBottom])
+  }, [messages, activeTab])
 
   // Fetch full user manual from backend
   useEffect(() => {
@@ -159,7 +160,7 @@ export function AskAiPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
 
   // Follow running AI job
   useEffect(() => {
-    if (!currentJob || currentJob.state !== 'running') return
+    if (!currentJob || currentJob.state !== 'running' || !pendingJobId) return
     const id = currentJob.id
     const timer = setInterval(() => {
       runCommand({ type: 'ai_job', job_id: id })
@@ -169,35 +170,37 @@ export function AskAiPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
             const job = r.job
             if (job.state === 'running') {
               setMessages((prev) => prev.map((m) =>
-                m.id === `job-${job.id}` ? { ...m, content: job.partial } : m))
+                m.id === pendingJobId ? { ...m, content: job.partial } : m))
             }
-            if (job.state === 'done' && job.answer) {
+            if (job.state === 'done' && job.answer && (job.answer.text.trim() || job.answer.actions.length > 0)) {
               const answer = job.answer
               setMessages((prev) => prev.map((m) =>
-                m.id === `job-${job.id}`
+                m.id === pendingJobId
                   ? { ...m, content: answer.text, status: 'done', answer, timestamp: Date.now() }
                   : m))
               if (answer.actions.length > 0) {
                 setPickedActions(answer.actions.filter((a) => !a.destructive).map((_, i) => i))
               }
               setCurrentJob(null)
-            } else if (job.state === 'failed') {
+              setPendingJobId(null)
+            } else if (job.state === 'failed' || (job.state === 'done' && !job.answer?.text?.trim())) {
               setMessages((prev) => prev.map((m) =>
-                m.id === `job-${job.id}`
-                  ? { ...m, status: 'failed', error: job.error ?? 'No response from the provider.', timestamp: Date.now() }
+                m.id === pendingJobId
+                  ? { ...m, status: 'failed', error: job.error ?? 'The model returned an empty answer.', timestamp: Date.now() }
                   : m))
               setCurrentJob(null)
+              setPendingJobId(null)
             }
           }
         })
         .catch(() => undefined)
     }, 400)
     return () => clearInterval(timer)
-  }, [currentJob?.id, currentJob?.state, setError]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentJob?.id, currentJob?.state, pendingJobId, setError]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const provider = useMemo(() => {
     if (!aiState?.settings) return undefined
-    const featureId = aiState.settings.features['app_guide']
+    const featureId = aiState.settings.features['assistant']
     return aiState.settings.providers.find((p) => p.id === featureId) ?? aiState.settings.providers[0]
   }, [aiState])
 
@@ -209,6 +212,7 @@ export function AskAiPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     setError(null)
     setPromptPreview(null)
     setActionResults(null)
+    setExecutedActions([])
 
     // Add user message to chat immediately
     const userMsg: ChatMessage = {
@@ -217,26 +221,63 @@ export function AskAiPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       content: trimmed,
       timestamp: Date.now(),
     }
+    // Conversation history before this turn so the assistant remembers context.
+    const history = messages.map((m) => ({ role: m.role, content: m.content }))
     setMessages((prev) => [...prev, userMsg])
     setQuestion('')
 
     void run('ask', async () => {
-      const r = await runCommand({
-        type: 'ai_start',
-        request: {
-          feature: 'app_guide',
-          question: trimmed,
-        },
-        confirm_remote: remoteOk,
-      })
+      let r
+      try {
+        r = await runCommand({
+          type: 'ai_start',
+          request: {
+            feature: 'assistant',
+            question: trimmed,
+            messages: history,
+          },
+          confirm_remote: remoteOk,
+        })
+      } catch (cause) {
+        setError({
+          problem: 'The assistant request was refused.',
+          cause: cause instanceof Error ? cause.message : String(cause),
+          fix: 'Check Settings → AI assistant: ensure it is on, a provider is added, and a model is chosen.',
+        })
+        return
+      }
       if (r.type === 'ai_job') {
         const job = r.job
         setCurrentJob(job)
-        if (job.state === 'running') {
+        if (job.state === 'done' && job.answer && (job.answer.text.trim() || job.answer.actions.length > 0)) {
+          // Immediate answer — show it as a completed assistant message.
+          const answer = job.answer
+          const pendingId = `job-${Date.now()}`
+          setPendingJobId(pendingId)
           setMessages((prev) => [
             ...prev,
             {
-              id: `job-${job.id}`,
+              id: pendingId,
+              role: 'assistant',
+              content: answer.text,
+              status: 'done',
+              answer,
+              question: trimmed,
+              timestamp: Date.now(),
+            },
+          ])
+          if (answer.actions.length > 0) {
+            setPickedActions(answer.actions.filter((a) => !a.destructive).map((_, i) => i))
+          }
+          setCurrentJob(null)
+          setPendingJobId(null)
+        } else if (job.state === 'running') {
+          const pendingId = `job-${Date.now()}`
+          setPendingJobId(pendingId)
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: pendingId,
               role: 'assistant',
               content: job.partial,
               status: 'pending',
@@ -244,7 +285,29 @@ export function AskAiPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
               timestamp: Date.now(),
             },
           ])
+        } else {
+          // done with empty answer, or failed — show as failed so user can resend.
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `job-${Date.now()}`,
+              role: 'assistant',
+              content: job.answer?.text ?? 'The model returned an empty answer. Try again, or pick another model.',
+              status: 'failed',
+              error: job.error ?? 'empty answer',
+              question: trimmed,
+              timestamp: Date.now(),
+            },
+          ])
+          setCurrentJob(null)
+          setPendingJobId(null)
         }
+      } else {
+        setError({
+          problem: 'The assistant did not return a usable response.',
+          cause: `unexpected response type: ${(r as { type: string }).type}`,
+          fix: 'Try again, or pick another model in Settings.',
+        })
       }
     })
   }
@@ -259,7 +322,7 @@ export function AskAiPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       const r = await runCommand({
         type: 'ai_preview',
         request: {
-          feature: 'app_guide',
+          feature: 'assistant',
           question: trimmed,
         },
       })
@@ -275,10 +338,11 @@ export function AskAiPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     try {
       await runCommand({ type: 'ai_cancel', job_id: jobId })
       setMessages((prev) => prev.map((m) =>
-        m.id === `job-${jobId}` && m.status === 'pending'
+        m.id === pendingJobId && m.status === 'pending'
           ? { ...m, status: 'stopped', timestamp: Date.now() }
           : m))
       setCurrentJob((job) => job?.id === jobId ? null : job)
+      setPendingJobId(null)
     } catch (cause) {
       setError({
         problem: 'The assistant could not stop generating.',
@@ -290,7 +354,71 @@ export function AskAiPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
 
   const handleResend = (q: string) => {
     setError(null)
-    askQuestion(q)
+    setPromptPreview(null)
+    setActionResults(null)
+    setExecutedActions([])
+
+    // Conversation history before this resend so the assistant remembers context.
+    const history = messages.map((m) => ({ role: m.role, content: m.content }))
+
+    // Replace the failed assistant message with a fresh pending one; don't add a duplicate user message.
+    setMessages((prev) => prev.map((m) =>
+      m.role === 'assistant' && m.status === 'failed' && m.question === q
+        ? { ...m, status: 'pending', content: '', timestamp: Date.now() }
+        : m
+    ))
+    void run('ask', async () => {
+      const r = await runCommand({
+        type: 'ai_start',
+        request: {
+          feature: 'assistant',
+          question: q,
+          messages: history,
+        },
+        confirm_remote: remoteOk,
+      })
+      if (r.type === 'ai_job') {
+        const job = r.job
+        setCurrentJob(job)
+        if (job.state === 'done' && job.answer && (job.answer.text.trim() || job.answer.actions.length > 0)) {
+          const answer = job.answer
+          const pendingId = `job-${Date.now()}`
+          setPendingJobId(pendingId)
+          setMessages((prev) => prev.map((m) =>
+            m.role === 'assistant' && m.status === 'pending' && m.question === q
+              ? { ...m, id: pendingId, content: answer.text, status: 'done', answer, timestamp: Date.now() }
+              : m
+          ))
+          if (answer.actions.length > 0) {
+            setPickedActions(answer.actions.filter((a) => !a.destructive).map((_, i) => i))
+          }
+          setCurrentJob(null)
+          setPendingJobId(null)
+        } else if (job.state === 'running') {
+          const pendingId = `job-${Date.now()}`
+          setPendingJobId(pendingId)
+          setMessages((prev) => prev.map((m) =>
+            m.role === 'assistant' && m.status === 'pending' && m.question === q
+              ? { ...m, id: pendingId, content: job.partial, status: 'pending', timestamp: Date.now() }
+              : m
+          ))
+        } else {
+          setMessages((prev) => prev.map((m) =>
+            m.role === 'assistant' && m.status === 'pending' && m.question === q
+              ? { ...m, status: 'failed', error: job.error ?? 'empty answer', timestamp: Date.now() }
+              : m
+          ))
+          setCurrentJob(null)
+          setPendingJobId(null)
+        }
+      } else {
+        setError({
+          problem: 'The assistant did not return a usable response.',
+          cause: `unexpected response type: ${(r as { type: string }).type}`,
+          fix: 'Try again, or pick another model in Settings.',
+        })
+      }
+    })
   }
 
   const handleClearHistory = () => {
@@ -316,14 +444,24 @@ export function AskAiPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         'Approval needed',
       )
     }
-    const r = await runCommand({
-      type: 'ai_apply',
-      actions: chosen.map((c) => c.command as CoreCommand),
-      confirm_destructive: confirmDestructive,
+    void run('apply', async () => {
+      const r = await runCommand({
+        type: 'ai_apply',
+        actions: chosen.map((c) => c.command as CoreCommand),
+        confirm_destructive: confirmDestructive,
+      })
+      if (r.type === 'ai_applied') {
+        setActionResults(r.steps)
+        setExecutedActions((prev) => [...new Set([...prev, ...pickedActions])])
+        setPickedActions([])
+      } else {
+        setError({
+          problem: 'The assistant could not run those steps.',
+          cause: 'unexpected response from ai_apply',
+          fix: 'Check the settings and try again, or run the steps manually.',
+        })
+      }
     })
-    if (r.type === 'ai_applied') {
-      setActionResults(r.steps)
-    }
   }
 
   const handleCopyManual = () => {
@@ -534,7 +672,6 @@ export function AskAiPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                         <StreamingMarkdown
                           content={m.content}
                           streaming={m.status === 'pending'}
-                          onReveal={scrollChatToBottom}
                           className="text-xs sm:text-sm"
                         />
                         {m.status === 'pending' ? (
@@ -577,22 +714,36 @@ export function AskAiPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                           <div className="mt-3 flex flex-col gap-2 rounded-md border border-border bg-card/80 p-3 text-xs">
                             <p className="font-semibold text-foreground">Suggested executable steps (reviewed by safety gate):</p>
                             {m.answer.actions.map((act, idx) => (
-                              <label key={idx} className="flex cursor-pointer items-start gap-2 text-muted-foreground">
-                                <Checkbox
-                                  className="mt-0.5"
-                                  checked={pickedActions.includes(idx)}
-                                  onChange={(checked) =>
-                                    setPickedActions((prev) =>
-                                      checked ? [...prev, idx] : prev.filter((i) => i !== idx),
-                                    )
-                                  }
-                                />
-                                <span>
-                                  <strong className="text-foreground">{act.label}</strong>
-                                  {act.destructive && (
-                                    <Badge variant="warning" className="ml-1.5 text-[10px]">
-                                      replaces something
-                                    </Badge>
+                                <label key={idx} className={`flex cursor-pointer items-start gap-2 text-muted-foreground ${executedActions.includes(idx) ? 'opacity-50 pointer-events-none' : ''}`}>
+                                  <Checkbox
+                                    className="mt-0.5"
+                                    checked={pickedActions.includes(idx) && !executedActions.includes(idx)}
+                                    disabled={executedActions.includes(idx)}
+                                    onChange={(checked) =>
+                                      setPickedActions((prev) =>
+                                        checked ? [...prev, idx] : prev.filter((i) => i !== idx),
+                                      )
+                                    }
+                                  />
+                                <span className="flex flex-col gap-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <strong className="text-foreground">{act.label}</strong>
+                                    {executedActions.includes(idx) && (
+                                      <Badge variant="success" className="text-[10px]">Done</Badge>
+                                    )}
+                                    {act.destructive && !executedActions.includes(idx) && (
+                                      <Badge variant="destructive" className="ml-1.5 text-[10px]">
+                                        replaces or removes data
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  {!executedActions.includes(idx) && (
+                                    <details className="text-xs text-muted-foreground mt-0.5">
+                                      <summary className="cursor-pointer">View parameters</summary>
+                                      <pre className="mt-1 break-all font-mono text-[10px]">
+                                        {JSON.stringify(act.command, null, 2)}
+                                      </pre>
+                                    </details>
                                   )}
                                 </span>
                               </label>

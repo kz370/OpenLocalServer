@@ -2170,7 +2170,7 @@ export interface AiDetected {
 }
 
 export interface AiRequest {
-  feature: 'explain' | 'config' | 'logs' | 'traffic' | 'commit' | 'palette' | 'app_guide'
+  feature: 'assistant' | 'explain' | 'config' | 'logs' | 'traffic' | 'commit' | 'palette' | 'app_guide'
   kind?: string
   project_id?: string | null
   question?: string | null
@@ -2179,6 +2179,7 @@ export interface AiRequest {
   tunnel_id?: string | null
   request_ids?: number[]
   log_sources?: string[]
+  messages?: { role: string; content: string }[]
 }
 
 export interface AiPrompt {

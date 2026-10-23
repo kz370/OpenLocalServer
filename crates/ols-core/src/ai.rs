@@ -32,16 +32,8 @@ use crate::repair::RepairStep;
 
 pub const KINDS: &[&str] = &["lmstudio", "ollama", "huggingface", "openrouter", "custom"];
 
-/// The places the assistant is used; each can have its own provider.
-pub const FEATURES: &[(&str, &str)] = &[
-    ("explain", "Explain and fix"),
-    ("config", "Configs and manifests"),
-    ("logs", "Ask the logs"),
-    ("traffic", "Traffic and k6 scripts"),
-    ("commit", "Commit messages"),
-    ("palette", "Plain-language palette"),
-    ("app_guide", "Ask about the app"),
-];
+/// The assistant is the single AI surface; every request routes through it.
+pub const FEATURES: &[(&str, &str)] = &[("assistant", "Chat Assistant")];
 
 pub const APP_GUIDE_MD: &str = include_str!("../catalog/user_manual.md");
 
@@ -50,12 +42,6 @@ const MAX_ACTIONS: usize = 10;
 const MAX_PART: usize = 12_000;
 const MAX_TOTAL: usize = 48_000;
 const TOOL_OUTPUT: usize = 8_000;
-/// Inline cap for a user-picked log excerpt; beyond this the full text spills to a `.log` file readable via `read_excerpt`.
-const EXCERPT_INLINE: usize = 12_000;
-/// Hard cap stored on disk for a picked excerpt (≈200 KB).
-const EXCERPT_MAX_FILE: usize = 200_000;
-/// How many excerpt files to keep per workspace before pruning oldest.
-const EXCERPT_KEEP: usize = 20;
 const IDLE: Duration = Duration::from_secs(120);
 
 fn fail(msg: impl Into<String>) -> CoreError {
@@ -206,17 +192,6 @@ fn head(text: &str, max: usize) -> String {
     format!("{}\n[cut: {} more characters]", &text[..n], text.len() - n)
 }
 
-fn tail(text: &str, max: usize) -> String {
-    if text.len() <= max {
-        return text.to_string();
-    }
-    let mut n = text.len() - max;
-    while !text.is_char_boundary(n) {
-        n += 1;
-    }
-    format!("[cut: {n} earlier characters]\n{}", &text[n..])
-}
-
 struct Fence {
     lang: String,
     body: String,
@@ -276,6 +251,9 @@ pub struct AiRequest {
     /// The subject: a finding, an error line, a config block.
     #[serde(default)]
     pub text: Option<String>,
+    /// Previous conversation turns so the assistant remembers context across messages.
+    #[serde(default)]
+    pub messages: Vec<PromptMessage>,
     #[serde(default)]
     pub tunnel_id: Option<String>,
     #[serde(default)]
@@ -320,14 +298,6 @@ pub struct AiAnswer {
     pub actions: Vec<AiAction>,
     /// Steps the model proposed that were refused, and why.
     pub rejected: Vec<String>,
-    /// A drafted `environment.yaml` that parses.
-    pub manifest: Option<String>,
-    /// A complete file draft, shown for review before the editor uses it.
-    #[serde(default)]
-    pub file: Option<String>,
-    /// A drafted k6 script that passes the load-test safety scan.
-    pub script: Option<String>,
-    pub commit_message: Option<String>,
     pub provider: String,
     pub model: String,
     pub local: bool,
@@ -374,14 +344,59 @@ pub fn allowed(cmd: &CoreCommand) -> bool {
     use CoreCommand as C;
     matches!(
         cmd,
-        C::StartService { .. }
+        // Sites / domains
+        C::AddDomain { .. }
+            | C::UpdateDomain { .. }
+            | C::RemoveDomain { .. }
+            | C::SetDomainEnabled { .. }
+            | C::BulkSetDomainsEnabled { .. }
+            | C::BulkRemoveDomains { .. }
+            | C::BulkSetDomainServer { .. }
+            | C::DuplicateDomain { .. }
+            | C::RenameDomain { .. }
+            | C::SyncAutoDomains
+            | C::RegisterProject { .. }
+            | C::RemoveProject { .. }
+            | C::DeleteProject { .. }
+            // Site bundles
+            | C::ExportSites { .. }
+            | C::ImportSites { .. }
+            | C::PreviewSiteBundle { .. }
+            | C::ExportSupportBundle { .. }
+            // Services
+            | C::StartService { .. }
             | C::StopService { .. }
             | C::RestartService { .. }
-            | C::InstallRuntime { .. }
+            | C::StopAll
+            | C::SaveCustomService { .. }
+            | C::RemoveCustomService { .. }
+            | C::StartWorker { .. }
+            | C::StopWorker { .. }
+            | C::RestartWorker { .. }
+            // Tunnels
+            | C::StartTunnel { .. }
+            | C::StopTunnel { .. }
+            | C::SaveTunnel { .. }
+            | C::RemoveTunnel { .. }
+            | C::CheckTunnel { .. }
+            | C::SetTunnelToken { .. }
+            | C::SetTunnelPassword { .. }
+            // Databases
+            | C::CreateDatabase { .. }
+            | C::BackupDatabase { .. }
+            | C::RestoreDatabase { .. }
+            | C::ListDatabases { .. }
+            // Web servers
             | C::ApplyWeb { .. }
             | C::ValidateWeb
             | C::StopWeb
             | C::RestartSiteApp { .. }
+            // Runtimes & extensions
+            | C::InstallRuntime { .. }
+            | C::RemoveRuntime { .. }
+            | C::SetPhpExtension { .. }
+            | C::InstallPhpExtension { .. }
+            // Certificates, DNS & networking
             | C::SyncHosts
             | C::TrustCa
             | C::RegenerateCertificate { .. }
@@ -390,23 +405,35 @@ pub fn allowed(cmd: &CoreCommand) -> bool {
             | C::SyncDdns { .. }
             | C::DetectPublicIp
             | C::SyncAllDdns { .. }
-            | C::SetDomainEnabled { .. }
-            | C::CreateDatabase { .. }
-            | C::BackupDatabase { .. }
+            // Profiles & snapshots
+            | C::ApplyProfile { .. }
+            | C::CreateSnapshot { .. }
+            | C::RestoreSnapshot { .. }
+            // Quick apps & project tools
+            | C::StartQuickApp { .. }
             | C::ApplySetup { .. }
             | C::ApplyMailpitEnv { .. }
-            | C::StartWorker { .. }
-            | C::StopWorker { .. }
-            | C::RestartWorker { .. }
-            | C::RunComposer { .. }
             | C::SetEnvValue { .. }
-            | C::StartQuickApp { .. }
+            | C::RunComposer { .. }
     )
 }
 
-/// Steps that replace something the user may want to keep: they need a separate confirmation.
 pub fn destructive(cmd: &CoreCommand) -> bool {
-    crate::repair::is_destructive(cmd) || matches!(cmd, CoreCommand::SetEnvValue { .. })
+    crate::repair::is_destructive(cmd)
+        || matches!(
+            cmd,
+            CoreCommand::RemoveDomain { .. }
+                | CoreCommand::DeleteProject { .. }
+                | CoreCommand::BulkRemoveDomains { .. }
+                | CoreCommand::RemoveTunnel { .. }
+                | CoreCommand::RemoveCustomService { .. }
+                | CoreCommand::RemoveRuntime { .. }
+                | CoreCommand::StopAll
+                | CoreCommand::RestoreDatabase { .. }
+                | CoreCommand::RestoreSnapshot { .. }
+                | CoreCommand::ImportSites { .. }
+                | CoreCommand::SetEnvValue { .. }
+        )
 }
 
 /// A proposed command as it will actually run: an imported Quick App never gets its approval, and nothing elevated.
@@ -423,28 +450,78 @@ fn normalise(cmd: CoreCommand) -> CoreCommand {
 }
 
 const PLAN_DOC: &str = r#"Commands you may propose, as JSON with the "type" first. Nothing else is accepted:
-- start_service, stop_service, restart_service: {"type":"start_service","id":"mariadb"} (ids from list_services)
-- install_runtime: {"type":"install_runtime","id":"php","version":"8.4.26"}
-- apply_web: {"type":"apply_web","overwrite":[]} (regenerate the web server config and reload it); validate_web; stop_web
-- restart_site_app: {"type":"restart_site_app","hostname":"shop.test"}
-- set_domain_enabled: {"type":"set_domain_enabled","hostname":"shop.test","enabled":true}
-- regenerate_certificate: {"type":"regenerate_certificate","hostname":"shop.test"}; sync_hosts; trust_ca
-- create_database / backup_database: {"type":"create_database","engine":"mariadb","name":"shop"} / {"type":"backup_database","engine":"mariadb","database":"shop"}
-- apply_setup: {"type":"apply_setup","project_id":"...","dry_run":false}
-- apply_mailpit_env: {"type":"apply_mailpit_env","project_id":"...","file":".env"}
-- start_worker, stop_worker, restart_worker: {"type":"start_worker","id":"..."}
-- run_composer: {"type":"run_composer","project_id":"...","action":"install"}
-- set_env_value: {"type":"set_env_value","project_id":"...","file":".env","key":"DB_HOST","value":"127.0.0.1"}
-- start_quick_app: {"type":"start_quick_app","id":"laravel","values":{"project_name":"shop"}}
+- Sites / domains:
+  - add_domain: {"type":"add_domain","domain":"shop.test"} (create a new site)
+  - update_domain: {"type":"update_domain","hostname":"shop.test","php":"8.3","root":"C:\\sites\\shop","server":"nginx"}
+  - remove_domain: {"type":"remove_domain","hostname":"shop.test"} (DESTRUCTIVE: deletes a site)
+  - set_domain_enabled: {"type":"set_domain_enabled","hostname":"shop.test","enabled":false}
+  - bulk_set_domains_enabled: {"type":"bulk_set_domains_enabled","hostnames":["a.test","b.test"],"enabled":true}
+  - bulk_remove_domains: {"type":"bulk_remove_domains","hostnames":["a.test","b.test"]} (DESTRUCTIVE)
+  - bulk_set_domain_server: {"type":"bulk_set_domain_server","hostnames":["a.test"],"server":"nginx"}
+  - duplicate_domain: {"type":"duplicate_domain","hostname":"shop.test","new_hostname":"shop2.test"}
+  - rename_domain: {"type":"rename_domain","hostname":"shop.test","new_hostname":"shop2.test"}
+  - sync_auto_domains: {"type":"sync_auto_domains"}
+  - register_project: {"type":"register_project","path":"C:\\projects\\shop"}
+  - remove_project: {"type":"remove_project","id":"..."} (DESTRUCTIVE)
+  - delete_project: {"type":"delete_project","id":"..."} (DESTRUCTIVE)
+- Site bundles:
+  - export_sites: {"type":"export_sites","hostnames":["shop.test"],"dest":"C:\\backup.zip","password":"..."}
+  - import_sites: {"type":"import_sites","source":"C:\\backup.zip","password":"...","on_conflict":"skip","name":"shop"} (DESTRUCTIVE)
+  - preview_site_bundle: {"type":"preview_site_bundle","source":"C:\\backup.zip"}
+  - export_support_bundle: {"type":"export_support_bundle","dest":"C:\\support.zip"}
+- Services:
+  - start_service, stop_service, restart_service: {"type":"start_service","id":"mariadb"} (ids from list_services)
+  - stop_all: {"type":"stop_all"} (DESTRUCTIVE)
+  - save_custom_service: {"type":"save_custom_service","service":{"id":"...","name":"...","command":"...","args":[]}}
+  - remove_custom_service: {"type":"remove_custom_service","id":"..."} (DESTRUCTIVE)
+  - start_worker, stop_worker, restart_worker: {"type":"start_worker","id":"..."}
+- Tunnels:
+  - start_tunnel: {"type":"start_tunnel","id":"..."}
+  - stop_tunnel: {"type":"stop_tunnel","id":"..."}
+  - save_tunnel: {"type":"save_tunnel","tunnel":{"id":"","name":"...","provider":"cloudflare","target":"https://shop.test"}}
+  - remove_tunnel: {"type":"remove_tunnel","id":"..."} (DESTRUCTIVE)
+  - check_tunnel: {"type":"check_tunnel","id":"..."}
+  - set_tunnel_token: {"type":"set_tunnel_token","provider":"cloudflare","token":"..."}
+  - set_tunnel_password: {"type":"set_tunnel_password","id":"...","password":"..."}
+- Databases:
+  - create_database: {"type":"create_database","engine":"mariadb","name":"shop","charset":"utf8mb4","collation":"utf8mb4_unicode_ci"}
+  - backup_database: {"type":"backup_database","engine":"mariadb","database":"shop"}
+  - restore_database: {"type":"restore_database","engine":"mariadb","database":"shop","file":"C:\\backup.sql"} (DESTRUCTIVE)
+  - list_databases: {"type":"list_databases","engine":"mariadb"}
+- Web servers:
+  - apply_web: {"type":"apply_web","overwrite":[]} (regenerate and reload web config); validate_web; stop_web
+  - restart_site_app: {"type":"restart_site_app","hostname":"shop.test"}
+- Runtimes & extensions:
+  - install_runtime: {"type":"install_runtime","id":"php","version":"8.4.26"}
+  - remove_runtime: {"type":"remove_runtime","id":"php","version":"8.4.26"} (DESTRUCTIVE)
+  - set_php_extension: {"type":"set_php_extension","version":"8.4.26","extension":"xdebug","enabled":true}
+  - install_php_extension: {"type":"install_php_extension","version":"8.4.26","extension":"xdebug"}
+- Certificates, DNS & networking:
+  - sync_hosts: {"type":"sync_hosts"}
+  - trust_ca: {"type":"trust_ca"}
+  - regenerate_certificate: {"type":"regenerate_certificate","hostname":"shop.test"}
+  - verify_ssl_files: {"type":"verify_ssl_files","hostname":"shop.test"}
+  - issue_lets_encrypt: {"type":"issue_lets_encrypt","hostname":"shop.test"}
+  - sync_ddns: {"type":"sync_ddns","hostname":"home.example.com"}
+  - detect_public_ip: {"type":"detect_public_ip"}
+  - sync_all_ddns: {"type":"sync_all_ddns","force":false}
+- Profiles & snapshots:
+  - apply_profile: {"type":"apply_profile","id":"..."}
+  - create_snapshot: {"type":"create_snapshot","label":"Before change","project_id":"...","include_files":true,"include_env":true,"databases":["shop"]}
+  - restore_snapshot: {"type":"restore_snapshot","file":"C:\\snapshot.zip","project_id":"...","options":{}} (DESTRUCTIVE)
+- Quick apps & project tools:
+  - start_quick_app: {"type":"start_quick_app","id":"laravel","values":{"project_name":"shop"}} (needs user approval; never elevated)
+  - apply_setup: {"type":"apply_setup","project_id":"...","dry_run":false}
+  - apply_mailpit_env: {"type":"apply_mailpit_env","project_id":"...","file":".env"}
+  - set_env_value: {"type":"set_env_value","project_id":"...","file":".env","key":"DB_HOST","value":"127.0.0.1"} (DESTRUCTIVE)
+  - run_composer: {"type":"run_composer","project_id":"...","action":"install"}
 To propose changes, end the answer with exactly one block:
 ```ols-plan
 [{"label":"Start MariaDB","command":{"type":"start_service","id":"mariadb"}}]
 ```
-Propose only what you are sure about, at most 10 steps, and use ids and names you were given. Do not propose anything when no command is needed."#;
+Propose only what you are sure about, at most 10 steps, and use ids and names you were given from the tools. Do not propose anything when no command is needed."#;
 
-const SYSTEM: &str = "You are the assistant inside OLS, a Windows local development environment manager: Nginx, Apache and Caddy, PHP, Node, Python, MariaDB, PostgreSQL, MongoDB, Redis, Mailpit, trusted local HTTPS domains, and project manifests in .openlocalserver/. Be concrete and brief; say what you are unsure of. You cannot run anything yourself: the user approves every change. Secrets in what you are given are replaced by [redacted]; never ask for them.";
-
-const MANIFEST_INSTRUCTIONS: &str = "Draft .openlocalserver/environment.yaml for this project. Reply with the complete file in one ```yaml block, using only the keys shown in the detected example, then a short note on what you chose and what to check. Do not invent versions the project files don't support.";
+const SYSTEM: &str = "You are the OpenLocalServer (OLS) Assistant, the single conversational front door for the whole application. OLS manages Nginx, Apache and Caddy, PHP/Node/Python runtimes, MariaDB, PostgreSQL, MongoDB, Redis, Mailpit, trusted local HTTPS domains, tunnels, and project manifests in .openlocalserver/. Be concrete and brief; say what you are unsure of. You cannot run anything yourself: the user approves every change. Secrets in what you are given are replaced by [redacted]; never ask for them.";
 
 // ------------------------------------------------------------------------------ tools (read-only)
 
@@ -462,6 +539,12 @@ fn tool_defs() -> Vec<Value> {
         f("read_manifest", "A project's .openlocalserver/environment.yaml.", json!({"project_id":{"type":"string"}}), &["project_id"]),
         f("read_env_names", "The variable names in a project's .env file, values hidden.", json!({"project_id":{"type":"string"},"file":{"type":"string"}}), &["project_id"]),
         f("list_quick_apps", "The Quick Apps (id, name, description).", json!({}), &[]),
+        f("list_tunnels", "The tunnels (id, name, provider, target, public hostname, active state).", json!({}), &[]),
+        f("list_databases", "Databases across MariaDB, PostgreSQL and SQLite (engine, name, size).", json!({}), &[]),
+        f("list_runtimes", "Installed runtimes and available catalog versions (id, name, version, installed).", json!({}), &[]),
+        f("list_profiles", "Available configuration profiles (id, name).", json!({}), &[]),
+        f("get_site_details", "Complete configuration of one domain: root, runtime, web server, SSL, tunnel, path prefix.", json!({"hostname":{"type":"string"}}), &["hostname"]),
+        f("list_tasks", "Background tasks and their statuses (id, kind, state, progress).", json!({}), &[]),
     ]
 }
 
@@ -617,6 +700,81 @@ impl Inner {
                 .map(|a| format!("{}: {}: {}", a.id, a.name, a.description))
                 .collect::<Vec<_>>()
                 .join("\n"),
+            "list_tunnels" => self
+                .list_tunnels()
+                .into_iter()
+                .map(|t| {
+                    format!(
+                        "{} · {} · {} · target={} · public={} · {}",
+                        t.config.id,
+                        t.config.name,
+                        t.config.provider,
+                        t.config.target,
+                        t.public_url.as_deref().unwrap_or("-"),
+                        t.state
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n"),
+            "list_databases" => {
+                let engine = s("engine").unwrap_or_else(|| "mariadb".into());
+                match self.services.list_databases(&engine) {
+                    Ok(dbs) => dbs.join("\n"),
+                    Err(e) => return Err(e),
+                }
+            }
+            "list_runtimes" => self
+                .runtimes
+                .catalog()
+                .into_iter()
+                .map(|r| {
+                    format!(
+                        "{} · {} · {}",
+                        r.id,
+                        r.name,
+                        if r.installed { "installed" } else { "catalog" }
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n"),
+            "list_profiles" => self
+                .profiles
+                .list()
+                .into_iter()
+                .map(|p| format!("{}: {}", p.id, p.name))
+                .collect::<Vec<_>>()
+                .join("\n"),
+            "get_site_details" => {
+                let hostname = s("hostname").ok_or("get_site_details needs a hostname")?;
+                let d = self
+                    .domains
+                    .lock()
+                    .unwrap()
+                    .get(&hostname)
+                    .ok_or("unknown domain")?;
+                let runtime = d
+                    .app
+                    .as_ref()
+                    .and_then(|a| a.runtime.as_deref())
+                    .unwrap_or("-");
+                format!(
+                    "hostname={} root={} runtime={} server={} ssl={} tunnel={} path_prefix={}",
+                    d.hostname,
+                    d.root,
+                    runtime,
+                    d.server.as_deref().unwrap_or("-"),
+                    d.ssl_provider,
+                    d.tunnel_id.as_deref().unwrap_or("-"),
+                    d.path_prefix.as_deref().unwrap_or("-"),
+                )
+            }
+            "list_tasks" => self
+                .tasks
+                .list()
+                .into_iter()
+                .map(|t| format!("{}: {} · {} · {:?}", t.id, t.kind, t.title, t.state))
+                .collect::<Vec<_>>()
+                .join("\n"),
             other => return Err(format!("there is no tool called {other}")),
         };
         Ok(head(&clean(&text), TOOL_OUTPUT))
@@ -628,28 +786,6 @@ impl Inner {
 impl Inner {
     fn excerpt_dir(&self) -> PathBuf {
         self.paths.data_dir().join("ai-excerpts")
-    }
-
-    /// Spill an overlong picked excerpt to a `.log` text file; returns file name. Prunes oldest beyond keep cap.
-    fn save_excerpt(&self, text: &str) -> Result<String, String> {
-        let dir = self.excerpt_dir();
-        std::fs::create_dir_all(&dir)
-            .map_err(|e| format!("couldn't store the excerpt file: {e}"))?;
-        let body = head(&clean(text), EXCERPT_MAX_FILE);
-        let name = format!("excerpt-{}.log", now_ms());
-        std::fs::write(dir.join(&name), &body)
-            .map_err(|e| format!("couldn't store the excerpt file: {e}"))?;
-        if let Ok(mut files) = std::fs::read_dir(&dir).map(|d| {
-            d.flatten()
-                .filter(|e| e.path().extension().is_some_and(|x| x == "log"))
-                .collect::<Vec<_>>()
-        }) {
-            files.sort_by_key(|e| e.file_name());
-            for stale in files.iter().rev().skip(EXCERPT_KEEP) {
-                let _ = std::fs::remove_file(stale.path());
-            }
-        }
-        Ok(name)
     }
 
     /// Page through a saved excerpt file: `start_line` 1-based, `lines` capped.
@@ -1163,286 +1299,11 @@ fn need<'a>(value: &'a Option<String>, what: &str) -> Result<&'a str, CoreError>
         .ok_or_else(|| fail(format!("{what} is needed for this request")))
 }
 
-fn need_project(req: &AiRequest) -> Result<&str, CoreError> {
-    req.project_id
-        .as_deref()
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| fail("choose a project for this request"))
-}
-
-fn format_request(r: &crate::inspector::RecordedRequest) -> String {
-    let headers = |h: &[(String, String)]| {
-        h.iter()
-            .map(|(k, v)| format!("{k}: {v}"))
-            .collect::<Vec<_>>()
-            .join("\n")
-    };
-    format!(
-        "{} {} -> {} in {} ms{}\n{}\n\n{}\n\nResponse headers:\n{}\n\n{}",
-        r.method,
-        r.path,
-        r.status,
-        r.duration_ms,
-        r.error
-            .as_ref()
-            .map(|e| format!(" (error: {e})"))
-            .unwrap_or_default(),
-        headers(&r.request_headers),
-        r.request_body.clone().unwrap_or_default(),
-        headers(&r.response_headers),
-        r.response_body.clone().unwrap_or_default()
-    )
-}
-
 impl Inner {
     fn ai_context(&self, req: &AiRequest) -> Result<Context, CoreError> {
         let mut attachments: Vec<(String, String)> = Vec::new();
         let (instructions, question) = match req.feature.as_str() {
-            "explain" => {
-                let subject = need(&req.text, "the problem to explain")?;
-                let title = req.title.clone().unwrap_or_default();
-                attachments.push((
-                    "The problem".into(),
-                    if title.is_empty() {
-                        subject.to_string()
-                    } else {
-                        format!("{title}\n{subject}")
-                    },
-                ));
-                let health: Vec<String> = self
-                    .environment_health()
-                    .into_iter()
-                    .filter(|h| h.status != "ok")
-                    .map(|h| format!("[{}] {}: {}", h.status, h.label, h.detail))
-                    .collect();
-                if !health.is_empty() {
-                    attachments.push((
-                        "Environment health (what is not OK)".into(),
-                        health.join("\n"),
-                    ));
-                }
-                let findings: Vec<String> = self
-                    .diagnose()
-                    .into_iter()
-                    .filter(|f| !f.ignored)
-                    .map(|f| format!("{} | cause: {}", f.problem, f.cause))
-                    .collect();
-                if !findings.is_empty() {
-                    attachments.push(("Diagnostics findings".into(), findings.join("\n")));
-                }
-                if let Ok(lines) = self.read_log("web:error", 40) {
-                    if !lines.is_empty() {
-                        attachments.push((
-                            "Web server error log (last 40 lines)".into(),
-                            lines.join("\n"),
-                        ));
-                    }
-                }
-                ("Explain what went wrong in plain words, why it happened, and how to fix it. If commands you may propose fix it, end with a plan.".to_string(), req.question.clone().unwrap_or_else(|| "Explain this and propose a fix.".into()))
-            }
-            "config" if req.kind == "manifest" => {
-                let id = need_project(req)?;
-                let project = self
-                    .projects
-                    .lock()
-                    .unwrap()
-                    .get(id)
-                    .ok_or_else(|| fail("that project isn't registered"))?;
-                let root = PathBuf::from(&project.path);
-                let mut names: Vec<String> = std::fs::read_dir(&root)
-                    .map(|d| {
-                        d.flatten()
-                            .map(|e| {
-                                format!(
-                                    "{}{}",
-                                    e.file_name().to_string_lossy(),
-                                    if e.path().is_dir() { "/" } else { "" }
-                                )
-                            })
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                names.sort();
-                names.truncate(80);
-                attachments.push((
-                    format!("Project folder: {}", project.name),
-                    names.join("\n"),
-                ));
-                for f in [
-                    "composer.json",
-                    "package.json",
-                    "requirements.txt",
-                    "pyproject.toml",
-                ] {
-                    if let Ok(t) = std::fs::read_to_string(root.join(f)) {
-                        attachments.push((f.to_string(), head(&t, 3000)));
-                    }
-                }
-                for f in [".env.example", ".env.sample"] {
-                    if let Ok(t) = std::fs::read_to_string(root.join(f)) {
-                        attachments.push((
-                            format!("{f} (values hidden)"),
-                            head(&redact_env_file(&t), 2000),
-                        ));
-                        break;
-                    }
-                }
-                if let Ok(t) = std::fs::read_to_string(root.join("README.md")) {
-                    attachments.push(("README.md (start)".into(), head(&t, 1500)));
-                }
-                if let Ok(m) = self.derive_manifest(id) {
-                    if let Ok(y) = serde_yaml_ng::to_string(&m) {
-                        attachments.push(("Detected example environment.yaml".into(), y));
-                    }
-                }
-                if let Ok(info) = self.manifest_info(id) {
-                    if let Some(t) = info.text {
-                        attachments.push(("Current environment.yaml".into(), t));
-                    }
-                }
-                (
-                    MANIFEST_INSTRUCTIONS.to_string(),
-                    req.question.clone().unwrap_or_else(|| {
-                        "Draft the environment manifest for this project.".into()
-                    }),
-                )
-            }
-            "config" if req.kind == "htaccess" => {
-                let block = req.text.as_deref().unwrap_or("");
-                attachments.push(("Current .htaccess".into(), block.to_string()));
-                ("Suggest a complete Apache .htaccess file. Return the complete file in one ```apache fenced block, then briefly explain the changes. Do not apply it; the user will review it.".to_string(), req.question.clone().unwrap_or_else(|| "Improve this .htaccess file for this PHP site.".into()))
-            }
-            "config" => {
-                let block = need(&req.text, "the config to look at")?;
-                attachments.push((
-                    req.title.clone().unwrap_or_else(|| "The config".into()),
-                    block.to_string(),
-                ));
-                ("Explain what the config does. If the user wants a change, show it as a unified diff in one ```diff block, then explain it briefly. Never invent directives the server doesn't have.".to_string(), req.question.clone().unwrap_or_else(|| "Explain this config and point out anything wrong.".into()))
-            }
-            "logs" => {
-                let question = need(&req.question, "a question")?.to_string();
-                if let Some(picked) = req.text.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
-                    let cleaned = clean(picked);
-                    if cleaned.len() <= EXCERPT_INLINE {
-                        attachments.push((
-                            format!(
-                                "Selected log lines (user-picked {} characters)",
-                                cleaned.len()
-                            ),
-                            cleaned,
-                        ));
-                    } else if let Ok(file) = self.save_excerpt(&cleaned) {
-                        attachments.push((
-                            format!(
-                                "Selected log lines (first {} of {} chars in full excerpt file {file}; use read_excerpt for rest)",
-                                EXCERPT_INLINE,
-                                cleaned.len(),
-                                file = file
-                            ),
-                            head(&cleaned, EXCERPT_INLINE),
-                        ));
-                    } else {
-                        attachments.push((
-                            format!(
-                                "Selected log lines (user-picked {} characters, truncated)",
-                                cleaned.len()
-                            ),
-                            head(&cleaned, EXCERPT_INLINE),
-                        ));
-                    }
-                }
-                let sources: Vec<String> = if req.log_sources.is_empty() {
-                    vec!["app".into(), "web:error".into()]
-                } else {
-                    req.log_sources.clone()
-                };
-                for s in sources.iter().take(6) {
-                    let lines = self.read_log(s, 150).map_err(|e| fail(e.to_string()))?;
-                    if !lines.is_empty() {
-                        attachments.push((
-                            format!("Log {s} (last {} lines)", lines.len()),
-                            lines.join("\n"),
-                        ));
-                    }
-                }
-                ("Answer from the logs. Quote the lines you used verbatim, each in a > blockquote, and say when the logs don't contain the answer.".to_string(), question)
-            }
-            "traffic" => {
-                let tunnel = need(&req.tunnel_id, "a tunnel")?;
-                let all = self.tunnel_requests(tunnel)?;
-                let picked: Vec<_> = if req.request_ids.is_empty() {
-                    all.iter().rev().take(3).collect()
-                } else {
-                    all.iter()
-                        .filter(|r| req.request_ids.contains(&r.id))
-                        .collect()
-                };
-                if picked.is_empty() {
-                    return Err(fail("no recorded requests to look at"));
-                }
-                for r in picked {
-                    attachments.push((
-                        format!("Request #{} (secrets already hidden)", r.id),
-                        format_request(r),
-                    ));
-                }
-                match req.kind.as_str() {
-                    "handler" => ("Write a webhook handler that receives this request and responds correctly. Use the language or framework the user names; otherwise PHP. Give the code in one fenced block and a short note on validating the signature.".to_string(), req.question.clone().unwrap_or_else(|| "Write a handler for this webhook.".into())),
-                    "k6" => {
-                        let id = need_project(req)?;
-                        let sites: Vec<String> = self.load_overview(id)?.sites.iter().filter(|s| !s.public).map(|s| s.host.clone()).collect();
-                        attachments.push(("Load test rules".into(), format!("The script runs against __ENV.BASE_URL only (the project's own sites: {}). Keep virtual users at or under {}.", sites.join(", "), self.load_overview(id)?.max_vus)));
-                        ("Write a k6 script that replays this kind of traffic. Reply with the script in one ```javascript block, using `${__ENV.BASE_URL}` for the address, sensible stages and thresholds, and check() on responses. Then a short note.".to_string(), req.question.clone().unwrap_or_else(|| "Write a k6 script from these requests.".into()))
-                    }
-                    _ => ("Explain what this request is, who most likely sent it, and whether the response was right. Say what to check if it failed.".to_string(), req.question.clone().unwrap_or_else(|| "Explain this request.".into())),
-                }
-            }
-            "commit" => {
-                let id = need_project(req)?;
-                let diff = self.git_staged_diff(id)?;
-                if diff.trim().is_empty() {
-                    return Err(fail(
-                        "nothing is staged; stage the changes to describe first",
-                    ));
-                }
-                attachments.push(("Staged changes".into(), tail(&diff, 24_000)));
-                if let Ok(log) = self.git_log(id, 6) {
-                    if !log.is_empty() {
-                        attachments.push((
-                            "Recent commit subjects (for style)".into(),
-                            log.iter()
-                                .map(|c| c.subject.clone())
-                                .collect::<Vec<_>>()
-                                .join("\n"),
-                        ));
-                    }
-                }
-                ("Write a Git commit message for the staged changes: an imperative subject of at most 72 characters, a blank line, then a short body only when it helps. Match the style of the recent subjects. Reply with the message only, no fences.".to_string(), req.question.clone().unwrap_or_else(|| "Write the commit message.".into()))
-            }
-            "palette" => {
-                let question = need(&req.question, "what you want")?.to_string();
-                let apps: Vec<String> = self
-                    .catalog
-                    .lock()
-                    .unwrap()
-                    .list()
-                    .into_iter()
-                    .map(|a| format!("{}: {} ({})", a.id, a.name, a.description))
-                    .collect();
-                attachments.push(("Quick Apps".into(), apps.join("\n")));
-                let projects: Vec<String> = self
-                    .projects
-                    .lock()
-                    .unwrap()
-                    .list()
-                    .into_iter()
-                    .map(|p| format!("{}: {}", p.id, p.name))
-                    .collect();
-                attachments.push(("Projects".into(), projects.join("\n")));
-                ("Turn the request into something the user can confirm. Prefer one start_quick_app step when a Quick App fits (use its id; put the user's wishes in values, and read the app with the tools when unsure of its fields). Otherwise say what to do by hand. Explain in one or two sentences.".to_string(), question)
-            }
-            "app_guide" => {
+            "assistant" => {
                 let question =
                     need(&req.question, "what you want to know about OpenLocalServer")?.to_string();
                 attachments.push((
@@ -1490,7 +1351,7 @@ impl Inner {
                 attachments.push(("User Live Environment Status".into(), env_facts.join("\n")));
 
                 (
-                    "You are the OpenLocalServer (OLS) Assistant. You help users understand how to use OpenLocalServer, how each feature works, how to configure web servers, domains, PHP/Node runtimes, databases, services, and tunnels.\n\nCRITICAL INSTRUCTIONS:\n1. Answer correctly, simply, and directly. Avoid long rambling or annoying walls of irrelevant technical jargon.\n2. Keep explanations clear, step-by-step, and easy to understand for beginners and pros alike.\n3. If the user asks how to do something, guide them to the right page or setting in OLS (e.g., Sites, Web server, Databases, Services, Runtimes, Tunnels, Settings).\n4. Refer to the attached OLS User Manual for exact facts. Do not invent non-existent features.".to_string(),
+                    "You are the OpenLocalServer (OLS) Assistant, the single conversational front door for the whole application. You answer questions about OLS and propose concrete actions as an ols-plan that the user reviews before anything runs.\n\nCRITICAL INSTRUCTIONS:\n1. Answer correctly, simply, and directly. Avoid long rambling or walls of jargon.\n2. Use the live tools (list_sites, list_services, list_tunnels, list_databases, list_runtimes, list_profiles, get_site_details, list_tasks, get_findings, read_log, read_web_config, read_manifest, read_env_names, list_quick_apps, list_projects) to check current state before proposing changes.\n3. If the user asks how to do something, guide them to the right page or setting, or propose the commands to do it.\n4. You may propose any app operation: sites, bundles, tunnels, services, databases, runtimes, SSL certificates, DNS, profiles, snapshots, quick apps, environment setup.\n5. Destructive steps (delete, remove, restore, import, env edits) need a separate user confirmation — mention this when proposing them.\n6. Refer to the attached OLS User Manual for exact facts. Do not invent non-existent features.\n\nEnd answers that propose changes with exactly one ols-plan block containing JSON commands from the allowlist.".to_string(),
                     question,
                 )
             }
@@ -1525,26 +1386,25 @@ impl Inner {
             labels.push(format!("{label} ({} characters)", body.len()));
             user.push_str(&format!("\n\n### {label}\n```\n{body}\n```"));
         }
-        let mut system = format!("{SYSTEM}\n\n{}", ctx.instructions);
-        if !matches!(req.feature.as_str(), "commit" | "logs") {
-            system.push_str(&format!("\n\n{PLAN_DOC}"));
-        }
+        let system = format!("{SYSTEM}\n\n{}\n\n{PLAN_DOC}", ctx.instructions);
+        // Previous conversation turns come first, then the current question as the final user turn.
+        let mut prompt_messages: Vec<PromptMessage> = Vec::with_capacity(req.messages.len() + 2);
+        prompt_messages.push(PromptMessage {
+            role: "system".into(),
+            content: system,
+        });
+        prompt_messages.extend(req.messages.clone());
+        prompt_messages.push(PromptMessage {
+            role: "user".into(),
+            content: user,
+        });
         Ok(AiPrompt {
             provider_id: provider.id.clone(),
             provider_name: provider.name.clone(),
             model: provider.model.clone(),
             local: provider.local,
             host: url_host(&provider.base_url),
-            messages: vec![
-                PromptMessage {
-                    role: "system".into(),
-                    content: system,
-                },
-                PromptMessage {
-                    role: "user".into(),
-                    content: user,
-                },
-            ],
+            messages: prompt_messages,
             attachments: labels,
             tools: if provider.tools { tool_names() } else { vec![] },
         })
@@ -1982,7 +1842,7 @@ async fn run_chat(
     provider: AiProvider,
     key: Option<String>,
     prompt: AiPrompt,
-    req: AiRequest,
+    _req: AiRequest,
     job: Arc<Mutex<Job>>,
     cancel: Arc<AtomicBool>,
 ) -> Result<AiAnswer, String> {
@@ -2070,8 +1930,7 @@ async fn run_chat(
 
     let all = fences(&final_text);
     let plan_blocks: Vec<&Fence> = all.iter().filter(|f| f.lang == "ols-plan").collect();
-    let (actions, mut rejected) =
-        off_runtime(|| inner.ai_check_plan(&final_text)).unwrap_or_default();
+    let (actions, rejected) = off_runtime(|| inner.ai_check_plan(&final_text)).unwrap_or_default();
     let mut answer = AiAnswer {
         provider: provider.name.clone(),
         model: provider.model.clone(),
@@ -2082,73 +1941,7 @@ async fn run_chat(
         tokens_out: counted.then_some(tokens_out),
         ..Default::default()
     };
-    let mut hidden_blocks = plan_blocks.clone();
-    if req.feature == "config" && req.kind == "htaccess" {
-        hidden_blocks.extend(
-            all.iter()
-                .rev()
-                .find(|f| matches!(f.lang.as_str(), "apache" | "htaccess")),
-        );
-    }
-    let mut text = without_fences(&final_text, &hidden_blocks);
-
-    match (req.feature.as_str(), req.kind.as_str()) {
-        ("config", "manifest") => {
-            if let Some(f) = all
-                .iter()
-                .rev()
-                .find(|f| f.lang == "yaml" || f.lang == "yml")
-            {
-                match serde_yaml_ng::from_str::<crate::manifest::EnvironmentManifest>(&f.body) {
-                    Ok(_) => answer.manifest = Some(format!("{}\n", f.body.trim_end())),
-                    Err(e) => rejected.push(format!("The drafted manifest doesn't read as an environment.yaml ({e}), so it can't be saved.")),
-                }
-            }
-        }
-        ("config", "htaccess") => {
-            if let Some(f) = all
-                .iter()
-                .rev()
-                .find(|f| matches!(f.lang.as_str(), "apache" | "htaccess"))
-            {
-                if f.body.len() <= 256 * 1024 {
-                    answer.file = Some(format!("{}\n", f.body.trim_end()));
-                } else {
-                    rejected.push(
-                        "The drafted .htaccess file is larger than 256 KB and was not offered."
-                            .into(),
-                    );
-                }
-            }
-        }
-        ("traffic", "k6") => {
-            if let Some(f) = all
-                .iter()
-                .rev()
-                .find(|f| matches!(f.lang.as_str(), "javascript" | "js"))
-            {
-                let checked = match &req.project_id {
-                    Some(id) => {
-                        off_runtime(|| inner.load_check_script(id, &f.body)).and_then(|r| r)
-                    }
-                    None => Err("choose a project to save the script into".into()),
-                };
-                match checked {
-                    Ok(()) => answer.script = Some(format!("{}\n", f.body.trim_end())),
-                    Err(e) => rejected.push(format!(
-                        "The drafted k6 script was refused by the load-test safety scan: {e}"
-                    )),
-                }
-            }
-        }
-        ("commit", _) => {
-            let message = text.trim().trim_matches('`').trim().to_string();
-            if !message.is_empty() {
-                answer.commit_message = Some(message);
-            }
-        }
-        _ => {}
-    }
+    let mut text = without_fences(&final_text, &plan_blocks);
     if answer.cost_usd.is_none() && provider.kind == "openrouter" && counted {
         if let Some((pi, po)) = off_runtime(|| inner.ai_price(&provider, &provider.model))
             .ok()
@@ -2351,9 +2144,9 @@ mod tests {
 
     fn explain(text: &str) -> AiRequest {
         AiRequest {
-            feature: "explain".into(),
+            feature: "assistant".into(),
             title: Some("Web server won't start".into()),
-            text: Some(text.into()),
+            question: Some(text.into()),
             ..Default::default()
         }
     }
@@ -2415,16 +2208,13 @@ mod tests {
 ```"#;
         let (actions, rejected) = i.ai_check_plan(plan);
         let kinds: Vec<&str> = actions.iter().map(|a| a.label.as_str()).collect();
-        assert_eq!(kinds, ["Start MariaDB", "Set host"], "{rejected:?}");
-        assert!(
-            !actions[0].destructive && actions[1].destructive,
-            "an env edit needs its own confirmation"
-        );
-        assert_eq!(rejected.len(), 4, "{rejected:?}");
+        assert_eq!(kinds, ["Start MariaDB", "Wipe", "Set host"], "{rejected:?}");
+        assert!(!actions[0].destructive && actions[1].destructive && actions[2].destructive, "restore_database and set_env_value need their own confirmation");
+        assert_eq!(rejected.len(), 3, "{rejected:?}");
         assert!(
             rejected.iter().any(|r| r.contains("run_command"))
                 && rejected.iter().any(|r| r.contains("get_secret"))
-                && rejected.iter().any(|r| r.contains("restore_database"))
+                && rejected.iter().any(|r| r.contains("launch_rockets"))
         );
         assert_eq!(i.ai_check_plan("```ols-plan\nnot json\n```").1.len(), 1);
     }
@@ -2503,7 +2293,7 @@ mod tests {
         .unwrap();
         i.ai_save_settings(
             true,
-            BTreeMap::from([("explain".to_string(), "cloud".to_string())]),
+            BTreeMap::from([("assistant".to_string(), "cloud".to_string())]),
         )
         .unwrap();
         let e = i.ai_start(explain("boom"), false).unwrap_err().to_string();
@@ -2537,9 +2327,8 @@ mod tests {
             assert!(!shown.contains(leaked), "{leaked} is in the preview");
         }
         assert!(
-            shown.contains("The problem")
-                && preview.tools.contains(&"read_log".to_string())
-                && preview.local
+            preview.tools.contains(&"read_log".to_string()) && preview.local,
+            "tools and local provider in preview"
         );
 
         let job = i.ai_start(req, false).unwrap();
@@ -2902,7 +2691,7 @@ mod tests {
         assert!(i
             .ai_save_settings(
                 true,
-                BTreeMap::from([("explain".to_string(), "missing".to_string())])
+                BTreeMap::from([("assistant".to_string(), "missing".to_string())])
             )
             .is_err());
         assert!(i
@@ -2913,14 +2702,13 @@ mod tests {
             .is_err());
         let state = i.ai_save_settings(
             true,
-            BTreeMap::from([("logs".to_string(), "x".to_string())]),
+            BTreeMap::from([("assistant".to_string(), "x".to_string())]),
         );
-        assert!(state.is_ok(), "the second provider was named X");
-        assert_eq!(pick_provider(&i.ai_settings(), "logs").unwrap().id, "x");
+        assert!(state.is_ok(), "the override was saved");
         assert_eq!(
-            pick_provider(&i.ai_settings(), "explain").unwrap().id,
-            "mock",
-            "the first provider is the default"
+            pick_provider(&i.ai_settings(), "assistant").unwrap().id,
+            "x",
+            "the override wins"
         );
         let after = i.ai_remove_provider("x").unwrap();
         assert!(after.settings.features.is_empty());
@@ -2967,101 +2755,35 @@ mod tests {
     }
 
     #[test]
-    fn a_manifest_draft_must_parse_and_a_commit_message_needs_staged_changes() {
-        let mock = Mock::start(|_, _, _| {
-            sse(&[
-                "Here you go.\n```yaml\nname: shop\nruntimes:\n  php: \"8.3\"\n```\n",
-                "```yaml\n{{ broken\n```",
-            ])
-        });
-        let (core, home) = setup(&mock.url(), true);
-        let project = home.paths.root().join("shop");
-        std::fs::create_dir_all(&project).unwrap();
-        std::fs::write(project.join("composer.json"), "{}").unwrap();
-        let p = core
-            .inner()
-            .projects
-            .lock()
-            .unwrap()
-            .register(project.to_str().unwrap())
-            .unwrap();
-        let req = AiRequest {
-            feature: "config".into(),
-            kind: "manifest".into(),
-            project_id: Some(p.id.clone()),
-            ..Default::default()
-        };
-        let prompt = core.inner().ai_prompt(&req).unwrap();
-        assert!(
-            prompt
-                .attachments
-                .iter()
-                .any(|a| a.starts_with("composer.json"))
-                && prompt
-                    .attachments
-                    .iter()
-                    .any(|a| a.starts_with("Detected example")),
-            "{:?}",
-            prompt.attachments
-        );
-        let done = wait(&core, &core.inner().ai_start(req, false).unwrap().id);
-        assert_eq!(done.state, "done", "{:?}", done.error);
-        let a = done.answer.unwrap();
-        assert!(
-            a.manifest.is_none(),
-            "the last yaml block is the one used, and it doesn't parse"
-        );
-        assert!(
-            a.rejected.iter().any(|r| r.contains("manifest")),
-            "{:?}",
-            a.rejected
-        );
-
-        let commit = AiRequest {
-            feature: "commit".into(),
-            project_id: Some(p.id),
-            ..Default::default()
-        };
-        assert!(
-            core.inner().ai_prompt(&commit).is_err(),
-            "no repository or nothing staged"
-        );
-    }
-
-    #[test]
     fn every_feature_needs_what_it_asks_about() {
         let (core, _home) = setup("http://127.0.0.1:9/v1", true);
         let i = core.inner();
-        for (feature, kind) in [
-            ("explain", ""),
-            ("logs", ""),
-            ("palette", ""),
-            ("traffic", "explain"),
-            ("config", "manifest"),
-            ("config", "web"),
-            ("commit", ""),
-            ("dance", ""),
-        ] {
-            let r = AiRequest {
-                feature: feature.into(),
-                kind: kind.into(),
-                ..Default::default()
-            };
-            assert!(
-                i.ai_prompt(&r).is_err(),
-                "{feature}/{kind} without input must be refused"
-            );
-        }
+        // Unknown feature is refused.
+        let r = AiRequest {
+            feature: "dance".into(),
+            question: Some("why".into()),
+            ..Default::default()
+        };
+        assert!(i.ai_prompt(&r).is_err(), "unknown feature must be refused");
+        // Assistant needs a question.
+        let r = AiRequest {
+            feature: "assistant".into(),
+            ..Default::default()
+        };
+        assert!(
+            i.ai_prompt(&r).is_err(),
+            "assistant without a question must be refused"
+        );
         let logs = AiRequest {
-            feature: "logs".into(),
+            feature: "assistant".into(),
             question: Some("why 502?".into()),
             ..Default::default()
         };
         let p = i.ai_prompt(&logs).unwrap();
         assert!(
-            p.messages[0].content.contains("Quote the lines")
-                && !p.messages[0].content.contains("ols-plan"),
-            "log answers don't propose plans"
+            p.messages[0].content.contains("ols-plan")
+                && p.messages[0].content.contains("OpenLocalServer (OLS) Assistant"),
+            "assistant answers propose plans"
         );
     }
 }

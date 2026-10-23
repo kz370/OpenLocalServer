@@ -1,26 +1,14 @@
 import { AlertTriangle, ChevronDown, ChevronRight, EyeOff, Info, RefreshCw, Wrench, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
-import { AiButton } from '@/components/ai/AiButton'
 import { ErrorCard } from '@/components/ErrorCard'
 import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { type Finding, runCommand } from '@/core'
-import type { AskAi } from '@/lib/ai'
 import { useAction, usePoll } from '@/lib/hooks'
 import { confirmAction } from '@/lib/confirm'
-
-/** What the assistant is asked to explain for one finding. */
-export function explainFinding(f: Finding): AskAi {
-  return {
-    title: 'Explain this problem',
-    description: f.problem,
-    request: { feature: 'explain', title: f.problem, text: [f.problem, `Cause: ${f.cause}`, `Suggested fix: ${f.fix}`, ...f.details.filter(Boolean)].join('\n') },
-    question: 'optional',
-  }
-}
 
 const ICON = { error: XCircle, warning: AlertTriangle, info: Info }
 const COLOR = { error: 'text-destructive', warning: 'text-warning', info: 'text-muted-foreground' }
@@ -104,7 +92,6 @@ export function DiagnosticsCard({ refreshToken = 0 }: { refreshToken?: number })
                   </div>
                 </div>
                 <div className="flex w-full flex-wrap items-center gap-1 sm:w-auto sm:shrink-0">
-                  {!f.ignored && <AiButton ask={() => explainFinding(f)} />}
                   {f.fix_command && !f.ignored && (
                     <Button size="sm" disabled={busy !== null} onClick={() => run(`fix:${f.id}`, () => fix(f))}>
                       {busy === `fix:${f.id}` ? <Spinner className="size-3.5" /> : <Wrench />} Fix
