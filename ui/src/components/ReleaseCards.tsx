@@ -150,6 +150,8 @@ export function UpdatesCard() {
 
   const [status, setStatus] = useState<UpdaterStatus | null>(null)
   const [info, setInfo] = useState<UpdateInfo | null>(null)
+  const [checking, setChecking] = useState(false)
+  const [lastCheckResult, setLastCheckResult] = useState<'checked' | null>(null)
   const [showConfig, setShowConfig] = useState(false)
   const [endpointInput, setEndpointInput] = useState('')
   const [publicKeyInput, setPublicKeyInput] = useState('')
@@ -174,9 +176,16 @@ export function UpdatesCard() {
   const checkForUpdates = () =>
     run('check', async () => {
       setError(null)
-      const r = await runCommand({ type: 'check_update' })
-      if (r.type === 'update') {
-        setInfo(r.update)
+      setChecking(true)
+      setLastCheckResult(null)
+      try {
+        const r = await runCommand({ type: 'check_update' })
+        if (r.type === 'update') {
+          setInfo(r.update)
+          setLastCheckResult('checked')
+        }
+      } finally {
+        setChecking(false)
       }
     })
 
@@ -272,6 +281,24 @@ export function UpdatesCard() {
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <ErrorCard error={displayError} onDismiss={() => setError(null)} />
+
+        {/* Checking state — visible while the backend fetches and verifies the manifest */}
+        {checking && (
+          <div className="rounded-lg border border-info/40 bg-info/10 p-3.5 text-sm flex items-center gap-2">
+            <RefreshCw className="size-4 animate-spin shrink-0" />
+            <span>Checking for updates…</span>
+          </div>
+        )}
+
+        {/* Last check result — persists after the check finishes so the user sees feedback */}
+        {!checking && lastCheckResult === 'checked' && info && (
+          <div className="rounded-lg border border-info/40 bg-info/10 p-3.5 text-sm flex items-center gap-2">
+            <CheckCircle className="size-4 shrink-0 text-info" />
+            <span>
+              Checked: v{info.latest} — {info.status.replace('_', ' ')}
+            </span>
+          </div>
+        )}
 
         {/* When downloaded and verified: show ONE unified ready banner */}
         {isDownloaded && info && (

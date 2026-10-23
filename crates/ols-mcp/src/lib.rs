@@ -1,4 +1,4 @@
-use ols_core::{Core, CoreCommand, CoreResponse};
+use ols_core::{control, CoreCommand, CoreResponse};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::io::{self, BufRead, Write};
@@ -330,13 +330,14 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
     })
 }
 
-/// Execute a `CoreCommand` against the OLS core and return the `CoreResponse`.
-async fn execute_command(core: Arc<Core>, cmd: CoreCommand) -> Result<CoreResponse, String> {
-    let core_clone = core.clone();
+/// Send a `CoreCommand` to the running OLS app via the local control channel.
+async fn send_command(cmd: CoreCommand) -> Result<CoreResponse, String> {
+    let cmd_clone = cmd.clone();
     spawn_blocking(move || {
-        core_clone
-            .dispatch(cmd)
-            .map_err(|e| format!("{}: {}", e.problem, e.cause))
+        let paths = ols_core::paths::AppPaths::resolve();
+        control::send(&paths, cmd_clone)
+            .map_err(|e| format!("{e}"))
+            .and_then(|r| r.map_err(|d| format!("{}: {}", d.problem, d.cause)))
     })
     .await
     .map_err(|e| format!("command task failed: {e}"))?
@@ -430,7 +431,7 @@ fn format_response(response: &CoreResponse) -> String {
 }
 
 /// Handle a single JSON-RPC request.
-async fn handle_request(core: Arc<Core>, req: JsonRpcRequest) -> JsonRpcResponse {
+async fn handle_request(req: JsonRpcRequest) -> JsonRpcResponse {
     match req.method.as_str() {
         "initialize" => {
             let result = json!({
@@ -469,7 +470,7 @@ async fn handle_request(core: Arc<Core>, req: JsonRpcRequest) -> JsonRpcResponse
                 .unwrap_or("");
             let args = req.params.get("arguments").cloned().unwrap_or(json!({}));
             match build_command(name, &args) {
-                Ok(cmd) => match execute_command(core.clone(), cmd).await {
+                Ok(cmd) => match send_command(cmd).await {
                     Ok(response) => {
                         let text = format_response(&response);
                         JsonRpcResponse::ok(
@@ -483,11 +484,9 @@ async fn handle_request(core: Arc<Core>, req: JsonRpcRequest) -> JsonRpcResponse
             }
         }
         "resources/list" => JsonRpcResponse::ok(req.id, json!({ "resources": [] })),
-        "resources/read" => {
-            JsonRpcResponse::err(req.id, -32601, "resources not supported".to_string())
-        }
+        "resources/read" => JsonRpcResponse::err(req.id, -32601, "resources not supported".into()),
         "prompts/list" => JsonRpcResponse::ok(req.id, json!({ "prompts": [] })),
-        "prompts/get" => JsonRpcResponse::err(req.id, -32601, "prompts not supported".to_string()),
+        "prompts/get" => JsonRpcResponse::err(req.id, -32601, "prompts not supported".into()),
         "ping" => JsonRpcResponse::ok(req.id, json!(null)),
         other => JsonRpcResponse::err(req.id, -32601, format!("method not found: {other}")),
     }
@@ -508,15 +507,15 @@ async fn read_line(stdin: &mut impl BufRead) -> io::Result<Option<String>> {
     }
 }
 
-/// Run the MCP server over stdio.
-pub async fn run_stdio(core: Core) -> io::Result<()> {
-    let core = Arc::new(core);
+/// Run the MCP server over stdio. Connects to the running OLS app via its local
+/// control channel (named pipe + control.json token), so OLS must be running.
+pub async fn run_stdio() -> io::Result<()> {
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut stdin = stdin.lock();
     let mut stdout = stdout.lock();
 
-    info!("ols-mcp server starting");
+    info!("ols-mcp server starting (connects to running OLS app)");
 
     loop {
         let line = match read_line(&mut stdin).await? {
@@ -546,7 +545,7 @@ pub async fn run_stdio(core: Core) -> io::Result<()> {
             }
         };
 
-        let resp = handle_request(Arc::clone(&core), req).await;
+        let resp = handle_request(req).await;
         let out = serde_json::to_string(&resp).unwrap();
         let _ = writeln!(stdout, "{out}");
         stdout.flush().ok();

@@ -1,6 +1,6 @@
 # OLS MCP Server
 
-The OLS MCP (Model Context Protocol) server exposes Open Local Server as a stdio-based MCP service. Any MCP host (Claude Desktop, VS Code, Cursor, etc.) can connect to it and control OLS through JSON-RPC 2.0 tools.
+The OLS MCP (Model Context Protocol) server exposes Open Local Server as a stdio-based MCP service. Any MCP host (Claude Desktop, VS Code, Cursor, LM Studio, etc.) can connect to it and control OLS through JSON-RPC 2.0 tools.
 
 ## What it does
 
@@ -14,23 +14,30 @@ Each MCP tool maps one-to-one to an OLS `CoreCommand`, so an LLM can discover an
 - **Tasks**: `ols_list_tasks`
 - **Escape hatch**: `ols_run_command` runs any `CoreCommand` variant by name with JSON args.
 
-## How to run
+## How to use it
 
-The MCP server is part of the OLS workspace (`crates/ols-mcp/`). Build it:
+The MCP server ships **with the OLS installer** — you do not need to build it yourself. It connects to the **already running** OLS app via its local control channel (named pipe + `control.json` session token), so OLS must be running (desktop app or `ols daemon`).
 
-```bash
-cargo build -p ols-mcp
+Point your MCP host at the `ols-mcp` binary (installed alongside `OLS.exe`). For example, in Claude Desktop's config:
+
+```json
+{
+  "mcpServers": {
+    "ols": {
+      "command": "C:\\OpenLocalServer\\ols-mcp.exe"
+    }
+  }
+}
 ```
 
-Then run it over stdio:
+Then restart Claude Desktop and you can ask it to control OLS:
 
-```bash
-cargo run -p ols-mcp
-```
+> "List all my domains"
+> "Create a new site called shop.test at C:\sites\shop with PHP 8.3"
+> "Start the MariaDB service"
+> "Create a MariaDB database called shop"
 
-It reads JSON-RPC 2.0 requests from stdin and writes responses to stdout.
-
-## Example tool call (JSON-RPC)
+## Example tool call (JSON-RPC 2.0)
 
 List all domains:
 
@@ -68,7 +75,7 @@ Create a site:
 
 ## Safety
 
-Destructive operations (remove domain, remove tunnel, restore snapshot, import sites, env edits) are flagged as destructive by the core and return a diagnostic rather than running silently. Destructive steps still need user confirmation in the app UI before they execute.
+Destructive operations (remove domain, remove tunnel, restore snapshot, import sites, env edits) are flagged as destructive by the core and require user confirmation in the app UI before they execute. The MCP server reports this as a diagnostic rather than running silently.
 
 ## Where it lives
 

@@ -76,7 +76,6 @@ export function SettingsPage() {
       const l = line.toLowerCase()
       const isHeading = l.startsWith('#')
       if (isHeading) {
-        // A new heading ends any skipped section.
         skipSection = false
         const heading = l.replace(/^#+\s*/, '').trim()
         if (heading.toLowerCase() === 'upgrading') {
@@ -85,16 +84,6 @@ export function SettingsPage() {
         }
       }
       if (skipSection) continue
-      if (
-        l.includes('download setup') ||
-        l.includes('setup.exe') ||
-        l.includes('download ols') ||
-        l.includes('installer') ||
-        l.includes('msi') ||
-        l.includes('.exe')
-      ) {
-        continue
-      }
       out.push(line)
     }
     return out.join('\n')
