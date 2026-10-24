@@ -338,7 +338,7 @@ export function AboutCard() {
     <Card className="border-border/60 bg-card">
       <CardContent className="flex flex-col gap-5 p-6">
         <div className="flex items-center gap-4">
-          <img src={mark} alt="" className="size-12 rounded-xl shadow-sm shadow-teal-500/30" />
+          <img src={mark} alt="" className="size-12 rounded-full shadow-sm shadow-teal-500/30" />
           <div>
             <h2 className="text-lg font-semibold tracking-tight text-foreground">
               OLS <span className="font-normal text-foreground/70">(Open Local Server)</span>

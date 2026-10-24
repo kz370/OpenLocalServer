@@ -144,7 +144,7 @@ export function Sidebar({ page, onNavigate }: { page: Page; onNavigate: (p: Page
         <img
           src={mark}
           alt=""
-          className="size-8 rounded-lg shadow-sm shadow-teal-500/30"
+          className="size-8 rounded-full shadow-sm shadow-teal-500/30"
         />
         <span className="text-sm font-semibold tracking-tight">OLS</span>
       </div>

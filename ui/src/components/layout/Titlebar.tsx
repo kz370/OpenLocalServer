@@ -30,7 +30,7 @@ export function Titlebar() {
         <img
           src={mark}
           alt=""
-          className="size-4 rounded"
+          className="size-4 rounded-full"
           aria-hidden
         />
         {/* The window is the one surface that is always on screen, so it carries the
