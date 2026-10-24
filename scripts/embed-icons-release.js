@@ -3,6 +3,7 @@ const { execSync } = require('child_process');
 const RCEDIT = 'node_modules/rcedit/bin/rcedit-x64.exe';
 
 const tasks = [
+  ['target/release/openlocalserver.exe', 'src-tauri/icons/icon.ico'],
   ['target/release/ols-mcp.exe', 'crates/ols-mcp/icon.ico'],
   ['target/release/ols-helper.exe', 'crates/ols-helper/icon.ico'],
   ['target/release/olsc.exe', 'crates/ols-cli/icon.ico'],

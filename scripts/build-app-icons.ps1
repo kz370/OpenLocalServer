@@ -195,33 +195,43 @@ Write-Sizes (Join-Path $src 'icon-light-stopped.png') (Join-Path $icons 'red') '
 Write-Sizes (Join-Path $src 'icon-dark-running.png') (Join-Path $icons 'dark') 'dark running'
 Write-Sizes (Join-Path $src 'icon-dark-stopped.png') (Join-Path $icons 'dark/red') 'dark stopped (services stopped)'
 
-# The dark colourway also needs a real .ico, and not as a bundle: the Start Menu shortcut
+# The main executable icon (embedded into OLS.exe / openlocalserver.exe by tauri-build)
+# and the installer setup icon (SetupIconFile in installer/open-local-server.iss) both read
+# src-tauri/icons/icon.ico. Overwrite the light icon.ico created by cargo tauri icon with
+# the dark circular mark (256 down to 16) so both the main exe and the install setup exe
+# display the dark icon.
+#
+# The dark colourway also needs a real .ico in icons/dark/icon.ico: the Start Menu shortcut
 # points its own IconLocation at it, and the taskbar button takes the taskbar mark from
 # that shortcut rather than from the window (see the shortcut section of src-tauri/src/
 # notify.rs). `IShellLink::SetIconLocation` wants an icon *resource*, so a .png there
 # leaves the button blank — this has to be a genuine multi-size .ico.
-#
-# 128 down to 16 rather than the 256 the bundle set carries: a shortcut is never drawn
-# larger than a Start Menu tile, and the entry sizes dominate the file.
+$mainIco = Join-Path $icons 'icon.ico'
 $darkIco = Join-Path $icons 'dark/icon.ico'
 if ($Tool -eq 'magick') {
-  magick (Join-Path $src 'icon-dark-running.png') -define icon:auto-resize=128,64,48,32,24,16 -strip $darkIco
+  magick (Join-Path $src 'icon-dark-running.png') -define icon:auto-resize=256,128,64,48,32,24,16 -strip $mainIco
+  if ($LASTEXITCODE -ne 0) { throw "magick failed for main icon.ico" }
+  magick (Join-Path $src 'icon-dark-running.png') -define icon:auto-resize=256,128,64,48,32,24,16 -strip $darkIco
   if ($LASTEXITCODE -ne 0) { throw "magick failed for the dark .ico" }
 }
 else {
   # ffmpeg writes no .ico, so the sizes are emitted one by one and packed by magick if it
-  # happens to be present; without it the dark .ico is left for a machine that has it,
-  # and the shortcut falls back to the executable's own (light) icon rather than breaking.
+  # happens to be present; without it the dark .ico is left for a machine that has it.
   if (Test-Tool 'magick') {
-    magick (Join-Path $src 'icon-dark-running.png') -define icon:auto-resize=128,64,48,32,24,16 -strip $darkIco
+    magick (Join-Path $src 'icon-dark-running.png') -define icon:auto-resize=256,128,64,48,32,24,16 -strip $mainIco
+    if ($LASTEXITCODE -ne 0) { throw "magick failed for main icon.ico" }
+    magick (Join-Path $src 'icon-dark-running.png') -define icon:auto-resize=256,128,64,48,32,24,16 -strip $darkIco
     if ($LASTEXITCODE -ne 0) { throw "magick failed for the dark .ico" }
   }
   else {
-    Write-Warning 'no ImageMagick: icons/dark/icon.ico not rebuilt, so the taskbar keeps the executable icon'
+    Write-Warning 'no ImageMagick: icon.ico and icons/dark/icon.ico not rebuilt with dark icon'
   }
 }
+if (Test-Path $mainIco) {
+  Write-Output "ico     $mainIco ($((Get-Item -LiteralPath $mainIco).Length) bytes, 16-256px, main exe & installer setup mark [dark])"
+}
 if (Test-Path $darkIco) {
-  Write-Output "ico     $darkIco ($((Get-Item -LiteralPath $darkIco).Length) bytes, 16-128px, the shortcut/taskbar mark)"
+  Write-Output "ico     $darkIco ($((Get-Item -LiteralPath $darkIco).Length) bytes, 16-256px, the shortcut/taskbar mark [dark])"
 }
 
 Write-SvgMark (Join-Path $icons '128x128.png') (Join-Path $public 'favicon.svg') @(
