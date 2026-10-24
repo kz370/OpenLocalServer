@@ -1,4 +1,11 @@
 {
+  "name": "openlocalserver-workspace",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix ui run dev",
+    "build": "npm --prefix ui run build",
+    "lint": "npm --prefix ui run lint"
+  },
   "devDependencies": {
     "rcedit": "^5.0.2"
   }
