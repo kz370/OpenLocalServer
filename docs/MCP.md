@@ -77,7 +77,7 @@ Create a site:
 
 MCP authentication is **off by default** for backward compatibility. Enable it in OLS Settings → MCP / AI tools.
 
-The cleanest way is to put the token **in the MCP server config itself** (next to the `command`), so every `tools/call` is authenticated automatically — you never edit individual request JSON.
+The token lives **only in the MCP host config** (next to the `command`) — not inside individual `tools/call` requests. Set it once, and every call is authenticated automatically.
 
 ### Option A: `--token` argument (recommended)
 
@@ -107,14 +107,20 @@ The cleanest way is to put the token **in the MCP server config itself** (next t
 }
 ```
 
-Get the token from **OLS Settings → MCP / AI tools** (enable authentication, then generate or paste a token). Rotating the token there invalidates all connected MCP hosts on the next request; just update the config with the new token.
+Get the token from **OLS Settings → MCP / AI tools** (enable authentication, then generate or copy a token). Use the **Copy** button next to the token field. Rotating the token there invalidates all connected MCP hosts on the next request; just update the config with the new token.
 
-When authentication is enabled, every `tools/call` request (except `initialize`, `ping`, `resources/list`, `prompts/list`) must carry a bearer token:
+### Expiry
 
-- **Header form** (preferred, MCP 2025-06-18): send `params._meta.authorization` = `Bearer <token>`
-- **Fallback form**: send `params.arguments.token` = `<token>`
+Choose one expiry mode on the settings page:
+
+- **Never expires** — token is valid until you rotate it.
+- **Expires after (hours)** — token expires N hours after creation (TTL).
+- **Expires at (date/time)** — absolute expiry date/time.
+
+Leave on "Never expires" for no expiry. After expiry, all connections are rejected until you set a new expiry or regenerate the token.
 
 The token is stored in the OS credential manager (Windows Credential Manager), never in settings files, logs, or the installer bundle.
+
 
 ### Token rotation
 

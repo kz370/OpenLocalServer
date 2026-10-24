@@ -264,7 +264,7 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
     fn normalize_kind(value: &Value) -> Value {
         match value {
             Value::String(s) => match s.to_lowercase().as_str() {
-                "static" => json!({"type": "static"}),
+                "static" | "html" => json!({"type": "static"}),
                 "proxy" => {
                     json!({"type": "proxy", "upstream_port": 8080, "upstream_host": null, "upstream_https": false})
                 }
@@ -281,18 +281,37 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
         },
         "ols_add_domain" => {
             let mut args = args.clone();
-            // Normalize `kind` from a plain string ("static", "php", "proxy") into the
-            // internally-tagged SiteKind enum serde expects. Case-insensitive.
+            // Normalize `kind` from a plain string ("static", "html", "php", "proxy")
+            // into the internally-tagged SiteKind enum serde expects. Case-insensitive.
             if let Some(k) = args.get("kind") {
                 args["kind"] = normalize_kind(k);
             } else {
                 args["kind"] = json!({"type": "php", "version": null});
             }
             // Default root to the installation's sites folder so the AI doesn't
-            // have to guess a location.
+            // have to guess a location. Respect the configured sites dir if set.
             if args.get("root").is_none() {
-                let sites_dir = ols_core::paths::AppPaths::resolve().sites_dir();
+                let settings = ols_core::settings::SettingsService::load(
+                    &ols_core::paths::AppPaths::resolve(),
+                );
+                let sites_dir: std::path::PathBuf = settings
+                    .ok()
+                    .and_then(|s| s.get("domains.sites_dir").cloned())
+                    .and_then(|v| v.as_str().map(|s| s.to_owned()))
+                    .filter(|s| !s.is_empty())
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|| ols_core::paths::AppPaths::resolve().sites_dir());
                 args["root"] = json!(sites_dir.to_string_lossy());
+            }
+            // Validate the root is an absolute folder path before sending to core.
+            if let Some(root) = args.get("root").and_then(|v| v.as_str()) {
+                if !std::path::Path::new(root).is_absolute() {
+                    return Err(format!(
+                        "failed to parse domain args: root '{root}' is not an absolute folder path. \
+                         Use an absolute path (e.g. C:\\sites\\test559.local) or set domains.sites_dir \
+                         in Settings to a default sites folder.",
+                    ));
+                }
             }
             let mut domain: ols_core::domain::Domain = serde_json::from_value(args)
                 .map_err(|e| format!("failed to parse domain args: {e}"))?;

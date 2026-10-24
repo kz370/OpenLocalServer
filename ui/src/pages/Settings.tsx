@@ -1,5 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Archive, Book, Copy, Eye, EyeOff, ExternalLink, FolderPlus, FolderSearch, FolderTree, Gauge, Globe, Info, Power, Settings2, ShieldCheck, Stethoscope, Trash2 } from 'lucide-react'
+import { Archive, Book, Copy, Eye, EyeOff, ExternalLink, FolderPlus, FolderSearch, FolderTree, Gauge, Globe, Info, Power, RefreshCw, Settings2, ShieldCheck, Stethoscope, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
@@ -71,8 +71,9 @@ export function SettingsPage() {
   const [mcpEnabled, setMcpEnabled] = useState(false)
   const [mcpToken, setMcpToken] = useState('')
   const [mcpTokenVisible, setMcpTokenVisible] = useState(false)
-  const [mcpTtl, setMcpTtl] = useState(0)
-  const [mcpNewToken, setMcpNewToken] = useState('')
+  const [mcpExpiryMode, setMcpExpiryMode] = useState<'none' | 'hours' | 'at'>('none')
+  const [mcpTtlHours, setMcpTtlHours] = useState(0)
+  const [mcpExpiresAt, setMcpExpiresAt] = useState('')
   const [mcpConfigured, setMcpConfigured] = useState(false)
 
   const releaseNotesFiltered = useMemo(() => {
@@ -125,7 +126,7 @@ export function SettingsPage() {
         setCustomTld(tld)
       }
     })
-    // MCP auth: enabled is a setting, token/TTL live in the OS keyring via GetSecret.
+    // MCP auth: enabled is a setting, token + expires_at live in the OS keyring via GetSecret.
     void runCommand({ type: 'get_setting', key: 'mcp.auth.enabled' }).then((r) => {
       if (r.type === 'setting' && typeof r.value === 'boolean') setMcpEnabled(r.value)
     })
@@ -135,10 +136,22 @@ export function SettingsPage() {
         setMcpToken(r.value ?? '')
       }
     })
+    void runCommand({ type: 'get_secret', key: 'mcp.auth.token.expires_at' }).then((r) => {
+      if (r.type === 'secret' && r.value) {
+        const ms = parseInt(r.value, 10)
+        if (!isNaN(ms)) {
+          setMcpExpiresAt(new Date(ms).toISOString().slice(0, 16))
+          setMcpExpiryMode('at')
+        }
+      }
+    })
     void runCommand({ type: 'get_secret', key: 'mcp.auth.token.ttl_ms' }).then((r) => {
       if (r.type === 'secret' && r.value) {
         const ttl = parseInt(r.value, 10)
-        if (!isNaN(ttl)) setMcpTtl(ttl)
+        if (!isNaN(ttl) && ttl > 0) {
+          setMcpTtlHours(ttl / (3600 * 1000))
+          setMcpExpiryMode('hours')
+        }
       }
     })
   }, [])
@@ -169,17 +182,22 @@ export function SettingsPage() {
 
   async function saveMcp() {
     await runCommand({ type: 'set_setting', key: 'mcp.auth.enabled', value: mcpEnabled })
-    if (mcpNewToken) {
-      await runCommand({ type: 'set_secret', key: 'mcp.auth.token', value: mcpNewToken })
+    if (mcpToken) {
+      await runCommand({ type: 'set_secret', key: 'mcp.auth.token', value: mcpToken })
       const now = Date.now()
       await runCommand({ type: 'set_secret', key: 'mcp.auth.token.created_at', value: String(now) })
-      await runCommand({ type: 'set_secret', key: 'mcp.auth.token.ttl_ms', value: String(mcpTtl * 3600 * 1000) })
-      setMcpToken(mcpNewToken)
-      setMcpNewToken('')
+      if (mcpExpiryMode === 'hours' && mcpTtlHours > 0) {
+        await runCommand({ type: 'set_secret', key: 'mcp.auth.token.ttl_ms', value: String(mcpTtlHours * 3600 * 1000) })
+        await runCommand({ type: 'set_secret', key: 'mcp.auth.token.expires_at', value: '' })
+      } else if (mcpExpiryMode === 'at' && mcpExpiresAt) {
+        const expiresMs = new Date(mcpExpiresAt).getTime()
+        await runCommand({ type: 'set_secret', key: 'mcp.auth.token.ttl_ms', value: '' })
+        await runCommand({ type: 'set_secret', key: 'mcp.auth.token.expires_at', value: String(expiresMs) })
+      } else {
+        await runCommand({ type: 'set_secret', key: 'mcp.auth.token.ttl_ms', value: '' })
+        await runCommand({ type: 'set_secret', key: 'mcp.auth.token.expires_at', value: '' })
+      }
       setMcpConfigured(true)
-    } else if (mcpConfigured && mcpToken) {
-      // Token unchanged; just refresh TTL.
-      await runCommand({ type: 'set_secret', key: 'mcp.auth.token.ttl_ms', value: String(mcpTtl * 3600 * 1000) })
     }
     setSaved('MCP settings saved.')
     setTimeout(() => setSaved(null), 2500)
@@ -188,7 +206,7 @@ export function SettingsPage() {
   function generateMcpToken() {
     const bytes = new Uint8Array(32)
     crypto.getRandomValues(bytes)
-    setMcpNewToken(Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join(''))
+    setMcpToken(Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join(''))
   }
 
   async function addRootFolder() {
@@ -551,12 +569,12 @@ export function SettingsPage() {
                   checked={mcpEnabled}
                   onChange={setMcpEnabled}
                   title="Require MCP authentication"
-                  hint="When on, every ols-mcp request must carry a valid bearer token. Off keeps existing installs working unchanged."
+                  hint="When on, the ols-mcp server must be launched with --token or OLS_MCP_TOKEN matching this token. Off keeps existing installs working unchanged."
                 />
                 {!mcpEnabled && (
                   <p className="text-xs text-muted-foreground">
-                    Turn authentication on to generate a token, then configure your MCP host
-                    to send it as &ldquo;Authorization: Bearer &lt;token&gt;&rdquo;.
+                    Turn authentication on to generate a token, then pass it as
+                    &ldquo;--token &lt;token&gt;&rdquo; or OLS_MCP_TOKEN in your MCP host config.
                   </p>
                 )}
                 {mcpEnabled && (
@@ -564,7 +582,7 @@ export function SettingsPage() {
                     <SettingRow
                       stacked
                       title="Bearer token"
-                      hint={mcpConfigured ? 'Token is stored in the OS credential manager.' : 'No token configured. Generate one below.'}
+                      hint={mcpConfigured ? 'Stored in the OS credential manager. Copy it into your MCP host config as --token or OLS_MCP_TOKEN.' : 'No token configured. Generate one below.'}
                     >
                       <div className="flex items-center gap-2">
                         <Input
@@ -582,47 +600,60 @@ export function SettingsPage() {
                         >
                           {mcpTokenVisible ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                         </Button>
-                        {mcpConfigured && (
-                          <Button size="sm" variant="outline" onClick={() => setMcpNewToken('')}>
-                            Regenerate
-                          </Button>
-                        )}
-                      </div>
-                    </SettingRow>
-                    <SettingRow
-                      stacked
-                      title="New token (optional)"
-                      hint="Leave blank to keep the existing token. A new token invalidates all connected MCP hosts immediately."
-                    >
-                      <div className="flex gap-2">
-                        <Input
-                          type={mcpTokenVisible ? 'text' : 'password'}
-                          value={mcpNewToken}
-                          onChange={(e) => setMcpNewToken(e.target.value)}
-                          placeholder="Auto-generate on save if blank"
-                          className="flex-1 font-mono text-xs"
-                        />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={async () => {
+                            await navigator.clipboard.writeText(mcpToken)
+                          }}
+                          disabled={!mcpToken}
+                          aria-label="Copy token"
+                        >
+                          <Copy className="size-4" />
+                        </Button>
                         <Button size="sm" variant="outline" onClick={generateMcpToken}>
-                          Generate
+                          <RefreshCw className="size-4" />
                         </Button>
                       </div>
                     </SettingRow>
                     <SettingRow
                       stacked
-                      title="Token lifetime (hours)"
-                      hint="0 means the token never expires. After expiry, rotate it in this page."
+                      title="Token expiry"
+                      hint="Never expires = valid until rotated. Hours = TTL from creation. At = absolute date/time."
                     >
-                      <Input
-                        type="number"
-                        value={mcpTtl}
-                        onChange={(e) => setMcpTtl(parseInt(e.target.value, 10) || 0)}
-                        className="w-24"
-                      />
+                      <div className="flex items-start gap-3">
+                        <Select
+                          value={mcpExpiryMode}
+                          onChange={(e) => setMcpExpiryMode(e.target.value as 'none' | 'hours' | 'at')}
+                          className="w-48"
+                        >
+                          <option value="none">Never expires</option>
+                          <option value="hours">Expires after N hours</option>
+                          <option value="at">Expires at date/time</option>
+                        </Select>
+                        {mcpExpiryMode === 'hours' && (
+                          <Input
+                            type="number"
+                            value={mcpTtlHours}
+                            onChange={(e) => setMcpTtlHours(parseInt(e.target.value, 10) || 0)}
+                            placeholder="hours"
+                            className="w-24 bg-input border border-input rounded px-3 py-1.5 text-sm"
+                          />
+                        )}
+                        {mcpExpiryMode === 'at' && (
+                          <input
+                            type="datetime-local"
+                            value={mcpExpiresAt}
+                            onChange={(e) => setMcpExpiresAt(e.target.value)}
+                            className="bg-input border border-input rounded px-3 py-1.5 text-sm w-64"
+                          />
+                        )}
+                      </div>
                     </SettingRow>
                     <p className="text-xs text-muted-foreground">
-                      Token rotation: changing the token above invalidates every MCP client
-                      on next request. No reinstall needed — just reconfigure each host with
-                      the new token.
+                      Token rotation: changing the token above invalidates every connected
+                      MCP host on next request. Update each host&rsquo;s --token / OLS_MCP_TOKEN
+                      with the new value. No reinstall needed.
                     </p>
                   </>
                 )}
