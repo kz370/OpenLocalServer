@@ -15,6 +15,9 @@ use crate::settings::SettingsService;
 pub mod dispatch;
 pub mod types;
 
+#[cfg(test)]
+mod tests;
+
 pub use self::types::{CoreCommand, CoreResponse, DashboardData};
 
 /// Reports a background task's completion status.
@@ -105,6 +108,3 @@ impl Core {
             .map_err(|e| Diagnostic::from(&e))
     }
 }
-
-#[cfg(test)]
-mod tests;

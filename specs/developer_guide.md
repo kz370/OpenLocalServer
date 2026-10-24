@@ -27,7 +27,7 @@ Managed binaries downloaded on demand with SHA-256 verify; never run unverified 
 - Isolated tests: `test_support::isolated_home()` sets temp OLS_HOME with global env lock.
 
 ## Extension Guide
-- New CoreCommand: add variant in `command.rs`, implement in `app.rs` Inner method, return CoreResponse, expose in `core.ts` types, call via `runCommand`. No direct manager access from UI.
+- New CoreCommand: add variant in `command/types.rs`, route in `command/dispatch.rs`, implement in appropriate `app/` submodule (`domains.rs`, `projects.rs`, `web.rs`, `quickapp.rs`, `system.rs`) Inner method, return CoreResponse, expose in `core.ts` types, call via `runCommand`. No direct manager access from UI.
 - New runtime: add pin in `catalog.rs` (HTTPS URL + 64-hex SHA256), probe logic in `runtime.rs`, UI row in Runtimes page. Remote catalogs need minisign key.
 - New plugin: write `plugin.yaml` (id/name/version/permissions/contributes), `olsc plugin install <folder|zip>`; permissions gate exact list; manifest change voids approval.
 - New quick-app: YAML in `catalog/quick-apps/` following schema (variables/steps/files/env/post_create/domain); validate via strict schema + Minijinja strict undefined.

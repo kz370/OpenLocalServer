@@ -1,10 +1,10 @@
 # RUNTIME
 
 ## Files to Process
-Total meaningful source files: 235 (excluding target/, node_modules/, .git/, dist/, data/services/postgres runtime data, icon bulk).
+Total meaningful source files: 244 (excluding target/, node_modules/, .git/, dist/, data/services/postgres runtime data, icon bulk).
 
-### Rust core (crates/ols-core/src, 79 files)
-- src/lib.rs, app.rs, command.rs, control.rs, api.rs, paths.rs, settings.rs, secrets.rs, db.rs
+### Rust core (crates/ols-core/src, 88 files)
+- src/lib.rs, app/ (mod.rs, domains.rs, projects.rs, quickapp.rs, system.rs, web.rs, tests.rs), command/ (mod.rs, types.rs, dispatch.rs, tests.rs), control.rs, api.rs, paths.rs, settings.rs, secrets.rs, db.rs
 - src/cli_dispatch.rs
 - src/process.rs, port.rs, exec.rs, error.rs, logging.rs, redact.rs, diagnostics.rs, repair.rs, search.rs, support.rs, network.rs, journal.rs, resources.rs, elevate.rs, test_support.rs
 - src/catalog.rs, catalogs.rs, runtime.rs, php.rs, nodepm.rs, composer.rs, venv.rs, custom_install.rs, resolver.rs, detection.rs, plugin.rs, updater.rs
@@ -62,7 +62,10 @@ release-notes/v2.2.0.md added 2026-10-19; Files Processed is now 232, matching F
 
 scripts/update-version.bat, scripts/update-version.ps1, update-version.bat added 2026-10-22; Files Processed is now 235, matching Files to Process.
 
+crates/ols-core/src/app/ and crates/ols-core/src/command/ modularization added 2026-10-25; Files Processed is now 244, matching Files to Process.
+
 ## Log
+- [2026-10-25] refactor(core): modularized monolithic app.rs and command.rs into cohesive, focused submodules under 500-1,200 lines. Split `crates/ols-core/src/command.rs` (5,719 lines) into `command/` (`mod.rs`, `types.rs`, `dispatch.rs`, `tests.rs`) and `crates/ols-core/src/app.rs` (5,402 lines) into `app/` (`mod.rs`, `domains.rs`, `projects.rs`, `web.rs`, `quickapp.rs`, `system.rs`, `tests.rs`). Stripped verbose essay-like comments in favor of concise developer docstrings while retaining 100% binary and IPC compatibility. All unit tests verified (command: 26 passed, app: 34 passed). Updated REFACTORING_PLAN.md with comprehensive 4-tier plan targeting all source files > 500 lines. Specs: full_documentation.md, catalog.txt, relationships.txt, developer_guide.md, runtime.md. Files Processed 235 -> 244.
 - [2026-10-24] fix(core,mcp): prevented duplicate auto-domain creation on project scan and enabled full HTTPS & local CA support in MCP server. In crates/ols-core/src/app.rs, updated sync_auto_domains to match any domain serving the same project folder or root, link existing domains to project IDs, and strip trailing default TLDs from folder names prior to slugification (preventing "test366.local" from becoming "test366-local.local"); updated add_domain to auto-link matching project IDs. In crates/ols-mcp/src/lib.rs, exposed https (defaulting to true) and redirect_https in ols_add_domain and ols_update_domain schemas with clear Local CA certificate documentation, implemented safe partial updates in ols_update_domain (retaining all existing fields when updating https), and updated python venv binary resolution. Updated docs/MCP.md, catalog.txt, and full_documentation.md. Verified with cargo fmt --all, cargo clippy -p ols-core -p ols-helper -p ols-mcp --all-targets (0 errors), cargo test -p ols-core -p ols-helper (550 passed), cargo test -p ols-mcp (13 passed), cd ui && npm run lint (0 errors) and npm run build. Files Processed remains 235.
 - [2026-10-24] fix(installer,build): eliminated loose .ico files from being installed or moved into the installation folder ({app}). Removed .ico sources from installer [Files] section, removed IconFilename from [Icons] shortcuts so Windows uses each binary's embedded PE icon directly, updated PruneUnshippedFiles to prune any leftover .ico files from previous installs, removed .ico copies in scripts/build-installer.bat, and updated menu_icon in crates/ols-core/src/shell_menu.rs to target OLS.exe directly. Verified with ISCC compilation. Files Processed remains 235.
 - [2026-10-24] docs(release): updated v2.4.0.md release notes and CHANGELOG.md documenting Python runtime management, Model Context Protocol (MCP) server, circular icon branding, dark executable/setup icon, User Manual page, and core fixes. Files Processed remains 235.

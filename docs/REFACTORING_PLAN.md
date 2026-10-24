@@ -1,112 +1,167 @@
-# Safe Refactoring Plan: Modularizing Monolithic Files in OpenLocalServer
+# Comprehensive Safe Refactoring Plan: Modularizing Files > 500 Lines in OpenLocalServer
 
 ## 1. Executive Summary & Objective
 
-In accordance with project maintainability guidelines and architecture best practices, this plan defines the **safe, non-destructive refactoring** of oversized files in OpenLocalServer—specifically targeting files exceeding 4,000 lines.
+In accordance with user requirements, the refactoring scope has been expanded from only files exceeding 4,000 lines to **all codebase files exceeding 500 lines**. A 500-line ceiling ensures tight cohesion, single-responsibility modules, readable navigation, and simple maintenance across both Rust crates and TypeScript UI layers.
 
-### Primary Goals
-1. **Break Monoliths into Focused Modules**: Decompose massive files into smaller, single-responsibility files (targeted under 600–1,200 lines each) using Rust's directory module idiom (`mod.rs`, submodules).
-2. **Preserve 100% Behavioral & API Compatibility**: Zero breaking changes to public APIs, IPC contracts, data types, serializations, or CLI command signatures.
-3. **Comment Hygiene**: Replace essay-like multi-paragraph doc comments with concise, direct, human developer comments explaining intent without bloat.
-4. **Enforce Safety & Spec Synchronization**: Maintain quality gates (`cargo clippy`, `cargo test`, `npm run lint`, `npm run build`) and update all `specs/` documentation per `AGENTS.md`.
+### Non-Negotiable Requirements
+1. **Safe & Non-Destructive**: Zero behavioral, IPC wire format, or public API contract changes.
+2. **Comment Hygiene**: Strip all bloated essay-like architectural commentaries. Replace with concise, 1-2 sentence developer docstrings explaining intent.
+3. **Spec Synchronization (`AGENTS.md`)**: Keep `specs/full_documentation.md`, `specs/catalog.txt`, `specs/relationships.txt`, and `specs/runtime.md` updated as files are modularized.
+4. **Safety Rule**: Never run `cargo test` while `cargo tauri dev` is actively running.
 
 ---
 
-## 2. Codebase Audit: Monolithic Files (>4,000 Lines)
+## 2. Complete Codebase Audit: Files Exceeding 500 Lines
 
-An audit of the codebase identified two files that severely exceed the 4,000-line threshold:
+A full audit of the project source tree (`crates/`, `src-tauri/`, `ui/src/`) identified **69 source files** exceeding 500 lines, categorized into 4 priority tiers:
 
-| File | Original Line Count | File Size | Primary Responsibilities |
+### Tier 1: Original Monoliths (>4,000 lines) — *Completed / In Final Polish*
+| Original File | Line Count | Target Modular Architecture | Status |
 |---|---|---|---|
-| [`crates/ols-core/src/command.rs`](file:///I:/Development/repos/OpenLocalServer/crates/ols-core/src/command.rs) | **5,719 lines** | 203 KB | Central IPC/CLI command router (`CoreCommand`), response enums (`CoreResponse`), `Core` struct, 76-arm dispatcher match block, and comprehensive dispatch unit tests. |
-| [`crates/ols-core/src/app.rs`](file:///I:/Development/repos/OpenLocalServer/crates/ols-core/src/app.rs) | **5,402 lines** | 218 KB | Central application state (`Inner`), domain CRUD & sync, project scanning, web server config application, Quick App execution engine (`QuickHost`), Windows startup/registry, log streaming, and unit test suites. |
-
-*(Note: The next largest files are ~2,000–2,600 lines, such as `runtime.rs`, `ai.rs`, `domain.rs`, and `ui/src/core.ts`, which remain well below the 4,000-line threshold and are kept stable).*
+| [`crates/ols-core/src/command.rs`](file:///I:/Development/repos/OpenLocalServer/crates/ols-core/src/command.rs) | **5,719** | Split into `crates/ols-core/src/command/` (`mod.rs`, `types.rs`, `dispatch.rs`, `tests.rs`) | **Extracted & Test-Verified** (26/26 passed) |
+| [`crates/ols-core/src/app.rs`](file:///I:/Development/repos/OpenLocalServer/crates/ols-core/src/app.rs) | **5,402** | Split into `crates/ols-core/src/app/` (`mod.rs`, `domains.rs`, `projects.rs`, `web.rs`, `quickapp.rs`, `system.rs`, `tests.rs`) | **Extracted & Test-Verified** (34/34 passed) |
 
 ---
 
-## 3. Modular Architecture & Decomposition Plan
+### Tier 2: Heavyweight Source Files (2,000 – 3,000 lines)
+These files represent critical business logic that has accumulated excessive responsibilities over time:
 
-### 3.1. Target 1: `crates/ols-core/src/command/` (Replaces `command.rs`)
+| File | Lines | Current Responsibilities | Proposed Modular Split Plan |
+|---|---|---|---|
+| [`crates/ols-core/src/runtime.rs`](file:///I:/Development/repos/OpenLocalServer/crates/ols-core/src/runtime.rs) | **2,837** | Runtime manager, downloader, unpacker, verification, system detection, path resolution, events | `runtime/` (`mod.rs`, `manager.rs`, `detect.rs`, `download.rs`, `unpack.rs`, `events.rs`, `tests.rs`) |
+| [`crates/ols-core/src/ai.rs`](file:///I:/Development/repos/OpenLocalServer/crates/ols-core/src/ai.rs) | **2,794** | Ollama client, model pull/catalog, prompts, chat completions, code generation, embeddings | `ai/` (`mod.rs`, `ollama.rs`, `models.rs`, `prompts.rs`, `chat.rs`, `tests.rs`) |
+| [`crates/ols-core/src/command/dispatch.rs`](file:///I:/Development/repos/OpenLocalServer/crates/ols-core/src/command/dispatch.rs) | **2,643** | Giant dispatch match block handling all command categories | `command/dispatch/` (`mod.rs`, `system.rs`, `services.rs`, `web.rs`, `domains.rs`, `projects.rs`, `runtimes.rs`, `tools.rs`) |
+| [`crates/ols-cli/src/main.rs`](file:///I:/Development/repos/OpenLocalServer/crates/ols-cli/src/main.rs) | **2,368** | CLI command parsing, terminal formatting, interactive prompts, IPC bridge | `ols-cli/src/` (`main.rs`, `cli.rs`, `format.rs`, `commands/` [subcommands]) |
+| [`crates/ols-core/src/domain.rs`](file:///I:/Development/repos/OpenLocalServer/crates/ols-core/src/domain.rs) | **2,362** | Domain store, hosts file manipulation, DNS, SSL bindings, site types, validation | `domain/` (`mod.rs`, `store.rs`, `hosts.rs`, `ssl.rs`, `types.rs`, `validation.rs`, `tests.rs`) |
+| [`ui/src/core.ts`](file:///I:/Development/repos/OpenLocalServer/ui/src/core.ts) | **2,257** | Tauri IPC wrappers, state management, event listeners, command definitions | `ui/src/core/` (`index.ts`, `ipc.ts`, `events.ts`, `commands.ts`, `types.ts`) |
+| [`crates/ols-core/src/web/manager.rs`](file:///I:/Development/repos/OpenLocalServer/crates/ols-core/src/web/manager.rs) | **2,221** | Web server manager, Apache/Nginx/Caddy orchestration, config template generation | `web/manager/` (`mod.rs`, `apply.rs`, `validation.rs`, `templates.rs`, `ports.rs`) |
+| [`crates/ols-core/src/setup.rs`](file:///I:/Development/repos/OpenLocalServer/crates/ols-core/src/setup.rs) | **2,141** | First-run setup, default runtimes, hosts configuration, CA certificate bootstrap | `setup/` (`mod.rs`, `bootstrap.rs`, `ca.rs`, `defaults.rs`, `installer.rs`) |
 
-Rather than housing types, routing, task management, and tests in a single 5,719-line file, `command` is modularized into:
+---
 
+### Tier 3: Moderate Monoliths (1,000 – 2,000 lines)
+
+#### Rust Modules:
+| File | Lines | Proposed Modular Split Plan |
+|---|---|---|
+| [`crates/ols-core/src/snapshots.rs`](file:///I:/Development/repos/OpenLocalServer/crates/ols-core/src/snapshots.rs) | 1,881 | Split into `snapshots/` (`mod.rs`, `create.rs`, `restore.rs`, `storage.rs`, `manifest.rs`) |
+| [`crates/ols-core/src/command/types.rs`](file:///I:/Development/repos/OpenLocalServer/crates/ols-core/src/command/types.rs) | 1,828 | Split commands into `command/types/` (`commands.rs`, `responses.rs`, `models.rs`) |
+| [`crates/ols-core/src/auto_backup.rs`](file:///I:/Development/repos/OpenLocalServer/crates/ols-core/src/auto_backup.rs) | 1,813 | Split into `auto_backup/` (`mod.rs`, `engine.rs`, `retention.rs`, `scheduler.rs`) |
+| [`crates/ols-mcp/src/lib.rs`](file:///I:/Development/repos/OpenLocalServer/crates/ols-mcp/src/lib.rs) | 1,580 | Split into `ols-mcp/src/` (`lib.rs`, `protocol.rs`, `tools.rs`, `prompts.rs`, `resources.rs`) |
+| [`crates/ols-core/src/service.rs`](file:///I:/Development/repos/OpenLocalServer/crates/ols-core/src/service.rs) | 1,517 | Split into `service/` (`mod.rs`, `supervisor.rs`, `windows.rs`, `discovery.rs`) |
+| [`crates/ols-core/src/sitebundle.rs`](file:///I:/Development/repos/OpenLocalServer/crates/ols-core/src/sitebundle.rs) | 1,505 | Split into `sitebundle/` (`mod.rs`, `archive.rs`, `export.rs`, `import.rs`) |
+| [`crates/ols-core/src/loadtest.rs`](file:///I:/Development/repos/OpenLocalServer/crates/ols-core/src/loadtest.rs) | 1,501 | Split into `loadtest/` (`mod.rs`, `engine.rs`, `metrics.rs`, `reporter.rs`) |
+| [`crates/ols-core/src/ddns.rs`](file:///I:/Development/repos/OpenLocalServer/crates/ols-core/src/ddns.rs) | 1,436 | Split into `ddns/` (`mod.rs`, `providers/` [cloudflare, duckdns, route53, noip]) |
+| [`crates/ols-core/src/app/system.rs`](file:///I:/Development/repos/OpenLocalServer/crates/ols-core/src/app/system.rs) | 1,293 | Split into `app/system/` (`health.rs`, `registry.rs`, `logs.rs`, `dbtools.rs`) |
+| [`crates/ols-core/src/git.rs`](file:///I:/Development/repos/OpenLocalServer/crates/ols-core/src/git.rs) | 1,287 | Split into `git/` (`mod.rs`, `repo.rs`, `commit.rs`, `branch.rs`, `remote.rs`) |
+| [`crates/ols-core/src/tunnel.rs`](file:///I:/Development/repos/OpenLocalServer/crates/ols-core/src/tunnel.rs) | 1,280 | Split into `tunnel/` (`mod.rs`, `ngrok.rs`, `localtunnel.rs`, `cloudflare.rs`) |
+| [`crates/ols-core/src/quickapp/plan.rs`](file:///I:/Development/repos/OpenLocalServer/crates/ols-core/src/quickapp/plan.rs) | 1,278 | Split into `quickapp/plan/` (`mod.rs`, `analyzer.rs`, `resolver.rs`, `builder.rs`) |
+| [`crates/ols-core/src/command/tests.rs`](file:///I:/Development/repos/OpenLocalServer/crates/ols-core/src/command/tests.rs) | 1,146 | Partition test cases across relevant domain submodules |
+| [`src-tauri/src/lib.rs`](file:///I:/Development/repos/OpenLocalServer/src-tauri/src/lib.rs) | 1,093 | Split into `src-tauri/src/` (`lib.rs`, `tray.rs`, `menu.rs`, `commands.rs`, `window.rs`) |
+| [`crates/ols-core/src/app/quickapp.rs`](file:///I:/Development/repos/OpenLocalServer/crates/ols-core/src/app/quickapp.rs) | 1,007 | Split into `app/quickapp/` (`host.rs`, `requirements.rs`, `runner.rs`) |
+
+#### UI Components & Pages:
+| File | Lines | Proposed Modular Split Plan |
+|---|---|---|
+| [`ui/src/components/site/SiteDomainsPanel.tsx`](file:///I:/Development/repos/OpenLocalServer/ui/src/components/site/SiteDomainsPanel.tsx) | 1,860 | Decompose into subcomponents: `DomainRow.tsx`, `DomainActions.tsx`, `DomainSslBadge.tsx`, `BulkDomainBar.tsx` |
+| [`ui/src/components/site/DomainDialog.tsx`](file:///I:/Development/repos/OpenLocalServer/ui/src/components/site/DomainDialog.tsx) | 1,384 | Decompose into tab panels: `GeneralTab.tsx`, `SslTab.tsx`, `RoutingTab.tsx`, `AdvancedTab.tsx` |
+| [`ui/src/pages/Commands.tsx`](file:///I:/Development/repos/OpenLocalServer/ui/src/pages/Commands.tsx) | 1,142 | Extract `CommandPalette.tsx`, `CommandHistoryList.tsx`, `CommandOutputView.tsx` |
+| [`ui/src/pages/Sites.tsx`](file:///I:/Development/repos/OpenLocalServer/ui/src/pages/Sites.tsx) | 1,120 | Extract `SiteList.tsx`, `SiteCard.tsx`, `SiteFilterBar.tsx`, `CreateSiteModal.tsx` |
+
+---
+
+### Tier 4: Files Between 500 – 1,000 Lines
+
+#### Rust Modules (to refactor into focused submodules):
+- `crates/ols-core/src/plugin.rs` (969 lines) → `plugin/` (`mod.rs`, `loader.rs`, `manifest.rs`, `sandbox.rs`)
+- `crates/ols-core/src/app/tests.rs` (944 lines) → split across matching sub-tests
+- `crates/ols-core/src/quickapp/run.rs` (943 lines) → `quickapp/run/` (`mod.rs`, `exec.rs`, `status.rs`)
+- `crates/ols-core/src/app/domains.rs` (910 lines) → `app/domains/` (`crud.rs`, `ssl.rs`, `bulk.rs`)
+- `crates/ols-core/src/php.rs` (908 lines) → `php/` (`mod.rs`, `pools.rs`, `extensions.rs`, `ini.rs`)
+- `crates/ols-core/src/process.rs` (897 lines) → `process/` (`mod.rs`, `supervisor.rs`, `windows.rs`)
+- `crates/ols-core/src/tasks.rs` (833 lines) → `tasks/` (`mod.rs`, `queue.rs`, `worker.rs`)
+- `crates/ols-core/src/repair.rs` (808 lines) → `repair/` (`mod.rs`, `rules.rs`, `actions.rs`)
+- `crates/ols-core/src/migrate.rs` (784 lines) → `migrate/` (`mod.rs`, `v1.rs`, `v2.rs`, `importer.rs`)
+- `crates/ols-core/src/quickapp/catalog.rs` (745 lines) → `quickapp/catalog/` (`mod.rs`, `builtin.rs`, `parser.rs`)
+- `crates/ols-core/src/command_catalog.rs` (732 lines) → `command_catalog/` (`mod.rs`, `metadata.rs`, `docs.rs`)
+- `crates/ols-core/src/wordpress.rs` (679 lines) → `wordpress/` (`mod.rs`, `cli.rs`, `config.rs`, `detector.rs`)
+- `crates/ols-core/src/profiles.rs` (642 lines) → `profiles/` (`mod.rs`, `store.rs`, `apply.rs`)
+- `crates/ols-core/src/detection.rs` (637 lines) → `detection/` (`mod.rs`, `stack.rs`, `rules.rs`)
+- `crates/ols-core/src/app/projects.rs` (633 lines) → `app/projects/` (`scan.rs`, `skip.rs`, `watcher.rs`)
+- `crates/ols-core/src/web/nginx.rs` (624 lines) → `web/nginx/` (`mod.rs`, `parser.rs`, `generator.rs`)
+- `crates/ols-core/src/inspector.rs` (617 lines) → `inspector/` (`mod.rs`, `system.rs`, `network.rs`)
+- `crates/ols-core/src/api.rs` (611 lines) → `api/` (`mod.rs`, `routes.rs`, `middleware.rs`)
+- `crates/ols-core/src/resources.rs` (609 lines) → `resources/` (`mod.rs`, `monitor.rs`, `limits.rs`)
+- `crates/ols-core/src/dbtools.rs` (607 lines) → `dbtools/` (`mod.rs`, `discovery.rs`, `drivers.rs`)
+- `crates/ols-core/src/web/mod.rs` (568 lines) → trim and extract helpers
+- `crates/ols-core/src/envfile.rs` (542 lines) → `envfile/` (`mod.rs`, `parser.rs`, `writer.rs`)
+- `crates/ols-core/src/catalog.rs` (537 lines) → `catalog/` (`mod.rs`, `store.rs`, `version.rs`)
+- `crates/ols-core/src/quickapp/schema.rs` (532 lines) → `quickapp/schema/` (`types.rs`, `validation.rs`)
+- `crates/ols-core/src/acme.rs` (523 lines) → `acme/` (`client.rs`, `challenge.rs`, `cert.rs`)
+- `crates/ols-core/src/project_tools.rs` (516 lines) → `project_tools/` (`mod.rs`, `runners.rs`)
+- `crates/ols-core/src/scheduler.rs` (509 lines) → `scheduler/` (`mod.rs`, `cron.rs`, `job.rs`)
+
+#### UI Pages & Components:
+- `ui/src/pages/Tunnels.tsx` (902 lines) → extract `TunnelList.tsx`, `TunnelConfigModal.tsx`
+- `ui/src/pages/QuickApps.tsx` (901 lines) → extract `AppCatalogGrid.tsx`, `AppInstallModal.tsx`
+- `ui/src/pages/Databases.tsx` (848 lines) → extract `DatabaseList.tsx`, `DbConnectionModal.tsx`
+- `ui/src/pages/Runtimes.tsx` (756 lines) → extract `RuntimeCard.tsx`, `RuntimeVersionPicker.tsx`
+- `ui/src/pages/Config.tsx` (747 lines) → extract `ConfigEditor.tsx`, `ConfigDiffViewer.tsx`
+- `ui/src/pages/Dashboard.tsx` (726 lines) → extract `StatWidgets.tsx`, `ServiceStatusBar.tsx`
+- `ui/src/components/SettingsExtras.tsx` (686 lines) → extract individual setting section panels
+- `ui/src/pages/Settings.tsx` (674 lines) → extract tab panels into `settings/`
+- `ui/src/components/project/LoadPanel.tsx` (646 lines) → extract `LoadConfig.tsx`, `LoadCharts.tsx`
+- `ui/src/components/project/GitPanel.tsx` (624 lines) → extract `BranchSelector.tsx`, `CommitList.tsx`
+- `ui/src/components/project/BackupsPanel.tsx` (556 lines) → extract `BackupCard.tsx`, `RestoreDialog.tsx`
+- `ui/src/components/site/SiteLogoPanel.tsx` (538 lines) → extract `IconPicker.tsx`, `FaviconGenerator.tsx`
+- `ui/src/components/ReleaseCards.tsx` (533 lines) → extract `ChangelogItem.tsx`, `UpdateAction.tsx`
+- `ui/src/pages/WebServer.tsx` (513 lines) → extract `PortStatusGrid.tsx`, `VirtualHostCard.tsx`
+
+---
+
+## 3. Systematic Execution Roadmap
+
+Refactoring is executed in sequential, atomic phases. After each file group is refactored:
+1. Verify compiler & build: `cargo check` and `cd ui && npm run build`.
+2. Clean doc comments of unnecessary narrative bloat.
+3. Update `specs/` (documentation, catalog, relationships, and runtime log).
+4. Run `cargo test` only when `cargo tauri dev` is inactive.
+
+### Sequential Phases
+1. **Phase 1: Polish Tier 1 Monoliths & Sub-Dispatch**
+   - Further partition `crates/ols-core/src/command/dispatch.rs` (2,643 lines) into domain dispatch handlers (`command/dispatch/*.rs`).
+   - Finalize `crates/ols-core/src/app/` submodule splits.
+2. **Phase 2: Heavyweight Core Infrastructure (Tier 2)**
+   - Modularize `runtime.rs` (2,837 lines) → `runtime/`.
+   - Modularize `ai.rs` (2,794 lines) → `ai/`.
+   - Modularize `domain.rs` (2,362 lines) → `domain/`.
+   - Modularize `web/manager.rs` (2,221 lines) → `web/manager/`.
+   - Modularize `setup.rs` (2,141 lines) → `setup/`.
+   - Modularize `ols-cli/src/main.rs` (2,368 lines) → `ols-cli/src/`.
+3. **Phase 3: Frontend Architecture Core & Key Dialogs (Tier 2/3 UI)**
+   - Modularize `ui/src/core.ts` (2,257 lines) → `ui/src/core/`.
+   - Decompose `ui/src/components/site/SiteDomainsPanel.tsx` (1,860 lines).
+   - Decompose `ui/src/components/site/DomainDialog.tsx` (1,384 lines).
+   - Modularize `ui/src/pages/Commands.tsx` & `ui/src/pages/Sites.tsx`.
+4. **Phase 4: Moderate Monoliths (Tier 3)**
+   - Refactor `snapshots.rs`, `auto_backup.rs`, `service.rs`, `sitebundle.rs`, `loadtest.rs`, `ddns.rs`, `git.rs`, `tunnel.rs`, `quickapp/plan.rs`, and `src-tauri/src/lib.rs`.
+5. **Phase 5: Files 500 – 1,000 Lines (Tier 4)**
+   - Refactor remaining 27 core files and 14 UI files under the 500-line limit.
+
+---
+
+## 4. Verification & Quality Gates
+
+Each refactored module must strictly pass:
+```text
+cargo fmt --all
+cargo clippy -p ols-core -p ols-helper --all-targets
+cargo test -p ols-core -p ols-helper   # Only when tauri dev is not running
+cd ui && npm run lint && npm run build
 ```
-crates/ols-core/src/command/
-├── mod.rs          # Module declarations, re-exports, Core struct definition, and public dispatch() entry point (~110 lines)
-├── types.rs        # CoreCommand, CoreResponse, DashboardData, TaskProgress enum/struct definitions (~1,800 lines)
-├── dispatch.rs     # Core::dispatch_inner method containing the central match routing logic (~2,660 lines)
-└── tests.rs        # Command dispatch integration and unit tests (~1,145 lines)
-```
-
-#### Responsibilities & Boundaries:
-- **`mod.rs`**: Re-exports all public types so external callers (`ols-cli`, `src-tauri`, `ols-mcp`) experience seamless backward compatibility with `crate::command::*` and `crate::CoreCommand`.
-- **`types.rs`**: Isolates all serialization traits, serde tagging (`rename_all = "camelCase"`), and parameter payloads. All excessive 20-line comments are condensed to crisp 1-line docstrings.
-- **`dispatch.rs`**: Implements `Core::dispatch_inner`, handling command dispatching across all application domains (system, services, web, domains, projects, runtimes, tools).
-- **`tests.rs`**: Isolates all unit test cases validating dispatch behavior, state responses, and error handling.
-
----
-
-## 3.2. Target 2: `crates/ols-core/src/app/` (Replaces `app.rs`)
-
-`Inner` is the central state struct of `ols-core`. In Rust, `impl Inner` blocks can be partitioned cleanly across submodules in the same crate without runtime overhead or API changes:
-
-```
-crates/ols-core/src/app/
-├── mod.rs          # Inner struct definition, constructors (new, with_parts), lock() helper, shared constants (~450 lines)
-├── domains.rs      # impl Inner: domain CRUD, bulk domain operations, site summaries, site icons (~850 lines)
-├── projects.rs     # impl Inner: project root discovery, scanning, skip/deletion tracking, filesystem watcher (~600 lines)
-├── web.rs          # impl Inner: apply_web, apply_web_server, web server config writes, port validation (~235 lines)
-├── quickapp.rs     # impl Inner: plan_quick_app, run_quick_command, QuickHost implementation for Host (~1,000 lines)
-├── system.rs       # impl Inner: health checks, Windows autostart registry, log inspection/clearing, DB explorer (~700 lines)
-└── tests.rs        # Consolidated unit tests for all Inner methods (~1,300 lines)
-```
-
-#### Responsibilities & Boundaries:
-- **`mod.rs`**: Holds the `Inner` struct, field definitions, constructors (`new`, `with_parts`, `apply_api`), `lock()` helper, and shared constants (`PROJECT_ROOTS`, `PROJECT_SKIP`, `AUTO_SKIP`, `OLS_EXCLUDED_FOLDER`, etc.).
-- **`domains.rs`**: Domain lifecycle management, host record updates, domain suggestions, TLS certificate binding, site groups, and favicon downloads.
-- **`projects.rs`**: Project directory discovery, `SkipEntry` / `DeletedItem` tracking, excluded folder lists, and directory watcher lifecycle.
-- **`web.rs`**: Web server configuration generation, server port conflict checking, tunnel broadcasts, and hash tracking.
-- **`quickapp.rs`**: Application blueprint execution, requirement analysis, runtime resolution, and `QuickHost` orchestration.
-- **`system.rs`**: Diagnostic environment health checks, Windows Run registry startup entries, log streaming, and database GUI integration.
-- **`tests.rs`**: All unit tests verifying `Inner` behavior across domains, projects, startup settings, and quick apps.
-
----
-
-## 4. Comment Hygiene Guidelines
-
-Both files previously contained verbose architectural commentary. In the new structure, comments adhere to these rules:
-- **Concise & Direct**: Explain *why* something is done if non-obvious, or *what* it accomplishes in one or two clear sentences.
-- **Remove Historical Narrative**: Omit multi-paragraph essays debating alternatives or documenting historical bug workarounds unless critical for safety.
-- **Human-Friendly**: Maintain a professional, clean developer voice.
-
----
-
-## 5. Quality Gates & Safety Constraints
-
-### Safety Constraints (Binding)
-1. **Never run `cargo test` if the user is running `cargo tauri dev`**: Check process lists before initiating test runs to avoid locks or interfering with the dev environment.
-2. **Deterministic Quality Verification**:
-   ```bash
-   cargo fmt --all
-   cargo clippy -p ols-core -p ols-helper --all-targets
-   cargo test -p ols-core -p ols-helper
-   cd ui && npm run lint && npm run build
-   ```
-3. **No Breaking Changes**:
-   - Zero modifications to JSON IPC wire serialization tags.
-   - Zero breaking changes to `CoreResponse` and `CoreCommand`.
-   - All crate-internal helpers maintain proper `pub(crate)` visibility.
-
----
-
-## 6. Specs Synchronization Protocol (Mandatory per `AGENTS.md`)
-
-Per the repository's binding mandate, any structural or code change must update `specs/`:
-1. **`specs/full_documentation.md`**: Update File Analysis section to document the new `command/` and `app/` submodules and their individual responsibilities.
-2. **`specs/catalog.txt`**: Add the new file entries for `command/` and `app/` submodules; remove legacy single-file references.
-3. **`specs/relationships.txt`**: Update module dependency relationships for `command` and `app`.
-4. **`specs/runtime.md`**:
-   - Recompute `Files to Process` to reflect the new modular files.
-   - Set `Files Processed` to equal `Files to Process`.
-   - Append a conventional commit log entry under `## Log` (e.g. `refactor(core): modularize command.rs and app.rs into focused submodules`).
+And synchronize with:
+- `specs/full_documentation.md`
+- `specs/catalog.txt`
+- `specs/relationships.txt`
+- `specs/runtime.md`
