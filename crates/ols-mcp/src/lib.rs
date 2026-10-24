@@ -289,17 +289,23 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
                 args["kind"] = json!({"type": "php", "version": null});
             }
             // Default root to the installation's sites folder so the AI doesn't
-            // have to guess a location. Respect the configured sites dir if set.
+            // have to guess a location. Respect OLS_SITES_DIR env var, then the
+            // configured domains.sites_dir setting, then the install's sites dir.
             if args.get("root").is_none() {
-                let settings = ols_core::settings::SettingsService::load(
-                    &ols_core::paths::AppPaths::resolve(),
-                );
-                let sites_dir: std::path::PathBuf = settings
+                let sites_dir: std::path::PathBuf = std::env::var("OLS_SITES_DIR")
                     .ok()
-                    .and_then(|s| s.get("domains.sites_dir").cloned())
-                    .and_then(|v| v.as_str().map(|s| s.to_owned()))
                     .filter(|s| !s.is_empty())
                     .map(std::path::PathBuf::from)
+                    .or_else(|| {
+                        ols_core::settings::SettingsService::load(
+                            &ols_core::paths::AppPaths::resolve(),
+                        )
+                        .ok()
+                        .and_then(|s| s.get("domains.sites_dir").cloned())
+                        .and_then(|v| v.as_str().map(|s| s.to_owned()))
+                        .filter(|s| !s.is_empty())
+                        .map(std::path::PathBuf::from)
+                    })
                     .unwrap_or_else(|| ols_core::paths::AppPaths::resolve().sites_dir());
                 args["root"] = json!(sites_dir.to_string_lossy());
             }
