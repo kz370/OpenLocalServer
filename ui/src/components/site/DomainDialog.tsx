@@ -2,25 +2,43 @@ import { open } from '@tauri-apps/plugin-dialog'
 import {
   ArrowLeftRight,
   ArrowRight,
-  Braces,
   Check,
   CircleAlert,
   FileCode2,
   FileText,
   FolderSearch,
   Globe,
+  Loader2,
+  RefreshCw,
   Rocket,
+  Terminal,
 } from 'lucide-react'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 
-import { TechTile } from '@/components/TechIcon'
+import { TechIcon, TechTile } from '@/components/TechIcon'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
 import { Field, FormSection, Select, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { buildSitePath, domainToFolderName, getDefaultSitesDir, getDefaultTld, slugify } from '@/lib/sites'
-import { type Domain, type Project, type QuickEntryView, runCommand } from '@/core'
+import { type Domain, type Project, type QuickEntryView, type SiteFolderInspection, runCommand } from '@/core'
+
+export type SiteServeMode = 'php' | 'node' | 'python' | 'proxy' | 'static'
+
+export function getInitialServeMode(domain: Domain): SiteServeMode {
+  if (domain.kind.type === 'php') return 'php'
+  if (domain.kind.type === 'static') return 'static'
+  if (domain.kind.type === 'proxy') {
+    if (domain.app?.runtime === 'node') return 'node'
+    if (domain.app?.runtime === 'python') return 'python'
+    const exe = domain.app?.executable?.toLowerCase() || ''
+    if (['node', 'npm', 'pnpm', 'yarn', 'bun'].some((k) => exe.includes(k))) return 'node'
+    if (['python', 'py', 'uvicorn', 'flask', 'django', 'waitress', 'streamlit'].some((k) => exe.includes(k))) return 'python'
+    return 'proxy'
+  }
+  return 'static'
+}
 
 const emptyBlocks = { headers: [], redirects: [], mappings: [], upstreams: [], includes: [] }
 
@@ -190,7 +208,18 @@ export function DomainSettings({
   // placeholder can name the real default location even when no parent was passed in
   // and the lookup has not answered yet.
   const [defaultSitesDir, setDefaultSitesDir] = useState('')
-  const kindType = d.kind.type
+  const [serveMode, setServeMode] = useState<SiteServeMode>(() => getInitialServeMode(domain))
+  const modeTouched = useRef(false)
+  const [inspection, setInspection] = useState<SiteFolderInspection | null>(null)
+  const [inspecting, setInspecting] = useState(false)
+  const [installedNodeVersions, setInstalledNodeVersions] = useState<string[]>([])
+  const [installedPythonVersions, setInstalledPythonVersions] = useState<string[]>([])
+  const [nodePkgManager, setNodePkgManager] = useState<'npm' | 'pnpm' | 'yarn' | 'bun'>('npm')
+  const [pythonPkgManager, setPythonPkgManager] = useState<'pip' | 'uv' | 'poetry' | 'pipenv'>('pip')
+  const [pythonInterpreter, setPythonInterpreter] = useState<string>('system')
+  const [nodeRunOptChoice, setNodeRunOptChoice] = useState<string>('')
+  const [pythonRunOptChoice, setPythonRunOptChoice] = useState<string>('')
+  const [portChecking, setPortChecking] = useState(false)
   const [appLine, setAppLine] = useState('')
   const [defaultTld, setDefaultTld] = useState('local')
   const [template, setTemplate] = useState(`{project}.local`)
@@ -199,11 +228,7 @@ export function DomainSettings({
   const [webServers, setWebServers] = useState<{ id: string; name: string; http: number; https: number; default: boolean }[]>([])
   const [err, setErr] = useState<string | null>(null)
 
-  // Re-seed the form only when the domain being edited actually changes. Keying this
-  // on `projects` too meant a project-folder watcher event (debounced, fires on any
-  // change under the sites root) reset the form and discarded whatever had been picked
-  // but not yet saved — picking a web server and then saving wrote the stale value
-  // back, which is how a pin to one server kept reverting to "Default (automatic)".
+  // Re-seed the form only when the domain being edited actually changes.
   useEffect(() => {
     setD(domain)
     setErr(null)
@@ -212,9 +237,112 @@ export function DomainSettings({
     setDomainTouched(false)
     setPrefixTouched(!!domain.path_prefix)
     projectNameTouched.current = false
+    setServeMode(getInitialServeMode(domain))
+    modeTouched.current = false
     setAppLine(domain?.app ? [domain.app.executable, ...domain.app.args].join(' ') : '')
     if (!domain.project_id) setProjectName('')
   }, [domain])
+
+  useEffect(() => {
+    void runCommand({ type: 'list_runtime_catalog' }).then((r) => {
+      if (r.type === 'runtime_catalog') {
+        setInstalledNodeVersions(r.entries.filter((e) => e.id === 'node' && e.installed).map((e) => e.version))
+        setInstalledPythonVersions(r.entries.filter((e) => e.id === 'python' && e.installed).map((e) => e.version))
+      }
+    })
+  }, [])
+
+  useEffect(() => {
+    const rootPath = d.root?.trim()
+    if (!rootPath || rootPath.length < 2) {
+      setInspection(null)
+      return
+    }
+    let cancelled = false
+    setInspecting(true)
+    const timer = setTimeout(() => {
+      void runCommand({ type: 'inspect_site_folder', path: rootPath })
+        .then((res) => {
+          if (cancelled || res.type !== 'site_folder_inspection') return
+          const info = res.inspection
+          setInspection(info)
+          setInspecting(false)
+
+          if (isNew && !modeTouched.current) {
+            if (info.framework === 'node' || info.package_scripts.length > 0) {
+              setServeMode('node')
+              if (info.detected_package_manager && ['npm', 'pnpm', 'yarn', 'bun'].includes(info.detected_package_manager)) {
+                setNodePkgManager(info.detected_package_manager as 'npm' | 'pnpm' | 'yarn' | 'bun')
+              }
+              if (info.suggested_command) setAppLine(info.suggested_command)
+              if (info.suggested_port) {
+                setD((cur) => ({
+                  ...cur,
+                  kind: { type: 'proxy', upstream_port: info.suggested_port, upstream_host: null, upstream_https: false },
+                }))
+              }
+            } else if (
+              ['django', 'flask', 'fast_api', 'generic_python'].includes(info.framework) ||
+              info.entry_files.some((f) => f.endsWith('.py')) ||
+              info.detected_venv
+            ) {
+              setServeMode('python')
+              if (info.detected_package_manager && ['pip', 'uv', 'poetry', 'pipenv'].includes(info.detected_package_manager)) {
+                setPythonPkgManager(info.detected_package_manager as 'pip' | 'uv' | 'poetry' | 'pipenv')
+              }
+              if (info.suggested_command) setAppLine(info.suggested_command)
+              if (info.detected_venv) setPythonInterpreter('venv')
+              if (info.suggested_port) {
+                setD((cur) => ({
+                  ...cur,
+                  kind: { type: 'proxy', upstream_port: info.suggested_port, upstream_host: null, upstream_https: false },
+                }))
+              }
+            } else if (['laravel', 'symfony', 'word_press', 'generic_php'].includes(info.framework)) {
+              setServeMode('php')
+            }
+          } else {
+            if (info.detected_package_manager) {
+              if (['npm', 'pnpm', 'yarn', 'bun'].includes(info.detected_package_manager)) {
+                setNodePkgManager(info.detected_package_manager as 'npm' | 'pnpm' | 'yarn' | 'bun')
+              } else if (['pip', 'uv', 'poetry', 'pipenv'].includes(info.detected_package_manager)) {
+                setPythonPkgManager(info.detected_package_manager as 'pip' | 'uv' | 'poetry' | 'pipenv')
+              }
+            }
+            if (info.detected_venv) setPythonInterpreter('venv')
+          }
+        })
+        .catch(() => {
+          if (!cancelled) setInspecting(false)
+        })
+    }, 250)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [d.root, isNew])
+
+  async function findNextFreePort(startPort: number) {
+    setPortChecking(true)
+    try {
+      for (let p = startPort; p < startPort + 40; p++) {
+        const res = await runCommand({ type: 'check_port', port: p })
+        if (res.type === 'port' && res.status.status === 'free') {
+          setD((cur) => ({
+            ...cur,
+            kind: {
+              ...(cur.kind.type === 'proxy' ? cur.kind : { type: 'proxy', upstream_host: null, upstream_https: false }),
+              type: 'proxy',
+              upstream_port: p,
+            },
+          }))
+          break
+        }
+      }
+    } finally {
+      setPortChecking(false)
+    }
+  }
 
   // The project list is its own stream and changes identity on every watcher event;
   // only the name derived from it follows along, and never over a name the user is
@@ -389,14 +517,164 @@ export function DomainSettings({
     }
   }
 
+  const onSelectMode = (m: SiteServeMode) => {
+    modeTouched.current = true
+    setServeMode(m)
+    if (m === 'php') {
+      setD((cur) => ({ ...cur, kind: { type: 'php', version: cur.kind.type === 'php' ? cur.kind.version : null } }))
+    } else if (m === 'node') {
+      const port = d.kind.type === 'proxy' ? d.kind.upstream_port : (inspection?.suggested_port || 3000)
+      setD((cur) => ({ ...cur, kind: { type: 'proxy', upstream_port: port, upstream_host: null, upstream_https: false } }))
+      if (!appLine.trim()) {
+        setAppLine(inspection?.suggested_command || 'npm run dev')
+      }
+    } else if (m === 'python') {
+      const port = d.kind.type === 'proxy' ? d.kind.upstream_port : (inspection?.suggested_port || 8000)
+      setD((cur) => ({ ...cur, kind: { type: 'proxy', upstream_port: port, upstream_host: null, upstream_https: false } }))
+      if (!appLine.trim()) {
+        setAppLine(inspection?.suggested_command || 'python main.py')
+      }
+    } else if (m === 'proxy') {
+      setD((cur) => ({
+        ...cur,
+        kind: {
+          type: 'proxy',
+          upstream_port: cur.kind.type === 'proxy' ? cur.kind.upstream_port : 3000,
+          upstream_host: cur.kind.type === 'proxy' ? cur.kind.upstream_host : null,
+          upstream_https: cur.kind.type === 'proxy' ? cur.kind.upstream_https : false,
+        },
+      }))
+    } else if (m === 'static') {
+      setD((cur) => ({ ...cur, kind: { type: 'static' } }))
+    }
+  }
+
+  const onNodeRunOptChange = (opt: string) => {
+    setNodeRunOptChoice(opt)
+    if (!opt || opt === 'custom') return
+    if (opt.startsWith('script:')) {
+      const scriptName = opt.replace('script:', '')
+      if (nodePkgManager === 'npm') {
+        setAppLine(scriptName === 'start' ? 'npm start' : `npm run ${scriptName}`)
+      } else {
+        setAppLine(`${nodePkgManager} ${scriptName}`)
+      }
+    } else if (opt === 'preset:dev') {
+      setAppLine(nodePkgManager === 'npm' ? 'npm run dev' : `${nodePkgManager} dev`)
+    } else if (opt === 'preset:start') {
+      setAppLine(nodePkgManager === 'npm' ? 'npm start' : `${nodePkgManager} start`)
+    } else if (opt === 'preset:server_js') {
+      setAppLine('node server.js')
+    } else if (opt === 'preset:index_js') {
+      setAppLine('node index.js')
+    } else if (opt === 'preset:pnpm_dev') {
+      setNodePkgManager('pnpm')
+      setAppLine('pnpm dev')
+    } else if (opt === 'preset:yarn_dev') {
+      setNodePkgManager('yarn')
+      setAppLine('yarn dev')
+    } else if (opt === 'preset:bun_dev') {
+      setNodePkgManager('bun')
+      setAppLine('bun run dev')
+    }
+  }
+
+  const onNodePkgManagerChange = (pm: 'npm' | 'pnpm' | 'yarn' | 'bun') => {
+    setNodePkgManager(pm)
+    setAppLine((cur) => {
+      if (cur.startsWith('npm run ')) return cur.replace('npm run ', `${pm} `)
+      if (cur.startsWith('pnpm ')) return cur.replace('pnpm ', `${pm} `)
+      if (cur.startsWith('yarn ')) return cur.replace('yarn ', `${pm} `)
+      if (cur.startsWith('bun run ')) return cur.replace('bun run ', `${pm} `)
+      if (cur === 'npm start') return `${pm} start`
+      return cur
+    })
+  }
+
+  const onPythonRunOptChange = (opt: string) => {
+    setPythonRunOptChoice(opt)
+    if (!opt || opt === 'custom') return
+    if (opt === 'preset:main_py') {
+      setAppLine('python main.py')
+    } else if (opt === 'preset:app_py') {
+      setAppLine('python app.py')
+    } else if (opt === 'preset:server_py') {
+      setAppLine('python server.py')
+    } else if (opt === 'preset:fastapi') {
+      setAppLine('python -m uvicorn main:app --reload')
+    } else if (opt === 'preset:flask') {
+      setAppLine('python -m flask run')
+    } else if (opt === 'preset:django') {
+      setAppLine('python manage.py runserver')
+    } else if (opt === 'preset:streamlit') {
+      setAppLine('streamlit run app.py')
+    }
+  }
+
   function submit() {
     const out = { ...d, hostname: d.hostname.trim().toLowerCase() }
-    if (out.kind.type === 'proxy' && appLine.trim()) {
-      const [executable, ...args] = splitArgs(appLine)
-      out.app = { executable, args, cwd: out.app?.cwd || out.root, runtime: out.app?.runtime ?? (executable === 'node' || executable === 'npm' ? 'node' : null) }
-    } else {
+    if (serveMode === 'php') {
+      out.kind = d.kind.type === 'php' ? d.kind : { type: 'php', version: null }
       out.app = null
+    } else if (serveMode === 'static') {
+      out.kind = { type: 'static' }
+      out.app = null
+    } else if (serveMode === 'node') {
+      const port = d.kind.type === 'proxy' && d.kind.upstream_port ? d.kind.upstream_port : 3000
+      out.kind = { type: 'proxy', upstream_port: port, upstream_host: null, upstream_https: false }
+      if (appLine.trim()) {
+        const [executable, ...args] = splitArgs(appLine)
+        out.app = {
+          executable,
+          args,
+          cwd: out.app?.cwd || out.root,
+          runtime: 'node',
+        }
+      } else {
+        out.app = null
+      }
+    } else if (serveMode === 'python') {
+      const port = d.kind.type === 'proxy' && d.kind.upstream_port ? d.kind.upstream_port : 8000
+      out.kind = { type: 'proxy', upstream_port: port, upstream_host: null, upstream_https: false }
+      if (appLine.trim()) {
+        const [executable, ...args] = splitArgs(appLine)
+        let finalExe = executable
+        // If user picked a specific virtualenv and executable is a generic 'python', point to that venv's python.exe
+        if (pythonInterpreter.startsWith('venv:') || pythonInterpreter === 'venv') {
+          const venvPath = pythonInterpreter.startsWith('venv:')
+            ? pythonInterpreter.slice(5)
+            : inspection?.detected_venv
+          if (venvPath && (executable.toLowerCase() === 'python' || executable.toLowerCase() === 'python.exe')) {
+            finalExe = venvPath
+          }
+        }
+        out.app = {
+          executable: finalExe,
+          args,
+          cwd: out.app?.cwd || out.root,
+          runtime: 'python',
+        }
+      } else {
+        out.app = null
+      }
+    } else if (serveMode === 'proxy') {
+      const port = d.kind.type === 'proxy' && d.kind.upstream_port ? d.kind.upstream_port : 3000
+      const host = d.kind.type === 'proxy' ? d.kind.upstream_host : null
+      const https = d.kind.type === 'proxy' ? d.kind.upstream_https : false
+      out.kind = { type: 'proxy', upstream_port: port, upstream_host: host, upstream_https: https }
+      if (!host && appLine.trim()) {
+        const [executable, ...args] = splitArgs(appLine)
+        out.app = {
+          executable,
+          args,
+          cwd: out.app?.cwd || out.root,
+          runtime: out.app?.runtime ?? null,
+        }
+      } else {
+        out.app = null
+      }
     }
+
     if (!out.https) out.redirect_https = false
     if (!out.hostname) return setErr('Enter a domain like shop.test or mydomain.com')
     if (pathPrefixError) return setErr(pathPrefixError)
@@ -408,10 +686,12 @@ export function DomainSettings({
     if (submitRef) submitRef.current = submit
   })
 
-  const kinds: { id: 'php' | 'proxy' | 'static'; title: string; hint: string; icon: ReactNode }[] = [
-    { id: 'php', title: 'PHP', hint: 'Laravel, WordPress, plain PHP (FastCGI)', icon: <Braces className="size-5" /> },
-    { id: 'proxy', title: 'Reverse proxy', hint: 'Dev server, Docker, another computer', icon: <ArrowLeftRight className="size-5" /> },
-    { id: 'static', title: 'Static files', hint: 'HTML, CSS and JS served as they are', icon: <FileText className="size-5" /> },
+  const kinds: { id: SiteServeMode; title: string; hint: string; icon: ReactNode }[] = [
+    { id: 'php', title: 'PHP', hint: 'Laravel, WordPress, Symfony (FastCGI pool)', icon: <TechIcon id="php" className="size-4" /> },
+    { id: 'node', title: 'Node.js', hint: 'Next.js, Vite, Express, Nest, Fastify dev server', icon: <TechIcon id="node" className="size-4" /> },
+    { id: 'python', title: 'Python', hint: 'Python script (main.py), FastAPI (Uvicorn), Django, Flask', icon: <TechIcon id="python" className="size-4" /> },
+    { id: 'proxy', title: 'Reverse proxy', hint: 'Forward traffic to Docker, another local port, or remote IP', icon: <ArrowLeftRight className="size-4" /> },
+    { id: 'static', title: 'Static files', hint: 'Directly serve HTML, CSS, JS with zero background process', icon: <FileText className="size-4" /> },
   ]
   const host = d.hostname.trim().toLowerCase()
   const localTld = /\.(test|local|localhost|dev\.test)$/.test(host)
@@ -597,30 +877,56 @@ export function DomainSettings({
 
 
       <FormSection title="Serves">
-        <div className="grid gap-2.5 sm:grid-cols-3" role="radiogroup" aria-label="What the site serves">
-          {kinds.map((k) => (
-            <button
-              key={k.id}
-              type="button"
-              role="radio"
-              aria-checked={kindType === k.id}
-              onClick={() => set({ kind: k.id === 'php' ? { type: 'php', version: null } : k.id === 'proxy' ? { type: 'proxy', upstream_port: 3000 } : { type: 'static' } })}
-              className={cn(
-                'flex min-h-28 flex-col items-start gap-1.5 rounded-lg border p-3 text-left transition-colors',
-                kindType === k.id ? 'border-primary bg-accent text-accent-foreground ring-1 ring-primary/30' : 'border-border hover:bg-accent/40',
-              )}
-            >
-              {k.icon}
-              <span className="text-[13px] font-medium">{k.title}</span>
-              <span className="text-xs leading-relaxed text-muted-foreground">{k.hint}</span>
-            </button>
-          ))}
+        <div className="flex flex-col gap-2.5">
+          <div className="flex p-1 bg-muted/60 rounded-xl border border-border/80 gap-1 select-none" role="tablist" aria-label="What the site serves">
+            {kinds.map((k) => {
+              const active = serveMode === k.id
+              return (
+                <button
+                  key={k.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => onSelectMode(k.id)}
+                  className={cn(
+                    'flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-medium transition-all cursor-pointer',
+                    active
+                      ? 'bg-background text-foreground shadow-sm border border-border/70 ring-1 ring-primary/20 font-semibold'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-background/40',
+                  )}
+                >
+                  <span className="shrink-0 flex items-center justify-center [&_svg]:size-4">{k.icon}</span>
+                  <span>{k.title}</span>
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="flex items-center justify-between px-3.5 py-2 rounded-lg bg-accent/25 border border-border/60 text-xs">
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <span className="font-semibold text-foreground">{kinds.find((k) => k.id === serveMode)?.title}:</span>
+              <span>{kinds.find((k) => k.id === serveMode)?.hint}</span>
+            </div>
+            {inspection?.framework && inspection.framework !== 'unknown' && (
+              <span className="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-400 border border-emerald-500/20">
+                Detected: {inspection.framework.replace(/_/g, ' ')}
+              </span>
+            )}
+          </div>
         </div>
-        {d.kind.type === 'php' && (
+
+        {inspecting && (
+          <div className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-1.5 text-xs text-muted-foreground">
+            <Loader2 className="size-3.5 animate-spin text-primary" />
+            <span>Inspecting project files and startup scripts…</span>
+          </div>
+        )}
+
+        {serveMode === 'php' && (
           <Field label="PHP version" hint="“Project default” follows the project's own resolved version">
-            <Select value={d.kind.version ?? ''} onChange={(e) => set({ kind: { type: 'php', version: e.target.value || null } })}>
+            <Select value={d.kind.type === 'php' ? (d.kind.version ?? '') : ''} onChange={(e) => set({ kind: { type: 'php', version: e.target.value || null } })}>
               <option value="">Project default / newest</option>
-              {phpOptions(installedPhp, d.kind.version).map((o) => (
+              {phpOptions(installedPhp, d.kind.type === 'php' ? d.kind.version : null).map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
                 </option>
@@ -628,36 +934,309 @@ export function DomainSettings({
             </Select>
           </Field>
         )}
-        {d.kind.type === 'proxy' && (
+
+        {serveMode === 'node' && (
+          <div className="flex flex-col gap-3 rounded-lg border border-border/80 bg-accent/10 p-3.5">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field
+                label="Run opt (Startup Mode)"
+                hint={
+                  inspection?.package_scripts?.length
+                    ? `Found ${inspection.package_scripts.length} script(s) in package.json.`
+                    : 'Choose a startup mode or pick [Custom Command].'
+                }
+              >
+                <Select value={nodeRunOptChoice} onChange={(e) => onNodeRunOptChange(e.target.value)}>
+                  <option value="">-- Choose startup script / preset --</option>
+                  {inspection?.package_scripts && inspection.package_scripts.length > 0 && (
+                    <optgroup label="Scripts in package.json">
+                      {inspection.package_scripts.map((s) => (
+                        <option key={s.name} value={`script:${s.name}`}>
+                          {s.name} {s.description ? `[${s.description}]` : ''}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  <optgroup label="Common Presets">
+                    <option value="preset:dev">npm run dev (Next.js / Vite / Nuxt)</option>
+                    <option value="preset:start">npm start (Production)</option>
+                    <option value="preset:server_js">node server.js</option>
+                    <option value="preset:index_js">node index.js</option>
+                    <option value="preset:pnpm_dev">pnpm dev</option>
+                    <option value="preset:yarn_dev">yarn dev</option>
+                    <option value="preset:bun_dev">bun run dev</option>
+                  </optgroup>
+                  <option value="custom">[Custom Command]</option>
+                </Select>
+              </Field>
+
+              <Field label="Package Manager" hint="Please select the package manager for this project">
+                <Select value={nodePkgManager} onChange={(e) => onNodePkgManagerChange(e.target.value as any)}>
+                  <option value="npm">npm</option>
+                  <option value="pnpm">pnpm</option>
+                  <option value="yarn">yarn</option>
+                  <option value="bun">bun</option>
+                </Select>
+              </Field>
+            </div>
+
+            <Field label="Start command" hint="OLS supervises this process and passes PORT. Example: npm run dev">
+              <div className="flex items-center gap-2">
+                <Terminal className="size-4 shrink-0 text-muted-foreground" />
+                <Input
+                  value={appLine}
+                  onChange={(e) => {
+                    setAppLine(e.target.value)
+                    setNodeRunOptChoice('custom')
+                  }}
+                  placeholder="npm run dev"
+                  className="font-mono text-xs"
+                />
+              </div>
+            </Field>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Port of the project" hint="OLS web server reverse-proxies domain traffic to this port">
+                <div className="flex gap-2">
+                  <Input
+                    type="number"
+                    value={d.kind.type === 'proxy' ? d.kind.upstream_port : 3000}
+                    onChange={(e) =>
+                      set({
+                        kind: {
+                          type: 'proxy',
+                          upstream_port: Number(e.target.value) || 3000,
+                          upstream_host: null,
+                          upstream_https: false,
+                        },
+                      })
+                    }
+                    className="font-mono"
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={portChecking}
+                    onClick={() => findNextFreePort(d.kind.type === 'proxy' ? d.kind.upstream_port : 3000)}
+                    className="shrink-0 gap-1 text-xs"
+                  >
+                    <RefreshCw className={cn('size-3', portChecking && 'animate-spin')} />
+                    Find free
+                  </Button>
+                </div>
+              </Field>
+
+              <Field label="Node Version" hint="Choose the Node runtime version">
+                <Select
+                  value={d.app?.runtime === 'node' ? '' : ''}
+                  onChange={() => {}}
+                >
+                  <option value="">System Node.js (PATH)</option>
+                  {installedNodeVersions.map((v) => (
+                    <option key={v} value={v}>
+                      Node.js v{v} (OLS installed)
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            </div>
+
+            <Toggle
+              checked={d.enabled}
+              onChange={(v) => set({ enabled: v })}
+              label="Follow the system to start the service"
+              hint="Supervise and automatically start this Node.js server with OpenLocalServer."
+            />
+          </div>
+        )}
+
+        {serveMode === 'python' && (
+          <div className="flex flex-col gap-3 rounded-lg border border-border/80 bg-accent/10 p-3.5">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Run opt (Startup Mode)" hint="Select standard Python script or framework">
+                <Select value={pythonRunOptChoice} onChange={(e) => onPythonRunOptChange(e.target.value)}>
+                  <option value="">-- Choose startup command --</option>
+                  <optgroup label="Standard Python Scripts">
+                    <option value="preset:main_py">python main.py</option>
+                    <option value="preset:app_py">python app.py</option>
+                    <option value="preset:server_py">python server.py</option>
+                  </optgroup>
+                  <optgroup label="Frameworks (FastAPI, Flask, Django)">
+                    <option value="preset:fastapi">FastAPI: python -m uvicorn main:app --reload</option>
+                    <option value="preset:django">Django: python manage.py runserver</option>
+                    <option value="preset:flask">Flask: python -m flask run</option>
+                    <option value="preset:streamlit">Streamlit: streamlit run app.py</option>
+                  </optgroup>
+                  <option value="custom">[Custom Command]</option>
+                </Select>
+              </Field>
+
+              <Field label="Package Manager" hint="Virtual environment / dependency tool">
+                <Select value={pythonPkgManager} onChange={(e) => setPythonPkgManager(e.target.value as any)}>
+                  <option value="pip">pip (requirements.txt)</option>
+                  <option value="uv">uv</option>
+                  <option value="poetry">poetry</option>
+                  <option value="pipenv">pipenv</option>
+                </Select>
+              </Field>
+            </div>
+
+            <Field label="Start command" hint="OLS supervises this process and passes PORT. Example: python main.py">
+              <div className="flex items-center gap-2">
+                <Terminal className="size-4 shrink-0 text-muted-foreground" />
+                <Input
+                  value={appLine}
+                  onChange={(e) => {
+                    setAppLine(e.target.value)
+                    setPythonRunOptChoice('custom')
+                  }}
+                  placeholder="python main.py"
+                  className="font-mono text-xs"
+                />
+              </div>
+            </Field>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Port of the project" hint="OLS web server reverse-proxies domain traffic to this port">
+                <div className="flex gap-2">
+                  <Input
+                    type="number"
+                    value={d.kind.type === 'proxy' ? d.kind.upstream_port : 8000}
+                    onChange={(e) =>
+                      set({
+                        kind: {
+                          type: 'proxy',
+                          upstream_port: Number(e.target.value) || 8000,
+                          upstream_host: null,
+                          upstream_https: false,
+                        },
+                      })
+                    }
+                    className="font-mono"
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={portChecking}
+                    onClick={() => findNextFreePort(d.kind.type === 'proxy' ? d.kind.upstream_port : 8000)}
+                    className="shrink-0 gap-1 text-xs"
+                  >
+                    <RefreshCw className={cn('size-3', portChecking && 'animate-spin')} />
+                    Find free
+                  </Button>
+                </div>
+              </Field>
+
+              <Field
+                label="Python Interpreter / Environment"
+                hint={
+                  pythonInterpreter.startsWith('venv:') || pythonInterpreter === 'venv'
+                    ? 'Using selected virtualenv. Its Scripts directory will be set first on PATH and VIRTUAL_ENV is set.'
+                    : pythonInterpreter.startsWith('version:')
+                      ? `Using OLS managed Python v${pythonInterpreter.slice(8)}.`
+                      : 'Using system Python from PATH.'
+                }
+              >
+                <Select value={pythonInterpreter} onChange={(e) => setPythonInterpreter(e.target.value)}>
+                  {inspection?.available_venvs && inspection.available_venvs.length > 0 && (
+                    <optgroup label="Detected Virtual Environments">
+                      {inspection.available_venvs.map((v) => (
+                        <option key={v.path} value={`venv:${v.python_exe}`}>
+                          {v.name} ({v.version ? `Python ${v.version}` : 'venv'}) - {v.path}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  <optgroup label="System / Global Python">
+                    <option value="system">System Python (PATH)</option>
+                  </optgroup>
+                  {installedPythonVersions.length > 0 && (
+                    <optgroup label="OLS Managed Runtimes">
+                      {installedPythonVersions.map((v) => (
+                        <option key={v} value={`version:${v}`}>
+                          Python v{v} (OLS installed)
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </Select>
+              </Field>
+            </div>
+
+            <Toggle
+              checked={d.enabled}
+              onChange={(v) => set({ enabled: v })}
+              label="Follow the system to start the service"
+              hint="Supervise and automatically start this Python server with OpenLocalServer."
+            />
+          </div>
+        )}
+
+        {serveMode === 'proxy' && (
           <>
             <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_7rem]">
               <Field label="Forward to" hint="Blank = this computer. Or a Docker host, another PC's IP, a hostname.">
                 <Input
-                  value={d.kind.upstream_host ?? ''}
-                  onChange={(e) => set({ kind: { ...d.kind, type: 'proxy', upstream_port: d.kind.type === 'proxy' ? d.kind.upstream_port : 3000, upstream_host: e.target.value.trim() || null } })}
+                  value={d.kind.type === 'proxy' ? (d.kind.upstream_host ?? '') : ''}
+                  onChange={(e) =>
+                    set({
+                      kind: {
+                        type: 'proxy',
+                        upstream_port: d.kind.type === 'proxy' ? d.kind.upstream_port : 3000,
+                        upstream_host: e.target.value.trim() || null,
+                        upstream_https: d.kind.type === 'proxy' ? d.kind.upstream_https : false,
+                      },
+                    })
+                  }
                   placeholder="127.0.0.1"
                 />
               </Field>
               <Field label="Port">
                 <Input
                   type="number"
-                  value={d.kind.upstream_port}
-                  onChange={(e) => set({ kind: { ...d.kind, type: 'proxy', upstream_port: Number(e.target.value) } })}
+                  value={d.kind.type === 'proxy' ? d.kind.upstream_port : 3000}
+                  onChange={(e) =>
+                    set({
+                      kind: {
+                        type: 'proxy',
+                        upstream_port: Number(e.target.value) || 3000,
+                        upstream_host: d.kind.type === 'proxy' ? d.kind.upstream_host : null,
+                        upstream_https: d.kind.type === 'proxy' ? d.kind.upstream_https : false,
+                      },
+                    })
+                  }
                 />
               </Field>
             </div>
             <Toggle
-              checked={!!d.kind.upstream_https}
-              onChange={(v) => set({ kind: { ...d.kind, type: 'proxy', upstream_port: d.kind.type === 'proxy' ? d.kind.upstream_port : 3000, upstream_https: v } })}
+              checked={d.kind.type === 'proxy' ? !!d.kind.upstream_https : false}
+              onChange={(v) =>
+                set({
+                  kind: {
+                    type: 'proxy',
+                    upstream_port: d.kind.type === 'proxy' ? d.kind.upstream_port : 3000,
+                    upstream_host: d.kind.type === 'proxy' ? d.kind.upstream_host : null,
+                    upstream_https: v,
+                  },
+                })
+              }
               label="The target only speaks HTTPS"
               hint="Self-signed certificates on the target are accepted."
             />
-            {!d.kind.upstream_host && (
+            {!(d.kind.type === 'proxy' && d.kind.upstream_host) && (
               <Field label="Start command (optional)" hint="OLS supervises it and passes PORT. Example: npm run dev">
                 <Input value={appLine} onChange={(e) => setAppLine(e.target.value)} placeholder="npm run dev" />
               </Field>
             )}
           </>
+        )}
+
+        {serveMode === 'static' && (
+          <p className="rounded-md border border-border/60 bg-muted/20 p-3 text-xs text-muted-foreground">
+            Serves static HTML, CSS, JavaScript, and asset files directly from the site folder with zero background process overhead.
+          </p>
         )}
       </FormSection>
 

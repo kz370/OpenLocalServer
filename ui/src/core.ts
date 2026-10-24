@@ -711,6 +711,7 @@ export type CoreCommand =
   | { type: 'forget_deleted_item'; value: string }
   | { type: 'clear_deleted_items' }
   | { type: 'get_project_detail'; id: string }
+  | { type: 'inspect_site_folder'; path: string }
   | { type: 'run_in_project'; project_id: string; runtime_id: string; args: string[] }
   | { type: 'list_wp_projects' }
   | { type: 'wp_sign_in'; project_id: string; hostname?: string; theme?: 'light' | 'dark' }
@@ -1058,6 +1059,7 @@ export type CoreResponse =
   | { type: 'project'; project: Project }
   | { type: 'projects'; projects: Project[] }
   | { type: 'project_detail'; detail: ProjectDetail }
+  | { type: 'site_folder_inspection'; inspection: SiteFolderInspection }
   | { type: 'wp_projects'; projects: WpProject[] }
   | { type: 'wp_sign_in'; url: string; expires_at: number }
   | { type: 'deleted_items'; items: DeletedItem[] }
@@ -1310,6 +1312,24 @@ export interface DiscoveredCommand {
   help: string
   arguments: CommandArgument[]
   options: CommandOption[]
+}
+
+export interface DetectedVenv {
+  name: string
+  path: string
+  python_exe: string
+  version: string | null
+}
+
+export interface SiteFolderInspection {
+  framework: string
+  package_scripts: DiscoveredCommand[]
+  detected_package_manager: string | null
+  detected_venv: string | null
+  available_venvs: DetectedVenv[]
+  suggested_command: string | null
+  suggested_port: number
+  entry_files: string[]
 }
 export interface CommandSource {
   id: string

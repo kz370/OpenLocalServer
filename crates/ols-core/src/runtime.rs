@@ -983,6 +983,7 @@ fn runtime_binary(id: &str) -> Option<&'static str> {
     match id {
         "node" => Some("node.exe"),
         "php" => Some("php.exe"),
+        "python" => Some("python.exe"),
         "nginx" => Some("nginx.exe"),
         "mariadb" => Some("bin/mariadbd.exe"),
         "apache" => Some("bin/httpd.exe"),
@@ -1003,6 +1004,7 @@ fn runtime_name(id: &str, manifests: &[PackageManifest]) -> String {
         .unwrap_or_else(|| match id {
             "node" => "Node.js".into(),
             "php" => "PHP".into(),
+            "python" => "Python".into(),
             "nginx" => "Nginx".into(),
             "mariadb" => "MariaDB".into(),
             "apache" => "Apache HTTP Server".into(),

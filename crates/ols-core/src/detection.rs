@@ -213,6 +213,260 @@ pub fn detect(project_path: &Path) -> DetectionResult {
     }
 }
 
+/// Information about a detected Python virtual environment or environment folder.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DetectedVenv {
+    pub name: String,
+    pub path: String,
+    pub python_exe: String,
+    pub version: Option<String>,
+}
+
+/// Rich inspection result of a directory when creating or editing a site (e.g. Node, Python, PHP).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SiteFolderInspection {
+    pub framework: String,
+    pub package_scripts: Vec<crate::command_catalog::DiscoveredCommand>,
+    pub detected_package_manager: Option<String>,
+    pub detected_venv: Option<String>,
+    pub available_venvs: Vec<DetectedVenv>,
+    pub suggested_command: Option<String>,
+    pub suggested_port: u16,
+    pub entry_files: Vec<String>,
+}
+
+/// Inspects a directory to find its framework, package manager, scripts, virtualenvs, entry files, and suggested dev server commands.
+pub fn inspect_site_folder(project_path: &Path) -> SiteFolderInspection {
+    if !project_path.exists() {
+        return SiteFolderInspection {
+            framework: "unknown".into(),
+            package_scripts: Vec::new(),
+            detected_package_manager: None,
+            detected_venv: None,
+            available_venvs: Vec::new(),
+            suggested_command: None,
+            suggested_port: 3000,
+            entry_files: Vec::new(),
+        };
+    }
+
+    let detection = detect(project_path);
+    let mut package_scripts = Vec::new();
+    let mut detected_pm = None;
+
+    if let Ok(pkg_text) = std::fs::read_to_string(project_path.join("package.json")) {
+        package_scripts = crate::command_catalog::package_scripts(&pkg_text);
+        let (pm, _, _) = crate::nodepm::detect(project_path);
+        detected_pm = pm;
+    }
+
+    // Find all potential virtual environments (.venv, venv, env, .env, or subdirs with pyvenv.cfg or Scripts/python.exe)
+    let mut available_venvs: Vec<DetectedVenv> = Vec::new();
+    let candidate_names = [".venv", "venv", "env", ".env"];
+    for name in candidate_names {
+        let dir = project_path.join(name);
+        if dir.is_dir() {
+            let exe = crate::venv::python_exe(&dir);
+            if exe.is_file() {
+                let cfg_version = std::fs::read_to_string(dir.join("pyvenv.cfg"))
+                    .ok()
+                    .and_then(|cfg| {
+                        cfg.lines().find_map(|l| {
+                            let (k, v) = l.split_once('=')?;
+                            if k.trim().eq_ignore_ascii_case("version")
+                                || k.trim().eq_ignore_ascii_case("version_info")
+                            {
+                                Some(v.trim().to_string())
+                            } else {
+                                None
+                            }
+                        })
+                    });
+                available_venvs.push(DetectedVenv {
+                    name: name.to_string(),
+                    path: dir.display().to_string(),
+                    python_exe: exe.display().to_string(),
+                    version: cfg_version,
+                });
+            }
+        }
+    }
+
+    // Also check immediate subfolders that have a pyvenv.cfg
+    if let Ok(entries) = std::fs::read_dir(project_path) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let name = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or_default();
+                if !candidate_names.contains(&name) && path.join("pyvenv.cfg").is_file() {
+                    let exe = crate::venv::python_exe(&path);
+                    if exe.is_file() {
+                        let cfg_version = std::fs::read_to_string(path.join("pyvenv.cfg"))
+                            .ok()
+                            .and_then(|cfg| {
+                                cfg.lines().find_map(|l| {
+                                    let (k, v) = l.split_once('=')?;
+                                    if k.trim().eq_ignore_ascii_case("version")
+                                        || k.trim().eq_ignore_ascii_case("version_info")
+                                    {
+                                        Some(v.trim().to_string())
+                                    } else {
+                                        None
+                                    }
+                                })
+                            });
+                        available_venvs.push(DetectedVenv {
+                            name: name.to_string(),
+                            path: path.display().to_string(),
+                            python_exe: exe.display().to_string(),
+                            version: cfg_version,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    let detected_venv = available_venvs.first().map(|v| v.python_exe.clone());
+
+    let detected_python_pm = if project_path.join("uv.lock").is_file() {
+        Some("uv".to_string())
+    } else if project_path.join("poetry.lock").is_file() {
+        Some("poetry".to_string())
+    } else if project_path.join("Pipfile").is_file() || project_path.join("Pipfile.lock").is_file()
+    {
+        Some("pipenv".to_string())
+    } else if project_path.join("requirements.txt").is_file()
+        || project_path.join("pyproject.toml").is_file()
+    {
+        Some("pip".to_string())
+    } else {
+        None
+    };
+
+    let pm = detected_pm.or(detected_python_pm);
+
+    let candidates = [
+        "server.js",
+        "index.js",
+        "app.js",
+        "main.js",
+        "src/index.ts",
+        "src/main.ts",
+        "main.py",
+        "app.py",
+        "manage.py",
+        "server.py",
+        "wsgi.py",
+        "asgi.py",
+        "streamlit_app.py",
+    ];
+    let mut entry_files = Vec::new();
+    for c in candidates {
+        if project_path.join(c).is_file() {
+            entry_files.push(c.to_string());
+        }
+    }
+
+    let find_free_port = |start: u16, end: u16| -> u16 {
+        for p in start..=end {
+            if crate::port::port_is_free(p) {
+                return p;
+            }
+        }
+        start
+    };
+
+    let framework_str = match detection.framework {
+        Framework::Laravel => "laravel",
+        Framework::Symfony => "symfony",
+        Framework::WordPress => "word_press",
+        Framework::GenericPhp => "generic_php",
+        Framework::Node => "node",
+        Framework::Django => "django",
+        Framework::Flask => "flask",
+        Framework::FastApi => "fast_api",
+        Framework::GenericPython => "generic_python",
+        Framework::Unknown => {
+            if !package_scripts.is_empty() || project_path.join("package.json").is_file() {
+                "node"
+            } else if entry_files.iter().any(|f| f.ends_with(".py")) || detected_venv.is_some() {
+                "generic_python"
+            } else {
+                "unknown"
+            }
+        }
+    }
+    .to_string();
+
+    let is_node = framework_str == "node"
+        || !package_scripts.is_empty()
+        || project_path.join("package.json").is_file();
+    let is_python = matches!(
+        framework_str.as_str(),
+        "django" | "flask" | "fast_api" | "generic_python"
+    ) || entry_files.iter().any(|f| f.ends_with(".py"))
+        || detected_venv.is_some();
+
+    let (suggested_command, suggested_port) = if is_node {
+        let pkg_mgr = pm.as_deref().unwrap_or("npm");
+        let cmd = if package_scripts.iter().any(|s| s.name == "dev") {
+            if pkg_mgr == "npm" {
+                "npm run dev".to_string()
+            } else {
+                format!("{pkg_mgr} dev")
+            }
+        } else if package_scripts.iter().any(|s| s.name == "start") {
+            format!("{pkg_mgr} start")
+        } else if entry_files.contains(&"server.js".to_string()) {
+            "node server.js".to_string()
+        } else if entry_files.contains(&"index.js".to_string()) {
+            "node index.js".to_string()
+        } else if entry_files.contains(&"app.js".to_string()) {
+            "node app.js".to_string()
+        } else {
+            "npm run dev".to_string()
+        };
+        (Some(cmd), find_free_port(3000, 3050))
+    } else if is_python {
+        let cmd = if entry_files.contains(&"app.py".to_string()) {
+            "python app.py".to_string()
+        } else if entry_files.contains(&"main.py".to_string()) {
+            "python main.py".to_string()
+        } else if framework_str == "django" || entry_files.contains(&"manage.py".to_string()) {
+            "python manage.py runserver".to_string()
+        } else if framework_str == "flask" {
+            "python -m flask run".to_string()
+        } else if entry_files.contains(&"server.py".to_string()) {
+            "python server.py".to_string()
+        } else {
+            "python main.py".to_string()
+        };
+        let port = if framework_str == "flask" {
+            find_free_port(5000, 5050)
+        } else {
+            find_free_port(8000, 8050)
+        };
+        (Some(cmd), port)
+    } else {
+        (None, 80)
+    };
+
+    SiteFolderInspection {
+        framework: framework_str,
+        package_scripts,
+        detected_package_manager: pm,
+        detected_venv,
+        available_venvs,
+        suggested_command,
+        suggested_port,
+        entry_files,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

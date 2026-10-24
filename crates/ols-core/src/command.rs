@@ -165,6 +165,11 @@ pub enum CoreCommand {
     GetProjectDetail {
         id: String,
     },
+    /// Inspects a folder before or during site creation/editing (e.g. Node / Python / PHP)
+    /// to detect its framework, scripts, package managers, virtual environments and entry points.
+    InspectSiteFolder {
+        path: String,
+    },
     /// Runtime-aware terminal (§19): runs `runtime_id`'s resolved binary for this
     /// project, with its bin dir first on PATH, and streams output like any other
     /// managed process (reuses the Process Supervisor — same live-output UI).
@@ -1416,6 +1421,9 @@ pub enum CoreResponse {
     ProjectDetail {
         detail: Box<ProjectDetail>,
     },
+    SiteFolderInspection {
+        inspection: crate::detection::SiteFolderInspection,
+    },
     WpProjects {
         projects: Vec<crate::wordpress::WpProject>,
     },
@@ -2283,6 +2291,12 @@ impl Core {
                 })?;
                 Ok(R::ProjectDetail {
                     detail: Box::new(detail),
+                })
+            }
+            C::InspectSiteFolder { path } => {
+                let p = std::path::Path::new(&path);
+                Ok(R::SiteFolderInspection {
+                    inspection: crate::detection::inspect_site_folder(p),
                 })
             }
             C::ListWpProjects => Ok(R::WpProjects {

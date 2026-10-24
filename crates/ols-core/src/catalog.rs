@@ -280,6 +280,18 @@ const CATALOG: &[PackageManifest] = &[
         archive_root: "k6-v2.3.0-windows-amd64",
         binary: "k6.exe",
     },
+    PackageManifest {
+        id: "python",
+        name: "Python",
+        version: "3.12.9",
+        platform: "windows",
+        architecture: "x64",
+        url: "https://www.python.org/ftp/python/3.12.9/python-3.12.9-embed-amd64.zip",
+        // From python.org's official SPDX release SBOM manifest (python-3.12.9-embed-amd64.zip.spdx.json).
+        sha256: "615861fb801e8b04c847598db4e1e46e4b046295017caa37cb5486dde72b5865",
+        archive_root: "",
+        binary: "python.exe",
+    },
 ];
 
 fn current_platform() -> &'static str {

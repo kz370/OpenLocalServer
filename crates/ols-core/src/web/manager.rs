@@ -1626,7 +1626,20 @@ fn wait_port_free_all(timeout: Duration) {
 }
 
 /// Finds `exe` (with common Windows extensions) in `dir`, or on PATH when `dir` is None.
+/// If `exe` is already a full or relative path to a file, resolves it directly.
 pub fn find_executable(dir: Option<&Path>, exe: &str) -> Option<PathBuf> {
+    let p = Path::new(exe);
+    if p.is_file() {
+        return Some(p.to_path_buf());
+    }
+    #[cfg(windows)]
+    if !exe.ends_with(".exe") && !exe.ends_with(".cmd") && !exe.ends_with(".bat") {
+        let with_exe = p.with_extension("exe");
+        if with_exe.is_file() {
+            return Some(with_exe);
+        }
+    }
+
     // Windows cannot spawn a bare Unix shell script (e.g. Node's extensionless `npx`/`npm`)
     // via CreateProcess — that surfaces as os error 193. Prefer native launchers first so
     // `shim()` routes `.cmd`/`.bat` through `cmd.exe /C`. Bare names stay last as fallback.
@@ -1682,11 +1695,43 @@ pub fn build_app_spec(
     };
 
     let system_path = std::env::var("PATH").unwrap_or_default();
-    let path = match bin_dir {
-        Some(d) => format!("{};{system_path}", d.display()),
-        None => system_path,
+    let mut extra_path_dirs: Vec<PathBuf> = Vec::new();
+
+    // If found executable is inside a Python venv (e.g. .venv\Scripts\python.exe),
+    // prepend the Scripts folder to PATH and export VIRTUAL_ENV.
+    let mut virtual_env_var = None;
+    if let Some(parent) = found.parent() {
+        if parent
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.eq_ignore_ascii_case("Scripts"))
+        {
+            extra_path_dirs.push(parent.to_path_buf());
+            if let Some(venv_root) = parent.parent() {
+                virtual_env_var = Some(venv_root.display().to_string());
+            }
+        }
+    }
+
+    if let Some(d) = bin_dir {
+        extra_path_dirs.push(d.to_path_buf());
+    }
+
+    let path = if extra_path_dirs.is_empty() {
+        system_path
+    } else {
+        let prefix = extra_path_dirs
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join(";");
+        format!("{prefix};{system_path}")
     };
+
     let mut env = vec![("PATH".to_string(), path)];
+    if let Some(venv) = virtual_env_var {
+        env.push(("VIRTUAL_ENV".to_string(), venv));
+    }
     if let Some(p) = port {
         env.push(("PORT".to_string(), p.to_string()));
     }
@@ -1706,6 +1751,58 @@ pub fn build_app_spec(
             delay_ms: 1000,
         }),
     })
+}
+
+/// A site saved as static whose folder holds PHP files would hand their source to the
+/// browser as downloads. Serve it through PHP instead (PHP serves plain files fine too);
+/// the stored kind is left alone so the user's choice is never rewritten behind their back.
+fn effective_kind(d: &Domain) -> SiteKind {
+    if matches!(d.kind, SiteKind::Static) && has_php(std::path::Path::new(&d.root), 3) {
+        return SiteKind::Php { version: None };
+    }
+    d.kind.clone()
+}
+
+/// Any `.php` file in `dir` or up to `depth` folders below it (`/contact/index.php`
+/// downloads just the same as a top-level one). Dependency and VCS folders are skipped:
+/// a `node_modules` package shipping a stray PHP file doesn't make the site PHP.
+fn has_php(dir: &Path, depth: u8) -> bool {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return false;
+    };
+    let mut subdirs = Vec::new();
+    for e in rd.flatten() {
+        let path = e.path();
+        let Ok(ft) = e.file_type() else { continue };
+        if ft.is_file()
+            && path
+                .extension()
+                .is_some_and(|x| x.eq_ignore_ascii_case("php"))
+        {
+            return true;
+        }
+        if ft.is_dir() && depth > 0 {
+            let name = e.file_name().to_string_lossy().to_lowercase();
+            if !name.starts_with('.') && name != "node_modules" && name != "vendor" {
+                subdirs.push(path);
+            }
+        }
+    }
+    subdirs.iter().any(|d| has_php(d, depth - 1))
+}
+
+/// Top-level domains reserved for local use (RFC 2606 / 6761 / ICANN `.internal`): routing
+/// every name under them to this machine can't hijack a real website. `.local` is left
+/// out on purpose (mDNS and some company networks use it).
+const SAFE_TLDS: &[&str] = &["test", "localhost", "example", "invalid", "internal"];
+
+fn tld_of(hostname: &str) -> String {
+    hostname
+        .trim_end_matches('.')
+        .rsplit('.')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase()
 }
 
 #[cfg(test)]
@@ -2121,56 +2218,4 @@ mod tests {
         let cfg = test_config("nginx");
         assert_eq!(mgr.apply_targets(&cfg), vec!["nginx".to_string()]);
     }
-}
-
-/// A site saved as static whose folder holds PHP files would hand their source to the
-/// browser as downloads. Serve it through PHP instead (PHP serves plain files fine too);
-/// the stored kind is left alone so the user's choice is never rewritten behind their back.
-fn effective_kind(d: &Domain) -> SiteKind {
-    if matches!(d.kind, SiteKind::Static) && has_php(std::path::Path::new(&d.root), 3) {
-        return SiteKind::Php { version: None };
-    }
-    d.kind.clone()
-}
-
-/// Any `.php` file in `dir` or up to `depth` folders below it (`/contact/index.php`
-/// downloads just the same as a top-level one). Dependency and VCS folders are skipped:
-/// a `node_modules` package shipping a stray PHP file doesn't make the site PHP.
-fn has_php(dir: &Path, depth: u8) -> bool {
-    let Ok(rd) = std::fs::read_dir(dir) else {
-        return false;
-    };
-    let mut subdirs = Vec::new();
-    for e in rd.flatten() {
-        let path = e.path();
-        let Ok(ft) = e.file_type() else { continue };
-        if ft.is_file()
-            && path
-                .extension()
-                .is_some_and(|x| x.eq_ignore_ascii_case("php"))
-        {
-            return true;
-        }
-        if ft.is_dir() && depth > 0 {
-            let name = e.file_name().to_string_lossy().to_lowercase();
-            if !name.starts_with('.') && name != "node_modules" && name != "vendor" {
-                subdirs.push(path);
-            }
-        }
-    }
-    subdirs.iter().any(|d| has_php(d, depth - 1))
-}
-
-/// Top-level domains reserved for local use (RFC 2606 / 6761 / ICANN `.internal`): routing
-/// every name under them to this machine can't hijack a real website. `.local` is left
-/// out on purpose (mDNS and some company networks use it).
-const SAFE_TLDS: &[&str] = &["test", "localhost", "example", "invalid", "internal"];
-
-fn tld_of(hostname: &str) -> String {
-    hostname
-        .trim_end_matches('.')
-        .rsplit('.')
-        .next()
-        .unwrap_or_default()
-        .to_ascii_lowercase()
 }
