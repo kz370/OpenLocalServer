@@ -216,11 +216,24 @@ export function DomainSettings({
   const [installedPythonVersions, setInstalledPythonVersions] = useState<string[]>([])
   const [nodePkgManager, setNodePkgManager] = useState<'npm' | 'pnpm' | 'yarn' | 'bun'>('npm')
   const [pythonPkgManager, setPythonPkgManager] = useState<'pip' | 'uv' | 'poetry' | 'pipenv'>('pip')
-  const [pythonInterpreter, setPythonInterpreter] = useState<string>('system')
+  const [nodeVersion, setNodeVersion] = useState<string>(() => {
+    if (domain?.app?.runtime?.startsWith('node:')) return domain.app.runtime.slice(5)
+    return ''
+  })
+  const [pythonInterpreter, setPythonInterpreter] = useState<string>(() => {
+    if (domain?.app?.runtime?.startsWith('python:')) return `version:${domain.app.runtime.slice(7)}`
+    if (domain?.app?.executable && (domain.app.executable.includes('/Scripts/') || domain.app.executable.includes('\\Scripts\\'))) {
+      return `venv:${domain.app.executable}`
+    }
+    return 'system'
+  })
   const [nodeRunOptChoice, setNodeRunOptChoice] = useState<string>('')
   const [pythonRunOptChoice, setPythonRunOptChoice] = useState<string>('')
   const [portChecking, setPortChecking] = useState(false)
-  const [appLine, setAppLine] = useState('')
+  const initialAppLine = domain?.app ? [domain.app.executable, ...domain.app.args].join(' ') : ''
+  const isInitialPython = domain?.app?.runtime?.startsWith('python') || ['python', 'py', 'uvicorn', 'flask', 'django', 'waitress', 'streamlit'].some((k) => domain?.app?.executable?.toLowerCase().includes(k))
+  const [nodeAppLine, setNodeAppLine] = useState(!isInitialPython ? (initialAppLine || 'npm run dev') : 'npm run dev')
+  const [pythonAppLine, setPythonAppLine] = useState(isInitialPython ? (initialAppLine || 'python main.py') : 'python main.py')
   const [defaultTld, setDefaultTld] = useState('local')
   const [template, setTemplate] = useState(`{project}.local`)
   const [showApps, setShowApps] = useState(false)
@@ -239,7 +252,15 @@ export function DomainSettings({
     projectNameTouched.current = false
     setServeMode(getInitialServeMode(domain))
     modeTouched.current = false
-    setAppLine(domain?.app ? [domain.app.executable, ...domain.app.args].join(' ') : '')
+    const line = domain?.app ? [domain.app.executable, ...domain.app.args].join(' ') : ''
+    const isPy = domain?.app?.runtime?.startsWith('python') || ['python', 'py', 'uvicorn', 'flask', 'django', 'waitress', 'streamlit'].some((k) => domain?.app?.executable?.toLowerCase().includes(k))
+    if (isPy) {
+      setPythonAppLine(line || 'python main.py')
+      if (domain?.app?.runtime?.startsWith('python:')) setPythonInterpreter(`version:${domain.app.runtime.slice(7)}`)
+    } else {
+      setNodeAppLine(line || 'npm run dev')
+      if (domain?.app?.runtime?.startsWith('node:')) setNodeVersion(domain.app.runtime.slice(5))
+    }
     if (!domain.project_id) setProjectName('')
   }, [domain])
 
@@ -269,29 +290,42 @@ export function DomainSettings({
           setInspecting(false)
 
           if (isNew && !modeTouched.current) {
-            if (info.framework === 'node' || info.package_scripts.length > 0) {
-              setServeMode('node')
-              if (info.detected_package_manager && ['npm', 'pnpm', 'yarn', 'bun'].includes(info.detected_package_manager)) {
-                setNodePkgManager(info.detected_package_manager as 'npm' | 'pnpm' | 'yarn' | 'bun')
+            const isPython =
+              ['django', 'flask', 'fast_api', 'generic_python'].includes(info.framework) ||
+              info.entry_files.some((f) => f.endsWith('.py')) ||
+              !!info.detected_venv ||
+              (info.available_venvs && info.available_venvs.length > 0) ||
+              (info.requirements_files && info.requirements_files.length > 0)
+
+            if (isPython) {
+              setServeMode('python')
+              if (info.detected_package_manager && ['pip', 'uv', 'poetry', 'pipenv'].includes(info.detected_package_manager)) {
+                setPythonPkgManager(info.detected_package_manager as 'pip' | 'uv' | 'poetry' | 'pipenv')
               }
-              if (info.suggested_command) setAppLine(info.suggested_command)
+              const pyCmd = info.suggested_command && info.suggested_command.toLowerCase().includes('python')
+                ? info.suggested_command
+                : 'python main.py'
+              setPythonAppLine(pyCmd)
+              if (info.available_venvs && info.available_venvs.length > 0) {
+                setPythonInterpreter(`venv:${info.available_venvs[0].python_exe}`)
+              } else if (info.detected_venv) {
+                setPythonInterpreter('venv')
+              }
               if (info.suggested_port) {
                 setD((cur) => ({
                   ...cur,
                   kind: { type: 'proxy', upstream_port: info.suggested_port, upstream_host: null, upstream_https: false },
                 }))
               }
-            } else if (
-              ['django', 'flask', 'fast_api', 'generic_python'].includes(info.framework) ||
-              info.entry_files.some((f) => f.endsWith('.py')) ||
-              info.detected_venv
-            ) {
-              setServeMode('python')
-              if (info.detected_package_manager && ['pip', 'uv', 'poetry', 'pipenv'].includes(info.detected_package_manager)) {
-                setPythonPkgManager(info.detected_package_manager as 'pip' | 'uv' | 'poetry' | 'pipenv')
+            } else if (info.framework === 'node' || info.package_scripts.length > 0) {
+              setServeMode('node')
+              if (info.detected_package_manager && ['npm', 'pnpm', 'yarn', 'bun'].includes(info.detected_package_manager)) {
+                setNodePkgManager(info.detected_package_manager as 'npm' | 'pnpm' | 'yarn' | 'bun')
               }
-              if (info.suggested_command) setAppLine(info.suggested_command)
-              if (info.detected_venv) setPythonInterpreter('venv')
+              const nodeCmd = info.suggested_command && !info.suggested_command.toLowerCase().includes('python')
+                ? info.suggested_command
+                : (info.package_scripts.some((s) => s.name === 'dev') ? 'npm run dev' : 'npm start')
+              setNodeAppLine(nodeCmd)
               if (info.suggested_port) {
                 setD((cur) => ({
                   ...cur,
@@ -309,7 +343,11 @@ export function DomainSettings({
                 setPythonPkgManager(info.detected_package_manager as 'pip' | 'uv' | 'poetry' | 'pipenv')
               }
             }
-            if (info.detected_venv) setPythonInterpreter('venv')
+            if (info.available_venvs && info.available_venvs.length > 0) {
+              setPythonInterpreter(`venv:${info.available_venvs[0].python_exe}`)
+            } else if (info.detected_venv) {
+              setPythonInterpreter('venv')
+            }
           }
         })
         .catch(() => {
@@ -525,15 +563,9 @@ export function DomainSettings({
     } else if (m === 'node') {
       const port = d.kind.type === 'proxy' ? d.kind.upstream_port : (inspection?.suggested_port || 3000)
       setD((cur) => ({ ...cur, kind: { type: 'proxy', upstream_port: port, upstream_host: null, upstream_https: false } }))
-      if (!appLine.trim()) {
-        setAppLine(inspection?.suggested_command || 'npm run dev')
-      }
     } else if (m === 'python') {
       const port = d.kind.type === 'proxy' ? d.kind.upstream_port : (inspection?.suggested_port || 8000)
       setD((cur) => ({ ...cur, kind: { type: 'proxy', upstream_port: port, upstream_host: null, upstream_https: false } }))
-      if (!appLine.trim()) {
-        setAppLine(inspection?.suggested_command || 'python main.py')
-      }
     } else if (m === 'proxy') {
       setD((cur) => ({
         ...cur,
@@ -555,33 +587,33 @@ export function DomainSettings({
     if (opt.startsWith('script:')) {
       const scriptName = opt.replace('script:', '')
       if (nodePkgManager === 'npm') {
-        setAppLine(scriptName === 'start' ? 'npm start' : `npm run ${scriptName}`)
+        setNodeAppLine(scriptName === 'start' ? 'npm start' : `npm run ${scriptName}`)
       } else {
-        setAppLine(`${nodePkgManager} ${scriptName}`)
+        setNodeAppLine(`${nodePkgManager} ${scriptName}`)
       }
     } else if (opt === 'preset:dev') {
-      setAppLine(nodePkgManager === 'npm' ? 'npm run dev' : `${nodePkgManager} dev`)
+      setNodeAppLine(nodePkgManager === 'npm' ? 'npm run dev' : `${nodePkgManager} dev`)
     } else if (opt === 'preset:start') {
-      setAppLine(nodePkgManager === 'npm' ? 'npm start' : `${nodePkgManager} start`)
+      setNodeAppLine(nodePkgManager === 'npm' ? 'npm start' : `${nodePkgManager} start`)
     } else if (opt === 'preset:server_js') {
-      setAppLine('node server.js')
+      setNodeAppLine('node server.js')
     } else if (opt === 'preset:index_js') {
-      setAppLine('node index.js')
+      setNodeAppLine('node index.js')
     } else if (opt === 'preset:pnpm_dev') {
       setNodePkgManager('pnpm')
-      setAppLine('pnpm dev')
+      setNodeAppLine('pnpm dev')
     } else if (opt === 'preset:yarn_dev') {
       setNodePkgManager('yarn')
-      setAppLine('yarn dev')
+      setNodeAppLine('yarn dev')
     } else if (opt === 'preset:bun_dev') {
       setNodePkgManager('bun')
-      setAppLine('bun run dev')
+      setNodeAppLine('bun run dev')
     }
   }
 
   const onNodePkgManagerChange = (pm: 'npm' | 'pnpm' | 'yarn' | 'bun') => {
     setNodePkgManager(pm)
-    setAppLine((cur) => {
+    setNodeAppLine((cur) => {
       if (cur.startsWith('npm run ')) return cur.replace('npm run ', `${pm} `)
       if (cur.startsWith('pnpm ')) return cur.replace('pnpm ', `${pm} `)
       if (cur.startsWith('yarn ')) return cur.replace('yarn ', `${pm} `)
@@ -595,19 +627,19 @@ export function DomainSettings({
     setPythonRunOptChoice(opt)
     if (!opt || opt === 'custom') return
     if (opt === 'preset:main_py') {
-      setAppLine('python main.py')
+      setPythonAppLine('python main.py')
     } else if (opt === 'preset:app_py') {
-      setAppLine('python app.py')
+      setPythonAppLine('python app.py')
     } else if (opt === 'preset:server_py') {
-      setAppLine('python server.py')
+      setPythonAppLine('python server.py')
     } else if (opt === 'preset:fastapi') {
-      setAppLine('python -m uvicorn main:app --reload')
+      setPythonAppLine('python -m uvicorn main:app --reload')
     } else if (opt === 'preset:flask') {
-      setAppLine('python -m flask run')
+      setPythonAppLine('python -m flask run')
     } else if (opt === 'preset:django') {
-      setAppLine('python manage.py runserver')
+      setPythonAppLine('python manage.py runserver')
     } else if (opt === 'preset:streamlit') {
-      setAppLine('streamlit run app.py')
+      setPythonAppLine('streamlit run app.py')
     }
   }
 
@@ -622,13 +654,13 @@ export function DomainSettings({
     } else if (serveMode === 'node') {
       const port = d.kind.type === 'proxy' && d.kind.upstream_port ? d.kind.upstream_port : 3000
       out.kind = { type: 'proxy', upstream_port: port, upstream_host: null, upstream_https: false }
-      if (appLine.trim()) {
-        const [executable, ...args] = splitArgs(appLine)
+      if (nodeAppLine.trim()) {
+        const [executable, ...args] = splitArgs(nodeAppLine)
         out.app = {
           executable,
           args,
           cwd: out.app?.cwd || out.root,
-          runtime: 'node',
+          runtime: nodeVersion ? `node:${nodeVersion}` : 'node',
         }
       } else {
         out.app = null
@@ -636,11 +668,13 @@ export function DomainSettings({
     } else if (serveMode === 'python') {
       const port = d.kind.type === 'proxy' && d.kind.upstream_port ? d.kind.upstream_port : 8000
       out.kind = { type: 'proxy', upstream_port: port, upstream_host: null, upstream_https: false }
-      if (appLine.trim()) {
-        const [executable, ...args] = splitArgs(appLine)
+      if (pythonAppLine.trim()) {
+        const [executable, ...args] = splitArgs(pythonAppLine)
         let finalExe = executable
-        // If user picked a specific virtualenv and executable is a generic 'python', point to that venv's python.exe
-        if (pythonInterpreter.startsWith('venv:') || pythonInterpreter === 'venv') {
+        let runtimeField = 'python'
+        if (pythonInterpreter.startsWith('version:')) {
+          runtimeField = `python:${pythonInterpreter.slice(8)}`
+        } else if (pythonInterpreter.startsWith('venv:') || pythonInterpreter === 'venv') {
           const venvPath = pythonInterpreter.startsWith('venv:')
             ? pythonInterpreter.slice(5)
             : inspection?.detected_venv
@@ -652,7 +686,7 @@ export function DomainSettings({
           executable: finalExe,
           args,
           cwd: out.app?.cwd || out.root,
-          runtime: 'python',
+          runtime: runtimeField,
         }
       } else {
         out.app = null
@@ -662,8 +696,8 @@ export function DomainSettings({
       const host = d.kind.type === 'proxy' ? d.kind.upstream_host : null
       const https = d.kind.type === 'proxy' ? d.kind.upstream_https : false
       out.kind = { type: 'proxy', upstream_port: port, upstream_host: host, upstream_https: https }
-      if (!host && appLine.trim()) {
-        const [executable, ...args] = splitArgs(appLine)
+      if (!host && nodeAppLine.trim()) {
+        const [executable, ...args] = splitArgs(nodeAppLine)
         out.app = {
           executable,
           args,
@@ -984,9 +1018,9 @@ export function DomainSettings({
               <div className="flex items-center gap-2">
                 <Terminal className="size-4 shrink-0 text-muted-foreground" />
                 <Input
-                  value={appLine}
+                  value={nodeAppLine}
                   onChange={(e) => {
-                    setAppLine(e.target.value)
+                    setNodeAppLine(e.target.value)
                     setNodeRunOptChoice('custom')
                   }}
                   placeholder="npm run dev"
@@ -1029,8 +1063,8 @@ export function DomainSettings({
 
               <Field label="Node Version" hint="Choose the Node runtime version">
                 <Select
-                  value={d.app?.runtime === 'node' ? '' : ''}
-                  onChange={() => {}}
+                  value={nodeVersion}
+                  onChange={(e) => setNodeVersion(e.target.value)}
                 >
                   <option value="">System Node.js (PATH)</option>
                   {installedNodeVersions.map((v) => (
@@ -1053,6 +1087,14 @@ export function DomainSettings({
 
         {serveMode === 'python' && (
           <div className="flex flex-col gap-3 rounded-lg border border-border/80 bg-accent/10 p-3.5">
+            {inspection?.requirements_files && inspection.requirements_files.length > 0 && (
+              <div className="flex items-center gap-1.5 rounded-md border border-border/60 bg-background/60 px-2.5 py-1.5 text-xs text-muted-foreground">
+                <FileText className="size-3.5 shrink-0 text-primary" />
+                <span>Detected dependency manifest:</span>
+                <span className="font-mono font-medium text-foreground">{inspection.requirements_files.join(', ')}</span>
+              </div>
+            )}
+
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Run opt (Startup Mode)" hint="Select standard Python script or framework">
                 <Select value={pythonRunOptChoice} onChange={(e) => onPythonRunOptChange(e.target.value)}>
@@ -1086,9 +1128,9 @@ export function DomainSettings({
               <div className="flex items-center gap-2">
                 <Terminal className="size-4 shrink-0 text-muted-foreground" />
                 <Input
-                  value={appLine}
+                  value={pythonAppLine}
                   onChange={(e) => {
-                    setAppLine(e.target.value)
+                    setPythonAppLine(e.target.value)
                     setPythonRunOptChoice('custom')
                   }}
                   placeholder="python main.py"
@@ -1227,7 +1269,7 @@ export function DomainSettings({
             />
             {!(d.kind.type === 'proxy' && d.kind.upstream_host) && (
               <Field label="Start command (optional)" hint="OLS supervises it and passes PORT. Example: npm run dev">
-                <Input value={appLine} onChange={(e) => setAppLine(e.target.value)} placeholder="npm run dev" />
+                <Input value={nodeAppLine} onChange={(e) => setNodeAppLine(e.target.value)} placeholder="npm run dev" />
               </Field>
             )}
           </>

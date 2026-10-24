@@ -16,6 +16,7 @@ mod notify;
 
 /// The single front door from the UI into the application core (architecture decision 1).
 /// The UI never calls a manager directly — every action is a `CoreCommand` routed through here.
+// Trigger rebuild for runtime catalog and site inspection updates (v2).
 ///
 /// Commands run on a blocking thread: applying the web config or installing a runtime can
 /// take seconds, and must never freeze the window.

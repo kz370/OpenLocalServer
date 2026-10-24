@@ -230,6 +230,7 @@ pub struct SiteFolderInspection {
     pub detected_package_manager: Option<String>,
     pub detected_venv: Option<String>,
     pub available_venvs: Vec<DetectedVenv>,
+    pub requirements_files: Vec<String>,
     pub suggested_command: Option<String>,
     pub suggested_port: u16,
     pub entry_files: Vec<String>,
@@ -244,6 +245,7 @@ pub fn inspect_site_folder(project_path: &Path) -> SiteFolderInspection {
             detected_package_manager: None,
             detected_venv: None,
             available_venvs: Vec::new(),
+            requirements_files: Vec::new(),
             suggested_command: None,
             suggested_port: 3000,
             entry_files: Vec::new(),
@@ -380,21 +382,40 @@ pub fn inspect_site_folder(project_path: &Path) -> SiteFolderInspection {
         start
     };
 
+    // Find Python requirements and dependency specification files
+    let mut requirements_files = Vec::new();
+    let req_candidates = [
+        "requirements.txt",
+        "requirements-dev.txt",
+        "requirements/base.txt",
+        "requirements/dev.txt",
+        "pyproject.toml",
+        "Pipfile",
+    ];
+    for req in req_candidates {
+        if project_path.join(req).is_file() {
+            requirements_files.push(req.to_string());
+        }
+    }
+
     let framework_str = match detection.framework {
         Framework::Laravel => "laravel",
         Framework::Symfony => "symfony",
         Framework::WordPress => "word_press",
         Framework::GenericPhp => "generic_php",
-        Framework::Node => "node",
         Framework::Django => "django",
         Framework::Flask => "flask",
         Framework::FastApi => "fast_api",
         Framework::GenericPython => "generic_python",
+        Framework::Node => "node",
         Framework::Unknown => {
-            if !package_scripts.is_empty() || project_path.join("package.json").is_file() {
-                "node"
-            } else if entry_files.iter().any(|f| f.ends_with(".py")) || detected_venv.is_some() {
+            if entry_files.iter().any(|f| f.ends_with(".py"))
+                || detected_venv.is_some()
+                || !requirements_files.is_empty()
+            {
                 "generic_python"
+            } else if !package_scripts.is_empty() || project_path.join("package.json").is_file() {
+                "node"
             } else {
                 "unknown"
             }
@@ -402,16 +423,41 @@ pub fn inspect_site_folder(project_path: &Path) -> SiteFolderInspection {
     }
     .to_string();
 
-    let is_node = framework_str == "node"
-        || !package_scripts.is_empty()
-        || project_path.join("package.json").is_file();
     let is_python = matches!(
         framework_str.as_str(),
         "django" | "flask" | "fast_api" | "generic_python"
     ) || entry_files.iter().any(|f| f.ends_with(".py"))
-        || detected_venv.is_some();
+        || detected_venv.is_some()
+        || !requirements_files.is_empty();
 
-    let (suggested_command, suggested_port) = if is_node {
+    let is_node = !is_python
+        && (framework_str == "node"
+            || !package_scripts.is_empty()
+            || project_path.join("package.json").is_file());
+
+    let (suggested_command, suggested_port) = if is_python {
+        let cmd = if entry_files.contains(&"app.py".to_string()) {
+            "python app.py".to_string()
+        } else if entry_files.contains(&"main.py".to_string()) {
+            "python main.py".to_string()
+        } else if framework_str == "django" || entry_files.contains(&"manage.py".to_string()) {
+            "python manage.py runserver".to_string()
+        } else if framework_str == "flask" {
+            "python -m flask run".to_string()
+        } else if framework_str == "fast_api" {
+            "python -m uvicorn main:app --reload".to_string()
+        } else if entry_files.contains(&"server.py".to_string()) {
+            "python server.py".to_string()
+        } else {
+            "python main.py".to_string()
+        };
+        let port = if framework_str == "flask" {
+            find_free_port(5000, 5050)
+        } else {
+            find_free_port(8000, 8050)
+        };
+        (Some(cmd), port)
+    } else if is_node {
         let pkg_mgr = pm.as_deref().unwrap_or("npm");
         let cmd = if package_scripts.iter().any(|s| s.name == "dev") {
             if pkg_mgr == "npm" {
@@ -431,26 +477,6 @@ pub fn inspect_site_folder(project_path: &Path) -> SiteFolderInspection {
             "npm run dev".to_string()
         };
         (Some(cmd), find_free_port(3000, 3050))
-    } else if is_python {
-        let cmd = if entry_files.contains(&"app.py".to_string()) {
-            "python app.py".to_string()
-        } else if entry_files.contains(&"main.py".to_string()) {
-            "python main.py".to_string()
-        } else if framework_str == "django" || entry_files.contains(&"manage.py".to_string()) {
-            "python manage.py runserver".to_string()
-        } else if framework_str == "flask" {
-            "python -m flask run".to_string()
-        } else if entry_files.contains(&"server.py".to_string()) {
-            "python server.py".to_string()
-        } else {
-            "python main.py".to_string()
-        };
-        let port = if framework_str == "flask" {
-            find_free_port(5000, 5050)
-        } else {
-            find_free_port(8000, 8050)
-        };
-        (Some(cmd), port)
     } else {
         (None, 80)
     };
@@ -461,6 +487,7 @@ pub fn inspect_site_folder(project_path: &Path) -> SiteFolderInspection {
         detected_package_manager: pm,
         detected_venv,
         available_venvs,
+        requirements_files,
         suggested_command,
         suggested_port,
         entry_files,

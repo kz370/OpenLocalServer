@@ -584,6 +584,62 @@ impl RuntimeManager {
                 versions.dedup();
                 versions
             }
+            "python" => {
+                let mut versions = Vec::new();
+                // 1. Fetch release list from python.org directory (contains all released 3.x versions)
+                if let Ok(bytes) = self.fetch("https://www.python.org/ftp/python/") {
+                    if let Ok(page) = String::from_utf8(bytes) {
+                        for v in extract_versions(&page, "href=\"", "/\"") {
+                            if v.starts_with("3.") {
+                                let parts: Vec<&str> = v.split('.').collect();
+                                if parts.len() == 3 {
+                                    if let Ok(minor) = parts[1].parse::<u32>() {
+                                        // Restrict to released branches (3.7 through 3.15) to prevent 404 on unreleased/alpha versions
+                                        if (7..=15).contains(&minor) {
+                                            versions.push(v);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                // 2. Also incorporate index-windows.json if available
+                if let Ok(bytes) =
+                    self.fetch("https://www.python.org/ftp/python/index-windows.json")
+                {
+                    if let Ok(doc) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+                        for item in doc
+                            .get("versions")
+                            .and_then(|v| v.as_array())
+                            .into_iter()
+                            .flatten()
+                        {
+                            let Some(id_str) = item.get("id").and_then(|v| v.as_str()) else {
+                                continue;
+                            };
+                            if id_str.starts_with("pythonembed-") && id_str.ends_with("-64") {
+                                if let Some(v) = item.get("sort-version").and_then(|v| v.as_str()) {
+                                    if !v.contains('a') && !v.contains('b') && !v.contains("rc") {
+                                        versions.push(v.to_string());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                // 3. Fallback to built-in catalog if network returned no entries
+                if versions.is_empty() {
+                    for m in builtin_catalog() {
+                        if m.id == "python" {
+                            versions.push(m.version.to_string());
+                        }
+                    }
+                }
+                versions.sort_by(|a, b| compare_versions(b, a));
+                versions.dedup();
+                versions
+            }
             _ => return Err(format!("Online version lists are not available for {id}.")),
         };
         if versions.is_empty() {
@@ -1527,6 +1583,57 @@ be updated."
             format!("memcached-{version}-win64-mingw"),
             "bin/memcached.exe",
         ),
+        "python" => {
+            let mut matched = None;
+            if let Ok(resp) = http
+                .get("https://www.python.org/ftp/python/index-windows.json")
+                .send()
+                .await
+            {
+                if let Ok(bytes) = resp.bytes().await {
+                    if let Ok(doc) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+                        matched = doc
+                            .get("versions")
+                            .and_then(|v| v.as_array())
+                            .into_iter()
+                            .flatten()
+                            .find_map(|item| {
+                                let id_str = item.get("id").and_then(|v| v.as_str())?;
+                                let sort_v = item.get("sort-version").and_then(|v| v.as_str())?;
+                                if id_str.starts_with("pythonembed-") && id_str.ends_with("-64") && sort_v == version {
+                                    let u = item.get("url").and_then(|v| v.as_str())?.to_string();
+                                    let s = item.pointer("/hash/sha256").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                                    Some((u, s))
+                                } else {
+                                    None
+                                }
+                            });
+                    }
+                }
+            }
+            let (url, sha) = match matched {
+                Some((u, s)) => (u, s),
+                None => {
+                    let u1 = format!(
+                        "https://www.python.org/ftp/python/{version}/python-{version}-embed-amd64.zip"
+                    );
+                    let u2 = format!(
+                        "https://www.python.org/ftp/python/{version}/python-{version}-embeddable-amd64.zip"
+                    );
+                    let chosen = if let Ok(resp) = http.head(&u1).send().await {
+                        if resp.status().is_success() {
+                            u1
+                        } else {
+                            u2
+                        }
+                    } else {
+                        u1
+                    };
+                    (chosen, String::new())
+                }
+            };
+            (url, sha, String::new(), "python.exe")
+        }
         _ => return Err(format!("Online installs are not supported for {id}.")),
     };
     Ok(OwnedManifest {

@@ -1327,6 +1327,7 @@ export interface SiteFolderInspection {
   detected_package_manager: string | null
   detected_venv: string | null
   available_venvs: DetectedVenv[]
+  requirements_files: string[]
   suggested_command: string | null
   suggested_port: number
   entry_files: string[]

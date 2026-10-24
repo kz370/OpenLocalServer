@@ -777,21 +777,28 @@ impl Inner {
     /// The runtime's bin dir a project resolves to (custom pin, then managed), else the
     /// newest managed install.
     pub(crate) fn runtime_bin_for(&self, project_id: Option<&str>, id: &str) -> Option<PathBuf> {
+        let (runtime_id, ver_pin) = id
+            .split_once(':')
+            .map(|(r, v)| (r, Some(v)))
+            .unwrap_or((id, None));
+        if let Some(ver) = ver_pin {
+            return self.runtimes.bin_dir(runtime_id, ver);
+        }
         if let Some(pid) = project_id {
             if let Some(detail) = self.project_detail(pid) {
                 if let Some(dir) = detail
                     .resolved
                     .iter()
-                    .find(|r| r.id == id)
+                    .find(|r| r.id == runtime_id)
                     .and_then(|r| r.bin_dir.clone())
                 {
                     return Some(PathBuf::from(dir));
                 }
             }
         }
-        let versions = self.runtimes.installed_versions(id);
+        let versions = self.runtimes.installed_versions(runtime_id);
         let newest = crate::php::pick_version(&versions, None)?;
-        self.runtimes.bin_dir(id, &newest)
+        self.runtimes.bin_dir(runtime_id, &newest)
     }
 
     // -------------------------------------------------------------------- domains
