@@ -24,7 +24,7 @@ Point your MCP host at the `ols-mcp` binary (installed alongside `OLS.exe`). For
 {
   "mcpServers": {
     "ols": {
-      "command": "C:\\OpenLocalServer\\ols-mcp.exe"
+      "command": "C:\\OLS\\ols-mcp.exe"
     }
   }
 }

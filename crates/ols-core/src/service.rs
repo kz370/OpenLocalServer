@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
@@ -655,9 +655,6 @@ impl ServiceManager {
             return Err("mariadbd.exe missing on disk".into());
         }
         let mariadb_dir = self.paths.services_dir().join("mariadb");
-        // Keep the pre-version-manager 11.4 data directory in place. New major/minor
-        // versions get isolated stores because MariaDB data files are not safe to share
-        // across arbitrary version switches.
         let legacy_data = mariadb_dir.join("data");
         let series = version.split('.').take(2).collect::<Vec<_>>().join(".");
         let data_dir = if version.starts_with("11.4.") && legacy_data.exists() {
@@ -683,22 +680,85 @@ impl ServiceManager {
             }
         }
 
-        self.start_capped(ProcessSpec {
-            name: "MariaDB".into(),
-            executable: mariadbd.display().to_string(),
-            args: vec![
-                format!("--datadir={}", data_dir.display()),
-                format!("--port={}", primary_port("mariadb").unwrap()),
-                "--bind-address=127.0.0.1".to_string(),
-                "--console".to_string(),
-            ]
-            .into_iter()
-            .chain(self.limit_args("mariadb"))
-            .collect(),
-            cwd: Some(install_dir.display().to_string()),
-            env: vec![],
-            restart: None,
-        })
+        let port = primary_port("mariadb").unwrap();
+        let mut base_args = vec![
+            format!("--datadir={}", data_dir.display()),
+            format!("--port={}", port),
+            "--bind-address=127.0.0.1".to_string(),
+            "--console".to_string(),
+        ];
+        base_args.extend(self.limit_args("mariadb"));
+
+        let start_server = |skip_grant: bool| -> Result<ProcessId, String> {
+            let mut args = base_args.clone();
+            if skip_grant {
+                args.push("--skip-grant-tables".to_string());
+            }
+            self.start_capped(ProcessSpec {
+                name: "MariaDB".into(),
+                executable: mariadbd.display().to_string(),
+                args,
+                cwd: Some(install_dir.display().to_string()),
+                env: vec![],
+                restart: None,
+            })
+        };
+
+        let wait_for_ready = |id: ProcessId| -> bool {
+            let _ = self.supervisor.wait_for_spawn(id, Duration::from_secs(5));
+            let started = Instant::now();
+            while started.elapsed() < Duration::from_secs(30) {
+                if !port_is_free(port) && self.run_sql("mariadb", "SELECT 1").is_ok() {
+                    return true;
+                }
+                std::thread::sleep(Duration::from_millis(200));
+            }
+            false
+        };
+
+        let normal_id = start_server(false)?;
+        if wait_for_ready(normal_id) {
+            // root@127.0.0.1 with no password already works.
+            return Ok(normal_id);
+        }
+
+        // root can't connect passwordless over TCP (e.g. auth_socket or a prior
+        // provisioning without TCP grants). Bootstrap with --skip-grant-tables to
+        // fix root's auth, then restart normally.
+        self.supervisor.stop(normal_id);
+        let _ = self
+            .supervisor
+            .wait_for_exit(normal_id, Duration::from_secs(10));
+
+        let bootstrap_id = start_server(true)?;
+        if !wait_for_ready(bootstrap_id) {
+            self.supervisor.stop(bootstrap_id);
+            let _ = self
+                .supervisor
+                .wait_for_exit(bootstrap_id, Duration::from_secs(10));
+            return Err("mariadb did not become ready during bootstrap".into());
+        }
+
+        for sql in [
+            "ALTER USER IF EXISTS 'root'@'localhost' IDENTIFIED BY '';",
+            "CREATE USER IF NOT EXISTS 'root'@'127.0.0.1' IDENTIFIED BY '';",
+            "GRANT ALL PRIVILEGES ON *.* TO 'root'@'127.0.0.1' WITH GRANT OPTION;",
+            "FLUSH PRIVILEGES;",
+        ] {
+            let _ = self.run_sql("mariadb", sql);
+        }
+
+        self.supervisor.stop(bootstrap_id);
+        let _ = self
+            .supervisor
+            .wait_for_exit(bootstrap_id, Duration::from_secs(10));
+
+        let fixed_id = start_server(false)?;
+        if wait_for_ready(fixed_id) {
+            Ok(fixed_id)
+        } else {
+            Err("mariadb did not become ready after root auth fix".into())
+        }
     }
 
     /// MongoDB (§31, Stage 10): connection info, logs (process output), health (port probe).

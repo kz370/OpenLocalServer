@@ -82,6 +82,7 @@ fn mcp_tools() -> Vec<McpTool> {
                     "hostname": { "type": "string" },
                     "root": { "type": "string" },
                     "php": { "type": "string" },
+                    "kind": { "type": "string" },
                     "server": { "type": "string" },
                     "enabled": { "type": "boolean" }
                 },
@@ -97,6 +98,7 @@ fn mcp_tools() -> Vec<McpTool> {
                     "hostname": { "type": "string" },
                     "root": { "type": "string" },
                     "php": { "type": "string" },
+                    "kind": { "type": "string" },
                     "server": { "type": "string" },
                     "enabled": { "type": "boolean" }
                 },
@@ -218,16 +220,14 @@ fn mcp_tools() -> Vec<McpTool> {
         },
         McpTool {
             name: "ols_run_command".into(),
-            description: Some(
-                "Run any OLS core command by name with JSON args (advanced).".to_string(),
-            ),
+            description: Some("Run any OLS core command by name with JSON args (advanced). `args` must include a `type` field matching the CoreCommand variant (e.g. `run_command` needs `executable`, `args`, `cwd`, `timeout_ms`).".to_string()),
             input_schema: json!({
                 "type": "object",
                 "properties": {
-                    "command": { "type": "string", "description": "CoreCommand variant name" },
-                    "args": { "type": "object", "description": "Command arguments as JSON" }
+                    "command": { "type": "string", "description": "CoreCommand variant name (e.g. run_command, list_databases)" },
+                    "args": { "type": "object", "description": "Command arguments as JSON. Must include a `type` field matching the CoreCommand variant." }
                 },
-                "required": ["command"]
+                "required": ["command", "args"]
             }),
         },
     ]
@@ -262,7 +262,15 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
             hostname: req_str!("hostname"),
         },
         "ols_add_domain" => {
-            let mut domain: ols_core::domain::Domain = serde_json::from_value(args.clone())
+            let mut args = args.clone();
+            if args.get("kind").is_none() {
+                if let Some(php) = opt_str!("php") {
+                    args["kind"] = json!({"type": "php", "version": php});
+                } else {
+                    args["kind"] = json!({"type": "php", "version": null});
+                }
+            }
+            let mut domain: ols_core::domain::Domain = serde_json::from_value(args)
                 .map_err(|e| format!("failed to parse domain args: {e}"))?;
             domain.hostname = req_str!("hostname");
             if let Some(root) = opt_str!("root") {
@@ -277,7 +285,15 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
             C::AddDomain { domain }
         }
         "ols_update_domain" => {
-            let mut domain: ols_core::domain::Domain = serde_json::from_value(args.clone())
+            let mut args = args.clone();
+            if args.get("kind").is_none() {
+                if let Some(php) = opt_str!("php") {
+                    args["kind"] = json!({"type": "php", "version": php});
+                } else {
+                    args["kind"] = json!({"type": "php", "version": null});
+                }
+            }
+            let mut domain: ols_core::domain::Domain = serde_json::from_value(args)
                 .map_err(|e| format!("failed to parse domain args: {e}"))?;
             domain.hostname = req_str!("hostname");
             if let Some(root) = opt_str!("root") {
@@ -323,6 +339,13 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
         "ols_run_command" => {
             let cmd_name = req_str!("command");
             let cmd_args = args.get("args").cloned().unwrap_or(json!({}));
+            if cmd_args.get("type").is_none() {
+                return Err(format!(
+                    "failed to deserialize command '{cmd_name}': missing required field `type` \
+                     in args (e.g. {{\"type\": \"run_command\", \"executable\": \"cmd\", \
+                     \"args\": [], \"cwd\": null, \"timeout_ms\": 1000}})"
+                ));
+            }
             serde_json::from_value::<CoreCommand>(cmd_args)
                 .map_err(|e| format!("failed to deserialize command '{cmd_name}': {e}"))?
         }
@@ -424,6 +447,39 @@ fn format_response(response: &CoreResponse) -> String {
                 "None.".into()
             } else {
                 names.join("\n")
+            }
+        }
+        CoreResponse::CommandResult { entry } => {
+            format!(
+                "Command: {}\nArgs: {}\nExit code: {}\nDuration: {}ms\nTimed out: {}",
+                entry.command,
+                entry.args.join(" "),
+                entry
+                    .exit_code
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "-".into()),
+                entry.duration_ms,
+                entry.timed_out
+            )
+        }
+        CoreResponse::CommandHistory { entries } => {
+            if entries.is_empty() {
+                "No command history.".into()
+            } else {
+                let mut out = String::from("Command history:\n");
+                for e in entries {
+                    out.push_str(&format!(
+                        "- {} {} (exit: {}, {}ms, timed_out: {})\n",
+                        e.command,
+                        e.args.join(" "),
+                        e.exit_code
+                            .map(|c| c.to_string())
+                            .unwrap_or_else(|| "-".into()),
+                        e.duration_ms,
+                        e.timed_out
+                    ));
+                }
+                out
             }
         }
         other => format!("{:?}", other),
