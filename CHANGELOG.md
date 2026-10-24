@@ -7,7 +7,23 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [2.4.0] — 2026-10-24
 
-Feature release. Full notes: [elease-notes/v2.4.0.md](./release-notes/v2.4.0.md).
+Feature release. Full notes: [`release-notes/v2.4.0.md`](./release-notes/v2.4.0.md).
+
+### Added
+- **Python Runtime & Virtualenv Support**: First-class support for Python runtimes (3.7–3.15) alongside PHP and Node.js with virtualenv auto-detection.
+- **Model Context Protocol (MCP) Server**: Bundled `ols-mcp` companion server implementing stdio JSON-RPC 2.0 with bearer-token authentication.
+- **Smart Folder Inspection**: Project inspection discovering entry files, package managers, virtualenvs, suggested start commands, and port allocations.
+- **User Manual Page**: Built-in User Manual and Release Notes viewer under `Settings → User Manual`.
+
+### Changed & Improved
+- **Circular Application Branding**: Refreshed all application icons with circular antialiased marks.
+- **Dark Executable & Setup Icons**: Main application executable (`OLS.exe`) and installer setup (`OLS-Setup.exe`) default to the dark circular mark across all icon sizes (16px–256px).
+- **Runtime Management**: Deduplicated installed runtimes display and filtered unavailable online upstream builds.
+
+### Fixed
+- **MariaDB Local Root Authentication**: Automated bootstrapping for MariaDB root permissions to ensure seamless passwordless local TCP connections.
+- **Isolated Node & Python Start Commands**: Separated start command lines in site settings so Node and Python processes never cross-pollinate.
+
 
 ## [2.3.0] — 2026-10-23
 
