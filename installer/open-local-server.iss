@@ -118,6 +118,9 @@ Source: "{#LibDir}\ols-mcp.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#OutputDir}\cpulimit.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#LibDir}\*.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "..\src-tauri\icons\icon.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#LibDir}\ols-helper-icon.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#LibDir}\ols-mcp-icon.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#LibDir}\olsc-cli-icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"
@@ -125,6 +128,9 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\OLS.exe"; IconFilename: "{app}\icon.ico"; WorkingDir: "{app}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\OLS.exe"; IconFilename: "{app}\icon.ico"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autoprograms}\{#AppName} Helper"; Filename: "{app}\ols-helper.exe"; IconFilename: "{app}\ols-helper-icon.ico"; WorkingDir: "{app}"
+Name: "{autoprograms}\{#AppName} MCP"; Filename: "{app}\ols-mcp.exe"; IconFilename: "{app}\ols-mcp-icon.ico"; WorkingDir: "{app}"
+Name: "{autoprograms}\{#AppName} CLI"; Filename: "{app}\olsc.exe"; IconFilename: "{app}\olsc-cli-icon.ico"; WorkingDir: "{app}"
 
 [Run]
 ; The "Launch OLS" checkbox on the final page, ticked by default.

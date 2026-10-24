@@ -309,16 +309,6 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
                     .unwrap_or_else(|| ols_core::paths::AppPaths::resolve().sites_dir());
                 args["root"] = json!(sites_dir.to_string_lossy());
             }
-            // Validate the root is an absolute folder path before sending to core.
-            if let Some(root) = args.get("root").and_then(|v| v.as_str()) {
-                if !std::path::Path::new(root).is_absolute() {
-                    return Err(format!(
-                        "failed to parse domain args: root '{root}' is not an absolute folder path. \
-                         Use an absolute path (e.g. C:\\sites\\test559.local) or set domains.sites_dir \
-                         in Settings to a default sites folder.",
-                    ));
-                }
-            }
             let mut domain: ols_core::domain::Domain = serde_json::from_value(args)
                 .map_err(|e| format!("failed to parse domain args: {e}"))?;
             domain.hostname = req_str!("hostname");
@@ -328,14 +318,14 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
             if let Some(server) = opt_str!("server") {
                 domain.server = Some(server);
             }
-            if let Some(enabled) = opt_bool!("enabled") {
-                domain.enabled = enabled;
-            }
             if let Some(https) = opt_bool!("https") {
                 domain.https = https;
             }
             if let Some(redirect_https) = opt_bool!("redirect_https") {
                 domain.redirect_https = redirect_https;
+            }
+            if let Some(enabled) = opt_bool!("enabled") {
+                domain.enabled = enabled;
             }
             C::AddDomain { domain }
         }
@@ -367,16 +357,6 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
                     })
                     .unwrap_or_else(|| ols_core::paths::AppPaths::resolve().sites_dir());
                 args["root"] = json!(sites_dir.to_string_lossy());
-            }
-            // Validate the root is an absolute folder path before sending to core.
-            if let Some(root) = args.get("root").and_then(|v| v.as_str()) {
-                if !std::path::Path::new(root).is_absolute() {
-                    return Err(format!(
-                        "failed to parse domain args: root '{root}' is not an absolute folder path. \
-                         Use an absolute path (e.g. C:\\sites\\test559.local) or set domains.sites_dir \
-                         in Settings to a default sites folder.",
-                    ));
-                }
             }
             let mut domain: ols_core::domain::Domain = serde_json::from_value(args)
                 .map_err(|e| format!("failed to parse domain args: {e}"))?;
