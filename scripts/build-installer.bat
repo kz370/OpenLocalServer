@@ -205,6 +205,11 @@ call :stage_cpulimit || goto :fail
 for %%d in ("%TARGET%\*.dll") do if exist "%%~d" (
   call :copy_retry "%%~d" "%DIST%\%%~nxd" || goto :fail
 )
+rem Ship the per-binary icons next to their executables so the Start Menu shortcuts
+rem can reference them and Windows Explorer shows the right icon on each file.
+call :copy_retry "%ROOT%crates\ols-helper\icon.ico" "%DIST%\ols-helper-icon.ico" || goto :fail
+call :copy_retry "%ROOT%crates\ols-mcp\icon.ico" "%DIST%\ols-mcp-icon.ico" || goto :fail
+call :copy_retry "%ROOT%crates\ols-cli\icon.ico" "%DIST%\olsc-cli-icon.ico" || goto :fail
 echo       portable exe: "%STAGED%"
 
 echo [3/5] Looking for Inno Setup...
@@ -303,6 +308,10 @@ echo       staged exes already in %DIST%.
 for %%d in ("%TARGET%\*.dll") do if exist "%%~d" (
   call :copy_retry "%%~d" "%DIST%\%%~nxd" || goto :fail
 )
+rem Ship the per-binary icons next to their executables.
+call :copy_retry "%ROOT%crates\ols-helper\icon.ico" "%DIST%\ols-helper-icon.ico" || goto :fail
+call :copy_retry "%ROOT%crates\ols-mcp\icon.ico" "%DIST%\ols-mcp-icon.ico" || goto :fail
+call :copy_retry "%ROOT%crates\ols-cli\icon.ico" "%DIST%\olsc-cli-icon.ico" || goto :fail
 echo       portable exe: "%STAGED%"
 set "ISCC="
 for %%p in ("%ProgramFiles%\Inno Setup 7\ISCC.exe" "%ProgramFiles(x86)%\Inno Setup 7\ISCC.exe" "%ProgramFiles%\Inno Setup 6\ISCC.exe" "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" "%LocalAppData%\Programs\Inno Setup 7\ISCC.exe") do (
