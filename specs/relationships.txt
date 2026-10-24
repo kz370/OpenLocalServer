@@ -1,4 +1,6 @@
 UI | uses | Tauri run_command
+UI (core/client.ts) | calls | Tauri invoke('run_command')
+olsc (crates/ols-cli) | uses | ols-core control channel (calls CoreCommand over local IPC or background daemon)
 Tauri run_command | uses | Core::dispatch
 Core::dispatch | uses | Inner managers
 Inner | uses | ProcessSupervisor
