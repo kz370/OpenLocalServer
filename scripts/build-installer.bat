@@ -195,6 +195,12 @@ if not exist "%CLI_EXE%" (
   goto :fail
 )
 
+echo       Embedding icons into executables...
+if not exist "%ROOT%node_modules\rcedit" call npm.cmd install
+node "%ROOT%scripts\embed-icons-release.js" || (
+  echo [!] Warning: icon embedding failed, executables will have default icons.
+)
+
 if not exist "%DIST%" mkdir "%DIST%"
 rem Copy with retries: antivirus or a just-exited app can hold the file briefly.
 call :copy_retry "%EXE%" "%STAGED%" || goto :fail
