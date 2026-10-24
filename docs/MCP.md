@@ -73,6 +73,72 @@ Create a site:
 }
 ```
 
+## Authentication
+
+MCP authentication is **off by default** for backward compatibility. Enable it in OLS Settings → MCP / AI tools.
+
+When enabled, every `tools/call` request (except `initialize`, `ping`, `resources/list`, `prompts/list`) must carry a bearer token:
+
+- **Header form** (preferred, MCP 2025-06-18): send `params._meta.authorization` = `Bearer <token>`
+- **Fallback form**: send `params.arguments.token` = `<token>`
+
+The token is stored in the OS credential manager (Windows Credential Manager), never in settings files, logs, or the installer bundle.
+
+### Token rotation
+
+Open OLS Settings → MCP / AI tools and enter a new token, or leave blank to auto-generate one. Changing the token invalidates all connected MCP hosts on the next request; reconfigure each host with the new token. No reinstall needed.
+
+### Expiration
+
+Set a token lifetime (hours) on the settings page. `0` means never expires. After expiry, all authenticated requests are rejected until you rotate the token.
+
+### Example (Claude Desktop with auth enabled)
+
+```json
+{
+  "mcpServers": {
+    "ols": {
+      "command": "C:\\OLS\\ols-mcp.exe"
+    }
+  }
+}
+```
+
+Then configure your MCP host to send the bearer token with each `tools/call`. If your host supports `_meta.authorization`:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "_meta": { "authorization": "Bearer <your-token>" },
+    "name": "ols_list_domains",
+    "arguments": {}
+  }
+}
+```
+
+Otherwise use the `arguments.token` fallback:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "ols_list_domains",
+    "arguments": { "token": "<your-token>" }
+  }
+}
+```
+
+### Domain creation notes
+
+- `kind` accepts plain strings: `"php"`, `"static"`, `"proxy"` (case-insensitive). Omitted or unrecognized values default to PHP.
+- `root` defaults to the installation's `sites` folder if not provided. It must be an absolute folder path.
+- `php` version (e.g. `"8.3"`) is used only when `kind` is `php`.
+
 ## Safety
 
 Destructive operations (remove domain, remove tunnel, restore snapshot, import sites, env edits) are flagged as destructive by the core and require user confirmation in the app UI before they execute. The MCP server reports this as a diagnostic rather than running silently.
@@ -83,3 +149,4 @@ Destructive operations (remove domain, remove tunnel, restore snapshot, import s
 - Entry: `crates/ols-mcp/src/main.rs`
 - Library: `crates/ols-mcp/src/lib.rs`
 - Registered in workspace `Cargo.toml` alongside `ols-core`, `ols-helper`, `ols-cli`.
+

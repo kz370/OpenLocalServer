@@ -5,6 +5,8 @@ use std::io::{self, BufRead, Write};
 use tokio::task::spawn_blocking;
 use tracing::{info, warn};
 
+mod auth;
+
 /// MCP JSON-RPC 2.0 request.
 #[derive(Debug, Deserialize)]
 struct JsonRpcRequest {
@@ -37,12 +39,12 @@ impl JsonRpcResponse {
         }
     }
 
-    fn err(id: Value, code: i64, message: String) -> Self {
+    fn err(id: Value, error: Value) -> Self {
         Self {
             jsonrpc: "2.0".into(),
             id,
             result: None,
-            error: Some(json!({ "code": code, "message": message })),
+            error: Some(error),
         }
     }
 }
@@ -256,6 +258,22 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
         };
     }
 
+    /// Convert a user-supplied `kind` string (e.g. `"php"`, `"static"`, `"proxy"`,
+    /// case-insensitive) into the internally-tagged `SiteKind` JSON that serde expects,
+    /// e.g. `{"type": "static"}`. If `kind` is already an object, pass it through.
+    fn normalize_kind(value: &Value) -> Value {
+        match value {
+            Value::String(s) => match s.to_lowercase().as_str() {
+                "static" => json!({"type": "static"}),
+                "proxy" => {
+                    json!({"type": "proxy", "upstream_port": 8080, "upstream_host": null, "upstream_https": false})
+                }
+                _ => json!({"type": "php", "version": null}),
+            },
+            other => other.clone(),
+        }
+    }
+
     Ok(match name {
         "ols_list_domains" => C::ListDomains,
         "ols_get_domain" => C::GetDomain {
@@ -263,12 +281,18 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
         },
         "ols_add_domain" => {
             let mut args = args.clone();
-            if args.get("kind").is_none() {
-                if let Some(php) = opt_str!("php") {
-                    args["kind"] = json!({"type": "php", "version": php});
-                } else {
-                    args["kind"] = json!({"type": "php", "version": null});
-                }
+            // Normalize `kind` from a plain string ("static", "php", "proxy") into the
+            // internally-tagged SiteKind enum serde expects. Case-insensitive.
+            if let Some(k) = args.get("kind") {
+                args["kind"] = normalize_kind(k);
+            } else {
+                args["kind"] = json!({"type": "php", "version": null});
+            }
+            // Default root to the installation's sites folder so the AI doesn't
+            // have to guess a location.
+            if args.get("root").is_none() {
+                let sites_dir = ols_core::paths::AppPaths::resolve().sites_dir();
+                args["root"] = json!(sites_dir.to_string_lossy());
             }
             let mut domain: ols_core::domain::Domain = serde_json::from_value(args)
                 .map_err(|e| format!("failed to parse domain args: {e}"))?;
@@ -286,12 +310,17 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
         }
         "ols_update_domain" => {
             let mut args = args.clone();
-            if args.get("kind").is_none() {
-                if let Some(php) = opt_str!("php") {
-                    args["kind"] = json!({"type": "php", "version": php});
-                } else {
-                    args["kind"] = json!({"type": "php", "version": null});
-                }
+            // Normalize `kind` from a plain string ("static", "php", "proxy") into the
+            // internally-tagged SiteKind enum serde expects. Case-insensitive.
+            if let Some(k) = args.get("kind") {
+                args["kind"] = normalize_kind(k);
+            } else {
+                args["kind"] = json!({"type": "php", "version": null});
+            }
+            // Default root to the installation's sites folder.
+            if args.get("root").is_none() {
+                let sites_dir = ols_core::paths::AppPaths::resolve().sites_dir();
+                args["root"] = json!(sites_dir.to_string_lossy());
             }
             let mut domain: ols_core::domain::Domain = serde_json::from_value(args)
                 .map_err(|e| format!("failed to parse domain args: {e}"))?;
@@ -488,6 +517,11 @@ fn format_response(response: &CoreResponse) -> String {
 
 /// Handle a single JSON-RPC request.
 async fn handle_request(req: JsonRpcRequest) -> JsonRpcResponse {
+    // Auth gate: reject unauthenticated requests before any tool runs.
+    if let auth::AuthOutcome::Err(err) = auth::AuthMiddleware::check(&req) {
+        return JsonRpcResponse::err(req.id, err);
+    }
+
     match req.method.as_str() {
         "initialize" => {
             let result = json!({
@@ -534,17 +568,26 @@ async fn handle_request(req: JsonRpcRequest) -> JsonRpcResponse {
                             json!({ "content": [{ "type": "text", "text": text }] }),
                         )
                     }
-                    Err(e) => JsonRpcResponse::err(req.id, -32603, e),
+                    Err(e) => JsonRpcResponse::err(req.id, json!({ "code": -32603, "message": e })),
                 },
-                Err(e) => JsonRpcResponse::err(req.id, -32603, e),
+                Err(e) => JsonRpcResponse::err(req.id, json!({ "code": -32603, "message": e })),
             }
         }
         "resources/list" => JsonRpcResponse::ok(req.id, json!({ "resources": [] })),
-        "resources/read" => JsonRpcResponse::err(req.id, -32601, "resources not supported".into()),
+        "resources/read" => JsonRpcResponse::err(
+            req.id,
+            json!({ "code": -32601, "message": "resources not supported" }),
+        ),
         "prompts/list" => JsonRpcResponse::ok(req.id, json!({ "prompts": [] })),
-        "prompts/get" => JsonRpcResponse::err(req.id, -32601, "prompts not supported".into()),
+        "prompts/get" => JsonRpcResponse::err(
+            req.id,
+            json!({ "code": -32601, "message": "prompts not supported" }),
+        ),
         "ping" => JsonRpcResponse::ok(req.id, json!(null)),
-        other => JsonRpcResponse::err(req.id, -32601, format!("method not found: {other}")),
+        other => JsonRpcResponse::err(
+            req.id,
+            json!({ "code": -32601, "message": format!("method not found: {other}") }),
+        ),
     }
 }
 
@@ -591,8 +634,7 @@ pub async fn run_stdio() -> io::Result<()> {
                     "{}",
                     serde_json::to_string(&JsonRpcResponse::err(
                         json!(null),
-                        -32700,
-                        format!("parse error: {e}"),
+                        json!({ "code": -32700, "message": format!("parse error: {e}") }),
                     ))
                     .unwrap()
                 );

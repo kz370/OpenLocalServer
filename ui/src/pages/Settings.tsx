@@ -1,5 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Archive, Book, Copy, ExternalLink, EyeOff, FolderPlus, FolderSearch, FolderTree, Gauge, Globe, Info, Power, Settings2, ShieldCheck, Stethoscope, Trash2 } from 'lucide-react'
+import { Archive, Book, Copy, Eye, EyeOff, ExternalLink, FolderPlus, FolderSearch, FolderTree, Gauge, Globe, Info, Power, Settings2, ShieldCheck, Stethoscope, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
@@ -22,9 +22,10 @@ import { useAction } from '@/lib/hooks'
 import { invalidateDefaultTldCache } from '@/lib/sites'
 import { cn } from '@/lib/utils'
 
-type Section = 'general' | 'sites' | 'roots' | 'deleted' | 'startup' | 'diagnostics' | 'manual' | 'resources' | 'backups' | 'about'
+type Section = 'general' | 'sites' | 'roots' | 'deleted' | 'startup' | 'diagnostics' | 'manual' | 'resources' | 'backups' | 'about' | 'mcp'
 const SECTIONS: { id: Section; label: string; icon: typeof Globe }[] = [
   { id: 'general', label: 'General', icon: Settings2 },
+  { id: 'mcp', label: 'MCP / AI tools', icon: ShieldCheck },
   { id: 'sites', label: 'Sites & domains', icon: Globe },
   { id: 'roots', label: 'Root folders', icon: FolderTree },
   { id: 'deleted', label: 'Hide/Exclude', icon: EyeOff },
@@ -67,6 +68,12 @@ export function SettingsPage() {
   const [section, setSection] = useState<Section>('general')
   const [manual, setManual] = useState<string | null>(null)
   const [manualTab, setManualTab] = useState<'manual' | 'notes'>('manual')
+  const [mcpEnabled, setMcpEnabled] = useState(false)
+  const [mcpToken, setMcpToken] = useState('')
+  const [mcpTokenVisible, setMcpTokenVisible] = useState(false)
+  const [mcpTtl, setMcpTtl] = useState(0)
+  const [mcpNewToken, setMcpNewToken] = useState('')
+  const [mcpConfigured, setMcpConfigured] = useState(false)
 
   const releaseNotesFiltered = useMemo(() => {
     const lines = releaseNotes.split('\n')
@@ -118,6 +125,22 @@ export function SettingsPage() {
         setCustomTld(tld)
       }
     })
+    // MCP auth: enabled is a setting, token/TTL live in the OS keyring via GetSecret.
+    void runCommand({ type: 'get_setting', key: 'mcp.auth.enabled' }).then((r) => {
+      if (r.type === 'setting' && typeof r.value === 'boolean') setMcpEnabled(r.value)
+    })
+    void runCommand({ type: 'get_secret', key: 'mcp.auth.token' }).then((r) => {
+      if (r.type === 'secret') {
+        setMcpConfigured(!!r.value)
+        setMcpToken(r.value ?? '')
+      }
+    })
+    void runCommand({ type: 'get_secret', key: 'mcp.auth.token.ttl_ms' }).then((r) => {
+      if (r.type === 'secret' && r.value) {
+        const ttl = parseInt(r.value, 10)
+        if (!isNaN(ttl)) setMcpTtl(ttl)
+      }
+    })
   }, [])
 
   useEffect(() => {
@@ -142,6 +165,30 @@ export function SettingsPage() {
     if (autoDomains) await runCommand({ type: 'sync_auto_domains' })
     setSaved('Saved.')
     setTimeout(() => setSaved(null), 2500)
+  }
+
+  async function saveMcp() {
+    await runCommand({ type: 'set_setting', key: 'mcp.auth.enabled', value: mcpEnabled })
+    if (mcpNewToken) {
+      await runCommand({ type: 'set_secret', key: 'mcp.auth.token', value: mcpNewToken })
+      const now = Date.now()
+      await runCommand({ type: 'set_secret', key: 'mcp.auth.token.created_at', value: String(now) })
+      await runCommand({ type: 'set_secret', key: 'mcp.auth.token.ttl_ms', value: String(mcpTtl * 3600 * 1000) })
+      setMcpToken(mcpNewToken)
+      setMcpNewToken('')
+      setMcpConfigured(true)
+    } else if (mcpConfigured && mcpToken) {
+      // Token unchanged; just refresh TTL.
+      await runCommand({ type: 'set_secret', key: 'mcp.auth.token.ttl_ms', value: String(mcpTtl * 3600 * 1000) })
+    }
+    setSaved('MCP settings saved.')
+    setTimeout(() => setSaved(null), 2500)
+  }
+
+  function generateMcpToken() {
+    const bytes = new Uint8Array(32)
+    crypto.getRandomValues(bytes)
+    setMcpNewToken(Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join(''))
   }
 
   async function addRootFolder() {
@@ -232,7 +279,7 @@ export function SettingsPage() {
     </div>
   )
 
-  const showSave = section === 'general' || section === 'sites' || section === 'startup'
+  const showSave = section === 'general' || section === 'sites' || section === 'startup' || section === 'mcp'
 
   return (
     <div className="flex flex-col gap-5">
@@ -489,9 +536,103 @@ export function SettingsPage() {
           )}
           {section === 'about' && <AboutCard />}
 
+          {section === 'mcp' && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">MCP authentication</CardTitle>
+                <CardDescription>
+                  AI tools (Claude Desktop, Cursor, etc.) connect to OLS through the ols-mcp
+                  server. Enable a bearer token so only authorised hosts can send commands.
+                  The token is stored in the OS credential manager, never in settings or logs.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4">
+                <SwitchRow
+                  checked={mcpEnabled}
+                  onChange={setMcpEnabled}
+                  title="Require MCP authentication"
+                  hint="When on, every ols-mcp request must carry a valid bearer token. Off keeps existing installs working unchanged."
+                />
+                {!mcpEnabled && (
+                  <p className="text-xs text-muted-foreground">
+                    Turn authentication on to generate a token, then configure your MCP host
+                    to send it as &ldquo;Authorization: Bearer &lt;token&gt;&rdquo;.
+                  </p>
+                )}
+                {mcpEnabled && (
+                  <>
+                    <SettingRow
+                      stacked
+                      title="Bearer token"
+                      hint={mcpConfigured ? 'Token is stored in the OS credential manager.' : 'No token configured. Generate one below.'}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type={mcpTokenVisible ? 'text' : 'password'}
+                          value={mcpToken}
+                          onChange={(e) => setMcpToken(e.target.value)}
+                          placeholder="Leave blank to keep current token"
+                          className="flex-1 font-mono text-xs"
+                        />
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setMcpTokenVisible(!mcpTokenVisible)}
+                          aria-label={mcpTokenVisible ? 'Hide token' : 'Show token'}
+                        >
+                          {mcpTokenVisible ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                        </Button>
+                        {mcpConfigured && (
+                          <Button size="sm" variant="outline" onClick={() => setMcpNewToken('')}>
+                            Regenerate
+                          </Button>
+                        )}
+                      </div>
+                    </SettingRow>
+                    <SettingRow
+                      stacked
+                      title="New token (optional)"
+                      hint="Leave blank to keep the existing token. A new token invalidates all connected MCP hosts immediately."
+                    >
+                      <div className="flex gap-2">
+                        <Input
+                          type={mcpTokenVisible ? 'text' : 'password'}
+                          value={mcpNewToken}
+                          onChange={(e) => setMcpNewToken(e.target.value)}
+                          placeholder="Auto-generate on save if blank"
+                          className="flex-1 font-mono text-xs"
+                        />
+                        <Button size="sm" variant="outline" onClick={generateMcpToken}>
+                          Generate
+                        </Button>
+                      </div>
+                    </SettingRow>
+                    <SettingRow
+                      stacked
+                      title="Token lifetime (hours)"
+                      hint="0 means the token never expires. After expiry, rotate it in this page."
+                    >
+                      <Input
+                        type="number"
+                        value={mcpTtl}
+                        onChange={(e) => setMcpTtl(parseInt(e.target.value, 10) || 0)}
+                        className="w-24"
+                      />
+                    </SettingRow>
+                    <p className="text-xs text-muted-foreground">
+                      Token rotation: changing the token above invalidates every MCP client
+                      on next request. No reinstall needed — just reconfigure each host with
+                      the new token.
+                    </p>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           {showSave && (
             <div className="flex items-center gap-3">
-              <SaveButton action={action} name="save" busyLabel="Saving…" onClick={() => void run('save', saveAll)}>Save settings</SaveButton>
+              <SaveButton action={action} name="save" busyLabel="Saving…" onClick={() => void run('save', section === 'mcp' ? saveMcp : saveAll)}>Save settings</SaveButton>
               {saved && <span className="text-sm text-success">{saved}</span>}
             </div>
           )}

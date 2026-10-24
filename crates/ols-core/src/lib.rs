@@ -39,6 +39,7 @@ pub mod loadtest;
 pub mod logging;
 pub mod mail;
 pub mod manifest;
+pub mod mcp_auth;
 pub mod migrate;
 pub mod monitor;
 pub mod network;

@@ -685,6 +685,8 @@ export type CoreCommand =
   | { type: 'ping' }
   | { type: 'get_setting'; key: string }
   | { type: 'set_setting'; key: string; value: unknown }
+  | { type: 'get_secret'; key: string }
+  | { type: 'set_secret'; key: string; value: string }
   | { type: 'start_process'; spec: ProcessSpec }
   | { type: 'stop_process'; id: ProcessId }
   | { type: 'list_processes' }
