@@ -77,7 +77,39 @@ Create a site:
 
 MCP authentication is **off by default** for backward compatibility. Enable it in OLS Settings → MCP / AI tools.
 
-When enabled, every `tools/call` request (except `initialize`, `ping`, `resources/list`, `prompts/list`) must carry a bearer token:
+The cleanest way is to put the token **in the MCP server config itself** (next to the `command`), so every `tools/call` is authenticated automatically — you never edit individual request JSON.
+
+### Option A: `--token` argument (recommended)
+
+```json
+{
+  "mcpServers": {
+    "ols": {
+      "command": "C:\\OLS\\ols-mcp.exe",
+      "args": ["--token", "your-secret-token-here"]
+    }
+  }
+}
+```
+
+### Option B: `OLS_MCP_TOKEN` environment variable
+
+```json
+{
+  "mcpServers": {
+    "ols": {
+      "command": "C:\\OLS\\ols-mcp.exe",
+      "env": {
+        "OLS_MCP_TOKEN": "your-secret-token-here"
+      }
+    }
+  }
+}
+```
+
+Get the token from **OLS Settings → MCP / AI tools** (enable authentication, then generate or paste a token). Rotating the token there invalidates all connected MCP hosts on the next request; just update the config with the new token.
+
+When authentication is enabled, every `tools/call` request (except `initialize`, `ping`, `resources/list`, `prompts/list`) must carry a bearer token:
 
 - **Header form** (preferred, MCP 2025-06-18): send `params._meta.authorization` = `Bearer <token>`
 - **Fallback form**: send `params.arguments.token` = `<token>`

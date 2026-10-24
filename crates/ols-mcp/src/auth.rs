@@ -68,7 +68,11 @@ pub struct AuthMiddleware;
 impl AuthMiddleware {
     /// Run the check against a request. Returns `AuthOutcome::Err` with a JSON-RPC
     /// error value when the request should be rejected.
-    pub fn check(req: &JsonRpcRequest) -> AuthOutcome {
+    ///
+    /// `override_token` is the token from `--token` / `OLS_MCP_TOKEN` (set in the
+    /// MCP host config). When present it takes precedence over the keyring token,
+    /// so the token lives next to the command instead of inside every tools/call.
+    pub fn check(req: &JsonRpcRequest, override_token: Option<&str>) -> AuthOutcome {
         let config = ols_core::mcp_auth::McpAuthConfig::load();
 
         // Auth disabled → everything passes (backward compatible).
@@ -81,13 +85,15 @@ impl AuthMiddleware {
             return AuthOutcome::Ok;
         }
 
-        // No token configured at all → refuse with a setup message.
-        let expected = match &config.token {
+        // The expected token: CLI/env override wins, then keyring, then none.
+        let expected = override_token.or(config.token.as_deref());
+
+        let expected = match expected {
             Some(t) => t,
             None => {
                 return AuthOutcome::Err(auth_error(
                     "MCP authentication not configured",
-                    "Open OLS Settings → MCP, enable authentication and copy the token into your MCP host.",
+                    "Open OLS Settings → MCP, enable authentication and copy the token into your MCP host, or pass --token / OLS_MCP_TOKEN to ols-mcp.",
                 ));
             }
         };
@@ -139,14 +145,17 @@ mod tests {
     fn disabled_passes_everything() {
         // Can't easily flip enabled without keyring, but OPEN_METHODS always pass.
         let r = req("initialize", json!({}));
-        assert!(matches!(AuthMiddleware::check(&r), AuthOutcome::Ok));
+        assert!(matches!(AuthMiddleware::check(&r, None), AuthOutcome::Ok));
     }
 
     #[test]
     fn open_methods_pass() {
         for m in OPEN_METHODS {
             let r = req(m, json!({}));
-            assert!(matches!(AuthMiddleware::check(&r), AuthOutcome::Ok), "{m}");
+            assert!(
+                matches!(AuthMiddleware::check(&r, None), AuthOutcome::Ok),
+                "{m}"
+            );
         }
     }
 

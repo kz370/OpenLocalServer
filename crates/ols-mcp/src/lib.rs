@@ -516,9 +516,9 @@ fn format_response(response: &CoreResponse) -> String {
 }
 
 /// Handle a single JSON-RPC request.
-async fn handle_request(req: JsonRpcRequest) -> JsonRpcResponse {
+async fn handle_request(req: JsonRpcRequest, override_token: Option<&str>) -> JsonRpcResponse {
     // Auth gate: reject unauthenticated requests before any tool runs.
-    if let auth::AuthOutcome::Err(err) = auth::AuthMiddleware::check(&req) {
+    if let auth::AuthOutcome::Err(err) = auth::AuthMiddleware::check(&req, override_token) {
         return JsonRpcResponse::err(req.id, err);
     }
 
@@ -608,7 +608,7 @@ async fn read_line(stdin: &mut impl BufRead) -> io::Result<Option<String>> {
 
 /// Run the MCP server over stdio. Connects to the running OLS app via its local
 /// control channel (named pipe + control.json token), so OLS must be running.
-pub async fn run_stdio() -> io::Result<()> {
+pub async fn run_stdio(override_token: Option<String>) -> io::Result<()> {
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut stdin = stdin.lock();
@@ -643,7 +643,7 @@ pub async fn run_stdio() -> io::Result<()> {
             }
         };
 
-        let resp = handle_request(req).await;
+        let resp = handle_request(req, override_token.as_deref()).await;
         let out = serde_json::to_string(&resp).unwrap();
         let _ = writeln!(stdout, "{out}");
         stdout.flush().ok();
