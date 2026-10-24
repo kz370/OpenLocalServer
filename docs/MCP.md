@@ -6,7 +6,9 @@ The OLS MCP (Model Context Protocol) server exposes Open Local Server as a stdio
 
 Each MCP tool maps one-to-one to an OLS `CoreCommand`, so an LLM can discover and safely call app operations:
 
-- **Domains**: `ols_list_domains`, `ols_get_domain`, `ols_add_domain`, `ols_update_domain`, `ols_remove_domain`, `ols_set_domain_enabled`
+- **Domains & Sites**: `ols_list_domains`, `ols_get_domain`, `ols_add_domain`, `ols_update_domain`, `ols_remove_domain`, `ols_set_domain_enabled`, `ols_restart_site_app`
+- **Folder Inspection**: `ols_inspect_site_folder` (detects framework, package manager, virtual environments, requirements files, entry scripts, and suggested commands)
+- **Runtimes**: `ols_list_runtimes`, `ols_install_runtime`, `ols_refresh_runtimes` (query and install Python, Node, and PHP runtimes)
 - **Services**: `ols_list_services`, `ols_start_service`, `ols_stop_service`, `ols_restart_service`
 - **Tunnels**: `ols_list_tunnels`, `ols_start_tunnel`, `ols_stop_tunnel`
 - **Databases**: `ols_list_databases`, `ols_create_database`
@@ -53,7 +55,7 @@ List all domains:
 }
 ```
 
-Create a site:
+Create a site (PHP):
 
 ```json
 {
@@ -68,6 +70,44 @@ Create a site:
       "php": "8.3",
       "server": "nginx",
       "enabled": true
+    }
+  }
+}
+```
+
+Create a supervised Python or Node site:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "tools/call",
+  "params": {
+    "name": "ols_add_domain",
+    "arguments": {
+      "hostname": "fastapi.test",
+      "root": "C:\\sites\\fastapi-app",
+      "kind": "python",
+      "command": "python -m uvicorn main:app --port 8000",
+      "port": 8000,
+      "venv": ".venv",
+      "runtime": "3.12.6"
+    }
+  }
+}
+```
+
+Inspect a project folder (detect frameworks, virtualenvs, dependencies, and suggested start commands):
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 4,
+  "method": "tools/call",
+  "params": {
+    "name": "ols_inspect_site_folder",
+    "arguments": {
+      "path": "C:\\sites\\fastapi-app"
     }
   }
 }
@@ -147,9 +187,18 @@ The token is stored in the OS credential manager (Windows Credential Manager), n
 
 ## Domain creation notes
 
-- `kind` accepts plain strings: `"php"`, `"static"`, `"html"`, `"proxy"` (case-insensitive). Omitted or unrecognized values default to PHP.
+- `kind` accepts plain strings: `"php"`, `"static"`, `"html"`, `"proxy"`, `"node"`, or `"python"` (case-insensitive). Omitted or unrecognized values default to PHP.
 - `root` is optional and defaults to `<sites_dir>\<hostname>` using `OLS_SITES_DIR`, then the `domains.sites_dir` setting, then the install's `sites` folder. Relative paths are resolved against this folder.
 - `php` version (e.g. `"8.3"`) is used only when `kind` is `php`.
+- **Node & Python sites**:
+  - Setting `kind` to `"python"` or `"node"` configures a reverse proxy and runs a supervised background application process (`AppSpec`).
+  - `command` specifies the launch command (e.g. `"python main.py"`, `"uvicorn main:app --port 8000"`, `"npm run start"`).
+  - `port` specifies the listening port that the web server reverse proxies to (defaults to 8000 for Python, 3000 for Node).
+  - `runtime` pins a specific runtime version (e.g. `"3.12.6"`, `"20.18.0"`). OLS prepends the matching runtime's binary directory to the process `PATH`.
+  - `venv` (Python only) specifies the virtualenv folder or executable path relative to the site root (e.g. `".venv"` or `".venv/Scripts/python.exe"`).
+- `ols_restart_site_app` takes `{"hostname": "mysite.test"}` to restart the supervised Python or Node dev server / application process.
+- `ols_inspect_site_folder` inspects any project folder to discover frameworks (FastAPI, Flask, Django, Next.js, Express, etc.), package managers, virtual environments, requirements files, scripts, and suggested commands/ports.
+- `ols_list_runtimes`, `ols_install_runtime`, `ols_refresh_runtimes` manage the system and OLS-managed versions for Python, Node, and PHP.
 - `https` (boolean) enables SSL for the site. `redirect_https` (boolean) redirects HTTP to HTTPS.
 - `enabled` (boolean) toggles the site on/off.
 

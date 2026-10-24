@@ -86,7 +86,7 @@ fn mcp_tools() -> Vec<McpTool> {
         McpTool {
             name: "ols_add_domain".into(),
             description: Some(
-                "Create a new site/domain. 'root' is optional: if omitted, it defaults to <sites_dir>/<hostname> (using OLS_SITES_DIR). Relative paths like 'mysite' or 'mysite/public' are also automatically resolved inside OLS_SITES_DIR."
+                "Create a new site/domain. Supports PHP, Static, Proxy, Node.js, and Python sites. 'root' is optional: if omitted, defaults to <sites_dir>/<hostname>. Relative paths are resolved against OLS_SITES_DIR."
                     .to_string(),
             ),
             input_schema: json!({
@@ -98,15 +98,31 @@ fn mcp_tools() -> Vec<McpTool> {
                     },
                     "root": {
                         "type": "string",
-                        "description": "Document root folder path. Optional: if omitted, defaults to <sites_dir>/<hostname>. Relative paths (e.g. 'myproject' or 'myproject/public') are automatically resolved inside OLS_SITES_DIR."
+                        "description": "Document root folder path. Optional: if omitted, defaults to <sites_dir>/<hostname>. Relative paths are automatically resolved inside OLS_SITES_DIR."
+                    },
+                    "kind": {
+                        "type": "string",
+                        "description": "Site kind: 'php', 'static', 'html', 'proxy', 'node', or 'python'. Defaults to 'php'."
                     },
                     "php": {
                         "type": "string",
                         "description": "PHP version (e.g. '8.3'). Only used if kind is 'php'."
                     },
-                    "kind": {
+                    "command": {
                         "type": "string",
-                        "description": "Site kind: 'php', 'static', 'html', or 'proxy'. Defaults to 'php'."
+                        "description": "Start command for supervised background Node or Python processes (e.g. 'npm run dev', 'python main.py', 'uvicorn main:app --reload')."
+                    },
+                    "port": {
+                        "type": "integer",
+                        "description": "Upstream reverse proxy port (e.g. 3000 for Node, 8000 for Python). Defaults automatically."
+                    },
+                    "runtime": {
+                        "type": "string",
+                        "description": "Runtime version pin (e.g. 'node', 'node:20.18.0', 'python', 'python:3.12.9')."
+                    },
+                    "venv": {
+                        "type": "string",
+                        "description": "Python virtual environment directory or executable path (e.g. '.venv', 'venv')."
                     },
                     "server": {
                         "type": "string",
@@ -123,7 +139,7 @@ fn mcp_tools() -> Vec<McpTool> {
         McpTool {
             name: "ols_update_domain".into(),
             description: Some(
-                "Modify an existing site's config. 'root' is optional: if provided as a relative path, it is resolved against OLS_SITES_DIR."
+                "Modify an existing site's config. Supports switching kinds ('php', 'node', 'python', 'static', 'proxy') and adjusting start commands, ports, and runtimes."
                     .to_string(),
             ),
             input_schema: json!({
@@ -137,13 +153,29 @@ fn mcp_tools() -> Vec<McpTool> {
                         "type": "string",
                         "description": "New document root folder path. If relative, resolved against OLS_SITES_DIR."
                     },
+                    "kind": {
+                        "type": "string",
+                        "description": "Site kind: 'php', 'static', 'html', 'proxy', 'node', or 'python'."
+                    },
                     "php": {
                         "type": "string",
                         "description": "PHP version (e.g. '8.3'). Only used if kind is 'php'."
                     },
-                    "kind": {
+                    "command": {
                         "type": "string",
-                        "description": "Site kind: 'php', 'static', 'html', or 'proxy'."
+                        "description": "Start command for supervised background Node or Python processes."
+                    },
+                    "port": {
+                        "type": "integer",
+                        "description": "Upstream reverse proxy port."
+                    },
+                    "runtime": {
+                        "type": "string",
+                        "description": "Runtime version pin (e.g. 'node', 'node:20.18.0', 'python', 'python:3.12.9')."
+                    },
+                    "venv": {
+                        "type": "string",
+                        "description": "Python virtual environment directory or executable path."
                     },
                     "server": {
                         "type": "string",
@@ -271,6 +303,58 @@ fn mcp_tools() -> Vec<McpTool> {
             input_schema: json!({ "type": "object", "properties": {} }),
         },
         McpTool {
+            name: "ols_restart_site_app".into(),
+            description: Some("Restart the supervised background application process (Node.js dev server, Python app/uvicorn, etc.) for a site.".to_string()),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "hostname": { "type": "string", "description": "The site hostname (e.g. 'mysite.test')" }
+                },
+                "required": ["hostname"]
+            }),
+        },
+        McpTool {
+            name: "ols_inspect_site_folder".into(),
+            description: Some("Inspect a project folder to detect framework (Django, Flask, FastAPI, Node, PHP), virtual environments, package managers (npm, pip, uv, poetry), scripts, dependencies, and suggested start command and port.".to_string()),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Folder path of the project to inspect. If relative or omitted, resolved against OLS_SITES_DIR."
+                    }
+                }
+            }),
+        },
+        McpTool {
+            name: "ols_list_runtimes".into(),
+            description: Some("List installed and available runtimes (Python, Node.js, PHP, MariaDB, etc.) with system PATH versions, OLS installed versions, and active defaults.".to_string()),
+            input_schema: json!({ "type": "object", "properties": {} }),
+        },
+        McpTool {
+            name: "ols_install_runtime".into(),
+            description: Some("Download and install an official managed runtime version (e.g. Python '3.12.9', Node.js '20.18.0') with verified SHA-256.".to_string()),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "Runtime ID: 'python', 'node', 'php', 'mariadb', etc." },
+                    "version": { "type": "string", "description": "Version string to install (e.g. '3.12.9')" }
+                },
+                "required": ["id", "version"]
+            }),
+        },
+        McpTool {
+            name: "ols_refresh_runtimes".into(),
+            description: Some("Refresh online catalog versions for a runtime family from official vendor feeds (e.g. 'python', 'node', 'php').".to_string()),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "Runtime ID to refresh ('python', 'node', 'php', 'mariadb', etc.)" }
+                },
+                "required": ["id"]
+            }),
+        },
+        McpTool {
             name: "ols_run_command".into(),
             description: Some("Run any OLS core command by name with JSON args (advanced). `args` must include a `type` field matching the CoreCommand variant (e.g. `run_command` needs `executable`, `args`, `cwd`, `timeout_ms`).".to_string()),
             input_schema: json!({
@@ -349,19 +433,15 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
         };
     }
 
-    /// Convert a user-supplied `kind` string (e.g. `"php"`, `"static"`, `"proxy"`,
-    /// case-insensitive) into the internally-tagged `SiteKind` JSON that serde expects,
-    /// e.g. `{"type": "static"}`. If `kind` is already an object, pass it through.
-    fn normalize_kind(value: &Value) -> Value {
-        match value {
-            Value::String(s) => match s.to_lowercase().as_str() {
-                "static" | "html" => json!({"type": "static"}),
-                "proxy" => {
-                    json!({"type": "proxy", "upstream_port": 8080, "upstream_host": null, "upstream_https": false})
-                }
-                _ => json!({"type": "php", "version": null}),
-            },
-            other => other.clone(),
+    fn split_command_line(cmd: &str) -> (String, Vec<String>) {
+        let parts: Vec<&str> = cmd.split_whitespace().collect();
+        if parts.is_empty() {
+            (String::new(), Vec::new())
+        } else {
+            (
+                parts[0].to_string(),
+                parts[1..].iter().map(|s| s.to_string()).collect(),
+            )
         }
     }
 
@@ -372,18 +452,109 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
         },
         "ols_add_domain" => {
             let mut args = args.clone();
-            // Normalize `kind` from a plain string ("static", "html", "php", "proxy")
-            // into the internally-tagged SiteKind enum serde expects. Case-insensitive.
-            if let Some(k) = args.get("kind") {
-                args["kind"] = normalize_kind(k);
-            } else {
-                args["kind"] = json!({"type": "php", "version": null});
-            }
             let hostname = req_str!("hostname");
-            // Default root to `<sites_dir>/<hostname>` or resolve relative path against `sites_dir`.
             let root_str = args.get("root").and_then(|v| v.as_str());
             let resolved_root = resolve_domain_root(root_str, &hostname);
             args["root"] = json!(resolved_root.to_string_lossy());
+
+            let kind_str = args
+                .get("kind")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_lowercase());
+            let port_opt = args.get("port").and_then(|v| v.as_u64()).map(|p| p as u16);
+            let command_opt = opt_str!("command");
+            let runtime_opt = opt_str!("runtime");
+            let venv_opt = opt_str!("venv");
+
+            match kind_str.as_deref() {
+                Some("node") => {
+                    let port = port_opt.unwrap_or(3000);
+                    args["kind"] = json!({
+                        "type": "proxy",
+                        "upstream_port": port,
+                        "upstream_host": null,
+                        "upstream_https": false
+                    });
+                    let cmd_str = command_opt.as_deref().unwrap_or("npm run dev");
+                    let (exe, cmd_args) = split_command_line(cmd_str);
+                    args["app"] = json!({
+                        "executable": exe,
+                        "args": cmd_args,
+                        "cwd": resolved_root.to_string_lossy(),
+                        "runtime": runtime_opt.unwrap_or_else(|| "node".into())
+                    });
+                }
+                Some("python") => {
+                    let port = port_opt.unwrap_or(8000);
+                    args["kind"] = json!({
+                        "type": "proxy",
+                        "upstream_port": port,
+                        "upstream_host": null,
+                        "upstream_https": false
+                    });
+                    let cmd_str = command_opt.as_deref().unwrap_or("python main.py");
+                    let (mut exe, cmd_args) = split_command_line(cmd_str);
+                    if let Some(ref venv) = venv_opt {
+                        let vpath = std::path::Path::new(venv);
+                        if vpath.ends_with("python.exe") || vpath.ends_with("python") {
+                            exe = venv.clone();
+                        } else {
+                            let cand = resolved_root.join(vpath).join("Scripts").join("python.exe");
+                            if cand.exists() {
+                                exe = cand.to_string_lossy().to_string();
+                            }
+                        }
+                    }
+                    args["app"] = json!({
+                        "executable": exe,
+                        "args": cmd_args,
+                        "cwd": resolved_root.to_string_lossy(),
+                        "runtime": runtime_opt.unwrap_or_else(|| "python".into())
+                    });
+                }
+                Some("static") | Some("html") => {
+                    args["kind"] = json!({"type": "static"});
+                }
+                Some("proxy") => {
+                    let port = port_opt.unwrap_or(8080);
+                    args["kind"] = json!({
+                        "type": "proxy",
+                        "upstream_port": port,
+                        "upstream_host": null,
+                        "upstream_https": false
+                    });
+                    if let Some(cmd_str) = command_opt {
+                        let (exe, cmd_args) = split_command_line(&cmd_str);
+                        args["app"] = json!({
+                            "executable": exe,
+                            "args": cmd_args,
+                            "cwd": resolved_root.to_string_lossy(),
+                            "runtime": runtime_opt
+                        });
+                    }
+                }
+                _ => {
+                    if let Some(cmd_str) = command_opt {
+                        let port = port_opt.unwrap_or(3000);
+                        args["kind"] = json!({
+                            "type": "proxy",
+                            "upstream_port": port,
+                            "upstream_host": null,
+                            "upstream_https": false
+                        });
+                        let (exe, cmd_args) = split_command_line(&cmd_str);
+                        args["app"] = json!({
+                            "executable": exe,
+                            "args": cmd_args,
+                            "cwd": resolved_root.to_string_lossy(),
+                            "runtime": runtime_opt
+                        });
+                    } else {
+                        let php_ver = opt_str!("php");
+                        args["kind"] = json!({"type": "php", "version": php_ver});
+                    }
+                }
+            }
 
             let mut domain: ols_core::domain::Domain = serde_json::from_value(args)
                 .map_err(|e| format!("failed to parse domain args: {e}"))?;
@@ -405,17 +576,108 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
         }
         "ols_update_domain" => {
             let mut args = args.clone();
-            // Normalize `kind` from a plain string ("static", "php", "proxy") into the
-            // internally-tagged SiteKind enum serde expects. Case-insensitive.
-            if let Some(k) = args.get("kind") {
-                args["kind"] = normalize_kind(k);
-            } else {
-                args["kind"] = json!({"type": "php", "version": null});
-            }
             let hostname = req_str!("hostname");
             let root_str = args.get("root").and_then(|v| v.as_str());
             let resolved_root = resolve_domain_root(root_str, &hostname);
             args["root"] = json!(resolved_root.to_string_lossy());
+
+            let kind_str = args
+                .get("kind")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_lowercase());
+            let port_opt = args.get("port").and_then(|v| v.as_u64()).map(|p| p as u16);
+            let command_opt = opt_str!("command");
+            let runtime_opt = opt_str!("runtime");
+            let venv_opt = opt_str!("venv");
+
+            match kind_str.as_deref() {
+                Some("node") => {
+                    let port = port_opt.unwrap_or(3000);
+                    args["kind"] = json!({
+                        "type": "proxy",
+                        "upstream_port": port,
+                        "upstream_host": null,
+                        "upstream_https": false
+                    });
+                    let cmd_str = command_opt.as_deref().unwrap_or("npm run dev");
+                    let (exe, cmd_args) = split_command_line(cmd_str);
+                    args["app"] = json!({
+                        "executable": exe,
+                        "args": cmd_args,
+                        "cwd": resolved_root.to_string_lossy(),
+                        "runtime": runtime_opt.unwrap_or_else(|| "node".into())
+                    });
+                }
+                Some("python") => {
+                    let port = port_opt.unwrap_or(8000);
+                    args["kind"] = json!({
+                        "type": "proxy",
+                        "upstream_port": port,
+                        "upstream_host": null,
+                        "upstream_https": false
+                    });
+                    let cmd_str = command_opt.as_deref().unwrap_or("python main.py");
+                    let (mut exe, cmd_args) = split_command_line(cmd_str);
+                    if let Some(ref venv) = venv_opt {
+                        let vpath = std::path::Path::new(venv);
+                        if vpath.ends_with("python.exe") || vpath.ends_with("python") {
+                            exe = venv.clone();
+                        } else {
+                            let cand = resolved_root.join(vpath).join("Scripts").join("python.exe");
+                            if cand.exists() {
+                                exe = cand.to_string_lossy().to_string();
+                            }
+                        }
+                    }
+                    args["app"] = json!({
+                        "executable": exe,
+                        "args": cmd_args,
+                        "cwd": resolved_root.to_string_lossy(),
+                        "runtime": runtime_opt.unwrap_or_else(|| "python".into())
+                    });
+                }
+                Some("static") | Some("html") => {
+                    args["kind"] = json!({"type": "static"});
+                }
+                Some("proxy") => {
+                    let port = port_opt.unwrap_or(8080);
+                    args["kind"] = json!({
+                        "type": "proxy",
+                        "upstream_port": port,
+                        "upstream_host": null,
+                        "upstream_https": false
+                    });
+                    if let Some(cmd_str) = command_opt {
+                        let (exe, cmd_args) = split_command_line(&cmd_str);
+                        args["app"] = json!({
+                            "executable": exe,
+                            "args": cmd_args,
+                            "cwd": resolved_root.to_string_lossy(),
+                            "runtime": runtime_opt
+                        });
+                    }
+                }
+                _ => {
+                    if let Some(cmd_str) = command_opt {
+                        let port = port_opt.unwrap_or(3000);
+                        args["kind"] = json!({
+                            "type": "proxy",
+                            "upstream_port": port,
+                            "upstream_host": null,
+                            "upstream_https": false
+                        });
+                        let (exe, cmd_args) = split_command_line(&cmd_str);
+                        args["app"] = json!({
+                            "executable": exe,
+                            "args": cmd_args,
+                            "cwd": resolved_root.to_string_lossy(),
+                            "runtime": runtime_opt
+                        });
+                    } else if let Some(php_ver) = opt_str!("php") {
+                        args["kind"] = json!({"type": "php", "version": php_ver});
+                    }
+                }
+            }
 
             let mut domain: ols_core::domain::Domain = serde_json::from_value(args)
                 .map_err(|e| format!("failed to parse domain args: {e}"))?;
@@ -464,6 +726,32 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
         "ols_apply_web" => C::ApplyWeb { overwrite: vec![] },
         "ols_validate_web" => C::ValidateWeb,
         "ols_list_tasks" => C::ListTasks,
+        "ols_restart_site_app" => C::RestartSiteApp {
+            hostname: req_str!("hostname"),
+        },
+        "ols_inspect_site_folder" => {
+            let path_str = opt_str!("path");
+            let target_path = match path_str {
+                Some(p) => {
+                    let pb = std::path::Path::new(&p);
+                    if pb.is_absolute() {
+                        pb.to_path_buf()
+                    } else {
+                        resolve_sites_dir().join(pb)
+                    }
+                }
+                None => resolve_sites_dir(),
+            };
+            C::InspectSiteFolder {
+                path: target_path.to_string_lossy().to_string(),
+            }
+        }
+        "ols_list_runtimes" => C::ListRuntimeCatalog,
+        "ols_install_runtime" => C::InstallRuntime {
+            id: req_str!("id"),
+            version: req_str!("version"),
+        },
+        "ols_refresh_runtimes" => C::RefreshRuntimeCatalog { id: req_str!("id") },
         "ols_run_command" => {
             let cmd_name = req_str!("command");
             let cmd_args = args.get("args").cloned().unwrap_or(json!({}));
@@ -560,7 +848,7 @@ fn format_response(response: &CoreResponse) -> String {
         CoreResponse::Text { text } => text.clone(),
         CoreResponse::Domain { domain } => {
             let d = domain.as_ref();
-            format!(
+            let mut s = format!(
                 "Domain {}:\n- Document root: {}\n- Server: {}\n- Enabled: {}\n- HTTPS: {}\n- URL: {}",
                 d.hostname,
                 d.root,
@@ -568,7 +856,93 @@ fn format_response(response: &CoreResponse) -> String {
                 d.enabled,
                 d.https,
                 d.url()
-            )
+            );
+            if let Some(app) = &d.app {
+                s.push_str(&format!(
+                    "\n- Supervised app: {} {}\n  cwd: {}\n  runtime: {}",
+                    app.executable,
+                    app.args.join(" "),
+                    app.cwd,
+                    app.runtime.as_deref().unwrap_or("system")
+                ));
+            }
+            s
+        }
+        CoreResponse::SiteFolderInspection { inspection } => {
+            let mut out = format!(
+                "Site Folder Inspection:\n- Framework: {}\n- Suggested command: {}\n- Suggested port: {}\n",
+                inspection.framework,
+                inspection.suggested_command.as_deref().unwrap_or("none"),
+                inspection.suggested_port,
+            );
+            if let Some(pm) = &inspection.detected_package_manager {
+                out.push_str(&format!("- Package manager: {pm}\n"));
+            }
+            if let Some(venv) = &inspection.detected_venv {
+                out.push_str(&format!("- Active virtualenv: {venv}\n"));
+            }
+            if !inspection.available_venvs.is_empty() {
+                out.push_str("- Available virtualenvs:\n");
+                for v in &inspection.available_venvs {
+                    out.push_str(&format!(
+                        "  * {} (python: {}, exe: {})\n",
+                        v.path,
+                        v.version.as_deref().unwrap_or("unknown"),
+                        v.python_exe
+                    ));
+                }
+            }
+            if !inspection.requirements_files.is_empty() {
+                out.push_str(&format!(
+                    "- Requirements files: {}\n",
+                    inspection.requirements_files.join(", ")
+                ));
+            }
+            if !inspection.entry_files.is_empty() {
+                out.push_str(&format!(
+                    "- Entry files: {}\n",
+                    inspection.entry_files.join(", ")
+                ));
+            }
+            if !inspection.package_scripts.is_empty() {
+                out.push_str("- Package scripts:\n");
+                for script in &inspection.package_scripts {
+                    out.push_str(&format!("  * {}: {}\n", script.name, script.description));
+                }
+            }
+            out
+        }
+        CoreResponse::RuntimeCatalog { entries } => {
+            if entries.is_empty() {
+                "No runtimes available.".into()
+            } else {
+                let mut out = String::from("Available runtimes:\n");
+                for entry in entries {
+                    let mut flags = Vec::new();
+                    if entry.installed {
+                        flags.push("installed");
+                    }
+                    if entry.is_default {
+                        flags.push("default");
+                    }
+                    let flags_str = if flags.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" [{}]", flags.join(", "))
+                    };
+                    out.push_str(&format!(
+                        "- {} ({}) {}{}\n",
+                        entry.id, entry.name, entry.version, flags_str
+                    ));
+                    if let Some(sys) = &entry.system {
+                        out.push_str(&format!(
+                            "  System install found: {} ({})\n",
+                            sys.version, sys.path
+                        ));
+                    }
+                }
+                out
+            }
         }
         CoreResponse::Names { names } => {
             if names.is_empty() {
@@ -804,6 +1178,7 @@ pub async fn run_stdio(override_token: Option<String>) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ols_core::domain::SiteKind;
 
     #[test]
     fn resolve_domain_root_defaults_to_hostname_subfolder() {
@@ -864,6 +1239,108 @@ mod tests {
             assert!(std::path::Path::new(&domain.root).is_absolute());
         } else {
             panic!("expected AddDomain variant");
+        }
+    }
+
+    #[test]
+    fn build_command_add_domain_python_with_command_and_venv() {
+        let cmd = build_command(
+            "ols_add_domain",
+            &json!({
+                "hostname": "pyapp.test",
+                "kind": "python",
+                "command": "python main.py --host 0.0.0.0",
+                "port": 8000,
+                "runtime": "3.11",
+                "venv": ".venv"
+            }),
+        )
+        .expect("should build AddDomain for python");
+
+        if let CoreCommand::AddDomain { domain } = cmd {
+            assert_eq!(domain.hostname, "pyapp.test");
+            match domain.kind {
+                SiteKind::Proxy { upstream_port, .. } => assert_eq!(upstream_port, 8000),
+                _ => panic!("expected Proxy site kind"),
+            }
+            let app = domain.app.expect("expected AppSpec");
+            assert_eq!(app.args, vec!["main.py", "--host", "0.0.0.0"]);
+            assert_eq!(app.runtime.as_deref(), Some("3.11"));
+            assert!(app.executable.contains(".venv"));
+        } else {
+            panic!("expected AddDomain variant");
+        }
+    }
+
+    #[test]
+    fn build_command_add_domain_node() {
+        let cmd = build_command(
+            "ols_add_domain",
+            &json!({
+                "hostname": "nodeapp.test",
+                "kind": "node",
+                "command": "npm run start",
+                "port": 3000,
+                "runtime": "20.18.0"
+            }),
+        )
+        .expect("should build AddDomain for node");
+
+        if let CoreCommand::AddDomain { domain } = cmd {
+            assert_eq!(domain.hostname, "nodeapp.test");
+            match domain.kind {
+                SiteKind::Proxy { upstream_port, .. } => assert_eq!(upstream_port, 3000),
+                _ => panic!("expected Proxy site kind"),
+            }
+            let app = domain.app.expect("expected AppSpec");
+            assert_eq!(app.executable, "npm");
+            assert_eq!(app.args, vec!["run", "start"]);
+            assert_eq!(app.runtime.as_deref(), Some("20.18.0"));
+        } else {
+            panic!("expected AddDomain variant");
+        }
+    }
+
+    #[test]
+    fn build_command_restart_site_app() {
+        let cmd = build_command(
+            "ols_restart_site_app",
+            &json!({
+                "hostname": "my-site.test"
+            }),
+        )
+        .expect("should build RestartSiteApp");
+
+        if let CoreCommand::RestartSiteApp { hostname } = cmd {
+            assert_eq!(hostname, "my-site.test");
+        } else {
+            panic!("expected RestartSiteApp variant");
+        }
+    }
+
+    #[test]
+    fn build_command_runtime_tools() {
+        let list_cmd = build_command("ols_list_runtimes", &json!({})).unwrap();
+        assert!(matches!(list_cmd, CoreCommand::ListRuntimeCatalog));
+
+        let install_cmd = build_command(
+            "ols_install_runtime",
+            &json!({ "id": "python", "version": "3.12.6" }),
+        )
+        .unwrap();
+        if let CoreCommand::InstallRuntime { id, version } = install_cmd {
+            assert_eq!(id, "python");
+            assert_eq!(version, "3.12.6");
+        } else {
+            panic!("expected InstallRuntime");
+        }
+
+        let refresh_cmd =
+            build_command("ols_refresh_runtimes", &json!({ "id": "python" })).unwrap();
+        if let CoreCommand::RefreshRuntimeCatalog { id } = refresh_cmd {
+            assert_eq!(id, "python");
+        } else {
+            panic!("expected RefreshRuntimeCatalog");
         }
     }
 }
