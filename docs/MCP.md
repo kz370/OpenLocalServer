@@ -111,7 +111,7 @@ Get the token from **OLS Settings → MCP / AI tools** (enable authentication, t
 
 ### Option C: `OLS_SITES_DIR` environment variable (default site root)
 
-Sets the default `root` for `ols_add_domain` / `ols_update_domain` when no `root` is provided. Falls back to the `domains.sites_dir` setting, then the install's `sites` folder.
+Sets the base sites directory for `ols_add_domain` / `ols_update_domain` and `ols_get_sites_dir`. Falls back to the `domains.sites_dir` setting, then the install's `sites` folder.
 
 ```json
 {
@@ -119,12 +119,19 @@ Sets the default `root` for `ols_add_domain` / `ols_update_domain` when no `root
     "ols": {
       "command": "C:\\OLS\\ols-mcp.exe",
       "env": {
+        "OLS_MCP_TOKEN": "your-token-here",
         "OLS_SITES_DIR": "C:\\sites"
       }
     }
   }
 }
 ```
+
+When creating sites (`ols_add_domain`):
+- `root` is **optional**. If omitted, it automatically defaults to `<sites_dir>\<hostname>` (e.g. `C:\sites\myshop.test`).
+- If a relative path is provided (e.g. `"myshop"` or `"myshop/public"`), it is automatically resolved under `<sites_dir>`.
+- If an absolute path is provided, it is used as-is.
+- AI clients can call the `ols_get_sites_dir` tool or read the `ols://sites-dir` resource to find where files should be placed.
 
 ### Expiry
 
@@ -141,7 +148,7 @@ The token is stored in the OS credential manager (Windows Credential Manager), n
 ## Domain creation notes
 
 - `kind` accepts plain strings: `"php"`, `"static"`, `"html"`, `"proxy"` (case-insensitive). Omitted or unrecognized values default to PHP.
-- `root` defaults to `OLS_SITES_DIR` env var, then the `domains.sites_dir` setting, then the install's `sites` folder. It must be an absolute folder path (e.g. `C:\sites\shop`). A relative path is rejected with an actionable error.
+- `root` is optional and defaults to `<sites_dir>\<hostname>` using `OLS_SITES_DIR`, then the `domains.sites_dir` setting, then the install's `sites` folder. Relative paths are resolved against this folder.
 - `php` version (e.g. `"8.3"`) is used only when `kind` is `php`.
 - `https` (boolean) enables SSL for the site. `redirect_https` (boolean) redirects HTTP to HTTPS.
 - `enabled` (boolean) toggles the site on/off.

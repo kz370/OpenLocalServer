@@ -46,7 +46,15 @@ impl AuthMiddleware {
     /// token, or when auth is configured but no launch token was provided.
     pub fn check(_req: &JsonRpcRequest, override_token: Option<&str>) -> AuthOutcome {
         let config = ols_core::mcp_auth::McpAuthConfig::load();
+        Self::check_with_config(_req, override_token, &config)
+    }
 
+    /// Internal check with an explicit `McpAuthConfig` for testing.
+    pub fn check_with_config(
+        _req: &JsonRpcRequest,
+        override_token: Option<&str>,
+        config: &ols_core::mcp_auth::McpAuthConfig,
+    ) -> AuthOutcome {
         // No token configured anywhere → backward compatible, everything passes.
         if config.token.is_none() && override_token.is_none() {
             return AuthOutcome::Ok;
@@ -108,8 +116,14 @@ mod tests {
 
     #[test]
     fn no_token_anywhere_passes() {
+        let empty_config = ols_core::mcp_auth::McpAuthConfig {
+            token: None,
+            ttl_ms: None,
+            expires_at_ms: None,
+            created_at_ms: None,
+        };
         assert!(matches!(
-            AuthMiddleware::check(&req(), None),
+            AuthMiddleware::check_with_config(&req(), None, &empty_config),
             AuthOutcome::Ok
         ));
     }

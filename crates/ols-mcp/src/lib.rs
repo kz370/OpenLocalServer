@@ -62,6 +62,14 @@ struct McpTool {
 fn mcp_tools() -> Vec<McpTool> {
     vec![
         McpTool {
+            name: "ols_get_sites_dir".into(),
+            description: Some(
+                "Get the configured base directory for websites and projects (configured via OLS_SITES_DIR or settings). Use this to know where website files and folders should be created."
+                    .to_string(),
+            ),
+            input_schema: json!({ "type": "object", "properties": {} }),
+        },
+        McpTool {
             name: "ols_list_domains".into(),
             description: Some("List all registered sites/domains.".to_string()),
             input_schema: json!({ "type": "object", "properties": {} }),
@@ -77,32 +85,74 @@ fn mcp_tools() -> Vec<McpTool> {
         },
         McpTool {
             name: "ols_add_domain".into(),
-            description: Some("Create a new site/domain.".to_string()),
+            description: Some(
+                "Create a new site/domain. 'root' is optional: if omitted, it defaults to <sites_dir>/<hostname> (using OLS_SITES_DIR). Relative paths like 'mysite' or 'mysite/public' are also automatically resolved inside OLS_SITES_DIR."
+                    .to_string(),
+            ),
             input_schema: json!({
                 "type": "object",
                 "properties": {
-                    "hostname": { "type": "string" },
-                    "root": { "type": "string" },
-                    "php": { "type": "string" },
-                    "kind": { "type": "string" },
-                    "server": { "type": "string" },
-                    "enabled": { "type": "boolean" }
+                    "hostname": {
+                        "type": "string",
+                        "description": "The local domain hostname (e.g. 'myproject.test' or 'shop.local')."
+                    },
+                    "root": {
+                        "type": "string",
+                        "description": "Document root folder path. Optional: if omitted, defaults to <sites_dir>/<hostname>. Relative paths (e.g. 'myproject' or 'myproject/public') are automatically resolved inside OLS_SITES_DIR."
+                    },
+                    "php": {
+                        "type": "string",
+                        "description": "PHP version (e.g. '8.3'). Only used if kind is 'php'."
+                    },
+                    "kind": {
+                        "type": "string",
+                        "description": "Site kind: 'php', 'static', 'html', or 'proxy'. Defaults to 'php'."
+                    },
+                    "server": {
+                        "type": "string",
+                        "description": "Web server ('nginx', 'apache', or 'caddy'). Defaults to system default."
+                    },
+                    "enabled": {
+                        "type": "boolean",
+                        "description": "Whether the site is enabled. Defaults to true."
+                    }
                 },
-                "required": ["hostname", "root"]
+                "required": ["hostname"]
             }),
         },
         McpTool {
             name: "ols_update_domain".into(),
-            description: Some("Modify an existing site's config.".to_string()),
+            description: Some(
+                "Modify an existing site's config. 'root' is optional: if provided as a relative path, it is resolved against OLS_SITES_DIR."
+                    .to_string(),
+            ),
             input_schema: json!({
                 "type": "object",
                 "properties": {
-                    "hostname": { "type": "string" },
-                    "root": { "type": "string" },
-                    "php": { "type": "string" },
-                    "kind": { "type": "string" },
-                    "server": { "type": "string" },
-                    "enabled": { "type": "boolean" }
+                    "hostname": {
+                        "type": "string",
+                        "description": "The hostname of the existing domain to update."
+                    },
+                    "root": {
+                        "type": "string",
+                        "description": "New document root folder path. If relative, resolved against OLS_SITES_DIR."
+                    },
+                    "php": {
+                        "type": "string",
+                        "description": "PHP version (e.g. '8.3'). Only used if kind is 'php'."
+                    },
+                    "kind": {
+                        "type": "string",
+                        "description": "Site kind: 'php', 'static', 'html', or 'proxy'."
+                    },
+                    "server": {
+                        "type": "string",
+                        "description": "Web server ('nginx', 'apache', or 'caddy')."
+                    },
+                    "enabled": {
+                        "type": "boolean",
+                        "description": "Whether the site is enabled."
+                    }
                 },
                 "required": ["hostname"]
             }),
@@ -235,6 +285,47 @@ fn mcp_tools() -> Vec<McpTool> {
     ]
 }
 
+/// Resolve the base directory for sites:
+/// 1. `OLS_SITES_DIR` environment variable
+/// 2. `domains.sites_dir` setting in settings.json
+/// 3. OLS default sites directory (`AppPaths::sites_dir()`)
+pub fn resolve_sites_dir() -> std::path::PathBuf {
+    std::env::var("OLS_SITES_DIR")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            ols_core::settings::SettingsService::load(&ols_core::paths::AppPaths::resolve())
+                .ok()
+                .and_then(|s| s.get("domains.sites_dir").cloned())
+                .and_then(|v| v.as_str().map(|s| s.trim().to_string()))
+                .filter(|s| !s.is_empty())
+                .map(std::path::PathBuf::from)
+        })
+        .unwrap_or_else(|| ols_core::paths::AppPaths::resolve().sites_dir())
+}
+
+/// Resolve the document root for a domain:
+/// - If `root` is omitted, empty, or whitespace, default to `<sites_dir>/<hostname>`.
+/// - If `root` is a relative path (e.g. "mysite", "mysite/public", "./mysite"),
+///   resolve it against `sites_dir`.
+/// - If `root` is an absolute path, use it directly.
+pub fn resolve_domain_root(root_opt: Option<&str>, hostname: &str) -> std::path::PathBuf {
+    let sites_dir = resolve_sites_dir();
+    match root_opt.map(|s| s.trim()).filter(|s| !s.is_empty()) {
+        None => sites_dir.join(hostname),
+        Some(r) => {
+            let p = std::path::Path::new(r);
+            if p.is_absolute() {
+                p.to_path_buf()
+            } else {
+                sites_dir.join(p)
+            }
+        }
+    }
+}
+
 /// Convert named tool + simple args into a `CoreCommand`.
 fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
     use CoreCommand as C;
@@ -288,33 +379,16 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
             } else {
                 args["kind"] = json!({"type": "php", "version": null});
             }
-            // Default root to the installation's sites folder so the AI doesn't
-            // have to guess a location. Respect OLS_SITES_DIR env var, then the
-            // configured domains.sites_dir setting, then the install's sites dir.
-            if args.get("root").is_none() {
-                let sites_dir: std::path::PathBuf = std::env::var("OLS_SITES_DIR")
-                    .ok()
-                    .filter(|s| !s.is_empty())
-                    .map(std::path::PathBuf::from)
-                    .or_else(|| {
-                        ols_core::settings::SettingsService::load(
-                            &ols_core::paths::AppPaths::resolve(),
-                        )
-                        .ok()
-                        .and_then(|s| s.get("domains.sites_dir").cloned())
-                        .and_then(|v| v.as_str().map(|s| s.to_owned()))
-                        .filter(|s| !s.is_empty())
-                        .map(std::path::PathBuf::from)
-                    })
-                    .unwrap_or_else(|| ols_core::paths::AppPaths::resolve().sites_dir());
-                args["root"] = json!(sites_dir.to_string_lossy());
-            }
+            let hostname = req_str!("hostname");
+            // Default root to `<sites_dir>/<hostname>` or resolve relative path against `sites_dir`.
+            let root_str = args.get("root").and_then(|v| v.as_str());
+            let resolved_root = resolve_domain_root(root_str, &hostname);
+            args["root"] = json!(resolved_root.to_string_lossy());
+
             let mut domain: ols_core::domain::Domain = serde_json::from_value(args)
                 .map_err(|e| format!("failed to parse domain args: {e}"))?;
-            domain.hostname = req_str!("hostname");
-            if let Some(root) = opt_str!("root") {
-                domain.root = root;
-            }
+            domain.hostname = hostname;
+            domain.root = resolved_root.to_string_lossy().to_string();
             if let Some(server) = opt_str!("server") {
                 domain.server = Some(server);
             }
@@ -338,32 +412,15 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
             } else {
                 args["kind"] = json!({"type": "php", "version": null});
             }
-            // Default root to the installation's sites folder. Respect OLS_SITES_DIR
-            // env var, then the configured domains.sites_dir setting.
-            if args.get("root").is_none() {
-                let sites_dir: std::path::PathBuf = std::env::var("OLS_SITES_DIR")
-                    .ok()
-                    .filter(|s| !s.is_empty())
-                    .map(std::path::PathBuf::from)
-                    .or_else(|| {
-                        ols_core::settings::SettingsService::load(
-                            &ols_core::paths::AppPaths::resolve(),
-                        )
-                        .ok()
-                        .and_then(|s| s.get("domains.sites_dir").cloned())
-                        .and_then(|v| v.as_str().map(|s| s.to_owned()))
-                        .filter(|s| !s.is_empty())
-                        .map(std::path::PathBuf::from)
-                    })
-                    .unwrap_or_else(|| ols_core::paths::AppPaths::resolve().sites_dir());
-                args["root"] = json!(sites_dir.to_string_lossy());
-            }
+            let hostname = req_str!("hostname");
+            let root_str = args.get("root").and_then(|v| v.as_str());
+            let resolved_root = resolve_domain_root(root_str, &hostname);
+            args["root"] = json!(resolved_root.to_string_lossy());
+
             let mut domain: ols_core::domain::Domain = serde_json::from_value(args)
                 .map_err(|e| format!("failed to parse domain args: {e}"))?;
-            domain.hostname = req_str!("hostname");
-            if let Some(root) = opt_str!("root") {
-                domain.root = root;
-            }
+            domain.hostname = hostname;
+            domain.root = resolved_root.to_string_lossy().to_string();
             if let Some(server) = opt_str!("server") {
                 domain.server = Some(server);
             }
@@ -504,7 +561,7 @@ fn format_response(response: &CoreResponse) -> String {
         CoreResponse::Domain { domain } => {
             let d = domain.as_ref();
             format!(
-                "Domain {}: root={}, server={}, enabled={}, https={}\nurl={}",
+                "Domain {}:\n- Document root: {}\n- Server: {}\n- Enabled: {}\n- HTTPS: {}\n- URL: {}",
                 d.hostname,
                 d.root,
                 d.server.as_deref().unwrap_or("-"),
@@ -601,6 +658,21 @@ async fn handle_request(req: JsonRpcRequest, override_token: Option<&str>) -> Js
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
             let args = req.params.get("arguments").cloned().unwrap_or(json!({}));
+            if name == "ols_get_sites_dir" {
+                let sites_dir = resolve_sites_dir();
+                return JsonRpcResponse::ok(
+                    req.id,
+                    json!({
+                        "content": [{
+                            "type": "text",
+                            "text": format!(
+                                "Sites root directory: {}\n\nWhen adding a domain with `ols_add_domain` without specifying `root`, it defaults to `<sites_dir>\\<hostname>`. Any relative path is also resolved inside this directory.",
+                                sites_dir.display()
+                            )
+                        }]
+                    }),
+                );
+            }
             match build_command(name, &args) {
                 Ok(cmd) => match send_command(cmd).await {
                     Ok(response) => {
@@ -615,11 +687,45 @@ async fn handle_request(req: JsonRpcRequest, override_token: Option<&str>) -> Js
                 Err(e) => JsonRpcResponse::err(req.id, json!({ "code": -32603, "message": e })),
             }
         }
-        "resources/list" => JsonRpcResponse::ok(req.id, json!({ "resources": [] })),
-        "resources/read" => JsonRpcResponse::err(
-            req.id,
-            json!({ "code": -32601, "message": "resources not supported" }),
-        ),
+        "resources/list" => {
+            let sites_dir = resolve_sites_dir();
+            JsonRpcResponse::ok(
+                req.id,
+                json!({
+                    "resources": [
+                        {
+                            "uri": "ols://sites-dir",
+                            "name": "OLS Sites Directory",
+                            "description": format!("Configured base directory for websites: {}", sites_dir.display()),
+                            "mimeType": "text/plain"
+                        }
+                    ]
+                }),
+            )
+        }
+        "resources/read" => {
+            let uri = req.params.get("uri").and_then(|v| v.as_str()).unwrap_or("");
+            if uri == "ols://sites-dir" {
+                let sites_dir = resolve_sites_dir();
+                JsonRpcResponse::ok(
+                    req.id,
+                    json!({
+                        "contents": [
+                            {
+                                "uri": uri,
+                                "mimeType": "text/plain",
+                                "text": sites_dir.to_string_lossy()
+                            }
+                        ]
+                    }),
+                )
+            } else {
+                JsonRpcResponse::err(
+                    req.id,
+                    json!({ "code": -32602, "message": format!("unknown resource URI: {uri}") }),
+                )
+            }
+        }
         "prompts/list" => JsonRpcResponse::ok(req.id, json!({ "prompts": [] })),
         "prompts/get" => JsonRpcResponse::err(
             req.id,
@@ -693,4 +799,71 @@ pub async fn run_stdio(override_token: Option<String>) -> io::Result<()> {
 
     info!("ols-mcp server stopped");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_domain_root_defaults_to_hostname_subfolder() {
+        let root = resolve_domain_root(None, "myshop.test");
+        assert!(root.is_absolute());
+        assert!(root.ends_with("myshop.test"));
+    }
+
+    #[test]
+    fn resolve_domain_root_handles_empty_root() {
+        let root = resolve_domain_root(Some("   "), "myshop.test");
+        assert!(root.is_absolute());
+        assert!(root.ends_with("myshop.test"));
+    }
+
+    #[test]
+    fn resolve_domain_root_resolves_relative_path() {
+        let root = resolve_domain_root(Some("custom-folder/public"), "myshop.test");
+        assert!(root.is_absolute());
+        let s = root.to_string_lossy();
+        assert!(s.contains("custom-folder"));
+        assert!(s.ends_with("public"));
+    }
+
+    #[test]
+    fn build_command_add_domain_without_root() {
+        let cmd = build_command(
+            "ols_add_domain",
+            &json!({
+                "hostname": "test.local"
+            }),
+        )
+        .expect("should build AddDomain without root");
+
+        if let CoreCommand::AddDomain { domain } = cmd {
+            assert_eq!(domain.hostname, "test.local");
+            assert!(domain.root.ends_with("test.local"));
+            assert!(std::path::Path::new(&domain.root).is_absolute());
+        } else {
+            panic!("expected AddDomain variant");
+        }
+    }
+
+    #[test]
+    fn build_command_add_domain_with_relative_root() {
+        let cmd = build_command(
+            "ols_add_domain",
+            &json!({
+                "hostname": "test.local",
+                "root": "test-folder"
+            }),
+        )
+        .expect("should build AddDomain with relative root");
+
+        if let CoreCommand::AddDomain { domain } = cmd {
+            assert_eq!(domain.hostname, "test.local");
+            assert!(domain.root.ends_with("test-folder"));
+            assert!(std::path::Path::new(&domain.root).is_absolute());
+        } else {
+            panic!("expected AddDomain variant");
+        }
+    }
 }
