@@ -169,6 +169,7 @@ const
   { Kept in the prune allow-list at ssPostInstall, or the prune would delete the
     shim [Files] has just written. }
   LimiterExe  = 'cpulimit.exe';
+  McpExe      = 'ols-mcp.exe';
   { The Start Menu folder an install made before the rename created. The group
     name is NOT read from DefaultGroupName on an upgrade: Inno takes it from the
     previous install's uninstaller (unins000.exe carries the name), so it runs
@@ -707,6 +708,7 @@ var
 begin
   Shipped := '|' + Lowercase(AppExe) + '|' + Lowercase(DaemonExe) + '|' +
              Lowercase(HelperExe) + '|' + Lowercase(LimiterExe) + '|' +
+             Lowercase(McpExe) + '|' +
              'icon.ico|unins000.exe|unins000.dat|';
   if FindFirst(ExpandConstant('{app}\*'), Found) then
   begin

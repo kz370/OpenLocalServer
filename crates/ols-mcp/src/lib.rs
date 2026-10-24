@@ -2,13 +2,13 @@ use ols_core::{control, CoreCommand, CoreResponse};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::io::{self, BufRead, Write};
-use std::sync::Arc;
 use tokio::task::spawn_blocking;
 use tracing::{info, warn};
 
 /// MCP JSON-RPC 2.0 request.
 #[derive(Debug, Deserialize)]
 struct JsonRpcRequest {
+    #[allow(dead_code)]
     jsonrpc: String,
     id: Value,
     method: String,

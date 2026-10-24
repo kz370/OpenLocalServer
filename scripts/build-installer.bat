@@ -31,7 +31,7 @@ set "EXE=%TARGET%\%CARGO_BIN%.exe"
 set "HELPER_EXE=%TARGET%\%HELPER_BIN%.exe"
 set "MCP_EXE=%TARGET%\%MCP_BIN%.exe"
 set "CLI_EXE=%TARGET%\%CLI_BIN%.exe"
-set "STAGED_MCP=%DIST%\%MCP_BIN%.exe"
+set "DISTROOT=%ROOT%release"
 set "DISTROOT=%ROOT%release"
 rem The CPU limiter for Settings > Resources (§129). Vendored, not built: see
 rem vendor\cpulimit\README.md for provenance. It is hash-checked on every build
@@ -54,6 +54,7 @@ set "DIST=%DISTROOT%\%VERSION%"
 set "STAGED=%DIST%\%APPNAME%.exe"
 set "STAGED_HELPER=%DIST%\%HELPER_BIN%.exe"
 set "STAGED_CLI=%DIST%\%CLI_BIN%.exe"
+set "STAGED_MCP=%DIST%\%MCP_BIN%.exe"
 set "STAGED_CPULIMIT=%DIST%\cpulimit.exe"
 
 
@@ -221,7 +222,7 @@ if not defined ISCC (
 
 
 echo [4/5] Creating installer...
-"%ISCC%" /Q "/DAppVersion=%VERSION%" "/DSourceExe=%STAGED%" "/DLibDir=%TARGET%" "/DOutputDir=%DIST%" "%ROOT%installer\open-local-server.iss"
+"%ISCC%" /Q "/DAppVersion=%VERSION%" "/DSourceExe=%STAGED%" "/DLibDir=%DIST%" "/DOutputDir=%DIST%" "%ROOT%installer\open-local-server.iss"
 if errorlevel 1 (
   echo [x] Problem: Inno Setup failed. Cause: see ISCC output above.
   echo     Fix: fix the reported error and run this again.
@@ -243,6 +244,10 @@ if not exist "%STAGED_CLI%" (
   echo [x] Missing "%STAGED_CPULIMIT%" - Settings > Resources cannot cap CPU without it.
   set "VERIFY_FAIL=1"
 )
+if not exist "%STAGED_MCP%" (
+  echo [x] Missing "%STAGED_MCP%" - MCP server required for AI control.
+  set "VERIFY_FAIL=1"
+)
 rem Flat lines, not a block: %VAR% inside a parenthesised block is expanded when the whole
 rem block is parsed, so a value set by a for/f in the same block reads back empty. The
 rem staged copy is re-hashed, not just the source, because this is the file that ships.
@@ -259,11 +264,11 @@ if defined ISCC (
 if defined VERIFY_FAIL goto :fail
 echo.
 echo       Artifacts:
-for %%f in ("%STAGED%" "%STAGED_HELPER%" "%STAGED_CLI%" "%STAGED_CPULIMIT%") do echo       %%~nxf - %%~zf bytes
+for %%f in ("%STAGED%" "%STAGED_HELPER%" "%STAGED_CLI%" "%STAGED_CPULIMIT%" "%STAGED_MCP%") do echo       %%~nxf - %%~zf bytes
 if exist "%SETUP%" for %%f in ("%SETUP%") do echo       %%~nxf - %%~zf bytes
 echo.
 echo       SHA-256:
-for %%f in ("%STAGED%" "%STAGED_HELPER%" "%STAGED_CLI%" "%STAGED_CPULIMIT%") do call :show_hash "%%~f"
+for %%f in ("%STAGED%" "%STAGED_HELPER%" "%STAGED_CLI%" "%STAGED_CPULIMIT%" "%STAGED_MCP%") do call :show_hash "%%~f"
 if exist "%SETUP%" call :show_hash "%SETUP%"
 echo.
 echo === Done: %APPNAME% %VERSION% ===
@@ -282,7 +287,7 @@ rem which is the whole reason a release can look "older than the source":
 rem nothing here recompiles. Print what is being staged so a stale build is
 rem visible before it ships.
 echo       staged from:
-for %%f in ("%EXE%" "%HELPER_EXE%" "%CLI_EXE%") do echo         %%~nxf  %%~t  %%~zf bytes
+for %%f in ("%STAGED%" "%STAGED_HELPER%" "%STAGED_CLI%" "%STAGED_MCP%") do echo         %%~nxf  %%~t  %%~zf bytes
 echo       (run "full" to rebuild these from the current source)
 call :app_running
 if not errorlevel 1 (
@@ -290,27 +295,11 @@ if not errorlevel 1 (
   echo     Fix: right-click the tray icon, Quit, then run this again.
   goto :fail
 )
-if not exist "%EXE%" (
-  echo [x] Problem: %CARGO_BIN%.exe missing from target\release.
-  echo     Fix: run scripts\build-installer.bat full first to build it.
-  goto :fail
-)
-if not exist "%HELPER_EXE%" (
-  echo [x] Problem: %HELPER_BIN%.exe missing from target\release.
-  echo     Fix: run scripts\build-installer.bat full first to build it.
-  goto :fail
-)
-if not exist "%CLI_EXE%" (
-  echo [x] Problem: %CLI_BIN%.exe missing from target\release.
-  echo     Fix: run scripts\build-installer.bat full first to build it.
-  goto :fail
-)
-if not exist "%DIST%" mkdir "%DIST%"
-call :copy_retry "%EXE%" "%STAGED%" || goto :fail
-call :copy_retry "%HELPER_EXE%" "%STAGED_HELPER%" || goto :fail
-call :copy_retry "%CLI_EXE%" "%STAGED_CLI%" || goto :fail
-call :copy_retry "%MCP_EXE%" "%STAGED_MCP%" || goto :fail
-call :stage_cpulimit || goto :fail
+rem In inno_only mode the exes are already in %DIST% from a prior full build.
+rem Nothing to copy — just build the installer.
+goto :skip_copies
+:skip_copies
+echo       staged exes already in %DIST%.
 for %%d in ("%TARGET%\*.dll") do if exist "%%~d" (
   call :copy_retry "%%~d" "%DIST%\%%~nxd" || goto :fail
 )
@@ -327,7 +316,7 @@ if not defined ISCC (
   goto :verify
 )
 echo [inno] Creating installer...
-"%ISCC%" /Q "/DAppVersion=%VERSION%" "/DSourceExe=%STAGED%" "/DLibDir=%TARGET%" "/DOutputDir=%DIST%" "%ROOT%installer\open-local-server.iss"
+"%ISCC%" /Q "/DAppVersion=%VERSION%" "/DSourceExe=%STAGED%" "/DLibDir=%DIST%" "/DOutputDir=%DIST%" "%ROOT%installer\open-local-server.iss"
 if errorlevel 1 (
   echo [x] Problem: Inno Setup failed. Cause: see ISCC output above.
   echo     Fix: fix the reported error and run this again.
