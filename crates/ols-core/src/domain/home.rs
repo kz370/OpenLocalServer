@@ -78,11 +78,11 @@ pub(crate) fn write_home_page(dir: &Path) -> std::io::Result<()> {
 /// Exact bytes of the official application logo, per theme. The welcome page is a
 /// plain static page with its own theme toggle, so it carries both colourways
 /// rather than being told which one is active.
-const LOGO_SVG: &[u8] = include_bytes!("../../../../ui/public/favicon.svg");
-const LOGO_SVG_DARK: &[u8] = include_bytes!("../../../../ui/public/favicon-dark.svg");
+pub(crate) const LOGO_SVG: &[u8] = include_bytes!("../../../../ui/public/favicon.svg");
+pub(crate) const LOGO_SVG_DARK: &[u8] = include_bytes!("../../../../ui/public/favicon-dark.svg");
 
 /// Marker of the currently shipped welcome page.
-const HOME_VERSION_MARKER: &str = "<!-- home v9 -->";
+pub(crate) const HOME_VERSION_MARKER: &str = "<!-- home v9 -->";
 
 /// Markers of older shipped pages (v1 teal cards, v1.5 centered hero, v2 brand,
 /// v3 brand, v4 brand, v5 brand, v6 pre-rebrand brand, v7 acronym tab title with
@@ -128,7 +128,7 @@ pub(crate) fn upgrade_home_page(paths: &AppPaths) -> bool {
 
 /// Static welcome page for `openlocalserver.test`. Self-contained except the
 /// seeded `logo.svg` (exact official brand bytes); works offline.
-const HOME_PAGE: &str = r##"<!doctype html>
+pub(crate) const HOME_PAGE: &str = r##"<!doctype html>
 <html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8">

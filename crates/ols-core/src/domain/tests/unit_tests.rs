@@ -1,40 +1,10 @@
-use std::path::PathBuf;
-use super::super::*;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+use super::*;
+use crate::db;
+use crate::domain::home::*;
 use crate::error::CoreError;
-
-#[cfg(test)]
-mod unit_tests {
-    use super::*;
-    use super::*;
-
-    fn domain(host: &str) -> Domain {
-        Domain {
-            hostname: host.into(),
-            project_id: None,
-            root: "C:/sites/x".into(),
-            kind: SiteKind::Static,
-            https: true,
-            redirect_https: true,
-            wildcard: false,
-            enabled: true,
-            ownership: Ownership::Managed,
-            app: None,
-            blocks: SiteBlocks::default(),
-            generated_hashes: BTreeMap::new(),
-            public_domain: None,
-            tunnel_id: None,
-            server: None,
-            path_prefix: None,
-            icon: None,
-            ssl_provider: SslProvider::LocalCa,
-            custom_cert_path: None,
-            custom_key_path: None,
-            lets_encrypt_email: None,
-            auto_broadcast: false,
-            broadcast_provider: None,
-            ..Default::default()
-        }
-    }
+use crate::paths::AppPaths;
 
     #[test]
     fn hostname_validation_accepts_normal_and_rejects_dangerous_names() {
@@ -377,4 +347,3 @@ mod unit_tests {
             .expect("toggle");
         assert!(pre_paint < toggle, "pre-paint script must come first");
     }
-}

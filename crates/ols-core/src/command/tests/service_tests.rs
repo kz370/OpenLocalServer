@@ -11,7 +11,8 @@ use crate::project::Project;
 
 fn test_core() -> (Core, crate::test_support::IsolatedHome) {
     let home = crate::test_support::isolated_home();
-    let core = Core::new(&home.paths).expect("core created");
+    let settings = crate::settings::SettingsService::load(&home.paths).unwrap();
+    let core = Core::new(settings, home.paths.clone());
     (core, home)
 }
 

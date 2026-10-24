@@ -1,10 +1,8 @@
+use std::collections::BTreeMap;
 use std::path::PathBuf;
-use super::super::*;
+use super::*;
+use crate::db;
 use crate::error::CoreError;
-
-#[cfg(test)]
-mod store_tests {
-    use super::*;
 
     #[test]
     fn a_v6_page_the_user_edited_is_left_alone() {
@@ -391,4 +389,3 @@ mod store_tests {
         let content = std::fs::read_to_string(&index_file).unwrap();
         assert_eq!(content, "<h1>custom user content</h1>");
     }
-}
