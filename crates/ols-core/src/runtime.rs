@@ -60,20 +60,48 @@ pub fn detect_system_install(id: &str) -> Option<SystemInstall> {
     found
 }
 
+fn clean_system_version(id: &str, raw: &str) -> String {
+    let trimmed = raw.trim();
+    match id {
+        "python" => trimmed
+            .strip_prefix("Python ")
+            .unwrap_or(trimmed)
+            .trim()
+            .to_string(),
+        "node" => trimmed
+            .strip_prefix('v')
+            .unwrap_or(trimmed)
+            .trim()
+            .to_string(),
+        "php" => {
+            if let Some(rest) = trimmed.strip_prefix("PHP ") {
+                rest.split_whitespace().next().unwrap_or(rest).to_string()
+            } else {
+                trimmed.to_string()
+            }
+        }
+        _ => trimmed.to_string(),
+    }
+}
+
 fn probe_system_install(id: &str) -> Option<SystemInstall> {
     let (exe_name, version_flag) = crate::catalog::system_probe(id)?;
     let path_var = std::env::var_os("PATH")?;
-    let exe_path = std::env::split_paths(&path_var)
-        .map(|dir| dir.join(exe_name))
-        .find(|p| p.is_file())?;
-
-    let version =
-        probe_version(&exe_path, version_flag).unwrap_or_else(|| "unknown version".to_string());
-
-    Some(SystemInstall {
-        path: exe_path.display().to_string(),
-        version,
-    })
+    for dir in std::env::split_paths(&path_var) {
+        let exe_path = dir.join(exe_name);
+        if exe_path.is_file() {
+            if let Some(raw) = probe_version(&exe_path, version_flag) {
+                let cleaned = clean_system_version(id, &raw);
+                if !cleaned.is_empty() && cleaned != "unknown version" {
+                    return Some(SystemInstall {
+                        path: exe_path.display().to_string(),
+                        version: cleaned,
+                    });
+                }
+            }
+        }
+    }
+    None
 }
 
 /// First line of `<exe> <flag>`. Some tools (an old Windows Redis) never exit on their version flag, or
@@ -268,10 +296,11 @@ impl RuntimeManager {
         let online = self.online_versions.read().unwrap().clone();
         let mut all_versions: HashMap<String, Vec<String>> = HashMap::new();
         for m in &manifests {
-            all_versions
-                .entry(m.id.to_string())
-                .or_default()
-                .push(m.version.to_string());
+            let list = all_versions.entry(m.id.to_string()).or_default();
+            let v = m.version.to_string();
+            if !list.contains(&v) {
+                list.push(v);
+            }
         }
         for (id, versions) in &online {
             let known = all_versions.entry(id.clone()).or_default();
@@ -293,6 +322,7 @@ impl RuntimeManager {
             "redis",
             "memcached",
             "mailpit",
+            "python",
         ] {
             if let Ok(dirs) = std::fs::read_dir(self.paths.runtimes_dir().join(id)) {
                 let known = all_versions.entry(id.to_string()).or_default();
@@ -590,16 +620,8 @@ impl RuntimeManager {
                 if let Ok(bytes) = self.fetch("https://www.python.org/ftp/python/") {
                     if let Ok(page) = String::from_utf8(bytes) {
                         for v in extract_versions(&page, "href=\"", "/\"") {
-                            if v.starts_with("3.") {
-                                let parts: Vec<&str> = v.split('.').collect();
-                                if parts.len() == 3 {
-                                    if let Ok(minor) = parts[1].parse::<u32>() {
-                                        // Restrict to released branches (3.7 through 3.15) to prevent 404 on unreleased/alpha versions
-                                        if (7..=15).contains(&minor) {
-                                            versions.push(v);
-                                        }
-                                    }
-                                }
+                            if v.starts_with("3.") && is_valid_released_python(&v) {
+                                versions.push(v);
                             }
                         }
                     }
@@ -620,7 +642,11 @@ impl RuntimeManager {
                             };
                             if id_str.starts_with("pythonembed-") && id_str.ends_with("-64") {
                                 if let Some(v) = item.get("sort-version").and_then(|v| v.as_str()) {
-                                    if !v.contains('a') && !v.contains('b') && !v.contains("rc") {
+                                    if !v.contains('a')
+                                        && !v.contains('b')
+                                        && !v.contains("rc")
+                                        && is_valid_released_python(v)
+                                    {
                                         versions.push(v.to_string());
                                     }
                                 }
@@ -1090,6 +1116,28 @@ fn nginx_versions(page: &str) -> Vec<String> {
     found.sort_by(|a, b| compare_versions(b, a));
     found.dedup();
     found
+}
+
+fn is_valid_released_python(v: &str) -> bool {
+    let parts: Vec<&str> = v.split('.').collect();
+    if parts.len() != 3 {
+        return false;
+    }
+    let (Ok(minor), Ok(patch)) = (parts[1].parse::<u32>(), parts[2].parse::<u32>()) else {
+        return false;
+    };
+    match minor {
+        7 => patch <= 9,
+        8 => patch <= 10,
+        9 => patch <= 13,
+        10 => patch <= 11,
+        11 => patch <= 9,
+        12 => patch <= 10,
+        13 => patch <= 17,
+        14 => patch <= 9,
+        15 => patch <= 1,
+        _ => false,
+    }
 }
 
 fn extract_versions(text: &str, start: &str, end: &str) -> Vec<String> {

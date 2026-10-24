@@ -26,7 +26,7 @@ ResourceLimits | Optional memory, CPU and process caps applied at the next start
 ElevateRunner | Privileged ols-helper invoker with UAC fallback.
 Catalog | Built-in runtime pins (URL+SHA256, HTTPS enforced).
 CatalogSources | Signed remote catalogs (minisign, re-verified each load).
-RuntimeManager | Download-verify-extract + version probe + events + per-vendor online version feeds (node, php, nginx, apache, composer, mongodb, postgres, redis, memcached, mailpit, mariadb). Per-install pause/cancel controls; a stop is a Cancelled outcome, not a failure.
+RuntimeManager | Download-verify-extract + version probe + events + per-vendor online version feeds (node, php, nginx, apache, composer, mongodb, postgres, redis, memcached, mailpit, mariadb, python). Deduplicates catalog rows, filters 404 versions without official Windows embeddable releases, and normalizes system-detected runtimes. Per-install pause/cancel controls; a stop is a Cancelled outcome, not a failure.
 PhpPools | Per-version php-cgi FastCGI pools + extension management.
 NodePm | Lockfile/packageManager detector + corepack switch.
 ComposerReader | composer.json/lock merger, vendor/scripts reporter.

@@ -22,7 +22,7 @@ import { Field, FormSection, Select, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { buildSitePath, domainToFolderName, getDefaultSitesDir, getDefaultTld, slugify } from '@/lib/sites'
-import { type Domain, type Project, type QuickEntryView, type SiteFolderInspection, runCommand } from '@/core'
+import { type Domain, type Project, type QuickEntryView, type SiteFolderInspection, type SystemInstall, runCommand } from '@/core'
 
 export type SiteServeMode = 'php' | 'node' | 'python' | 'proxy' | 'static'
 
@@ -214,6 +214,8 @@ export function DomainSettings({
   const [inspecting, setInspecting] = useState(false)
   const [installedNodeVersions, setInstalledNodeVersions] = useState<string[]>([])
   const [installedPythonVersions, setInstalledPythonVersions] = useState<string[]>([])
+  const [systemNode, setSystemNode] = useState<SystemInstall | null>(null)
+  const [systemPython, setSystemPython] = useState<SystemInstall | null>(null)
   const [nodePkgManager, setNodePkgManager] = useState<'npm' | 'pnpm' | 'yarn' | 'bun'>('npm')
   const [pythonPkgManager, setPythonPkgManager] = useState<'pip' | 'uv' | 'poetry' | 'pipenv'>('pip')
   const [nodeVersion, setNodeVersion] = useState<string>(() => {
@@ -269,6 +271,10 @@ export function DomainSettings({
       if (r.type === 'runtime_catalog') {
         setInstalledNodeVersions(r.entries.filter((e) => e.id === 'node' && e.installed).map((e) => e.version))
         setInstalledPythonVersions(r.entries.filter((e) => e.id === 'python' && e.installed).map((e) => e.version))
+        const pySys = r.entries.find((e) => e.id === 'python')?.system
+        if (pySys) setSystemPython(pySys)
+        const nodeSys = r.entries.find((e) => e.id === 'node')?.system
+        if (nodeSys) setSystemNode(nodeSys)
       }
     })
   }, [])
@@ -1061,12 +1067,23 @@ export function DomainSettings({
                 </div>
               </Field>
 
-              <Field label="Node Version" hint="Choose the Node runtime version">
+              <Field
+                label="Node Version"
+                hint={
+                  nodeVersion
+                    ? `Using OLS managed Node.js v${nodeVersion}.`
+                    : systemNode?.version
+                      ? `Using system Node.js (${systemNode.version}) from PATH (${systemNode.path}).`
+                      : 'Choose the Node runtime version'
+                }
+              >
                 <Select
                   value={nodeVersion}
                   onChange={(e) => setNodeVersion(e.target.value)}
                 >
-                  <option value="">System Node.js (PATH)</option>
+                  <option value="">
+                    System Node.js ({systemNode?.version ? `PATH - Node.js ${systemNode.version.replace(/^v/i, '')}` : 'PATH'})
+                  </option>
                   {installedNodeVersions.map((v) => (
                     <option key={v} value={v}>
                       Node.js v{v} (OLS installed)
@@ -1178,7 +1195,9 @@ export function DomainSettings({
                     ? 'Using selected virtualenv. Its Scripts directory will be set first on PATH and VIRTUAL_ENV is set.'
                     : pythonInterpreter.startsWith('version:')
                       ? `Using OLS managed Python v${pythonInterpreter.slice(8)}.`
-                      : 'Using system Python from PATH.'
+                      : systemPython?.version
+                        ? `Using system Python (${systemPython.version.replace(/^Python\s*/i, '')}) from PATH (${systemPython.path}).`
+                        : 'Using system Python from PATH.'
                 }
               >
                 <Select value={pythonInterpreter} onChange={(e) => setPythonInterpreter(e.target.value)}>
@@ -1192,7 +1211,9 @@ export function DomainSettings({
                     </optgroup>
                   )}
                   <optgroup label="System / Global Python">
-                    <option value="system">System Python (PATH)</option>
+                    <option value="system">
+                      System Python ({systemPython?.version ? `PATH - Python ${systemPython.version.replace(/^Python\s*/i, '')}` : 'PATH'})
+                    </option>
                   </optgroup>
                   {installedPythonVersions.length > 0 && (
                     <optgroup label="OLS Managed Runtimes">

@@ -327,12 +327,21 @@ export function RuntimesPage() {
     const byId = new Map<string, Group>()
     for (const entry of catalog) {
       const g = byId.get(entry.id) ?? { id: entry.id, name: entry.name, rows: [] }
-      g.rows.push({ key: `${entry.id}@${entry.version}`, version: entry.version, kind: 'managed', entry })
+      const key = `${entry.id}@${entry.version}`
+      const existing = g.rows.find((r) => r.key === key)
+      if (!existing) {
+        g.rows.push({ key, version: entry.version, kind: 'managed', entry })
+      } else if (!existing.entry?.installed && entry.installed) {
+        existing.entry = entry
+      }
       byId.set(entry.id, g)
     }
     for (const c of customInstalls) {
       const g = byId.get(c.id) ?? { id: c.id, name: c.id.toUpperCase(), rows: [] }
-      g.rows.push({ key: `custom:${c.id}:${c.label}`, version: c.label || 'custom', kind: 'custom', custom: c })
+      const key = `custom:${c.id}:${c.label}`
+      if (!g.rows.some((r) => r.key === key)) {
+        g.rows.push({ key, version: c.label || 'custom', kind: 'custom', custom: c })
+      }
       byId.set(c.id, g)
     }
     const list = [...byId.values()]
