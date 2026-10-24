@@ -86,7 +86,7 @@ fn mcp_tools() -> Vec<McpTool> {
         McpTool {
             name: "ols_add_domain".into(),
             description: Some(
-                "Create a new site/domain. Supports PHP, Static, Proxy, Node.js, and Python sites. 'root' is optional: if omitted, defaults to <sites_dir>/<hostname>. Relative paths are resolved against OLS_SITES_DIR."
+                "Create a new site/domain. Supports PHP, Static, Proxy, Node.js, and Python sites. HTTPS is enabled by default with trusted local CA certificates. 'root' is optional: if omitted, defaults to <sites_dir>/<hostname>. Relative paths are resolved against OLS_SITES_DIR."
                     .to_string(),
             ),
             input_schema: json!({
@@ -128,6 +128,14 @@ fn mcp_tools() -> Vec<McpTool> {
                         "type": "string",
                         "description": "Web server ('nginx', 'apache', or 'caddy'). Defaults to system default."
                     },
+                    "https": {
+                        "type": "boolean",
+                        "description": "Whether HTTPS is enabled using OLS local CA certificates. Defaults to true."
+                    },
+                    "redirect_https": {
+                        "type": "boolean",
+                        "description": "Whether HTTP requests automatically redirect to HTTPS. Defaults to true when https is true."
+                    },
                     "enabled": {
                         "type": "boolean",
                         "description": "Whether the site is enabled. Defaults to true."
@@ -139,7 +147,7 @@ fn mcp_tools() -> Vec<McpTool> {
         McpTool {
             name: "ols_update_domain".into(),
             description: Some(
-                "Modify an existing site's config. Supports switching kinds ('php', 'node', 'python', 'static', 'proxy') and adjusting start commands, ports, and runtimes."
+                "Modify an existing site's config. Supports switching kinds ('php', 'node', 'python', 'static', 'proxy'), toggling HTTPS/SSL with local CA certificates, and adjusting start commands, ports, and runtimes."
                     .to_string(),
             ),
             input_schema: json!({
@@ -180,6 +188,14 @@ fn mcp_tools() -> Vec<McpTool> {
                     "server": {
                         "type": "string",
                         "description": "Web server ('nginx', 'apache', or 'caddy')."
+                    },
+                    "https": {
+                        "type": "boolean",
+                        "description": "Enable or disable HTTPS with OLS local CA certificate."
+                    },
+                    "redirect_https": {
+                        "type": "boolean",
+                        "description": "Whether HTTP redirects to HTTPS."
                     },
                     "enabled": {
                         "type": "boolean",
@@ -410,6 +426,18 @@ pub fn resolve_domain_root(root_opt: Option<&str>, hostname: &str) -> std::path:
     }
 }
 
+pub fn split_command_line(cmd: &str) -> (String, Vec<String>) {
+    let parts: Vec<&str> = cmd.split_whitespace().collect();
+    if parts.is_empty() {
+        (String::new(), Vec::new())
+    } else {
+        (
+            parts[0].to_string(),
+            parts[1..].iter().map(|s| s.to_string()).collect(),
+        )
+    }
+}
+
 /// Convert named tool + simple args into a `CoreCommand`.
 fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
     use CoreCommand as C;
@@ -431,18 +459,6 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
         ($k:expr) => {
             args.get($k).and_then(|v| v.as_bool())
         };
-    }
-
-    fn split_command_line(cmd: &str) -> (String, Vec<String>) {
-        let parts: Vec<&str> = cmd.split_whitespace().collect();
-        if parts.is_empty() {
-            (String::new(), Vec::new())
-        } else {
-            (
-                parts[0].to_string(),
-                parts[1..].iter().map(|s| s.to_string()).collect(),
-            )
-        }
     }
 
     Ok(match name {
@@ -500,9 +516,7 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
                             exe = venv.clone();
                         } else {
                             let cand = resolved_root.join(vpath).join("Scripts").join("python.exe");
-                            if cand.exists() {
-                                exe = cand.to_string_lossy().to_string();
-                            }
+                            exe = cand.to_string_lossy().to_string();
                         }
                     }
                     args["app"] = json!({
@@ -563,12 +577,9 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
             if let Some(server) = opt_str!("server") {
                 domain.server = Some(server);
             }
-            if let Some(https) = opt_bool!("https") {
-                domain.https = https;
-            }
-            if let Some(redirect_https) = opt_bool!("redirect_https") {
-                domain.redirect_https = redirect_https;
-            }
+            let https = opt_bool!("https").unwrap_or(true);
+            domain.https = https;
+            domain.redirect_https = opt_bool!("redirect_https").unwrap_or(https);
             if let Some(enabled) = opt_bool!("enabled") {
                 domain.enabled = enabled;
             }
@@ -1047,6 +1058,190 @@ async fn handle_request(req: JsonRpcRequest, override_token: Option<&str>) -> Js
                     }),
                 );
             }
+            if name == "ols_update_domain" {
+                let hostname = match args.get("hostname").and_then(|v| v.as_str()) {
+                    Some(h) if !h.trim().is_empty() => h.to_string(),
+                    _ => {
+                        return JsonRpcResponse::err(
+                            req.id,
+                            json!({ "code": -32602, "message": "missing required argument: hostname" }),
+                        );
+                    }
+                };
+
+                // Fetch existing domain so partial updates (e.g. toggling https) preserve all other fields
+                match send_command(CoreCommand::GetDomain {
+                    hostname: hostname.clone(),
+                })
+                .await
+                {
+                    Ok(CoreResponse::Domain { mut domain }) => {
+                        if let Some(https) = args.get("https").and_then(|v| v.as_bool()) {
+                            domain.https = https;
+                            if https && !domain.redirect_https {
+                                domain.redirect_https = true;
+                            }
+                        }
+                        if let Some(redirect_https) =
+                            args.get("redirect_https").and_then(|v| v.as_bool())
+                        {
+                            domain.redirect_https = redirect_https;
+                        }
+                        if let Some(enabled) = args.get("enabled").and_then(|v| v.as_bool()) {
+                            domain.enabled = enabled;
+                        }
+                        if let Some(server) = args.get("server").and_then(|v| v.as_str()) {
+                            domain.server = Some(server.to_string());
+                        }
+                        if let Some(root_str) = args.get("root").and_then(|v| v.as_str()) {
+                            domain.root = resolve_domain_root(Some(root_str), &hostname)
+                                .to_string_lossy()
+                                .to_string();
+                        }
+                        let kind_str = args
+                            .get("kind")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_lowercase());
+                        let port_opt = args.get("port").and_then(|v| v.as_u64()).map(|p| p as u16);
+                        let command_opt = args
+                            .get("command")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+                        let runtime_opt = args
+                            .get("runtime")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+                        let venv_opt = args
+                            .get("venv")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+                        let php_opt = args
+                            .get("php")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+
+                        let resolved_root = std::path::PathBuf::from(&domain.root);
+
+                        match kind_str.as_deref() {
+                            Some("node") => {
+                                let port = port_opt.unwrap_or(3000);
+                                domain.kind = ols_core::domain::SiteKind::Proxy {
+                                    upstream_port: port,
+                                    upstream_host: None,
+                                    upstream_https: false,
+                                };
+                                let cmd_str = command_opt.as_deref().unwrap_or("npm run dev");
+                                let (exe, cmd_args) = split_command_line(cmd_str);
+                                domain.app = Some(ols_core::domain::AppSpec {
+                                    executable: exe,
+                                    args: cmd_args,
+                                    cwd: domain.root.clone(),
+                                    runtime: Some(runtime_opt.unwrap_or_else(|| "node".into())),
+                                });
+                            }
+                            Some("python") => {
+                                let port = port_opt.unwrap_or(8000);
+                                domain.kind = ols_core::domain::SiteKind::Proxy {
+                                    upstream_port: port,
+                                    upstream_host: None,
+                                    upstream_https: false,
+                                };
+                                let cmd_str = command_opt.as_deref().unwrap_or("python main.py");
+                                let (mut exe, cmd_args) = split_command_line(cmd_str);
+                                if let Some(ref venv) = venv_opt {
+                                    let vpath = std::path::Path::new(venv);
+                                    if vpath.ends_with("python.exe") || vpath.ends_with("python") {
+                                        exe = venv.clone();
+                                    } else {
+                                        let cand = resolved_root
+                                            .join(vpath)
+                                            .join("Scripts")
+                                            .join("python.exe");
+                                        exe = cand.to_string_lossy().to_string();
+                                    }
+                                }
+                                domain.app = Some(ols_core::domain::AppSpec {
+                                    executable: exe,
+                                    args: cmd_args,
+                                    cwd: domain.root.clone(),
+                                    runtime: Some(runtime_opt.unwrap_or_else(|| "python".into())),
+                                });
+                            }
+                            Some("static") | Some("html") => {
+                                domain.kind = ols_core::domain::SiteKind::Static;
+                                domain.app = None;
+                            }
+                            Some("proxy") => {
+                                let port = port_opt.unwrap_or(8080);
+                                domain.kind = ols_core::domain::SiteKind::Proxy {
+                                    upstream_port: port,
+                                    upstream_host: None,
+                                    upstream_https: false,
+                                };
+                                if let Some(cmd_str) = command_opt {
+                                    let (exe, cmd_args) = split_command_line(&cmd_str);
+                                    domain.app = Some(ols_core::domain::AppSpec {
+                                        executable: exe,
+                                        args: cmd_args,
+                                        cwd: domain.root.clone(),
+                                        runtime: runtime_opt,
+                                    });
+                                }
+                            }
+                            Some("php") => {
+                                domain.kind = ols_core::domain::SiteKind::Php { version: php_opt };
+                                domain.app = None;
+                            }
+                            None => {
+                                if let Some(php_ver) = php_opt {
+                                    domain.kind = ols_core::domain::SiteKind::Php {
+                                        version: Some(php_ver),
+                                    };
+                                }
+                                if let Some(cmd_str) = command_opt {
+                                    let (exe, cmd_args) = split_command_line(&cmd_str);
+                                    domain.app = Some(ols_core::domain::AppSpec {
+                                        executable: exe,
+                                        args: cmd_args,
+                                        cwd: domain.root.clone(),
+                                        runtime: runtime_opt,
+                                    });
+                                }
+                            }
+                            _ => {}
+                        }
+
+                        match send_command(CoreCommand::UpdateDomain { domain: *domain }).await {
+                            Ok(response) => {
+                                let text = format_response(&response);
+                                return JsonRpcResponse::ok(
+                                    req.id,
+                                    json!({ "content": [{ "type": "text", "text": text }] }),
+                                );
+                            }
+                            Err(e) => {
+                                return JsonRpcResponse::err(
+                                    req.id,
+                                    json!({ "code": -32603, "message": e }),
+                                )
+                            }
+                        }
+                    }
+                    Ok(_) => {
+                        return JsonRpcResponse::err(
+                            req.id,
+                            json!({ "code": -32603, "message": "unexpected response when fetching domain" }),
+                        )
+                    }
+                    Err(e) => {
+                        return JsonRpcResponse::err(
+                            req.id,
+                            json!({ "code": -32603, "message": e }),
+                        )
+                    }
+                }
+            }
+
             match build_command(name, &args) {
                 Ok(cmd) => match send_command(cmd).await {
                     Ok(response) => {
@@ -1217,9 +1412,48 @@ mod tests {
             assert_eq!(domain.hostname, "test.local");
             assert!(domain.root.ends_with("test.local"));
             assert!(std::path::Path::new(&domain.root).is_absolute());
+            assert!(domain.https, "should default https to true");
+            assert!(
+                domain.redirect_https,
+                "should default redirect_https to true"
+            );
         } else {
             panic!("expected AddDomain variant");
         }
+    }
+
+    #[test]
+    fn build_command_add_domain_with_explicit_https_false() {
+        let cmd = build_command(
+            "ols_add_domain",
+            &json!({
+                "hostname": "http-only.local",
+                "https": false
+            }),
+        )
+        .expect("should build AddDomain");
+
+        if let CoreCommand::AddDomain { domain } = cmd {
+            assert!(!domain.https);
+            assert!(!domain.redirect_https);
+        } else {
+            panic!("expected AddDomain variant");
+        }
+    }
+
+    #[test]
+    fn tools_schema_includes_https_parameters() {
+        let tools = mcp_tools();
+        let add_tool = tools.iter().find(|t| t.name == "ols_add_domain").unwrap();
+        assert!(add_tool.input_schema["properties"]["https"].is_object());
+        assert!(add_tool.input_schema["properties"]["redirect_https"].is_object());
+
+        let update_tool = tools
+            .iter()
+            .find(|t| t.name == "ols_update_domain")
+            .unwrap();
+        assert!(update_tool.input_schema["properties"]["https"].is_object());
+        assert!(update_tool.input_schema["properties"]["redirect_https"].is_object());
     }
 
     #[test]

@@ -47,7 +47,7 @@ CLI `ols` never manages directly; daemon mode runs core headless + scheduler clo
 ## 4. File Analysis
 ### Rust core essentials
 - `lib.rs`: Purpose: crate root + re-exports. Key exports Core/CoreCommand/CoreResponse. Depends on command/paths/process/project/runtime/service/settings.
-- `app.rs`: Purpose: shared Inner state + command impls. Holds supervisor/runtimes/services/certs/php/web/terminals/journal/workers/tunnels/api/ai. Lock order domains-first; every core lock goes through `lock()` (poisoned guards recovered) and is released before any blocking I/O.
+- `app.rs`: Purpose: shared Inner state + command impls. Holds supervisor/runtimes/services/certs/php/web/terminals/journal/workers/tunnels/api/ai. Lock order domains-first; every core lock goes through `lock()` (poisoned guards recovered) and is released before any blocking I/O. In `sync_auto_domains`, checks whether any domain already serves a project folder or root to prevent duplicate auto-domains (e.g. slugifying `.local` into `-local.local`), strips default TLD suffixes, and auto-links project IDs in `add_domain`.
 - `command.rs`: Purpose: single dispatcher. ~150 variants covering processes/runtimes/projects/services/web/DB/quickapps/AI/tunnels. Input CoreCommand JSON, output CoreResponse or Diagnostic.
 - `control.rs`: Purpose: named-pipe RPC. control.json {pipe,token,pid}. Token-gated JSON lines. Handles shutdown handover.
 - `api.rs`: Purpose: localhost HTTP. Port 7420, bearer SHA256, Origin reject, read_only vs operate lists, 1MB cap.

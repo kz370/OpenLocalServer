@@ -204,8 +204,10 @@ The token is stored in the OS credential manager (Windows Credential Manager), n
 
 ### SSL / HTTPS notes
 
-- Enabling `https` on a domain and running `ols_apply_web` generates the web server config with SSL. However, **Let's Encrypt requires a real public DNS hostname** — it will not issue certificates for `.local`, `.test`, `.localhost`, or other local-only suffixes. For local-only domains, use self-signed certs or skip SSL.
-- `ols_apply_web` applies web config to all domains. It does not take a hostname argument; it reads the `https` flag from each domain. Set `https: true` on the domain first, then run `ols_apply_web`.
+- `https` (boolean, defaults to `true`) enables SSL for the site. `redirect_https` (boolean) automatically redirects HTTP traffic to HTTPS.
+- OLS includes a built-in Local Certificate Authority (Local CA) that automatically provisions and installs valid, trusted SSL certificates for all local domains (including `.local`, `.test`, `.localhost`, and custom tlds) without requiring public DNS or manual configuration.
+- To enable HTTPS on an existing domain via MCP, call `ols_update_domain` with `{"hostname": "mysite.local", "https": true, "redirect_https": true}`, followed by `ols_apply_web` to reload web server configurations.
+- `ols_apply_web` regenerates web server configurations and ensures local certificates are minted for all domains where `https: true`. It does not take arguments and affects active web servers (Nginx, Apache, Caddy).
 
 ### write_web_config (via ols_run_command)
 

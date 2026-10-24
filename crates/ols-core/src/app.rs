@@ -951,6 +951,30 @@ impl Inner {
                 domain.root
             ))
         })?;
+        if domain.project_id.is_none() {
+            let root_path = Path::new(&domain.root);
+            let mut projects = lock(&self.projects);
+            let matched_id = projects.list().iter().find_map(|p| {
+                if Path::new(&p.path) == root_path {
+                    Some(p.id.clone())
+                } else {
+                    None
+                }
+            });
+            if let Some(id) = matched_id {
+                domain.project_id = Some(id);
+            } else if root_path.is_dir() {
+                let roots = self.string_list(PROJECT_ROOTS);
+                if let Some(parent) = root_path.parent() {
+                    let parent_str = parent.display().to_string();
+                    if roots.iter().any(|r| r.eq_ignore_ascii_case(&parent_str)) {
+                        if let Ok(p) = projects.register(&domain.root) {
+                            domain.project_id = Some(p.id);
+                        }
+                    }
+                }
+            }
+        }
         let hostname = domain.hostname.clone();
         let added = self.domains.lock().unwrap().add(domain)?;
         self.remove_skip(AUTO_SKIP, &hostname)?;
@@ -1535,27 +1559,54 @@ impl Inner {
         let projects = self.projects.lock().unwrap().list();
         let mut created = 0;
         let mut created_hosts: Vec<String> = Vec::new();
-        for p in projects {
+        for p in &projects {
             let path = Path::new(&p.path);
-            let (taken, linked) = {
+            if !path.is_dir() {
+                continue;
+            }
+
+            let tld_suffix = format!(".{default_tld}");
+            let effective_name = p.name.strip_suffix(&tld_suffix).unwrap_or(&p.name);
+            let candidate_hostname = crate::domain::apply_template(&auto_template, effective_name);
+
+            let mut domain_to_link: Option<Domain> = None;
+            let already_served = {
                 let domains = self.domains.lock().unwrap();
-                let hostname = crate::domain::apply_template(&auto_template, &p.name);
-                (
-                    domains.get(&hostname).is_some() || skip.contains(&hostname),
-                    domains
-                        .list()
-                        .iter()
-                        .any(|d| d.project_id.as_deref() == Some(&p.id)),
-                )
+                let linked = domains
+                    .list()
+                    .iter()
+                    .any(|d| d.project_id.as_deref() == Some(&p.id));
+
+                let matching_by_path = domains.list().into_iter().find(|d| {
+                    let d_folder = site_folder(d, &projects);
+                    Path::new(&d_folder) == path || Path::new(&d.root) == path
+                });
+
+                if let Some(mut existing) = matching_by_path {
+                    if existing.project_id.as_deref() != Some(&p.id) {
+                        existing.project_id = Some(p.id.clone());
+                        domain_to_link = Some(existing);
+                    }
+                    true
+                } else {
+                    linked
+                        || domains.get(&candidate_hostname).is_some()
+                        || skip.contains(&candidate_hostname)
+                }
             };
-            if taken || linked || !path.is_dir() {
+
+            if let Some(domain) = domain_to_link {
+                let _ = self.domains.lock().unwrap().update(domain);
+            }
+
+            if already_served {
                 continue;
             }
             let Some((kind, root)) = auto_site(path) else {
                 continue;
             };
             let domain = Domain {
-                hostname: crate::domain::apply_template(&auto_template, &p.name),
+                hostname: candidate_hostname,
                 project_id: Some(p.id.clone()),
                 root: root.display().to_string(),
                 kind,
@@ -4792,6 +4843,52 @@ mod project_skip_tests {
             "a scan that reached the deleted folder by another route must still skip it"
         );
         assert!(skip_matches(&skipped, &raw));
+    }
+
+    #[test]
+    fn sync_auto_domains_does_not_duplicate_existing_domain_for_folder() {
+        let (inner, home) = inner();
+        let root = home.paths.data_dir().join("www");
+        let site_dir = project_dir(&root, "test366.local");
+        inner
+            .remember_projects_root(&root.display().to_string())
+            .unwrap();
+
+        // Add domain explicitly (e.g. via MCP ols_add_domain) without project_id
+        let d = Domain {
+            hostname: "test366.local".into(),
+            project_id: None,
+            root: site_dir.display().to_string(),
+            kind: SiteKind::Static,
+            enabled: true,
+            https: true,
+            redirect_https: true,
+            server: Some("caddy".into()),
+            ..Default::default()
+        };
+        inner.add_domain(d).unwrap();
+
+        // sync_auto_domains runs (as happens on watcher or refresh)
+        let created = inner.sync_auto_domains().unwrap();
+        assert_eq!(
+            created, 0,
+            "must not create a duplicate auto domain for existing folder"
+        );
+
+        let custom_domains: Vec<_> = inner
+            .domains
+            .lock()
+            .unwrap()
+            .list()
+            .into_iter()
+            .filter(|d| d.hostname != "openlocalserver.test")
+            .collect();
+        assert_eq!(custom_domains.len(), 1);
+        assert_eq!(custom_domains[0].hostname, "test366.local");
+        assert!(
+            custom_domains[0].project_id.is_some(),
+            "should link project_id to existing domain"
+        );
     }
 }
 
