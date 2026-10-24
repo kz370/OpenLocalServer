@@ -224,10 +224,20 @@ jobs:
 
       - name: Install minisign
         run: |
-          choco install minisign --yes --no-progress --limit-output
-          if (Test-Path 'C:\ProgramData\chocolatey\bin') {
-            "C:\ProgramData\chocolatey\bin" >> $env:GITHUB_PATH
+          $expectedHash = '37b600344e20c19314b2e82813db2bfdcc408b77b876f7727889dbd46d539479'
+          $zipPath = Join-Path $env:RUNNER_TEMP 'minisign.zip'
+          $extractDir = Join-Path $env:RUNNER_TEMP 'minisign'
+          Invoke-WebRequest -Uri 'https://github.com/jedisct1/minisign/releases/download/0.12/minisign-0.12-win64.zip' -OutFile $zipPath
+          $actualHash = (Get-FileHash -Path $zipPath -Algorithm SHA256).Hash.ToLower()
+          if ($actualHash -ne $expectedHash) {
+            throw "SHA-256 mismatch for minisign binary! Expected $expectedHash but got $actualHash"
           }
+          Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
+          $binDir = Join-Path $extractDir 'minisign-win64\x86_64'
+          if (-not (Test-Path (Join-Path $binDir 'minisign.exe'))) {
+            throw "minisign.exe not found in extracted directory $binDir"
+          }
+          $binDir >> $env:GITHUB_PATH
 
       - name: Write and sign the update manifest
         id: manifest
@@ -245,10 +255,10 @@ jobs:
           }
 
           $minisign = (Get-Command minisign -ErrorAction SilentlyContinue)?.Source
-          if (-not $minisign -and (Test-Path 'C:\ProgramData\chocolatey\bin\minisign.exe')) {
-            $minisign = 'C:\ProgramData\chocolatey\bin\minisign.exe'
+          if (-not $minisign -and (Test-Path "$env:RUNNER_TEMP\minisign\minisign-win64\x86_64\minisign.exe")) {
+            $minisign = "$env:RUNNER_TEMP\minisign\minisign-win64\x86_64\minisign.exe"
           }
-          if (-not $minisign) { throw 'minisign executable not found in PATH or Chocolatey bin' }
+          if (-not $minisign) { throw 'minisign executable not found in PATH or runner temp' }
 
           # The key is a secret so it never lands in the repo or in a log. It is written
           # to the runner's own temp and removed in the same step; a private key left on a
