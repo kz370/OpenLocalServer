@@ -117,20 +117,18 @@ Source: "{#LibDir}\ols-mcp.exe"; DestDir: "{app}"; Flags: ignoreversion
 ; default install can cap CPU with nothing configured.
 Source: "{#OutputDir}\cpulimit.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#LibDir}\*.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
-Source: "..\src-tauri\icons\icon.ico"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#LibDir}\ols-helper-icon.ico"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#LibDir}\ols-mcp-icon.ico"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#LibDir}\olsc-cli-icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"
 
 [Icons]
-Name: "{autoprograms}\{#AppName}"; Filename: "{app}\OLS.exe"; IconFilename: "{app}\icon.ico"; WorkingDir: "{app}"
-Name: "{autodesktop}\{#AppName}"; Filename: "{app}\OLS.exe"; IconFilename: "{app}\icon.ico"; WorkingDir: "{app}"; Tasks: desktopicon
-Name: "{autoprograms}\{#AppName} Helper"; Filename: "{app}\ols-helper.exe"; IconFilename: "{app}\ols-helper-icon.ico"; WorkingDir: "{app}"
-Name: "{autoprograms}\{#AppName} MCP"; Filename: "{app}\ols-mcp.exe"; IconFilename: "{app}\ols-mcp-icon.ico"; WorkingDir: "{app}"
-Name: "{autoprograms}\{#AppName} CLI"; Filename: "{app}\olsc.exe"; IconFilename: "{app}\olsc-cli-icon.ico"; WorkingDir: "{app}"
+; Icons are embedded directly in each executable binary, so shortcuts read them
+; natively from the target .exe without copying loose .ico files to {app}.
+Name: "{autoprograms}\{#AppName}"; Filename: "{app}\OLS.exe"; WorkingDir: "{app}"
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\OLS.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autoprograms}\{#AppName} Helper"; Filename: "{app}\ols-helper.exe"; WorkingDir: "{app}"
+Name: "{autoprograms}\{#AppName} MCP"; Filename: "{app}\ols-mcp.exe"; WorkingDir: "{app}"
+Name: "{autoprograms}\{#AppName} CLI"; Filename: "{app}\olsc.exe"; WorkingDir: "{app}"
 
 [Run]
 ; The "Launch OLS" checkbox on the final page, ticked by default.
@@ -715,17 +713,17 @@ begin
   Shipped := '|' + Lowercase(AppExe) + '|' + Lowercase(DaemonExe) + '|' +
              Lowercase(HelperExe) + '|' + Lowercase(LimiterExe) + '|' +
              Lowercase(McpExe) + '|' +
-             'icon.ico|unins000.exe|unins000.dat|';
+             'unins000.exe|unins000.dat|';
   if FindFirst(ExpandConstant('{app}\*'), Found) then
   begin
     try
       repeat
         { The extension test has to exclude the empty extension explicitly.
-          Pos('', '.dll.exe') is 1 -- an empty needle is found at the start --
+          Pos('', '.dll.exe.ico') is 1 -- an empty needle is found at the start --
           so without this the walk matches "." and ".." and the log fills with
           "Could not remove the leftover file C:\...\." on every install. }
         if (ExtractFileExt(Found.Name) <> '') and
-           (Pos(Lowercase(ExtractFileExt(Found.Name)), '.dll.exe') > 0) and
+           (Pos(Lowercase(ExtractFileExt(Found.Name)), '.dll.exe.ico') > 0) and
            (Pos('|' + Lowercase(Found.Name) + '|', Shipped) = 0) then
         begin
           Path := ExpandConstant('{app}\') + Found.Name;

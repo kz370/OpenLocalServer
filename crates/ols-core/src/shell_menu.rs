@@ -71,14 +71,18 @@ fn find_cli() -> Option<std::path::PathBuf> {
 /// because that is the only folder both are guaranteed to share.
 fn menu_icon(cli: &Path) -> String {
     let dir = cli.parent().unwrap_or(cli);
-    let ico = dir.join("icon.ico");
-    if ico.is_file() {
-        ico.display().to_string()
+    let app = dir.join("OLS.exe");
+    if app.is_file() {
+        app.display().to_string()
     } else {
-        // No .ico beside the CLI: the app's own image is the next best thing, and on
-        // a dev build (where the CLI is not installed next to anything) it is the only
-        // one there is.
-        cli.display().to_string()
+        let ico = dir.join("icon.ico");
+        if ico.is_file() {
+            ico.display().to_string()
+        } else {
+            // No OLS.exe or .ico beside the CLI: the CLI's own image is the fallback
+            // (e.g. on dev builds where the CLI is not beside an install).
+            cli.display().to_string()
+        }
     }
 }
 
@@ -266,10 +270,12 @@ mod tests {
         let dir = home.paths.root().join("install");
         std::fs::create_dir_all(&dir).unwrap();
         let cli = dir.join(CLI);
-        // No .ico yet: the CLI is the fallback, which is what a dev build has.
+        // No .ico or OLS.exe yet: the CLI is the fallback, which is what a dev build has.
         assert_eq!(menu_icon(&cli), cli.display().to_string());
         std::fs::write(dir.join("icon.ico"), b"x").unwrap();
         assert_eq!(menu_icon(&cli), dir.join("icon.ico").display().to_string());
+        std::fs::write(dir.join("OLS.exe"), b"x").unwrap();
+        assert_eq!(menu_icon(&cli), dir.join("OLS.exe").display().to_string());
     }
 
     /// The lookup that caused it. Two independent mistakes, so two checks: the name
