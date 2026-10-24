@@ -141,8 +141,36 @@ The token is stored in the OS credential manager (Windows Credential Manager), n
 ## Domain creation notes
 
 - `kind` accepts plain strings: `"php"`, `"static"`, `"html"`, `"proxy"` (case-insensitive). Omitted or unrecognized values default to PHP.
-- `root` defaults to `OLS_SITES_DIR` env var, then the `domains.sites_dir` setting, then the install's `sites` folder. It must be an absolute folder path.
+- `root` defaults to `OLS_SITES_DIR` env var, then the `domains.sites_dir` setting, then the install's `sites` folder. It must be an absolute folder path (e.g. `C:\sites\shop`). A relative path is rejected with an actionable error.
 - `php` version (e.g. `"8.3"`) is used only when `kind` is `php`.
+- `https` (boolean) enables SSL for the site. `redirect_https` (boolean) redirects HTTP to HTTPS.
+- `enabled` (boolean) toggles the site on/off.
+
+### SSL / HTTPS notes
+
+- Enabling `https` on a domain and running `ols_apply_web` generates the web server config with SSL. However, **Let's Encrypt requires a real public DNS hostname** — it will not issue certificates for `.local`, `.test`, `.localhost`, or other local-only suffixes. For local-only domains, use self-signed certs or skip SSL.
+- `ols_apply_web` applies web config to all domains. It does not take a hostname argument; it reads the `https` flag from each domain. Set `https: true` on the domain first, then run `ols_apply_web`.
+
+### write_web_config (via ols_run_command)
+
+`ols_run_command` runs any `CoreCommand` variant. For `write_web_config`, `args` must include:
+
+```json
+{
+  "type": "write_web_config",
+  "hostname": "shop.test",
+  "part": "site",
+  "content": "<nginx config text here>"
+}
+```
+
+- `type` must be `"write_web_config"` (internally-tagged CoreCommand variant).
+- `hostname` — the site hostname.
+- `part` — one of `"main"`, `"site"`, `"custom"` (maps to `ConfigPart`).
+- `content` — the full config file text (required).
+
+Missing `content` or an invalid `part` produces a clear serde error.
+
 
 ## Safety
 

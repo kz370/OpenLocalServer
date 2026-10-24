@@ -331,6 +331,12 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
             if let Some(enabled) = opt_bool!("enabled") {
                 domain.enabled = enabled;
             }
+            if let Some(https) = opt_bool!("https") {
+                domain.https = https;
+            }
+            if let Some(redirect_https) = opt_bool!("redirect_https") {
+                domain.redirect_https = redirect_https;
+            }
             C::AddDomain { domain }
         }
         "ols_update_domain" => {
@@ -342,10 +348,35 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
             } else {
                 args["kind"] = json!({"type": "php", "version": null});
             }
-            // Default root to the installation's sites folder.
+            // Default root to the installation's sites folder. Respect OLS_SITES_DIR
+            // env var, then the configured domains.sites_dir setting.
             if args.get("root").is_none() {
-                let sites_dir = ols_core::paths::AppPaths::resolve().sites_dir();
+                let sites_dir: std::path::PathBuf = std::env::var("OLS_SITES_DIR")
+                    .ok()
+                    .filter(|s| !s.is_empty())
+                    .map(std::path::PathBuf::from)
+                    .or_else(|| {
+                        ols_core::settings::SettingsService::load(
+                            &ols_core::paths::AppPaths::resolve(),
+                        )
+                        .ok()
+                        .and_then(|s| s.get("domains.sites_dir").cloned())
+                        .and_then(|v| v.as_str().map(|s| s.to_owned()))
+                        .filter(|s| !s.is_empty())
+                        .map(std::path::PathBuf::from)
+                    })
+                    .unwrap_or_else(|| ols_core::paths::AppPaths::resolve().sites_dir());
                 args["root"] = json!(sites_dir.to_string_lossy());
+            }
+            // Validate the root is an absolute folder path before sending to core.
+            if let Some(root) = args.get("root").and_then(|v| v.as_str()) {
+                if !std::path::Path::new(root).is_absolute() {
+                    return Err(format!(
+                        "failed to parse domain args: root '{root}' is not an absolute folder path. \
+                         Use an absolute path (e.g. C:\\sites\\test559.local) or set domains.sites_dir \
+                         in Settings to a default sites folder.",
+                    ));
+                }
             }
             let mut domain: ols_core::domain::Domain = serde_json::from_value(args)
                 .map_err(|e| format!("failed to parse domain args: {e}"))?;
@@ -358,6 +389,12 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
             }
             if let Some(enabled) = opt_bool!("enabled") {
                 domain.enabled = enabled;
+            }
+            if let Some(https) = opt_bool!("https") {
+                domain.https = https;
+            }
+            if let Some(redirect_https) = opt_bool!("redirect_https") {
+                domain.redirect_https = redirect_https;
             }
             C::UpdateDomain { domain }
         }
