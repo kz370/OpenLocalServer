@@ -150,6 +150,7 @@ export function UpdatesCard() {
 
   const [status, setStatus] = useState<UpdaterStatus | null>(null)
   const [info, setInfo] = useState<UpdateInfo | null>(null)
+  const [lastChecked, setLastChecked] = useState<Date | null>(null)
   const [showConfig, setShowConfig] = useState(false)
   const [endpointInput, setEndpointInput] = useState('')
   const [publicKeyInput, setPublicKeyInput] = useState('')
@@ -177,6 +178,7 @@ export function UpdatesCard() {
       const r = await runCommand({ type: 'check_update' })
       if (r.type === 'update') {
         setInfo(r.update)
+        setLastChecked(new Date())
       }
     })
 
@@ -242,13 +244,17 @@ export function UpdatesCard() {
   const hasUpdate = info?.status === 'update_available'
   const isDownloaded = !!info?.downloaded
 
-  // Friendly error message instead of raw crypto / internal network errors
+  // Friendly error message preserving detailed diagnostic if available
   const displayError = error
     ? {
-      problem: 'Unable to check for updates right now.',
-      cause: 'There was a problem contacting the update service or verifying the release files.',
-      fix: 'Please check your internet connection, or download the installer manually from the GitHub Releases page.',
+      problem: error.problem || 'Unable to check for updates right now.',
+      cause: error.cause || 'There was a problem contacting the update service or verifying the release files.',
+      fix: error.fix || 'Please check your internet connection, or download the installer manually from the GitHub Releases page.',
     }
+    : null
+
+  const lastCheckedText = lastChecked
+    ? `Checked ${lastChecked.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
     : null
 
   return (
@@ -305,19 +311,25 @@ export function UpdatesCard() {
           </div>
         )}
 
-        {/* Up-to-date notice (only when checked and no update is available) */}
-        {info?.status === 'up_to_date' && !isDownloaded && (
-          <div className="flex items-center gap-2 text-sm text-success">
-            <CheckCircle className="size-4" />
-            You are on the latest version (v{info.latest}).
-          </div>
-        )}
-
-        {/* Development build notice (only when checked and no update is available) */}
-        {info?.status === 'development_version' && !isDownloaded && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <CheckCircle className="size-4 text-info" />
-            Running development build (v{info.latest}).
+        {/* Compact status row (borderless, directly above action buttons) */}
+        {!hasUpdate && !isDownloaded && info && (
+          <div className="flex items-center justify-between text-xs text-muted-foreground py-0.5">
+            <div className="flex items-center gap-1.5">
+              {info.status === 'development_version' ? (
+                <>
+                  <CheckCircle className="size-3.5 text-info shrink-0" />
+                  <span className="font-medium text-foreground/90">Development build:</span>
+                  <span>v{status?.current || info.current} (latest release: v{info.latest})</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="size-3.5 text-success shrink-0" />
+                  <span className="font-medium text-foreground/90">Up to date:</span>
+                  <span>You are on the latest version (v{info.latest})</span>
+                </>
+              )}
+            </div>
+            {lastCheckedText && <span>{lastCheckedText}</span>}
           </div>
         )}
 

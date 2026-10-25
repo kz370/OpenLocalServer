@@ -1,13 +1,8 @@
 use super::super::*;
-use crate::command::{Core, CoreCommand};
-use serde_json::{json, Value};
-use std::collections::{BTreeMap, HashMap};
-use std::io::{Read, Write};
-use std::net::TcpListener;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
-
 use super::mock::*;
+use crate::ai::providers::{authorize, client};
+use crate::command::CoreCommand;
+use std::collections::BTreeMap;
 #[test]
 fn only_loopback_addresses_are_local() {
     for url in [

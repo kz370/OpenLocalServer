@@ -7,7 +7,7 @@
     <link rel="canonical" href="./" />
     <meta
       name="description"
-      content="Open Local Server (OLS) is a local development environment manager for Windows. It installs and supervises runtimes, gives every project its own .test domain with trusted HTTPS, and runs databases, mail and caches behind one core — from a desktop app, the olsc command line, or a local HTTP API."
+      content="Open Local Server (OLS) is a local development environment manager for Windows. It installs and supervises runtimes, gives every project its own .test domain with trusted HTTPS, and runs databases, mail and caches behind one core — from a desktop app, the olsc command line, a local HTTP API, or an MCP server."
     />
     <meta name="color-scheme" content="dark" />
     <!--
@@ -25,7 +25,7 @@
     <meta property="og:type" content="website" />
     <meta
       property="og:description"
-      content="Open Local Server: runtimes, sites, databases and trusted HTTPS for Windows local development. One core engine, three front doors: desktop app, olsc command line, local HTTP API."
+      content="Open Local Server: runtimes, sites, databases and trusted HTTPS for Windows local development. One core engine, four front doors: desktop app, olsc command line, local HTTP API, and MCP server."
     />
     <meta property="og:image" content="website/assets/img/dashboard.webp" />
   </head>
@@ -53,7 +53,7 @@
         <div class="nav__cta">
           <a
             class="btn btn--primary btn--sm"
-            href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-1.1.0-setup.exe"
+            href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-2.4.0-setup.exe"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" />
@@ -95,7 +95,7 @@
             <div class="hero__actions">
               <a
                 class="btn btn--primary"
-                href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-1.1.0-setup.exe"
+                href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-2.4.0-setup.exe"
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" />
@@ -110,16 +110,16 @@
               </a>
             </div>
             <p class="hero__note">
-              Windows 10 / 11, 64-bit. <code>OLS-1.1.0-setup.exe</code>, a
-              <a href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-1.1.0-portable-win-x64.zip">portable zip</a>,
-              and <a href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-1.1.0-SHA256SUMS.txt">SHA-256 sums</a>
+              Windows 10 / 11, 64-bit. <code>OLS-2.4.0-setup.exe</code>, a
+              <a href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-2.4.0-portable-win-x64.zip">portable zip</a>,
+              and <a href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-2.4.0-SHA256SUMS.txt">SHA-256 sums</a>
               to check either against. Source on
               <a href="https://github.com/kz370/OpenLocalServer">GitHub</a>.
             </p>
             <ul class="facts">
               <li>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
-                v1.1.0
+                v2.4.0
               </li>
               <li>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
@@ -131,7 +131,7 @@
               </li>
               <li>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
-                GUI · CLI · HTTP API
+                GUI · CLI · API · MCP
               </li>
             </ul>
           </div>
@@ -208,11 +208,19 @@
                   <small>127.0.0.1:7420 · bearer token</small>
                 </span>
               </div>
+              <div class="door">
+                <span class="door__icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="10" rx="2" /><circle cx="12" cy="5" r="2" /><path d="M12 7v4" /><line x1="8" y1="16" x2="8" y2="16" /><line x1="16" y1="16" x2="16" y2="16" /></svg>
+                </span>
+                <span>
+                  <b>MCP Server</b>
+                  <small>ols-mcp · stdio for Claude &amp; Cursor</small>
+                </span>
+              </div>
             </div>
             <p class="flow">
-              All three send the same <code>CoreCommand</code> JSON to
-              <code>ols-core</code>. The CLI drives the open app, or starts a
-              background daemon when the app is closed.
+              All four send the same <code>CoreCommand</code> JSON to
+              <code>ols-core</code>. The CLI and MCP server drive the running app, or communicate through the local control channel.
             </p>
           </div>
         </div>
@@ -223,10 +231,9 @@
         <div class="wrap">
           <div class="section__head section__head--center reveal">
             <div class="eyebrow">Key features</div>
-            <h2>Everything a local environment needs, under one supervisor</h2>
+            <h2>Everything a local environment needs, with native AI MCP control</h2>
             <p>
-              No hand-edited paths, no manual certificate trust, no per-project
-              README telling you which commands to run in which order.
+              Runtimes, sites, databases, trusted HTTPS, and a built-in Model Context Protocol server for AI coding assistants.
             </p>
           </div>
 
@@ -241,10 +248,25 @@
                 that a project can override.
               </p>
               <ul>
-                <li>Multiple versions of PHP and Node side by side, plus Composer, Python venvs, portable Git and k6</li>
-                <li>Any PHP, Node or Python already on this machine: scan a folder, or locate one executable</li>
+                <li>PHP NTS 8.1–8.5 and Node 22/24 side by side, plus Composer, portable Git and k6</li>
+                <li>Python support: detects system Python (3.7–3.15) and local virtual environments (<code>.venv</code>, <code>venv</code>)</li>
+                <li>Bring your own: scan any folder for existing installs, or locate one executable</li>
                 <li>Per-version extensions, Xdebug and PECL; corepack for npm, pnpm and yarn</li>
                 <li>Downloads verified against vendor SHA-256; plugins can add more runtimes</li>
+              </ul>
+            </article>
+
+            <article class="card reveal">
+              <span class="card__icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="10" rx="2" /><circle cx="12" cy="5" r="2" /><path d="M12 7v4" /><line x1="8" y1="16" x2="8" y2="16" /><line x1="16" y1="16" x2="16" y2="16" /></svg>
+              </span>
+              <h3>Model Context Protocol (MCP)</h3>
+              <p>Let AI coding assistants control and configure your local stack.</p>
+              <ul>
+                <li>Native stdio MCP server (<code>ols-mcp.exe</code>) shipped directly in the installer</li>
+                <li>Direct integration with Claude Desktop, Cursor, VS Code, LM Studio, and AGY</li>
+                <li>Tools to inspect site folders, detect frameworks &amp; venvs, and create domains</li>
+                <li>Manage services, query database tables, and run SQL queries through natural language</li>
               </ul>
             </article>
 
@@ -258,9 +280,11 @@
                 trusts.
               </p>
               <ul>
-                <li>Any domain plus wildcard subdomains; a folder gets an automatic <code>&lt;folder&gt;.test</code> domain</li>
+                <li>Any domain plus wildcard subdomains; automatic <code>&lt;folder&gt;.test</code> resolution</li>
+                <li>Automatic welcome page (HTML or PHP info) generated if document root has no index</li>
                 <li>On-device CA, 397-day leaf certificates, auto-renew under 30 days left</li>
-                <li>Built-in wildcard DNS for <code>.test</code>, <code>.localhost</code> and <code>.internal</code>; optional elevated helper for everything else</li>
+                <li>Multi-interface binding (<code>0.0.0.0</code>) for LAN access and router port forwarding</li>
+                <li>Site logos and icons with custom WebP uploads and offline Font Awesome catalog</li>
               </ul>
             </article>
 
@@ -274,26 +298,10 @@
                 diff.
               </p>
               <ul>
-                <li>Nginx, Apache and Caddy — move a site from one to another</li>
+                <li>Nginx 1.28, Apache 2.4 and Caddy 2.11 — switch a site with one click</li>
                 <li>Managed, Advanced and Manual modes; validate before reload, roll back on failure</li>
                 <li>Drift detection plus config history with diff and restore</li>
-              </ul>
-            </article>
-
-            <article class="card reveal">
-              <span class="card__icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" /></svg>
-              </span>
-              <h3>Projects &amp; reproducible environments</h3>
-              <p>
-                A project that describes itself, and a setup that can be previewed
-                before it touches anything.
-              </p>
-              <ul>
-                <li>Framework and version detected from <code>composer.json</code>, <code>package.json</code>, <code>manage.py</code></li>
-                <li>Manifests in <code>.openlocalserver/*.yaml</code>: environment, services, commands, lock file</li>
-                <li>14-step setup: resolve, plan, conflict report, dry run, apply — journaled, with rollback</li>
-                <li>Profiles, snapshots (zip, clone, import/export) and a lossless <code>.env</code> editor</li>
+                <li>Reverse proxy to any local or remote host and port</li>
               </ul>
             </article>
 
@@ -301,43 +309,29 @@
               <span class="card__icon">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="6" rx="8" ry="3" /><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6" /><path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" /></svg>
               </span>
-              <h3>Databases &amp; services</h3>
-              <p>Engines, users and backups managed per project, with mail capture.</p>
+              <h3>Databases &amp; SQL tools</h3>
+              <p>Engines, users, backups, and built-in database inspection tools.</p>
               <ul>
-                <li>MariaDB, PostgreSQL, MongoDB, Redis, Memcached, Mailpit, SQLite</li>
-                <li>Per-engine database and user management, connection details, backup and restore with a safety copy first</li>
-                <li>One-click GUIs: HeidiSQL, pgAdmin 4, NoSQLBooster, Tiny RDM</li>
-                <li>Import databases from other common Windows stacks without an SQL dump</li>
+                <li>MariaDB 11.4, PostgreSQL 17, MongoDB, Redis, Memcached, Mailpit, SQLite</li>
+                <li>Database tools: table listing, schema inspection, and SQL query execution</li>
+                <li>One-click external GUIs: HeidiSQL, pgAdmin 4, NoSQLBooster, Tiny RDM</li>
+                <li>Live database import from other common Windows stacks without manual SQL dumps</li>
               </ul>
             </article>
 
             <article class="card reveal">
               <span class="card__icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18" /><path d="m7 14 3-4 3 3 5-7" /></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" /></svg>
               </span>
-              <h3>Dashboard &amp; diagnostics</h3>
+              <h3>Projects &amp; site bundles</h3>
               <p>
-                Health, traffic and findings in one place, with the fix next to the
-                finding.
+                Reproducible environments, scheduled backups, and portable site bundles.
               </p>
               <ul>
-                <li>Services card for all nine built-ins with colour-coded actions and TCP health</li>
-                <li>Traffic graph built from the web access log, with a hover inspector</li>
-                <li>Diagnostics as Problem / Cause / Fix, safe one-click auto-repair and an ignore list</li>
-                <li>Unified log viewer, process manager, <code>Ctrl+K</code> search and <code>Ctrl+Shift+P</code> command palette</li>
-              </ul>
-            </article>
-
-            <article class="card reveal">
-              <span class="card__icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></svg>
-              </span>
-              <h3>Quick Apps &amp; commands</h3>
-              <p>Start from a recipe, then run what the project already exposes.</p>
-              <ul>
-                <li>13 built-in recipes: Laravel, Symfony, WordPress, Express, React/Vite, Vue, Next.js, Django, FastAPI, static sites</li>
-                <li>Validate, review the plan, run — with command history</li>
-                <li>Discovered Composer and npm scripts, one click to run, output kept in a ring</li>
+                <li>Framework detection from <code>composer.json</code>, <code>package.json</code>, <code>manage.py</code></li>
+                <li>14-step setup pipeline: resolve, plan, conflict report, dry run, apply with rollback</li>
+                <li>Site bundles: export/import sites as <code>*.olsbundle.zip</code> with encrypted <code>.env</code> and database dumps</li>
+                <li>Scheduled automatic backups with configurable retention and lossless <code>.env</code> editor</li>
               </ul>
             </article>
 
@@ -345,12 +339,29 @@
               <span class="card__icon">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5" /><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.5-1.5" /></svg>
               </span>
-              <h3>Tunnels &amp; traffic inspector</h3>
-              <p>Share a local site on purpose, and see what comes back.</p>
+              <h3>Dynamic DNS &amp; tunnels</h3>
+              <p>Broadcast sites to the web or sync custom domains with dynamic DNS.</p>
               <ul>
-                <li>Cloudflare, ngrok, LocalTunnel and Tailscale behind one provider abstraction</li>
-                <li>Exposure confirmation, optional password, public badge, one-click stop</li>
-                <li>Forwarding proxy with a redacted request log, replay and a webhook tester</li>
+                <li>Dynamic DNS: 12+ providers (Cloudflare, DuckDNS, No-IP, Route53, etc.) with auto-sync</li>
+                <li>Site Broadcast controls with live status, one-click public URL copying, and instant toggle</li>
+                <li>Tunnels: Cloudflare, ngrok, LocalTunnel, Tailscale with exposure confirmation</li>
+                <li>Forwarding traffic inspector with request log, replay, and webhook tester</li>
+              </ul>
+            </article>
+
+            <article class="card reveal">
+              <span class="card__icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18" /><path d="m7 14 3-4 3 3 5-7" /></svg>
+              </span>
+              <h3>Dashboard, diagnostics &amp; manual</h3>
+              <p>
+                Real-time health, traffic, diagnostics, in-app updates, and offline docs.
+              </p>
+              <ul>
+                <li>Services overview with colour-coded actions and live TCP health</li>
+                <li>Traffic graph built from web access logs, with hover request inspection</li>
+                <li>Diagnostics as Problem / Cause / Fix with safe one-click auto-repair</li>
+                <li>Built-in User Manual &amp; release notes viewer in Settings, plus verified self-updater</li>
               </ul>
             </article>
 
@@ -359,12 +370,12 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16v12H4z" /><path d="m4 8 8 5 8-5" /></svg>
               </span>
               <h3>CLI, API &amp; automation</h3>
-              <p>The same engine, reachable the way your tools expect.</p>
+              <p>The same engine, reachable the way your tools and scripts expect.</p>
               <ul>
-                <li>Ships as <code>olsc.exe</code> beside the app, so <code>olsc</code> works with the GUI closed, through a background core</li>
-                <li>Local HTTP API with a bearer token and read-only vs operate scopes</li>
-                <li>Queue workers, a cron scheduler with no overlapping runs, and portable-pty terminals</li>
-                <li>Git manager, k6 load testing, a signed self-updater and declarative plugins</li>
+                <li>Ships as <code>olsc.exe</code> beside the app; works with GUI closed via background core</li>
+                <li>Local HTTP API (<code>127.0.0.1:7420</code>) with bearer tokens and scoped permissions</li>
+                <li>13 Quick App recipes (Laravel, Symfony, WordPress, Vite, Next.js, Django, FastAPI…)</li>
+                <li>Queue workers, cron scheduler with no overlapping runs, and portable-pty terminals</li>
               </ul>
             </article>
           </div>
@@ -542,7 +553,7 @@
             <div class="step">
               <h3>Install the app</h3>
               <p>
-                Run the downloaded <code>OLS-1.1.0-setup.exe</code> and open OLS.
+                Run the downloaded <code>OLS-2.4.0-setup.exe</code> and open OLS.
                 Windows 10 or 11, 64-bit.
               </p>
             </div>
@@ -570,11 +581,11 @@
           </div>
 
           <div class="optional reveal">
-            <h3 class="optional__title">Optional: the <code>olsc</code> command</h3>
+            <h3 class="optional__title">Command line (<code>olsc</code>) &amp; AI (<code>ols-mcp</code>)</h3>
             <p>
-              The install folder holds <code>OLS.exe</code>, the app, and
-              <code>olsc.exe</code>, the command line — two separate programs with two
-              separate names. (<code>olsc</code> rather than <code>ols</code> because
+              The install folder (<code>C:\OLS</code>) holds <code>OLS.exe</code> (the app),
+              <code>olsc.exe</code> (the command line), and <code>ols-mcp.exe</code> (the MCP
+              server for AI assistants). (<code>olsc</code> rather than <code>ols</code> because
               Windows does not tell file names apart by case: the app is
               <code>OLS.exe</code>, so anything called <code>ols</code> finds the app
               and opens a window instead of running a command.) The installer does not
@@ -585,17 +596,16 @@
               <li>
                 <b>Add the folder to PATH</b> — Windows <b>Settings → System → About →
                 Advanced system settings → Environment Variables</b>, add
-                <code>C:\OpenLocalServer</code> under <b>Path</b>, then open a new
+                <code>C:\OLS</code> under <b>Path</b>, then open a new
                 terminal. <code>olsc status</code> works from there on.
               </li>
               <li>
                 <b>Call it by its full path</b> — no change to the machine:
-                <code>C:\OpenLocalServer\olsc.exe status</code>
+                <code>C:\OLS\olsc.exe status</code>
               </li>
             </ul>
             <p class="optional__foot">
-              <code>olsc</code> talks to the app while it is open and starts a
-              background core when it is not, so it behaves the same either way.
+              <code>olsc</code> and <code>ols-mcp</code> talk to the app while it is open and communicate through the local control channel, so they behave consistently.
             </p>
           </div>
 
@@ -689,10 +699,10 @@
         <div class="wrap">
           <div class="section__head reveal">
             <div class="eyebrow">For developers</div>
-            <h2>One core, three front doors</h2>
+            <h2>One core, four front doors</h2>
             <p>
               <code>ols-core</code> is a single <code>CoreCommand</code> dispatcher over
-              shared state. The GUI, the CLI and the HTTP API are three front doors onto
+              shared state. The GUI, the CLI, the HTTP API, and the MCP server are four front doors onto
               the same managers — there is no second implementation of anything.
             </p>
           </div>
@@ -704,7 +714,8 @@
                 <div><dt>Core</dt><dd>Rust · <code>ols-core</code> · Tokio</dd></div>
                 <div><dt>Shell</dt><dd>Tauri 2 · tray · single IPC command</dd></div>
                 <div><dt>Frontend</dt><dd>React 19 · Vite 8 · Tailwind 4 · shadcn/ui · CodeMirror 6 · xterm.js</dd></div>
-                <div><dt>CLI</dt><dd><code>olsc</code> — a separate program beside the app; works once the install folder is on <code>PATH</code></dd></div>
+                <div><dt>CLI</dt><dd><code>olsc</code> — separate program beside the app; works once <code>C:\OLS</code> is on <code>PATH</code></dd></div>
+                <div><dt>MCP Server</dt><dd><code>ols-mcp</code> — stdio JSON-RPC 2.0 tools for Claude Desktop, Cursor, VS Code</dd></div>
                 <div><dt>Helper</dt><dd><code>ols-helper</code> — hosts, NRPT and services over a named pipe or one UAC prompt</dd></div>
                 <div><dt>State</dt><dd>SQLite <code>app.db</code>; <code>OLS_HOME</code> overrides every path</dd></div>
                 <div><dt>Platform</dt><dd>Windows 10 / 11, 64-bit. Linux is planned last; macOS is not planned.</dd></div>
@@ -716,6 +727,9 @@
                 <span class="tag">React 19</span>
                 <span class="tag">Tailwind 4</span>
                 <span class="tag">Tokio</span>
+                <span class="tag">MCP Server</span>
+                <span class="tag">JSON-RPC 2.0</span>
+                <span class="tag">Python / venv</span>
                 <span class="tag">CodeMirror 6</span>
                 <span class="tag">xterm.js</span>
                 <span class="tag">portable-pty</span>
@@ -726,12 +740,28 @@
 
             <div class="reveal">
               <div class="panelbox">
-                <h3>Driving it from a script</h3>
+                <h3>Model Context Protocol (MCP)</h3>
+                <p>
+                  <code>ols-mcp.exe</code> ships beside the app. Connect Claude Desktop, Cursor, or any AI assistant to inspect projects, manage domains, and run database queries:
+                </p>
+                <div class="code">
+                  <div class="code__bar">
+                    <b>Claude Desktop / Cursor config</b>
+                    <button class="code__copy" type="button">Copy</button>
+                  </div>
+<pre><code>{
+  <span class="s">"mcpServers"</span>: {
+    <span class="s">"ols"</span>: {
+      <span class="s">"command"</span>: <span class="s">"C:\\OLS\\ols-mcp.exe"</span>
+    }
+  }
+}</code></pre>
+                </div>
+                <h3 class="spaced">Local HTTP API</h3>
                 <p>
                   The local API is off by default and listens on
                   <code>127.0.0.1:7420</code>. Every request needs a bearer token;
-                  requests carrying an <code>Origin</code> header are refused. A
-                  read-only scope covers queries, an operate scope covers changes.
+                  requests carrying an <code>Origin</code> header are refused:
                 </p>
                 <div class="code">
                   <div class="code__bar">
@@ -803,11 +833,11 @@
                   <small>Installer, portable zip, checksums</small>
                 </span>
               </a>
-              <a href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-1.1.0-SHA256SUMS.txt">
+              <a href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-2.4.0-SHA256SUMS.txt">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 12l2 2 4-4" /><rect x="3" y="4" width="18" height="16" rx="2" /></svg>
                 <span>
                   <b>Verify a download</b>
-                  <small>OLS-1.1.0-SHA256SUMS.txt</small>
+                  <small>OLS-2.4.0-SHA256SUMS.txt</small>
                 </span>
               </a>
               <a href="https://github.com/kz370/OpenLocalServer/blob/main/CONTRIBUTING.md">
@@ -839,7 +869,7 @@
           <div class="cta__actions">
             <a
               class="btn btn--primary"
-              href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-1.1.0-setup.exe"
+              href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-2.4.0-setup.exe"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" />
@@ -879,7 +909,7 @@
             <p>
               A local development environment manager for Windows. Runtimes, sites,
               databases and trusted HTTPS, with one core engine behind a desktop app,
-              the <code>olsc</code> CLI and a local HTTP API.
+              the <code>olsc</code> CLI, a local HTTP API, and an MCP server.
             </p>
           </div>
           <div>
@@ -895,6 +925,8 @@
             <h4>Documentation</h4>
             <ul>
               <li><a href="https://github.com/kz370/OpenLocalServer/blob/main/docs/USER_GUIDE.md">User guide</a></li>
+              <li><a href="https://github.com/kz370/OpenLocalServer/blob/main/docs/OLS_USER_MANUAL.md">User manual</a></li>
+              <li><a href="https://github.com/kz370/OpenLocalServer/blob/main/docs/MCP.md">MCP server</a></li>
               <li><a href="https://github.com/kz370/OpenLocalServer/blob/main/docs/API.md">Local HTTP API</a></li>
               <li><a href="https://github.com/kz370/OpenLocalServer/blob/main/docs/PLUGINS.md">Plugins</a></li>
               <li><a href="https://github.com/kz370/OpenLocalServer/blob/main/docs/AI_ASSISTANT.md">AI assistant</a></li>
@@ -913,7 +945,7 @@
           </div>
         </div>
         <div class="footer__base">
-          <span>OLS 1.1.0 · Windows 10 / 11 64-bit</span>
+          <span>OLS 2.4.0 · Windows 10 / 11 64-bit</span>
           <span class="spacer"></span>
           <span>GPL-3.0-only</span>
           <span>Built with Rust · Tauri 2 · React 19</span>
