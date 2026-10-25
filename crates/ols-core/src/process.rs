@@ -234,7 +234,13 @@ impl ProcessSupervisor {
                 }
             }
             if Instant::now() >= deadline {
-                tracing::warn!(processes = ?active.iter().map(|p| &p.name).collect::<Vec<_>>(), "processes did not stop before shutdown timeout");
+                tracing::warn!(processes = ?active.iter().map(|p| &p.name).collect::<Vec<_>>(), "processes did not stop before shutdown timeout; force terminating");
+                for process in &active {
+                    if let Some(pid) = process.pid {
+                        kill_tree_sync(pid);
+                    }
+                    set_state(&self.processes, process.id, ProcessState::Stopped, None);
+                }
                 return false;
             }
             std::thread::sleep(Duration::from_millis(25));
@@ -661,12 +667,30 @@ async fn kill_tree(pid: u32) {
     let _ = cmd.status().await;
 }
 
+#[cfg(windows)]
+fn kill_tree_sync(pid: u32) {
+    use std::os::windows::process::CommandExt;
+    let _ = std::process::Command::new("taskkill")
+        .args(["/PID", &pid.to_string(), "/T", "/F"])
+        .creation_flags(0x0800_0000)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output();
+}
+
 #[cfg(not(windows))]
 async fn kill_tree(pid: u32) {
     let _ = tokio::process::Command::new("kill")
         .args(["-9", &pid.to_string()])
         .status()
         .await;
+}
+
+#[cfg(not(windows))]
+fn kill_tree_sync(pid: u32) {
+    let _ = std::process::Command::new("kill")
+        .args(["-9", &pid.to_string()])
+        .output();
 }
 
 #[cfg(test)]

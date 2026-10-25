@@ -336,7 +336,7 @@ fn shutdown(core: &Core) -> bool {
             }
         }
     }
-    core.supervisor().stop_all_and_wait(Duration::from_secs(30))
+    core.supervisor().stop_all_and_wait(Duration::from_secs(5))
 }
 
 fn begin_shutdown(app: &AppHandle, core: Core) {
@@ -346,22 +346,26 @@ fn begin_shutdown(app: &AppHandle, core: Core) {
     set_stopping_tray(app);
     let app = app.clone();
     std::thread::spawn(move || {
-        let mut notified = false;
-        loop {
-            if shutdown(&core) {
-                app.exit(0);
-                return;
-            }
-            if !notified {
-                notify(
-                    &core,
-                    "Still stopping",
-                    "OpenLocalServer will keep waiting and exit when its managed processes stop.",
-                );
-                notified = true;
-            }
-            std::thread::sleep(Duration::from_secs(2));
+        // Attempt clean shutdown (up to 5s for managed processes).
+        let clean = shutdown(&core);
+        if !clean {
+            tracing::warn!(
+                "shutdown timed out waiting for some processes; proceeding with app exit"
+            );
         }
+
+        // Hide windows immediately so UI feels responsive
+        for (_label, window) in app.webview_windows() {
+            let _ = window.hide();
+        }
+
+        // Spawn a watchdog thread: if Tauri's event loop hangs on exit, force process termination
+        std::thread::spawn(|| {
+            std::thread::sleep(Duration::from_millis(1500));
+            std::process::exit(0);
+        });
+
+        app.exit(0);
     });
 }
 

@@ -544,7 +544,10 @@ mod tests {
         };
         for view in cat.list() {
             let app = cat.get(&view.id).unwrap().app;
-            let provided = BTreeMap::from([("project_name".to_string(), "demo-app".to_string())]);
+            let provided = BTreeMap::from([
+                ("project_name".to_string(), "demo-app".to_string()),
+                ("domain".to_string(), "demo-app.test".to_string()),
+            ]);
             let values = resolve_values(&app, &provided, &ctx)
                 .unwrap_or_else(|e| panic!("{}: {e:?}", app.id));
             let plan = build_plan(&app, values, &ctx).unwrap_or_else(|e| panic!("{}: {e}", app.id));
