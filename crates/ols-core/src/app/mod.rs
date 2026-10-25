@@ -166,6 +166,9 @@ pub struct DomainSummary {
     /// Last detected public IP synced to DNS.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ddns_last_ip: Option<String>,
+    /// For proxy sites: the target upstream URL, e.g. "http://127.0.0.1:3000".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_target: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

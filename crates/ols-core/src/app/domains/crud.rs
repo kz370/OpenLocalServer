@@ -198,6 +198,7 @@ impl Inner {
                     aliases: d.aliases.clone(),
                     ddns_provider: d.ddns_provider.clone(),
                     ddns_last_ip: d.ddns_last_ip.clone(),
+                    proxy_target: d.kind.upstream_url(),
                 }
             })
             .collect()

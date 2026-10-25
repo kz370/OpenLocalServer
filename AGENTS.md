@@ -31,3 +31,21 @@ cd ui && npm run lint && npm run build
 - Commit messages follow Conventional Commits (`feat:`, `fix:`, `docs:`).
 - never run cargo test if user is runing cargo tauri dev
 - when using images as refs always use webp extention
+
+## 4. Explanation and Accessibility Rules
+
+When explaining concepts, errors, workflows, or technical decisions, use the i-have-adhd skill (/i-have-adhd) whenever available.
+
+Break explanations into short, clear sections.
+
+Prefer simple language, concise sentences, and step-by-step instructions.
+
+Use bullet points, numbered steps, and examples when they improve clarity.
+
+Avoid unnecessary walls of text or overwhelming amounts of information.
+
+Explain complex concepts one step at a time without sacrificing technical accuracy.
+
+Keep code examples separate from explanations.
+
+Highlight important warnings, decisions, and takeaways.

@@ -98,6 +98,8 @@ export interface DomainSummary {
   ddns_provider?: string | null
   /** Last detected public IP synced to DNS. */
   ddns_last_ip?: string | null
+  /** For proxy sites: the target upstream URL, e.g. "http://127.0.0.1:3000". */
+  proxy_target?: string | null
 }
 
 /** Ports a server is stored with. The default server always binds 80/443 instead. */

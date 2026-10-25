@@ -138,20 +138,24 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
           ...target,
           hostname:
             domains
-              .filter(
-                (d) =>
+              .filter((d) => {
+                const isProxy = d.kind === 'proxy' || d.group === 'proxy'
+                if (isProxy) return false
+                return (
                   d.project_id === target.projectId ||
                   (normPath(d.folder) !== '' &&
                     normPath(d.folder) ===
-                      normPath(projects.find((p) => p.id === target.projectId)?.path)),
-              )
+                      normPath(projects.find((p) => p.id === target.projectId)?.path))
+                )
+              })
               .sort((a, b) => a.hostname.localeCompare(b.hostname))[0]?.hostname ?? null,
         }
       : target
 
   const activeDomains = domains.filter((d) => d.hostname !== 'openlocalserver.test')
 
-  // Group domains by project or matching folder so a project folder only ever has ONE row in the table.
+  // Group domains by project or matching folder so a physical project folder only ever has ONE row in the table.
+  // Reverse proxy sites proxy to independent ports/hosts and are never grouped by folder.
   interface DomainBucket {
     project: Project | null
     domains: DomainSummary[]
@@ -159,11 +163,14 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   const buckets: DomainBucket[] = []
   const claimedDomains = new Set<string>()
 
-  // 1. First pass: group by project (by project_id or project folder path).
+  // 1. First pass: group real-file projects (by project_id or project folder path).
+  // Reverse proxy sites are not physical folder projects and must never be grouped into a project folder.
   for (const p of projects) {
     const np = normPath(p.path)
     const matching = activeDomains.filter((d) => {
       if (claimedDomains.has(d.hostname)) return false
+      const isProxy = d.kind === 'proxy' || d.group === 'proxy'
+      if (isProxy) return false
       const matched = (d.project_id && d.project_id === p.id) || (np !== '' && normPath(d.folder) === np)
       return Boolean(matched)
     })
@@ -172,13 +179,15 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   }
 
   // 2. Second pass: remaining domains that don't belong to a registered project.
-  // Group them by folder (if folder is non-empty) or keep as single domain buckets.
+  // Group them by folder ONLY for normal real-file projects (same folder on disk, multiple domains).
+  // Reverse proxy sites proxy to different ports/hosts and must each have their own independent row.
   const folderBucketMap = new Map<string, DomainBucket>()
   for (const d of activeDomains) {
     if (claimedDomains.has(d.hostname)) continue
     claimedDomains.add(d.hostname)
+    const isProxy = d.kind === 'proxy' || d.group === 'proxy'
     const df = normPath(d.folder)
-    if (df !== '') {
+    if (!isProxy && df !== '') {
       const existing = folderBucketMap.get(df)
       if (existing) {
         existing.domains.push(d)
@@ -217,7 +226,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     if (!term) return true
     const extraHosts = r.extraDomains.map((e) => e.hostname).join(' ')
     const aliases = [r.site?.aliases ?? [], ...r.extraDomains.flatMap((e) => e.aliases ?? [])].flat().join(' ')
-    const text = `${r.site?.hostname ?? ''} ${extraHosts} ${aliases} ${r.project?.name ?? ''} ${r.site?.folder ?? r.project?.path ?? ''}`.toLowerCase()
+    const text = `${r.site?.hostname ?? ''} ${extraHosts} ${aliases} ${r.project?.name ?? ''} ${r.site?.proxy_target ?? ''} ${r.site?.folder ?? r.project?.path ?? ''}`.toLowerCase()
     return text.includes(term)
   }
   const q = query.trim().toLowerCase()
@@ -311,7 +320,9 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         hostnames.push(...rowHosts)
       } else {
         const np = normPath(r.project?.path)
-        const match = known.filter((d) => d.project_id === r.project?.id || (np !== '' && normPath(d.folder) === np)).map((d) => d.hostname)
+        const match = known
+          .filter((d) => d.project_id === r.project?.id || (d.kind !== 'proxy' && d.group !== 'proxy' && np !== '' && normPath(d.folder) === np))
+          .map((d) => d.hostname)
         if (match.length > 0) hostnames.push(...match)
         else noSite.push(r.project?.name ?? r.key)
       }
@@ -440,7 +451,9 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       const skipped: string[] = []
       for (const r of waiting) {
         const np = normPath(r.project?.path)
-        const host = known.find((d) => d.project_id === r.project?.id || (np !== '' && normPath(d.folder) === np))?.hostname
+        const host = known.find(
+          (d) => d.project_id === r.project?.id || (d.kind !== 'proxy' && d.group !== 'proxy' && np !== '' && normPath(d.folder) === np),
+        )?.hostname
         if (host) hostnames.push(host)
         else skipped.push(`${r.project?.name ?? r.key} has no index.html or project file to serve`)
       }
@@ -552,7 +565,8 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   function menuFor(r: Row): MenuItem[] {
     const { site: d, project: p } = r
     const items: MenuItem[] = []
-    const folder = d?.folder ?? p?.path
+    const isProxy = d?.kind === 'proxy' || d?.group === 'proxy'
+    const folder = isProxy ? (p?.path ?? null) : (d?.folder ?? p?.path)
     if (folder) items.push({ label: 'Open project folder', icon: <FolderOpen />, hint: folder, onSelect: () => void run('open', () => runCommand({ type: 'open_path', path: folder })) })
     if (folder) items.push({ label: 'Open folder in code editor', icon: <Code2 />, hint: folder, onSelect: () => void run('code', () => runCommand({ type: 'open_in_editor', path: folder })) })
     if (p) items.push({ label: 'Terminal', icon: <SquareTerminal />, onSelect: () => setTarget({ hostname: d?.hostname ?? null, projectId: p.id, tab: 'terminal' }) })
@@ -881,7 +895,9 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
               {pageRows.map((r) => {
                 const { site: d, project: p } = r
                 const openSettings = () => setTarget({ hostname: d?.hostname ?? null, projectId: p?.id ?? null })
-                const folder = d?.folder ?? p?.path
+                const isProxy = d?.kind === 'proxy' || d?.group === 'proxy'
+                const folder = isProxy ? (p?.path ?? '') : (d?.folder ?? p?.path ?? '')
+                const proxyTarget = d?.proxy_target
                 // A row mid-removal dims and says so, so deleting never looks like a click
                 // that did nothing.
                 const pending = [d?.hostname, ...r.extraDomains.map((e) => e.hostname), p?.id].filter(Boolean).some((k) => removing.has(k!))
@@ -961,9 +977,15 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                                   </span>
                                 )}
                                 {d && p && p.name !== d.hostname && <span className="shrink-0">{p.name}</span>}
-                                <span className="min-w-0 flex-1 truncate" title={folder}>
-                                  {folder}
-                                </span>
+                                {isProxy ? (
+                                  <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground/80" title={proxyTarget ? `Proxy upstream: ${proxyTarget}` : 'Reverse proxy'}>
+                                    {proxyTarget ? `→ ${proxyTarget}` : 'proxy'}
+                                  </span>
+                                ) : (
+                                  <span className="min-w-0 flex-1 truncate" title={folder}>
+                                    {folder}
+                                  </span>
+                                )}
                               </>
                             ) : (
                               <>
