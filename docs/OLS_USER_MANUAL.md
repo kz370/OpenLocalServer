@@ -1,6 +1,6 @@
 # OpenLocalServer (OLS) — Comprehensive User Manual & Operations Guide
 
-> **Version:** 2.3.0  
+> **Version:** 2.4.0  
 > **Platform:** Windows 10 / Windows 11 (64-bit)  
 > **License:** GPL-3.0-only  
 > **CLI Tool:** `olsc`  
@@ -360,18 +360,23 @@ olsc guide                     # Display this complete User Manual in terminal
 
 ---
 
-## 17. What's New in Version 2.3.0
+## 17. What's New in Version 2.4.0
 
-1. **Ask AI Sidebar Navigation & RAG Knowledge Base:**
-   - Dedicated "Ask AI" navigation placed conveniently at the bottom of the sidebar.
-   - Comprehensive RAG knowledge base integration grounded in this complete manual.
-2. **Direct Site Broadcast Controls:**
-   - Real-time broadcast status, one-click public URL copying, and tunnel start/stop directly within the Site Domains panel.
-3. **Dynamic DNS (Cloudflare Integration):**
-   - Live DNS A-record synchronization for custom domains with conflict detection and router guidance.
-4. **Multi-Interface Web Binding (`0.0.0.0`):**
-   - Web servers bind to all IPv4 interfaces, allowing LAN devices and mobile phones to test dev sites directly over Wi-Fi.
-5. **Host Header Routing Fix:**
-   - Public and LAN host headers properly route to virtual hosts across Nginx, Apache, and Caddy.
-6. **Automatic Folder & Welcome Page Initialization:**
-   - Automatic document root creation and initial welcome page generation for Static and Plain PHP sites.
+1. **Python & Virtual Environment Management:**
+   - Automatic detection of system Python (3.7–3.15) and project-local virtual environments (`.venv`, `venv`).
+   - Run FastAPI (Uvicorn), Django, Flask, Streamlit, and custom Python apps with managed supervisor processes.
+2. **Model Context Protocol (MCP) Server:**
+   - Built-in Stdio MCP server (`ols-mcp`) enabling AI coding tools to inspect and configure local domains, web servers, databases, and runtimes.
+   - Secure OS keyring token authentication with configurable TTL/expiry.
+3. **Database Inspection & SQL Execution:**
+   - Multi-engine database table inspection and SQL execution tools for MariaDB/MySQL, PostgreSQL, and SQLite.
+4. **Proxy Port Collision & Reserved Port Prevention:**
+   - Real-time conflict detection preventing duplicate local proxy ports (`127.0.0.1`) and HTTP 502 Bad Gateway errors.
+   - Rejection of core reserved application ports (DNS, Web, DB, Redis, Mailpit).
+   - "Find free port" helper in Reverse Proxy mode.
+5. **Dark Circular Icon Branding:**
+   - Modern circular branding across application executable, Inno Setup installer, taskbar, system tray, and site favicons.
+6. **In-App User Manual & Release Notes Viewer:**
+   - Integrated manual and release notes tab in `Settings → User Manual`.
+7. **Updates UI Feedback:**
+   - Compact in-button loading spinner and clean SemVer comparison badges.

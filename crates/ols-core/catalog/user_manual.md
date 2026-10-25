@@ -1,6 +1,6 @@
 # OpenLocalServer (OLS) — Comprehensive User Manual & Operations Guide
 
-> **Version:** 2.3.0  
+> **Version:** 2.4.0  
 > **Platform:** Windows 10 / Windows 11 (64-bit)  
 > **License:** GPL-3.0-only  
 > **CLI Binary:** `olsc`  
@@ -26,7 +26,7 @@
 14. [AI Assistant (Local & Cloud Bring-Your-Own-Model)](#14-ai-assistant-local--cloud-bring-your-own-model)
 15. [Command Line Interface (CLI — `olsc`)](#15-command-line-interface-cli--olsc)
 16. [Keyboard Shortcuts, Settings & Privacy](#16-keyboard-shortcuts-settings--privacy)
-17. [Version 2.3.0 Specific Notes & What's New](#17-version-230-specific-notes--whats-new)
+17. [Version 2.4.0 Specific Notes & What's New](#17-version-240-specific-notes--whats-new)
 
 ---
 
@@ -312,18 +312,24 @@ olsc guide
 
 ---
 
-## 17. Version 2.3.0 Specific Notes & What's New
+## 17. Version 2.4.0 Specific Notes & What's New
 
-### New Features in v2.3.0
-1. **Direct Site Broadcast Controls:**
-   - Manage public broadcasting directly within the Site Domains panel with live state toggles and quick URL copy.
-2. **Dynamic DNS (Cloudflare Integration):**
-   - Live DNS synchronization for custom domains with automated conflict detection.
-3. **Multi-Interface Web Binding (`0.0.0.0`):**
-   - Web servers bind to `0.0.0.0` allowing local WiFi/LAN devices to test sites directly via LAN IP addresses.
-4. **Host Header Routing Fix:**
-   - External and LAN host headers properly route to virtual hosts across Nginx, Apache, and Caddy.
-5. **Automatic Folder & Welcome Page Creation:**
-   - New sites automatically create their document root directory and initialize a clean `index.html` or `index.php` welcome page.
-6. **Ask AI Sidebar Navigation & RAG Knowledge Base:**
-   - Dedicated sidebar entry and integrated user manual with version-specific RAG knowledge.
+### New Features in v2.4.0
+1. **Python & Virtual Environment Support:**
+   - Detects system Python installations (3.7–3.15) and project-local virtual environments (`.venv`, `venv`).
+   - Supports direct execution of FastAPI (Uvicorn), Django, Flask, Streamlit, and custom Python scripts with supervisor process management.
+2. **Model Context Protocol (MCP) Server:**
+   - Built-in Stdio MCP server (`ols-mcp`) enabling AI assistants (Cursor, Claude Desktop, Antigravity) to manage domains, web servers, databases, and runtimes.
+   - Secure token authentication stored in Windows Credential Manager with configurable expiration.
+3. **Database Inspection & SQL Execution:**
+   - Multi-engine database table listing and direct SQL execution tools across MariaDB/MySQL, PostgreSQL, and SQLite.
+4. **Proxy Port Collision & Reserved Port Validation:**
+   - Real-time detection and prevention of upstream port collisions on `127.0.0.1`.
+   - Prevents assignment of ports reserved for core services (web servers, databases, Redis, Mailpit, DNS).
+   - "Find free port" helper added to Reverse Proxy mode to locate unused loopback ports.
+5. **Dark Circular Icon Branding:**
+   - High-resolution circular branding across application executables, Inno Setup installer, taskbar, system tray, and site favicons.
+6. **In-App User Manual & Release Notes Viewer:**
+   - Dedicated documentation and release notes reader integrated directly in `Settings → User Manual`.
+7. **Updates UI Enhancements:**
+   - Compact in-button loading indicator with immediate SemVer comparison feedback.

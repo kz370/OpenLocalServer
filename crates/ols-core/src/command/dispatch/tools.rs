@@ -389,7 +389,7 @@ impl Core {
                 }),
                 C::GetAppGuide { version: _ } => Ok(R::AppGuide {
                     markdown: i.app_guide(),
-                    version: "2.3.0".to_string(),
+                    version: env!("CARGO_PKG_VERSION").to_string(),
                 }),
                 // @@arms-end
                 other => {

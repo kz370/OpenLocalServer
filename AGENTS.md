@@ -49,3 +49,22 @@ Explain complex concepts one step at a time without sacrificing technical accura
 Keep code examples separate from explanations.
 
 Highlight important warnings, decisions, and takeaways.
+
+## 5. Version Bump & Release Synchronization Mandate (binding)
+
+Whenever the application version is bumped or changed (e.g. via `scripts/update-version.bat` or manual edits), all contributors and AI agents MUST update and synchronize the following files in the same pull request / commit:
+
+1. **Manifests & Packages:**
+   - Root `Cargo.toml` (`[workspace.package] version = "<version>"`)
+   - `src-tauri/tauri.conf.json` (`version: "<version>"`)
+   - `ui/package.json` and `ui/package-lock.json` (`"version": "<version>"`)
+2. **Release Notes & Documentation:**
+   - `release-notes/v<version>.md`: Create/update the version release notes.
+   - `CHANGELOG.md`: Add the new `## [<version>] — YYYY-MM-DD` section linking to `release-notes/v<version>.md`.
+   - `crates/ols-core/catalog/user_manual.md`: Update header `> **Version:** <version>`, Table of Contents, and Section 17 "What's New in Version <version>".
+   - `docs/OLS_USER_MANUAL.md`: Update header `> **Version:** <version>` and Section 17 "What's New in Version <version>".
+3. **In-App Manual & Settings Viewer:**
+   - `ui/src/pages/Settings.tsx`: Update the `releaseNotes` import to target `../../../release-notes/v<version>.md?raw` and ensure `get_app_guide` queries the updated version.
+4. **Website & Landing Page:**
+   - `index.html` and `website/`: Update version badges, download links (`OLS-<version>-setup.exe`, portable zip, SHA256 checksums), and footer version marks.
+   - `README.md`: Update the version badge link (`version-<version>-blue`).
