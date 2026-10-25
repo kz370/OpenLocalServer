@@ -111,7 +111,6 @@ pub struct Inner {
     project_events: broadcast::Sender<()>,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RequirementView {
     pub id: String,
@@ -199,7 +198,6 @@ pub struct StartupSettings {
     pub close_to_tray: bool,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QuickPlanResult {
     pub ok: bool,
@@ -211,8 +209,6 @@ pub struct QuickPlanResult {
     /// The answers as resolved so far (defaults filled in, secrets masked).
     pub values: BTreeMap<String, String>,
 }
-
-
 
 impl Inner {
     pub fn new(settings: SettingsService, paths: AppPaths) -> Result<Arc<Self>, CoreError> {
@@ -456,6 +452,4 @@ impl Inner {
         }
         true
     }
-
-
 }

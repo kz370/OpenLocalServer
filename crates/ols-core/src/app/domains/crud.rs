@@ -1,9 +1,9 @@
-use std::path::{Path, PathBuf};
-use crate::app::*;
 use crate::app::domains::*;
+use crate::app::*;
 use crate::domain::{AppSpec, BulkOutcome, Domain, Ownership, SiteBlocks, SiteKind};
 use crate::error::CoreError;
 use crate::web::WebConfig;
+use std::path::{Path, PathBuf};
 
 impl Inner {
     pub fn read_site_file(&self, hostname: &str, name: &str) -> Result<String, CoreError> {
@@ -130,7 +130,6 @@ impl Inner {
         }
         Ok(path.display().to_string())
     }
-
 
     pub fn site_url(&self, d: &Domain, cfg: &WebConfig) -> String {
         let ports = cfg.effective_ports(&crate::domain::resolved_server(d, cfg));
@@ -394,6 +393,4 @@ impl Inner {
     }
 
     // ------------------------------------------------------- automatic domains
-
-
 }

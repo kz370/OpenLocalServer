@@ -1,10 +1,10 @@
-use std::path::{Path, PathBuf};
-use crate::app::*;
 use crate::app::system::*;
+use crate::app::*;
 use crate::dbtools;
 use crate::domain::Domain;
 use crate::error::CoreError;
 use crate::health::{HealthReport, HealthTarget};
+use std::path::{Path, PathBuf};
 
 impl Inner {
     pub fn health_check(&self, hostname: &str) -> Result<HealthReport, CoreError> {
@@ -28,7 +28,6 @@ impl Inner {
     }
 
     // ------------------------------------------------------------------ databases
-
 
     pub fn environment_health(&self) -> Vec<HealthItem> {
         let cfg = self.web_config();
@@ -347,6 +346,4 @@ impl Inner {
     }
 
     // --------------------------------------------------------- database migration
-
-
 }

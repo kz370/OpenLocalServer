@@ -1,6 +1,6 @@
-use std::sync::Arc;
 use crate::app::*;
 use crate::domain::{Domain, SiteKind};
+use std::sync::Arc;
 
 mod open_database_tests {
     use super::*;

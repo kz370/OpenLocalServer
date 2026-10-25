@@ -184,4 +184,3 @@ pub fn table(rows: Vec<Vec<String>>) {
         println!("{}", line.join("  ").trim_end());
     }
 }
-

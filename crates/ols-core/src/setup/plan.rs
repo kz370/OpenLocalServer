@@ -1,15 +1,9 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use serde::{Deserialize, Serialize};
 
 use super::*;
 use crate::app::Inner;
 use crate::error::CoreError;
-
-use crate::catalog;
 use crate::manifest;
-use crate::project::Project;
 
 impl Inner {
     pub fn plan_setup(&self, project_id: &str) -> Result<EnvironmentPlan, CoreError> {
@@ -472,5 +466,4 @@ impl Inner {
             ok,
         })
     }
-
 }

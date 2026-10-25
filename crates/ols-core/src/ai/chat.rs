@@ -1,25 +1,18 @@
-use std::collections::{BTreeMap, HashMap};
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use futures_util::StreamExt;
-use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use crate::app::Inner;
-use crate::command::{Core, CoreCommand};
+use crate::command::CoreCommand;
 use crate::error::CoreError;
-use crate::redact::{redact_env_file, redact_text};
-use crate::repair::RepairStep;
 
-use super::types::*;
-use super::policy::*;
 use super::client::*;
+use super::policy::*;
 use super::providers::*;
 use super::tools::*;
-use super::*;
+use super::types::*;
 
 pub(crate) struct Context {
     pub(crate) instructions: String,
@@ -35,10 +28,7 @@ pub(crate) fn need<'a>(value: &'a Option<String>, what: &str) -> Result<&'a str,
         .ok_or_else(|| fail(format!("{what} is needed for this request")))
 }
 
-
-
 impl Inner {
-
     pub(crate) fn ai_context(&self, req: &AiRequest) -> Result<Context, CoreError> {
         let mut attachments: Vec<(String, String)> = Vec::new();
         let (instructions, question) = match req.feature.as_str() {

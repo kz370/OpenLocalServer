@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::app::*;
 use crate::app::quickapp::*;
+use crate::app::*;
 use crate::domain::{Domain, Ownership};
 use crate::error::CoreError;
 use crate::quickapp::commands::QuickCommand;
@@ -376,5 +376,4 @@ impl Inner {
             }
         }
     }
-
 }

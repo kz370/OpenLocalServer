@@ -4,7 +4,6 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -14,12 +13,11 @@ use crate::error::CoreError;
 use crate::redact::{redact_env_file, redact_text};
 use crate::repair::RepairStep;
 
-use super::types::*;
 use super::policy::*;
+use super::types::*;
 use super::*;
 
 impl Inner {
-
     pub fn ai_settings(&self) -> AiSettings {
         let mut cfg: AiSettings = crate::db::load_docs(&self.paths, "ai")
             .ok()
@@ -237,8 +235,6 @@ impl Inner {
     }
 }
 
-
-
 fn test_provider(p: &AiProvider, key: Option<&str>) -> AiTestResult {
     {
         let started = Instant::now();
@@ -430,7 +426,10 @@ async fn lmstudio_models(p: &AiProvider, key: Option<&str>) -> Option<Vec<AiMode
     (!models.is_empty()).then_some(models)
 }
 
-pub(crate) async fn fetch_models(p: &AiProvider, key: Option<&str>) -> Result<Vec<AiModel>, String> {
+pub(crate) async fn fetch_models(
+    p: &AiProvider,
+    key: Option<&str>,
+) -> Result<Vec<AiModel>, String> {
     if p.kind == "lmstudio" {
         if let Some(models) = lmstudio_models(p, key).await {
             return Ok(models);
@@ -494,4 +493,3 @@ pub(crate) async fn fetch_models(p: &AiProvider, key: Option<&str>) -> Result<Ve
 }
 
 // ------------------------------------------------------------------------------ building a prompt
-

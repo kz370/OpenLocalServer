@@ -1,16 +1,9 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use serde::{Deserialize, Serialize};
 
 use super::types::*;
 use crate::app::Inner;
 use crate::error::CoreError;
-
-use std::time::Duration;
-use crate::journal::Journal;
 use crate::manifest::LockFile;
-use crate::process::ProcessSpec;
 
 impl Inner {
     pub fn setup_progress(&self) -> Option<SetupReport> {

@@ -1,20 +1,12 @@
 pub mod rules;
 pub mod text;
 
-pub use self::rules::*;
+pub(crate) use self::rules::*;
 pub use self::text::*;
 
-use std::collections::{BTreeMap, HashMap, HashSet};
-use std::path::{Path, PathBuf};
-use serde::{Deserialize, Serialize};
-
-use crate::setup::types::*;
 use crate::app::Inner;
-use crate::catalog;
-use crate::error::CoreError;
 use crate::manifest::LockFile;
-use crate::manifest;
-use crate::project::Project;
+use crate::setup::types::*;
 
 pub(crate) struct Planner<'a> {
     pub(crate) inner: &'a Inner,
@@ -57,7 +49,13 @@ impl Planner<'_> {
         }
     }
 
-    pub(crate) fn conflict(&mut self, kind: &str, blocking: bool, message: String, resolution: &str) {
+    pub(crate) fn conflict(
+        &mut self,
+        kind: &str,
+        blocking: bool,
+        message: String,
+        resolution: &str,
+    ) {
         self.conflicts.push(Conflict {
             kind: kind.into(),
             blocking,
@@ -207,5 +205,4 @@ impl Planner<'_> {
             SetupAction::StartService { id: id.into() },
         );
     }
-
 }

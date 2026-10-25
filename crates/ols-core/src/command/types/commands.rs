@@ -1,25 +1,13 @@
-use std::collections::BTreeMap;
-use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::app::{DeletedItem, DomainSummary, HealthItem, LogSource, QuickPlanResult, StartupSettings};
-use crate::certs::{CaInfo, CertInfo};
-use crate::custom_install::CustomInstall;
-use crate::dbtools::{DbTool, ExternalTool};
-use crate::domain::{Domain, Ownership, SiteBlocks};
-use crate::health::HealthReport;
-use crate::port::PortStatus;
-use crate::process::{CommandHistoryEntry, ProcessId, ProcessInfo, ProcessSpec};
-use crate::project::{Project, ProjectDetail};
-use crate::quickapp::commands::{HistoryEntry, QuickCommand};
-use crate::quickapp::{EntryDetail, EntryView, RunView};
-use crate::runtime::CatalogEntry;
-use crate::service::{ConnectionInfo, DbUser, ServiceStatus};
-use crate::sqlite::{IntegrityResult, SqliteInfo};
-use crate::web::WebConfig;
-use crate::web::manager::{ApplyReport, ConfigFile, ConfigPart, ConfigVersion, WebStatus};
-use crate::xdebug::{XdebugReport, XdebugSettings};
+use crate::app::StartupSettings;
+use crate::dbtools::ExternalTool;
+use crate::domain::{Domain, Ownership};
+use crate::process::{ProcessId, ProcessSpec};
+use crate::quickapp::commands::QuickCommand;
+use crate::web::manager::ConfigPart;
+use crate::xdebug::XdebugSettings;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -311,6 +299,15 @@ pub enum CoreCommand {
     },
     ListDatabases {
         engine: String,
+    },
+    ListDatabaseTables {
+        engine: String,
+        database: String,
+    },
+    ExecuteSql {
+        engine: String,
+        database: Option<String>,
+        sql: String,
     },
     CreateDbUser {
         engine: String,

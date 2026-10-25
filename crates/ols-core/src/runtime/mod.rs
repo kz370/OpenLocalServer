@@ -11,12 +11,6 @@ pub mod types;
 #[cfg(test)]
 mod tests;
 
-pub use self::archive::*;
-pub use self::catalog::*;
-pub use self::detect::*;
-pub use self::extract::*;
-pub use self::install::*;
+pub use self::detect::detect_system_install;
 pub use self::manager::*;
-pub use self::resolve::*;
-pub use self::scrapers::*;
 pub use self::types::*;

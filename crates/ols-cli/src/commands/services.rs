@@ -1,8 +1,8 @@
-use std::io::Write;
-use std::time::{Duration, Instant};
-use ols_core::command::{CoreCommand, CoreResponse};
 use crate::args::{PhpCmd, RuntimeCmd, ServiceCmd, TunnelCmd};
 use crate::ctx::{confirm, table, Ctx, R};
+use ols_core::command::{CoreCommand, CoreResponse};
+use std::io::Write;
+use std::time::{Duration, Instant};
 
 pub fn runtime(ctx: &Ctx, cmd: RuntimeCmd) -> R<()> {
     match cmd {
@@ -32,9 +32,7 @@ pub fn runtime(ctx: &Ctx, cmd: RuntimeCmd) -> R<()> {
                 }
             }
         }
-        RuntimeCmd::Install { id, version } => {
-            install(ctx, &id, version.as_deref())?
-        }
+        RuntimeCmd::Install { id, version } => install(ctx, &id, version.as_deref())?,
     }
     Ok(())
 }
@@ -112,8 +110,6 @@ pub fn install(ctx: &Ctx, id: &str, version: Option<&str>) -> R<()> {
         }
     }
 }
-
-
 
 pub fn service(ctx: &Ctx, cmd: ServiceCmd) -> R<()> {
     match cmd {
@@ -211,8 +207,6 @@ pub fn service(ctx: &Ctx, cmd: ServiceCmd) -> R<()> {
     Ok(())
 }
 
-
-
 pub fn tunnel(ctx: &Ctx, cmd: TunnelCmd) -> R<()> {
     let CoreResponse::Tunnels { tunnels } = ctx.call(CoreCommand::ListTunnels)? else {
         return Err("unexpected reply".into());
@@ -302,7 +296,6 @@ pub fn tunnel(ctx: &Ctx, cmd: TunnelCmd) -> R<()> {
 
 /// Prints a process's output until it exits.
 
-
 pub fn follow(ctx: &Ctx, id: ols_core::process::ProcessId) -> R<()> {
     let mut printed = 0usize;
     while let CoreResponse::ProcessOutput { lines, .. } =
@@ -339,5 +332,3 @@ pub fn follow(ctx: &Ctx, id: ols_core::process::ProcessId) -> R<()> {
     }
     Ok(())
 }
-
-

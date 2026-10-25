@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -20,7 +19,6 @@ pub struct SystemInstall {
     pub path: String,
     pub version: String,
 }
-
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -102,4 +100,3 @@ pub enum RuntimeEvent {
     /// diagnostic is warranted, so this is its own terminal event.
     Cancelled { id: String, version: String },
 }
-

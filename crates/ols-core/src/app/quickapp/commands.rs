@@ -2,17 +2,15 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::app::*;
 use crate::app::quickapp::*;
+use crate::app::*;
 use crate::domain::{Domain, Ownership};
 use crate::error::CoreError;
 use crate::quickapp::commands::QuickCommand;
 use crate::quickapp::plan::RunPlan;
 use crate::quickapp::run::{ActionOutcome, ResolvedProgram, RunCtx};
-use crate::quickapp::QuickHost;
 
 impl Inner {
-
     /// Values available to a Quick Command's `{{placeholders}}`.
     fn command_values(&self, project_id: Option<&str>) -> BTreeMap<String, String> {
         let mut values = BTreeMap::new();

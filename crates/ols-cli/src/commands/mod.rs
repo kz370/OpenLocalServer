@@ -4,9 +4,9 @@ pub mod projects;
 pub mod services;
 pub mod system;
 
-use std::path::PathBuf;
 use crate::args::Cmd;
 use crate::ctx::{Ctx, R};
+use std::path::PathBuf;
 
 pub fn run(ctx: &Ctx, cmd: Cmd) -> R<()> {
     match cmd {
@@ -15,11 +15,18 @@ pub fn run(ctx: &Ctx, cmd: Cmd) -> R<()> {
         Cmd::Stop => system::stop_everything(ctx),
         Cmd::Restart => system::restart(ctx),
         Cmd::Status => system::status(ctx),
-        Cmd::Setup { dry_run, path, yes } => {
-            system::setup(ctx, path.unwrap_or_else(|| PathBuf::from(".")), dry_run, yes)
-        }
+        Cmd::Setup { dry_run, path, yes } => system::setup(
+            ctx,
+            path.unwrap_or_else(|| PathBuf::from(".")),
+            dry_run,
+            yes,
+        ),
         Cmd::Doctor => system::doctor(ctx),
-        Cmd::Repair { project, dry_run, yes } => system::repair(ctx, project, dry_run, yes),
+        Cmd::Repair {
+            project,
+            dry_run,
+            yes,
+        } => system::repair(ctx, project, dry_run, yes),
         Cmd::Search { query } => system::search(ctx, query),
         Cmd::Project(p) => projects::project(ctx, p),
         Cmd::Runtime(r) => services::runtime(ctx, r),

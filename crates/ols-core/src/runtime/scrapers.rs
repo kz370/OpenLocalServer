@@ -1,6 +1,4 @@
-use std::collections::HashMap;
-use super::manager::{compare_versions, runtime_name};
-use super::*;
+use super::manager::compare_versions;
 
 pub(crate) fn nginx_versions(page: &str) -> Vec<String> {
     let mut found = Vec::new();
@@ -140,7 +138,11 @@ pub(crate) fn mongodb_asset(value: &serde_json::Value, version: &str) -> Option<
     }
 }
 
-pub(crate) fn linked_download_url(page: &str, filename_prefix: &str, version: &str) -> Option<String> {
+pub(crate) fn linked_download_url(
+    page: &str,
+    filename_prefix: &str,
+    version: &str,
+) -> Option<String> {
     for segment in page.split("href=").skip(1) {
         let quote = segment.chars().next()?;
         if quote != '\'' && quote != '"' {

@@ -6,10 +6,10 @@ use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
-use crate::command::Core;
-use super::super::types::*;
 use super::super::policy::*;
+use super::super::types::*;
 use super::super::*;
+use crate::command::Core;
 
 /// A stand-in OpenAI-compatible server on a loopback port. `respond(path, body, request_number)` returns the
 /// status, content type and body; every request is recorded. No test talks to a real provider.
@@ -52,8 +52,8 @@ impl Mock {
                                 .and_then(|l| l.split_whitespace().nth(1))
                                 .unwrap_or("/")
                                 .to_string();
-                            let body = String::from_utf8_lossy(&data[end + 4..end + 4 + len])
-                                .to_string();
+                            let body =
+                                String::from_utf8_lossy(&data[end + 4..end + 4 + len]).to_string();
                             break (path, body);
                         }
                     }

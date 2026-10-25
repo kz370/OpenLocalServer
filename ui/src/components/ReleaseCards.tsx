@@ -150,8 +150,6 @@ export function UpdatesCard() {
 
   const [status, setStatus] = useState<UpdaterStatus | null>(null)
   const [info, setInfo] = useState<UpdateInfo | null>(null)
-  const [checking, setChecking] = useState(false)
-  const [lastCheckResult, setLastCheckResult] = useState<'checked' | null>(null)
   const [showConfig, setShowConfig] = useState(false)
   const [endpointInput, setEndpointInput] = useState('')
   const [publicKeyInput, setPublicKeyInput] = useState('')
@@ -176,16 +174,9 @@ export function UpdatesCard() {
   const checkForUpdates = () =>
     run('check', async () => {
       setError(null)
-      setChecking(true)
-      setLastCheckResult(null)
-      try {
-        const r = await runCommand({ type: 'check_update' })
-        if (r.type === 'update') {
-          setInfo(r.update)
-          setLastCheckResult('checked')
-        }
-      } finally {
-        setChecking(false)
+      const r = await runCommand({ type: 'check_update' })
+      if (r.type === 'update') {
+        setInfo(r.update)
       }
     })
 
@@ -282,24 +273,6 @@ export function UpdatesCard() {
       <CardContent className="flex flex-col gap-4">
         <ErrorCard error={displayError} onDismiss={() => setError(null)} />
 
-        {/* Checking state — visible while the backend fetches and verifies the manifest */}
-        {checking && (
-          <div className="rounded-lg border border-info/40 bg-info/10 p-3.5 text-sm flex items-center gap-2">
-            <RefreshCw className="size-4 animate-spin shrink-0" />
-            <span>Checking for updates…</span>
-          </div>
-        )}
-
-        {/* Last check result — persists after the check finishes so the user sees feedback */}
-        {!checking && lastCheckResult === 'checked' && info && (
-          <div className="rounded-lg border border-info/40 bg-info/10 p-3.5 text-sm flex items-center gap-2">
-            <CheckCircle className="size-4 shrink-0 text-info" />
-            <span>
-              Checked: v{info.latest} — {info.status.replace('_', ' ')}
-            </span>
-          </div>
-        )}
-
         {/* When downloaded and verified: show ONE unified ready banner */}
         {isDownloaded && info && (
           <div className="rounded-lg border border-success/40 bg-success/10 p-3.5 text-sm">
@@ -332,11 +305,19 @@ export function UpdatesCard() {
           </div>
         )}
 
-        {/* Up-to-date banner (only when checked and no update is available) */}
+        {/* Up-to-date notice (only when checked and no update is available) */}
         {info?.status === 'up_to_date' && !isDownloaded && (
           <div className="flex items-center gap-2 text-sm text-success">
             <CheckCircle className="size-4" />
             You are on the latest version (v{info.latest}).
+          </div>
+        )}
+
+        {/* Development build notice (only when checked and no update is available) */}
+        {info?.status === 'development_version' && !isDownloaded && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <CheckCircle className="size-4 text-info" />
+            Running development build (v{info.latest}).
           </div>
         )}
 
@@ -396,7 +377,7 @@ export function UpdatesCard() {
             id="check-for-updates-btn"
           >
             {busy === 'check' ? <Spinner /> : <RefreshCw />}
-            Check for updates
+            {busy === 'check' ? 'Checking for updates…' : 'Check for updates'}
           </Button>
 
           {/* Download — only when an update is available and not yet downloaded */}
@@ -408,7 +389,7 @@ export function UpdatesCard() {
               id="download-update-btn"
             >
               {busy === 'download' ? <Spinner /> : <ArrowDownToLine />}
-              Download update
+              {busy === 'download' ? 'Downloading update…' : 'Download update'}
             </Button>
           )}
 
@@ -420,7 +401,7 @@ export function UpdatesCard() {
               id="install-update-btn"
             >
               {busy === 'install' ? <Spinner /> : <Rocket />}
-              Install now
+              {busy === 'install' ? 'Installing…' : 'Install now'}
             </Button>
           )}
 

@@ -1,5 +1,5 @@
-use std::collections::BTreeMap;
 use super::*;
+use std::collections::BTreeMap;
 
 pub(crate) fn domain(host: &str) -> Domain {
     Domain {

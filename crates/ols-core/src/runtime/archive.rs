@@ -1,8 +1,7 @@
-use std::path::{Path, PathBuf};
-use sha2::{Digest, Sha256};
-use crate::catalog::OwnedManifest;
 use super::types::*;
-use super::*;
+use crate::catalog::OwnedManifest;
+use sha2::{Digest, Sha256};
+use std::path::Path;
 
 /// A user stop: the partial download is deleted (it is unverified, so keeping it could
 /// only ever be re-fetched anyway) and nothing is extracted.
@@ -144,4 +143,3 @@ pub(crate) fn extract_zip(
     }
     Ok(())
 }
-

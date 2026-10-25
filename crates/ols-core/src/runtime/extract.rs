@@ -1,18 +1,15 @@
 use std::collections::HashMap;
 use std::io::Write;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 
 use futures_util::StreamExt;
-use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::sync::broadcast;
 
-use crate::catalog::{builtin_catalog, OwnedManifest, PackageManifest};
-use crate::paths::AppPaths;
-use super::types::*;
 use super::archive::*;
-use super::*;
+use super::types::*;
+use crate::catalog::OwnedManifest;
+use crate::paths::AppPaths;
 
 pub(crate) struct ProgressThrottle {
     last_emit: std::time::Instant,
@@ -398,5 +395,3 @@ restarts the download from the beginning.",
     });
     InstallOutcome::Done
 }
-
-

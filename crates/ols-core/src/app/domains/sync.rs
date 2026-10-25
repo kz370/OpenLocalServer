@@ -1,9 +1,9 @@
-use std::path::{Path, PathBuf};
-use crate::app::*;
 use crate::app::domains::*;
+use crate::app::*;
 use crate::domain::{AppSpec, BulkOutcome, Domain, Ownership, SiteBlocks, SiteKind};
 use crate::error::CoreError;
 use crate::web::WebConfig;
+use std::path::{Path, PathBuf};
 
 impl Inner {
     pub fn sync_auto_domains(&self) -> Result<usize, CoreError> {
@@ -202,4 +202,3 @@ fn auto_site(path: &Path) -> Option<(SiteKind, PathBuf)> {
         _ => None,
     }
 }
-

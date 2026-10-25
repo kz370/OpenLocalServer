@@ -1,17 +1,12 @@
 use std::collections::HashMap;
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 
-use futures_util::StreamExt;
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use tokio::sync::broadcast;
 
-use crate::catalog::{builtin_catalog, OwnedManifest, PackageManifest};
-use crate::paths::AppPaths;
 use super::types::*;
-use super::*;
+use crate::catalog::{builtin_catalog, PackageManifest};
+use crate::paths::AppPaths;
 
 pub struct RuntimeManager {
     pub(crate) runtime: tokio::runtime::Runtime,
@@ -289,4 +284,3 @@ pub(crate) fn runtime_name(id: &str, manifests: &[PackageManifest]) -> String {
             _ => id.into(),
         })
 }
-

@@ -1,10 +1,8 @@
-use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
-use serde::{Deserialize, Serialize};
 use super::*;
 use crate::db;
 use crate::error::CoreError;
 use crate::paths::AppPaths;
+use std::path::Path;
 
 pub struct DomainStore {
     paths: AppPaths,
@@ -488,4 +486,3 @@ pub fn slugify(name: &str) -> String {
     }
     out.trim_end_matches('-').to_string()
 }
-

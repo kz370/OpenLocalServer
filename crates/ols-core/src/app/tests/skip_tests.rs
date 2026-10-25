@@ -1,6 +1,6 @@
-use std::sync::Arc;
 use crate::app::*;
 use crate::domain::{Domain, SiteKind};
+use std::sync::Arc;
 
 #[cfg(test)]
 mod project_skip_tests {

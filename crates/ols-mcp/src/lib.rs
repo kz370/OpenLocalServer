@@ -283,24 +283,93 @@ fn mcp_tools() -> Vec<McpTool> {
         },
         McpTool {
             name: "ols_list_databases".into(),
-            description: Some("List databases across engines.".to_string()),
+            description: Some(
+                "List databases across engines (MariaDB/MySQL, PostgreSQL, SQLite). 'engine' is optional: if omitted, databases across all engines are listed."
+                    .to_string(),
+            ),
             input_schema: json!({
                 "type": "object",
-                "properties": { "engine": { "type": "string" } }
+                "properties": {
+                    "engine": {
+                        "type": "string",
+                        "description": "Optional database engine ('mariadb', 'mysql', 'postgres', or 'sqlite'). If omitted, databases from all engines are listed."
+                    }
+                }
             }),
         },
         McpTool {
             name: "ols_create_database".into(),
-            description: Some("Create a new database.".to_string()),
+            description: Some(
+                "Create a new database. Supports MariaDB, MySQL, PostgreSQL, and SQLite. For SQLite, 'name' can be a database file name or path."
+                    .to_string(),
+            ),
             input_schema: json!({
                 "type": "object",
                 "properties": {
-                    "engine": { "type": "string" },
-                    "name": { "type": "string" },
-                    "user": { "type": "string" },
-                    "password": { "type": "string" }
+                    "engine": {
+                        "type": "string",
+                        "description": "Database engine: 'mariadb', 'mysql', 'postgres', or 'sqlite'."
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Database name (or SQLite file path/name)."
+                    },
+                    "user": {
+                        "type": "string",
+                        "description": "Optional username for MariaDB/PostgreSQL."
+                    },
+                    "password": {
+                        "type": "string",
+                        "description": "Optional user password for MariaDB/PostgreSQL."
+                    }
                 },
                 "required": ["engine", "name"]
+            }),
+        },
+        McpTool {
+            name: "ols_list_tables".into(),
+            description: Some(
+                "List all tables in a database. Supports MariaDB/MySQL, PostgreSQL, and SQLite."
+                    .to_string(),
+            ),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "engine": {
+                        "type": "string",
+                        "description": "Database engine ('mariadb', 'postgres', or 'sqlite')."
+                    },
+                    "database": {
+                        "type": "string",
+                        "description": "Database name (for MariaDB/PostgreSQL) or database file path (for SQLite)."
+                    }
+                },
+                "required": ["engine", "database"]
+            }),
+        },
+        McpTool {
+            name: "ols_execute_sql".into(),
+            description: Some(
+                "Execute a SQL query or command on a database to view table rows, inspect schemas, or modify data and tables (SELECT, INSERT, UPDATE, DELETE, CREATE TABLE, ALTER TABLE, etc.). Supports MariaDB/MySQL, PostgreSQL, and SQLite."
+                    .to_string(),
+            ),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "engine": {
+                        "type": "string",
+                        "description": "Database engine ('mariadb', 'postgres', or 'sqlite')."
+                    },
+                    "database": {
+                        "type": "string",
+                        "description": "Database name (for MariaDB/PostgreSQL) or database file path (for SQLite). Optional for server-level queries."
+                    },
+                    "sql": {
+                        "type": "string",
+                        "description": "SQL statement or query to execute."
+                    }
+                },
+                "required": ["engine", "sql"]
             }),
         },
         McpTool {
@@ -725,15 +794,65 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
             confirm_exposure: false,
         },
         "ols_stop_tunnel" => C::StopTunnel { id: req_str!("id") },
-        "ols_list_databases" => C::ListDatabases {
+        "ols_list_databases" => {
+            let engine = opt_str!("engine").unwrap_or_else(|| "mariadb".into());
+            let engine_lower = engine.to_ascii_lowercase();
+            let target_engine = match engine_lower.as_str() {
+                "mysql" | "mariadb" => "mariadb",
+                "postgres" | "postgresql" | "pgsql" => "postgres",
+                _ => engine.as_str(),
+            };
+            C::ListDatabases {
+                engine: target_engine.to_string(),
+            }
+        }
+        "ols_create_database" => {
+            let engine = req_str!("engine");
+            let engine_lower = engine.to_ascii_lowercase();
+            let norm_engine = match engine_lower.as_str() {
+                "mysql" | "mariadb" => "mariadb",
+                "postgres" | "postgresql" | "pgsql" => "postgres",
+                "sqlite" | "sqlite3" => "sqlite",
+                _ => engine.as_str(),
+            };
+            if norm_engine == "sqlite" {
+                let name = req_str!("name");
+                let pb = std::path::Path::new(&name);
+                let target_path = if pb.is_absolute() {
+                    pb.to_path_buf()
+                } else {
+                    resolve_sites_dir().join(pb)
+                };
+                C::CreateSqlite {
+                    path: target_path.to_string_lossy().to_string(),
+                    project_id: None,
+                }
+            } else {
+                C::CreateDatabase {
+                    engine: norm_engine.to_string(),
+                    name: req_str!("name"),
+                    user: opt_str!("user"),
+                    password: opt_str!("password"),
+                }
+            }
+        }
+        "ols_list_tables" => C::ListDatabaseTables {
             engine: req_str!("engine"),
+            database: req_str!("database"),
         },
-        "ols_create_database" => C::CreateDatabase {
-            engine: req_str!("engine"),
-            name: req_str!("name"),
-            user: opt_str!("user"),
-            password: opt_str!("password"),
-        },
+        "ols_execute_sql" | "ols_query_database" => {
+            let sql = args
+                .get("sql")
+                .or_else(|| args.get("query"))
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| "missing required argument: sql".to_string())?
+                .to_string();
+            C::ExecuteSql {
+                engine: req_str!("engine"),
+                database: opt_str!("database"),
+                sql,
+            }
+        }
         "ols_apply_web" => C::ApplyWeb { overwrite: vec![] },
         "ols_validate_web" => C::ValidateWeb,
         "ols_list_tasks" => C::ListTasks,
@@ -1057,6 +1176,289 @@ async fn handle_request(req: JsonRpcRequest, override_token: Option<&str>) -> Js
                         }]
                     }),
                 );
+            }
+            if name == "ols_add_domain" {
+                let cmd = match build_command(name, &args) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        return JsonRpcResponse::err(
+                            req.id,
+                            json!({ "code": -32602, "message": e }),
+                        );
+                    }
+                };
+                let hostname = args
+                    .get("hostname")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                match send_command(cmd).await {
+                    Ok(add_resp) => {
+                        // Restart the server that this site is working on so SSL certificates are generated and applied
+                        let mut server_id = args
+                            .get("server")
+                            .and_then(|v| v.as_str())
+                            .filter(|s| !s.trim().is_empty())
+                            .map(|s| s.to_string());
+
+                        if server_id.is_none() {
+                            if let Ok(CoreResponse::WebConfig { config }) =
+                                send_command(CoreCommand::GetWebConfig).await
+                            {
+                                server_id = Some(config.default_server);
+                            }
+                        }
+                        let target_server = server_id.unwrap_or_else(|| "nginx".to_string());
+
+                        let mut extra_info = String::new();
+                        match send_command(CoreCommand::RestartService {
+                            id: target_server.clone(),
+                        })
+                        .await
+                        {
+                            Ok(_) => {
+                                extra_info.push_str(&format!(
+                                    "\n\nWeb server '{target_server}' was restarted and SSL certificate applied."
+                                ));
+                            }
+                            Err(e) => {
+                                extra_info.push_str(&format!(
+                                    "\n\nNote: site was added, but restarting web server '{target_server}' encountered: {e}"
+                                ));
+                            }
+                        }
+
+                        // If the site has an app (Node.js/Python), restart the supervised site app process
+                        let has_app = args.get("command").is_some()
+                            || args
+                                .get("kind")
+                                .and_then(|v| v.as_str())
+                                .map_or(false, |k| {
+                                    k.eq_ignore_ascii_case("node")
+                                        || k.eq_ignore_ascii_case("python")
+                                });
+                        if has_app && !hostname.is_empty() {
+                            let _ = send_command(CoreCommand::RestartSiteApp {
+                                hostname: hostname.clone(),
+                            })
+                            .await;
+                        }
+
+                        let text = format!("{}{}", format_response(&add_resp), extra_info);
+                        return JsonRpcResponse::ok(
+                            req.id,
+                            json!({ "content": [{ "type": "text", "text": text }] }),
+                        );
+                    }
+                    Err(e) => {
+                        return JsonRpcResponse::err(
+                            req.id,
+                            json!({ "code": -32603, "message": e }),
+                        );
+                    }
+                }
+            }
+            if name == "ols_list_tables" {
+                let db_name = args.get("database").and_then(|v| v.as_str()).unwrap_or("");
+                match build_command(name, &args) {
+                    Ok(cmd) => match send_command(cmd).await {
+                        Ok(CoreResponse::Names { names }) => {
+                            let text = if names.is_empty() {
+                                format!("No tables found in database '{db_name}'.")
+                            } else {
+                                format!(
+                                    "Tables in database '{db_name}' ({} total):\n{}",
+                                    names.len(),
+                                    names
+                                        .iter()
+                                        .map(|t| format!("- {t}"))
+                                        .collect::<Vec<_>>()
+                                        .join("\n")
+                                )
+                            };
+                            return JsonRpcResponse::ok(
+                                req.id,
+                                json!({ "content": [{ "type": "text", "text": text }] }),
+                            );
+                        }
+                        Ok(other) => {
+                            return JsonRpcResponse::ok(
+                                req.id,
+                                json!({ "content": [{ "type": "text", "text": format_response(&other) }] }),
+                            );
+                        }
+                        Err(e) => {
+                            return JsonRpcResponse::err(
+                                req.id,
+                                json!({ "code": -32603, "message": e }),
+                            );
+                        }
+                    },
+                    Err(e) => {
+                        return JsonRpcResponse::err(
+                            req.id,
+                            json!({ "code": -32603, "message": e }),
+                        );
+                    }
+                }
+            }
+            if name == "ols_list_databases" {
+                let engine_opt = args
+                    .get("engine")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.trim().to_lowercase())
+                    .filter(|s| !s.is_empty() && s != "all");
+
+                match engine_opt.as_deref() {
+                    Some("sqlite") | Some("sqlite3") => {
+                        match send_command(CoreCommand::ListSqlite).await {
+                            Ok(CoreResponse::SqliteList { databases }) => {
+                                if databases.is_empty() {
+                                    return JsonRpcResponse::ok(
+                                        req.id,
+                                        json!({ "content": [{ "type": "text", "text": "No SQLite databases registered." }] }),
+                                    );
+                                }
+                                let mut out = String::from("SQLite databases:\n");
+                                for d in databases {
+                                    out.push_str(&format!(
+                                        "- {} ({} bytes)\n",
+                                        d.path, d.size_bytes
+                                    ));
+                                }
+                                return JsonRpcResponse::ok(
+                                    req.id,
+                                    json!({ "content": [{ "type": "text", "text": out }] }),
+                                );
+                            }
+                            Ok(other) => {
+                                return JsonRpcResponse::ok(
+                                    req.id,
+                                    json!({ "content": [{ "type": "text", "text": format_response(&other) }] }),
+                                );
+                            }
+                            Err(e) => {
+                                return JsonRpcResponse::err(
+                                    req.id,
+                                    json!({ "code": -32603, "message": e }),
+                                );
+                            }
+                        }
+                    }
+                    Some(eng) => {
+                        let target_engine = match eng {
+                            "mysql" | "mariadb" => "mariadb",
+                            "postgresql" | "pgsql" | "postgres" => "postgres",
+                            other => other,
+                        };
+                        match send_command(CoreCommand::ListDatabases {
+                            engine: target_engine.to_string(),
+                        })
+                        .await
+                        {
+                            Ok(CoreResponse::Names { names }) => {
+                                let text = if names.is_empty() {
+                                    format!("No databases found for {target_engine}.")
+                                } else {
+                                    format!(
+                                        "{target_engine} databases:\n{}",
+                                        names
+                                            .iter()
+                                            .map(|n| format!("- {n}"))
+                                            .collect::<Vec<_>>()
+                                            .join("\n")
+                                    )
+                                };
+                                return JsonRpcResponse::ok(
+                                    req.id,
+                                    json!({ "content": [{ "type": "text", "text": text }] }),
+                                );
+                            }
+                            Ok(other) => {
+                                return JsonRpcResponse::ok(
+                                    req.id,
+                                    json!({ "content": [{ "type": "text", "text": format_response(&other) }] }),
+                                );
+                            }
+                            Err(e) => {
+                                return JsonRpcResponse::err(
+                                    req.id,
+                                    json!({ "code": -32603, "message": e }),
+                                );
+                            }
+                        }
+                    }
+                    None => {
+                        // Query all engines: MariaDB, PostgreSQL, SQLite
+                        let mut sections = Vec::new();
+
+                        // 1. MariaDB
+                        if let Ok(CoreResponse::Names { names }) =
+                            send_command(CoreCommand::ListDatabases {
+                                engine: "mariadb".into(),
+                            })
+                            .await
+                        {
+                            if !names.is_empty() {
+                                sections.push(format!(
+                                    "MariaDB / MySQL:\n{}",
+                                    names
+                                        .iter()
+                                        .map(|n| format!("  - {n}"))
+                                        .collect::<Vec<_>>()
+                                        .join("\n")
+                                ));
+                            }
+                        }
+
+                        // 2. PostgreSQL
+                        if let Ok(CoreResponse::Names { names }) =
+                            send_command(CoreCommand::ListDatabases {
+                                engine: "postgres".into(),
+                            })
+                            .await
+                        {
+                            if !names.is_empty() {
+                                sections.push(format!(
+                                    "PostgreSQL:\n{}",
+                                    names
+                                        .iter()
+                                        .map(|n| format!("  - {n}"))
+                                        .collect::<Vec<_>>()
+                                        .join("\n")
+                                ));
+                            }
+                        }
+
+                        // 3. SQLite
+                        if let Ok(CoreResponse::SqliteList { databases }) =
+                            send_command(CoreCommand::ListSqlite).await
+                        {
+                            if !databases.is_empty() {
+                                sections.push(format!(
+                                    "SQLite:\n{}",
+                                    databases
+                                        .iter()
+                                        .map(|d| format!("  - {} ({} bytes)", d.path, d.size_bytes))
+                                        .collect::<Vec<_>>()
+                                        .join("\n")
+                                ));
+                            }
+                        }
+
+                        let text = if sections.is_empty() {
+                            "No databases found across engines (MariaDB, PostgreSQL, SQLite). Ensure database services are started.".to_string()
+                        } else {
+                            format!("Databases across engines:\n\n{}", sections.join("\n\n"))
+                        };
+
+                        return JsonRpcResponse::ok(
+                            req.id,
+                            json!({ "content": [{ "type": "text", "text": text }] }),
+                        );
+                    }
+                }
             }
             if name == "ols_update_domain" {
                 let hostname = match args.get("hostname").and_then(|v| v.as_str()) {
@@ -1575,6 +1977,91 @@ mod tests {
             assert_eq!(id, "python");
         } else {
             panic!("expected RefreshRuntimeCatalog");
+        }
+    }
+
+    #[test]
+    fn build_command_database_tables_and_sql() {
+        let tools = mcp_tools();
+        assert!(tools.iter().any(|t| t.name == "ols_list_tables"));
+        assert!(tools.iter().any(|t| t.name == "ols_execute_sql"));
+
+        let list_tables_cmd = build_command(
+            "ols_list_tables",
+            &json!({ "engine": "mariadb", "database": "shop" }),
+        )
+        .unwrap();
+        if let CoreCommand::ListDatabaseTables { engine, database } = list_tables_cmd {
+            assert_eq!(engine, "mariadb");
+            assert_eq!(database, "shop");
+        } else {
+            panic!("expected ListDatabaseTables");
+        }
+
+        let exec_cmd = build_command(
+            "ols_execute_sql",
+            &json!({ "engine": "mariadb", "database": "shop", "sql": "SELECT * FROM users" }),
+        )
+        .unwrap();
+        if let CoreCommand::ExecuteSql {
+            engine,
+            database,
+            sql,
+        } = exec_cmd
+        {
+            assert_eq!(engine, "mariadb");
+            assert_eq!(database.as_deref(), Some("shop"));
+            assert_eq!(sql, "SELECT * FROM users");
+        } else {
+            panic!("expected ExecuteSql");
+        }
+
+        // Test with query alias
+        let query_cmd = build_command(
+            "ols_query_database",
+            &json!({ "engine": "sqlite", "query": "SELECT 1" }),
+        )
+        .unwrap();
+        if let CoreCommand::ExecuteSql {
+            engine,
+            database,
+            sql,
+        } = query_cmd
+        {
+            assert_eq!(engine, "sqlite");
+            assert!(database.is_none());
+            assert_eq!(sql, "SELECT 1");
+        } else {
+            panic!("expected ExecuteSql");
+        }
+
+        // Test ols_list_databases without engine argument (should default)
+        let list_db_default = build_command("ols_list_databases", &json!({})).unwrap();
+        if let CoreCommand::ListDatabases { engine } = list_db_default {
+            assert_eq!(engine, "mariadb");
+        } else {
+            panic!("expected ListDatabases");
+        }
+
+        // Test ols_list_databases with mysql alias
+        let list_db_mysql =
+            build_command("ols_list_databases", &json!({ "engine": "mysql" })).unwrap();
+        if let CoreCommand::ListDatabases { engine } = list_db_mysql {
+            assert_eq!(engine, "mariadb");
+        } else {
+            panic!("expected ListDatabases");
+        }
+
+        // Test ols_create_database with sqlite
+        let create_db_sqlite = build_command(
+            "ols_create_database",
+            &json!({ "engine": "sqlite", "name": "app.db" }),
+        )
+        .unwrap();
+        if let CoreCommand::CreateSqlite { path, .. } = create_db_sqlite {
+            assert!(path.ends_with("app.db"));
+        } else {
+            panic!("expected CreateSqlite");
         }
     }
 }

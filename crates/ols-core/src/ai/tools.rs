@@ -4,7 +4,6 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -14,8 +13,8 @@ use crate::error::CoreError;
 use crate::redact::{redact_env_file, redact_text};
 use crate::repair::RepairStep;
 
-use super::types::*;
 use super::policy::*;
+use super::types::*;
 use super::*;
 
 // ------------------------------------------------------------------------------ tools (read-only)
@@ -276,15 +275,18 @@ impl Inner {
     }
 }
 
-
 impl Inner {
-
     pub(crate) fn excerpt_dir(&self) -> PathBuf {
         self.paths.data_dir().join("ai-excerpts")
     }
 
     /// Page through a saved excerpt file: `start_line` 1-based, `lines` capped.
-    pub(crate) fn read_excerpt(&self, file: &str, start_line: usize, lines: usize) -> Result<String, String> {
+    pub(crate) fn read_excerpt(
+        &self,
+        file: &str,
+        start_line: usize,
+        lines: usize,
+    ) -> Result<String, String> {
         if file.contains('/') || file.contains('\\') || file.contains("..") {
             return Err("unknown excerpt file".into());
         }
@@ -305,6 +307,4 @@ impl Inner {
             all[start..end].join("\n")
         ))
     }
-
-
 }

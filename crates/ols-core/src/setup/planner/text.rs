@@ -1,14 +1,6 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
-use std::path::{Path, PathBuf};
-use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 use crate::setup::types::*;
-use crate::app::Inner;
-use crate::catalog;
-use crate::error::CoreError;
-use crate::manifest::LockFile;
-use crate::manifest;
-use crate::project::Project;
 
 pub(crate) fn on_off(b: bool) -> &'static str {
     if b {
@@ -72,4 +64,3 @@ pub fn plan_text(plan: &EnvironmentPlan) -> String {
     }
     out
 }
-

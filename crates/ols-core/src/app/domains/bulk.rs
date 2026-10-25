@@ -1,9 +1,9 @@
-use std::path::{Path, PathBuf};
-use crate::app::*;
 use crate::app::domains::*;
+use crate::app::*;
 use crate::domain::{AppSpec, BulkOutcome, Domain, Ownership, SiteBlocks, SiteKind};
 use crate::error::CoreError;
 use crate::web::WebConfig;
+use std::path::{Path, PathBuf};
 
 impl Inner {
     pub fn rename_domain(&self, hostname: &str, new_hostname: &str) -> Result<Domain, CoreError> {
@@ -138,7 +138,6 @@ impl Inner {
         Ok(outcome)
     }
 
-
     pub fn set_ownership(&self, hostname: &str, ownership: Ownership) -> Result<(), CoreError> {
         let cfg = self.web_config();
         let mut domains = self.domains.lock().unwrap();
@@ -151,7 +150,6 @@ impl Inner {
         let mut domains = self.domains.lock().unwrap();
         self.web.restore_history(&cfg, &mut domains, hostname, id)
     }
-
 }
 
 /// The "type of website" a site is listed under: "php", "nodejs", "python", "static", or
@@ -319,5 +317,3 @@ pub fn read_site_icon_image(folder: &str) -> Option<String> {
         None
     }
 }
-
-

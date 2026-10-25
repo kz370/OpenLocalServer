@@ -214,7 +214,6 @@ impl Inner {
         Err(CoreError::WebError(clashes.join("\n")))
     }
 
-
     pub fn write_web_config(
         &self,
         hostname: &str,
@@ -226,6 +225,4 @@ impl Inner {
         self.web
             .write_config(&cfg, &mut domains, hostname, part, content)
     }
-
-
 }

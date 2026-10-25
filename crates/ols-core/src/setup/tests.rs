@@ -1,7 +1,7 @@
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use serde::{Deserialize, Serialize};
 
 use super::types::*;
 use crate::app::Inner;
@@ -13,8 +13,8 @@ use crate::test_support;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::manifest;
     use crate::command::{Core, CoreCommand, CoreResponse};
+    use crate::manifest;
 
     fn core() -> (Core, crate::test_support::IsolatedHome) {
         let home = crate::test_support::isolated_home();

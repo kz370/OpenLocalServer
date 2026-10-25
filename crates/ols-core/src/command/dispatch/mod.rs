@@ -12,7 +12,10 @@ use super::Core;
 use crate::error::CoreError;
 
 impl Core {
-    pub(crate) fn dispatch_inner(&self, mut command: CoreCommand) -> Result<CoreResponse, CoreError> {
+    pub(crate) fn dispatch_inner(
+        &self,
+        mut command: CoreCommand,
+    ) -> Result<CoreResponse, CoreError> {
         command = match self.dispatch_system(command) {
             Ok(res) => return res,
             Err(cmd) => cmd,
@@ -43,7 +46,9 @@ impl Core {
         };
         match self.dispatch_tools(command) {
             Ok(res) => res,
-            Err(cmd) => Err(CoreError::ServiceError(format!("Unhandled command: {cmd:?}"))),
+            Err(cmd) => Err(CoreError::ServiceError(format!(
+                "Unhandled command: {cmd:?}"
+            ))),
         }
     }
 }

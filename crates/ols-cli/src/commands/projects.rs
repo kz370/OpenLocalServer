@@ -1,64 +1,64 @@
-use std::path::{Path, PathBuf};
-use ols_core::command::{CoreCommand, CoreResponse};
 use crate::args::{ProjectCmd, QuickCommandCmd, SnapshotCmd, WorkerCmd};
 use crate::commands::system::setup;
 use crate::ctx::{table, Ctx, R};
+use ols_core::command::{CoreCommand, CoreResponse};
+use std::path::{Path, PathBuf};
 
 pub fn domain(ctx: &Ctx) -> R<()> {
-            let r = ctx.call(CoreCommand::ListDomains)?;
-            if !ctx.print_json(&r) {
-                if let CoreResponse::Domains { domains } = r {
-                    let mut rows = vec![vec![
-                        "SITE".into(),
-                        "TYPE".into(),
-                        "STATE".into(),
-                        "FOLDER".into(),
-                    ]];
-                    rows.extend(domains.into_iter().map(|d| {
-                        vec![
-                            d.url,
-                            d.group,
-                            if d.enabled {
-                                "enabled".into()
-                            } else {
-                                "disabled".into()
-                            },
-                            d.folder,
-                        ]
-                    }));
-                    table(rows);
-                }
-            }
+    let r = ctx.call(CoreCommand::ListDomains)?;
+    if !ctx.print_json(&r) {
+        if let CoreResponse::Domains { domains } = r {
+            let mut rows = vec![vec![
+                "SITE".into(),
+                "TYPE".into(),
+                "STATE".into(),
+                "FOLDER".into(),
+            ]];
+            rows.extend(domains.into_iter().map(|d| {
+                vec![
+                    d.url,
+                    d.group,
+                    if d.enabled {
+                        "enabled".into()
+                    } else {
+                        "disabled".into()
+                    },
+                    d.folder,
+                ]
+            }));
+            table(rows);
+        }
+    }
     Ok(())
 }
 
 pub fn certificate(ctx: &Ctx) -> R<()> {
-            let r = ctx.call(CoreCommand::ListCertificates)?;
-            if !ctx.print_json(&r) {
-                if let CoreResponse::Certificates { certs } = r {
-                    let mut rows = vec![vec!["HOST".into(), "DAYS LEFT".into(), "NAMES".into()]];
-                    rows.extend(
-                        certs
-                            .into_iter()
-                            .map(|c| vec![c.hostname, c.days_left.to_string(), c.sans.join(", ")]),
-                    );
-                    table(rows);
-                }
-            }
+    let r = ctx.call(CoreCommand::ListCertificates)?;
+    if !ctx.print_json(&r) {
+        if let CoreResponse::Certificates { certs } = r {
+            let mut rows = vec![vec!["HOST".into(), "DAYS LEFT".into(), "NAMES".into()]];
+            rows.extend(
+                certs
+                    .into_iter()
+                    .map(|c| vec![c.hostname, c.days_left.to_string(), c.sans.join(", ")]),
+            );
+            table(rows);
+        }
+    }
     Ok(())
 }
 
 pub fn quick_app(ctx: &Ctx) -> R<()> {
-            let r = ctx.call(CoreCommand::ListQuickApps)?;
-            if !ctx.print_json(&r) {
-                if let CoreResponse::QuickApps { apps } = r {
-                    table(
-                        apps.into_iter()
-                            .map(|a| vec![a.id, a.name, a.description])
-                            .collect(),
-                    );
-                }
-            }
+    let r = ctx.call(CoreCommand::ListQuickApps)?;
+    if !ctx.print_json(&r) {
+        if let CoreResponse::QuickApps { apps } = r {
+            table(
+                apps.into_iter()
+                    .map(|a| vec![a.id, a.name, a.description])
+                    .collect(),
+            );
+        }
+    }
     Ok(())
 }
 
@@ -98,38 +98,38 @@ pub fn quick_command(ctx: &Ctx, cmd: QuickCommandCmd) -> R<()> {
 
 pub fn worker(ctx: &Ctx, cmd: WorkerCmd) -> R<()> {
     match cmd {
-            WorkerCmd::List => {
-                let r = ctx.call(CoreCommand::ListWorkers { project_id: None })?;
-                if !ctx.print_json(&r) {
-                    if let CoreResponse::Workers { workers } = r {
-                        table(
-                            workers
-                                .into_iter()
-                                .map(|w| {
-                                    vec![
-                                        w.worker.name,
-                                        format!("{}/{}", w.running, w.worker.count),
-                                        w.command_line,
-                                    ]
-                                })
-                                .collect(),
-                        );
-                    }
+        WorkerCmd::List => {
+            let r = ctx.call(CoreCommand::ListWorkers { project_id: None })?;
+            if !ctx.print_json(&r) {
+                if let CoreResponse::Workers { workers } = r {
+                    table(
+                        workers
+                            .into_iter()
+                            .map(|w| {
+                                vec![
+                                    w.worker.name,
+                                    format!("{}/{}", w.running, w.worker.count),
+                                    w.command_line,
+                                ]
+                            })
+                            .collect(),
+                    );
                 }
             }
-            WorkerCmd::Start { project } => {
-                let id = ctx.project_id(&project)?;
-                if let CoreResponse::Count { count } =
-                    ctx.call(CoreCommand::StartProjectWorkers { project_id: id })?
-                {
-                    println!("{count} worker process(es) running.");
-                }
+        }
+        WorkerCmd::Start { project } => {
+            let id = ctx.project_id(&project)?;
+            if let CoreResponse::Count { count } =
+                ctx.call(CoreCommand::StartProjectWorkers { project_id: id })?
+            {
+                println!("{count} worker process(es) running.");
             }
-            WorkerCmd::Stop { project } => {
-                let id = ctx.project_id(&project)?;
-                ctx.call(CoreCommand::StopProjectWorkers { project_id: id })?;
-                println!("Workers stopped.");
-            }
+        }
+        WorkerCmd::Stop { project } => {
+            let id = ctx.project_id(&project)?;
+            ctx.call(CoreCommand::StopProjectWorkers { project_id: id })?;
+            println!("Workers stopped.");
+        }
     }
     Ok(())
 }
@@ -244,5 +244,3 @@ pub fn project(ctx: &Ctx, cmd: ProjectCmd) -> R<()> {
     }
     Ok(())
 }
-
-

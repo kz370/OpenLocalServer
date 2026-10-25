@@ -10,10 +10,10 @@ mod ctx;
 #[cfg(test)]
 mod tests;
 
-use std::process::ExitCode;
 use clap::Parser;
 use ols_core::control;
 use ols_core::AppPaths;
+use std::process::ExitCode;
 
 use args::{Cli, Cmd};
 use ctx::Ctx;

@@ -14,28 +14,28 @@ use crate::error::CoreError;
 use crate::redact::{redact_env_file, redact_text};
 use crate::repair::RepairStep;
 
-use super::types::*;
 use super::policy::*;
+use super::types::*;
 use super::*;
 
 use super::chat::*;
 use super::providers::*;
 use super::tools::*;
 
-struct ToolCall {
+pub(crate) struct ToolCall {
     id: String,
     name: String,
     args: String,
 }
 
 #[derive(Default)]
-struct Completion {
+pub(crate) struct Completion {
     content: String,
     calls: Vec<ToolCall>,
     usage: Option<(u64, u64)>,
 }
 
-enum ChatError {
+pub(crate) enum ChatError {
     Cancelled,
     Status(u16, String),
     Other(String),
@@ -384,4 +384,3 @@ impl Core {
         steps
     }
 }
-

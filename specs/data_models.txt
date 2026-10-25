@@ -20,6 +20,8 @@ Entities:
 - InstallControl {paused, cancelled}, one per in-flight id@version, live only while that install runs. Pause holds the transfer (partial file kept, resume continues it); cancel deletes the partial download and installs nothing.
 - DatabaseInstance {id, engine, version, host, port, data_path, status}
 - Database {engine, name, owner} + DbUser {name, host, password_ref}
+- Database operations: `ListDatabaseTables {engine: String, database: String}` -> `CoreResponse::Names { names: Vec<String> }` (lists tables for MariaDB/MySQL, PostgreSQL, or SQLite); `ExecuteSql {engine: String, database: Option<String>, sql: String}` -> `CoreResponse::Text { text: String }` (runs arbitrary SQL DDL/DML and returns formatted tabular results or status).
+- Multi-engine aliasing: MariaDB and MySQL share the mariadb runtime/service; PostgreSQL normalizes pgsql/postgresql aliases; SQLite paths resolve against registered sqlite files or filesystem paths.
 - WebConfig {default_server: nginx|apache|caddy, servers:{server_id -> ServerPorts{http, https}}, php_workers, dns_port}
   Settings keys: web.default_server, web.servers.<id>.http_port, web.servers.<id>.https_port (legacy web.server / web.http_port / web.https_port migrate into the default server's entry on load).
   effective_ports(id) = 80/443 when id == default_server, else the stored pair; stored pairs are never rewritten just because a server becomes the default. First-time pairs: apache 8080/8443, caddy 8081/8444, nginx 8082/8445.

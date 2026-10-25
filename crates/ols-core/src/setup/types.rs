@@ -1,5 +1,5 @@
-use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 pub use crate::detection::Framework;
 pub use crate::domain::{AppSpec, Domain, Ownership, SiteKind};
@@ -221,4 +221,3 @@ pub struct ManifestInfo {
     pub has_commands: bool,
     pub has_services: bool,
 }
-

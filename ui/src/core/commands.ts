@@ -107,6 +107,8 @@ export type CoreCommand =
   | { type: 'export_web_config'; hostname: string; part: ConfigPart; dest: string }
   | { type: 'create_database'; engine: string; name: string; user?: string | null; password?: string | null }
   | { type: 'list_databases'; engine: string }
+  | { type: 'list_database_tables'; engine: string; database: string }
+  | { type: 'execute_sql'; engine: string; database?: string | null; sql: string }
   | { type: 'list_custom_services' }
   | { type: 'save_custom_service'; service: CustomServiceDef }
   | { type: 'remove_custom_service'; id: string }

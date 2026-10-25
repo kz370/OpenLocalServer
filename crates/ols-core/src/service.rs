@@ -912,21 +912,311 @@ impl ServiceManager {
             "postgres" => ("psql.exe", primary_port("postgres")),
             other => return Err(format!("{other} is not a SQL engine OLS manages")),
         };
-        let version = self
-            .runtimes
-            .installed_versions(engine)
-            .into_iter()
-            .next()
-            .ok_or_else(|| format!("{engine} is not installed"))?;
-        let client = self
-            .runtimes
-            .install_dir(engine, &version)
-            .join("bin")
-            .join(exe);
+        let version = self.runtimes.installed_versions(engine).into_iter().next();
+        let client = if let Some(version) = version {
+            let base = self.runtimes.install_dir(engine, &version).join("bin");
+            let p1 = base.join(exe);
+            if p1.is_file() {
+                p1
+            } else if engine == "mariadb" && base.join("mysql.exe").is_file() {
+                base.join("mysql.exe")
+            } else {
+                p1
+            }
+        } else if let Some(p) = crate::web::manager::find_executable(None, exe) {
+            p
+        } else if engine == "mariadb" {
+            crate::web::manager::find_executable(None, "mysql")
+                .ok_or_else(|| format!("{engine} is not installed"))?
+        } else {
+            return Err(format!("{engine} is not installed"));
+        };
         if !client.is_file() {
-            return Err(format!("{exe} missing on disk"));
+            return Err(format!("{exe} missing on disk at {}", client.display()));
         }
         Ok((client, port.unwrap()))
+    }
+
+    pub fn sqlite_client(&self) -> Result<PathBuf, String> {
+        if let Some(v) = self
+            .runtimes
+            .installed_versions("sqlite")
+            .into_iter()
+            .next()
+        {
+            if let Some(p) = self.runtimes.binary_path("sqlite", &v) {
+                if p.is_file() {
+                    return Ok(p);
+                }
+            }
+        }
+        let managed = self.paths.data_dir().join("runtimes").join("sqlite");
+        if let Ok(entries) = std::fs::read_dir(&managed) {
+            for d in entries.flatten() {
+                let exe = d.path().join("sqlite3.exe");
+                if exe.is_file() {
+                    return Ok(exe);
+                }
+            }
+        }
+        crate::web::manager::find_executable(None, "sqlite3")
+            .or_else(|| {
+                std::env::current_exe()
+                    .ok()
+                    .and_then(|e| e.parent().map(|p| p.join("sqlite3.exe")))
+            })
+            .filter(|p| p.is_file())
+            .ok_or_else(|| {
+                "sqlite3 is not installed or not found on PATH. Install it from the Runtimes page."
+                    .to_string()
+            })
+    }
+
+    pub fn resolve_sqlite_path(&self, database: &str) -> PathBuf {
+        let p = std::path::Path::new(database.trim());
+        if p.is_absolute() {
+            p.to_path_buf()
+        } else {
+            let in_sites = self.paths.sites_dir().join(p);
+            if in_sites.exists() {
+                in_sites
+            } else if p.exists() {
+                p.to_path_buf()
+            } else {
+                in_sites
+            }
+        }
+    }
+
+    pub fn list_tables(&self, engine: &str, database: &str) -> Result<Vec<String>, String> {
+        let engine_lower = engine.to_ascii_lowercase();
+        let engine_norm = match engine_lower.as_str() {
+            "mysql" | "mariadb" => "mariadb",
+            "postgres" | "postgresql" | "pgsql" => "postgres",
+            "sqlite" | "sqlite3" => "sqlite",
+            _ => engine,
+        };
+
+        if engine_norm == "sqlite" {
+            let client = self.sqlite_client()?;
+            let db_path = self.resolve_sqlite_path(database);
+            if !db_path.exists() {
+                return Err(format!(
+                    "SQLite database file not found: {}",
+                    db_path.display()
+                ));
+            }
+            let out = run_capture(
+                &client,
+                &[
+                    db_path.to_string_lossy().to_string(),
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name;".into(),
+                ],
+                None,
+                &[],
+                Duration::from_secs(20),
+            );
+            if !out.success() {
+                return Err(format!("sqlite3 error: {}", out.combined()));
+            }
+            return Ok(out
+                .stdout
+                .lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty())
+                .map(str::to_string)
+                .collect());
+        }
+
+        if !is_safe_identifier(database) {
+            return Err(IDENTIFIER_HINT.into());
+        }
+
+        if engine_norm == "postgres" {
+            let (client, port) = self.sql_client("postgres")?;
+            let port_s = port.to_string();
+            let args: Vec<String> = [
+                "-U",
+                "postgres",
+                "-h",
+                "127.0.0.1",
+                "-p",
+                port_s.as_str(),
+                "-d",
+                database,
+                "-X",
+                "-A",
+                "-t",
+                "-v",
+                "ON_ERROR_STOP=1",
+                "-c",
+                "SELECT tablename FROM pg_tables WHERE schemaname NOT IN ('pg_catalog', 'information_schema') ORDER BY tablename;",
+            ]
+            .iter()
+            .map(|a| a.to_string())
+            .collect();
+
+            let out = run_capture(&client, &args, None, &[], Duration::from_secs(20));
+            if !out.success() {
+                return Err(format!("postgres error: {}", out.combined()));
+            }
+            return Ok(out
+                .stdout
+                .lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty())
+                .map(str::to_string)
+                .collect());
+        }
+
+        if engine_norm == "mariadb" {
+            let (client, port) = self.sql_client("mariadb")?;
+            let port_s = port.to_string();
+            let query = format!("SHOW TABLES FROM `{database}`;");
+            let args: Vec<String> = [
+                "-u",
+                "root",
+                "-h",
+                "127.0.0.1",
+                "-P",
+                port_s.as_str(),
+                "--batch",
+                "--skip-column-names",
+                "-e",
+                &query,
+            ]
+            .iter()
+            .map(|a| a.to_string())
+            .collect();
+
+            let out = run_capture(&client, &args, None, &[], Duration::from_secs(20));
+            if !out.success() {
+                return Err(format!("mariadb error: {}", out.combined()));
+            }
+            return Ok(out
+                .stdout
+                .lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty())
+                .map(str::to_string)
+                .collect());
+        }
+
+        Err(format!("unsupported database engine: {engine}"))
+    }
+
+    pub fn run_sql_query(
+        &self,
+        engine: &str,
+        database: Option<&str>,
+        sql: &str,
+    ) -> Result<String, String> {
+        let engine_lower = engine.to_ascii_lowercase();
+        let engine_norm = match engine_lower.as_str() {
+            "mysql" | "mariadb" => "mariadb",
+            "postgres" | "postgresql" | "pgsql" => "postgres",
+            "sqlite" | "sqlite3" => "sqlite",
+            _ => engine,
+        };
+
+        if engine_norm == "sqlite" {
+            let db_str =
+                database.ok_or_else(|| "database file path is required for sqlite".to_string())?;
+            let client = self.sqlite_client()?;
+            let db_path = self.resolve_sqlite_path(db_str);
+            let args: Vec<String> = vec![
+                "-header".into(),
+                "-column".into(),
+                db_path.to_string_lossy().to_string(),
+                sql.to_string(),
+            ];
+            let out = run_capture(&client, &args, None, &[], Duration::from_secs(30));
+            if out.success() {
+                let res = out.stdout.trim().to_string();
+                if res.is_empty() {
+                    Ok("Query executed successfully (no rows returned).".into())
+                } else {
+                    Ok(res)
+                }
+            } else {
+                Err(format!("sqlite3 error: {}", out.combined()))
+            }
+        } else if engine_norm == "postgres" {
+            let (client, port) = self.sql_client("postgres")?;
+            let port_s = port.to_string();
+            let db_target = database
+                .filter(|d| !d.trim().is_empty())
+                .unwrap_or("postgres");
+            if !is_safe_identifier(db_target) {
+                return Err(IDENTIFIER_HINT.into());
+            }
+            let args: Vec<String> = [
+                "-U",
+                "postgres",
+                "-h",
+                "127.0.0.1",
+                "-p",
+                port_s.as_str(),
+                "-d",
+                db_target,
+                "-X",
+                "-v",
+                "ON_ERROR_STOP=1",
+                "-c",
+                sql,
+            ]
+            .iter()
+            .map(|a| a.to_string())
+            .collect();
+            let out = run_capture(&client, &args, None, &[], Duration::from_secs(30));
+            if out.success() {
+                let res = out.stdout.trim().to_string();
+                if res.is_empty() {
+                    Ok("Query executed successfully.".into())
+                } else {
+                    Ok(res)
+                }
+            } else {
+                Err(format!("postgres error: {}", out.combined()))
+            }
+        } else if engine_norm == "mariadb" {
+            let (client, port) = self.sql_client("mariadb")?;
+            let port_s = port.to_string();
+            let mut args: Vec<String> = vec![
+                "-u".into(),
+                "root".into(),
+                "-h".into(),
+                "127.0.0.1".into(),
+                "-P".into(),
+                port_s,
+                "--table".into(),
+            ];
+            if let Some(db) = database {
+                let db_trim = db.trim();
+                if !db_trim.is_empty() {
+                    if !is_safe_identifier(db_trim) {
+                        return Err(IDENTIFIER_HINT.into());
+                    }
+                    args.push("-D".into());
+                    args.push(db_trim.into());
+                }
+            }
+            args.push("-e".into());
+            args.push(sql.to_string());
+            let out = run_capture(&client, &args, None, &[], Duration::from_secs(30));
+            if out.success() {
+                let res = out.stdout.trim().to_string();
+                if res.is_empty() {
+                    Ok("Query executed successfully (no rows returned).".into())
+                } else {
+                    Ok(res)
+                }
+            } else {
+                Err(format!("mariadb error: {}", out.combined()))
+            }
+        } else {
+            Err(format!("unsupported database engine: {engine}"))
+        }
     }
 
     /// Runs SQL as root against the local engine and returns its tab-separated output.
@@ -1055,20 +1345,29 @@ impl ServiceManager {
     }
 
     pub fn create_database(&self, engine: &str, name: &str) -> Result<(), String> {
+        let engine_lower = engine.to_ascii_lowercase();
+        let engine_norm = match engine_lower.as_str() {
+            "mysql" | "mariadb" => "mariadb",
+            "postgres" | "postgresql" | "pgsql" => "postgres",
+            _ => engine,
+        };
         if !is_safe_identifier(name) {
             return Err(IDENTIFIER_HINT.into());
         }
-        if engine == "postgres" {
+        if engine_norm == "postgres" {
             // PostgreSQL has no `IF NOT EXISTS` for databases.
-            if self.list_databases(engine)?.iter().any(|d| d == name) {
+            if self.list_databases(engine_norm)?.iter().any(|d| d == name) {
                 return Ok(());
             }
             return self
-                .run_sql(engine, &format!("CREATE DATABASE \"{name}\""))
+                .run_sql(engine_norm, &format!("CREATE DATABASE \"{name}\""))
                 .map(|_| ());
         }
-        self.run_sql(engine, &format!("CREATE DATABASE IF NOT EXISTS `{name}`"))
-            .map(|_| ())
+        self.run_sql(
+            engine_norm,
+            &format!("CREATE DATABASE IF NOT EXISTS `{name}`"),
+        )
+        .map(|_| ())
     }
 
     /// Creating a database with a login of its own, or with none.
@@ -1132,13 +1431,19 @@ impl ServiceManager {
     }
 
     pub fn list_databases(&self, engine: &str) -> Result<Vec<String>, String> {
-        let text = if engine == "postgres" {
+        let engine_lower = engine.to_ascii_lowercase();
+        let engine_norm = match engine_lower.as_str() {
+            "mysql" | "mariadb" => "mariadb",
+            "postgres" | "postgresql" | "pgsql" => "postgres",
+            _ => engine,
+        };
+        let text = if engine_norm == "postgres" {
             self.run_sql(
-                engine,
+                engine_norm,
                 "SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY datname",
             )?
         } else {
-            self.run_sql(engine, "SHOW DATABASES")?
+            self.run_sql(engine_norm, "SHOW DATABASES")?
         };
         const SYSTEM: &[&str] = &[
             "information_schema",

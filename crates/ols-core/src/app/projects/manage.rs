@@ -1,13 +1,13 @@
+use notify::RecursiveMode;
+use notify_debouncer_mini::new_debouncer;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
-use serde::{Deserialize, Serialize};
-use notify::RecursiveMode;
-use notify_debouncer_mini::new_debouncer;
 use tokio::sync::broadcast;
 
-use crate::app::*;
 use crate::app::projects::*;
+use crate::app::*;
 use crate::error::CoreError;
 use crate::project::{build_detail, Project, ProjectDetail};
 
@@ -85,7 +85,6 @@ impl Inner {
             }
         });
     }
-
 
     pub fn project_detail(&self, id: &str) -> Option<ProjectDetail> {
         let project = lock(&self.projects).get(id)?;
@@ -327,7 +326,6 @@ impl Inner {
         }
         Ok(())
     }
-
 }
 
 fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
@@ -345,7 +343,10 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-pub(crate) fn move_to_excluded_dir(path: &Path, excluded_folder_name: &str) -> Result<PathBuf, CoreError> {
+pub(crate) fn move_to_excluded_dir(
+    path: &Path,
+    excluded_folder_name: &str,
+) -> Result<PathBuf, CoreError> {
     if !path.is_dir() {
         return Err(CoreError::failed_fix(
             format!("Folder does not exist: {}", path.display()),
@@ -408,4 +409,3 @@ pub(crate) fn move_to_excluded_dir(path: &Path, excluded_folder_name: &str) -> R
     }
     Ok(dest)
 }
-

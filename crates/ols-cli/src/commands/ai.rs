@@ -1,7 +1,7 @@
-use std::time::Duration;
-use ols_core::command::{CoreCommand, CoreResponse};
 use crate::args::{AiCmd, AiRun};
 use crate::ctx::{Ctx, R};
+use ols_core::command::{CoreCommand, CoreResponse};
+use std::time::Duration;
 
 pub fn ai_cmd(ctx: &Ctx, cmd: AiCmd) -> R<()> {
     let state = || -> R<ols_core::ai::AiState> {
@@ -175,7 +175,6 @@ pub fn ai_cmd(ctx: &Ctx, cmd: AiCmd) -> R<()> {
 
 /// Starts a request, streams the answer, then offers the proposed steps for approval.
 
-
 pub fn ai_run(ctx: &Ctx, request: ols_core::ai::AiRequest, run: AiRun) -> R<()> {
     use std::io::{IsTerminal, Write};
     if run.preview {
@@ -334,4 +333,3 @@ pub fn ai_run(ctx: &Ctx, request: ols_core::ai::AiRequest, run: AiRun) -> R<()> 
     }
     Ok(())
 }
-

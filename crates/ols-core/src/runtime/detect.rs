@@ -1,17 +1,4 @@
-use std::collections::HashMap;
-use std::io::Write;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, RwLock};
-
-use futures_util::StreamExt;
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use tokio::sync::broadcast;
-
-use crate::catalog::{builtin_catalog, OwnedManifest, PackageManifest};
-use crate::paths::AppPaths;
 use super::types::*;
-use super::*;
 
 /// Look for an existing, unmanaged install of `id` on PATH. Never touches or registers
 /// it — purely informational, so the UI can say "found on your system" instead of only
@@ -122,4 +109,3 @@ fn probe_version(exe: &std::path::Path, flag: &str) -> Option<String> {
             .to_string()
     })
 }
-

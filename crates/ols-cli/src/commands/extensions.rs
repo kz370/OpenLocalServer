@@ -1,9 +1,9 @@
-use std::path::Path;
-use std::time::Duration;
-use ols_core::command::{CoreCommand, CoreResponse};
-use ols_core::updater::UpdateStatus;
 use crate::args::{ApiCmd, CatalogCmd, PluginCmd, TestCmd, UpdateCmd};
 use crate::ctx::{confirm, table, Ctx, R};
+use ols_core::command::{CoreCommand, CoreResponse};
+use ols_core::updater::UpdateStatus;
+use std::path::Path;
+use std::time::Duration;
 
 pub fn test(ctx: &Ctx, cmd: TestCmd) -> R<()> {
     match cmd {
@@ -122,8 +122,6 @@ pub fn plugin(ctx: &Ctx, cmd: PluginCmd) -> R<()> {
     Ok(())
 }
 
-
-
 pub fn catalog(ctx: &Ctx, cmd: CatalogCmd) -> R<()> {
     let show = |ctx: &Ctx, r: CoreResponse| {
         if ctx.print_json(&r) {
@@ -198,7 +196,6 @@ pub fn catalog(ctx: &Ctx, cmd: CatalogCmd) -> R<()> {
     Ok(())
 }
 
-
 pub fn api(ctx: &Ctx, cmd: ApiCmd) -> R<()> {
     let show = |ctx: &Ctx, r: CoreResponse| {
         if ctx.print_json(&r) {
@@ -269,8 +266,6 @@ pub fn api(ctx: &Ctx, cmd: ApiCmd) -> R<()> {
     Ok(())
 }
 
-
-
 pub fn update(ctx: &Ctx, cmd: UpdateCmd) -> R<()> {
     match cmd {
         UpdateCmd::Check => {
@@ -321,7 +316,6 @@ Install it with: ols update install",
     }
     Ok(())
 }
-
 
 pub fn load_test(
     ctx: &Ctx,
@@ -453,4 +447,3 @@ pub fn load_test(
             .unwrap_or_else(|| "the test didn't pass".into())),
     }
 }
-

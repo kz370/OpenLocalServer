@@ -1,15 +1,9 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
-use std::path::{Path, PathBuf};
-use serde::{Deserialize, Serialize};
+use std::path::Path;
 
-use super::Planner;
 use super::on_off;
+use super::Planner;
+use crate::manifest::SchedulerEntry;
 use crate::setup::types::*;
-use crate::app::Inner;
-use crate::catalog;
-use crate::error::CoreError;
-use crate::manifest::{self, LockFile, SchedulerEntry};
-use crate::project::Project;
 
 impl Planner<'_> {
     pub(crate) fn domain(
@@ -203,7 +197,12 @@ impl Planner<'_> {
         Some(host)
     }
 
-    pub(crate) fn workers(&mut self, project_id: &str, framework: &Framework, manifest: &EnvironmentManifest) {
+    pub(crate) fn workers(
+        &mut self,
+        project_id: &str,
+        framework: &Framework,
+        manifest: &EnvironmentManifest,
+    ) {
         let existing = self.inner.workers_for(project_id);
         for (name, entry) in &manifest.workers {
             let def = match entry {

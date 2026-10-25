@@ -185,7 +185,11 @@ scripts/update-version.bat | delegates_to | scripts/update-version.ps1 via pwsh 
 update-version.bat | delegates_to | scripts/update-version.bat %*
 scripts/update-version.ps1 | synchronizes | Cargo.toml, src-tauri/tauri.conf.json, ui/package.json, ui/package-lock.json, Cargo.lock, README.md, CHANGELOG.md, release-notes/v<version>.md
 scripts/update-version.ps1 | validates_via | cargo metadata --format-version 1 --no-deps
-ols-mcp | exposes | CoreCommand variants as MCP JSON-RPC 2.0 tools (ols_list_domains, ols_add_domain, ols_get_sites_dir, ols_start_service, ols_apply_web, etc.) and `ols://sites-dir` resource over stdio; `ols_run_command` is an escape hatch for arbitrary `CoreCommand` variants.
+ols-mcp | exposes | CoreCommand variants as MCP JSON-RPC 2.0 tools (ols_list_domains, ols_add_domain, ols_list_tables, ols_execute_sql, ols_get_sites_dir, ols_start_service, ols_apply_web, etc.) and `ols://sites-dir` resource over stdio; `ols_run_command` is an escape hatch for arbitrary `CoreCommand` variants.
+ols-mcp (ols_add_domain) | triggers | CoreCommand::RestartService for the target web server so local TLS certificates are generated and loaded into the server immediately.
+ols-mcp (ols_list_databases) | queries | MariaDB, PostgreSQL, and SQLite databases when engine is omitted; normalizes mysql to mariadb.
+CoreCommand::ListDatabaseTables | calls | ServiceManager::list_tables across MariaDB, PostgreSQL, and SQLite engines.
+CoreCommand::ExecuteSql | calls | ServiceManager::run_sql_query across MariaDB, PostgreSQL, and SQLite engines.
 Dialog | renders_below | Titlebar (fixed top-9 inset-x-0 bottom-0, unblocking native titlebar drag region and window controls)
 Dialog | layers_via | DialogDepthContext and layer prop (base z-60, nested/top/sub z-70, ai z-80, confirm z-90)
 Cloudflare (tunnel) | filters_url | api.trycloudflare.com (ignores management API endpoint and extracts only public tunnel address)

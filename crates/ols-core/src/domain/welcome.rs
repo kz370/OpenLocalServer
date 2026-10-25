@@ -1,6 +1,5 @@
-use std::path::{Path, PathBuf};
 use super::types::*;
-use crate::error::CoreError;
+use std::path::Path;
 
 pub fn ensure_site_dir_and_welcome_file(domain: &Domain) -> std::io::Result<()> {
     match &domain.kind {

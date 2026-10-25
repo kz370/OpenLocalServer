@@ -1,13 +1,13 @@
+use serde_json::Value;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
-use serde_json::Value;
 
+use super::types::*;
 use crate::command::CoreCommand;
 use crate::error::CoreError;
 use crate::redact::redact_text;
-use super::types::*;
 
 pub const KINDS: &[&str] = &["lmstudio", "ollama", "huggingface", "openrouter", "custom"];
 
@@ -41,7 +41,6 @@ pub(crate) fn yes() -> bool {
 pub(crate) fn key_name(provider_id: &str) -> String {
     format!("ai:{provider_id}")
 }
-
 
 pub fn is_local_url(url: &str) -> bool {
     let Some(parsed) = reqwest::Url::parse(url.trim()).ok() else {
@@ -190,6 +189,8 @@ pub fn allowed(cmd: &CoreCommand) -> bool {
             | C::BackupDatabase { .. }
             | C::RestoreDatabase { .. }
             | C::ListDatabases { .. }
+            | C::ListDatabaseTables { .. }
+            | C::ExecuteSql { .. }
             // Web servers
             | C::ApplyWeb { .. }
             | C::ValidateWeb
@@ -326,4 +327,3 @@ To propose changes, end the answer with exactly one block:
 Propose only what you are sure about, at most 10 steps, and use ids and names you were given from the tools. Do not propose anything when no command is needed."#;
 
 pub(crate) const SYSTEM: &str = "You are the OpenLocalServer (OLS) Assistant, the single conversational front door for the whole application. OLS manages Nginx, Apache and Caddy, PHP/Node/Python runtimes, MariaDB, PostgreSQL, MongoDB, Redis, Mailpit, trusted local HTTPS domains, tunnels, and project manifests in .openlocalserver/. Be concrete and brief; say what you are unsure of. You cannot run anything yourself: the user approves every change. Secrets in what you are given are replaced by [redacted]; never ask for them.";
-

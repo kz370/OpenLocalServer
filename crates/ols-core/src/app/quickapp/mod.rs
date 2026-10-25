@@ -6,12 +6,12 @@ pub use self::actions::*;
 pub use self::commands::*;
 pub use self::resolve::*;
 
-use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
 use crate::app::Inner;
 use crate::quickapp::run::{ActionOutcome, ResolvedProgram, RunCtx};
 use crate::quickapp::QuickHost;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 impl crate::quickapp::EntryView {
     pub fn source_label(&self) -> String {

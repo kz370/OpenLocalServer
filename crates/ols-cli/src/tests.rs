@@ -1,5 +1,5 @@
-use std::path::{Path, PathBuf};
 use crate::ctx::explorer_path;
+use std::path::{Path, PathBuf};
 
 /// Explorer passes a shared folder as `UNC\server\share\path`, which is why the
 /// right-click menu refused every folder on a network drive.

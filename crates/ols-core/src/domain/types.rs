@@ -1,7 +1,6 @@
-use std::collections::BTreeMap;
-use std::path::PathBuf;
-use serde::{Deserialize, Serialize};
 use crate::error::CoreError;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 pub(crate) fn yes() -> bool {
     true
@@ -283,8 +282,6 @@ impl Default for Domain {
         }
     }
 }
-
-
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct BulkOutcome {

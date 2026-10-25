@@ -1,8 +1,6 @@
-use crate::catalog::{builtin_catalog, OwnedManifest, PackageManifest};
 use super::manager::runtime_name;
 use super::scrapers::*;
-use super::*;
-
+use crate::catalog::{builtin_catalog, OwnedManifest, PackageManifest};
 
 pub(crate) fn owned_manifest(m: PackageManifest) -> OwnedManifest {
     OwnedManifest {

@@ -1,8 +1,8 @@
-use std::path::{Path, PathBuf};
-use serde::{Deserialize, Serialize};
-use crate::app::*;
 use crate::app::projects::*;
+use crate::app::*;
 use crate::error::CoreError;
+use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 
 /// One entry of the deletion history: a project folder or an automatic site the user
 /// deleted, kept so scans and automatic domains leave it alone. Clearing an entry only
@@ -120,8 +120,6 @@ pub(crate) fn skip_matches(entries: &[SkipEntry], path: &str) -> bool {
         stored.eq_ignore_ascii_case(&raw) || stored.eq_ignore_ascii_case(&canonical)
     })
 }
-
-
 
 impl Inner {
     pub(crate) fn skip_entries(&self, key: &str) -> Vec<SkipEntry> {

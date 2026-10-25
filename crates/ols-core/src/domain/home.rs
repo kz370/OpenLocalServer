@@ -1,11 +1,8 @@
-use std::collections::BTreeMap;
-use std::path::Path;
 use super::types::*;
 use crate::paths::AppPaths;
+use std::collections::BTreeMap;
+use std::path::Path;
 
-fn yes() -> bool {
-    true
-}
 
 /// The site every fresh install starts with: a static welcome page.
 pub const HOME_HOSTNAME: &str = "openlocalserver.test";

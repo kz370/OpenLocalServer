@@ -11,7 +11,7 @@ Each MCP tool maps one-to-one to an OLS `CoreCommand`, so an LLM can discover an
 - **Runtimes**: `ols_list_runtimes`, `ols_install_runtime`, `ols_refresh_runtimes` (query and install Python, Node, and PHP runtimes)
 - **Services**: `ols_list_services`, `ols_start_service`, `ols_stop_service`, `ols_restart_service`
 - **Tunnels**: `ols_list_tunnels`, `ols_start_tunnel`, `ols_stop_tunnel`
-- **Databases**: `ols_list_databases`, `ols_create_database`
+- **Databases**: `ols_list_databases`, `ols_create_database`, `ols_list_tables` (list tables in MariaDB/MySQL, PostgreSQL, or SQLite), `ols_execute_sql` (view table content, schema, or modify data and tables via SQL)
 - **Web server**: `ols_apply_web`, `ols_validate_web`
 - **Tasks**: `ols_list_tasks`
 - **Escape hatch**: `ols_run_command` runs any `CoreCommand` variant by name with JSON args.
@@ -108,6 +108,41 @@ Inspect a project folder (detect frameworks, virtualenvs, dependencies, and sugg
     "name": "ols_inspect_site_folder",
     "arguments": {
       "path": "C:\\sites\\fastapi-app"
+    }
+  }
+}
+```
+
+List tables in a database:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 5,
+  "method": "tools/call",
+  "params": {
+    "name": "ols_list_tables",
+    "arguments": {
+      "engine": "mariadb",
+      "database": "shop"
+    }
+  }
+}
+```
+
+View table content or execute SQL:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 6,
+  "method": "tools/call",
+  "params": {
+    "name": "ols_execute_sql",
+    "arguments": {
+      "engine": "mariadb",
+      "database": "shop",
+      "sql": "SELECT id, username, email FROM users LIMIT 10;"
     }
   }
 }
