@@ -7,7 +7,7 @@ variables:
   - name: domain
     label: Domain
     type: domain
-    default: "myapp.test"
+    required: true
   - name: target_host
     label: Where it runs (127.0.0.1 = this computer; or an IP / hostname)
     type: text
