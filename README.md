@@ -72,41 +72,48 @@ Grab the latest installer (`OLS-2.4.0-setup.exe`) from the [Releases page](https
 
 ## 📸 Tour
 
-> Screenshots captured directly from the running app (dark theme).
+> Screenshots captured directly from the running app, showing **Dark** and **Light** themes side by side.
 
 <p align="center">
-  <img width="700" src="./assets/dashboard.webp" alt="Dashboard — environment health, services, diagnostics">
-  <br><em>Dashboard — health, services, diagnostics, and traffic graph at a glance</em>
+  <img width="49%" src="./assets/dashboard-dark.webp" alt="Dashboard — Dark Theme">
+  <img width="49%" src="./assets/dashboard-light.webp" alt="Dashboard — Light Theme">
+  <br><em>Dashboard — health, services, diagnostics, and traffic graph at a glance (Dark & Light)</em>
 </p>
 
 <p align="center">
-  <img width="700" src="./assets/sites.webp" alt="Sites & Projects — domains, per-site PHP, HTTPS, reverse proxy">
-  <br><em>Sites — domains, per-site PHP/Node/Python, HTTPS, status tabs, and site branding</em>
+  <img width="49%" src="./assets/sites-dark.webp" alt="Sites & Projects — Dark Theme">
+  <img width="49%" src="./assets/sites-light.webp" alt="Sites & Projects — Light Theme">
+  <br><em>Sites — domains, per-site PHP/Node/Python, HTTPS, status tabs, and site branding (Dark & Light)</em>
 </p>
 
 <p align="center">
-  <img width="700" src="./assets/runtimes.webp" alt="Runtimes — side-by-side versions and defaults">
-  <br><em>Runtimes — side-by-side versions, extensions, and global defaults</em>
+  <img width="49%" src="./assets/runtimes-dark.webp" alt="Runtimes — Dark Theme">
+  <img width="49%" src="./assets/runtimes-light.webp" alt="Runtimes — Light Theme">
+  <br><em>Runtimes — side-by-side versions, extensions, and global defaults (Dark & Light)</em>
 </p>
 
 <p align="center">
-  <img width="700" src="./assets/version-manager.webp" alt="Version manager — install and manage versions per runtime">
-  <br><em>Version manager — search, install, and manage runtime versions</em>
+  <img width="49%" src="./assets/version-manager-dark.webp" alt="Version Manager — Dark Theme">
+  <img width="49%" src="./assets/version-manager-light.webp" alt="Version Manager — Light Theme">
+  <br><em>Version Manager — search, install, and manage runtime versions (Dark & Light)</em>
 </p>
 
 <p align="center">
-  <img width="700" src="./assets/databases.webp" alt="Databases — engines, users, backups">
-  <br><em>Databases — engines, users, backups, table inspection, and SQL tools</em>
+  <img width="49%" src="./assets/databases-dark.webp" alt="Databases — Dark Theme">
+  <img width="49%" src="./assets/databases-light.webp" alt="Databases — Light Theme">
+  <br><em>Databases — engines, users, backups, table inspection, and SQL tools (Dark & Light)</em>
 </p>
 
 <p align="center">
-  <img width="700" src="./assets/webserver.webp" alt="Web server — engine config and control">
-  <br><em>Web server — live switching (Nginx / Apache / Caddy), syntax validation, and config history</em>
+  <img width="49%" src="./assets/webserver-dark.webp" alt="Web Server — Dark Theme">
+  <img width="49%" src="./assets/webserver-light.webp" alt="Web Server — Light Theme">
+  <br><em>Web Server — live switching (Nginx / Apache / Caddy), syntax validation, and config history (Dark & Light)</em>
 </p>
 
 <p align="center">
-  <img width="700" src="./assets/tunnels.webp" alt="Tunnels — share a local site, traffic inspector">
-  <br><em>Tunnels — share a local site publicly, inspect traffic, and replay requests</em>
+  <img width="49%" src="./assets/tunnels-dark.webp" alt="Tunnels — Dark Theme">
+  <img width="49%" src="./assets/tunnels-light.webp" alt="Tunnels — Light Theme">
+  <br><em>Tunnels — share a local site publicly, inspect traffic, and replay requests (Dark & Light)</em>
 </p>
 
 ---
