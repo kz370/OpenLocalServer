@@ -13,4 +13,5 @@ pub mod types;
 mod tests;
 
 pub use self::policy::*;
+pub(crate) use self::providers::{authorize, client};
 pub use self::types::*;

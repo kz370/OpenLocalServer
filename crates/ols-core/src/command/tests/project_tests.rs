@@ -1,12 +1,6 @@
-use serde_json::Value;
-use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
-
 use crate::command::*;
 use crate::domain::{Domain, Ownership};
-use crate::error::CoreError;
 use crate::project::Project;
-use crate::web::manager::ConfigPart;
 use crate::Core;
 
 fn test_core() -> (Core, crate::test_support::IsolatedHome) {

@@ -161,7 +161,7 @@ fn registry_run_target() -> Option<String> {
 /// characters survive into the stored value depends on how `reg add` was given the
 /// argument, so both spellings are accepted. Splitting on whitespace instead would
 /// truncate `C:\Program Files\Open Local Server\…` to `C:\Program`.
-pub(crate) fn parse_run_target(blob: &str) -> Option<String> {
+pub fn parse_run_target(blob: &str) -> Option<String> {
     let line = blob.lines().find(|l| l.contains(REG_VALUE))?;
     let row = line.split_once(REG_VALUE)?.1.trim();
     if let Some(quoted) = row

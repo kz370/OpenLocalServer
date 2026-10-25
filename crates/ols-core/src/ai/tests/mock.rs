@@ -6,9 +6,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
-use super::super::policy::*;
 use super::super::types::*;
-use super::super::*;
 use crate::command::Core;
 
 /// A stand-in OpenAI-compatible server on a loopback port. `respond(path, body, request_number)` returns the

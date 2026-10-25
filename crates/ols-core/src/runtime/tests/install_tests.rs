@@ -1,24 +1,18 @@
 use std::collections::HashMap;
-use std::io::{Read as _, Write};
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, RwLock};
+use std::io::Read;
+use std::path::Path;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use futures_util::StreamExt;
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use tokio::sync::broadcast;
-
-use crate::catalog::{builtin_catalog, OwnedManifest, PackageManifest};
-use crate::paths::AppPaths;
-use crate::runtime::archive::*;
-use crate::runtime::catalog::*;
-use crate::runtime::extract::*;
+use crate::catalog::OwnedManifest;
+use crate::runtime::archive::{cache_file_name, extract_zip, quarantined_error};
+use crate::runtime::extract::{install_one, ProgressThrottle};
 use crate::runtime::install::*;
-use crate::runtime::manager::*;
-use crate::runtime::resolve::*;
-use crate::runtime::scrapers::*;
 use crate::runtime::types::*;
+use crate::runtime::RuntimeEvent;
+use crate::AppPaths;
+use crate::RuntimeManager;
+use tokio::sync::broadcast;
 
 /// Real network access, real downloads — not run by default. Proves the full §21
 /// pipeline end-to-end for both archive layouts (Node's wrapped, PHP's flat):

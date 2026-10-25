@@ -1,24 +1,10 @@
-use std::collections::HashMap;
-use std::io::{Read as _, Write};
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, RwLock};
-use std::time::{Duration, Instant};
+use std::io::Write as _;
 
-use futures_util::StreamExt;
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use tokio::sync::broadcast;
-
-use crate::catalog::{builtin_catalog, OwnedManifest, PackageManifest};
-use crate::paths::AppPaths;
-use crate::runtime::archive::*;
-use crate::runtime::catalog::*;
+use crate::runtime::archive::zip_has_eocd;
 use crate::runtime::extract::*;
-use crate::runtime::install::*;
-use crate::runtime::manager::*;
-use crate::runtime::resolve::*;
+use crate::runtime::manager::RuntimeManager;
+use crate::runtime::resolve::resolve_online_manifest;
 use crate::runtime::scrapers::*;
-use crate::runtime::types::*;
 
 /// Trimmed copy of the real EDB binaries page: the version is separated from the
 /// `Binaries from installer` label by a `<span>` and a React `<!-- -->` comment, and

@@ -1,8 +1,6 @@
 use super::*;
 use crate::db;
-use crate::error::CoreError;
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 
 #[test]
 fn a_v6_page_the_user_edited_is_left_alone() {

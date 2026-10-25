@@ -1,10 +1,8 @@
 use super::*;
 use crate::db;
 use crate::domain::home::*;
-use crate::error::CoreError;
 use crate::paths::AppPaths;
-use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[test]
 fn hostname_validation_accepts_normal_and_rejects_dangerous_names() {
