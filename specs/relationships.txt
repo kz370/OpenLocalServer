@@ -42,7 +42,7 @@ SitesPage | reads | list_wp_projects (which rows show "WP Admin"), wp_sign_in + 
 WebManager | uses | DomainStore (snapshot only: apply renders, validates and restarts outside the store lock, and returns generated-config hashes for Inner to commit)
 WebManager | returns | HashUpdate (server id, hostname, sha-256) to Inner::record_generated_hashes
 WebManager | renders | one `localhost/<prefix>` routes file per server (all those requests share one Host, so they cannot be per-site files), each route proxying to its own site's vhost
-DomainStore | validates | Domain.path_prefix (one safe path segment, unique across sites — two sites on one path could not both answer)
+DomainStore | validates | Domain.path_prefix (one safe path segment, unique across sites — two sites on one path could not both answer) and SiteKind::Proxy upstream_port (unique across local proxy/app sites on 127.0.0.1; rejects internal reserved app ports for web, databases, caches, mail, DNS)
 WebManager | uses | CertificateManager
 WebManager | uses | PhpPools
 WebManager | uses | DnsServer

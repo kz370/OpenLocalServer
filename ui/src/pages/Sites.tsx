@@ -1160,6 +1160,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       <DomainDialog
         projects={projects}
         domain={adding}
+        existingDomains={web.domains}
         defaultParent={effectiveParent}
         installedPhp={installedPhp}
         onQuickApp={(id) => {

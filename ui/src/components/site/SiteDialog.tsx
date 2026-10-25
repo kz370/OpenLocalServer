@@ -302,6 +302,7 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
                   key={target.hostname ?? 'new'}
                   projects={projects}
                   domain={settingsDomain}
+                  existingDomains={web.domains}
                   isNew={!target.hostname}
                   installedPhp={installedPhp}
                   onSave={(d) => run('save', () => save(d))}

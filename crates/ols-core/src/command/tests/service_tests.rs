@@ -243,8 +243,8 @@ fn sites_are_grouped_by_website_type() {
             icon: None,
             ..Default::default()
         };
-    let proxy = || crate::domain::SiteKind::Proxy {
-        upstream_port: 3000,
+    let proxy = |port: u16| crate::domain::SiteKind::Proxy {
+        upstream_port: port,
         upstream_host: None,
         upstream_https: false,
     };
@@ -255,9 +255,9 @@ fn sites_are_grouped_by_website_type() {
             None,
         ),
         make("b.test", crate::domain::SiteKind::Static, None),
-        make("c.test", proxy(), Some(("npm", Some("node")))),
-        make("d.test", proxy(), Some(("uvicorn", None))),
-        make("e.test", proxy(), None),
+        make("c.test", proxy(3000), Some(("npm", Some("node")))),
+        make("d.test", proxy(8000), Some(("uvicorn", None))),
+        make("e.test", proxy(3001), None),
         make(
             "f.test",
             crate::domain::SiteKind::Proxy {

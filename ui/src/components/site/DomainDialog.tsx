@@ -13,7 +13,7 @@ import {
   Rocket,
   Terminal,
 } from 'lucide-react'
-import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 
 import { TechIcon, TechTile } from '@/components/TechIcon'
 import { Button } from '@/components/ui/button'
@@ -22,7 +22,39 @@ import { Field, FormSection, Select, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { buildSitePath, domainToFolderName, getDefaultSitesDir, getDefaultTld, slugify } from '@/lib/sites'
-import { type Domain, type Project, type QuickEntryView, type SiteFolderInspection, type SystemInstall, runCommand } from '@/core'
+import { type Domain, type DomainSummary, type Project, type QuickEntryView, type SiteFolderInspection, type SystemInstall, runCommand } from '@/core'
+
+export const RESERVED_APP_PORTS: Record<number, string> = {
+  53: 'DNS server',
+  80: 'Web server HTTP',
+  443: 'Web server HTTPS',
+  1025: 'Mailpit SMTP',
+  3306: 'MariaDB / MySQL',
+  5432: 'PostgreSQL',
+  6379: 'Redis',
+  8025: 'Mailpit Web UI',
+  8080: 'Apache HTTP',
+  8081: 'Caddy HTTP',
+  8082: 'Nginx HTTP',
+  8443: 'Apache HTTPS',
+  8444: 'Caddy HTTPS',
+  8445: 'Nginx HTTPS',
+  9000: 'PHP-FPM',
+  9003: 'Xdebug',
+  11211: 'Memcached',
+  27017: 'MongoDB',
+}
+
+function parseUpstreamTarget(target?: string | null): { host: string; port: number } | null {
+  if (!target) return null
+  try {
+    const url = new URL(target)
+    const port = Number(url.port) || (url.protocol === 'https:' ? 443 : 80)
+    return { host: url.hostname, port }
+  } catch {
+    return null
+  }
+}
 
 export type SiteServeMode = 'php' | 'node' | 'python' | 'proxy' | 'static'
 
@@ -85,12 +117,14 @@ export function DomainDialog({
   onQuickApp,
   installedPhp,
   defaultParent,
+  existingDomains,
 }: {
   projects: Project[]
   onQuickApp: (id: string) => void
   domain: Domain | null
   installedPhp: string[]
   defaultParent?: string
+  existingDomains?: DomainSummary[]
   onClose: () => void
   onSave: (d: Domain) => void
   busy: boolean
@@ -103,6 +137,7 @@ export function DomainDialog({
       domain={domain}
       defaultParent={defaultParent}
       installedPhp={installedPhp}
+      existingDomains={existingDomains}
       onClose={onClose}
       onSave={onSave}
       busy={busy}
@@ -116,6 +151,7 @@ function AddSiteDialogBody({
   domain,
   defaultParent,
   installedPhp,
+  existingDomains,
   onSave,
   busy,
   onClose,
@@ -125,6 +161,7 @@ function AddSiteDialogBody({
   domain: Domain
   defaultParent?: string
   installedPhp: string[]
+  existingDomains?: DomainSummary[]
   onSave: (d: Domain) => void
   busy: boolean
   onClose: () => void
@@ -155,6 +192,7 @@ function AddSiteDialogBody({
         isNew
         defaultParent={defaultParent}
         installedPhp={installedPhp}
+        existingDomains={existingDomains}
         onSave={onSave}
         busy={busy}
         submitRef={submitRef}
@@ -171,6 +209,7 @@ export function DomainSettings({
   isNew,
   defaultParent,
   installedPhp,
+  existingDomains,
   onSave,
   busy,
   actions,
@@ -183,6 +222,7 @@ export function DomainSettings({
   isNew: boolean
   defaultParent?: string
   installedPhp: string[]
+  existingDomains?: DomainSummary[]
   onSave: (d: Domain) => void
   busy: boolean
   actions?: (submit: () => void, busy: boolean) => ReactNode
@@ -190,6 +230,17 @@ export function DomainSettings({
   onOpenDomainsTab?: () => void
 }) {
   const [d, setD] = useState<Domain>(domain)
+  const [allDomains, setAllDomains] = useState<DomainSummary[]>(existingDomains || [])
+
+  useEffect(() => {
+    if (existingDomains) {
+      setAllDomains(existingDomains)
+    } else {
+      runCommand({ type: 'list_domains' }).then((res) => {
+        if (res.type === 'domains') setAllDomains(res.domains)
+      })
+    }
+  }, [existingDomains])
   const [projectName, setProjectName] = useState(() => {
     if (domain.project_id) {
       const p = projects.find((x) => x.id === domain.project_id)
@@ -233,6 +284,53 @@ export function DomainSettings({
   const [pythonRunOptChoice, setPythonRunOptChoice] = useState<string>('')
   const [portChecking, setPortChecking] = useState(false)
   const initialAppLine = domain?.app ? [domain.app.executable, ...domain.app.args].join(' ') : ''
+
+  const effectivePort =
+    d.kind.type === 'proxy' && d.kind.upstream_port
+      ? d.kind.upstream_port
+      : serveMode === 'python'
+        ? 8000
+        : 3000
+
+  const effectiveHost = d.kind.type === 'proxy' ? d.kind.upstream_host?.trim() || '127.0.0.1' : '127.0.0.1'
+  const isLocal =
+    !effectiveHost ||
+    effectiveHost === '127.0.0.1' ||
+    effectiveHost === 'localhost' ||
+    effectiveHost === '::1'
+
+  const portConflict = useMemo(() => {
+    if (!['node', 'python', 'proxy'].includes(serveMode)) return null
+
+    if (isLocal && effectivePort in RESERVED_APP_PORTS) {
+      return `Port ${effectivePort} is reserved for ${RESERVED_APP_PORTS[effectivePort]}. Choose a different port.`
+    }
+
+    const curHost = d.hostname.trim().toLowerCase()
+    for (const other of allDomains) {
+      if (other.hostname.toLowerCase() === curHost) continue
+      const target = parseUpstreamTarget(other.proxy_target)
+      if (!target) continue
+      const otherLocal =
+        !target.host ||
+        target.host === '127.0.0.1' ||
+        target.host === 'localhost' ||
+        target.host === '::1'
+
+      if (isLocal && otherLocal && target.port === effectivePort) {
+        return `Port ${effectivePort} is already assigned to site "${other.hostname}". Choose a different port.`
+      }
+      if (
+        !isLocal &&
+        !otherLocal &&
+        target.host.toLowerCase() === effectiveHost.toLowerCase() &&
+        target.port === effectivePort
+      ) {
+        return `Port ${effectivePort} on ${effectiveHost} is already assigned to site "${other.hostname}".`
+      }
+    }
+    return null
+  }, [serveMode, isLocal, effectivePort, effectiveHost, d.hostname, allDomains])
   const isInitialPython = domain?.app?.runtime?.startsWith('python') || ['python', 'py', 'uvicorn', 'flask', 'django', 'waitress', 'streamlit'].some((k) => domain?.app?.executable?.toLowerCase().includes(k))
   const [nodeAppLine, setNodeAppLine] = useState(!isInitialPython ? (initialAppLine || 'npm run dev') : 'npm run dev')
   const [pythonAppLine, setPythonAppLine] = useState(isInitialPython ? (initialAppLine || 'python main.py') : 'python main.py')
@@ -369,7 +467,25 @@ export function DomainSettings({
   async function findNextFreePort(startPort: number) {
     setPortChecking(true)
     try {
-      for (let p = startPort; p < startPort + 40; p++) {
+      const curHost = d.hostname.trim().toLowerCase()
+      for (let p = startPort; p < startPort + 100; p++) {
+        // Skip reserved internal application ports (databases, web servers, etc.)
+        if (isLocal && p in RESERVED_APP_PORTS) continue
+
+        // Skip ports already assigned to another site in OpenLocalServer
+        const usedByOther = allDomains.some((other) => {
+          if (other.hostname.toLowerCase() === curHost) return false
+          const target = parseUpstreamTarget(other.proxy_target)
+          if (!target) return false
+          const otherLocal =
+            !target.host ||
+            target.host === '127.0.0.1' ||
+            target.host === 'localhost' ||
+            target.host === '::1'
+          return isLocal && otherLocal && target.port === p
+        })
+        if (usedByOther) continue
+
         const res = await runCommand({ type: 'check_port', port: p })
         if (res.type === 'port' && res.status.status === 'free') {
           setD((cur) => ({
@@ -718,6 +834,7 @@ export function DomainSettings({
     if (!out.https) out.redirect_https = false
     if (!out.hostname) return setErr('Enter a domain like shop.test or mydomain.com')
     if (pathPrefixError) return setErr(pathPrefixError)
+    if (portConflict) return setErr(portConflict)
     if (!out.root) return setErr('Choose the site folder')
     if (out.public_domain && !out.tunnel_id) return setErr('Choose a saved named Cloudflare tunnel for the public domain')
     onSave(out)
@@ -1065,6 +1182,12 @@ export function DomainSettings({
                     Find free
                   </Button>
                 </div>
+                {portConflict && (
+                  <p className="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-destructive">
+                    <CircleAlert className="size-3.5 shrink-0" />
+                    {portConflict}
+                  </p>
+                )}
               </Field>
 
               <Field
@@ -1186,6 +1309,12 @@ export function DomainSettings({
                     Find free
                   </Button>
                 </div>
+                {portConflict && (
+                  <p className="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-destructive">
+                    <CircleAlert className="size-3.5 shrink-0" />
+                    {portConflict}
+                  </p>
+                )}
               </Field>
 
               <Field
@@ -1239,7 +1368,7 @@ export function DomainSettings({
 
         {serveMode === 'proxy' && (
           <>
-            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_7rem]">
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
               <Field label="Forward to" hint="Blank = this computer. Or a Docker host, another PC's IP, a hostname.">
                 <Input
                   value={d.kind.type === 'proxy' ? (d.kind.upstream_host ?? '') : ''}
@@ -1257,20 +1386,40 @@ export function DomainSettings({
                 />
               </Field>
               <Field label="Port">
-                <Input
-                  type="number"
-                  value={d.kind.type === 'proxy' ? d.kind.upstream_port : 3000}
-                  onChange={(e) =>
-                    set({
-                      kind: {
-                        type: 'proxy',
-                        upstream_port: Number(e.target.value) || 3000,
-                        upstream_host: d.kind.type === 'proxy' ? d.kind.upstream_host : null,
-                        upstream_https: d.kind.type === 'proxy' ? d.kind.upstream_https : false,
-                      },
-                    })
-                  }
-                />
+                <div className="flex gap-2">
+                  <Input
+                    type="number"
+                    value={d.kind.type === 'proxy' ? d.kind.upstream_port : 3000}
+                    onChange={(e) =>
+                      set({
+                        kind: {
+                          type: 'proxy',
+                          upstream_port: Number(e.target.value) || 3000,
+                          upstream_host: d.kind.type === 'proxy' ? d.kind.upstream_host : null,
+                          upstream_https: d.kind.type === 'proxy' ? d.kind.upstream_https : false,
+                        },
+                      })
+                    }
+                    className="font-mono w-28"
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={portChecking}
+                    onClick={() => findNextFreePort(d.kind.type === 'proxy' ? d.kind.upstream_port : 3000)}
+                    className="shrink-0 gap-1 text-xs"
+                  >
+                    <RefreshCw className={cn('size-3', portChecking && 'animate-spin')} />
+                    Find free
+                  </Button>
+                </div>
+                {portConflict && (
+                  <p className="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-destructive">
+                    <CircleAlert className="size-3.5 shrink-0" />
+                    {portConflict}
+                  </p>
+                )}
               </Field>
             </div>
             <Toggle

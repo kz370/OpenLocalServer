@@ -88,6 +88,7 @@ impl DomainStore {
         domain.broadcast_provider =
             validate_broadcast_provider(domain.broadcast_provider.as_deref())?;
         self.check_path_prefix_taken(&domain)?;
+        self.check_upstream_port_taken(&domain)?;
         validate_ssl_config(&domain)?;
         if let Some(host) = domain.public_domain.as_mut() {
             *host = host.trim().to_ascii_lowercase();
@@ -117,6 +118,7 @@ impl DomainStore {
         domain.broadcast_provider =
             validate_broadcast_provider(domain.broadcast_provider.as_deref())?;
         self.check_path_prefix_taken(&domain)?;
+        self.check_upstream_port_taken(&domain)?;
         validate_ssl_config(&domain)?;
         if let Some(host) = domain.public_domain.as_mut() {
             *host = host.trim().to_ascii_lowercase();
@@ -327,6 +329,58 @@ impl DomainStore {
         Ok(())
     }
 
+    /// Two sites cannot share the same local upstream port on 127.0.0.1: only one dev server
+    /// or daemon can bind the port at a time, and the other will crash or return HTTP 502 Bad Gateway.
+    fn check_upstream_port_taken(&self, candidate: &Domain) -> Result<(), CoreError> {
+        let SiteKind::Proxy {
+            upstream_port,
+            ref upstream_host,
+            ..
+        } = candidate.kind
+        else {
+            return Ok(());
+        };
+
+        let is_local = |h: Option<&str>| -> bool {
+            h.map_or(true, |v| {
+                let s = v.trim();
+                s.is_empty()
+                    || s == "127.0.0.1"
+                    || s == "::1"
+                    || s.eq_ignore_ascii_case("localhost")
+            })
+        };
+
+        if !is_local(upstream_host.as_deref()) {
+            return Ok(());
+        }
+
+        if let Some(label) = reserved_app_port_label(upstream_port) {
+            return Err(CoreError::DomainError(format!(
+                "Port {upstream_port} is reserved for {label}. Choose a different port for this site."
+            )));
+        }
+
+        if let Some(other) = self.domains.iter().find(|d| {
+            d.hostname != candidate.hostname
+                && match &d.kind {
+                    SiteKind::Proxy {
+                        upstream_port: op,
+                        upstream_host: oh,
+                        ..
+                    } => *op == upstream_port && is_local(oh.as_deref()),
+                    _ => false,
+                }
+        }) {
+            return Err(CoreError::DomainError(format!(
+                "Port {upstream_port} is already assigned to site '{}'. Choose a different port or free it first.",
+                other.hostname
+            )));
+        }
+
+        Ok(())
+    }
+
     pub(crate) fn persist(&self) -> Result<(), CoreError> {
         // Written back relative when the root is one of the app's own folders, so moving
         // the install moves the site with it instead of stranding it at a dead path.
@@ -485,4 +539,29 @@ pub fn slugify(name: &str) -> String {
         }
     }
     out.trim_end_matches('-').to_string()
+}
+
+/// Ports reserved for internal services (web servers, databases, caches, mail, DNS).
+pub fn reserved_app_port_label(port: u16) -> Option<&'static str> {
+    match port {
+        53 => Some("DNS server"),
+        80 => Some("Web server HTTP"),
+        443 => Some("Web server HTTPS"),
+        1025 => Some("Mailpit SMTP"),
+        3306 => Some("MariaDB / MySQL"),
+        5432 => Some("PostgreSQL"),
+        6379 => Some("Redis"),
+        8025 => Some("Mailpit Web UI"),
+        8080 => Some("Apache HTTP"),
+        8081 => Some("Caddy HTTP"),
+        8082 => Some("Nginx HTTP"),
+        8443 => Some("Apache HTTPS"),
+        8444 => Some("Caddy HTTPS"),
+        8445 => Some("Nginx HTTPS"),
+        9000 => Some("PHP-FPM"),
+        9003 => Some("Xdebug"),
+        11211 => Some("Memcached"),
+        27017 => Some("MongoDB"),
+        _ => None,
+    }
 }

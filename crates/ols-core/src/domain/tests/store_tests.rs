@@ -387,3 +387,96 @@ fn ensure_site_dir_does_not_overwrite_existing_index_file() {
     let content = std::fs::read_to_string(&index_file).unwrap();
     assert_eq!(content, "<h1>custom user content</h1>");
 }
+
+#[test]
+fn two_proxy_sites_cannot_claim_the_same_local_port() {
+    let home = crate::test_support::isolated_home();
+    let mut store = DomainStore::load(&home.paths).unwrap();
+
+    let mut first = domain("node-app.test");
+    first.kind = SiteKind::Proxy {
+        upstream_port: 3000,
+        upstream_host: None,
+        upstream_https: false,
+    };
+    store.add(first).unwrap();
+
+    let mut second = domain("second-app.test");
+    second.kind = SiteKind::Proxy {
+        upstream_port: 3000,
+        upstream_host: Some("127.0.0.1".into()),
+        upstream_https: false,
+    };
+    let err = store.add(second).unwrap_err().to_string();
+    assert!(err.contains("Port 3000"), "{err}");
+    assert!(err.contains("node-app.test"), "{err}");
+}
+
+#[test]
+fn a_proxy_site_may_keep_its_own_port_when_edited() {
+    let home = crate::test_support::isolated_home();
+    let mut store = DomainStore::load(&home.paths).unwrap();
+
+    let mut d = domain("node-app.test");
+    d.kind = SiteKind::Proxy {
+        upstream_port: 5000,
+        upstream_host: None,
+        upstream_https: false,
+    };
+    let saved = store.add(d).unwrap();
+
+    let mut edited = saved;
+    edited.https = false;
+    assert!(store.update(edited).is_ok());
+}
+
+#[test]
+fn proxy_sites_on_different_remote_hosts_may_share_a_port() {
+    let home = crate::test_support::isolated_home();
+    let mut store = DomainStore::load(&home.paths).unwrap();
+
+    let mut first = domain("remote1.test");
+    first.kind = SiteKind::Proxy {
+        upstream_port: 8080,
+        upstream_host: Some("192.168.1.10".into()),
+        upstream_https: false,
+    };
+    store.add(first).unwrap();
+
+    let mut second = domain("remote2.test");
+    second.kind = SiteKind::Proxy {
+        upstream_port: 8080,
+        upstream_host: Some("192.168.1.20".into()),
+        upstream_https: false,
+    };
+    assert!(store.add(second).is_ok());
+}
+
+#[test]
+fn proxy_sites_cannot_use_reserved_app_ports() {
+    let home = crate::test_support::isolated_home();
+    let mut store = DomainStore::load(&home.paths).unwrap();
+
+    let reserved = [
+        (80, "Web server HTTP"),
+        (443, "Web server HTTPS"),
+        (3306, "MariaDB / MySQL"),
+        (5432, "PostgreSQL"),
+        (6379, "Redis"),
+        (8025, "Mailpit"),
+    ];
+
+    for (port, label) in reserved {
+        let mut d = domain(&format!("app-{port}.test"));
+        d.kind = SiteKind::Proxy {
+            upstream_port: port,
+            upstream_host: None,
+            upstream_https: false,
+        };
+        let err = store.add(d).unwrap_err().to_string();
+        assert!(
+            err.contains(&format!("Port {port} is reserved for {label}")),
+            "expected reserved port error for {port}, got: {err}"
+        );
+    }
+}
