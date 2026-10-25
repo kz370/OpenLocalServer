@@ -1,6 +1,7 @@
 use super::super::types::*;
 use super::super::{file_name, report, Core};
 use crate::error::CoreError;
+use std::sync::Arc;
 
 impl Core {
     pub(crate) fn dispatch_ops(

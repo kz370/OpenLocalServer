@@ -11,6 +11,7 @@ pub mod types;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use self::archive::extract_zip;
 pub use self::detect::detect_system_install;
 pub use self::manager::*;
 pub use self::types::*;

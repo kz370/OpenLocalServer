@@ -1,10 +1,8 @@
-use crate::app::system::*;
+use std::path::Path;
+
 use crate::app::*;
-use crate::dbtools;
 use crate::domain::Domain;
 use crate::error::CoreError;
-use crate::health::{HealthReport, HealthTarget};
-use std::path::{Path, PathBuf};
 
 impl Inner {
     pub fn wp_projects(&self) -> Vec<crate::wordpress::WpProject> {

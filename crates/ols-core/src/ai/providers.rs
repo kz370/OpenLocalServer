@@ -1,21 +1,13 @@
-use std::collections::{BTreeMap, HashMap};
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
-use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use crate::app::Inner;
-use crate::command::{Core, CoreCommand};
 use crate::error::CoreError;
-use crate::redact::{redact_env_file, redact_text};
-use crate::repair::RepairStep;
 
 use super::policy::*;
 use super::types::*;
-use super::*;
 
 impl Inner {
     pub fn ai_settings(&self) -> AiSettings {

@@ -1,8 +1,7 @@
-use crate::app::projects::*;
 use crate::app::*;
 use crate::error::CoreError;
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// One entry of the deletion history: a project folder or an automatic site the user
 /// deleted, kept so scans and automatic domains leave it alone. Clearing an entry only

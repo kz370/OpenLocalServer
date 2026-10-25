@@ -1,10 +1,8 @@
-use crate::app::system::*;
+use std::path::{Path, PathBuf};
+
 use crate::app::*;
 use crate::dbtools;
-use crate::domain::Domain;
 use crate::error::CoreError;
-use crate::health::{HealthReport, HealthTarget};
-use std::path::{Path, PathBuf};
 
 impl Inner {
     pub fn open_database(

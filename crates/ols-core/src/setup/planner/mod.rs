@@ -1,7 +1,6 @@
 pub mod rules;
 pub mod text;
 
-pub(crate) use self::rules::*;
 pub use self::text::*;
 
 use crate::app::Inner;

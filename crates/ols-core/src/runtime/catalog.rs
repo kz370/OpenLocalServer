@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use super::detect::detect_system_install;
 use super::manager::*;
 use super::scrapers::*;
 use super::types::*;

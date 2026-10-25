@@ -1,12 +1,10 @@
 use notify::RecursiveMode;
 use notify_debouncer_mini::new_debouncer;
-use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::broadcast;
 
-use crate::app::projects::*;
 use crate::app::*;
 use crate::error::CoreError;
 use crate::project::{build_detail, Project, ProjectDetail};

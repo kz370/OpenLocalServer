@@ -1,9 +1,7 @@
-use crate::app::domains::*;
 use crate::app::*;
-use crate::domain::{AppSpec, BulkOutcome, Domain, Ownership, SiteBlocks, SiteKind};
+use crate::domain::{BulkOutcome, Domain, Ownership, SiteKind};
 use crate::error::CoreError;
-use crate::web::WebConfig;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 impl Inner {
     pub fn rename_domain(&self, hostname: &str, new_hostname: &str) -> Result<Domain, CoreError> {

@@ -1,6 +1,6 @@
 use crate::app::domains::*;
 use crate::app::*;
-use crate::domain::{AppSpec, BulkOutcome, Domain, Ownership, SiteBlocks, SiteKind};
+use crate::domain::{Domain, SiteBlocks, SiteKind};
 use crate::error::CoreError;
 use crate::web::WebConfig;
 use std::path::{Path, PathBuf};

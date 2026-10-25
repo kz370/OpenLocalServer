@@ -1,6 +1,9 @@
 use super::super::types::*;
 use super::super::Core;
+use crate::app::Host;
 use crate::error::CoreError;
+use crate::quickapp::commands::quick_command_from_line;
+use std::sync::Arc;
 
 impl Core {
     pub(crate) fn dispatch_database(

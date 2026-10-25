@@ -3,7 +3,6 @@ use crate::paths::AppPaths;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-
 /// The site every fresh install starts with: a static welcome page.
 pub const HOME_HOSTNAME: &str = "openlocalserver.test";
 /// Hostname seeded by older installs; renamed to [`HOME_HOSTNAME`] on load.

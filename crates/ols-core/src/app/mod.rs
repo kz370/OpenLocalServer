@@ -13,7 +13,6 @@ use crate::custom_install::CustomInstallStore;
 use crate::dbtools::ExternalToolStore;
 use crate::domain::{AppSpec, DomainStore, SiteBlocks, SiteKind};
 use crate::error::CoreError;
-use crate::health;
 use crate::paths::AppPaths;
 use crate::php::PhpPools;
 use crate::process::{ProcessId, ProcessSpec, ProcessSupervisor};

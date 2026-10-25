@@ -1,6 +1,10 @@
+use std::sync::Arc;
+
 use super::extract::*;
 use super::manager::*;
+use super::resolve::{owned_manifest, resolve_online_manifest};
 use super::types::*;
+use crate::catalog::builtin_catalog;
 
 impl RuntimeManager {
     pub(crate) fn is_installed(&self, id: &str, version: &str) -> bool {

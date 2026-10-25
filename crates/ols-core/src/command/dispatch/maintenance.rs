@@ -1,6 +1,7 @@
 use super::super::types::*;
 use super::super::{helper_service_status, Core};
 use crate::error::CoreError;
+use std::time::Duration;
 
 impl Core {
     pub(crate) fn dispatch_maintenance(

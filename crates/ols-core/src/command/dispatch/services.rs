@@ -1,6 +1,9 @@
 use super::super::types::*;
 use super::super::Core;
 use crate::error::CoreError;
+use crate::process::ProcessSpec;
+use crate::resolver::ResolutionSource;
+use std::time::Duration;
 
 impl Core {
     pub(crate) fn dispatch_services(
