@@ -7,7 +7,6 @@ use std::time::{Duration, Instant};
 use crate::catalog::OwnedManifest;
 use crate::runtime::archive::{cache_file_name, extract_zip, quarantined_error};
 use crate::runtime::extract::{install_one, ProgressThrottle};
-use crate::runtime::install::*;
 use crate::runtime::types::*;
 use crate::runtime::RuntimeEvent;
 use crate::AppPaths;

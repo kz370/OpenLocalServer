@@ -1,5 +1,5 @@
 use crate::app::*;
-use crate::domain::{Domain, SiteKind};
+use crate::domain::Domain;
 use std::sync::Arc;
 
 mod apply_concurrency_tests {

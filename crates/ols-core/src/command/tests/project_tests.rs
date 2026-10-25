@@ -10,6 +10,7 @@ fn test_core() -> (Core, crate::test_support::IsolatedHome) {
     (core, home)
 }
 
+#[test]
 fn diagnostics_report_a_missing_site_folder_and_remember_ignores() {
     let (core, home) = test_core();
     let gone = home.paths.root().join("gone");

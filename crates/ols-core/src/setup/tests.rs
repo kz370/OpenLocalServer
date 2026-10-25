@@ -1,11 +1,7 @@
 use std::path::Path;
 
 use super::types::*;
-use crate::command::{Core, CoreCommand, CoreResponse};
-use crate::manifest;
-
-use super::*;
-use crate::test_support;
+use crate::setup::plan_text;
 
 #[cfg(test)]
 mod tests {

@@ -13,6 +13,7 @@ fn test_core() -> (Core, crate::test_support::IsolatedHome) {
     (core, home)
 }
 
+#[test]
 fn ping_returns_pong_with_version() {
     let (core, _home) = test_core();
     match core.dispatch(CoreCommand::Ping).unwrap() {

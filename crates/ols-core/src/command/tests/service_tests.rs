@@ -1,8 +1,5 @@
-use std::collections::BTreeMap;
-
 use crate::command::*;
 use crate::domain::{Domain, Ownership};
-use crate::project::Project;
 use crate::Core;
 
 fn test_core() -> (Core, crate::test_support::IsolatedHome) {
@@ -12,6 +9,7 @@ fn test_core() -> (Core, crate::test_support::IsolatedHome) {
     (core, home)
 }
 
+#[test]
 fn stop_all_leaves_no_supervised_process_running() {
     use crate::process::ProcessSpec;
     use std::time::Duration;

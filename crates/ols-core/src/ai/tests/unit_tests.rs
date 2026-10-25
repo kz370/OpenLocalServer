@@ -1,6 +1,5 @@
 use super::super::*;
 use super::mock::*;
-use crate::ai::providers::{authorize, client};
 use crate::command::CoreCommand;
 use std::collections::BTreeMap;
 #[test]
