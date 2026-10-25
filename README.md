@@ -6,72 +6,107 @@
 [![Version](https://img.shields.io/badge/version-2.4.0-blue)](./CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-0078D6)](./docs/STATUS.md)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue)](./LICENSE)
-[![Tauri](https://img.shields.io/badge/shell-Tauri_2-orange)](./src-tauri/tauri.conf.json)
-[![Rust](https://img.shields.io/badge/backend-Rust-red)](./crates/ols-core)
+[![Shell](https://img.shields.io/badge/shell-Tauri_2-orange)](./src-tauri/tauri.conf.json)
+[![Backend](https://img.shields.io/badge/backend-Rust-red)](./crates/ols-core)
+[![Protocol](https://img.shields.io/badge/protocol-MCP_stdio-purple)](./docs/MCP.md)
 
-**OLS** (Open Local Server) is an all-in-one local development environment for Windows with broad runtime coverage and full extensibility. Every project gets isolated runtimes, its own `.test` domain, and trusted local HTTPS. One core engine (`ols-core`) powers three front doors: desktop GUI, CLI (`olsc`), and local HTTP API.
+**OLS** (Open Local Server) is an all-in-one local development environment for Windows engineered for native performance, broad runtime coverage, and full extensibility. Every project gets isolated runtimes, its own `.test` domain, and trusted local HTTPS without manual system configuration or virtual machine overhead.
 
-**Free, open source, and no limit on the number of sites.**
+One core engine (`ols-core`) powers four interfaces:
+- **Desktop GUI (`OLS.exe`)**: Modern, borderless window with rich real-time monitoring and controls.
+- **CLI (`olsc.exe`)**: Fast command-line interface with a lightweight background daemon.
+- **Model Context Protocol (`ols-mcp.exe`)**: Stdio MCP server allowing AI coding assistants (Claude Desktop, Cursor, VS Code, LM Studio) to inspect and control your local environment.
+- **Local HTTP API (`127.0.0.1:7420`)**: Scoped JSON API for local tooling and scripting.
+
+**Free, open source, and unlimited sites.**
+
+---
 
 ## Why I built it
 
-I found plenty of free tools, but none of them had everything I wanted in one place. So I built one that does, first of all for myself. It is not made for profit, just to have the tool I wanted and to share it. It is and will stay completely free.
+I found plenty of free tools, but none had everything I wanted in one place. So I built one that does — first of all for myself. It is not made for profit, just to have the tool I wanted and to share it. It is and will stay completely free.
 
-It is still in the early stages, so expect rough edges. Feedback and bug reports are very welcome.
+It is actively developed, so feedback, suggestions, and bug reports are very welcome.
+
+---
 
 ## Contents
 
-- [Download](#-download) · [Tour](#tour) · [Runtimes](#runtimes--toolchain) · [Sites & HTTPS](#sites-web-servers--https) · [Projects](#projects--reproducible-environments) · [Databases & Services](#databases--services) · [Dashboard & Monitoring](#dashboard--monitoring) · [Sharing](#sharing--tunnels) · [Automation](#cli-api--automation)
-- [Getting Started](#getting-started) · [Usage](#usage) · [Project Structure](#project-structure) · [Built for AI](#-built-for-ai-built-to-be-forked) · [Contributing](#contributing) · [Third-Party Notices](#-third-party-notices) · [License](#license)
+- [Download](#-download)
+- [Tour](#-tour)
+- [Features](#-features)
+  - [Runtimes & Toolchain](#-runtimes--toolchain)
+  - [Sites, Web Servers & HTTPS](#-sites-web-servers--https)
+  - [Projects & Reproducible Environments](#-projects--reproducible-environments)
+  - [Databases & Services](#-databases--services)
+  - [Dashboard & Monitoring](#-dashboard--monitoring)
+  - [Sharing & Tunnels](#-sharing--tunnels)
+  - [MCP Server, CLI & API](#-mcp-server-cli--api)
+- [Getting Started](#-getting-started)
+  - [Prerequisites](#prerequisites)
+  - [Install Dependencies](#install-dependencies)
+  - [Run Locally (Dev)](#run-locally-dev)
+  - [Build for Production](#build-for-production)
+- [Usage](#-usage)
+  - [Register a Project and Go Live](#register-a-project-and-go-live)
+  - [Daily CLI Commands](#daily-cli-commands)
+  - [AI Integration with MCP](#ai-integration-with-mcp)
+  - [Typical Flow in GUI](#typical-flow-in-gui)
+- [Project Structure](#-project-structure)
+- [Built for AI, Built to be Forked](#-built-for-ai-built-to-be-forked)
+- [Contributing](#-contributing)
+- [Third-Party Notices](#-third-party-notices)
+- [License](#-license)
 
 ---
 
 ## 📥 Download
 
-Grab the latest installer from the [Releases page](https://github.com/kz370/OpenLocalServer/releases).
+Grab the latest installer (`OLS-2.4.0-setup.exe`) from the [Releases page](https://github.com/kz370/OpenLocalServer/releases).
 
-- **The app itself comes empty.** Nothing is bundled. From the interface you download only the runtimes, web servers, and databases you need, or point OLS to ones you already have.
-- **SmartScreen:** the installer isn't code-signed yet, so Windows SmartScreen may show a warning. Click **More info**, then **Run anyway**.
+- **What ships in the installer:** The desktop app (`OLS.exe`), the CLI (`olsc.exe`), the elevated helper service (`ols-helper.exe`), the MCP server (`ols-mcp.exe`), and the CPU limiter (`cpulimit.exe`).
+- **Runtimes are downloaded on demand:** The app itself does not bundle third-party runtimes or databases. You download only the runtimes (PHP, Node.js, Python), web servers (Nginx, Apache, Caddy), and databases (MariaDB, PostgreSQL, MongoDB, Redis) you need with SHA-256 verification, or point OLS to existing installations already on your computer.
+- **SmartScreen notice:** Until the installer binary is code-signed, Windows SmartScreen may display a warning. Click **More info**, then **Run anyway**.
 
 ---
 
 ## 📸 Tour
 
-> Captured from running app (dark theme).
+> Screenshots captured directly from the running app (dark theme).
 
 <p align="center">
   <img width="700" src="./assets/dashboard.webp" alt="Dashboard — environment health, services, diagnostics">
-  <br><em>Dashboard — health, services, diagnostics at a glance</em>
+  <br><em>Dashboard — health, services, diagnostics, and traffic graph at a glance</em>
 </p>
 
 <p align="center">
   <img width="700" src="./assets/sites.webp" alt="Sites & Projects — domains, per-site PHP, HTTPS, reverse proxy">
-  <br><em>Sites — domains, per-site PHP, HTTPS, reverse proxy</em>
+  <br><em>Sites — domains, per-site PHP/Node/Python, HTTPS, status tabs, and site branding</em>
 </p>
 
 <p align="center">
   <img width="700" src="./assets/runtimes.webp" alt="Runtimes — side-by-side versions and defaults">
-  <br><em>Runtimes — side-by-side versions and defaults</em>
+  <br><em>Runtimes — side-by-side versions, extensions, and global defaults</em>
 </p>
 
 <p align="center">
   <img width="700" src="./assets/version-manager.webp" alt="Version manager — install and manage versions per runtime">
-  <br><em>Version manager — install and manage versions per runtime</em>
+  <br><em>Version manager — search, install, and manage runtime versions</em>
 </p>
 
 <p align="center">
   <img width="700" src="./assets/databases.webp" alt="Databases — engines, users, backups">
-  <br><em>Databases — engines, users, backups</em>
+  <br><em>Databases — engines, users, backups, table inspection, and SQL tools</em>
 </p>
 
 <p align="center">
   <img width="700" src="./assets/webserver.webp" alt="Web server — engine config and control">
-  <br><em>Web server — engine config and control</em>
+  <br><em>Web server — live switching (Nginx / Apache / Caddy), syntax validation, and config history</em>
 </p>
 
 <p align="center">
   <img width="700" src="./assets/tunnels.webp" alt="Tunnels — share a local site, traffic inspector">
-  <br><em>Tunnels — share a local site, inspect traffic</em>
+  <br><em>Tunnels — share a local site publicly, inspect traffic, and replay requests</em>
 </p>
 
 ---
@@ -80,188 +115,223 @@ Grab the latest installer from the [Releases page](https://github.com/kz370/Open
 
 ### 📦 Runtimes & Toolchain
 
-- **Side-by-side versions** per runtime with a **version manager** dialog: search, install, default badge, per-version path display.
-- **Managed lineup:** PHP NTS 8.1–8.5 (per-version extensions, Xdebug per version, PECL), Node 22/24 (corepack npm/pnpm/yarn), Composer, Python venvs, portable Git, k6 (load testing).
-- **Online catalogs** per runtime (vendor sources, 24h cache, background refresh) + **SHA-256 verified** downloads, resume-safe cache, atomic extract.
-- **Bring your own:** scan a folder for existing PHP installs, or register one executable (PHP/Node/Python) by locating the file.
-- **Resolution order:** project manifest pin > auto-detected > global default. Changing a default never touches project files.
+- **Side-by-side versions** per runtime with a dedicated **Version Manager** dialog: search, install, default badge, and per-version file path display.
+- **Managed lineup:**
+  - **PHP:** NTS 8.1, 8.3, and 8.4 with per-version extensions, Xdebug 3 configuration, and PECL package support.
+  - **Node.js:** Node 22 and 24 with corepack support (npm, pnpm, yarn, bun).
+  - **Python:** Python 3.10, 3.11, 3.12, and 3.13 embedded packages, plus automated detection of system Python (3.7–3.15) and local virtual environments (`.venv`, `venv`). Supervised background dev server processes (`uvicorn`, `flask`, `django`, `waitress`, `streamlit`).
+  - **Tooling:** Composer 2.10, portable Git 2.55, and k6 2.3 load testing.
+- **Online catalogs** per runtime with vendor-published sources, 24-hour caching, background refresh, and **SHA-256 verification** on all downloads with atomic extraction.
+- **Bring your own:** Scan folders for existing PHP installations (e.g. Laragon, XAMPP), or register custom executables (PHP, Node, Python) by locating the file.
+- **Resolution order:** Project manifest pin > auto-detected from project files > global default. Changing a global default never touches existing project configurations.
 
 ### 🌐 Sites, Web Servers & HTTPS
 
-- **Add a site from inside the app:** pick a folder, add a **root folder** so every project inside it becomes a site automatically, or add one straight from a **Git repository**.
-- **Unlimited sites.** Any domain + wildcard subdomains; automatic `<folder>.test`; static sites; **reverse proxy** to any host:port. Run on a domain, on localhost, or both at the same time.
-- **Trusted local HTTPS:** on-device CA, 397-day leaf certs, auto-renew under 30 days, SAN-aware reuse.
-- **Per-site PHP version and per-site web server:** each site can run on its own PHP version and its own server (Nginx, Apache, or Caddy); unpinned sites follow the global default.
-- **Nginx 1.28 / Apache 2.4 / Caddy 2.11** with generated configs; Managed / Advanced / Manual modes; validate-before-reload with rollback; **drift detection**; config history with diff + restore.
-- Built-in **wildcard DNS** for `.test` / `.localhost` / `.internal`; optional elevated helper for hosts/NRPT (no repeated UAC prompts).
-- **Custom Domains & Dynamic DNS (DDNS):** Support for 12+ providers (Cloudflare, DuckDNS, No-IP, Dynu, ClouDNS, HE.net, Route53, Namecheap, GoDaddy, Porkbun, DigitalOcean, and custom webhooks) with auto-sync and IP change detection.
-  - *Troubleshooting HTTP Error 522 / Router admin page:* Dynamic DNS only updates your domain's IP address. If Cloudflare returns Error 522 or visitors see your router login page, your router's port forwarding is missing, your ISP blocks inbound web traffic (ports 80/443), or you are behind CGNAT. To fix: forward ports 80 & 443 in your router settings to your PC's LAN IP, and set Cloudflare SSL mode to Flexible or Full. Alternatively, use OLS's built-in **Online Broadcast Tunnel** to bypass port forwarding and CGNAT completely with zero router configuration.
+- **Multiple ways to add a site:** Pick an existing directory, add a **project root folder** to automatically detect and register all subfolders as sites, clone directly from a **Git repository**, or scaffold with **Quick Apps**.
+- **Automatic document root & welcome page:** When creating a new site, OLS automatically creates the document root folder and generates a default welcome file (`index.html` or `index.php`) if none exists.
+- **Site status tabs & filtering:** Dedicated **Enabled**, **Disabled**, and **All** tabs with quick counts and distinct colored status indicators.
+- **Safe deletion & folder exclusion:** Deleting or hiding a site moves its folder into an `ols_excluded_sites` subfolder (with automatic name collision resolution) instead of permanent disk deletion. Configurable ignored folders (`projects.ignored_folders`) in Settings.
+- **Site branding & icons:** Custom site logos in table rows via local image upload with automatic WebP optimization, or a bundled offline Font Awesome icon catalog with swatch and custom color pickers.
+- **Unlimited sites & domains:** Any domain name plus wildcard subdomains; automatic `<folder>.test` naming; static sites; reverse proxies to any `host:port`. Run on a domain, on `localhost/<prefix>`, or both simultaneously.
+- **Multi-interface web binding (`0.0.0.0` & `127.0.0.1`):** Web servers bind across all local network interfaces, supporting LAN access and router port forwarding.
+- **Trusted local HTTPS:** Built-in on-device Certificate Authority (CA), 397-day leaf certificates, automated renewal under 30 days, and SAN-aware reuse.
+- **Per-site PHP version & per-site web server:** Each site can run on its own PHP version and web server (Nginx, Apache, or Caddy); unpinned sites cleanly follow global defaults.
+- **Web server lineup:**
+  - **Nginx 1.28 & 1.30**, **Apache 2.4 (2.4.69)**, and **Caddy 2.11 (2.11.4)** with generated configurations.
+  - Caddy uses a stable localhost admin address derived from its install path, avoiding port 20019 collisions.
+  - Managed, Advanced, and Manual modes; validate-before-reload with automatic rollback; **drift detection**; config revision history with diff and restore.
+- **Zero-prompt DNS:** Built-in **wildcard DNS** for `.test`, `.localhost`, and `.internal`; elevated helper service for hosts file and NRPT rules (no repeated UAC popups).
+- **Custom domains, site broadcast & Dynamic DNS (DDNS):** Support for 12+ DNS providers (Cloudflare, DuckDNS, No-IP, Dynu, ClouDNS, HE.net, Route53, Namecheap, GoDaddy, Porkbun, DigitalOcean, and custom webhooks) with auto-sync and IP change detection.
+  - **Site Broadcast panel:** Live broadcast status and 1-click public URL copying integrated into the Site Domains panel.
+  - **Router & port forwarding troubleshooting:** Guides for resolving HTTP Error 522 and CGNAT restrictions.
 
 ### 🧩 Projects & Reproducible Environments
 
-- **Auto-detection:** framework + version from `composer.json`, `package.json`, `manage.py`, markers; workspace scan.
-- **Manifests** (`.openlocalserver/*.yaml`): environment, services, commands, lock file.
-- **14-step setup pipeline:** resolve → plan → conflict report → dry-run → apply, journaled with **rollback** and file lock.
-- **Profiles** (Development / Testing / Debugging / Demo), **snapshots and backups** (zip, clone, import/export), `.env` lossless editor (comments/order/CRLF preserved).
-- **Quick Apps:** 13 built-in recipes (Laravel, Symfony, WordPress, Express, React/Vite, Vue, Next.js, Django, FastAPI, static…) — validate → plan review → run with history.
-- **Quick Commands + project commands:** discovered Composer/npm scripts with one-click run and output ring, plus ready-made commands for Laravel, Node, and Python projects.
+- **Auto-detection:** Framework and version detection from `composer.json`, `package.json`, `manage.py`, and project markers.
+- **Manifests (`.openlocalserver/*.yaml`):** Declarative environment specifications, services, custom commands, and lock files.
+- **14-step setup pipeline:** Resolve → plan → conflict report → dry-run → apply, fully journaled with automatic **rollback** on failure and file locking.
+- **Profiles & snapshots:** Development, Testing, Debugging, and Demo profiles; point-in-time snapshots and backups (zip, clone, import/export); lossless `.env` editor preserving comments, key order, and CRLF line endings.
+- **Encrypted site bundles:** Export and import settings, `.env` files, database dumps, and project files with optional **Argon2id + ChaCha20-Poly1305** password encryption.
+- **Quick Apps:** 13 built-in application recipes (Laravel, Symfony, WordPress, Express, React/Vite, Vue, Next.js, Django, FastAPI, static HTML…) — parameter validation → plan review → execution with step history.
+- **Quick Commands:** Auto-discovered Composer, npm, and manage.py scripts with 1-click execution and terminal ring buffer, plus preconfigured commands for Laravel, Node, and Python.
 
 ### 🗄️ Databases & Services
 
-- **Engines:** MariaDB 11.4 (per-series data folders), PostgreSQL 17, MongoDB, Redis (`redis-windows`), Memcached, Mailpit, SQLite.
-- Per-engine **DB + user management**, connection details, **backup/restore** (safety copy first), SQLite `.backup` + integrity checks.
-- **One-click external GUIs:** HeidiSQL, pgAdmin 4, NoSQLBooster, Tiny RDM (auto-detected, Redis URI copy).
-- **Importers:** Laragon / XAMPP / WampServer databases without SQL dumps (live-dump importer).
-- Service lifecycle with TCP health, Mailpit mail capture per framework (`.env` planner with diff preview).
-- **Resource limits per service:** cap RAM, CPU, and process count for each service, plus engine settings such as the MariaDB buffer pool.
+- **Engines:** MariaDB (11.4 & 11.8), PostgreSQL (17.6), MongoDB (8.3), Redis (`redis-windows` 8.10), Memcached (1.6), Mailpit (1.31), SQLite (3.53).
+- **Database inspection & SQL execution:** Table listing and direct SQL command execution (`SELECT`, `INSERT`, `UPDATE`, `CREATE TABLE`, etc.) across MariaDB/MySQL, PostgreSQL, and SQLite with client binary fallback (`mariadb.exe`, `mysql.exe`, `psql.exe`, `sqlite3.exe`).
+- **Database & user management:** Create databases and users, view connection strings, perform point-in-time backups and restores (safety copy created first), SQLite `.backup` and integrity checks.
+- **1-click external GUIs:** HeidiSQL, pgAdmin 4, NoSQLBooster, and Tiny RDM (auto-detected with connection URI copying).
+- **Live-dump importers:** Direct migration from Laragon, XAMPP, and WampServer databases without requiring manual SQL dump exports.
+- **Service lifecycle & mail capture:** Background service supervision with TCP health checks, Mailpit outgoing mail capture per framework with `.env` configuration diffs.
+- **Resource limits:** Per-service limits on memory, CPU allocation, and process counts.
 
 ### 📊 Dashboard & Monitoring
 
-- **Services card:** all built-ins in a fixed order — start/stop/restart/reload/logs colour-coded per action, and anything unavailable right now shown flat grey instead of looking clickable. In a narrow window the **Web server** card moves above Overview; side by side it sits above Services.
-- **Ports tab:** one aligned row per server (icon, name, HTTP, HTTPS, site count) with fixed-width port fields sized to five digits; a server that is the default shows its 80/443 fields locked rather than editable.
-- **Number fields:** ports, worker counts, memory limits and IDE ports all use an in-app stepper (rounded chevrons, app palette, arrow keys work) rather than the browser's default arrows.
-- **Overview:** sites/projects counts, resource donuts (CPU/RAM/disk), **traffic graph** from web access log (30-bucket, hover inspector).
-- **Diagnostics card:** findings as Problem/Cause/Fix, safe one-click **auto-repair**, ignore list, AI explain per finding.
-- **Doctor:** full report + repair planner; every error is `Diagnostic{problem, cause, fix}`.
-- **Logs page:** unified severity-aware viewer (search/filter/export/clear); send logs to the AI assistant to explain an error. **Processes page:** raw process manager + system stats; per-site usage rollups.
-- Command palette (`Ctrl+Shift+P`), global search (`Ctrl+K`).
+- **Services card:** Built-in services in a clean, consistent order — start, stop, restart, reload, and logs color-coded per action with unavailable actions flattened.
+- **Ports tab:** Clear rows per server (icon, name, HTTP, HTTPS, site count) with fixed-width port inputs; active default servers keep their 80/443 ports protected from accidental edits.
+- **Custom input steppers:** Ports, worker counts, and memory limits use rounded in-app stepper chevrons with arrow key support.
+- **Overview:** Active sites and projects counts, resource usage donuts (CPU, RAM, disk), and a 30-bucket web traffic graph with hover inspector.
+- **Diagnostics & Doctor:** Detailed findings formatted as **Problem / Cause / Fix**, safe 1-click **auto-repair**, ignore rules, and redacted support bundle generation.
+- **Unified logs viewer:** Multi-source severity-aware log viewer with real-time tailing, search, level filtering, clipboard copy, and export.
+- **Processes & Background Tasks:** Process supervisor with CPU/RAM metrics, per-site usage rollups, and a background task registry with live step and progress tracking.
+- **In-App User Manual & Release Notes:** Full documentation and release notes viewer embedded under `Settings → User Manual`.
+- **Command palette (`Ctrl+Shift+P`) & Global search (`Ctrl+K`)**.
 
 ### 🔗 Sharing & Tunnels
 
-- Providers: **Cloudflare, ngrok, LocalTunnel, Tailscale** (abstraction + confirm gate). LocalTunnel needs no account, though it doesn't always work.
-- **Exposure confirmation**, optional password, public badge, one-click stop.
-- **Traffic inspector:** forwarding proxy, redacted log (500 cap), replay, webhook tester.
+- **Supported providers:** Cloudflare Tunnel (`cloudflared`), ngrok, LocalTunnel, and Tailscale.
+- **Security controls:** Public exposure confirmation gate, optional basic password protection, public status badge, and 1-click stop.
+- **Real-time traffic inspector:** Forwarding proxy, redacted request log (500-request ring buffer), request replay, and webhook tester. Captures standard HTTP requests while streaming WebSockets and chunked data directly through.
 
-**Provider binaries are found, not installed.** Put the program on `PATH` or in a
-known location before starting a tunnel:
+> **Note on tunnel binaries:** Tunnel executables are found on your system, not downloaded by OLS. Ensure `cloudflared` or `ngrok` is installed and available on your `PATH` (e.g. via `winget install Cloudflare.cloudflared`). ngrok authtokens are stored securely in Windows Credential Manager.
 
-```powershell
-winget install --id Cloudflare.cloudflared   # cloudflared -> <prefix>.trycloudflare.com
-winget install --id ngrok.ngrok               # ngrok     -> needs an authtoken
-```
+### 🤖 MCP Server, CLI & API
 
-- Searched: anything on `PATH`, plus `C:\Program Files\cloudflared\` and
-  `C:\Program Files (x86)\cloudflared\`.
-- ngrok additionally needs its authtoken saved in the app (Tunnels → ngrok →
-  token); it is kept in Windows Credential Manager, never in a file or log.
-- The inspector captures normal HTTP requests only. WebSocket upgrades and
-  streamed/chunked responses pass through without being logged, replayed or fed
-  to the webhook tester.
-
-### 🤖 CLI, API & Automation
-
-- **CLI (`olsc`):** `setup [--dry-run] | doctor | repair | status | start | stop`, plus `project | runtime | service | tunnel | worker | snapshot | quick-command | search`; background **daemon** keeps working with GUI closed.
-- **Local HTTP API** (`127.0.0.1:7420`): same `CoreCommand` JSON, bearer token, origin reject, read-only vs operate scopes.
-- **Workers** (queue registry, max 16, Procfile.dev import), **scheduled tasks** (cron, 1-min tick, no overlap), **terminal** (portable-pty shells with runtime PATH-first, max 8).
-- **Git manager:** status/stage/commit/branches/pull/push/remotes/stash/clone with credential helper.
-- **k6 load testing** (VU cap, JSON metrics), **AI assistant** (runs locally with LM Studio, or connect Hugging Face / OpenRouter / any OpenAI-compatible provider) with scoped permissions.
-- **Plugins:** declarative `plugin.yaml` (runtimes, quick apps, detections, health checks) via **minisign-signed catalogs**, re-verified each load.
-- **Self-updater** (signed `latest.json` + SHA check), tray icon, notifications, start with Windows, leftover-server cleanup, memory limits. See [docs/PLUGINS.md](./docs/PLUGINS.md), [docs/API.md](./docs/API.md), [docs/AI_ASSISTANT.md](./docs/AI_ASSISTANT.md).
+- **Model Context Protocol (MCP) Server (`ols-mcp`):** Native stdio MCP server shipping directly with OLS (`ols-mcp.exe`). Allows LLM hosts (Claude Desktop, Cursor, VS Code, LM Studio) to inspect and control OLS through JSON-RPC 2.0 tools:
+  - **Domains & Sites:** `ols_list_domains`, `ols_get_domain`, `ols_add_domain`, `ols_update_domain`, `ols_remove_domain`, `ols_set_domain_enabled`, `ols_restart_site_app`.
+  - **Project Inspection:** `ols_inspect_site_folder` (detects frameworks, virtualenvs, entry scripts, and start commands).
+  - **Runtimes:** `ols_list_runtimes`, `ols_install_runtime`, `ols_refresh_runtimes`.
+  - **Services & Tunnels:** `ols_list_services`, `ols_start_service`, `ols_stop_service`, `ols_restart_service`, `ols_list_tunnels`, `ols_start_tunnel`, `ols_stop_tunnel`.
+  - **Databases & Tables:** `ols_list_databases`, `ols_create_database`, `ols_list_tables`, `ols_execute_sql`.
+  - **Web Server:** `ols_apply_web`, `ols_validate_web`.
+  - See [docs/MCP.md](./docs/MCP.md) for full configuration examples and tool schemas.
+- **Command Line (`olsc`):**
+  - Drive OLS from any shell: `olsc setup`, `olsc doctor`, `olsc repair`, `olsc status`, `olsc start`, `olsc stop`, `olsc restart`.
+  - Full subcommands: `project`, `runtime`, `php`, `service`, `tunnel`, `worker`, `snapshot`, `quick-app`, `quick-command`, `search`, `guide`.
+  - Background daemon: Automatically runs in the background (`olsc daemon`) when the GUI is closed.
+- **Local HTTP API (`127.0.0.1:7420`):** Bearer token authenticated JSON API mirroring `CoreCommand` operations with read-only and operate scopes. See [docs/API.md](./docs/API.md).
+- **Automation tools:** Background queue workers (max 16, Procfile.dev import), scheduled cron tasks (1-minute tick, overlap protection), portable-pty terminal shells, and Git repository management.
+- **Extensibility & Plugins:** Declarative `plugin.yaml` extensions via minisign-signed catalogs, re-verified on every load. See [docs/PLUGINS.md](./docs/PLUGINS.md).
 
 ---
 
 ## 🚀 Getting Started
 
-Most people only need the installer from the [Download](#-download) section. The steps below are for building from source.
+Most users only need the installer from the [Download](#-download) section. The instructions below are for building OLS from source.
 
 ### Prerequisites
 
 | Requirement | Version | Notes |
 |---|---|---|
 | Windows | 10 / 11 (64-bit) | Windows-only |
-| Rust | stable | `rustup` toolchain |
-| Node.js | 22+ | UI build |
-| Tauri prerequisites | — | WebView2, MSVC, WiX — see [Tauri prerequisites](https://tauri.app/start/prerequisites/) |
+| Rust | Stable (1.75+) | Installed via `rustup` |
+| Node.js | 22 LTS or newer | UI compilation |
+| Tauri Prerequisites | — | Microsoft C++ Build Tools (MSVC), WebView2 runtime |
+| Inno Setup | 6 or 7 | Required only for building the setup installer |
 
-### Install dependencies
+### Install Dependencies
 
 ```powershell
-# Rust toolchain (if missing)
+# Install Rust toolchain (if not already installed)
 winget install Rustlang.Rustup
 
-# Node 22 (if missing)
+# Install Node.js LTS (v22+)
 winget install OpenJS.NodeJS.LTS --version 22
 
-# UI dependencies
+# Install UI packages
 cd ui
 npm install
+cd ..
 ```
 
-### Run locally (dev)
+### Run Locally (Dev)
 
 ```powershell
-# From repo root — starts Tauri + Vite + Rust core
+# From the repository root — builds ols-helper and launches Tauri + Vite
 .\scripts\dev.bat
 ```
 
-This launches the desktop app with hot-reload (Vite on `http://localhost:1420`).
+This launches the desktop app with hot module reloading (Vite server running on `http://localhost:1420`).
 
-### Build for production
+### Build for Production
 
 ```powershell
-# Core + helper checks
+# 1. Quality gates (must pass cleanly)
 cargo fmt --all
-cargo clippy -p ols-core -p ols-helper --all-targets
-cargo test -p ols-core -p ols-helper
+cargo clippy -p ols-core -p ols-helper -p ols-mcp --all-targets
+cargo test -p ols-core -p ols-helper -p ols-mcp
 
-# UI lint + build
+# 2. Build and validate UI
 cd ui
 npm run lint
 npm run build
-
-# Tauri bundle (NSIS/MSI)
 cd ..
-cargo tauri build
+
+# 3. Build complete installer (staged executables, embedded icons, Inno Setup)
+scripts\build-installer.bat full
 ```
+
+The resulting installer package will be output to `release\<version>\OLS-<version>-setup.exe`.
 
 ---
 
 ## 💻 Usage
 
-### Register a project and go live
+### Register a Project and Go Live
 
 ```powershell
-# Clone any PHP / Node / Python project
+# Clone any PHP, Node, or Python project
 git clone https://github.com/example/my-laravel-app.git
 cd my-laravel-app
 
-# Full environment setup: runtimes → DB → domain → DNS → SSL → mail → workers
+# Set up environment: runtimes → DB → domain → DNS → SSL → mail → workers
 olsc setup
 
-# Preview plan without applying
+# Or preview the setup plan without making any changes
 olsc setup --dry-run
 
-# Check health, auto-fix safe issues
+# Run health diagnostics and automatically resolve safe issues
 olsc doctor
 olsc repair
 ```
 
-### Daily commands
+### Daily CLI Commands
 
 ```powershell
-olsc status                  # services, sites, runtimes
-olsc start                   # start all enabled services
-olsc stop                    # stop all
+olsc status                                              # View services, sites, runtimes, and health
+olsc start                                               # Start the web server and enabled services
+olsc stop                                                # Stop all web servers, services, workers, and tunnels
+olsc restart                                             # Restart running services and servers
 
-olsc project list            # registered projects
-olsc service list            # MariaDB, Postgres, Redis, Mailpit…
-olsc runtime list            # installed PHP/Node versions
+olsc project list                                        # List registered projects
+olsc service list                                        # List background services (MariaDB, PostgreSQL, Redis, Mailpit...)
+olsc runtime list                                        # List installed and available runtimes
 
-olsc tunnel start --provider cloudflared --port 443
-olsc worker run --queue default
-olsc snapshot create --name "before-upgrade"
-olsc search "mailpit"        # global search
+olsc tunnel list                                         # List configured public tunnels
+olsc tunnel start <name> --yes                           # Start a tunnel by name or project
+olsc worker start <project>                              # Start background queue workers for a project
+olsc snapshot create <project> --label "pre-migration"   # Create a point-in-time project snapshot
+olsc search "mailpit"                                    # Search across projects, configs, services, and logs
+olsc guide                                               # Display the comprehensive user manual
 ```
 
-### Typical flow in GUI
+### AI Integration with MCP
 
-1. **Add project** — register or scan a folder, or add from a Git repository → framework auto-detected
-2. **Setup** — review 14-step plan → Apply (rollback on failure)
-3. **Open site** — `https://myapp.test` with trusted cert, per-site PHP
-4. **Develop** — `.env` editor, terminal, Git tab, logs, Mailpit for mail
-5. **Share** — tunnel with confirmation → inspector → one-click stop
+You can connect your preferred AI coding assistant to OLS using the bundled `ols-mcp.exe` binary. For example, in **Claude Desktop** (`claude_desktop_config.json`) or **Cursor**:
 
-> All errors surface as `Diagnostic{ problem, cause, fix }` — what broke, why, and how to fix it.
+```json
+{
+  "mcpServers": {
+    "ols": {
+      "command": "C:\\OpenLocalServer\\ols-mcp.exe"
+    }
+  }
+}
+```
+
+Once connected, you can ask your AI assistant natural questions:
+- *"List all my running sites and database services."*
+- *"Create a new site called `api.test` pointing to `C:\sites\api` using PHP 8.4."*
+- *"Create a MariaDB database named `shop_db` and list its tables."*
+- *"Inspect the folder `C:\projects\fastapi-app` and configure a supervised site."*
+
+### Typical Flow in GUI
+
+1. **Add Site:** Register an existing folder, auto-scan a project root, or clone from Git. Frameworks and entry points are detected automatically.
+2. **Setup:** Review the 14-step environment plan and click **Apply** (with automatic rollback on error).
+3. **Open Site:** Click the domain link to open `https://myapp.test` with trusted local SSL.
+4. **Develop:** Use the built-in `.env` editor, run commands from the Quick Commands panel, and view outgoing emails in Mailpit.
+5. **Share:** Start a public tunnel with explicit confirmation and monitor requests in the real-time Traffic Inspector.
 
 ---
 
@@ -270,133 +340,135 @@ olsc search "mailpit"        # global search
 ```text
 OpenLocalServer/
 ├── crates/
-│   ├── ols-core/        # All logic — CoreCommand dispatcher (~150-200 variants),
+│   ├── ols-core/        # Application core — CoreCommand dispatcher, state management,
 │   │                    # managers: Runtime, Service, Web, Domain, Certs, Project,
 │   │                    # ProcessSupervisor, Workers, Scheduler, Tunnel, Mail,
-│   │                    # Diagnostics, QuickApp, Plugin
-│   ├── ols-helper/      # Elevated helper — hosts/NRPT/service via UAC or
-│   │                    # LocalSystem named pipe (closed validated set)
-│   └── ols-cli/         # CLI (`olsc.exe` beside the app) — drives the app or a background daemon
-├── src-tauri/           # Tauri 2 shell — window, tray, single IPC `run_command`
-├── ui/src/              # React 19 + Vite 8 + Tailwind 4 + shadcn/ui,
-│   │                    # CodeMirror 6, xterm.js, `core.ts` IPC wrapper
-│   ├── pages/           # Dashboard, Sites, Environment, Git, Workers,
-│   │                    # Snapshots, Tunnels, Profiles, Repair, Doctor…
-│   └── components/      # shadcn/ui primitives, dialogs, editors
-├── data/                # SQLite app database (app.db),
-│                        # OLS_HOME env overrides all paths
-├── docs/                # STATUS.md, IMPLEMENTATION_PLAN.md, AI_ASSISTANT.md…
-├── specs/               # Single source of truth — architecture, catalog,
-│                        # relationships, data models, API reference, diagrams
-├── installer/          # Inno Setup script (open-local-server.iss)
-├── scripts/            # dev.bat, build-installer.bat, upload-release.bat
-├── assets/              # App icons + README screenshots (dashboard, sites,
-│                        # runtimes, version-manager, databases, webserver,
-│                        # tunnels — all .webp)
-└── OLS_Master_SRS_v4.md  # Full requirements spec (v4)
+│   │                    # Diagnostics, QuickApp, Plugin, Database Tools
+│   ├── ols-helper/      # Elevated helper executable — manages hosts file and NRPT rules
+│   │                    # via UAC or a LocalSystem named pipe (strictly validated API)
+│   ├── ols-cli/         # CLI client (`olsc.exe`) — drives the app or background daemon
+│   └── ols-mcp/         # Stdio Model Context Protocol server (`ols-mcp.exe`) for AI hosts
+├── src-tauri/           # Tauri 2 desktop shell (`OLS.exe`) — windowing, tray, single IPC dispatcher
+├── ui/src/              # React 19 + Vite 8 + Tailwind CSS 4 + shadcn/ui frontend
+│   ├── pages/           # Dashboard, Sites, QuickApps, Commands, WebServer, Databases,
+│   │                    # Services, Runtimes, Tunnels, Profiles, Plugins, Logs,
+│   │                    # Processes, Tasks, Settings, Config
+│   └── components/      # UI primitives, dialogs, form fields, and code editors
+├── installer/           # Inno Setup packaging script (`open-local-server.iss`)
+├── scripts/             # dev.bat, build-installer.bat, update-version.bat, upload-release.bat
+├── specs/               # Single source of truth — architecture, catalog, data models,
+│                        # relationships, API reference, runtime logs, and diagrams
+├── docs/                # Comprehensive guides: OLS_USER_MANUAL.md, MCP.md, API.md, PLUGINS.md...
+└── assets/              # App branding, icons, and README screenshots (.webp)
 ```
 
-**Architecture (one core, many front doors):**
+**Architecture (One Core, Multiple Front Doors):**
 
 ```text
-GUI (React) ──┐
-CLI (olsc) ────┼──> Core::dispatch(CoreCommand) -> Inner (Arc-shared state)
-HTTP API ─────┘         |
-                        v
-              Managers: Runtime, Service, Web, Domain, Certs,
-              Project, ProcessSupervisor, Workers, Scheduler,
-              Tunnel, Mail, Diagnostics, QuickApp, Plugin
+Desktop GUI (React) ──┐
+CLI (olsc) ───────────┼──> Core::dispatch(CoreCommand) ──> Arc<Inner> Shared State
+MCP Server (ols-mcp) ─┤                                         │
+HTTP API (127.0.0.1) ─┘                                         ▼
+                                                      Managers:
+                                                      Runtime, Service, Web, Domain,
+                                                      Certs, Project, ProcessSupervisor,
+                                                      Workers, Scheduler, Tunnel, Mail,
+                                                      Diagnostics, QuickApp, Plugin
 ```
 
 ---
 
-## 🤖 Built for AI, built to be forked
+## 🤖 Built for AI, Built to be Forked
 
-The whole project is documented so an AI agent can understand it and keep building it:
+The entire project is built and documented with AI-pair engineering in mind:
 
-- [`specs/`](./specs) is the single source of truth: architecture, catalog, data models, API reference, diagrams.
-- [`AGENTS.md`](./AGENTS.md) tells an agent how the project works, what to do, and what to avoid.
-- [`docs/`](./docs) and the [Master SRS](./OLS_Master_SRS_v4.md) explain the plan and the requirements.
+- **Model Context Protocol (`ols-mcp`):** Native MCP tools expose full environment operations directly to LLMs.
+- **Specifications as Truth (`specs/`):** The `specs/` directory defines architecture, catalogs, data models, relationships, and API specifications. Any code change updates matching specs.
+- **Agent Guidelines (`AGENTS.md`):** Clear rules and quality gates guide automated agents and human contributors alike.
+- **Structured Error Diagnostics:** All errors adhere to `Diagnostic{ problem, cause, fix }` so both users and AI assistants can automatically diagnose and repair issues.
 
-Fork it, point your own AI agent (Claude Code, Cursor, or any other) at the repo, and turn it into the tool you want.
+Fork the repository, point an AI agent (Cursor, Claude, Antigravity) at the codebase, and customize it to suit your workflow.
 
 ---
 
 ## 🤝 Contributing
 
-Contributions welcome. Please read [CONTRIBUTING.md](./CONTRIBUTING.md) and the [Code of Conduct](./CODE_OF_CONDUCT.md) first.
+Contributions are very welcome! Please review [CONTRIBUTING.md](./CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md) before submitting pull requests.
 
 ```powershell
-# Quality gates — must pass before PR
+# Mandatory Quality Gates — must pass before submitting a PR
 cargo fmt --all
-cargo clippy -p ols-core -p ols-helper --all-targets
-cargo test -p ols-core -p ols-helper
-cd ui; npm run lint; npm run build
+cargo clippy -p ols-core -p ols-helper -p ols-mcp --all-targets
+cargo test -p ols-core -p ols-helper -p ols-mcp
+cd ui
+npm run lint
+npm run build
 ```
 
-- **Specs-sync mandate:** `specs/` is source of truth. Any behavior change must update matching `specs/` files in same PR + append log line to `specs/runtime.md`. Behavior PR without spec update gets rejected. See [AGENTS.md](./AGENTS.md).
-- **Safety:** user errors use `Diagnostic{problem,cause,fix}` · downloads verify SHA-256 · secrets in OS keyring only, never logs/files/bundles.
-- **Commits:** Conventional Commits (`feat:`, `fix:`, `docs:` …).
+- **Specs-sync mandate:** `specs/` is the single source of truth. Any functional change must update the corresponding specification files and append a log entry to `specs/runtime.md`.
+- **Safety guarantees:** User errors use `Diagnostic{problem, cause, fix}`; file downloads must verify SHA-256; secrets remain exclusively in the OS keyring.
+- **Commit convention:** Follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`).
 
 ---
 
 ## 🧾 Third-Party Notices
 
-olsc is GPL-3.0-only (see [LICENSE](./LICENSE)).
+OLS is licensed under **GPL-3.0-only** (see [LICENSE](./LICENSE)).
 
-**The installer ships OLS only — no third-party software is bundled.** Runtimes, web servers, and databases are downloaded by you on demand from the vendor and SHA-256 verified, and are installed into OLS-managed folders you can delete at any time. Tunnel binaries are neither downloaded nor installed — OLS only finds them already on your `PATH` (see [Tunnels](#-sharing--tunnels)).
+**The installer packages OLS companion binaries only (`OLS.exe`, `olsc.exe`, `ols-helper.exe`, `ols-mcp.exe`, `cpulimit.exe`) — no third-party runtimes, web servers, or databases are bundled.** Runtimes are downloaded on demand from official vendors, SHA-256 verified, and extracted into isolated OLS directories that you can remove at any time. Tunnel executables are neither downloaded nor installed; OLS locates existing binaries on your system `PATH`.
 
-### Downloaded on demand (NOT part of the installer)
+### Downloaded on Demand (NOT bundled in installer)
 
-| Component | License | Source |
+| Component | License | Official Source |
 | :--- | :--- | :--- |
-| PHP (NTS 8.1–8.5) | PHP License 3.01 | windows.php.net |
-| Composer | MIT | getcomposer.org |
-| Node.js 22 / 24 | MIT | nodejs.org |
-| corepack / npm / pnpm / yarn | MIT | nodejs.org |
-| Portable Git | GPL-2.0-only | git-scm.com/downloads |
-| Python | PSF License | python.org |
-| k6 | AGPL-3.0-only | grafana.com/docs/k6 |
-| Nginx 1.28 | BSD-2-Clause | nginx.org |
-| Apache httpd 2.4 | Apache-2.0 | httpd.apache.org |
-| Caddy 2.11 | Apache-2.0 | caddyserver.com |
-| MariaDB 11.4 | GPL-2.0-only | mariadb.org |
-| PostgreSQL 17 | PostgreSQL License | postgresql.org |
-| MongoDB | SSPL-1.0 | mongodb.com |
-| Redis (`redis-windows`) | RSALv2 / SSPLv1 | redis.io |
-| Memcached | BSD-3-Clause | memcached.org |
-| Mailpit | MIT | github.com/axllent/mailpit |
-| HeidiSQL | GPL-3.0-only | heidisql.com |
-| pgAdmin 4 | PostgreSQL License | pgadmin.org |
-| NoSQLBooster | MIT | nosqlbooster.com |
-| Tiny RDM | MIT | github.com/rvigster/TinyRDM |
-| cloudflared | Apache-2.0 | github.com/cloudflare/cloudflared |
-| ngrok | Apache-2.0 | github.com/ngrok/ngrok |
-| localtunnel | MIT | github.com/localtunnel/localtunnel |
-| Tailscale | BSD-3-Clause | tailscale.com |
+| PHP (NTS 8.1, 8.3, 8.4) | PHP License 3.01 | [windows.php.net](https://windows.php.net) |
+| Composer 2.10 | MIT | [getcomposer.org](https://getcomposer.org) |
+| Node.js (22, 24) | MIT | [nodejs.org](https://nodejs.org) |
+| corepack / npm / pnpm / yarn / bun | MIT / Various | [nodejs.org](https://nodejs.org) |
+| Python (3.10–3.13 embedded) | PSF License | [python.org](https://python.org) |
+| Portable Git | GPL-2.0-only | [git-scm.com](https://git-scm.com) |
+| k6 (Load Testing) | AGPL-3.0-only | [grafana.com/k6](https://grafana.com/docs/k6) |
+| Nginx (1.28, 1.30) | BSD-2-Clause | [nginx.org](https://nginx.org) |
+| Apache HTTP Server (2.4.69) | Apache-2.0 | [apachelounge.com](https://www.apachelounge.com) |
+| Caddy (2.11.4) | Apache-2.0 | [caddyserver.com](https://caddyserver.com) |
+| MariaDB (11.4, 11.8) | GPL-2.0-only | [mariadb.org](https://mariadb.org) |
+| PostgreSQL (17.6) | PostgreSQL License | [postgresql.org](https://postgresql.org) |
+| MongoDB (8.3) | SSPL-1.0 | [mongodb.com](https://mongodb.com) |
+| Redis (`redis-windows` 8.10) | RSALv2 / SSPLv1 | [github.com/redis-windows](https://github.com/redis-windows) |
+| Memcached (1.6) | BSD-3-Clause | [memcached.org](https://memcached.org) |
+| Mailpit (1.31) | MIT | [github.com/axllent/mailpit](https://github.com/axllent/mailpit) |
+| SQLite (3.53) | Public Domain | [sqlite.org](https://sqlite.org) |
+| HeidiSQL | GPL-3.0-only | [heidisql.com](https://heidisql.com) |
+| pgAdmin 4 | PostgreSQL License | [pgadmin.org](https://pgadmin.org) |
+| NoSQLBooster | Proprietary / Free Tier | [nosqlbooster.com](https://nosqlbooster.com) |
+| Tiny RDM | MIT | [github.com/rvigster/TinyRDM](https://github.com/rvigster/TinyRDM) |
+| cloudflared | Apache-2.0 | [github.com/cloudflare/cloudflared](https://github.com/cloudflare/cloudflared) |
+| ngrok | Apache-2.0 | [ngrok.com](https://ngrok.com) |
+| localtunnel | MIT | [github.com/localtunnel/localtunnel](https://github.com/localtunnel/localtunnel) |
+| Tailscale | BSD-3-Clause | [tailscale.com](https://tailscale.com) |
 
 ### Notes
 
-- Everything above runs as a **separate process in a separate folder**, is never linked into the OLS binary, and is removed when you uninstall it. Each project license applies to its own install.
-- Redis and MongoDB are source-available, not OSI-approved.
-- Tunnel provider binaries (cloudflared, ngrok) are **found on `PATH`, never downloaded or installed** by OLS.
-- Licenses come from upstream vendor metadata; re-verify at release time.
+- Each runtime and database runs as a separate host process in its own folder and is never linked into OLS binaries.
+- Redis and MongoDB use source-available licenses (RSALv2/SSPLv1 and SSPL-1.0).
+- Tunnel provider binaries (`cloudflared`, `ngrok`) are searched on `PATH` and never downloaded or redistributed by OLS.
 
 ---
 
 ## 📄 License
 
-GPL-3.0-only — see [LICENSE](./LICENSE). See [SECURITY.md](./SECURITY.md) for reporting policy.
+GPL-3.0-only — see [LICENSE](./LICENSE). For security disclosures, see [SECURITY.md](./SECURITY.md).
 
-Feel free to use the code, edit it, and make your own version.
+Feel free to use the code, customize it, and make your own version.
 
 ---
 
 <p align="center">
-  Built with Rust · Tauri 2 · React 19 · Tokio
+  Built with Rust · Tauri 2 · React 19 · Tokio · Model Context Protocol (MCP)
   <br>
   <a href="./docs/STATUS.md">Status</a> ·
-  <a href="./docs/IMPLEMENTATION_PLAN.md">Implementation Plan</a> ·
-  <a href="./OLS_Master_SRS_v4.md">Master SRS v4</a> ·
+  <a href="./docs/OLS_USER_MANUAL.md">User Manual</a> ·
+  <a href="./docs/MCP.md">MCP Server Guide</a> ·
+  <a href="./docs/API.md">API Reference</a> ·
   <a href="./CONTRIBUTING.md">Contributing</a>
 </p>
