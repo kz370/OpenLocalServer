@@ -36,10 +36,17 @@ interface Row {
   key: string
   site: DomainSummary | null
   project: Project | null
+  extraDomains: DomainSummary[]
 }
 
 type Group = DomainSummary['group'] | 'none'
 type SiteFilter = 'enabled' | 'disabled' | 'all' | Group
+
+/** Normalize path for cross-platform folder matching. */
+function normPath(p: string | null | undefined): string {
+  if (!p) return ''
+  return p.trim().replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+}
 
 /** Website types in display order; a type with no sites is not listed. */
 const GROUPS: { id: Group; label: string; icon: string }[] = [
@@ -127,17 +134,92 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   // A project opened by id shows its first site when it has one.
   const shownTarget: SiteTarget | null =
     target && !target.hostname && target.projectId
-      ? { ...target, hostname: domains.filter((d) => d.project_id === target.projectId).sort((a, b) => a.hostname.localeCompare(b.hostname))[0]?.hostname ?? null }
+      ? {
+          ...target,
+          hostname:
+            domains
+              .filter(
+                (d) =>
+                  d.project_id === target.projectId ||
+                  (normPath(d.folder) !== '' &&
+                    normPath(d.folder) ===
+                      normPath(projects.find((p) => p.id === target.projectId)?.path)),
+              )
+              .sort((a, b) => a.hostname.localeCompare(b.hostname))[0]?.hostname ?? null,
+        }
       : target
 
-  const rows: Row[] = [
-    // openlocalserver.test is built in: served and configurable, but never listed, so it can't be deleted.
-    ...domains.filter((d) => d.hostname !== 'openlocalserver.test').map((d) => ({ key: `site:${d.hostname}`, site: d, project: projects.find((p) => p.id === d.project_id) ?? null })),
-    ...projects.filter((p) => !domains.some((d) => d.project_id === p.id)).map((p) => ({ key: `project:${p.id}`, site: null, project: p })),
-  ].sort((a, b) => (a.site?.hostname ?? a.project?.name ?? '').localeCompare(b.site?.hostname ?? b.project?.name ?? ''))
+  const activeDomains = domains.filter((d) => d.hostname !== 'openlocalserver.test')
 
-  const matchesQuery = (r: Row, term: string) =>
-    !term || `${r.site?.hostname ?? ''} ${r.project?.name ?? ''} ${r.site?.folder ?? r.project?.path ?? ''}`.toLowerCase().includes(term)
+  // Group domains by project or matching folder so a project folder only ever has ONE row in the table.
+  interface DomainBucket {
+    project: Project | null
+    domains: DomainSummary[]
+  }
+  const buckets: DomainBucket[] = []
+  const claimedDomains = new Set<string>()
+
+  // 1. First pass: group by project (by project_id or project folder path).
+  for (const p of projects) {
+    const np = normPath(p.path)
+    const matching = activeDomains.filter((d) => {
+      if (claimedDomains.has(d.hostname)) return false
+      const matched = (d.project_id && d.project_id === p.id) || (np !== '' && normPath(d.folder) === np)
+      return Boolean(matched)
+    })
+    for (const d of matching) claimedDomains.add(d.hostname)
+    buckets.push({ project: p, domains: matching })
+  }
+
+  // 2. Second pass: remaining domains that don't belong to a registered project.
+  // Group them by folder (if folder is non-empty) or keep as single domain buckets.
+  const folderBucketMap = new Map<string, DomainBucket>()
+  for (const d of activeDomains) {
+    if (claimedDomains.has(d.hostname)) continue
+    claimedDomains.add(d.hostname)
+    const df = normPath(d.folder)
+    if (df !== '') {
+      const existing = folderBucketMap.get(df)
+      if (existing) {
+        existing.domains.push(d)
+        continue
+      }
+      const b: DomainBucket = { project: null, domains: [d] }
+      folderBucketMap.set(df, b)
+      buckets.push(b)
+    } else {
+      buckets.push({ project: null, domains: [d] })
+    }
+  }
+
+  // 3. Convert buckets into Rows: primary domain first (preferring enabled), extra domains grouped.
+  const rows: Row[] = buckets
+    .map((b) => {
+      const sortedDomains = [...b.domains].sort((d1, d2) => {
+        if (d1.enabled !== d2.enabled) return d1.enabled ? -1 : 1
+        return d1.hostname.localeCompare(d2.hostname)
+      })
+      const site = sortedDomains[0] ?? null
+      const extraDomains = sortedDomains.slice(1)
+      const key = site ? `site:${site.hostname}` : `project:${b.project!.id}`
+      return { key, site, project: b.project, extraDomains }
+    })
+    .sort((a, b) => {
+      const nameA = a.site?.hostname ?? a.project?.name ?? ''
+      const nameB = b.site?.hostname ?? b.project?.name ?? ''
+      return nameA.localeCompare(nameB)
+    })
+
+  const isRowEnabled = (r: Row) => (r.site?.enabled ?? false) || r.extraDomains.some((e) => e.enabled)
+  const isRowDisabled = (r: Row) => (!!r.site && !r.site.enabled) && (!r.extraDomains.length || r.extraDomains.every((e) => !e.enabled))
+
+  const matchesQuery = (r: Row, term: string) => {
+    if (!term) return true
+    const extraHosts = r.extraDomains.map((e) => e.hostname).join(' ')
+    const aliases = [r.site?.aliases ?? [], ...r.extraDomains.flatMap((e) => e.aliases ?? [])].flat().join(' ')
+    const text = `${r.site?.hostname ?? ''} ${extraHosts} ${aliases} ${r.project?.name ?? ''} ${r.site?.folder ?? r.project?.path ?? ''}`.toLowerCase()
+    return text.includes(term)
+  }
   const q = query.trim().toLowerCase()
   const matches = rows.filter((r) => matchesQuery(r, q))
   const groupsPresent = GROUPS.filter((g) => rows.some((r) => groupOf(r) === g.id))
@@ -146,8 +228,8 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       ? filter
       : 'all'
   const matchesFilter = (r: Row, selected: SiteFilter) => {
-    if (selected === 'enabled') return r.site?.enabled === true
-    if (selected === 'disabled') return !!r.site && !r.site.enabled
+    if (selected === 'enabled') return isRowEnabled(r)
+    if (selected === 'disabled') return isRowDisabled(r)
     if (selected === 'all') return true
     return groupOf(r) === selected
   }
@@ -192,14 +274,14 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     })
 
   const pickedCount = pickedKeys.length
-  /** Only site rows have a hostname, and a hostname is what a bundle is keyed by. */
-  const pickedHostnames = pickedRows.map((r) => r.site?.hostname).filter((h): h is string => !!h)
+  /** All hostnames associated with picked rows (including extra domains for the project). */
+  const pickedHostnames = pickedRows.flatMap((r) => [r.site?.hostname, ...r.extraDomains.map((e) => e.hostname)]).filter((h): h is string => !!h)
   /** Rows that have no site yet: the only ones "Add auto domain" can do anything to. */
   const noDomainCount = pickedRows.filter((r) => !r.site).length
   // Enable and Disable are each hidden when they would change nothing: a disabled button
   // beside an enabled twin is a hint, an enabled button that does nothing is a lie. A row
   // with no site counts as off, because the batch is about to give it one.
-  const enabledCount = pickedRows.filter((r) => r.site?.enabled).length
+  const enabledCount = pickedRows.filter(isRowEnabled).length
   const allEnabled = pickedCount > 0 && enabledCount === pickedCount
   const noneEnabled = enabledCount === 0
   const busyBulk = busy === 'bulk'
@@ -216,7 +298,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
    */
   async function resolveSites(): Promise<{ hostnames: string[]; noSite: string[] }> {
     if (pickedRows.every((r) => r.site)) {
-      return { hostnames: pickedRows.map((r) => r.site!.hostname), noSite: [] }
+      return { hostnames: pickedRows.flatMap((r) => [r.site!.hostname, ...r.extraDomains.map((e) => e.hostname)]), noSite: [] }
     }
     await runCommand({ type: 'sync_auto_domains' })
     const res = await runCommand({ type: 'list_domains' })
@@ -224,9 +306,15 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     const hostnames: string[] = []
     const noSite: string[] = []
     for (const r of pickedRows) {
-      const host = r.site?.hostname ?? known.find((d) => d.project_id === r.project?.id)?.hostname
-      if (host) hostnames.push(host)
-      else noSite.push(r.project?.name ?? r.key)
+      const rowHosts = [r.site?.hostname, ...r.extraDomains.map((e) => e.hostname)].filter((h): h is string => !!h)
+      if (rowHosts.length > 0) {
+        hostnames.push(...rowHosts)
+      } else {
+        const np = normPath(r.project?.path)
+        const match = known.filter((d) => d.project_id === r.project?.id || (np !== '' && normPath(d.folder) === np)).map((d) => d.hostname)
+        if (match.length > 0) hostnames.push(...match)
+        else noSite.push(r.project?.name ?? r.key)
+      }
     }
     // Those rows are site rows now, so the selection follows them onto their new keys
     // instead of vanishing when the project-only row they were made on disappears.
@@ -351,7 +439,8 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       const hostnames: string[] = []
       const skipped: string[] = []
       for (const r of waiting) {
-        const host = known.find((d) => d.project_id === r.project?.id)?.hostname
+        const np = normPath(r.project?.path)
+        const host = known.find((d) => d.project_id === r.project?.id || (np !== '' && normPath(d.folder) === np))?.hostname
         if (host) hostnames.push(host)
         else skipped.push(`${r.project?.name ?? r.key} has no index.html or project file to serve`)
       }
@@ -406,7 +495,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     )
     if (!ok) return
     await run('bulk', async () => {
-      const hostnames = pickedRows.map((r) => r.site?.hostname).filter((h): h is string => !!h)
+      const hostnames = pickedRows.flatMap((r) => [r.site?.hostname, ...r.extraDomains.map((e) => e.hostname)]).filter((h): h is string => !!h)
       const projectIds = pickedRows.filter((r) => !r.site).map((r) => r.project!.id)
       const skipped: string[] = []
       let changed = 0
@@ -438,7 +527,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     )
     if (!ok) return
     await run('bulk', async () => {
-      const hostnames = pickedRows.map((r) => r.site?.hostname).filter((h): h is string => !!h)
+      const hostnames = pickedRows.flatMap((r) => [r.site?.hostname, ...r.extraDomains.map((e) => e.hostname)]).filter((h): h is string => !!h)
       const projectIds = pickedRows.filter((r) => !r.site).map((r) => r.project!.id)
       const skipped: string[] = []
       let changed = 0
@@ -526,7 +615,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         label: 'Export to bundle…',
         icon: <Download />,
         hint: 'Its settings, .env files, database and files — pick what goes in',
-        onSelect: () => setExportFor([d.hostname]),
+        onSelect: () => setExportFor([d.hostname, ...r.extraDomains.map((e) => e.hostname)]),
       })
       items.push(
         'separator',
@@ -569,35 +658,38 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     }
     items.push('separator')
     if (d) {
+      const allHosts = [d.hostname, ...r.extraDomains.map((e) => e.hostname)]
       const key = d.hostname
       items.push({
         label: 'Hide/Exclude',
         icon: <EyeOff />,
-        disabled: removing.has(key) || busy === `hide:${key}`,
+        disabled: allHosts.some((h) => removing.has(h)) || busy === `hide:${key}`,
         onSelect: async () => {
           const last = p ? ` ${p.name} leaves the list with it.` : ''
+          const hostLabel = allHosts.length > 1 ? `${d.hostname} (+${r.extraDomains.length} extra domains)` : d.hostname
           const ok = await confirmAction(
             `Its certificate is revoked and its config file is removed.${last} The project folder on disk is not touched. It stays hidden until cleared in Settings > Hide/Exclude.`,
-            `Hide/Exclude ${d.hostname}?`,
+            `Hide/Exclude ${hostLabel}?`,
             'Hide/Exclude',
           )
           if (!ok) return
-          await run(`hide:${key}`, () => web.hideSite(key))
+          await run(`hide:${key}`, () => web.hideSites(allHosts))
         },
       })
       items.push({
         label: 'Delete site',
         icon: <Trash2 />,
         danger: true,
-        disabled: removing.has(key) || busy === `delete:${key}`,
+        disabled: allHosts.some((h) => removing.has(h)) || busy === `delete:${key}`,
         onSelect: async () => {
+          const hostLabel = allHosts.length > 1 ? `${d.hostname} (+${r.extraDomains.length} extra domains)` : d.hostname
           const ok = await confirmAction(
             `Moves the project into an "ols_excluded_sites" folder in the same directory instead of permanently deleting it. Certificate is revoked and server configuration is removed.`,
-            `Delete ${d.hostname}?`,
+            `Delete ${hostLabel}?`,
             'Delete site',
           )
           if (!ok) return
-          await run(`delete:${key}`, () => web.deleteSite(key))
+          await run(`delete:${key}`, () => web.deleteSites(allHosts))
         },
       })
     } else if (p) {
@@ -755,8 +847,8 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
             )}
             <Tabs
               tabs={[
-                { id: 'enabled', label: 'Enabled', badge: matches.filter((r) => r.site?.enabled).length, icon: <Check className="size-3.5 text-emerald-500" /> },
-                { id: 'disabled', label: 'Disabled', badge: matches.filter((r) => r.site && !r.site.enabled).length, icon: <CircleOff className="size-3.5 text-rose-500" /> },
+                { id: 'enabled', label: 'Enabled', badge: matches.filter(isRowEnabled).length, icon: <Check className="size-3.5 text-emerald-500" /> },
+                { id: 'disabled', label: 'Disabled', badge: matches.filter(isRowDisabled).length, icon: <CircleOff className="size-3.5 text-rose-500" /> },
                 ...groupsPresent.map((g) => ({
                   id: g.id as SiteFilter,
                   label: g.label,
@@ -792,7 +884,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                 const folder = d?.folder ?? p?.path
                 // A row mid-removal dims and says so, so deleting never looks like a click
                 // that did nothing.
-                const pending = removing.has(d?.hostname ?? p?.id ?? '')
+                const pending = [d?.hostname, ...r.extraDomains.map((e) => e.hostname), p?.id].filter(Boolean).some((k) => removing.has(k!))
                 return (
                   <TableRow key={r.key} aria-busy={pending} className={pending ? 'opacity-50 transition-opacity' : undefined}>
                     <TableCell>
@@ -834,10 +926,25 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
 
                         {/* The name and sub-line block */}
                         <div className="min-w-0 flex-1">
-                          <div className="flex min-w-0 items-center">
+                          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                             <button className="cursor-pointer truncate text-left font-medium leading-6 hover:underline" onClick={openSettings} title={d?.hostname ?? p?.name}>
                               {d?.hostname ?? p?.name}
                             </button>
+                            {r.extraDomains.map((extra) => (
+                              <button
+                                key={extra.hostname}
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setTarget({ hostname: extra.hostname, projectId: p?.id ?? null })
+                                }}
+                                className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-border/70 bg-muted/60 px-2 py-0.5 text-xs font-mono font-medium text-foreground/80 hover:bg-accent hover:text-accent-foreground transition-all"
+                                title={`Extra domain: ${extra.hostname} (${extra.enabled ? (status?.running ? 'Running' : 'Stopped') : 'Disabled'}) — Click to configure`}
+                              >
+                                <span className={`size-1.5 shrink-0 rounded-full ${!extra.enabled ? 'bg-warning' : status?.running ? 'bg-emerald-500' : 'bg-muted-foreground/50'}`} />
+                                <span>{extra.hostname}</span>
+                              </button>
+                            ))}
                           </div>
                           <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
                             {d ? (
@@ -951,6 +1058,15 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                           title={`Dynamic DNS active via ${d.ddns_provider}${d.ddns_last_ip ? ` (IP: ${d.ddns_last_ip})` : ''}`}
                         >
                           <Zap className="size-3" /> DDNS ({d.ddns_provider})
+                        </div>
+                      )}
+                      {r.extraDomains.length > 0 && (
+                        <div
+                          className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-medium text-primary/80"
+                          title={`Additional domains for this project folder: ${r.extraDomains.map((e) => e.hostname).join(', ')}`}
+                        >
+                          <Globe className="size-3" />
+                          +{r.extraDomains.length} extra domain{r.extraDomains.length === 1 ? '' : 's'}
                         </div>
                       )}
                       {(d?.aliases ?? []).length > 0 && (

@@ -1,5 +1,5 @@
-use crate::app::*;
 use crate::app::projects::same_skip_entry;
+use crate::app::*;
 use crate::domain::{Domain, SiteKind};
 use std::sync::Arc;
 

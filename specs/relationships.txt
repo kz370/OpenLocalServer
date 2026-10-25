@@ -104,6 +104,7 @@ WebConfig | resolves | Domain.server -> resolved_server(domain, cfg)
 SitesPage | uses | UseWeb hook
 SitesPage | uses | ConfirmAction (the dialog title names the site or project; the destructive button repeats the action)
 SitesPage | filters rows by | Enabled (default), Disabled, website type, or All (last); status filters include sites only, and search falls back to All when the current filter has no match
+SitesPage | groups rows by | project / folder path into a single row with primary domain and extra-domain badge pills
 UseWeb.deleteSite / deleteSites / deleteProject | uses | delete_site / bulk_delete_sites / delete_project (moves project folder to excluded_sites/, row removed optimistically, apply run behind an `applying` flag)
 UseWeb.hideSite / hideSites / hideProjectFromList | uses | remove_domain / bulk_remove_domains / remove_project (leaves files untouched on disk, adds to skip lists)
 SitesPage | uses | Checkbox (one per row, site or not) and Pagination (page controls only; the caller owns `page`/`perPage` and the slice); renders subtle FolderCode icon for projects without a domain
