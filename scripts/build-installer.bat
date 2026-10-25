@@ -32,7 +32,6 @@ set "HELPER_EXE=%TARGET%\%HELPER_BIN%.exe"
 set "MCP_EXE=%TARGET%\%MCP_BIN%.exe"
 set "CLI_EXE=%TARGET%\%CLI_BIN%.exe"
 set "DISTROOT=%ROOT%release"
-set "DISTROOT=%ROOT%release"
 rem The CPU limiter for Settings > Resources (§129). Vendored, not built: see
 rem vendor\cpulimit\README.md for provenance. It is hash-checked on every build
 rem and installed next to the app, so a default install needs no configuration.
@@ -196,8 +195,12 @@ if not exist "%CLI_EXE%" (
 )
 
 echo       Embedding icons into executables...
-if not exist "%ROOT%node_modules\rcedit" call npm.cmd install
-node "%ROOT%scripts\embed-icons-release.js" || (
+pushd "%ROOT%"
+if not exist "node_modules\rcedit" call npm.cmd install
+node "scripts\embed-icons-release.js"
+set "EMBED_ERR=%ERRORLEVEL%"
+popd
+if not "%EMBED_ERR%"=="0" (
   echo [!] Warning: icon embedding failed, executables will have default icons.
 )
 
@@ -247,7 +250,7 @@ if not exist "%STAGED_HELPER%" (
   set "VERIFY_FAIL=1"
 )
 if not exist "%STAGED_CLI%" (
-  echo [x] Missing "%STAGED_CPULIMIT%" - Settings > Resources cannot cap CPU without it.
+  echo [x] Missing "%STAGED_CLI%" - CLI executable required for command line and shell integration.
   set "VERIFY_FAIL=1"
 )
 if not exist "%STAGED_MCP%" (
@@ -301,11 +304,22 @@ if not errorlevel 1 (
   echo     Fix: right-click the tray icon, Quit, then run this again.
   goto :fail
 )
-rem In inno_only mode the exes are already in %DIST% from a prior full build.
-rem Nothing to copy — just build the installer.
-goto :skip_copies
-:skip_copies
-echo       staged exes already in %DIST%.
+rem In inno_only mode ensure icons are embedded in target\release exes before packaging
+echo       Embedding icons into executables...
+pushd "%ROOT%"
+if not exist "node_modules\rcedit" call npm.cmd install
+node "scripts\embed-icons-release.js"
+set "EMBED_ERR=%ERRORLEVEL%"
+popd
+if not "%EMBED_ERR%"=="0" (
+  echo [!] Warning: icon embedding failed, executables will have default icons.
+)
+if not exist "%DIST%" mkdir "%DIST%"
+call :copy_retry "%EXE%" "%STAGED%" || goto :fail
+call :copy_retry "%HELPER_EXE%" "%STAGED_HELPER%" || goto :fail
+call :copy_retry "%CLI_EXE%" "%STAGED_CLI%" || goto :fail
+call :copy_retry "%MCP_EXE%" "%STAGED_MCP%" || goto :fail
+call :stage_cpulimit || goto :fail
 for %%d in ("%TARGET%\*.dll") do if exist "%%~d" (
   call :copy_retry "%%~d" "%DIST%\%%~nxd" || goto :fail
 )
