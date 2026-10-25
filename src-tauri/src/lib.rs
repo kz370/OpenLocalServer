@@ -339,19 +339,33 @@ fn shutdown(core: &Core) -> bool {
     core.supervisor().stop_all_and_wait(Duration::from_secs(5))
 }
 
+#[tauri::command]
+fn request_exit(app: AppHandle, state: tauri::State<'_, Core>) {
+    begin_shutdown(&app, state.inner().clone());
+}
+
 fn begin_shutdown(app: &AppHandle, core: Core) {
     if SHUTDOWN_IN_PROGRESS.swap(true, Ordering::SeqCst) {
         return;
     }
     set_stopping_tray(app);
+    // §120: notify UI immediately so the main window (if open) displays the exiting loading animation
+    let _ = app.emit("ols:exiting", ());
     let app = app.clone();
     std::thread::spawn(move || {
+        let start = std::time::Instant::now();
         // Attempt clean shutdown (up to 5s for managed processes).
         let clean = shutdown(&core);
         if !clean {
             tracing::warn!(
                 "shutdown timed out waiting for some processes; proceeding with app exit"
             );
+        }
+
+        // Keep exit screen visible for at least 700ms so the loading animation is smooth
+        let elapsed = start.elapsed();
+        if elapsed < Duration::from_millis(700) {
+            std::thread::sleep(Duration::from_millis(700) - elapsed);
         }
 
         // Hide windows immediately so UI feels responsive
@@ -1091,7 +1105,7 @@ pub fn run() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![run_command])
+        .invoke_handler(tauri::generate_handler![run_command, request_exit])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

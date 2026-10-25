@@ -36,6 +36,17 @@ export function runCommandWithin(command: CoreCommand, ms: number): Promise<Core
   return Promise.race([runCommand(command), deadline]).finally(() => clearTimeout(timer))
 }
 
+/**
+ * Requests graceful shutdown of OpenLocalServer via Tauri.
+ */
+export async function requestExit(): Promise<void> {
+  try {
+    await invoke('request_exit')
+  } catch {
+    // ignore
+  }
+}
+
 
 // ---- Stage 16: plugins and signed catalogs ---------------------------------------------
 

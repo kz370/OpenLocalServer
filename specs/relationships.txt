@@ -194,3 +194,8 @@ CoreCommand::ExecuteSql | calls | ServiceManager::run_sql_query across MariaDB, 
 Dialog | renders_below | Titlebar (fixed top-9 inset-x-0 bottom-0, unblocking native titlebar drag region and window controls)
 Dialog | layers_via | DialogDepthContext and layer prop (base z-60, nested/top/sub z-70, ai z-80, confirm z-90)
 Cloudflare (tunnel) | filters_url | api.trycloudflare.com (ignores management API endpoint and extracts only public tunnel address)
+Tauri begin_shutdown | emits | ols:exiting (triggers ExitingOverlay animation before bounded 5s shutdown)
+ExitingOverlay | listens | ols:exiting (renders full-screen animated shutdown loading screen)
+Tauri request_exit | calls | begin_shutdown
+UI (core/client.ts) | calls | Tauri invoke('request_exit')
+CommandPalette & SettingsPage | invoke | requestExit

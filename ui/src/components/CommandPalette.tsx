@@ -3,7 +3,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 
 import type { Page } from '@/components/layout/Sidebar'
 import { Spinner } from '@/components/Spinner'
-import { type CoreCommand, type SearchHit, runCommand } from '@/core'
+import { type CoreCommand, type SearchHit, runCommand, requestExit } from '@/core'
 import { asDiagnostic } from '@/components/ErrorCard'
 import { usePresence } from '@/lib/hooks'
 import { openProject } from '@/lib/nav'
@@ -142,6 +142,7 @@ export function CommandPalette({ onNavigate, onDoctor }: { onNavigate: (p: Page)
         { id: 'open-mailpit', label: 'Open Mailpit', group: 'Environment', run: () => exec('Open Mailpit', { type: 'open_url', url: 'http://127.0.0.1:8025' }) },
         { id: 'open-nginx', label: 'Open web server config', group: 'Environment', run: go('config') },
         { id: 'new-quick-app', label: 'Create a project from a Quick App', group: 'Environment', run: go('quickapps') },
+        { id: 'quit', label: 'Quit OpenLocalServer', group: 'Environment', hint: 'Stop all services and exit', run: () => { setOpen(false); void requestExit() } },
       ]
       if (projects.type === 'projects') {
         for (const p of projects.projects) {

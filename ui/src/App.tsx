@@ -6,6 +6,7 @@ import { ConfirmHost } from '@/components/ConfirmHost'
 import { DoctorDialog } from '@/components/DoctorDialog'
 import { type Page, Sidebar } from '@/components/layout/Sidebar'
 import { Titlebar } from '@/components/layout/Titlebar'
+import { ExitingOverlay } from '@/components/layout/ExitingOverlay'
 import { useWindowState } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 import { CommandsPage } from '@/pages/Commands'
@@ -229,6 +230,7 @@ export default function App() {
       )}
     >
       <Titlebar />
+      <ExitingOverlay />
       <div className="flex min-h-0 flex-1">
         <Sidebar page={page} onNavigate={navigate} />
         <ConfirmHost />

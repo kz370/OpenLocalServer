@@ -411,3 +411,15 @@ body {
 .prose-ols a:hover {
   opacity: 0.85;
 }
+
+@keyframes ols-indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(120%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
