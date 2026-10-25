@@ -27,6 +27,8 @@ export function SiteLogoDialog({
   const currentIcon = d?.icon ?? null
   const currentImage = d?.icon_image ?? p?.icon_image ?? null
 
+  const isProxy = d?.kind === 'proxy'
+
   return (
     <Dialog
       open
@@ -46,6 +48,7 @@ export function SiteLogoDialog({
         displayName={displayName}
         initialIcon={currentIcon}
         initialImage={currentImage}
+        isProxy={isProxy}
         onUpdated={onUpdated}
       />
     </Dialog>

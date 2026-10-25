@@ -149,6 +149,7 @@ impl Inner {
         let cfg = self.web_config();
         let projects = self.projects.lock().unwrap().list();
         let tunnels = self.list_tunnels();
+        let proxy_dir = self.paths.proxy_site_images_dir();
         self.domains
             .lock()
             .unwrap()
@@ -156,7 +157,12 @@ impl Inner {
             .into_iter()
             .map(|d| {
                 let folder = site_folder(&d, &projects);
-                let icon_image = read_site_icon_image(&folder);
+                let icon_image = if matches!(d.kind, SiteKind::Proxy { .. }) {
+                    read_proxy_site_icon_image(&proxy_dir, &d.hostname)
+                } else {
+                    read_site_icon_image(&folder)
+                        .or_else(|| read_proxy_site_icon_image(&proxy_dir, &d.hostname))
+                };
                 let broadcast_tunnel = tunnels.iter().find(|t| {
                     (d.tunnel_id.as_deref() == Some(&t.config.id)
                         || (d.project_id.is_some() && d.project_id == t.config.project_id))
@@ -342,6 +348,13 @@ impl Inner {
         }
         let _ = self.certs.revoke(hostname);
         self.web.restart_app(hostname);
+        let proxy_icon = self
+            .paths
+            .proxy_site_images_dir()
+            .join(proxy_icon_filename(hostname));
+        if proxy_icon.exists() {
+            let _ = std::fs::remove_file(proxy_icon);
+        }
         if let Some(id) = orphan_project {
             let _ = self.remove_project(&id);
         }

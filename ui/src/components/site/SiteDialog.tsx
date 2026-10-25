@@ -341,7 +341,8 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
                   folder={project?.path ?? domain?.root ?? ''}
                   displayName={title}
                   initialIcon={domain?.icon ?? null}
-                  initialImage={project?.icon_image ?? null}
+                  initialImage={web.domains.find((s) => s.hostname === target.hostname)?.icon_image ?? project?.icon_image ?? null}
+                  isProxy={domain?.kind.type === 'proxy'}
                   onUpdated={async () => {
                     if (target.hostname) {
                       const r = await runCommand({ type: 'get_domain', hostname: target.hostname })

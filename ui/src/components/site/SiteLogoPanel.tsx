@@ -21,6 +21,7 @@ export interface SiteLogoPanelProps {
   displayName: string
   initialIcon?: string | null
   initialImage?: string | null
+  isProxy?: boolean
   onUpdated?: () => Promise<void> | void
 }
 
@@ -35,6 +36,7 @@ export function SiteLogoPanel({
   displayName,
   initialIcon = null,
   initialImage = null,
+  isProxy = false,
   onUpdated,
 }: SiteLogoPanelProps) {
   const [activeTab, setActiveTab] = useState<'photo' | 'fa'>('photo')
@@ -66,9 +68,9 @@ export function SiteLogoPanel({
     setCurrentImage(initialImage)
   }, [initialImage])
 
-  // If no initial image is passed but a folder is known, check for existing ols_site_icon.webp
+  // If no initial image is passed and this is NOT a proxy site, check for existing ols_site_icon.webp in folder
   useEffect(() => {
-    if (!currentImage && folder) {
+    if (!currentImage && folder && !isProxy) {
       const sep = folder.includes('/') ? '/' : '\\'
       const iconPath = folder.endsWith(sep) ? `${folder}ols_site_icon.webp` : `${folder}${sep}ols_site_icon.webp`
       runCommand({ type: 'read_image_file', path: iconPath })
@@ -81,7 +83,7 @@ export function SiteLogoPanel({
           // File does not exist or cannot be read yet
         })
     }
-  }, [folder])
+  }, [folder, isProxy])
 
   const flashSaved = () => {
     setSavedNotice(true)
@@ -261,7 +263,7 @@ export function SiteLogoPanel({
             )}
             {currentImage ? (
               <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-500 text-[10px]">
-                Custom Photo (ols_site_icon.webp)
+                {isProxy ? 'Proxy Site Icon (proxy-site-images)' : 'Custom Photo (ols_site_icon.webp)'}
               </Badge>
             ) : currentIcon ? (
               <Badge variant="outline" className="border-sky-500/40 bg-sky-500/10 text-sky-500 text-[10px]">
@@ -302,7 +304,7 @@ export function SiteLogoPanel({
           }`}
           onClick={() => setActiveTab('photo')}
         >
-          Photo from PC (ols_site_icon.webp)
+          {isProxy ? 'Site Icon Image (proxy-site-images)' : 'Photo from PC (ols_site_icon.webp)'}
         </button>
         <button
           type="button"
@@ -326,8 +328,21 @@ export function SiteLogoPanel({
             </div>
             <h3 className="mt-2 text-sm font-medium">Pick a photo from your PC</h3>
             <p className="mt-1 text-xs text-muted-foreground">
-              PNG, JPG, WEBP, SVG, GIF, or ICO. The image is converted to WebP format and saved directly into the project folder as{' '}
-              <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px] text-foreground">ols_site_icon.webp</code>.
+              PNG, JPG, WEBP, SVG, GIF, or ICO. The image is converted to WebP format and saved{' '}
+              {isProxy ? (
+                <>
+                  into OpenLocalServer's data folder as{' '}
+                  <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px] text-foreground">
+                    data/proxy-site-images/{hostname ? hostname.replace(/[^a-zA-Z0-9-]/g, '_') : 'domain'}.webp
+                  </code>
+                  . Each proxy site maintains its own unique icon.
+                </>
+              ) : (
+                <>
+                  directly into the project folder as{' '}
+                  <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px] text-foreground">ols_site_icon.webp</code>.
+                </>
+              )}
             </p>
             <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
               <Button size="sm" onClick={() => void handlePickPhoto()} disabled={busy}>
@@ -352,10 +367,16 @@ export function SiteLogoPanel({
           <div className="text-xs text-muted-foreground space-y-1">
             <p>
               <strong>Destination path:</strong>{' '}
-              <span className="font-mono text-[11px]">{folder ? `${folder}\\ols_site_icon.webp` : 'Project root'}</span>
+              <span className="font-mono text-[11px]">
+                {isProxy
+                  ? `data\\proxy-site-images\\${hostname ? hostname.replace(/[^a-zA-Z0-9-]/g, '_') : 'domain'}.webp`
+                  : folder
+                    ? `${folder}\\ols_site_icon.webp`
+                    : 'Project root'}
+              </span>
             </p>
             <p>
-              If the file is deleted from the folder or not provided, the site automatically falls back to the configured Font Awesome icon or the default internet globe icon.
+              If the file is deleted or not provided, the site automatically falls back to the configured Font Awesome icon or the default internet globe icon.
             </p>
           </div>
         </div>

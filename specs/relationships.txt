@@ -181,7 +181,7 @@ SitesPage | opens | SiteDialog (with active tab 'icon' when user clicks the row'
 SiteDialog | uses | SiteLogoPanel (renders dedicated site logo & icon management on the 'icon' tab)
 SiteLogoDialog | uses | SiteLogoPanel (renders SiteLogoPanel in a modal dialog)
 SiteLogoPanel | uses | SiteLogo (live preview of table row header with instant optimistic updates)
-SiteLogoPanel | dispatches | CoreCommand::SetDomainIcon, CoreCommand::SetSiteIconImage, CoreCommand::RemoveSiteIconImage, CoreCommand::ReadImageFile
+SiteLogoPanel | dispatches | CoreCommand::SetDomainIcon, CoreCommand::SetSiteIconImage (writes to project root or `<data>/proxy-site-images/<domain>.webp` for proxy sites), CoreCommand::RemoveSiteIconImage, CoreCommand::ReadImageFile
 scripts/update-version.bat | delegates_to | scripts/update-version.ps1 via pwsh or powershell (UTF-8 console code page 65001)
 update-version.bat | delegates_to | scripts/update-version.bat %*
 scripts/update-version.ps1 | synchronizes | Cargo.toml, src-tauri/tauri.conf.json, ui/package.json, ui/package-lock.json, Cargo.lock, README.md, CHANGELOG.md, release-notes/v<version>.md

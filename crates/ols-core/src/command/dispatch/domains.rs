@@ -123,26 +123,14 @@ impl Core {
                     folder,
                     webp_base64,
                 } => {
-                    let target_dir = if let Some(f) = folder.filter(|s| !s.trim().is_empty()) {
-                        std::path::PathBuf::from(f)
-                    } else if let Some(h) = hostname {
-                        let d = i.domains.lock().unwrap().get(&h).ok_or_else(|| {
-                            CoreError::DomainError(format!("{h} is not a known domain"))
-                        })?;
-                        let projects = i.projects.lock().unwrap().list();
-                        std::path::PathBuf::from(crate::app::site_folder(&d, &projects))
+                    let d = if let Some(h) = &hostname {
+                        i.domains.lock().unwrap().get(h)
                     } else {
-                        return Err(CoreError::DomainError(
-                            "Neither hostname nor folder was provided".into(),
-                        ));
+                        None
                     };
-
-                    if !target_dir.is_dir() {
-                        return Err(CoreError::DomainError(format!(
-                            "Folder does not exist: {}",
-                            target_dir.display()
-                        )));
-                    }
+                    let is_proxy = d.as_ref().is_some_and(|site| {
+                        matches!(site.kind, crate::domain::SiteKind::Proxy { .. })
+                    });
 
                     let raw_b64 = if let Some(idx) = webp_base64.find(',') {
                         &webp_base64[idx + 1..]
@@ -159,30 +147,91 @@ impl Core {
                         ));
                     }
 
-                    let icon_path = target_dir.join("ols_site_icon.webp");
-                    std::fs::write(&icon_path, &bytes).map_err(|e| {
-                        CoreError::DomainError(format!("Failed to write ols_site_icon.webp: {e}"))
-                    })?;
+                    if is_proxy {
+                        let h = hostname.as_deref().unwrap_or("proxy_site");
+                        let proxy_dir = i.paths.proxy_site_images_dir();
+                        std::fs::create_dir_all(&proxy_dir).map_err(|e| {
+                            CoreError::DomainError(format!(
+                                "Failed to create proxy-site-images folder: {e}"
+                            ))
+                        })?;
+                        let icon_path = proxy_dir.join(crate::app::proxy_icon_filename(h));
+                        std::fs::write(&icon_path, &bytes).map_err(|e| {
+                            CoreError::DomainError(format!("Failed to write proxy site icon: {e}"))
+                        })?;
+                    } else {
+                        let target_dir = if let Some(f) = folder.filter(|s| !s.trim().is_empty()) {
+                            std::path::PathBuf::from(f)
+                        } else if let Some(ref site) = d {
+                            let projects = i.projects.lock().unwrap().list();
+                            std::path::PathBuf::from(crate::app::site_folder(site, &projects))
+                        } else {
+                            return Err(CoreError::DomainError(
+                                "Neither hostname nor folder was provided".into(),
+                            ));
+                        };
+
+                        if !target_dir.is_dir() {
+                            return Err(CoreError::DomainError(format!(
+                                "Folder does not exist: {}",
+                                target_dir.display()
+                            )));
+                        }
+
+                        let icon_path = target_dir.join("ols_site_icon.webp");
+                        std::fs::write(&icon_path, &bytes).map_err(|e| {
+                            CoreError::DomainError(format!(
+                                "Failed to write ols_site_icon.webp: {e}"
+                            ))
+                        })?;
+                    }
                     Ok(R::Ok)
                 }
                 C::RemoveSiteIconImage { hostname, folder } => {
-                    let target_dir = if let Some(f) = folder.filter(|s| !s.trim().is_empty()) {
-                        std::path::PathBuf::from(f)
-                    } else if let Some(h) = hostname {
-                        let d = i.domains.lock().unwrap().get(&h).ok_or_else(|| {
-                            CoreError::DomainError(format!("{h} is not a known domain"))
-                        })?;
-                        let projects = i.projects.lock().unwrap().list();
-                        std::path::PathBuf::from(crate::app::site_folder(&d, &projects))
+                    let d = if let Some(h) = &hostname {
+                        i.domains.lock().unwrap().get(h)
                     } else {
-                        return Err(CoreError::DomainError(
-                            "Neither hostname nor folder was provided".into(),
-                        ));
+                        None
                     };
+                    let is_proxy = d.as_ref().is_some_and(|site| {
+                        matches!(site.kind, crate::domain::SiteKind::Proxy { .. })
+                    });
 
-                    let icon_path = target_dir.join("ols_site_icon.webp");
-                    if icon_path.exists() {
-                        let _ = std::fs::remove_file(icon_path);
+                    if is_proxy {
+                        if let Some(h) = &hostname {
+                            let proxy_icon = i
+                                .paths
+                                .proxy_site_images_dir()
+                                .join(crate::app::proxy_icon_filename(h));
+                            if proxy_icon.exists() {
+                                let _ = std::fs::remove_file(proxy_icon);
+                            }
+                        }
+                    } else {
+                        let target_dir = if let Some(f) = folder.filter(|s| !s.trim().is_empty()) {
+                            std::path::PathBuf::from(f)
+                        } else if let Some(ref site) = d {
+                            let projects = i.projects.lock().unwrap().list();
+                            std::path::PathBuf::from(crate::app::site_folder(site, &projects))
+                        } else {
+                            return Err(CoreError::DomainError(
+                                "Neither hostname nor folder was provided".into(),
+                            ));
+                        };
+
+                        let icon_path = target_dir.join("ols_site_icon.webp");
+                        if icon_path.exists() {
+                            let _ = std::fs::remove_file(icon_path);
+                        }
+                        if let Some(h) = &hostname {
+                            let proxy_icon = i
+                                .paths
+                                .proxy_site_images_dir()
+                                .join(crate::app::proxy_icon_filename(h));
+                            if proxy_icon.exists() {
+                                let _ = std::fs::remove_file(proxy_icon);
+                            }
+                        }
                     }
                     Ok(R::Ok)
                 }

@@ -315,3 +315,38 @@ pub fn read_site_icon_image(folder: &str) -> Option<String> {
         None
     }
 }
+
+/// Generates a safe filename for a proxy site icon (e.g. "test.local" -> "test_local.webp").
+pub fn proxy_icon_filename(hostname: &str) -> String {
+    let sanitized: String = hostname
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let name = if sanitized.trim_matches('_').is_empty() {
+        "proxy_site"
+    } else {
+        sanitized.as_str()
+    };
+    format!("{name}.webp")
+}
+
+/// Reads `<proxy_dir>/<hostname>.webp` if present and returns a data URL.
+pub fn read_proxy_site_icon_image(proxy_dir: &Path, hostname: &str) -> Option<String> {
+    let path = proxy_dir.join(proxy_icon_filename(hostname));
+    if path.is_file() {
+        match std::fs::read(&path) {
+            Ok(bytes) if !bytes.is_empty() && bytes.len() <= 2 * 1024 * 1024 => {
+                Some(format!("data:image/webp;base64,{}", to_base64(&bytes)))
+            }
+            _ => None,
+        }
+    } else {
+        None
+    }
+}

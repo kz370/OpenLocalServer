@@ -161,6 +161,11 @@ impl AppPaths {
         self.root.join("quick-apps")
     }
 
+    /// Dedicated directory inside the data directory for proxy site icons and images.
+    pub fn proxy_site_images_dir(&self) -> PathBuf {
+        self.root.join("proxy-site-images")
+    }
+
     pub fn sites_dir(&self) -> PathBuf {
         if std::env::var(HOME_ENV_VAR).is_ok() {
             return self.root.join("sites");
