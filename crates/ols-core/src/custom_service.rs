@@ -45,6 +45,9 @@ pub struct CustomService {
     /// Start it again (up to 3 times) when it exits on its own.
     #[serde(default)]
     pub restart_on_crash: bool,
+    /// Service category: "web" | "database" | "cache" | "mail" | etc.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
 }
 
 pub fn is_custom_id(id: &str) -> bool {
@@ -238,6 +241,7 @@ mod tests {
             port: Some(9000),
             health: HealthCheck::Tcp,
             restart_on_crash: false,
+            category: None,
         }
     }
 

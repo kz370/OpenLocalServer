@@ -52,6 +52,9 @@ pub struct ServiceStatus {
     /// "mail" | "sql" | "document" — what kind of thing this is.
     #[serde(default)]
     pub kind: String,
+    /// Service category: "web" | "database" | "cache" | "mail" | etc.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
     /// Where a client connects (§62, §63): a DSN/URL, or the SMTP address for Mailpit.
     #[serde(default)]
     pub connection: Option<String>,
@@ -236,6 +239,7 @@ impl ServiceManager {
                     port: Some(s.http_port),
                     port_status: Some(port_status),
                     kind: "web".into(),
+                    category: Some("web".into()),
                     connection: Some(format!("http://127.0.0.1:{}", s.http_port)),
                     healthy,
                     version: None,
@@ -340,6 +344,7 @@ impl ServiceManager {
                 }
             }),
             kind: "custom".into(),
+            category: def.category.clone(),
             connection: def.port.map(|p| format!("127.0.0.1:{p}")),
             healthy: if running {
                 def.port.and_then(|p| custom_service::probe(p, &def.health))
@@ -462,6 +467,7 @@ impl ServiceManager {
                     port: None,
                     port_status: None,
                     kind: "custom".into(),
+                    category: None,
                     connection: None,
                     healthy: None,
                     version: None,
@@ -492,6 +498,7 @@ impl ServiceManager {
                 }
             }),
             kind: kind_of(id).to_string(),
+            category: category_of(id).map(str::to_string),
             connection: installed.then(|| connection_string(id)).flatten(),
             healthy: running.then(|| {
                 port.is_some_and(|p| {
@@ -1634,6 +1641,16 @@ fn kind_of(id: &str) -> &'static str {
         "redis" => "cache",
         "memcached" => "cache",
         _ => "sql",
+    }
+}
+
+fn category_of(id: &str) -> Option<&'static str> {
+    match id {
+        "nginx" | "apache" | "caddy" => Some("web"),
+        "mariadb" | "postgres" | "mongodb" => Some("database"),
+        "redis" | "memcached" => Some("cache"),
+        "mailpit" => Some("mail"),
+        _ => None,
     }
 }
 

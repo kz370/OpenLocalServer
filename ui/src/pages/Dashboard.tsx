@@ -1,5 +1,5 @@
-import { AlertTriangle, CheckCircle2, FileText, Home, Play, RefreshCw, Rocket, RotateCw, XCircle } from 'lucide-react'
-import { memo, useMemo, useState } from 'react'
+import { AlertTriangle, CheckCircle2, ChevronDown, FileText, Home, Play, RefreshCw, Rocket, RotateCw, XCircle } from 'lucide-react'
+import { memo, useEffect, useMemo, useState } from 'react'
 
 import { DiagnosticsCard } from '@/components/DiagnosticsCard'
 import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
@@ -17,6 +17,7 @@ import { formatBytes, useAction, usePoll } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 import { waitForService } from '@/lib/wait'
 import { confirmAction } from '@/lib/confirm'
+import { groupServices } from '@/lib/serviceGrouping'
 
 /** §173 / §116 / §101: what's running, what's wrong, and one-click ways to act on it. */
 export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page) => void; onOpenLogs: (source: string) => void }) {
@@ -330,15 +331,24 @@ function servicePortTitle(s: ServiceStatus, sites?: number): string {
   return `HTTP port ${s.port} — ${sites} site${sites === 1 ? '' : 's'} on ${s.name}`
 }
 
-/** The services the widget shows, in a fixed order, so the list never re-shuffles. */
-const WIDGET_ORDER = ['mailpit', 'mariadb', 'postgres', 'mongodb', 'redis', 'memcached', 'nginx', 'apache', 'caddy'] as const
+const COLLAPSED_STORAGE_KEY = 'ols:dashboard:services:collapsed'
+const SETTING_KEY = 'dashboard.services.collapsed_groups'
+
+function getInitialCollapsed(): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(COLLAPSED_STORAGE_KEY)
+    if (raw) return JSON.parse(raw) as Record<string, boolean>
+  } catch {
+    // ignore
+  }
+  return {}
+}
 
 type WidgetAction = 'start' | 'stop' | 'restart' | 'reload'
 
 /**
- * The dashboard's Services card: one compact row per service, each with its own logo,
- * port and state, and icon-only controls. Nothing here scrolls — the eight built-in
- * services always fit.
+ * The dashboard's Services card: services grouped by type (Web servers, Databases,
+ * Cache & queues, Mail, Other) with collapsible section headers and compact rows.
  */
 function ServicesWidget({
   services,
@@ -360,11 +370,36 @@ function ServicesWidget({
   onOpenLogs: (source: string) => void
   onDone: () => Promise<void>
 }) {
-  const byId = new Map((services ?? []).map((s) => [s.id, s]))
-  // Always the same eight rows, installed or not, so the card keeps a stable height.
-  const rows = WIDGET_ORDER.map((id) => byId.get(id)).filter((s): s is ServiceStatus => !!s)
-  const running = rows.filter((s) => s.running).length
-  const installed = rows.filter((s) => s.installed).length
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(getInitialCollapsed)
+
+  useEffect(() => {
+    void runCommand({ type: 'get_setting', key: SETTING_KEY })
+      .then((res) => {
+        if (res.type === 'setting' && res.value && typeof res.value === 'object') {
+          const remote = res.value as Record<string, boolean>
+          setCollapsed((prev) => ({ ...remote, ...prev }))
+        }
+      })
+      .catch(() => undefined)
+  }, [])
+
+  function toggleGroup(groupId: string) {
+    setCollapsed((prev) => {
+      const next = { ...prev, [groupId]: !prev[groupId] }
+      try {
+        localStorage.setItem(COLLAPSED_STORAGE_KEY, JSON.stringify(next))
+      } catch {
+        // ignore
+      }
+      void runCommand({ type: 'set_setting', key: SETTING_KEY, value: next }).catch(() => undefined)
+      return next
+    })
+  }
+
+  const groups = groupServices(services)
+  const allServices = groups.flatMap((g) => g.services)
+  const running = allServices.filter((s) => s.running).length
+  const installed = allServices.filter((s) => s.installed).length
   // How many sites each web server renders — a running server with none opens no
   // listener, which is different from one that has stopped answering.
   const webSites = new Map((webServers ?? []).map((s) => [s.id, s.sites]))
@@ -401,82 +436,135 @@ function ServicesWidget({
         </Button>
       </CardHeader>
       <CardContent className="p-0">
-        {rows.map((s, i) => {
-          const working = busy === `svc:${s.id}:start` || busy === `svc:${s.id}:stop` || busy === `svc:${s.id}:restart` || busy === `svc:${s.id}:reload`
-          const state = !s.installed ? 'missing' : s.running ? (s.healthy === false ? 'unhealthy' : 'running') : 'stopped'
+        {groups.map((group, groupIndex) => {
+          const isCollapsed = !!collapsed[group.id]
+          const runningInGroup = group.services.filter((s) => s.running).length
+
           return (
-             <div
-               key={s.id}
-               className={cn(
-                 // In the windowed band (`lg` to `xl`) the card is one half of a two-column
-                 // grid and cannot hold five controls, a port and a state on one line: the
-                 // name, the only flexible field, was truncated away to make room. There the
-                 // row becomes two lines — name, port and state on top, the actions on their
-                 // own line under the name. Narrower and wider than that band there is room
-                 // for one line, and the actions sit at the end of it.
-                 'grid grid-cols-[1.25rem_minmax(0,1fr)_5.5rem_auto_auto] items-center gap-x-3 px-3 h-9 transition-colors hover:bg-muted/25',
-                 'lg:grid-cols-[1.25rem_minmax(0,1fr)_5.5rem_auto] lg:grid-rows-[auto_auto] lg:h-auto lg:gap-y-0.5 lg:py-1.5',
-                 'xl:grid-cols-[1.25rem_minmax(0,1fr)_5.5rem_auto_auto] xl:grid-rows-1 xl:py-0 xl:h-9',
-                 i > 0 && 'border-t border-border/60'
-               )}
-             >
-              <span className="shrink-0">
-                <ServiceMark id={s.id} state={state} className="size-4 [&>svg]:size-3" />
-              </span>
-              <span className="min-w-0 truncate text-[13px] font-medium">{s.name}</span>
-              <span
-                className="text-right font-mono text-xs tabular-nums text-muted-foreground"
-                title={servicePortTitle(s, webSites.get(s.id))}
+            <div key={group.id} className="min-w-0">
+              <button
+                type="button"
+                onClick={() => toggleGroup(group.id)}
+                className={cn(
+                  'flex w-full min-w-0 h-7 items-center justify-between gap-2 px-3 text-left transition-colors hover:bg-muted/30 select-none cursor-pointer',
+                  groupIndex > 0 && 'border-t border-border/60'
+                )}
+                aria-expanded={!isCollapsed}
               >
-                {s.port === null ? '—' : s.port}
-              </span>
-              <ServiceStatus state={state} />
-              <span className="flex shrink-0 items-center gap-0.5 lg:col-start-2 lg:row-start-2 lg:col-span-3 xl:col-start-5 xl:row-start-1 xl:col-span-1 xl:justify-end">
-                <ServiceIconAction
-                  title={`Start ${s.name}`}
-                  disabled={busy !== null || !s.installed || s.running}
-                  spinning={working && busy === `svc:${s.id}:start`}
-                  onClick={() => act(s, 'start')}
-                  iconColor="text-emerald-400"
-                >
-                  <Play className="size-3.5" />
-                </ServiceIconAction>
-                <ServiceIconAction
-                  title={`Stop ${s.name}`}
-                  disabled={busy !== null || !s.installed || !s.running}
-                  spinning={working && busy === `svc:${s.id}:stop`}
-                  onClick={() => act(s, 'stop')}
-                  iconColor="text-destructive/70"
-                >
-                  <StopIcon className="size-3.5" />
-                </ServiceIconAction>
-                <ServiceIconAction
-                  title="Restart"
-                  disabled={busy !== null || !s.installed}
-                  spinning={working && busy === `svc:${s.id}:restart`}
-                  onClick={() => act(s, 'restart')}
-                  iconColor="text-amber-400"
-                >
-                  <RotateCw className="size-3.5" />
-                </ServiceIconAction>
-                <ServiceIconAction
-                  title="Reload config"
-                  disabled={busy !== null || !s.installed || s.kind !== 'web'}
-                  spinning={working && busy === `svc:${s.id}:reload`}
-                  onClick={() => act(s, 'reload')}
-                  iconColor="text-sky-400"
-                >
-                  <RefreshCw className="size-3.5" />
-                </ServiceIconAction>
-                <ServiceIconAction
-                  title="Logs"
-                  disabled={busy !== null || !s.installed || !s.log_source}
-                  onClick={() => s.log_source && onOpenLogs(s.log_source)}
-                  iconColor="text-violet-400"
-                >
-                  <FileText className="size-3.5" />
-                </ServiceIconAction>
-              </span>
+                <span className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  {group.label}
+                </span>
+                <span className="flex shrink-0 items-center gap-1.5 tabular-nums text-xs text-muted-foreground">
+                  {runningInGroup > 0 && (
+                    <span
+                      className="size-1.5 shrink-0 rounded-full bg-success"
+                      title={`${runningInGroup} running`}
+                    />
+                  )}
+                  <span>
+                    {runningInGroup}/{group.services.length}
+                  </span>
+                  <ChevronDown
+                    className={cn(
+                      'size-3.5 shrink-0 text-muted-foreground transition-transform duration-200',
+                      isCollapsed && '-rotate-90'
+                    )}
+                  />
+                </span>
+              </button>
+
+              {!isCollapsed && (
+                <div>
+                  {group.services.map((s) => {
+                    const working =
+                      busy === `svc:${s.id}:start` ||
+                      busy === `svc:${s.id}:stop` ||
+                      busy === `svc:${s.id}:restart` ||
+                      busy === `svc:${s.id}:reload`
+                    const state = !s.installed
+                      ? 'missing'
+                      : s.running
+                        ? s.healthy === false
+                          ? 'unhealthy'
+                          : 'running'
+                        : 'stopped'
+                    return (
+                      <div
+                        key={s.id}
+                        className={cn(
+                          // In the windowed band (`lg` to `xl`) the card is one half of a two-column
+                          // grid and cannot hold five controls, a port and a state on one line: the
+                          // name, the only flexible field, was truncated away to make room. There the
+                          // row becomes two lines — name, port and state on top, the actions on their
+                          // own line under the name. Narrower and wider than that band there is room
+                          // for one line, and the actions sit at the end of it.
+                          'grid grid-cols-[1.25rem_minmax(0,1fr)_5.5rem_auto_auto] items-center gap-x-3 px-3 h-9 transition-colors hover:bg-muted/25 border-t border-border/60',
+                          'lg:grid-cols-[1.25rem_minmax(0,1fr)_5.5rem_auto] lg:grid-rows-[auto_auto] lg:h-auto lg:gap-y-0.5 lg:py-1.5',
+                          'xl:grid-cols-[1.25rem_minmax(0,1fr)_5.5rem_auto_auto] xl:grid-rows-1 xl:py-0 xl:h-9'
+                        )}
+                      >
+                        <span className="shrink-0">
+                          <ServiceMark id={s.id} state={state} className="size-4 [&>svg]:size-3" />
+                        </span>
+                        <span className="min-w-0 truncate text-[13px] font-medium">{s.name}</span>
+                        <span
+                          className="text-right font-mono text-xs tabular-nums text-muted-foreground"
+                          title={servicePortTitle(s, webSites.get(s.id))}
+                        >
+                          {s.port === null ? '—' : s.port}
+                        </span>
+                        <ServiceStatus state={state} />
+                        <span className="flex shrink-0 items-center gap-0.5 lg:col-start-2 lg:row-start-2 lg:col-span-3 xl:col-start-5 xl:row-start-1 xl:col-span-1 xl:justify-end">
+                          <ServiceIconAction
+                            title={`Start ${s.name}`}
+                            disabled={busy !== null || !s.installed || s.running}
+                            spinning={working && busy === `svc:${s.id}:start`}
+                            onClick={() => act(s, 'start')}
+                            iconColor="text-emerald-400"
+                          >
+                            <Play className="size-3.5" />
+                          </ServiceIconAction>
+                          <ServiceIconAction
+                            title={`Stop ${s.name}`}
+                            disabled={busy !== null || !s.installed || !s.running}
+                            spinning={working && busy === `svc:${s.id}:stop`}
+                            onClick={() => act(s, 'stop')}
+                            iconColor="text-destructive/70"
+                          >
+                            <StopIcon className="size-3.5" />
+                          </ServiceIconAction>
+                          <ServiceIconAction
+                            title="Restart"
+                            disabled={busy !== null || !s.installed}
+                            spinning={working && busy === `svc:${s.id}:restart`}
+                            onClick={() => act(s, 'restart')}
+                            iconColor="text-amber-400"
+                          >
+                            <RotateCw className="size-3.5" />
+                          </ServiceIconAction>
+                          <ServiceIconAction
+                            title="Reload config"
+                            disabled={busy !== null || !s.installed || s.kind !== 'web'}
+                            spinning={working && busy === `svc:${s.id}:reload`}
+                            onClick={() => act(s, 'reload')}
+                            iconColor="text-sky-400"
+                          >
+                            <RefreshCw className="size-3.5" />
+                          </ServiceIconAction>
+                          <ServiceIconAction
+                            title="Logs"
+                            disabled={busy !== null || !s.installed || !s.log_source}
+                            onClick={() => s.log_source && onOpenLogs(s.log_source)}
+                            iconColor="text-violet-400"
+                          >
+                            <FileText className="size-3.5" />
+                          </ServiceIconAction>
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           )
         })}
@@ -542,8 +630,8 @@ function parseAccessLine(line: string): { t: number | null; bytes: number } {
   return { t, bytes }
 }
 
-const UP_COLOR = '#22c55e'
-const DOWN_COLOR = '#f59e0b'
+const UP_COLOR = 'var(--success)'
+const DOWN_COLOR = 'var(--warning)'
 
 function smoothPath(pts: { x: number; y: number }[]): string {
   if (pts.length === 0) return ''

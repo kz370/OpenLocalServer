@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/form'
 import { type Diagnostic, type TerminalEvent, runCommand } from '@/core'
 
+import { useThemeSafe } from '@/lib/theme'
+
 /**
  * A real shell for a project (§19): PowerShell or cmd, started in the project's folder with its
  * runtimes first on PATH. The shell runs in the app's core; this only draws it and sends keys.
@@ -19,6 +21,7 @@ export function ProjectTerminal({ projectId }: { projectId: string | null }) {
   const [session, setSession] = useState(0)
   const [ended, setEnded] = useState(false)
   const [error, setError] = useState<Diagnostic | null>(null)
+  const theme = useThemeSafe()
 
   useEffect(() => {
     const el = host.current
@@ -29,12 +32,29 @@ export function ProjectTerminal({ projectId }: { projectId: string | null }) {
     setEnded(false)
     setError(null)
 
-    // lineHeight 1.0 (xterm default) clips descenders (p, g, y) in WebView2's
-    // Consolas metrics; windowsMode aligns the renderer with Windows fonts.
-    // Release builds hit this while dev stayed lucky on fallback fonts.
-    // Explicit theme: default xterm grays can render near-invisible against the
-    // black host on some WebView2 color profiles, looking like "nothing shown".
-    const term = new XTerm({ cursorBlink: true, cursorStyle: 'bar', fontSize: 13, lineHeight: 1.3, fontFamily: 'Consolas, "Cascadia Mono", monospace', scrollback: 5000, convertEol: false, windowsMode: true, theme: { background: '#000000', foreground: '#e8e8e8', cursor: '#34d399', selectionBackground: 'rgba(52, 211, 153, 0.3)' } })
+    // Derive terminal theme from active theme tokens so it follows presets and overrides
+    const dark = theme?.resolvedTheme !== 'light'
+    const termBg = dark ? (theme?.tokens.card ?? '#000000') : (theme?.tokens.card ?? '#ffffff')
+    const termFg = theme?.tokens.foreground ?? (dark ? '#e8e8e8' : '#0f172a')
+    const termCursor = theme?.tokens.primary ?? (dark ? '#34d399' : '#059669')
+    const termSelection = theme?.tokens.ring ?? 'rgba(52, 211, 153, 0.3)'
+
+    const term = new XTerm({
+      cursorBlink: true,
+      cursorStyle: 'bar',
+      fontSize: 13,
+      lineHeight: 1.3,
+      fontFamily: 'Consolas, "Cascadia Mono", monospace',
+      scrollback: 5000,
+      convertEol: false,
+      windowsMode: true,
+      theme: {
+        background: termBg,
+        foreground: termFg,
+        cursor: termCursor,
+        selectionBackground: termSelection,
+      },
+    })
     const fit = new FitAddon()
     term.loadAddon(fit)
     term.open(el)
@@ -97,7 +117,7 @@ export function ProjectTerminal({ projectId }: { projectId: string | null }) {
       if (id !== null) void send({ type: 'close_terminal', id })
       term.dispose()
     }
-  }, [projectId, shell, session])
+  }, [projectId, shell, session, theme?.tokens])
 
   return (
     <div className="flex flex-col gap-2">

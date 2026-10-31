@@ -23,6 +23,7 @@ import { invalidateDefaultTldCache } from '@/lib/sites'
 import { cn } from '@/lib/utils'
 import {
   SettingsAboutIcon,
+  SettingsAppearanceIcon,
   SettingsBackupsIcon,
   SettingsDeletedIcon,
   SettingsDiagnosticsIcon,
@@ -34,10 +35,12 @@ import {
   SettingsSitesIcon,
   SettingsStartupIcon,
 } from '@/components/layout/SidebarIcons'
+import { AppearanceSettings } from '@/components/settings/AppearanceSettings'
 
-type Section = 'general' | 'sites' | 'roots' | 'deleted' | 'startup' | 'diagnostics' | 'manual' | 'resources' | 'backups' | 'about' | 'mcp'
+type Section = 'general' | 'appearance' | 'sites' | 'roots' | 'deleted' | 'startup' | 'diagnostics' | 'manual' | 'resources' | 'backups' | 'about' | 'mcp'
 const SECTIONS: { id: Section; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'general', label: 'General', icon: SettingsGeneralIcon },
+  { id: 'appearance', label: 'Appearance', icon: SettingsAppearanceIcon },
   { id: 'mcp', label: 'MCP / AI tools', icon: SettingsMcpIcon },
   { id: 'sites', label: 'Sites & domains', icon: SettingsSitesIcon },
   { id: 'roots', label: 'Root folders', icon: SettingsRootsIcon },
@@ -78,7 +81,16 @@ export function SettingsPage() {
   const [helper, setHelper] = useState<HelperService | null>(null)
   const [version, setVersion] = useState('')
   const [saved, setSaved] = useState<string | null>(null)
-  const [section, setSection] = useState<Section>('general')
+  const [section, setSection] = useState<Section>(() => {
+    try {
+      if (typeof window !== 'undefined' && window.location.hash.toLowerCase().includes('appearance')) {
+        return 'appearance'
+      }
+    } catch {
+      // ignore
+    }
+    return 'general'
+  })
   const [manual, setManual] = useState<string | null>(null)
   const [manualTab, setManualTab] = useState<'manual' | 'notes'>('manual')
   const [mcpEnabled, setMcpEnabled] = useState(false)
@@ -332,12 +344,12 @@ export function SettingsPage() {
                 className={cn(
                   'group relative flex items-center gap-3 whitespace-nowrap rounded-xl px-3.5 py-2.5 text-left text-sm font-medium transition-all duration-150',
                   isActive
-                    ? 'border border-emerald-500/70 bg-gradient-to-r from-emerald-500/15 via-emerald-500/5 to-transparent text-emerald-950 font-semibold shadow-xs dark:border-[#00e599]/80 dark:from-emerald-950/70 dark:via-teal-950/35 dark:to-transparent dark:text-white dark:shadow-[0_0_15px_rgba(0,229,153,0.12)]'
+                    ? 'border border-primary/70 bg-gradient-to-r from-primary/15 via-primary/5 to-transparent text-foreground font-semibold shadow-xs dark:border-primary/80 dark:from-primary/20 dark:via-primary/5 dark:to-transparent dark:text-white dark:shadow-[0_0_15px_var(--ring)]'
                     : 'border border-transparent text-muted-foreground hover:bg-accent/40 hover:text-foreground',
                 )}
               >
                 {isActive && (
-                  <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] dark:bg-[#00f2aa] dark:shadow-[0_0_10px_#00f2aa]" />
+                  <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-primary shadow-[0_0_8px_var(--primary)]" />
                 )}
                 <s.icon className="size-5 shrink-0 transition-transform duration-150 group-hover:scale-105" />
                 <span className="truncate">{s.label}</span>
@@ -347,6 +359,8 @@ export function SettingsPage() {
         </nav>
 
         <div className="flex min-w-0 max-w-3xl flex-1 flex-col gap-5">
+          {section === 'appearance' && <AppearanceSettings />}
+
           {section === 'general' && (
             <>
               <Card>

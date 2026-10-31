@@ -10,11 +10,38 @@
  *   and soft pastel blue & lilac/lavender bottom waves.
  * - Positioned fixed behind all UI content with pointer-events: none.
  */
+import { useThemeSafe } from '@/lib/theme'
+
 export function GlobalAuroraBackground() {
+  const theme = useThemeSafe()
+  const isGradient = theme?.options.background.type === 'gradient'
+  const isAurora = !theme || theme.preset.id === 'default'
+
+  if (isGradient) {
+    return (
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 -z-10 overflow-hidden select-none transition-colors duration-700"
+        style={{ background: 'var(--app-background)' }}
+      />
+    )
+  }
+
+  if (!isAurora) {
+    return (
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 -z-10 overflow-hidden select-none transition-colors duration-700"
+        style={{ background: 'var(--app-background, var(--background))' }}
+      />
+    )
+  }
+
   return (
     <div
       aria-hidden="true"
-      className="pointer-events-none fixed inset-0 -z-10 overflow-hidden select-none transition-colors duration-700 bg-[#F8FAFF] dark:bg-[#050B16]"
+      className="pointer-events-none fixed inset-0 -z-10 overflow-hidden select-none transition-colors duration-700"
+      style={{ background: 'var(--app-background, var(--background))' }}
     >
       {/* ── Soft Multi-Layer Ambient Mesh Glows ────────────────────────────── */}
       {/* Top-Right Cyan/Teal Ambient Glow */}

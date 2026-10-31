@@ -6,10 +6,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { SiteUsage, SystemStats } from '@/core'
 import { formatBytes } from '@/lib/hooks'
 
-/** Each ring's own colour. CPU and RAM are close relatives (teal / blue-teal); disks differ. */
+/** Each ring's own colour derived from theme tokens. CPU uses primary, RAM uses info, disks use theme accents. */
 const CPU_COLOR = 'var(--primary)'
-const RAM_COLOR = 'oklch(0.68 0.12 220)'
-const DISK_COLORS = ['oklch(0.66 0.16 295)', 'oklch(0.7 0.14 340)', 'oklch(0.72 0.13 145)', 'oklch(0.7 0.12 250)']
+const RAM_COLOR = 'var(--info)'
+const DISK_COLORS = ['var(--accent-foreground)', 'var(--primary)', 'var(--info)', 'var(--warning)']
 
 /** The ring keeps its colour while there's headroom, drifts to amber past 60%, red at 90%. */
 function ringColor(base: string, percent: number): string {

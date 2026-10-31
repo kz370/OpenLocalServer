@@ -60,7 +60,9 @@ function baseExtensions(lang: EditorLanguage, dark: boolean, readOnly: boolean):
 const appSurface = EditorView.theme({
   '&': { backgroundColor: 'var(--card)' },
   '.cm-content': { color: 'var(--foreground)', caretColor: 'var(--primary)' },
-  '.cm-cursor': { borderLeftColor: 'var(--primary)' },
+  '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--primary)' },
+  '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': { backgroundColor: 'var(--accent)' },
+  '.cm-activeLine': { backgroundColor: 'var(--muted)', opacity: '0.5' },
   '.cm-gutters': { backgroundColor: 'var(--card)', borderRight: '1px solid var(--border)', color: 'var(--muted-foreground)' },
   '.cm-activeLineGutter': { backgroundColor: 'transparent' },
 })

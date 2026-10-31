@@ -6,19 +6,39 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>OpenLocalServer</title>
     <script>
-      // Apply the stored theme before the first paint. The React ThemeProvider does
-      // the same thing in an effect, which runs after the first frame — without this
-      // a dark-theme start flashes a white window on the way to dark.
+      // Apply the stored theme before the first paint to prevent theme and background flashes.
       ;(function () {
         try {
-          var stored = localStorage.getItem('ols-theme') || 'system'
+          var mode = 'system'
+          var raw = localStorage.getItem('ols-appearance')
+          if (raw) {
+            try {
+              var parsed = JSON.parse(raw)
+              if (parsed && parsed.mode) mode = parsed.mode
+              if (parsed && parsed.overrides) {
+                if (parsed.overrides.accent) {
+                  document.documentElement.style.setProperty('--primary', parsed.overrides.accent)
+                  document.documentElement.style.setProperty('--ring', parsed.overrides.accent)
+                }
+                if (parsed.overrides.background && parsed.overrides.background.type === 'gradient') {
+                  var bg = parsed.overrides.background
+                  document.documentElement.style.setProperty(
+                    '--app-background',
+                    'linear-gradient(' + (bg.angle || 135) + 'deg, ' + bg.from + ', ' + bg.to + ')'
+                  )
+                }
+              }
+            } catch (err) {}
+          } else {
+            mode = localStorage.getItem('ols-theme') || 'system'
+          }
           var dark =
-            stored === 'dark' ||
-            (stored === 'system' &&
+            mode === 'dark' ||
+            (mode === 'system' &&
               window.matchMedia('(prefers-color-scheme: dark)').matches)
           document.documentElement.classList.toggle('dark', dark)
         } catch (e) {
-          /* private mode: fall back to the light theme */
+          /* private mode: fall back to default */
         }
         // The app window is transparent and is created hidden, then revealed once the
         // UI reports it has painted. Until React mounts there is nothing painted, so

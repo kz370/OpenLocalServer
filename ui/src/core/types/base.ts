@@ -179,6 +179,7 @@ export interface CustomServiceDef {
   port: number | null
   health: CustomHealthCheck
   restart_on_crash: boolean
+  category?: string | null
 }
 
 export type TerminalEvent = { kind: 'output'; id: number; data: string } | { kind: 'exit'; id: number }
@@ -208,6 +209,7 @@ export interface ServiceStatus {
   port: number | null
   port_status: PortStatusLite | null
   kind: string
+  category?: string | null
   connection: string | null
   healthy: boolean | null
   version: string | null

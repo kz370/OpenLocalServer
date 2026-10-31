@@ -201,3 +201,12 @@ CommandPalette & SettingsPage | invoke | requestExit
 SitesPage | uses | FloatingMenu (shared context menu on table row onContextMenu and Actions button click; renders fixed-positioned with window boundary clamping below the 36px titlebar at z-[95])
 SitesPage | filters | 'missing' tab (isolates sites whose project folder is missing or offline from 'enabled' / 'disabled' tabs)
 TauriApp (refresh_tray & sync_tray_tooltip) | updates_on | run_command IPC (site start/stop/add/remove/apply), process_events, project_events, autostart, and periodic 2-second heartbeat
+DashboardPage (ServicesWidget) | uses | serviceGrouping::groupServices (categorizes services into Web servers, Databases, Cache & queues, Mail, Other)
+DashboardPage (ServicesWidget) | persists_collapsed_via | dashboard.services.collapsed_groups CoreCommand::SetSetting and localStorage
+SettingsPage (Appearance) | uses | AppearanceSettings (theme modes, presets, curated accents + picker, monochrome/colorful icon toggle, solid/gradient app backgrounds, live preview strip, reset button)
+AppearanceSettings | uses | useTheme (reads/writes active theme settings, preset id, overrides)
+ThemeProvider (ui/src/lib/theme) | persists_via | CoreCommand::GetSetting/SetSetting ('appearance') and localStorage ('ols-appearance', fallback 'ols-theme')
+ThemeProvider (ui/src/lib/theme) | applies_to | document.documentElement CSS variables (--background, --foreground, --card, --popover, --primary, --ring, --app-background, etc.) and emits Tauri 'ols:theme'
+ui/index.html | pre_paints_theme | reads 'ols-appearance' / 'ols-theme' from localStorage before first paint, injecting root variables to prevent flash of wrong theme
+CodeEditor & Terminal & SystemMonitor & TrafficGraph | derive_from | active theme tokens (CodeMirror surface/cursor/selection/activeLine, xterm background/foreground/cursor/selection, donut chart strokes, traffic graph UP_COLOR/DOWN_COLOR)
+

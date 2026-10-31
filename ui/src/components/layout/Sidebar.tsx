@@ -118,12 +118,12 @@ export function Sidebar({ page, onNavigate }: { page: Page; onNavigate: (p: Page
         className={cn(
           'group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-150',
           isActive
-            ? 'border border-emerald-500/70 bg-gradient-to-r from-emerald-500/15 via-emerald-500/5 to-transparent text-emerald-950 font-semibold shadow-xs dark:border-[#00e599]/80 dark:from-emerald-950/70 dark:via-teal-950/35 dark:to-transparent dark:text-white dark:shadow-[0_0_15px_rgba(0,229,153,0.12)]'
+            ? 'border border-primary/70 bg-gradient-to-r from-primary/15 via-primary/5 to-transparent text-foreground font-semibold shadow-xs dark:border-primary/80 dark:from-primary/20 dark:via-primary/5 dark:to-transparent dark:text-white dark:shadow-[0_0_15px_var(--ring)]'
             : 'border border-transparent text-sidebar-foreground/75 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground',
         )}
       >
         {isActive && (
-          <span className="absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] dark:bg-[#00f2aa] dark:shadow-[0_0_10px_#00f2aa]" />
+          <span className="absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r-full bg-primary shadow-[0_0_8px_var(--primary)]" />
         )}
         <Icon className="size-5 shrink-0 transition-transform duration-150 group-hover:scale-105" />
         <span className="truncate">{label}</span>
