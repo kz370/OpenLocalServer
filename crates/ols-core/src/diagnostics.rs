@@ -253,17 +253,67 @@ impl Inner {
             );
         }
 
+        let mut reported_missing_roots = std::collections::HashSet::new();
+
         for d in domains.iter().filter(|d| d.enabled) {
             if !d.root.is_empty() && !std::path::Path::new(&d.root).is_dir() {
-                b.add(
-                    format!("site_root_missing:{}", d.hostname),
-                    Severity::Error,
-                    format!("The folder for {} does not exist", d.hostname),
-                    "The site's folder was moved, renamed or deleted.",
-                    "Edit the site and choose its folder again, or disable it.",
-                    None,
-                    vec![d.root.clone()],
-                );
+                let np = norm_path(&d.root);
+                if !reported_missing_roots.insert(np.clone()) {
+                    continue;
+                }
+
+                let linked_project = projects.iter().find(|p| {
+                    d.project_id.as_deref() == Some(&p.id)
+                        || norm_path(&p.path) == np
+                        || np.starts_with(&format!("{}/", norm_path(&p.path)))
+                });
+
+                let root_path = std::path::Path::new(&d.root);
+                let vol = crate::project::volume_root(root_path);
+                let is_offline = vol.as_ref().map(|v| !v.exists()).unwrap_or(false);
+
+                let subject = if let Some(p) = linked_project {
+                    if p.name.eq_ignore_ascii_case(&d.hostname) {
+                        d.hostname.clone()
+                    } else {
+                        format!("{} (project {})", d.hostname, p.name)
+                    }
+                } else {
+                    d.hostname.clone()
+                };
+
+                let mut details = vec![d.root.clone()];
+                if let Some(p) = linked_project {
+                    if norm_path(&p.path) != np {
+                        details.push(format!("Project root: {}", p.path));
+                    }
+                }
+
+                if is_offline {
+                    let drive_name = vol
+                        .as_ref()
+                        .map(|v| v.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "volume".to_string());
+                    b.add(
+                        format!("site_root_missing:{}", d.hostname),
+                        Severity::Error,
+                        format!("The drive for {} is disconnected", subject),
+                        format!("The drive {drive_name} where this site folder is stored is disconnected or unavailable."),
+                        "Reconnect the drive, or edit the site in the Sites page to choose a new folder.",
+                        None,
+                        details,
+                    );
+                } else {
+                    b.add(
+                        format!("site_root_missing:{}", d.hostname),
+                        Severity::Error,
+                        format!("The folder for {} does not exist", subject),
+                        "The site's folder was moved, renamed or deleted.",
+                        "Edit the site in the Sites page and choose its folder again, or disable it.",
+                        None,
+                        details,
+                    );
+                }
             }
             if let Some(pid) = &d.project_id {
                 if !projects.iter().any(|p| &p.id == pid) {
@@ -331,18 +381,76 @@ impl Inner {
     }
 
     fn check_projects(&self, b: &mut Builder) {
+        let mut reported_paths: std::collections::HashSet<String> = b
+            .findings
+            .iter()
+            .filter(|f| f.id.starts_with("site_root_missing:"))
+            .flat_map(|f| {
+                f.details.iter().filter_map(|d| {
+                    if let Some(rest) = d.strip_prefix("Project root: ") {
+                        Some(norm_path(rest))
+                    } else if !d.contains(':')
+                        || d.chars().nth(1) == Some(':')
+                        || d.starts_with('/')
+                        || d.starts_with('\\')
+                    {
+                        Some(norm_path(d))
+                    } else {
+                        None
+                    }
+                })
+            })
+            .collect();
+
+        let domains = self.domains.lock().unwrap().list();
+        let reported_project_ids: std::collections::HashSet<String> = b
+            .findings
+            .iter()
+            .filter(|f| f.id.starts_with("site_root_missing:"))
+            .filter_map(|f| {
+                let hostname = f.id.strip_prefix("site_root_missing:")?;
+                domains
+                    .iter()
+                    .find(|d| d.hostname == hostname)
+                    .and_then(|d| d.project_id.clone())
+            })
+            .collect();
+
         for p in self.projects.lock().unwrap().list() {
+            let np = norm_path(&p.path);
+            if reported_paths.contains(&np) || reported_project_ids.contains(&p.id) {
+                continue;
+            }
             let root = std::path::Path::new(&p.path);
             if !root.is_dir() {
-                b.add(
-                    format!("project_missing:{}", p.id),
-                    Severity::Warning,
-                    format!("The folder for project {} is gone", p.name),
-                    "It was moved, renamed or deleted.",
-                    "Remove the project from the Projects page, or restore the folder.",
-                    None,
-                    vec![p.path.clone()],
-                );
+                reported_paths.insert(np);
+                let vol = crate::project::volume_root(root);
+                let is_offline = vol.as_ref().map(|v| !v.exists()).unwrap_or(false);
+                if is_offline {
+                    let drive_name = vol
+                        .as_ref()
+                        .map(|v| v.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "volume".to_string());
+                    b.add(
+                        format!("project_missing:{}", p.id),
+                        Severity::Warning,
+                        format!("The drive for project {} is disconnected", p.name),
+                        format!("The drive {drive_name} where this project is stored is disconnected or unavailable."),
+                        "Reconnect the drive, or remove the project from the Sites page.",
+                        None,
+                        vec![p.path.clone()],
+                    );
+                } else {
+                    b.add(
+                        format!("project_missing:{}", p.id),
+                        Severity::Warning,
+                        format!("The folder for project {} is gone", p.name),
+                        "It was moved, renamed or deleted.",
+                        "Remove the project from the Sites page, or restore the folder.",
+                        None,
+                        vec![p.path.clone()],
+                    );
+                }
                 continue;
             }
             let composer = crate::composer::read(root);
@@ -464,4 +572,11 @@ impl Inner {
             }
         }
     }
+}
+
+fn norm_path(p: &str) -> String {
+    p.trim()
+        .replace('\\', "/")
+        .trim_end_matches('/')
+        .to_lowercase()
 }

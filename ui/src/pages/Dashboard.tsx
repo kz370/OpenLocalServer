@@ -308,7 +308,7 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
           </div>
         </div>
       </div>
-      <DiagnosticsCard refreshToken={diagToken} />
+      <DiagnosticsCard refreshToken={diagToken} onNavigate={onNavigate} />
 
       <Card>
         <CardHeader className="pb-2">

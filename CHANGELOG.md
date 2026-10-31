@@ -10,11 +10,15 @@ and the project follows [Semantic Versioning](https://semver.org/).
 Feature release. Full notes: [`release-notes/v2.5.0.md`](./release-notes/v2.5.0.md).
 
 ### Highlights
+- **Consolidated Missing Folder Alerts**: Replaced repetitive, noisy dashboard diagnostic rows with a single, clean collapsible summary card for all missing directories and offline drives.
+- **Batch Actions (`Manage in Sites` & `Ignore all`)**: 1-click **Manage in Sites** button instantly navigates to the Sites table with the `Folder not found` filter pre-selected; 1-click **Ignore all** / **Unignore all** silences or restores alerts in bulk.
+- **Intelligent Disconnected Drive Detection**: Detects when an external drive (e.g. `D:\`), USB drive, or network share is offline, accurately reporting *"The drive for <name> is disconnected"* rather than claiming the project was deleted.
+- **Physical Path Deduplication**: Cross-references sites and projects by their real disk path, emitting exactly one unified alert (e.g. `chatbot-ta.local (project chatbot-TA)`) instead of duplicate Error + Warning rows.
 - **"Folder not found" Sites Tab**: Sites with missing directories or offline external drives are isolated into a dedicated filter tab (`Folder not found`), keeping the Enabled tab strictly operational and providing a 1-click **Locate** button to re-point moved folders.
 - **Right-Click Actions Menu**: Right-clicking any site row opens the cursor-positioned actions menu, sharing a single unified menu definition with the row's Actions button.
 - **Smart Viewport Clamping & Scrolling**: Floating menus automatically detect screen bounds, flip upwards/leftwards when near edges, clear the 36px titlebar, and scroll smoothly inside compact windows without closing on mouse wheel scroll.
 - **Live System Tray Tooltip**: The Windows notification tray tooltip (`OpenLocalServer — X of Y running`) updates dynamically in real-time as sites and services start, stop, or change health.
-- **Thread-Safe Tray Synchronization**: Decoupled tooltip updates from Win32 menu rebuilds to guarantee crash-free background IPC status updates.
+- **Vibrant Navigation & Aurora Themes**: Redesigned sidebar and settings navigation with radiant multi-color SVG gradient icons, active neon indicator bars, and flowing Dark Aurora / Light Aurora ambient backgrounds.
 
 ## [2.4.0] — 2026-10-25
 

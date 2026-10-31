@@ -362,15 +362,29 @@ olsc guide                     # Display this complete User Manual in terminal
 
 ## 17. What's New in Version 2.5.0
 
-1. **"Folder not found" Site Management Tab:**
+1. **Consolidated Missing Folder Alerts & Batch Remediation:**
+   - Consolidates all missing directories and offline drives into a single, clean collapsible summary card on the Dashboard.
+   - Provides a 1-click **Manage in Sites** action that switches straight to the Sites table with the `Folder not found` filter pre-selected.
+   - Provides a 1-click **Ignore all** / **Unignore all** batch toggle to silence or restore alerts in bulk.
+   - Expandable details list displays individual paths, offline drive status tags, and per-item ignore controls.
+2. **Intelligent Disconnected Drive Detection:**
+   - Checks volume root prefixes (`C:\`, `D:\`, UNC shares) to distinguish missing project folders from unplugged storage drives.
+   - When an external or network drive is offline, OLS reports *"The drive for <name> is disconnected"* with instructions to reconnect the drive rather than claiming the project was deleted.
+3. **Physical Path Deduplication:**
+   - Cross-references sites and registered projects by physical disk path, emitting exactly one unified alert per folder (e.g. `chatbot-ta.local (project chatbot-TA)`) and eliminating duplicate Error + Warning rows on the Dashboard.
+4. **"Folder not found" Site Management Tab:**
    - Dedicated filter tab (`Folder not found`) isolating sites whose project folder is missing (`status === 'missing'`) or external drive is offline (`status === 'offline'`).
    - Ensures the "Enabled" and "Disabled" tabs represent strictly operational projects.
    - Provides a 1-click **Locate** button directly in the row to relocate projects to their new disk location.
-2. **Right-Click Context Menu for Sites:**
+5. **Right-Click Context Menu for Sites:**
    - Right-clicking any site row opens the actions dropdown positioned at the mouse cursor.
    - Shares a single unified menu definition with the row's Actions button, keeping all actions 100% in sync.
-3. **Smart Viewport Clamping & Internal Scrolling:**
+6. **Smart Viewport Clamping & Internal Scrolling:**
    - Floating menus automatically calculate available viewport space, flip upward or leftward near edges, and enforce clearance below the 36px titlebar (`minTop = 44px`, `z-[95]`).
    - Constrains maximum dropdown height (`calc(100vh - 52px)`) with smooth internal scrolling (`overflow-y-auto`) for small windows and laptop displays, ignoring internal scroll events to prevent accidental closure.
-4. **Live System Tray Tooltip Synchronization:**
+7. **Live System Tray Tooltip Synchronization:**
    - Real-time tray icon tooltip (`OpenLocalServer — X of Y running`) updates immediately when sites or services start, stop, or change health status.
+8. **Vibrant Navigation & Aurora Themes:**
+   - High-contrast, multi-color SVG gradient icons across sidebar and settings navigation.
+   - Active neon glowing indicators and fluid Dark Aurora / Light Aurora ambient background meshes.
+

@@ -26,7 +26,7 @@ import { Pagination } from '@/components/ui/pagination'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { type Domain, type DomainSummary, type HealthReport, type Project, type WpProject, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
-import { onOpenProject, takePendingProject } from '@/lib/nav'
+import { onOpenProject, onOpenSitesFilter, takePendingProject, takePendingSitesFilter } from '@/lib/nav'
 import { useTheme } from '@/lib/theme'
 import { useWeb } from '@/lib/web'
 import { Wizard } from '@/pages/QuickApps'
@@ -98,7 +98,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   const [dupOf, setDupOf] = useState<string | null>(null)
   const [dupName, setDupName] = useState('')
   const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState<SiteFilter>('enabled')
+  const [filter, setFilter] = useState<SiteFilter>(() => (takePendingSitesFilter() as SiteFilter) || 'enabled')
   const [message, setMessage] = useState<string | null>(null)
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null)
   const [activeMenu, setActiveMenu] = useState<{ key: string; anchor: MenuAnchor } | null>(null)
@@ -130,6 +130,10 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     const pending = takePendingProject()
     if (pending) show(pending)
     return onOpenProject(show)
+  }, [])
+
+  useEffect(() => {
+    return onOpenSitesFilter((f) => setFilter(f as SiteFilter))
   }, [])
 
   // A project opened by id shows its first site when it has one.

@@ -34,3 +34,28 @@ export function onOpenProject(fn: (p: OpenProject) => void): () => void {
   window.addEventListener(EVENT, handler)
   return () => window.removeEventListener(EVENT, handler)
 }
+
+const SITES_FILTER_EVENT = 'ols:open-sites-filter'
+let pendingSitesFilter: string | null = null
+
+/** Asks the Sites page to switch to a specific tab filter (e.g. 'missing'); remembered until mounted. */
+export function openSitesFilter(filter: string) {
+  pendingSitesFilter = filter
+  window.dispatchEvent(new CustomEvent<string>(SITES_FILTER_EVENT, { detail: filter }))
+}
+
+export function takePendingSitesFilter(): string | null {
+  const f = pendingSitesFilter
+  pendingSitesFilter = null
+  return f
+}
+
+export function onOpenSitesFilter(fn: (filter: string) => void): () => void {
+  const handler = (e: Event) => {
+    pendingSitesFilter = null
+    fn((e as CustomEvent<string>).detail)
+  }
+  window.addEventListener(SITES_FILTER_EVENT, handler)
+  return () => window.removeEventListener(SITES_FILTER_EVENT, handler)
+}
+
