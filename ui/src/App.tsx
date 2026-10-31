@@ -4,6 +4,7 @@ import { listen } from '@tauri-apps/api/event'
 import { CommandPalette } from '@/components/CommandPalette'
 import { ConfirmHost } from '@/components/ConfirmHost'
 import { DoctorDialog } from '@/components/DoctorDialog'
+import { GlobalAuroraBackground } from '@/components/layout/GlobalAuroraBackground'
 import { type Page, Sidebar } from '@/components/layout/Sidebar'
 import { Titlebar } from '@/components/layout/Titlebar'
 import { ExitingOverlay } from '@/components/layout/ExitingOverlay'
@@ -225,13 +226,14 @@ export default function App() {
   return (
     <div
       className={cn(
-        'flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground',
+        'relative flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground',
         isWindowed ? 'rounded-xl' : 'rounded-none',
       )}
     >
+      <GlobalAuroraBackground />
       <Titlebar />
       <ExitingOverlay />
-      <div className="flex min-h-0 flex-1">
+      <div className="relative z-10 flex min-h-0 flex-1">
         <Sidebar page={page} onNavigate={navigate} />
         <ConfirmHost />
         <CommandPalette onNavigate={navigate} onDoctor={openDoctor} />

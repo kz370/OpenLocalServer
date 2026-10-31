@@ -1,5 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Archive, Book, Copy, Eye, EyeOff, ExternalLink, FolderPlus, FolderSearch, FolderTree, Gauge, Globe, Info, Power, RefreshCw, Settings2, ShieldCheck, Stethoscope, Trash2 } from 'lucide-react'
+import { Book, Copy, ExternalLink, Eye, EyeOff, FolderPlus, FolderSearch, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
@@ -21,20 +21,33 @@ import { confirmThen } from '@/lib/confirm'
 import { useAction } from '@/lib/hooks'
 import { invalidateDefaultTldCache } from '@/lib/sites'
 import { cn } from '@/lib/utils'
+import {
+  SettingsAboutIcon,
+  SettingsBackupsIcon,
+  SettingsDeletedIcon,
+  SettingsDiagnosticsIcon,
+  SettingsGeneralIcon,
+  SettingsManualIcon,
+  SettingsMcpIcon,
+  SettingsResourcesIcon,
+  SettingsRootsIcon,
+  SettingsSitesIcon,
+  SettingsStartupIcon,
+} from '@/components/layout/SidebarIcons'
 
 type Section = 'general' | 'sites' | 'roots' | 'deleted' | 'startup' | 'diagnostics' | 'manual' | 'resources' | 'backups' | 'about' | 'mcp'
-const SECTIONS: { id: Section; label: string; icon: typeof Globe }[] = [
-  { id: 'general', label: 'General', icon: Settings2 },
-  { id: 'mcp', label: 'MCP / AI tools', icon: ShieldCheck },
-  { id: 'sites', label: 'Sites & domains', icon: Globe },
-  { id: 'roots', label: 'Root folders', icon: FolderTree },
-  { id: 'deleted', label: 'Hide/Exclude', icon: EyeOff },
-  { id: 'startup', label: 'Startup & tray', icon: Power },
-  { id: 'diagnostics', label: 'Diagnostics', icon: Stethoscope },
-  { id: 'manual', label: 'User Manual', icon: Book },
-  { id: 'resources', label: 'Resources', icon: Gauge },
-  { id: 'backups', label: 'Backups', icon: Archive },
-  { id: 'about', label: 'About', icon: Info },
+const SECTIONS: { id: Section; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { id: 'general', label: 'General', icon: SettingsGeneralIcon },
+  { id: 'mcp', label: 'MCP / AI tools', icon: SettingsMcpIcon },
+  { id: 'sites', label: 'Sites & domains', icon: SettingsSitesIcon },
+  { id: 'roots', label: 'Root folders', icon: SettingsRootsIcon },
+  { id: 'deleted', label: 'Hide/Exclude', icon: SettingsDeletedIcon },
+  { id: 'startup', label: 'Startup & tray', icon: SettingsStartupIcon },
+  { id: 'diagnostics', label: 'Diagnostics', icon: SettingsDiagnosticsIcon },
+  { id: 'manual', label: 'User Manual', icon: SettingsManualIcon },
+  { id: 'resources', label: 'Resources', icon: SettingsResourcesIcon },
+  { id: 'backups', label: 'Backups', icon: SettingsBackupsIcon },
+  { id: 'about', label: 'About', icon: SettingsAboutIcon },
 ]
 
 async function getString(key: string): Promise<string> {
@@ -309,20 +322,28 @@ export function SettingsPage() {
       <ErrorCard error={error} onDismiss={() => setError(null)} />
 
       <div className="flex flex-col gap-6 md:flex-row md:items-start">
-        <nav className="flex shrink-0 gap-0.5 overflow-x-auto md:sticky md:top-0 md:w-52 md:flex-col" aria-label="Settings sections">
-          {SECTIONS.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => setSection(s.id)}
-              className={cn(
-                'flex items-center gap-2.5 whitespace-nowrap rounded-md px-3 py-2 text-left text-sm font-medium transition-colors',
-                section === s.id ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
-              )}
-            >
-              <s.icon className="size-4 shrink-0" />
-              {s.label}
-            </button>
-          ))}
+        <nav className="flex shrink-0 gap-1 overflow-x-auto md:sticky md:top-0 md:w-56 md:flex-col" aria-label="Settings sections">
+          {SECTIONS.map((s) => {
+            const isActive = section === s.id
+            return (
+              <button
+                key={s.id}
+                onClick={() => setSection(s.id)}
+                className={cn(
+                  'group relative flex items-center gap-3 whitespace-nowrap rounded-xl px-3.5 py-2.5 text-left text-sm font-medium transition-all duration-150',
+                  isActive
+                    ? 'border border-emerald-500/70 bg-gradient-to-r from-emerald-500/15 via-emerald-500/5 to-transparent text-emerald-950 font-semibold shadow-xs dark:border-[#00e599]/80 dark:from-emerald-950/70 dark:via-teal-950/35 dark:to-transparent dark:text-white dark:shadow-[0_0_15px_rgba(0,229,153,0.12)]'
+                    : 'border border-transparent text-muted-foreground hover:bg-accent/40 hover:text-foreground',
+                )}
+              >
+                {isActive && (
+                  <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] dark:bg-[#00f2aa] dark:shadow-[0_0_10px_#00f2aa]" />
+                )}
+                <s.icon className="size-5 shrink-0 transition-transform duration-150 group-hover:scale-105" />
+                <span className="truncate">{s.label}</span>
+              </button>
+            )
+          })}
         </nav>
 
         <div className="flex min-w-0 max-w-3xl flex-1 flex-col gap-5">

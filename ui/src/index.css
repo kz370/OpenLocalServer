@@ -7,10 +7,10 @@
      dashboard defaults to. Paired with the icon's lime "live" dots for a teal+lime identity. */
   --radius: 0.5rem;
 
-  --background: oklch(1 0 0);
+  --background: #F8FAFF;
   --foreground: oklch(0.18 0.01 200);
 
-  --card: oklch(1 0 0);
+  --card: oklch(1 0 0 / 82%);
   --card-foreground: oklch(0.18 0.01 200);
 
   --popover: oklch(1 0 0);
@@ -39,18 +39,18 @@
   --input: oklch(0.94 0.01 200);
   --ring: oklch(0.6 0.135 168);
 
-  --sidebar: oklch(0.98 0.004 200);
+  --sidebar: rgba(248, 250, 255, 0.82);
   --sidebar-foreground: oklch(0.18 0.01 200);
-  --sidebar-border: oklch(0.92 0.008 200);
-  --sidebar-accent: oklch(0.93 0.04 168);
+  --sidebar-border: oklch(0.9 0.008 200 / 65%);
+  --sidebar-accent: oklch(0.93 0.04 168 / 80%);
   --sidebar-accent-foreground: oklch(0.28 0.07 168);
 }
 
 .dark {
-  --background: oklch(0.15 0.008 200);
+  --background: #050B16;
   --foreground: oklch(0.95 0.005 200);
 
-  --card: oklch(0.19 0.009 200);
+  --card: oklch(0.19 0.009 200 / 82%);
   --card-foreground: oklch(0.95 0.005 200);
 
   --popover: oklch(0.19 0.009 200);
@@ -79,10 +79,10 @@
   --input: oklch(1 0 0 / 8%);
   --ring: oklch(0.75 0.14 168);
 
-  --sidebar: oklch(0.13 0.008 200);
+  --sidebar: rgba(5, 11, 22, 0.82);
   --sidebar-foreground: oklch(0.95 0.005 200);
   --sidebar-border: oklch(1 0 0 / 8%);
-  --sidebar-accent: oklch(0.28 0.05 168);
+  --sidebar-accent: oklch(0.28 0.05 168 / 60%);
   --sidebar-accent-foreground: oklch(0.9 0.05 168);
 }
 
