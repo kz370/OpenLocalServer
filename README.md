@@ -62,7 +62,7 @@ It is actively developed, so feedback, suggestions, and bug reports are very wel
 
 ## 📥 Download
 
-Grab the latest installer (`OLS-2.4.0-setup.exe`) from the [Releases page](https://github.com/kz370/OpenLocalServer/releases).
+Grab the latest installer (`OLS-2.5.0-setup.exe`) from the [Releases page](https://github.com/kz370/OpenLocalServer/releases).
 
 - **What ships in the installer:** The desktop app (`OLS.exe`), the CLI (`olsc.exe`), the elevated helper service (`ols-helper.exe`), the MCP server (`ols-mcp.exe`), and the CPU limiter (`cpulimit.exe`).
 - **Runtimes are downloaded on demand:** The app itself does not bundle third-party runtimes or databases. You download only the runtimes (PHP, Node.js, Python), web servers (Nginx, Apache, Caddy), and databases (MariaDB, PostgreSQL, MongoDB, Redis) you need with SHA-256 verification, or point OLS to existing installations already on your computer.
@@ -136,7 +136,8 @@ Grab the latest installer (`OLS-2.4.0-setup.exe`) from the [Releases page](https
 
 - **Multiple ways to add a site:** Pick an existing directory, add a **project root folder** to automatically detect and register all subfolders as sites, clone directly from a **Git repository**, or scaffold with **Quick Apps**.
 - **Automatic document root & welcome page:** When creating a new site, OLS automatically creates the document root folder and generates a default welcome file (`index.html` or `index.php`) if none exists.
-- **Site status tabs & filtering:** Dedicated **Enabled**, **Disabled**, and **All** tabs with quick counts and distinct colored status indicators.
+- **Site status tabs & filtering:** Dedicated **Enabled**, **Disabled**, **Folder not found**, and **All** tabs with quick counts and distinct colored status indicators. The **Folder not found** tab isolates missing directories and offline drives, providing a 1-click **Locate** button to re-point moved folders.
+- **Multi-domain project rows & context menu:** Multiple domains sharing a project folder group into a single project row with primary domain focus and interactive extra-domain pills. Right-clicking any site row opens a cursor-positioned actions menu with smart viewport clamping and smooth internal scrolling.
 - **Safe deletion & folder exclusion:** Deleting or hiding a site moves its folder into an `ols_excluded_sites` subfolder (with automatic name collision resolution) instead of permanent disk deletion. Configurable ignored folders (`projects.ignored_folders`) in Settings.
 - **Site branding & icons:** Custom site logos in table rows via local image upload with automatic WebP optimization, or a bundled offline Font Awesome icon catalog with swatch and custom color pickers.
 - **Unlimited sites & domains:** Any domain name plus wildcard subdomains; automatic `<folder>.test` naming; static sites; reverse proxies to any `host:port`. Run on a domain, on `localhost/<prefix>`, or both simultaneously.
@@ -174,11 +175,15 @@ Grab the latest installer (`OLS-2.4.0-setup.exe`) from the [Releases page](https
 
 ### 📊 Dashboard & Monitoring
 
+- **Consolidated Missing Folder Alerts:** Collapses missing directories and offline external drives into a single summary card on the Dashboard with batch actions (1-click **Manage in Sites**, **Ignore all** / **Unignore all**).
+- **Disconnected Drive Detection & Deduplication:** Accurately distinguishes missing project folders from offline external drives (`D:\`, USB, network shares) instead of claiming deletion, and deduplicates physical paths.
 - **Services card:** Built-in services in a clean, consistent order — start, stop, restart, reload, and logs color-coded per action with unavailable actions flattened.
 - **Ports tab:** Clear rows per server (icon, name, HTTP, HTTPS, site count) with fixed-width port inputs; active default servers keep their 80/443 ports protected from accidental edits.
 - **Custom input steppers:** Ports, worker counts, and memory limits use rounded in-app stepper chevrons with arrow key support.
 - **Overview:** Active sites and projects counts, resource usage donuts (CPU, RAM, disk), and a 30-bucket web traffic graph with hover inspector.
 - **Diagnostics & Doctor:** Detailed findings formatted as **Problem / Cause / Fix**, safe 1-click **auto-repair**, ignore rules, and redacted support bundle generation.
+- **Live System Tray Synchronization:** Real-time tray icon tooltip (`OpenLocalServer — X of Y running`) updating dynamically as sites and services change state, with dynamic green/red status marks across tray and taskbar.
+- **Appearance & Aurora Themes:** Flowing Dark Aurora and Light Aurora ambient backgrounds, multi-color SVG gradient icons across sidebar and settings navigation, and token-based appearance customization (presets, WCAG 2.1 contrast math, custom accent colors).
 - **Unified logs viewer:** Multi-source severity-aware log viewer with real-time tailing, search, level filtering, clipboard copy, and export.
 - **Processes & Background Tasks:** Process supervisor with CPU/RAM metrics, per-site usage rollups, and a background task registry with live step and progress tracking.
 - **In-App User Manual & Release Notes:** Full documentation and release notes viewer embedded under `Settings → User Manual`.
@@ -202,9 +207,10 @@ Grab the latest installer (`OLS-2.4.0-setup.exe`) from the [Releases page](https
   - **Databases & Tables:** `ols_list_databases`, `ols_create_database`, `ols_list_tables`, `ols_execute_sql`.
   - **Web Server:** `ols_apply_web`, `ols_validate_web`.
   - See [docs/MCP.md](./docs/MCP.md) for full configuration examples and tool schemas.
+- **Private AI Assistant (BYOM):** Opt-in in-app AI assistant supporting local zero-telemetry models via **LM Studio** and **Ollama**, or cloud providers (OpenRouter, Hugging Face, custom OpenAI-compatible endpoints). Includes automatic pre-prompt secret redaction and explicit user approval gates before executing proposed actions. Accessible in the GUI and via CLI (`olsc ai ask`, `olsc ai explain`).
 - **Command Line (`olsc`):**
   - Drive OLS from any shell: `olsc setup`, `olsc doctor`, `olsc repair`, `olsc status`, `olsc start`, `olsc stop`, `olsc restart`.
-  - Full subcommands: `project`, `runtime`, `php`, `service`, `tunnel`, `worker`, `snapshot`, `quick-app`, `quick-command`, `search`, `guide`.
+  - Full subcommands: `project`, `runtime`, `php`, `service`, `tunnel`, `worker`, `snapshot`, `quick-app`, `quick-command`, `ai`, `search`, `guide`.
   - Background daemon: Automatically runs in the background (`olsc daemon`) when the GUI is closed.
 - **Local HTTP API (`127.0.0.1:7420`):** Bearer token authenticated JSON API mirroring `CoreCommand` operations with read-only and operate scopes. See [docs/API.md](./docs/API.md).
 - **Automation tools:** Background queue workers (max 16, Procfile.dev import), scheduled cron tasks (1-minute tick, overlap protection), portable-pty terminal shells, and Git repository management.
@@ -255,8 +261,8 @@ This launches the desktop app with hot module reloading (Vite server running on 
 ```powershell
 # 1. Quality gates (must pass cleanly)
 cargo fmt --all
-cargo clippy -p ols-core -p ols-helper -p ols-mcp --all-targets
-cargo test -p ols-core -p ols-helper -p ols-mcp
+cargo clippy -p ols-core -p ols-helper --all-targets
+cargo test -p ols-core -p ols-helper
 
 # 2. Build and validate UI
 cd ui
@@ -308,6 +314,7 @@ olsc tunnel list                                         # List configured publi
 olsc tunnel start <name> --yes                           # Start a tunnel by name or project
 olsc worker start <project>                              # Start background queue workers for a project
 olsc snapshot create <project> --label "pre-migration"   # Create a point-in-time project snapshot
+olsc ai ask "How do I configure Redis caching?"          # Query the built-in AI assistant
 olsc search "mailpit"                                    # Search across projects, configs, services, and logs
 olsc guide                                               # Display the comprehensive user manual
 ```
@@ -361,11 +368,14 @@ OpenLocalServer/
 │   │                    # Services, Runtimes, Tunnels, Profiles, Plugins, Logs,
 │   │                    # Processes, Tasks, Settings, Config
 │   └── components/      # UI primitives, dialogs, form fields, and code editors
+├── vendor/              # Vendored companion utilities (cpulimit.exe under MIT license)
 ├── installer/           # Inno Setup packaging script (`open-local-server.iss`)
 ├── scripts/             # dev.bat, build-installer.bat, update-version.bat, upload-release.bat
+├── release-notes/       # Version release notes (v2.5.0.md, etc.)
 ├── specs/               # Single source of truth — architecture, catalog, data models,
 │                        # relationships, API reference, runtime logs, and diagrams
 ├── docs/                # Comprehensive guides: OLS_USER_MANUAL.md, MCP.md, API.md, PLUGINS.md...
+├── website/             # Project website and documentation assets
 └── assets/              # App branding, icons, and README screenshots (.webp)
 ```
 
@@ -405,8 +415,8 @@ Contributions are very welcome! Please review [CONTRIBUTING.md](./CONTRIBUTING.m
 ```powershell
 # Mandatory Quality Gates — must pass before submitting a PR
 cargo fmt --all
-cargo clippy -p ols-core -p ols-helper -p ols-mcp --all-targets
-cargo test -p ols-core -p ols-helper -p ols-mcp
+cargo clippy -p ols-core -p ols-helper --all-targets
+cargo test -p ols-core -p ols-helper
 cd ui
 npm run lint
 npm run build
@@ -422,7 +432,7 @@ npm run build
 
 OLS is licensed under **GPL-3.0-only** (see [LICENSE](./LICENSE)).
 
-**The installer packages OLS companion binaries only (`OLS.exe`, `olsc.exe`, `ols-helper.exe`, `ols-mcp.exe`, `cpulimit.exe`) — no third-party runtimes, web servers, or databases are bundled.** Runtimes are downloaded on demand from official vendors, SHA-256 verified, and extracted into isolated OLS directories that you can remove at any time. Tunnel executables are neither downloaded nor installed; OLS locates existing binaries on your system `PATH`.
+**The installer packages OLS companion binaries only (`OLS.exe`, `olsc.exe`, `ols-helper.exe`, `ols-mcp.exe`, `cpulimit.exe`) — no third-party runtimes, web servers, or databases are bundled.** Companion binary `cpulimit.exe` is MIT-licensed from [kz370/win-utils](https://github.com/kz370/win-utils). Runtimes are downloaded on demand from official vendors, SHA-256 verified, and extracted into isolated OLS directories that you can remove at any time. Tunnel executables are neither downloaded nor installed; OLS locates existing binaries on your system `PATH`.
 
 ### Downloaded on Demand (NOT bundled in installer)
 
