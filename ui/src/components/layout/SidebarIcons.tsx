@@ -38,13 +38,13 @@ export function SitesIcon({ className }: { className?: string }) {
     <svg viewBox="0 0 24 24" fill="none" className={cn('size-5 shrink-0', className)}>
       <defs>
         <radialGradient id="sb-globe-bg" cx="12" cy="12" r="9" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#00f0ff" stopOpacity="0.2" />
-          <stop offset="1" stopColor="#0284c7" stopOpacity="0.04" />
+          <stop offset="0%" stopColor="#0284c7" stopOpacity="0.22" />
+          <stop offset="100%" stopColor="#0369a1" stopOpacity="0.06" />
         </radialGradient>
         <linearGradient id="sb-globe-stroke" x1="3" y1="3" x2="21" y2="21" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#38bdf8" />
-          <stop offset="0.5" stopColor="#00f0ff" />
-          <stop offset="1" stopColor="#0284c7" />
+          <stop offset="0%" stopColor="#0284c7" />
+          <stop offset="50%" stopColor="#0ea5e9" />
+          <stop offset="100%" stopColor="#0369a1" />
         </linearGradient>
       </defs>
       <circle cx="12" cy="12" r="9" fill="url(#sb-globe-bg)" stroke="url(#sb-globe-stroke)" strokeWidth="1.8" />
@@ -66,7 +66,7 @@ export function QuickAppsIcon({ className }: { className?: string }) {
           <stop offset="1" stopColor="#e2e8f0" />
         </linearGradient>
         <linearGradient id="sb-rocket-flame" x1="3" y1="21" x2="9" y2="15" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#ef4444" />
+          <stop stopColor="#dc2626" />
           <stop offset="0.5" stopColor="#f97316" />
           <stop offset="1" stopColor="#fde047" />
         </linearGradient>
@@ -81,16 +81,18 @@ export function QuickAppsIcon({ className }: { className?: string }) {
         fill="#fde047"
       />
       {/* Stars / Sparks */}
-      <path d="M2.5 15.2L3 13.8L3.5 15.2L4.9 15.7L3.5 16.2L3 17.6L2.5 16.2L1.1 15.7Z" fill="#fbbf24" />
-      <path d="M7.2 21.5L7.6 20.4L8.7 20.9L7.9 21.7L8.2 22.9L7.4 22.2L6.5 22.9L6.8 21.8L6 21.1Z" fill="#f59e0b" />
+      <path d="M2.5 15.2L3 13.8L3.5 15.2L4.9 15.7L3.5 16.2L3 17.6L2.5 16.2L1.1 15.7Z" fill="#d97706" />
+      <path d="M7.2 21.5L7.6 20.4L8.7 20.9L7.9 21.7L8.2 22.9L7.4 22.2L6.5 22.9L6.8 21.8L6 21.1Z" fill="#b45309" />
       {/* Left Fin */}
       <path d="M9 15L5.8 17.6C5.6 15 6.8 13 7.8 12.4L9 15Z" fill="#dc2626" />
       {/* Right Fin */}
       <path d="M15 9L17.6 5.8C15 5.6 13 6.8 12.4 7.8L15 9Z" fill="#dc2626" />
-      {/* Rocket Fuselage */}
+      {/* Rocket Fuselage with crisp outline for Light Mode */}
       <path
         d="M9 15C8 12.5 8.5 9.5 12 6C15.5 2.5 19 2 21 3C22 5 21.5 8.5 18 12C14.5 15.5 11.5 16 9 15Z"
         fill="url(#sb-rocket-body)"
+        stroke="#94a3b8"
+        strokeWidth="0.8"
       />
       {/* Red Nosecone */}
       <path
@@ -98,7 +100,7 @@ export function QuickAppsIcon({ className }: { className?: string }) {
         fill="#ef4444"
       />
       {/* Circular Glass Window */}
-      <circle cx="14.5" cy="9.5" r="2.2" fill="#38bdf8" stroke="#ffffff" strokeWidth="0.9" />
+      <circle cx="14.5" cy="9.5" r="2.2" fill="#0284c7" stroke="#ffffff" strokeWidth="0.9" />
       <circle cx="15.2" cy="8.8" r="0.65" fill="#ffffff" />
     </svg>
   )
@@ -140,35 +142,43 @@ export function TunnelsIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" className={cn('size-5 shrink-0', className)}>
       <defs>
-        <linearGradient id="sb-tun-outer" x1="3" y1="12" x2="21" y2="12" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#f59e0b" />
-          <stop offset="0.5" stopColor="#fbbf24" />
-          <stop offset="1" stopColor="#f59e0b" />
+        {/* Outer Ring Gradient (High contrast violet-indigo) */}
+        <linearGradient id="sb-tun-ring1" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#4f46e5" />
+          <stop offset="100%" stopColor="#7c3aed" />
         </linearGradient>
-        <linearGradient id="sb-tun-inner" x1="6.5" y1="14" x2="17.5" y2="14" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#ea580c" />
-          <stop offset="0.5" stopColor="#f97316" />
-          <stop offset="1" stopColor="#ea580c" />
+        {/* Middle Ring Gradient (Electric blue) */}
+        <linearGradient id="sb-tun-ring2" x1="4" y1="4" x2="20" y2="20" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#0284c7" />
+          <stop offset="100%" stopColor="#2563eb" />
+        </linearGradient>
+        {/* Core Cyber Beam Gradient */}
+        <linearGradient id="sb-tun-beam" x1="5" y1="19" x2="19" y2="5" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#0284c7" />
+          <stop offset="45%" stopColor="#00f5d4" />
+          <stop offset="100%" stopColor="#ffffff" />
         </linearGradient>
       </defs>
-      {/* Outer arch */}
-      <path
-        d="M3.2 19C3.2 14.1 7.1 10.2 12 10.2C16.9 10.2 20.8 14.1 20.8 19"
-        stroke="url(#sb-tun-outer)"
-        strokeWidth="2.8"
-        strokeLinecap="round"
-      />
-      {/* Inner arch */}
-      <path
-        d="M6.8 19C6.8 16.1 9.1 13.8 12 13.8C14.9 13.8 17.2 16.1 17.2 19"
-        stroke="url(#sb-tun-inner)"
-        strokeWidth="2.4"
-        strokeLinecap="round"
-      />
-      {/* Center glowing node */}
-      <circle cx="12" cy="18" r="2.4" fill="#00f0ff" />
-      <circle cx="12" cy="18" r="1.1" fill="#ffffff" />
-      <path d="M10 19.6H14" stroke="#0ea5e9" strokeWidth="1.4" strokeLinecap="round" />
+
+      {/* Back Portal Ring (Receding in distance) */}
+      <ellipse cx="14" cy="10" rx="4.5" ry="6" transform="rotate(-25 14 10)" stroke="#6366f1" strokeWidth="1.5" strokeOpacity="0.6" />
+
+      {/* Perspective Warp Guides */}
+      <line x1="6.5" y1="9.5" x2="11.5" y2="6" stroke="#0284c7" strokeWidth="1.2" strokeDasharray="1.5 1.5" strokeOpacity="0.5" />
+      <line x1="14" y1="20" x2="17.5" y2="15" stroke="#0284c7" strokeWidth="1.2" strokeDasharray="1.5 1.5" strokeOpacity="0.5" />
+
+      {/* Middle Portal Ring */}
+      <ellipse cx="12" cy="12" rx="6.5" ry="8" transform="rotate(-25 12 12)" stroke="url(#sb-tun-ring2)" strokeWidth="1.8" />
+
+      {/* Front Portal Ring (High contrast foreground ring) */}
+      <ellipse cx="10" cy="14" rx="8" ry="9.5" transform="rotate(-25 10 14)" stroke="url(#sb-tun-ring1)" strokeWidth="2.2" />
+
+      {/* Piercing Cyber Beam cutting through tunnel center */}
+      <line x1="5" y1="18.5" x2="18.5" y2="5.5" stroke="url(#sb-tun-beam)" strokeWidth="2.4" strokeLinecap="round" />
+
+      {/* Center Luminous Warp Node / Flare */}
+      <circle cx="12" cy="12" r="2.2" fill="#00f5d4" />
+      <circle cx="12" cy="12" r="1.1" fill="#ffffff" />
     </svg>
   )
 }
@@ -496,8 +506,8 @@ export function SettingsGeneralIcon({ className }: { className?: string }) {
     <svg viewBox="0 0 24 24" fill="none" className={cn('size-5 shrink-0', className)}>
       <defs>
         <linearGradient id="sb-set-gen" x1="3" y1="6" x2="21" y2="18" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#00f5d4" />
-          <stop offset="1" stopColor="#06b6d4" />
+          <stop stopColor="#0d9488" />
+          <stop offset="1" stopColor="#0284c7" />
         </linearGradient>
       </defs>
       {/* Top track */}
@@ -517,19 +527,19 @@ export function SettingsMcpIcon({ className }: { className?: string }) {
     <svg viewBox="0 0 24 24" fill="none" className={cn('size-5 shrink-0', className)}>
       <defs>
         <linearGradient id="sb-set-mcp" x1="4" y1="3" x2="20" y2="21" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#818cf8" />
-          <stop offset="1" stopColor="#6366f1" />
+          <stop stopColor="#6366f1" />
+          <stop offset="1" stopColor="#4f46e5" />
         </linearGradient>
       </defs>
       {/* Shield outline */}
       <path
         d="M12 3L4 6.5V11.5C4 16.5 7.5 20.8 12 22C16.5 20.8 20 16.5 20 11.5V6.5L12 3Z"
         stroke="url(#sb-set-mcp)"
-        strokeWidth="2"
+        strokeWidth="2.2"
         strokeLinecap="round"
         strokeLinejoin="round"
         fill="url(#sb-set-mcp)"
-        fillOpacity="0.15"
+        fillOpacity="0.18"
       />
       {/* Center 4-point star */}
       <path
@@ -549,19 +559,19 @@ export function SettingsRootsIcon({ className }: { className?: string }) {
     <svg viewBox="0 0 24 24" fill="none" className={cn('size-5 shrink-0', className)}>
       <defs>
         <linearGradient id="sb-set-folder" x1="3" y1="5" x2="21" y2="19" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#fde047" />
-          <stop offset="0.5" stopColor="#fbbf24" />
-          <stop offset="1" stopColor="#f59e0b" />
+          <stop stopColor="#f59e0b" />
+          <stop offset="0.5" stopColor="#d97706" />
+          <stop offset="1" stopColor="#b45309" />
         </linearGradient>
       </defs>
       <path
         d="M3 6.5C3 5.67 3.67 5 4.5 5H9.2C9.7 5 10.2 5.25 10.5 5.65L11.8 7.35C12.1 7.75 12.6 8 13.1 8H19.5C20.33 8 21 8.67 21 9.5V17.5C21 18.33 20.33 19 19.5 19H4.5C3.67 19 3 18.33 3 17.5V6.5Z"
         stroke="url(#sb-set-folder)"
-        strokeWidth="2"
+        strokeWidth="2.2"
         strokeLinecap="round"
         strokeLinejoin="round"
         fill="url(#sb-set-folder)"
-        fillOpacity="0.18"
+        fillOpacity="0.22"
       />
     </svg>
   )
@@ -572,22 +582,22 @@ export function SettingsDeletedIcon({ className }: { className?: string }) {
     <svg viewBox="0 0 24 24" fill="none" className={cn('size-5 shrink-0', className)}>
       <defs>
         <linearGradient id="sb-set-eye" x1="3" y1="4" x2="21" y2="20" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#fb7185" />
-          <stop offset="1" stopColor="#f43f5e" />
+          <stop stopColor="#e11d48" />
+          <stop offset="1" stopColor="#be123c" />
         </linearGradient>
       </defs>
       {/* Eye shape */}
       <path
         d="M2.5 12C4.5 7.5 8 5 12 5C14.2 5 16.3 5.8 18 7.2M21.5 12C19.5 16.5 16 19 12 19C9.8 19 7.7 18.2 6 16.8"
         stroke="url(#sb-set-eye)"
-        strokeWidth="2"
+        strokeWidth="2.2"
         strokeLinecap="round"
       />
       {/* Pupil arc */}
       <path
         d="M10 10.5C9.6 11 9.4 11.5 9.4 12C9.4 13.4 10.6 14.6 12 14.6C12.5 14.6 13 14.4 13.5 14"
         stroke="url(#sb-set-eye)"
-        strokeWidth="1.8"
+        strokeWidth="2"
         strokeLinecap="round"
       />
       {/* Diagonal slash */}
@@ -597,7 +607,7 @@ export function SettingsDeletedIcon({ className }: { className?: string }) {
         x2="20.5"
         y2="20.5"
         stroke="url(#sb-set-eye)"
-        strokeWidth="2.2"
+        strokeWidth="2.4"
         strokeLinecap="round"
       />
     </svg>
@@ -609,8 +619,8 @@ export function SettingsStartupIcon({ className }: { className?: string }) {
     <svg viewBox="0 0 24 24" fill="none" className={cn('size-5 shrink-0', className)}>
       <defs>
         <linearGradient id="sb-set-power" x1="4" y1="3" x2="20" y2="21" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#00f0ff" />
-          <stop offset="1" stopColor="#06b6d4" />
+          <stop stopColor="#0284c7" />
+          <stop offset="1" stopColor="#0369a1" />
         </linearGradient>
       </defs>
       {/* Circular arc */}
@@ -639,16 +649,16 @@ export function SettingsDiagnosticsIcon({ className }: { className?: string }) {
     <svg viewBox="0 0 24 24" fill="none" className={cn('size-5 shrink-0', className)}>
       <defs>
         <linearGradient id="sb-set-steth" x1="4" y1="3" x2="20" y2="21" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#d8b4fe" />
-          <stop offset="0.6" stopColor="#c084fc" />
-          <stop offset="1" stopColor="#a855f7" />
+          <stop stopColor="#c084fc" />
+          <stop offset="0.6" stopColor="#a855f7" />
+          <stop offset="1" stopColor="#7c3aed" />
         </linearGradient>
       </defs>
       {/* Stethoscope earpieces & U-loop */}
       <path
         d="M6 3V8C6 11.3 8.7 14 12 14C15.3 14 18 11.3 18 8V3"
         stroke="url(#sb-set-steth)"
-        strokeWidth="2"
+        strokeWidth="2.2"
         strokeLinecap="round"
       />
       {/* Earpieces tips */}
@@ -658,11 +668,11 @@ export function SettingsDiagnosticsIcon({ className }: { className?: string }) {
       <path
         d="M12 14V17C12 18.7 13.3 20 15 20C16.7 20 18 18.7 18 17V16"
         stroke="url(#sb-set-steth)"
-        strokeWidth="2"
+        strokeWidth="2.2"
         strokeLinecap="round"
       />
       {/* Chestpiece */}
-      <circle cx="18" cy="15" r="2.2" fill="url(#sb-set-steth)" />
+      <circle cx="18" cy="15" r="2.4" fill="url(#sb-set-steth)" />
       <circle cx="18" cy="15" r="1" fill="#ffffff" />
     </svg>
   )
@@ -673,22 +683,22 @@ export function SettingsManualIcon({ className }: { className?: string }) {
     <svg viewBox="0 0 24 24" fill="none" className={cn('size-5 shrink-0', className)}>
       <defs>
         <linearGradient id="sb-set-book" x1="2" y1="5" x2="22" y2="19" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#00f2aa" />
-          <stop offset="1" stopColor="#10b981" />
+          <stop stopColor="#059669" />
+          <stop offset="1" stopColor="#047857" />
         </linearGradient>
       </defs>
       {/* Open book left & right pages */}
       <path
         d="M4 19.5C6.5 18 9 18 12 19.5C15 18 17.5 18 20 19.5V6.5C17.5 5 15 5 12 6.5C9 5 6.5 5 4 6.5V19.5Z"
         stroke="url(#sb-set-book)"
-        strokeWidth="2"
+        strokeWidth="2.2"
         strokeLinecap="round"
         strokeLinejoin="round"
         fill="url(#sb-set-book)"
-        fillOpacity="0.16"
+        fillOpacity="0.2"
       />
       {/* Center spine */}
-      <line x1="12" y1="6.5" x2="12" y2="19.5" stroke="url(#sb-set-book)" strokeWidth="1.8" strokeLinecap="round" />
+      <line x1="12" y1="6.5" x2="12" y2="19.5" stroke="url(#sb-set-book)" strokeWidth="2" strokeLinecap="round" />
     </svg>
   )
 }
@@ -698,19 +708,19 @@ export function SettingsResourcesIcon({ className }: { className?: string }) {
     <svg viewBox="0 0 24 24" fill="none" className={cn('size-5 shrink-0', className)}>
       <defs>
         <linearGradient id="sb-set-gauge" x1="3" y1="4" x2="21" y2="20" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#38bdf8" />
-          <stop offset="1" stopColor="#0ea5e9" />
+          <stop stopColor="#0284c7" />
+          <stop offset="1" stopColor="#1d4ed8" />
         </linearGradient>
       </defs>
       {/* Dial arc */}
       <path
         d="M4.5 17.5A9 9 0 1 1 19.5 17.5"
         stroke="url(#sb-set-gauge)"
-        strokeWidth="2.2"
+        strokeWidth="2.4"
         strokeLinecap="round"
       />
       {/* Center hub */}
-      <circle cx="12" cy="14" r="2.2" fill="url(#sb-set-gauge)" />
+      <circle cx="12" cy="14" r="2.4" fill="url(#sb-set-gauge)" />
       {/* Needle pointing up-right */}
       <line
         x1="12"
@@ -718,7 +728,7 @@ export function SettingsResourcesIcon({ className }: { className?: string }) {
         x2="16.5"
         y2="9.5"
         stroke="#ffffff"
-        strokeWidth="2"
+        strokeWidth="2.2"
         strokeLinecap="round"
       />
     </svg>
@@ -730,21 +740,21 @@ export function SettingsBackupsIcon({ className }: { className?: string }) {
     <svg viewBox="0 0 24 24" fill="none" className={cn('size-5 shrink-0', className)}>
       <defs>
         <linearGradient id="sb-set-archive" x1="3" y1="4" x2="21" y2="20" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#fbbf24" />
-          <stop offset="1" stopColor="#f59e0b" />
+          <stop stopColor="#d97706" />
+          <stop offset="1" stopColor="#b45309" />
         </linearGradient>
       </defs>
       {/* Top lid */}
-      <rect x="3" y="4" width="18" height="4.5" rx="1.5" stroke="url(#sb-set-archive)" strokeWidth="2" fill="url(#sb-set-archive)" fillOpacity="0.25" />
+      <rect x="3" y="4" width="18" height="4.5" rx="1.5" stroke="url(#sb-set-archive)" strokeWidth="2.2" fill="url(#sb-set-archive)" fillOpacity="0.25" />
       {/* Bottom crate */}
       <path
         d="M4.5 8.5V18.5C4.5 19.3 5.2 20 6 20H18C18.8 20 19.5 19.3 19.5 18.5V8.5"
         stroke="url(#sb-set-archive)"
-        strokeWidth="2"
+        strokeWidth="2.2"
         strokeLinecap="round"
       />
       {/* Center handle latch */}
-      <line x1="10" y1="12.5" x2="14" y2="12.5" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" />
+      <line x1="10" y1="12.5" x2="14" y2="12.5" stroke="#ffffff" strokeWidth="2.2" strokeLinecap="round" />
     </svg>
   )
 }
