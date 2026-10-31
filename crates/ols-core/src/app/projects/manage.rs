@@ -64,6 +64,12 @@ impl Inner {
                         if tick_count % 6 == 0 {
                             let health_changed = lock(&core.projects).sweep_health();
                             if health_changed {
+                                if let Err(error) = core.sync_auto_domains() {
+                                    tracing::warn!(%error, "automatic domains could not be synced after a project health change");
+                                }
+                                if let Err(error) = core.apply_web(&[]) {
+                                    tracing::warn!(%error, "web configs could not be applied after project health change");
+                                }
                                 let _ = core.project_events.send(());
                             }
                         }
@@ -407,6 +413,10 @@ impl Inner {
 
         if let Err(e) = self.sync_auto_domains() {
             tracing::warn!(error = %e, "automatic domains could not be synced after relocate");
+        }
+
+        if let Err(e) = self.apply_web(&[]) {
+            tracing::warn!(error = %e, "web configs could not be applied after relocate");
         }
 
         Ok(project)

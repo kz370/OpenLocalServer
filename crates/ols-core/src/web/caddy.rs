@@ -202,6 +202,15 @@ impl WebServer for Caddy {
 
 fn body(site: &SiteSpec) -> String {
     let mut out = String::new();
+    if site.missing_folder {
+        let html = crate::web::missing_folder_html(&site.hostname, &site.root);
+        let escaped_html = html.replace('\\', "\\\\").replace('"', "\\\"");
+        out.push_str(&format!(
+            "    respond \"{escaped_html}\" 503 {{\n        close\n    }}\n"
+        ));
+        return out;
+    }
+
     out.push_str(&format!(
         "    root * \"{}\"\n",
         site.root.replace('\\', "/")
@@ -286,7 +295,25 @@ mod tests {
             forwarded_tls: false,
             path_prefix: None,
             aliases: Vec::new(),
+            missing_folder: false,
         }
+    }
+
+    #[test]
+    fn missing_folder_renders_503_respond_without_root() {
+        let mut s = site(Backend::Static, false, false);
+        s.missing_folder = true;
+        let out = Caddy.render_site(
+            &s,
+            Ports {
+                http: 80,
+                https: 443,
+            },
+        );
+        assert!(out.contains("respond \""));
+        assert!(out.contains("503"));
+        assert!(out.contains("Project Folder Not Found"));
+        assert!(!out.contains("root *"));
     }
 
     #[test]

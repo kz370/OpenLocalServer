@@ -271,6 +271,13 @@ impl WebServer for Nginx {
 /// keep "downloading" the old wrong response. Unchanged files still come back as a 304.
 fn render_body(site: &SiteSpec) -> String {
     let mut out = String::new();
+    if site.missing_folder {
+        out.push_str("    default_type text/html;\n");
+        let html = crate::web::missing_folder_html(&site.hostname, &site.root);
+        out.push_str(&format!("    return 503 '{html}';\n"));
+        return out;
+    }
+
     let https = site.tls.is_some() || site.forwarded_tls;
     out.push_str(&format!("    root \"{}\";\n", site.root.replace('\\', "/")));
     out.push_str("    index index.php index.html index.htm;\n");
@@ -399,7 +406,18 @@ mod tests {
             forwarded_tls: false,
             path_prefix: None,
             aliases: Vec::new(),
+            missing_folder: false,
         }
+    }
+
+    #[test]
+    fn missing_folder_renders_503_stub_without_touching_root() {
+        let mut s = site(Backend::Static, false, false);
+        s.missing_folder = true;
+        let out = Nginx.render_site(&s, PORTS);
+        assert!(out.contains("return 503"));
+        assert!(out.contains("Project Folder Not Found"));
+        assert!(!out.contains("root \""));
     }
 
     const PORTS: Ports = Ports {

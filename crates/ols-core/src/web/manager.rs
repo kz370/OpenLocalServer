@@ -585,6 +585,8 @@ impl WebManager {
             };
             let custom_snippet = (d.ownership == Ownership::Advanced)
                 .then(|| layout.custom_file(server.config_ext(), &d.hostname));
+            let is_proxy = matches!(backend, Backend::Proxy { .. });
+            let missing_folder = !is_proxy && !std::path::Path::new(&d.root).is_dir();
             let spec = SiteSpec {
                 hostname: d.hostname.clone(),
                 wildcard: d.wildcard,
@@ -598,6 +600,7 @@ impl WebManager {
                 forwarded_tls: false,
                 path_prefix: d.path_prefix.clone(),
                 aliases: d.aliases.clone(),
+                missing_folder,
             };
             path_specs.push(spec.clone());
             rendered.push((d.clone(), server.render_site(&spec, ports)));

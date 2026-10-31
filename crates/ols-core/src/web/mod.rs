@@ -256,6 +256,16 @@ pub struct SiteSpec {
     pub path_prefix: Option<String>,
     /// Additional domain aliases pointing to this site.
     pub aliases: Vec<String>,
+    /// True when the document root folder is missing or offline on disk (and not a proxy site).
+    pub missing_folder: bool,
+}
+
+/// Renders an in-browser friendly HTML page returned as 503 when a project's document root is missing or offline.
+pub fn missing_folder_html(hostname: &str, root: &str) -> String {
+    let clean_root = root.replace('\\', "/");
+    format!(
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>503 Project Folder Missing - {hostname}</title><style>body{{font-family:system-ui,-apple-system,sans-serif;background:#0f172a;color:#f8fafc;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:1rem;box-sizing:border-box}}.card{{background:#1e293b;padding:2.5rem;border-radius:12px;border:1px solid #334155;max-width:540px;width:100%;box-shadow:0 10px 25px -5px rgba(0,0,0,0.3);text-align:center}}h1{{color:#f43f5e;font-size:1.5rem;margin:0 0 1rem 0;font-weight:600}}p{{color:#94a3b8;line-height:1.6;margin:0 0 1rem 0;font-size:0.95rem}}code{{background:#0f172a;color:#38bdf8;padding:0.3rem 0.6rem;border-radius:6px;font-size:0.875rem;word-break:break-all;border:1px solid #1e293b;display:inline-block;margin:0.25rem 0}}.badge{{display:inline-block;padding:0.25rem 0.75rem;border-radius:9999px;font-size:0.75rem;font-weight:600;background:rgba(244,63,94,0.15);color:#fb7185;margin-bottom:1rem;border:1px solid rgba(244,63,94,0.3)}}</style></head><body><div class=\"card\"><div class=\"badge\">OpenLocalServer &bull; 503 Missing Root</div><h1>Project Folder Not Found</h1><p>The document root for <strong>{hostname}</strong> could not be found on disk:</p><p><code>{clean_root}</code></p><p>If the folder was renamed, moved to another drive, or is currently unmounted, restore it or use <strong>Locate</strong> in OpenLocalServer to update its path.</p></div></body></html>"
+    )
 }
 
 impl SiteSpec {

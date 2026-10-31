@@ -291,8 +291,16 @@ fn head(site: &SiteSpec) -> String {
 }
 
 fn body(site: &SiteSpec) -> String {
-    let root = site.root.replace('\\', "/");
     let mut out = String::new();
+    if site.missing_folder {
+        let html = crate::web::missing_folder_html(&site.hostname, &site.root);
+        let safe_html = html.replace('"', "'");
+        out.push_str("    Redirect 503 /\n");
+        out.push_str(&format!("    ErrorDocument 503 \"{safe_html}\"\n"));
+        return out;
+    }
+
+    let root = site.root.replace('\\', "/");
     out.push_str(&format!("    DocumentRoot \"{root}\"\n"));
     out.push_str(&format!(
         "    <Directory \"{root}\">\n        Options Indexes FollowSymLinks\n        AllowOverride All\n        Require all granted\n    </Directory>\n"
@@ -394,7 +402,20 @@ mod tests {
             forwarded_tls: false,
             path_prefix: None,
             aliases: Vec::new(),
+            missing_folder: false,
         }
+    }
+
+    #[test]
+    fn missing_folder_renders_503_stub_without_document_root() {
+        let mut s = site(Backend::Static, false, false);
+        s.missing_folder = true;
+        let out = Apache.render_site(&s, PORTS);
+        assert!(out.contains("Redirect 503 /"));
+        assert!(out.contains("ErrorDocument 503"));
+        assert!(out.contains("Project Folder Not Found"));
+        assert!(!out.contains("DocumentRoot"));
+        assert!(!out.contains("<Directory"));
     }
 
     const PORTS: Ports = Ports {
