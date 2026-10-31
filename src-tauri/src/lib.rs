@@ -36,7 +36,7 @@ async fn run_command(
         })?;
     // Any command can start or stop things, so the tray, taskbar and in-app mark
     // are refreshed after every one of them rather than only the tray menu ones.
-    sync_status_icon(&app, &state.inner().clone());
+    refresh_tray(&app, &state.inner().clone());
     dispatched
 }
 
@@ -623,9 +623,20 @@ fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
     )
 }
 
+fn sync_tray_tooltip(app: &AppHandle, core: &Core) {
+    if SHUTDOWN_IN_PROGRESS.load(Ordering::SeqCst) {
+        return;
+    }
+    if let Some(tray) = app.tray_by_id("main") {
+        let _ = tray.set_tooltip(Some(tray_tooltip(core).as_str()));
+    }
+}
+
 fn refresh_tray(app: &AppHandle, core: &Core) {
-    if let (Some(tray), Ok(menu)) = (app.tray_by_id("main"), tray_menu(app, core)) {
-        let _ = tray.set_menu(Some(menu));
+    if let Some(tray) = app.tray_by_id("main") {
+        if let Ok(menu) = tray_menu(app, core) {
+            let _ = tray.set_menu(Some(menu));
+        }
         // The tooltip counts what is up, so it is refreshed with the menu that
         // reports the same thing. It is not refreshed during shutdown, or it would
         // put the running count back over the "stopping" line.
@@ -855,7 +866,7 @@ pub fn run() {
             if let Some(core) = app.try_state::<Core>().map(|c| c.inner().clone()) {
                 let handle = app.clone();
                 tauri::async_runtime::spawn(async move {
-                    sync_status_icon(&handle, &core);
+                    refresh_tray(&handle, &core);
                 });
             }
         }))
@@ -911,7 +922,7 @@ pub fn run() {
                     let _ = process_handle.emit("process-event", &event);
                     // A service that dies on its own changes what the tray and
                     // taskbar mark should say.
-                    sync_status_icon(&process_handle, &process_core);
+                    refresh_tray(&process_handle, &process_core);
                     // §119: tell the user when something they rely on dies.
                     if let ProcessEvent::StateChanged {
                         id,
@@ -976,10 +987,12 @@ pub fn run() {
             });
 
             let projects_handle = app.handle().clone();
+            let projects_core = core.clone();
             let mut project_events = core.inner().subscribe_project_events();
             tauri::async_runtime::spawn(async move {
                 while project_events.recv().await.is_ok() {
                     let _ = projects_handle.emit("projects-changed", ());
+                    refresh_tray(&projects_handle, &projects_core);
                 }
             });
 
@@ -1038,7 +1051,11 @@ pub fn run() {
             let status_core = core.clone();
             std::thread::spawn(move || loop {
                 std::thread::sleep(Duration::from_secs(2));
+                if SHUTDOWN_IN_PROGRESS.load(Ordering::SeqCst) {
+                    break;
+                }
                 sync_status_icon(&status_handle, &status_core);
+                sync_tray_tooltip(&status_handle, &status_core);
             });
             // §106: scheduled tasks run while the app is open.
             ols_core::scheduler::start_clock(core.inner());
@@ -1068,7 +1085,7 @@ pub fn run() {
             let auto_fix_app = app.handle().clone();
             std::thread::spawn(move || {
                 autostart_core.inner().run_autostart();
-                sync_status_icon(&auto_fix_app, &autostart_core);
+                refresh_tray(&auto_fix_app, &autostart_core);
                 loop {
                     for result in autostart_core.auto_fix_diagnostics() {
                         if result.ok {

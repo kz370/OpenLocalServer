@@ -197,5 +197,7 @@ Cloudflare (tunnel) | filters_url | api.trycloudflare.com (ignores management AP
 Tauri begin_shutdown | emits | ols:exiting (triggers ExitingOverlay animation before bounded 5s shutdown)
 ExitingOverlay | listens | ols:exiting (renders full-screen animated shutdown loading screen)
 Tauri request_exit | calls | begin_shutdown
-UI (core/client.ts) | calls | Tauri invoke('request_exit')
 CommandPalette & SettingsPage | invoke | requestExit
+SitesPage | uses | FloatingMenu (shared context menu on table row onContextMenu and Actions button click; renders fixed-positioned with window boundary clamping below the 36px titlebar at z-[95])
+SitesPage | filters | 'missing' tab (isolates sites whose project folder is missing or offline from 'enabled' / 'disabled' tabs)
+TauriApp (refresh_tray & sync_tray_tooltip) | updates_on | run_command IPC (site start/stop/add/remove/apply), process_events, project_events, autostart, and periodic 2-second heartbeat

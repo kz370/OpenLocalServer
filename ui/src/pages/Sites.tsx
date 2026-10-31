@@ -1,5 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Activity, Check, CircleOff, Code2, Copy, Download, ExternalLink, EyeOff, FolderOpen, FolderPlus, FolderSearch, FolderX, Globe, HardDrive, Image as ImageIcon, KeyRound, List, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2, X, Zap } from 'lucide-react'
+import { Activity, Check, CircleOff, Code2, Copy, Download, ExternalLink, EyeOff, FolderOpen, FolderPlus, FolderSearch, FolderX, Globe, HardDrive, Image as ImageIcon, KeyRound, List, MoreHorizontal, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2, X, Zap } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
@@ -21,7 +21,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog } from '@/components/ui/dialog'
 import { Field, Select, Tabs } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
-import { ActionMenu, type MenuItem } from '@/components/ui/menu'
+import { FloatingMenu, type MenuAnchor, type MenuItem } from '@/components/ui/menu'
 import { Pagination } from '@/components/ui/pagination'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { type Domain, type DomainSummary, type HealthReport, type Project, type WpProject, runCommand } from '@/core'
@@ -40,7 +40,7 @@ interface Row {
 }
 
 type Group = DomainSummary['group'] | 'none'
-type SiteFilter = 'enabled' | 'disabled' | 'all' | Group
+type SiteFilter = 'enabled' | 'disabled' | 'missing' | 'all' | Group
 
 /** Normalize path for cross-platform folder matching. */
 function normPath(p: string | null | undefined): string {
@@ -101,6 +101,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   const [filter, setFilter] = useState<SiteFilter>('enabled')
   const [message, setMessage] = useState<string | null>(null)
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null)
+  const [activeMenu, setActiveMenu] = useState<{ key: string; anchor: MenuAnchor } | null>(null)
   // Bulk selection. Only site rows are picked — a project with no domain yet has nothing
   // to enable, pin to a web server or delete, so it gets no checkbox.
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set())
@@ -219,8 +220,9 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       return nameA.localeCompare(nameB)
     })
 
-  const isRowEnabled = (r: Row) => (r.site?.enabled ?? false) || r.extraDomains.some((e) => e.enabled)
-  const isRowDisabled = (r: Row) => (!!r.site && !r.site.enabled) && (!r.extraDomains.length || r.extraDomains.every((e) => !e.enabled))
+  const isRowMissingFolder = (r: Row) => Boolean(r.project?.health && r.project.health.status !== 'healthy')
+  const isRowEnabled = (r: Row) => !isRowMissingFolder(r) && ((r.site?.enabled ?? false) || r.extraDomains.some((e) => e.enabled))
+  const isRowDisabled = (r: Row) => !isRowMissingFolder(r) && (!!r.site && !r.site.enabled) && (!r.extraDomains.length || r.extraDomains.every((e) => !e.enabled))
 
   const matchesQuery = (r: Row, term: string) => {
     if (!term) return true
@@ -231,16 +233,17 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   }
   const q = query.trim().toLowerCase()
   const matches = rows.filter((r) => matchesQuery(r, q))
-  const groupsPresent = GROUPS.filter((g) => rows.some((r) => groupOf(r) === g.id))
+  const groupsPresent = GROUPS.filter((g) => rows.some((r) => !isRowMissingFolder(r) && groupOf(r) === g.id))
   const activeFilter =
-    filter === 'enabled' || filter === 'disabled' || filter === 'all' || groupsPresent.some((g) => g.id === filter)
+    filter === 'enabled' || filter === 'disabled' || filter === 'missing' || filter === 'all' || groupsPresent.some((g) => g.id === filter)
       ? filter
       : 'all'
   const matchesFilter = (r: Row, selected: SiteFilter) => {
+    if (selected === 'missing') return isRowMissingFolder(r)
     if (selected === 'enabled') return isRowEnabled(r)
     if (selected === 'disabled') return isRowDisabled(r)
     if (selected === 'all') return true
-    return groupOf(r) === selected
+    return !isRowMissingFolder(r) && groupOf(r) === selected
   }
   const visible = matches.filter((r) => matchesFilter(r, activeFilter))
   const onSearch = (value: string) => {
@@ -886,10 +889,11 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
               tabs={[
                 { id: 'enabled', label: 'Enabled', badge: matches.filter(isRowEnabled).length, icon: <Check className="size-3.5 text-emerald-500" /> },
                 { id: 'disabled', label: 'Disabled', badge: matches.filter(isRowDisabled).length, icon: <CircleOff className="size-3.5 text-rose-500" /> },
+                { id: 'missing', label: 'Folder not found', badge: matches.filter(isRowMissingFolder).length, icon: <FolderX className="size-3.5 text-destructive" /> },
                 ...groupsPresent.map((g) => ({
                   id: g.id as SiteFilter,
                   label: g.label,
-                  badge: matches.filter((r) => groupOf(r) === g.id).length,
+                  badge: matches.filter((r) => !isRowMissingFolder(r) && groupOf(r) === g.id).length,
                   icon: <TechIcon id={g.icon} className="size-3.5" />,
                 })),
                 { id: 'all', label: 'All', badge: matches.length, icon: <List className="size-3.5 text-sky-500" /> },
@@ -925,7 +929,19 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                 // that did nothing.
                 const pending = [d?.hostname, ...r.extraDomains.map((e) => e.hostname), p?.id].filter(Boolean).some((k) => removing.has(k!))
                 return (
-                  <TableRow key={r.key} aria-busy={pending} className={pending ? 'opacity-50 transition-opacity' : undefined}>
+                  <TableRow
+                    key={r.key}
+                    aria-busy={pending}
+                    className={pending ? 'opacity-50 transition-opacity' : undefined}
+                    onContextMenu={(e) => {
+                      if (pending) return
+                      e.preventDefault()
+                      setActiveMenu({
+                        key: r.key,
+                        anchor: { type: 'cursor', x: e.clientX, y: e.clientY },
+                      })
+                    }}
+                  >
                     <TableCell>
                       {/* A project with no domain yet is pickable too: the batch gives it
                           its automatic `<folder>.<tld>` first, so a folder dropped into a
@@ -1175,7 +1191,28 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                             <Spinner />
                           </span>
                         ) : (
-                          <ActionMenu label={`More actions for ${d?.hostname ?? p?.name}`} items={menuFor(r)} />
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 w-8 shrink-0 cursor-pointer px-0"
+                            title={`More actions for ${d?.hostname ?? p?.name}`}
+                            aria-label={`More actions for ${d?.hostname ?? p?.name}`}
+                            aria-haspopup="menu"
+                            aria-expanded={activeMenu?.key === r.key}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (activeMenu?.key === r.key) {
+                                setActiveMenu(null)
+                              } else {
+                                setActiveMenu({
+                                  key: r.key,
+                                  anchor: { type: 'button', rect: e.currentTarget.getBoundingClientRect() },
+                                })
+                              }
+                            }}
+                          >
+                            <MoreHorizontal className="size-4" />
+                          </Button>
                         )}
                       </div>
                     </TableCell>
@@ -1185,12 +1222,29 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
               {visible.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={4} className="text-center text-sm text-muted-foreground">
-                    {rows.length === 0 ? 'No sites yet. Add one, add a project folder, or create one from Quick Apps.' : q ? `No site matches "${query.trim()}".` : 'No sites of this type.'}
+                    {rows.length === 0
+                      ? 'No sites yet. Add one, add a project folder, or create one from Quick Apps.'
+                      : q
+                        ? `No site matches "${query.trim()}".`
+                        : activeFilter === 'missing'
+                          ? 'No sites with missing project folders.'
+                          : 'No sites of this type.'}
                   </TableCell>
                 </TableRow>
               )}
             </TableBody>
           </Table>
+          {activeMenu && (() => {
+            const row = rows.find((r) => r.key === activeMenu.key)
+            if (!row) return null
+            return (
+              <FloatingMenu
+                items={menuFor(row)}
+                anchor={activeMenu.anchor}
+                onClose={() => setActiveMenu(null)}
+              />
+            )
+          })()}
           {visible.length > 0 && (
             <Pagination
               label="sites"
