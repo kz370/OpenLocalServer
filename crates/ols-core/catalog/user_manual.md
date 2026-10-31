@@ -1,6 +1,6 @@
 # OpenLocalServer (OLS) — Comprehensive User Manual & Operations Guide
 
-> **Version:** 2.4.0  
+> **Version:** 2.5.0  
 > **Platform:** Windows 10 / Windows 11 (64-bit)  
 > **License:** GPL-3.0-only  
 > **CLI Binary:** `olsc`  
@@ -26,7 +26,7 @@
 14. [AI Assistant (Local & Cloud Bring-Your-Own-Model)](#14-ai-assistant-local--cloud-bring-your-own-model)
 15. [Command Line Interface (CLI — `olsc`)](#15-command-line-interface-cli--olsc)
 16. [Keyboard Shortcuts, Settings & Privacy](#16-keyboard-shortcuts-settings--privacy)
-17. [Version 2.4.0 Specific Notes & What's New](#17-version-240-specific-notes--whats-new)
+17. [Version 2.5.0 Specific Notes & What's New](#17-version-250-specific-notes--whats-new)
 
 ---
 
@@ -312,24 +312,19 @@ olsc guide
 
 ---
 
-## 17. Version 2.4.0 Specific Notes & What's New
+## 17. Version 2.5.0 Specific Notes & What's New
 
-### New Features in v2.4.0
-1. **Python & Virtual Environment Support:**
-   - Detects system Python installations (3.7–3.15) and project-local virtual environments (`.venv`, `venv`).
-   - Supports direct execution of FastAPI (Uvicorn), Django, Flask, Streamlit, and custom Python scripts with supervisor process management.
-2. **Model Context Protocol (MCP) Server:**
-   - Built-in Stdio MCP server (`ols-mcp`) enabling AI assistants (Cursor, Claude Desktop, Antigravity) to manage domains, web servers, databases, and runtimes.
-   - Secure token authentication stored in Windows Credential Manager with configurable expiration.
-3. **Database Inspection & SQL Execution:**
-   - Multi-engine database table listing and direct SQL execution tools across MariaDB/MySQL, PostgreSQL, and SQLite.
-4. **Proxy Port Collision & Reserved Port Validation:**
-   - Real-time detection and prevention of upstream port collisions on `127.0.0.1`.
-   - Prevents assignment of ports reserved for core services (web servers, databases, Redis, Mailpit, DNS).
-   - "Find free port" helper added to Reverse Proxy mode to locate unused loopback ports.
-5. **Dark Circular Icon Branding:**
-   - High-resolution circular branding across application executables, Inno Setup installer, taskbar, system tray, and site favicons.
-6. **In-App User Manual & Release Notes Viewer:**
-   - Dedicated documentation and release notes reader integrated directly in `Settings → User Manual`.
-7. **Updates UI Enhancements:**
-   - Compact in-button loading indicator with immediate SemVer comparison feedback.
+### New Features in v2.5.0
+1. **"Folder not found" Site Management Tab:**
+   - Adds a dedicated filter tab (`Folder not found`) isolating sites whose project folder is missing (`status === 'missing'`) or drive is offline (`status === 'offline'`).
+   - Ensures the "Enabled" and "Disabled" tabs represent strictly operational projects.
+   - Provides a 1-click **Locate** action directly in the row to relocate projects to their new disk location.
+2. **Right-Click Context Menu for Sites:**
+   - Right-clicking any site row immediately opens the actions dropdown positioned at the mouse cursor.
+   - Shares a single unified menu definition with the row's Actions button, keeping all actions 100% in sync.
+3. **Smart Viewport Clamping & Internal Scrolling:**
+   - Floating menus automatically calculate available viewport space, flip upward or leftward near edges, and enforce clearance below the 36px titlebar (`minTop = 44px`, `z-[95]`).
+   - Constrains maximum dropdown height (`calc(100vh - 52px)`) with smooth internal scrolling (`overflow-y-auto`) for small windows and laptop displays, ignoring internal scroll events to prevent accidental closure.
+4. **Live System Tray Tooltip Synchronization:**
+   - Real-time tray icon tooltip (`OpenLocalServer — X of Y running`) updates immediately when sites or services start, stop, or change health status.
+   - Thread-safe tooltip synchronization with cached string deduplication (`TOOLTIP_SHOWS`) decoupled from Win32 menu rebuilds.

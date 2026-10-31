@@ -1,6 +1,6 @@
 # OpenLocalServer (OLS) — Comprehensive User Manual & Operations Guide
 
-> **Version:** 2.4.0  
+> **Version:** 2.5.0  
 > **Platform:** Windows 10 / Windows 11 (64-bit)  
 > **License:** GPL-3.0-only  
 > **CLI Tool:** `olsc`  
@@ -65,7 +65,7 @@
   - [14.3 Asking the App Assistant & Safety Approvals](#143-asking-the-app-assistant--safety-approvals)
 - [15. Command Line Interface Reference (`olsc`)](#15-command-line-interface-reference-olsc)
 - [16. Keyboard Shortcuts, Settings & Privacy Guidelines](#16-keyboard-shortcuts-settings--privacy-guidelines)
-- [17. What's New in Version 2.3.0](#17-whats-new-in-version-230)
+- [17. What's New in Version 2.5.0](#17-whats-new-in-version-250)
 
 ---
 
@@ -360,23 +360,17 @@ olsc guide                     # Display this complete User Manual in terminal
 
 ---
 
-## 17. What's New in Version 2.4.0
+## 17. What's New in Version 2.5.0
 
-1. **Python & Virtual Environment Management:**
-   - Automatic detection of system Python (3.7–3.15) and project-local virtual environments (`.venv`, `venv`).
-   - Run FastAPI (Uvicorn), Django, Flask, Streamlit, and custom Python apps with managed supervisor processes.
-2. **Model Context Protocol (MCP) Server:**
-   - Built-in Stdio MCP server (`ols-mcp`) enabling AI coding tools to inspect and configure local domains, web servers, databases, and runtimes.
-   - Secure OS keyring token authentication with configurable TTL/expiry.
-3. **Database Inspection & SQL Execution:**
-   - Multi-engine database table inspection and SQL execution tools for MariaDB/MySQL, PostgreSQL, and SQLite.
-4. **Proxy Port Collision & Reserved Port Prevention:**
-   - Real-time conflict detection preventing duplicate local proxy ports (`127.0.0.1`) and HTTP 502 Bad Gateway errors.
-   - Rejection of core reserved application ports (DNS, Web, DB, Redis, Mailpit).
-   - "Find free port" helper in Reverse Proxy mode.
-5. **Dark Circular Icon Branding:**
-   - Modern circular branding across application executable, Inno Setup installer, taskbar, system tray, and site favicons.
-6. **In-App User Manual & Release Notes Viewer:**
-   - Integrated manual and release notes tab in `Settings → User Manual`.
-7. **Updates UI Feedback:**
-   - Compact in-button loading spinner and clean SemVer comparison badges.
+1. **"Folder not found" Site Management Tab:**
+   - Dedicated filter tab (`Folder not found`) isolating sites whose project folder is missing (`status === 'missing'`) or external drive is offline (`status === 'offline'`).
+   - Ensures the "Enabled" and "Disabled" tabs represent strictly operational projects.
+   - Provides a 1-click **Locate** button directly in the row to relocate projects to their new disk location.
+2. **Right-Click Context Menu for Sites:**
+   - Right-clicking any site row opens the actions dropdown positioned at the mouse cursor.
+   - Shares a single unified menu definition with the row's Actions button, keeping all actions 100% in sync.
+3. **Smart Viewport Clamping & Internal Scrolling:**
+   - Floating menus automatically calculate available viewport space, flip upward or leftward near edges, and enforce clearance below the 36px titlebar (`minTop = 44px`, `z-[95]`).
+   - Constrains maximum dropdown height (`calc(100vh - 52px)`) with smooth internal scrolling (`overflow-y-auto`) for small windows and laptop displays, ignoring internal scroll events to prevent accidental closure.
+4. **Live System Tray Tooltip Synchronization:**
+   - Real-time tray icon tooltip (`OpenLocalServer — X of Y running`) updates immediately when sites or services start, stop, or change health status.

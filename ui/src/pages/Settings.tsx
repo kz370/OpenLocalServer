@@ -13,7 +13,7 @@ import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import releaseNotes from '../../../release-notes/v2.4.0.md?raw'
+import releaseNotes from '../../../release-notes/v2.5.0.md?raw'
 import { Select, SettingRow, SwitchRow, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { type EditorInfo, type HelperService, type ServiceStatus, type StartupSettings, runCommand, requestExit } from '@/core'
@@ -158,7 +158,7 @@ export function SettingsPage() {
 
   useEffect(() => {
     if (section !== 'manual') return
-    void runCommand({ type: 'get_app_guide', version: version || '2.4.0' }).then((r) => {
+    void runCommand({ type: 'get_app_guide', version: version || '2.5.0' }).then((r) => {
       if (r.type === 'app_guide') setManual(r.markdown)
     })
   }, [section, version])
