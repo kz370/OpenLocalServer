@@ -71,12 +71,7 @@ fn port() -> Result<u16, CoreError> {
 
 impl crate::app::Inner {
     pub fn procfile_preview(&self, project_id: &str) -> Result<ProcfilePreview, CoreError> {
-        let project = self
-            .projects
-            .lock()
-            .unwrap()
-            .get(project_id)
-            .ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
+        let project = self.ensure_project_available(project_id)?;
         let root = std::path::PathBuf::from(&project.path);
         let (source, contents) = project_file(&root).ok_or_else(|| {
             CoreError::ServiceError("this project has no Procfile or Procfile.dev".into())
@@ -143,12 +138,7 @@ impl crate::app::Inner {
             self.save_worker(worker.clone())?;
         }
         if let (Some(app), Some(port)) = (&preview.web, preview.web_port) {
-            let project = self
-                .projects
-                .lock()
-                .unwrap()
-                .get(project_id)
-                .ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
+            let project = self.ensure_project_available(project_id)?;
             let mut domain = self
                 .domains
                 .lock()

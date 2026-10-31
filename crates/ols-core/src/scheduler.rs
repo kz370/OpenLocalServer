@@ -329,9 +329,7 @@ impl Inner {
             ));
         }
         if let Some(p) = &t.project_id {
-            if self.projects.lock().unwrap().get(p).is_none() {
-                return Err(CoreError::InvalidProjectPath(p.clone()));
-            }
+            self.ensure_project_available(p)?;
         }
         if t.id.is_empty() {
             t.id = crate::workers::worker_id(t.project_id.as_deref().unwrap_or("global"), &t.name);

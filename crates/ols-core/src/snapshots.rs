@@ -358,12 +358,7 @@ impl Inner {
         label: &str,
         options: SnapshotOptions,
     ) -> Result<SnapshotContent, CoreError> {
-        let project = self
-            .projects
-            .lock()
-            .unwrap()
-            .get(project_id)
-            .ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
+        let project = self.ensure_project_available(project_id)?;
         let root = PathBuf::from(&project.path);
         let mut manifest_files = BTreeMap::new();
         if let Ok(rd) = std::fs::read_dir(manifest::dir(&root)) {
@@ -652,7 +647,7 @@ impl Inner {
         };
         let title = format!("Restore a snapshot of {}", content.project.name);
         self.journaled("restore_snapshot", &title, Some("A \"Before restore\" snapshot of the previous state was taken; restore it to undo."), None, || {
-            let project = self.projects.lock().unwrap().get(project_id).ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
+            let project = self.ensure_project_available(project_id)?;
             let root = PathBuf::from(&project.path);
             if opts.files && content.file_count > 0 {
                 match self.extract_files(&file, &root, "files", None) {
@@ -1099,12 +1094,7 @@ impl Inner {
         name: &str,
         what: &str,
     ) -> Result<CloneResult, CoreError> {
-        let source = self
-            .projects
-            .lock()
-            .unwrap()
-            .get(project_id)
-            .ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
+        let source = self.ensure_project_available(project_id)?;
         let target = PathBuf::from(target);
         if !target.is_absolute() {
             return Err(err("choose a full folder path for the copy"));

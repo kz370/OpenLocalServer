@@ -131,11 +131,10 @@ fn env_value(project: &Path, file: &str, key: &str) -> Option<String> {
 impl Inner {
     /// §112 for one project: runtimes, .env, APP_KEY, dependencies, its services and site.
     pub fn diagnose_project(&self, project_id: &str) -> Result<Vec<Finding>, CoreError> {
-        let detail = self
-            .project_detail(project_id)
-            .ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
-        let root = Path::new(&detail.project.path);
-        let name = detail.project.name.clone();
+        let project = self.ensure_project_available(project_id)?;
+        let detail = self.project_detail(project_id).unwrap();
+        let root = Path::new(&project.path);
+        let name = project.name.clone();
         let mut out = Vec::new();
 
         for r in &detail.resolved {

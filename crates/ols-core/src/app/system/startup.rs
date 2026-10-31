@@ -13,15 +13,7 @@ impl Inner {
         self.remove_skip(PROJECT_SKIP, path)
     }
 
-    /// Laragon-style automatic domains (setting `domains.auto`, on by default): every
-    /// folder in a remembered projects folder becomes a project, and every project that
-    /// can be served (PHP or plain HTML) gets `<folder>.<tld>` over HTTPS where `<tld>` is
-    /// read from `domains.default_tld` (default: `local`). Domains the user deleted stay
-    /// deleted. Applies the web config when something was added and the server is running.
-    /// Returns how many domains were created.
-
     /// §53 health chain for one site.
-
     pub fn startup_settings(&self) -> StartupSettings {
         // Read first: `web_config` takes the same settings lock, so it cannot be called
         // while the guard below is held.

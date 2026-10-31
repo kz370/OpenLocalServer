@@ -106,12 +106,7 @@ impl Inner {
     /// Cancels a pending one-time sign-in link. The file is the whole capability, so
     /// removing it is the whole cancellation.
     pub fn wp_signin_revoke(&self, project_id: &str) -> Result<usize, CoreError> {
-        let project = self
-            .projects
-            .lock()
-            .unwrap()
-            .get(project_id)
-            .ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
+        let project = self.ensure_project_available(project_id)?;
         crate::wordpress::revoke(Path::new(&project.path))
     }
 }

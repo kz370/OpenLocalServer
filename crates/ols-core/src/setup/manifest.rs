@@ -6,12 +6,7 @@ use crate::error::CoreError;
 
 impl Inner {
     pub fn manifest_info(&self, project_id: &str) -> Result<ManifestInfo, CoreError> {
-        let project = self
-            .projects
-            .lock()
-            .unwrap()
-            .get(project_id)
-            .ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
+        let project = self.ensure_project_available(project_id)?;
         let root = PathBuf::from(&project.path);
         let path = manifest::manifest_path(&root);
         let text = std::fs::read_to_string(&path).ok();
@@ -35,12 +30,7 @@ impl Inner {
     pub fn save_manifest_text(&self, project_id: &str, text: &str) -> Result<String, CoreError> {
         serde_yaml_ng::from_str::<EnvironmentManifest>(text)
             .map_err(|e| CoreError::EnvError(format!("the manifest doesn't read as YAML: {e}")))?;
-        let project = self
-            .projects
-            .lock()
-            .unwrap()
-            .get(project_id)
-            .ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
+        let project = self.ensure_project_available(project_id)?;
         let path = manifest::manifest_path(Path::new(&project.path));
         std::fs::create_dir_all(path.parent().unwrap())?;
         std::fs::write(&path, text)?;
@@ -50,10 +40,9 @@ impl Inner {
     /// Without a manifest: what detection says the project needs, as a manifest the user
     /// can save and edit.
     pub fn derive_manifest(&self, project_id: &str) -> Result<EnvironmentManifest, CoreError> {
-        let detail = self
-            .project_detail(project_id)
-            .ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
-        let path = PathBuf::from(&detail.project.path);
+        let project = self.ensure_project_available(project_id)?;
+        let detail = self.project_detail(project_id).unwrap();
+        let path = PathBuf::from(&project.path);
         let det = &detail.detection;
         let mut m = EnvironmentManifest {
             name: Some(detail.project.name.clone()),
@@ -173,12 +162,7 @@ impl Inner {
         project_id: &str,
         manifest: Option<EnvironmentManifest>,
     ) -> Result<String, CoreError> {
-        let project = self
-            .projects
-            .lock()
-            .unwrap()
-            .get(project_id)
-            .ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
+        let project = self.ensure_project_available(project_id)?;
         let m = match manifest {
             Some(m) => m,
             None => self.derive_manifest(project_id)?,

@@ -91,11 +91,10 @@ pub fn is_runnable(path: &Path) -> bool {
 impl Inner {
     /// The project's usual places, plus the server config of each site pointing at it.
     pub fn project_shortcuts(&self, project_id: &str) -> Result<Vec<Shortcut>, CoreError> {
-        let detail = self
-            .project_detail(project_id)
-            .ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
+        let project = self.ensure_project_available(project_id)?;
+        let detail = self.project_detail(project_id).unwrap();
         let mut shortcuts = project_shortcuts(
-            Path::new(&detail.project.path),
+            Path::new(&project.path),
             detail.detection.doc_root.as_deref(),
         );
 

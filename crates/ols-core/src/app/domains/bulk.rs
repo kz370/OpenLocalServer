@@ -64,7 +64,6 @@ impl Inner {
     /// running each server's validator and (re)starting it can take seconds, and holding
     /// the lock that long blocked reads (`list_domains` runs on a UI poll) for the whole
     /// apply. Generated-config hashes are committed afterwards, under the lock again.
-
     pub fn set_domain_enabled(&self, hostname: &str, enabled: bool) -> Result<(), CoreError> {
         let mut domains = self.domains.lock().unwrap();
         let mut d = domains
@@ -153,7 +152,6 @@ impl Inner {
 /// The "type of website" a site is listed under: "php", "nodejs", "python", "static", or
 /// "proxy" for anything else that is forwarded (Docker, another computer, unknown apps).
 /// A dev-server site is told apart by its start command, else by the linked project.
-
 pub(crate) fn site_group(d: &Domain, projects: &[crate::project::Project]) -> &'static str {
     use crate::detection::Framework;
     match &d.kind {

@@ -23,6 +23,20 @@ impl Inner {
                 ".htaccess editing is available for PHP sites".into(),
             ));
         }
+        if !std::path::Path::new(&domain.root).is_dir() {
+            if let Some(ref pid) = domain.project_id {
+                if let Some(p) = self.projects.lock().unwrap().get(pid) {
+                    return Err(CoreError::ProjectFolderMissing {
+                        name: p.name,
+                        path: p.path,
+                    });
+                }
+            }
+            return Err(CoreError::ProjectFolderMissing {
+                name: domain.hostname.clone(),
+                path: domain.root.clone(),
+            });
+        }
         let root = std::fs::canonicalize(&domain.root).map_err(|e| {
             CoreError::DomainError(format!("site document root is unavailable: {e}"))
         })?;
@@ -74,6 +88,20 @@ impl Inner {
             return Err(CoreError::DomainError(
                 ".htaccess editing is available for PHP sites".into(),
             ));
+        }
+        if !std::path::Path::new(&domain.root).is_dir() {
+            if let Some(ref pid) = domain.project_id {
+                if let Some(p) = self.projects.lock().unwrap().get(pid) {
+                    return Err(CoreError::ProjectFolderMissing {
+                        name: p.name,
+                        path: p.path,
+                    });
+                }
+            }
+            return Err(CoreError::ProjectFolderMissing {
+                name: domain.hostname.clone(),
+                path: domain.root.clone(),
+            });
         }
         let root = std::fs::canonicalize(&domain.root).map_err(|e| {
             CoreError::DomainError(format!("site document root is unavailable: {e}"))

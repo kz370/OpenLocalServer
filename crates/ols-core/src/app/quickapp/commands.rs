@@ -50,11 +50,13 @@ impl Inner {
         history_line: &str,
     ) -> Result<ProcessId, CoreError> {
         let (executable, full_args, env) = self.project_program(program, args, project_id)?;
-        let cwd_owned = cwd.map(str::to_string).or_else(|| {
-            project_id
-                .and_then(|id| self.projects.lock().unwrap().get(id))
-                .map(|p| p.path)
-        });
+        let cwd_owned = match cwd {
+            Some(c) => Some(c.to_string()),
+            None => match project_id {
+                Some(id) => Some(self.ensure_project_available(id)?.path),
+                None => None,
+            },
+        };
         let id = self.supervisor.start(ProcessSpec {
             name: name.to_string(),
             executable: executable.display().to_string(),

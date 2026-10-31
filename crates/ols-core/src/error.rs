@@ -20,6 +20,9 @@ pub enum CoreError {
     #[error("not a directory: {0}")]
     InvalidProjectPath(String),
 
+    #[error("project folder missing for {name}: {path}")]
+    ProjectFolderMissing { name: String, path: String },
+
     #[error("{0}")]
     ServiceError(String),
 
@@ -122,6 +125,11 @@ impl From<&CoreError> for Diagnostic {
                 problem: "That folder can't be added as a project.".into(),
                 cause: format!("\"{p}\" is not a directory on disk."),
                 fix: Some("Check the path and try again.".into()),
+            },
+            CoreError::ProjectFolderMissing { name, path } => Diagnostic {
+                problem: format!("The folder for '{name}' no longer exists."),
+                cause: format!("\"{path}\" was moved, renamed, or deleted outside OLS."),
+                fix: Some("Locate the folder again, or remove the project from OLS.".into()),
             },
             CoreError::ServiceError(msg) => Diagnostic {
                 problem: "That service operation failed.".into(),

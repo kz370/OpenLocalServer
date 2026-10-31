@@ -223,9 +223,8 @@ pub fn send_test_mail(port: u16, to: &str) -> Result<(), String> {
 
 impl Inner {
     fn project_framework(&self, project_id: &str) -> Result<Framework, CoreError> {
-        let detail = self
-            .project_detail(project_id)
-            .ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
+        let _ = self.ensure_project_available(project_id)?;
+        let detail = self.project_detail(project_id).unwrap();
         Ok(detail.detection.framework)
     }
 

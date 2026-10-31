@@ -43,11 +43,14 @@ fn first_lines(text: &str) -> String {
 
 impl Inner {
     fn project(&self, id: &str) -> Result<Project, CoreError> {
-        self.projects
-            .lock()
-            .unwrap()
-            .get(id)
-            .ok_or_else(|| CoreError::InvalidProjectPath(id.to_string()))
+        let p = self.projects.lock().unwrap().get(id).ok_or_else(|| {
+            CoreError::failed(
+                "Project not found",
+                format!("{id} is not a registered project"),
+            )
+        })?;
+        crate::project::ensure_project_available(&p)?;
+        Ok(p)
     }
 
     // -------------------------------------------------------------- composer (§14)

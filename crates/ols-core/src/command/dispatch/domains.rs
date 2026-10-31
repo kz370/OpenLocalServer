@@ -277,12 +277,12 @@ impl Core {
                     project_id,
                     template,
                 } => {
-                    let project = i
-                        .projects
-                        .lock()
-                        .unwrap()
-                        .get(&project_id)
-                        .ok_or_else(|| CoreError::InvalidProjectPath(project_id.clone()))?;
+                    let project = i.projects.lock().unwrap().get(&project_id).ok_or_else(|| {
+                        CoreError::failed(
+                            "Project not found",
+                            format!("{project_id} is not a registered project"),
+                        )
+                    })?;
                     Ok(R::Text {
                         text: crate::domain::apply_template(&template, &project.name),
                     })

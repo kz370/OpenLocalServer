@@ -455,7 +455,13 @@ impl Inner {
             .lock()
             .unwrap()
             .get(project_id)
-            .ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
+            .ok_or_else(|| {
+                CoreError::failed(
+                    "Project not found",
+                    format!("{project_id} is not a registered project"),
+                )
+            })?;
+        crate::project::ensure_project_available(&p)?;
         Ok(PathBuf::from(p.path))
     }
 

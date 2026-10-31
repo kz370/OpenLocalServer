@@ -7,10 +7,9 @@ use crate::manifest;
 
 impl Inner {
     pub fn plan_setup(&self, project_id: &str) -> Result<EnvironmentPlan, CoreError> {
-        let detail = self
-            .project_detail(project_id)
-            .ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
-        let path = PathBuf::from(&detail.project.path);
+        let project = self.ensure_project_available(project_id)?;
+        let detail = self.project_detail(project_id).unwrap();
+        let path = PathBuf::from(&project.path);
         let mut conflicts = Vec::new();
         let (mut manifest, manifest_found) = match manifest::read_manifest(&path) {
             Ok(Some(m)) => (m, true),

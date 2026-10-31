@@ -25,6 +25,24 @@ pub struct Project {
     pub icon_image: Option<String>,
 }
 
+/// Verifies that a registered project's directory exists on disk.
+/// If the directory is missing, returns `CoreError::ProjectFolderMissing`.
+pub fn ensure_project_available(project: &Project) -> Result<(), CoreError> {
+    if !std::path::Path::new(&project.path).is_dir() {
+        return Err(CoreError::ProjectFolderMissing {
+            name: project.name.clone(),
+            path: project.path.clone(),
+        });
+    }
+    Ok(())
+}
+
+impl Project {
+    pub fn ensure_available(&self) -> Result<(), CoreError> {
+        ensure_project_available(self)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectDetail {
     pub project: Project,
@@ -355,6 +373,40 @@ mod tests {
         assert_eq!(
             php.bin_dir.as_deref(),
             Some(home.paths.root().display().to_string().as_str())
+        );
+    }
+
+    #[test]
+    fn ensure_project_available_detects_existing_and_missing_directory() {
+        let home = crate::test_support::isolated_home();
+        let project_dir = home.paths.root().join("test_app");
+        std::fs::create_dir_all(&project_dir).unwrap();
+
+        let mut store = ProjectStore::load(&home.paths).unwrap();
+        let project = store.register(project_dir.to_str().unwrap()).unwrap();
+        assert!(ensure_project_available(&project).is_ok());
+        assert!(project.ensure_available().is_ok());
+
+        // Remove the directory on disk to simulate external deletion
+        std::fs::remove_dir_all(&project_dir).unwrap();
+
+        let err = ensure_project_available(&project).unwrap_err();
+        match &err {
+            CoreError::ProjectFolderMissing { name, path } => {
+                assert_eq!(name, "test_app");
+                assert_eq!(path, &project.path);
+            }
+            other => panic!("expected ProjectFolderMissing, got: {other:?}"),
+        }
+
+        let diag = crate::error::Diagnostic::from(&err);
+        assert_eq!(diag.problem, "The folder for 'test_app' no longer exists.");
+        assert!(diag
+            .cause
+            .contains("was moved, renamed, or deleted outside OLS."));
+        assert_eq!(
+            diag.fix.as_deref(),
+            Some("Locate the folder again, or remove the project from OLS.")
         );
     }
 }

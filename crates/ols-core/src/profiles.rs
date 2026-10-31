@@ -337,12 +337,7 @@ pub struct ModeResult {
 
 impl Inner {
     pub fn project_modes(&self, project_id: &str) -> Result<ModesView, CoreError> {
-        let project = self
-            .projects
-            .lock()
-            .unwrap()
-            .get(project_id)
-            .ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
+        let project = self.ensure_project_available(project_id)?;
         let own = manifest::read_manifest(Path::new(&project.path))
             .ok()
             .flatten()
@@ -420,12 +415,7 @@ impl Inner {
         }
 
         if !mode.env.is_empty() {
-            let project = self
-                .projects
-                .lock()
-                .unwrap()
-                .get(project_id)
-                .ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
+            let project = self.ensure_project_available(project_id)?;
             if Path::new(&project.path).join(".env").is_file() {
                 for (k, v) in &mode.env {
                     match self.env_set(project_id, ".env", k, v) {
@@ -490,12 +480,7 @@ impl Inner {
 
     /// A profile from a project's current manifest ("Clone Profile", §158).
     pub fn profile_from_project(&self, project_id: &str, name: &str) -> Result<Profile, CoreError> {
-        let project = self
-            .projects
-            .lock()
-            .unwrap()
-            .get(project_id)
-            .ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
+        let project = self.ensure_project_available(project_id)?;
         let mut env =
             match manifest::read_manifest(Path::new(&project.path)).map_err(CoreError::EnvError)? {
                 Some(m) => m,
@@ -525,12 +510,7 @@ impl Inner {
         project_id: &str,
         profile_id: &str,
     ) -> Result<EnvironmentManifest, CoreError> {
-        let project = self
-            .projects
-            .lock()
-            .unwrap()
-            .get(project_id)
-            .ok_or_else(|| CoreError::InvalidProjectPath(project_id.to_string()))?;
+        let project = self.ensure_project_available(project_id)?;
         let profile = self
             .profiles
             .get(profile_id)

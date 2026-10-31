@@ -22,19 +22,12 @@ impl Core {
                     runtime_id,
                     args,
                 } => {
-                    let project = i
-                        .projects
-                        .lock()
-                        .unwrap()
-                        .get(&project_id)
-                        .ok_or_else(|| CoreError::InvalidProjectPath(project_id.clone()))?;
-                    let detail = i
-                        .project_detail(&project_id)
-                        .ok_or_else(|| CoreError::InvalidProjectPath(project_id.clone()))?;
+                    let project = i.ensure_project_available(&project_id)?;
+                    let detail = i.project_detail(&project_id).unwrap();
                     let resolved = detail.resolved.iter().find(|r| r.id == runtime_id);
 
                     let Some(r) = resolved.filter(|r| r.installed_version.is_some()) else {
-                        return Err(CoreError::InvalidProjectPath(format!(
+                        return Err(CoreError::ServiceError(format!(
                             "{runtime_id} is not resolved to an installed version for this project"
                         )));
                     };
@@ -49,7 +42,7 @@ impl Core {
                             .resolve(&runtime_id, r.requested_version.as_deref())
                             .map(|c| std::path::PathBuf::from(&c.path))
                             .ok_or_else(|| {
-                                CoreError::InvalidProjectPath(format!(
+                                CoreError::ServiceError(format!(
                                     "{runtime_id} custom install vanished"
                                 ))
                             })?
@@ -58,7 +51,7 @@ impl Core {
                         i.runtimes
                             .binary_path(&runtime_id, &version)
                             .ok_or_else(|| {
-                                CoreError::InvalidProjectPath(format!(
+                                CoreError::ServiceError(format!(
                                     "{runtime_id} {version} binary missing on disk"
                                 ))
                             })?

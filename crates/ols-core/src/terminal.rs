@@ -263,13 +263,7 @@ impl Inner {
         project_id: Option<&str>,
     ) -> Result<(Option<PathBuf>, Vec<(String, String)>), CoreError> {
         let project = match project_id {
-            Some(id) => Some(
-                self.projects
-                    .lock()
-                    .unwrap()
-                    .get(id)
-                    .ok_or_else(|| CoreError::InvalidProjectPath(id.to_string()))?,
-            ),
+            Some(id) => Some(self.ensure_project_available(id)?),
             None => None,
         };
 

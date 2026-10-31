@@ -91,6 +91,18 @@ impl Inner {
         Some(build_detail(&project, &self.runtimes, &settings, &custom))
     }
 
+    /// Verifies that a registered project exists in the store and that its directory is available on disk.
+    pub fn ensure_project_available(&self, project_id: &str) -> Result<Project, CoreError> {
+        let project = lock(&self.projects).get(project_id).ok_or_else(|| {
+            CoreError::failed(
+                "Project not found",
+                format!("{project_id} is not a registered project"),
+            )
+        })?;
+        crate::project::ensure_project_available(&project)?;
+        Ok(project)
+    }
+
     pub fn project_by_path(&self, path: &str) -> Option<Project> {
         let norm = |p: &str| {
             p.replace('/', "\\")
@@ -133,9 +145,6 @@ impl Inner {
     }
 
     // -------------------------------------------------------------------- domains
-
-    /// The URL a site is reachable at, on the server that actually renders it: a site
-    /// pinned to a non-default server always carries that server's port.
 
     pub(crate) fn string_list(&self, key: &str) -> Vec<String> {
         let s = self.settings.lock().unwrap();
@@ -311,7 +320,10 @@ impl Inner {
         let path_str = {
             let mut projects = self.projects.lock().unwrap();
             let p = projects.get(id).ok_or_else(|| {
-                CoreError::InvalidProjectPath(format!("{id} is not a registered project"))
+                CoreError::failed(
+                    "Project not found",
+                    format!("{id} is not a registered project"),
+                )
             })?;
             let path = p.path.clone();
             projects.remove(id)?;

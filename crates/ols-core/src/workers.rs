@@ -221,9 +221,7 @@ impl Inner {
         if w.command.trim().is_empty() {
             return Err(CoreError::ServiceError("a worker needs a command".into()));
         }
-        if self.projects.lock().unwrap().get(&w.project_id).is_none() {
-            return Err(CoreError::InvalidProjectPath(w.project_id.clone()));
-        }
+        self.ensure_project_available(&w.project_id)?;
         if w.name.trim().is_empty() {
             w.name = "worker".into();
         }
@@ -268,12 +266,7 @@ impl Inner {
                 full_args.insert(0, "-d".into());
             }
         }
-        let project = self
-            .projects
-            .lock()
-            .unwrap()
-            .get(&w.project_id)
-            .ok_or_else(|| CoreError::InvalidProjectPath(w.project_id.clone()))?;
+        let project = self.ensure_project_available(&w.project_id)?;
 
         let mut procs = self.worker_procs.0.lock().unwrap();
         let list = procs.entry(w.id.clone()).or_default();

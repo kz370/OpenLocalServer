@@ -53,12 +53,7 @@ impl Core {
                     databases: i.sqlite.lock().unwrap().list(),
                 }),
                 C::DetectSqlite { project_id } => {
-                    let project = i
-                        .projects
-                        .lock()
-                        .unwrap()
-                        .get(&project_id)
-                        .ok_or_else(|| CoreError::InvalidProjectPath(project_id.clone()))?;
+                    let project = i.ensure_project_available(&project_id)?;
                     let found =
                         crate::sqlite::detect_in_project(std::path::Path::new(&project.path));
                     let mut store = i.sqlite.lock().unwrap();
