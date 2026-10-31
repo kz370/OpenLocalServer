@@ -5,8 +5,10 @@ import {
   FileCode2,
   FileKey2,
   FolderKanban,
+  FolderX,
   GitBranch,
   Globe,
+  HardDrive,
   Image as ImageIcon,
   Layers,
   LayoutDashboard,
@@ -238,6 +240,24 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
               <h2 data-tauri-drag-region className="truncate text-base font-semibold">{title}</h2>
               {project && target.hostname && <span data-tauri-drag-region className="truncate text-sm text-muted-foreground">· {project.name}</span>}
               {project && <span data-tauri-drag-region className="hidden truncate text-xs text-muted-foreground md:inline">{project.path}</span>}
+              {project?.health?.status === 'missing' && (
+                <span
+                  className="inline-flex items-center gap-1 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive"
+                  title={`Folder missing${project.health.since ? ` since ${new Date(project.health.since * 1000).toLocaleString()}` : ''}: ${project.path}`}
+                >
+                  <FolderX className="size-3" />
+                  <span>Folder missing</span>
+                </span>
+              )}
+              {project?.health?.status === 'offline' && (
+                <span
+                  className="inline-flex items-center gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400"
+                  title={`Drive offline${project.health.since ? ` since ${new Date(project.health.since * 1000).toLocaleString()}` : ''}: ${project.path}`}
+                >
+                  <HardDrive className="size-3" />
+                  <span>Drive offline</span>
+                </span>
+              )}
             </div>
             <button onClick={onClose} className="rounded-md p-1 text-muted-foreground hover:bg-accent shrink-0 cursor-pointer" aria-label="Close">
               <X className="size-4" />
@@ -408,6 +428,24 @@ function ProjectOverview({ detail, onRun }: { detail: ProjectDetail; onRun: (c: 
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-1.5">
         <Badge>{detail.detection.framework.replace(/_/g, ' ')}</Badge>
+        {detail.project.health?.status === 'missing' && (
+          <span
+            className="inline-flex items-center gap-1 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive"
+            title={`Folder missing${detail.project.health.since ? ` since ${new Date(detail.project.health.since * 1000).toLocaleString()}` : ''}: ${detail.project.path}`}
+          >
+            <FolderX className="size-3" />
+            <span>Folder missing</span>
+          </span>
+        )}
+        {detail.project.health?.status === 'offline' && (
+          <span
+            className="inline-flex items-center gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400"
+            title={`Drive offline${detail.project.health.since ? ` since ${new Date(detail.project.health.since * 1000).toLocaleString()}` : ''}: ${detail.project.path}`}
+          >
+            <HardDrive className="size-3" />
+            <span>Drive offline</span>
+          </span>
+        )}
         {detail.detection.markers.map((m) => (
           <Badge key={m} variant="secondary">
             {m}

@@ -1,5 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Activity, Check, CircleOff, Code2, Copy, Download, ExternalLink, EyeOff, FolderOpen, FolderPlus, FolderSearch, Globe, Image as ImageIcon, KeyRound, List, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2, X, Zap } from 'lucide-react'
+import { Activity, Check, CircleOff, Code2, Copy, Download, ExternalLink, EyeOff, FolderOpen, FolderPlus, FolderSearch, FolderX, Globe, HardDrive, Image as ImageIcon, KeyRound, List, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2, X, Zap } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
@@ -946,6 +946,24 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                             <button className="cursor-pointer truncate text-left font-medium leading-6 hover:underline" onClick={openSettings} title={d?.hostname ?? p?.name}>
                               {d?.hostname ?? p?.name}
                             </button>
+                            {p?.health?.status === 'missing' && (
+                              <span
+                                className="inline-flex items-center gap-1 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive"
+                                title={`Folder missing${p.health.since ? ` since ${new Date(p.health.since * 1000).toLocaleString()}` : ''}: ${p.path}`}
+                              >
+                                <FolderX className="size-3" />
+                                <span>Folder missing</span>
+                              </span>
+                            )}
+                            {p?.health?.status === 'offline' && (
+                              <span
+                                className="inline-flex items-center gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400"
+                                title={`Drive offline${p.health.since ? ` since ${new Date(p.health.since * 1000).toLocaleString()}` : ''}: ${p.path}`}
+                              >
+                                <HardDrive className="size-3" />
+                                <span>Drive offline</span>
+                              </span>
+                            )}
                             {r.extraDomains.map((extra) => (
                               <button
                                 key={extra.hostname}

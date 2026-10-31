@@ -122,11 +122,17 @@ export interface ResolvedRuntime {
   bin_dir: string | null
 }
 
+export type ProjectHealth =
+  | { status: 'healthy' }
+  | { status: 'missing'; since: number }
+  | { status: 'offline'; since: number }
+
 export interface Project {
   id: string
   name: string
   path: string
   icon_image?: string | null
+  health?: ProjectHealth
 }
 
 /**

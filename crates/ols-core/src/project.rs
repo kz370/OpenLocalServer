@@ -1,7 +1,7 @@
 //! Project Manager (§40 — Stage 4). A project is a folder OLS knows about, plus
 //! whatever OLS can read from it. Registering a project never writes into it.
 
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf, Prefix};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -15,6 +15,20 @@ use crate::resolver::{self, ResolutionSource, ResolvedRuntime};
 use crate::runtime::RuntimeManager;
 use crate::settings::SettingsService;
 
+/// Health status of a registered project folder.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum ProjectHealth {
+    #[default]
+    Healthy,
+    Missing {
+        since: u64,
+    },
+    Offline {
+        since: u64,
+    },
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Project {
     pub id: String,
@@ -23,6 +37,56 @@ pub struct Project {
     /// Data URL (`data:image/webp;base64,...`) when `ols_site_icon.webp` exists in `path`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon_image: Option<String>,
+    #[serde(default)]
+    pub health: ProjectHealth,
+}
+
+/// Finds the root volume or mount point of a path.
+/// On Windows, detects disk roots (e.g. `C:\`) and UNC shares (e.g. `\\server\share`).
+/// On Unix, detects the root directory (`/`).
+pub fn volume_root(path: &Path) -> Option<PathBuf> {
+    let mut components = path.components();
+    match components.next()? {
+        Component::Prefix(prefix_component) => match prefix_component.kind() {
+            Prefix::VerbatimDisk(disk) | Prefix::Disk(disk) => Some(PathBuf::from(format!(
+                r"{}:\",
+                disk.to_ascii_uppercase() as char
+            ))),
+            Prefix::VerbatimUNC(server, share) | Prefix::UNC(server, share) => {
+                let server_str = server.to_str()?;
+                let share_str = share.to_str()?;
+                Some(PathBuf::from(format!(r"\\{}\{}", server_str, share_str)))
+            }
+            _ => Some(PathBuf::from(prefix_component.as_os_str())),
+        },
+        Component::RootDir => Some(PathBuf::from("/")),
+        _ => None,
+    }
+}
+
+/// Evaluates the current health of a project path against its last known health.
+/// Preserves `since` timestamps across checks as long as the status does not change.
+pub fn evaluate_health(path: &Path, current: &ProjectHealth, now: u64) -> ProjectHealth {
+    if path.is_dir() {
+        return ProjectHealth::Healthy;
+    }
+
+    let is_offline = match volume_root(path) {
+        Some(root) => !root.exists(),
+        None => false,
+    };
+
+    if is_offline {
+        match current {
+            ProjectHealth::Offline { since } => ProjectHealth::Offline { since: *since },
+            _ => ProjectHealth::Offline { since: now },
+        }
+    } else {
+        match current {
+            ProjectHealth::Missing { since } => ProjectHealth::Missing { since: *since },
+            _ => ProjectHealth::Missing { since: now },
+        }
+    }
 }
 
 /// Verifies that a registered project's directory exists on disk.
@@ -73,11 +137,27 @@ pub struct ProjectStore {
 
 impl ProjectStore {
     pub fn load(paths: &AppPaths) -> Result<Self, CoreError> {
-        let projects = crate::db::load_docs(paths, "projects")?;
-        Ok(Self {
+        let mut projects: Vec<Project> = crate::db::load_docs(paths, "projects")?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let mut changed = false;
+        for p in &mut projects {
+            let next = evaluate_health(Path::new(&p.path), &p.health, now);
+            if next != p.health {
+                p.health = next;
+                changed = true;
+            }
+        }
+        let store = Self {
             paths: paths.clone(),
             projects,
-        })
+        };
+        if changed {
+            let _ = store.persist();
+        }
+        Ok(store)
     }
 
     pub fn list(&self) -> Vec<Project> {
@@ -86,6 +166,39 @@ impl ProjectStore {
 
     pub fn get(&self, id: &str) -> Option<Project> {
         self.projects.iter().find(|p| p.id == id).cloned()
+    }
+
+    /// Evaluates the health of all registered projects.
+    /// Returns true if any project health status transitioned.
+    pub fn sweep_health(&mut self) -> bool {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let mut changed = false;
+        for p in &mut self.projects {
+            let next = evaluate_health(Path::new(&p.path), &p.health, now);
+            if next != p.health {
+                p.health = next;
+                changed = true;
+            }
+        }
+        if changed {
+            let _ = self.persist();
+        }
+        changed
+    }
+
+    /// Updates the health status of a specific project.
+    pub fn update_health(&mut self, id: &str, health: ProjectHealth) -> bool {
+        if let Some(p) = self.projects.iter_mut().find(|p| p.id == id) {
+            if p.health != health {
+                p.health = health;
+                let _ = self.persist();
+                return true;
+            }
+        }
+        false
     }
 
     /// Registers an existing folder. Idempotent — registering the same path twice
@@ -119,6 +232,7 @@ impl ProjectStore {
             name,
             path: canonical_str,
             icon_image: None,
+            health: ProjectHealth::Healthy,
         };
         self.projects.push(project.clone());
         self.persist()?;
@@ -408,5 +522,54 @@ mod tests {
             diag.fix.as_deref(),
             Some("Locate the folder again, or remove the project from OLS.")
         );
+    }
+
+    #[test]
+    fn volume_root_detects_disk_and_unc_roots() {
+        let path = Path::new(r"C:\Users\tester\my_project");
+        let root = volume_root(path);
+        assert_eq!(root, Some(PathBuf::from(r"C:\")));
+
+        let unc = Path::new(r"\\myserver\myshare\folder\sub");
+        let unc_root = volume_root(unc);
+        assert_eq!(unc_root, Some(PathBuf::from(r"\\myserver\myshare")));
+    }
+
+    #[test]
+    fn evaluate_health_detects_healthy_missing_and_preserves_timestamp() {
+        let home = crate::test_support::isolated_home();
+        let project_dir = home.paths.root().join("app_health");
+        std::fs::create_dir_all(&project_dir).unwrap();
+
+        // 1. Existing folder is Healthy
+        let h1 = evaluate_health(&project_dir, &ProjectHealth::Healthy, 1000);
+        assert_eq!(h1, ProjectHealth::Healthy);
+
+        // 2. Deleted folder on existing disk becomes Missing with timestamp
+        std::fs::remove_dir_all(&project_dir).unwrap();
+        let h2 = evaluate_health(&project_dir, &ProjectHealth::Healthy, 2000);
+        assert_eq!(h2, ProjectHealth::Missing { since: 2000 });
+
+        // 3. Repeated evaluation preserves the original timestamp
+        let h3 = evaluate_health(&project_dir, &h2, 3000);
+        assert_eq!(h3, ProjectHealth::Missing { since: 2000 });
+
+        // 4. Restored folder becomes Healthy again
+        std::fs::create_dir_all(&project_dir).unwrap();
+        let h4 = evaluate_health(&project_dir, &h3, 4000);
+        assert_eq!(h4, ProjectHealth::Healthy);
+    }
+
+    #[test]
+    fn evaluate_health_detects_offline_volumes() {
+        // Find an unmounted drive letter on Windows (or test relative path if non-Windows)
+        let unmounted = Path::new(r"Z:\nonexistent_drive_ols_test\my_app");
+        if volume_root(unmounted).map(|r| !r.exists()).unwrap_or(false) {
+            let h1 = evaluate_health(unmounted, &ProjectHealth::Healthy, 5000);
+            assert_eq!(h1, ProjectHealth::Offline { since: 5000 });
+
+            let h2 = evaluate_health(unmounted, &h1, 6000);
+            assert_eq!(h2, ProjectHealth::Offline { since: 5000 });
+        }
     }
 }

@@ -47,16 +47,27 @@ impl Inner {
                     }
                 }
             }
+            let mut tick_count: u32 = 0;
             loop {
                 match events_rx.recv_timeout(Duration::from_millis(500)) {
                     Ok(_) => {
+                        let _ = lock(&core.projects).sweep_health();
                         if let Err(error) = core.sync_auto_domains() {
                             tracing::warn!(%error, "automatic domains could not be synced after a project change");
                         }
                         let _ = core.project_events.send(());
                     }
                     Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
-                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                        tick_count = tick_count.wrapping_add(1);
+                        // Every ~3 seconds (6 * 500ms), sweep health to detect unmounted drives / external deletions
+                        if tick_count % 6 == 0 {
+                            let health_changed = lock(&core.projects).sweep_health();
+                            if health_changed {
+                                let _ = core.project_events.send(());
+                            }
+                        }
+                    }
                 }
                 let desired: std::collections::HashSet<PathBuf> = core
                     .string_list(PROJECT_ROOTS)
@@ -93,12 +104,25 @@ impl Inner {
 
     /// Verifies that a registered project exists in the store and that its directory is available on disk.
     pub fn ensure_project_available(&self, project_id: &str) -> Result<Project, CoreError> {
-        let project = lock(&self.projects).get(project_id).ok_or_else(|| {
+        let mut project = lock(&self.projects).get(project_id).ok_or_else(|| {
             CoreError::failed(
                 "Project not found",
                 format!("{project_id} is not a registered project"),
             )
         })?;
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let next_health =
+            crate::project::evaluate_health(Path::new(&project.path), &project.health, now);
+        if next_health != project.health {
+            project.health = next_health;
+            lock(&self.projects).update_health(project_id, project.health.clone());
+            let _ = self.project_events.send(());
+        }
+
         crate::project::ensure_project_available(&project)?;
         Ok(project)
     }
