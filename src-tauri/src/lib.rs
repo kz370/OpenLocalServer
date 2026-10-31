@@ -34,9 +34,10 @@ async fn run_command(
             cause: e.to_string(),
             fix: None,
         })?;
-    // Any command can start or stop things, so the tray, taskbar and in-app mark
-    // are refreshed after every one of them rather than only the tray menu ones.
-    refresh_tray(&app, &state.inner().clone());
+    // Any command can start or stop things, so the tray, taskbar, in-app mark
+    // and live tray tooltip are refreshed after every command.
+    sync_status_icon(&app, &state.inner().clone());
+    sync_tray_tooltip(&app, &state.inner().clone());
     dispatched
 }
 
@@ -125,6 +126,7 @@ const WINDOW_ICON_DARK_STOPPED: &[u8] = include_bytes!("../icons/dark/red/128x12
 /// Both halves are cached: a theme flip repaints without touching the service
 /// state, and a service state change repaints without touching the theme.
 static ICON_SHOWS: Mutex<Option<(bool, bool)>> = Mutex::new(None);
+static TOOLTIP_SHOWS: Mutex<Option<String>> = Mutex::new(None);
 
 /// Theme the UI last reported, so a status repaint lands on the right colourway.
 /// The UI owns the theme (it is a UI-local setting with no core counterpart), so
@@ -320,6 +322,8 @@ fn set_stopping_tray(app: &AppHandle) {
     if let Some(tray) = app.tray_by_id("main") {
         let _ = tray.set_tooltip(Some("OpenLocalServer is stopping"));
     }
+    *TOOLTIP_SHOWS.lock().unwrap_or_else(|e| e.into_inner()) =
+        Some("OpenLocalServer is stopping".into());
 }
 
 /// Stops everything OpenLocalServer started and waits before allowing the app to exit.
@@ -627,8 +631,15 @@ fn sync_tray_tooltip(app: &AppHandle, core: &Core) {
     if SHUTDOWN_IN_PROGRESS.load(Ordering::SeqCst) {
         return;
     }
+    let tip = tray_tooltip(core);
+    let mut last = TOOLTIP_SHOWS.lock().unwrap_or_else(|e| e.into_inner());
+    if last.as_deref() == Some(&tip) {
+        return;
+    }
     if let Some(tray) = app.tray_by_id("main") {
-        let _ = tray.set_tooltip(Some(tray_tooltip(core).as_str()));
+        if tray.set_tooltip(Some(tip.as_str())).is_ok() {
+            *last = Some(tip);
+        }
     }
 }
 
@@ -637,14 +648,9 @@ fn refresh_tray(app: &AppHandle, core: &Core) {
         if let Ok(menu) = tray_menu(app, core) {
             let _ = tray.set_menu(Some(menu));
         }
-        // The tooltip counts what is up, so it is refreshed with the menu that
-        // reports the same thing. It is not refreshed during shutdown, or it would
-        // put the running count back over the "stopping" line.
-        if !SHUTDOWN_IN_PROGRESS.load(Ordering::SeqCst) {
-            let _ = tray.set_tooltip(Some(tray_tooltip(core).as_str()));
-        }
     }
     sync_status_icon(app, core);
+    sync_tray_tooltip(app, core);
 }
 
 fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
@@ -866,7 +872,8 @@ pub fn run() {
             if let Some(core) = app.try_state::<Core>().map(|c| c.inner().clone()) {
                 let handle = app.clone();
                 tauri::async_runtime::spawn(async move {
-                    refresh_tray(&handle, &core);
+                    sync_status_icon(&handle, &core);
+                    sync_tray_tooltip(&handle, &core);
                 });
             }
         }))
@@ -922,7 +929,8 @@ pub fn run() {
                     let _ = process_handle.emit("process-event", &event);
                     // A service that dies on its own changes what the tray and
                     // taskbar mark should say.
-                    refresh_tray(&process_handle, &process_core);
+                    sync_status_icon(&process_handle, &process_core);
+                    sync_tray_tooltip(&process_handle, &process_core);
                     // §119: tell the user when something they rely on dies.
                     if let ProcessEvent::StateChanged {
                         id,
@@ -992,7 +1000,8 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 while project_events.recv().await.is_ok() {
                     let _ = projects_handle.emit("projects-changed", ());
-                    refresh_tray(&projects_handle, &projects_core);
+                    sync_status_icon(&projects_handle, &projects_core);
+                    sync_tray_tooltip(&projects_handle, &projects_core);
                 }
             });
 
@@ -1085,7 +1094,8 @@ pub fn run() {
             let auto_fix_app = app.handle().clone();
             std::thread::spawn(move || {
                 autostart_core.inner().run_autostart();
-                refresh_tray(&auto_fix_app, &autostart_core);
+                sync_status_icon(&auto_fix_app, &autostart_core);
+                sync_tray_tooltip(&auto_fix_app, &autostart_core);
                 loop {
                     for result in autostart_core.auto_fix_diagnostics() {
                         if result.ok {
