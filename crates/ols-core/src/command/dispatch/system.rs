@@ -313,6 +313,11 @@ impl Core {
                     i.remove_project(&id)?;
                     Ok(R::Ok)
                 }
+                C::RelocateProject { id, path } => {
+                    tracing::info!(command = "relocate_project", id = %id, path = %path);
+                    let project = i.relocate_project(&id, &path)?;
+                    Ok(R::Project { project })
+                }
                 C::DeleteProject { id } => {
                     i.delete_project(&id)?;
                     Ok(R::Ok)

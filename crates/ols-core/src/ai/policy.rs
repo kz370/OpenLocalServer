@@ -155,6 +155,7 @@ pub fn allowed(cmd: &CoreCommand) -> bool {
             | C::RenameDomain { .. }
             | C::SyncAutoDomains
             | C::RegisterProject { .. }
+            | C::RelocateProject { .. }
             | C::RemoveProject { .. }
             | C::DeleteProject { .. }
             // Site bundles

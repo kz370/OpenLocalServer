@@ -73,6 +73,10 @@ pub enum CoreCommand {
     RemoveProject {
         id: String,
     },
+    RelocateProject {
+        id: String,
+        path: String,
+    },
     DeleteProject {
         id: String,
     },

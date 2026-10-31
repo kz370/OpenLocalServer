@@ -562,14 +562,37 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     })
   }
 
+  async function handleRelocateProject(projectId: string) {
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: 'Locate project folder',
+    })
+    if (!selected || typeof selected !== 'string') return
+    await run(`relocate:${projectId}`, async () => {
+      await web.relocateProject(projectId, selected)
+    })
+  }
+
   function menuFor(r: Row): MenuItem[] {
     const { site: d, project: p } = r
     const items: MenuItem[] = []
     const isProxy = d?.kind === 'proxy' || d?.group === 'proxy'
     const folder = isProxy ? (p?.path ?? null) : (d?.folder ?? p?.path)
-    if (folder) items.push({ label: 'Open project folder', icon: <FolderOpen />, hint: folder, onSelect: () => void run('open', () => runCommand({ type: 'open_path', path: folder })) })
-    if (folder) items.push({ label: 'Open folder in code editor', icon: <Code2 />, hint: folder, onSelect: () => void run('code', () => runCommand({ type: 'open_in_editor', path: folder })) })
-    if (p) items.push({ label: 'Terminal', icon: <SquareTerminal />, onSelect: () => setTarget({ hostname: d?.hostname ?? null, projectId: p.id, tab: 'terminal' }) })
+    const isHealthy = !p?.health || p.health.status === 'healthy'
+
+    if (p && !isHealthy) {
+      items.push({
+        label: 'Locate project folder…',
+        icon: <FolderSearch />,
+        hint: `Re-point ${p.name} to its new folder location`,
+        onSelect: () => void handleRelocateProject(p.id),
+      })
+    }
+
+    if (folder) items.push({ label: 'Open project folder', icon: <FolderOpen />, hint: isHealthy ? folder : 'Project folder is not accessible', disabled: !isHealthy, onSelect: () => void run('open', () => runCommand({ type: 'open_path', path: folder })) })
+    if (folder) items.push({ label: 'Open folder in code editor', icon: <Code2 />, hint: isHealthy ? folder : 'Project folder is not accessible', disabled: !isHealthy, onSelect: () => void run('code', () => runCommand({ type: 'open_in_editor', path: folder })) })
+    if (p) items.push({ label: 'Terminal', icon: <SquareTerminal />, disabled: !isHealthy, onSelect: () => setTarget({ hostname: d?.hostname ?? null, projectId: p.id, tab: 'terminal' }) })
     // WordPress gets a passwordless admin entry. The backend answers with a link that works
     // once, from this machine, for a few minutes; no password is read, asked for or stored.
     const wp = p ? wpProjects.find((w) => w.project_id === p.id) : undefined
@@ -963,6 +986,20 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                                 <HardDrive className="size-3" />
                                 <span>Drive offline</span>
                               </span>
+                            )}
+                            {p?.health && p.health.status !== 'healthy' && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  void handleRelocateProject(p.id)
+                                }}
+                                className="inline-flex cursor-pointer items-center gap-1 rounded border border-border/80 bg-background px-1.5 py-0.5 text-[11px] font-medium text-foreground hover:bg-accent transition-colors"
+                                title="Point this project to its new directory location"
+                              >
+                                <FolderSearch className="size-3" />
+                                <span>Locate</span>
+                              </button>
                             )}
                             {r.extraDomains.map((extra) => (
                               <button

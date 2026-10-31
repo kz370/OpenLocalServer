@@ -1,10 +1,12 @@
 import { listen } from '@tauri-apps/api/event'
+import { open } from '@tauri-apps/plugin-dialog'
 import {
   Bug,
   Camera,
   FileCode2,
   FileKey2,
   FolderKanban,
+  FolderSearch,
   FolderX,
   GitBranch,
   Globe,
@@ -19,6 +21,7 @@ import {
   ServerCog,
   Settings2,
   SquareTerminal,
+  Trash2,
   Wrench,
   X,
   Zap,
@@ -26,6 +29,7 @@ import {
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 
 import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
+import { confirmAction } from '@/lib/confirm'
 import { ProjectShortcuts } from '@/components/OpenWithMenu'
 import { ProjectTools, TOOL_TABS, type ToolTab } from '@/components/ProjectTools'
 import { SaveButton } from '@/components/SaveButton'
@@ -306,6 +310,66 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
           </nav>
 
           <div className="flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-5">
+            {project?.health && project.health.status !== 'healthy' && (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-destructive/40 bg-destructive/10 p-4">
+                <div className="flex items-start sm:items-center gap-3">
+                  {project.health.status === 'offline' ? (
+                    <HardDrive className="size-5 shrink-0 text-amber-500 mt-0.5 sm:mt-0" />
+                  ) : (
+                    <FolderX className="size-5 shrink-0 text-destructive mt-0.5 sm:mt-0" />
+                  )}
+                  <div>
+                    <h4 className="text-sm font-semibold text-foreground">
+                      {project.health.status === 'offline' ? 'Drive or network share offline' : 'Project folder missing'}
+                    </h4>
+                    <p className="text-xs text-muted-foreground">
+                      The folder at <span className="font-mono text-foreground">{project.path}</span> cannot be reached on disk.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={async () => {
+                      const selected = await open({
+                        directory: true,
+                        multiple: false,
+                        title: 'Locate project folder',
+                      })
+                      if (!selected || typeof selected !== 'string') return
+                      await web.relocateProject(project.id, selected)
+                      setDetailTick((n) => n + 1)
+                    }}
+                  >
+                    <FolderSearch className="size-3.5 mr-1" />
+                    Locate folder…
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-destructive hover:bg-destructive/10"
+                    onClick={async () => {
+                      const ok = await confirmAction(
+                        `Remove "${project.name}" and its configuration from OpenLocalServer?`,
+                        `Remove from OLS`,
+                        'Remove',
+                      )
+                      if (!ok) return
+                      if (target.hostname) {
+                        await web.deleteSite(target.hostname)
+                      } else {
+                        await web.deleteProject(project.id)
+                      }
+                      onClose()
+                    }}
+                  >
+                    <Trash2 className="size-3.5 mr-1" />
+                    Remove from OLS
+                  </Button>
+                </div>
+              </div>
+            )}
             <ErrorCard error={error} onDismiss={() => setError(null)} />
             <ErrorCard error={domainError} onDismiss={() => setDomainError(null)} />
             <ErrorCard error={detailError} onDismiss={() => setDetailError(null)} />

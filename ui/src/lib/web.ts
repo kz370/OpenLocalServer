@@ -198,6 +198,19 @@ export function useWeb() {
     }
   }
 
+  /** Relocates a project to a new folder on disk and updates associated sites. */
+  async function relocateProject(id: string, newPath: string) {
+    try {
+      const res = await runCommand({ type: 'relocate_project', id, path: newPath })
+      await Promise.all([refresh(), refreshProjects()])
+      await applyTracked()
+      return res
+    } catch (e) {
+      await Promise.all([refresh().catch(() => undefined), refreshProjects().catch(() => undefined)])
+      throw e
+    }
+  }
+
   /** Backwards compatibility alias for hideProjectFromList */
   const removeProjectFromList = hideProjectFromList
 
@@ -280,6 +293,7 @@ export function useWeb() {
     deleteSite,
     deleteSites,
     deleteProject,
+    relocateProject,
     hideSite,
     hideSites,
     hideProjectFromList,

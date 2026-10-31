@@ -123,7 +123,7 @@ pub struct ProjectDetail {
 /// on it — dropping the prefix alone leaves `UNC\server\share\path`, which names
 /// nothing. So the UNC form is rewritten rather than stripped, and a project on a
 /// share is stored and displayed as a path that can be opened again.
-fn strip_verbatim_prefix(path: &str) -> String {
+pub fn strip_verbatim_prefix(path: &str) -> String {
     if let Some(unc) = path.strip_prefix(r"\\?\UNC\") {
         return format!(r"\\{unc}");
     }
@@ -247,6 +247,20 @@ impl ProjectStore {
             .find(|p| p.id == id)
             .ok_or_else(|| CoreError::InvalidProjectPath(id.to_string()))?;
         p.name = name.to_string();
+        let out = p.clone();
+        self.persist()?;
+        Ok(out)
+    }
+
+    /// Relocates a registered project to a new directory path on disk.
+    pub fn relocate(&mut self, id: &str, new_path: &str) -> Result<Project, CoreError> {
+        let p = self
+            .projects
+            .iter_mut()
+            .find(|p| p.id == id)
+            .ok_or_else(|| CoreError::InvalidProjectPath(id.to_string()))?;
+        p.path = new_path.to_string();
+        p.health = ProjectHealth::Healthy;
         let out = p.clone();
         self.persist()?;
         Ok(out)
@@ -571,5 +585,40 @@ mod tests {
             let h2 = evaluate_health(unmounted, &h1, 6000);
             assert_eq!(h2, ProjectHealth::Offline { since: 5000 });
         }
+    }
+
+    #[test]
+    fn relocate_updates_path_and_resets_health_to_healthy() {
+        let home = crate::test_support::isolated_home();
+        let project_dir = home.paths.root().join("original_app");
+        std::fs::create_dir_all(&project_dir).unwrap();
+
+        let mut store = ProjectStore::load(&home.paths).unwrap();
+        let project = store.register(project_dir.to_str().unwrap()).unwrap();
+
+        // Mark it as missing
+        store.update_health(&project.id, ProjectHealth::Missing { since: 12345 });
+        assert_eq!(
+            store.get(&project.id).unwrap().health,
+            ProjectHealth::Missing { since: 12345 }
+        );
+
+        let new_dir = home.paths.root().join("relocated_app");
+        std::fs::create_dir_all(&new_dir).unwrap();
+        let relocated = store
+            .relocate(&project.id, new_dir.to_str().unwrap())
+            .unwrap();
+        assert_eq!(relocated.path, new_dir.to_str().unwrap());
+        assert_eq!(relocated.health, ProjectHealth::Healthy);
+
+        let reloaded = ProjectStore::load(&home.paths).unwrap();
+        assert_eq!(
+            reloaded.get(&project.id).unwrap().path,
+            new_dir.to_str().unwrap()
+        );
+        assert_eq!(
+            reloaded.get(&project.id).unwrap().health,
+            ProjectHealth::Healthy
+        );
     }
 }

@@ -360,6 +360,57 @@ impl Inner {
         }
         Ok(())
     }
+
+    /// Relocates a registered project to a new directory path on disk, updating all associated domain roots.
+    pub fn relocate_project(&self, id: &str, new_path: &str) -> Result<Project, CoreError> {
+        let path_buf = PathBuf::from(new_path);
+        if !path_buf.is_dir() {
+            return Err(CoreError::InvalidProjectPath(new_path.to_string()));
+        }
+        let canonical = std::fs::canonicalize(&path_buf).unwrap_or(path_buf.clone());
+        let canonical_str = crate::project::strip_verbatim_prefix(&canonical.display().to_string());
+
+        let (project, old_path) = {
+            let mut projects = lock(&self.projects);
+            let old_p = projects.get(id).ok_or_else(|| {
+                CoreError::failed(
+                    "Project not found",
+                    format!("{id} is not a registered project"),
+                )
+            })?;
+            let old_path = old_p.path.clone();
+            let updated = projects.relocate(id, &canonical_str)?;
+            (updated, old_path)
+        };
+
+        // Clear any skip on the new path
+        let _ = self.clear_project_skip(&canonical_str);
+
+        // Update domain roots for any domains tied to this project
+        {
+            let mut domains = lock(&self.domains);
+            let list = domains.list();
+            for mut domain in list {
+                if domain.project_id.as_deref() == Some(id) {
+                    if let Ok(rel) = Path::new(&domain.root).strip_prefix(Path::new(&old_path)) {
+                        let updated_root = Path::new(&canonical_str).join(rel);
+                        domain.root = updated_root.display().to_string();
+                    } else if domain.root.is_empty() || domain.root == old_path {
+                        domain.root = canonical_str.clone();
+                    }
+                    let _ = domains.update(domain);
+                }
+            }
+        }
+
+        let _ = self.project_events.send(());
+
+        if let Err(e) = self.sync_auto_domains() {
+            tracing::warn!(error = %e, "automatic domains could not be synced after relocate");
+        }
+
+        Ok(project)
+    }
 }
 
 fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
