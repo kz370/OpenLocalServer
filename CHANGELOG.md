@@ -15,10 +15,13 @@ Feature release. Full notes: [`release-notes/v2.5.0.md`](./release-notes/v2.5.0.
 - **Intelligent Disconnected Drive Detection**: Detects when an external drive (e.g. `D:\`), USB drive, or network share is offline, accurately reporting *"The drive for <name> is disconnected"* rather than claiming the project was deleted.
 - **Physical Path Deduplication**: Cross-references sites and projects by their real disk path, emitting exactly one unified alert (e.g. `chatbot-ta.local (project chatbot-TA)`) instead of duplicate Error + Warning rows.
 - **"Folder not found" Sites Tab**: Sites with missing directories or offline external drives are isolated into a dedicated filter tab (`Folder not found`), keeping the Enabled tab strictly operational and providing a 1-click **Locate** button to re-point moved folders.
+- **Multi-Domain Project Grouping**: Multiple hostnames sharing a physical project directory are unified into a single project row with primary domain focus and interactive pill badges with status dots for extra domains.
 - **Right-Click Actions Menu**: Right-clicking any site row opens the cursor-positioned actions menu, sharing a single unified menu definition with the row's Actions button.
 - **Smart Viewport Clamping & Scrolling**: Floating menus automatically detect screen bounds, flip upwards/leftwards when near edges, clear the 36px titlebar, and scroll smoothly inside compact windows without closing on mouse wheel scroll.
-- **Live System Tray Tooltip**: The Windows notification tray tooltip (`OpenLocalServer — X of Y running`) updates dynamically in real-time as sites and services start, stop, or change health.
+- **Token-Based Appearance Customization & Themes**: Dedicated `Settings → Appearance` tab with 4 curated presets (Default, High Contrast, Midnight Slate, Warm Amber), WCAG 2.1 contrast math with auto-readable foregrounds, customizable accent color with swatch/hex picker, monochrome vs colorful sidebar icons, and solid vs ambient gradient backgrounds with 360° angle sliders.
 - **Vibrant Navigation & Aurora Themes**: Redesigned sidebar and settings navigation with radiant multi-color SVG gradient icons, active neon indicator bars, and flowing Dark Aurora / Light Aurora ambient backgrounds.
+- **Dashboard Services Card Grouping**: Built-in services displayed in a clean, consistent order with color-coded action buttons (start emerald, stop destructive, restart amber, reload sky, logs violet) and flattened unavailable actions to prevent layout shifting.
+- **Live System Tray Tooltip**: The Windows notification tray tooltip (`OpenLocalServer — X of Y running`) updates dynamically in real-time as sites and services start, stop, or change health, with matching tray/taskbar status mark indicators.
 
 ## [2.4.0] — 2026-10-25
 

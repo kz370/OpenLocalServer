@@ -1,5 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Book, Copy, ExternalLink, Eye, EyeOff, FolderPlus, FolderSearch, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react'
+import { Book, Check, Copy, ExternalLink, Eye, EyeOff, FolderPlus, FolderSearch, RefreshCw, Search, ShieldCheck, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
@@ -93,6 +93,8 @@ export function SettingsPage() {
   })
   const [manual, setManual] = useState<string | null>(null)
   const [manualTab, setManualTab] = useState<'manual' | 'notes'>('manual')
+  const [manualSearch, setManualSearch] = useState('')
+  const [manualCopied, setManualCopied] = useState(false)
   const [mcpEnabled, setMcpEnabled] = useState(false)
   const [mcpToken, setMcpToken] = useState('')
   const [mcpTokenVisible, setMcpTokenVisible] = useState(false)
@@ -121,6 +123,48 @@ export function SettingsPage() {
     }
     return out.join('\n')
   }, [])
+
+  const activeManualMarkdown = manualTab === 'notes' ? releaseNotesFiltered : (manual ?? '')
+  const displayedManualMarkdown = useMemo(() => {
+    if (!manualSearch.trim()) return activeManualMarkdown
+    const q = manualSearch.toLowerCase()
+    const lines = activeManualMarkdown.split('\n')
+    const matched: string[] = []
+    let currentHeading = ''
+    let inMatchingBlock = false
+    for (const line of lines) {
+      if (line.startsWith('#')) {
+        currentHeading = line
+        inMatchingBlock = line.toLowerCase().includes(q)
+        if (inMatchingBlock) {
+          matched.push(line)
+        }
+        continue
+      }
+      if (line.toLowerCase().includes(q)) {
+        if (currentHeading && !matched.includes(currentHeading)) {
+          matched.push(currentHeading)
+        }
+        matched.push(line)
+      } else if (inMatchingBlock) {
+        matched.push(line)
+      }
+    }
+    return matched.length > 0
+      ? matched.join('\n')
+      : `*No content matches "${manualSearch}". Try searching for another term.*`
+  }, [activeManualMarkdown, manualSearch])
+
+  async function copyManualContent() {
+    try {
+      await navigator.clipboard.writeText(activeManualMarkdown)
+      setManualCopied(true)
+      setTimeout(() => setManualCopied(false), 2000)
+    } catch {
+      // fallback
+    }
+  }
+
   const action = useAction()
   const { busy, error, setError, run } = action
 
@@ -550,38 +594,84 @@ export function SettingsPage() {
           {section === 'manual' && (
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm">User Manual</CardTitle>
-                <CardDescription>
-                  Open Local Server user manual and release notes. Read how sites, databases, services,
-                  tunnels, runtimes and profiles work before you change anything.
-                </CardDescription>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <div>
+                    <CardTitle className="text-sm">User Manual</CardTitle>
+                    <CardDescription>
+                      Open Local Server user manual and release notes. Read how sites, databases, services,
+                      tunnels, runtimes, and profiles work before changing settings.
+                    </CardDescription>
+                  </div>
+                  <Badge variant="outline" className="text-xs px-2.5 py-0.5 w-fit border-border/80">
+                    v{version || '2.5.0'}
+                  </Badge>
+                </div>
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
-                <div className="flex gap-2 border-b border-border pb-1">
-                  <button
-                    className={cn(
-                      'flex flex-shrink-0 items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                      manualTab === 'manual' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
-                    )}
-                    onClick={() => setManualTab('manual')}
-                  >
-                    <Book className="size-4 shrink-0" /> User Manual
-                  </button>
-                  <button
-                    className={cn(
-                      'flex flex-shrink-0 items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                      manualTab === 'notes' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
-                    )}
-                    onClick={() => setManualTab('notes')}
-                  >
-                    <Copy className="size-4 shrink-0" /> {`Release Notes (v${version})`}
-                  </button>
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2">
+                  <div className="flex gap-2">
+                    <button
+                      className={cn(
+                        'flex flex-shrink-0 items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors cursor-pointer',
+                        manualTab === 'manual' ? 'bg-accent text-accent-foreground shadow-xs' : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
+                      )}
+                      onClick={() => setManualTab('manual')}
+                    >
+                      <Book className="size-4 shrink-0" /> User Manual
+                    </button>
+                    <button
+                      className={cn(
+                        'flex flex-shrink-0 items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors cursor-pointer',
+                        manualTab === 'notes' ? 'bg-accent text-accent-foreground shadow-xs' : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
+                      )}
+                      onClick={() => setManualTab('notes')}
+                    >
+                      <Copy className="size-4 shrink-0" /> {`Release Notes (v${version || '2.5.0'})`}
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <div className="relative flex-1 sm:w-64">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
+                      <Input
+                        value={manualSearch}
+                        onChange={(e) => setManualSearch(e.target.value)}
+                        placeholder={`Search ${manualTab === 'notes' ? 'release notes' : 'manual'}…`}
+                        className="h-8 pl-8 pr-7 text-xs"
+                      />
+                      {manualSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setManualSearch('')}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+                        >
+                          <X className="size-3.5" />
+                        </button>
+                      )}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void copyManualContent()}
+                      className="h-8 text-xs shrink-0 cursor-pointer"
+                      title="Copy current document text"
+                    >
+                      {manualCopied ? (
+                        <>
+                          <Check className="size-3.5 text-emerald-500 mr-1" /> Copied
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="size-3.5 mr-1" /> Copy Markdown
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </div>
-                <div className="flex-1 border rounded-lg p-4 text-sm leading-relaxed overflow-y-auto min-h-[300px]">
+                <div className="flex-1 border rounded-lg p-4 text-sm leading-relaxed overflow-y-auto min-h-[350px] max-h-[calc(100vh-280px)]">
                   {manualTab === 'notes' ? (
-                    <Markdown content={releaseNotesFiltered} className="prose prose-sm max-w-none" />
+                    <Markdown content={displayedManualMarkdown} className="prose prose-sm max-w-none" />
                   ) : manual ? (
-                    <Markdown content={manual} className="prose prose-sm max-w-none" />
+                    <Markdown content={displayedManualMarkdown} className="prose prose-sm max-w-none" />
                   ) : (
                     <p className="text-muted-foreground">Loading manual…</p>
                   )}

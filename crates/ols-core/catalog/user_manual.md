@@ -89,6 +89,16 @@ The **Sites** page is your central command hub for managing websites and web app
 - **Site Logos & Offline Icons:**
   - Assign custom icons or choose from built-in Font Awesome SVGs with custom hex colors.
   - Upload custom images (automatically converted client-side to WebP and saved in the project root as `ols_site_icon.webp`).
+- **Missing Folder Detection & "Folder not found" Tab (v2.5.0):**
+  - Isolates projects with deleted folders or offline external drives into the dedicated **Folder not found** tab.
+  - Keeps the **Enabled** and **Disabled** tabs strictly operational.
+  - Provides a 1-click **Locate** action directly in the row to relocate moved folders.
+- **Multi-Domain Project Grouping (v2.5.0):**
+  - Consolidates multiple domains sharing the same project folder into a single unified row with primary domain focus.
+  - Extra domains appear as interactive pill badges with real-time status dots; clicking any pill opens its configuration dialog.
+  - Bulk actions and deletion apply cleanly across all domains in the project row.
+- **Right-Click Context Menu (v2.5.0):**
+  - Right-clicking any site row opens the cursor-positioned actions menu with smart viewport bounds clamping and smooth internal scrolling.
 
 ---
 
@@ -310,6 +320,14 @@ olsc guide
 - Secrets are stored in the secure Windows Credential Manager / OS keyring.
 - Secrets (`.env` passwords, API keys) are automatically redacted before sending any prompt to AI providers.
 
+### Appearance & Theme Customization (v2.5.0)
+- **Settings → Appearance:** Choose between System, Light, and Dark modes.
+- **Curated Theme Presets:** 4 built-in presets: Default, High Contrast, Midnight Slate, and Warm Amber.
+- **Contrast-Safe Color Engine:** Automatically computes WCAG 2.1 contrast ratios and readable foreground text colors.
+- **Custom Accent Colors:** Pick curated swatches or enter any custom hex/CSS color.
+- **Icon Style:** Toggle between monochrome subtle icons or vibrant multi-color SVG gradient icons.
+- **Background Styles:** Toggle solid colors or ambient gradients with a 360° direction angle slider.
+
 ---
 
 ## 17. Version 2.5.0 Specific Notes & What's New
@@ -341,4 +359,22 @@ olsc guide
 8. **Vibrant Navigation & Aurora Themes:**
    - High-contrast, multi-color SVG gradient icons across sidebar and settings navigation.
    - Active neon glowing indicators and fluid Dark Aurora / Light Aurora ambient background meshes.
+9. **Token-Based Appearance Customization & Themes:**
+   - Dedicated `Settings → Appearance` tab with 4 curated presets (Default, High Contrast, Midnight Slate, Warm Amber).
+   - Live OS theme synchronization and customizable dark/light modes.
+   - Contrast-safe color engine with WCAG 2.1 contrast math and auto-readable foregrounds.
+   - Custom accent color picker with swatches, presets, and hex inputs.
+   - Monochrome vs colorful sidebar icon toggles.
+   - Solid vs ambient gradient backgrounds with 360° angle sliders and preset directions.
+   - Real-time interactive preview strip.
+10. **Dashboard Services Card Grouping & Action States:**
+    - Redesigned Services card with fluid responsive grid.
+    - Clear, fixed ordering of all 9 built-in services.
+    - Color-coded action buttons with subtle opacity (start: emerald, stop: destructive, restart: amber, reload: sky, logs: violet).
+    - Flattened styling for currently unavailable actions to prevent layout shifts.
+11. **Multi-Domain Project Grouping:**
+    - Multiple hostnames sharing a physical project directory are unified into a single project row.
+    - Primary domain leads with interactive pill badges and status dots for secondary/alias domains.
+    - Direct 1-click modal navigation to any domain's settings directly from the pill badges.
+    - Bulk enable/disable and delete operations apply cleanly across all domains in the project row.
 

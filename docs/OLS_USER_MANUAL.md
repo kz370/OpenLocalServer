@@ -18,6 +18,8 @@
   - [3.2 Automatic Folder & Welcome Page Initialization](#32-automatic-folder--welcome-page-initialization)
   - [3.3 Document Roots, Custom Domains & Aliases](#33-document-roots-custom-domains--aliases)
   - [3.4 Site Logos & Offline Font Awesome Icons](#34-site-logos--offline-font-awesome-icons)
+  - [3.5 Missing Folder Detection & "Folder not found" Tab](#35-missing-folder-detection--folder-not-found-tab)
+  - [3.6 Multi-Domain Project Grouping & Context Menus](#36-multi-domain-project-grouping--context-menus)
 - [4. Domains, Networking & Multi-Interface Binding](#4-domains-networking--multi-interface-binding)
   - [4.1 Local DNS & Zero-Config `.test` Domains](#41-local-dns--zero-config-test-domains)
   - [4.2 Multi-Interface Web Binding (`0.0.0.0`) & LAN Access](#42-multi-interface-web-binding-0000--lan-access)
@@ -147,6 +149,17 @@ From the **Sites** page, click **Add Site / Link Project**:
 - Customize each site with a dedicated icon in the Sites list:
   - **Upload Photo:** Upload any PNG, JPEG, or WebP image. OLS automatically converts it client-side into an optimized WebP icon saved as `ols_site_icon.webp` in the project root.
   - **Built-in Font Awesome Icons:** Pick from hundreds of offline SVG icons and customize colors using hex codes or interactive color swatches.
+
+### 3.5 Missing Folder Detection & "Folder not found" Tab
+*New in v2.5.0:*
+- Automatically detects deleted directories and offline external storage devices (`D:\`, USB drives, network UNC shares).
+- Sites with missing directories are isolated into the dedicated **Folder not found** filter tab, keeping the **Enabled** and **Disabled** tabs strictly operational.
+- Includes a 1-click **Locate** button directly in the row to quickly re-point moved folders to their new location on disk.
+
+### 3.6 Multi-Domain Project Grouping & Context Menus
+*New in v2.5.0:*
+- Multiple domains sharing a project folder group into a single project row: the primary domain leads, and extra domains appear as interactive pill badges with status dots.
+- Right-clicking any site row opens the cursor-positioned actions menu, with smart boundary clamping ensuring it never cuts off or clears past screen edges.
 
 ---
 
@@ -358,6 +371,14 @@ olsc guide                     # Display this complete User Manual in terminal
 - **F5:** Refresh the current page while preserving active tabs and sub-panels.
 - **Esc:** Close active dialog, modal, or overlay.
 
+### Appearance & Theme Customization (v2.5.0)
+- **Settings → Appearance:** Switch between System, Light, and Dark modes.
+- **Curated Theme Presets:** 4 built-in presets: Default, High Contrast, Midnight Slate, and Warm Amber.
+- **Contrast-Safe Color Engine:** Computes WCAG 2.1 contrast ratios and auto-readable foreground text colors.
+- **Custom Accent Colors:** Curated swatches or custom hex/CSS color input.
+- **Icon Style:** Toggle between monochrome subtle icons or vibrant multi-color SVG gradient icons.
+- **Background Styles:** Toggle solid colors or ambient gradients with a 360° direction angle slider.
+
 ---
 
 ## 17. What's New in Version 2.5.0
@@ -387,4 +408,22 @@ olsc guide                     # Display this complete User Manual in terminal
 8. **Vibrant Navigation & Aurora Themes:**
    - High-contrast, multi-color SVG gradient icons across sidebar and settings navigation.
    - Active neon glowing indicators and fluid Dark Aurora / Light Aurora ambient background meshes.
+9. **Token-Based Appearance Customization & Themes:**
+   - Dedicated `Settings → Appearance` tab with 4 curated presets (Default, High Contrast, Midnight Slate, Warm Amber).
+   - Live OS theme synchronization and customizable dark/light modes.
+   - Contrast-safe color engine with WCAG 2.1 contrast math and auto-readable foregrounds.
+   - Custom accent color picker with swatches, presets, and hex inputs.
+   - Monochrome vs colorful sidebar icon toggles.
+   - Solid vs ambient gradient backgrounds with 360° angle sliders and preset directions.
+   - Real-time interactive preview strip.
+10. **Dashboard Services Card Grouping & Action States:**
+    - Redesigned Services card with fluid responsive grid.
+    - Clear, fixed ordering of all 9 built-in services.
+    - Color-coded action buttons with subtle opacity (start: emerald, stop: destructive, restart: amber, reload: sky, logs: violet).
+    - Flattened styling for currently unavailable actions to prevent layout shifts.
+11. **Multi-Domain Project Grouping:**
+    - Multiple hostnames sharing a physical project directory are unified into a single project row.
+    - Primary domain leads with interactive pill badges and status dots for secondary/alias domains.
+    - Direct 1-click modal navigation to any domain's settings directly from the pill badges.
+    - Bulk enable/disable and delete operations apply cleanly across all domains in the project row.
 
