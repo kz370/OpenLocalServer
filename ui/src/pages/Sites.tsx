@@ -902,7 +902,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
               onChange={setFilter}
             />
           </div>
-          <Table wrapperClassName="rounded-none">
+          <Table wrapperClassName="rounded-none border-x-0 border-b-0 bg-transparent">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-10">

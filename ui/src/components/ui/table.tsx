@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils'
 
 const Table = React.forwardRef<HTMLTableElement, React.HTMLAttributes<HTMLTableElement> & { wrapperClassName?: string }>(
   ({ className, wrapperClassName, ...props }, ref) => (
-    <div className={cn('w-full overflow-x-auto border border-border', wrapperClassName ?? 'rounded-lg')}>
+    <div className={cn('w-full overflow-x-auto border border-border/80 bg-card/60 backdrop-blur-md', wrapperClassName ?? 'rounded-lg')}>
       <table ref={ref} className={cn('w-full caption-bottom break-words text-sm', className)} {...props} />
     </div>
   ),
@@ -13,7 +13,7 @@ Table.displayName = 'Table'
 
 const TableHeader = React.forwardRef<HTMLTableSectionElement, React.HTMLAttributes<HTMLTableSectionElement>>(
   ({ className, ...props }, ref) => (
-    <thead ref={ref} className={cn('bg-muted/50 [&_tr]:border-b', className)} {...props} />
+    <thead ref={ref} className={cn('bg-muted/75 border-b border-border/80 backdrop-blur-xs', className)} {...props} />
   ),
 )
 TableHeader.displayName = 'TableHeader'
@@ -29,7 +29,10 @@ const TableRow = React.forwardRef<HTMLTableRowElement, React.HTMLAttributes<HTML
   ({ className, ...props }, ref) => (
     <tr
       ref={ref}
-      className={cn('border-b border-border transition-colors last:border-0 hover:bg-muted/40', className)}
+      className={cn(
+        'border-b border-border/70 transition-colors last:border-0 hover:bg-muted/40 data-[state=selected]:bg-muted/60',
+        className,
+      )}
       {...props}
     />
   ),
@@ -41,7 +44,7 @@ const TableHead = React.forwardRef<HTMLTableCellElement, React.ThHTMLAttributes<
     <th
       ref={ref}
       className={cn(
-        'h-9 px-3 text-left align-middle text-xs font-medium text-muted-foreground first:pl-4 last:pr-4',
+        'h-9 px-3 text-left align-middle text-xs font-semibold uppercase tracking-wider text-muted-foreground first:pl-4 last:pr-4',
         className,
       )}
       {...props}

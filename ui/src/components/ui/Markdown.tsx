@@ -37,7 +37,7 @@ export function Markdown({ content, className = '' }: MarkdownProps) {
       if (pre.parentElement?.classList.contains('code-block-wrapper')) return
 
       const wrapper = document.createElement('div')
-      wrapper.className = 'code-block-wrapper relative group my-3 rounded-lg overflow-hidden border border-border bg-muted/60 dark:bg-black/40 shadow-xs'
+      wrapper.className = 'code-block-wrapper relative group my-3 rounded-lg overflow-hidden border border-border/80 bg-card/60 backdrop-blur-md shadow-xs'
 
       // Check code language
       const codeEl = pre.querySelector('code')
@@ -46,7 +46,7 @@ export function Markdown({ content, className = '' }: MarkdownProps) {
 
       // Header bar
       const header = document.createElement('div')
-      header.className = 'flex items-center justify-between px-3 py-1.5 bg-muted/90 dark:bg-zinc-900 border-b border-border/80 text-[11px] font-mono text-muted-foreground'
+      header.className = 'flex items-center justify-between px-3 py-1.5 bg-muted/80 border-b border-border/80 text-[11px] font-mono text-muted-foreground'
       header.innerHTML = `<span>${lang || 'code'}</span>`
 
       // Copy button
@@ -93,8 +93,8 @@ export function CodeBlock({ code, language = 'bash' }: { code: string; language?
   }
 
   return (
-    <div className="relative my-3 rounded-lg border border-border bg-muted/60 dark:bg-black/40 overflow-hidden shadow-xs">
-      <div className="flex items-center justify-between px-3.5 py-1.5 bg-muted/80 dark:bg-zinc-900/90 border-b border-border/80 text-[11px] font-mono text-muted-foreground">
+    <div className="relative my-3 rounded-lg border border-border/80 bg-card/60 backdrop-blur-md overflow-hidden shadow-xs">
+      <div className="flex items-center justify-between px-3.5 py-1.5 bg-muted/80 border-b border-border/80 text-[11px] font-mono text-muted-foreground">
         <span>{language}</span>
         <button
           onClick={handleCopy}
