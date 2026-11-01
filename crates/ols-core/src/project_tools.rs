@@ -114,7 +114,7 @@ impl Inner {
         let mut args = vec!["/C".to_string(), corepack.display().to_string()];
         args.extend(enable);
         let out = crate::exec::run_capture(
-            Path::new("cmd.exe"),
+            &crate::exec::cmd_path(),
             &args,
             Some(Path::new(&project.path)),
             &env,

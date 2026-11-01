@@ -125,7 +125,7 @@ pub fn execute(args: &[String], hosts_file: &Path) -> Result<(), HelperError> {
 }
 
 fn powershell(script: &str) -> Result<(), HelperError> {
-    let mut cmd = std::process::Command::new("powershell");
+    let mut cmd = std::process::Command::new(ols_core::exec::powershell_path());
     cmd.args(["-NoProfile", "-NonInteractive", "-Command", script]);
     #[cfg(windows)]
     {

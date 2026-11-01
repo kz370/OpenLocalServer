@@ -32,7 +32,7 @@ fn shim(file: PathBuf, path_dirs: Vec<PathBuf>) -> ResolvedProgram {
         .is_some_and(|e| e.eq_ignore_ascii_case("cmd") || e.eq_ignore_ascii_case("bat"));
     if is_shim {
         ResolvedProgram {
-            executable: PathBuf::from("cmd.exe"),
+            executable: crate::exec::cmd_path(),
             pre_args: vec!["/C".into(), file.display().to_string()],
             env: vec![],
             path_dirs,

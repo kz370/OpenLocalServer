@@ -602,7 +602,7 @@ pub fn kill_orphans(runtimes_dir: &std::path::Path) -> usize {
         "Get-CimInstance Win32_Process -Filter \"{filter}\" | ForEach-Object {{ \"$($_.ProcessId)|$($_.ExecutablePath)|$($_.CommandLine)\" }}"
     );
     let out = crate::exec::run_capture(
-        std::path::Path::new("powershell"),
+        &crate::exec::powershell_path(),
         &[
             "-NoProfile".into(),
             "-NonInteractive".into(),

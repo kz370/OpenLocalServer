@@ -72,10 +72,10 @@ pub async fn next_event(rx: &mut broadcast::Receiver<TerminalEvent>) -> Option<T
 }
 
 /// The shell's program and arguments for a shell name.
-pub fn shell_command(shell: Option<&str>) -> Result<(&'static str, Vec<&'static str>), String> {
+pub fn shell_command(shell: Option<&str>) -> Result<(PathBuf, Vec<&'static str>), String> {
     match shell.unwrap_or("powershell") {
-        "powershell" => Ok(("powershell.exe", vec!["-NoLogo"])),
-        "cmd" => Ok(("cmd.exe", vec![])),
+        "powershell" => Ok((crate::exec::powershell_path(), vec!["-NoLogo"])),
+        "cmd" => Ok((crate::exec::cmd_path(), vec![])),
         other => Err(format!("unknown shell: {other}")),
     }
 }
@@ -141,7 +141,7 @@ impl TerminalManager {
             })
             .map_err(|e| format!("could not open a terminal: {e}"))?;
 
-        let mut cmd = CommandBuilder::new(program);
+        let mut cmd = CommandBuilder::new(&program);
         cmd.args(args);
         if let Some(cwd) = spec.cwd.as_ref().filter(|c| c.is_dir()) {
             cmd.cwd(cwd);
@@ -154,7 +154,7 @@ impl TerminalManager {
         let child = pair
             .slave
             .spawn_command(cmd)
-            .map_err(|e| format!("could not start {program}: {e}"))?;
+            .map_err(|e| format!("could not start {}: {e}", program.display()))?;
         drop(pair.slave);
         let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
         let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
@@ -408,8 +408,14 @@ mod tests {
 
     #[test]
     fn only_known_shells_start() {
-        assert_eq!(shell_command(None).unwrap().0, "powershell.exe");
-        assert_eq!(shell_command(Some("cmd")).unwrap().0, "cmd.exe");
+        let ps = shell_command(None).unwrap().0;
+        let ps_str = ps.to_string_lossy().to_lowercase();
+        assert!(ps_str.ends_with("powershell.exe") || ps_str == "powershell");
+
+        let cmd = shell_command(Some("cmd")).unwrap().0;
+        let cmd_str = cmd.to_string_lossy().to_lowercase();
+        assert!(cmd_str.ends_with("cmd.exe") || cmd_str == "cmd");
+
         assert!(shell_command(Some("bash; rm -rf /")).is_err());
     }
 

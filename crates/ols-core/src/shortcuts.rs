@@ -163,7 +163,7 @@ impl Inner {
                     return Ok(());
                 }
                 // No Windows Terminal: a plain PowerShell window in that folder.
-                std::process::Command::new("powershell.exe")
+                std::process::Command::new(crate::exec::powershell_path())
                     .arg("-NoExit")
                     .current_dir(&dir)
                     .spawn()
@@ -174,7 +174,7 @@ impl Inner {
                 if p.is_file() && is_runnable(p) {
                     return Err(err("That file is a program or script, so it is not opened with the default app. Open it in your editor instead."));
                 }
-                let mut cmd = std::process::Command::new("cmd.exe");
+                let mut cmd = std::process::Command::new(crate::exec::cmd_path());
                 cmd.args(["/C", "start", ""]).arg(p);
                 crate::exec::hide_window(&mut cmd);
                 cmd.spawn().map(|_| ()).map_err(|e| err(e.to_string()))

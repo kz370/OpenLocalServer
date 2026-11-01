@@ -238,7 +238,7 @@ pub fn run_streaming(
 pub fn kill_tree_blocking(pid: u32) {
     #[cfg(windows)]
     {
-        let mut cmd = Command::new("taskkill");
+        let mut cmd = Command::new(windows_system_dir().join("taskkill.exe"));
         cmd.args(["/PID", &pid.to_string(), "/T", "/F"])
             .stdout(Stdio::null())
             .stderr(Stdio::null());
@@ -249,6 +249,126 @@ pub fn kill_tree_blocking(pid: u32) {
     {
         let _ = Command::new("kill").args(["-9", &pid.to_string()]).status();
     }
+}
+
+/// The Windows system directory (e.g. `C:\Windows\System32`), resolved without depending on PATH.
+pub fn windows_system_dir() -> std::path::PathBuf {
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStringExt;
+        let mut buf = vec![0u16; 260];
+        let len = unsafe {
+            windows_sys::Win32::System::SystemInformation::GetSystemDirectoryW(
+                buf.as_mut_ptr(),
+                buf.len() as u32,
+            )
+        };
+        if len > 0 && (len as usize) < buf.len() {
+            return std::path::PathBuf::from(std::ffi::OsString::from_wide(&buf[..len as usize]));
+        } else if len as usize >= buf.len() {
+            buf.resize(len as usize + 1, 0);
+            let len2 = unsafe {
+                windows_sys::Win32::System::SystemInformation::GetSystemDirectoryW(
+                    buf.as_mut_ptr(),
+                    buf.len() as u32,
+                )
+            };
+            if len2 > 0 && (len2 as usize) < buf.len() {
+                return std::path::PathBuf::from(std::ffi::OsString::from_wide(
+                    &buf[..len2 as usize],
+                ));
+            }
+        }
+        if let Ok(root) = std::env::var("SystemRoot").or_else(|_| std::env::var("windir")) {
+            let candidate = std::path::PathBuf::from(root).join("System32");
+            if candidate.is_dir() {
+                return candidate;
+            }
+        }
+        std::path::PathBuf::from(r"C:\Windows\System32")
+    }
+    #[cfg(not(windows))]
+    {
+        std::path::PathBuf::from("/bin")
+    }
+}
+
+/// Full path to powershell.exe, resolved directly from the Windows system directory
+/// rather than searching PATH.
+pub fn powershell_path() -> std::path::PathBuf {
+    #[cfg(windows)]
+    {
+        let sys = windows_system_dir();
+        let candidate = sys.join(r"WindowsPowerShell\v1.0\powershell.exe");
+        if candidate.is_file() {
+            return candidate;
+        }
+        let sys32_candidate = sys.join("powershell.exe");
+        if sys32_candidate.is_file() {
+            return sys32_candidate;
+        }
+        std::path::PathBuf::from("powershell.exe")
+    }
+    #[cfg(not(windows))]
+    {
+        std::path::PathBuf::from("powershell")
+    }
+}
+
+/// Full path to cmd.exe, resolved directly from the Windows system directory
+/// rather than searching PATH.
+pub fn cmd_path() -> std::path::PathBuf {
+    #[cfg(windows)]
+    {
+        let sys = windows_system_dir();
+        let candidate = sys.join("cmd.exe");
+        if candidate.is_file() {
+            return candidate;
+        }
+        std::path::PathBuf::from("cmd.exe")
+    }
+    #[cfg(not(windows))]
+    {
+        std::path::PathBuf::from("sh")
+    }
+}
+
+/// Quotes a single argument for Windows command lines according to MSVC conventions.
+pub fn quote_windows_arg(arg: &str) -> String {
+    if arg.is_empty() {
+        return "\"\"".to_string();
+    }
+    if !arg.contains([' ', '\t', '\n', '\x0b', '\"']) {
+        return arg.to_string();
+    }
+    let mut out = String::from("\"");
+    let mut backslashes = 0;
+    for c in arg.chars() {
+        match c {
+            '\\' => backslashes += 1,
+            '"' => {
+                out.push_str(&"\\".repeat(backslashes * 2 + 1));
+                backslashes = 0;
+                out.push('"');
+            }
+            _ => {
+                out.push_str(&"\\".repeat(backslashes));
+                backslashes = 0;
+                out.push(c);
+            }
+        }
+    }
+    out.push_str(&"\\".repeat(backslashes * 2));
+    out.push('"');
+    out
+}
+
+/// Formats a list of arguments into a single Windows command-line parameters string.
+pub fn format_windows_args(args: &[String]) -> String {
+    args.iter()
+        .map(|a| quote_windows_arg(a))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 #[cfg(test)]
@@ -323,5 +443,61 @@ mod tests {
         );
         assert!(r.exit_code.is_none());
         assert!(!r.stderr.is_empty());
+    }
+
+    #[test]
+    fn quoting_windows_args() {
+        assert_eq!(quote_windows_arg(""), "\"\"");
+        assert_eq!(quote_windows_arg("simple"), "simple");
+        assert_eq!(quote_windows_arg("hello world"), "\"hello world\"");
+        assert_eq!(quote_windows_arg("arg with\ttab"), "\"arg with\ttab\"");
+        assert_eq!(quote_windows_arg(r#"a"b"#), r#""a\"b""#);
+        assert_eq!(quote_windows_arg(r#"C:\path\dir"#), r#"C:\path\dir"#);
+        assert_eq!(
+            quote_windows_arg(r#"C:\path\with space\"#),
+            r#""C:\path\with space\\""#
+        );
+    }
+
+    #[test]
+    fn formatting_windows_args() {
+        let args = vec![
+            "hosts-apply".to_string(),
+            "127.0.0.1=site.local".to_string(),
+            "with space".to_string(),
+        ];
+        assert_eq!(
+            format_windows_args(&args),
+            "hosts-apply 127.0.0.1=site.local \"with space\""
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn system_paths_resolve_to_existing_files() {
+        let sys = windows_system_dir();
+        assert!(
+            sys.is_dir(),
+            "System directory must exist: {}",
+            sys.display()
+        );
+
+        let ps = powershell_path();
+        assert!(ps.is_file(), "PowerShell must exist at: {}", ps.display());
+        assert!(
+            ps.to_string_lossy()
+                .to_lowercase()
+                .ends_with("powershell.exe"),
+            "Expected powershell.exe, got: {}",
+            ps.display()
+        );
+
+        let cmd = cmd_path();
+        assert!(cmd.is_file(), "cmd.exe must exist at: {}", cmd.display());
+        assert!(
+            cmd.to_string_lossy().to_lowercase().ends_with("cmd.exe"),
+            "Expected cmd.exe, got: {}",
+            cmd.display()
+        );
     }
 }

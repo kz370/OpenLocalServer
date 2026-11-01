@@ -80,7 +80,7 @@ fn parse_cloudflare_error(status: reqwest::StatusCode, raw_bytes: &[u8]) -> Stri
 fn detect_ip_from_os_interfaces() -> Option<String> {
     #[cfg(target_os = "windows")]
     {
-        let out = std::process::Command::new("powershell")
+        let out = std::process::Command::new(crate::exec::powershell_path())
             .args([
                 "-NoProfile",
                 "-Command",

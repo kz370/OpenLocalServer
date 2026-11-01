@@ -326,7 +326,7 @@ fn dir_size(dir: &Path) -> u64 {
 fn running_servers() -> Vec<(PathBuf, u16)> {
     let script = "Get-CimInstance Win32_Process -Filter \"Name='mysqld.exe' or Name='mariadbd.exe'\" | ForEach-Object { \"$($_.ExecutablePath)|$($_.CommandLine)\" }";
     let out = run_capture(
-        Path::new("powershell"),
+        &crate::exec::powershell_path(),
         &[
             "-NoProfile".into(),
             "-NonInteractive".into(),

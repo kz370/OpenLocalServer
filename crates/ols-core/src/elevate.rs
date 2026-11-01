@@ -251,47 +251,126 @@ fn via_service(args: &[String]) -> Option<Result<(), String>> {
 }
 
 #[cfg(windows)]
-fn elevated(helper: &std::path::Path, args: &[String]) -> Result<(), String> {
-    // Args are validated by the helper itself, but quote defensively anyway.
-    let arg_list = args
-        .iter()
-        .map(|a| format!("\"{}\"", a.replace('"', "")))
-        .collect::<Vec<_>>()
-        .join(" ");
-    let script = format!(
-        "$p = Start-Process -FilePath '{}' -ArgumentList '{}' -Verb RunAs -Wait -PassThru -WindowStyle Hidden; exit $p.ExitCode",
-        helper.display().to_string().replace('\'', "''"),
-        arg_list.replace('\'', "''")
-    );
-    let out = crate::exec::run_capture(
-        std::path::Path::new("powershell"),
-        &[
-            "-NoProfile".into(),
-            "-NonInteractive".into(),
-            "-Command".into(),
-            script,
-        ],
-        None,
-        &[],
-        // The user has to notice and click through UAC.
-        Duration::from_secs(120),
-    );
-    match out.exit_code {
-        Some(0) => Ok(()),
-        _ if out.stderr.to_lowercase().contains("canceled")
-            || out.stderr.to_lowercase().contains("cancelled") =>
-        {
-            Err("the administrator prompt was cancelled".into())
+fn run_elevated_win32(
+    executable: &std::path::Path,
+    args: &[String],
+    show_window: bool,
+    timeout: Duration,
+) -> Result<(), String> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Foundation::{
+        CloseHandle, GetLastError, ERROR_CANCELLED, WAIT_OBJECT_0, WAIT_TIMEOUT,
+    };
+    use windows_sys::Win32::System::Threading::{
+        GetExitCodeProcess, TerminateProcess, WaitForSingleObject,
+    };
+    use windows_sys::Win32::UI::Shell::{
+        ShellExecuteExW, SEE_MASK_NOASYNC, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{SW_HIDE, SW_SHOWNORMAL};
+
+    let exe_wide: Vec<u16> = executable
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let verb_wide: Vec<u16> = "runas\0".encode_utf16().collect();
+
+    let formatted_args = crate::exec::format_windows_args(args);
+    let args_wide: Vec<u16> = formatted_args
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+
+    let mut exec_info = SHELLEXECUTEINFOW {
+        cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
+        fMask: SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC,
+        hwnd: std::ptr::null_mut(),
+        lpVerb: verb_wide.as_ptr(),
+        lpFile: exe_wide.as_ptr(),
+        lpParameters: if formatted_args.is_empty() {
+            std::ptr::null()
+        } else {
+            args_wide.as_ptr()
+        },
+        lpDirectory: std::ptr::null(),
+        nShow: if show_window { SW_SHOWNORMAL } else { SW_HIDE },
+        hInstApp: std::ptr::null_mut(),
+        lpIDList: std::ptr::null_mut(),
+        lpClass: std::ptr::null(),
+        hkeyClass: std::ptr::null_mut(),
+        dwHotKey: 0,
+        Anonymous: unsafe { std::mem::zeroed() },
+        hProcess: std::ptr::null_mut(),
+    };
+
+    let success = unsafe { ShellExecuteExW(&mut exec_info) };
+    if success == 0 {
+        let err = unsafe { GetLastError() };
+        if err == ERROR_CANCELLED {
+            return Err("the administrator prompt was cancelled".into());
         }
-        Some(code) => Err(format!(
-            "the elevated helper failed (exit code {code}) {}",
-            out.combined()
-        )),
-        None => Err(format!(
-            "could not start the elevated helper: {}",
-            out.combined()
-        )),
+        let io_err = std::io::Error::from_raw_os_error(err as i32);
+        return Err(format!(
+            "could not start {} elevated: {io_err}",
+            executable.display()
+        ));
     }
+
+    let h_process = exec_info.hProcess;
+    if h_process.is_null() {
+        return Ok(());
+    }
+
+    let timeout_ms = timeout.as_millis().min(u32::MAX as u128) as u32;
+    let wait_res = unsafe { WaitForSingleObject(h_process, timeout_ms) };
+
+    let result = match wait_res {
+        WAIT_OBJECT_0 => {
+            let mut exit_code: u32 = 0;
+            if unsafe { GetExitCodeProcess(h_process, &mut exit_code) } != 0 {
+                if exit_code == 0 {
+                    Ok(())
+                } else {
+                    Err(format!(
+                        "the elevated process failed (exit code {exit_code})"
+                    ))
+                }
+            } else {
+                Err(format!(
+                    "could not read exit code from elevated process: {}",
+                    std::io::Error::last_os_error()
+                ))
+            }
+        }
+        WAIT_TIMEOUT => {
+            let _ = unsafe { TerminateProcess(h_process, 1) };
+            Err("the elevated process timed out".into())
+        }
+        _ => Err(format!(
+            "failed waiting for elevated process: {}",
+            std::io::Error::last_os_error()
+        )),
+    };
+
+    unsafe { CloseHandle(h_process) };
+    result
+}
+
+#[cfg(windows)]
+fn elevated(helper: &std::path::Path, args: &[String]) -> Result<(), String> {
+    run_elevated_win32(helper, args, false, Duration::from_secs(120)).map_err(|e| {
+        if e.contains("cancelled") {
+            e
+        } else if e.contains("failed (exit code") {
+            format!(
+                "the elevated helper {}",
+                e.trim_start_matches("the elevated process ")
+            )
+        } else {
+            format!("could not start the elevated helper: {e}")
+        }
+    })
 }
 
 #[cfg(not(windows))]
@@ -304,39 +383,13 @@ fn elevated(_helper: &std::path::Path, _args: &[String]) -> Result<(), String> {
 /// launches it in a separate session — so only success or failure comes back.
 #[cfg(windows)]
 pub fn run_elevated_command(executable: &std::path::Path, args: &[String]) -> Result<(), String> {
-    let arg_list = args
-        .iter()
-        .map(|a| format!("\"{}\"", a.replace('"', "\\\"")))
-        .collect::<Vec<_>>()
-        .join(" ");
-    let script = format!(
-        "$p = Start-Process -FilePath '{}' -ArgumentList '{}' -Verb RunAs -Wait -PassThru; exit $p.ExitCode",
-        executable.display().to_string().replace('\'', "''"),
-        arg_list.replace('\'', "''")
-    );
-    let out = crate::exec::run_capture(
-        std::path::Path::new("powershell"),
-        &[
-            "-NoProfile".into(),
-            "-NonInteractive".into(),
-            "-Command".into(),
-            script,
-        ],
-        None,
-        &[],
-        Duration::from_secs(1800),
-    );
-    match out.exit_code {
-        Some(0) => Ok(()),
-        Some(code) => Err(format!(
-            "the elevated command failed (exit code {code}) {}",
-            out.combined()
-        )),
-        None => Err(format!(
-            "the administrator prompt was cancelled or failed: {}",
-            out.combined()
-        )),
-    }
+    run_elevated_win32(executable, args, true, Duration::from_secs(1800)).map_err(|e| {
+        if e.contains("cancelled") {
+            "the administrator prompt was cancelled or failed".into()
+        } else {
+            format!("the elevated command {e}")
+        }
+    })
 }
 
 #[cfg(not(windows))]

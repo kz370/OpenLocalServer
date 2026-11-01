@@ -199,7 +199,7 @@ impl Inner {
     /// Starts `exe` on `path`, detached. Editor shims (`code.cmd`) go through `cmd.exe`.
     pub(crate) fn launch_editor(&self, exe: &Path, path: &str) -> Result<(), CoreError> {
         let mut cmd = if crate::editors::is_shim(exe) {
-            let mut c = std::process::Command::new("cmd.exe");
+            let mut c = std::process::Command::new(crate::exec::cmd_path());
             c.arg("/C")
                 .arg(exe)
                 .args(crate::editors::open_args(exe, path));

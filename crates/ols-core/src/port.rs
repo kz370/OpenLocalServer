@@ -64,7 +64,7 @@ pub fn check_port(port: u16) -> PortStatus {
 
 #[cfg(windows)]
 fn find_owning_pid(port: u16) -> Option<u32> {
-    let mut cmd = std::process::Command::new("netstat");
+    let mut cmd = std::process::Command::new(crate::exec::windows_system_dir().join("netstat.exe"));
     cmd.args(["-ano"]);
     crate::exec::hide_window(&mut cmd);
     let output = cmd.output().ok()?;
@@ -106,7 +106,7 @@ fn find_owning_pid(port: u16) -> Option<u32> {
 /// a ghost holder. Best-effort: any parse failure means "not excluded".
 #[cfg(windows)]
 fn excluded_range_reason(port: u16) -> Option<String> {
-    let mut cmd = std::process::Command::new("netsh");
+    let mut cmd = std::process::Command::new(crate::exec::windows_system_dir().join("netsh.exe"));
     cmd.args([
         "interface",
         "ipv4",
@@ -138,7 +138,8 @@ fn excluded_range_reason(_port: u16) -> Option<String> {
 
 #[cfg(windows)]
 fn find_process_name(pid: u32) -> Option<String> {
-    let mut cmd = std::process::Command::new("tasklist");
+    let mut cmd =
+        std::process::Command::new(crate::exec::windows_system_dir().join("tasklist.exe"));
     cmd.args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"]);
     crate::exec::hide_window(&mut cmd);
     let output = cmd.output().ok()?;
@@ -204,8 +205,10 @@ mod tests {
     fn identifies_the_current_process_as_the_owner() {
         let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let port = listener.local_addr().unwrap().port();
+        let _conn = std::net::TcpStream::connect(("127.0.0.1", port)).ok();
 
         let status = check_port(port);
+        drop(_conn);
         drop(listener);
 
         match status {
