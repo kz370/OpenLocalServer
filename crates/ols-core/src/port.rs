@@ -52,7 +52,8 @@ pub fn check_port(port: u16) -> PortStatus {
             let pid = find_owning_pid(port);
             let process_name = pid
                 .and_then(find_process_name)
-                .or_else(|| excluded_range_reason(port));
+                .or_else(|| excluded_range_reason(port))
+                .or_else(|| known_port_hint(port));
             cache
                 .lock()
                 .unwrap()
@@ -97,7 +98,43 @@ fn find_owning_pid(port: u16) -> Option<u32> {
             fallback = Some(pid);
         }
     }
-    fallback
+    if let Some(pid) = fallback {
+        return Some(pid);
+    }
+
+    find_owning_pid_powershell(port)
+}
+
+#[cfg(windows)]
+fn find_owning_pid_powershell(port: u16) -> Option<u32> {
+    let mut cmd = std::process::Command::new(crate::exec::powershell_path());
+    cmd.args([
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        &format!(
+            "(Get-NetTCPConnection -LocalPort {port} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -First 1)"
+        ),
+    ]);
+    crate::exec::hide_window(&mut cmd);
+    let output = cmd.output().ok()?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    text.trim().parse::<u32>().ok().filter(|&p| p > 0)
+}
+
+fn known_port_hint(port: u16) -> Option<String> {
+    match port {
+        80 => Some("HTTP Web Server (port 80)".to_string()),
+        443 => Some("HTTPS Web Server (port 443)".to_string()),
+        3306 => Some("MySQL / MariaDB (standard port 3306)".to_string()),
+        5432 => Some("PostgreSQL (standard port 5432)".to_string()),
+        6379 => Some("Redis (standard port 6379)".to_string()),
+        8025 => Some("Mailpit Web UI (port 8025)".to_string()),
+        1025 => Some("Mailpit SMTP (port 1025)".to_string()),
+        11211 => Some("Memcached (standard port 11211)".to_string()),
+        27017 => Some("MongoDB (standard port 27017)".to_string()),
+        _ => None,
+    }
 }
 
 /// Port binds fail with nobody listening when Windows reserves the range

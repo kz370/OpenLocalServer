@@ -29,9 +29,11 @@ export function ProcessesPage() {
   const [name, setName] = useState('demo')
   const [executable, setExecutable] = useState('ping')
   const [args, setArgs] = useState('127.0.0.1 -n 10')
+  const [starting, setStarting] = useState(false)
 
   const [port, setPort] = useState('3306')
   const [portResult, setPortResult] = useState<PortStatus | null>(null)
+  const [checkingPort, setCheckingPort] = useState(false)
   const [error, setError] = useState<Diagnostic | null>(null)
 
   const outputsRef = useRef(outputs)
@@ -68,13 +70,15 @@ export function ProcessesPage() {
   }, [])
 
   async function startProcess() {
+    if (!executable.trim()) return
     setError(null)
+    setStarting(true)
     try {
       const res = await runCommand({
         type: 'start_process',
         spec: {
-          name,
-          executable,
+          name: name.trim() || executable.trim(),
+          executable: executable.trim(),
           args: args.split(' ').filter(Boolean),
           cwd: null,
           env: [],
@@ -87,6 +91,8 @@ export function ProcessesPage() {
       }
     } catch (err) {
       setError(err as Diagnostic)
+    } finally {
+      setStarting(false)
     }
   }
 
@@ -103,12 +109,24 @@ export function ProcessesPage() {
   }
 
   async function checkPort() {
+    const p = Number.parseInt(port.trim(), 10)
+    if (isNaN(p) || p < 1 || p > 65535) {
+      setError({
+        problem: 'Invalid port number',
+        cause: `"${port}" is not a valid TCP port number (must be between 1 and 65535).`,
+        fix: 'Enter a valid port number, such as 80, 443, or 3306.',
+      })
+      return
+    }
     setError(null)
+    setCheckingPort(true)
     try {
-      const res = await runCommand({ type: 'check_port', port: Number(port) })
+      const res = await runCommand({ type: 'check_port', port: p })
       if (res.type === 'port') setPortResult(res.status)
     } catch (err) {
       setError(err as Diagnostic)
+    } finally {
+      setCheckingPort(false)
     }
   }
 
@@ -120,7 +138,11 @@ export function ProcessesPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Processes</h1>
         <p className="text-sm text-muted-foreground">
           The services the app supervises — PHP, Nginx, MariaDB and the rest — and the processes it runs for you.
-          Background work has its own page.
+          Background work has its own{' '}
+          <a href="#/tasks" className="underline underline-offset-2 hover:text-foreground">
+            Tasks page
+          </a>
+          .
         </p>
       </div>
 
@@ -150,21 +172,35 @@ export function ProcessesPage() {
             ))}
           </div>
           <div className="flex flex-wrap gap-2">
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="name" className="w-32" />
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void startProcess()
+              }}
+              placeholder="name"
+              className="w-32"
+            />
             <Input
               value={executable}
               onChange={(e) => setExecutable(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void startProcess()
+              }}
               placeholder="executable"
               className="w-32"
             />
             <Input
               value={args}
               onChange={(e) => setArgs(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void startProcess()
+              }}
               placeholder="args (space separated)"
               className="flex-1 min-w-40"
             />
-            <Button onClick={startProcess} size="sm">
-              <Play /> Start
+            <Button onClick={startProcess} size="sm" disabled={starting || !executable.trim()}>
+              {starting ? <Spinner className="size-3.5" /> : <Play />} Start
             </Button>
           </div>
         </CardContent>
@@ -242,8 +278,20 @@ export function ProcessesPage() {
         </Card>
 
         <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Live output {selected !== null && `· ${processes.find((p) => p.id === selected)?.name ?? `#${selected}`}`}</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm">
+              Live output {selected !== null && `· ${processes.find((p) => p.id === selected)?.name ?? `#${selected}`}`}
+            </CardTitle>
+            {selected !== null && selectedOutput.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => setOutputs((prev) => ({ ...prev, [selected]: [] }))}
+              >
+                Clear output
+              </Button>
+            )}
           </CardHeader>
           <CardContent>
             <pre className="h-64 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-all rounded-md bg-muted p-3 font-mono text-xs leading-relaxed">
@@ -260,28 +308,51 @@ export function ProcessesPage() {
       <Card>
         <CardHeader>
           <CardTitle>Port checker</CardTitle>
-          <CardDescription>§109 — reports the owner instead of guessing; never kills anything.</CardDescription>
+          <CardDescription>Reports the owning process and PID instead of guessing; never terminates anything.</CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-wrap items-center gap-2">
-          <Input value={port} onChange={(e) => setPort(e.target.value)} className="w-24" />
-          <Button onClick={checkPort} size="sm" variant="secondary">
-            Check
-          </Button>
-          {portResult && (
-            <span className="text-sm">
-              {portResult.status === 'free' ? (
-                <Badge variant="success">Free</Badge>
-              ) : (
-                <>
-                  <Badge variant="destructive">In use</Badge>{' '}
-                  <span className="text-muted-foreground">
-                    {portResult.process_name ?? 'unknown process'}
-                    {portResult.pid && ` (PID ${portResult.pid})`}
-                  </span>
-                </>
-              )}
-            </span>
-          )}
+        <CardContent className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              value={port}
+              onChange={(e) => {
+                setPort(e.target.value)
+                setPortResult(null)
+                setError(null)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void checkPort()
+              }}
+              placeholder="Port (e.g. 3306)"
+              className="w-28"
+            />
+            <Button onClick={checkPort} size="sm" variant="secondary" disabled={checkingPort || !port.trim()}>
+              {checkingPort ? <Spinner className="size-3.5" /> : null}
+              {checkingPort ? 'Checking...' : 'Check'}
+            </Button>
+            {portResult && (
+              <span className="text-sm flex items-center gap-2">
+                {portResult.status === 'free' ? (
+                  <>
+                    <Badge variant="success">Free</Badge>
+                    <span className="text-muted-foreground">Port is available.</span>
+                  </>
+                ) : (
+                  <>
+                    <Badge variant="destructive">In use</Badge>
+                    <span className="text-muted-foreground">
+                      {portResult.process_name
+                        ? portResult.pid
+                          ? `${portResult.process_name} (PID ${portResult.pid})`
+                          : portResult.process_name
+                        : portResult.pid
+                          ? `PID ${portResult.pid}`
+                          : 'In use by another application (process details unavailable)'}
+                    </span>
+                  </>
+                )}
+              </span>
+            )}
+          </div>
         </CardContent>
       </Card>
 

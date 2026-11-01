@@ -18,6 +18,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { type CatalogEntry, type CustomInstall, type Diagnostic, type RuntimeEvent, runCommand } from '@/core'
 import { formatBytes } from '@/lib/hooks'
 import { confirmAction } from '@/lib/confirm'
+import { compareVersionsDesc, formatAvailableVersions, getRuntimeStatus } from '@/lib/runtimeStatus'
 
 /** Runtimes a user may already have somewhere else and want to point at. */
 const LOCATABLE = ['php', 'node', 'python']
@@ -45,19 +46,7 @@ function readCatalogCache(): Record<string, CachedCatalog> {
   }
 }
 
-function versionKey(v: string): number[] {
-  return v.split('.').map((p) => parseInt(p, 10) || 0)
-}
 
-function compareVersionsDesc(a: string, b: string): number {
-  const ka = versionKey(a)
-  const kb = versionKey(b)
-  for (let i = 0; i < Math.max(ka.length, kb.length); i++) {
-    const d = (kb[i] ?? 0) - (ka[i] ?? 0)
-    if (d !== 0) return d
-  }
-  return 0
-}
 
 interface Row {
   key: string
@@ -258,6 +247,19 @@ export function RuntimesPage() {
       }
     })
 
+  const handleUpdate = (group: Group, version: string) => {
+    const row = group.rows.find((r) => r.version === version && r.kind === 'managed')
+    const entry: CatalogEntry = row?.entry ?? {
+      id: group.id,
+      name: group.name,
+      version,
+      installed: false,
+      is_default: false,
+      system: null,
+    }
+    void install(entry)
+  }
+
   // Pause/Resume hold the transfer where it is rather than restarting it: the partial
   // file is kept, so resuming finishes the same download.
   const setPaused = (entry: CatalogEntry, paused: boolean) =>
@@ -293,13 +295,14 @@ export function RuntimesPage() {
       await refresh()
     })
 
-  const openVersions = (group: Group) => {
+  const openVersions = (group: Group, preselectedVersion?: string) => {
     setError(null)
     setNotice(null)
     setInstallError(null)
     setManageId(group.id)
     setVersionSearch('')
-    setInstallChoices((prev) => ({ ...prev, [group.id]: group.rows.find((r) => r.kind === 'managed' && !r.entry?.installed)?.version ?? '' }))
+    const defaultChoice = preselectedVersion ?? group.rows.find((r) => r.kind === 'managed' && !r.entry?.installed)?.version ?? ''
+    setInstallChoices((prev) => ({ ...prev, [group.id]: defaultChoice }))
     if (!ONLINE_CATALOGS.has(group.id)) {
       setCatalogRefreshing(false)
       return
@@ -315,6 +318,10 @@ export function RuntimesPage() {
     void refreshOnlineCatalog(group.id)
       .then((entries) => {
         if (!entries) return
+        if (preselectedVersion && entries.some((entry) => entry.version === preselectedVersion && !entry.installed)) {
+          setInstallChoices((prev) => ({ ...prev, [group.id]: preselectedVersion }))
+          return
+        }
         const newest = entries
           .filter((entry) => !entry.installed)
           .sort((a, b) => compareVersionsDesc(a.version, b.version))[0]
@@ -493,44 +500,148 @@ export function RuntimesPage() {
             </TableRow>
           )}
           {!loading && groups.map((g) => {
-            const managedInstalled = g.rows.filter((r) => r.kind === 'managed' && r.entry?.installed)
-            const customInstalled = g.rows.filter((r) => r.kind === 'custom')
-            const defaultVersion = managedInstalled.find((r) => r.entry?.is_default)?.version
-            const availableCount = g.rows.filter((r) => r.kind === 'managed' && !r.entry?.installed).length
             const isChecking = ONLINE_CATALOGS.has(g.id) && catalogStatus[g.id] === 'checking'
             const isError = ONLINE_CATALOGS.has(g.id) && catalogStatus[g.id] === 'error' && !cachedCatalogIds.has(g.id)
-            const hasUpdate = !isError && availableCount > 0
+            const status = getRuntimeStatus({
+              rows: g.rows.map((r) => ({
+                key: r.key,
+                version: r.version,
+                kind: r.kind,
+                installed: r.kind === 'custom' || !!r.entry?.installed,
+                isDefault: !!r.entry?.is_default,
+              })),
+              isChecking,
+              isError,
+            })
             return (
               <TableRow key={g.id} className="hover:bg-muted/30">
                 <TableCell className="py-2.5">
                   <span className="flex items-center gap-2 text-[13px] font-medium"><TechIcon id={g.id} className="size-4 opacity-90" />{g.name}</span>
                 </TableCell>
                 <TableCell className="py-2.5">
-                  {managedInstalled.length + customInstalled.length === 0 ? <span className="text-xs text-muted-foreground">None</span> : (
-                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                      {defaultVersion && <>
-                        <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{defaultVersion}</code>
-                        <Badge variant="secondary" className="px-1.5 text-[11px] font-normal">Default</Badge>
-                      </>}
-                      <span className="text-xs text-muted-foreground">{managedInstalled.length + customInstalled.length} installed</span>
-                    </span>
+                  {status.totalInstalled === 0 ? (
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-xs text-muted-foreground">None</span>
+                      {status.installableCount > 0 && (
+                        <span className="text-[11px] text-muted-foreground">
+                          {formatAvailableVersions(status.installableCount)}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-0.5">
+                      <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        {status.defaultVersion && (
+                          <>
+                            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{status.defaultVersion}</code>
+                            <Badge variant="secondary" className="px-1.5 text-[11px] font-normal">Default</Badge>
+                          </>
+                        )}
+                        {status.totalInstalled > 1 && (
+                          <span className="text-xs text-muted-foreground">
+                            {status.totalInstalled} installed
+                          </span>
+                        )}
+                      </span>
+                      {status.installableCount > 0 && (
+                        <span className="text-[11px] text-muted-foreground">
+                          {formatAvailableVersions(status.installableCount)}
+                        </span>
+                      )}
+                    </div>
                   )}
                 </TableCell>
                 <TableCell className="py-2.5">
                   <span className="flex items-center gap-1.5 text-xs">
-                    {isChecking && !cachedCatalogIds.has(g.id)
-                      ? <><span className="size-1.5 animate-pulse rounded-full bg-muted-foreground" /><span className="text-muted-foreground">Checking…</span></>
-                      : isError
-                        ? <><span className="size-1.5 rounded-full bg-muted-foreground/60" /><span className="text-muted-foreground">Could not check</span></>
-                        : hasUpdate
-                          ? <><span className="size-1.5 rounded-full bg-sky-400" /><span className="text-sky-400"> {availableCount} available</span>{isChecking && <span className="text-muted-foreground">· refreshing</span>}</>
-                          : <><span className="size-1.5 rounded-full bg-emerald-500/80" /><span className="text-muted-foreground">Up to date</span></>}
+                    {status.statusKind === 'checking' && (
+                      <>
+                        <span className="size-1.5 animate-pulse rounded-full bg-muted-foreground" />
+                        <span className="text-muted-foreground">Checking…</span>
+                      </>
+                    )}
+                    {status.statusKind === 'error' && (
+                      <>
+                        <span className="size-1.5 rounded-full bg-muted-foreground/60" />
+                        <span className="text-muted-foreground">Could not check</span>
+                      </>
+                    )}
+                    {status.statusKind === 'not_installed' && (
+                      <>
+                        <span className="size-1.5 rounded-full bg-muted-foreground/40" />
+                        <span className="text-muted-foreground">Not installed</span>
+                        {isChecking && <span className="text-muted-foreground">· refreshing</span>}
+                      </>
+                    )}
+                    {status.statusKind === 'up_to_date' && (
+                      <>
+                        <span className="size-1.5 rounded-full bg-emerald-500/80" />
+                        <span className="text-muted-foreground">Up to date</span>
+                        {isChecking && <span className="text-muted-foreground">· refreshing</span>}
+                      </>
+                    )}
+                    {status.statusKind === 'update_available' && status.latestAvailableVersion && (() => {
+                      const updateVersion = status.latestAvailableVersion
+                      const updateKey = `${g.id}@${updateVersion}`
+                      const updateEvt = progress[updateKey]
+                      const isUpdating = pending.has(updateKey) || updateEvt?.kind === 'progress'
+                      return (
+                        <div className="flex flex-col gap-0.5">
+                          <span className="flex items-center gap-1.5 text-xs">
+                            <span className={`size-1.5 rounded-full ${isUpdating ? 'animate-pulse bg-sky-400' : 'bg-sky-400'}`} />
+                            <span className="font-medium text-sky-400">{isUpdating ? 'Updating…' : 'Update available'}</span>
+                            {isChecking && <span className="text-muted-foreground">· refreshing</span>}
+                          </span>
+                          <span className="pl-3 text-[11px] text-muted-foreground">
+                            {isUpdating && updateEvt?.kind === 'progress' && updateEvt.state === 'downloading'
+                              ? `${formatBytes(updateEvt.downloaded)}${updateEvt.total ? ` / ${formatBytes(updateEvt.total)}` : ''}`
+                              : isUpdating
+                                ? `Starting ${updateVersion}…`
+                                : `Latest: ${updateVersion}`}
+                          </span>
+                        </div>
+                      )
+                    })()}
                   </span>
                 </TableCell>
                 <TableCell className="py-2.5 text-right">
-                  <Button size="sm" variant="secondary" className="h-7 px-2.5 text-xs font-normal" onClick={() => openVersions(g)}>
-                    <Settings2 className="size-3.5 opacity-70" /> Manage
-                  </Button>
+                  {status.statusKind === 'update_available' && status.latestAvailableVersion ? (() => {
+                    const updateVersion = status.latestAvailableVersion
+                    const updateKey = `${g.id}@${updateVersion}`
+                    const updateEvt = progress[updateKey]
+                    const isUpdating = pending.has(updateKey) || updateEvt?.kind === 'progress'
+                    return (
+                      <div className="flex items-center justify-end gap-1.5">
+                        <Button
+                          size="sm"
+                          disabled={isUpdating}
+                          className="h-7 px-2.5 text-xs font-medium"
+                          onClick={() => handleUpdate(g, updateVersion)}
+                          title={`Download and install ${g.name} ${updateVersion}`}
+                        >
+                          {isUpdating ? <Spinner className="mr-1 size-3.5" /> : <Download className="mr-1 size-3.5" />}
+                          {isUpdating ? 'Updating…' : `Update to ${updateVersion}`}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                          onClick={() => openVersions(g, updateVersion)}
+                          title={`Manage all ${g.name} versions`}
+                        >
+                          <Settings2 className="size-3.5 opacity-70" />
+                        </Button>
+                      </div>
+                    )
+                  })() : (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="h-7 px-2.5 text-xs font-normal"
+                      onClick={() => openVersions(g)}
+                    >
+                      <Settings2 className="size-3.5 opacity-70" /> Manage
+                    </Button>
+                  )}
                 </TableCell>
               </TableRow>
             )
@@ -551,7 +662,10 @@ export function RuntimesPage() {
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <h3 className="text-[13px] font-semibold leading-none">Install a version</h3>
             </div>
-              <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">Vendor SHA-256 checksums are verified when published. {managedGroup.name} archives come directly from the vendor over HTTPS.</p>
+            <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+              Vendor SHA-256 checksums are verified when published. {managedGroup.name} archives come directly from the vendor over HTTPS.
+              {installable.length > 0 && ` (${formatAvailableVersions(installable.length)} to install)`}
+            </p>
             <div className="mt-3 grid gap-2 lg:grid-cols-[minmax(0,1fr)_170px_auto]">
               <Input
                 aria-label={`Search ${managedGroup.name} versions`}
@@ -581,7 +695,21 @@ export function RuntimesPage() {
                   <optgroup key={major} label={major === 'Other' ? major : `Major ${major}`}>
                     {rows.map((row) => {
                       const installed = !!row.entry?.installed
-                      return <option key={row.key} value={row.version} disabled={installed}>{row.version}{installed ? ' · Installed' : progress[row.key]?.kind === 'progress' ? ' · Installing' : pending.has(row.key) ? ' · Starting…' : ''}</option>
+                      const isDefault = !!row.entry?.is_default
+                      return (
+                        <option key={row.key} value={row.version} disabled={installed}>
+                          {row.version}
+                          {installed
+                            ? isDefault
+                              ? ' · Default'
+                              : ' · Installed'
+                            : progress[row.key]?.kind === 'progress'
+                              ? ' · Installing'
+                              : pending.has(row.key)
+                                ? ' · Starting…'
+                                : ''}
+                        </option>
+                      )
                     })}
                   </optgroup>
                 ))}
@@ -696,7 +824,7 @@ export function RuntimesPage() {
                 <h3 className="text-[13px] font-semibold leading-none">Installed versions</h3>
                 <p className="text-xs text-muted-foreground">The default is used unless a project or site pins another version.</p>
               </div>
-              <Badge variant="secondary" className="shrink-0 rounded-full px-2 text-[11px] font-normal text-muted-foreground">{installedRows.length} versions</Badge>
+              <Badge variant="secondary" className="shrink-0 rounded-full px-2 text-[11px] font-normal text-muted-foreground">{installedRows.length} {installedRows.length === 1 ? 'version' : 'versions'}</Badge>
             </div>
             <div className="overflow-hidden rounded-lg border border-border/60">
               {installedRows.length === 0 ? <p className="px-3 py-4 text-center text-[13px] text-muted-foreground">No versions installed.</p> : installedRows.map((row) => {
@@ -708,7 +836,11 @@ export function RuntimesPage() {
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-1.5 text-[13px] font-medium tabular-nums">
                         <span className="font-mono">{row.version}</span>
-                        {isDefault && <Badge variant="secondary" className="px-1.5 text-[11px] font-normal">Default</Badge>}
+                        {isDefault ? (
+                          <Badge variant="secondary" className="px-1.5 text-[11px] font-normal">Default</Badge>
+                        ) : row.kind === 'managed' ? (
+                          <Badge variant="outline" className="px-1.5 text-[11px] font-normal text-muted-foreground">Installed</Badge>
+                        ) : null}
                         {row.kind === 'custom' && <Badge variant="outline" className="px-1.5 text-[11px] font-normal text-muted-foreground">Yours</Badge>}
                       </div>
                       {row.custom?.path
