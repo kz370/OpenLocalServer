@@ -224,7 +224,7 @@ function OpenDatabaseButton({ engine, database = null, path = null, dbTools, ext
             <Select
               aria-label={`Open ${engine} databases with`}
               title={`Open ${engine} databases with`}
-              className="h-7 w-32 shrink-0 text-xs"
+              className="h-7 w-44 sm:w-48 shrink-0 text-xs"
               value={selectedTool}
               onChange={(event) => { void setDefaultTool(engine, event.target.value).catch((e) => setError(e as Diagnostic)) }}
             >
@@ -385,7 +385,7 @@ function SqlEngine({ engine, service, ...toolProps }: { engine: 'mariadb' | 'pos
       {running && (
         <div className="grid items-start gap-4 lg:grid-cols-2">
           <Card>
-            <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
+            <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-5">
               <CardTitle className="text-sm">Databases</CardTitle>
               {dbChoices.length > 0 && (
                 <span className="inline-flex shrink-0 items-center gap-1.5">
@@ -393,7 +393,7 @@ function SqlEngine({ engine, service, ...toolProps }: { engine: 'mariadb' | 'pos
                   <Select
                     aria-label={`Open ${ENGINE_NAMES[engine]} databases with`}
                     title={`Open ${ENGINE_NAMES[engine]} databases with`}
-                    className="h-7 w-32 shrink-0 text-xs"
+                    className="h-7 w-44 sm:w-48 shrink-0 text-xs"
                     value={toolProps.defaultTools[engine] ?? ''}
                     onChange={(event) => void toolProps.setDefaultTool(engine, event.target.value).catch((e) => setError(e as Diagnostic))}
                   >
@@ -763,7 +763,7 @@ function Sqlite(toolProps: DatabaseToolProps) {
       <ErrorCard error={error} onDismiss={() => setError(null)} />
       {msg && <p className="rounded-lg border border-border bg-muted/40 p-3 text-sm">{msg}</p>}
       <Card>
-        <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
+        <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-5">
           <CardTitle className="text-sm">SQLite databases</CardTitle>
           <div className="flex flex-wrap items-center gap-2">
             <Select value={projectId} onChange={(e) => setProjectId(e.target.value)} className="w-48">
