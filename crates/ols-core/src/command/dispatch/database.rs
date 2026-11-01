@@ -212,13 +212,14 @@ impl Core {
                             _ => "mysql://root@127.0.0.1:3306/test_db".into(),
                         },
                     };
+                    let templates = tool.args.for_engine(sample_engine);
                     let args = if tool.id == "heidisql" {
                         crate::dbtools::heidisql_args_for_executable(&sample_info, &tool.executable)
                             .unwrap_or_else(|| {
-                                crate::dbtools::expand_args(&tool.args, &sample_info)
+                                crate::dbtools::expand_args(&templates, &sample_info)
                             })
                     } else {
-                        crate::dbtools::expand_args(&tool.args, &sample_info)
+                        crate::dbtools::expand_args(&templates, &sample_info)
                     };
                     let verbatim = tool.id == "heidisql"
                         || args.iter().any(|a| a.contains('"'))

@@ -61,17 +61,18 @@ impl Inner {
             if tool.launch_mode == "clipboard" {
                 return dbtools::launch(&tool.executable, &[], false).map_err(svc);
             }
+            // A tool may carry different arguments per engine (driver ids, URL forms).
+            let templates = tool.args.for_engine(engine);
             let args = if tool.id == "heidisql"
-                && (tool.args.is_empty()
-                    || tool
-                        .args
+                && (templates.is_empty()
+                    || templates
                         .iter()
                         .any(|a| a.contains("-D=") || a.contains("--nettype") || a.contains("-h=")))
             {
                 dbtools::heidisql_args_for_executable(&info, &tool.executable)
-                    .unwrap_or_else(|| dbtools::expand_args(&tool.args, &info))
+                    .unwrap_or_else(|| dbtools::expand_args(&templates, &info))
             } else {
-                dbtools::expand_args(&tool.args, &info)
+                dbtools::expand_args(&templates, &info)
             };
             let verbatim = tool.id == "heidisql"
                 || args.iter().any(|a| a.contains('"'))
@@ -113,14 +114,14 @@ impl Inner {
                 return dbtools::launch(&exe, &[], false).map_err(svc);
             }
             if id == "letos" {
+                if engine != "sqlite" {
+                    return Err(svc("Letos only supports SQLite"));
+                }
                 let exe = find(id).ok_or_else(|| {
                     svc("Letos was not found. Install it or register it under External tools.")
                 })?;
-                let args = if engine == "sqlite" {
-                    dbtools::dbbrowser_args(&info).unwrap_or_default()
-                } else {
-                    vec![]
-                };
+                let args = dbtools::dbbrowser_args(&info)
+                    .ok_or_else(|| svc("Letos needs a database file path"))?;
                 return dbtools::launch(&exe, &args, false).map_err(svc);
             }
             if id == "dbbrowser" {

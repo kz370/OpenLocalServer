@@ -4,7 +4,7 @@
     {
       "id": "letos",
       "name": "Letos DB Browser",
-      "engines": ["mariadb", "postgres", "sqlite"],
+      "engines": ["sqlite"],
       "launchMode": "args",
       "args": ["{path}"]
     },
@@ -27,7 +27,11 @@
       "name": "DBeaver",
       "engines": ["mariadb", "postgres", "sqlite"],
       "launchMode": "args",
-      "args": ["-con", "driver=mysql|host={host}|port={port}|database={database}|user={user}"]
+      "args": {
+        "mariadb": ["-con", "name=OLS {database}|driver=mariaDB|host={host}|port={port}|database={database}|user={user}|connect=true|create=true|save=false"],
+        "postgres": ["-con", "name=OLS {database}|driver=postgres-jdbc|host={host}|port={port}|database={database}|user={user}|connect=true|create=true|save=false"],
+        "sqlite": ["-con", "name=OLS {database}|driver=sqlite_jdbc|database={path}|connect=true|create=true|save=false"]
+      }
     },
     {
       "id": "pgadmin",

@@ -2,7 +2,12 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   CURRENT_SCHEMA_VERSION,
+  argsForEngine,
   exportToolsJson,
+  argsSections,
+  cleanArgs,
+  toPerEngineArgs,
+  toPlainArgs,
   getValidPlaceholderChips,
   slugify,
   validateImportJson,
@@ -163,4 +168,56 @@ test('slugify cleans names into lowercase IDs', () => {
   assert.equal(slugify('DBeaver Community'), 'dbeaver-community')
   assert.equal(slugify('DB Browser for SQLite!'), 'db-browser-for-sqlite')
   assert.equal(slugify('  My_Custom_Tool 2026 '), 'my-custom-tool-2026')
+})
+
+test('validateImportJson accepts per-engine args and keeps the map', () => {
+  const args = {
+    mariadb: ['-con', 'name=OLS {database}|driver=mariaDB|host={host}|port={port}'],
+    sqlite: ['-con', 'name=OLS {database}|driver=sqlite_jdbc|database={path}'],
+  }
+  const res = validateImportJson(
+    JSON.stringify({
+      schemaVersion: 1,
+      tools: [{ id: 'dbeaver', name: 'DBeaver', engines: ['mariadb', 'sqlite'], launchMode: 'args', args }],
+    }),
+  )
+  assert.equal(res.ok, true)
+  if (res.ok) {
+    assert.deepEqual(res.tools[0].args, args)
+    assert.deepEqual(argsForEngine(res.tools[0].args, 'sqlite'), args.sqlite)
+    assert.deepEqual(argsForEngine(res.tools[0].args, 'postgres'), [])
+  }
+})
+
+test('validateImportJson rejects unknown engine keys and placeholders in per-engine args', () => {
+  const make = (args: unknown) =>
+    validateImportJson(
+      JSON.stringify({ schemaVersion: 1, tools: [{ id: 't', name: 'T', engines: [], launchMode: 'args', args }] }),
+    )
+  const badEngine = make({ oracle: ['{uri}'] })
+  assert.equal(badEngine.ok, false)
+  const badPlaceholder = make({ mariadb: ['{nope}'] })
+  assert.equal(badPlaceholder.ok, false)
+  const withDefault = make({ default: ['{uri}'] })
+  assert.equal(withDefault.ok, true)
+})
+
+test('argsForEngine falls back to default and plain lists apply to every engine', () => {
+  assert.deepEqual(argsForEngine({ default: ['{uri}'], sqlite: ['{path}'] }, 'redis'), ['{uri}'])
+  assert.deepEqual(argsForEngine(['{uri}'], 'sqlite'), ['{uri}'])
+})
+
+test('toPerEngineArgs copies a plain list into each section and toPlainArgs collapses it back', () => {
+  const sections = argsSections(['mariadb', 'sqlite'])
+  const map = toPerEngineArgs(['{uri}'], sections)
+  assert.deepEqual(map, { mariadb: ['{uri}'], sqlite: ['{uri}'] })
+  map.sqlite = ['{path}']
+  assert.deepEqual(toPlainArgs(map), ['{uri}'])
+  assert.deepEqual(toPerEngineArgs(['x'], argsSections([])), { default: ['x'] })
+})
+
+test('cleanArgs drops blank arguments and sections that are no longer ticked', () => {
+  assert.deepEqual(cleanArgs(['-con', '  ', '{uri}'], []), ['-con', '{uri}'])
+  const map = { mariadb: ['a', ''], sqlite: [''], postgres: ['stale'] }
+  assert.deepEqual(cleanArgs(map, ['mariadb', 'sqlite']), { mariadb: ['a'] })
 })

@@ -20,7 +20,8 @@ pub fn detect_db_tools() -> Vec<DbTool> {
             id: "letos".into(),
             name: "Letos DB Browser".into(),
             found_path: find_letos(),
-            engines: vec!["mariadb".into(), "postgres".into(), "sqlite".into()],
+            // Letos is a SQLite manager (no network-database plugins): it only opens files.
+            engines: vec!["sqlite".into()],
         },
         DbTool {
             id: "dbbrowser".into(),
@@ -240,12 +241,60 @@ pub struct ExternalTool {
     pub launch_mode: String,
     #[serde(default)]
     pub executable: String,
-    /// Arguments with placeholders: {host} {port} {user} {database} {path} {uri}.
+    /// Arguments with placeholders: {host} {port} {user} {database} {path} {uri}. Either one
+    /// list for every engine or a map of engine id to its own list (see [`ToolArgs`]).
     #[serde(default)]
-    pub args: Vec<String>,
+    pub args: ToolArgs,
     /// Calculated availability status (not persisted to disk).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub available: Option<bool>,
+}
+
+/// Key of a per-engine args map that applies to engines without their own entry.
+pub const DEFAULT_ARGS_KEY: &str = "default";
+
+/// A tool's command-line arguments. Most tools take the same arguments for every engine
+/// (`["{path}"]`), but some need a different driver or URL form per engine, so the JSON may
+/// also be `{"mariadb": [...], "postgres": [...], "sqlite": [...]}`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ToolArgs {
+    List(Vec<String>),
+    PerEngine(std::collections::BTreeMap<String, Vec<String>>),
+}
+
+impl Default for ToolArgs {
+    fn default() -> Self {
+        ToolArgs::List(Vec::new())
+    }
+}
+
+impl From<Vec<String>> for ToolArgs {
+    fn from(list: Vec<String>) -> Self {
+        ToolArgs::List(list)
+    }
+}
+
+impl ToolArgs {
+    /// The argument templates for one engine: its own entry, else `default`, else none.
+    pub fn for_engine(&self, engine: &str) -> Vec<String> {
+        match self {
+            ToolArgs::List(list) => list.clone(),
+            ToolArgs::PerEngine(map) => map
+                .get(engine)
+                .or_else(|| map.get(DEFAULT_ARGS_KEY))
+                .cloned()
+                .unwrap_or_default(),
+        }
+    }
+
+    /// True when there are no templates at all, for any engine.
+    pub fn is_empty(&self) -> bool {
+        match self {
+            ToolArgs::List(list) => list.is_empty(),
+            ToolArgs::PerEngine(map) => map.values().all(Vec::is_empty),
+        }
+    }
 }
 
 fn default_launch_mode() -> String {
@@ -274,8 +323,9 @@ impl ExternalToolStore {
     pub fn load(paths: &AppPaths) -> Result<Self, CoreError> {
         let mut tools: Vec<ExternalTool> = crate::db::load_docs(paths, "external_tools")?;
         for t in &mut tools {
-            if t.id == "letos" && !t.engines.contains(&"mariadb".to_string()) {
-                t.engines = vec!["mariadb".into(), "postgres".into(), "sqlite".into()];
+            // Letos only opens SQLite files; drop network engines saved by older versions.
+            if t.id == "letos" && t.engines != ["sqlite"] {
+                t.engines = vec!["sqlite".into()];
             }
         }
         Ok(Self {
@@ -348,6 +398,24 @@ impl ExternalToolStore {
             engines.push(e);
         }
         tool.engines = engines;
+        if let ToolArgs::PerEngine(map) = &tool.args {
+            let mut normalized = std::collections::BTreeMap::new();
+            for (raw, list) in map {
+                let key = raw.trim().to_ascii_lowercase();
+                if key != DEFAULT_ARGS_KEY && !KNOWN_ENGINES.contains(&key.as_str()) {
+                    return Err(CoreError::failed_fix(
+                        format!("\"{}\" is not a database engine in this tool's arguments.", raw.trim()),
+                        format!(
+                            "Per-engine arguments are keyed by one of: {}, or \"{DEFAULT_ARGS_KEY}\".",
+                            KNOWN_ENGINES.join(", ")
+                        ),
+                        "Rename the key to an engine id, or use a plain list of arguments for every engine.",
+                    ));
+                }
+                normalized.insert(key, list.clone());
+            }
+            tool.args = ToolArgs::PerEngine(normalized);
+        }
         match self.tools.iter_mut().find(|t| t.id == tool.id) {
             Some(existing) => *existing = tool,
             None => self.tools.push(tool),
@@ -529,6 +597,35 @@ mod external_tool_tests {
     }
 
     #[test]
+    fn per_engine_args_parse_pick_by_engine_and_fall_back_to_default() {
+        let tool: ExternalTool = serde_json::from_str(
+            r#"{"id":"dbeaver","name":"DBeaver","engines":["mariadb","sqlite"],
+                "args":{"mariadb":["-con","name=OLS {database}|driver=mariaDB|host={host}"],
+                        "sqlite":["-con","driver=sqlite_jdbc|database={path}"],
+                        "default":["{uri}"]}}"#,
+        )
+        .unwrap();
+        let maria = expand_args(&tool.args.for_engine("mariadb"), &info("mariadb"));
+        assert_eq!(
+            maria,
+            ["-con", "name=OLS shop|driver=mariaDB|host=127.0.0.1"]
+        );
+        let lite = expand_args(&tool.args.for_engine("sqlite"), &info("sqlite"));
+        assert_eq!(
+            lite,
+            ["-con", "driver=sqlite_jdbc|database=C:\\my dbs\\a.sqlite"]
+        );
+        assert_eq!(tool.args.for_engine("postgres"), ["{uri}"]);
+        assert!(!tool.args.is_empty());
+
+        // A plain list still means "the same for every engine".
+        let plain: ExternalTool =
+            serde_json::from_str(r#"{"id":"x","name":"X","engines":[],"args":["{path}"]}"#)
+                .unwrap();
+        assert_eq!(plain.args.for_engine("sqlite"), ["{path}"]);
+        assert_eq!(plain.args.for_engine("mariadb"), ["{path}"]);
+    }
+    #[test]
     fn heidisql_args_quote_dotted_values_and_pick_the_right_nettype() {
         let mysql = heidisql_args(&info("mariadb")).unwrap();
         assert!(mysql.contains(&"--nettype=0".to_string()));
@@ -599,7 +696,7 @@ mod external_tool_tests {
             engines: vec!["mongodb".into()],
             launch_mode: "args".into(),
             executable: exe.display().to_string(),
-            args: vec!["{uri}".into()],
+            args: vec!["{uri}".into()].into(),
             available: None,
         };
         store.save(tool.clone()).unwrap();
@@ -610,7 +707,7 @@ mod external_tool_tests {
             engines: vec!["mariadb".into()],
             launch_mode: "args".into(),
             executable: "C:/nope/x.exe".into(),
-            args: vec!["{uri}".into()],
+            args: vec!["{uri}".into()].into(),
             available: None,
         };
         store.save(unavail).unwrap();
@@ -643,7 +740,7 @@ mod external_tool_tests {
                 engines: vec!["MariaDB".into(), " mariadb ".into(), "SQLite".into()],
                 launch_mode: "args".into(),
                 executable: exe.clone(),
-                args: vec!["{uri}".into()],
+                args: vec!["{uri}".into()].into(),
                 available: None,
             })
             .unwrap();
@@ -669,7 +766,7 @@ mod external_tool_tests {
                 engines: vec!["mysql".into()],
                 launch_mode: "args".into(),
                 executable: exe,
-                args: vec![],
+                args: vec![].into(),
                 available: None,
             })
             .unwrap_err();
@@ -704,7 +801,7 @@ mod external_tool_tests {
                 engines: vec![],
                 launch_mode: "args".into(),
                 executable: exe.display().to_string(),
-                args: vec!["{uri}".into()],
+                args: vec!["{uri}".into()].into(),
                 available: None,
             })
             .unwrap();

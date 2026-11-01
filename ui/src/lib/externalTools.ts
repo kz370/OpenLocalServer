@@ -1,9 +1,12 @@
-import type { ExternalTool } from '../core/types/web.ts'
+import type { ExternalTool, ToolArgs } from '../core/types/web.ts'
 
 export const KNOWN_ENGINES = ['mariadb', 'postgres', 'mongodb', 'redis', 'memcached', 'sqlite'] as const
 export type KnownEngine = (typeof KNOWN_ENGINES)[number]
 
 export const ALLOWED_PLACEHOLDERS = ['{uri}', '{path}', '{host}', '{port}', '{user}', '{database}'] as const
+
+/** Key of a per-engine args map that applies to any engine without its own entry. */
+export const DEFAULT_ARGS_KEY = 'default'
 
 export const CURRENT_SCHEMA_VERSION = 1
 
@@ -12,7 +15,79 @@ export interface ToolDefinition {
   name: string
   engines: string[]
   launchMode: 'args' | 'clipboard'
-  args: string[]
+  /** One argument list for every engine, or a map of engine id to its own argument list. */
+  args: ToolArgs
+}
+
+export function isPerEngineArgs(args: ToolArgs | undefined | null): args is Record<string, string[]> {
+  return !!args && !Array.isArray(args) && typeof args === 'object'
+}
+
+/** True when the tool has no arguments at all. */
+export function argsAreEmpty(args: ToolArgs | undefined | null): boolean {
+  if (!args) return true
+  if (isPerEngineArgs(args)) return Object.values(args).every((list) => list.length === 0)
+  return args.length === 0
+}
+
+/** The argument list used for one engine (exact engine entry, else `default`, else none). */
+export function argsForEngine(args: ToolArgs | undefined | null, engine: string): string[] {
+  if (!args) return []
+  if (!isPerEngineArgs(args)) return args
+  return args[engine] ?? args[DEFAULT_ARGS_KEY] ?? []
+}
+
+/** One-line display form of an argument list (arguments containing spaces are quoted). */
+export function joinArgs(list: string[]): string {
+  return list.map((a) => (/\s/.test(a) && !a.includes('"') ? `"${a}"` : a)).join(' ')
+}
+
+/** The engine sections the args editor shows: one per ticked engine, or just `default` when none is ticked. */
+export function argsSections(engines: string[]): string[] {
+  return engines.length > 0 ? engines : [DEFAULT_ARGS_KEY]
+}
+
+/** Turns args into a per-engine map with one entry per section; a plain list is copied into each. */
+export function toPerEngineArgs(args: ToolArgs, sections: string[]): Record<string, string[]> {
+  const map: Record<string, string[]> = {}
+  for (const section of sections) map[section] = [...argsForEngine(args, section)]
+  return map
+}
+
+/** Collapses args to one plain list (the first non-empty entry of a per-engine map). */
+export function toPlainArgs(args: ToolArgs): string[] {
+  if (!isPerEngineArgs(args)) return [...args]
+  return [...(Object.values(args).find((list) => list.length > 0) ?? [])]
+}
+
+/** Drops empty arguments and map entries for sections that are no longer shown. */
+export function cleanArgs(args: ToolArgs, sections: string[]): ToolArgs {
+  const clean = (list: string[]) => list.map((a) => a.trim()).filter(Boolean)
+  if (!isPerEngineArgs(args)) return clean(args)
+  const map: Record<string, string[]> = {}
+  for (const section of sections) {
+    const list = clean(args[section] ?? [])
+    if (list.length > 0) map[section] = list
+  }
+  return map
+}
+/** Short one-line description of a tool's args for lists. */
+export function summarizeArgs(args: ToolArgs | undefined | null): string {
+  if (!args) return ''
+  if (!isPerEngineArgs(args)) return joinArgs(args)
+  return Object.entries(args)
+    .map(([engine, list]) => `${engine}: ${joinArgs(list)}`)
+    .join(' | ')
+}
+
+/** Returns the first unknown `{placeholder}` found in the list, or null when all are allowed. */
+function checkPlaceholders(list: string[]): string | null {
+  for (const a of list) {
+    for (const p of a.match(/\{[^}]+\}/g) ?? []) {
+      if (!ALLOWED_PLACEHOLDERS.includes(p as (typeof ALLOWED_PLACEHOLDERS)[number])) return p
+    }
+  }
+  return null
 }
 
 export interface ToolsFile {
@@ -159,24 +234,50 @@ export function validateImportJson(raw: string): ValidationResult {
 
     const launchMode = t.launchMode === 'clipboard' ? 'clipboard' : 'args'
 
-    const args: string[] = []
+    const unknownPlaceholder = (list: string[]): ValidationFailure | null => {
+      const p = checkPlaceholders(list)
+      return p
+        ? {
+            ok: false,
+            problem: `Unknown argument placeholder "${p}" in tool "${t.id as string}".`,
+            cause: `Placeholder "${p}" is not recognized.`,
+            fix: `Allowed placeholders are: ${ALLOWED_PLACEHOLDERS.join(', ')}.`,
+          }
+        : null
+    }
+
+    let args: ToolArgs = []
     if (Array.isArray(t.args)) {
-      for (const a of t.args) {
-        if (typeof a !== 'string') continue
-        // Validate placeholders in arg
-        const placeholders = a.match(/\{[^}]+\}/g) ?? []
-        for (const p of placeholders) {
-          if (!ALLOWED_PLACEHOLDERS.includes(p as (typeof ALLOWED_PLACEHOLDERS)[number])) {
-            return {
-              ok: false,
-              problem: `Unknown argument placeholder "${p}" in tool "${t.id}".`,
-              cause: `Placeholder "${p}" is not recognized.`,
-              fix: `Allowed placeholders are: ${ALLOWED_PLACEHOLDERS.join(', ')}.`,
-            }
+      const list = t.args.filter((a): a is string => typeof a === 'string')
+      const bad = unknownPlaceholder(list)
+      if (bad) return bad
+      args = list
+    } else if (t.args && typeof t.args === 'object') {
+      const map: Record<string, string[]> = {}
+      for (const [rawKey, value] of Object.entries(t.args as Record<string, unknown>)) {
+        const key = rawKey.trim().toLowerCase()
+        if (!KNOWN_ENGINES.includes(key as KnownEngine) && key !== DEFAULT_ARGS_KEY) {
+          return {
+            ok: false,
+            problem: `Unknown engine "${rawKey}" in the args of tool "${t.id}".`,
+            cause: `"${rawKey}" is not a recognized database engine in OpenLocalServer.`,
+            fix: `Key each argument list by one of: ${KNOWN_ENGINES.join(', ')}, or "${DEFAULT_ARGS_KEY}".`,
           }
         }
-        args.push(a)
+        if (!Array.isArray(value)) {
+          return {
+            ok: false,
+            problem: `Invalid args for engine "${rawKey}" in tool "${t.id}".`,
+            cause: 'Each engine entry must be an array of strings.',
+            fix: `Write it like "${rawKey}": ["-con", "{uri}"].`,
+          }
+        }
+        const list = value.filter((a): a is string => typeof a === 'string')
+        const bad = unknownPlaceholder(list)
+        if (bad) return bad
+        map[key] = list
       }
+      args = map
     }
 
     validTools.push({

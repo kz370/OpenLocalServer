@@ -237,7 +237,8 @@ export interface ExternalTool {
   engines: string[]
   launchMode: 'args' | 'clipboard'
   executable: string
-  args: string[]
+  args: ToolArgs
   available?: boolean
 }
-
+/** One argument list for every engine, or a map of engine id (or `default`) to its own list. */
+export type ToolArgs = string[] | Record<string, string[]>

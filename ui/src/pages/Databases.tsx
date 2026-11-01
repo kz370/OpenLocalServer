@@ -32,6 +32,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog } from '@/components/ui/dialog'
 import { Field, Select, Tabs } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { ToolArgsEditor } from '@/components/ToolArgsEditor'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import {
   type ConnectionInfo,
@@ -39,6 +40,7 @@ import {
   type DbTool,
   type Diagnostic,
   type DbUser,
+  type ToolArgs,
   type ExternalTool,
   type Project,
   type ServiceStatus,
@@ -52,9 +54,12 @@ import { confirmAction, confirmThen } from '@/lib/confirm'
 import { notify } from '@/lib/notify'
 import presetsCatalog from '@/data/presets.json'
 import {
+  argsAreEmpty,
+  argsSections,
+  cleanArgs,
   exportToolsJson,
-  getValidPlaceholderChips,
   slugify,
+  summarizeArgs,
   validateImportJson,
   type ToolDefinition,
 } from '@/lib/externalTools'
@@ -332,7 +337,6 @@ function OpenDatabaseButton({ engine, database = null, path = null, dbTools, ext
           const isClipboard = selectedChoice?.launchMode === 'clipboard'
             || (engine === 'mongodb' && (selectedTool === 'nosqlbooster' || !selectedChoice?.found_path))
             || (engine === 'redis' && (selectedTool === 'tinyrdm' || !selectedChoice?.found_path))
-            || (engine !== 'sqlite' && (selectedChoice?.id === 'letos' || selectedTool === 'letos'))
           if (isClipboard) {
             const connection = await runCommand({ type: 'get_connection_info', engine, database, path })
             if (connection.type === 'connection') {
@@ -915,7 +919,7 @@ function Tools({ dbTools, externalTools, onToolsUpdated }: ToolsProps) {
     engines: [] as string[],
     launchMode: 'args' as 'args' | 'clipboard',
     executable: '',
-    args: '{uri}',
+    args: ['{uri}'] as ToolArgs,
     isCustomId: false,
   })
 
@@ -946,7 +950,7 @@ function Tools({ dbTools, externalTools, onToolsUpdated }: ToolsProps) {
       engines: [],
       launchMode: 'args',
       executable: '',
-      args: '{uri}',
+      args: ['{uri}'],
       isCustomId: false,
     })
   }
@@ -981,7 +985,7 @@ function Tools({ dbTools, externalTools, onToolsUpdated }: ToolsProps) {
       name: p.name,
       engines: [...p.engines],
       launchMode: p.launchMode,
-      args: p.args.join(' ') || (p.launchMode === 'args' ? '{uri}' : ''),
+      args: argsAreEmpty(p.args) && p.launchMode === 'args' ? ['{uri}'] : p.args,
       executable: existing?.executable || detected,
       isCustomId: true,
     })
@@ -999,10 +1003,6 @@ function Tools({ dbTools, externalTools, onToolsUpdated }: ToolsProps) {
     }
   }
 
-  function splitArgs(str: string): string[] {
-    const matches = str.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)
-    return matches ? matches.map((m) => m.trim()).filter(Boolean) : []
-  }
 
   async function handleSave() {
     if (!draft.id.trim() || !draft.name.trim()) return
@@ -1014,7 +1014,8 @@ function Tools({ dbTools, externalTools, onToolsUpdated }: ToolsProps) {
         engines: draft.engines,
         launchMode: draft.launchMode,
         executable: draft.executable.trim(),
-        args: draft.launchMode === 'clipboard' ? [] : splitArgs(draft.args),
+        args:
+          draft.launchMode === 'clipboard' ? [] : cleanArgs(draft.args, argsSections(draft.engines)),
       }
 
       const res = await runCommand({ type: 'save_external_tool', tool })
@@ -1185,8 +1186,6 @@ function Tools({ dbTools, externalTools, onToolsUpdated }: ToolsProps) {
       p.id.toLowerCase().includes(presetSearch.toLowerCase()) ||
       p.engines.some((e) => e.toLowerCase().includes(presetSearch.toLowerCase())),
   )
-
-  const chips = getValidPlaceholderChips(draft.engines)
 
   return (
     <div className="flex flex-col gap-6">
@@ -1415,46 +1414,14 @@ function Tools({ dbTools, externalTools, onToolsUpdated }: ToolsProps) {
               </div>
             </Field>
 
-            {/* Arguments field with placeholder chips (if args mode) */}
+            {/* Arguments: one box per argument, optionally different per engine (if args mode) */}
             {draft.launchMode === 'args' && (
               <div className="flex flex-col gap-2">
-                <Field
-                  label="Arguments (space-separated)"
-                  hint="Each space-separated token is passed as an isolated process argument."
-                >
-                  <Input
-                    value={draft.args}
-                    onChange={(e) => setDraft((curr) => ({ ...curr, args: e.target.value }))}
-                    placeholder="-con {uri}"
-                    className="font-mono text-xs"
-                  />
-                </Field>
-
-                {/* Clickable placeholder chips */}
-                <div className="flex flex-col gap-1.5 rounded-lg bg-muted/40 p-2.5">
-                  <span className="text-[11px] font-medium text-muted-foreground">
-                    Click a chip to insert placeholder into arguments:
-                  </span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {chips.map((c) => (
-                      <button
-                        key={c.token}
-                        type="button"
-                        onClick={() => {
-                          setDraft((curr) => {
-                            const trimmed = curr.args.trim()
-                            const next = trimmed ? `${trimmed} ${c.token}` : c.token
-                            return { ...curr, args: next }
-                          })
-                        }}
-                        title={c.label}
-                        className="rounded border border-border bg-card px-2 py-0.5 font-mono text-[11px] hover:border-primary hover:bg-primary/10 transition"
-                      >
-                        {c.token}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                <ToolArgsEditor
+                  engines={draft.engines}
+                  value={draft.args}
+                  onChange={(args) => setDraft((curr) => ({ ...curr, args }))}
+                />
 
                 {/* Security Note */}
                 <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-2 text-[11px] text-amber-700 dark:text-amber-300">
@@ -1463,7 +1430,6 @@ function Tools({ dbTools, externalTools, onToolsUpdated }: ToolsProps) {
                 </div>
               </div>
             )}
-
             {/* Executable Path */}
             <Field label="Program executable (.exe)" hint="Single local path. The file must exist on disk.">
               <div className="flex gap-2">
@@ -1557,9 +1523,9 @@ function Tools({ dbTools, externalTools, onToolsUpdated }: ToolsProps) {
                         </span>
                       ))
                     )}
-                    {t.launchMode === 'args' && t.args.length > 0 && (
+                    {t.launchMode === 'args' && !argsAreEmpty(t.args) && (
                       <span className="font-mono text-[11px] text-muted-foreground truncate max-w-sm">
-                        · args: {t.args.join(' ')}
+                        · args: {summarizeArgs(t.args)}
                       </span>
                     )}
                   </div>
@@ -1644,7 +1610,7 @@ function Tools({ dbTools, externalTools, onToolsUpdated }: ToolsProps) {
                         name: t.name,
                         engines: [...t.engines],
                         launchMode: t.launchMode ?? 'args',
-                        args: t.args.join(' '),
+                        args: t.args,
                         executable: t.executable,
                         isCustomId: true,
                       })
@@ -1828,7 +1794,7 @@ function Tools({ dbTools, externalTools, onToolsUpdated }: ToolsProps) {
                         </div>
                         <div className="mt-1 flex flex-wrap gap-1 text-[11px] text-muted-foreground">
                           <span>Engines: {t.engines.length ? t.engines.join(', ') : 'every engine'}</span>
-                          {t.args.length > 0 && <span className="font-mono">· args: {t.args.join(' ')}</span>}
+                          {!argsAreEmpty(t.args) && <span className="font-mono">· args: {summarizeArgs(t.args)}</span>}
                         </div>
                       </div>
 
