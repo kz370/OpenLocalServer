@@ -212,8 +212,18 @@ impl Core {
                             _ => "mysql://root@127.0.0.1:3306/test_db".into(),
                         },
                     };
-                    let args = crate::dbtools::expand_args(&tool.args, &sample_info);
-                    crate::dbtools::launch(&tool.executable, &args, false)
+                    let args = if tool.id == "heidisql" {
+                        crate::dbtools::heidisql_args_for_executable(&sample_info, &tool.executable)
+                            .unwrap_or_else(|| {
+                                crate::dbtools::expand_args(&tool.args, &sample_info)
+                            })
+                    } else {
+                        crate::dbtools::expand_args(&tool.args, &sample_info)
+                    };
+                    let verbatim = tool.id == "heidisql"
+                        || args.iter().any(|a| a.contains('"'))
+                        || tool.executable.to_lowercase().contains("heidisql");
+                    crate::dbtools::launch(&tool.executable, &args, verbatim)
                         .map_err(CoreError::ServiceError)?;
                     Ok(R::Text {
                         text: format!(

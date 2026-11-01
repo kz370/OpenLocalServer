@@ -272,7 +272,12 @@ pub struct ExternalToolStore {
 
 impl ExternalToolStore {
     pub fn load(paths: &AppPaths) -> Result<Self, CoreError> {
-        let tools = crate::db::load_docs(paths, "external_tools")?;
+        let mut tools: Vec<ExternalTool> = crate::db::load_docs(paths, "external_tools")?;
+        for t in &mut tools {
+            if t.id == "letos" && !t.engines.contains(&"mariadb".to_string()) {
+                t.engines = vec!["mariadb".into(), "postgres".into(), "sqlite".into()];
+            }
+        }
         Ok(Self {
             paths: paths.clone(),
             tools,
@@ -377,6 +382,7 @@ pub fn expand_args(args: &[String], info: &ConnectionInfo) -> Vec<String> {
                 .replace("{path}", info.path.as_deref().unwrap_or(""))
                 .replace("{uri}", &info.uri)
         })
+        .filter(|s| !s.trim().is_empty())
         .collect()
 }
 
@@ -464,9 +470,15 @@ pub fn heidisql_args_for_executable(
 /// exactly as written (Windows) instead of being re-quoted.
 pub fn launch(executable: &str, args: &[String], verbatim: bool) -> Result<(), String> {
     let mut cmd = std::process::Command::new(executable);
+    if let Some(parent) = std::path::Path::new(executable).parent() {
+        cmd.current_dir(parent);
+    }
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
+        let verbatim = verbatim
+            || args.iter().any(|a| a.contains('"'))
+            || executable.to_lowercase().contains("heidisql");
         for a in args {
             if verbatim {
                 cmd.raw_arg(a);

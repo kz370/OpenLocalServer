@@ -61,8 +61,22 @@ impl Inner {
             if tool.launch_mode == "clipboard" {
                 return dbtools::launch(&tool.executable, &[], false).map_err(svc);
             }
-            let args = dbtools::expand_args(&tool.args, &info);
-            return dbtools::launch(&tool.executable, &args, false).map_err(svc);
+            let args = if tool.id == "heidisql"
+                && (tool.args.is_empty()
+                    || tool
+                        .args
+                        .iter()
+                        .any(|a| a.contains("-D=") || a.contains("--nettype") || a.contains("-h=")))
+            {
+                dbtools::heidisql_args_for_executable(&info, &tool.executable)
+                    .unwrap_or_else(|| dbtools::expand_args(&tool.args, &info))
+            } else {
+                dbtools::expand_args(&tool.args, &info)
+            };
+            let verbatim = tool.id == "heidisql"
+                || args.iter().any(|a| a.contains('"'))
+                || tool.executable.to_lowercase().contains("heidisql");
+            return dbtools::launch(&tool.executable, &args, verbatim).map_err(svc);
         }
 
         // 2) Built-in tool handling if explicitly chosen by ID:

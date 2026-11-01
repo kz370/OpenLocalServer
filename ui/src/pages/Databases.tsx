@@ -330,7 +330,10 @@ function OpenDatabaseButton({ engine, database = null, path = null, dbTools, ext
               return
             }
 
-            const isClipboard = selectedChoice?.launchMode === 'clipboard' || (engine === 'mongodb' && selectedTool === 'nosqlbooster') || (engine === 'redis' && selectedTool === 'tinyrdm')
+            const isClipboard = selectedChoice?.launchMode === 'clipboard'
+              || (engine === 'mongodb' && (selectedTool === 'nosqlbooster' || !selectedChoice?.found_path))
+              || (engine === 'redis' && (selectedTool === 'tinyrdm' || !selectedChoice?.found_path))
+              || (engine !== 'sqlite' && (selectedChoice?.id === 'letos' || selectedTool === 'letos'))
             if (isClipboard) {
               const connection = await runCommand({ type: 'get_connection_info', engine, database, path })
               if (connection.type === 'connection') {
@@ -1000,6 +1003,11 @@ function Tools({ dbTools, externalTools, onToolsUpdated }: ToolsProps) {
     }
   }
 
+  function splitArgs(str: string): string[] {
+    const matches = str.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)
+    return matches ? matches.map((m) => m.trim()).filter(Boolean) : []
+  }
+
   async function handleSave() {
     if (!draft.id.trim() || !draft.name.trim()) return
 
@@ -1010,7 +1018,7 @@ function Tools({ dbTools, externalTools, onToolsUpdated }: ToolsProps) {
         engines: draft.engines,
         launchMode: draft.launchMode,
         executable: draft.executable.trim(),
-        args: draft.launchMode === 'clipboard' ? [] : draft.args.split(/\s+/).filter(Boolean),
+        args: draft.launchMode === 'clipboard' ? [] : splitArgs(draft.args),
       }
 
       const res = await runCommand({ type: 'save_external_tool', tool })
