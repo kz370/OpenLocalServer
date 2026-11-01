@@ -258,6 +258,33 @@ impl ProcessSupervisor {
         })
     }
 
+    /// Are any live processes currently running an executable or working directory inside `dir`?
+    pub fn any_alive_in_dir(&self, dir: &std::path::Path) -> bool {
+        let mut norm_dir = dir.to_string_lossy().replace('/', "\\").to_lowercase();
+        if !norm_dir.ends_with('\\') {
+            norm_dir.push('\\');
+        }
+        let guard = self.processes.lock().unwrap();
+        guard.values().any(|r| {
+            matches!(
+                r.info.state,
+                ProcessState::Starting | ProcessState::Running | ProcessState::Restarting
+            ) && {
+                let exec = r.spec.executable.replace('/', "\\").to_lowercase();
+                if exec.starts_with(&norm_dir) {
+                    return true;
+                }
+                if let Some(ref cwd) = r.spec.cwd {
+                    let norm_cwd = cwd.replace('/', "\\").to_lowercase();
+                    if norm_cwd.starts_with(&norm_dir) {
+                        return true;
+                    }
+                }
+                false
+            }
+        })
+    }
+
     pub fn snapshot(&self) -> Vec<ProcessInfo> {
         let guard = self.processes.lock().unwrap();
         let mut list: Vec<_> = guard.values().map(|r| r.info.clone()).collect();

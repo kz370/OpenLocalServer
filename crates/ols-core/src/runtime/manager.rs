@@ -221,7 +221,7 @@ impl RuntimeManager {
         rx.recv().map_err(|e| e.to_string())?
     }
 
-    pub(crate) fn version_dir(&self, id: &str, version: &str) -> PathBuf {
+    pub fn version_dir(&self, id: &str, version: &str) -> PathBuf {
         self.paths.runtimes_dir().join(id).join(version)
     }
 }
@@ -260,6 +260,11 @@ pub(crate) fn runtime_binary(id: &str) -> Option<&'static str> {
         "postgres" => Some("bin/postgres.exe"),
         "redis" => Some("redis-server.exe"),
         "memcached" => Some("bin/memcached.exe"),
+        "mailpit" => Some("mailpit.exe"),
+        "caddy" => Some("caddy.exe"),
+        "sqlite" => Some("sqlite3.exe"),
+        "git" => Some("cmd/git.exe"),
+        "k6" => Some("k6.exe"),
         _ => None,
     }
 }
@@ -281,6 +286,11 @@ pub(crate) fn runtime_name(id: &str, manifests: &[PackageManifest]) -> String {
             "postgres" => "PostgreSQL".into(),
             "redis" => "Redis".into(),
             "memcached" => "Memcached".into(),
+            "mailpit" => "Mailpit".into(),
+            "caddy" => "Caddy".into(),
+            "sqlite" => "SQLite".into(),
+            "git" => "Git (portable)".into(),
+            "k6" => "k6 (load testing)".into(),
             _ => id.into(),
         })
 }

@@ -212,20 +212,14 @@ impl Core {
                     Ok(R::Ok)
                 }
                 C::RemoveRuntime { id, version } => {
-                    if i.services.is_running(&id) {
-                        return Err(CoreError::ServiceError(format!(
-                            "Stop {id} before removing a version."
-                        )));
-                    }
-                    if matches!(id.as_str(), "nginx" | "apache" | "caddy") && i.web.is_running() {
-                        return Err(CoreError::ServiceError(
-                            "Stop the web server before removing a server version.".into(),
-                        ));
-                    }
-                    if id == "php" && i.web.is_running() {
-                        return Err(CoreError::ServiceError(
-                            "Stop the web server before removing a PHP version.".into(),
-                        ));
+                    let version_dir = i.runtimes.version_dir(&id, &version);
+                    if i.supervisor.any_alive_in_dir(&version_dir) {
+                        let msg = if id == "php" {
+                            format!("Stop sites using PHP {version} before removing it.")
+                        } else {
+                            format!("Stop {id} before removing {id} {version}.")
+                        };
+                        return Err(CoreError::ServiceError(msg));
                     }
                     let was_default = i.runtimes.catalog().iter().any(|entry| {
                         entry.id == id && entry.version == version && entry.is_default
