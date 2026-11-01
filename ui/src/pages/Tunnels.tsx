@@ -64,11 +64,16 @@ const STATE_BADGE: Record<TunnelStatus['state'], { label: string; variant: 'succ
 }
 
 /** §56–60, §110–111: public tunnels, their traffic, and a webhook tester. */
+let cachedTunnels: TunnelStatus[] = []
+let cachedTunnelProviders: TunnelProvider[] = []
+let cachedTunnelDomains: DomainSummary[] = []
+let cachedTunnelProjects: Project[] = []
+
 export function TunnelsPage() {
-  const [tunnels, setTunnels] = useState<TunnelStatus[]>([])
-  const [providers, setProviders] = useState<TunnelProvider[]>([])
-  const [domains, setDomains] = useState<DomainSummary[]>([])
-  const [projects, setProjects] = useState<Project[]>([])
+  const [tunnels, setTunnels] = useState<TunnelStatus[]>(cachedTunnels)
+  const [providers, setProviders] = useState<TunnelProvider[]>(cachedTunnelProviders)
+  const [domains, setDomains] = useState<DomainSummary[]>(cachedTunnelDomains)
+  const [projects, setProjects] = useState<Project[]>(cachedTunnelProjects)
   const [editing, setEditing] = useState<TunnelConfig | null>(null)
   const [confirming, setConfirming] = useState<TunnelStatus | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
@@ -76,14 +81,26 @@ export function TunnelsPage() {
 
   const refresh = useCallback(async () => {
     const r = await runCommand({ type: 'list_tunnels' })
-    if (r.type === 'tunnels') setTunnels(r.tunnels)
+    if (r.type === 'tunnels') {
+      setTunnels(r.tunnels)
+      cachedTunnels = r.tunnels
+    }
   }, [])
 
   const loadAll = useCallback(async () => {
     const [p, d, pr] = await Promise.all([runCommand({ type: 'list_tunnel_providers' }), runCommand({ type: 'list_domains' }), runCommand({ type: 'list_projects' })])
-    if (p.type === 'tunnel_providers') setProviders(p.providers)
-    if (d.type === 'domains') setDomains(d.domains)
-    if (pr.type === 'projects') setProjects(pr.projects)
+    if (p.type === 'tunnel_providers') {
+      setProviders(p.providers)
+      cachedTunnelProviders = p.providers
+    }
+    if (d.type === 'domains') {
+      setDomains(d.domains)
+      cachedTunnelDomains = d.domains
+    }
+    if (pr.type === 'projects') {
+      setProjects(pr.projects)
+      cachedTunnelProjects = pr.projects
+    }
     await refresh()
   }, [refresh])
 

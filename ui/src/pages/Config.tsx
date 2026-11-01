@@ -31,9 +31,12 @@ function languageFor(server: string): EditorLanguage {
   return server === 'nginx' ? 'nginx' : server === 'apache' ? 'apache' : 'text'
 }
 
+let cachedConfigFiles: ConfigFile[] = []
+let cachedWebConfig: WebConfig | null = null
+
 export function ConfigPage() {
-  const [files, setFiles] = useState<ConfigFile[]>([])
-  const [cfg, setCfg] = useState<WebConfig | null>(null)
+  const [files, setFiles] = useState<ConfigFile[]>(cachedConfigFiles)
+  const [cfg, setCfg] = useState<WebConfig | null>(cachedWebConfig)
   const [selected, setSelected] = useState<string | null>(null)
   const [historyTick, setHistoryTick] = useState(0)
   const { error, setError } = useAction()
@@ -45,9 +48,13 @@ export function ConfigPage() {
     const [l, c] = await Promise.all([runCommand({ type: 'list_web_configs' }), runCommand({ type: 'get_web_config' })])
     if (l.type === 'configs') {
       setFiles(l.files)
+      cachedConfigFiles = l.files
       if (!keep && !selected && l.files.length > 0) setSelected(fileKey(l.files[0]))
     }
-    if (c.type === 'web_config') setCfg(c.config)
+    if (c.type === 'web_config') {
+      setCfg(c.config)
+      cachedWebConfig = c.config
+    }
   }
 
   useEffect(() => {

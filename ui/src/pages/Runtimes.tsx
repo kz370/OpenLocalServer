@@ -67,22 +67,28 @@ interface Group {
   rows: Row[]
 }
 
+let cachedRuntimeCatalog: CatalogEntry[] = []
+let cachedCustomInstalls: CustomInstall[] = []
+let cachedCatalogStatus: Record<string, CatalogStatus> = {}
+let cachedVerifiedKeys: Set<string> = new Set()
+let cachedHasLoaded = false
+
 export function RuntimesPage() {
-  const [catalog, setCatalog] = useState<CatalogEntry[]>([])
+  const [catalog, setCatalog] = useState<CatalogEntry[]>(cachedRuntimeCatalog)
   const [progress, setProgress] = useState<Record<string, RuntimeEvent | undefined>>({})
   const [error, setError] = useState<Diagnostic | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!cachedHasLoaded)
   const [catalogRefreshing, setCatalogRefreshing] = useState(false)
-  const [catalogStatus, setCatalogStatus] = useState<Record<string, CatalogStatus>>({})
+  const [catalogStatus, setCatalogStatus] = useState<Record<string, CatalogStatus>>(cachedCatalogStatus)
   const [cachedCatalogIds, setCachedCatalogIds] = useState<Set<string>>(new Set())
-  const [verifiedKeys, setVerifiedKeys] = useState<Set<string>>(new Set())
+  const [verifiedKeys, setVerifiedKeys] = useState<Set<string>>(cachedVerifiedKeys)
   const [filter, setFilter] = useState<'all' | 'updates' | 'installed'>('all')
 
   const [installError, setInstallError] = useState<{ id: string; version: string; message: string } | null>(null)
   const [pending, setPending] = useState<Set<string>>(new Set())
 
-  const [customInstalls, setCustomInstalls] = useState<CustomInstall[]>([])
+  const [customInstalls, setCustomInstalls] = useState<CustomInstall[]>(cachedCustomInstalls)
   const [manageId, setManageId] = useState<string | null>(null)
   const [installChoices, setInstallChoices] = useState<Record<string, string>>({})
   const [versionSearch, setVersionSearch] = useState('')
@@ -136,12 +142,20 @@ export function RuntimesPage() {
         for (const entry of res.entries) {
           byKey.set(`${entry.id}@${entry.version}`, entry)
         }
-        return Array.from(byKey.values())
+        const next = Array.from(byKey.values())
+        cachedRuntimeCatalog = next
+        return next
       })
-      setVerifiedKeys((prev) => new Set([...prev, ...res.entries.map((e) => `${e.id}@${e.version}`)]))
+      const nextKeys = new Set([...verifiedKeys, ...res.entries.map((e) => `${e.id}@${e.version}`)])
+      cachedVerifiedKeys = nextKeys
+      setVerifiedKeys(nextKeys)
     }
     const custom = await runCommand({ type: 'list_custom_installs' })
-    if (custom.type === 'custom_installs') setCustomInstalls(custom.entries)
+    if (custom.type === 'custom_installs') {
+      setCustomInstalls(custom.entries)
+      cachedCustomInstalls = custom.entries
+    }
+    cachedHasLoaded = true
     setLoading(false)
   }
 
@@ -151,7 +165,11 @@ export function RuntimesPage() {
       const res = await runCommand({ type: 'refresh_runtime_catalog', id })
       if (res.type !== 'runtime_catalog') return
       const entries = res.entries.filter((entry) => entry.id === id)
-      setCatalog((prev) => [...prev.filter((entry) => entry.id !== id), ...entries])
+      setCatalog((prev) => {
+        const next = [...prev.filter((entry) => entry.id !== id), ...entries]
+        cachedRuntimeCatalog = next
+        return next
+      })
       setVerifiedKeys((prev) => new Set([...prev, ...entries.map((e) => `${e.id}@${e.version}`)]))
       setCatalogStatus((prev) => ({ ...prev, [id]: 'ready' }))
       setCachedCatalogIds((prev) => new Set([...prev, id]))

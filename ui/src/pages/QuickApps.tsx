@@ -109,8 +109,10 @@ function evalCondition(expr: string, values: Record<string, string>): boolean {
   )
 }
 
+let cachedQuickApps: QuickEntryView[] = []
+
 export function QuickAppsPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
-  const [apps, setApps] = useState<QuickEntryView[]>([])
+  const [apps, setApps] = useState<QuickEntryView[]>(cachedQuickApps)
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('all')
   const [favOnly, setFavOnly] = useState(false)
@@ -122,7 +124,10 @@ export function QuickAppsPage({ onNavigate }: { onNavigate: (p: Page) => void })
 
   async function refresh() {
     const r = await runCommand({ type: 'list_quick_apps' })
-    if (r.type === 'quick_apps') setApps(r.apps)
+    if (r.type === 'quick_apps') {
+      setApps(r.apps)
+      cachedQuickApps = r.apps
+    }
   }
   useEffect(() => {
     refresh().catch((e) => setError(asDiagnostic(e)))

@@ -18,9 +18,12 @@ import { confirmAction } from '@/lib/confirm'
 
 type ServiceAction = 'start' | 'stop' | 'restart' | 'reload'
 
+let cachedServicesList: ServiceStatus[] = []
+let cachedDbToolsList: DbTool[] = []
+
 export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => void }) {
-  const [services, setServices] = useState<ServiceStatus[]>([])
-  const [dbTools, setDbTools] = useState<DbTool[]>([])
+  const [services, setServices] = useState<ServiceStatus[]>(cachedServicesList)
+  const [dbTools, setDbTools] = useState<DbTool[]>(cachedDbToolsList)
   const [dbName, setDbName] = useState('my_app')
   const [error, setError] = useState<Diagnostic | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -29,9 +32,15 @@ export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => v
   async function refresh() {
     try {
       const res = await runCommand({ type: 'list_services' })
-      if (res.type === 'services') setServices(res.services)
+      if (res.type === 'services') {
+        setServices(res.services)
+        cachedServicesList = res.services
+      }
       const tools = await runCommand({ type: 'list_db_tools' })
-      if (tools.type === 'db_tools') setDbTools(tools.tools)
+      if (tools.type === 'db_tools') {
+        setDbTools(tools.tools)
+        cachedDbToolsList = tools.tools
+      }
     } catch (err) {
       // An empty list and a failed list look identical on screen, so the failure has
       // to be shown or the page silently claims nothing is registered.

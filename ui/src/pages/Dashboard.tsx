@@ -19,13 +19,17 @@ import { waitForService } from '@/lib/wait'
 import { confirmAction } from '@/lib/confirm'
 import { groupServices } from '@/lib/serviceGrouping'
 
+let cachedDashboardData: DashboardData | null = null
+let cachedDashboardStats: SystemStats | null = null
+let cachedAccessLines: string[] = []
+
 /** §173 / §116 / §101: what's running, what's wrong, and one-click ways to act on it. */
 export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page) => void; onOpenLogs: (source: string) => void }) {
-  const [data, setData] = useState<DashboardData | null>(null)
+  const [data, setData] = useState<DashboardData | null>(cachedDashboardData)
   const [dataError, setDataError] = useState<Diagnostic | null>(null)
   const [diagToken, setDiagToken] = useState(0)
-  const [stats, setStats] = useState<SystemStats | null>(null)
-  const [accessLines, setAccessLines] = useState<string[]>([])
+  const [stats, setStats] = useState<SystemStats | null>(cachedDashboardStats)
+  const [accessLines, setAccessLines] = useState<string[]>(cachedAccessLines)
   const action = useAction()
   const { busy, error, setError, run } = action
 
@@ -34,6 +38,7 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
       const res = await runCommand({ type: 'get_dashboard' })
       if (res.type === 'dashboard') {
         setData(res.data)
+        cachedDashboardData = res.data
         setDataError(null)
       }
     } catch (e) {
@@ -46,18 +51,27 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
   // Machine load next to sites, not buried on Processes page.
   usePoll(async () => {
     const r = await runCommand({ type: 'get_system_stats' }).catch(() => null)
-    if (r?.type === 'system_stats') setStats(r.stats)
+    if (r?.type === 'system_stats') {
+      setStats(r.stats)
+      cachedDashboardStats = r.stats
+    }
   }, 3000)
 
   // Traffic from web access log; no new backend needed.
   usePoll(async () => {
     const r = await runCommand({ type: 'read_log', source: 'web:access', max_lines: 400 }).catch(() => null)
-    if (r?.type === 'log_lines') setAccessLines(r.lines)
+    if (r?.type === 'log_lines') {
+      setAccessLines(r.lines)
+      cachedAccessLines = r.lines
+    }
   }, 5000)
 
   const refresh = async () => {
     const res = await runCommand({ type: 'get_dashboard' })
-    if (res.type === 'dashboard') setData(res.data)
+    if (res.type === 'dashboard') {
+      setData(res.data)
+      cachedDashboardData = res.data
+    }
   }
 
   const web = data?.web

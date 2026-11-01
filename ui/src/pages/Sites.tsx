@@ -82,6 +82,8 @@ function StatusDot({ site, running }: { site: DomainSummary | null; running: boo
   )
 }
 
+let cachedWpProjects: WpProject[] = []
+
 export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   const web = useWeb()
   // The WordPress sign-in screen lives outside this window, so it is told which colourway
@@ -113,11 +115,14 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   // WordPress projects, straight from the folders on disk: this is what decides which rows
   // get a "WP Admin" action. Re-read when the project list changes, so a folder added or
   // deleted elsewhere gains or loses the action without a reload.
-  const [wpProjects, setWpProjects] = useState<WpProject[]>([])
+  const [wpProjects, setWpProjects] = useState<WpProject[]>(cachedWpProjects)
 
   const refreshWpProjects = async () => {
     const r = await runCommand({ type: 'list_wp_projects' })
-    if (r.type === 'wp_projects') setWpProjects(r.projects)
+    if (r.type === 'wp_projects') {
+      setWpProjects(r.projects)
+      cachedWpProjects = r.projects
+    }
   }
 
   useEffect(() => {

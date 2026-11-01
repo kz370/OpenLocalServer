@@ -38,13 +38,21 @@ type DatabaseToolProps = {
 }
 
 /** §31–39, §102: SQL databases and users, MongoDB connection info, SQLite files, and external tools. */
+let cachedDbServices: ServiceStatus[] = []
+let cachedDbTools: DbTool[] = []
+let cachedExternalTools: ExternalTool[] = []
+let cachedDefaultTools: Record<string, string> = {}
+let cachedSqlDbs: Record<string, string[]> = {}
+let cachedSqlUsers: Record<string, DbUser[]> = {}
+let cachedSqlBackups: Record<string, DbBackup[]> = {}
+
 export function DatabasesPage() {
   const [tab, setTab] = useState<Tab>('mariadb')
   const [migrating, setMigrating] = useState(false)
-  const [services, setServices] = useState<ServiceStatus[]>([])
-  const [dbTools, setDbTools] = useState<DbTool[]>([])
-  const [externalTools, setExternalTools] = useState<ExternalTool[]>([])
-  const [defaultTools, setDefaultTools] = useState<Record<string, string>>({})
+  const [services, setServices] = useState<ServiceStatus[]>(cachedDbServices)
+  const [dbTools, setDbTools] = useState<DbTool[]>(cachedDbTools)
+  const [externalTools, setExternalTools] = useState<ExternalTool[]>(cachedExternalTools)
+  const [defaultTools, setDefaultTools] = useState<Record<string, string>>(cachedDefaultTools)
   const { error, setError } = useAction()
 
   useEffect(() => {
@@ -53,8 +61,14 @@ export function DatabasesPage() {
       runCommand({ type: 'list_external_tools' }),
       ...['mariadb', 'postgres', 'mongodb', 'redis', 'sqlite'].map((engine) => runCommand({ type: 'get_setting', key: `database.default_tool.${engine}` })),
     ]).then(([detected, external, ...settings]) => {
-      if (detected.type === 'db_tools') setDbTools(detected.tools)
-      if (external.type === 'external_tools') setExternalTools(external.tools)
+      if (detected.type === 'db_tools') {
+        setDbTools(detected.tools)
+        cachedDbTools = detected.tools
+      }
+      if (external.type === 'external_tools') {
+        setExternalTools(external.tools)
+        cachedExternalTools = external.tools
+      }
       const defaults: Record<string, string> = {}
       const configured = new Set<string>()
       settings.forEach((setting, index) => {
@@ -75,6 +89,7 @@ export function DatabasesPage() {
         else defaults[engine] = registeredTools.find((tool) => tool.engines.includes(engine))?.id ?? ''
       }
       setDefaultTools(defaults)
+      cachedDefaultTools = defaults
     }).catch((e) => setError(e as Diagnostic))
   }, [])
 
@@ -85,7 +100,10 @@ export function DatabasesPage() {
 
   usePoll(async () => {
     const r = await runCommand({ type: 'list_services' })
-    if (r.type === 'services') setServices(r.services)
+    if (r.type === 'services') {
+      setServices(r.services)
+      cachedDbServices = r.services
+    }
   }, 4000)
 
   return (
@@ -314,14 +332,14 @@ function ConnectionDetails({ engine, database, path = null }: { engine: string; 
 const ENGINE_NAMES = { mariadb: 'MariaDB', postgres: 'PostgreSQL' } as const
 
 function SqlEngine({ engine, service, ...toolProps }: { engine: 'mariadb' | 'postgres'; service?: ServiceStatus } & DatabaseToolProps) {
-  const [dbs, setDbs] = useState<string[]>([])
-  const [users, setUsers] = useState<DbUser[]>([])
+  const [dbs, setDbs] = useState<string[]>(() => cachedSqlDbs[engine] ?? [])
+  const [users, setUsers] = useState<DbUser[]>(() => cachedSqlUsers[engine] ?? [])
   const [newDb, setNewDb] = useState('')
   const [newDbCreds, setNewDbCreds] = useState<'root' | 'custom'>('root')
   const [dbUser, setDbUser] = useState({ user: '', password: '' })
   const [user, setUser] = useState({ user: '', password: '', database: '' })
   const [openDb, setOpenDb] = useState<string | null>(null)
-  const [backups, setBackups] = useState<DbBackup[]>([])
+  const [backups, setBackups] = useState<DbBackup[]>(() => cachedSqlBackups[engine] ?? [])
   const [note, setNote] = useState<string | null>(null)
   const [busyDb, setBusyDb] = useState<string | null>(null)
   const [busyBackup, setBusyBackup] = useState<string | null>(null)
@@ -332,10 +350,19 @@ function SqlEngine({ engine, service, ...toolProps }: { engine: 'mariadb' | 'pos
   async function refresh() {
     if (!running) return
     const [d, u] = await Promise.all([runCommand({ type: 'list_databases', engine }), runCommand({ type: 'list_db_users', engine })])
-    if (d.type === 'names') setDbs(d.names)
-    if (u.type === 'db_users') setUsers(u.users)
+    if (d.type === 'names') {
+      setDbs(d.names)
+      cachedSqlDbs[engine] = d.names
+    }
+    if (u.type === 'db_users') {
+      setUsers(u.users)
+      cachedSqlUsers[engine] = u.users
+    }
     const b = await runCommand({ type: 'list_db_backups', engine, database: null })
-    if (b.type === 'db_backups') setBackups(b.backups)
+    if (b.type === 'db_backups') {
+      setBackups(b.backups)
+      cachedSqlBackups[engine] = b.backups
+    }
   }
   useEffect(() => {
     refresh().catch((e) => setError(e))

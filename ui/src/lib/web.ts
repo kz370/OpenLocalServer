@@ -25,16 +25,26 @@ export interface BulkOutcome {
  * The web server's state and the "apply" step every site change ends with. Shared by the
  * Projects page (which lists sites) and the Web server page (server, ports, certificates).
  */
+let cachedStatus: WebStatus | null = null
+let cachedCfg: WebConfig | null = null
+let cachedDomains: DomainSummary[] = []
+let cachedCerts: CertInfo[] = []
+let cachedCa: CaInfo | null = null
+let cachedProjects: Project[] = []
+let cachedCatalog: CatalogEntry[] = []
+let cachedCustomPhp: string[] = []
+let cachedReports: ApplyReport[] = []
+
 export function useWeb() {
-  const [status, setStatus] = useState<WebStatus | null>(null)
-  const [cfg, setCfg] = useState<WebConfig | null>(null)
-  const [domains, setDomains] = useState<DomainSummary[]>([])
-  const [certs, setCerts] = useState<CertInfo[]>([])
-  const [ca, setCa] = useState<CaInfo | null>(null)
-  const [projects, setProjects] = useState<Project[]>([])
-  const [catalog, setCatalog] = useState<CatalogEntry[]>([])
-  const [customPhp, setCustomPhp] = useState<string[]>([])
-  const [reports, setReports] = useState<ApplyReport[]>([])
+  const [status, setStatus] = useState<WebStatus | null>(cachedStatus)
+  const [cfg, setCfg] = useState<WebConfig | null>(cachedCfg)
+  const [domains, setDomains] = useState<DomainSummary[]>(cachedDomains)
+  const [certs, setCerts] = useState<CertInfo[]>(cachedCerts)
+  const [ca, setCa] = useState<CaInfo | null>(cachedCa)
+  const [projects, setProjects] = useState<Project[]>(cachedProjects)
+  const [catalog, setCatalog] = useState<CatalogEntry[]>(cachedCatalog)
+  const [customPhp, setCustomPhp] = useState<string[]>(cachedCustomPhp)
+  const [reports, setReports] = useState<ApplyReport[]>(cachedReports)
   const [driftOpen, setDriftOpen] = useState(false)
   /** Hostnames and project ids whose row is mid-removal, so the page can show it. */
   const [removing, setRemoving] = useState<ReadonlySet<string>>(new Set())
@@ -66,16 +76,37 @@ export function useWeb() {
       runCommand({ type: 'list_certificates' }),
       runCommand({ type: 'get_ca_info' }),
     ])
-    if (s.type === 'web_status') setStatus(s.status)
-    if (c.type === 'web_config') setCfg((prev) => (updateConfig || prev === null ? c.config : prev))
-    if (d.type === 'domains') setDomains(d.domains)
-    if (k.type === 'certificates') setCerts(k.certs)
-    if (a.type === 'ca_info') setCa(a.info)
+    if (s.type === 'web_status') {
+      setStatus(s.status)
+      cachedStatus = s.status
+    }
+    if (c.type === 'web_config') {
+      setCfg((prev) => {
+        const next = updateConfig || prev === null ? c.config : prev
+        cachedCfg = next
+        return next
+      })
+    }
+    if (d.type === 'domains') {
+      setDomains(d.domains)
+      cachedDomains = d.domains
+    }
+    if (k.type === 'certificates') {
+      setCerts(k.certs)
+      cachedCerts = k.certs
+    }
+    if (a.type === 'ca_info') {
+      setCa(a.info)
+      cachedCa = a.info
+    }
   }
 
   async function refreshProjects() {
     const r = await runCommand({ type: 'list_projects' })
-    if (r.type === 'projects') setProjects(r.projects)
+    if (r.type === 'projects') {
+      setProjects(r.projects)
+      cachedProjects = r.projects
+    }
   }
 
   usePoll(() => refresh().catch(() => undefined), 4000)
@@ -100,10 +131,21 @@ export function useWeb() {
     // The catalog and the unmanaged PHP versions only decorate other pages, so a failed read
     // leaves them empty. It still has to be caught: an unhandled rejection here is silent.
     runCommand({ type: 'list_runtime_catalog' })
-      .then((r) => r.type === 'runtime_catalog' && setCatalog(r.entries))
+      .then((r) => {
+        if (r.type === 'runtime_catalog') {
+          setCatalog(r.entries)
+          cachedCatalog = r.entries
+        }
+      })
       .catch(() => undefined)
     runCommand({ type: 'list_custom_installs' })
-      .then((r) => r.type === 'custom_installs' && setCustomPhp(r.entries.filter((c) => c.id === 'php' && c.label).map((c) => c.label)))
+      .then((r) => {
+        if (r.type === 'custom_installs') {
+          const phps = r.entries.filter((c) => c.id === 'php' && c.label).map((c) => c.label)
+          setCustomPhp(phps)
+          cachedCustomPhp = phps
+        }
+      })
       .catch(() => undefined)
     return () => {
       alive = false
