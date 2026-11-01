@@ -213,3 +213,5 @@ elevate | uses | Win32 ShellExecuteExW (runas verb) directly for UAC elevation w
 exec | resolves | Windows system binaries via GetSystemDirectoryW (%SystemRoot%\System32) independently of PATH
 SettingsPage (Documentation & Release Notes) | uses | ReleaseNotesView (renders structured changelogs with release metadata headers, feature cards, and expandable details)
 ReleaseNotesView | uses | releaseNotes::parseReleaseNotes & filterReleaseNotes (tokenizes raw Markdown with marked.lexer and maps topic icons)
+PluginsPage | renders | PluginConsentDialog (when turning on a plugin)
+PluginConsentDialog | uses | pluginConsent (buildPluginConsentSummary, formatDownloadSource, extractHostname, formatSize)

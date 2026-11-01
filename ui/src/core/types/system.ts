@@ -110,6 +110,7 @@ export interface PluginRuntimeContribution {
   version: string
   url?: string
   sha256?: string
+  size?: number | string
   platform?: string
   architecture?: string
   archive_root?: string

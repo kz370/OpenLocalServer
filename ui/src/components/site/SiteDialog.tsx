@@ -236,8 +236,8 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
   return (
     <DialogDepthContext.Provider value={1}>
       <div className="fixed top-9 inset-x-0 bottom-0 z-[60] flex items-center justify-center p-4">
-        <div data-state={state} className="modal-backdrop absolute inset-0 bg-black/50" onClick={onClose} />
-        <div data-state={state} role="dialog" aria-modal="true" aria-label={`Settings for ${title}`} className="modal-panel relative flex h-[88vh] w-full max-w-6xl flex-col rounded-xl border border-border bg-card text-card-foreground shadow-2xl">
+        <div data-state={state} className="modal-backdrop absolute inset-0 bg-black/60 backdrop-blur-xs" onClick={onClose} />
+        <div data-state={state} role="dialog" aria-modal="true" aria-label={`Settings for ${title}`} className="modal-panel relative flex h-[88vh] w-full max-w-6xl flex-col rounded-xl border border-border bg-[var(--dialog-surface,#ffffff)] dark:bg-[var(--dialog-surface,#0b1426)] text-card-foreground shadow-2xl">
           <div data-tauri-drag-region className="flex items-center justify-between gap-4 border-b border-border px-5 py-3 select-none">
             <div data-tauri-drag-region className="flex min-w-0 flex-1 items-center gap-2">
               <Globe className="size-4 shrink-0 text-muted-foreground" />

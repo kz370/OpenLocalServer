@@ -1,4 +1,4 @@
-import { adjustAccentForMode, hexToRgba, pickReadableForeground } from './color.ts'
+import { adjustAccentForMode, hexToRgba, parseColor, pickReadableForeground } from './color.ts'
 import type { ThemeDefinition, ThemeOptions, ThemeOverrides, ThemeTokens } from './types.ts'
 
 /**
@@ -117,4 +117,22 @@ export function applyThemeToDom(
 
   // 5. Sidebar icon style marker
   root.dataset.sidebarIcons = options.sidebarIcons
+
+  // 6. Solid, 100% opaque dialog and modal surface
+  const bgRgb = parseColor(tokens.background) ?? { r: 255, g: 255, b: 255, a: 1 }
+  const cardRgb = parseColor(tokens.card) ?? bgRgb
+  const solidR = Math.round(cardRgb.r * cardRgb.a + bgRgb.r * (1 - cardRgb.a))
+  const solidG = Math.round(cardRgb.g * cardRgb.a + bgRgb.g * (1 - cardRgb.a))
+  const solidB = Math.round(cardRgb.b * cardRgb.a + bgRgb.b * (1 - cardRgb.a))
+  const solidDialog = `rgb(${solidR}, ${solidG}, ${solidB})`
+
+  const isDark = resolvedMode === 'dark'
+  const delta = isDark ? 8 : -6
+  const innerR = Math.min(255, Math.max(0, solidR + delta))
+  const innerG = Math.min(255, Math.max(0, solidG + delta))
+  const innerB = Math.min(255, Math.max(0, solidB + (isDark ? delta + 4 : delta)))
+  const solidInnerCard = `rgb(${innerR}, ${innerG}, ${innerB})`
+
+  root.style.setProperty('--dialog-surface', solidDialog)
+  root.style.setProperty('--dialog-card', solidInnerCard)
 }

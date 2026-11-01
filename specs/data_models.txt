@@ -79,7 +79,8 @@ Manifest (.openlocalserver/):
 - commands.yaml (merged QuickCommands)
 
 Plugin (plugin.yaml):
-- {id, name, version, description, author, kind: declarative, permissions[], contributes:{runtimes[], quick_apps dir, detections[], health_checks[]}}
+- {id, name, version, description, author, kind: declarative, permissions[], contributes:{runtimes[{id, name, version, url, sha256, size?}], quick_apps dir, detections[{id, name, markers[], all[]?}], health_checks[{id, name, kind, target, hint?}]}}
+- `PluginConsentSummary`: Structured objective consent summary `{runtimes: RuntimeConsentItem[{name, version, host, source, url, sizeText, explanation}], detections: {items, explanation} | null, quickApps: {folder, explanation} | null, healthChecks: HealthCheckConsentItem[], rawPermissions: string[], closingSentence: string}` derived directly from manifest contributes/permissions data without using author free-text.
 
 QuickApp recipe YAML:
 - {id, name, description, category, requirements{}, variables[]{id,label,type,required,default,validation,options,show_if,runtime}, steps[]{if, run/cwd/allow_failure | action + with}, files[], env_vars[], post_create[], install[], domain{}, environment{}}

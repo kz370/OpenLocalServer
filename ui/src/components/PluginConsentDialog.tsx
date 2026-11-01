@@ -59,24 +59,36 @@ export function PluginConsentDialog({
     >
       <div className="flex flex-col gap-3.5 text-sm">
         {summary.runtimes.length > 0 && (
-          <div className="flex flex-col gap-2 rounded-lg border border-border bg-card/40 p-3">
+          <div className="flex flex-col gap-2 rounded-lg border border-border bg-[var(--dialog-card,#f8fafc)] dark:bg-[var(--dialog-card,#121c32)] p-3">
             <div className="flex items-center gap-2 font-medium text-foreground">
               <Download className="size-4 text-primary shrink-0" />
               <span>Runtime downloads</span>
             </div>
-            <div className="flex flex-col gap-2 pl-6">
+            <div className="flex flex-col gap-2.5 pl-6">
               {summary.runtimes.map((r) => (
-                <div key={r.id || r.name} className="flex flex-col gap-0.5">
+                <div key={r.id || r.name} className="flex flex-col gap-1">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="font-semibold text-foreground">
                       {r.name} {r.version}
+                      {r.sizeText ? `, ${r.sizeText},` : ''}
                     </span>
                     <span className="text-xs text-muted-foreground">from</span>
-                    <code className="rounded border border-border/60 bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground">
-                      {r.host}
+                    <code
+                      title={r.url}
+                      className="rounded border border-border/60 bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground cursor-help"
+                    >
+                      {r.source}
                     </code>
                   </div>
                   <p className="text-xs text-muted-foreground">{r.explanation}</p>
+                  <details className="text-xs text-muted-foreground group">
+                    <summary className="cursor-pointer hover:text-foreground inline-flex items-center gap-1 select-none font-medium">
+                      <span>View download URL</span>
+                    </summary>
+                    <div className="mt-1 break-all rounded bg-muted/80 p-2 font-mono text-[11px] text-foreground border border-border/40 select-all">
+                      {r.url}
+                    </div>
+                  </details>
                 </div>
               ))}
             </div>
@@ -84,7 +96,7 @@ export function PluginConsentDialog({
         )}
 
         {summary.detections && summary.detections.items.length > 0 && (
-          <div className="flex flex-col gap-2 rounded-lg border border-border bg-card/40 p-3">
+          <div className="flex flex-col gap-2 rounded-lg border border-border bg-[var(--dialog-card,#f8fafc)] dark:bg-[var(--dialog-card,#121c32)] p-3">
             <div className="flex items-center gap-2 font-medium text-foreground">
               <Search className="size-4 text-primary shrink-0" />
               <span>Project detection</span>
@@ -109,7 +121,7 @@ export function PluginConsentDialog({
         )}
 
         {summary.quickApps && (
-          <div className="flex flex-col gap-2 rounded-lg border border-border bg-card/40 p-3">
+          <div className="flex flex-col gap-2 rounded-lg border border-border bg-[var(--dialog-card,#f8fafc)] dark:bg-[var(--dialog-card,#121c32)] p-3">
             <div className="flex items-center gap-2 font-medium text-foreground">
               <Zap className="size-4 text-primary shrink-0" />
               <span>Quick Apps</span>
@@ -127,7 +139,7 @@ export function PluginConsentDialog({
         )}
 
         {summary.healthChecks.length > 0 && (
-          <div className="flex flex-col gap-2 rounded-lg border border-border bg-card/40 p-3">
+          <div className="flex flex-col gap-2 rounded-lg border border-border bg-[var(--dialog-card,#f8fafc)] dark:bg-[var(--dialog-card,#121c32)] p-3">
             <div className="flex items-center gap-2 font-medium text-foreground">
               <Activity className="size-4 text-primary shrink-0" />
               <span>Health checks</span>
