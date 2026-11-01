@@ -121,7 +121,7 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
 
     React.useImperativeHandle(ref, () => selectRef.current as HTMLSelectElement)
 
-    const { refs, floatingStyles, context } = useFloating({
+    const { refs, floatingStyles, context, isPositioned } = useFloating({
       open,
       onOpenChange: (isOpen) => {
         if (disabled) return
@@ -263,13 +263,13 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
     }
 
     React.useEffect(() => {
-      if (open && activeIndex >= 0 && listRef.current) {
+      if (open && isPositioned && activeIndex >= 0 && listRef.current) {
         const activeEl = listRef.current.querySelector(`[data-index="${activeIndex}"]`)
         if (activeEl) {
           activeEl.scrollIntoView({ block: 'nearest' })
         }
       }
-    }, [open, activeIndex])
+    }, [open, isPositioned, activeIndex])
 
     return (
       <div className={cn('relative min-w-0', className)}>
@@ -329,10 +329,13 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
                 refs.setFloating(el)
               }}
               role="listbox"
-              style={floatingStyles}
+              style={{
+                ...floatingStyles,
+                visibility: isPositioned ? undefined : 'hidden',
+              }}
               onKeyDown={handleKeyDown}
               {...getFloatingProps()}
-              className="z-[99] flex flex-col gap-0.5 overflow-y-auto rounded-lg border border-border dark:border-white/15 bg-popover/95 backdrop-blur-md p-1 text-sm text-popover-foreground shadow-2xl select-none focus:outline-none animate-in fade-in-50 zoom-in-95 duration-100"
+              className="z-[99] flex flex-col gap-0.5 overflow-y-auto rounded-lg border border-border dark:border-white/15 bg-popover/95 backdrop-blur-md p-1 text-sm text-popover-foreground shadow-2xl select-none focus:outline-none"
             >
               {parsedItems.map((item, index) => {
                 if (item.type === 'group') {

@@ -76,7 +76,7 @@ export function FloatingMenu({
     }
   }, [anchor])
 
-  const { refs, floatingStyles, context, update } = useFloating({
+  const { refs, floatingStyles, context, update, isPositioned } = useFloating({
     open: true,
     onOpenChange: (isOpen) => {
       if (!isOpen) onClose()
@@ -141,7 +141,10 @@ export function FloatingMenu({
       <div
         ref={refs.setFloating}
         role="menu"
-        style={floatingStyles}
+        style={{
+          ...floatingStyles,
+          visibility: isPositioned ? undefined : 'hidden',
+        }}
         onContextMenu={(e) => e.preventDefault()}
         {...getFloatingProps()}
         className="z-[95] min-w-48 overflow-y-auto rounded-lg border border-border dark:border-white/15 bg-popover/95 backdrop-blur-md p-1 text-sm text-popover-foreground shadow-xl select-none focus:outline-none"
