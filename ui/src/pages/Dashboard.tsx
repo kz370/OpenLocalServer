@@ -1,4 +1,4 @@
-import { Activity, ChevronDown, FileText, Home, Play, Repeat, Rocket, RotateCw } from 'lucide-react'
+import { ChevronDown, FileText, Globe, Home, Play, Repeat, Rocket, RotateCw } from 'lucide-react'
 import { memo, useEffect, useMemo, useState } from 'react'
 
 import { DiagnosticsCard } from '@/components/DiagnosticsCard'
@@ -10,7 +10,15 @@ import type { Page } from '@/components/layout/Sidebar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { type DashboardData, type Diagnostic, type ServerAvailability, type ServiceStatus, type SystemStats, runCommand } from '@/core'
+import {
+  type DashboardData,
+  type Diagnostic,
+  type ServerAvailability,
+  type ServiceStatus,
+  type StartupSettings,
+  type SystemStats,
+  runCommand,
+} from '@/core'
 import { formatBytes, useAction, usePoll } from '@/lib/hooks'
 import { createPersistentCache } from '@/lib/cache'
 import { cn } from '@/lib/utils'
@@ -24,14 +32,25 @@ const accessLinesCache = createPersistentCache<string[]>('dashboard_access_lines
 
 /**
  * Summary dashboard page: what's running, what's wrong, and one-click ways to act on it.
- * Uses CSS container queries driven by the page content width.
+ * Responsive container layout driven by content area:
+ * - Content >= 1500px: 3 columns (Resources+Web, Services max 540px, Traffic).
+ * - Content 1100-1499px: 2 columns (Resources+Web+Traffic, Services max 540px).
+ * - Content < 1100px: 1 column (Diagnostics, Resources, Services, Web server, Traffic).
  */
-export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page) => void; onOpenLogs: (source: string) => void }) {
+export function DashboardPage({
+  onNavigate,
+  onOpenLogs,
+}: {
+  onNavigate: (p: Page) => void
+  onOpenLogs: (source: string) => void
+}) {
   const [data, setData] = useState<DashboardData | null>(dashboardCache.get)
   const [dataError, setDataError] = useState<Diagnostic | null>(null)
   const [diagToken, setDiagToken] = useState(0)
   const [stats, setStats] = useState<SystemStats | null>(dashboardStatsCache.get)
   const [accessLines, setAccessLines] = useState<string[]>(accessLinesCache.get)
+  const [startup, setStartup] = useState<StartupSettings | null>(null)
+
   const action = useAction()
   const { busy, error, setError, run } = action
 
@@ -48,7 +67,7 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
     }
   }, 3000)
 
-  // Machine load next to sites, not buried on Processes page.
+  // Machine load
   usePoll(async () => {
     const r = await runCommand({ type: 'get_system_stats' }).catch(() => null)
     if (r?.type === 'system_stats') {
@@ -66,6 +85,14 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
     }
   }, 5000)
 
+  // Autostart settings: Stop all / Start all specifically targets autostart services
+  usePoll(async () => {
+    const r = await runCommand({ type: 'get_startup_settings' }).catch(() => null)
+    if (r?.type === 'startup') {
+      setStartup(r.settings)
+    }
+  }, 5000)
+
   const refresh = async () => {
     const res = await runCommand({ type: 'get_dashboard' })
     if (res.type === 'dashboard') {
@@ -75,9 +102,30 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
   }
 
   const web = data?.web
-  const runningServices = data?.services.filter((s) => s.running) ?? []
-  const stoppable = (data?.services ?? []).filter((s) => s.installed && !s.running)
-  const hasRunning = runningServices.length > 0 || web?.running === true
+  const autostartIds = startup?.autostart_services ?? []
+  const isWebInAutostart =
+    autostartIds.some((id) => ['nginx', 'apache', 'caddy'].includes(id)) || autostartIds.includes('web')
+
+  const autostartServices = (data?.services ?? []).filter((s) => autostartIds.includes(s.id))
+  const runningAutostart = autostartServices.filter((s) => s.running)
+  const stoppableAutostart = autostartServices.filter((s) => s.installed && !s.running)
+  const webAutostartRunning = isWebInAutostart && (web?.running === true)
+  const webAutostartStopped = isWebInAutostart && (web && !web.running)
+
+  // If user configured autostart services, target strictly those.
+  // Otherwise fall back to installed services so the button remains helpful.
+  const targetsToStop = autostartIds.length > 0 ? runningAutostart : (data?.services ?? []).filter((s) => s.running)
+  const shouldStopWeb = autostartIds.length > 0 ? webAutostartRunning : (web?.running === true)
+
+  const targetsToStart =
+    autostartIds.length > 0 ? stoppableAutostart : (data?.services ?? []).filter((s) => s.installed && !s.running)
+  const shouldStartWeb = autostartIds.length > 0 ? webAutostartStopped : (web && !web.running)
+
+  const hasRunning = targetsToStop.length > 0 || shouldStopWeb
+  const canStart = targetsToStart.length > 0 || shouldStartWeb
+  const totalTargetCount = hasRunning
+    ? targetsToStop.length + (shouldStopWeb ? 1 : 0)
+    : targetsToStart.length + (shouldStartWeb ? 1 : 0)
 
   return (
     <div className="@container/dashboard flex flex-col gap-3.5 w-full min-w-0">
@@ -98,51 +146,49 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
             size="sm"
             className={cn(
               'h-8 min-w-28 rounded-md px-3 text-[13px] font-medium [&_svg]:size-3.5 shrink-0 transition-colors',
-              hasRunning && 'border border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/15 hover:text-destructive dark:bg-destructive/[0.18] dark:text-red-300 dark:hover:bg-destructive/25'
+              hasRunning &&
+                'border border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/15 hover:text-destructive dark:bg-destructive/[0.18] dark:text-red-300 dark:hover:bg-destructive/25'
             )}
-            disabled={busy !== null || (!hasRunning && stoppable.length === 0)}
+            disabled={busy !== null || (!hasRunning && !canStart)}
             title={
               hasRunning
-                ? 'Stop every running service, worker, tunnel and the web stack'
-                : stoppable.length > 0 || (web && !web.running)
-                  ? `Start ${stoppable.length + (web?.running ? 0 : 1)} stopped service${stoppable.length === 0 ? '' : 's'}`
-                  : 'Every installed service is already running'
+                ? `Stop ${totalTargetCount} running autostart service${totalTargetCount === 1 ? '' : 's'}`
+                : canStart
+                  ? `Start ${totalTargetCount} autostart service${totalTargetCount === 1 ? '' : 's'}`
+                  : 'All autostart services are already running'
             }
             onClick={() =>
               hasRunning
                 ? void (async () => {
-                  const ok = await confirmAction('Stop all running services, workers, tunnels, and the web stack?')
-                  if (!ok) return
-                  await run('stop-all', async () => {
-                    const res = await runCommand({ type: 'stop_all' })
-                    if (res.type === 'stopped_everything' && res.still_running.length > 0) {
-                      throw {
-                        problem: 'Something did not stop.',
-                        cause: `Still running after Stop all: ${res.still_running.join(', ')}`,
-                        fix: 'Close it from Task Manager and press Stop all again.',
+                    const ok = await confirmAction(
+                      `Stop ${totalTargetCount} running autostart service${totalTargetCount === 1 ? '' : 's'}?`
+                    )
+                    if (!ok) return
+                    await run('stop-all', async () => {
+                      const promises: Promise<unknown>[] = targetsToStop.map((s) =>
+                        runCommand({ type: 'stop_service', id: s.id })
+                      )
+                      if (shouldStopWeb) {
+                        promises.push(runCommand({ type: 'stop_web' }))
                       }
+                      await Promise.all(promises)
+                      await Promise.all(targetsToStop.map((s) => waitForService(s.id, 'stopped')))
+                      await refresh()
+                      setDiagToken((t) => t + 1)
+                    })
+                  })()
+                : void run('start-all', async () => {
+                    const promises: Promise<unknown>[] = targetsToStart.map((service) =>
+                      runCommand({ type: 'start_service', id: service.id })
+                    )
+                    if (shouldStartWeb) {
+                      promises.push(runCommand({ type: 'apply_web', overwrite: [] }))
                     }
+                    await Promise.all(promises)
+                    await Promise.all(targetsToStart.map((service) => waitForService(service.id, 'running')))
                     await refresh()
                     setDiagToken((t) => t + 1)
                   })
-                })()
-                : void run('start-all', async () => {
-                  const current = await runCommand({ type: 'get_dashboard' })
-                  if (current.type === 'dashboard') setData(current.data)
-                  const targets = (current.type === 'dashboard' ? current.data.services : []).filter(
-                    (s) => s.installed && !s.running,
-                  )
-                  const promises: Promise<unknown>[] = targets.map((service) =>
-                    runCommand({ type: 'start_service', id: service.id }),
-                  )
-                  if (current.type === 'dashboard' && !current.data.web?.running) {
-                    promises.push(runCommand({ type: 'apply_web', overwrite: [] }))
-                  }
-                  await Promise.all(promises)
-                  await Promise.all(targets.map((service) => waitForService(service.id, 'running')))
-                  await refresh()
-                  setDiagToken((t) => t + 1)
-                })
             }
           >
             {busy === 'stop-all' || busy === 'start-all' ? (
@@ -152,7 +198,13 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
             ) : (
               <Play />
             )}{' '}
-            {busy === 'stop-all' ? 'Stopping all…' : busy === 'start-all' ? 'Starting all…' : hasRunning ? 'Stop all' : 'Start all'}
+            {busy === 'stop-all'
+              ? 'Stopping autostart…'
+              : busy === 'start-all'
+                ? 'Starting autostart…'
+                : hasRunning
+                  ? 'Stop all'
+                  : 'Start all'}
           </Button>
         </div>
       </div>
@@ -160,21 +212,13 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
       <ErrorCard error={error} onDismiss={() => setError(null)} />
       {dataError && <ErrorCard error={dataError} onDismiss={() => setDataError(null)} />}
 
-      {/* Diagnostics: compact pill when clean, expanded card when issues found */}
-      <DiagnosticsCard
-        refreshToken={diagToken}
-        onNavigate={onNavigate}
-        healthProblems={data?.health ?? []}
-      />
+      {/* Diagnostics: strictly one slim row (<= 44px) in all states so layout never jumps */}
+      <DiagnosticsCard refreshToken={diagToken} onNavigate={onNavigate} healthProblems={data?.health ?? []} />
 
-      {/*
-        Responsive content-driven layout:
-        - Wide (>=1100px): 2 columns. Left: Resources, Web server, Traffic. Right: Services (full height).
-        - Narrow (<1100px): single column in order: Resources, Web server, Services, Traffic.
-      */}
-      <div className="grid grid-cols-1 @[1100px]/dashboard:grid-cols-2 gap-3.5 items-start">
+      {/* Responsive content-driven layout container */}
+      <div className="dashboard-grid-container">
         {/* 1. Resources card */}
-        <Card className="order-1 @[1100px]/dashboard:col-start-1 @[1100px]/dashboard:row-start-1 shadow-xs">
+        <Card className="dashboard-col-resources shadow-xs flex flex-col justify-between">
           <CardHeader className="flex-row items-center justify-between space-y-0 px-3.5 py-2.5">
             <div>
               <CardTitle className="text-sm font-semibold">Overview & Resources</CardTitle>
@@ -212,27 +256,30 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
               View processes
             </Button>
           </CardHeader>
-          <CardContent className="px-3.5 pb-3 pt-0">
-            {/* Flattened items: 3 compact columns in 1 row separated by clean dividers */}
-            <div className="grid grid-cols-3 divide-x divide-border/50">
-              <CompactResource
+          <CardContent className="px-3.5 pb-3.5 pt-0">
+            {/* 3 equal-width tiles with ring on top, label below, detail under label */}
+            <div className="grid grid-cols-3 divide-x divide-border/40 py-1">
+              <ResourceDonut
                 label="CPU"
                 percent={stats?.cpu_percent ?? 0}
                 detail={stats ? `${stats.cpu_cores} cores` : '…'}
+                variant="cpu"
                 loading={!stats}
               />
-              <CompactResource
+              <ResourceDonut
                 label="RAM"
                 percent={stats?.memory_used && stats?.memory_total ? (stats.memory_used / stats.memory_total) * 100 : 0}
                 detail={stats ? `${formatBytes(stats.memory_used)} / ${formatBytes(stats.memory_total)}` : '…'}
+                variant="ram"
                 loading={!stats}
               />
               {(stats?.disks ?? []).slice(0, 1).map((d) => (
-                <CompactResource
+                <ResourceDonut
                   key={d.mount}
                   label={`Disk ${d.mount.replace(/\\$/, '')}`}
                   percent={d.total > 0 ? (d.used / d.total) * 100 : 0}
                   detail={stats ? `${formatBytes(d.total - d.used)} free` : '…'}
+                  variant="disk"
                   loading={!stats}
                 />
               ))}
@@ -240,8 +287,8 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
           </CardContent>
         </Card>
 
-        {/* 2. Web server card */}
-        <Card className="order-2 @[1100px]/dashboard:col-start-1 @[1100px]/dashboard:row-start-2 shadow-xs">
+        {/* 2. Web server card: compact horizontal layout with no dead space */}
+        <Card className="dashboard-col-webserver shadow-xs flex flex-col justify-between">
           <CardHeader className="flex-row items-center justify-between space-y-0 px-3.5 py-2.5">
             <CardTitle className="text-sm font-semibold">Web server</CardTitle>
             {web?.running ? (
@@ -254,24 +301,46 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
               </Badge>
             )}
           </CardHeader>
-          <CardContent className="flex flex-col gap-1.5 text-xs text-muted-foreground px-3.5 pb-3 pt-0">
-            <div className="font-medium text-foreground/90">
-              {web?.servers.find((s) => s.active)?.name ?? '…'} · ports {web?.http_port ?? '—'} / {web?.https_port ?? '—'}
-            </div>
-            {web?.php_pools && web.php_pools.length > 0 && (
-              <div>
-                {web.php_pools.map((p) => `PHP ${p.version} (${p.ports.length} worker${p.ports.length === 1 ? '' : 's'}${p.running ? '' : ', stopped'})`).join(' · ')}
+          <CardContent className="flex flex-col gap-3 px-3.5 pb-3.5 pt-0">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs">
+              <div className="flex items-center gap-1.5">
+                <span className="text-muted-foreground">Server:</span>
+                <span className="font-medium text-foreground">{web?.servers.find((s) => s.active)?.name ?? '—'}</span>
               </div>
-            )}
-            {web?.dns_running && <div>Wildcard DNS on port {web.dns_port}</div>}
-            <div className="pt-1.5">
+              <div className="flex items-center gap-1.5">
+                <span className="text-muted-foreground">Ports:</span>
+                <span className="font-mono font-medium text-foreground">
+                  {web?.http_port ?? '—'} / {web?.https_port ?? '—'}
+                </span>
+              </div>
+              {web?.php_pools && web.php_pools.length > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-muted-foreground">PHP:</span>
+                  <span className="font-medium text-foreground">
+                    {web.php_pools
+                      .map((p) => `${p.version} (${p.ports.length} worker${p.ports.length === 1 ? '' : 's'})`)
+                      .join(', ')}
+                  </span>
+                </div>
+              )}
+              {web?.dns_running && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-muted-foreground">DNS:</span>
+                  <span className="font-medium text-foreground">Port {web.dns_port}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end pt-1">
               <Button
                 size="sm"
                 variant="secondary"
                 className="h-7 text-xs font-medium gap-1.5"
                 disabled={!web?.running}
                 title={web?.running ? 'Open the built-in welcome site' : 'Start the web server first'}
-                onClick={() => runCommand({ type: 'open_url', url: 'https://openlocalserver.test' }).catch(() => undefined)}
+                onClick={() =>
+                  runCommand({ type: 'open_url', url: 'https://openlocalserver.test' }).catch(() => undefined)
+                }
               >
                 <Home className="size-3.5" /> Open home page
               </Button>
@@ -279,8 +348,8 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
           </CardContent>
         </Card>
 
-        {/* 3. Services card: full height alongside Left column when wide, above Traffic when narrow */}
-        <div className="order-3 @[1100px]/dashboard:col-start-2 @[1100px]/dashboard:row-start-1 @[1100px]/dashboard:row-span-3 flex min-h-0 min-w-0 flex-1 flex-col">
+        {/* 3. Services card: width bounded (~460-540px), fixed 4 action slots, no redundant stop buttons */}
+        <div className="dashboard-col-services flex min-h-0 min-w-0 flex-1 flex-col">
           <ServicesWidget
             services={data?.services ?? null}
             webServers={data?.web?.servers ?? null}
@@ -295,8 +364,8 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
           />
         </div>
 
-        {/* 4. Traffic card: bottom of Left column when wide, after Services when narrow */}
-        <Card className="order-4 @[1100px]/dashboard:col-start-1 @[1100px]/dashboard:row-start-3 shadow-xs">
+        {/* 4. Traffic card: clustered stat blocks, chart flexes in height to match column baseline */}
+        <Card className="dashboard-col-traffic shadow-xs flex flex-col h-full">
           <CardHeader className="flex-row items-center justify-between space-y-0 px-3.5 py-2.5">
             <CardTitle className="text-sm font-semibold">Traffic</CardTitle>
             <Button
@@ -308,7 +377,7 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
               Logs
             </Button>
           </CardHeader>
-          <CardContent className="flex flex-col gap-2.5 px-3.5 pb-3 pt-0">
+          <CardContent className="flex flex-col flex-1 gap-2.5 px-3.5 pb-3.5 pt-0 min-h-0">
             <TrafficGraph lines={accessLines} />
           </CardContent>
         </Card>
@@ -340,49 +409,8 @@ function getInitialCollapsed(): Record<string, boolean> {
 type WidgetAction = 'start' | 'stop' | 'restart' | 'reload'
 
 /**
- * Standard fixed action button for each service row slot.
- * Ensures identical dimensions (28px x 28px), fixed slots, and clean visual affordance.
- */
-function RowActionButton({
-  title,
-  disabled,
-  spinning,
-  onClick,
-  children,
-  variant = 'neutral',
-}: {
-  title: string
-  disabled: boolean
-  spinning?: boolean
-  onClick: (e: React.MouseEvent) => void
-  children: React.ReactNode
-  variant?: 'start' | 'stop' | 'neutral'
-}) {
-  return (
-    <button
-      type="button"
-      title={title}
-      aria-label={title}
-      disabled={disabled}
-      onClick={onClick}
-      className={cn(
-        'size-7 min-w-7 min-h-7 shrink-0 rounded-md border flex items-center justify-center transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
-        disabled
-          ? 'opacity-30 cursor-not-allowed border-border/20 bg-muted/10 text-muted-foreground pointer-events-none'
-          : variant === 'start'
-            ? 'cursor-pointer border-success/30 bg-success/5 text-success hover:bg-success/15 hover:border-success/50'
-            : variant === 'stop'
-              ? 'cursor-pointer border-destructive/30 bg-destructive/5 text-destructive hover:bg-destructive/15 hover:border-destructive/50'
-              : 'cursor-pointer border-border/40 bg-muted/20 text-muted-foreground hover:bg-muted/60 hover:text-foreground hover:border-border/80'
-      )}
-    >
-      {spinning ? <Spinner className="size-3.5" /> : children}
-    </button>
-  )
-}
-
-/**
  * Services card: services grouped by type with collapsible section headers and fixed 4-slot rows.
+ * OVERRIDE: Group headers do NOT have group stop/start buttons.
  */
 function ServicesWidget({
   services,
@@ -396,7 +424,7 @@ function ServicesWidget({
   services: ServiceStatus[] | null
   webServers: ServerAvailability[] | null
   busy: string | null
-  run: <T, >(key: string, fn: () => Promise<T>) => Promise<T | undefined>
+  run: <T>(key: string, fn: () => Promise<T>) => Promise<T | undefined>
   onNavigate: (p: Page) => void
   onOpenLogs: (source: string) => void
   onDone: () => Promise<void>
@@ -434,8 +462,14 @@ function ServicesWidget({
   const webSites = new Map((webServers ?? []).map((s) => [s.id, s.sites]))
 
   async function act(s: ServiceStatus, action: WidgetAction) {
-    if (action === 'stop' && !(await confirmAction(`Stop ${s.name}? Anything connected to it will be disconnected.`))) return
-    if (action === 'restart' && s.running && !(await confirmAction(`Restart ${s.name}? Anything connected to it will be disconnected.`))) return
+    if (action === 'stop' && !(await confirmAction(`Stop ${s.name}? Anything connected to it will be disconnected.`)))
+      return
+    if (
+      action === 'restart' &&
+      s.running &&
+      !(await confirmAction(`Restart ${s.name}? Anything connected to it will be disconnected.`))
+    )
+      return
     void run(`svc:${s.id}:${action}`, async () => {
       if (action === 'reload') {
         await runCommand({ type: 'apply_web', overwrite: [] })
@@ -450,68 +484,50 @@ function ServicesWidget({
     })
   }
 
-  async function actGroup(group: (typeof groups)[number], action: 'start' | 'stop') {
-    if (action === 'stop') {
-      if (!(await confirmAction(`Stop all running services in ${group.label}? Anything connected to them will be disconnected.`))) return
-      const targets = group.services.filter((s) => s.running)
-      void run(`group:${group.id}:stop`, async () => {
-        await Promise.all(targets.map((s) => runCommand({ type: 'stop_service', id: s.id })))
-        await Promise.all(targets.map((s) => waitForService(s.id, 'stopped')))
-        await onDone()
-      })
-    } else {
-      const targets = group.services.filter((s) => s.installed && !s.running)
-      void run(`group:${group.id}:start`, async () => {
-        await Promise.all(targets.map((s) => runCommand({ type: 'start_service', id: s.id })))
-        await Promise.all(targets.map((s) => waitForService(s.id, 'running')))
-        await onDone()
-      })
-    }
-  }
-
   return (
-    <Card className="flex w-full min-w-0 flex-1 flex-col overflow-hidden py-0 shadow-xs">
-      <CardHeader className="flex-row items-center justify-between space-y-0 px-3 py-2.5">
-        <div className="flex min-w-0 items-baseline gap-2">
+    <Card className="shadow-xs flex flex-col h-full">
+      <CardHeader className="flex-row items-center justify-between space-y-0 px-3.5 py-2.5">
+        <div className="flex items-baseline gap-2">
           <CardTitle className="text-sm font-semibold">Services</CardTitle>
-          <CardDescription className="truncate text-xs tabular-nums">
-            {services === null ? 'Loading…' : `${running} running · ${installed} installed`}
-          </CardDescription>
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {running} running · {installed} installed
+          </span>
         </div>
-        <Button size="sm" variant="ghost" className="h-7 shrink-0 rounded-md px-2 text-xs text-muted-foreground hover:text-foreground" onClick={() => onNavigate('services')}>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 shrink-0 rounded-md px-2 text-xs text-muted-foreground hover:text-foreground"
+          onClick={() => onNavigate('services')}
+        >
           Manage
         </Button>
       </CardHeader>
-      <CardContent className="p-0">
+      <CardContent className="p-0 flex-1 overflow-y-auto">
         {groups.map((group, groupIndex) => {
           const runningInGroup = group.services.filter((s) => s.running).length
-          const stoppedInGroup = group.services.filter((s) => s.installed && !s.running).length
-
-          // Default: collapsed when all services are stopped (e.g. Cache & Queues 0/2, Mail 0/1)
-          const isCollapsed = collapsed[group.id] !== undefined
-            ? !!collapsed[group.id]
-            : runningInGroup === 0
-
-          const groupBusy = busy === `group:${group.id}:start` || busy === `group:${group.id}:stop`
-
-          const groupToggleTooltip = runningInGroup > 0
-            ? `Stop ${runningInGroup} running`
-            : `Start ${stoppedInGroup} stopped`
+          // Collapsed by default when all services in group are stopped
+          const isCollapsed = collapsed[group.id] !== undefined ? !!collapsed[group.id] : runningInGroup === 0
 
           return (
             <div key={group.id} className="min-w-0">
+              {/* Group header: chevron + group name + n/m count only (no redundant action buttons) */}
               <div
                 className={cn(
-                  'flex w-full min-w-0 h-8 items-center justify-between gap-2 px-3 transition-colors hover:bg-muted/30 select-none',
+                  'flex w-full min-w-0 h-9 items-center justify-between px-3 transition-colors hover:bg-muted/30 select-none cursor-pointer',
                   groupIndex > 0 && 'border-t border-border/60'
                 )}
+                onClick={() => toggleGroup(group.id)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    toggleGroup(group.id)
+                  }
+                }}
+                aria-expanded={!isCollapsed}
               >
-                <button
-                  type="button"
-                  onClick={() => toggleGroup(group.id)}
-                  className="flex min-w-0 flex-1 items-center gap-2 text-left cursor-pointer"
-                  aria-expanded={!isCollapsed}
-                >
+                <div className="flex min-w-0 items-center gap-2">
                   <ChevronDown
                     className={cn(
                       'size-3.5 shrink-0 text-muted-foreground transition-transform duration-200',
@@ -521,30 +537,9 @@ function ServicesWidget({
                   <span className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/90 dark:text-muted-foreground">
                     {group.label}
                   </span>
-                  {/* Clean n/m count without duplicate status dot */}
-                  <span className="tabular-nums text-xs text-muted-foreground/80">
+                  <span className="tabular-nums text-xs text-muted-foreground/80 font-medium">
                     {runningInGroup}/{group.services.length}
                   </span>
-                </button>
-
-                {/* Group toggle aligned in Slot 1 column */}
-                <div className="flex shrink-0 items-center gap-1 w-[7.5rem] justify-end">
-                  <RowActionButton
-                    title={groupToggleTooltip}
-                    disabled={groupBusy || group.services.every((s) => !s.installed)}
-                    spinning={groupBusy}
-                    variant={runningInGroup > 0 ? 'stop' : 'start'}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      void actGroup(group, runningInGroup > 0 ? 'stop' : 'start')
-                    }}
-                  >
-                    {runningInGroup > 0 ? <StopIcon className="size-3.5" /> : <Play className="size-3.5" />}
-                  </RowActionButton>
-                  {/* Spacers for slots 2, 3, 4 preserve exact column alignment with rows */}
-                  <span className="size-7 min-w-7 shrink-0" aria-hidden="true" />
-                  <span className="size-7 min-w-7 shrink-0" aria-hidden="true" />
-                  <span className="size-7 min-w-7 shrink-0" aria-hidden="true" />
                 </div>
               </div>
 
@@ -567,68 +562,98 @@ function ServicesWidget({
                     return (
                       <div
                         key={s.id}
-                        className="flex items-center justify-between gap-2 px-3 h-8.5 transition-colors hover:bg-muted/25 border-t border-border/60 min-w-0"
+                        className="grid grid-cols-[1fr_64px_138px] items-center gap-2 px-3 h-10 border-t border-border/60 transition-colors hover:bg-muted/25 min-w-0 select-none"
                       >
-                        {/* Service mark with single status badge, name, and port (port hides on narrow) */}
-                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                          <span className="shrink-0 flex items-center justify-center" title={`${s.name} (${state})`}>
+                        {/* Col 1: Icon + Name */}
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span
+                            className="shrink-0 flex items-center justify-center"
+                            title={`${s.name} (${state})`}
+                          >
                             <ServiceMark id={s.id} state={state} className="size-4 [&>svg]:size-3" />
                           </span>
-                          <span className="min-w-0 truncate text-[13px] font-medium text-foreground" title={`${s.name} (${state})`}>
-                            {s.name}
-                          </span>
                           <span
-                            className="hidden @[480px]/dashboard:inline-block font-mono text-xs tabular-nums text-muted-foreground shrink-0 ml-auto mr-1"
-                            title={servicePortTitle(s, webSites.get(s.id))}
+                            className="min-w-0 truncate text-[13px] font-medium text-foreground"
+                            title={`${s.name} (${state})`}
                           >
-                            {s.port === null ? '—' : s.port}
+                            {s.name}
                           </span>
                         </div>
 
-                        {/* Fixed 4 action slots in exact order */}
-                        <div className="flex shrink-0 items-center gap-1 w-[7.5rem] justify-end">
-                          {/* Slot 1: Start/Stop toggle button */}
-                          <RowActionButton
+                        {/* Col 2: Port: fixed ~64px, right-aligned, monospace */}
+                        <span
+                          className="font-mono text-xs tabular-nums text-muted-foreground/80 text-right truncate"
+                          title={servicePortTitle(s, webSites.get(s.id))}
+                        >
+                          {s.port === null ? '—' : s.port}
+                        </span>
+
+                        {/* Col 3: 4 action slots (fixed 30px each, 6px gap = 138px) */}
+                        <div className="flex items-center gap-1.5 justify-end shrink-0 w-[138px]">
+                          {/* Slot 1: Start/Stop toggle button with distinct colors */}
+                          <button
+                            type="button"
                             title={s.running ? `Stop ${s.name}` : `Start ${s.name}`}
+                            aria-label={s.running ? `Stop ${s.name}` : `Start ${s.name}`}
                             disabled={busy !== null || !s.installed}
-                            spinning={working && (busy === `svc:${s.id}:start` || busy === `svc:${s.id}:stop`)}
-                            variant={s.running ? 'stop' : 'start'}
                             onClick={() => void act(s, s.running ? 'stop' : 'start')}
+                            className={cn(
+                              'action-slot-btn',
+                              s.running ? 'action-slot-stop' : 'action-slot-start'
+                            )}
                           >
-                            {s.running ? <StopIcon className="size-3.5" /> : <Play className="size-3.5" />}
-                          </RowActionButton>
+                            {working && (busy === `svc:${s.id}:start` || busy === `svc:${s.id}:stop`) ? (
+                              <Spinner className="size-4 animate-spin" />
+                            ) : s.running ? (
+                              <StopIcon />
+                            ) : (
+                              <Play />
+                            )}
+                          </button>
 
                           {/* Slot 2: Restart */}
-                          <RowActionButton
+                          <button
+                            type="button"
                             title="Restart"
+                            aria-label="Restart"
                             disabled={busy !== null || !s.installed || !s.running}
-                            spinning={working && busy === `svc:${s.id}:restart`}
-                            variant="neutral"
                             onClick={() => void act(s, 'restart')}
+                            className="action-slot-btn action-slot-restart"
                           >
-                            <RotateCw className="size-3.5" />
-                          </RowActionButton>
+                            {working && busy === `svc:${s.id}:restart` ? (
+                              <Spinner className="size-4 animate-spin" />
+                            ) : (
+                              <RotateCw />
+                            )}
+                          </button>
 
                           {/* Slot 3: Reload config */}
-                          <RowActionButton
+                          <button
+                            type="button"
                             title="Reload config"
+                            aria-label="Reload config"
                             disabled={busy !== null || !s.installed || !s.running || s.kind !== 'web'}
-                            spinning={working && busy === `svc:${s.id}:reload`}
-                            variant="neutral"
                             onClick={() => void act(s, 'reload')}
+                            className="action-slot-btn action-slot-reload"
                           >
-                            <Repeat className="size-3.5" />
-                          </RowActionButton>
+                            {working && busy === `svc:${s.id}:reload` ? (
+                              <Spinner className="size-4 animate-spin" />
+                            ) : (
+                              <Repeat />
+                            )}
+                          </button>
 
                           {/* Slot 4: View logs */}
-                          <RowActionButton
+                          <button
+                            type="button"
                             title="View logs"
+                            aria-label="View logs"
                             disabled={busy !== null || !s.installed}
-                            variant="neutral"
                             onClick={() => onOpenLogs(s.log_source || `service:${s.id}`)}
+                            className="action-slot-btn action-slot-logs"
                           >
-                            <FileText className="size-3.5" />
-                          </RowActionButton>
+                            <FileText />
+                          </button>
                         </div>
                       </div>
                     )
@@ -643,45 +668,50 @@ function ServicesWidget({
   )
 }
 
-/** Semantic color thresholds: normal (<75%), warning (75-89%), critical (>=90%) */
-function getGaugeColor(percent: number): string {
-  if (percent >= 90) return 'var(--destructive)'
-  if (percent >= 75) return 'var(--warning)'
-  return 'var(--success)'
-}
-
 /**
- * Compact resource gauge with no nested bordered box.
- * Adapts size smoothly when space is tight.
+ * Three centered tiles for CPU, RAM, Disk.
+ * Diameter 80px (viewBox 0 0 80 80, radius 33, stroke 7px).
+ * Scale font to ~22% of diameter (~16px bold) so 100% fits with >= 10px clearance.
  */
-function CompactResource({
+function ResourceDonut({
   label,
   percent,
   detail,
+  variant,
   loading,
 }: {
   label: string
   percent: number
   detail: string
+  variant: 'cpu' | 'ram' | 'disk'
   loading?: boolean
 }) {
-  const r = 16
+  const p = Math.min(100, Math.max(0, Math.round(percent)))
+  const r = 33
   const c = 2 * Math.PI * r
-  const p = Math.min(100, Math.max(0, percent))
-  const color = getGaugeColor(p)
+
+  // Semantic threshold colors
+  let color = 'var(--action-start)'
+  if (variant === 'cpu') {
+    color = p >= 90 ? 'var(--action-stop)' : p >= 75 ? 'var(--action-restart)' : 'var(--action-start)'
+  } else if (variant === 'ram') {
+    color = p >= 90 ? 'var(--action-stop)' : p >= 80 ? 'var(--action-restart)' : 'var(--action-reload)'
+  } else {
+    color = p >= 95 ? 'var(--action-stop)' : p >= 85 ? 'var(--action-restart)' : 'var(--action-logs)'
+  }
 
   return (
-    <div className="flex flex-col sm:flex-row items-center justify-center gap-2 px-2 text-center sm:text-left min-w-0">
-      <div className="relative size-10 @[500px]/dashboard:size-11 shrink-0">
-        <svg viewBox="0 0 40 40" className="size-full -rotate-90">
-          <circle cx="20" cy="20" r={r} fill="none" stroke="var(--muted)" strokeWidth="4" />
+    <div className="flex flex-col items-center justify-center text-center p-2 min-w-0">
+      <div className="relative size-20 shrink-0">
+        <svg viewBox="0 0 80 80" className="size-full -rotate-90">
+          <circle cx="40" cy="40" r={r} fill="none" stroke="var(--muted)" strokeWidth="7" />
           <circle
-            cx="20"
-            cy="20"
+            cx="40"
+            cy="40"
             r={r}
             fill="none"
             stroke={color}
-            strokeWidth="4"
+            strokeWidth="7"
             strokeLinecap="round"
             strokeDasharray={c}
             strokeDashoffset={c * (1 - p / 100)}
@@ -689,25 +719,33 @@ function CompactResource({
           />
         </svg>
         <span
-          className="absolute inset-0 flex items-center justify-center text-[11px] font-semibold tabular-nums"
+          className="absolute inset-0 flex items-center justify-center text-base font-bold tabular-nums"
           style={{ color }}
         >
-          {loading ? '…' : `${p.toFixed(0)}%`}
+          {loading ? '…' : `${p}%`}
         </span>
       </div>
-      <div className="flex flex-col min-w-0 leading-tight">
-        <span className="text-xs font-medium text-foreground">{label}</span>
-        <span className="text-[11px] text-muted-foreground/80 tabular-nums truncate max-w-full" title={detail}>
-          {detail}
-        </span>
-      </div>
+      <span className="text-xs font-semibold text-foreground mt-2">{label}</span>
+      <span className="text-[11px] text-muted-foreground tabular-nums truncate max-w-full" title={detail}>
+        {detail}
+      </span>
     </div>
   )
 }
 
 const MONTHS: Record<string, number> = {
-  Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5,
-  Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11,
+  Jan: 0,
+  Feb: 1,
+  Mar: 2,
+  Apr: 3,
+  May: 4,
+  Jun: 5,
+  Jul: 6,
+  Aug: 7,
+  Sep: 8,
+  Oct: 9,
+  Nov: 10,
+  Dec: 11,
 }
 
 function parseAccessTime(line: string): number | null {
@@ -725,20 +763,23 @@ function parseAccessLine(line: string): { t: number | null; bytes: number } {
   return { t, bytes }
 }
 
-const REQ_COLOR = 'var(--success)'
-const DATA_COLOR = 'var(--warning)'
+const REQ_COLOR = 'var(--action-start)'
+const DATA_COLOR = 'var(--action-restart)'
 
-/** Monotone cubic spline (Fritsch-Carlson) interpolation clamped at the baseline */
+/**
+ * Monotone Hermite spline clamped to never dip below the zero baseline.
+ */
 function monotonePath(pts: { x: number; y: number }[], baseline: number): string {
   const n = pts.length
   if (n === 0) return ''
   if (n === 1) return `M ${pts[0].x},${pts[0].y}`
 
-  const m = new Array(n).fill(0)
-  const deltas: number[] = []
+  const deltas: number[] = new Array(n - 1)
+  const m: number[] = new Array(n)
+
   for (let i = 0; i < n - 1; i++) {
     const dx = pts[i + 1].x - pts[i].x
-    deltas.push(dx !== 0 ? (pts[i + 1].y - pts[i].y) / dx : 0)
+    deltas[i] = dx === 0 ? 0 : (pts[i + 1].y - pts[i].y) / dx
   }
 
   m[0] = deltas[0]
@@ -828,7 +869,7 @@ const TrafficGraph = memo(function TrafficGraph({ lines }: { lines: string[] }) 
   const niceMax = Math.ceil(maxV / 5) * 5
 
   const W = 300
-  const H = 85
+  const H = 100
   const PAD_L = 20
   const BASELINE = H - 16
 
@@ -863,18 +904,18 @@ const TrafficGraph = memo(function TrafficGraph({ lines }: { lines: string[] }) 
   const hov = hover !== null ? { i: hover, t: bucketT(hover), r: req[hover], k: kb[hover], x: upPts[hover].x } : null
 
   return (
-    <div className="flex min-w-0 flex-col gap-2">
-      {/* Flattened inline metrics: one compact row with clean divider */}
-      <div className="flex items-center justify-between rounded-md bg-muted/30 px-3 py-1.5 text-xs">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <span className="size-1.5 rounded-full shrink-0" style={{ background: REQ_COLOR }} />
+    <div className="flex min-w-0 flex-1 flex-col justify-between gap-2.5 h-full">
+      {/* Requests and Served sit next to each other as compact stat blocks */}
+      <div className="flex flex-wrap items-center gap-3 rounded-md bg-muted/20 px-3 py-1.5 text-xs w-fit">
+        <div className="flex items-center gap-1.5">
+          <span className="size-2 rounded-full shrink-0" style={{ background: REQ_COLOR }} />
           <span className="text-muted-foreground">Requests:</span>
           <span className="font-semibold tabular-nums text-foreground">{windowReq}</span>
           <span className="text-[11px] text-muted-foreground/80 tabular-nums">({totalLogReq} total)</span>
         </div>
-        <div className="h-3 w-px bg-border/60 mx-2 shrink-0" />
-        <div className="flex items-center gap-1.5 min-w-0">
-          <span className="size-1.5 rounded-full shrink-0" style={{ background: DATA_COLOR }} />
+        <div className="h-3 w-px bg-border/60 shrink-0" />
+        <div className="flex items-center gap-1.5">
+          <span className="size-2 rounded-full shrink-0" style={{ background: DATA_COLOR }} />
           <span className="text-muted-foreground">Served:</span>
           <span className="font-semibold tabular-nums text-foreground truncate">
             {windowKb >= 1024 ? `${(windowKb / 1024).toFixed(1)} MB` : `${windowKb.toFixed(0)} KB`}
@@ -887,25 +928,28 @@ const TrafficGraph = memo(function TrafficGraph({ lines }: { lines: string[] }) 
 
       {/* Slim empty state when traffic is basically zero */}
       {totalLogReq === 0 && windowReq === 0 ? (
-        <div className="flex h-14 items-center justify-center gap-2 rounded-md border border-dashed border-border/50 px-3 text-xs text-muted-foreground/80">
-          <Activity className="size-3.5 opacity-50 shrink-0" />
+        <div className="flex flex-1 min-h-[120px] items-center justify-center gap-2 rounded-md border border-dashed border-border/50 px-3 text-xs text-muted-foreground/80">
+          <Globe className="size-4 opacity-50 shrink-0" />
           <span>No traffic recorded in the last 5 minutes</span>
         </div>
       ) : (
-        <div className="relative" onMouseLeave={() => setHover(null)}>
+        <div
+          className="flex-1 min-h-[120px] relative w-full flex flex-col justify-center"
+          onMouseLeave={() => setHover(null)}
+        >
           <svg
             viewBox={`0 0 ${W} ${H}`}
-            className="w-full h-24"
+            className="w-full flex-1 min-h-[120px]"
             preserveAspectRatio="none"
             onMouseMove={onMove}
           >
             <defs>
               <linearGradient id="trafUp" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={REQ_COLOR} stopOpacity="0.45" />
+                <stop offset="0%" stopColor={REQ_COLOR} stopOpacity="0.38" />
                 <stop offset="100%" stopColor={REQ_COLOR} stopOpacity="0.02" />
               </linearGradient>
               <linearGradient id="trafDown" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={DATA_COLOR} stopOpacity="0.45" />
+                <stop offset="0%" stopColor={DATA_COLOR} stopOpacity="0.38" />
                 <stop offset="100%" stopColor={DATA_COLOR} stopOpacity="0.02" />
               </linearGradient>
             </defs>
@@ -913,8 +957,17 @@ const TrafficGraph = memo(function TrafficGraph({ lines }: { lines: string[] }) 
               const y = 6 + (1 - t / niceMax) * (BASELINE - 6)
               return (
                 <g key={t}>
-                  <line x1={PAD_L} x2={W - 4} y1={y} y2={y} stroke="var(--border)" strokeWidth="0.5" strokeDasharray="3 3" opacity="0.8" />
-                  <text x="2" y={y + 3} fontSize="7" fill="var(--muted-foreground)" className="hidden @[450px]/dashboard:inline">
+                  <line
+                    x1={PAD_L}
+                    x2={W - 4}
+                    y1={y}
+                    y2={y}
+                    stroke="var(--border)"
+                    strokeWidth="0.5"
+                    strokeDasharray="3 3"
+                    opacity="0.8"
+                  />
+                  <text x="2" y={y + 3} fontSize="7" fill="var(--muted-foreground)">
                     {t}
                   </text>
                 </g>
@@ -926,7 +979,16 @@ const TrafficGraph = memo(function TrafficGraph({ lines }: { lines: string[] }) 
             <path d={upLine} fill="none" stroke={REQ_COLOR} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
             {hov !== null && (
               <g>
-                <line x1={hov.x} x2={hov.x} y1="6" y2={BASELINE} stroke="var(--muted-foreground)" strokeWidth="0.75" strokeDasharray="2 2" opacity="0.9" />
+                <line
+                  x1={hov.x}
+                  x2={hov.x}
+                  y1="6"
+                  y2={BASELINE}
+                  stroke="var(--muted-foreground)"
+                  strokeWidth="0.75"
+                  strokeDasharray="2 2"
+                  opacity="0.9"
+                />
                 <circle cx={upPts[hov.i].x} cy={upPts[hov.i].y} r="2.4" fill={REQ_COLOR} stroke="var(--card)" strokeWidth="1" />
                 <circle cx={downPts[hov.i].x} cy={downPts[hov.i].y} r="2.4" fill={DATA_COLOR} stroke="var(--card)" strokeWidth="1" />
               </g>
@@ -949,7 +1011,7 @@ const TrafficGraph = memo(function TrafficGraph({ lines }: { lines: string[] }) 
         </div>
       )}
 
-      <div className="flex justify-between text-[11px] tabular-nums text-muted-foreground/80">
+      <div className="flex justify-between text-[11px] tabular-nums text-muted-foreground/80 shrink-0">
         <span>Last 5 min ({fmtT(end - WIN_MS)})</span>
         <span>Now ({fmtT(end)})</span>
       </div>

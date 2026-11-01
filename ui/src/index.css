@@ -36,6 +36,13 @@
   --warning: #F59E0B;
   --info: #0284C7;
 
+  /* Action button semantic tokens */
+  --action-start: #10b981;
+  --action-stop: #ef4444;
+  --action-restart: #f59e0b;
+  --action-reload: #0ea5e9;
+  --action-logs: #8b5cf6;
+
   --border: rgba(203, 213, 225, 0.65);
   --input: rgba(255, 255, 255, 0.9);
   --ring: rgba(5, 150, 105, 0.4);
@@ -80,6 +87,13 @@
   --success-foreground: #064E3B;
   --warning: #FBBF24;
   --info: #38BDF8;
+
+  /* Action button semantic tokens (dark) */
+  --action-start: #34d399;
+  --action-stop: #f87171;
+  --action-restart: #fbbf24;
+  --action-reload: #38bdf8;
+  --action-logs: #a78bfa;
 
   --border: rgba(148, 163, 184, 0.14);
   --input: rgba(13, 23, 44, 0.75);
@@ -479,5 +493,195 @@ body {
   }
   100% {
     transform: translateX(250%);
+  }
+}
+
+/* --- Action Buttons: 30px square, 8px radius, 16px icon, tinted color-mix --- */
+.action-slot-btn {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  min-height: 30px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  outline: none;
+}
+
+.action-slot-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.action-slot-btn:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.action-slot-btn:disabled,
+.action-slot-btn[aria-disabled="true"] {
+  opacity: 0.3 !important;
+  cursor: not-allowed !important;
+  pointer-events: none !important;
+  background: color-mix(in srgb, var(--muted-foreground) 10%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--border) 40%, transparent) !important;
+  color: var(--muted-foreground) !important;
+}
+
+.action-slot-start:not(:disabled) {
+  color: var(--action-start);
+  background: color-mix(in srgb, var(--action-start) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--action-start) 28%, transparent);
+}
+.action-slot-start:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--action-start) 24%, transparent);
+  border-color: color-mix(in srgb, var(--action-start) 50%, transparent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--action-start) 20%, transparent);
+}
+.action-slot-start:focus-visible {
+  outline: 2px solid var(--action-start);
+  outline-offset: 1px;
+}
+
+.action-slot-stop:not(:disabled) {
+  color: var(--action-stop);
+  background: color-mix(in srgb, var(--action-stop) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--action-stop) 28%, transparent);
+}
+.action-slot-stop:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--action-stop) 24%, transparent);
+  border-color: color-mix(in srgb, var(--action-stop) 50%, transparent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--action-stop) 20%, transparent);
+}
+.action-slot-stop:focus-visible {
+  outline: 2px solid var(--action-stop);
+  outline-offset: 1px;
+}
+
+.action-slot-restart:not(:disabled) {
+  color: var(--action-restart);
+  background: color-mix(in srgb, var(--action-restart) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--action-restart) 28%, transparent);
+}
+.action-slot-restart:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--action-restart) 24%, transparent);
+  border-color: color-mix(in srgb, var(--action-restart) 50%, transparent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--action-restart) 20%, transparent);
+}
+.action-slot-restart:focus-visible {
+  outline: 2px solid var(--action-restart);
+  outline-offset: 1px;
+}
+
+.action-slot-reload:not(:disabled) {
+  color: var(--action-reload);
+  background: color-mix(in srgb, var(--action-reload) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--action-reload) 28%, transparent);
+}
+.action-slot-reload:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--action-reload) 24%, transparent);
+  border-color: color-mix(in srgb, var(--action-reload) 50%, transparent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--action-reload) 20%, transparent);
+}
+.action-slot-reload:focus-visible {
+  outline: 2px solid var(--action-reload);
+  outline-offset: 1px;
+}
+
+.action-slot-logs:not(:disabled) {
+  color: var(--action-logs);
+  background: color-mix(in srgb, var(--action-logs) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--action-logs) 28%, transparent);
+}
+.action-slot-logs:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--action-logs) 24%, transparent);
+  border-color: color-mix(in srgb, var(--action-logs) 50%, transparent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--action-logs) 20%, transparent);
+}
+.action-slot-logs:focus-visible {
+  outline: 2px solid var(--action-logs);
+  outline-offset: 1px;
+}
+
+/* --- Dashboard Responsive Grid Layout Driven by Content Area --- */
+.dashboard-grid-container {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.875rem;
+  width: 100%;
+  min-width: 0;
+}
+
+/* Narrow (< 1100px content width) order: Resources, Services, Web server, Traffic */
+.dashboard-grid-container > .dashboard-col-resources {
+  order: 1;
+}
+.dashboard-grid-container > .dashboard-col-services {
+  order: 2;
+}
+.dashboard-grid-container > .dashboard-col-webserver {
+  order: 3;
+}
+.dashboard-grid-container > .dashboard-col-traffic {
+  order: 4;
+}
+
+/* Medium (1100px - 1499px content width): 2 columns */
+@container dashboard (min-width: 1100px) and (max-width: 1499px) {
+  .dashboard-grid-container {
+    grid-template-columns: 1fr minmax(460px, 520px);
+    align-items: stretch;
+  }
+  .dashboard-grid-container > .dashboard-col-resources {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .dashboard-grid-container > .dashboard-col-webserver {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .dashboard-grid-container > .dashboard-col-traffic {
+    grid-column: 1;
+    grid-row: 3;
+  }
+  .dashboard-grid-container > .dashboard-col-services {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+    max-width: 540px;
+    height: 100%;
+  }
+}
+
+/* Wide (>= 1500px content width): 3 columns */
+@container dashboard (min-width: 1500px) {
+  .dashboard-grid-container {
+    grid-template-columns: 1fr minmax(460px, 520px) 1fr;
+    grid-template-rows: auto 1fr;
+    align-items: stretch;
+  }
+  .dashboard-grid-container > .dashboard-col-resources {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .dashboard-grid-container > .dashboard-col-webserver {
+    grid-column: 1;
+    grid-row: 2;
+    height: 100%;
+  }
+  .dashboard-grid-container > .dashboard-col-services {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    max-width: 540px;
+    height: 100%;
+  }
+  .dashboard-grid-container > .dashboard-col-traffic {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
   }
 }
