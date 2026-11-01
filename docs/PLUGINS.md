@@ -21,6 +21,14 @@ Built-in plugins ship inside the app and are off until you turn them on: **Go**,
 JDK 21)** and **.NET SDK**. Ruby is not included: RubyInstaller ships `.7z` archives and the Package Manager
 reads zip only.
 
+### Permission review and consent dialog
+
+When you click **Review and turn on** for any plugin on the Plugins page, OpenLocalServer displays a specific consent dialog generated directly from the manifest data (`contributes` and `permissions`), never from free text written by the plugin author:
+- **Runtime downloads:** Displays each runtime's name, version, and verified download host parsed from its actual download URL (e.g. `go.dev`, `github.com`, `builds.dotnet.microsoft.com`). Clarifies that downloads only start when you click Install in Runtimes and are verified against fixed SHA-256 hashes.
+- **Project detection:** Displays each detection's target marker files (e.g. `go.mod`, `pom.xml`, `build.gradle`) and states that file scanning is strictly read-only.
+- **Details line:** Raw internal permission IDs (`download`, `read_projects`, etc.) appear as secondary details.
+- **Single confirmation:** A single "Allow and turn on" action approves permissions and turns on the plugin. The plugin can be turned off at any time.
+
 ## `plugin.yaml`
 
 ```yaml

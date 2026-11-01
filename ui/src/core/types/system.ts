@@ -104,6 +104,33 @@ export interface Diagnostic {
   fix: string | null
 }
 
+export interface PluginRuntimeContribution {
+  id: string
+  name: string
+  version: string
+  url?: string
+  sha256?: string
+  platform?: string
+  architecture?: string
+  archive_root?: string
+  binary?: string
+}
+
+export interface PluginDetectionContribution {
+  id: string
+  name: string
+  markers?: string[]
+  all?: string[]
+}
+
+export interface PluginHealthCheckContribution {
+  id: string
+  name: string
+  kind: string
+  target: string
+  hint?: string | null
+}
+
 export interface PluginManifest {
   id: string
   name: string
@@ -114,10 +141,10 @@ export interface PluginManifest {
   kind: 'declarative' | 'wasm'
   permissions: string[]
   contributes: {
-    runtimes: { id: string; name: string; version: string }[]
+    runtimes: PluginRuntimeContribution[]
     quick_apps: string | null
-    detections: { id: string; name: string; markers: string[] }[]
-    health_checks: { id: string; name: string; kind: string; target: string }[]
+    detections: PluginDetectionContribution[]
+    health_checks: PluginHealthCheckContribution[]
   }
 }
 

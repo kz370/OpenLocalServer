@@ -3,6 +3,7 @@ import { FileArchive, FolderOpen, Plug, Plus, RefreshCw, ShieldCheck, ShieldAler
 import { useCallback, useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
+import { PluginConsentDialog } from '@/components/PluginConsentDialog'
 import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -10,7 +11,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Dialog } from '@/components/ui/dialog'
 import { Field } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
-import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/form'
 import { type CatalogView, type PluginInfo, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
@@ -30,10 +30,10 @@ export function PluginsPage() {
   const [plugins, setPlugins] = useState<PluginInfo[]>([])
   const [catalogs, setCatalogs] = useState<CatalogView[]>([])
   const [review, setReview] = useState<PluginInfo | null>(null)
-  const [allowed, setAllowed] = useState(false)
   const [adding, setAdding] = useState(false)
   const [form, setForm] = useState({ name: '', url: '', key: '' })
-  const { busy, error, setError, run } = useAction()
+  const action = useAction()
+  const { busy, error, setError, run } = action
 
   const load = useCallback(async () => {
     const [p, c] = await Promise.all([runCommand({ type: 'list_plugins' }), runCommand({ type: 'list_catalog_sources' })])
@@ -104,7 +104,7 @@ export function PluginsPage() {
                       Turn off
                     </Button>
                   ) : (
-                    <Button size="sm" disabled={busy !== null} onClick={() => { setAllowed(false); setReview(p) }}>
+                    <Button size="sm" disabled={busy !== null} onClick={() => setReview(p)}>
                       Review and turn on
                     </Button>
                   ))}
@@ -196,51 +196,25 @@ export function PluginsPage() {
         </Card>
       ))}
 
-      <Dialog
+      <PluginConsentDialog
+        plugin={review}
         open={review !== null}
         onClose={() => setReview(null)}
-        title={review ? `Turn on ${review.manifest.name}?` : ''}
-        description="It can do only what is listed here."
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setReview(null)}>
-              Cancel
-            </Button>
-            <Button
-              disabled={!allowed || busy !== null}
-              onClick={() =>
-                review &&
-                run('on', async () => {
-                  await runCommand({ type: 'set_plugin_enabled', id: review.manifest.id, enabled: true, approve: review.manifest.permissions })
-                  setReview(null)
-                  await load()
-                })
-              }
-            >
-              Turn on
-            </Button>
-          </>
-        }
-      >
-        {review && (
-          <div className="flex flex-col gap-3 text-sm">
-            {review.permissions.length === 0 && <p>It asks for no permissions.</p>}
-            <ul className="flex flex-col gap-2">
-              {review.permissions.map((p) => (
-                <li key={p.id} className="rounded-md border border-border px-3 py-2">
-                  <span className="font-mono text-xs text-muted-foreground">{p.id}</span>
-                  <div>{p.description}</div>
-                </li>
-              ))}
-            </ul>
-            <div className="text-xs text-muted-foreground">Adds: {adds(review).join(', ') || 'nothing yet'}.{review.folder ? ` Installed in ${review.folder}.` : ''}</div>
-            <label className="flex items-center gap-2">
-              <Switch size="sm" checked={allowed} onChange={setAllowed} label="I allow these" />
-              I allow these
-            </label>
-          </div>
-        )}
-      </Dialog>
+        action={action}
+        onAllowAndTurnOn={async () => {
+          if (!review) return
+          await run('on', async () => {
+            await runCommand({
+              type: 'set_plugin_enabled',
+              id: review.manifest.id,
+              enabled: true,
+              approve: review.manifest.permissions,
+            })
+            setReview(null)
+            await load()
+          })
+        }}
+      />
 
       <Dialog
         open={adding}
