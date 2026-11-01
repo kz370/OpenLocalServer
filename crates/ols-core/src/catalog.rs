@@ -152,7 +152,7 @@ const CATALOG: &[PackageManifest] = &[
         // Apache Lounge publishes SHA-256 checksum sidecars; verified against the official
         // archive and publisher's checksum file. (The host serves the zip only when a Referer
         // is sent — see `download_referer`.)
-        sha256: "ca272e0b75abad78b1e4029a0753b20ff2232d2d857e8eebeea5d469c5776977",
+        sha256: "77d715d0d9cee731e2251e7ddc2090a7a8e6d41fedef2e9827cd918593c5a652",
         archive_root: "Apache24",
         binary: "bin/httpd.exe",
     },

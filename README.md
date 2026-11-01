@@ -2,7 +2,7 @@
 
 > A free, open-source local development environment manager for Windows — runtimes, sites, databases, and trusted HTTPS, without touching your system by hand.
 
-[![Version](https://img.shields.io/badge/version-2.5.0-blue)](./CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.5.1-blue)](./CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-0078D6)](./docs/STATUS.md)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue)](./LICENSE)
 [![Shell](https://img.shields.io/badge/shell-Tauri_2-orange)](./src-tauri/tauri.conf.json)

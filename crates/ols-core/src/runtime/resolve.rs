@@ -29,6 +29,16 @@ async fn fetch_text(http: &reqwest::Client, url: &str) -> Result<String, String>
     response.text().await.map_err(|e| e.to_string())
 }
 
+fn github_asset_sha256(asset: &serde_json::Value) -> String {
+    asset
+        .get("digest")
+        .and_then(|v| v.as_str())
+        .and_then(|d| d.strip_prefix("sha256:"))
+        .filter(|s| s.len() == 64)
+        .map(|s| s.to_ascii_lowercase())
+        .unwrap_or_default()
+}
+
 pub(crate) async fn resolve_online_manifest(
     http: &reqwest::Client,
     id: &str,
@@ -230,7 +240,7 @@ be updated."
                 .map_err(|e| e.to_string())?;
             let release: serde_json::Value =
                 serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
-            let (url, archive_root) = release
+            let (url, sha, archive_root) = release
                 .get("assets")
                 .and_then(|v| v.as_array())
                 .into_iter()
@@ -241,42 +251,194 @@ be updated."
                         && name.contains("Windows-x64")
                         && name.ends_with(".zip")
                     {
-                        Some((
-                            asset.get("browser_download_url")?.as_str()?.to_string(),
-                            name.trim_end_matches(".zip").to_string(),
-                        ))
+                        let u = asset.get("browser_download_url")?.as_str()?.to_string();
+                        let root = name.trim_end_matches(".zip").to_string();
+                        let sha = github_asset_sha256(asset);
+                        Some((u, sha, root))
                     } else {
                         None
                     }
                 })
                 .ok_or_else(|| format!("Redis Windows release {version} has no x64 archive"))?;
-            (url, String::new(), archive_root, "redis-server.exe")
+            (url, sha, archive_root, "redis-server.exe")
         }
-        "mailpit" => (
-            // Mailpit publishes no checksum file, so `sha256` stays empty and install_one
-            // records the digest of the HTTPS download instead of comparing it (§21).
-            format!(
+        "mailpit" => {
+            let api =
+                format!("https://api.github.com/repos/axllent/mailpit/releases/tags/v{version}");
+            let mut sha = String::new();
+            let mut url = format!(
                 "https://github.com/axllent/mailpit/releases/download/v{version}/mailpit-windows-amd64.zip"
-            ),
-            String::new(),
-            String::new(),
-            "mailpit.exe",
-        ),
+            );
+            if let Ok(resp) = http.get(&api).send().await {
+                if resp.status().is_success() {
+                    if let Ok(bytes) = resp.bytes().await {
+                        if let Ok(release) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+                            if let Some(asset) = release
+                                .get("assets")
+                                .and_then(|v| v.as_array())
+                                .into_iter()
+                                .flatten()
+                                .find(|a| {
+                                    a.get("name").and_then(|n| n.as_str())
+                                        == Some("mailpit-windows-amd64.zip")
+                                })
+                            {
+                                if let Some(u) =
+                                    asset.get("browser_download_url").and_then(|v| v.as_str())
+                                {
+                                    url = u.to_string();
+                                }
+                                sha = github_asset_sha256(asset);
+                            }
+                        }
+                    }
+                }
+            }
+            (url, sha, String::new(), "mailpit.exe")
+        }
         "nginx" => (
             format!("https://nginx.org/download/nginx-{version}.zip"),
             String::new(),
             format!("nginx-{version}"),
             "nginx.exe",
         ),
-        "memcached" => (
-            // The community Windows port tags upstream versions as `<version>_mingw_libressl`.
-            format!(
-                "https://github.com/jefyt/memcached-windows/releases/download/{version}_mingw_libressl/memcached-{version}-win64-mingw.zip"
-            ),
-            String::new(),
-            format!("memcached-{version}-win64-mingw"),
-            "bin/memcached.exe",
-        ),
+        "memcached" => {
+            let tag = format!("{version}_mingw_libressl");
+            let api =
+                format!("https://api.github.com/repos/jefyt/memcached-windows/releases/tags/{tag}");
+            let filename = format!("memcached-{version}-win64-mingw.zip");
+            let mut sha = String::new();
+            let mut url = format!(
+                "https://github.com/jefyt/memcached-windows/releases/download/{tag}/{filename}"
+            );
+            if let Ok(resp) = http.get(&api).send().await {
+                if resp.status().is_success() {
+                    if let Ok(bytes) = resp.bytes().await {
+                        if let Ok(release) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+                            if let Some(asset) = release
+                                .get("assets")
+                                .and_then(|v| v.as_array())
+                                .into_iter()
+                                .flatten()
+                                .find(|a| a.get("name").and_then(|n| n.as_str()) == Some(&filename))
+                            {
+                                if let Some(u) =
+                                    asset.get("browser_download_url").and_then(|v| v.as_str())
+                                {
+                                    url = u.to_string();
+                                }
+                                sha = github_asset_sha256(asset);
+                            }
+                        }
+                    }
+                }
+            }
+            (
+                url,
+                sha,
+                format!("memcached-{version}-win64-mingw"),
+                "bin/memcached.exe",
+            )
+        }
+        "caddy" => {
+            let api =
+                format!("https://api.github.com/repos/caddyserver/caddy/releases/tags/v{version}");
+            let filename = format!("caddy_{version}_windows_amd64.zip");
+            let mut sha = String::new();
+            let mut url = format!(
+                "https://github.com/caddyserver/caddy/releases/download/v{version}/{filename}"
+            );
+            if let Ok(resp) = http.get(&api).send().await {
+                if resp.status().is_success() {
+                    if let Ok(bytes) = resp.bytes().await {
+                        if let Ok(release) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+                            if let Some(asset) = release
+                                .get("assets")
+                                .and_then(|v| v.as_array())
+                                .into_iter()
+                                .flatten()
+                                .find(|a| a.get("name").and_then(|n| n.as_str()) == Some(&filename))
+                            {
+                                if let Some(u) =
+                                    asset.get("browser_download_url").and_then(|v| v.as_str())
+                                {
+                                    url = u.to_string();
+                                }
+                                sha = github_asset_sha256(asset);
+                            }
+                        }
+                    }
+                }
+            }
+            (url, sha, String::new(), "caddy.exe")
+        }
+        "k6" => {
+            let api = format!("https://api.github.com/repos/grafana/k6/releases/tags/v{version}");
+            let filename = format!("k6-v{version}-windows-amd64.zip");
+            let mut sha = String::new();
+            let mut url =
+                format!("https://github.com/grafana/k6/releases/download/v{version}/{filename}");
+            if let Ok(resp) = http.get(&api).send().await {
+                if resp.status().is_success() {
+                    if let Ok(bytes) = resp.bytes().await {
+                        if let Ok(release) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+                            if let Some(asset) = release
+                                .get("assets")
+                                .and_then(|v| v.as_array())
+                                .into_iter()
+                                .flatten()
+                                .find(|a| a.get("name").and_then(|n| n.as_str()) == Some(&filename))
+                            {
+                                if let Some(u) =
+                                    asset.get("browser_download_url").and_then(|v| v.as_str())
+                                {
+                                    url = u.to_string();
+                                }
+                                sha = github_asset_sha256(asset);
+                            }
+                        }
+                    }
+                }
+            }
+            (url, sha, format!("k6-v{version}-windows-amd64"), "k6.exe")
+        }
+        "git" => {
+            let tag = if version.starts_with("2.55.0.5") {
+                "v2.55.0.windows.5".to_string()
+            } else {
+                format!("v{version}")
+            };
+            let api =
+                format!("https://api.github.com/repos/git-for-windows/git/releases/tags/{tag}");
+            let filename = format!("MinGit-{version}-64-bit.zip");
+            let mut sha = String::new();
+            let mut url = format!(
+                "https://github.com/git-for-windows/git/releases/download/{tag}/{filename}"
+            );
+            if let Ok(resp) = http.get(&api).send().await {
+                if resp.status().is_success() {
+                    if let Ok(bytes) = resp.bytes().await {
+                        if let Ok(release) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+                            if let Some(asset) = release
+                                .get("assets")
+                                .and_then(|v| v.as_array())
+                                .into_iter()
+                                .flatten()
+                                .find(|a| a.get("name").and_then(|n| n.as_str()) == Some(&filename))
+                            {
+                                if let Some(u) =
+                                    asset.get("browser_download_url").and_then(|v| v.as_str())
+                                {
+                                    url = u.to_string();
+                                }
+                                sha = github_asset_sha256(asset);
+                            }
+                        }
+                    }
+                }
+            }
+            (url, sha, String::new(), "cmd/git.exe")
+        }
         "python" => {
             let mut matched = None;
             if let Ok(resp) = http
@@ -294,9 +456,16 @@ be updated."
                             .find_map(|item| {
                                 let id_str = item.get("id").and_then(|v| v.as_str())?;
                                 let sort_v = item.get("sort-version").and_then(|v| v.as_str())?;
-                                if id_str.starts_with("pythonembed-") && id_str.ends_with("-64") && sort_v == version {
+                                if id_str.starts_with("pythonembed-")
+                                    && id_str.ends_with("-64")
+                                    && sort_v == version
+                                {
                                     let u = item.get("url").and_then(|v| v.as_str())?.to_string();
-                                    let s = item.pointer("/hash/sha256").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                                    let s = item
+                                        .pointer("/hash/sha256")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or_default()
+                                        .to_string();
                                     Some((u, s))
                                 } else {
                                     None

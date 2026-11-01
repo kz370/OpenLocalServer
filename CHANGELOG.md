@@ -5,6 +5,10 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.5.1] — 2026-11-01
+
+Feature release. Full notes: [elease-notes/v2.5.1.md](./release-notes/v2.5.1.md).
+
 ## [2.5.0] — 2026-10-31
 
 Feature release. Full notes: [`release-notes/v2.5.0.md`](./release-notes/v2.5.0.md).

@@ -51,7 +51,7 @@ impl ProgressThrottle {
 }
 
 pub(crate) async fn install_one(
-    manifest: OwnedManifest,
+    mut manifest: OwnedManifest,
     paths: AppPaths,
     http: reqwest::Client,
     events_tx: broadcast::Sender<RuntimeEvent>,
@@ -95,11 +95,37 @@ pub(crate) async fn install_one(
             Err(e) => return InstallOutcome::Failed(e.to_string()),
         }
     };
-    let already_cached = if manifest.sha256.is_empty() {
+    let mut already_cached = if manifest.sha256.is_empty() {
         cached_digest.is_some() && cached_is_valid_archive
     } else {
-        cached_digest.as_deref() == Some(manifest.sha256.as_str())
+        cached_digest
+            .as_deref()
+            .is_some_and(|d| d.eq_ignore_ascii_case(&manifest.sha256))
     };
+
+    if !already_cached && !manifest.sha256.is_empty() && cached_is_valid_archive {
+        if let Some(ref c_digest) = cached_digest {
+            if let Ok(online) =
+                super::resolve::resolve_online_manifest(&http, &manifest.id, &manifest.version)
+                    .await
+            {
+                if !online.sha256.is_empty() && c_digest.eq_ignore_ascii_case(&online.sha256) {
+                    tracing::warn!(
+                        id = %manifest.id,
+                        version = %manifest.version,
+                        expected = %manifest.sha256,
+                        actual = %c_digest,
+                        "cached archive checksum changed upstream; verified against upstream online sidecar"
+                    );
+                    manifest.sha256 = online.sha256;
+                    manifest.url = online.url;
+                    manifest.archive_root = online.archive_root;
+                    manifest.binary = online.binary;
+                    already_cached = true;
+                }
+            }
+        }
+    }
 
     let mut downloaded: u64;
     let total: Option<u64>;
@@ -281,12 +307,35 @@ restarts the download from the beginning.",
         // Nginx does not publish a SHA-256 sidecar. For those releases, calculate and
         // retain the digest of the HTTPS download; vendors that publish hashes are checked
         // against their published value above.
-        if !manifest.sha256.is_empty() && digest != manifest.sha256 {
-            let _ = tokio::fs::remove_file(&archive_path).await;
-            return InstallOutcome::Failed(format!(
-                "checksum mismatch: expected {}, got {digest} — refusing to install an unverified binary",
-                manifest.sha256
-            ));
+        if !manifest.sha256.is_empty() && !digest.eq_ignore_ascii_case(&manifest.sha256) {
+            let mut verified_online = false;
+            if let Ok(online) =
+                super::resolve::resolve_online_manifest(&http, &manifest.id, &manifest.version)
+                    .await
+            {
+                if !online.sha256.is_empty() && digest.eq_ignore_ascii_case(&online.sha256) {
+                    tracing::warn!(
+                        id = %manifest.id,
+                        version = %manifest.version,
+                        expected = %manifest.sha256,
+                        actual = %digest,
+                        "static checksum mismatched but matched upstream online sidecar; upstream archive has changed"
+                    );
+                    manifest.sha256 = online.sha256;
+                    manifest.url = online.url;
+                    manifest.archive_root = online.archive_root;
+                    manifest.binary = online.binary;
+                    verified_online = true;
+                }
+            }
+
+            if !verified_online {
+                let _ = tokio::fs::remove_file(&archive_path).await;
+                return InstallOutcome::Failed(format!(
+                    "checksum mismatch: expected {}, got {digest} — refusing to install an unverified binary",
+                    manifest.sha256
+                ));
+            }
         }
     }
 

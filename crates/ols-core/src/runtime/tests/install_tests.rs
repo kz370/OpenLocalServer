@@ -386,3 +386,96 @@ fn catalog_only_lists_entries_for_this_platform() {
         assert!(entries.iter().any(|e| e.id == "node"));
     }
 }
+
+#[test]
+fn install_one_fails_when_static_checksum_mismatches_and_no_online_sidecar() {
+    let home = crate::test_support::isolated_home();
+    let manager = RuntimeManager::new(home.paths.clone());
+    let (events_tx, _events) = broadcast::channel(256);
+    let state = Arc::new(Mutex::new(HashMap::new()));
+    let control = Arc::new(InstallControl::default());
+    let url = slow_file_server(1024, 512, 1);
+    let mut manifest = test_manifest(url);
+    // Intentionally wrong checksum for a runtime with no online scraper
+    manifest.id = "unknown_rt".into();
+    manifest.sha256 = "0000000000000000000000000000000000000000000000000000000000000000".into();
+
+    let task = spawn_install(
+        manifest,
+        home.paths.clone(),
+        manager.http.clone(),
+        events_tx,
+        state,
+        control,
+    );
+    let outcome = task.join().unwrap();
+    match outcome {
+        InstallOutcome::Failed(msg) => {
+            assert!(
+                msg.contains("checksum mismatch"),
+                "expected checksum mismatch error, got: {msg}"
+            );
+            assert!(
+                msg.contains("refusing to install an unverified binary"),
+                "expected safety refusal, got: {msg}"
+            );
+        }
+        other => panic!("expected InstallOutcome::Failed, got {other:?}"),
+    }
+}
+
+#[test]
+#[ignore]
+fn dynamic_sidecar_verification_recovers_when_static_hash_is_stale() {
+    let home = crate::test_support::isolated_home();
+    let manager = RuntimeManager::new(home.paths.clone());
+    let (events_tx, _events) = broadcast::channel(256);
+    let state = Arc::new(Mutex::new(HashMap::new()));
+    let control = Arc::new(InstallControl::default());
+
+    // Use Apache 2.4.69 with the old pre-Oct-24 hash
+    let stale_hash = "ca272e0b75abad78b1e4029a0753b20ff2232d2d857e8eebeea5d469c5776977";
+    let manifest = OwnedManifest {
+        id: "apache".into(),
+        name: "Apache HTTP Server".into(),
+        version: "2.4.69".into(),
+        platform: "windows".into(),
+        architecture: "x64".into(),
+        url:
+            "https://www.apachelounge.com/download/VS18/binaries/httpd-2.4.69-261002-Win64-VS18.zip"
+                .into(),
+        sha256: stale_hash.into(),
+        archive_root: "Apache24".into(),
+        binary: "bin/httpd.exe".into(),
+        probe: None,
+    };
+
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let outcome = rt.block_on(install_one(
+        manifest,
+        home.paths.clone(),
+        manager.http.clone(),
+        events_tx,
+        state,
+        control,
+    ));
+
+    assert!(
+        matches!(outcome, InstallOutcome::Done),
+        "install_one should dynamically recover via online sidecar: {outcome:?}"
+    );
+    let httpd = home
+        .paths
+        .runtimes_dir()
+        .join("apache")
+        .join("2.4.69")
+        .join("bin")
+        .join("httpd.exe");
+    assert!(
+        httpd.exists(),
+        "httpd.exe should be extracted and installed"
+    );
+}
