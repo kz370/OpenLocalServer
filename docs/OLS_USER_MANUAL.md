@@ -1,6 +1,6 @@
 # OpenLocalServer (OLS) — Comprehensive User Manual & Operations Guide
 
-> **Version:** 2.5.0  
+> **Version:** 2.6.0  
 > **Platform:** Windows 10 / Windows 11 (64-bit)  
 > **License:** GPL-3.0-only  
 > **CLI Binary:** `olsc`  
@@ -26,7 +26,7 @@
 14. [AI Assistant & Model Context Protocol (MCP)](#14-ai-assistant--model-context-protocol-mcp)
 15. [Command Line Interface (CLI — `olsc`)](#15-command-line-interface-cli--olsc)
 16. [Keyboard Shortcuts, Settings, Themes & Documentation](#16-keyboard-shortcuts-settings-themes--documentation)
-17. [Version 2.5.0 Specific Notes & What's New](#17-version-250-specific-notes--whats-new)
+17. [Version 2.6.0 Specific Notes & What's New](#17-version-260-specific-notes--whats-new)
 
 ---
 
@@ -361,9 +361,41 @@ olsc guide
 
 ---
 
-## 17. Version 2.5.0 Specific Notes & What's New
+## 17. Version 2.6.0 Specific Notes & What's New
 
-### New Features in v2.5.0
+### New Features in v2.6.0
+1. **Installed Software UI Overhaul:**
+   - **Accurate Status Display**: Separated installation status from update availability. Accurately communicates "Up to date" (green indicator), "Update available" (sky indicator with non-link neutral text), and "Not installed".
+   - **Multi-Version Tracking**: Shows total installed counts (e.g. "2 installed") without mistaking older uninstalled versions for pending updates. Displays the "Default" badge only where relevant.
+   - **Standardized Action Column**: Every single row features a uniform right-aligned "Manage" button (`h-8`, `min-w-[90px]`, `text-xs`). When an update exists, the "Update to <version>" button renders directly to its left with identical margins.
+   - **WCAG AA Contrast & Typography**: Secondary metadata ("X versions available", "Latest: X", "X installed") is elevated to 12px with 5.8:1 (light) and 9.2:1 (dark) contrast ratios.
+   - **Consistent Cells & Compact Layout**: Uniform 4-column layout with em-dash ("—") fallbacks for unversioned tools. Compact fixed column widths reduce eye-travel on wide monitors, paired with subtle row hover highlights and consistent 56px row height.
+   - **Filter Toolbar & "Update all" Action**: Added "All", "Updates available", and "Installed" filter tabs above the table, and a bulk "Update all" action with pre-flight major version confirmation.
+
+2. **Semver Major Upgrade Protection:**
+   - **Major Boundary Detection**: Upgrades crossing a major semver boundary (e.g. MongoDB 8.x to 9.0) display a "Major" warning badge and amber warning-styled button.
+   - **Confirmation Dialog**: Clicking a major upgrade opens a confirmation modal detailing potential breaking changes, configuration deprecations, and data compatibility before downloading. Minor and patch updates remain one-click.
+
+3. **Prerelease Filtering & Channel Selector:**
+   - **Stable Default Updates**: Alpha, beta, rc, preview, canary, and dev builds are excluded from default update recommendations.
+   - **Node.js LTS Targeting**: Node.js update recommendations strictly target the newest even-numbered LTS line (e.g. 22.x, 20.x).
+   - **"Show pre-release versions" Toggle**: Added a channel toggle in the Manage dialog with distinct "Pre-release" badges and secondary button styling, never primary.
+
+4. **Dynamic Upstream SHA-256 Sidecar Resolution:**
+   - **Automatic Sidecar Verification**: Resolves vendor in-place archive rebuilds across all runtimes (Apache Lounge, GitHub assets, official mirrors). If an archive fails static catalog verification, OLS automatically queries the upstream provider's live sidecar or API feed. If verified, the checksum updates in-memory and extraction succeeds safely without compromising security.
+
+5. **Scoped Process Supervisor Deletion Guards:**
+   - **Process-Level Version Scoping**: Removing an idle or unselected runtime version (e.g. Mailpit 1.32.0 or PHP 8.3) is now permitted even when another version (e.g. Mailpit 1.31.3 or PHP 8.4) is actively running. Only active processes executing from that specific version directory block deletion.
+
+6. **Registered Dynamic Runtime Binaries:**
+   - Added executable mappings for Mailpit (`mailpit.exe`), Caddy (`caddy.exe`), SQLite (`sqlite3.exe`), Git (`cmd/git.exe`), and k6 (`k6.exe`), ensuring dynamic online installs are detected on disk.
+
+7. **Port Checker Accuracy:**
+   - Filtered PID 0 and TIME_WAIT sockets from netstat output, preventing in-use ports from falsely displaying as "System Idle Process". Added PowerShell `Get-NetTCPConnection` fallback for bound sockets and standard port hints (3306, 5432, 6379, 80, 443).
+
+---
+
+### Previous Version Notes (v2.5.0)
 1. **Consolidated Missing Folder Alerts & Batch Remediation:**
    - Consolidates all missing directories and offline drives into a single, clean collapsible summary card on the Dashboard.
    - Provides a 1-click **Manage in Sites** action that switches straight to the Sites table with the `Folder not found` filter pre-selected.

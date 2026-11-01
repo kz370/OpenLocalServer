@@ -15,51 +15,50 @@ pub enum PortStatus {
     },
 }
 
-/// Cheap free/in-use test: a bind attempt, no process lookup.
+/// Cheap free/in-use test: tests both wildcard (0.0.0.0) and loopback (127.0.0.1).
+/// On Windows, if a service (e.g. Nginx, Apache) binds to 0.0.0.0:port, Winsock
+/// still allows another socket to bind to 127.0.0.1:port. Conversely, if a service
+/// (e.g. MariaDB) binds specifically to 127.0.0.1:port, binding to 0.0.0.0:port can
+/// succeed while 127.0.0.1 fails. Both addresses must be bindable for the port to be free.
 pub fn port_is_free(port: u16) -> bool {
-    TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], port))).is_ok()
+    let any_free = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], port))).is_ok();
+    let loop_free = TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], port))).is_ok();
+    any_free && loop_free
 }
 
-/// Check whether `port` is free on 127.0.0.1. If it's busy, best-effort identify the
-/// owning process (Windows: parse `netstat -ano` + `tasklist`) so the UI can show
-/// "Port 3306 is in use by mysqld.exe (PID 4821)" instead of a bare failure.
+/// Check whether `port` is free. If it's busy, best-effort identify the
+/// owning process (Windows: parse `netstat -ano` / `Get-NetTCPConnection` + `tasklist`)
+/// so the UI can show the process name and PID (e.g. "nginx.exe (PID 27272)")
+/// instead of a bare failure or false "Free".
 pub fn check_port(port: u16) -> PortStatus {
-    let addr: SocketAddr = ([127, 0, 0, 1], port).into();
-    match TcpListener::bind(addr) {
-        Ok(listener) => {
-            drop(listener);
-            PortStatus::Free
-        }
-        Err(_) => {
-            // netstat + tasklist cost ~0.5s and the UI polls this; owners rarely change, so cache.
-            static CACHE: std::sync::OnceLock<
-                std::sync::Mutex<
-                    std::collections::HashMap<
-                        u16,
-                        (std::time::Instant, Option<u32>, Option<String>),
-                    >,
-                >,
-            > = std::sync::OnceLock::new();
-            let cache = CACHE.get_or_init(Default::default);
-            if let Some((at, pid, name)) = cache.lock().unwrap().get(&port) {
-                if at.elapsed() < std::time::Duration::from_secs(5) {
-                    return PortStatus::InUse {
-                        pid: *pid,
-                        process_name: name.clone(),
-                    };
-                }
-            }
-            let (pid, process_name) = resolve_in_use_owner(port);
-            let process_name = process_name
-                .or_else(|| excluded_range_reason(port))
-                .or_else(|| known_port_hint(port));
-            cache
-                .lock()
-                .unwrap()
-                .insert(port, (std::time::Instant::now(), pid, process_name.clone()));
-            PortStatus::InUse { pid, process_name }
+    if port_is_free(port) {
+        return PortStatus::Free;
+    }
+
+    // netstat + tasklist cost ~0.5s and the UI polls this; owners rarely change, so cache.
+    static CACHE: std::sync::OnceLock<
+        std::sync::Mutex<
+            std::collections::HashMap<u16, (std::time::Instant, Option<u32>, Option<String>)>,
+        >,
+    > = std::sync::OnceLock::new();
+    let cache = CACHE.get_or_init(Default::default);
+    if let Some((at, pid, name)) = cache.lock().unwrap().get(&port) {
+        if at.elapsed() < std::time::Duration::from_secs(5) {
+            return PortStatus::InUse {
+                pid: *pid,
+                process_name: name.clone(),
+            };
         }
     }
+    let (pid, process_name) = resolve_in_use_owner(port);
+    let process_name = process_name
+        .or_else(|| excluded_range_reason(port))
+        .or_else(|| known_port_hint(port));
+    cache
+        .lock()
+        .unwrap()
+        .insert(port, (std::time::Instant::now(), pid, process_name.clone()));
+    PortStatus::InUse { pid, process_name }
 }
 
 #[cfg(windows)]

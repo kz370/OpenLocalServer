@@ -13,6 +13,7 @@ import { Markdown } from '@/components/ui/Markdown'
 import { type ApiStatus, type NetworkStatus, type ShellMenuStatus, type UpdateInfo, type UpdaterStatus, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
 import { useAction } from '@/lib/hooks'
+import { compareVersionsDesc } from '@/lib/runtimeStatus'
 
 /** Where the prose lives. The card states what the API is and how to switch it on; the
  * endpoint contract, the mode lists and the security rules are documented, because a
@@ -241,8 +242,11 @@ export function UpdatesCard() {
     return mb >= 1 ? ` · ${mb.toFixed(1)} MB` : ` · ${(bytes / 1024).toFixed(0)} KB`
   }
 
-  const hasUpdate = info?.status === 'update_available'
-  const isDownloaded = !!info?.downloaded
+  const isCurrentOrNewer = Boolean(
+    status?.current && info?.latest && compareVersionsDesc(info.latest, status.current) >= 0,
+  )
+  const hasUpdate = info?.status === 'update_available' && !isCurrentOrNewer
+  const isDownloaded = !!info?.downloaded && !isCurrentOrNewer
 
   // Friendly error message preserving detailed diagnostic if available
   const displayError = error
@@ -266,9 +270,9 @@ export function UpdatesCard() {
             <Badge variant="success">Ready to install</Badge>
           ) : info?.status === 'development_version' ? (
             <Badge variant="destructive">Development version</Badge>
-          ) : info?.status === 'update_available' ? (
+          ) : hasUpdate ? (
             <Badge variant="warning">Update available</Badge>
-          ) : info?.status === 'up_to_date' ? (
+          ) : info?.status === 'up_to_date' || isCurrentOrNewer ? (
             <Badge variant="success">Up to date</Badge>
           ) : null}
         </CardTitle>
@@ -312,20 +316,20 @@ export function UpdatesCard() {
         )}
 
         {/* Compact status row (borderless, directly above action buttons) */}
-        {!hasUpdate && !isDownloaded && info && (
+        {!hasUpdate && !isDownloaded && (info || isCurrentOrNewer) && (
           <div className="flex items-center justify-between text-xs text-muted-foreground py-0.5">
             <div className="flex items-center gap-1.5">
-              {info.status === 'development_version' ? (
+              {info?.status === 'development_version' ? (
                 <>
                   <CheckCircle className="size-3.5 text-info shrink-0" />
                   <span className="font-medium text-foreground/90">Development build:</span>
-                  <span>v{status?.current || info.current} (latest release: v{info.latest})</span>
+                  <span>v{status?.current || info.current} (latest release: v{info?.latest})</span>
                 </>
               ) : (
                 <>
                   <CheckCircle className="size-3.5 text-success shrink-0" />
                   <span className="font-medium text-foreground/90">Up to date:</span>
-                  <span>You are on the latest version (v{info.latest})</span>
+                  <span>You are on the latest version (v{status?.current || info?.latest})</span>
                 </>
               )}
             </div>

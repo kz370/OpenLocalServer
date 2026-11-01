@@ -225,11 +225,28 @@ impl Inner {
     }
 
     pub fn updater_status(&self) -> UpdaterStatus {
+        let settings = self.updater_settings();
+        let current = env!("CARGO_PKG_VERSION").to_string();
+        let mut last = self.last_update();
+        if let Some(ref mut info) = last {
+            let recomputed = update_status(&current, &info.latest);
+            if info.status != recomputed || info.current != current {
+                info.current = current.clone();
+                info.status = recomputed;
+                if matches!(
+                    info.status,
+                    UpdateStatus::UpToDate | UpdateStatus::DevelopmentVersion
+                ) {
+                    info.downloaded = None;
+                }
+                let _ = self.save_updater(&settings, Some(info));
+            }
+        }
         UpdaterStatus {
-            settings: self.updater_settings(),
-            current: env!("CARGO_PKG_VERSION").into(),
+            settings,
+            current,
             key_configured: !self.update_key().trim().is_empty(),
-            last: self.last_update(),
+            last,
         }
     }
 

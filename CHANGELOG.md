@@ -5,9 +5,16 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [2.5.1] — 2026-11-01
+## [2.6.0] — 2026-11-01
 
-Feature release. Full notes: [elease-notes/v2.5.1.md](./release-notes/v2.5.1.md).
+Maintenance and UI release. Full notes: [`release-notes/v2.6.0.md`](./release-notes/v2.6.0.md).
+
+### Highlights
+- **Runtime Updates UI**: Separated installation status from update availability, standardized action buttons, filter tabs, and bulk "Update all".
+- **Major Upgrade Protection**: Semver major boundary detection with breaking change confirmation modals.
+- **Prerelease Filtering**: Excluded pre-releases from default updates; added channel toggle in Manage panel; Node.js strictly targets LTS.
+- **Dynamic Checksum Resolution**: Automatically verifies upstream SHA-256 sidecars on vendor in-place archive rebuilds.
+- **Process & Port Fixes**: Scoped runtime version deletion guard; fixed Port Checker false positives showing PID 0 as "System Idle Process".
 
 ## [2.5.0] — 2026-10-31
 
