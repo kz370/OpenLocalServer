@@ -158,10 +158,15 @@ pub fn service_available() -> bool {
 /// the app goes on talking to an elevated half it no longer matches. The service answers
 /// `version` over the pipe for exactly this question.
 ///
-/// Retries a few times because the service needs a moment after `install-service` starts it
-/// before the named pipe answers.
+/// Queries once without blocking retries.
 pub fn service_version() -> Option<String> {
-    for _ in 0..25 {
+    service_version_retries(1)
+}
+
+/// Query with retries (used immediately after `install-service` starts the service
+/// before the named pipe answers).
+pub fn service_version_retries(retries: usize) -> Option<String> {
+    for i in 0..retries {
         if let Some(reply) = service_reply(&["version".to_string()]) {
             if reply.code != 0 {
                 return None;
@@ -170,7 +175,9 @@ pub fn service_version() -> Option<String> {
                 return Some(reply.message);
             }
         }
-        std::thread::sleep(Duration::from_millis(100));
+        if i + 1 < retries {
+            std::thread::sleep(Duration::from_millis(100));
+        }
     }
     None
 }

@@ -64,28 +64,54 @@ async function getStringList(key: string): Promise<string[]> {
   return r.type === 'setting' && Array.isArray(r.value) ? r.value.filter((value): value is string => typeof value === 'string') : []
 }
 
+let cachedStartup: StartupSettings | null = null
+let cachedServices: ServiceStatus[] = []
+let cachedEditors: EditorInfo[] = []
+let cachedEditor = ''
+let cachedEditorId = 'vscode'
+let cachedHelper: HelperService | null = null
+let cachedVersion = ''
+let cachedProjectsDir = ''
+let cachedSitesDir = ''
+let cachedRootFolders: string[] = []
+let cachedDefaultTld = 'local'
+let cachedCustomTld = ''
+let cachedWatchSites = true
+let cachedAutoDomains = true
+let cachedAutoFixDiagnostics = true
+let cachedMcpEnabled = false
+let cachedMcpToken = ''
+let cachedMcpConfigured = false
+let cachedMcpExpiryMode: 'none' | 'hours' | 'at' = 'none'
+let cachedMcpTtlHours = 0
+let cachedMcpExpiresAt = ''
+
 /** §119–121 startup, tray and notification behavior, plus the everyday defaults. */
 export function SettingsPage() {
-  const [startup, setStartup] = useState<StartupSettings | null>(null)
-  const [services, setServices] = useState<ServiceStatus[]>([])
-  const [editor, setEditor] = useState('')
-  const [editorId, setEditorId] = useState('vscode')
-  const [editors, setEditors] = useState<EditorInfo[]>([])
-  const [projectsDir, setProjectsDir] = useState('')
-  const [autoDomains, setAutoDomains] = useState(true)
-  const [watchSites, setWatchSites] = useState(true)
-  const [autoFixDiagnostics, setAutoFixDiagnostics] = useState(true)
-  const [sitesDir, setSitesDir] = useState('')
-  const [rootFolders, setRootFolders] = useState<string[]>([])
-  const [defaultTld, setDefaultTld] = useState('local')
-  const [customTld, setCustomTld] = useState('')
-  const [helper, setHelper] = useState<HelperService | null>(null)
-  const [version, setVersion] = useState('')
+  const [startup, setStartup] = useState<StartupSettings | null>(cachedStartup)
+  const [services, setServices] = useState<ServiceStatus[]>(cachedServices)
+  const [editor, setEditor] = useState(cachedEditor)
+  const [editorId, setEditorId] = useState(cachedEditorId)
+  const [editors, setEditors] = useState<EditorInfo[]>(cachedEditors)
+  const [projectsDir, setProjectsDir] = useState(cachedProjectsDir)
+  const [autoDomains, setAutoDomains] = useState(cachedAutoDomains)
+  const [watchSites, setWatchSites] = useState(cachedWatchSites)
+  const [autoFixDiagnostics, setAutoFixDiagnostics] = useState(cachedAutoFixDiagnostics)
+  const [sitesDir, setSitesDir] = useState(cachedSitesDir)
+  const [rootFolders, setRootFolders] = useState<string[]>(cachedRootFolders)
+  const [defaultTld, setDefaultTld] = useState(cachedDefaultTld)
+  const [customTld, setCustomTld] = useState(cachedCustomTld)
+  const [helper, setHelper] = useState<HelperService | null>(cachedHelper)
+  const [version, setVersion] = useState(cachedVersion)
   const [saved, setSaved] = useState<string | null>(null)
   const [section, setSection] = useState<Section>(() => {
     try {
       if (typeof window !== 'undefined' && window.location.hash.toLowerCase().includes('appearance')) {
         return 'appearance'
+      }
+      const stored = sessionStorage.getItem('ols:settings-section')
+      if (stored && SECTIONS.some((s) => s.id === stored)) {
+        return stored as Section
       }
     } catch {
       // ignore
@@ -95,13 +121,13 @@ export function SettingsPage() {
   const [manual, setManual] = useState<string | null>(null)
   const [manualTab, setManualTab] = useState<'manual' | 'notes'>('manual')
   const [manualCopied, setManualCopied] = useState(false)
-  const [mcpEnabled, setMcpEnabled] = useState(false)
-  const [mcpToken, setMcpToken] = useState('')
+  const [mcpEnabled, setMcpEnabled] = useState(cachedMcpEnabled)
+  const [mcpToken, setMcpToken] = useState(cachedMcpToken)
   const [mcpTokenVisible, setMcpTokenVisible] = useState(false)
-  const [mcpExpiryMode, setMcpExpiryMode] = useState<'none' | 'hours' | 'at'>('none')
-  const [mcpTtlHours, setMcpTtlHours] = useState(0)
-  const [mcpExpiresAt, setMcpExpiresAt] = useState('')
-  const [mcpConfigured, setMcpConfigured] = useState(false)
+  const [mcpExpiryMode, setMcpExpiryMode] = useState<'none' | 'hours' | 'at'>(cachedMcpExpiryMode)
+  const [mcpTtlHours, setMcpTtlHours] = useState(cachedMcpTtlHours)
+  const [mcpExpiresAt, setMcpExpiresAt] = useState(cachedMcpExpiresAt)
+  const [mcpConfigured, setMcpConfigured] = useState(cachedMcpConfigured)
 
   const releaseNotesFiltered = useMemo(() => {
     const lines = releaseNotes.split('\n')
@@ -140,48 +166,136 @@ export function SettingsPage() {
   const { busy, error, setError, run } = action
 
   useEffect(() => {
-    runCommand({ type: 'get_startup_settings' }).then((r) => r.type === 'startup' && setStartup(r.settings))
-    runCommand({ type: 'list_services' }).then((r) => r.type === 'services' && setServices(r.services))
-    runCommand({ type: 'ping' }).then((r) => r.type === 'pong' && setVersion(r.version))
-    runCommand({ type: 'list_editors' }).then((r) => r.type === 'editors' && setEditors(r.editors))
-    runCommand({ type: 'get_helper_service' }).then((r) => r.type === 'helper_service' && setHelper(r))
+    void runCommand({ type: 'ping' }).then((r) => {
+      if (r.type === 'pong') {
+        setVersion(r.version)
+        cachedVersion = r.version
+      }
+    })
+  }, [])
+
+  useEffect(() => {
+    if (section !== 'general') return
+    void runCommand({ type: 'list_editors' }).then((r) => {
+      if (r.type === 'editors') {
+        setEditors(r.editors)
+        cachedEditors = r.editors
+      }
+    })
+    void runCommand({ type: 'get_helper_service' }).then((r) => {
+      if (r.type === 'helper_service') {
+        setHelper(r)
+        cachedHelper = r
+      }
+    })
     void Promise.all([getString('editor'), getString('editor.command')]).then(([id, cmd]) => {
       setEditor(cmd)
-      setEditorId(cmd ? 'custom' : id || 'vscode')
+      cachedEditor = cmd
+      const resolvedId = cmd ? 'custom' : id || 'vscode'
+      setEditorId(resolvedId)
+      cachedEditorId = resolvedId
     })
-    void getString('quickapps.projects_dir').then(setProjectsDir)
-    void getString('paths.sites_dir').then(setSitesDir)
-    void getStringList('projects.roots').then(setRootFolders)
-    void runCommand({ type: 'get_setting', key: 'projects.watch' }).then((r) => r.type === 'setting' && setWatchSites(r.value !== false))
-    void runCommand({ type: 'get_setting', key: 'domains.auto' }).then((r) => r.type === 'setting' && setAutoDomains(r.value !== false))
-    void runCommand({ type: 'get_setting', key: 'diagnostics.auto_fix' }).then((r) => r.type === 'setting' && setAutoFixDiagnostics(r.value !== false))
+  }, [section])
+
+  useEffect(() => {
+    if (section !== 'general' && section !== 'startup') return
+    void runCommand({ type: 'get_startup_settings' }).then((r) => {
+      if (r.type === 'startup') {
+        setStartup(r.settings)
+        cachedStartup = r.settings
+      }
+    })
+    if (section === 'startup') {
+      void runCommand({ type: 'list_services' }).then((r) => {
+        if (r.type === 'services') {
+          setServices(r.services)
+          cachedServices = r.services
+        }
+      })
+    }
+  }, [section])
+
+  useEffect(() => {
+    if (section !== 'sites' && section !== 'roots') return
+    void getString('quickapps.projects_dir').then((v) => {
+      setProjectsDir(v)
+      cachedProjectsDir = v
+    })
+    void getString('paths.sites_dir').then((v) => {
+      setSitesDir(v)
+      cachedSitesDir = v
+    })
+    void getStringList('projects.roots').then((v) => {
+      setRootFolders(v)
+      cachedRootFolders = v
+    })
+    void runCommand({ type: 'get_setting', key: 'projects.watch' }).then((r) => {
+      if (r.type === 'setting') {
+        const val = r.value !== false
+        setWatchSites(val)
+        cachedWatchSites = val
+      }
+    })
+    void runCommand({ type: 'get_setting', key: 'domains.auto' }).then((r) => {
+      if (r.type === 'setting') {
+        const val = r.value !== false
+        setAutoDomains(val)
+        cachedAutoDomains = val
+      }
+    })
     void getString('domains.default_tld').then((val) => {
       const tld = val.trim().replace(/^\./, '') || 'local'
       const presets = ['local', 'test', 'localhost']
       if (presets.includes(tld)) {
         setDefaultTld(tld)
         setCustomTld('')
+        cachedDefaultTld = tld
+        cachedCustomTld = ''
       } else {
         setDefaultTld('custom')
         setCustomTld(tld)
+        cachedDefaultTld = 'custom'
+        cachedCustomTld = tld
       }
     })
-    // MCP auth: enabled is a setting, token + expires_at live in the OS keyring via GetSecret.
+  }, [section])
+
+  useEffect(() => {
+    if (section !== 'diagnostics') return
+    void runCommand({ type: 'get_setting', key: 'diagnostics.auto_fix' }).then((r) => {
+      if (r.type === 'setting') {
+        const val = r.value !== false
+        setAutoFixDiagnostics(val)
+        cachedAutoFixDiagnostics = val
+      }
+    })
+  }, [section])
+
+  useEffect(() => {
+    if (section !== 'mcp') return
     void runCommand({ type: 'get_setting', key: 'mcp.auth.enabled' }).then((r) => {
-      if (r.type === 'setting' && typeof r.value === 'boolean') setMcpEnabled(r.value)
+      if (r.type === 'setting' && typeof r.value === 'boolean') {
+        setMcpEnabled(r.value)
+        cachedMcpEnabled = r.value
+      }
     })
     void runCommand({ type: 'get_secret', key: 'mcp.auth.token' }).then((r) => {
       if (r.type === 'secret') {
         setMcpConfigured(!!r.value)
         setMcpToken(r.value ?? '')
+        cachedMcpConfigured = !!r.value
+        cachedMcpToken = r.value ?? ''
       }
     })
     void runCommand({ type: 'get_secret', key: 'mcp.auth.token.expires_at' }).then((r) => {
       if (r.type === 'secret' && r.value) {
         const ms = parseInt(r.value, 10)
         if (!isNaN(ms)) {
-          setMcpExpiresAt(new Date(ms).toISOString().slice(0, 16))
+          const val = new Date(ms).toISOString().slice(0, 16)
+          setMcpExpiresAt(val)
           setMcpExpiryMode('at')
+          cachedMcpExpiresAt = val
+          cachedMcpExpiryMode = 'at'
         }
       }
     })
@@ -189,12 +303,15 @@ export function SettingsPage() {
       if (r.type === 'secret' && r.value) {
         const ttl = parseInt(r.value, 10)
         if (!isNaN(ttl) && ttl > 0) {
-          setMcpTtlHours(ttl / (3600 * 1000))
+          const hours = ttl / (3600 * 1000)
+          setMcpTtlHours(hours)
           setMcpExpiryMode('hours')
+          cachedMcpTtlHours = hours
+          cachedMcpExpiryMode = 'hours'
         }
       }
     })
-  }, [])
+  }, [section])
 
   useEffect(() => {
     if (section !== 'manual') return
@@ -204,16 +321,34 @@ export function SettingsPage() {
   }, [section, version])
 
   async function saveAll() {
-    if (!startup) return
-    const r = await runCommand({ type: 'set_startup_settings', settings: startup })
-    if (r.type === 'startup') setStartup(r.settings)
-    await runCommand({ type: 'set_setting', key: 'editor', value: editorId === 'custom' ? '' : editorId })
-    await runCommand({ type: 'set_setting', key: 'editor.command', value: editorId === 'custom' ? editor : '' })
+    if (startup) {
+      const r = await runCommand({ type: 'set_startup_settings', settings: startup })
+      if (r.type === 'startup') {
+        setStartup(r.settings)
+        cachedStartup = r.settings
+      }
+    }
+    const targetEditorId = editorId === 'custom' ? '' : editorId
+    const targetEditorCmd = editorId === 'custom' ? editor : ''
+    await runCommand({ type: 'set_setting', key: 'editor', value: targetEditorId })
+    await runCommand({ type: 'set_setting', key: 'editor.command', value: targetEditorCmd })
+    cachedEditor = targetEditorCmd
+    cachedEditorId = editorId
+
     await runCommand({ type: 'set_setting', key: 'quickapps.projects_dir', value: projectsDir })
+    cachedProjectsDir = projectsDir
+
     await runCommand({ type: 'set_setting', key: 'domains.auto', value: autoDomains })
+    cachedAutoDomains = autoDomains
+
     await runCommand({ type: 'set_setting', key: 'projects.watch', value: watchSites })
+    cachedWatchSites = watchSites
+
     const tldValue = defaultTld === 'custom' ? customTld.trim().replace(/^\./, '') : defaultTld
     await runCommand({ type: 'set_setting', key: 'domains.default_tld', value: tldValue || 'local' })
+    cachedDefaultTld = defaultTld
+    cachedCustomTld = customTld
+
     invalidateDefaultTldCache()
     if (autoDomains) await runCommand({ type: 'sync_auto_domains' })
     setSaved('Saved.')
@@ -222,22 +357,30 @@ export function SettingsPage() {
 
   async function saveMcp() {
     await runCommand({ type: 'set_setting', key: 'mcp.auth.enabled', value: mcpEnabled })
+    cachedMcpEnabled = mcpEnabled
     if (mcpToken) {
       await runCommand({ type: 'set_secret', key: 'mcp.auth.token', value: mcpToken })
+      cachedMcpToken = mcpToken
+      cachedMcpConfigured = true
+      setMcpConfigured(true)
       const now = Date.now()
       await runCommand({ type: 'set_secret', key: 'mcp.auth.token.created_at', value: String(now) })
       if (mcpExpiryMode === 'hours' && mcpTtlHours > 0) {
         await runCommand({ type: 'set_secret', key: 'mcp.auth.token.ttl_ms', value: String(mcpTtlHours * 3600 * 1000) })
         await runCommand({ type: 'set_secret', key: 'mcp.auth.token.expires_at', value: '' })
+        cachedMcpExpiryMode = 'hours'
+        cachedMcpTtlHours = mcpTtlHours
       } else if (mcpExpiryMode === 'at' && mcpExpiresAt) {
         const expiresMs = new Date(mcpExpiresAt).getTime()
         await runCommand({ type: 'set_secret', key: 'mcp.auth.token.ttl_ms', value: '' })
         await runCommand({ type: 'set_secret', key: 'mcp.auth.token.expires_at', value: String(expiresMs) })
+        cachedMcpExpiryMode = 'at'
+        cachedMcpExpiresAt = mcpExpiresAt
       } else {
         await runCommand({ type: 'set_secret', key: 'mcp.auth.token.ttl_ms', value: '' })
         await runCommand({ type: 'set_secret', key: 'mcp.auth.token.expires_at', value: '' })
+        cachedMcpExpiryMode = 'none'
       }
-      setMcpConfigured(true)
     }
     setSaved('MCP settings saved.')
     setTimeout(() => setSaved(null), 2500)
@@ -257,6 +400,7 @@ export function SettingsPage() {
       const result = await runCommand({ type: 'set_setting', key: 'projects.roots', value: next })
       if (result.type === 'ok') {
         setRootFolders(next)
+        cachedRootFolders = next
         if (autoDomains) await runCommand({ type: 'sync_auto_domains' })
       }
     })
@@ -266,14 +410,40 @@ export function SettingsPage() {
     const next = rootFolders.filter((folder) => folder !== root)
     await run('remove root folder', async () => {
       const result = await runCommand({ type: 'set_setting', key: 'projects.roots', value: next })
-      if (result.type === 'ok') setRootFolders(next)
+      if (result.type === 'ok') {
+        setRootFolders(next)
+        cachedRootFolders = next
+      }
     })
   }
 
-  if (!startup) return null
-  const set = (patch: Partial<StartupSettings>) => setStartup({ ...startup, ...patch })
-  const toggleService = (id: string, on: boolean) =>
-    set({ autostart_services: on ? [...startup.autostart_services, id] : startup.autostart_services.filter((s) => s !== id) })
+  const defaultStartup: StartupSettings = {
+    with_windows: false,
+    start_minimized: false,
+    autostart_services: [],
+    notifications: true,
+    close_to_tray: true,
+  }
+  const currentStartup = startup ?? defaultStartup
+
+  const set = (patch: Partial<StartupSettings>) => {
+    setStartup((prev) => {
+      const next = { ...(prev ?? defaultStartup), ...patch }
+      cachedStartup = next
+      return next
+    })
+  }
+  const toggleService = (id: string, on: boolean) => {
+    setStartup((prev) => {
+      const base = prev ?? defaultStartup
+      const next = {
+        ...base,
+        autostart_services: on ? [...base.autostart_services, id] : base.autostart_services.filter((s) => s !== id),
+      }
+      cachedStartup = next
+      return next
+    })
+  }
 
   const editorField = (
     <div className="flex flex-col gap-2">
@@ -355,7 +525,14 @@ export function SettingsPage() {
             return (
               <button
                 key={s.id}
-                onClick={() => setSection(s.id)}
+                onClick={() => {
+                  setSection(s.id)
+                  try {
+                    sessionStorage.setItem('ols:settings-section', s.id)
+                  } catch {
+                    // ignore
+                  }
+                }}
                 className={cn(
                   'group relative flex items-center gap-3 whitespace-nowrap rounded-xl px-3.5 py-2.5 text-left text-sm font-medium transition-all duration-150',
                   isActive
@@ -517,14 +694,14 @@ export function SettingsPage() {
                 <CardDescription>Servers keep running from the system tray after you close the window.</CardDescription>
               </CardHeader>
               <CardContent>
-                <SwitchRow checked={startup.with_windows} onChange={(v) => set({ with_windows: v })} title="Start with Windows" hint="Adds OLS to your account's startup list (no administrator rights needed)." />
-                <SwitchRow checked={startup.start_minimized} onChange={(v) => set({ start_minimized: v })} title="Start minimized to the tray" hint="Every launch, whether you open it yourself or Windows starts it with your account." />
-                <SwitchRow checked={startup.close_to_tray} onChange={(v) => set({ close_to_tray: v })} title="Closing the window keeps running in the tray" hint="Use Quit in the tray menu to stop everything." />
-                <SwitchRow checked={startup.notifications} onChange={(v) => set({ notifications: v })} title="Desktop notifications" hint="When a process crashes, an install finishes, or a Quick App completes." />
+                <SwitchRow checked={currentStartup.with_windows} onChange={(v) => set({ with_windows: v })} title="Start with Windows" hint="Adds OLS to your account's startup list (no administrator rights needed)." />
+                <SwitchRow checked={currentStartup.start_minimized} onChange={(v) => set({ start_minimized: v })} title="Start minimized to the tray" hint="Every launch, whether you open it yourself or Windows starts it with your account." />
+                <SwitchRow checked={currentStartup.close_to_tray} onChange={(v) => set({ close_to_tray: v })} title="Closing the window keeps running in the tray" hint="Use Quit in the tray menu to stop everything." />
+                <SwitchRow checked={currentStartup.notifications} onChange={(v) => set({ notifications: v })} title="Desktop notifications" hint="When a process crashes, an install finishes, or a Quick App completes." />
                 <SettingRow stacked title="Start these services automatically" hint="A web server listed here has its config applied before it starts, so your sites answer as soon as the app opens.">
                   <div className="flex flex-col gap-2.5">
                     {services.filter((s) => s.installed).map((s) => (
-                      <Toggle key={s.id} checked={startup.autostart_services.includes(s.id)} onChange={(v) => toggleService(s.id, v)} label={s.name} />
+                      <Toggle key={s.id} checked={currentStartup.autostart_services.includes(s.id)} onChange={(v) => toggleService(s.id, v)} label={s.name} />
                     ))}
                     {services.every((s) => !s.installed) && <span className="text-sm text-muted-foreground">No services installed yet.</span>}
                   </div>

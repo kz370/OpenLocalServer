@@ -21,16 +21,19 @@ import { compareVersionsDesc } from '@/lib/runtimeStatus'
  * of text every user has to scroll past. */
 const DOCS_URL = 'https://github.com/kz370/OpenLocalServer/blob/main/docs/API.md'
 
+let cachedApiStatus: ApiStatus | null = null
+
 /** §137: the local HTTP API. Off by default, token only, read-only unless switched to operate. */
 export function ApiCard() {
-  const [status, setStatus] = useState<ApiStatus | null>(null)
-  const [port, setPort] = useState('7420')
+  const [status, setStatus] = useState<ApiStatus | null>(cachedApiStatus)
+  const [port, setPort] = useState(() => (cachedApiStatus ? String(cachedApiStatus.settings.port) : '7420'))
   const [token, setToken] = useState<string | null>(null)
   const { busy, error, setError, run } = useAction()
   const load = useCallback(async () => {
     const r = await runCommand({ type: 'get_api_status' })
     if (r.type === 'api_status') {
       setStatus(r.status)
+      cachedApiStatus = r.status
       setPort(String(r.status.settings.port))
     }
   }, [])
@@ -145,16 +148,19 @@ export function ApiCard() {
  *  The backend fetches and verifies the minisign manifest; nothing is downloaded or run
  *  unless the signature matches. The public key must be compiled in (OLS_UPDATE_PUBKEY)
  *  or entered in Settings for a check to succeed. */
+let cachedUpdaterStatus: UpdaterStatus | null = null
+let cachedUpdateInfo: UpdateInfo | null = null
+
 export function UpdatesCard() {
   const isDev = import.meta.env.DEV
   const DEFAULT_ENDPOINT = 'https://github.com/kz370/OpenLocalServer/releases/latest/download/latest.json'
 
-  const [status, setStatus] = useState<UpdaterStatus | null>(null)
-  const [info, setInfo] = useState<UpdateInfo | null>(null)
+  const [status, setStatus] = useState<UpdaterStatus | null>(cachedUpdaterStatus)
+  const [info, setInfo] = useState<UpdateInfo | null>(cachedUpdateInfo)
   const [lastChecked, setLastChecked] = useState<Date | null>(null)
   const [showConfig, setShowConfig] = useState(false)
-  const [endpointInput, setEndpointInput] = useState('')
-  const [publicKeyInput, setPublicKeyInput] = useState('')
+  const [endpointInput, setEndpointInput] = useState(() => cachedUpdaterStatus?.settings.endpoint || DEFAULT_ENDPOINT)
+  const [publicKeyInput, setPublicKeyInput] = useState(() => cachedUpdaterStatus?.settings.public_key || '')
   const { busy, error, setError, run } = useAction()
 
   const RELEASES_URL = 'https://github.com/kz370/OpenLocalServer/releases/latest'
@@ -165,9 +171,11 @@ export function UpdatesCard() {
       .then((r) => {
         if (r.type === 'updater_status') {
           setStatus(r.status)
+          cachedUpdaterStatus = r.status
           setEndpointInput(r.status.settings.endpoint || DEFAULT_ENDPOINT)
           setPublicKeyInput(r.status.settings.public_key || '')
           setInfo(r.status.last ?? null)
+          cachedUpdateInfo = r.status.last ?? null
         }
       })
       .catch(setError)
@@ -446,13 +454,20 @@ export function UpdatesCard() {
 }
 
 
+let cachedShellMenu: ShellMenuStatus | null = null
+
 /** §124 (Explorer menu) and the support bundle, plus what "privacy" means here. */
 export function SystemCard() {
-  const [menu, setMenu] = useState<ShellMenuStatus | null>(null)
+  const [menu, setMenu] = useState<ShellMenuStatus | null>(cachedShellMenu)
   const [bundle, setBundle] = useState<string | null>(null)
   const { busy, error, setError, run } = useAction()
   useEffect(() => {
-    runCommand({ type: 'get_shell_menu' }).then((r) => r.type === 'shell_menu' && setMenu(r.status))
+    runCommand({ type: 'get_shell_menu' }).then((r) => {
+      if (r.type === 'shell_menu') {
+        setMenu(r.status)
+        cachedShellMenu = r.status
+      }
+    })
   }, [])
   return (
     <Card>

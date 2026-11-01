@@ -58,6 +58,19 @@ pub(crate) fn helper_service_status() -> CoreResponse {
     }
 }
 
+/// Returns the status after installation, waiting briefly for the service named pipe to answer.
+pub(crate) fn helper_service_status_wait() -> CoreResponse {
+    let version = crate::elevate::service_version_retries(25);
+    let status = version
+        .as_deref()
+        .map(|v| crate::updater::update_status(v, env!("CARGO_PKG_VERSION")));
+    CoreResponse::HelperService {
+        installed: version.is_some(),
+        status,
+        version,
+    }
+}
+
 /// Shared application core handle. Cloning shares the underlying state.
 #[derive(Clone)]
 pub struct Core {

@@ -1,5 +1,5 @@
 use super::super::types::*;
-use super::super::{helper_service_status, Core};
+use super::super::{helper_service_status, helper_service_status_wait, Core};
 use crate::error::CoreError;
 use std::time::Duration;
 
@@ -38,7 +38,7 @@ impl Core {
                 C::GetHelperService => Ok(helper_service_status()),
                 C::InstallHelperService => {
                     crate::elevate::install_service().map_err(CoreError::ServiceError)?;
-                    Ok(helper_service_status())
+                    Ok(helper_service_status_wait())
                 }
                 C::UninstallHelperService => {
                     crate::elevate::uninstall_service().map_err(CoreError::ServiceError)?;
