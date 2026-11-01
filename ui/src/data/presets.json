@@ -4,7 +4,7 @@
     {
       "id": "letos",
       "name": "Letos DB Browser",
-      "engines": ["mariadb", "postgres", "sqlite"],
+      "engines": ["sqlite"],
       "launchMode": "args",
       "args": ["{path}"]
     },
@@ -20,14 +20,14 @@
       "name": "HeidiSQL",
       "engines": ["mariadb", "postgres", "sqlite"],
       "launchMode": "args",
-      "args": ["--host={host}", "--port={port}", "--user={user}", "--databases={database}"]
+      "args": ["-h={host}", "-P={port}", "-u={user}", "-D={database}"]
     },
     {
       "id": "dbeaver",
       "name": "DBeaver",
       "engines": ["mariadb", "postgres", "sqlite"],
-      "launchMode": "clipboard",
-      "args": []
+      "launchMode": "args",
+      "args": ["-con", "driver=mysql|host={host}|port={port}|database={database}|user={user}"]
     },
     {
       "id": "pgadmin",

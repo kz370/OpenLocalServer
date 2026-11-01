@@ -43,6 +43,29 @@ impl Inner {
                 })
         };
 
+        // 1) An explicitly chosen or engine-registered external tool from ExternalToolStore:
+        let registered = {
+            let store = self.ext_tools.lock().unwrap();
+            match tool_id {
+                Some(id) => store.get(id).cloned(),
+                None => store.for_engine(engine).cloned(),
+            }
+        };
+        if let Some(tool) = registered {
+            if tool.executable.is_empty() || !Path::new(&tool.executable).is_file() {
+                return Err(svc(format!(
+                    "Executable not found for tool '{}': '{}'. Click 'Fix path' under External tools to locate it.",
+                    tool.name, tool.executable
+                )));
+            }
+            if tool.launch_mode == "clipboard" {
+                return dbtools::launch(&tool.executable, &[], false).map_err(svc);
+            }
+            let args = dbtools::expand_args(&tool.args, &info);
+            return dbtools::launch(&tool.executable, &args, false).map_err(svc);
+        }
+
+        // 2) Built-in tool handling if explicitly chosen by ID:
         if let Some(id) = tool_id {
             if id == "heidisql" {
                 let exe = find(id).ok_or_else(|| {
@@ -97,29 +120,6 @@ impl Inner {
                     .ok_or_else(|| svc("DB Browser for SQLite needs a database file path"))?;
                 return dbtools::launch(&exe, &args, false).map_err(svc);
             }
-        }
-
-        // 1) an explicitly chosen registered tool, 2) the first registered for the engine,
-        // 3) HeidiSQL (mariadb/sqlite) or pgAdmin if detected.
-        let registered = {
-            let store = self.ext_tools.lock().unwrap();
-            match tool_id {
-                Some(id) => store.get(id).cloned(),
-                None => store.for_engine(engine).cloned(),
-            }
-        };
-        if let Some(tool) = registered {
-            if tool.executable.is_empty() || !Path::new(&tool.executable).is_file() {
-                return Err(svc(format!(
-                    "Executable not found for tool '{}': '{}'. Click 'Fix path' under External tools to locate it.",
-                    tool.name, tool.executable
-                )));
-            }
-            if tool.launch_mode == "clipboard" {
-                return dbtools::launch(&tool.executable, &[], false).map_err(svc);
-            }
-            let args = dbtools::expand_args(&tool.args, &info);
-            return dbtools::launch(&tool.executable, &args, false).map_err(svc);
         }
         match engine {
             "mariadb" => {
