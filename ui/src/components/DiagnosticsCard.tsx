@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { type Finding, type HealthItem, runCommand } from '@/core'
 import { useAction, usePoll } from '@/lib/hooks'
 import { openSitesFilter } from '@/lib/nav'
+import { notify } from '@/lib/notify'
 import { cn } from '@/lib/utils'
 
 /**
@@ -74,7 +75,17 @@ export function DiagnosticsCard({
   }
 
   async function fixAll() {
-    await runCommand({ type: 'apply_repair', project_id: null, ids: [], confirm_destructive: false })
+    const res = await runCommand({ type: 'apply_repair', project_id: null, ids: [], confirm_destructive: false })
+    if (res.type === 'repair_report') {
+      const failed = res.report.steps.filter((s) => !s.ok)
+      notify.batch({
+        operation: 'issues repaired',
+        total: res.report.steps.length,
+        succeeded: res.report.fixed,
+        failed: failed.length,
+        failedItems: failed.map((s) => `${s.label}: ${s.detail}`),
+      })
+    }
     await scan()
   }
 

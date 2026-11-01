@@ -29,6 +29,7 @@ import {
 } from '@/core'
 import { useAction } from '@/lib/hooks'
 import { confirmThen } from '@/lib/confirm'
+import { notify } from '@/lib/notify'
 
 export type ToolTab = 'environment' | 'terminal' | 'env' | 'git' | 'workers' | 'backups' | 'repair' | 'mail' | 'composer' | 'node' | 'python' | 'xdebug' | 'load'
 
@@ -111,7 +112,6 @@ function MailPanel({ projectId }: { projectId: string }) {
   const [plan, setPlan] = useState<MailEnvPlan | null>(null)
   const [checks, setChecks] = useState<MailCheck[]>([])
   const [to, setTo] = useState('dev@example.test')
-  const [message, setMessage] = useState<string | null>(null)
   const action = useAction()
   const { error, setError, run } = action
 
@@ -187,7 +187,7 @@ function MailPanel({ projectId }: { projectId: string }) {
                   void run('apply', async () => {
                     const r = await runCommand({ type: 'apply_mailpit_env', project_id: projectId, file: '.env' })
                     if (r.type === 'mail_env_plan') setPlan(r.plan)
-                    setMessage('.env updated. The previous version is kept in the .env editor’s history.')
+                    notify.success('.env updated. The previous version is kept in the .env editor’s history.')
                     await load()
                   })
                 }
@@ -215,7 +215,7 @@ function MailPanel({ projectId }: { projectId: string }) {
             onClick={() =>
               void run('send', async () => {
                 const r = await runCommand({ type: 'send_test_mail', to })
-                if (r.type === 'text') setMessage(r.text)
+                if (r.type === 'text') notify.success(r.text)
               })
             }
           >
@@ -223,7 +223,6 @@ function MailPanel({ projectId }: { projectId: string }) {
           </SaveButton>
         </div>
       </div>
-      {message && <p className="text-sm text-success">{message}</p>}
     </div>
   )
 }

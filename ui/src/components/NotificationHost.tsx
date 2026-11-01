@@ -1,0 +1,284 @@
+import { AlertCircle, AlertTriangle, Check, CheckCircle2, Copy, FileText, Info, RotateCcw, X } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+
+import { Spinner } from '@/components/Spinner'
+import { Button } from '@/components/ui/button'
+import {
+  type NotificationItem,
+  dismissNewestNotification,
+  dismissNotification,
+  initGlobalNotificationListeners,
+  subscribeNotifications,
+} from '@/lib/notify'
+import { cn } from '@/lib/utils'
+
+export function NotificationHost({ onNavigateLogs }: { onNavigateLogs?: (source?: string | null) => void }) {
+  const [items, setItems] = useState<NotificationItem[]>([])
+
+  useEffect(() => {
+    initGlobalNotificationListeners()
+    const unsubscribe = subscribeNotifications((next) => setItems(next))
+    return unsubscribe
+  }, [])
+
+  // Esc dismisses the newest toast
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        dismissNewestNotification()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
+  // Stack at most 4 visible; older ones queue
+  const visible = items.slice(0, 4)
+
+  if (visible.length === 0) return null
+
+  return (
+    <div
+      aria-label="Notifications"
+      className="fixed bottom-4 right-4 z-[9999] flex max-w-sm w-full flex-col-reverse gap-2.5 pointer-events-none"
+    >
+      {visible.map((item) => (
+        <ToastItem key={item.id} item={item} onNavigateLogs={onNavigateLogs} />
+      ))}
+    </div>
+  )
+}
+
+function ToastItem({
+  item,
+  onNavigateLogs,
+}: {
+  item: NotificationItem
+  onNavigateLogs?: (source?: string | null) => void
+}) {
+  const [isHovered, setIsHovered] = useState(false)
+  const [isFocused, setIsFocused] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [showDetails, setShowDetails] = useState(false)
+  const [windowFocused, setWindowFocused] = useState(true)
+
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const remainingRef = useRef<number | null>(item.duration ?? null)
+  const startTimeRef = useRef<number>(Date.now())
+
+  const clearTimer = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
+  }, [])
+
+  const startTimer = useCallback(
+    (ms: number) => {
+      clearTimer()
+      startTimeRef.current = Date.now()
+      remainingRef.current = ms
+      timerRef.current = setTimeout(() => {
+        dismissNotification(item.id)
+      }, ms)
+    },
+    [clearTimer, item.id],
+  )
+
+  // Track window focus: pause when unfocused, resume with fresh 2000ms delay when window focused
+  useEffect(() => {
+    const handleBlur = () => {
+      setWindowFocused(false)
+      clearTimer()
+    }
+    const handleFocus = () => {
+      setWindowFocused(true)
+      if (item.duration !== undefined) {
+        // Give user at least 2000ms to read toasts when returning to the window
+        startTimer(Math.max(2000, remainingRef.current ?? item.duration))
+      }
+    }
+
+    window.addEventListener('blur', handleBlur)
+    window.addEventListener('focus', handleFocus)
+    return () => {
+      window.removeEventListener('blur', handleBlur)
+      window.removeEventListener('focus', handleFocus)
+    }
+  }, [clearTimer, item.duration, startTimer])
+
+  // Timer logic with hover & focus pauses
+  useEffect(() => {
+    if (item.duration === undefined) return // Persistent
+
+    const isPaused = isHovered || isFocused || !windowFocused
+
+    if (isPaused) {
+      if (timerRef.current) {
+        const elapsed = Date.now() - startTimeRef.current
+        remainingRef.current = Math.max(0, (remainingRef.current ?? item.duration) - elapsed)
+        clearTimer()
+      }
+    } else {
+      const ms = remainingRef.current ?? item.duration
+      if (ms > 0) {
+        startTimer(ms)
+      } else {
+        dismissNotification(item.id)
+      }
+    }
+
+    return clearTimer
+  }, [clearTimer, isFocused, isHovered, item.duration, item.id, startTimer, windowFocused])
+
+  const copyDetails = async () => {
+    if (!item.details && !item.message) return
+    const text = item.details ? `${item.message}\n\nDetails:\n${item.details}` : item.message
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // ignore
+    }
+  }
+
+  const isAlert = item.type === 'error' || item.type === 'warning'
+  const isProgress = item.type === 'progress'
+
+  return (
+    <div
+      role={isAlert ? 'alert' : 'status'}
+      aria-live={item.type === 'error' ? 'assertive' : 'polite'}
+      tabIndex={0}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      onFocus={() => setIsFocused(true)}
+      onBlur={() => setIsFocused(false)}
+      className={cn(
+        'pointer-events-auto relative flex flex-col gap-2 rounded-xl border p-3.5 shadow-xl transition-all duration-200 outline-none',
+        'bg-card/95 backdrop-blur-xl text-card-foreground',
+        item.type === 'success' && 'border-success/40 shadow-success/5',
+        item.type === 'info' && 'border-info/40 shadow-info/5',
+        item.type === 'warning' && 'border-warning/40 shadow-warning/5',
+        item.type === 'error' && 'border-destructive/40 shadow-destructive/5',
+        item.type === 'progress' && 'border-primary/40 shadow-primary/5',
+        'animate-in fade-in slide-in-from-bottom-2 motion-reduce:animate-none',
+      )}
+    >
+      <div className="flex items-start gap-2.5">
+        <span className="mt-0.5 shrink-0">
+          {item.type === 'success' && <CheckCircle2 className="size-4 text-success" />}
+          {item.type === 'info' && <Info className="size-4 text-info" />}
+          {item.type === 'warning' && <AlertTriangle className="size-4 text-warning" />}
+          {item.type === 'error' && <AlertCircle className="size-4 text-destructive" />}
+          {item.type === 'progress' && <Spinner className="size-4 text-primary" />}
+        </span>
+
+        <div className="flex flex-1 flex-col gap-1 min-w-0 pr-5">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {item.title && <span className="font-semibold text-xs text-foreground">{item.title}</span>}
+            {item.count > 1 && (
+              <span className="inline-flex items-center px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-muted text-muted-foreground border border-border">
+                x{item.count}
+              </span>
+            )}
+          </div>
+
+          <p className="text-xs leading-relaxed text-foreground/90 font-medium break-words">
+            {item.message}
+          </p>
+
+          {isProgress && (
+            <div className="mt-1 flex flex-col gap-1 w-full">
+              {item.statusText && (
+                <span className="text-[11px] text-muted-foreground truncate">{item.statusText}</span>
+              )}
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                {item.progress !== null && item.progress !== undefined ? (
+                  <div
+                    className="h-full bg-primary transition-all duration-200"
+                    style={{ width: `${Math.min(100, Math.max(0, item.progress))}%` }}
+                  />
+                ) : (
+                  <div className="h-full w-1/3 bg-primary animate-[indeterminate_1.5s_infinite_linear] rounded-full" />
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Error actions: Copy details, View logs, Details toggle */}
+          {item.type === 'error' && (
+            <div className="mt-1 flex items-center gap-2 flex-wrap text-xs">
+              {item.details && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setShowDetails((prev) => !prev)}
+                    className="cursor-pointer text-[11px] font-medium text-muted-foreground hover:text-foreground underline underline-offset-2"
+                  >
+                    {showDetails ? 'Hide details' : 'Show details'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={copyDetails}
+                    className="cursor-pointer inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                  >
+                    {copied ? <Check className="size-3 text-success" /> : <Copy className="size-3" />}
+                    {copied ? 'Copied' : 'Copy details'}
+                  </button>
+                </>
+              )}
+              {onNavigateLogs && (
+                <button
+                  type="button"
+                  onClick={() => onNavigateLogs(item.logSource)}
+                  className="cursor-pointer inline-flex items-center gap-1 text-[11px] font-medium text-info hover:underline underline-offset-2"
+                >
+                  <FileText className="size-3" /> View logs
+                </button>
+              )}
+            </div>
+          )}
+
+          {showDetails && item.details && (
+            <pre className="mt-1.5 max-h-32 overflow-y-auto rounded-md bg-muted/60 p-2 text-[10px] text-muted-foreground font-mono whitespace-pre-wrap break-all border border-border/50">
+              {item.details}
+            </pre>
+          )}
+
+          {/* Action button (e.g. Undo, Retry, View details) */}
+          {item.action && (
+            <div className="mt-1.5 flex items-center gap-2">
+              <Button
+                size="sm"
+                variant={item.action.primary ? 'default' : 'secondary'}
+                onClick={() => {
+                  void item.action?.onClick()
+                  dismissNotification(item.id)
+                }}
+                className={cn(
+                  'h-6 px-2.5 text-[11px] font-medium',
+                  item.action.isUndo && 'gap-1 bg-warning/20 hover:bg-warning/30 text-warning-foreground border border-warning/40',
+                )}
+              >
+                {item.action.isUndo && <RotateCcw className="size-3" />}
+                {item.action.label}
+              </Button>
+            </div>
+          )}
+        </div>
+
+        <button
+          type="button"
+          aria-label="Dismiss notification"
+          onClick={() => dismissNotification(item.id)}
+          className="absolute top-2.5 right-2.5 size-5 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/80 cursor-pointer transition-colors"
+        >
+          <X className="size-3.5" />
+        </button>
+      </div>
+    </div>
+  )
+}
+

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
 import { type DoctorReport, type RepairReport, runCommand } from '@/core'
 import { useAction } from '@/lib/hooks'
+import { notify } from '@/lib/notify'
 import { cn } from '@/lib/utils'
 import { confirmAction } from '@/lib/confirm'
 
@@ -57,7 +58,17 @@ export function DoctorDialog({ open, onClose }: { open: boolean; onClose: () => 
             onClick={() =>
               run('repair', async () => {
                 const r = await runCommand({ type: 'apply_repair', project_id: null, ids: [], confirm_destructive: false })
-                if (r.type === 'repair_report') setRepair(r.report)
+                if (r.type === 'repair_report') {
+                  setRepair(r.report)
+                  const failed = r.report.steps.filter((s) => !s.ok)
+                  notify.batch({
+                    operation: 'issues repaired',
+                    total: r.report.steps.length,
+                    succeeded: r.report.fixed,
+                    failed: failed.length,
+                    failedItems: failed.map((s) => `${s.label}: ${s.detail}`),
+                  })
+                }
                 const d = await runCommand({ type: 'doctor' })
                 if (d.type === 'doctor_report') setReport(d.report)
               })

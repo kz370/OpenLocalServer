@@ -1,5 +1,6 @@
 import { Copy, Minus, Square, X } from 'lucide-react'
 
+import { NotificationsPopover } from '@/components/NotificationsPopover'
 import { useAppMarkPath, useWindowState } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 
@@ -7,7 +8,7 @@ function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 }
 
-export function Titlebar() {
+export function Titlebar({ onNavigateLogs }: { onNavigateLogs?: (source?: string | null) => void }) {
   const { maximized } = useWindowState()
   // Same four colourways (light/dark × running/stopped) the tray and taskbar use.
   const mark = useAppMarkPath()
@@ -40,34 +41,37 @@ export function Titlebar() {
          <span className="text-sidebar-foreground">Open Local Server</span>
       </span>
       <div data-tauri-drag-region className="min-w-0 flex-1" />
-      {isTauri() && (
-        <div className="flex items-center gap-1">
-          <button
-            onClick={action((win) => void win.minimize().catch(() => undefined))}
-            title="Minimize"
-            aria-label="Minimize"
-            className="flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          >
-            <Minus className="size-3.5" />
-          </button>
-          <button
-            onClick={action((win) => void win.toggleMaximize().catch(() => undefined))}
-            title={maximized ? 'Restore' : 'Maximize'}
-            aria-label={maximized ? 'Restore' : 'Maximize'}
-            className="flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          >
-            {maximized ? <Copy className={cn('size-3 rotate-180')} /> : <Square className="size-3" />}
-          </button>
-          <button
-            onClick={action((win) => void win.close().catch(() => undefined))}
-            title="Close"
-            aria-label="Close"
-            className="flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-destructive hover:text-destructive-foreground"
-          >
-            <X className="size-3.5" />
-          </button>
-        </div>
-      )}
+      <div className="flex items-center gap-1.5">
+        <NotificationsPopover onNavigateLogs={onNavigateLogs} />
+        {isTauri() && (
+          <div className="flex items-center gap-1 ml-1 border-l border-sidebar-border/60 pl-1.5">
+            <button
+              onClick={action((win) => void win.minimize().catch(() => undefined))}
+              title="Minimize"
+              aria-label="Minimize"
+              className="flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            >
+              <Minus className="size-3.5" />
+            </button>
+            <button
+              onClick={action((win) => void win.toggleMaximize().catch(() => undefined))}
+              title={maximized ? 'Restore' : 'Maximize'}
+              aria-label={maximized ? 'Restore' : 'Maximize'}
+              className="flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            >
+              {maximized ? <Copy className={cn('size-3 rotate-180')} /> : <Square className="size-3" />}
+            </button>
+            <button
+              onClick={action((win) => void win.close().catch(() => undefined))}
+              title="Close"
+              aria-label="Close"
+              className="flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-destructive hover:text-destructive-foreground"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+        )}
+      </div>
     </header>
   )
 }

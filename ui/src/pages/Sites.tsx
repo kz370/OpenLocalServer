@@ -26,6 +26,7 @@ import { Pagination } from '@/components/ui/pagination'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { type Domain, type DomainSummary, type HealthReport, type Project, type WpProject, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
+import { notify } from '@/lib/notify'
 import { onOpenProject, onOpenSitesFilter, takePendingProject, takePendingSitesFilter } from '@/lib/nav'
 import { useTheme } from '@/lib/theme'
 import { useWeb } from '@/lib/web'
@@ -101,7 +102,6 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   const [dupName, setDupName] = useState('')
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<SiteFilter>(() => (takePendingSitesFilter() as SiteFilter) || 'enabled')
-  const [message, setMessage] = useState<string | null>(null)
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null)
   const [activeMenu, setActiveMenu] = useState<{ key: string; anchor: MenuAnchor } | null>(null)
   // Bulk selection. Only site rows are picked — a project with no domain yet has nothing
@@ -348,11 +348,21 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   /** One batch, one message: how many changed, and every site the backend or the folder
    *  itself refused, so a partial edit is reported instead of looking complete. */
   function reportBulk(label: string, changed: number, skipped: string[]) {
-    setMessage(
-      skipped.length === 0
-        ? `${label}: ${changed} site${changed === 1 ? '' : 's'} changed.`
-        : `${label}: ${changed} site${changed === 1 ? '' : 's'} changed, ${skipped.length} left alone — ${skipped.join('; ')}.`,
-    )
+    if (skipped.length === 0) {
+      notify.success(`${label}: ${changed} site${changed === 1 ? '' : 's'} updated.`)
+    } else if (changed === 0) {
+      notify.warning(`No sites changed. ${skipped.join('; ')}`, {
+        details: skipped.join('\n'),
+      })
+    } else {
+      notify.batch({
+        operation: 'sites',
+        total: changed + skipped.length,
+        succeeded: changed,
+        failed: skipped.length,
+        failedItems: skipped,
+      })
+    }
   }
 
 
@@ -409,7 +419,11 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       const res = await runCommand({ type: 'scan_and_register_projects', path: picked })
       if (res.type === 'projects') {
         await refreshProjects()
-        setMessage(res.projects.length === 0 ? 'No project folders found in there.' : `Found and registered ${res.projects.length} project${res.projects.length > 1 ? 's' : ''}.`)
+        if (res.projects.length === 0) {
+          notify.info('No project folders found in there.')
+        } else {
+          notify.success(`Found and registered ${res.projects.length} project${res.projects.length > 1 ? 's' : ''}.`)
+        }
       }
     })
   }
@@ -442,7 +456,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         setTarget({ hostname: now.hostname, projectId: p.id })
         return
       }
-      setMessage(
+      notify.warning(
         created > 0
           ? `No site for ${p.name}: the other folders were added, but this one has no index.html or project file to serve.`
           : `No site for ${p.name}: its folder has no index.html or project file to serve. Add one, or create the site by hand.`,
@@ -486,7 +500,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     await run('bulk', async () => {
       const { hostnames, noSite } = await resolveSites()
       if (hostnames.length === 0) {
-        setMessage(`Nothing to ${enabled ? 'enable' : 'disable'}: ${noSite.join(', ')} ${noSite.length === 1 ? 'has' : 'have'} no site to serve. Add an index.html or a project file to the folder first.`)
+        notify.warning(`Nothing to ${enabled ? 'enable' : 'disable'}: ${noSite.join(', ')} ${noSite.length === 1 ? 'has' : 'have'} no site to serve. Add an index.html or a project file to the folder first.`)
         return
       }
       const out = await web.setDomainsEnabled(hostnames, enabled)
@@ -505,7 +519,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     await run('bulk', async () => {
       const { hostnames, noSite } = await resolveSites()
       if (hostnames.length === 0) {
-        setMessage(`Nothing to move: ${noSite.join(', ')} ${noSite.length === 1 ? 'has' : 'have'} no site to serve.`)
+        notify.warning(`Nothing to move: ${noSite.join(', ')} ${noSite.length === 1 ? 'has' : 'have'} no site to serve.`)
         return
       }
       const out = await web.setDomainsServer(hostnames, toDefault ? null : bulkServerChoice)
@@ -679,8 +693,22 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
           disabled: busy === `toggle:${d.hostname}`,
           onSelect: () =>
             void run(`toggle:${d.hostname}`, async () => {
-              await runCommand({ type: 'set_domain_enabled', hostname: d.hostname, enabled: !d.enabled })
+              const previousState = d.enabled
+              await runCommand({ type: 'set_domain_enabled', hostname: d.hostname, enabled: !previousState })
               await Promise.all([apply(), refresh()])
+              notify.info(
+                previousState ? `Disabled ${d.hostname}` : `Enabled ${d.hostname}`,
+                {
+                  action: {
+                    label: 'Undo',
+                    isUndo: true,
+                    onClick: async () => {
+                      await runCommand({ type: 'set_domain_enabled', hostname: d.hostname, enabled: previousState })
+                      await Promise.all([apply(), refresh()])
+                    },
+                  },
+                },
+              )
             }),
         },
         {
@@ -809,14 +837,6 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       </div>
 
       <ErrorCard error={error} onDismiss={() => setError(null)} />
-      {message && (
-        <p className="text-sm text-muted-foreground">
-          {message}{' '}
-          <button className="cursor-pointer underline" onClick={() => setMessage(null)}>
-            Dismiss
-          </button>
-        </p>
-      )}
       {applying && (
         <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
           <Spinner /> Updating the web-server configuration…

@@ -12,6 +12,7 @@ import { Field, Select, SettingRow, Toggle } from '@/components/ui/form'
 import { NumberInput, Input } from '@/components/ui/input'
 import { type AutoBackupSettings, type AutoBackupStatus, type CpuCapStatus, type ResourceLimits, type SettingsBackup, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
+import { notify } from '@/lib/notify'
 import { formatBytes, timeAgo, useAction, useAppMarkPath } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 
@@ -377,7 +378,6 @@ export function AboutCard() {
 /** §130: backups of the app's own settings (not runtimes, caches or logs). */
 export function SettingsBackupsCard() {
   const [backups, setBackups] = useState<SettingsBackup[]>([])
-  const [message, setMessage] = useState<string | null>(null)
   const { busy, error, setError, run } = useAction()
   const load = useCallback(async () => {
     const r = await runCommand({ type: 'list_settings_backups' })
@@ -403,14 +403,13 @@ export function SettingsBackupsCard() {
             onClick={() =>
               run('backup', async () => {
                 await runCommand({ type: 'backup_settings' })
-                setMessage('Backup saved.')
+                notify.success('Settings backup saved.')
                 await load()
               })
             }
           >
             {busy === 'backup' ? <Spinner /> : <Archive />} Back up settings now
           </Button>
-          {message && <span className="text-sm text-success">{message}</span>}
         </div>
         {backups.map((b) => (
           <div key={b.id} className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2 text-sm">
@@ -422,10 +421,10 @@ export function SettingsBackupsCard() {
               variant="ghost"
               disabled={busy !== null}
               onClick={async () => {
-                if (!(await confirmAction('Restore these settings? The current ones are backed up first. Restart OLS to load them.', 'Restore settings'))) return
+                if (!(await confirmAction('Restore these settings? The current ones are backed up first. Restart OLS to load them.', 'Restore settings', 'Restore settings'))) return
                 await run(`restore:${b.id}`, async () => {
                   await runCommand({ type: 'restore_settings', id: b.id })
-                  setMessage('Restored. Restart OLS to load them.')
+                  notify.success('Settings restored. Restart OLS to load them.')
                   await load()
                 })
               }}

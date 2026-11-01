@@ -15,7 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { type DbTool, type Diagnostic, type PortStatus, type ServiceStatus, runCommand } from '@/core'
 import { createPersistentCache } from '@/lib/cache'
 import { waitForService } from '@/lib/wait'
-import { confirmAction } from '@/lib/confirm'
+import { notify } from '@/lib/notify'
 
 type ServiceAction = 'start' | 'stop' | 'restart' | 'reload'
 
@@ -28,7 +28,6 @@ export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => v
   const [dbName, setDbName] = useState('my_app')
   const [error, setError] = useState<Diagnostic | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
-  const [message, setMessage] = useState<string | null>(null)
 
   async function refresh() {
     try {
@@ -59,8 +58,6 @@ export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => v
    * `busy` is keyed `svc:<id>:<action>` so the spinner sits on the control that was
    * pressed and the other four stay usable, rather than the whole row going dead. */
   async function act(service: ServiceStatus, action: ServiceAction) {
-    if (action === 'stop' && !(await confirmAction(`Stop ${service.name}? Anything connected to it will be disconnected.`))) return
-    if (action === 'restart' && service.running && !(await confirmAction(`Restart ${service.name}? Anything connected to it will be disconnected.`))) return
     setError(null)
     setBusy(`svc:${service.id}:${action}`)
     try {
@@ -85,10 +82,9 @@ export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => v
 
   async function createDatabase() {
     setError(null)
-    setMessage(null)
     try {
       await runCommand({ type: 'create_database', engine: 'mariadb', name: dbName })
-      setMessage(`Database "${dbName}" created (or already existed).`)
+      notify.success(`Database "${dbName}" created (or already existed).`)
     } catch (err) {
       setError(err as Diagnostic)
     }
@@ -176,7 +172,6 @@ export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => v
             <Button size="sm" variant="secondary" onClick={createDatabase}>
               Create
             </Button>
-            {message && <span className="text-sm text-success">{message}</span>}
           </CardContent>
         </Card>
       )}

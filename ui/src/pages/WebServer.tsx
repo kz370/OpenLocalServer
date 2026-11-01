@@ -1,4 +1,4 @@
-import { Check, Lock, Play, RefreshCw, RotateCcw, ShieldCheck, Trash2 } from 'lucide-react'
+import { AlertTriangle, Check, Lock, Play, RefreshCw, RotateCcw, ShieldCheck, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
@@ -341,6 +341,41 @@ export function WebServerPage({
       </div>
 
       <ErrorCard error={error} onDismiss={() => setError(null)} />
+
+      {status?.running && hasChanges && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-warning/40 bg-warning/10 p-3.5 text-sm shadow-xs">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <AlertTriangle className="size-4 shrink-0 text-warning" />
+            <span className="font-semibold text-warning shrink-0">Unapplied server changes</span>
+            <span className="text-xs text-muted-foreground truncate">
+              You have {totalPendingChanges} unapplied change{totalPendingChanges === 1 ? '' : 's'} in server configuration.
+            </span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {serverChanges.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={busy !== null}
+                onClick={handleDiscard}
+                className="h-7 px-2.5 text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                <RotateCcw className="size-3 mr-1" /> Discard
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={applyButtonDisabled}
+              onClick={() => void handleApply()}
+              className="h-7 px-2.5 text-xs font-medium bg-warning/20 hover:bg-warning/30 text-foreground border border-warning/30 cursor-pointer"
+            >
+              {isApplying ? <Spinner className="size-3 mr-1" /> : <Play className="size-3 mr-1" />}
+              Apply changes
+            </Button>
+          </div>
+        </div>
+      )}
 
       {status && status.port_conflicts.length > 0 && !status.running && (
         <Card className="border-warning/40">

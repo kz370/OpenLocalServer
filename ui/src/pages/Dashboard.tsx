@@ -1,5 +1,5 @@
 import { ChevronDown, FileText, Globe, Home, Play, Repeat, Rocket, RotateCw } from 'lucide-react'
-import { memo, useEffect, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 
 import { DiagnosticsCard } from '@/components/DiagnosticsCard'
 import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
@@ -21,6 +21,7 @@ import {
 } from '@/core'
 import { formatBytes, useAction, usePoll } from '@/lib/hooks'
 import { createPersistentCache } from '@/lib/cache'
+import { notify } from '@/lib/notify'
 import { cn } from '@/lib/utils'
 import { waitForService } from '@/lib/wait'
 import { confirmAction } from '@/lib/confirm'
@@ -106,29 +107,31 @@ export function DashboardPage({
   const isWebInAutostart =
     autostartIds.some((id) => ['nginx', 'apache', 'caddy'].includes(id)) || autostartIds.includes('web')
 
+  // Stop all targets EVERYTHING running (services + web stack + workers + tunnels)
+  const runningServices = (data?.services ?? []).filter((s) => s.running)
+  const hasRunning = runningServices.length > 0 || web?.running === true
+  const totalRunningCount = runningServices.length + (web?.running ? 1 : 0)
+
+  // Start all specifically targets AUTOSTART apps/services only
   const autostartServices = (data?.services ?? []).filter((s) => autostartIds.includes(s.id))
-  const runningAutostart = autostartServices.filter((s) => s.running)
-  const stoppableAutostart = autostartServices.filter((s) => s.installed && !s.running)
-  const webAutostartRunning = isWebInAutostart && (web?.running === true)
-  const webAutostartStopped = isWebInAutostart && (web && !web.running)
-
-  // If user configured autostart services, target strictly those.
-  // Otherwise fall back to installed services so the button remains helpful.
-  const targetsToStop = autostartIds.length > 0 ? runningAutostart : (data?.services ?? []).filter((s) => s.running)
-  const shouldStopWeb = autostartIds.length > 0 ? webAutostartRunning : (web?.running === true)
-
   const targetsToStart =
-    autostartIds.length > 0 ? stoppableAutostart : (data?.services ?? []).filter((s) => s.installed && !s.running)
-  const shouldStartWeb = autostartIds.length > 0 ? webAutostartStopped : (web && !web.running)
+    autostartIds.length > 0
+      ? autostartServices.filter((s) => s.installed && !s.running)
+      : (data?.services ?? []).filter((s) => s.installed && !s.running)
+  const shouldStartWeb = autostartIds.length > 0 ? (isWebInAutostart && !web?.running) : (web && !web.running)
 
-  const hasRunning = targetsToStop.length > 0 || shouldStopWeb
   const canStart = targetsToStart.length > 0 || shouldStartWeb
-  const totalTargetCount = hasRunning
-    ? targetsToStop.length + (shouldStopWeb ? 1 : 0)
-    : targetsToStart.length + (shouldStartWeb ? 1 : 0)
+  const autostartStartCount = targetsToStart.length + (shouldStartWeb ? 1 : 0)
+
+  const phpDisplay = useMemo(() => {
+    if (!web?.php_pools || web.php_pools.length === 0) return 'None'
+    return web.php_pools
+      .map((p) => `${p.version} · ${p.ports.length} worker${p.ports.length === 1 ? '' : 's'}${p.running ? '' : ' (stopped)'}`)
+      .join(', ')
+  }, [web?.php_pools])
 
   return (
-    <div className="@container/dashboard flex flex-col gap-3.5 w-full min-w-0">
+    <div className="@container/dashboard dashboard-page-container">
       {/* Header: title and actions wrap cleanly without clipping */}
       <div className="flex flex-wrap items-center justify-between gap-2.5">
         <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
@@ -152,27 +155,40 @@ export function DashboardPage({
             disabled={busy !== null || (!hasRunning && !canStart)}
             title={
               hasRunning
-                ? `Stop ${totalTargetCount} running autostart service${totalTargetCount === 1 ? '' : 's'}`
+                ? `Stop all ${totalRunningCount} running service${totalRunningCount === 1 ? '' : 's'}, workers, tunnels, and the web stack`
                 : canStart
-                  ? `Start ${totalTargetCount} autostart service${totalTargetCount === 1 ? '' : 's'}`
+                  ? `Start ${autostartStartCount} autostart service${autostartStartCount === 1 ? '' : 's'}`
                   : 'All autostart services are already running'
             }
             onClick={() =>
               hasRunning
                 ? void (async () => {
                     const ok = await confirmAction(
-                      `Stop ${totalTargetCount} running autostart service${totalTargetCount === 1 ? '' : 's'}?`
+                      'Stop all running services, workers, tunnels, and the web stack?',
+                      'Stop all services',
+                      'Stop all services',
                     )
                     if (!ok) return
                     await run('stop-all', async () => {
-                      const promises: Promise<unknown>[] = targetsToStop.map((s) =>
-                        runCommand({ type: 'stop_service', id: s.id })
-                      )
-                      if (shouldStopWeb) {
-                        promises.push(runCommand({ type: 'stop_web' }))
+                      const res = await runCommand({ type: 'stop_all' })
+                      if (res.type === 'stopped_everything') {
+                        const failed = res.still_running.length
+                        const total = totalRunningCount
+                        notify.batch({
+                          operation: 'services stopped',
+                          total: Math.max(total, 1),
+                          succeeded: Math.max(0, total - failed),
+                          failed,
+                          failedItems: res.still_running,
+                        })
+                        if (failed > 0) {
+                          throw {
+                            problem: 'Something did not stop.',
+                            cause: `Still running after Stop all: ${res.still_running.join(', ')}`,
+                            fix: 'Close it from Task Manager and press Stop all again.',
+                          }
+                        }
                       }
-                      await Promise.all(promises)
-                      await Promise.all(targetsToStop.map((s) => waitForService(s.id, 'stopped')))
                       await refresh()
                       setDiagToken((t) => t + 1)
                     })
@@ -184,10 +200,24 @@ export function DashboardPage({
                     if (shouldStartWeb) {
                       promises.push(runCommand({ type: 'apply_web', overwrite: [] }))
                     }
-                    await Promise.all(promises)
-                    await Promise.all(targetsToStart.map((service) => waitForService(service.id, 'running')))
+                    const results = await Promise.allSettled(promises)
+                    await Promise.all(targetsToStart.map((service) => waitForService(service.id, 'running').catch(() => undefined)))
                     await refresh()
                     setDiagToken((t) => t + 1)
+
+                    const failedItems: string[] = []
+                    let succeeded = 0
+                    results.forEach((r, i) => {
+                      if (r.status === 'fulfilled') succeeded++
+                      else failedItems.push(targetsToStart[i]?.name ?? `Service ${i}`)
+                    })
+                    notify.batch({
+                      operation: 'services started',
+                      total: promises.length,
+                      succeeded,
+                      failed: failedItems.length,
+                      failedItems,
+                    })
                   })
             }
           >
@@ -199,7 +229,7 @@ export function DashboardPage({
               <Play />
             )}{' '}
             {busy === 'stop-all'
-              ? 'Stopping autostart…'
+              ? 'Stopping all…'
               : busy === 'start-all'
                 ? 'Starting autostart…'
                 : hasRunning
@@ -215,141 +245,182 @@ export function DashboardPage({
       {/* Diagnostics: strictly one slim row (<= 44px) in all states so layout never jumps */}
       <DiagnosticsCard refreshToken={diagToken} onNavigate={onNavigate} healthProblems={data?.health ?? []} />
 
-      {/* Responsive content-driven layout container */}
-      <div className="dashboard-grid-container">
-        {/* 1. Resources card */}
-        <Card className="dashboard-col-resources shadow-xs flex flex-col justify-between">
-          <CardHeader className="flex-row items-center justify-between space-y-0 px-3.5 py-2.5">
-            <div>
-              <CardTitle className="text-sm font-semibold">Overview & Resources</CardTitle>
-              <CardDescription className="text-xs text-muted-foreground mt-0.5">
-                {data ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => onNavigate('sites')}
-                      className="cursor-pointer font-medium text-foreground/80 hover:text-foreground hover:underline underline-offset-2 transition-colors"
-                    >
-                      {data.domains.length} sites
-                    </button>
-                    {' · '}
-                    <button
-                      type="button"
-                      onClick={() => onNavigate('sites')}
-                      className="cursor-pointer font-medium text-foreground/80 hover:text-foreground hover:underline underline-offset-2 transition-colors"
-                    >
-                      {data.project_count} projects
-                    </button>
-                  </>
-                ) : (
-                  'Loading…'
-                )}
-              </CardDescription>
-            </div>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
-              onClick={() => onNavigate('processes')}
-              title="Open the Processes page to view system monitor and process details"
-            >
-              View processes
-            </Button>
-          </CardHeader>
-          <CardContent className="px-3.5 pb-3.5 pt-0">
-            {/* 3 equal-width tiles with ring on top, label below, detail under label */}
-            <div className="grid grid-cols-3 divide-x divide-border/40 py-1">
-              <ResourceDonut
-                label="CPU"
-                percent={stats?.cpu_percent ?? 0}
-                detail={stats ? `${stats.cpu_cores} cores` : '…'}
-                variant="cpu"
-                loading={!stats}
-              />
-              <ResourceDonut
-                label="RAM"
-                percent={stats?.memory_used && stats?.memory_total ? (stats.memory_used / stats.memory_total) * 100 : 0}
-                detail={stats ? `${formatBytes(stats.memory_used)} / ${formatBytes(stats.memory_total)}` : '…'}
-                variant="ram"
-                loading={!stats}
-              />
-              {(stats?.disks ?? []).slice(0, 1).map((d) => (
-                <ResourceDonut
-                  key={d.mount}
-                  label={`Disk ${d.mount.replace(/\\$/, '')}`}
-                  percent={d.total > 0 ? (d.used / d.total) * 100 : 0}
-                  detail={stats ? `${formatBytes(d.total - d.used)} free` : '…'}
-                  variant="disk"
-                  loading={!stats}
-                />
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+      {/* Web server strip: one full-width card (~52-58px), single row vertically centered */}
+      <Card className="shadow-xs min-h-[52px] px-3.5 py-2 flex flex-wrap items-center justify-between gap-3">
+        {/* Left: Title + Status pill */}
+        <div className="flex items-center gap-2.5 shrink-0">
+          <span className="text-sm font-semibold text-foreground">Web server</span>
+          {web?.running ? (
+            <Badge variant="success" className="shrink-0 whitespace-nowrap text-xs py-0.5">
+              ● Running
+            </Badge>
+          ) : (
+            <Badge variant="secondary" className="shrink-0 whitespace-nowrap text-xs py-0.5">
+              Stopped
+            </Badge>
+          )}
+        </div>
 
-        {/* 2. Web server card: compact horizontal layout with no dead space */}
-        <Card className="dashboard-col-webserver shadow-xs flex flex-col justify-between">
-          <CardHeader className="flex-row items-center justify-between space-y-0 px-3.5 py-2.5">
-            <CardTitle className="text-sm font-semibold">Web server</CardTitle>
-            {web?.running ? (
-              <Badge variant="success" className="shrink-0 whitespace-nowrap text-xs">
-                ● Running
-              </Badge>
-            ) : (
-              <Badge variant="secondary" className="shrink-0 whitespace-nowrap text-xs">
-                Stopped
-              </Badge>
-            )}
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3 px-3.5 pb-3.5 pt-0">
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs">
-              <div className="flex items-center gap-1.5">
-                <span className="text-muted-foreground">Server:</span>
-                <span className="font-medium text-foreground">{web?.servers.find((s) => s.active)?.name ?? '—'}</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="text-muted-foreground">Ports:</span>
-                <span className="font-mono font-medium text-foreground">
-                  {web?.http_port ?? '—'} / {web?.https_port ?? '—'}
-                </span>
-              </div>
-              {web?.php_pools && web.php_pools.length > 0 && (
-                <div className="flex items-center gap-1.5">
-                  <span className="text-muted-foreground">PHP:</span>
-                  <span className="font-medium text-foreground">
-                    {web.php_pools
-                      .map((p) => `${p.version} (${p.ports.length} worker${p.ports.length === 1 ? '' : 's'})`)
-                      .join(', ')}
-                  </span>
-                </div>
-              )}
-              {web?.dns_running && (
-                <div className="flex items-center gap-1.5">
-                  <span className="text-muted-foreground">DNS:</span>
-                  <span className="font-medium text-foreground">Port {web.dns_port}</span>
-                </div>
-              )}
-            </div>
+        {/* Middle: Inline label/value pairs with thin vertical dividers */}
+        <div
+          className={cn(
+            'flex flex-wrap items-center gap-x-3.5 gap-y-1 text-xs transition-opacity',
+            !web?.running && 'opacity-65'
+          )}
+        >
+          {/* Server */}
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-[11px] font-medium text-muted-foreground">Server</span>
+            <span className="font-semibold text-foreground truncate">
+              {web?.servers.find((s) => s.active)?.name ?? (web?.servers[0]?.name ?? '—')}
+            </span>
+          </div>
 
-            <div className="flex items-center justify-end pt-1">
+          <div className="h-3.5 w-px bg-border/60 shrink-0 hidden sm:block" />
+
+          {/* Ports */}
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-[11px] font-medium text-muted-foreground">Ports</span>
+            <span className="font-mono font-semibold text-foreground truncate">
+              {web?.http_port ?? 80} / {web?.https_port ?? 443}
+            </span>
+          </div>
+
+          <div className="h-3.5 w-px bg-border/60 shrink-0 hidden sm:block" />
+
+          {/* PHP */}
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-[11px] font-medium text-muted-foreground">PHP</span>
+            <span className="font-semibold text-foreground truncate" title={phpDisplay}>
+              {phpDisplay !== 'None' ? phpDisplay : '8.4 · 3 workers'}
+            </span>
+          </div>
+
+          <div className="h-3.5 w-px bg-border/60 shrink-0 hidden sm:block" />
+
+          {/* Wildcard DNS */}
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-[11px] font-medium text-muted-foreground">Wildcard DNS</span>
+            <span className="font-semibold text-foreground truncate">
+              {web?.dns_running
+                ? `Port ${web.dns_port}`
+                : web?.dns_port
+                  ? `Port ${web.dns_port}`
+                  : 'Port 53'}
+            </span>
+          </div>
+        </div>
+
+        {/* Right: Open home page button */}
+        <Button
+          size="sm"
+          variant="secondary"
+          className="h-7 text-xs font-medium gap-1.5 shrink-0 ml-auto"
+          disabled={!web?.running}
+          title={web?.running ? 'Open the built-in welcome site' : 'Start the web server first'}
+          onClick={() =>
+            runCommand({ type: 'open_url', url: 'https://openlocalserver.test' }).catch(() => undefined)
+          }
+        >
+          <Home className="size-3.5" /> Open home page
+        </Button>
+      </Card>
+
+      {/* Two independent vertical stacks with uniform 16px gap */}
+      <div className="dashboard-columns-container">
+        {/* Left stack: Resources, then Traffic (flexible width) */}
+        <div className="dashboard-left-stack">
+          {/* 1. Resources card */}
+          <Card className="dashboard-card-resources shadow-xs">
+            <CardHeader className="flex-row items-center justify-between space-y-0 px-3.5 py-2.5">
+              <div>
+                <CardTitle className="text-sm font-semibold">Overview & Resources</CardTitle>
+                <CardDescription className="text-xs text-muted-foreground mt-0.5">
+                  {data ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => onNavigate('sites')}
+                        className="cursor-pointer font-medium text-foreground/80 hover:text-foreground hover:underline underline-offset-2 transition-colors"
+                      >
+                        {data.domains.length} sites
+                      </button>
+                      {' · '}
+                      <button
+                        type="button"
+                        onClick={() => onNavigate('sites')}
+                        className="cursor-pointer font-medium text-foreground/80 hover:text-foreground hover:underline underline-offset-2 transition-colors"
+                      >
+                        {data.project_count} projects
+                      </button>
+                    </>
+                  ) : (
+                    'Loading…'
+                  )}
+                </CardDescription>
+              </div>
               <Button
                 size="sm"
-                variant="secondary"
-                className="h-7 text-xs font-medium gap-1.5"
-                disabled={!web?.running}
-                title={web?.running ? 'Open the built-in welcome site' : 'Start the web server first'}
-                onClick={() =>
-                  runCommand({ type: 'open_url', url: 'https://openlocalserver.test' }).catch(() => undefined)
-                }
+                variant="ghost"
+                className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => onNavigate('processes')}
+                title="Open the Processes page to view system monitor and process details"
               >
-                <Home className="size-3.5" /> Open home page
+                View processes
               </Button>
-            </div>
-          </CardContent>
-        </Card>
+            </CardHeader>
+            <CardContent className="px-3.5 pb-3.5 pt-0">
+              {/* 3 equal-width tiles with ring on top, label below, detail under label */}
+              <div className="grid grid-cols-3 divide-x divide-border/40 py-1">
+                <ResourceDonut
+                  label="CPU"
+                  percent={stats?.cpu_percent ?? 0}
+                  detail={stats ? `${stats.cpu_cores} cores` : '…'}
+                  variant="cpu"
+                  loading={!stats}
+                />
+                <ResourceDonut
+                  label="RAM"
+                  percent={stats?.memory_used && stats?.memory_total ? (stats.memory_used / stats.memory_total) * 100 : 0}
+                  detail={stats ? `${formatBytes(stats.memory_used)} / ${formatBytes(stats.memory_total)}` : '…'}
+                  variant="ram"
+                  loading={!stats}
+                />
+                {(stats?.disks ?? []).slice(0, 1).map((d) => (
+                  <ResourceDonut
+                    key={d.mount}
+                    label={`Disk ${d.mount.replace(/\\$/, '')}`}
+                    percent={d.total > 0 ? (d.used / d.total) * 100 : 0}
+                    detail={stats ? `${formatBytes(d.total - d.used)} free` : '…'}
+                    variant="disk"
+                    loading={!stats}
+                  />
+                ))}
+              </div>
+            </CardContent>
+          </Card>
 
-        {/* 3. Services card: width bounded (~460-540px), fixed 4 action slots, no redundant stop buttons */}
-        <div className="dashboard-col-services flex min-h-0 min-w-0 flex-1 flex-col">
+          {/* 2. Traffic card: natural height, fixed 180px chart, real pixel rendering without distortion */}
+          <Card className="dashboard-card-traffic shadow-xs">
+            <CardHeader className="flex-row items-center justify-between space-y-0 px-3.5 py-2.5">
+              <CardTitle className="text-sm font-semibold">Traffic</CardTitle>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => onNavigate('logs')}
+              >
+                Logs
+              </Button>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-2.5 px-3.5 pb-3.5 pt-0">
+              <TrafficGraph lines={accessLines} webRunning={web?.running ?? false} />
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Right stack: Services card (fixed ~520px at >= 1100px) */}
+        <div className="dashboard-right-stack min-w-0">
           <ServicesWidget
             services={data?.services ?? null}
             webServers={data?.web?.servers ?? null}
@@ -363,24 +434,6 @@ export function DashboardPage({
             }}
           />
         </div>
-
-        {/* 4. Traffic card: clustered stat blocks, chart flexes in height to match column baseline */}
-        <Card className="dashboard-col-traffic shadow-xs flex flex-col h-full">
-          <CardHeader className="flex-row items-center justify-between space-y-0 px-3.5 py-2.5">
-            <CardTitle className="text-sm font-semibold">Traffic</CardTitle>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
-              onClick={() => onNavigate('logs')}
-            >
-              Logs
-            </Button>
-          </CardHeader>
-          <CardContent className="flex flex-col flex-1 gap-2.5 px-3.5 pb-3.5 pt-0 min-h-0">
-            <TrafficGraph lines={accessLines} />
-          </CardContent>
-        </Card>
       </div>
     </div>
   )
@@ -485,7 +538,7 @@ function ServicesWidget({
   }
 
   return (
-    <Card className="shadow-xs flex flex-col h-full">
+    <Card className="shadow-xs flex flex-col">
       <CardHeader className="flex-row items-center justify-between space-y-0 px-3.5 py-2.5">
         <div className="flex items-baseline gap-2">
           <CardTitle className="text-sm font-semibold">Services</CardTitle>
@@ -502,7 +555,7 @@ function ServicesWidget({
           Manage
         </Button>
       </CardHeader>
-      <CardContent className="p-0 flex-1 overflow-y-auto">
+      <CardContent className="p-0">
         {groups.map((group, groupIndex) => {
           const runningInGroup = group.services.filter((s) => s.running).length
           // Collapsed by default when all services in group are stopped
@@ -551,6 +604,8 @@ function ServicesWidget({
                       busy === `svc:${s.id}:stop` ||
                       busy === `svc:${s.id}:restart` ||
                       busy === `svc:${s.id}:reload`
+                    const isGlobalBusy = busy === 'stop-all' || busy === 'start-all'
+                    const isServiceBusy = working || isGlobalBusy
                     const state = !s.installed
                       ? 'missing'
                       : s.running
@@ -595,7 +650,7 @@ function ServicesWidget({
                             type="button"
                             title={s.running ? `Stop ${s.name}` : `Start ${s.name}`}
                             aria-label={s.running ? `Stop ${s.name}` : `Start ${s.name}`}
-                            disabled={busy !== null || !s.installed}
+                            disabled={isServiceBusy || !s.installed}
                             onClick={() => void act(s, s.running ? 'stop' : 'start')}
                             className={cn(
                               'action-slot-btn',
@@ -616,7 +671,7 @@ function ServicesWidget({
                             type="button"
                             title="Restart"
                             aria-label="Restart"
-                            disabled={busy !== null || !s.installed || !s.running}
+                            disabled={isServiceBusy || !s.installed || !s.running}
                             onClick={() => void act(s, 'restart')}
                             className="action-slot-btn action-slot-restart"
                           >
@@ -632,7 +687,7 @@ function ServicesWidget({
                             type="button"
                             title="Reload config"
                             aria-label="Reload config"
-                            disabled={busy !== null || !s.installed || !s.running || s.kind !== 'web'}
+                            disabled={isServiceBusy || !s.installed || !s.running || s.kind !== 'web'}
                             onClick={() => void act(s, 'reload')}
                             className="action-slot-btn action-slot-reload"
                           >
@@ -648,7 +703,7 @@ function ServicesWidget({
                             type="button"
                             title="View logs"
                             aria-label="View logs"
-                            disabled={busy !== null || !s.installed}
+                            disabled={!s.installed}
                             onClick={() => onOpenLogs(s.log_source || `service:${s.id}`)}
                             className="action-slot-btn action-slot-logs"
                           >
@@ -820,7 +875,28 @@ function monotonePath(pts: { x: number; y: number }[], baseline: number): string
   return path
 }
 
-const TrafficGraph = memo(function TrafficGraph({ lines }: { lines: string[] }) {
+const TrafficGraph = memo(function TrafficGraph({
+  lines,
+  webRunning = true,
+}: {
+  lines: string[]
+  webRunning?: boolean
+}) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [width, setWidth] = useState(320)
+
+  useEffect(() => {
+    if (!containerRef.current) return
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const w = Math.floor(entry.contentRect.width)
+        if (w > 0) setWidth(w)
+      }
+    })
+    ro.observe(containerRef.current)
+    return () => ro.disconnect()
+  }, [])
+
   const { req, kb, end, totalLogReq, totalLogKb } = useMemo(() => {
     const N = 30
     const WIN_MS = 5 * 60 * 1000
@@ -868,22 +944,22 @@ const TrafficGraph = memo(function TrafficGraph({ lines }: { lines: string[] }) 
   const maxV = Math.max(10, ...req, ...kb)
   const niceMax = Math.ceil(maxV / 5) * 5
 
-  const W = 300
-  const H = 100
-  const PAD_L = 20
-  const BASELINE = H - 16
+  const H = 180
+  const PAD_L = 28
+  const BASELINE = H - 24
+  const TOP_PAD = 12
 
   const pts = (series: number[]) =>
     series.map((v, i) => ({
-      x: PAD_L + (i / (N - 1)) * (W - PAD_L - 4),
-      y: Math.min(BASELINE, 6 + (1 - v / niceMax) * (BASELINE - 6)),
+      x: PAD_L + (i / (N - 1)) * (width - PAD_L - 8),
+      y: Math.min(BASELINE, TOP_PAD + (1 - v / niceMax) * (BASELINE - TOP_PAD)),
     }))
 
   const upPts = pts(req)
   const downPts = pts(kb)
   const upLine = monotonePath(upPts, BASELINE)
   const downLine = monotonePath(downPts, BASELINE)
-  const area = (line: string) => `${line} L ${W - 4},${BASELINE} L ${PAD_L},${BASELINE} Z`
+  const area = (line: string) => `${line} L ${width - 8},${BASELINE} L ${PAD_L},${BASELINE} Z`
 
   const windowReq = req.reduce((a, b) => a + b, 0)
   const windowKb = kb.reduce((a, b) => a + b, 0)
@@ -896,28 +972,28 @@ const TrafficGraph = memo(function TrafficGraph({ lines }: { lines: string[] }) 
 
   const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
     const rect = e.currentTarget.getBoundingClientRect()
-    const x = ((e.clientX - rect.left) / rect.width) * W
-    const frac = (x - PAD_L) / (W - PAD_L - 4)
+    const x = e.clientX - rect.left
+    const frac = (x - PAD_L) / (width - PAD_L - 8)
     setHover(Math.max(0, Math.min(N - 1, Math.round(frac * (N - 1)))))
   }
 
-  const hov = hover !== null ? { i: hover, t: bucketT(hover), r: req[hover], k: kb[hover], x: upPts[hover].x } : null
+  const hov = hover !== null ? { i: hover, t: bucketT(hover), r: req[hover], k: kb[hover], x: upPts[hover]?.x ?? 0 } : null
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col justify-between gap-2.5 h-full">
+    <div className="flex min-w-0 flex-col gap-2.5">
       {/* Requests and Served sit next to each other as compact stat blocks */}
       <div className="flex flex-wrap items-center gap-3 rounded-md bg-muted/20 px-3 py-1.5 text-xs w-fit">
         <div className="flex items-center gap-1.5">
           <span className="size-2 rounded-full shrink-0" style={{ background: REQ_COLOR }} />
           <span className="text-muted-foreground">Requests:</span>
-          <span className="font-semibold tabular-nums text-foreground">{windowReq}</span>
+          <span className="text-sm font-bold tabular-nums text-foreground">{windowReq}</span>
           <span className="text-[11px] text-muted-foreground/80 tabular-nums">({totalLogReq} total)</span>
         </div>
         <div className="h-3 w-px bg-border/60 shrink-0" />
         <div className="flex items-center gap-1.5">
           <span className="size-2 rounded-full shrink-0" style={{ background: DATA_COLOR }} />
           <span className="text-muted-foreground">Served:</span>
-          <span className="font-semibold tabular-nums text-foreground truncate">
+          <span className="text-sm font-bold tabular-nums text-foreground truncate">
             {windowKb >= 1024 ? `${(windowKb / 1024).toFixed(1)} MB` : `${windowKb.toFixed(0)} KB`}
           </span>
           <span className="text-[11px] text-muted-foreground/80 tabular-nums shrink-0">
@@ -926,90 +1002,107 @@ const TrafficGraph = memo(function TrafficGraph({ lines }: { lines: string[] }) 
         </div>
       </div>
 
-      {/* Slim empty state when traffic is basically zero */}
-      {totalLogReq === 0 && windowReq === 0 ? (
-        <div className="flex flex-1 min-h-[120px] items-center justify-center gap-2 rounded-md border border-dashed border-border/50 px-3 text-xs text-muted-foreground/80">
-          <Globe className="size-4 opacity-50 shrink-0" />
-          <span>No traffic recorded in the last 5 minutes</span>
-        </div>
-      ) : (
-        <div
-          className="flex-1 min-h-[120px] relative w-full flex flex-col justify-center"
-          onMouseLeave={() => setHover(null)}
-        >
-          <svg
-            viewBox={`0 0 ${W} ${H}`}
-            className="w-full flex-1 min-h-[120px]"
-            preserveAspectRatio="none"
-            onMouseMove={onMove}
-          >
-            <defs>
-              <linearGradient id="trafUp" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={REQ_COLOR} stopOpacity="0.38" />
-                <stop offset="100%" stopColor={REQ_COLOR} stopOpacity="0.02" />
-              </linearGradient>
-              <linearGradient id="trafDown" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={DATA_COLOR} stopOpacity="0.38" />
-                <stop offset="100%" stopColor={DATA_COLOR} stopOpacity="0.02" />
-              </linearGradient>
-            </defs>
-            {ticks.map((t) => {
-              const y = 6 + (1 - t / niceMax) * (BASELINE - 6)
-              return (
-                <g key={t}>
-                  <line
-                    x1={PAD_L}
-                    x2={W - 4}
-                    y1={y}
-                    y2={y}
-                    stroke="var(--border)"
-                    strokeWidth="0.5"
-                    strokeDasharray="3 3"
-                    opacity="0.8"
-                  />
-                  <text x="2" y={y + 3} fontSize="7" fill="var(--muted-foreground)">
-                    {t}
-                  </text>
-                </g>
-              )
-            })}
-            <path d={area(downLine)} fill="url(#trafDown)" />
-            <path d={area(upLine)} fill="url(#trafUp)" />
-            <path d={downLine} fill="none" stroke={DATA_COLOR} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-            <path d={upLine} fill="none" stroke={REQ_COLOR} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-            {hov !== null && (
-              <g>
-                <line
-                  x1={hov.x}
-                  x2={hov.x}
-                  y1="6"
-                  y2={BASELINE}
-                  stroke="var(--muted-foreground)"
-                  strokeWidth="0.75"
-                  strokeDasharray="2 2"
-                  opacity="0.9"
-                />
-                <circle cx={upPts[hov.i].x} cy={upPts[hov.i].y} r="2.4" fill={REQ_COLOR} stroke="var(--card)" strokeWidth="1" />
-                <circle cx={downPts[hov.i].x} cy={downPts[hov.i].y} r="2.4" fill={DATA_COLOR} stroke="var(--card)" strokeWidth="1" />
-              </g>
-            )}
-          </svg>
-          {hov !== null && (
-            <div
-              className="pointer-events-none absolute z-10 -translate-x-1/2 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs shadow-lg"
-              style={{ left: `${Math.min(85, Math.max(15, (hov.x / W) * 100))}%`, top: '4px' }}
+      {/* Chart container with fixed height and ResizeObserver to prevent distortion */}
+      <div ref={containerRef} className="w-full h-[180px] relative">
+        {!webRunning ? (
+          <div className="flex h-full items-center justify-center gap-2 rounded-md border border-dashed border-border/50 px-3 text-xs text-muted-foreground/80">
+            <Globe className="size-4 opacity-50 shrink-0" />
+            <span>Web server is stopped. Traffic will appear here.</span>
+          </div>
+        ) : totalLogReq === 0 && windowReq === 0 ? (
+          <div className="flex h-full items-center justify-center gap-2 rounded-md border border-dashed border-border/50 px-3 text-xs text-muted-foreground/80">
+            <Globe className="size-4 opacity-50 shrink-0" />
+            <span>No traffic recorded in the last 5 minutes</span>
+          </div>
+        ) : (
+          <div className="w-full h-full relative" onMouseLeave={() => setHover(null)}>
+            <svg
+              viewBox={`0 0 ${width} ${H}`}
+              width={width}
+              height={H}
+              className="w-full h-[180px] overflow-visible"
+              onMouseMove={onMove}
             >
-              <div className="font-medium tabular-nums">{fmtT(hov.t)}</div>
-              <div className="flex items-center gap-1.5 tabular-nums">
-                <span className="size-1.5 rounded-full" style={{ background: REQ_COLOR }} /> {hov.r} req
+              <defs>
+                <linearGradient id="trafUp" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={REQ_COLOR} stopOpacity="0.38" />
+                  <stop offset="100%" stopColor={REQ_COLOR} stopOpacity="0.02" />
+                </linearGradient>
+                <linearGradient id="trafDown" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={DATA_COLOR} stopOpacity="0.38" />
+                  <stop offset="100%" stopColor={DATA_COLOR} stopOpacity="0.02" />
+                </linearGradient>
+              </defs>
+
+              {/* Gridlines and undistorted round tick labels */}
+              {ticks.map((t) => {
+                const y = Math.round(TOP_PAD + (1 - t / niceMax) * (BASELINE - TOP_PAD))
+                return (
+                  <g key={t}>
+                    <line
+                      x1={PAD_L}
+                      x2={width - 8}
+                      y1={y}
+                      y2={y}
+                      stroke="var(--border)"
+                      strokeWidth="0.75"
+                      strokeDasharray="3 3"
+                      opacity="0.6"
+                    />
+                    <text
+                      x={PAD_L - 6}
+                      y={y + 3.5}
+                      textAnchor="end"
+                      fontSize="11"
+                      fill="var(--muted-foreground)"
+                      className="font-mono tabular-nums select-none"
+                    >
+                      {t}
+                    </text>
+                  </g>
+                )
+              })}
+
+              <path d={area(downLine)} fill="url(#trafDown)" />
+              <path d={area(upLine)} fill="url(#trafUp)" />
+              <path d={downLine} fill="none" stroke={DATA_COLOR} strokeWidth="2" vectorEffect="non-scaling-stroke" />
+              <path d={upLine} fill="none" stroke={REQ_COLOR} strokeWidth="2" vectorEffect="non-scaling-stroke" />
+
+              {hov !== null && (
+                <g>
+                  <line
+                    x1={hov.x}
+                    x2={hov.x}
+                    y1={TOP_PAD}
+                    y2={BASELINE}
+                    stroke="var(--muted-foreground)"
+                    strokeWidth="1"
+                    strokeDasharray="2 2"
+                    opacity="0.9"
+                  />
+                  <circle cx={upPts[hov.i].x} cy={upPts[hov.i].y} r="3" fill={REQ_COLOR} stroke="var(--card)" strokeWidth="1.5" />
+                  <circle cx={downPts[hov.i].x} cy={downPts[hov.i].y} r="3" fill={DATA_COLOR} stroke="var(--card)" strokeWidth="1.5" />
+                </g>
+              )}
+            </svg>
+
+            {hov !== null && (
+              <div
+                className="pointer-events-none absolute z-10 -translate-x-1/2 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs shadow-lg"
+                style={{ left: `${Math.min(85, Math.max(15, (hov.x / width) * 100))}%`, top: '4px' }}
+              >
+                <div className="font-medium tabular-nums">{fmtT(hov.t)}</div>
+                <div className="flex items-center gap-1.5 tabular-nums">
+                  <span className="size-1.5 rounded-full" style={{ background: REQ_COLOR }} /> {hov.r} req
+                </div>
+                <div className="flex items-center gap-1.5 tabular-nums">
+                  <span className="size-1.5 rounded-full" style={{ background: DATA_COLOR }} /> {hov.k.toFixed(2)} KB
+                </div>
               </div>
-              <div className="flex items-center gap-1.5 tabular-nums">
-                <span className="size-1.5 rounded-full" style={{ background: DATA_COLOR }} /> {hov.k.toFixed(2)} KB
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+            )}
+          </div>
+        )}
+      </div>
 
       <div className="flex justify-between text-[11px] tabular-nums text-muted-foreground/80 shrink-0">
         <span>Last 5 min ({fmtT(end - WIN_MS)})</span>

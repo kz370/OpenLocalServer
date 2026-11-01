@@ -46,7 +46,7 @@ export function ConfirmHost() {
             Cancel
           </Button>
           <Button ref={yes} variant="destructive" onClick={() => answer(true)}>
-            {req?.confirmLabel ?? 'Yes, continue'}
+            {req?.confirmLabel ?? 'Confirm'}
           </Button>
         </>
       }

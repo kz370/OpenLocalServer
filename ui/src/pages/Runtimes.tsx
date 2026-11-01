@@ -19,6 +19,7 @@ import { type CatalogEntry, type CustomInstall, type Diagnostic, type RuntimeEve
 import { formatBytes, usePoll } from '@/lib/hooks'
 import { createPersistentCache } from '@/lib/cache'
 import { confirmAction } from '@/lib/confirm'
+import { notify } from '@/lib/notify'
 import {
   compareVersionsDesc,
   formatAvailableVersions,
@@ -78,7 +79,6 @@ export function RuntimesPage() {
   const [catalog, setCatalog] = useState<CatalogEntry[]>(runtimeCatalogCache.get)
   const [progress, setProgress] = useState<Record<string, RuntimeEvent | undefined>>({})
   const [error, setError] = useState<Diagnostic | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
   const [loading, setLoading] = useState(() => !cachedHasLoaded && runtimeCatalogCache.get().length === 0)
   const [catalogRefreshing, setCatalogRefreshing] = useState(false)
   const [catalogStatus, setCatalogStatus] = useState<Record<string, CatalogStatus>>(cachedCatalogStatus)
@@ -190,7 +190,6 @@ export function RuntimesPage() {
 
   async function guarded(fn: () => Promise<void>) {
     setError(null)
-    setNotice(null)
     try {
       await fn()
     } catch (err) {
@@ -218,11 +217,11 @@ export function RuntimesPage() {
       if (!picked || Array.isArray(picked)) return
       const res = await runCommand({ type: 'scan_php_folder', dir: picked })
       if (res.type === 'php_scan') {
-        setNotice(
-          res.found.length === 0
-            ? 'No PHP installs found there. A PHP folder needs both php.exe and php-cgi.exe.'
-            : `Added ${res.found.length} PHP version${res.found.length === 1 ? '' : 's'}: ${res.found.map((f) => f.version).join(', ')}`,
-        )
+        if (res.found.length === 0) {
+          notify.warning('No PHP installs found there. A PHP folder needs both php.exe and php-cgi.exe.')
+        } else {
+          notify.success(`Added ${res.found.length} PHP version${res.found.length === 1 ? '' : 's'}: ${res.found.map((f) => f.version).join(', ')}`)
+        }
       }
       await refresh()
     })
@@ -337,7 +336,7 @@ export function RuntimesPage() {
     guarded(async () => {
       await runCommand({ type: 'set_setting', key: `runtime.${entry.id}.global`, value: entry.version })
       await refresh()
-      setNotice(entry.id === 'mariadb'
+      const msg = entry.id === 'mariadb'
         ? `MariaDB ${entry.version} is now the default. Each MariaDB series uses a separate data folder, so its databases are separate.`
         : ['nginx', 'apache', 'caddy'].includes(entry.id)
           ? `${entry.name} ${entry.version} will be used when you next start the web server.`
@@ -345,12 +344,13 @@ export function RuntimesPage() {
             ? `PHP ${entry.version} is now the default. Site/project pins still take precedence; apply web config to update unpinned PHP sites.`
             : ['node', 'python'].includes(entry.id)
               ? `${entry.name} ${entry.version} is now the default. A project's pinned version still takes precedence.`
-              : `${entry.name} ${entry.version} will be used the next time its service starts.`)
+              : `${entry.name} ${entry.version} will be used the next time its service starts.`
+      notify.info(msg)
     })
 
   const removeRuntime = (entry: CatalogEntry) =>
     guarded(async () => {
-      if (!(await confirmAction(`Remove the managed ${entry.name} ${entry.version} files? Projects or sites pinned to this version will need another version selected or this version reinstalled. Project files and MariaDB data stay in place.`, 'Remove version'))) return
+      if (!(await confirmAction(`Remove the managed ${entry.name} ${entry.version} files? Projects or sites pinned to this version will need another version selected or this version reinstalled. Project files and MariaDB data stay in place.`, 'Remove version', 'Remove version'))) return
       await runCommand({ type: 'remove_runtime', id: entry.id, version: entry.version })
       setCatalog((prev) => {
         const next = prev.map((e) =>
@@ -362,11 +362,11 @@ export function RuntimesPage() {
         return next
       })
       await refresh()
+      notify.success(`Removed ${entry.name} ${entry.version}.`)
     })
 
   const openVersions = (group: Group, preselectedVersion?: string) => {
     setError(null)
-    setNotice(null)
     setInstallError(null)
     setManageId(group.id)
     setVersionSearch('')
@@ -631,8 +631,6 @@ export function RuntimesPage() {
           </div>
         </div>
       </div>
-
-      {notice && !managedGroup && <p className="text-sm text-muted-foreground">{notice}</p>}
 
       <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
         <div className="flex items-center gap-1 rounded-lg border border-border/60 bg-muted/40 p-1">
@@ -1153,7 +1151,6 @@ export function RuntimesPage() {
               })}
             </div>
           </section>
-          {notice && <p className="text-sm text-muted-foreground">{notice}</p>}
           {error && <Card className="border-destructive/40 bg-destructive/5"><CardContent className="pt-4"><p className="font-medium text-destructive">{error.problem}</p><p className="mt-1 text-sm">{error.cause}</p></CardContent></Card>}
         </div>}
       </Dialog>
