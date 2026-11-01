@@ -108,16 +108,30 @@ export function RuntimesPage() {
           system: null,
         })),
       )
+      const installedSet = new Set(
+        res.entries
+          .filter((e) => e.installed)
+          .map((e) => `${e.id}@${e.version}`),
+      )
+      const defaultMap = new Map(
+        res.entries
+          .filter((e) => e.is_default)
+          .map((e) => [e.id, e.version]),
+      )
       setCatalog((prev) => {
         const byKey = new Map<string, CatalogEntry>()
-        for (const entry of prev) {
+        for (const entry of cachedEntries) {
           byKey.set(`${entry.id}@${entry.version}`, entry)
         }
-        for (const entry of cachedEntries) {
+        for (const entry of prev) {
           const key = `${entry.id}@${entry.version}`
-          if (!byKey.has(key)) {
-            byKey.set(key, entry)
-          }
+          const isInstalled = installedSet.has(key)
+          const isDefault = defaultMap.get(entry.id) === entry.version
+          byKey.set(key, {
+            ...entry,
+            installed: isInstalled,
+            is_default: isDefault,
+          })
         }
         for (const entry of res.entries) {
           byKey.set(`${entry.id}@${entry.version}`, entry)
@@ -307,6 +321,13 @@ export function RuntimesPage() {
     guarded(async () => {
       if (!(await confirmAction(`Remove the managed ${entry.name} ${entry.version} files? Projects or sites pinned to this version will need another version selected or this version reinstalled. Project files and MariaDB data stay in place.`, 'Remove version'))) return
       await runCommand({ type: 'remove_runtime', id: entry.id, version: entry.version })
+      setCatalog((prev) =>
+        prev.map((e) =>
+          e.id === entry.id && e.version === entry.version
+            ? { ...e, installed: false, is_default: false }
+            : e,
+        ),
+      )
       await refresh()
     })
 
@@ -354,7 +375,7 @@ export function RuntimesPage() {
       const existing = g.rows.find((r) => r.key === key)
       if (!existing) {
         g.rows.push({ key, version: entry.version, kind: 'managed', entry })
-      } else if (!existing.entry?.installed && entry.installed) {
+      } else {
         existing.entry = entry
       }
       byId.set(entry.id, g)
