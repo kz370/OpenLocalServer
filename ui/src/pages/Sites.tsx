@@ -1205,12 +1205,16 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                             aria-expanded={activeMenu?.key === r.key}
                             onClick={(e) => {
                               e.stopPropagation()
-                              if (activeMenu?.key === r.key) {
+                              if (activeMenu?.key === r.key && activeMenu.anchor.type === 'button') {
                                 setActiveMenu(null)
                               } else {
                                 setActiveMenu({
                                   key: r.key,
-                                  anchor: { type: 'button', rect: e.currentTarget.getBoundingClientRect() },
+                                  anchor: {
+                                    type: 'button',
+                                    rect: e.currentTarget.getBoundingClientRect(),
+                                    element: e.currentTarget,
+                                  },
                                 })
                               }
                             }}
@@ -1241,8 +1245,24 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
           {activeMenu && (() => {
             const row = rows.find((r) => r.key === activeMenu.key)
             if (!row) return null
+            const title = row.site?.hostname ?? row.project?.name ?? ''
             return (
               <FloatingMenu
+                header={
+                  activeMenu.anchor.type === 'cursor' && title ? (
+                    <>
+                      <SiteLogo
+                        icon={row.site?.icon}
+                        iconImage={row.site?.icon_image ?? row.project?.icon_image}
+                        hostname={title}
+                        className="size-3.5 shrink-0"
+                      />
+                      <span className="truncate" title={title}>
+                        {title}
+                      </span>
+                    </>
+                  ) : undefined
+                }
                 items={menuFor(row)}
                 anchor={activeMenu.anchor}
                 onClose={() => setActiveMenu(null)}
