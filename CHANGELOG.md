@@ -11,6 +11,7 @@ Maintenance and UI release. Full notes: [`release-notes/v2.6.0.md`](./release-no
 
 ### Highlights
 - **Persistent UI Caching**: Instantaneous 0ms page rendering across application restarts; optimistic live updates for sites, databases, and runtimes without manual page refresh.
+- **Dashboard Layout & Controls**: Responsive container (up to 1680px content area), full-width Web server status strip, clean borderless action buttons, and isolated per-service pending states.
 - **Unified Notification System**: Centralized toasts with semantic tokens, smart pause/resume on blur/hover, deduplication, live progress for background tasks and runtimes, and a persistent notification history dropdown.
 - **State Banners & Clean Confirmations**: Persistent inline banners for active conditions (unapplied web server changes, port collisions); replaced noisy confirmation dialogs for reversible actions with instant Undo toasts.
 - **Runtime Updates UI**: Separated installation status from update availability, standardized action buttons, filter tabs, and bulk "Update all".

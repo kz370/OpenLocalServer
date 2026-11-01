@@ -400,6 +400,12 @@ olsc guide
    - Centralized toasts with semantic tokens, smart pause/resume on blur/hover, deduplication, live progress for background tasks and runtimes, and a persistent notification history dropdown.
    - Persistent inline banners for active conditions (unapplied web server changes, port collisions); replaced noisy confirmation dialogs for reversible actions with instant Undo toasts.
 
+10. **Dashboard Layout & Service Controls:**
+    - Streamlined responsive two-column layout supporting wide content areas up to 1680px for maximized windows, eliminating side gutters.
+    - Dedicated full-width Web Server status strip featuring inline configuration attributes and 1-click home page navigation.
+    - Borderless service row action buttons with 18px icons, rounded hover tints, and WCAG-compliant ≥ 3:1 contrast tokens.
+    - Independent per-service pending states with transitional status indicators, preventing other service rows from dimming while one service starts or stops.
+
 ---
 
 ### Previous Version Notes (v2.5.0)
