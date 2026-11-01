@@ -52,6 +52,7 @@ It is actively developed, so feedback, suggestions, and bug reports are very wel
   - [Daily CLI Commands](#daily-cli-commands)
   - [AI Integration with MCP](#ai-integration-with-mcp)
   - [Typical Flow in GUI](#typical-flow-in-gui)
+- [Troubleshooting & Manual Runtimes](#-troubleshooting--manual-runtimes)
 - [Project Structure](#-project-structure)
 - [Built for AI, Built to be Forked](#-built-for-ai-built-to-be-forked)
 - [Contributing](#-contributing)
@@ -65,7 +66,7 @@ It is actively developed, so feedback, suggestions, and bug reports are very wel
 Grab the latest installer (`OLS-2.5.0-setup.exe`) from the [Releases page](https://github.com/kz370/OpenLocalServer/releases).
 
 - **What ships in the installer:** The desktop app (`OLS.exe`), the CLI (`olsc.exe`), the elevated helper service (`ols-helper.exe`), the MCP server (`ols-mcp.exe`), and the CPU limiter (`cpulimit.exe`).
-- **Runtimes are downloaded on demand:** The app itself does not bundle third-party runtimes or databases. You download only the runtimes (PHP, Node.js, Python), web servers (Nginx, Apache, Caddy), and databases (MariaDB, PostgreSQL, MongoDB, Redis) you need with SHA-256 verification, or point OLS to existing installations already on your computer.
+- **Runtimes are downloaded on demand:** The app itself does not bundle third-party runtimes or databases. You download only the runtimes (PHP, Node.js, Python), web servers (Nginx, Apache, Caddy), and databases (MariaDB, PostgreSQL, MongoDB, Redis) you need with SHA-256 verification, or point OLS to existing installations already on your computer. If an automatic download fails or you are offline, see [Troubleshooting & Manual Runtimes](./docs/TROUBLESHOOTING.md).
 - **SmartScreen notice:** Until the installer binary is code-signed, Windows SmartScreen may display a warning. Click **More info**, then **Run anyway**.
 
 ---
@@ -130,6 +131,7 @@ Grab the latest installer (`OLS-2.5.0-setup.exe`) from the [Releases page](https
   - **Tooling:** Composer 2.10, portable Git 2.55, and k6 2.3 load testing.
 - **Online catalogs** per runtime with vendor-published sources, 24-hour caching, background refresh, and **SHA-256 verification** on all downloads with atomic extraction.
 - **Bring your own:** Scan folders for existing PHP installations (e.g. Laragon, XAMPP), or register custom executables (PHP, Node, Python) by locating the file.
+- **Manual runtime drop-in & offline installation:** Drop any runtime into `<install dir>/data/runtimes/<id>/<version>/` or cache archive into `<install dir>/data/cache/`. See the [Troubleshooting & Manual Runtime Guide](./docs/TROUBLESHOOTING.md).
 - **Resolution order:** Project manifest pin > auto-detected from project files > global default. Changing a global default never touches existing project configurations.
 
 ### 🌐 Sites, Web Servers & HTTPS
@@ -349,6 +351,15 @@ Once connected, you can ask your AI assistant natural questions:
 
 ---
 
+## 🛠 Troubleshooting & Manual Runtimes
+
+Encountering download issues, antivirus false positives, or running in an offline environment?
+You can manually drop any runtime (Apache, Nginx, PHP, MariaDB, PostgreSQL, etc.) directly into `<install dir>/data/runtimes/<id>/<version>/`, place pre-downloaded archives into `<install dir>/data/cache/`, or link existing local installs via the GUI.
+
+👉 **Read the full [Troubleshooting & Manual Runtime Guide](./docs/TROUBLESHOOTING.md)** for detailed folder structures, binary location maps, and common fixes.
+
+---
+
 ## 📁 Project Structure
 
 ```text
@@ -485,6 +496,7 @@ Feel free to use the code, customize it, and make your own version.
   <br>
   <a href="./docs/STATUS.md">Status</a> ·
   <a href="./docs/OLS_USER_MANUAL.md">User Manual</a> ·
+  <a href="./docs/TROUBLESHOOTING.md">Troubleshooting & Manual Runtimes</a> ·
   <a href="./docs/MCP.md">MCP Server Guide</a> ·
   <a href="./docs/API.md">API Reference</a> ·
   <a href="./CONTRIBUTING.md">Contributing</a>
