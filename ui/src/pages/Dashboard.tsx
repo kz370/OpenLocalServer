@@ -1,5 +1,5 @@
 import { ChevronDown, FileText, Globe, Home, Play, Repeat, Rocket, RotateCw } from 'lucide-react'
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { DiagnosticsCard } from '@/components/DiagnosticsCard'
 import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
@@ -31,6 +31,8 @@ const dashboardCache = createPersistentCache<DashboardData | null>('dashboard_da
 const dashboardStatsCache = createPersistentCache<SystemStats | null>('dashboard_stats', null)
 const accessLinesCache = createPersistentCache<string[]>('dashboard_access_lines', [])
 
+export type WidgetAction = 'start' | 'stop' | 'restart' | 'reload'
+
 /**
  * Summary dashboard page: what's running, what's wrong, and one-click ways to act on it.
  * Responsive container layout driven by content area:
@@ -51,6 +53,7 @@ export function DashboardPage({
   const [stats, setStats] = useState<SystemStats | null>(dashboardStatsCache.get)
   const [accessLines, setAccessLines] = useState<string[]>(accessLinesCache.get)
   const [startup, setStartup] = useState<StartupSettings | null>(null)
+  const [pendingServices, setPendingServices] = useState<Map<string, WidgetAction>>(new Map())
 
   const action = useAction()
   const { busy, error, setError, run } = action
@@ -101,6 +104,41 @@ export function DashboardPage({
       dashboardCache.set(res.data)
     }
   }
+
+  const onServiceAction = useCallback(
+    async (s: ServiceStatus, action: WidgetAction) => {
+      setPendingServices((prev) => {
+        const next = new Map(prev)
+        next.set(s.id, action)
+        return next
+      })
+      try {
+        if (action === 'reload') {
+          await runCommand({ type: 'apply_web', overwrite: [] })
+        } else if (action === 'restart') {
+          await runCommand({ type: 'restart_service', id: s.id })
+          await waitForService(s.id, 'running')
+        } else {
+          await runCommand({ type: action === 'start' ? 'start_service' : 'stop_service', id: s.id })
+          await waitForService(s.id, action === 'start' ? 'running' : 'stopped')
+        }
+        await refresh()
+        setDiagToken((t) => t + 1)
+      } catch (e) {
+        const diag = asDiagnostic(e)
+        notify.error(diag.problem || `Failed to ${action} ${s.name}`, {
+          details: diag.cause,
+        })
+      } finally {
+        setPendingServices((prev) => {
+          const next = new Map(prev)
+          next.delete(s.id)
+          return next
+        })
+      }
+    },
+    [],
+  )
 
   const web = data?.web
   const autostartIds = startup?.autostart_services ?? []
@@ -193,32 +231,36 @@ export function DashboardPage({
                       setDiagToken((t) => t + 1)
                     })
                   })()
-                : void run('start-all', async () => {
-                    const promises: Promise<unknown>[] = targetsToStart.map((service) =>
-                      runCommand({ type: 'start_service', id: service.id })
-                    )
-                    if (shouldStartWeb) {
-                      promises.push(runCommand({ type: 'apply_web', overwrite: [] }))
-                    }
-                    const results = await Promise.allSettled(promises)
-                    await Promise.all(targetsToStart.map((service) => waitForService(service.id, 'running').catch(() => undefined)))
-                    await refresh()
-                    setDiagToken((t) => t + 1)
+                : void (async () => {
+                    await run('start-all', async () => {
+                      const promises: Promise<unknown>[] = targetsToStart.map((service) =>
+                        runCommand({ type: 'start_service', id: service.id })
+                      )
+                      if (shouldStartWeb) {
+                        promises.push(runCommand({ type: 'apply_web', overwrite: [] }))
+                      }
+                      const results = await Promise.allSettled(promises)
+                      await Promise.all(
+                        targetsToStart.map((service) => waitForService(service.id, 'running').catch(() => undefined))
+                      )
+                      await refresh()
+                      setDiagToken((t) => t + 1)
 
-                    const failedItems: string[] = []
-                    let succeeded = 0
-                    results.forEach((r, i) => {
-                      if (r.status === 'fulfilled') succeeded++
-                      else failedItems.push(targetsToStart[i]?.name ?? `Service ${i}`)
+                      const failedItems: string[] = []
+                      let succeeded = 0
+                      results.forEach((r, i) => {
+                        if (r.status === 'fulfilled') succeeded++
+                        else failedItems.push(targetsToStart[i]?.name ?? `Service ${i}`)
+                      })
+                      notify.batch({
+                        operation: 'services started',
+                        total: promises.length,
+                        succeeded,
+                        failed: failedItems.length,
+                        failedItems,
+                      })
                     })
-                    notify.batch({
-                      operation: 'services started',
-                      total: promises.length,
-                      succeeded,
-                      failed: failedItems.length,
-                      failedItems,
-                    })
-                  })
+                  })()
             }
           >
             {busy === 'stop-all' || busy === 'start-all' ? (
@@ -424,14 +466,10 @@ export function DashboardPage({
           <ServicesWidget
             services={data?.services ?? null}
             webServers={data?.web?.servers ?? null}
-            busy={busy}
-            run={run}
+            pendingServices={pendingServices}
+            onAction={onServiceAction}
             onNavigate={onNavigate}
             onOpenLogs={onOpenLogs}
-            onDone={async () => {
-              await refresh()
-              setDiagToken((t) => t + 1)
-            }}
           />
         </div>
       </div>
@@ -459,8 +497,6 @@ function getInitialCollapsed(): Record<string, boolean> {
   return {}
 }
 
-type WidgetAction = 'start' | 'stop' | 'restart' | 'reload'
-
 /**
  * Services card: services grouped by type with collapsible section headers and fixed 4-slot rows.
  * OVERRIDE: Group headers do NOT have group stop/start buttons.
@@ -468,19 +504,17 @@ type WidgetAction = 'start' | 'stop' | 'restart' | 'reload'
 function ServicesWidget({
   services,
   webServers,
-  busy,
-  run,
+  pendingServices,
+  onAction,
   onNavigate,
   onOpenLogs,
-  onDone,
 }: {
   services: ServiceStatus[] | null
   webServers: ServerAvailability[] | null
-  busy: string | null
-  run: <T>(key: string, fn: () => Promise<T>) => Promise<T | undefined>
+  pendingServices: Map<string, WidgetAction>
+  onAction: (s: ServiceStatus, action: WidgetAction) => Promise<void>
   onNavigate: (p: Page) => void
   onOpenLogs: (source: string) => void
-  onDone: () => Promise<void>
 }) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(getInitialCollapsed)
 
@@ -514,27 +548,8 @@ function ServicesWidget({
   const installed = allServices.filter((s) => s.installed).length
   const webSites = new Map((webServers ?? []).map((s) => [s.id, s.sites]))
 
-  async function act(s: ServiceStatus, action: WidgetAction) {
-    if (action === 'stop' && !(await confirmAction(`Stop ${s.name}? Anything connected to it will be disconnected.`)))
-      return
-    if (
-      action === 'restart' &&
-      s.running &&
-      !(await confirmAction(`Restart ${s.name}? Anything connected to it will be disconnected.`))
-    )
-      return
-    void run(`svc:${s.id}:${action}`, async () => {
-      if (action === 'reload') {
-        await runCommand({ type: 'apply_web', overwrite: [] })
-      } else if (action === 'restart') {
-        await runCommand({ type: 'restart_service', id: s.id })
-        await waitForService(s.id, 'running')
-      } else {
-        await runCommand({ type: action === 'start' ? 'start_service' : 'stop_service', id: s.id })
-        await waitForService(s.id, action === 'start' ? 'running' : 'stopped')
-      }
-      await onDone()
-    })
+  function handleAction(s: ServiceStatus, action: WidgetAction) {
+    void onAction(s, action)
   }
 
   return (
@@ -599,20 +614,17 @@ function ServicesWidget({
               {!isCollapsed && (
                 <div>
                   {group.services.map((s) => {
-                    const working =
-                      busy === `svc:${s.id}:start` ||
-                      busy === `svc:${s.id}:stop` ||
-                      busy === `svc:${s.id}:restart` ||
-                      busy === `svc:${s.id}:reload`
-                    const isGlobalBusy = busy === 'stop-all' || busy === 'start-all'
-                    const isServiceBusy = working || isGlobalBusy
+                    const pendingAction = pendingServices.get(s.id)
+                    const isPending = pendingAction !== undefined
                     const state = !s.installed
                       ? 'missing'
-                      : s.running
-                        ? s.healthy === false
-                          ? 'unhealthy'
-                          : 'running'
-                        : 'stopped'
+                      : isPending
+                        ? 'unhealthy'
+                        : s.running
+                          ? s.healthy === false
+                            ? 'unhealthy'
+                            : 'running'
+                          : 'stopped'
 
                     return (
                       <div
@@ -645,20 +657,36 @@ function ServicesWidget({
 
                         {/* Col 3: 4 action slots (fixed 30px each, 6px gap = 138px) */}
                         <div className="flex items-center gap-1.5 justify-end shrink-0 w-[138px]">
-                          {/* Slot 1: Start/Stop toggle button with distinct colors */}
+                          {/* Slot 1: Start/Stop toggle button */}
                           <button
                             type="button"
-                            title={s.running ? `Stop ${s.name}` : `Start ${s.name}`}
-                            aria-label={s.running ? `Stop ${s.name}` : `Start ${s.name}`}
-                            disabled={isServiceBusy || !s.installed}
-                            onClick={() => void act(s, s.running ? 'stop' : 'start')}
+                            title={
+                              isPending
+                                ? `${pendingAction === 'start' ? 'Starting' : pendingAction === 'stop' ? 'Stopping' : pendingAction} ${s.name}…`
+                                : s.running
+                                  ? `Stop ${s.name}`
+                                  : `Start ${s.name}`
+                            }
+                            aria-label={
+                              isPending
+                                ? `${pendingAction}ing ${s.name}`
+                                : s.running
+                                  ? `Stop ${s.name}`
+                                  : `Start ${s.name}`
+                            }
+                            disabled={isPending || !s.installed}
+                            onClick={() => void handleAction(s, s.running ? 'stop' : 'start')}
                             className={cn(
                               'action-slot-btn',
-                              s.running ? 'action-slot-stop' : 'action-slot-start'
+                              isPending
+                                ? 'action-slot-pending'
+                                : s.running
+                                  ? 'action-slot-stop'
+                                  : 'action-slot-start'
                             )}
                           >
-                            {working && (busy === `svc:${s.id}:start` || busy === `svc:${s.id}:stop`) ? (
-                              <Spinner className="size-4 animate-spin" />
+                            {isPending ? (
+                              <Spinner className="size-3.5 shrink-0" />
                             ) : s.running ? (
                               <StopIcon />
                             ) : (
@@ -671,15 +699,11 @@ function ServicesWidget({
                             type="button"
                             title="Restart"
                             aria-label="Restart"
-                            disabled={isServiceBusy || !s.installed || !s.running}
-                            onClick={() => void act(s, 'restart')}
+                            disabled={isPending || !s.installed || !s.running}
+                            onClick={() => void handleAction(s, 'restart')}
                             className="action-slot-btn action-slot-restart"
                           >
-                            {working && busy === `svc:${s.id}:restart` ? (
-                              <Spinner className="size-4 animate-spin" />
-                            ) : (
-                              <RotateCw />
-                            )}
+                            <RotateCw />
                           </button>
 
                           {/* Slot 3: Reload config */}
@@ -687,15 +711,11 @@ function ServicesWidget({
                             type="button"
                             title="Reload config"
                             aria-label="Reload config"
-                            disabled={isServiceBusy || !s.installed || !s.running || s.kind !== 'web'}
-                            onClick={() => void act(s, 'reload')}
+                            disabled={isPending || !s.installed || !s.running || s.kind !== 'web'}
+                            onClick={() => void handleAction(s, 'reload')}
                             className="action-slot-btn action-slot-reload"
                           >
-                            {working && busy === `svc:${s.id}:reload` ? (
-                              <Spinner className="size-4 animate-spin" />
-                            ) : (
-                              <Repeat />
-                            )}
+                            <Repeat />
                           </button>
 
                           {/* Slot 4: View logs */}

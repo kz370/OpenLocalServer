@@ -393,6 +393,13 @@ olsc guide
 7. **Port Checker Accuracy:**
    - Filtered PID 0 and TIME_WAIT sockets from netstat output, preventing in-use ports from falsely displaying as "System Idle Process". Added PowerShell `Get-NetTCPConnection` fallback for bound sockets and standard port hints (3306, 5432, 6379, 80, 443).
 
+8. **Instant Persistent UI Caching:**
+   - Synchronous 0ms page rendering backed by persistent storage across app restarts; instant optimistic updates for sites, databases, and runtimes without manual page refresh.
+
+9. **Unified Notifications & State Banners:**
+   - Centralized toasts with semantic tokens, smart pause/resume on blur/hover, deduplication, live progress for background tasks and runtimes, and a persistent notification history dropdown.
+   - Persistent inline banners for active conditions (unapplied web server changes, port collisions); replaced noisy confirmation dialogs for reversible actions with instant Undo toasts.
+
 ---
 
 ### Previous Version Notes (v2.5.0)

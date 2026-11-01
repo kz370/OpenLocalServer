@@ -36,12 +36,12 @@
   --warning: #F59E0B;
   --info: #0284C7;
 
-  /* Action button semantic tokens */
-  --action-start: #10b981;
-  --action-stop: #ef4444;
-  --action-restart: #f59e0b;
-  --action-reload: #0ea5e9;
-  --action-logs: #8b5cf6;
+  /* Action button semantic tokens - >= 3:1 contrast against light card */
+  --action-start: #059669;
+  --action-stop: #dc2626;
+  --action-restart: #d97706;
+  --action-reload: #0284c7;
+  --action-logs: #7c3aed;
 
   --border: rgba(203, 213, 225, 0.65);
   --input: rgba(255, 255, 255, 0.9);
@@ -497,6 +497,7 @@ body {
 }
 
 /* --- Action Buttons: 30px square, 8px radius, 16px icon, tinted color-mix --- */
+/* --- Services Card Action Slot Buttons --- */
 .action-slot-btn {
   width: 30px;
   min-width: 30px;
@@ -507,14 +508,24 @@ body {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  transition: background-color 120ms ease;
   cursor: pointer;
   outline: none;
 }
 
 .action-slot-btn svg {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
+  stroke-width: 2px;
+}
+
+/* Stop button keeps its filled square glyph optically sized */
+.action-slot-stop svg {
+  width: 14px;
+  height: 14px;
 }
 
 .action-slot-btn:active:not(:disabled) {
@@ -526,91 +537,106 @@ body {
   opacity: 0.3 !important;
   cursor: not-allowed !important;
   pointer-events: none !important;
-  background: color-mix(in srgb, var(--muted-foreground) 10%, transparent) !important;
-  border: 1px solid color-mix(in srgb, var(--border) 40%, transparent) !important;
-  color: var(--muted-foreground) !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
 }
 
-.action-slot-start:not(:disabled) {
+/* Slot 1 (Start) */
+.action-slot-start {
   color: var(--action-start);
-  background: color-mix(in srgb, var(--action-start) 14%, transparent);
-  border: 1px solid color-mix(in srgb, var(--action-start) 28%, transparent);
 }
 .action-slot-start:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--action-start) 24%, transparent);
-  border-color: color-mix(in srgb, var(--action-start) 50%, transparent);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--action-start) 20%, transparent);
+  background: color-mix(in srgb, var(--action-start) 14%, transparent);
+}
+.action-slot-start:active:not(:disabled) {
+  background: color-mix(in srgb, var(--action-start) 22%, transparent);
 }
 .action-slot-start:focus-visible {
   outline: 2px solid var(--action-start);
   outline-offset: 1px;
 }
 
-.action-slot-stop:not(:disabled) {
+/* Slot 1 (Stop) */
+.action-slot-stop {
   color: var(--action-stop);
-  background: color-mix(in srgb, var(--action-stop) 14%, transparent);
-  border: 1px solid color-mix(in srgb, var(--action-stop) 28%, transparent);
 }
 .action-slot-stop:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--action-stop) 24%, transparent);
-  border-color: color-mix(in srgb, var(--action-stop) 50%, transparent);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--action-stop) 20%, transparent);
+  background: color-mix(in srgb, var(--action-stop) 14%, transparent);
+}
+.action-slot-stop:active:not(:disabled) {
+  background: color-mix(in srgb, var(--action-stop) 22%, transparent);
 }
 .action-slot-stop:focus-visible {
   outline: 2px solid var(--action-stop);
   outline-offset: 1px;
 }
 
-.action-slot-restart:not(:disabled) {
+/* Slot 2 (Restart) */
+.action-slot-restart {
   color: var(--action-restart);
-  background: color-mix(in srgb, var(--action-restart) 14%, transparent);
-  border: 1px solid color-mix(in srgb, var(--action-restart) 28%, transparent);
 }
 .action-slot-restart:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--action-restart) 24%, transparent);
-  border-color: color-mix(in srgb, var(--action-restart) 50%, transparent);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--action-restart) 20%, transparent);
+  background: color-mix(in srgb, var(--action-restart) 14%, transparent);
+}
+.action-slot-restart:active:not(:disabled) {
+  background: color-mix(in srgb, var(--action-restart) 22%, transparent);
 }
 .action-slot-restart:focus-visible {
   outline: 2px solid var(--action-restart);
   outline-offset: 1px;
 }
 
-.action-slot-reload:not(:disabled) {
+/* Slot 3 (Reload) */
+.action-slot-reload {
   color: var(--action-reload);
-  background: color-mix(in srgb, var(--action-reload) 14%, transparent);
-  border: 1px solid color-mix(in srgb, var(--action-reload) 28%, transparent);
 }
 .action-slot-reload:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--action-reload) 24%, transparent);
-  border-color: color-mix(in srgb, var(--action-reload) 50%, transparent);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--action-reload) 20%, transparent);
+  background: color-mix(in srgb, var(--action-reload) 14%, transparent);
+}
+.action-slot-reload:active:not(:disabled) {
+  background: color-mix(in srgb, var(--action-reload) 22%, transparent);
 }
 .action-slot-reload:focus-visible {
   outline: 2px solid var(--action-reload);
   outline-offset: 1px;
 }
 
-.action-slot-logs:not(:disabled) {
+/* Slot 4 (Logs) */
+.action-slot-logs {
   color: var(--action-logs);
-  background: color-mix(in srgb, var(--action-logs) 14%, transparent);
-  border: 1px solid color-mix(in srgb, var(--action-logs) 28%, transparent);
 }
 .action-slot-logs:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--action-logs) 24%, transparent);
-  border-color: color-mix(in srgb, var(--action-logs) 50%, transparent);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--action-logs) 20%, transparent);
+  background: color-mix(in srgb, var(--action-logs) 14%, transparent);
+}
+.action-slot-logs:active:not(:disabled) {
+  background: color-mix(in srgb, var(--action-logs) 22%, transparent);
 }
 .action-slot-logs:focus-visible {
   outline: 2px solid var(--action-logs);
   outline-offset: 1px;
 }
 
+/* Pending state: spinner replaces icon, still without a box */
+.action-slot-btn.action-slot-pending {
+  opacity: 1 !important;
+  color: var(--action-restart);
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  cursor: wait;
+}
+.action-slot-btn.action-slot-pending svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2px;
+}
+
 /* --- Dashboard Responsive Layout Driven by Content Area --- */
 .dashboard-page-container {
   container-type: inline-size;
   container-name: dashboard;
-  max-width: 1200px;
+  max-width: 1680px;
   margin-left: auto;
   margin-right: auto;
   width: 100%;
