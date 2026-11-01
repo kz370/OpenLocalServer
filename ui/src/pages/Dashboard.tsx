@@ -102,7 +102,9 @@ export function DashboardPage({
     if (res.type === 'dashboard') {
       setData(res.data)
       dashboardCache.set(res.data)
+      return res.data
     }
+    return null
   }
 
   const onServiceAction = useCallback(
@@ -285,7 +287,12 @@ export function DashboardPage({
       {dataError && <ErrorCard error={dataError} onDismiss={() => setDataError(null)} />}
 
       {/* Diagnostics: strictly one slim row (<= 44px) in all states so layout never jumps */}
-      <DiagnosticsCard refreshToken={diagToken} onNavigate={onNavigate} healthProblems={data?.health ?? []} />
+      <DiagnosticsCard
+        refreshToken={diagToken}
+        onNavigate={onNavigate}
+        onRefresh={refresh}
+        healthProblems={data?.health ?? []}
+      />
 
       {/* Web server strip: one full-width card (~52-58px), single row vertically centered */}
       <Card className="shadow-xs min-h-[52px] px-3.5 py-2 flex flex-wrap items-center justify-between gap-3">

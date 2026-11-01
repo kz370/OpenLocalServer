@@ -8,6 +8,7 @@ import {
   getUnreadNotificationCount,
   markAllNotificationsRead,
   notify,
+  removeNotificationHistoryItem,
   subscribeNotificationHistory,
   subscribeNotifications,
 } from '../notify.ts'
@@ -113,4 +114,116 @@ test('dismissNewestNotification pops the latest notification', () => {
 
   dismissNotification(id1)
   dismissNotification(id2)
+})
+
+test('notification de-duplication: same error three times in a row produces one entry with x3', () => {
+  clearNotificationHistory()
+
+  let historyItems: { count: number; message: string }[] = []
+  const unsub = subscribeNotificationHistory((items) => {
+    historyItems = items.map((i) => ({ count: i.count, message: i.message }))
+  })
+
+  // Trigger same error three times in a row
+  notify.error('Database connection failed', { details: 'Port 3306 in use', logSource: 'mysql' })
+  notify.error('Database connection failed', { details: 'Port 3306 in use', logSource: 'mysql' })
+  notify.error('Database connection failed', { details: 'Port 3306 in use', logSource: 'mysql' })
+
+  assert.equal(historyItems.length, 1)
+  assert.equal(historyItems[0].count, 3)
+  assert.equal(historyItems[0].message, 'Database connection failed')
+
+  // Unread badge counts entries (1), not occurrences (3)
+  assert.equal(getUnreadNotificationCount(), 1)
+
+  unsub()
+})
+
+test('notification de-duplication: unrelated entry in between creates separate entries', () => {
+  clearNotificationHistory()
+
+  let historyItems: { count: number; message: string }[] = []
+  const unsub = subscribeNotificationHistory((items) => {
+    historyItems = items.map((i) => ({ count: i.count, message: i.message }))
+  })
+
+  notify.error('Database connection failed', { details: 'Port 3306 in use', logSource: 'mysql' })
+  notify.info('Unrelated informational message')
+  notify.error('Database connection failed', { details: 'Port 3306 in use', logSource: 'mysql' })
+
+  // Should have 3 separate rows since the two errors were not consecutive
+  assert.equal(historyItems.length, 3)
+  assert.equal(historyItems[0].message, 'Database connection failed')
+  assert.equal(historyItems[0].count, 1)
+  assert.equal(historyItems[1].message, 'Unrelated informational message')
+  assert.equal(historyItems[2].message, 'Database connection failed')
+  assert.equal(historyItems[2].count, 1)
+
+  unsub()
+})
+
+test('notification de-duplication: two different errors from the same service create separate entries', () => {
+  clearNotificationHistory()
+
+  let historyItems: { count: number; message: string; details?: string | null }[] = []
+  const unsub = subscribeNotificationHistory((items) => {
+    historyItems = items.map((i) => ({ count: i.count, message: i.message, details: i.details }))
+  })
+
+  // Two different errors from mysql service
+  notify.error('Failed to start service', { details: 'Access denied for user root', logSource: 'mysql' })
+  notify.error('Failed to start service', { details: 'Address already in use :3306', logSource: 'mysql' })
+
+  assert.equal(historyItems.length, 2)
+  assert.equal(historyItems[0].details, 'Address already in use :3306')
+  assert.equal(historyItems[1].details, 'Access denied for user root')
+
+  unsub()
+})
+
+test('bell unread count: routine success does not increment, errors/warnings do', () => {
+  clearNotificationHistory()
+  assert.equal(getUnreadNotificationCount(), 0)
+
+  // Routine success should NOT count toward bell unread badge
+  notify.success('All services operational')
+  assert.equal(getUnreadNotificationCount(), 0)
+
+  // Routine info should NOT count toward bell unread badge
+  notify.info('Configuration reloaded')
+  assert.equal(getUnreadNotificationCount(), 0)
+
+  // Warning DOES count
+  notify.warning('Port conflict detected')
+  assert.equal(getUnreadNotificationCount(), 1)
+
+  // Error DOES count
+  notify.error('Nginx failed to start')
+  assert.equal(getUnreadNotificationCount(), 2)
+
+  markAllNotificationsRead()
+  assert.equal(getUnreadNotificationCount(), 0)
+})
+
+test('removeNotificationHistoryItem removes a single entry', () => {
+  clearNotificationHistory()
+
+  const id1 = notify.error('Error 1')
+  const id2 = notify.error('Error 2')
+
+  let currentHistory: string[] = []
+  const unsub = subscribeNotificationHistory((items) => {
+    currentHistory = items.map((i) => i.id)
+  })
+
+  assert.equal(currentHistory.length, 2)
+  assert.ok(currentHistory.includes(id1))
+  assert.ok(currentHistory.includes(id2))
+
+  removeNotificationHistoryItem(id1)
+  assert.equal(currentHistory.length, 1)
+  assert.ok(!currentHistory.includes(id1))
+  assert.ok(currentHistory.includes(id2))
+
+  unsub()
 })

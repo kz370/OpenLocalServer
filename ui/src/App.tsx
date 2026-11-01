@@ -4,6 +4,7 @@ import { listen } from '@tauri-apps/api/event'
 import { CommandPalette } from '@/components/CommandPalette'
 import { ConfirmHost } from '@/components/ConfirmHost'
 import { NotificationHost } from '@/components/NotificationHost'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { DoctorDialog } from '@/components/DoctorDialog'
 import { GlobalAuroraBackground } from '@/components/layout/GlobalAuroraBackground'
 import { type Page, Sidebar } from '@/components/layout/Sidebar'
@@ -233,57 +234,59 @@ export default function App() {
         isWindowed ? 'rounded-xl' : 'rounded-none',
       )}
     >
-      <GlobalAuroraBackground />
-      <Titlebar onNavigateLogs={openLogs} />
-      <ExitingOverlay />
-      <div className="relative z-10 flex min-h-0 flex-1">
-        <Sidebar page={page} onNavigate={navigate} />
-        <ConfirmHost />
-        <NotificationHost onNavigateLogs={openLogs} />
-        <CommandPalette onNavigate={navigate} onDoctor={openDoctor} />
-        <DoctorDialog open={doctor} onClose={() => setDoctor(false)} />
-        <main className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-6">
-          {page === 'dashboard' && <DashboardPage onNavigate={navigate} onOpenLogs={openLogs} />}
-          {page === 'sites' && <SitesPage onNavigate={navigate} />}
-          {page === 'quickapps' && <QuickAppsPage onNavigate={navigate} />}
-          {page === 'commands' && <CommandsPage />}
-          {page === 'webserver' && (
-            <WebServerPage
-              initialTab={webServerTab}
-              onTabChange={(tab) => {
-                setWebServerTab(tab)
-                try {
-                  sessionStorage.setItem('ols:webserver-tab', tab)
-                } catch {
-                  // ignore
-                }
-              }}
-            />
-          )}
-          {page === 'tunnels' && <TunnelsPage />}
-          {page === 'databases' && <DatabasesPage />}
-          {page === 'services' && <ServicesPage onOpenLogs={openLogs} />}
-          {page === 'runtimes' && <RuntimesPage />}
-          {page === 'profiles' && <ProfilesPage />}
-          {page === 'plugins' && <PluginsPage />}
-          {page === 'logs' && (
-            <LogsPage
-              initialSource={logSource}
-              onSourceChange={(src) => {
-                setLogSource(src)
-                try {
-                  sessionStorage.setItem('ols:log-source', src)
-                } catch {
-                  // ignore
-                }
-              }}
-            />
-          )}
-          {page === 'processes' && <ProcessesPage />}
-          {page === 'tasks' && <TasksPage />}
-          {page === 'settings' && <SettingsPage />}
-        </main>
-      </div>
+      <TooltipProvider>
+        <GlobalAuroraBackground />
+        <Titlebar onNavigateLogs={openLogs} />
+        <ExitingOverlay />
+        <div className="relative z-10 flex min-h-0 flex-1">
+          <Sidebar page={page} onNavigate={navigate} />
+          <ConfirmHost />
+          <NotificationHost onNavigateLogs={openLogs} />
+          <CommandPalette onNavigate={navigate} onDoctor={openDoctor} />
+          <DoctorDialog open={doctor} onClose={() => setDoctor(false)} />
+          <main className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-6">
+            {page === 'dashboard' && <DashboardPage onNavigate={navigate} onOpenLogs={openLogs} />}
+            {page === 'sites' && <SitesPage onNavigate={navigate} />}
+            {page === 'quickapps' && <QuickAppsPage onNavigate={navigate} />}
+            {page === 'commands' && <CommandsPage />}
+            {page === 'webserver' && (
+              <WebServerPage
+                initialTab={webServerTab}
+                onTabChange={(tab) => {
+                  setWebServerTab(tab)
+                  try {
+                    sessionStorage.setItem('ols:webserver-tab', tab)
+                  } catch {
+                    // ignore
+                  }
+                }}
+              />
+            )}
+            {page === 'tunnels' && <TunnelsPage />}
+            {page === 'databases' && <DatabasesPage />}
+            {page === 'services' && <ServicesPage onOpenLogs={openLogs} />}
+            {page === 'runtimes' && <RuntimesPage />}
+            {page === 'profiles' && <ProfilesPage />}
+            {page === 'plugins' && <PluginsPage />}
+            {page === 'logs' && (
+              <LogsPage
+                initialSource={logSource}
+                onSourceChange={(src) => {
+                  setLogSource(src)
+                  try {
+                    sessionStorage.setItem('ols:log-source', src)
+                  } catch {
+                    // ignore
+                  }
+                }}
+              />
+            )}
+            {page === 'processes' && <ProcessesPage />}
+            {page === 'tasks' && <TasksPage />}
+            {page === 'settings' && <SettingsPage />}
+          </main>
+        </div>
+      </TooltipProvider>
     </div>
   )
 }

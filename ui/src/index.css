@@ -209,6 +209,15 @@ select optgroup {
   }
 }
 
+/* Allow modern tooltips on disabled buttons that have explanations */
+button:disabled[title],
+button:disabled[data-tooltip],
+[aria-disabled="true"][title],
+[aria-disabled="true"][data-tooltip] {
+  pointer-events: auto !important;
+  cursor: not-allowed;
+}
+
 /* Side-by-side diff: two equal panes that never push past the container. */
 .diff-host .cm-mergeViewEditor {
   min-width: 0;

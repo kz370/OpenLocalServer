@@ -18,7 +18,9 @@ import { timeAgo } from '@/lib/hooks'
 import {
   type NotificationItem,
   clearNotificationHistory,
+  isAttentionItem,
   markAllNotificationsRead,
+  removeNotificationHistoryItem,
   subscribeNotificationHistory,
 } from '@/lib/notify'
 import { cn } from '@/lib/utils'
@@ -68,7 +70,7 @@ export function NotificationsPopover({ onNavigateLogs }: { onNavigateLogs?: (sou
     }
   }
 
-  const unreadCount = history.filter((h) => !h.read).length
+  const unreadCount = history.filter((h) => !h.read && isAttentionItem(h)).length
 
   const handleCopy = async (id: string, text: string) => {
     try {
@@ -174,12 +176,30 @@ export function NotificationsPopover({ onNavigateLogs }: { onNavigateLogs?: (sou
 
                     <div className="flex flex-1 flex-col gap-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-medium text-foreground truncate">
-                          {item.title || (item.type.charAt(0).toUpperCase() + item.type.slice(1))}
-                        </span>
-                        <span className="text-[10px] text-muted-foreground shrink-0">
-                          {timeAgo(item.createdAt)}
-                        </span>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="font-medium text-foreground truncate">
+                            {item.title || (item.type.charAt(0).toUpperCase() + item.type.slice(1))}
+                          </span>
+                          {item.count > 1 && (
+                            <span className="inline-flex items-center px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-muted text-muted-foreground border border-border shrink-0">
+                              x{item.count}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="text-[10px] text-muted-foreground">
+                            {timeAgo(item.createdAt)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => removeNotificationHistoryItem(item.id)}
+                            title="Remove notification"
+                            aria-label="Remove notification"
+                            className="cursor-pointer text-muted-foreground/60 hover:text-destructive transition-colors p-0.5 rounded hover:bg-muted"
+                          >
+                            <X className="size-3" />
+                          </button>
+                        </div>
                       </div>
 
                       <p className="text-muted-foreground leading-snug break-words">

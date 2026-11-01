@@ -107,6 +107,17 @@ function ToastItem({
     }
   }, [clearTimer, item.duration, startTimer])
 
+  const prevCountRef = useRef(item.count)
+  useEffect(() => {
+    if (item.count !== prevCountRef.current) {
+      prevCountRef.current = item.count
+      if (item.duration !== undefined) {
+        remainingRef.current = item.duration
+        startTimer(item.duration)
+      }
+    }
+  }, [item.count, item.duration, startTimer])
+
   // Timer logic with hover & focus pauses
   useEffect(() => {
     if (item.duration === undefined) return // Persistent

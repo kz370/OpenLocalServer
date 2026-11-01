@@ -21,6 +21,7 @@ export interface NotificationItem {
   progress?: number | null // 0-100 or null for indeterminate
   statusText?: string
   duration?: number // auto-hide duration in ms (undefined = persistent)
+  needsAttention?: boolean
 }
 
 export interface ProgressNotificationHandle {
@@ -75,11 +76,21 @@ function emitHistory() {
   historyListeners.forEach((fn) => fn([...history]))
 }
 
-function addToHistory(item: NotificationItem) {
-  // Add to history (skip in-progress updates)
-  if (item.type === 'progress') return
-  history = [{ ...item, read: false }, ...history.filter((h) => h.id !== item.id)].slice(0, MAX_HISTORY)
-  emitHistory()
+export const MERGE_WINDOW_MS = 5 * 60 * 1000 // 5 minutes
+
+export function canMergeNotification(
+  prev: NotificationItem,
+  type: NotificationType,
+  message: string,
+  logSource?: string | null,
+  details?: string | null,
+): boolean {
+  if (prev.type !== type) return false
+  if (prev.message !== message) return false
+  if ((prev.logSource ?? null) !== (logSource ?? null)) return false
+  if ((prev.details ?? null) !== (details ?? null)) return false
+  if (Date.now() - prev.createdAt > MERGE_WINDOW_MS) return false
+  return true
 }
 
 let idCounter = 0
@@ -99,62 +110,99 @@ function pushNotification(
     duration?: number
     progress?: number | null
     statusText?: string
+    toast?: boolean
+    read?: boolean
+    needsAttention?: boolean
   } = {},
 ): string {
-  const id = opts.id || nextId()
+  const showToast = opts.toast !== false
+  const now = Date.now()
+  let targetId = opts.id || nextId()
 
-  // De-duplication check: if consecutive identical toast exists, collapse and reset timer
-  const existingIndex = toasts.findIndex((t) => t.type === type && t.message === message && !t.action)
-  if (existingIndex !== -1) {
-    const existing = toasts[existingIndex]
+  // 1. Toast de-duplication: only merge with consecutive toasts[0] within 5 minutes
+  if (showToast && toasts.length > 0 && !opts.action && canMergeNotification(toasts[0], type, message, opts.logSource, opts.details)) {
+    const prev = toasts[0]
+    targetId = prev.id
     const updated: NotificationItem = {
-      ...existing,
-      count: existing.count + 1,
-      createdAt: Date.now(),
-      details: opts.details ?? existing.details,
-      duration: opts.duration ?? existing.duration,
+      ...prev,
+      count: prev.count + 1,
+      createdAt: now,
+      duration: opts.duration ?? prev.duration,
     }
-    toasts[existingIndex] = updated
+    toasts[0] = updated
     emitToasts()
-    return existing.id
+  } else if (showToast) {
+    // Calculate default auto-hide duration
+    let duration = opts.duration
+    if (duration === undefined) {
+      if (type === 'progress') {
+        duration = undefined // Progress never auto-hides while active
+      } else if (type === 'error') {
+        duration = undefined // Errors never auto-hide
+      } else if (opts.action) {
+        duration = opts.action.isUndo ? UNDO_ACTION_MS : undefined // Actions stay unless Undo
+      } else if (type === 'warning') {
+        duration = WARNING_MS
+      } else {
+        duration = SUCCESS_INFO_MS
+      }
+    }
+
+    const item: NotificationItem = {
+      id: targetId,
+      type,
+      title: opts.title,
+      message,
+      details: opts.details,
+      logSource: opts.logSource,
+      action: opts.action,
+      count: 1,
+      createdAt: now,
+      read: opts.read ?? false,
+      progress: opts.progress,
+      statusText: opts.statusText,
+      duration,
+      needsAttention: opts.needsAttention,
+    }
+
+    toasts = [item, ...toasts].slice(0, MAX_VISIBLE)
+    emitToasts()
   }
 
-  // Calculate default auto-hide duration
-  let duration = opts.duration
-  if (duration === undefined) {
-    if (type === 'progress') {
-      duration = undefined // Progress never auto-hides while active
-    } else if (type === 'error') {
-      duration = undefined // Errors never auto-hide
-    } else if (opts.action) {
-      duration = opts.action.isUndo ? UNDO_ACTION_MS : undefined // Actions stay unless Undo
-    } else if (type === 'warning') {
-      duration = WARNING_MS
+  // 2. History de-duplication: only merge with consecutive history[0] within 5 minutes
+  if (type !== 'progress') {
+    if (history.length > 0 && !opts.action && canMergeNotification(history[0], type, message, opts.logSource, opts.details)) {
+      const prev = history[0]
+      const updated: NotificationItem = {
+        ...prev,
+        count: prev.count + 1,
+        createdAt: now,
+        read: prev.read, // unread stays unread and counts as one unread item
+        needsAttention: opts.needsAttention ?? prev.needsAttention,
+      }
+      history[0] = updated
+      emitHistory()
     } else {
-      duration = SUCCESS_INFO_MS
+      const historyItem: NotificationItem = {
+        id: targetId,
+        type,
+        title: opts.title,
+        message,
+        details: opts.details,
+        logSource: opts.logSource,
+        action: opts.action,
+        count: 1,
+        createdAt: now,
+        read: opts.read ?? false,
+        duration: opts.duration,
+        needsAttention: opts.needsAttention,
+      }
+      history = [historyItem, ...history].slice(0, MAX_HISTORY)
+      emitHistory()
     }
   }
 
-  const item: NotificationItem = {
-    id,
-    type,
-    title: opts.title,
-    message,
-    details: opts.details,
-    logSource: opts.logSource,
-    action: opts.action,
-    count: 1,
-    createdAt: Date.now(),
-    read: false,
-    progress: opts.progress,
-    statusText: opts.statusText,
-    duration,
-  }
-
-  toasts = [item, ...toasts].slice(0, MAX_VISIBLE)
-  emitToasts()
-  addToHistory(item)
-  return id
+  return targetId
 }
 
 export function dismissNotification(id: string) {
@@ -190,6 +238,11 @@ export function clearNotificationHistory() {
   emitHistory()
 }
 
+export function removeNotificationHistoryItem(id: string) {
+  history = history.filter((h) => h.id !== id)
+  emitHistory()
+}
+
 export function markAllNotificationsRead() {
   let changed = false
   history = history.map((item) => {
@@ -202,20 +255,52 @@ export function markAllNotificationsRead() {
   if (changed) emitHistory()
 }
 
+export function isAttentionItem(item: NotificationItem): boolean {
+  if (item.needsAttention !== undefined) return item.needsAttention
+  return item.type === 'error' || item.type === 'warning'
+}
+
 export function getUnreadNotificationCount(): number {
-  return history.filter((h) => !h.read).length
+  return history.filter((h) => !h.read && isAttentionItem(h)).length
 }
 
 export const notify = {
-  success(message: string, opts?: { title?: string; action?: NotificationAction; duration?: number }) {
+  success(
+    message: string,
+    opts?: {
+      title?: string
+      action?: NotificationAction
+      duration?: number
+      logSource?: string | null
+      details?: string | null
+    },
+  ) {
     return pushNotification('success', message, opts)
   },
 
-  info(message: string, opts?: { title?: string; action?: NotificationAction; duration?: number }) {
+  info(
+    message: string,
+    opts?: {
+      title?: string
+      action?: NotificationAction
+      duration?: number
+      logSource?: string | null
+      details?: string | null
+    },
+  ) {
     return pushNotification('info', message, opts)
   },
 
-  warning(message: string, opts?: { title?: string; action?: NotificationAction; duration?: number; details?: string | null }) {
+  warning(
+    message: string,
+    opts?: {
+      title?: string
+      action?: NotificationAction
+      duration?: number
+      details?: string | null
+      logSource?: string | null
+    },
+  ) {
     return pushNotification('warning', message, opts)
   },
 
@@ -229,6 +314,23 @@ export const notify = {
     },
   ) {
     return pushNotification('error', message, opts)
+  },
+
+  recordHistory(
+    type: NotificationType,
+    message: string,
+    opts: {
+      title?: string
+      details?: string | null
+      logSource?: string | null
+      read?: boolean
+      needsAttention?: boolean
+    } = {},
+  ) {
+    return pushNotification(type, message, {
+      ...opts,
+      toast: false,
+    })
   },
 
   progress(title: string, initialStatus?: string): ProgressNotificationHandle {
