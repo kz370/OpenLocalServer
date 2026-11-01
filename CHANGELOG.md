@@ -10,6 +10,9 @@ and the project follows [Semantic Versioning](https://semver.org/).
 Maintenance and UI release. Full notes: [`release-notes/v2.6.0.md`](./release-notes/v2.6.0.md).
 
 ### Highlights
+- **Persistent UI Caching**: Instantaneous 0ms page rendering across application restarts; optimistic live updates for sites, databases, and runtimes without manual page refresh.
+- **Unified Notification System**: Centralized toasts with semantic tokens, smart pause/resume on blur/hover, deduplication, live progress for background tasks and runtimes, and a persistent notification history dropdown.
+- **State Banners & Clean Confirmations**: Persistent inline banners for active conditions (unapplied web server changes, port collisions); replaced noisy confirmation dialogs for reversible actions with instant Undo toasts.
 - **Runtime Updates UI**: Separated installation status from update availability, standardized action buttons, filter tabs, and bulk "Update all".
 - **Major Upgrade Protection**: Semver major boundary detection with breaking change confirmation modals.
 - **Prerelease Filtering**: Excluded pre-releases from default updates; added channel toggle in Manage panel; Node.js strictly targets LTS.
