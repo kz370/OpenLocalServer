@@ -21,7 +21,7 @@ export function GlobalAuroraBackground() {
     return (
       <div
         aria-hidden="true"
-        className="pointer-events-none fixed inset-0 -z-10 overflow-hidden select-none transition-colors duration-700"
+        className="pointer-events-none fixed inset-0 -z-10 overflow-hidden select-none"
         style={{ background: 'var(--app-background)' }}
       />
     )

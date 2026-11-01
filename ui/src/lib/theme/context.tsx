@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { emit } from '@tauri-apps/api/event'
 
 import { runCommand } from '@/core'
@@ -84,9 +84,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   // Apply to DOM whenever tokens or options change
   useEffect(() => {
     applyThemeToDom(tokens, options, resolvedTheme)
-    // Synchronize tray & window chrome in Rust
-    void emit('ols:theme', resolvedTheme).catch(() => undefined)
   }, [tokens, options, resolvedTheme])
+
+  // Synchronize tray & window chrome in Rust (only when light/dark actually flips)
+  useEffect(() => {
+    void emit('ols:theme', resolvedTheme).catch(() => undefined)
+  }, [resolvedTheme])
 
   // Follow OS system preference live when in 'system' mode
   useEffect(() => {
@@ -123,8 +126,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   // Persist helper
-  const saveSettings = (next: ThemeSettings) => {
-    setSettings(next)
+  // Always points at the latest settings so rapid successive updates (color drags)
+  // never build on a stale closure.
+  const settingsRef = useRef(settings)
+  settingsRef.current = settings
+  const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const persist = (next: ThemeSettings) => {
     try {
       localStorage.setItem(STORAGE_KEY_APPEARANCE, JSON.stringify(next))
       localStorage.setItem(STORAGE_KEY_THEME_LEGACY, next.mode)
@@ -134,19 +142,31 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     void runCommand({ type: 'set_setting', key: 'appearance', value: next }).catch(() => undefined)
   }
 
+  // Apply immediately, but debounce disk/IPC writes so dragging is cheap.
+  const saveSettings = (next: ThemeSettings) => {
+    settingsRef.current = next
+    setSettings(next)
+    if (persistTimer.current) clearTimeout(persistTimer.current)
+    persistTimer.current = setTimeout(() => {
+      persistTimer.current = null
+      persist(settingsRef.current)
+    }, 300)
+  }
+
   const setMode = (mode: ThemeMode) => {
-    saveSettings({ ...settings, mode })
+    saveSettings({ ...settingsRef.current, mode })
   }
 
   const setPresetId = (presetId: string) => {
-    saveSettings({ ...settings, presetId })
+    saveSettings({ ...settingsRef.current, presetId })
   }
 
   const setOverrides = (patch: Partial<ThemeOverrides>) => {
+    const cur = settingsRef.current
     saveSettings({
-      ...settings,
+      ...cur,
       overrides: {
-        ...settings.overrides,
+        ...cur.overrides,
         ...patch,
       },
     })

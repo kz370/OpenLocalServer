@@ -1,5 +1,5 @@
 import { Check, Laptop, Moon, RotateCcw, Sparkles, Sun } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -17,6 +17,74 @@ import {
 import { cn } from '@/lib/utils'
 import { DashboardIcon, QuickAppsIcon, SitesIcon } from '@/components/layout/SidebarIcons'
 
+const HEX_RE = /^#[0-9a-fA-F]{6}$/
+
+/**
+ * Color picker + hex input with local draft state. Drags update the draft instantly
+ * and are committed at most once per animation frame, so the rest of the app is not
+ * re-rendered on every raw input event.
+ */
+function ColorField({
+  value,
+  fallback,
+  onCommit,
+}: {
+  value: string
+  fallback: string
+  onCommit: (hex: string) => void
+}) {
+  const [draft, setDraft] = useState(value)
+  const raf = useRef<number | null>(null)
+  const pending = useRef<string | null>(null)
+  const commitRef = useRef(onCommit)
+  commitRef.current = onCommit
+
+  // Follow external changes (presets, reset) when not mid-edit.
+  useEffect(() => {
+    if (pending.current === null) setDraft(value)
+  }, [value])
+
+  useEffect(
+    () => () => {
+      if (raf.current !== null) cancelAnimationFrame(raf.current)
+    },
+    [],
+  )
+
+  const update = (next: string) => {
+    setDraft(next)
+    if (!HEX_RE.test(next)) return
+    pending.current = next
+    if (raf.current !== null) return
+    raf.current = requestAnimationFrame(() => {
+      raf.current = null
+      const hex = pending.current
+      pending.current = null
+      if (hex) commitRef.current(hex)
+    })
+  }
+
+  const pickerValue = HEX_RE.test(draft) ? draft : HEX_RE.test(value) ? value.slice(0, 7) : fallback
+
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-2 py-1">
+      <input
+        type="color"
+        value={pickerValue}
+        onChange={(e) => update(e.target.value)}
+        className="size-6 cursor-pointer rounded border-0 bg-transparent p-0"
+      />
+      <Input
+        value={draft}
+        onChange={(e) => update(e.target.value)}
+        maxLength={7}
+        placeholder={fallback}
+        className="h-6 w-24 border-0 bg-transparent p-0 font-mono text-xs uppercase shadow-none focus-visible:ring-0"
+      />
+    </div>
+  )
+}
+
 export function AppearanceSettings() {
   const {
     settings,
@@ -31,7 +99,6 @@ export function AppearanceSettings() {
     resetToDefault,
   } = useTheme()
 
-  const [customHex, setCustomHex] = useState(settings.overrides.accent ?? '')
   const [resetConfirm, setResetConfirm] = useState(false)
 
   const activeAccent = settings.overrides.accent ?? preset[resolvedTheme].primary
@@ -46,16 +113,8 @@ export function AppearanceSettings() {
   const gradAngle =
     options.background.type === 'gradient' ? options.background.angle : 135
 
-  const handleCustomColorChange = (hex: string) => {
-    setCustomHex(hex)
-    if (/^#[0-9a-fA-F]{6}$/.test(hex)) {
-      setOverrides({ accent: hex })
-    }
-  }
-
   const handleReset = () => {
     resetToDefault()
-    setCustomHex('')
     setResetConfirm(true)
     setTimeout(() => setResetConfirm(false), 2500)
   }
@@ -241,7 +300,6 @@ export function AppearanceSettings() {
                 className="h-7 text-xs text-muted-foreground"
                 onClick={() => {
                   setOverrides({ accent: undefined })
-                  setCustomHex('')
                 }}
               >
                 Reset to preset accent
@@ -260,7 +318,6 @@ export function AppearanceSettings() {
                   key={swatch.name}
                   onClick={() => {
                     setOverrides({ accent: colorVal })
-                    setCustomHex(colorVal)
                   }}
                   title={swatch.name}
                   className={cn(
@@ -282,24 +339,12 @@ export function AppearanceSettings() {
             })}
 
             {/* Custom Color Input */}
-            <div className="flex items-center gap-2 rounded-lg border border-border bg-card/60 px-2 py-1">
-              <input
-                type="color"
-                value={activeAccent.startsWith('#') ? activeAccent.slice(0, 7) : '#059669'}
-                onChange={(e) => handleCustomColorChange(e.target.value)}
-                className="size-7 cursor-pointer rounded-md border-0 bg-transparent p-0"
-                title="Choose custom accent color"
-              />
-              <Input
-                value={customHex || activeAccent}
-                onChange={(e) => handleCustomColorChange(e.target.value)}
-                placeholder="#059669"
-                maxLength={7}
-                className="h-7 w-24 border-0 bg-transparent p-0 font-mono text-xs shadow-none uppercase focus-visible:ring-0"
-              />
-            </div>
+            <ColorField
+              value={activeAccent}
+              fallback="#059669"
+              onCommit={(hex) => setOverrides({ accent: hex })}
+            />
           </div>
-
           {/* Contrast warning if poor */}
           {contrastInfo.isLow && (
             <div className="flex items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 p-2.5 text-xs text-warning">
@@ -458,75 +503,30 @@ export function AppearanceSettings() {
                 {/* From Color */}
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-medium text-muted-foreground">Color 1</label>
-                  <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-2 py-1">
-                    <input
-                      type="color"
-                      value={gradFrom.startsWith('#') ? gradFrom.slice(0, 7) : '#050B16'}
-                      onChange={(e) =>
-                        setOverrides({
-                          background: {
-                            type: 'gradient',
-                            from: e.target.value,
-                            to: gradTo,
-                            angle: gradAngle,
-                          },
-                        })
-                      }
-                      className="size-6 cursor-pointer rounded border-0 bg-transparent p-0"
-                    />
-                    <Input
-                      value={gradFrom}
-                      onChange={(e) =>
-                        setOverrides({
-                          background: {
-                            type: 'gradient',
-                            from: e.target.value,
-                            to: gradTo,
-                            angle: gradAngle,
-                          },
-                        })
-                      }
-                      className="h-6 border-0 bg-transparent p-0 font-mono text-xs uppercase shadow-none focus-visible:ring-0"
-                    />
-                  </div>
+                  <ColorField
+                    value={gradFrom}
+                    fallback="#050B16"
+                    onCommit={(hex) =>
+                      setOverrides({
+                        background: { type: 'gradient', from: hex, to: gradTo, angle: gradAngle },
+                      })
+                    }
+                  />
                 </div>
 
                 {/* To Color */}
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-medium text-muted-foreground">Color 2</label>
-                  <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-2 py-1">
-                    <input
-                      type="color"
-                      value={gradTo.startsWith('#') ? gradTo.slice(0, 7) : '#0B1428'}
-                      onChange={(e) =>
-                        setOverrides({
-                          background: {
-                            type: 'gradient',
-                            from: gradFrom,
-                            to: e.target.value,
-                            angle: gradAngle,
-                          },
-                        })
-                      }
-                      className="size-6 cursor-pointer rounded border-0 bg-transparent p-0"
-                    />
-                    <Input
-                      value={gradTo}
-                      onChange={(e) =>
-                        setOverrides({
-                          background: {
-                            type: 'gradient',
-                            from: gradFrom,
-                            to: e.target.value,
-                            angle: gradAngle,
-                          },
-                        })
-                      }
-                      className="h-6 border-0 bg-transparent p-0 font-mono text-xs uppercase shadow-none focus-visible:ring-0"
-                    />
-                  </div>
+                  <ColorField
+                    value={gradTo}
+                    fallback="#0B1428"
+                    onCommit={(hex) =>
+                      setOverrides({
+                        background: { type: 'gradient', from: gradFrom, to: hex, angle: gradAngle },
+                      })
+                    }
+                  />
                 </div>
-
                 {/* Angle slider */}
                 <div className="flex flex-col gap-1.5">
                   <div className="flex items-center justify-between text-xs text-muted-foreground">

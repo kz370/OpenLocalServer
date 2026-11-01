@@ -230,7 +230,7 @@ export default function App() {
   return (
     <div
       className={cn(
-        'relative flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground',
+        'relative isolate flex h-screen w-screen flex-col overflow-hidden text-foreground',
         isWindowed ? 'rounded-xl' : 'rounded-none',
       )}
     >
