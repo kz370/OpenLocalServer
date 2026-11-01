@@ -152,6 +152,77 @@ impl Core {
                         tools: i.ext_tools.lock().unwrap().list(),
                     })
                 }
+                C::TestExternalTool { id } => {
+                    let tool = i
+                        .ext_tools
+                        .lock()
+                        .unwrap()
+                        .get(&id)
+                        .cloned()
+                        .ok_or_else(|| {
+                            CoreError::ServiceError(format!("Tool '{id}' is not registered"))
+                        })?;
+                    if tool.executable.is_empty()
+                        || !std::path::Path::new(&tool.executable).is_file()
+                    {
+                        return Err(CoreError::failed_fix(
+                            format!("Executable not found for '{}'", tool.name),
+                            format!("The file '{}' does not exist on disk.", tool.executable),
+                            "Browse and select a valid executable path.",
+                        ));
+                    }
+                    if tool.launch_mode == "clipboard" {
+                        crate::dbtools::launch(&tool.executable, &[], false)
+                            .map_err(CoreError::ServiceError)?;
+                        return Ok(R::Text {
+                            text: format!(
+                                "Started {} in clipboard mode. Paste the connection URI inside the tool.",
+                                tool.name
+                            ),
+                        });
+                    }
+                    let sample_engine = tool
+                        .engines
+                        .first()
+                        .map(|s| s.as_str())
+                        .unwrap_or("mariadb");
+                    let sample_info = crate::service::ConnectionInfo {
+                        engine: sample_engine.to_string(),
+                        host: "127.0.0.1".into(),
+                        port: match sample_engine {
+                            "postgres" => Some(5432),
+                            "redis" => Some(6379),
+                            "mongodb" => Some(27017),
+                            "memcached" => Some(11211),
+                            "sqlite" => None,
+                            _ => Some(3306),
+                        },
+                        user: if sample_engine == "postgres" {
+                            Some("postgres".into())
+                        } else {
+                            Some("root".into())
+                        },
+                        database: Some("test_db".into()),
+                        path: Some("C:\\test_database.sqlite".into()),
+                        uri: match sample_engine {
+                            "postgres" => "postgresql://postgres@127.0.0.1:5432/test_db".into(),
+                            "redis" => "redis://127.0.0.1:6379".into(),
+                            "mongodb" => "mongodb://127.0.0.1:27017/test_db".into(),
+                            "sqlite" => "C:\\test_database.sqlite".into(),
+                            _ => "mysql://root@127.0.0.1:3306/test_db".into(),
+                        },
+                    };
+                    let args = crate::dbtools::expand_args(&tool.args, &sample_info);
+                    crate::dbtools::launch(&tool.executable, &args, false)
+                        .map_err(CoreError::ServiceError)?;
+                    Ok(R::Text {
+                        text: format!(
+                            "Started {} with test arguments: {}",
+                            tool.name,
+                            args.join(" ")
+                        ),
+                    })
+                }
                 C::OpenDatabase {
                     engine,
                     database,

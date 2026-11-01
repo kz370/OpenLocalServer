@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "tools": [
+    {
+      "id": "tableplus",
+      "name": "TablePlus",
+      "engines": ["mariadb", "postgres", "redis", "sqlite"],
+      "launchMode": "args",
+      "args": ["{uri}"]
+    },
+    {
+      "id": "compass",
+      "name": "MongoDB Compass",
+      "engines": ["mongodb"],
+      "launchMode": "args",
+      "args": ["{uri}"]
+    },
+    {
+      "id": "sqlitestudio",
+      "name": "SQLiteStudio",
+      "engines": ["sqlite"],
+      "launchMode": "args",
+      "args": ["{path}"]
+    },
+    {
+      "id": "dbbrowser",
+      "name": "DB Browser for SQLite",
+      "engines": ["sqlite"],
+      "launchMode": "args",
+      "args": ["{path}"]
+    },
+    {
+      "id": "heidisql",
+      "name": "HeidiSQL",
+      "engines": ["mariadb", "postgres", "sqlite"],
+      "launchMode": "args",
+      "args": ["--host={host}", "--port={port}", "--user={user}", "--databases={database}"]
+    },
+    {
+      "id": "dbeaver",
+      "name": "DBeaver",
+      "engines": ["mariadb", "postgres", "sqlite"],
+      "launchMode": "clipboard",
+      "args": []
+    },
+    {
+      "id": "redisinsight",
+      "name": "RedisInsight",
+      "engines": ["redis"],
+      "launchMode": "clipboard",
+      "args": []
+    },
+    {
+      "id": "datagrip",
+      "name": "DataGrip",
+      "engines": ["mariadb", "postgres", "sqlite", "redis", "mongodb"],
+      "launchMode": "clipboard",
+      "args": []
+    },
+    {
+      "id": "navicat",
+      "name": "Navicat",
+      "engines": ["mariadb", "postgres", "sqlite", "mongodb", "redis"],
+      "launchMode": "clipboard",
+      "args": []
+    },
+    {
+      "id": "pgadmin",
+      "name": "pgAdmin 4",
+      "engines": ["postgres"],
+      "launchMode": "clipboard",
+      "args": []
+    },
+    {
+      "id": "nosqlbooster",
+      "name": "NoSQLBooster for MongoDB",
+      "engines": ["mongodb"],
+      "launchMode": "clipboard",
+      "args": []
+    },
+    {
+      "id": "tinyrdm",
+      "name": "Tiny RDM",
+      "engines": ["redis"],
+      "launchMode": "clipboard",
+      "args": []
+    }
+  ]
+}

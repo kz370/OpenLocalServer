@@ -1,5 +1,24 @@
 import { open, save } from '@tauri-apps/plugin-dialog'
-import { Archive, ExternalLink, FolderSearch, Import, Info, Plus, RotateCcw, Trash2 } from 'lucide-react'
+import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs'
+import {
+  AlertCircle,
+  Archive,
+  Download,
+  ExternalLink,
+  FileUp,
+  FolderOpen,
+  FolderSearch,
+  Import,
+  Info,
+  Pencil,
+  Play,
+  Plus,
+  RotateCcw,
+  Sparkles,
+  Trash2,
+  Upload,
+  Wrench,
+} from 'lucide-react'
 import { Fragment, useEffect, useState } from 'react'
 
 import { Spinner } from '@/components/Spinner'
@@ -10,6 +29,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Dialog } from '@/components/ui/dialog'
 import { Field, Select, Tabs } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -29,6 +49,15 @@ import { formatBytes, useAction, usePoll } from '@/lib/hooks'
 import { createPersistentCache } from '@/lib/cache'
 import { waitForService } from '@/lib/wait'
 import { confirmAction, confirmThen } from '@/lib/confirm'
+import { notify } from '@/lib/notify'
+import presetsCatalog from '@/data/presets.json'
+import {
+  exportToolsJson,
+  getValidPlaceholderChips,
+  slugify,
+  validateImportJson,
+  type ToolDefinition,
+} from '@/lib/externalTools'
 
 type Tab = 'mariadb' | 'postgres' | 'mongodb' | 'redis' | 'memcached' | 'sqlite' | 'tools'
 type DatabaseToolProps = {
@@ -142,7 +171,16 @@ export function DatabasesPage() {
       {tab === 'redis' && <Redis service={services.find((s) => s.id === 'redis')} dbTools={dbTools} externalTools={externalTools} defaultTools={defaultTools} setDefaultTool={setDefaultTool} />}
       {tab === 'memcached' && <Memcached service={services.find((s) => s.id === 'memcached')} />}
       {tab === 'sqlite' && <Sqlite dbTools={dbTools} externalTools={externalTools} defaultTools={defaultTools} setDefaultTool={setDefaultTool} />}
-      {tab === 'tools' && <Tools />}
+      {tab === 'tools' && (
+        <Tools
+          dbTools={dbTools}
+          externalTools={externalTools}
+          onToolsUpdated={(tools) => {
+            setExternalTools(tools)
+            externalToolsCache.set(tools)
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -202,10 +240,40 @@ function ServiceBanner({ service, name }: { service?: ServiceStatus; name: strin
 
 function toolChoices(engine: string, dbTools: DbTool[], externalTools: ExternalTool[]) {
   const serves = (engines: string[]) => engines.length === 0 || engines.includes(engine)
-  return [
-    ...dbTools.filter((tool) => serves(tool.engines) && tool.found_path),
-    ...externalTools.filter((tool) => serves(tool.engines)).map((tool) => ({ id: tool.id, name: tool.name, found_path: tool.executable, engines: tool.engines })),
-  ]
+  const map = new Map<
+    string,
+    { id: string; name: string; found_path: string; engines: string[]; available: boolean; launchMode: 'args' | 'clipboard' }
+  >()
+
+  // Registered external tools
+  for (const tool of externalTools) {
+    if (serves(tool.engines)) {
+      map.set(tool.id, {
+        id: tool.id,
+        name: tool.name,
+        found_path: tool.executable,
+        engines: tool.engines,
+        available: tool.available !== false && Boolean(tool.executable),
+        launchMode: tool.launchMode ?? 'args',
+      })
+    }
+  }
+
+  // Built-in detected tools (if not already registered)
+  for (const tool of dbTools) {
+    if (serves(tool.engines) && !map.has(tool.id)) {
+      map.set(tool.id, {
+        id: tool.id,
+        name: tool.name,
+        found_path: tool.found_path ?? '',
+        engines: tool.engines,
+        available: Boolean(tool.found_path),
+        launchMode: ['nosqlbooster', 'tinyrdm', 'pgadmin'].includes(tool.id) ? 'clipboard' : 'args',
+      })
+    }
+  }
+
+  return Array.from(map.values())
 }
 
 function OpenDatabaseButton({ engine, database = null, path = null, dbTools, externalTools, defaultTools, setDefaultTool, showToolSelect = true }: DatabaseToolProps & { engine: string; database?: string | null; path?: string | null; showToolSelect?: boolean }) {
@@ -213,7 +281,9 @@ function OpenDatabaseButton({ engine, database = null, path = null, dbTools, ext
   const { busy, error, setError, run } = useAction()
   const choices = toolChoices(engine, dbTools, externalTools)
   const selectedTool = defaultTools[engine] ?? ''
-  const toolName = choices.find((tool) => tool.id === selectedTool)?.name ?? 'tool'
+  const selectedChoice = choices.find((tool) => tool.id === selectedTool)
+  const toolName = selectedChoice?.name ?? 'tool'
+  const isAvailable = selectedChoice ? selectedChoice.available : true
 
   return (
     <span className="inline-flex flex-col items-end gap-1">
@@ -229,7 +299,16 @@ function OpenDatabaseButton({ engine, database = null, path = null, dbTools, ext
               onChange={(event) => { void setDefaultTool(engine, event.target.value).catch((e) => setError(e as Diagnostic)) }}
             >
               <option value="">Automatic tool</option>
-              {choices.map((tool) => <option key={tool.id} value={tool.id}>{tool.name}</option>)}
+              {choices.map((tool) => (
+                <option
+                  key={tool.id}
+                  value={tool.id}
+                  disabled={!tool.available}
+                  title={!tool.available ? `${tool.name} (Executable not found)` : undefined}
+                >
+                  {tool.name} {!tool.available ? '(Executable not found)' : ''}
+                </option>
+              ))}
             </Select>
           </span>
         )}
@@ -238,33 +317,33 @@ function OpenDatabaseButton({ engine, database = null, path = null, dbTools, ext
           variant="secondary"
           className="size-7 shrink-0 p-0"
           aria-label={`Open ${database ?? path ?? 'database'} with ${toolName}`}
-          title={`Open ${database ?? path ?? 'database'} with ${toolName}`}
-          disabled={busy !== null}
+          title={!isAvailable ? `${toolName} executable not found. Fix path under External tools.` : `Open ${database ?? path ?? 'database'} with ${toolName}`}
+          disabled={busy !== null || !isAvailable}
           onClick={() => run('open', async () => {
             setNote(null)
-            if (engine === 'mongodb' && selectedTool === 'nosqlbooster') {
-              const connection = await runCommand({ type: 'get_connection_info', engine, database, path })
-              if (connection.type === 'connection') {
-                try {
-                  await navigator.clipboard.writeText(connection.info.uri)
-                } catch {
-                  setNote(`Opened NoSQLBooster. Connect → From URI: ${connection.info.uri}`)
-                }
-              }
+            if (selectedChoice && !selectedChoice.available) {
+              setError({
+                problem: `Executable not found for ${selectedChoice.name}.`,
+                cause: selectedChoice.found_path ? `The file "${selectedChoice.found_path}" does not exist on disk.` : 'No executable path has been chosen.',
+                fix: 'Open the External tools tab and click "Fix path" to locate the executable.',
+              })
+              return
             }
-            if (engine === 'redis' && selectedTool === 'tinyrdm') {
+
+            const isClipboard = selectedChoice?.launchMode === 'clipboard' || (engine === 'mongodb' && selectedTool === 'nosqlbooster') || (engine === 'redis' && selectedTool === 'tinyrdm')
+            if (isClipboard) {
               const connection = await runCommand({ type: 'get_connection_info', engine, database, path })
               if (connection.type === 'connection') {
                 try {
                   await navigator.clipboard.writeText(connection.info.uri)
+                  const sanitized = connection.info.uri.replace(/:[^:@/]+@/, ':***@')
+                  setNote(`Connection URI copied (${sanitized}). Paste it into ${toolName}.`)
                 } catch {
-                  setNote(`Opened tool. Connect to ${connection.info.uri} if it did not pick it up.`)
+                  setNote(`Opened ${toolName}. Connect using ${connection.info.uri.replace(/:[^:@/]+@/, ':***@')}`)
                 }
               }
             }
             await runCommand({ type: 'open_database', engine, database, path, tool_id: selectedTool || null })
-            if (engine === 'mongodb' && selectedTool === 'nosqlbooster') setNote((current) => current ?? 'MongoDB connection URI copied. In NoSQLBooster, choose Connect → From URI and paste.')
-            if (engine === 'redis' && selectedTool === 'tinyrdm') setNote((current) => current ?? 'Redis URI copied (redis://127.0.0.1:6379). Paste it if the tool asks for a connection.')
           })}>
           {busy === 'open' ? <Spinner /> : <ExternalLink className="size-3.5" />}
         </Button>
@@ -821,109 +900,966 @@ const TOOL_ENGINES = [
   { id: 'sqlite', label: 'SQLite' },
 ] as const
 
-function Tools() {
-  const [tools, setTools] = useState<ExternalTool[]>([])
-  const [draft, setDraft] = useState({ id: '', name: '', engines: [] as string[], executable: '', args: '{uri}' })
+interface ToolsProps {
+  dbTools: DbTool[]
+  externalTools: ExternalTool[]
+  onToolsUpdated: (tools: ExternalTool[]) => void
+}
+
+function Tools({ dbTools, externalTools, onToolsUpdated }: ToolsProps) {
+  const [tools, setTools] = useState<ExternalTool[]>(externalTools)
+  const [presetSearch, setPresetSearch] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [draft, setDraft] = useState({
+    id: '',
+    name: '',
+    engines: [] as string[],
+    launchMode: 'args' as 'args' | 'clipboard',
+    executable: '',
+    args: '{uri}',
+    isCustomId: false,
+  })
+
+  // Import modal state
+  const [importOpen, setImportOpen] = useState(false)
+  const [importDragActive, setImportDragActive] = useState(false)
+  const [importError, setImportError] = useState<Diagnostic | null>(null)
+  const [importPending, setImportPending] = useState<ToolDefinition[] | null>(null)
+  const [duplicateActions, setDuplicateActions] = useState<Record<string, 'skip' | 'overwrite' | 'rename'>>({})
+
   const { busy, error, setError, run } = useAction()
 
   useEffect(() => {
-    runCommand({ type: 'list_external_tools' }).then((r) => r.type === 'external_tools' && setTools(r.tools))
+    runCommand({ type: 'list_external_tools' }).then((r) => {
+      if (r.type === 'external_tools') {
+        setTools(r.tools)
+        onToolsUpdated(r.tools)
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  function resetDraft() {
+    setEditingId(null)
+    setDraft({
+      id: '',
+      name: '',
+      engines: [],
+      launchMode: 'args',
+      executable: '',
+      args: '{uri}',
+      isCustomId: false,
+    })
+  }
+
+  function handleNameChange(name: string) {
+    if (!draft.isCustomId && !editingId) {
+      setDraft((curr) => ({
+        ...curr,
+        name,
+        id: slugify(name),
+      }))
+    } else {
+      setDraft((curr) => ({ ...curr, name }))
+    }
+  }
+
+  function handleIdChange(id: string) {
+    setDraft((curr) => ({
+      ...curr,
+      id: id.toLowerCase().replace(/\s+/g, '-'),
+      isCustomId: true,
+    }))
+  }
+
+  function applyPreset(p: ToolDefinition) {
+    const existing = tools.find((t) => t.id === p.id)
+    const detected = dbTools.find((d) => d.id === p.id)?.found_path ?? ''
+
+    setEditingId(existing ? existing.id : null)
+    setDraft({
+      id: p.id,
+      name: p.name,
+      engines: [...p.engines],
+      launchMode: p.launchMode,
+      args: p.args.join(' ') || (p.launchMode === 'args' ? '{uri}' : ''),
+      executable: existing?.executable || detected,
+      isCustomId: true,
+    })
+  }
+
+  async function handleBrowseExe() {
+    const picked = await open({
+      title: 'Select program executable',
+      multiple: false,
+      directory: false,
+      filters: [{ name: 'Executable', extensions: ['exe'] }],
+    })
+    if (picked && !Array.isArray(picked)) {
+      setDraft((curr) => ({ ...curr, executable: picked }))
+    }
+  }
+
+  async function handleSave() {
+    if (!draft.id.trim() || !draft.name.trim()) return
+
+    await run('save', async () => {
+      const tool: ExternalTool = {
+        id: draft.id.trim().toLowerCase(),
+        name: draft.name.trim(),
+        engines: draft.engines,
+        launchMode: draft.launchMode,
+        executable: draft.executable.trim(),
+        args: draft.launchMode === 'clipboard' ? [] : draft.args.split(/\s+/).filter(Boolean),
+      }
+
+      const res = await runCommand({ type: 'save_external_tool', tool })
+      if (res.type === 'external_tools') {
+        setTools(res.tools)
+        onToolsUpdated(res.tools)
+        notify.success(`Tool "${tool.name}" saved.`)
+        resetDraft()
+      }
+    })
+  }
+
+  async function fixPath(tool: ExternalTool) {
+    const picked = await open({
+      title: `Locate executable for ${tool.name}`,
+      multiple: false,
+      directory: false,
+      filters: [{ name: 'Executable', extensions: ['exe'] }],
+    })
+    if (!picked || Array.isArray(picked)) return
+
+    await run(`fix:${tool.id}`, async () => {
+      const updated: ExternalTool = {
+        ...tool,
+        executable: picked,
+      }
+      const res = await runCommand({ type: 'save_external_tool', tool: updated })
+      if (res.type === 'external_tools') {
+        setTools(res.tools)
+        onToolsUpdated(res.tools)
+        notify.success(`Path updated for "${tool.name}".`)
+        if (editingId === tool.id) {
+          setDraft((curr) => ({ ...curr, executable: picked }))
+        }
+      }
+    })
+  }
+
+  async function handleExport() {
+    const dest = await save({
+      title: 'Export external tools',
+      defaultPath: 'external_tools.json',
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    })
+    if (!dest) return
+
+    await run('export', async () => {
+      const json = exportToolsJson(tools)
+      try {
+        await writeTextFile(dest, json)
+      } catch {
+        // Web fallback if running without full Tauri FS
+        const blob = new Blob([json], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = 'external_tools.json'
+        a.click()
+        URL.revokeObjectURL(url)
+      }
+      notify.success(`Exported ${tools.length} tool(s) to ${dest}.`)
+    })
+  }
+
+  async function processImportContent(content: string) {
+    setImportError(null)
+    const result = validateImportJson(content)
+    if (!result.ok) {
+      setImportError({
+        problem: result.problem,
+        cause: result.cause,
+        fix: result.fix,
+      })
+      setImportPending(null)
+      return
+    }
+
+    setImportPending(result.tools)
+    const actions: Record<string, 'skip' | 'overwrite' | 'rename'> = {}
+    for (const t of result.tools) {
+      if (tools.some((existing) => existing.id === t.id)) {
+        actions[t.id] = 'skip'
+      }
+    }
+    setDuplicateActions(actions)
+  }
+
+  async function handlePickImportFile() {
+    const picked = await open({
+      title: 'Import external tools',
+      multiple: false,
+      directory: false,
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    })
+    if (!picked || Array.isArray(picked)) return
+
+    try {
+      const content = await readTextFile(picked)
+      await processImportContent(content)
+    } catch (err) {
+      setImportError({
+        problem: 'Could not read import file.',
+        cause: err instanceof Error ? err.message : String(err),
+        fix: 'Check that the file exists and is accessible.',
+      })
+    }
+  }
+
+  async function handleConfirmImport() {
+    if (!importPending) return
+
+    await run('import', async () => {
+      let addedCount = 0
+      let overwrittenCount = 0
+      let skippedCount = 0
+      let latestList = tools
+
+      for (const t of importPending) {
+        const isDuplicate = latestList.some((existing) => existing.id === t.id)
+        let finalId = t.id
+
+        if (isDuplicate) {
+          const action = duplicateActions[t.id] ?? 'skip'
+          if (action === 'skip') {
+            skippedCount++
+            continue
+          }
+          if (action === 'rename') {
+            let counter = 1
+            while (latestList.some((existing) => existing.id === finalId)) {
+              finalId = `${t.id}-${counter++}`
+            }
+          }
+        }
+
+        const newTool: ExternalTool = {
+          id: finalId,
+          name: t.name,
+          engines: t.engines,
+          launchMode: t.launchMode,
+          args: t.args,
+          executable: '', // Starts unavailable until user browses executable
+        }
+
+        const res = await runCommand({ type: 'save_external_tool', tool: newTool })
+        if (res.type === 'external_tools') {
+          latestList = res.tools
+          if (isDuplicate && duplicateActions[t.id] === 'overwrite') {
+            overwrittenCount++
+          } else {
+            addedCount++
+          }
+        }
+      }
+
+      setTools(latestList)
+      onToolsUpdated(latestList)
+      setImportOpen(false)
+      setImportPending(null)
+      notify.success(`Import finished: ${addedCount} added, ${overwrittenCount} overwritten, ${skippedCount} skipped.`)
+    })
+  }
+
+  const presets = (presetsCatalog as { tools: ToolDefinition[] }).tools ?? []
+  const filteredPresets = presets.filter(
+    (p) =>
+      p.name.toLowerCase().includes(presetSearch.toLowerCase()) ||
+      p.id.toLowerCase().includes(presetSearch.toLowerCase()) ||
+      p.engines.some((e) => e.toLowerCase().includes(presetSearch.toLowerCase())),
+  )
+
+  const chips = getValidPlaceholderChips(draft.engines)
+
   return (
-    <div className="flex flex-col gap-4">
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm">Register a database explorer</CardTitle>
-          <CardDescription>
-            Any program that opens a database — an explorer of your own, or a vendor one — as long as it is an .exe. It is then
-            listed in “Open with” on every engine tab you tick, and chosen per engine by the dropdown there. Arguments can use{' '}
-            {'{host} {port} {user} {database} {path} {uri}'}. Without a registered tool, MariaDB opens in HeidiSQL if it's
-            installed; SQLite opens in DB Browser for SQLite, then HeidiSQL.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-2">
-          <Field label="Id" hint="Lower-case name, no spaces. Saving with an existing id replaces that tool.">
-            <Input value={draft.id} onChange={(e) => setDraft({ ...draft, id: e.target.value })} placeholder="custom_db_explorer" />
-          </Field>
-          <Field label="Name">
-            <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="My DB Explorer" />
-          </Field>
-          {/* Chips, not a comma-separated text box: a free-text engine list accepted
-              "MariaDB" or "mysql", which then matched no engine and left the tool
-              invisible on every page — a silent failure that read as a broken button. */}
-          <Field
-            className="sm:col-span-2"
-            label="Engines it opens"
-            hint="Tick the tabs it should appear on. None ticked offers it everywhere — the safe default, since a tool that can open nothing is never picked."
+    <div className="flex flex-col gap-6">
+      {/* Page Header */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight">External Tools</h2>
+          <p className="text-sm text-muted-foreground">
+            Connect GUI database clients (DBeaver, TablePlus, HeidiSQL, etc.). Each tool has one user-chosen executable path.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy !== null}
+            onClick={() => {
+              setImportOpen(true)
+              setImportError(null)
+              setImportPending(null)
+            }}
           >
-            <div className="flex flex-wrap gap-x-4 gap-y-2">
-              {TOOL_ENGINES.map((e) => (
-                <label key={e.id} className="inline-flex items-center gap-2 text-sm">
-                  <Checkbox
-                    checked={draft.engines.includes(e.id)}
-                    onChange={(on) => setDraft({ ...draft, engines: on ? [...draft.engines, e.id] : draft.engines.filter((x) => x !== e.id) })}
-                    label={`${e.label} — open with ${draft.name || 'this tool'}`}
-                  />
-                  {e.label}
-                </label>
-              ))}
+            <Import className="size-4" /> Import JSON
+          </Button>
+          <Button size="sm" variant="outline" disabled={busy !== null || tools.length === 0} onClick={handleExport}>
+            <Download className="size-4" /> Export JSON
+          </Button>
+        </div>
+      </div>
+
+      <ErrorCard error={error} onDismiss={() => setError(null)} />
+
+      {/* Main 2-column Grid: Left = Presets Gallery, Right = Register/Edit Form */}
+      <div className="grid items-start gap-6 lg:grid-cols-12">
+        {/* Left Column: Quick Add Presets Gallery (5 cols) */}
+        <Card className="lg:col-span-5">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Sparkles className="size-4 text-primary" /> Quick Add Presets
+              </CardTitle>
+              <Badge variant="outline" className="text-xs">
+                {presets.length} available
+              </Badge>
             </div>
-          </Field>
-          <Field label="Arguments (space separated)" hint="Each space-separated word is one argument.">
-            <Input value={draft.args} onChange={(e) => setDraft({ ...draft, args: e.target.value })} />
-          </Field>
-          <div className="sm:col-span-2">
-            <Field label="Program" hint="The .exe to run. It must exist at that path.">
+            <CardDescription>Click a preset to pre-fill the form with verified arguments.</CardDescription>
+            <div className="pt-2">
+              <Input
+                value={presetSearch}
+                onChange={(e) => setPresetSearch(e.target.value)}
+                placeholder="Search presets by name or engine…"
+                className="h-8 text-xs"
+              />
+            </div>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2 max-h-[580px] overflow-y-auto pr-1">
+            {filteredPresets.map((p) => {
+              const isAdded = tools.some((t) => t.id === p.id)
+              const detectedPath = dbTools.find((d) => d.id === p.id)?.found_path
+              const isSelected = draft.id === p.id
+
+              return (
+                <div
+                  key={p.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => applyPreset(p)}
+                  onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && applyPreset(p)}
+                  className={`flex flex-col gap-1.5 rounded-lg border p-2.5 text-xs transition cursor-pointer select-none hover:border-primary/50 ${
+                    isSelected ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border bg-card'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-2 font-medium text-sm">
+                      <TechIcon id={p.id} className="size-4 shrink-0" />
+                      {p.name}
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <Badge variant="outline" className="text-[10px] h-4.5 px-1.5 capitalize">
+                        {p.launchMode}
+                      </Badge>
+                      {isAdded ? (
+                        <Badge variant="secondary" className="text-[10px] h-4.5 px-1.5 text-emerald-600 dark:text-emerald-400">
+                          Added
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-[10px] h-4.5 px-1.5 text-muted-foreground">
+                          Not added
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1">
+                    {p.engines.map((eng) => (
+                      <span key={eng} className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                        {eng}
+                      </span>
+                    ))}
+                  </div>
+                  {detectedPath && (
+                    <div className="flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+                      <span>● Detected on system</span>
+                      <span className="truncate font-mono text-[10px] text-muted-foreground">({detectedPath})</span>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+            {filteredPresets.length === 0 && (
+              <p className="p-4 text-center text-xs text-muted-foreground">No presets matched your search.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Right Column: Register / Edit Form (7 cols) */}
+        <Card className="lg:col-span-7">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Wrench className="size-4 text-primary" />
+                {editingId ? `Edit ${draft.name || 'tool'}` : 'Register a database explorer'}
+              </CardTitle>
+              {editingId && (
+                <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={resetDraft}>
+                  New tool
+                </Button>
+              )}
+            </div>
+            <CardDescription>
+              {editingId
+                ? 'Update settings or change the executable path.'
+                : 'Register an explorer of your own or customize a preset.'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Name" hint="Display name for menus and buttons">
+                <Input
+                  value={draft.name}
+                  onChange={(e) => handleNameChange(e.target.value)}
+                  placeholder="e.g. DBeaver"
+                />
+              </Field>
+              <Field label="ID" hint="Unique slug identifier (lowercase)">
+                <Input
+                  value={draft.id}
+                  onChange={(e) => handleIdChange(e.target.value)}
+                  placeholder="e.g. dbeaver"
+                />
+              </Field>
+            </div>
+
+            {/* Launch Mode Selection */}
+            <Field label="Launch Mode" hint="How connection parameters are passed to the program">
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <label
+                  className={`flex cursor-pointer flex-col rounded-lg border p-2.5 transition text-xs ${
+                    draft.launchMode === 'args'
+                      ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                      : 'border-border bg-card hover:bg-muted/30'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 font-medium">
+                    <input
+                      type="radio"
+                      name="launchMode"
+                      value="args"
+                      checked={draft.launchMode === 'args'}
+                      onChange={() => setDraft((curr) => ({ ...curr, launchMode: 'args' }))}
+                      className="sr-only"
+                    />
+                    <span>CLI Arguments</span>
+                  </div>
+                  <span className="mt-1 text-[11px] text-muted-foreground">
+                    Pass arguments directly to the program on startup.
+                  </span>
+                </label>
+
+                <label
+                  className={`flex cursor-pointer flex-col rounded-lg border p-2.5 transition text-xs ${
+                    draft.launchMode === 'clipboard'
+                      ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                      : 'border-border bg-card hover:bg-muted/30'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 font-medium">
+                    <input
+                      type="radio"
+                      name="launchMode"
+                      value="clipboard"
+                      checked={draft.launchMode === 'clipboard'}
+                      onChange={() => setDraft((curr) => ({ ...curr, launchMode: 'clipboard' }))}
+                      className="sr-only"
+                    />
+                    <span>Clipboard mode</span>
+                  </div>
+                  <span className="mt-1 text-[11px] text-muted-foreground">
+                    Launch tool and copy URI to clipboard (safest for GUI tools).
+                  </span>
+                </label>
+              </div>
+            </Field>
+
+            {/* Engines Checkboxes */}
+            <Field
+              label="Engines it opens"
+              hint="Check the tabs it should appear on. None ticked offers it everywhere."
+            >
+              <div className="flex flex-wrap gap-x-4 gap-y-2 pt-1">
+                {TOOL_ENGINES.map((e) => (
+                  <label key={e.id} className="inline-flex items-center gap-2 text-sm cursor-pointer select-none">
+                    <Checkbox
+                      checked={draft.engines.includes(e.id)}
+                      onChange={(on) =>
+                        setDraft((curr) => ({
+                          ...curr,
+                          engines: on ? [...curr.engines, e.id] : curr.engines.filter((x) => x !== e.id),
+                        }))
+                      }
+                      label={`${e.label}`}
+                    />
+                    <TechIcon id={e.id} className="size-3.5 opacity-80" />
+                    <span>{e.label}</span>
+                  </label>
+                ))}
+              </div>
+            </Field>
+
+            {/* Arguments field with placeholder chips (if args mode) */}
+            {draft.launchMode === 'args' && (
+              <div className="flex flex-col gap-2">
+                <Field
+                  label="Arguments (space-separated)"
+                  hint="Each space-separated token is passed as an isolated process argument."
+                >
+                  <Input
+                    value={draft.args}
+                    onChange={(e) => setDraft((curr) => ({ ...curr, args: e.target.value }))}
+                    placeholder="-con {uri}"
+                    className="font-mono text-xs"
+                  />
+                </Field>
+
+                {/* Clickable placeholder chips */}
+                <div className="flex flex-col gap-1.5 rounded-lg bg-muted/40 p-2.5">
+                  <span className="text-[11px] font-medium text-muted-foreground">
+                    Click a chip to insert placeholder into arguments:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {chips.map((c) => (
+                      <button
+                        key={c.token}
+                        type="button"
+                        onClick={() => {
+                          setDraft((curr) => {
+                            const trimmed = curr.args.trim()
+                            const next = trimmed ? `${trimmed} ${c.token}` : c.token
+                            return { ...curr, args: next }
+                          })
+                        }}
+                        title={c.label}
+                        className="rounded border border-border bg-card px-2 py-0.5 font-mono text-[11px] hover:border-primary hover:bg-primary/10 transition"
+                      >
+                        {c.token}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Security Note */}
+                <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-2 text-[11px] text-amber-700 dark:text-amber-300">
+                  <strong>Security Note:</strong> Passwords in <code>{'{uri}'}</code> may be visible to other local processes
+                  via the OS process list. Prefer <em>Clipboard mode</em> if your tool supports pasting a connection URI.
+                </div>
+              </div>
+            )}
+
+            {/* Executable Path */}
+            <Field label="Program executable (.exe)" hint="Single local path. The file must exist on disk.">
               <div className="flex gap-2">
-                <Input value={draft.executable} onChange={(e) => setDraft({ ...draft, executable: e.target.value })} />
-                <Button variant="secondary" onClick={async () => { const p = await open({ filters: [{ name: 'Program', extensions: ['exe'] }] }); if (p && !Array.isArray(p)) setDraft({ ...draft, executable: p }) }}>
-                  <FolderSearch /> Browse
+                <Input
+                  value={draft.executable}
+                  onChange={(e) => setDraft((curr) => ({ ...curr, executable: e.target.value }))}
+                  placeholder="C:\Program Files\..."
+                  className="font-mono text-xs"
+                />
+                <Button variant="secondary" onClick={handleBrowseExe} className="shrink-0">
+                  <FolderSearch className="size-4" /> Browse
                 </Button>
               </div>
             </Field>
-          </div>
-          <div>
-            <Button
-              disabled={busy !== null || !draft.id || !draft.name || !draft.executable}
-              onClick={() =>
-                run('save', async () => {
-                  const tool: ExternalTool = {
-                    id: draft.id,
-                    name: draft.name,
-                    engines: draft.engines,
-                    executable: draft.executable,
-                    args: draft.args.split(/\s+/).filter(Boolean),
-                  }
-                  const r = await runCommand({ type: 'save_external_tool', tool })
-                  if (r.type === 'external_tools') setTools(r.tools)
-                })
-              }
-            >
-              Save tool
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardContent className="flex flex-col gap-2 pt-4">
-          {tools.map((t) => (
-            <div key={t.id} className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2 text-sm">
-              <div className="min-w-0">
-                <div className="font-medium">{t.name}</div>
-                <div className="min-w-0 font-mono text-xs break-all text-muted-foreground">
-                  {t.engines.length === 0 ? 'every engine' : t.engines.join(', ')} · {t.executable}
-                </div>
-              </div>
-              <Button size="sm" variant="ghost" className="shrink-0" title="Remove this tool" onClick={() => confirmThen(`Remove ${t.name} from the tool list? The program itself is not uninstalled.`, () => run('rm', async () => { const r = await runCommand({ type: 'remove_external_tool', id: t.id }); if (r.type === 'external_tools') setTools(r.tools) }))}>
-                <Trash2 className="size-3.5" />
+
+            {/* Form Actions */}
+            <div className="flex items-center justify-between pt-2">
+              {editingId ? (
+                <Button variant="ghost" size="sm" onClick={resetDraft}>
+                  Cancel
+                </Button>
+              ) : (
+                <div />
+              )}
+              <Button
+                disabled={busy !== null || !draft.id.trim() || !draft.name.trim()}
+                onClick={handleSave}
+              >
+                {busy === 'save' && <Spinner />}
+                {editingId ? 'Update tool' : 'Save tool'}
               </Button>
             </div>
-          ))}
-          {tools.length === 0 && <p className="text-sm text-muted-foreground">No tools registered.</p>}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Bottom Section: Unified Registered Tools List */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <CardTitle className="text-sm font-semibold">Registered GUI tools ({tools.length})</CardTitle>
+              <CardDescription>
+                Tools configured for opening databases. Unavailable tools are highlighted with Fix path options.
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          {tools.map((t) => {
+            const isUnavailable = !t.executable || t.available === false
+
+            return (
+              <div
+                key={t.id}
+                className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 text-sm transition ${
+                  isUnavailable ? 'border-dashed border-destructive/50 bg-destructive/5 opacity-80' : 'border-border bg-card'
+                }`}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <TechIcon id={t.id} className="size-4.5 shrink-0" />
+                    <span className="font-medium text-foreground">{t.name}</span>
+                    <Badge variant="outline" className="font-mono text-[10px]">
+                      {t.id}
+                    </Badge>
+                    <Badge variant="outline" className="text-[10px] capitalize">
+                      {t.launchMode ?? 'args'}
+                    </Badge>
+                    {isUnavailable && (
+                      <Badge variant="destructive" className="flex items-center gap-1 text-[10px]">
+                        <AlertCircle className="size-3" /> Executable not found
+                      </Badge>
+                    )}
+                  </div>
+
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-xs text-muted-foreground break-all">
+                      {t.executable ? t.executable : '(No executable path configured)'}
+                    </span>
+                  </div>
+
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                    <span>Engines:</span>
+                    {t.engines.length === 0 ? (
+                      <span className="rounded bg-muted px-1.5 py-0.2 text-[10px]">every engine</span>
+                    ) : (
+                      t.engines.map((e) => (
+                        <span key={e} className="rounded bg-muted px-1.5 py-0.2 text-[10px]">
+                          {e}
+                        </span>
+                      ))
+                    )}
+                    {t.launchMode === 'args' && t.args.length > 0 && (
+                      <span className="font-mono text-[11px] text-muted-foreground truncate max-w-sm">
+                        · args: {t.args.join(' ')}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Tool Actions */}
+                <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                  {isUnavailable ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-destructive/40 text-destructive hover:bg-destructive/10"
+                      onClick={() => fixPath(t)}
+                      title="Locate the executable file on disk"
+                    >
+                      <FolderSearch className="size-3.5" /> Fix path
+                    </Button>
+                  ) : (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={busy !== null}
+                        onClick={() =>
+                          run(`open:${t.id}`, async () => {
+                            await runCommand({ type: 'open_db_tool', id: t.id })
+                          })
+                        }
+                        title={`Open ${t.name}`}
+                      >
+                        <ExternalLink className="size-3.5" /> Open
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={busy !== null}
+                        onClick={() =>
+                          run(`test:${t.id}`, async () => {
+                            if (t.launchMode === 'clipboard') {
+                              try {
+                                await navigator.clipboard.writeText('mysql://root@127.0.0.1:3306/test_db')
+                              } catch {
+                                // ignore
+                              }
+                            }
+                            const res = await runCommand({ type: 'test_external_tool', id: t.id })
+                            if (res.type === 'text') {
+                              notify.success(res.text)
+                            }
+                          })
+                        }
+                        title="Test launching with sample connection arguments"
+                      >
+                        <Play className="size-3.5" /> Test launch
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={busy !== null}
+                        onClick={() =>
+                          run(`folder:${t.id}`, async () => {
+                            const folder = t.executable.replace(/[\\/][^\\/]*$/, '')
+                            await runCommand({ type: 'open_path', path: folder })
+                          })
+                        }
+                        title="Reveal program folder in Explorer"
+                      >
+                        <FolderOpen className="size-3.5" /> Reveal folder
+                      </Button>
+                    </>
+                  )}
+
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setEditingId(t.id)
+                      setDraft({
+                        id: t.id,
+                        name: t.name,
+                        engines: [...t.engines],
+                        launchMode: t.launchMode ?? 'args',
+                        args: t.args.join(' '),
+                        executable: t.executable,
+                        isCustomId: true,
+                      })
+                      window.scrollTo({ top: 180, behavior: 'smooth' })
+                    }}
+                    title="Edit tool definition"
+                  >
+                    <Pencil className="size-3.5" />
+                  </Button>
+
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-destructive hover:bg-destructive/10"
+                    title={`Remove ${t.name}`}
+                    onClick={() =>
+                      confirmThen(`Remove ${t.name} from external tools? The program is not uninstalled.`, () =>
+                        run('rm', async () => {
+                          const r = await runCommand({ type: 'remove_external_tool', id: t.id })
+                          if (r.type === 'external_tools') {
+                            setTools(r.tools)
+                            onToolsUpdated(r.tools)
+                            if (editingId === t.id) resetDraft()
+                          }
+                        }),
+                      )
+                    }
+                  >
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                </div>
+              </div>
+            )
+          })}
+
+          {tools.length === 0 && (
+            <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+              No external tools registered yet. Click any preset in the gallery above or register your own explorer.
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      {/* Import Modal Dialog */}
+      <Dialog
+        open={importOpen}
+        onClose={() => {
+          setImportOpen(false)
+          setImportPending(null)
+          setImportError(null)
+        }}
+        title="Import External Tools"
+        description="Load external tools from a shared or backed up JSON file."
+        size="form"
+        footer={
+          <div className="flex items-center justify-between w-full">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setImportOpen(false)
+                setImportPending(null)
+                setImportError(null)
+              }}
+            >
+              Cancel
+            </Button>
+            {importPending && importPending.length > 0 && (
+              <Button size="sm" onClick={handleConfirmImport} disabled={busy !== null}>
+                {busy === 'import' && <Spinner />}
+                Confirm Import ({importPending.length} tools)
+              </Button>
+            )}
+          </div>
+        }
+      >
+        <div className="flex flex-col gap-4 text-xs">
+          <ErrorCard error={importError} onDismiss={() => setImportError(null)} />
+
+          {/* File Dropzone */}
+          <div
+            onDragOver={(e) => {
+              e.preventDefault()
+              setImportDragActive(true)
+            }}
+            onDragLeave={() => setImportDragActive(false)}
+            onDrop={async (e) => {
+              e.preventDefault()
+              setImportDragActive(false)
+              if (e.dataTransfer.files.length > 0) {
+                const file = e.dataTransfer.files[0]
+                const text = await file.text()
+                await processImportContent(text)
+              }
+            }}
+            className={`flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-6 text-center transition ${
+              importDragActive ? 'border-primary bg-primary/5' : 'border-border bg-muted/20'
+            }`}
+          >
+            <Upload className="size-8 text-muted-foreground mb-2" />
+            <p className="font-medium text-foreground">Drag and drop tools JSON file here</p>
+            <p className="text-muted-foreground text-[11px] mt-0.5">or choose a file from your computer</p>
+            <div className="mt-3">
+              <Button size="sm" variant="secondary" onClick={handlePickImportFile}>
+                <FileUp className="size-3.5" /> Pick JSON file
+              </Button>
+            </div>
+          </div>
+
+          {/* Import Preview Table */}
+          {importPending && (
+            <div className="flex flex-col gap-3 pt-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-2">
+                <span className="font-semibold text-sm">
+                  Preview: {importPending.length} tool(s) found in file
+                </span>
+                {/* Bulk Resolution Controls */}
+                <div className="flex items-center gap-1.5 text-[11px]">
+                  <span className="text-muted-foreground">For duplicates:</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = { ...duplicateActions }
+                      for (const k of Object.keys(next)) next[k] = 'skip'
+                      setDuplicateActions(next)
+                    }}
+                    className="rounded bg-muted px-2 py-0.5 hover:bg-muted/80"
+                  >
+                    Skip all
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = { ...duplicateActions }
+                      for (const k of Object.keys(next)) next[k] = 'overwrite'
+                      setDuplicateActions(next)
+                    }}
+                    className="rounded bg-muted px-2 py-0.5 hover:bg-muted/80"
+                  >
+                    Overwrite all
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = { ...duplicateActions }
+                      for (const k of Object.keys(next)) next[k] = 'rename'
+                      setDuplicateActions(next)
+                    }}
+                    className="rounded bg-muted px-2 py-0.5 hover:bg-muted/80"
+                  >
+                    Rename all
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2 max-h-60 overflow-y-auto pr-1">
+                {importPending.map((t) => {
+                  const isDuplicate = tools.some((existing) => existing.id === t.id)
+                  const action = duplicateActions[t.id] ?? 'skip'
+
+                  return (
+                    <div
+                      key={t.id}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-border p-2.5 bg-card"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <TechIcon id={t.id} className="size-4 shrink-0" />
+                          <span className="font-medium">{t.name}</span>
+                          <Badge variant="outline" className="font-mono text-[10px]">
+                            {t.id}
+                          </Badge>
+                          <Badge variant="outline" className="text-[10px]">
+                            {t.launchMode}
+                          </Badge>
+                          {isDuplicate && (
+                            <Badge variant="secondary" className="text-[10px] text-amber-600 dark:text-amber-400">
+                              Duplicate ID
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="mt-1 flex flex-wrap gap-1 text-[11px] text-muted-foreground">
+                          <span>Engines: {t.engines.length ? t.engines.join(', ') : 'every engine'}</span>
+                          {t.args.length > 0 && <span className="font-mono">· args: {t.args.join(' ')}</span>}
+                        </div>
+                      </div>
+
+                      {/* Duplicate Action Selector */}
+                      {isDuplicate && (
+                        <div className="flex items-center gap-1 shrink-0">
+                          <select
+                            value={action}
+                            onChange={(e) =>
+                              setDuplicateActions((curr) => ({
+                                ...curr,
+                                [t.id]: e.target.value as 'skip' | 'overwrite' | 'rename',
+                              }))
+                            }
+                            className="h-7 rounded border border-border bg-background px-2 text-xs"
+                          >
+                            <option value="skip">Skip</option>
+                            <option value="overwrite">Overwrite</option>
+                            <option value="rename">Rename ({t.id}-1)</option>
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+
+              <p className="text-[11px] text-muted-foreground italic">
+                * Note: Imported tools contain no local paths. They will be registered in the "Unavailable" state until you
+                click "Fix path" to locate their executable.
+              </p>
+            </div>
+          )}
+        </div>
+      </Dialog>
     </div>
   )
 }

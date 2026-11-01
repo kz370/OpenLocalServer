@@ -1,18 +1,17 @@
-import { open } from '@tauri-apps/plugin-dialog'
-import { ExternalLink, FileText, FolderSearch, Play, RefreshCw, RotateCw } from 'lucide-react'
+import { ExternalLink, FileText, Play, RefreshCw, RotateCw } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { CustomServices } from '@/components/CustomServices'
 import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
 import { ServiceIconAction } from '@/components/ServiceIconAction'
 import { StopIcon } from '@/components/StopIcon'
-import { TechIcon, ServiceMark } from '@/components/TechIcon'
+import { ServiceMark } from '@/components/TechIcon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { type DbTool, type Diagnostic, type PortStatus, type ServiceStatus, runCommand } from '@/core'
+import { type Diagnostic, type PortStatus, type ServiceStatus, runCommand } from '@/core'
 import { createPersistentCache } from '@/lib/cache'
 import { waitForService } from '@/lib/wait'
 import { notify } from '@/lib/notify'
@@ -20,11 +19,9 @@ import { notify } from '@/lib/notify'
 type ServiceAction = 'start' | 'stop' | 'restart' | 'reload'
 
 const servicesListCache = createPersistentCache<ServiceStatus[]>('services_list', [])
-const dbToolsListCache = createPersistentCache<DbTool[]>('services_db_tools', [])
 
 export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => void }) {
   const [services, setServices] = useState<ServiceStatus[]>(servicesListCache.get)
-  const [dbTools, setDbTools] = useState<DbTool[]>(dbToolsListCache.get)
   const [dbName, setDbName] = useState('my_app')
   const [error, setError] = useState<Diagnostic | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -35,11 +32,6 @@ export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => v
       if (res.type === 'services') {
         setServices(res.services)
         servicesListCache.set(res.services)
-      }
-      const tools = await runCommand({ type: 'list_db_tools' })
-      if (tools.type === 'db_tools') {
-        setDbTools(tools.tools)
-        dbToolsListCache.set(tools.tools)
       }
     } catch (err) {
       // An empty list and a failed list look identical on screen, so the failure has
@@ -85,32 +77,6 @@ export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => v
     try {
       await runCommand({ type: 'create_database', engine: 'mariadb', name: dbName })
       notify.success(`Database "${dbName}" created (or already existed).`)
-    } catch (err) {
-      setError(err as Diagnostic)
-    }
-  }
-
-  async function openTool(tool: DbTool) {
-    setError(null)
-    try {
-      await runCommand({ type: 'open_db_tool', id: tool.id })
-    } catch (err) {
-      setError(err as Diagnostic)
-    }
-  }
-
-  async function locateTool(tool: DbTool) {
-    const picked = await open({
-      multiple: false,
-      directory: false,
-      title: `Locate ${tool.name}`,
-      filters: [{ name: 'Executable', extensions: ['exe'] }],
-    })
-    if (!picked || Array.isArray(picked)) return
-    setError(null)
-    try {
-      await runCommand({ type: 'set_custom_install', id: tool.id, label: '', path: picked })
-      await refresh()
     } catch (err) {
       setError(err as Diagnostic)
     }
@@ -175,49 +141,6 @@ export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => v
           </CardContent>
         </Card>
       )}
-
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm">Database GUI tools</CardTitle>
-          <CardDescription>Detected on your system first — nothing downloads without you asking.</CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Tool</TableHead>
-                <TableHead>Path</TableHead>
-                <TableHead className="text-right">Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {dbTools.map((t) => (
-                <TableRow key={t.id}>
-                  <TableCell className="font-medium">
-                    <span className="flex items-center gap-2"><TechIcon id={t.id} className="size-4 opacity-90" />{t.name}</span>
-                  </TableCell>
-                  <TableCell className="max-w-xs truncate text-xs text-muted-foreground">
-                    {t.found_path ?? '—'}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      {!t.found_path && <Badge variant="outline">not found</Badge>}
-                      {t.found_path && (
-                        <Button size="sm" variant="secondary" onClick={() => openTool(t)}>
-                          Open
-                        </Button>
-                      )}
-                      <Button size="sm" variant="outline" onClick={() => locateTool(t)} title="Point at a specific install">
-                        <FolderSearch className="size-3.5" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
     </div>
   )
 }

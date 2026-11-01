@@ -171,9 +171,24 @@ pub struct ExternalTool {
     /// Engines this tool can open: any id in [`KNOWN_ENGINES`]. An empty list means the
     /// tool is offered for every engine, which is what a multi-protocol explorer wants.
     pub engines: Vec<String>,
+    #[serde(
+        default = "default_launch_mode",
+        rename = "launchMode",
+        alias = "launch_mode"
+    )]
+    pub launch_mode: String,
+    #[serde(default)]
     pub executable: String,
     /// Arguments with placeholders: {host} {port} {user} {database} {path} {uri}.
+    #[serde(default)]
     pub args: Vec<String>,
+    /// Calculated availability status (not persisted to disk).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub available: Option<bool>,
+}
+
+fn default_launch_mode() -> String {
+    "args".to_string()
 }
 
 /// Every engine id a registered tool may claim. These are the ids the Databases page
@@ -204,7 +219,13 @@ impl ExternalToolStore {
     }
 
     pub fn list(&self) -> Vec<ExternalTool> {
-        self.tools.clone()
+        let mut list = self.tools.clone();
+        for tool in &mut list {
+            tool.available = Some(
+                !tool.executable.is_empty() && std::path::Path::new(&tool.executable).is_file(),
+            );
+        }
+        list
     }
 
     /// The tool to use when none is chosen: the first one registered for this engine.
@@ -221,12 +242,11 @@ impl ExternalToolStore {
         self.tools.iter().find(|t| t.id.eq_ignore_ascii_case(id))
     }
 
-    /// Adds or replaces (by id) a tool. The executable must exist — a typo here would
-    /// otherwise only surface as a confusing failure at click time. Engine ids are
-    /// normalized (trimmed, lowercased, de-duplicated) and checked against
-    /// [`KNOWN_ENGINES`]: a misspelt engine saves happily and then never matches any page,
-    /// which looks like the button is broken, so it is refused here with the way out
-    /// instead.
+    /// Adds or replaces (by id) a tool. Engine ids are normalized (trimmed, lowercased,
+    /// de-duplicated) and checked against [`KNOWN_ENGINES`]: a misspelt engine saves
+    /// happily and then never matches any page, which looks like the button is broken,
+    /// so it is refused here with the way out instead. An empty or missing executable is
+    /// allowed so imported tools appear in the unavailable state until configured.
     pub fn save(&mut self, tool: ExternalTool) -> Result<(), CoreError> {
         let mut tool = tool;
         if tool.id.trim().is_empty() || tool.name.trim().is_empty() {
@@ -236,6 +256,13 @@ impl ExternalToolStore {
         }
         tool.id = tool.id.trim().to_ascii_lowercase();
         tool.name = tool.name.trim().to_string();
+        if tool.launch_mode.trim().is_empty() {
+            tool.launch_mode = "args".to_string();
+        } else if tool.launch_mode != "args" && tool.launch_mode != "clipboard" {
+            tool.launch_mode = "args".to_string();
+        }
+        tool.executable = tool.executable.trim().to_string();
+        tool.available = None;
         let mut engines: Vec<String> = Vec::with_capacity(tool.engines.len());
         for raw in &tool.engines {
             let e = raw.trim().to_ascii_lowercase();
@@ -255,12 +282,6 @@ impl ExternalToolStore {
             engines.push(e);
         }
         tool.engines = engines;
-        if !std::path::Path::new(&tool.executable).is_file() {
-            return Err(CoreError::ServiceError(format!(
-                "{} does not exist",
-                tool.executable
-            )));
-        }
         match self.tools.iter_mut().find(|t| t.id == tool.id) {
             Some(existing) => *existing = tool,
             None => self.tools.push(tool),
@@ -493,7 +514,7 @@ mod external_tool_tests {
     }
 
     #[test]
-    fn store_requires_an_existing_executable_and_persists() {
+    fn store_persists_and_reports_availability() {
         let home = crate::test_support::isolated_home();
         let mut store = ExternalToolStore::load(&home.paths).unwrap();
         let exe = home.paths.root().join("tool.exe");
@@ -503,22 +524,34 @@ mod external_tool_tests {
             id: "compass".into(),
             name: "Compass".into(),
             engines: vec!["mongodb".into()],
+            launch_mode: "args".into(),
             executable: exe.display().to_string(),
             args: vec!["{uri}".into()],
+            available: None,
         };
         store.save(tool.clone()).unwrap();
-        assert!(store
-            .save(ExternalTool {
-                executable: "C:/nope/x.exe".into(),
-                ..tool.clone()
-            })
-            .is_err());
+
+        let unavail = ExternalTool {
+            id: "missing".into(),
+            name: "Missing".into(),
+            engines: vec!["mariadb".into()],
+            launch_mode: "args".into(),
+            executable: "C:/nope/x.exe".into(),
+            args: vec!["{uri}".into()],
+            available: None,
+        };
+        store.save(unavail).unwrap();
+
+        let list = store.list();
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].available, Some(true));
+        assert_eq!(list[1].available, Some(false));
         assert_eq!(store.for_engine("mongodb").unwrap().id, "compass");
         assert!(store.for_engine("mysql").is_none());
 
         assert_eq!(
             ExternalToolStore::load(&home.paths).unwrap().list().len(),
-            1
+            2
         );
     }
 
@@ -535,8 +568,10 @@ mod external_tool_tests {
                 id: "  MyExplorer ".into(),
                 name: " My Explorer ".into(),
                 engines: vec!["MariaDB".into(), " mariadb ".into(), "SQLite".into()],
+                launch_mode: "args".into(),
                 executable: exe.clone(),
                 args: vec!["{uri}".into()],
+                available: None,
             })
             .unwrap();
 
@@ -559,8 +594,10 @@ mod external_tool_tests {
                 id: "myexplorer".into(),
                 name: "My Explorer".into(),
                 engines: vec!["mysql".into()],
+                launch_mode: "args".into(),
                 executable: exe,
                 args: vec![],
+                available: None,
             })
             .unwrap_err();
         let diag = Diagnostic::from(&err);
@@ -592,8 +629,10 @@ mod external_tool_tests {
                 id: "custom_db_explorer".into(),
                 name: "My DB Explorer".into(),
                 engines: vec![],
+                launch_mode: "args".into(),
                 executable: exe.display().to_string(),
                 args: vec!["{uri}".into()],
+                available: None,
             })
             .unwrap();
 

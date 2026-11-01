@@ -202,6 +202,14 @@ impl Core {
                         .resolve(&id, None)
                         .map(|c| c.path.clone())
                         .or_else(|| {
+                            i.ext_tools
+                                .lock()
+                                .unwrap()
+                                .get(&id)
+                                .map(|t| t.executable.clone())
+                                .filter(|p| !p.is_empty())
+                        })
+                        .or_else(|| {
                             crate::dbtools::detect_db_tools()
                                 .into_iter()
                                 .find(|t| t.id == id)
@@ -210,6 +218,13 @@ impl Core {
                         .ok_or_else(|| {
                             CoreError::ServiceError(format!("{id} was not found on this system"))
                         })?;
+                    if !std::path::Path::new(&path).is_file() {
+                        return Err(CoreError::failed_fix(
+                            format!("Executable not found for '{id}'"),
+                            format!("The file '{path}' does not exist on disk."),
+                            "Locate or browse for the correct executable under External tools.",
+                        ));
+                    }
                     // A standalone GUI app the user drives themselves — not managed/supervised.
                     crate::dbtools::launch(&path, &[], false).map_err(CoreError::ServiceError)?;
                     Ok(R::Ok)

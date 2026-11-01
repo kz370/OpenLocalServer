@@ -26,12 +26,21 @@ impl Inner {
                 .map(|c| c.path.clone())
         };
         let find = |id: &str| {
-            custom_path(id).or_else(|| {
-                detected
-                    .iter()
-                    .find(|t| t.id == id)
-                    .and_then(|t| t.found_path.clone())
-            })
+            custom_path(id)
+                .or_else(|| {
+                    self.ext_tools
+                        .lock()
+                        .unwrap()
+                        .get(id)
+                        .map(|t| t.executable.clone())
+                        .filter(|p| !p.is_empty())
+                })
+                .or_else(|| {
+                    detected
+                        .iter()
+                        .find(|t| t.id == id)
+                        .and_then(|t| t.found_path.clone())
+                })
         };
 
         if let Some(id) = tool_id {
@@ -89,6 +98,15 @@ impl Inner {
             }
         };
         if let Some(tool) = registered {
+            if tool.executable.is_empty() || !Path::new(&tool.executable).is_file() {
+                return Err(svc(format!(
+                    "Executable not found for tool '{}': '{}'. Click 'Fix path' under External tools to locate it.",
+                    tool.name, tool.executable
+                )));
+            }
+            if tool.launch_mode == "clipboard" {
+                return dbtools::launch(&tool.executable, &[], false).map_err(svc);
+            }
             let args = dbtools::expand_args(&tool.args, &info);
             return dbtools::launch(&tool.executable, &args, false).map_err(svc);
         }

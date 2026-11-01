@@ -235,7 +235,9 @@ export interface ExternalTool {
   id: string
   name: string
   engines: string[]
+  launchMode: 'args' | 'clipboard'
   executable: string
   args: string[]
+  available?: boolean
 }
 

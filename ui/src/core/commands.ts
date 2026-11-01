@@ -131,6 +131,7 @@ export type CoreCommand =
   | { type: 'list_external_tools' }
   | { type: 'save_external_tool'; tool: ExternalTool }
   | { type: 'remove_external_tool'; id: string }
+  | { type: 'test_external_tool'; id: string }
   | { type: 'open_database'; engine: string; database: string | null; path: string | null; tool_id: string | null }
   | { type: 'list_quick_apps' }
   | { type: 'get_quick_app'; id: string }

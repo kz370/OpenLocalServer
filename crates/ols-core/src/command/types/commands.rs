@@ -377,6 +377,9 @@ pub enum CoreCommand {
     RemoveExternalTool {
         id: String,
     },
+    TestExternalTool {
+        id: String,
+    },
     OpenDatabase {
         engine: String,
         database: Option<String>,
