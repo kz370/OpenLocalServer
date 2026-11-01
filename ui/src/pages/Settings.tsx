@@ -771,15 +771,15 @@ export function SettingsPage() {
                             value={mcpTtlHours}
                             onChange={(e) => setMcpTtlHours(parseInt(e.target.value, 10) || 0)}
                             placeholder="hours"
-                            className="w-24 bg-input border border-input rounded px-3 py-1.5 text-sm"
+                            className="w-24 text-sm"
                           />
                         )}
                         {mcpExpiryMode === 'at' && (
-                          <input
+                          <Input
                             type="datetime-local"
                             value={mcpExpiresAt}
                             onChange={(e) => setMcpExpiresAt(e.target.value)}
-                            className="bg-input border border-input rounded px-3 py-1.5 text-sm w-64"
+                            className="w-64 text-sm"
                           />
                         )}
                       </div>

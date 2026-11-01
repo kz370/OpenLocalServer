@@ -439,7 +439,7 @@ export function RuntimesPage() {
                   aria-label="Executable runtime"
                   value={customId}
                   onChange={(e) => setCustomId(e.target.value)}
-                  className="h-8 w-full appearance-none rounded-md border border-transparent bg-input/60 py-1 pl-2.5 pr-8 text-[13px] focus-visible:border-ring focus-visible:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                  className="h-8 w-full appearance-none rounded-md border border-border/80 dark:border-white/15 bg-input/60 hover:bg-input/80 hover:border-muted-foreground/40 dark:hover:border-white/25 py-1 pl-2.5 pr-8 text-[13px] cursor-pointer focus-visible:border-ring focus-visible:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                 >
                   {LOCATABLE.map((id) => (
                     <option key={id} value={id}>
@@ -572,7 +572,7 @@ export function RuntimesPage() {
                   value={selectedInstall}
                   disabled={filteredOptions.length === 0 || dialogChecking}
                   onChange={(e) => setInstallChoices((prev) => ({ ...prev, [managedGroup.id]: e.target.value }))}
-                  className="h-9 w-full min-w-0 appearance-none rounded-md border border-border/60 bg-background py-1 pl-2.5 pr-8 text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                  className="h-9 w-full min-w-0 appearance-none rounded-md border border-border/80 dark:border-white/15 bg-background hover:border-muted-foreground/40 dark:hover:border-white/25 py-1 pl-2.5 pr-8 text-[13px] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                 >
                   {filteredOptions.length === 0 && dialogChecking && <option value="">Checking vendor list…</option>}
                   {filteredOptions.length === 0 && !dialogChecking && unverifiedCount > 0 && <option value="">Verifying cached versions…</option>}

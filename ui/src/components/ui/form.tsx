@@ -6,12 +6,20 @@ import { cn } from '@/lib/utils'
 import { Switch } from './switch'
 
 const fieldBase =
-  'flex w-full rounded-lg border border-transparent bg-input/60 px-3.5 text-sm transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50'
+  'flex w-full rounded-lg border border-border/80 dark:border-white/15 bg-input/60 px-3.5 text-sm transition-colors hover:border-muted-foreground/40 dark:hover:border-white/25 placeholder:text-muted-foreground focus-visible:border-ring focus-visible:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50'
 
 export const Select = React.forwardRef<HTMLSelectElement, React.SelectHTMLAttributes<HTMLSelectElement>>(
   ({ className, children, ...props }, ref) => (
     <div className={cn('relative min-w-0 w-full', className)}>
-      <select ref={ref} className={cn(fieldBase, 'h-9 appearance-none py-1 pr-10', className)} {...props}>
+      <select
+        ref={ref}
+        className={cn(
+          fieldBase,
+          'h-9 appearance-none py-1 pr-10 cursor-pointer text-foreground hover:bg-input/80 shadow-xs',
+          className,
+        )}
+        {...props}
+      >
         {children}
       </select>
       <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />

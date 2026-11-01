@@ -58,9 +58,9 @@ export function OpenWithMenu({ path, isDir, onError }: { path: string; isDir: bo
         <ExternalLink className="size-3.5" /> Open <ChevronDown className="size-3" />
       </Button>
       {open && (
-        <div role="menu" className="absolute right-0 top-full z-40 mt-1 min-w-52 rounded-lg border border-border bg-card p-1 text-sm shadow-lg">
+        <div role="menu" className="absolute right-0 top-full z-40 mt-1 min-w-52 rounded-lg border border-border dark:border-white/15 bg-popover/95 backdrop-blur-md p-1 text-sm text-popover-foreground shadow-xl">
           {items.map((i) => (
-            <button key={i.app} role="menuitem" className="block w-full rounded-md px-3 py-1.5 text-left hover:bg-muted" onClick={() => go(i.app)}>
+            <button key={i.app} role="menuitem" className="block w-full rounded-md px-3 py-1.5 text-left transition-colors hover:bg-accent/80 hover:text-accent-foreground cursor-pointer" onClick={() => go(i.app)}>
               {i.label}
             </button>
           ))}

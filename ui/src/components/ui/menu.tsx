@@ -144,7 +144,7 @@ export function FloatingMenu({
         style={floatingStyles}
         onContextMenu={(e) => e.preventDefault()}
         {...getFloatingProps()}
-        className="z-[95] min-w-48 overflow-y-auto rounded-lg border border-border bg-card p-1 text-sm text-card-foreground shadow-lg select-none focus:outline-none"
+        className="z-[95] min-w-48 overflow-y-auto rounded-lg border border-border dark:border-white/15 bg-popover/95 backdrop-blur-md p-1 text-sm text-popover-foreground shadow-xl select-none focus:outline-none"
       >
         {header && (
           <>
@@ -172,8 +172,8 @@ export function FloatingMenu({
                 item.onSelect()
               }}
               className={cn(
-                'flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-left transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-3.5 [&_svg]:shrink-0',
-                item.danger ? 'text-destructive hover:bg-destructive/10' : '',
+                'flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-left transition-colors hover:bg-accent/80 hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-3.5 [&_svg]:shrink-0',
+                item.danger ? 'text-destructive hover:bg-destructive/10 hover:text-destructive' : '',
               )}
             >
               {item.icon}

@@ -868,7 +868,7 @@ export function SiteDomainsPanel({ domain: initialDomain, onSave, busy }: SiteDo
               className={cn(
                 'flex h-9 w-full items-center justify-between rounded-lg border bg-input/60 px-3.5 text-xs transition-colors cursor-pointer',
                 'hover:bg-input hover:border-ring/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30',
-                isProviderSelectOpen ? 'border-ring bg-background' : 'border-border'
+                isProviderSelectOpen ? 'border-ring bg-background' : 'border-border dark:border-white/15'
               )}
               aria-haspopup="listbox"
               aria-expanded={isProviderSelectOpen}

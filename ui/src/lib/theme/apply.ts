@@ -82,8 +82,9 @@ export function applyThemeToDom(
 
   const root = document.documentElement
 
-  // 1. Toggle dark class
+  // 1. Toggle dark class and sync colorScheme
   root.classList.toggle('dark', resolvedMode === 'dark')
+  root.style.colorScheme = resolvedMode
 
   // 2. Set tokens
   for (const [key, cssVar] of Object.entries(TOKEN_CSS_MAP) as [keyof ThemeTokens, string][]) {

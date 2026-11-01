@@ -8,7 +8,7 @@ const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLI
     <input
       type={type}
       className={cn(
-        'flex h-9 w-full rounded-lg border border-transparent bg-input/60 px-3.5 py-1 text-sm transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50',
+        'flex h-9 w-full rounded-lg border border-border/80 dark:border-white/15 bg-input/60 px-3.5 py-1 text-sm transition-colors hover:border-muted-foreground/40 dark:hover:border-white/25 placeholder:text-muted-foreground focus-visible:border-ring focus-visible:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50',
         className,
       )}
       ref={ref}
@@ -115,7 +115,7 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
             }
           }}
           className={cn(
-            'flex h-9 w-full rounded-lg border border-transparent bg-input/60 py-1 text-sm transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50',
+            'flex h-9 w-full rounded-lg border border-border/80 dark:border-white/15 bg-input/60 py-1 text-sm transition-colors hover:border-muted-foreground/40 dark:hover:border-white/25 placeholder:text-muted-foreground focus-visible:border-ring focus-visible:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50',
             // Right padding leaves room for the stepper; the arrows are gone for good.
             'px-3.5 pr-8 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none',
             className,

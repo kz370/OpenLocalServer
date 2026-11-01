@@ -426,4 +426,15 @@ olsc guide                     # Display this complete User Manual in terminal
     - Primary domain leads with interactive pill badges and status dots for secondary/alias domains.
     - Direct 1-click modal navigation to any domain's settings directly from the pill badges.
     - Bulk enable/disable and delete operations apply cleanly across all domains in the project row.
+12. **PHP 8.5+ Built-in OPcache & Windows ASLR Fix:**
+    - Detects OPcache as built-in for PHP ≥ 8.5 without requiring `ext/php_opcache.dll`.
+    - Automatically configures `opcache.file_cache` and `opcache.file_cache_fallback = 1` for Windows FastCGI workers, preventing Address Space Layout Randomization (ASLR) opcode handler collision crash-loops.
+    - Exposes OPcache as a toggle in the UI extensions dialog; explicitly emits `opcache.enable = 0` and `opcache.enable_cli = 0` when toggled off.
+13. **User-Defined `php.ini` Directives (`overrides.ini` & `conf.d/`):**
+    - Custom PHP configuration directives now survive automatic `php.ini` regenerations across restarts.
+    - Automatically creates an `overrides.ini` template in `<data_dir>/services/php/<version>/overrides.ini`.
+    - Appends all custom settings from `overrides.ini` and any `.ini` files in `<version>/conf.d/` to the bottom of the generated `php.ini`.
+14. **Direct Win32 Administrator Elevation & PATH Independence:**
+    - Replaced PowerShell `Start-Process -Verb RunAs` elevation with direct Win32 `ShellExecuteExW` (`runas` verb), removing the dependency on `powershell.exe` on system PATH.
+    - System executables (`powershell.exe`, `cmd.exe`) are now resolved directly from `%SystemRoot%\System32` via `GetSystemDirectoryW`, ensuring the built-in terminal and background tools run reliably even with missing or corrupted PATH environments.
 
