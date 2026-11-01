@@ -8,8 +8,5 @@
   },
   "devDependencies": {
     "rcedit": "^5.0.2"
-  },
-  "dependencies": {
-    "@tauri-apps/plugin-fs": "^2.7.1"
   }
 }
