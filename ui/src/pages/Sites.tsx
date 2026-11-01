@@ -932,11 +932,18 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                 // A row mid-removal dims and says so, so deleting never looks like a click
                 // that did nothing.
                 const pending = [d?.hostname, ...r.extraDomains.map((e) => e.hostname), p?.id].filter(Boolean).some((k) => removing.has(k!))
+                const isMenuOpen = activeMenu?.key === r.key
                 return (
                   <TableRow
                     key={r.key}
                     aria-busy={pending}
-                    className={pending ? 'opacity-50 transition-opacity' : undefined}
+                    data-state={isMenuOpen ? 'selected' : undefined}
+                    className={[
+                      pending ? 'opacity-50 transition-opacity' : '',
+                      isMenuOpen ? 'bg-primary/10 hover:bg-primary/15 shadow-[inset_3px_0_0_0_var(--primary)]' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ') || undefined}
                     onContextMenu={(e) => {
                       if (pending) return
                       e.preventDefault()
@@ -986,7 +993,11 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                         {/* The name and sub-line block */}
                         <div className="min-w-0 flex-1">
                           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                            <button className="cursor-pointer truncate text-left font-medium leading-6 hover:underline" onClick={openSettings} title={d?.hostname ?? p?.name}>
+                            <button
+                              className={`cursor-pointer truncate text-left font-medium leading-6 hover:underline ${isMenuOpen ? 'text-primary' : ''}`}
+                              onClick={openSettings}
+                              title={d?.hostname ?? p?.name}
+                            >
                               {d?.hostname ?? p?.name}
                             </button>
                             {p?.health?.status === 'missing' && (
@@ -1198,14 +1209,14 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="h-8 w-8 shrink-0 cursor-pointer px-0"
+                            className={`h-8 w-8 shrink-0 cursor-pointer px-0 ${isMenuOpen ? 'bg-accent text-accent-foreground' : ''}`}
                             title={`More actions for ${d?.hostname ?? p?.name}`}
                             aria-label={`More actions for ${d?.hostname ?? p?.name}`}
                             aria-haspopup="menu"
-                            aria-expanded={activeMenu?.key === r.key}
+                            aria-expanded={isMenuOpen}
                             onClick={(e) => {
                               e.stopPropagation()
-                              if (activeMenu?.key === r.key && activeMenu.anchor.type === 'button') {
+                              if (isMenuOpen && activeMenu.anchor.type === 'button') {
                                 setActiveMenu(null)
                               } else {
                                 setActiveMenu({
