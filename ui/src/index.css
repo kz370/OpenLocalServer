@@ -93,38 +93,18 @@
 
 /* Native select, option & datalist styling for visible contrast in light and dark mode */
 select {
-  color-scheme: light;
-}
-
-.dark select,
-:is(.dark) select {
-  color-scheme: dark;
+  color-scheme: light dark;
 }
 
 select option,
 datalist option {
-  background-color: #ffffff;
-  color: #0f172a;
-}
-
-.dark select option,
-:is(.dark) select option,
-.dark datalist option,
-:is(.dark) datalist option {
-  background-color: #0b1426;
-  color: #f8fafc;
+  background-color: var(--card);
+  color: var(--card-foreground);
 }
 
 select optgroup {
-  background-color: #ffffff;
-  color: #64748b;
-  font-weight: 600;
-}
-
-.dark select optgroup,
-:is(.dark) select optgroup {
-  background-color: #0b1426;
-  color: #94a3b8;
+  background-color: var(--card);
+  color: var(--muted-foreground);
   font-weight: 600;
 }
 
@@ -452,6 +432,33 @@ body {
   text-underline-offset: 2px;
 }
 .prose-ols a:hover {
+  opacity: 0.85;
+}
+
+/* Polished release notes inline typography */
+.release-notes-prose {
+  line-height: 1.6;
+}
+.release-notes-prose code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.85em;
+  background-color: oklch(from var(--muted) l c h / 70%);
+  color: var(--foreground);
+  padding: 0.12rem 0.35rem;
+  border-radius: 0.25rem;
+  border: 1px solid oklch(from var(--border) l c h / 70%);
+  font-weight: 500;
+}
+.release-notes-prose strong {
+  color: var(--foreground);
+  font-weight: 600;
+}
+.release-notes-prose a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.release-notes-prose a:hover {
   opacity: 0.85;
 }
 

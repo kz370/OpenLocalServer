@@ -45,3 +45,7 @@ release/*
 target_check/*
 
 .agents/*
+
+temp_frames/*
+
+*.gif

@@ -2,7 +2,6 @@
 
 > A free, open-source local development environment manager for Windows — runtimes, sites, databases, and trusted HTTPS, without touching your system by hand.
 
-[![Build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/kz370/OpenLocalServer/actions)
 [![Version](https://img.shields.io/badge/version-2.5.0-blue)](./CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-0078D6)](./docs/STATUS.md)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue)](./LICENSE)
@@ -10,7 +9,7 @@
 [![Backend](https://img.shields.io/badge/backend-Rust-red)](./crates/ols-core)
 [![Protocol](https://img.shields.io/badge/protocol-MCP_stdio-purple)](./docs/MCP.md)
 
-**OLS** (Open Local Server) is an all-in-one local development environment for Windows engineered for native performance, broad runtime coverage, and full extensibility. Every project gets isolated runtimes, its own `.test` domain, and trusted local HTTPS without manual system configuration or virtual machine overhead.
+**OLS** (Open Local Server) is an all-in-one local development environment for Windows engineered for native performance, broad runtime coverage, complete version flexibility, and full extensibility. Every project gets isolated runtimes, its own local domain, and trusted local HTTPS without manual system configuration or virtual machine overhead.
 
 One core engine (`ols-core`) powers four interfaces:
 - **Desktop GUI (`OLS.exe`)**: Modern, borderless window with rich real-time monitoring and controls.
@@ -18,7 +17,7 @@ One core engine (`ols-core`) powers four interfaces:
 - **Model Context Protocol (`ols-mcp.exe`)**: Stdio MCP server allowing AI coding assistants (Claude Desktop, Cursor, VS Code, LM Studio) to inspect and control your local environment.
 - **Local HTTP API (`127.0.0.1:7420`)**: Scoped JSON API for local tooling and scripting.
 
-**Free, open source, and unlimited sites.**
+**Free, open source, and unlimited sites. No telemetry by default.**
 
 ---
 
@@ -124,12 +123,13 @@ Grab the latest installer (`OLS-2.5.0-setup.exe`) from the [Releases page](https
 ### 📦 Runtimes & Toolchain
 
 - **Side-by-side versions** per runtime with a dedicated **Version Manager** dialog: search, install, default badge, and per-version file path display.
-- **Managed lineup:**
-  - **PHP:** NTS 8.1, 8.3, and 8.4 with per-version extensions, Xdebug 3 configuration, and PECL package support.
-  - **Node.js:** Node 22 and 24 with corepack support (npm, pnpm, yarn, bun).
-  - **Python:** Python 3.10, 3.11, 3.12, and 3.13 embedded packages, plus automated detection of system Python (3.7–3.15) and local virtual environments (`.venv`, `venv`). Supervised background dev server processes (`uvicorn`, `flask`, `django`, `waitress`, `streamlit`).
+- **Not limited to specific versions:** OLS is not tied to a fixed lineup. Run any version of any runtime and any database server — install it from the Version Manager, drop it in manually, or register your own build. Nothing is hardcoded to particular versions.
+- **Built-in catalog (one-click installs):**
+  - **PHP:** NTS 8.1–8.5 with per-version extensions, Xdebug 3 configuration, PECL package support, and per-version `overrides.ini` / `conf.d/*.ini` files merged into the generated `php.ini` so your own directives survive restarts.
+  - **Node.js:** corepack support (npm, pnpm, yarn); releases from the official Node.js catalog can be installed from the Version Manager.
+  - **Python:** embedded packages installable from the catalog, plus automated detection of system Python (3.7–3.15) and local virtual environments (`.venv`, `venv`). Supervised background dev server processes (`uvicorn`, `flask`, `django`, `waitress`, `streamlit`).
   - **Tooling:** Composer 2.10, portable Git 2.55, and k6 2.3 load testing.
-- **Online catalogs** per runtime with vendor-published sources, 24-hour caching, background refresh, and **SHA-256 verification** on all downloads with atomic extraction.
+- **Online catalogs** per runtime with vendor-published sources, 24-hour caching, background refresh, and **SHA-256 verification** on all downloads with atomic extraction. In-flight downloads can be **paused, resumed, or cancelled**.
 - **Bring your own:** Scan folders for existing PHP installations (e.g. Laragon, XAMPP), or register custom executables (PHP, Node, Python) by locating the file.
 - **Manual runtime drop-in & offline installation:** Drop any runtime into `<install dir>/data/runtimes/<id>/<version>/` or cache archive into `<install dir>/data/cache/`. See the [Troubleshooting & Manual Runtime Guide](./docs/TROUBLESHOOTING.md).
 - **Resolution order:** Project manifest pin > auto-detected from project files > global default. Changing a global default never touches existing project configurations.
@@ -137,12 +137,13 @@ Grab the latest installer (`OLS-2.5.0-setup.exe`) from the [Releases page](https
 ### 🌐 Sites, Web Servers & HTTPS
 
 - **Multiple ways to add a site:** Pick an existing directory, add a **project root folder** to automatically detect and register all subfolders as sites, clone directly from a **Git repository**, or scaffold with **Quick Apps**.
+- **Explorer right-click integration:** Add any folder to OLS straight from the Windows Explorer context menu.
 - **Automatic document root & welcome page:** When creating a new site, OLS automatically creates the document root folder and generates a default welcome file (`index.html` or `index.php`) if none exists.
 - **Site status tabs & filtering:** Dedicated **Enabled**, **Disabled**, **Folder not found**, and **All** tabs with quick counts and distinct colored status indicators. The **Folder not found** tab isolates missing directories and offline drives, providing a 1-click **Locate** button to re-point moved folders.
 - **Multi-domain project rows & context menu:** Multiple domains sharing a project folder group into a single project row with primary domain focus and interactive extra-domain pills. Right-clicking any site row opens a cursor-positioned actions menu with smart viewport clamping and smooth internal scrolling.
 - **Safe deletion & folder exclusion:** Deleting or hiding a site moves its folder into an `ols_excluded_sites` subfolder (with automatic name collision resolution) instead of permanent disk deletion. Configurable ignored folders (`projects.ignored_folders`) in Settings.
 - **Site branding & icons:** Custom site logos in table rows via local image upload with automatic WebP optimization, or a bundled offline Font Awesome icon catalog with swatch and custom color pickers.
-- **Unlimited sites & domains:** Any domain name plus wildcard subdomains; automatic `<folder>.test` naming; static sites; reverse proxies to any `host:port`. Run on a domain, on `localhost/<prefix>`, or both simultaneously.
+- **Unlimited sites & domains:** Any domain name plus wildcard subdomains; automatic `<folder>.<tld>` naming with a configurable top-level domain (local, test, localhost, or custom); static sites; reverse proxies to any `host:port`. Run on a domain, on `localhost/<prefix>`, or both simultaneously.
 - **Multi-interface web binding (`0.0.0.0` & `127.0.0.1`):** Web servers bind across all local network interfaces, supporting LAN access and router port forwarding.
 - **Trusted local HTTPS:** Built-in on-device Certificate Authority (CA), 397-day leaf certificates, automated renewal under 30 days, and SAN-aware reuse.
 - **Per-site PHP version & per-site web server:** Each site can run on its own PHP version and web server (Nginx, Apache, or Caddy); unpinned sites cleanly follow global defaults.
@@ -150,6 +151,7 @@ Grab the latest installer (`OLS-2.5.0-setup.exe`) from the [Releases page](https
   - **Nginx 1.28 & 1.30**, **Apache 2.4 (2.4.69)**, and **Caddy 2.11 (2.11.4)** with generated configurations.
   - Caddy uses a stable localhost admin address derived from its install path, avoiding port 20019 collisions.
   - Managed, Advanced, and Manual modes; validate-before-reload with automatic rollback; **drift detection**; config revision history with diff and restore.
+  - Built-in `.htaccess` editor for Apache sites.
 - **Zero-prompt DNS:** Built-in **wildcard DNS** for `.test`, `.localhost`, and `.internal`; elevated helper service for hosts file and NRPT rules (no repeated UAC popups).
 - **Custom domains, site broadcast & Dynamic DNS (DDNS):** Support for 12+ DNS providers (Cloudflare, DuckDNS, No-IP, Dynu, ClouDNS, HE.net, Route53, Namecheap, GoDaddy, Porkbun, DigitalOcean, and custom webhooks) with auto-sync and IP change detection.
   - **Site Broadcast panel:** Live broadcast status and 1-click public URL copying integrated into the Site Domains panel.
@@ -161,9 +163,12 @@ Grab the latest installer (`OLS-2.5.0-setup.exe`) from the [Releases page](https
 - **Manifests (`.openlocalserver/*.yaml`):** Declarative environment specifications, services, custom commands, and lock files.
 - **14-step setup pipeline:** Resolve → plan → conflict report → dry-run → apply, fully journaled with automatic **rollback** on failure and file locking.
 - **Profiles & snapshots:** Development, Testing, Debugging, and Demo profiles; point-in-time snapshots and backups (zip, clone, import/export); lossless `.env` editor preserving comments, key order, and CRLF line endings.
-- **Encrypted site bundles:** Export and import settings, `.env` files, database dumps, and project files with optional **Argon2id + ChaCha20-Poly1305** password encryption.
+- **Automatic backups:** Optional scheduled project snapshots and database dumps with per-site period and retention settings. Off by default, and only automatic backups are ever pruned.
+- **Encrypted site bundles:** Export and import settings, `.env` files, database dumps, and project files with optional **Argon2id + ChaCha20-Poly1305** password encryption. Importing onto an existing site takes a snapshot first, and long exports and imports run as background tasks you can watch.
+- **WordPress one-click admin login:** WordPress projects get a **WP Admin** action that signs you in with a short-lived token, so no password is needed, shown, or changed.
 - **Quick Apps:** 13 built-in application recipes (Laravel, Symfony, WordPress, Express, React/Vite, Vue, Next.js, Django, FastAPI, static HTML…) — parameter validation → plan review → execution with step history.
 - **Quick Commands:** Auto-discovered Composer, npm, and manage.py scripts with 1-click execution and terminal ring buffer, plus preconfigured commands for Laravel, Node, and Python.
+- **Portable by design:** Paths inside the install folder are stored relative, so you can rename the install folder or move it to another drive and every app-owned site keeps working.
 
 ### 🗄️ Databases & Services
 
@@ -179,7 +184,7 @@ Grab the latest installer (`OLS-2.5.0-setup.exe`) from the [Releases page](https
 
 - **Consolidated Missing Folder Alerts:** Collapses missing directories and offline external drives into a single summary card on the Dashboard with batch actions (1-click **Manage in Sites**, **Ignore all** / **Unignore all**).
 - **Disconnected Drive Detection & Deduplication:** Accurately distinguishes missing project folders from offline external drives (`D:\`, USB, network shares) instead of claiming deletion, and deduplicates physical paths.
-- **Services card:** Built-in services in a clean, consistent order — start, stop, restart, reload, and logs color-coded per action with unavailable actions flattened.
+- **Services card:** Built-in services grouped by category (web servers, databases, cache & queues, mail) — start, stop, restart, reload, and logs color-coded per action with unavailable actions flattened.
 - **Ports tab:** Clear rows per server (icon, name, HTTP, HTTPS, site count) with fixed-width port inputs; active default servers keep their 80/443 ports protected from accidental edits.
 - **Custom input steppers:** Ports, worker counts, and memory limits use rounded in-app stepper chevrons with arrow key support.
 - **Overview:** Active sites and projects counts, resource usage donuts (CPU, RAM, disk), and a 30-bucket web traffic graph with hover inspector.
@@ -209,14 +214,16 @@ Grab the latest installer (`OLS-2.5.0-setup.exe`) from the [Releases page](https
   - **Databases & Tables:** `ols_list_databases`, `ols_create_database`, `ols_list_tables`, `ols_execute_sql`.
   - **Web Server:** `ols_apply_web`, `ols_validate_web`.
   - See [docs/MCP.md](./docs/MCP.md) for full configuration examples and tool schemas.
-- **Private AI Assistant (BYOM):** Opt-in in-app AI assistant supporting local zero-telemetry models via **LM Studio** and **Ollama**, or cloud providers (OpenRouter, Hugging Face, custom OpenAI-compatible endpoints). Includes automatic pre-prompt secret redaction and explicit user approval gates before executing proposed actions. Accessible in the GUI and via CLI (`olsc ai ask`, `olsc ai explain`).
+
+  > **Heads-up:** MCP tools can create, change, and remove sites and run SQL against your local databases. Only connect AI hosts you trust.
 - **Command Line (`olsc`):**
   - Drive OLS from any shell: `olsc setup`, `olsc doctor`, `olsc repair`, `olsc status`, `olsc start`, `olsc stop`, `olsc restart`.
-  - Full subcommands: `project`, `runtime`, `php`, `service`, `tunnel`, `worker`, `snapshot`, `quick-app`, `quick-command`, `ai`, `search`, `guide`.
+  - Full subcommands: `project`, `runtime`, `php`, `service`, `tunnel`, `worker`, `snapshot`, `quick-app`, `quick-command`, `search`, `guide`.
   - Background daemon: Automatically runs in the background (`olsc daemon`) when the GUI is closed.
 - **Local HTTP API (`127.0.0.1:7420`):** Bearer token authenticated JSON API mirroring `CoreCommand` operations with read-only and operate scopes. See [docs/API.md](./docs/API.md).
-- **Automation tools:** Background queue workers (max 16, Procfile.dev import), scheduled cron tasks (1-minute tick, overlap protection), portable-pty terminal shells, and Git repository management.
+- **Automation tools:** Background queue workers (max 16, Procfile.dev import), scheduled cron tasks (1-minute tick, overlap protection, built-in cron editor), portable-pty terminal shells, and Git repository management.
 - **Extensibility & Plugins:** Declarative `plugin.yaml` extensions via minisign-signed catalogs, re-verified on every load. See [docs/PLUGINS.md](./docs/PLUGINS.md).
+- **Signed self-updater:** Update manifests and installers are signature- and SHA-256-verified before anything is replaced.
 
 ---
 
@@ -316,7 +323,6 @@ olsc tunnel list                                         # List configured publi
 olsc tunnel start <name> --yes                           # Start a tunnel by name or project
 olsc worker start <project>                              # Start background queue workers for a project
 olsc snapshot create <project> --label "pre-migration"   # Create a point-in-time project snapshot
-olsc ai ask "How do I configure Redis caching?"          # Query the built-in AI assistant
 olsc search "mailpit"                                    # Search across projects, configs, services, and logs
 olsc guide                                               # Display the comprehensive user manual
 ```
@@ -434,7 +440,7 @@ npm run build
 ```
 
 - **Specs-sync mandate:** `specs/` is the single source of truth. Any functional change must update the corresponding specification files and append a log entry to `specs/runtime.md`.
-- **Safety guarantees:** User errors use `Diagnostic{problem, cause, fix}`; file downloads must verify SHA-256; secrets remain exclusively in the OS keyring.
+- **Safety guarantees:** User errors use `Diagnostic{problem,cause,fix}`; file downloads must verify SHA-256; secrets remain exclusively in the OS keyring.
 - **Commit convention:** Follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`).
 
 ---
@@ -449,11 +455,11 @@ OLS is licensed under **GPL-3.0-only** (see [LICENSE](./LICENSE)).
 
 | Component | License | Official Source |
 | :--- | :--- | :--- |
-| PHP (NTS 8.1, 8.3, 8.4) | PHP License 3.01 | [windows.php.net](https://windows.php.net) |
+| PHP (NTS 8.1–8.5) | PHP License 3.01 | [windows.php.net](https://windows.php.net) |
 | Composer 2.10 | MIT | [getcomposer.org](https://getcomposer.org) |
-| Node.js (22, 24) | MIT | [nodejs.org](https://nodejs.org) |
-| corepack / npm / pnpm / yarn / bun | MIT / Various | [nodejs.org](https://nodejs.org) |
-| Python (3.10–3.13 embedded) | PSF License | [python.org](https://python.org) |
+| Node.js | MIT | [nodejs.org](https://nodejs.org) |
+| corepack / npm / pnpm / yarn | MIT / Various | [nodejs.org](https://nodejs.org) |
+| Python (embedded builds) | PSF License | [python.org](https://python.org) |
 | Portable Git | GPL-2.0-only | [git-scm.com](https://git-scm.com) |
 | k6 (Load Testing) | AGPL-3.0-only | [grafana.com/k6](https://grafana.com/docs/k6) |
 | Nginx (1.28, 1.30) | BSD-2-Clause | [nginx.org](https://nginx.org) |
@@ -466,12 +472,12 @@ OLS is licensed under **GPL-3.0-only** (see [LICENSE](./LICENSE)).
 | Memcached (1.6) | BSD-3-Clause | [memcached.org](https://memcached.org) |
 | Mailpit (1.31) | MIT | [github.com/axllent/mailpit](https://github.com/axllent/mailpit) |
 | SQLite (3.53) | Public Domain | [sqlite.org](https://sqlite.org) |
-| HeidiSQL | GPL-3.0-only | [heidisql.com](https://heidisql.com) |
+| HeidiSQL | GPL-2.0 | [heidisql.com](https://heidisql.com) |
 | pgAdmin 4 | PostgreSQL License | [pgadmin.org](https://pgadmin.org) |
 | NoSQLBooster | Proprietary / Free Tier | [nosqlbooster.com](https://nosqlbooster.com) |
-| Tiny RDM | MIT | [github.com/rvigster/TinyRDM](https://github.com/rvigster/TinyRDM) |
+| Tiny RDM | MIT | [github.com/tiny-craft/tiny-rdm](https://github.com/tiny-craft/tiny-rdm) |
 | cloudflared | Apache-2.0 | [github.com/cloudflare/cloudflared](https://github.com/cloudflare/cloudflared) |
-| ngrok | Apache-2.0 | [ngrok.com](https://ngrok.com) |
+| ngrok | Proprietary (freeware) | [ngrok.com](https://ngrok.com) |
 | localtunnel | MIT | [github.com/localtunnel/localtunnel](https://github.com/localtunnel/localtunnel) |
 | Tailscale | BSD-3-Clause | [tailscale.com](https://tailscale.com) |
 

@@ -1,11 +1,12 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Book, Check, Copy, ExternalLink, Eye, EyeOff, FolderPlus, FolderSearch, RefreshCw, Search, ShieldCheck, Trash2, X } from 'lucide-react'
+import { Book, Check, Copy, ExternalLink, Eye, EyeOff, FolderPlus, FolderSearch, RefreshCw, Search, ShieldCheck, Sparkles, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
 import { ExcludedSitesCard } from '@/components/ExcludedSitesCard'
 import { IgnoredFoldersCard } from '@/components/IgnoredFoldersCard'
 import { Markdown } from '@/components/ui/Markdown'
+import { ReleaseNotesView } from '@/components/ReleaseNotesView'
 import { ApiCard, SystemCard, UpdatesCard } from '@/components/ReleaseCards'
 import { AboutCard, AutoBackupCard, ResourcesCard, SettingsBackupsCard } from '@/components/SettingsExtras'
 import { SaveButton } from '@/components/SaveButton'
@@ -607,12 +608,12 @@ export function SettingsPage() {
                   </Badge>
                 </div>
               </CardHeader>
-              <CardContent className="flex flex-col gap-3">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2">
+              <CardContent className="flex flex-col gap-4">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3">
                   <div className="flex gap-2">
                     <button
                       className={cn(
-                        'flex flex-shrink-0 items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors cursor-pointer',
+                        'flex flex-shrink-0 items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors cursor-pointer',
                         manualTab === 'manual' ? 'bg-accent text-accent-foreground shadow-xs' : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
                       )}
                       onClick={() => setManualTab('manual')}
@@ -621,12 +622,12 @@ export function SettingsPage() {
                     </button>
                     <button
                       className={cn(
-                        'flex flex-shrink-0 items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors cursor-pointer',
+                        'flex flex-shrink-0 items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors cursor-pointer',
                         manualTab === 'notes' ? 'bg-accent text-accent-foreground shadow-xs' : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
                       )}
                       onClick={() => setManualTab('notes')}
                     >
-                      <Copy className="size-4 shrink-0" /> {`Release Notes (v${version || '2.5.0'})`}
+                      <Sparkles className="size-4 shrink-0 text-primary" /> {`Release Notes (v${version || '2.5.0'})`}
                     </button>
                   </div>
                   <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -667,15 +668,25 @@ export function SettingsPage() {
                     </Button>
                   </div>
                 </div>
-                <div className="flex-1 border rounded-lg p-4 text-sm leading-relaxed overflow-y-auto min-h-[350px] max-h-[calc(100vh-280px)]">
-                  {manualTab === 'notes' ? (
-                    <Markdown content={displayedManualMarkdown} className="prose prose-sm max-w-none" />
-                  ) : manual ? (
-                    <Markdown content={displayedManualMarkdown} className="prose prose-sm max-w-none" />
-                  ) : (
-                    <p className="text-muted-foreground">Loading manual…</p>
-                  )}
-                </div>
+
+                {manualTab === 'notes' ? (
+                  <ReleaseNotesView
+                    markdown={activeManualMarkdown}
+                    searchQuery={manualSearch}
+                    onClearSearch={() => setManualSearch('')}
+                    currentVersion={version || '2.5.0'}
+                    onCopyMarkdown={() => void copyManualContent()}
+                    isCopied={manualCopied}
+                  />
+                ) : (
+                  <div className="flex-1 rounded-xl border border-border/70 bg-card/40 p-5 text-sm leading-relaxed overflow-y-auto min-h-[350px] max-h-[calc(100vh-280px)]">
+                    {manual ? (
+                      <Markdown content={displayedManualMarkdown} className="prose prose-sm max-w-none release-notes-prose" />
+                    ) : (
+                      <p className="text-muted-foreground">Loading manual…</p>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}

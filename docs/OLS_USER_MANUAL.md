@@ -3,386 +3,367 @@
 > **Version:** 2.5.0  
 > **Platform:** Windows 10 / Windows 11 (64-bit)  
 > **License:** GPL-3.0-only  
-> **CLI Tool:** `olsc`  
-> **Application:** `OLS.exe`  
-> **Repository:** [https://github.com/kz370/OpenLocalServer](https://github.com/kz370/OpenLocalServer)  
+> **CLI Binary:** `olsc`  
+> **Desktop Binary:** `OLS.exe`  
 
 ---
 
 ## Table of Contents
 
-- [1. Executive Overview & System Architecture](#1-executive-overview--system-architecture)
-- [2. Installation, First Run & Trusting Local CA](#2-installation-first-run--trusting-local-ca)
-- [3. Sites & Virtual Host Management](#3-sites--virtual-host-management)
-  - [3.1 Adding Sites: Static, Plain PHP, and Reverse Proxy](#31-adding-sites-static-plain-php-and-reverse-proxy)
-  - [3.2 Automatic Folder & Welcome Page Initialization](#32-automatic-folder--welcome-page-initialization)
-  - [3.3 Document Roots, Custom Domains & Aliases](#33-document-roots-custom-domains--aliases)
-  - [3.4 Site Logos & Offline Font Awesome Icons](#34-site-logos--offline-font-awesome-icons)
-  - [3.5 Missing Folder Detection & "Folder not found" Tab](#35-missing-folder-detection--folder-not-found-tab)
-  - [3.6 Multi-Domain Project Grouping & Context Menus](#36-multi-domain-project-grouping--context-menus)
-- [4. Domains, Networking & Multi-Interface Binding](#4-domains-networking--multi-interface-binding)
-  - [4.1 Local DNS & Zero-Config `.test` Domains](#41-local-dns--zero-config-test-domains)
-  - [4.2 Multi-Interface Web Binding (`0.0.0.0`) & LAN Access](#42-multi-interface-web-binding-0000--lan-access)
-  - [4.3 Dynamic DNS (Cloudflare Integration) & Router Port Forwarding](#43-dynamic-dns-cloudflare-integration--router-port-forwarding)
-  - [4.4 Site Broadcast Controls & Public URL Copying](#44-site-broadcast-controls--public-url-copying)
-- [5. Web Servers: Nginx, Apache & Caddy](#5-web-servers-nginx-apache--caddy)
-  - [5.1 Live Web Server Switching](#51-live-web-server-switching)
-  - [5.2 Configuration Editing & Syntax Validation](#52-configuration-editing--syntax-validation)
-  - [5.3 Apache `.htaccess` Overrides & AI Review](#53-apache-htaccess-overrides--ai-review)
-  - [5.4 Local Certificate Authority & SSL Termination](#54-local-certificate-authority--ssl-termination)
-- [6. Quick Apps (1-Click Application Scaffolding)](#6-quick-apps-1-click-application-scaffolding)
-  - [6.1 Supported Framework Recipes](#61-supported-framework-recipes)
-  - [6.2 Creation Workflow & Automatic Environment Setup](#62-creation-workflow--automatic-environment-setup)
-- [7. Commands, CLI & Developer Workflows](#7-commands-cli--developer-workflows)
-  - [7.1 Artisan, Composer, npm, pip & WP-CLI](#71-artisan-composer-npm-pip--wp-cli)
-  - [7.2 Integrated Terminal & Environment Variables](#72-integrated-terminal--environment-variables)
-- [8. Runtimes, Extensions & Debugging](#8-runtimes-extensions--debugging)
-  - [8.1 Isolated PHP Management (PHP 7.4 through 8.4)](#81-isolated-php-management-php-74-through-84)
-  - [8.2 Extension Toggles & PECL Package Support](#82-extension-toggles--pecl-package-support)
-  - [8.3 Xdebug 3 Step-by-Step Configuration](#83-xdebug-3-step-by-step-configuration)
-  - [8.4 Node.js, Bun, and Python Virtual Environments](#84-nodejs-bun-and-python-virtual-environments)
-- [9. Databases & Infrastructure Services](#9-databases--infrastructure-services)
-  - [9.1 MySQL / MariaDB, PostgreSQL & SQLite](#91-mysql--mariadb-postgresql--sqlite)
-  - [9.2 Redis, Memcached & MongoDB](#92-redis-memcached--mongodb)
-  - [9.3 Mailpit Outgoing Email Catcher & Web Inspector](#93-mailpit-outgoing-email-catcher--web-inspector)
-  - [9.4 External Database Explorers (HeidiSQL, Adminer, pgAdmin)](#94-external-database-explorers-heidisql-adminer-pgadmin)
-- [10. Public Tunnels & Webhook Traffic Inspector](#10-public-tunnels--webhook-traffic-inspector)
-  - [10.1 Cloudflare Tunnel, Ngrok & Localtunnel](#101-cloudflare-tunnel-ngrok--localtunnel)
-  - [10.2 Real-Time Request Inspector & Replay](#102-real-time-request-inspector--replay)
-  - [10.3 Generating k6 Load Testing Scripts](#103-generating-k6-load-testing-scripts)
-- [11. Backups, Snapshots & Encrypted Site Bundles](#11-backups-snapshots--encrypted-site-bundles)
-  - [11.1 Point-in-Time Site Snapshots](#111-point-in-time-site-snapshots)
-  - [11.2 Argon2id + ChaCha20-Poly1305 Encrypted Bundles](#112-argon2id--chacha20-poly1305-encrypted-bundles)
-  - [11.3 Restoring, Cloning & Updating Sites from Bundles](#113-restoring-cloning--updating-sites-from-bundles)
-- [12. Monitoring, Live Logs & Process Supervision](#12-monitoring-live-logs--process-supervision)
-  - [12.1 Real-Time Multi-Source Log Viewer](#121-real-time-multi-source-log-viewer)
-  - [12.2 Background Task Registry & Progress Tracking](#122-background-task-registry--progress-tracking)
-- [13. Diagnostics, Health Engine & Doctor Auto-Repair](#13-diagnostics-health-engine--doctor-auto-repair)
-  - [13.1 Doctor Diagnostic Architecture (`Problem`, `Cause`, `Fix`)](#131-doctor-diagnostic-architecture-problem-cause-fix)
-  - [13.2 Automated One-Click Repair](#132-automated-one-click-repair)
-  - [13.3 Redacted Support Bundle Generation](#133-redacted-support-bundle-generation)
-- [14. AI Assistant (Private, Opt-In, Bring-Your-Own-Model)](#14-ai-assistant-private-opt-in-bring-your-own-model)
-  - [14.1 Supported Local Providers: LM Studio & Ollama](#141-supported-local-providers-lm-studio--ollama)
-  - [14.2 Supported Cloud Providers: OpenRouter & Hugging Face](#142-supported-cloud-providers-openrouter--hugging-face)
-  - [14.3 Asking the App Assistant & Safety Approvals](#143-asking-the-app-assistant--safety-approvals)
-- [15. Command Line Interface Reference (`olsc`)](#15-command-line-interface-reference-olsc)
-- [16. Keyboard Shortcuts, Settings & Privacy Guidelines](#16-keyboard-shortcuts-settings--privacy-guidelines)
-- [17. What's New in Version 2.5.0](#17-whats-new-in-version-250)
+1. [Overview & Core Architecture](#1-overview--core-architecture)
+2. [First Run & Quick Start](#2-first-run--quick-start)
+3. [Sites & Virtual Hosts Management](#3-sites--virtual-hosts-management)
+4. [Domains, Networking & Remote Access](#4-domains-networking--remote-access)
+5. [Web Servers (Nginx, Apache, Caddy)](#5-web-servers-nginx-apache-caddy)
+6. [Quick Apps (1-Click Deployment)](#6-quick-apps-1-click-deployment)
+7. [Commands & Developer Tools](#7-commands--developer-tools)
+8. [Runtimes & Extensions (PHP, Node, Python)](#8-runtimes--extensions-php-node-python)
+9. [Databases & Infrastructure Services](#9-databases--infrastructure-services)
+10. [Public Tunnels & Webhook Inspection](#10-public-tunnels--webhook-inspection)
+11. [Backups, Snapshots & Encrypted Site Bundles](#11-backups-snapshots--encrypted-site-bundles)
+12. [Monitoring, Logs & Background Tasks](#12-monitoring-logs--background-tasks)
+13. [Diagnostics, Health & Doctor Auto-Repair](#13-diagnostics-health--doctor-auto-repair)
+14. [AI Assistant & Model Context Protocol (MCP)](#14-ai-assistant--model-context-protocol-mcp)
+15. [Command Line Interface (CLI — `olsc`)](#15-command-line-interface-cli--olsc)
+16. [Keyboard Shortcuts, Settings, Themes & Documentation](#16-keyboard-shortcuts-settings-themes--documentation)
+17. [Version 2.5.0 Specific Notes & What's New](#17-version-250-specific-notes--whats-new)
 
 ---
 
-## 1. Executive Overview & System Architecture
+## 1. Overview & Core Architecture
 
-OpenLocalServer (OLS) is a unified, high-performance web development environment engineered exclusively for Microsoft Windows. Designed as a modern, lightweight successor to legacy WAMP, XAMPP, and cumbersome Docker setups, OLS runs web servers, runtimes, and databases natively on the host OS with zero virtual machine overhead and microsecond I/O performance.
+OpenLocalServer (OLS) is a fast, privacy-first local web development environment built specifically for Windows. It provides a complete alternative to traditional AMP/LEMP stacks, container sprawl, and bloated local dev tooling.
 
-```
-+-------------------------------------------------------------------------+
-|                          OpenLocalServer (OLS)                          |
-+-------------------------------------------------------------------------+
-|  User Interface (React 19 + Vite + Tailwind CSS + Tauri 2.0 Webview)   |
-+------------------------------------+------------------------------------+
-|  Control Channel (Named Pipes IPC) |  CLI Engine (`olsc`)               |
-+------------------------------------+------------------------------------+
-|                      Rust Core (`ols-core` crate)                       |
-|  - Process Supervisor & Heartbeat  |  - Local DNS Engine (`*.test`)     |
-|  - Certificate Authority & SSL     |  - RAG Knowledge Base & AI Client  |
-|  - Dynamic DNS (Cloudflare Sync)   |  - AES/ChaCha20 Site Bundler       |
-+------------------------------------+------------------------------------+
-|  Web Servers (Nginx / Apache / Caddy) bound to 0.0.0.0 & 127.0.0.1      |
-+------------------------------------+------------------------------------+
-|  Runtimes: PHP 7.4-8.4 (FastCGI)   |  Node.js / Bun / Python (Proxied)  |
-|  Databases: MySQL, Postgres, Redis |  Mail Service: Mailpit (Port 8025) |
-+-------------------------------------------------------------------------+
-```
-
-### Architectural Guarantees
-- **Native Windows Execution:** No WSL2 Linux filesystem translation latency; node_modules and Composer vendors operate at full NVMe disk speed.
-- **Strict Privacy Mandate:** OLS emits **zero telemetry**, **zero analytics**, and **zero background tracking**. Network operations only occur when you explicitly ask to download a runtime, refresh a catalog, initialize a public tunnel, or query your configured AI provider.
-- **Port Conflict Protection:** The core detects port collisions (IIS, Skype, other web servers) before startup and suggests automated fixes (`Diagnostic{problem, cause, fix}`).
+### Key Architectural Pillars
+- **Zero-Config `.test` Domains:** Automatic local DNS resolution for `.test` domains without manually editing the Windows `C:\Windows\System32\drivers\etc\hosts` file for every site.
+- **Local Certificate Authority (CA):** Seamless HTTPS with trusted local certificates generated on-demand.
+- **Multi-Server Flexibility:** Switch between **Nginx**, **Apache**, and **Caddy** with one click.
+- **Process Supervision:** Lightweight, non-blocking process management for PHP-FPM pools, database engines, Mailpit, Redis, tunnels, and workers.
+- **Privacy & Security:** Zero analytics, zero telemetry. Outbound network traffic occurs only for user-initiated package downloads, catalog updates, tunnels, or configured AI providers.
 
 ---
 
-## 2. Installation, First Run & Trusting Local CA
+## 2. First Run & Quick Start
 
-### System Requirements
-- **Operating System:** Windows 10 (Build 19041+) or Windows 11 (64-bit).
-- **Permissions:** Standard user privileges for daily operation. Administrator elevation is prompted strictly when binding system ports (80/443) or installing the local Certificate Authority into the Windows Certificate Store.
+Follow these 4 simple steps to set up your environment:
 
-### First Run Checklist
+1. **Install a PHP Runtime:**
+   - Navigate to the **Runtimes** page from the sidebar.
+   - Click **Install** on your desired PHP version (e.g., PHP 8.2 or 8.3).
+   - OLS downloads official binaries, verifies the SHA-256 checksum, and sets up isolated configuration.
 
-#### Step 1: Install a PHP Runtime
-1. Open **Runtimes** from the sidebar.
-2. Under the **PHP** section, select your preferred version (e.g. PHP 8.2 or 8.3) and click **Install**.
-3. OLS downloads the official binary distribution directly, verifies its SHA-256 hash, and sets up isolated configuration files (`php.ini`).
+2. **Trust the Local Certificate Authority:**
+   - Go to **Web server** → **Certificates** tab.
+   - Click **Trust Certificate Authority**.
+   - Windows will prompt for administrative permission once. After approval, all `.test` HTTPS sites will load in Chrome, Edge, and Firefox without security warnings.
 
-#### Step 2: Trust the Local Certificate Authority (One-Time Setup)
-1. Navigate to **Web server** → **Certificates** tab.
-2. Click **Trust Certificate Authority**.
-3. Windows User Account Control (UAC) will ask for confirmation to import the root certificate into the `Trusted Root Certification Authorities` store.
-4. After approval, all `.test` domains will automatically serve valid, trusted HTTPS with green lock icons in Chrome, Edge, Brave, and Firefox.
+3. **Create or Link Your First Site:**
+   - Go to the **Sites** page.
+   - Click **Add Site / Link Project**.
+   - Enter your domain (e.g. `mysite.test`) and choose your project folder.
+   - If the folder does not exist, OLS automatically creates the directory and generates an initial welcome `index.html` or `index.php`.
 
-#### Step 3: Start Services
-- Click **Start All** in the titlebar or run `olsc start` in PowerShell.
-
----
-
-## 3. Sites & Virtual Host Management
-
-### 3.1 Adding Sites: Static, Plain PHP, and Reverse Proxy
-From the **Sites** page, click **Add Site / Link Project**:
-- **Static Site:** Serves static assets (HTML, CSS, JavaScript, WebAssembly, images) directly through the active web server.
-- **PHP Site:** Configures a dedicated virtual host upstreamed to the appropriate PHP-FPM fastcgi pool.
-- **Reverse Proxy:** Forwards inbound HTTP/HTTPS traffic to an internal local port (e.g. `http://127.0.0.1:3000` for Next.js, `http://127.0.0.1:5173` for Vite, or `http://127.0.0.1:8000` for Python FastAPI).
-
-### 3.2 Automatic Folder & Welcome Page Initialization
-*Introduced in v2.3.0:*
-- When entering a new project folder path that does not yet exist on disk, OLS automatically creates the directory tree (`std::fs::create_dir_all`).
-- If no index file (`index.html`, `index.php`, `index.htm`) exists in the directory, OLS creates a welcome page:
-  - For **Static Sites**: Generates an `index.html` file highlighting server status and environment links.
-  - For **PHP Sites**: Generates an `index.php` welcome page with an interactive PHP Info toggle (`?phpinfo=1`), active SAPI details, and loaded extensions.
-
-### 3.3 Document Roots, Custom Domains & Aliases
-- **Custom Document Roots:** Specify subdirectories such as `/public` for Laravel and Symfony, `/dist` for Vite/React/Vue, or `/web` for Drupal.
-- **Domain Aliases:** Add supplementary hostnames (e.g. `api.mysite.test`, `cdn.mysite.test`) that route directly to the same document root. Deleting an alias prompts a confirmation dialog to prevent accidental downtime.
-
-### 3.4 Site Logos & Offline Font Awesome Icons
-- Customize each site with a dedicated icon in the Sites list:
-  - **Upload Photo:** Upload any PNG, JPEG, or WebP image. OLS automatically converts it client-side into an optimized WebP icon saved as `ols_site_icon.webp` in the project root.
-  - **Built-in Font Awesome Icons:** Pick from hundreds of offline SVG icons and customize colors using hex codes or interactive color swatches.
-
-### 3.5 Missing Folder Detection & "Folder not found" Tab
-*New in v2.5.0:*
-- Automatically detects deleted directories and offline external storage devices (`D:\`, USB drives, network UNC shares).
-- Sites with missing directories are isolated into the dedicated **Folder not found** filter tab, keeping the **Enabled** and **Disabled** tabs strictly operational.
-- Includes a 1-click **Locate** button directly in the row to quickly re-point moved folders to their new location on disk.
-
-### 3.6 Multi-Domain Project Grouping & Context Menus
-*New in v2.5.0:*
-- Multiple domains sharing a project folder group into a single project row: the primary domain leads, and extra domains appear as interactive pill badges with status dots.
-- Right-clicking any site row opens the cursor-positioned actions menu, with smart boundary clamping ensuring it never cuts off or clears past screen edges.
+4. **Start the Web Server & Services:**
+   - Click the green **Start All** button in the top titlebar or sidebar.
+   - Visit `http://mysite.test` or `https://mysite.test` in your browser!
 
 ---
 
-## 4. Domains, Networking & Multi-Interface Binding
+## 3. Sites & Virtual Hosts Management
 
-### 4.1 Local DNS & Zero-Config `.test` Domains
-OLS embeds a lightweight internal DNS daemon that intercepts and resolves all queries ending in `.test` to `127.0.0.1`. You never have to manually edit the Windows `hosts` file (`C:\Windows\System32\drivers\etc\hosts`) for every new project.
+The **Sites** page is your central command hub for managing websites and web applications.
 
-### 4.2 Multi-Interface Web Binding (`0.0.0.0`) & LAN Access
-*New in v2.3.0:*
-- Web servers (Nginx, Apache, Caddy) bind to `0.0.0.0` (all IPv4 interfaces) in addition to `127.0.0.1`.
-- **Testing on Mobile & Other PCs:** Connect your smartphone, tablet, or secondary computer to the same local Wi-Fi or LAN network. Open your mobile browser and enter your PC's local IP (e.g. `http://192.168.1.50`) to access your local development environment directly!
-- **Host Header Routing Fix:** OLS correctly routes requests carrying local IP or external host headers to the intended virtual host rather than falling through to a 404 error.
-
-### 4.3 Dynamic DNS (Cloudflare Integration) & Router Port Forwarding
-*New in v2.3.0:*
-- Synchronize your public IP address with your custom domain using Cloudflare DNS:
-  1. Open the site in **Sites** → **Domains & Public Access**.
-  2. Enter your Cloudflare API Token (with `Zone:DNS:Edit` permissions) and Zone ID.
-  3. OLS tests the token, verifies the DNS A record, and periodically updates the IP when your ISP leases change.
-  4. Automatic conflict resolution warns if CGNAT (Carrier-Grade NAT) or router firewall rules block incoming port 80/443 traffic.
-
-### 4.4 Site Broadcast Controls & Public URL Copying
-*New in v2.3.0:*
-- Directly within the Site Domains panel, view the live broadcast status indicator.
-- Start or stop live tunnels with one click, and copy the live public URL (`https://*.trycloudflare.com`) directly to your clipboard.
-
----
-
-## 5. Web Servers: Nginx, Apache & Caddy
-
-### 5.1 Live Web Server Switching
-Switch between web servers instantly from the **Web server** page:
-- **Nginx:** High-throughput, event-driven architecture. Ideal for microservices, reverse proxies, and high-concurrency static apps.
-- **Apache (httpd):** Full `.htaccess` rewrite rule evaluation, `mod_rewrite`, and legacy CMS compatibility.
-- **Caddy:** Modern, memory-safe Go web server with automatic HTTPS and streamlined configuration syntax.
-
-Switching web servers automatically updates port bindings, stops the prior binary, and boots the new server in under 500ms without port collision.
-
-### 5.2 Configuration Editing & Syntax Validation
-- Edit primary web server configs directly in the CodeMirror editor.
-- Click **Test Config** before applying: OLS executes `nginx -t`, `httpd -t`, or `caddy validate` in a sandbox before reloading the live server, preventing downtime from typos.
-
-### 5.3 Apache `.htaccess` Overrides & AI Review
-- Edit `.htaccess` files for any Apache-backed site directly in the Site Settings modal.
-- Use the **Ask AI** button inside the editor to detect redirect loops, optimize cache headers, or draft complex rewrite rules with diff comparisons.
+### Adding & Configuring Sites
+- **Site Types:**
+  - **Static:** Serves HTML, CSS, client-side JS, images directly via Nginx, Apache, or Caddy.
+  - **Plain PHP / Framework:** Directs requests to the appropriate PHP-FPM fastcgi pool.
+  - **Reverse Proxy:** Forwards traffic to an internal port (e.g. Node.js on port 3000, Vite on 5173, Python FastAPI on 8000).
+- **Automatic Folder & Welcome Page Creation (v2.3.0):**
+  - If you enter a project folder path that does not yet exist on disk, OLS will automatically create the folder (`std::fs::create_dir_all`).
+  - If no index file exists in the folder, OLS automatically generates a beautiful welcome page (`index.html` for static sites, or `index.php` with an interactive PHP Info inspector for PHP sites).
+- **Document Root Customization:**
+  - Supports modern framework conventions such as `/public` (Laravel, Symfony) or `/dist` (Vite, React, Vue).
+- **Domain Aliases:**
+  - Add multiple aliases for a single site (e.g. `admin.mysite.test`, `api.mysite.test`).
+  - Safety confirmations prevent accidental deletion.
+- **Site Logos & Offline Icons:**
+  - Assign custom icons or choose from built-in Font Awesome SVGs with custom hex colors.
+  - Upload custom images (automatically converted client-side to WebP and saved in the project root as `ols_site_icon.webp`).
+- **Missing Folder Detection & "Folder not found" Tab (v2.5.0):**
+  - Isolates projects with deleted folders or offline external drives into the dedicated **Folder not found** tab.
+  - Keeps the **Enabled** and **Disabled** tabs strictly operational.
+  - Provides a 1-click **Locate** action directly in the row to relocate moved folders.
+- **Multi-Domain Project Grouping (v2.5.0):**
+  - Consolidates multiple domains sharing the same project folder into a single unified row with primary domain focus.
+  - Extra domains appear as interactive pill badges with real-time status dots; clicking any pill opens its configuration dialog.
+  - Bulk actions and deletion apply cleanly across all domains in the project row.
+- **Right-Click Context Menu (v2.5.0):**
+  - Right-clicking any site row opens the cursor-positioned actions menu with smart viewport bounds clamping and smooth internal scrolling.
 
 ---
 
-## 6. Quick Apps (1-Click Application Scaffolding)
+## 4. Domains, Networking & Remote Access
 
-The **Quick Apps** catalog allows instant creation of fully configured web applications:
+OLS provides enterprise-grade local and remote networking capabilities:
 
-| Category | Frameworks Supported | Automatic Configuration |
-|---|---|---|
-| **PHP** | WordPress, Laravel, Symfony, Plain PHP | Document root (`/public`), MySQL database, `.env` file, virtual host |
-| **Node.js** | React (Vite), Vue (Vite), Next.js, Express API | Proxy port assignment, package installation (`npm install`), dev script |
-| **Python** | Django, FastAPI, Flask | Python `venv` creation, pip requirements install, port mapping |
-| **Custom** | Custom App Scaffolds | User-defined YAML recipes and scaffold hooks |
+### Local DNS & Multi-Interface Web Binding (v2.3.0)
+- **Local Resolution:** Resolves all `*.test` domains to `127.0.0.1` locally.
+- **Multi-Interface Web Binding (`0.0.0.0`):**
+  - In v2.3.0, Web servers bind to `0.0.0.0`, allowing mobile devices, tablets, and other computers on your local WiFi/LAN to access your dev sites via your LAN IP.
+- **Host Header Routing Fix:**
+  - Public and LAN host headers properly route to virtual hosts across all web servers without falling through to default 404 pages.
 
----
-
-## 7. Commands, CLI & Developer Workflows
-
-### 7.1 Artisan, Composer, npm, pip & WP-CLI
-The **Commands** page lists all executable tools detected within your project folder:
-- **Laravel:** `php artisan migrate`, `php artisan db:seed`, `php artisan route:list`, `php artisan cache:clear`.
-- **Node.js:** `npm run dev`, `npm run build`, `npm test`.
-- **WordPress:** `wp core update`, `wp plugin list`, `wp db export`.
-
-### 7.2 Integrated Terminal & Environment Variables
-- Open a project terminal directly from the UI or launch Windows Terminal / PowerShell.
-- OLS automatically injects the active PHP version, Composer path, and project-specific `.env` variables into the terminal session's environment.
+### Dynamic DNS (DDNS) & Site Broadcast Controls
+- **Site Broadcast Controls:**
+  - Directly from the Site Domains panel, toggle site broadcasting and copy public URLs with a single click.
+- **Dynamic DNS (12+ DNS Providers):**
+  - Synchronizes your custom domain with your live external IP address through Cloudflare, DuckDNS, No-IP, Porkbun, Dynu, Namecheap, FreeDNS, DigitalOcean, Hetzner, and other popular DNS providers.
+  - Automatic collision resolution, TTL management, and router port forwarding guidance.
 
 ---
 
-## 8. Runtimes, Extensions & Debugging
+## 5. Web Servers (Nginx, Apache, Caddy)
 
-### 8.1 Isolated PHP Management (PHP 7.4 through 8.4)
-OLS isolates multiple PHP versions concurrently. Site A can run on legacy PHP 7.4 while Site B runs on PHP 8.3 and Site C runs on PHP 8.4. Each pool runs under an independent fastcgi port.
+OLS gives you full control over your web server layer:
 
-### 8.2 Extension Toggles & PECL Package Support
-- Enable or disable extensions instantly without editing `php.ini` manually:
-  `curl`, `gd`, `intl`, `mbstring`, `mysqli`, `pdo_mysql`, `pdo_pgsql`, `pdo_sqlite`, `redis`, `sodium`, `zip`, `opcache`.
-- Changes reload the PHP-FPM pool instantly.
+- **Switching Servers:**
+  - Open **Web server** in the sidebar.
+  - Switch between **Nginx**, **Apache**, and **Caddy** at any time. Configurations are automatically regenerated and reloaded without port conflicts.
+- **Configuration Editing & Syntax Testing:**
+  - Edit web server configs directly in the built-in syntax-highlighted editor.
+  - Click **Test Config** before applying to verify syntax validity and prevent server crashes.
+- **Apache `.htaccess` Support:**
+  - Apache sites fully respect local `.htaccess` files.
+  - Includes a built-in `.htaccess` editor with AI-assisted review and diff previews.
 
-### 8.3 Xdebug 3 Step-by-Step Configuration
-1. Open **Runtimes** → **PHP** → select your PHP version → click **Xdebug**.
-2. Toggle **Enable Xdebug** on.
-3. Default port is set to `9003` (Xdebug 3 standard).
-4. Configure your IDE (`launch.json` for VS Code):
-```json
-{
-  "version": "0.2.0",
-  "configurations": [
-    {
-      "name": "Listen for Xdebug",
-      "type": "php",
-      "request": "launch",
-      "port": 9003
-    }
-  ]
-}
-```
-5. Set breakpoints in your PHP code and trigger requests in your browser.
+---
+
+## 6. Quick Apps (1-Click Deployment)
+
+The **Quick Apps** page allows you to spin up production-ready web frameworks in seconds:
+
+### Supported Recipes
+- **PHP:** WordPress, Laravel, Symfony, Plain PHP.
+- **Node.js / Frontend:** React (Vite), Vue (Vite), Next.js, Express API.
+- **Python:** Django, FastAPI, Flask.
+- **Custom App:** Reverse proxy or arbitrary scaffold recipes.
+
+### How Quick Apps Work
+1. Select a recipe from **Quick Apps**.
+2. Specify the project name and domain (e.g. `myblog.test`).
+3. OLS creates the site record, provisions databases, executes composer/npm scaffolding, and opens the site ready for development.
+
+---
+
+## 7. Commands & Developer Tools
+
+The **Commands** page provides quick access to framework and project CLI actions:
+- **Artisan (Laravel):** `migrate`, `db:seed`, `route:list`, `cache:clear`, `queue:work`.
+- **Composer:** `install`, `update`, `dump-autoload`.
+- **npm / yarn / pnpm / bun:** `install`, `run dev`, `run build`.
+- **WP-CLI (WordPress):** Core update, plugin install, database export.
+- **Interactive Terminal:** Open a built-in terminal or launch Windows Terminal / PowerShell with the project environment variables pre-loaded.
+
+---
+
+## 8. Runtimes & Extensions (PHP, Node, Python)
+
+OLS isolates development runtimes without polluting your Windows system `PATH`:
+
+- **PHP Management:**
+  - Supports multiple concurrent PHP versions (7.4, 8.0, 8.1, 8.2, 8.3, 8.4, and 8.5+).
+  - **PHP 8.5+ Built-in OPcache & Windows ASLR Fix:** In PHP 8.5+, OPcache is built into the PHP core rather than an external `php_opcache.dll`. OLS automatically configures `opcache.file_cache` and `opcache.file_cache_fallback = 1` for Windows FastCGI workers, preventing Address Space Layout Randomization (ASLR) opcode handler collision crash-loops. OPcache can be toggled in the UI extension dialog (explicitly setting `opcache.enable = 0` and `opcache.enable_cli = 0` when disabled).
+  - **User-Defined `php.ini` Directives (`overrides.ini` & `conf.d/`):** Custom PHP configuration directives now survive automatic `php.ini` regenerations across restarts. Users can add custom settings to `<data_dir>/services/php/<version>/overrides.ini` (which OLS automatically scaffolds with common directives like `upload_max_filesize`, `post_max_size`, `memory_limit`, `max_execution_time`) or drop modular `.ini` snippets into `<version>/conf.d/`. These are automatically appended to the generated `php.ini` whenever runtimes start or apply.
+  - Enable/disable extensions with a single toggle: `curl`, `gd`, `intl`, `mbstring`, `mysqli`, `pdo_mysql`, `pdo_pgsql`, `pdo_sqlite`, `redis`, `sodium`, `zip`, `opcache`.
+  - **Xdebug Integration:** One-click toggle with pre-configured port `9003` for VS Code, PhpStorm, and Sublime Text.
+- **Node.js & Package Managers:**
+  - Install LTS or Current Node.js runtimes.
+  - Built-in support for npm, yarn, pnpm, and bun.
+- **Python:**
+  - Python venv virtual environments isolated per project with pip package management.
+  - Run arbitrary Python scripts or start FastAPI, Flask, and Django apps with process supervision.
 
 ---
 
 ## 9. Databases & Infrastructure Services
 
-### 9.1 Relational & In-Memory Services
-- **MySQL / MariaDB:** Default port `3306`, user `root`, blank password.
-- **PostgreSQL:** Default port `5432`, user `postgres`.
-- **SQLite:** Integrated visual database browser and schema inspector.
-- **Redis:** Port `6379` (In-memory cache & queue broker).
-- **Memcached:** Port `11211`.
-- **MongoDB:** Port `27017`.
+Manage all backend services from the **Databases** and **Services** pages:
 
-### 9.2 Mailpit Outgoing Email Catcher
-- Mailpit runs automatically on port `1025` (SMTP) and catches all outgoing emails sent via PHP `mail()` or framework mailers.
-- View and debug formatted emails, headers, HTML rendering, and spam score via the Mailpit Web UI at `http://127.0.0.1:8025`.
+- **Relational Databases:**
+  - **MySQL / MariaDB:** Default port `3306`, user `root`, no password by default.
+  - **PostgreSQL:** Default port `5432`, user `postgres`.
+  - **SQLite:** Dedicated browser, visual manager, and file-based database support.
+- **In-Memory Caches & NoSQL:**
+  - **Redis:** Port `6379`.
+  - **Memcached:** Port `11211`.
+  - **MongoDB:** Port `27017`.
+- **Mailpit (Email Testing):**
+  - Catches all outgoing emails sent via PHP `mail()` or SMTP (`127.0.0.1:1025`).
+  - View, inspect, and test emails via the Mailpit web UI at `http://127.0.0.1:8025`.
+- **Database Explorers & Query Tools:**
+  - Built-in integration with Adminer, phpMyAdmin, HeidiSQL, pgAdmin, and custom `.exe` database tools.
+  - Direct database table listing and SQL query execution tools available in CLI (`olsc db tables`, `olsc db query`) and MCP (`ols_list_tables`, `ols_execute_sql`).
+- **Dashboard Services Card Grouping (v2.5.0):**
+  - Built-in and custom services are automatically organized into 5 canonical categories: **Web servers**, **Databases**, **Cache & queues**, **Mail**, and **Other**.
+  - Collapsible section headers feature live running service counters, active green dots, rotating chevrons, and thin divider borders.
+  - Collapsed state persists across restarts via backend settings (`dashboard.services.collapsed_groups`) and browser storage.
+  - Direct, color-coded action buttons (start: emerald, stop: destructive, restart: amber, reload: sky, logs: violet) with layout-stable states.
 
 ---
 
-## 10. Public Tunnels & Webhook Traffic Inspector
+## 10. Public Tunnels & Webhook Inspection
 
-### 10.1 Cloudflare Tunnel, Ngrok & Localtunnel
-- Share local sites with external clients or test webhooks (e.g. Stripe, GitHub, Shopify):
-  - **Cloudflare Tunnel:** Requires zero configuration and generates a secure public HTTPS URL (`https://*.trycloudflare.com`).
-  - **Ngrok:** Add your auth token for persistent custom subdomains.
-- First tunnel start prompts for user confirmation before establishing public connections.
+Share your local work with clients, remote teams, or external webhooks:
 
-### 10.2 Real-Time Request Inspector & Replay
-- Inspect all inbound requests passing through the tunnel.
-- View HTTP method, path, headers, request body JSON, and query parameters.
-- Click **Replay** to re-send identical requests to your local web server for rapid webhook debugging.
+- **Tunnel Providers:**
+  - **Cloudflare Tunnel:** Zero configuration required, generates secure HTTPS URL (`https://*.trycloudflare.com`).
+  - **Ngrok:** Connect with your auth token.
+  - **Localtunnel:** Free open-source alternative.
+- **Traffic Inspector:**
+  - Inspect inbound HTTP requests in real-time.
+  - View headers, JSON payloads, and response status codes.
+  - Replay requests or export them as **k6 load test scripts**.
 
 ---
 
 ## 11. Backups, Snapshots & Encrypted Site Bundles
 
-### 11.1 Point-in-Time Site Snapshots
-Create full site backups before updating dependencies or migrating databases. Snapshots capture the database SQL dump, `.env` file, and site configuration in a single snapshot archive.
+Protect your work with built-in backup and export tools:
 
-### 11.2 Argon2id + ChaCha20-Poly1305 Encrypted Bundles
-Export portable `.olsbundle` archives:
-- **Security:** Passwords and database dumps are encrypted using **Argon2id** key derivation and **ChaCha20-Poly1305** authenticated encryption.
-- **Portability:** Move entire sites between different Windows PCs with one-click restore and collision avoidance.
-
----
-
-## 12. Monitoring, Live Logs & Process Supervision
-
-- **Multi-Source Log Viewer:** Stream web server access logs, error logs, PHP error logs, and service output in real-time with regex filtering and log-level highlighting.
-- **Background Task Registry:** Monitor long-running exports, database imports, and catalog downloads with live percentage bars and step indicators.
+- **Snapshots:**
+  - Create instant, point-in-time snapshots of site configuration, database dumps, and `.env` files before running updates.
+- **Encrypted Site Bundles (`.olsbundle`):**
+  - Export entire sites (code, settings, database dumps, `.env` files) into a portable package.
+  - **Password Protection:** Sealed using **Argon2id** key derivation and **ChaCha20-Poly1305** authenticated encryption.
+  - **Import & Clone:** Import bundles onto any computer with automatic conflict resolution and safety snapshots.
 
 ---
 
-## 13. Diagnostics, Health Engine & Doctor Auto-Repair
+## 12. Monitoring, Logs & Background Tasks
 
-- **Doctor (`olsc doctor`):** Evaluates system health across 40+ validation vectors (firewall rules, port bindings, runtime integrity, SSL certificate expiration, hosts file conflicts).
-- **Format:** Always reports findings as:
-  - **Problem:** What is wrong.
-  - **Cause:** Why it happened.
-  - **Fix:** Step-by-step instructions or one-click automatic resolution.
-- **Support Bundle:** Exports a sanitized, redacted diagnostic zip for troubleshooting without leaking credentials.
-
----
-
-## 14. AI Assistant (Private, Opt-In, Bring-Your-Own-Model)
-
-OLS includes an AI assistant that follows strict security and privacy rules:
-- **No Telemetry / No Proprietary Vendor Lock-in:** Connect to **LM Studio** (`http://localhost:1234/v1`) or **Ollama** (`http://localhost:11434/v1`) on your local machine for 100% free, private AI that never sends data outside your computer.
-- **Cloud Models (Bring Your Own Key):** Supports **OpenRouter**, **Hugging Face**, or any custom OpenAI-compatible endpoint.
-- **Pre-Prompt Secret Redaction:** API keys, database passwords, and private `.env` values are automatically stripped before generating prompts.
-- **Safety Gate:** The AI proposes step-by-step executable actions, but **never executes anything without explicit user approval**.
+- **Real-Time Logs:**
+  - Unified viewer for Web server access logs, error logs, PHP-FPM logs, service journals, and application logs.
+- **Process Supervisor:**
+  - Monitor CPU and memory usage of running workers, database engines, and web servers.
+- **Background Tasks:**
+  - Track long-running database dumps, large site exports, and catalog sync operations with real-time step progress.
 
 ---
 
-## 15. Command Line Interface Reference (`olsc`)
+## 13. Diagnostics, Health & Doctor Auto-Repair
 
-The companion CLI binary `olsc` allows complete terminal control:
+When something is not working, OLS diagnoses and fixes it:
+
+- **Doctor (`olsc doctor`):**
+  - Inspects port bindings, firewall rules, hosts entries, SSL certificates, runtime health, and service states.
+  - Reports issues using the clear format: **Problem**, **Cause**, and **Fix**.
+- **Auto-Repair:**
+  - One-click automated resolution for port conflicts, broken configs, and missing certificates.
+- **Consolidated Missing Folder Alerts & Deduplication (v2.5.0):**
+  - Consolidates all missing directories and offline drives into a single collapsible summary card on the Dashboard, eliminating duplicate warning rows.
+  - 1-click **Manage in Sites** action opens the Sites table with the `Folder not found` filter pre-selected.
+  - 1-click **Ignore all** / **Unignore all** batch toggle to silence or restore alerts in bulk.
+  - Expandable details list displays individual paths, offline drive status tags, and per-item ignore controls.
+- **Intelligent Disconnected Drive Detection (v2.5.0):**
+  - Inspects drive root prefixes (`C:\`, `D:\`, UNC shares) to distinguish missing project folders from unplugged storage drives.
+  - Reports *"The drive for <name> is disconnected"* with instructions to reconnect the drive rather than claiming the project was deleted.
+- **Support Bundle Generation:**
+  - Exports a safe, redacted ZIP bundle containing sanitized diagnostics for bug reporting.
+
+---
+
+## 14. AI Assistant & Model Context Protocol (MCP)
+
+OLS provides private, opt-in AI tools and native Model Context Protocol (MCP) support:
+
+### Supported AI Providers
+- **Local (100% Free & Private):**
+  - **LM Studio:** `http://localhost:1234/v1`
+  - **Ollama:** `http://localhost:11434/v1`
+- **Cloud (Bring Your Own Key):**
+  - **OpenRouter:** `https://openrouter.ai/api/v1`
+  - **Hugging Face:** `https://router.huggingface.co/v1`
+  - **Custom API:** Any OpenAI-compatible endpoint.
+
+### Core Capabilities
+- **Ask AI (Sidebar):** Ask any question about using OLS, configuring sites, troubleshooting, and best practices.
+- **Explain & Fix:** Explains error messages and proposes safe, executable action plans.
+- **Config & .htaccess Review:** Drafts and verifies web server rules and environment manifests.
+- **Ask the Logs:** Analyzes recent log lines to pinpoint 500 errors or failed queries.
+- **Commit Messages:** Drafts concise Git commit messages from staged changes.
+
+### Model Context Protocol (MCP) Server (`ols-mcp`)
+- Connect AI host applications (Claude Desktop, Cursor, VS Code, Goose) directly to OLS via stdio JSON-RPC 2.0.
+- Exposes tools to inspect and mutate domains, restart web servers, apply SSL certificates, manage PHP/Node/Python runtimes, list database tables, execute SQL queries, and inspect logs.
+- Supports bearer token authentication stored securely in the Windows Credential Manager.
+
+---
+
+## 15. Command Line Interface (CLI — `olsc`)
+
+OLS includes the companion CLI tool `olsc` for terminal lovers:
 
 ```bash
-# Service & Server Lifecycle
-olsc status                    # Check status of web servers and services
-olsc start                     # Start web server and autostart services
-olsc stop                      # Stop all servers, background workers, and services
-olsc restart                   # Restart the environment
+# Check status of web server and services
+olsc status
 
-# Diagnostics & Health
-olsc doctor                    # Run full diagnostic inspection
-olsc repair                    # Auto-repair detected configuration issues
+# Start / Stop / Restart
+olsc start
+olsc stop
+olsc restart
 
-# Projects & Sites
-olsc project list              # List all registered projects
-olsc project start <name>      # Start project workers and services
+# Run diagnostic health check
+olsc doctor
 
-# AI Assistant & Operations Manual
-olsc ai ask "How do I setup SSL on custom domains?"   # Query the AI assistant
-olsc guide                     # Display this complete User Manual in terminal
+# Auto-repair issues
+olsc repair
+
+# Setup environment from .openlocalserver/environment.yaml
+olsc setup
+
+# Ask the AI assistant about the app or an error
+olsc ai ask "How do I add a custom domain and SSL?"
+
+# Print or view the full user manual
+olsc guide
 ```
 
 ---
 
-## 16. Keyboard Shortcuts, Settings & Privacy Guidelines
+## 16. Keyboard Shortcuts, Settings, Themes & Documentation
 
-- **Ctrl + K / Ctrl + Shift + P:** Open the Global Command Palette & Quick Search.
-- **F5:** Refresh the current page while preserving active tabs and sub-panels.
-- **Esc:** Close active dialog, modal, or overlay.
+### Shortcuts
+- **Ctrl + K / Ctrl + Shift + P:** Open Command Palette & Search.
+- **F5:** Refresh current page while preserving active tabs and sub-panels.
+- **Esc:** Close active dialog or modal.
+
+### Privacy & System Security
+- **No telemetry, no tracking, no analytics.**
+- Secrets are stored in the secure Windows Credential Manager / OS keyring.
+- Secrets (`.env` passwords, API keys) are automatically redacted before sending any prompt to AI providers.
+- **Direct Win32 Administrator Elevation & PATH Independence (v2.5.0):**
+  - Administrative operations (such as installing the background helper or modifying the hosts file) elevate directly via Win32 `ShellExecuteExW` with the `runas` verb, avoiding PowerShell and removing any dependency on system `PATH`.
+  - System binaries (`powershell.exe`, `cmd.exe`) are resolved directly from `%SystemRoot%\System32` via `GetSystemDirectoryW`, preventing launcher environment corruption.
 
 ### Appearance & Theme Customization (v2.5.0)
-- **Settings → Appearance:** Switch between System, Light, and Dark modes.
+- **Settings → Appearance:** Choose between System, Light, and Dark modes.
 - **Curated Theme Presets:** 4 built-in presets: Default, High Contrast, Midnight Slate, and Warm Amber.
-- **Contrast-Safe Color Engine:** Computes WCAG 2.1 contrast ratios and auto-readable foreground text colors.
-- **Custom Accent Colors:** Curated swatches or custom hex/CSS color input.
+- **Contrast-Safe Color Engine:** Automatically computes WCAG 2.1 contrast ratios and readable foreground text colors.
+- **Custom Accent Colors:** Pick curated swatches or enter any custom hex/CSS color with live contrast warning badges.
 - **Icon Style:** Toggle between monochrome subtle icons or vibrant multi-color SVG gradient icons.
-- **Background Styles:** Toggle solid colors or ambient gradients with a 360° direction angle slider.
+- **Background Styles:** Toggle solid colors or ambient gradients with a 360° direction angle slider and live preview strip.
+
+### In-App Documentation & Modernized Release Notes Viewer (v2.5.0)
+- **Settings → General → Documentation & Guides:** Toggle between the full in-app **User Manual** and **Release Notes**.
+- **Real-Time Text Search:** Filter topics and sections instantly with query highlighting and clear buttons.
+- **1-Click Copy Markdown:** Export raw Markdown to your clipboard with visual confirmation.
+- **Redesigned Release Notes UI:** Inspired by Linear, Raycast, and GitHub Desktop, featuring dedicated release headers, version metadata badges, categorized feature cards with contextual Lucide icons, expandable technical details, and distraction-free typography.
 
 ---
 
-## 17. What's New in Version 2.5.0
+## 17. Version 2.5.0 Specific Notes & What's New
 
+### New Features in v2.5.0
 1. **Consolidated Missing Folder Alerts & Batch Remediation:**
    - Consolidates all missing directories and offline drives into a single, clean collapsible summary card on the Dashboard.
    - Provides a 1-click **Manage in Sites** action that switches straight to the Sites table with the `Folder not found` filter pre-selected.
@@ -394,17 +375,18 @@ olsc guide                     # Display this complete User Manual in terminal
 3. **Physical Path Deduplication:**
    - Cross-references sites and registered projects by physical disk path, emitting exactly one unified alert per folder (e.g. `chatbot-ta.local (project chatbot-TA)`) and eliminating duplicate Error + Warning rows on the Dashboard.
 4. **"Folder not found" Site Management Tab:**
-   - Dedicated filter tab (`Folder not found`) isolating sites whose project folder is missing (`status === 'missing'`) or external drive is offline (`status === 'offline'`).
+   - Adds a dedicated filter tab (`Folder not found`) isolating sites whose project folder is missing (`status === 'missing'`) or drive is offline (`status === 'offline'`).
    - Ensures the "Enabled" and "Disabled" tabs represent strictly operational projects.
-   - Provides a 1-click **Locate** button directly in the row to relocate projects to their new disk location.
+   - Provides a 1-click **Locate** action directly in the row to relocate projects to their new disk location.
 5. **Right-Click Context Menu for Sites:**
-   - Right-clicking any site row opens the actions dropdown positioned at the mouse cursor.
+   - Right-clicking any site row immediately opens the actions dropdown positioned at the mouse cursor.
    - Shares a single unified menu definition with the row's Actions button, keeping all actions 100% in sync.
 6. **Smart Viewport Clamping & Internal Scrolling:**
    - Floating menus automatically calculate available viewport space, flip upward or leftward near edges, and enforce clearance below the 36px titlebar (`minTop = 44px`, `z-[95]`).
    - Constrains maximum dropdown height (`calc(100vh - 52px)`) with smooth internal scrolling (`overflow-y-auto`) for small windows and laptop displays, ignoring internal scroll events to prevent accidental closure.
 7. **Live System Tray Tooltip Synchronization:**
    - Real-time tray icon tooltip (`OpenLocalServer — X of Y running`) updates immediately when sites or services start, stop, or change health status.
+   - Thread-safe tooltip synchronization with cached string deduplication (`TOOLTIP_SHOWS`) decoupled from Win32 menu rebuilds.
 8. **Vibrant Navigation & Aurora Themes:**
    - High-contrast, multi-color SVG gradient icons across sidebar and settings navigation.
    - Active neon glowing indicators and fluid Dark Aurora / Light Aurora ambient background meshes.
@@ -418,7 +400,7 @@ olsc guide                     # Display this complete User Manual in terminal
    - Real-time interactive preview strip.
 10. **Dashboard Services Card Grouping & Action States:**
     - Redesigned Services card with fluid responsive grid.
-    - Clear, fixed ordering of all 9 built-in services.
+    - Clear, fixed ordering of all 9 built-in services organized across Web servers, Databases, Cache & queues, Mail, and Other.
     - Color-coded action buttons with subtle opacity (start: emerald, stop: destructive, restart: amber, reload: sky, logs: violet).
     - Flattened styling for currently unavailable actions to prevent layout shifts.
 11. **Multi-Domain Project Grouping:**
@@ -437,4 +419,8 @@ olsc guide                     # Display this complete User Manual in terminal
 14. **Direct Win32 Administrator Elevation & PATH Independence:**
     - Replaced PowerShell `Start-Process -Verb RunAs` elevation with direct Win32 `ShellExecuteExW` (`runas` verb), removing the dependency on `powershell.exe` on system PATH.
     - System executables (`powershell.exe`, `cmd.exe`) are now resolved directly from `%SystemRoot%\System32` via `GetSystemDirectoryW`, ensuring the built-in terminal and background tools run reliably even with missing or corrupted PATH environments.
-
+15. **Modernized In-App Release Notes & Documentation Viewer:**
+    - Completely overhauled the Release Notes interface in `Settings → General` with a native application design inspired by Linear, Raycast, and GitHub Desktop.
+    - Added dedicated release header with version badge, release date, platform, license, and concise lead summary.
+    - Replaced dense markdown lists with visually organized feature cards featuring topic-specific Lucide icons, short descriptions, and collapsible technical deep-dives.
+    - Added real-time text search filter with result counts and 1-click raw Markdown copy.

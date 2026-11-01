@@ -4,6 +4,7 @@ import { CodeEditor } from '@/components/CodeEditor'
 import { ErrorCard } from '@/components/ErrorCard'
 import { SaveButton } from '@/components/SaveButton'
 import { Badge } from '@/components/ui/badge'
+import { Select } from '@/components/ui/form'
 import { runCommand } from '@/core'
 import { useAction } from '@/lib/hooks'
 
@@ -36,7 +37,26 @@ export function HtaccessEditor({ hostname }: { hostname: string }) {
     {server !== 'apache' && <div className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-sm text-warning">The active server is {server === 'nginx' ? 'Nginx' : 'Caddy'}; it does not read .htaccess files.</div>}
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div className="flex items-center gap-2"><Badge variant="secondary">Apache</Badge><span className="text-xs text-muted-foreground">{exists ? 'Saved in the site document root' : 'File will be created when saved'}</span></div>
-      <div className="flex gap-2"><select aria-label="Create .htaccess from template" className="h-8 rounded-md border border-border/80 dark:border-white/15 bg-background hover:border-muted-foreground/40 dark:hover:border-white/25 px-2 text-xs cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30" defaultValue="" onChange={(e) => { if (e.target.value) { setContent(TEMPLATES[e.target.value]); setExists(false); e.currentTarget.value = '' } }}><option value="">Create from template…</option>{Object.keys(TEMPLATES).map((name) => <option key={name}>{name}</option>)}</select><SaveButton action={action} name="save" size="sm" busyLabel="Saving…" onClick={() => void run('save', async () => { const r = await runCommand({ type: 'write_site_file', hostname, name: '.htaccess', content }); if (r.type === 'text') setExists(true) })}>Save .htaccess</SaveButton></div>
+      <div className="flex gap-2">
+        <Select
+          aria-label="Create .htaccess from template"
+          className="w-52"
+          triggerClassName="h-8 text-xs"
+          value=""
+          onChange={(e) => {
+            if (e.target.value) {
+              setContent(TEMPLATES[e.target.value])
+              setExists(false)
+            }
+          }}
+        >
+          <option value="">Create from template…</option>
+          {Object.keys(TEMPLATES).map((name) => (
+            <option key={name} value={name}>{name}</option>
+          ))}
+        </Select>
+        <SaveButton action={action} name="save" size="sm" busyLabel="Saving…" onClick={() => void run('save', async () => { const r = await runCommand({ type: 'write_site_file', hostname, name: '.htaccess', content }); if (r.type === 'text') setExists(true) })}>Save .htaccess</SaveButton>
+      </div>
     </div>
     <CodeEditor value={content} onChange={setContent} language="apache" height="100%" />
   </div>

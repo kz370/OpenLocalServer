@@ -23,9 +23,9 @@
 11. [Backups, Snapshots & Encrypted Site Bundles](#11-backups-snapshots--encrypted-site-bundles)
 12. [Monitoring, Logs & Background Tasks](#12-monitoring-logs--background-tasks)
 13. [Diagnostics, Health & Doctor Auto-Repair](#13-diagnostics-health--doctor-auto-repair)
-14. [AI Assistant (Local & Cloud Bring-Your-Own-Model)](#14-ai-assistant-local--cloud-bring-your-own-model)
+14. [AI Assistant & Model Context Protocol (MCP)](#14-ai-assistant--model-context-protocol-mcp)
 15. [Command Line Interface (CLI — `olsc`)](#15-command-line-interface-cli--olsc)
-16. [Keyboard Shortcuts, Settings & Privacy](#16-keyboard-shortcuts-settings--privacy)
+16. [Keyboard Shortcuts, Settings, Themes & Documentation](#16-keyboard-shortcuts-settings-themes--documentation)
 17. [Version 2.5.0 Specific Notes & What's New](#17-version-250-specific-notes--whats-new)
 
 ---
@@ -113,12 +113,12 @@ OLS provides enterprise-grade local and remote networking capabilities:
 - **Host Header Routing Fix:**
   - Public and LAN host headers properly route to virtual hosts across all web servers without falling through to default 404 pages.
 
-### Dynamic DNS (DDNS) & Site Broadcast Controls (v2.3.0)
+### Dynamic DNS (DDNS) & Site Broadcast Controls
 - **Site Broadcast Controls:**
   - Directly from the Site Domains panel, toggle site broadcasting and copy public URLs with a single click.
-- **Dynamic DNS (Cloudflare Sync):**
-  - Synchronizes your custom domain with your live external IP address through Cloudflare DNS API.
-  - Automatic collision resolution and router port forwarding guidance.
+- **Dynamic DNS (12+ DNS Providers):**
+  - Synchronizes your custom domain with your live external IP address through Cloudflare, DuckDNS, No-IP, Porkbun, Dynu, Namecheap, FreeDNS, DigitalOcean, Hetzner, and other popular DNS providers.
+  - Automatic collision resolution, TTL management, and router port forwarding guidance.
 
 ---
 
@@ -171,14 +171,17 @@ The **Commands** page provides quick access to framework and project CLI actions
 OLS isolates development runtimes without polluting your Windows system `PATH`:
 
 - **PHP Management:**
-  - Supports multiple concurrent PHP versions (7.4, 8.0, 8.1, 8.2, 8.3, 8.4).
-  - Enable/disable extensions with a single toggle: `curl`, `gd`, `intl`, `mbstring`, `mysqli`, `pdo_mysql`, `pdo_pgsql`, `pdo_sqlite`, `redis`, `sodium`, `zip`.
+  - Supports multiple concurrent PHP versions (7.4, 8.0, 8.1, 8.2, 8.3, 8.4, and 8.5+).
+  - **PHP 8.5+ Built-in OPcache & Windows ASLR Fix:** In PHP 8.5+, OPcache is built into the PHP core rather than an external `php_opcache.dll`. OLS automatically configures `opcache.file_cache` and `opcache.file_cache_fallback = 1` for Windows FastCGI workers, preventing Address Space Layout Randomization (ASLR) opcode handler collision crash-loops. OPcache can be toggled in the UI extension dialog (explicitly setting `opcache.enable = 0` and `opcache.enable_cli = 0` when disabled).
+  - **User-Defined `php.ini` Directives (`overrides.ini` & `conf.d/`):** Custom PHP configuration directives now survive automatic `php.ini` regenerations across restarts. Users can add custom settings to `<data_dir>/services/php/<version>/overrides.ini` (which OLS automatically scaffolds with common directives like `upload_max_filesize`, `post_max_size`, `memory_limit`, `max_execution_time`) or drop modular `.ini` snippets into `<version>/conf.d/`. These are automatically appended to the generated `php.ini` whenever runtimes start or apply.
+  - Enable/disable extensions with a single toggle: `curl`, `gd`, `intl`, `mbstring`, `mysqli`, `pdo_mysql`, `pdo_pgsql`, `pdo_sqlite`, `redis`, `sodium`, `zip`, `opcache`.
   - **Xdebug Integration:** One-click toggle with pre-configured port `9003` for VS Code, PhpStorm, and Sublime Text.
 - **Node.js & Package Managers:**
   - Install LTS or Current Node.js runtimes.
   - Built-in support for npm, yarn, pnpm, and bun.
 - **Python:**
   - Python venv virtual environments isolated per project with pip package management.
+  - Run arbitrary Python scripts or start FastAPI, Flask, and Django apps with process supervision.
 
 ---
 
@@ -189,7 +192,7 @@ Manage all backend services from the **Databases** and **Services** pages:
 - **Relational Databases:**
   - **MySQL / MariaDB:** Default port `3306`, user `root`, no password by default.
   - **PostgreSQL:** Default port `5432`, user `postgres`.
-  - **SQLite:** Dedicated browser and visual manager.
+  - **SQLite:** Dedicated browser, visual manager, and file-based database support.
 - **In-Memory Caches & NoSQL:**
   - **Redis:** Port `6379`.
   - **Memcached:** Port `11211`.
@@ -197,8 +200,14 @@ Manage all backend services from the **Databases** and **Services** pages:
 - **Mailpit (Email Testing):**
   - Catches all outgoing emails sent via PHP `mail()` or SMTP (`127.0.0.1:1025`).
   - View, inspect, and test emails via the Mailpit web UI at `http://127.0.0.1:8025`.
-- **Database Explorers:**
+- **Database Explorers & Query Tools:**
   - Built-in integration with Adminer, phpMyAdmin, HeidiSQL, pgAdmin, and custom `.exe` database tools.
+  - Direct database table listing and SQL query execution tools available in CLI (`olsc db tables`, `olsc db query`) and MCP (`ols_list_tables`, `ols_execute_sql`).
+- **Dashboard Services Card Grouping (v2.5.0):**
+  - Built-in and custom services are automatically organized into 5 canonical categories: **Web servers**, **Databases**, **Cache & queues**, **Mail**, and **Other**.
+  - Collapsible section headers feature live running service counters, active green dots, rotating chevrons, and thin divider borders.
+  - Collapsed state persists across restarts via backend settings (`dashboard.services.collapsed_groups`) and browser storage.
+  - Direct, color-coded action buttons (start: emerald, stop: destructive, restart: amber, reload: sky, logs: violet) with layout-stable states.
 
 ---
 
@@ -250,16 +259,24 @@ When something is not working, OLS diagnoses and fixes it:
   - Reports issues using the clear format: **Problem**, **Cause**, and **Fix**.
 - **Auto-Repair:**
   - One-click automated resolution for port conflicts, broken configs, and missing certificates.
+- **Consolidated Missing Folder Alerts & Deduplication (v2.5.0):**
+  - Consolidates all missing directories and offline drives into a single collapsible summary card on the Dashboard, eliminating duplicate warning rows.
+  - 1-click **Manage in Sites** action opens the Sites table with the `Folder not found` filter pre-selected.
+  - 1-click **Ignore all** / **Unignore all** batch toggle to silence or restore alerts in bulk.
+  - Expandable details list displays individual paths, offline drive status tags, and per-item ignore controls.
+- **Intelligent Disconnected Drive Detection (v2.5.0):**
+  - Inspects drive root prefixes (`C:\`, `D:\`, UNC shares) to distinguish missing project folders from unplugged storage drives.
+  - Reports *"The drive for <name> is disconnected"* with instructions to reconnect the drive rather than claiming the project was deleted.
 - **Support Bundle Generation:**
   - Exports a safe, redacted ZIP bundle containing sanitized diagnostics for bug reporting.
 
 ---
 
-## 14. AI Assistant (Local & Cloud Bring-Your-Own-Model)
+## 14. AI Assistant & Model Context Protocol (MCP)
 
-The built-in AI Assistant is completely private and opt-in:
+OLS provides private, opt-in AI tools and native Model Context Protocol (MCP) support:
 
-### Supported Providers
+### Supported AI Providers
 - **Local (100% Free & Private):**
   - **LM Studio:** `http://localhost:1234/v1`
   - **Ollama:** `http://localhost:11434/v1`
@@ -274,6 +291,11 @@ The built-in AI Assistant is completely private and opt-in:
 - **Config & .htaccess Review:** Drafts and verifies web server rules and environment manifests.
 - **Ask the Logs:** Analyzes recent log lines to pinpoint 500 errors or failed queries.
 - **Commit Messages:** Drafts concise Git commit messages from staged changes.
+
+### Model Context Protocol (MCP) Server (`ols-mcp`)
+- Connect AI host applications (Claude Desktop, Cursor, VS Code, Goose) directly to OLS via stdio JSON-RPC 2.0.
+- Exposes tools to inspect and mutate domains, restart web servers, apply SSL certificates, manage PHP/Node/Python runtimes, list database tables, execute SQL queries, and inspect logs.
+- Supports bearer token authentication stored securely in the Windows Credential Manager.
 
 ---
 
@@ -308,25 +330,34 @@ olsc guide
 
 ---
 
-## 16. Keyboard Shortcuts, Settings & Privacy
+## 16. Keyboard Shortcuts, Settings, Themes & Documentation
 
 ### Shortcuts
 - **Ctrl + K / Ctrl + Shift + P:** Open Command Palette & Search.
 - **F5:** Refresh current page while preserving active tabs and sub-panels.
 - **Esc:** Close active dialog or modal.
 
-### Privacy Guarantee
+### Privacy & System Security
 - **No telemetry, no tracking, no analytics.**
 - Secrets are stored in the secure Windows Credential Manager / OS keyring.
 - Secrets (`.env` passwords, API keys) are automatically redacted before sending any prompt to AI providers.
+- **Direct Win32 Administrator Elevation & PATH Independence (v2.5.0):**
+  - Administrative operations (such as installing the background helper or modifying the hosts file) elevate directly via Win32 `ShellExecuteExW` with the `runas` verb, avoiding PowerShell and removing any dependency on system `PATH`.
+  - System binaries (`powershell.exe`, `cmd.exe`) are resolved directly from `%SystemRoot%\System32` via `GetSystemDirectoryW`, preventing launcher environment corruption.
 
 ### Appearance & Theme Customization (v2.5.0)
 - **Settings → Appearance:** Choose between System, Light, and Dark modes.
 - **Curated Theme Presets:** 4 built-in presets: Default, High Contrast, Midnight Slate, and Warm Amber.
 - **Contrast-Safe Color Engine:** Automatically computes WCAG 2.1 contrast ratios and readable foreground text colors.
-- **Custom Accent Colors:** Pick curated swatches or enter any custom hex/CSS color.
+- **Custom Accent Colors:** Pick curated swatches or enter any custom hex/CSS color with live contrast warning badges.
 - **Icon Style:** Toggle between monochrome subtle icons or vibrant multi-color SVG gradient icons.
-- **Background Styles:** Toggle solid colors or ambient gradients with a 360° direction angle slider.
+- **Background Styles:** Toggle solid colors or ambient gradients with a 360° direction angle slider and live preview strip.
+
+### In-App Documentation & Modernized Release Notes Viewer (v2.5.0)
+- **Settings → General → Documentation & Guides:** Toggle between the full in-app **User Manual** and **Release Notes**.
+- **Real-Time Text Search:** Filter topics and sections instantly with query highlighting and clear buttons.
+- **1-Click Copy Markdown:** Export raw Markdown to your clipboard with visual confirmation.
+- **Redesigned Release Notes UI:** Inspired by Linear, Raycast, and GitHub Desktop, featuring dedicated release headers, version metadata badges, categorized feature cards with contextual Lucide icons, expandable technical details, and distraction-free typography.
 
 ---
 
@@ -369,7 +400,7 @@ olsc guide
    - Real-time interactive preview strip.
 10. **Dashboard Services Card Grouping & Action States:**
     - Redesigned Services card with fluid responsive grid.
-    - Clear, fixed ordering of all 9 built-in services.
+    - Clear, fixed ordering of all 9 built-in services organized across Web servers, Databases, Cache & queues, Mail, and Other.
     - Color-coded action buttons with subtle opacity (start: emerald, stop: destructive, restart: amber, reload: sky, logs: violet).
     - Flattened styling for currently unavailable actions to prevent layout shifts.
 11. **Multi-Domain Project Grouping:**
@@ -388,4 +419,8 @@ olsc guide
 14. **Direct Win32 Administrator Elevation & PATH Independence:**
     - Replaced PowerShell `Start-Process -Verb RunAs` elevation with direct Win32 `ShellExecuteExW` (`runas` verb), removing the dependency on `powershell.exe` on system PATH.
     - System executables (`powershell.exe`, `cmd.exe`) are now resolved directly from `%SystemRoot%\System32` via `GetSystemDirectoryW`, ensuring the built-in terminal and background tools run reliably even with missing or corrupted PATH environments.
-
+15. **Modernized In-App Release Notes & Documentation Viewer:**
+    - Completely overhauled the Release Notes interface in `Settings → General` with a native application design inspired by Linear, Raycast, and GitHub Desktop.
+    - Added dedicated release header with version badge, release date, platform, license, and concise lead summary.
+    - Replaced dense markdown lists with visually organized feature cards featuring topic-specific Lucide icons, short descriptions, and collapsible technical deep-dives.
+    - Added real-time text search filter with result counts and 1-click raw Markdown copy.

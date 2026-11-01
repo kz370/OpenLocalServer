@@ -211,3 +211,5 @@ ui/index.html | pre_paints_theme | reads 'ols-appearance' / 'ols-theme' from loc
 CodeEditor & Terminal & SystemMonitor & TrafficGraph | derive_from | active theme tokens (CodeMirror surface/cursor/selection/activeLine, xterm background/foreground/cursor/selection, donut chart strokes, traffic graph UP_COLOR/DOWN_COLOR)
 elevate | uses | Win32 ShellExecuteExW (runas verb) directly for UAC elevation without invoking powershell
 exec | resolves | Windows system binaries via GetSystemDirectoryW (%SystemRoot%\System32) independently of PATH
+SettingsPage (Documentation & Release Notes) | uses | ReleaseNotesView (renders structured changelogs with release metadata headers, feature cards, and expandable details)
+ReleaseNotesView | uses | releaseNotes::parseReleaseNotes & filterReleaseNotes (tokenizes raw Markdown with marked.lexer and maps topic icons)

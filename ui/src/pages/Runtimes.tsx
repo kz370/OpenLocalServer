@@ -1,6 +1,6 @@
 import { listen } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
-import { Bug, Check, ChevronDown, Download, FolderSearch, Pause, Play, Puzzle, Settings2, Square, Trash2 } from 'lucide-react'
+import { Bug, Check, Download, FolderSearch, Pause, Play, Puzzle, Settings2, Square, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { Spinner } from '@/components/Spinner'
@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog } from '@/components/ui/dialog'
+import { Select } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { TechIcon } from '@/components/TechIcon'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -434,21 +435,19 @@ export function RuntimesPage() {
               <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">Choose its runtime and version, then locate the file.</p>
             </div>
             <div className="flex min-w-0 flex-wrap items-center gap-2 sm:flex-nowrap">
-              <div className="relative w-24 shrink-0">
-                <select
-                  aria-label="Executable runtime"
-                  value={customId}
-                  onChange={(e) => setCustomId(e.target.value)}
-                  className="h-8 w-full appearance-none rounded-md border border-border/80 dark:border-white/15 bg-input/60 hover:bg-input/80 hover:border-muted-foreground/40 dark:hover:border-white/25 py-1 pl-2.5 pr-8 text-[13px] cursor-pointer focus-visible:border-ring focus-visible:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
-                >
-                  {LOCATABLE.map((id) => (
-                    <option key={id} value={id}>
-                      {id}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-              </div>
+              <Select
+                aria-label="Executable runtime"
+                value={customId}
+                onChange={(e) => setCustomId(e.target.value)}
+                className="w-24 shrink-0"
+                triggerClassName="h-8 text-[13px] px-2.5"
+              >
+                {LOCATABLE.map((id) => (
+                  <option key={id} value={id}>
+                    {id}
+                  </option>
+                ))}
+              </Select>
               <Input
                 aria-label="Executable version"
                 value={customLabel}
@@ -566,29 +565,27 @@ export function RuntimesPage() {
                 placeholder="Search versions…"
                 className="h-9 text-[13px]"
               />
-              <div className="relative min-w-0">
-                <select
-                  aria-label={`Available ${managedGroup.name} versions`}
-                  value={selectedInstall}
-                  disabled={filteredOptions.length === 0 || dialogChecking}
-                  onChange={(e) => setInstallChoices((prev) => ({ ...prev, [managedGroup.id]: e.target.value }))}
-                  className="h-9 w-full min-w-0 appearance-none rounded-md border border-border/80 dark:border-white/15 bg-background hover:border-muted-foreground/40 dark:hover:border-white/25 py-1 pl-2.5 pr-8 text-[13px] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
-                >
-                  {filteredOptions.length === 0 && dialogChecking && <option value="">Checking vendor list…</option>}
-                  {filteredOptions.length === 0 && !dialogChecking && unverifiedCount > 0 && <option value="">Verifying cached versions…</option>}
-                  {filteredOptions.length === 0 && !dialogChecking && unverifiedCount === 0 && installable.length === 0 && <option value="">All catalog versions are installed</option>}
-                  {filteredOptions.length === 0 && !dialogChecking && versionSearch.trim() !== '' && verifiedManaged.length > 0 && <option value="">No versions match your search</option>}
-                  {[...optionsByMajor].map(([major, rows]) => (
-                    <optgroup key={major} label={major === 'Other' ? major : `Major ${major}`}>
-                      {rows.map((row) => {
-                        const installed = !!row.entry?.installed
-                        return <option key={row.key} value={row.version} disabled={installed}>{row.version}{installed ? ' · Installed' : progress[row.key]?.kind === 'progress' ? ' · Installing' : pending.has(row.key) ? ' · Starting…' : ''}</option>
-                      })}
-                    </optgroup>
-                  ))}
-                </select>
-                <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-              </div>
+              <Select
+                aria-label={`Available ${managedGroup.name} versions`}
+                value={selectedInstall}
+                disabled={filteredOptions.length === 0 || dialogChecking}
+                onChange={(e) => setInstallChoices((prev) => ({ ...prev, [managedGroup.id]: e.target.value }))}
+                className="min-w-0 flex-1"
+                triggerClassName="h-9 text-[13px] px-2.5"
+              >
+                {filteredOptions.length === 0 && dialogChecking && <option value="">Checking vendor list…</option>}
+                {filteredOptions.length === 0 && !dialogChecking && unverifiedCount > 0 && <option value="">Verifying cached versions…</option>}
+                {filteredOptions.length === 0 && !dialogChecking && unverifiedCount === 0 && installable.length === 0 && <option value="">All catalog versions are installed</option>}
+                {filteredOptions.length === 0 && !dialogChecking && versionSearch.trim() !== '' && verifiedManaged.length > 0 && <option value="">No versions match your search</option>}
+                {[...optionsByMajor].map(([major, rows]) => (
+                  <optgroup key={major} label={major === 'Other' ? major : `Major ${major}`}>
+                    {rows.map((row) => {
+                      const installed = !!row.entry?.installed
+                      return <option key={row.key} value={row.version} disabled={installed}>{row.version}{installed ? ' · Installed' : progress[row.key]?.kind === 'progress' ? ' · Installing' : pending.has(row.key) ? ' · Starting…' : ''}</option>
+                    })}
+                  </optgroup>
+                ))}
+              </Select>
               <Button
                 className="h-9 shrink-0 px-3.5 text-[13px]"
                 disabled={!selectedInstall || !selectedInstallVisible || installingChoice || installable.length === 0 || dialogChecking}
