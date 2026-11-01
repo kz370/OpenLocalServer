@@ -18,7 +18,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { type CatalogEntry, type CustomInstall, type Diagnostic, type RuntimeEvent, runCommand } from '@/core'
 import { formatBytes } from '@/lib/hooks'
 import { confirmAction } from '@/lib/confirm'
-import { compareVersionsDesc, formatAvailableVersions, getRuntimeStatus } from '@/lib/runtimeStatus'
+import {
+  compareVersionsDesc,
+  formatAvailableVersions,
+  getRuntimeStatus,
+  isMajorUpgrade,
+  isPrerelease,
+} from '@/lib/runtimeStatus'
+import { cn } from '@/lib/utils'
 
 /** Runtimes a user may already have somewhere else and want to point at. */
 const LOCATABLE = ['php', 'node', 'python']
@@ -46,8 +53,6 @@ function readCatalogCache(): Record<string, CachedCatalog> {
   }
 }
 
-
-
 interface Row {
   key: string
   version: string
@@ -71,35 +76,55 @@ export function RuntimesPage() {
   const [catalogRefreshing, setCatalogRefreshing] = useState(false)
   const [catalogStatus, setCatalogStatus] = useState<Record<string, CatalogStatus>>({})
   const [cachedCatalogIds, setCachedCatalogIds] = useState<Set<string>>(new Set())
-  // Versions the backend actually listed (builtin + online). localStorage cache
-  // entries are display-only until a refresh confirms them — installing a stale
-  // cached version fails with "not in the current online or built-in version list".
   const [verifiedKeys, setVerifiedKeys] = useState<Set<string>>(new Set())
-  // Install failure for the open dialog. Kept in dedicated state (not derived
-  // from the progress map) so a catalog refresh can't wipe it mid-read.
+  const [filter, setFilter] = useState<'all' | 'updates' | 'installed'>('all')
+
   const [installError, setInstallError] = useState<{ id: string; version: string; message: string } | null>(null)
-  // Versions whose install was requested but has not reported yet. `install_runtime`
-  // returns immediately, and the first backend event only comes after the online
-  // manifest is resolved and the first chunk lands — seconds of silence without this.
   const [pending, setPending] = useState<Set<string>>(new Set())
 
   const [customInstalls, setCustomInstalls] = useState<CustomInstall[]>([])
   const [manageId, setManageId] = useState<string | null>(null)
   const [installChoices, setInstallChoices] = useState<Record<string, string>>({})
   const [versionSearch, setVersionSearch] = useState('')
+  const [showPrerelease, setShowPrerelease] = useState(false)
   const [customId, setCustomId] = useState('php')
   const [customLabel, setCustomLabel] = useState('')
   const [extVersion, setExtVersion] = useState<string | null>(null)
   const [xdebugVersion, setXdebugVersion] = useState<string | null>(null)
-  // Render guard: coalesces progress bursts so a flooded event stream can't
-  // lock the page. Backend already throttles emits; this caps re-renders ~4/s.
   const lastProgressPaint = useRef(0)
 
   async function refresh() {
     const res = await runCommand({ type: 'list_runtime_catalog' })
     if (res.type === 'runtime_catalog') {
-      setCatalog(res.entries)
-      setVerifiedKeys(new Set(res.entries.map((e) => `${e.id}@${e.version}`)))
+      const cached = readCatalogCache()
+      setCachedCatalogIds(new Set(Object.keys(cached)))
+      const cachedEntries = Object.entries(cached).flatMap(([id, value]) =>
+        value.versions.map(({ name, version }) => ({
+          id,
+          name,
+          version,
+          installed: false,
+          is_default: false,
+          system: null,
+        })),
+      )
+      setCatalog((prev) => {
+        const byKey = new Map<string, CatalogEntry>()
+        for (const entry of prev) {
+          byKey.set(`${entry.id}@${entry.version}`, entry)
+        }
+        for (const entry of cachedEntries) {
+          const key = `${entry.id}@${entry.version}`
+          if (!byKey.has(key)) {
+            byKey.set(key, entry)
+          }
+        }
+        for (const entry of res.entries) {
+          byKey.set(`${entry.id}@${entry.version}`, entry)
+        }
+        return Array.from(byKey.values())
+      })
+      setVerifiedKeys((prev) => new Set([...prev, ...res.entries.map((e) => `${e.id}@${e.version}`)]))
     }
     const custom = await runCommand({ type: 'list_custom_installs' })
     if (custom.type === 'custom_installs') setCustomInstalls(custom.entries)
@@ -184,14 +209,6 @@ export function RuntimesPage() {
         await refresh()
         if (!active) return
         const cached = readCatalogCache()
-        setCachedCatalogIds(new Set(Object.keys(cached)))
-        const cachedEntries = Object.entries(cached).flatMap(([id, value]) =>
-          value.versions.map(({ name, version }) => ({ id, name, version, installed: false, is_default: false, system: null })),
-        )
-        setCatalog((prev) => {
-          const known = new Set(prev.map((entry) => `${entry.id}@${entry.version}`))
-          return [...prev, ...cachedEntries.filter((entry) => !known.has(`${entry.id}@${entry.version}`))]
-        })
         const staleIds = [...ONLINE_CATALOGS].filter((id) =>
           !cached[id] || Date.now() - cached[id].fetchedAt >= ONLINE_CATALOG_CACHE_TTL,
         )
@@ -210,9 +227,6 @@ export function RuntimesPage() {
       const e = event.payload
       const key = `${e.id}@${e.version}`
       setPending((prev) => (prev.has(key) ? new Set([...prev].filter((k) => k !== key)) : prev))
-      // Only coalesce byte-progress. A state change (paused, resumed, verifying) is one
-      // event the user is waiting on, so dropping it left the button stuck on the state
-      // they just left — pausing looked like it did nothing.
       if (e.kind === 'progress' && e.state === 'downloading') {
         const now = Date.now()
         if (now - lastProgressPaint.current < 250) return
@@ -221,8 +235,6 @@ export function RuntimesPage() {
       setProgress((prev) => ({ ...prev, [key]: e }))
       if (e.kind === 'failed') setInstallError({ id: e.id, version: e.version, message: e.message })
       if (e.kind === 'installed') setInstallError(null)
-      // A stop is not a failure, so it clears no error and sets none — but the version
-      // is no longer installing, so the catalog still needs re-reading.
       if (e.kind === 'installed' || e.kind === 'failed' || e.kind === 'cancelled') void refresh()
     })
     return () => {
@@ -235,9 +247,6 @@ export function RuntimesPage() {
     guarded(async () => {
       const key = `${entry.id}@${entry.version}`
       setInstallError(null)
-      // Paint the in-progress state here, not on the first event: the backend sends
-      // nothing until the manifest resolves and bytes arrive, and until then the button
-      // looked dead.
       setPending((prev) => new Set([...prev, key]))
       try {
         await runCommand({ type: 'install_runtime', id: entry.id, version: entry.version })
@@ -247,7 +256,15 @@ export function RuntimesPage() {
       }
     })
 
-  const handleUpdate = (group: Group, version: string) => {
+  const handleUpdate = async (group: Group, version: string, isMajor: boolean) => {
+    if (isMajor) {
+      const ok = await confirmAction(
+        `Upgrading ${group.name} to ${version} is a major version upgrade.\n\nMajor upgrades may introduce breaking changes, configuration deprecations, or data format incompatibilities with existing databases and applications.\n\nAre you sure you want to proceed with installing ${group.name} ${version}?`,
+        `Major Version Upgrade: ${group.name} ${version}`,
+        `Upgrade to ${version}`,
+      )
+      if (!ok) return
+    }
     const row = group.rows.find((r) => r.version === version && r.kind === 'managed')
     const entry: CatalogEntry = row?.entry ?? {
       id: group.id,
@@ -260,8 +277,6 @@ export function RuntimesPage() {
     void install(entry)
   }
 
-  // Pause/Resume hold the transfer where it is rather than restarting it: the partial
-  // file is kept, so resuming finishes the same download.
   const setPaused = (entry: CatalogEntry, paused: boolean) =>
     guarded(async () => {
       await runCommand({ type: 'pause_runtime', id: entry.id, version: entry.version, paused })
@@ -301,15 +316,13 @@ export function RuntimesPage() {
     setInstallError(null)
     setManageId(group.id)
     setVersionSearch('')
-    const defaultChoice = preselectedVersion ?? group.rows.find((r) => r.kind === 'managed' && !r.entry?.installed)?.version ?? ''
+    setShowPrerelease(preselectedVersion ? isPrerelease(preselectedVersion) : false)
+    const defaultChoice = preselectedVersion ?? group.rows.find((r) => r.kind === 'managed' && !r.entry?.installed && !isPrerelease(r.version))?.version ?? group.rows.find((r) => r.kind === 'managed' && !r.entry?.installed)?.version ?? ''
     setInstallChoices((prev) => ({ ...prev, [group.id]: defaultChoice }))
     if (!ONLINE_CATALOGS.has(group.id)) {
       setCatalogRefreshing(false)
       return
     }
-    // Always verify against the vendor list on open: the localStorage cache
-    // survives daemon restarts but the backend's online list does not, so a
-    // cached-only choice would fail validation at install time.
     if (catalogStatus[group.id] === 'checking') {
       setCatalogRefreshing(false)
       return
@@ -323,6 +336,8 @@ export function RuntimesPage() {
           return
         }
         const newest = entries
+          .filter((entry) => !entry.installed && !isPrerelease(entry.version))
+          .sort((a, b) => compareVersionsDesc(a.version, b.version))[0] ?? entries
           .filter((entry) => !entry.installed)
           .sort((a, b) => compareVersionsDesc(a.version, b.version))[0]
         if (newest) setInstallChoices((prev) => ({ ...prev, [group.id]: newest.version }))
@@ -354,18 +369,116 @@ export function RuntimesPage() {
     }
     const list = [...byId.values()]
     for (const g of list) g.rows.sort((a, b) => compareVersionsDesc(a.version, b.version))
-    // Groups with something installed first, then alphabetical.
     const has = (g: Group) => g.rows.some((r) => r.kind === 'custom' || r.entry?.installed)
     return list.sort((a, b) => Number(has(b)) - Number(has(a)) || a.name.localeCompare(b.name))
   }, [catalog, customInstalls])
 
+  const groupStatuses = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof getRuntimeStatus>>()
+    for (const g of groups) {
+      const isChecking = ONLINE_CATALOGS.has(g.id) && catalogStatus[g.id] === 'checking'
+      const isError = ONLINE_CATALOGS.has(g.id) && catalogStatus[g.id] === 'error' && !cachedCatalogIds.has(g.id)
+      const st = getRuntimeStatus({
+        rows: g.rows.map((r) => ({
+          key: r.key,
+          version: r.version,
+          kind: r.kind,
+          installed: r.kind === 'custom' || !!r.entry?.installed,
+          isDefault: !!r.entry?.is_default,
+        })),
+        runtimeId: g.id,
+        isChecking,
+        isError,
+      })
+      map.set(g.id, st)
+    }
+    return map
+  }, [groups, catalogStatus, cachedCatalogIds])
+
+  const updatesAvailableCount = useMemo(() => {
+    let count = 0
+    for (const status of groupStatuses.values()) {
+      if (status.statusKind === 'update_available' && status.targetUpdateVersion) count++
+    }
+    return count
+  }, [groupStatuses])
+
+  const installedRuntimesCount = useMemo(() => {
+    let count = 0
+    for (const status of groupStatuses.values()) {
+      if (status.totalInstalled > 0) count++
+    }
+    return count
+  }, [groupStatuses])
+
+  const filteredGroups = useMemo(() => {
+    if (filter === 'updates') {
+      return groups.filter((g) => {
+        const s = groupStatuses.get(g.id)
+        return s?.statusKind === 'update_available' && s?.targetUpdateVersion
+      })
+    }
+    if (filter === 'installed') {
+      return groups.filter((g) => {
+        const s = groupStatuses.get(g.id)
+        return s && s.totalInstalled > 0
+      })
+    }
+    return groups
+  }, [groups, filter, groupStatuses])
+
+  const handleUpdateAll = async () => {
+    const updatable = groups.filter((g) => {
+      const s = groupStatuses.get(g.id)
+      return s?.statusKind === 'update_available' && s?.targetUpdateVersion
+    })
+    if (updatable.length === 0) return
+
+    const majorUpgrades = updatable.filter((g) => {
+      const s = groupStatuses.get(g.id)
+      return s?.isMajorUpgrade
+    })
+
+    let confirmMsg = `Update all ${updatable.length} runtimes to their latest stable version?`
+    if (majorUpgrades.length > 0) {
+      confirmMsg += `\n\nNotice: ${majorUpgrades.length} runtime(s) have major upgrades which may contain breaking changes:\n`
+      for (const g of majorUpgrades) {
+        const s = groupStatuses.get(g.id)
+        confirmMsg += `• ${g.name} → ${s?.targetUpdateVersion}\n`
+      }
+    }
+
+    const ok = await confirmAction(confirmMsg, 'Update all runtimes', 'Update all')
+    if (!ok) return
+
+    for (const g of updatable) {
+      const s = groupStatuses.get(g.id)
+      if (s?.targetUpdateVersion) {
+        const row = g.rows.find((r) => r.version === s.targetUpdateVersion && r.kind === 'managed')
+        const entry: CatalogEntry = row?.entry ?? {
+          id: g.id,
+          name: g.name,
+          version: s.targetUpdateVersion,
+          installed: false,
+          is_default: false,
+          system: null,
+        }
+        void install(entry)
+      }
+    }
+  }
+
   const managedGroup = groups.find((g) => g.id === manageId) ?? null
-  // Only backend-confirmed versions are installable. Cached-only entries render
-  // in counts but can't install until a refresh verifies them.
+  const managedStatus = useMemo(() => {
+    if (!managedGroup) return null
+    return groupStatuses.get(managedGroup.id) ?? null
+  }, [managedGroup, groupStatuses])
+
   const verifiedManaged = managedGroup?.rows.filter((r) => r.kind === 'managed' && verifiedKeys.has(r.key)) ?? []
-  const installable = verifiedManaged.filter((r) => !r.entry?.installed)
+  const visibleManaged = verifiedManaged.filter((r) => showPrerelease || !isPrerelease(r.version))
+  const installable = visibleManaged.filter((r) => !r.entry?.installed)
   const unverifiedCount = managedGroup?.rows.filter((r) => r.kind === 'managed' && !r.entry?.installed && !verifiedKeys.has(r.key)).length ?? 0
-  const filteredOptions = verifiedManaged.filter((row) => row.version.toLowerCase().includes(versionSearch.trim().toLowerCase()))
+  const filteredOptions = visibleManaged.filter((row) => row.version.toLowerCase().includes(versionSearch.trim().toLowerCase()))
   const optionsByMajor = new Map<string, Row[]>()
   for (const row of filteredOptions) {
     const major = row.version.match(/^\d+/)?.[0] ?? 'Other'
@@ -381,13 +494,10 @@ export function RuntimesPage() {
   const selectedInstallEvent = progress[`${manageId}@${selectedInstall}`]
   const selectedInstallRow = installable.find((r) => r.version === selectedInstall)
   const selectedInstallPending = !!manageId && pending.has(`${manageId}@${selectedInstall}`)
-  // Pending counts as installing so the click is acknowledged before the first event.
+  const isSelectedPrerelease = isPrerelease(selectedInstall)
   const installingChoice = selectedInstallEvent?.kind === 'progress' || selectedInstallPending
   const installedRows = managedGroup?.rows.filter((r) => r.kind === 'custom' || r.entry?.installed) ?? []
   const managedInstalledCount = managedGroup?.rows.filter((r) => r.kind === 'managed' && r.entry?.installed).length ?? 0
-  // Downloads in flight for this runtime, including ones started elsewhere. A pending
-  // entry is included so a just-clicked install shows up (and can be stopped) before the
-  // backend has sent anything.
   const activeDownloads = [...new Set([...Object.keys(progress), ...pending])].flatMap((key) => {
     const [id, version] = [key.slice(0, key.indexOf('@')), key.slice(key.indexOf('@') + 1)]
     const event = progress[key]
@@ -404,12 +514,10 @@ export function RuntimesPage() {
       <div className="flex flex-col gap-1">
         <h1 className="text-xl font-semibold tracking-tight">Runtimes</h1>
         <p className="max-w-2xl text-[13px] leading-relaxed text-muted-foreground">
-            Install versions side by side, then choose a default for new projects and services. Vendor SHA-256 checksums are verified when published.
+          Languages, databases, and servers managed by OpenLocalServer. Every version runs from its own directory with vendor SHA-256 integrity verification.
         </p>
       </div>
 
-      {/* An install failure is otherwise only visible inside the manage dialog, so a
-          runtime that failed to install looked like nothing had happened. */}
       {installError && (
         <ErrorCard
           error={{
@@ -472,13 +580,67 @@ export function RuntimesPage() {
 
       {notice && !managedGroup && <p className="text-sm text-muted-foreground">{notice}</p>}
 
-      <Table wrapperClassName="rounded-xl border-border/60">
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+        <div className="flex items-center gap-1 rounded-lg border border-border/60 bg-muted/40 p-1">
+          <button
+            type="button"
+            onClick={() => setFilter('all')}
+            className={cn(
+              "rounded-md px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer",
+              filter === 'all'
+                ? "bg-background text-foreground shadow-xs"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            All ({groups.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilter('updates')}
+            className={cn(
+              "rounded-md px-2.5 py-1 text-xs font-medium transition-colors flex items-center gap-1.5 cursor-pointer",
+              filter === 'updates'
+                ? "bg-background text-foreground shadow-xs"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {updatesAvailableCount > 0 && <span className="size-1.5 rounded-full bg-sky-500 shrink-0" />}
+            Updates available ({updatesAvailableCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilter('installed')}
+            className={cn(
+              "rounded-md px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer",
+              filter === 'installed'
+                ? "bg-background text-foreground shadow-xs"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            Installed ({installedRuntimesCount})
+          </button>
+        </div>
+
+        {updatesAvailableCount > 0 && (
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-8 text-xs font-medium gap-1.5"
+            onClick={handleUpdateAll}
+          >
+            <Download className="size-3.5" />
+            Update all ({updatesAvailableCount})
+          </Button>
+        )}
+      </div>
+
+      <Table wrapperClassName="rounded-xl border-border/60 overflow-hidden">
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead className="h-8 text-[11px] font-medium uppercase tracking-wider">Runtime</TableHead>
-            <TableHead className="h-8 text-[11px] font-medium uppercase tracking-wider">Installed</TableHead>
-            <TableHead className="h-8 text-[11px] font-medium uppercase tracking-wider">Status</TableHead>
-            <TableHead className="h-8 text-right text-[11px] font-medium uppercase tracking-wider">Actions</TableHead>
+            <TableHead className="h-9 w-[190px] text-[11px] font-medium uppercase tracking-wider">Runtime</TableHead>
+            <TableHead className="h-9 w-[240px] text-[11px] font-medium uppercase tracking-wider">Installed</TableHead>
+            <TableHead className="h-9 w-[220px] text-[11px] font-medium uppercase tracking-wider">Status</TableHead>
+            <TableHead className="h-9 w-[290px] text-right text-[11px] font-medium uppercase tracking-wider">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -499,10 +661,9 @@ export function RuntimesPage() {
               </TableCell>
             </TableRow>
           )}
-          {!loading && groups.map((g) => {
+          {!loading && filteredGroups.map((g) => {
             const isChecking = ONLINE_CATALOGS.has(g.id) && catalogStatus[g.id] === 'checking'
-            const isError = ONLINE_CATALOGS.has(g.id) && catalogStatus[g.id] === 'error' && !cachedCatalogIds.has(g.id)
-            const status = getRuntimeStatus({
+            const status = groupStatuses.get(g.id) ?? getRuntimeStatus({
               rows: g.rows.map((r) => ({
                 key: r.key,
                 version: r.version,
@@ -510,163 +671,205 @@ export function RuntimesPage() {
                 installed: r.kind === 'custom' || !!r.entry?.installed,
                 isDefault: !!r.entry?.is_default,
               })),
-              isChecking,
-              isError,
+              runtimeId: g.id,
             })
+
             return (
-              <TableRow key={g.id} className="hover:bg-muted/30">
-                <TableCell className="py-2.5">
-                  <span className="flex items-center gap-2 text-[13px] font-medium"><TechIcon id={g.id} className="size-4 opacity-90" />{g.name}</span>
+              <TableRow key={g.id} className="h-14 transition-colors hover:bg-muted/40">
+                <TableCell className="w-[190px] py-3 align-middle">
+                  <span className="flex items-center gap-2 text-[13px] font-medium text-foreground">
+                    <TechIcon id={g.id} className="size-4 shrink-0 opacity-90" />
+                    <span className="truncate">{g.name}</span>
+                  </span>
                 </TableCell>
-                <TableCell className="py-2.5">
+                <TableCell className="w-[240px] py-3 align-middle">
                   {status.totalInstalled === 0 ? (
                     <div className="flex flex-col gap-0.5">
-                      <span className="text-xs text-muted-foreground">None</span>
-                      {status.installableCount > 0 && (
-                        <span className="text-[11px] text-muted-foreground">
+                      <span className="flex items-center gap-1.5 text-xs">
+                        <span className="font-mono text-muted-foreground">—</span>
+                        <span className="text-slate-600 dark:text-slate-400 font-medium">0 installed</span>
+                      </span>
+                      {status.installableCount > 0 ? (
+                        <span className="text-xs text-slate-600 dark:text-slate-400">
                           {formatAvailableVersions(status.installableCount)}
                         </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
                       )}
                     </div>
                   ) : (
                     <div className="flex flex-col gap-0.5">
-                      <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                        {status.defaultVersion && (
-                          <>
-                            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{status.defaultVersion}</code>
-                            <Badge variant="secondary" className="px-1.5 text-[11px] font-normal">Default</Badge>
-                          </>
+                      <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                        {status.defaultVersion ? (
+                          <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-foreground">
+                            {status.defaultVersion}
+                          </code>
+                        ) : (
+                          <span className="font-mono text-muted-foreground">—</span>
                         )}
-                        {status.totalInstalled > 1 && (
-                          <span className="text-xs text-muted-foreground">
-                            {status.totalInstalled} installed
-                          </span>
+                        {status.hasDefaultBadge && (
+                          <Badge variant="secondary" className="px-1.5 py-0 text-[11px] font-normal">
+                            Default
+                          </Badge>
                         )}
+                        <span className="text-xs text-slate-600 dark:text-slate-400 font-medium">
+                          {status.totalInstalled} installed
+                        </span>
                       </span>
-                      {status.installableCount > 0 && (
-                        <span className="text-[11px] text-muted-foreground">
+                      {status.installableCount > 0 ? (
+                        <span className="text-xs text-slate-600 dark:text-slate-400">
                           {formatAvailableVersions(status.installableCount)}
                         </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
                       )}
                     </div>
                   )}
                 </TableCell>
-                <TableCell className="py-2.5">
-                  <span className="flex items-center gap-1.5 text-xs">
+                <TableCell className="w-[220px] py-3 align-middle">
+                  <div className="flex flex-col gap-0.5">
                     {status.statusKind === 'checking' && (
-                      <>
-                        <span className="size-1.5 animate-pulse rounded-full bg-muted-foreground" />
-                        <span className="text-muted-foreground">Checking…</span>
-                      </>
+                      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <Spinner className="size-3 shrink-0" />
+                        <span>Checking…</span>
+                      </span>
                     )}
                     {status.statusKind === 'error' && (
-                      <>
-                        <span className="size-1.5 rounded-full bg-muted-foreground/60" />
-                        <span className="text-muted-foreground">Could not check</span>
-                      </>
+                      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <span className="size-2 rounded-full bg-muted-foreground/60 shrink-0" />
+                        <span>Could not check</span>
+                      </span>
                     )}
                     {status.statusKind === 'not_installed' && (
-                      <>
-                        <span className="size-1.5 rounded-full bg-muted-foreground/40" />
-                        <span className="text-muted-foreground">Not installed</span>
-                        {isChecking && <span className="text-muted-foreground">· refreshing</span>}
-                      </>
+                      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <span className="size-2 rounded-full bg-muted-foreground/40 shrink-0" />
+                        <span>Not installed</span>
+                        {isChecking && <span className="text-[11px] text-muted-foreground">· checking</span>}
+                      </span>
                     )}
                     {status.statusKind === 'up_to_date' && (
-                      <>
-                        <span className="size-1.5 rounded-full bg-emerald-500/80" />
-                        <span className="text-muted-foreground">Up to date</span>
-                        {isChecking && <span className="text-muted-foreground">· refreshing</span>}
-                      </>
+                      <span className="flex items-center gap-1.5 text-xs">
+                        <span className="size-2 rounded-full bg-emerald-500 shrink-0" />
+                        <span className="font-medium text-slate-700 dark:text-slate-300">Up to date</span>
+                        {isChecking && <span className="text-[11px] text-muted-foreground">· checking</span>}
+                      </span>
                     )}
-                    {status.statusKind === 'update_available' && status.latestAvailableVersion && (() => {
-                      const updateVersion = status.latestAvailableVersion
+                    {status.statusKind === 'update_available' && status.targetUpdateVersion && (() => {
+                      const updateVersion = status.targetUpdateVersion
+                      const isMajor = status.isMajorUpgrade
                       const updateKey = `${g.id}@${updateVersion}`
                       const updateEvt = progress[updateKey]
                       const isUpdating = pending.has(updateKey) || updateEvt?.kind === 'progress'
                       return (
-                        <div className="flex flex-col gap-0.5">
+                        <>
                           <span className="flex items-center gap-1.5 text-xs">
-                            <span className={`size-1.5 rounded-full ${isUpdating ? 'animate-pulse bg-sky-400' : 'bg-sky-400'}`} />
-                            <span className="font-medium text-sky-400">{isUpdating ? 'Updating…' : 'Update available'}</span>
-                            {isChecking && <span className="text-muted-foreground">· refreshing</span>}
+                            <span className={cn("size-2 rounded-full shrink-0", isUpdating ? "animate-pulse bg-sky-500" : "bg-sky-500 dark:bg-sky-400")} />
+                            <span className="font-medium text-foreground">{isUpdating ? 'Updating…' : 'Update available'}</span>
+                            {isChecking && <span className="text-[11px] text-muted-foreground">· checking</span>}
                           </span>
-                          <span className="pl-3 text-[11px] text-muted-foreground">
-                            {isUpdating && updateEvt?.kind === 'progress' && updateEvt.state === 'downloading'
-                              ? `${formatBytes(updateEvt.downloaded)}${updateEvt.total ? ` / ${formatBytes(updateEvt.total)}` : ''}`
-                              : isUpdating
-                                ? `Starting ${updateVersion}…`
-                                : `Latest: ${updateVersion}`}
+                          <span className="flex items-center gap-1.5 pl-3.5 text-xs text-slate-600 dark:text-slate-400">
+                            {isUpdating && updateEvt?.kind === 'progress' && updateEvt.state === 'downloading' ? (
+                              <span>{formatBytes(updateEvt.downloaded)}{updateEvt.total ? ` / ${formatBytes(updateEvt.total)}` : ''}</span>
+                            ) : isUpdating ? (
+                              <span>Starting {updateVersion}…</span>
+                            ) : (
+                              <>
+                                <span>Latest: {updateVersion}</span>
+                                {isMajor && (
+                                  <Badge variant="warning" className="px-1.5 py-0 text-[10px] font-semibold uppercase tracking-wider leading-none">
+                                    Major
+                                  </Badge>
+                                )}
+                              </>
+                            )}
                           </span>
-                        </div>
+                        </>
                       )
                     })()}
-                  </span>
+                  </div>
                 </TableCell>
-                <TableCell className="py-2.5 text-right">
-                  {status.statusKind === 'update_available' && status.latestAvailableVersion ? (() => {
-                    const updateVersion = status.latestAvailableVersion
-                    const updateKey = `${g.id}@${updateVersion}`
-                    const updateEvt = progress[updateKey]
-                    const isUpdating = pending.has(updateKey) || updateEvt?.kind === 'progress'
-                    return (
-                      <div className="flex items-center justify-end gap-1.5">
+                <TableCell className="w-[290px] py-3 text-right align-middle">
+                  <div className="flex items-center justify-end gap-2">
+                    {status.statusKind === 'update_available' && status.targetUpdateVersion && (() => {
+                      const updateVersion = status.targetUpdateVersion
+                      const isMajor = status.isMajorUpgrade
+                      const updateKey = `${g.id}@${updateVersion}`
+                      const updateEvt = progress[updateKey]
+                      const isUpdating = pending.has(updateKey) || updateEvt?.kind === 'progress'
+                      return (
                         <Button
                           size="sm"
                           disabled={isUpdating}
-                          className="h-7 px-2.5 text-xs font-medium"
-                          onClick={() => handleUpdate(g, updateVersion)}
+                          className={cn(
+                            "h-8 px-3 text-xs font-medium shrink-0",
+                            isMajor && "border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 hover:text-amber-800 dark:hover:text-amber-200 shadow-sm"
+                          )}
+                          onClick={() => void handleUpdate(g, updateVersion, isMajor)}
                           title={`Download and install ${g.name} ${updateVersion}`}
                         >
-                          {isUpdating ? <Spinner className="mr-1 size-3.5" /> : <Download className="mr-1 size-3.5" />}
-                          {isUpdating ? 'Updating…' : `Update to ${updateVersion}`}
+                          {isUpdating ? <Spinner className="size-3.5" /> : <Download className="size-3.5" />}
+                          <span>{isUpdating ? 'Updating…' : `Update to ${updateVersion}`}</span>
+                          {isMajor && !isUpdating && (
+                            <Badge variant="warning" className="ml-1 px-1 py-0 text-[9px] font-semibold uppercase leading-none">
+                              Major
+                            </Badge>
+                          )}
                         </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                          onClick={() => openVersions(g, updateVersion)}
-                          title={`Manage all ${g.name} versions`}
-                        >
-                          <Settings2 className="size-3.5 opacity-70" />
-                        </Button>
-                      </div>
-                    )
-                  })() : (
+                      )
+                    })()}
                     <Button
                       size="sm"
                       variant="secondary"
-                      className="h-7 px-2.5 text-xs font-normal"
+                      className="h-8 min-w-[90px] px-3 text-xs font-normal shrink-0"
                       onClick={() => openVersions(g)}
                     >
                       <Settings2 className="size-3.5 opacity-70" /> Manage
                     </Button>
-                  )}
+                  </div>
                 </TableCell>
               </TableRow>
             )
           })}
+          {!loading && filteredGroups.length === 0 && (
+            <TableRow className="hover:bg-transparent">
+              <TableCell colSpan={4} className="py-6 text-center text-xs text-muted-foreground">
+                {filter === 'updates'
+                  ? 'All runtimes are up to date. No updates available.'
+                  : filter === 'installed'
+                    ? 'No runtimes are currently installed.'
+                    : 'No runtimes in the catalog for this platform yet.'}
+              </TableCell>
+            </TableRow>
+          )}
         </TableBody>
       </Table>
-      {!loading && groups.length === 0 && <p className="text-sm text-muted-foreground">No runtimes in the catalog for this platform yet.</p>}
 
       <Dialog
         open={!!managedGroup}
-        onClose={() => { setManageId(null); setInstallError(null); setVersionSearch('') }}
+        onClose={() => { setManageId(null); setInstallError(null); setVersionSearch(''); setShowPrerelease(false) }}
         wide
         title={`${managedGroup?.name ?? 'Runtime'} versions`}
         description="Version lists refresh in the background and are checked again when needed. Search by version, choose one to install, or manage versions already on this computer."
       >
         {managedGroup && <div className="flex flex-col gap-4">
           <section className="rounded-lg border border-border/60 bg-background/40 p-3.5">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-[13px] font-semibold leading-none">Install a version</h3>
+              <label className="flex items-center gap-1.5 cursor-pointer text-xs font-medium text-slate-700 dark:text-slate-300 select-none">
+                <input
+                  type="checkbox"
+                  checked={showPrerelease}
+                  onChange={(e) => setShowPrerelease(e.target.checked)}
+                  className="size-3.5 rounded border-border accent-primary cursor-pointer"
+                />
+                <span>Show pre-release versions</span>
+              </label>
             </div>
             <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
               Vendor SHA-256 checksums are verified when published. {managedGroup.name} archives come directly from the vendor over HTTPS.
               {installable.length > 0 && ` (${formatAvailableVersions(installable.length)} to install)`}
             </p>
-            <div className="mt-3 grid gap-2 lg:grid-cols-[minmax(0,1fr)_170px_auto]">
+            <div className="mt-3 grid gap-2 lg:grid-cols-[minmax(0,1fr)_190px_auto]">
               <Input
                 aria-label={`Search ${managedGroup.name} versions`}
                 value={versionSearch}
@@ -696,9 +899,11 @@ export function RuntimesPage() {
                     {rows.map((row) => {
                       const installed = !!row.entry?.installed
                       const isDefault = !!row.entry?.is_default
+                      const isPre = isPrerelease(row.version)
                       return (
                         <option key={row.key} value={row.version} disabled={installed}>
                           {row.version}
+                          {isPre ? ' · Pre-release' : ''}
                           {installed
                             ? isDefault
                               ? ' · Default'
@@ -714,17 +919,39 @@ export function RuntimesPage() {
                   </optgroup>
                 ))}
               </Select>
-              <Button
-                className="h-9 shrink-0 px-3.5 text-[13px]"
-                disabled={!selectedInstall || !selectedInstallVisible || installingChoice || installable.length === 0 || dialogChecking}
-                onClick={() => { const row = installable.find((r) => r.version === selectedInstall); if (row?.entry) void install(row.entry) }}
-              >
-                {installingChoice ? <Spinner /> : <Download />} {installingChoice ? 'Installing…' : 'Download and install'}
-              </Button>
+              <div className="flex items-center gap-2">
+                {isSelectedPrerelease && (
+                  <Badge variant="outline" className="h-6 px-2 text-[11px] font-medium border-amber-500/40 text-amber-600 dark:text-amber-400">
+                    Pre-release
+                  </Badge>
+                )}
+                <Button
+                  variant={isSelectedPrerelease ? 'secondary' : 'default'}
+                  className={cn(
+                    "h-9 shrink-0 px-3.5 text-[13px]",
+                    isSelectedPrerelease && "border border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-accent"
+                  )}
+                  disabled={!selectedInstall || !selectedInstallVisible || installingChoice || installable.length === 0 || dialogChecking}
+                  onClick={async () => {
+                    const row = installable.find((r) => r.version === selectedInstall)
+                    if (!row?.entry) return
+                    const isMajor = isMajorUpgrade(managedStatus?.highestInstalledVersion ?? null, selectedInstall)
+                    if (isMajor) {
+                      const ok = await confirmAction(
+                        `Installing ${managedGroup.name} ${selectedInstall} is a major version upgrade.\n\nMajor upgrades may introduce breaking changes, configuration deprecations, or data format incompatibilities with existing databases and applications.\n\nAre you sure you want to proceed with installing ${managedGroup.name} ${selectedInstall}?`,
+                        `Major Version Upgrade: ${managedGroup.name} ${selectedInstall}`,
+                        `Install ${selectedInstall}`,
+                      )
+                      if (!ok) return
+                    }
+                    void install(row.entry)
+                  }}
+                >
+                  {installingChoice ? <Spinner /> : <Download />}
+                  {installingChoice ? 'Installing…' : isSelectedPrerelease ? 'Install pre-release' : 'Download and install'}
+                </Button>
+              </div>
             </div>
-            {/* Pause and Stop apply to the running download, not to a version that is
-                merely chosen. Only the transfer can be held or stopped — verification
-                and extraction are not pausable, so the controls go away once they start. */}
             {installingChoice && selectedInstallRow?.entry && selectedInstallEvent?.kind === 'progress' && (() => {
               const live = selectedInstallEvent
               const row = selectedInstallRow.entry!
@@ -761,6 +988,8 @@ export function RuntimesPage() {
                       .then((entries) => {
                         if (!entries) return
                         const newest = entries
+                          .filter((entry) => !entry.installed && !isPrerelease(entry.version))
+                          .sort((a, b) => compareVersionsDesc(a.version, b.version))[0] ?? entries
                           .filter((entry) => !entry.installed)
                           .sort((a, b) => compareVersionsDesc(a.version, b.version))[0]
                         if (newest) setInstallChoices((prev) => ({ ...prev, [managedGroup!.id]: newest.version }))
@@ -778,9 +1007,6 @@ export function RuntimesPage() {
             )}
           </section>
 
-          {/* Every download in flight for this runtime, whatever started it (this
-              dialog, the command palette, a project pinning a version). Each one can be
-              held or stopped; verification and extraction finish on their own. */}
           {activeDownloads.length > 0 && (
           <section>
             <div className="mb-2 flex items-center justify-between gap-3">
@@ -798,6 +1024,11 @@ export function RuntimesPage() {
                       <div className="flex flex-wrap items-center gap-1.5 text-[13px] font-medium tabular-nums">
                         <span className="font-mono">{entry.version}</span>
                         {paused && <Badge variant="secondary" className="px-1.5 text-[11px] font-normal">Paused</Badge>}
+                        {isPrerelease(entry.version) && (
+                          <Badge variant="outline" className="px-1.5 text-[11px] font-normal border-amber-500/40 text-amber-600 dark:text-amber-400">
+                            Pre-release
+                          </Badge>
+                        )}
                       </div>
                       <p className="mt-0.5 text-[11px] text-muted-foreground">
                         {live.state}: {formatBytes(live.downloaded)}{live.total ? ` / ${formatBytes(live.total)}` : ''}
@@ -829,6 +1060,7 @@ export function RuntimesPage() {
             <div className="overflow-hidden rounded-lg border border-border/60">
               {installedRows.length === 0 ? <p className="px-3 py-4 text-center text-[13px] text-muted-foreground">No versions installed.</p> : installedRows.map((row) => {
                 const isDefault = !!row.entry?.is_default
+                const isPre = isPrerelease(row.version)
                 return (
                 <div key={row.key} className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border/60 px-3 py-2 last:border-b-0 ${isDefault ? 'bg-primary/[0.06]' : ''}`}>
                   <div className="flex min-w-0 items-center gap-2">
@@ -841,6 +1073,11 @@ export function RuntimesPage() {
                         ) : row.kind === 'managed' ? (
                           <Badge variant="outline" className="px-1.5 text-[11px] font-normal text-muted-foreground">Installed</Badge>
                         ) : null}
+                        {isPre && (
+                          <Badge variant="outline" className="px-1.5 text-[11px] font-normal border-amber-500/40 text-amber-600 dark:text-amber-400">
+                            Pre-release
+                          </Badge>
+                        )}
                         {row.kind === 'custom' && <Badge variant="outline" className="px-1.5 text-[11px] font-normal text-muted-foreground">Yours</Badge>}
                       </div>
                       {row.custom?.path

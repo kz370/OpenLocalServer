@@ -49,9 +49,8 @@ pub fn check_port(port: u16) -> PortStatus {
                     };
                 }
             }
-            let pid = find_owning_pid(port);
-            let process_name = pid
-                .and_then(find_process_name)
+            let (pid, process_name) = resolve_in_use_owner(port);
+            let process_name = process_name
                 .or_else(|| excluded_range_reason(port))
                 .or_else(|| known_port_hint(port));
             cache
@@ -64,7 +63,40 @@ pub fn check_port(port: u16) -> PortStatus {
 }
 
 #[cfg(windows)]
-fn find_owning_pid(port: u16) -> Option<u32> {
+fn resolve_in_use_owner(port: u16) -> (Option<u32>, Option<String>) {
+    // 1) Fast path: netstat
+    if let Some(pid) = find_owning_pid_netstat(port) {
+        if pid > 0 {
+            if let Some(name) = find_process_name(pid) {
+                if !name.eq_ignore_ascii_case("System Idle Process") {
+                    return (Some(pid), Some(name));
+                }
+            }
+        }
+    }
+
+    // 2) PowerShell Get-NetTCPConnection fallback: handles state 0, dual-stack, or sockets where netstat misses/reports PID 0
+    if let Some((pid, name)) = find_owner_powershell(port) {
+        if pid > 0 && !name.eq_ignore_ascii_case("System Idle Process") {
+            let exe_name = if name.ends_with(".exe") {
+                name
+            } else {
+                format!("{name}.exe")
+            };
+            return (Some(pid), Some(exe_name));
+        }
+    }
+
+    (None, None)
+}
+
+#[cfg(not(windows))]
+fn resolve_in_use_owner(_port: u16) -> (Option<u32>, Option<String>) {
+    (None, None)
+}
+
+#[cfg(windows)]
+fn find_owning_pid_netstat(port: u16) -> Option<u32> {
     let mut cmd = std::process::Command::new(crate::exec::windows_system_dir().join("netstat.exe"));
     cmd.args(["-ano"]);
     crate::exec::hide_window(&mut cmd);
@@ -90,6 +122,11 @@ fn find_owning_pid(port: u16) -> Option<u32> {
         }
         let state_listening = cols[3] == "LISTENING";
         if let Ok(pid) = cols[cols.len() - 1].parse::<u32>() {
+            // PID 0 is System Idle Process (assigned by Windows to closed/TIME_WAIT entries).
+            // Never treat PID 0 as the owning process of a port.
+            if pid == 0 {
+                continue;
+            }
             if state_listening {
                 return Some(pid);
             }
@@ -98,28 +135,40 @@ fn find_owning_pid(port: u16) -> Option<u32> {
             fallback = Some(pid);
         }
     }
-    if let Some(pid) = fallback {
-        return Some(pid);
-    }
-
-    find_owning_pid_powershell(port)
+    fallback
 }
 
 #[cfg(windows)]
-fn find_owning_pid_powershell(port: u16) -> Option<u32> {
+fn find_owner_powershell(port: u16) -> Option<(u32, String)> {
     let mut cmd = std::process::Command::new(crate::exec::powershell_path());
     cmd.args([
         "-NoProfile",
         "-NonInteractive",
         "-Command",
         &format!(
-            "(Get-NetTCPConnection -LocalPort {port} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -First 1)"
+            "Get-NetTCPConnection -LocalPort {port} -ErrorAction SilentlyContinue | Where-Object {{ $_.OwningProcess -gt 0 }} | ForEach-Object {{ $p = Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue; if ($p) {{ \"$($p.Id)|$($p.ProcessName)\" }} }} | Select-Object -First 1"
         ),
     ]);
     crate::exec::hide_window(&mut cmd);
     let output = cmd.output().ok()?;
     let text = String::from_utf8_lossy(&output.stdout);
-    text.trim().parse::<u32>().ok().filter(|&p| p > 0)
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let mut parts = trimmed.splitn(2, '|');
+    let pid = parts
+        .next()?
+        .trim()
+        .parse::<u32>()
+        .ok()
+        .filter(|&p| p > 0)?;
+    let name = parts.next()?.trim().to_string();
+    if name.is_empty() || name.eq_ignore_ascii_case("System Idle Process") {
+        None
+    } else {
+        Some((pid, name))
+    }
 }
 
 fn known_port_hint(port: u16) -> Option<String> {
@@ -175,6 +224,9 @@ fn excluded_range_reason(_port: u16) -> Option<String> {
 
 #[cfg(windows)]
 fn find_process_name(pid: u32) -> Option<String> {
+    if pid == 0 {
+        return None;
+    }
     let mut cmd =
         std::process::Command::new(crate::exec::windows_system_dir().join("tasklist.exe"));
     cmd.args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"]);
@@ -190,16 +242,14 @@ fn find_process_name(pid: u32) -> Option<String> {
     // CSV line: "name.exe","1234","Console","1","12,345 K"
     let first_field = trimmed.split(',').next()?;
     let name = first_field.trim_matches('"').trim();
-    if name.is_empty() || name.starts_with("INFO:") {
+    if name.is_empty()
+        || name.starts_with("INFO:")
+        || name.eq_ignore_ascii_case("System Idle Process")
+    {
         None
     } else {
         Some(name.to_string())
     }
-}
-
-#[cfg(not(windows))]
-fn find_owning_pid(_port: u16) -> Option<u32> {
-    None
 }
 
 #[cfg(not(windows))]

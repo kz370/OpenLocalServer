@@ -8,6 +8,7 @@ export interface RuntimeVersionRow {
 
 export interface RuntimeStatusOptions {
   rows: RuntimeVersionRow[]
+  runtimeId?: string
   isChecking?: boolean
   isError?: boolean
 }
@@ -24,10 +25,13 @@ export interface RuntimeStatusResult {
   managedInstalledCount: number
   customInstalledCount: number
   defaultVersion: string | null
+  hasDefaultBadge: boolean
   installableCount: number
   highestInstalledVersion: string | null
   latestAvailableVersion: string | null
+  targetUpdateVersion: string | null
   hasUpdate: boolean
+  isMajorUpgrade: boolean
   statusKind: RuntimeStatusKind
   statusLabel: string
 }
@@ -50,6 +54,28 @@ export function compareVersionsDesc(a: string, b: string): number {
   return b.localeCompare(a)
 }
 
+/** Check if a version string represents an alpha, beta, rc, dev, preview, or canary build. */
+export function isPrerelease(version: string): boolean {
+  if (!version) return false
+  return /(?:[-._](?:alpha|beta|rc|dev|preview|canary|nightly|ea)|(?:alpha|beta|rc|dev)(?:\d+|$))/i.test(version)
+}
+
+/** Node.js LTS release lines use even major versions >= 4 (e.g. 18.x, 20.x, 22.x). */
+export function isNodeLts(version: string): boolean {
+  if (isPrerelease(version)) return false
+  const key = parseVersionKey(version)
+  const major = key[0] ?? 0
+  return major >= 4 && major % 2 === 0
+}
+
+/** Check if upgrading from `fromVersion` to `toVersion` crosses a major semver boundary. */
+export function isMajorUpgrade(fromVersion: string | null, toVersion: string | null): boolean {
+  if (!fromVersion || !toVersion) return false
+  const fromMajor = parseVersionKey(fromVersion)[0] ?? 0
+  const toMajor = parseVersionKey(toVersion)[0] ?? 0
+  return toMajor > fromMajor
+}
+
 export function formatAvailableVersions(count: number): string {
   if (count <= 0) return ''
   return `${count} ${count === 1 ? 'version' : 'versions'} available`
@@ -57,6 +83,7 @@ export function formatAvailableVersions(count: number): string {
 
 export function getRuntimeStatus({
   rows,
+  runtimeId,
   isChecking = false,
   isError = false,
 }: RuntimeStatusOptions): RuntimeStatusResult {
@@ -67,11 +94,12 @@ export function getRuntimeStatus({
 
   const defaultRow = managedInstalled.find((r) => r.isDefault)
   const defaultVersion = defaultRow?.version ?? (managedInstalled[0]?.version || null)
+  const hasDefaultBadge = totalInstalled > 1 ? !!defaultVersion : !!defaultRow?.isDefault
 
   const uninstalledManaged = managedRows.filter((r) => !r.installed)
   const installableCount = uninstalledManaged.length
 
-  // Find latest available version across all known managed catalog versions
+  // Find latest available version across all known managed catalog versions (including pre-releases)
   const sortedCatalog = managedRows
     .map((r) => r.version)
     .sort(compareVersionsDesc)
@@ -85,11 +113,37 @@ export function getRuntimeStatus({
   const sortedInstalled = installedVersionStrings.sort(compareVersionsDesc)
   const highestInstalledVersion = sortedInstalled[0] ?? null
 
-  // Check if a newer version is available compared to any installed version
+  // Find latest stable target for updates (never an alpha, beta, or RC as default target)
+  // For Node.js, prefer LTS stable releases over odd-numbered current releases
+  let targetUpdateVersion: string | null = null
   let hasUpdate = false
-  if (totalInstalled > 0 && latestAvailableVersion && highestInstalledVersion) {
-    hasUpdate = compareVersionsDesc(latestAvailableVersion, highestInstalledVersion) < 0
+
+  if (totalInstalled > 0 && highestInstalledVersion) {
+    if (runtimeId === 'node') {
+      const allLts = managedRows
+        .map((r) => r.version)
+        .filter((v) => isNodeLts(v))
+        .sort(compareVersionsDesc)
+      const latestLts = allLts[0] ?? null
+      if (latestLts && compareVersionsDesc(latestLts, highestInstalledVersion) < 0) {
+        // A newer LTS version exists and is uninstalled
+        targetUpdateVersion = latestLts
+        hasUpdate = true
+      }
+    } else {
+      const stableUninstalled = uninstalledManaged
+        .map((r) => r.version)
+        .filter((v) => !isPrerelease(v))
+        .sort(compareVersionsDesc)
+      const newestStable = stableUninstalled[0] ?? null
+      if (newestStable && compareVersionsDesc(newestStable, highestInstalledVersion) < 0) {
+        targetUpdateVersion = newestStable
+        hasUpdate = true
+      }
+    }
   }
+
+  const isMajor = hasUpdate && isMajorUpgrade(highestInstalledVersion, targetUpdateVersion)
 
   let statusKind: RuntimeStatusKind
   let statusLabel: string
@@ -103,7 +157,7 @@ export function getRuntimeStatus({
   } else if (totalInstalled === 0) {
     statusKind = 'not_installed'
     statusLabel = 'Not installed'
-  } else if (hasUpdate && latestAvailableVersion) {
+  } else if (hasUpdate && targetUpdateVersion) {
     statusKind = 'update_available'
     statusLabel = 'Update available'
   } else {
@@ -116,12 +170,14 @@ export function getRuntimeStatus({
     managedInstalledCount: managedInstalled.length,
     customInstalledCount: customInstalled.length,
     defaultVersion,
+    hasDefaultBadge,
     installableCount,
     highestInstalledVersion,
     latestAvailableVersion,
+    targetUpdateVersion,
     hasUpdate,
+    isMajorUpgrade: isMajor,
     statusKind,
     statusLabel,
   }
 }
-
