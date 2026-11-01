@@ -17,9 +17,27 @@ pub struct DbTool {
 pub fn detect_db_tools() -> Vec<DbTool> {
     vec![
         DbTool {
+            id: "letos".into(),
+            name: "Letos DB Browser".into(),
+            found_path: find_letos(),
+            engines: vec!["mariadb".into(), "postgres".into(), "sqlite".into()],
+        },
+        DbTool {
+            id: "dbbrowser".into(),
+            name: "DB Browser for SQLite".into(),
+            found_path: find_dbbrowser(),
+            engines: vec!["sqlite".into()],
+        },
+        DbTool {
             id: "heidisql".into(),
             name: "HeidiSQL".into(),
             found_path: find_heidisql(),
+            engines: vec!["mariadb".into(), "postgres".into(), "sqlite".into()],
+        },
+        DbTool {
+            id: "dbeaver".into(),
+            name: "DBeaver".into(),
+            found_path: find_dbeaver(),
             engines: vec!["mariadb".into(), "postgres".into(), "sqlite".into()],
         },
         DbTool {
@@ -39,12 +57,6 @@ pub fn detect_db_tools() -> Vec<DbTool> {
             name: "Tiny RDM".into(),
             found_path: find_tinyrdm(),
             engines: vec!["redis".into()],
-        },
-        DbTool {
-            id: "dbbrowser".into(),
-            name: "DB Browser for SQLite".into(),
-            found_path: find_dbbrowser(),
-            engines: vec!["sqlite".into()],
         },
     ]
 }
@@ -154,6 +166,55 @@ fn find_tinyrdm() -> Option<String> {
         }
     }
     EXES.iter().find_map(|exe| find_on_path(exe))
+}
+
+fn find_letos() -> Option<String> {
+    for base in [
+        r"C:\Program Files\Letos",
+        r"C:\Program Files (x86)\Letos",
+        r"C:\Program Files\SQLiteStudio",
+        r"C:\Program Files (x86)\SQLiteStudio",
+    ] {
+        for exe in ["letos.exe", "sqlitestudio.exe"] {
+            let candidate = PathBuf::from(base).join(exe);
+            if candidate.is_file() {
+                return Some(candidate.display().to_string());
+            }
+        }
+    }
+    if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
+        for sub in ["Programs\\Letos", "Programs\\SQLiteStudio"] {
+            for exe in ["letos.exe", "sqlitestudio.exe"] {
+                let candidate = PathBuf::from(&local_app_data).join(sub).join(exe);
+                if candidate.is_file() {
+                    return Some(candidate.display().to_string());
+                }
+            }
+        }
+    }
+    find_on_path("letos.exe").or_else(|| find_on_path("sqlitestudio.exe"))
+}
+
+fn find_dbeaver() -> Option<String> {
+    if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
+        let candidate = PathBuf::from(local_app_data)
+            .join("Programs")
+            .join("DBeaver")
+            .join("dbeaver.exe");
+        if candidate.is_file() {
+            return Some(candidate.display().to_string());
+        }
+    }
+    for base in [
+        r"C:\Program Files\DBeaver",
+        r"C:\Program Files (x86)\DBeaver",
+    ] {
+        let candidate = PathBuf::from(base).join("dbeaver.exe");
+        if candidate.is_file() {
+            return Some(candidate.display().to_string());
+        }
+    }
+    find_on_path("dbeaver.exe")
 }
 
 // ---------------------------------------------------------------------------------------

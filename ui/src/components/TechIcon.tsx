@@ -219,6 +219,7 @@ const GENERIC: Record<string, ReactNode> = {
   tinyrdm: REDIS_CLIENT,
   nosqlbooster: NOSQLBOOSTER,
   dbbrowser: DBBROWSER,
+  letos: DBBROWSER,
   compass: COMPASS,
 }
 

@@ -75,6 +75,17 @@ impl Inner {
                 })?;
                 return dbtools::launch(&exe, &[], false).map_err(svc);
             }
+            if id == "letos" {
+                let exe = find(id).ok_or_else(|| {
+                    svc("Letos was not found. Install it or register it under External tools.")
+                })?;
+                let args = if engine == "sqlite" {
+                    dbtools::dbbrowser_args(&info).unwrap_or_default()
+                } else {
+                    vec![]
+                };
+                return dbtools::launch(&exe, &args, false).map_err(svc);
+            }
             if id == "dbbrowser" {
                 if engine != "sqlite" {
                     return Err(svc("DB Browser for SQLite only supports SQLite"));
@@ -118,6 +129,11 @@ impl Inner {
                 dbtools::launch(&exe, &args, true).map_err(svc)
             }
             "sqlite" => {
+                if let Some(exe) = find("letos") {
+                    if let Some(args) = dbtools::dbbrowser_args(&info) {
+                        return dbtools::launch(&exe, &args, false).map_err(svc);
+                    }
+                }
                 if let Some(exe) = find("dbbrowser") {
                     if let Some(args) = dbtools::dbbrowser_args(&info) {
                         return dbtools::launch(&exe, &args, false).map_err(svc);
@@ -128,7 +144,7 @@ impl Inner {
                         return dbtools::launch(&exe, &args, true).map_err(svc);
                     }
                 }
-                Err(svc("Neither DB Browser for SQLite nor HeidiSQL was found. Install one, locate it from Services, or register another tool for this engine."))
+                Err(svc("Neither Letos, DB Browser for SQLite, nor HeidiSQL was found. Install one or register another tool under External tools."))
             }
             "postgres" => {
                 if let Some(exe) = find("heidisql") {

@@ -7,14 +7,11 @@ import { ServiceIconAction } from '@/components/ServiceIconAction'
 import { StopIcon } from '@/components/StopIcon'
 import { ServiceMark } from '@/components/TechIcon'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { type Diagnostic, type PortStatus, type ServiceStatus, runCommand } from '@/core'
 import { createPersistentCache } from '@/lib/cache'
 import { waitForService } from '@/lib/wait'
-import { notify } from '@/lib/notify'
 
 type ServiceAction = 'start' | 'stop' | 'restart' | 'reload'
 
@@ -22,7 +19,6 @@ const servicesListCache = createPersistentCache<ServiceStatus[]>('services_list'
 
 export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => void }) {
   const [services, setServices] = useState<ServiceStatus[]>(servicesListCache.get)
-  const [dbName, setDbName] = useState('my_app')
   const [error, setError] = useState<Diagnostic | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
 
@@ -72,17 +68,6 @@ export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => v
     }
   }
 
-  async function createDatabase() {
-    setError(null)
-    try {
-      await runCommand({ type: 'create_database', engine: 'mariadb', name: dbName })
-      notify.success(`Database "${dbName}" created (or already existed).`)
-    } catch (err) {
-      setError(err as Diagnostic)
-    }
-  }
-
-  const mariadb = services.find((s) => s.id === 'mariadb')
   // The three web servers get their own table: each starts and stops on its own, on
   // the port it binds right now (§3.3).
   const webServers = services.filter((s) => s.kind === 'web')
@@ -127,20 +112,6 @@ export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => v
       </Card>
 
       <CustomServices onChanged={refresh} />
-
-      {mariadb?.running && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Create a MariaDB database</CardTitle>
-          </CardHeader>
-          <CardContent className="flex items-center gap-2">
-            <Input value={dbName} onChange={(e) => setDbName(e.target.value)} className="w-56" />
-            <Button size="sm" variant="secondary" onClick={createDatabase}>
-              Create
-            </Button>
-          </CardContent>
-        </Card>
-      )}
     </div>
   )
 }

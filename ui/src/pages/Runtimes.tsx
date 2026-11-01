@@ -31,6 +31,23 @@ import { cn } from '@/lib/utils'
 
 /** Runtimes a user may already have somewhere else and want to point at. */
 const LOCATABLE = ['php', 'node', 'python']
+/** Database GUI tools belong in Databases > External tools and should never be listed as runtimes. */
+const DB_GUI_TOOL_IDS = new Set([
+  'heidisql',
+  'pgadmin',
+  'tinyrdm',
+  'nosqlbooster',
+  'dbbrowser',
+  'dbeaver',
+  'tableplus',
+  'redisinsight',
+  'datagrip',
+  'navicat',
+  'sqlitestudio',
+  'letos',
+  'adminer',
+  'phpmyadmin',
+])
 const ONLINE_CATALOGS = new Set(['nginx', 'node', 'mariadb', 'php', 'apache', 'composer', 'mongodb', 'postgres', 'redis', 'memcached', 'mailpit', 'python'])
 const ONLINE_CATALOG_CACHE_KEY = 'ols.runtime-catalogs'
 const ONLINE_CATALOG_CACHE_TTL = 24 * 60 * 60 * 1000
@@ -403,6 +420,7 @@ export function RuntimesPage() {
   const groups = useMemo<Group[]>(() => {
     const byId = new Map<string, Group>()
     for (const entry of catalog) {
+      if (DB_GUI_TOOL_IDS.has(entry.id.toLowerCase())) continue
       const g = byId.get(entry.id) ?? { id: entry.id, name: entry.name, rows: [] }
       const key = `${entry.id}@${entry.version}`
       const existing = g.rows.find((r) => r.key === key)
@@ -414,6 +432,7 @@ export function RuntimesPage() {
       byId.set(entry.id, g)
     }
     for (const c of customInstalls) {
+      if (DB_GUI_TOOL_IDS.has(c.id.toLowerCase())) continue
       const g = byId.get(c.id) ?? { id: c.id, name: c.id.toUpperCase(), rows: [] }
       const key = `custom:${c.id}:${c.label}`
       if (!g.rows.some((r) => r.key === key)) {

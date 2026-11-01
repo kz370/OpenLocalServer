@@ -1191,7 +1191,7 @@ function Tools({ dbTools, externalTools, onToolsUpdated }: ToolsProps) {
         <div>
           <h2 className="text-lg font-semibold tracking-tight">External Tools</h2>
           <p className="text-sm text-muted-foreground">
-            Connect GUI database clients (DBeaver, TablePlus, HeidiSQL, etc.). Each tool has one user-chosen executable path.
+            Connect GUI database clients (DBeaver, HeidiSQL, Letos, etc.). Each tool has one user-chosen executable path.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

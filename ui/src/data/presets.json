@@ -2,23 +2,9 @@
   "schemaVersion": 1,
   "tools": [
     {
-      "id": "tableplus",
-      "name": "TablePlus",
-      "engines": ["mariadb", "postgres", "redis", "sqlite"],
-      "launchMode": "args",
-      "args": ["{uri}"]
-    },
-    {
-      "id": "compass",
-      "name": "MongoDB Compass",
-      "engines": ["mongodb"],
-      "launchMode": "args",
-      "args": ["{uri}"]
-    },
-    {
-      "id": "sqlitestudio",
-      "name": "SQLiteStudio",
-      "engines": ["sqlite"],
+      "id": "letos",
+      "name": "Letos DB Browser",
+      "engines": ["mariadb", "postgres", "sqlite"],
       "launchMode": "args",
       "args": ["{path}"]
     },
@@ -40,27 +26,6 @@
       "id": "dbeaver",
       "name": "DBeaver",
       "engines": ["mariadb", "postgres", "sqlite"],
-      "launchMode": "clipboard",
-      "args": []
-    },
-    {
-      "id": "redisinsight",
-      "name": "RedisInsight",
-      "engines": ["redis"],
-      "launchMode": "clipboard",
-      "args": []
-    },
-    {
-      "id": "datagrip",
-      "name": "DataGrip",
-      "engines": ["mariadb", "postgres", "sqlite", "redis", "mongodb"],
-      "launchMode": "clipboard",
-      "args": []
-    },
-    {
-      "id": "navicat",
-      "name": "Navicat",
-      "engines": ["mariadb", "postgres", "sqlite", "mongodb", "redis"],
       "launchMode": "clipboard",
       "args": []
     },
