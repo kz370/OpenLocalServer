@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { type TaskEvent, type TaskView, runCommand } from '@/core'
+import { createPersistentCache } from '@/lib/cache'
 import { formatBytes, timeAgo, usePoll } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 
@@ -18,12 +19,17 @@ import { cn } from '@/lib/utils'
  * (it was reloading, or it fell behind the broadcast), the list catches up within a second
  * rather than sitting on a stale row.
  */
+const tasksCache = createPersistentCache<TaskView[]>('tasks_list', [])
+
 export function TasksPanel() {
-  const [tasks, setTasks] = useState<TaskView[]>([])
+  const [tasks, setTasks] = useState<TaskView[]>(tasksCache.get)
 
   const refresh = useCallback(async () => {
     const r = await runCommand({ type: 'list_tasks' })
-    if (r.type === 'tasks') setTasks(r.tasks)
+    if (r.type === 'tasks') {
+      setTasks(r.tasks)
+      tasksCache.set(r.tasks)
+    }
   }, [])
 
   useEffect(() => {
@@ -36,6 +42,7 @@ export function TasksPanel() {
       setTasks((current) => {
         const next = current.filter((t) => t.id !== task.id)
         next.unshift(task)
+        tasksCache.set(next)
         return next
       })
     }).then((dispose) => {

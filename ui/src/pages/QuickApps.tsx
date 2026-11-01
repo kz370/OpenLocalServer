@@ -37,7 +37,8 @@ import {
   type RunView,
   runCommand,
 } from '@/core'
-import { useAction } from '@/lib/hooks'
+import { useAction, usePoll } from '@/lib/hooks'
+import { createPersistentCache } from '@/lib/cache'
 import { confirmThen } from '@/lib/confirm'
 import { buildSitePath, domainToFolderName, folderNameToDomain, getDefaultSitesDir } from '@/lib/sites'
 import { cn } from '@/lib/utils'
@@ -109,10 +110,10 @@ function evalCondition(expr: string, values: Record<string, string>): boolean {
   )
 }
 
-let cachedQuickApps: QuickEntryView[] = []
+const quickAppsCache = createPersistentCache<QuickEntryView[]>('quick_apps', [])
 
 export function QuickAppsPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
-  const [apps, setApps] = useState<QuickEntryView[]>(cachedQuickApps)
+  const [apps, setApps] = useState<QuickEntryView[]>(quickAppsCache.get)
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('all')
   const [favOnly, setFavOnly] = useState(false)
@@ -126,13 +127,15 @@ export function QuickAppsPage({ onNavigate }: { onNavigate: (p: Page) => void })
     const r = await runCommand({ type: 'list_quick_apps' })
     if (r.type === 'quick_apps') {
       setApps(r.apps)
-      cachedQuickApps = r.apps
+      quickAppsCache.set(r.apps)
     }
   }
   useEffect(() => {
     refresh().catch((e) => setError(asDiagnostic(e)))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  usePoll(() => refresh().catch(() => undefined), 5000)
 
   const shown = useMemo(
     () =>
@@ -211,7 +214,17 @@ export function QuickAppsPage({ onNavigate }: { onNavigate: (p: Page) => void })
               </div>
               <button
                 type="button"
-                onClick={() => run('fav', async () => { await runCommand({ type: 'favorite_quick_app', id: a.id, favorite: !a.favorite }); await refresh() })}
+                onClick={() =>
+                  run('fav', async () => {
+                    setApps((prev) => {
+                      const next = prev.map((x) => (x.id === a.id ? { ...x, favorite: !x.favorite } : x))
+                      quickAppsCache.set(next)
+                      return next
+                    })
+                    await runCommand({ type: 'favorite_quick_app', id: a.id, favorite: !a.favorite })
+                    await refresh()
+                  })
+                }
                 className={cn(
                   'rounded-md p-1 transition-colors hover:bg-accent shrink-0',
                   a.favorite ? 'text-warning' : 'text-muted-foreground/60 hover:text-foreground',
@@ -261,6 +274,11 @@ export function QuickAppsPage({ onNavigate }: { onNavigate: (p: Page) => void })
                         a.overrides_builtin ? 'Discard your changes and restore the built-in recipe?' : `Delete "${a.name}"?`,
                         () =>
                           run('delete', async () => {
+                            setApps((prev) => {
+                              const next = prev.filter((x) => x.id !== a.id)
+                              quickAppsCache.set(next)
+                              return next
+                            })
                             await runCommand({ type: 'delete_quick_app', id: a.id })
                             await refresh()
                           }),

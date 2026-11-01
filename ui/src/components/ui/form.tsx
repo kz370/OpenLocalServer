@@ -119,7 +119,7 @@ export function Tabs<T extends string>({
   value,
   onChange,
 }: {
-  tabs: { id: T; label: string; badge?: string | number; icon?: React.ReactNode }[]
+  tabs: { id: T; label: string; badge?: React.ReactNode; icon?: React.ReactNode }[]
   value: T
   onChange: (id: T) => void
 }) {

@@ -26,6 +26,7 @@ import {
   runCommand,
 } from '@/core'
 import { formatBytes, useAction, usePoll } from '@/lib/hooks'
+import { createPersistentCache } from '@/lib/cache'
 import { waitForService } from '@/lib/wait'
 import { confirmAction, confirmThen } from '@/lib/confirm'
 
@@ -38,21 +39,21 @@ type DatabaseToolProps = {
 }
 
 /** §31–39, §102: SQL databases and users, MongoDB connection info, SQLite files, and external tools. */
-let cachedDbServices: ServiceStatus[] = []
-let cachedDbTools: DbTool[] = []
-let cachedExternalTools: ExternalTool[] = []
-let cachedDefaultTools: Record<string, string> = {}
-let cachedSqlDbs: Record<string, string[]> = {}
-let cachedSqlUsers: Record<string, DbUser[]> = {}
-let cachedSqlBackups: Record<string, DbBackup[]> = {}
+const dbServicesCache = createPersistentCache<ServiceStatus[]>('databases_services', [])
+const dbToolsCache = createPersistentCache<DbTool[]>('databases_tools', [])
+const externalToolsCache = createPersistentCache<ExternalTool[]>('databases_external_tools', [])
+const defaultToolsCache = createPersistentCache<Record<string, string>>('databases_default_tools', {})
+const sqlDbsCache = createPersistentCache<Record<string, string[]>>('databases_sql_dbs', {})
+const sqlUsersCache = createPersistentCache<Record<string, DbUser[]>>('databases_sql_users', {})
+const sqlBackupsCache = createPersistentCache<Record<string, DbBackup[]>>('databases_sql_backups', {})
 
 export function DatabasesPage() {
   const [tab, setTab] = useState<Tab>('mariadb')
   const [migrating, setMigrating] = useState(false)
-  const [services, setServices] = useState<ServiceStatus[]>(cachedDbServices)
-  const [dbTools, setDbTools] = useState<DbTool[]>(cachedDbTools)
-  const [externalTools, setExternalTools] = useState<ExternalTool[]>(cachedExternalTools)
-  const [defaultTools, setDefaultTools] = useState<Record<string, string>>(cachedDefaultTools)
+  const [services, setServices] = useState<ServiceStatus[]>(dbServicesCache.get)
+  const [dbTools, setDbTools] = useState<DbTool[]>(dbToolsCache.get)
+  const [externalTools, setExternalTools] = useState<ExternalTool[]>(externalToolsCache.get)
+  const [defaultTools, setDefaultTools] = useState<Record<string, string>>(defaultToolsCache.get)
   const { error, setError } = useAction()
 
   useEffect(() => {
@@ -63,11 +64,11 @@ export function DatabasesPage() {
     ]).then(([detected, external, ...settings]) => {
       if (detected.type === 'db_tools') {
         setDbTools(detected.tools)
-        cachedDbTools = detected.tools
+        dbToolsCache.set(detected.tools)
       }
       if (external.type === 'external_tools') {
         setExternalTools(external.tools)
-        cachedExternalTools = external.tools
+        externalToolsCache.set(external.tools)
       }
       const defaults: Record<string, string> = {}
       const configured = new Set<string>()
@@ -89,12 +90,16 @@ export function DatabasesPage() {
         else defaults[engine] = registeredTools.find((tool) => tool.engines.includes(engine))?.id ?? ''
       }
       setDefaultTools(defaults)
-      cachedDefaultTools = defaults
+      defaultToolsCache.set(defaults)
     }).catch((e) => setError(e as Diagnostic))
   }, [])
 
   async function setDefaultTool(engine: string, id: string) {
-    setDefaultTools((current) => ({ ...current, [engine]: id }))
+    setDefaultTools((current) => {
+      const next = { ...current, [engine]: id }
+      defaultToolsCache.set(next)
+      return next
+    })
     await runCommand({ type: 'set_setting', key: `database.default_tool.${engine}`, value: id })
   }
 
@@ -102,7 +107,7 @@ export function DatabasesPage() {
     const r = await runCommand({ type: 'list_services' })
     if (r.type === 'services') {
       setServices(r.services)
-      cachedDbServices = r.services
+      dbServicesCache.set(r.services)
     }
   }, 4000)
 
@@ -236,31 +241,31 @@ function OpenDatabaseButton({ engine, database = null, path = null, dbTools, ext
           title={`Open ${database ?? path ?? 'database'} with ${toolName}`}
           disabled={busy !== null}
           onClick={() => run('open', async () => {
-          setNote(null)
-          if (engine === 'mongodb' && selectedTool === 'nosqlbooster') {
-            const connection = await runCommand({ type: 'get_connection_info', engine, database, path })
-            if (connection.type === 'connection') {
-              try {
-                await navigator.clipboard.writeText(connection.info.uri)
-              } catch {
-                setNote(`Opened NoSQLBooster. Connect → From URI: ${connection.info.uri}`)
+            setNote(null)
+            if (engine === 'mongodb' && selectedTool === 'nosqlbooster') {
+              const connection = await runCommand({ type: 'get_connection_info', engine, database, path })
+              if (connection.type === 'connection') {
+                try {
+                  await navigator.clipboard.writeText(connection.info.uri)
+                } catch {
+                  setNote(`Opened NoSQLBooster. Connect → From URI: ${connection.info.uri}`)
+                }
               }
             }
-          }
-          if (engine === 'redis' && selectedTool === 'tinyrdm') {
-            const connection = await runCommand({ type: 'get_connection_info', engine, database, path })
-            if (connection.type === 'connection') {
-              try {
-                await navigator.clipboard.writeText(connection.info.uri)
-              } catch {
-                setNote(`Opened tool. Connect to ${connection.info.uri} if it did not pick it up.`)
+            if (engine === 'redis' && selectedTool === 'tinyrdm') {
+              const connection = await runCommand({ type: 'get_connection_info', engine, database, path })
+              if (connection.type === 'connection') {
+                try {
+                  await navigator.clipboard.writeText(connection.info.uri)
+                } catch {
+                  setNote(`Opened tool. Connect to ${connection.info.uri} if it did not pick it up.`)
+                }
               }
             }
-          }
-          await runCommand({ type: 'open_database', engine, database, path, tool_id: selectedTool || null })
-          if (engine === 'mongodb' && selectedTool === 'nosqlbooster') setNote((current) => current ?? 'MongoDB connection URI copied. In NoSQLBooster, choose Connect → From URI and paste.')
-          if (engine === 'redis' && selectedTool === 'tinyrdm') setNote((current) => current ?? 'Redis URI copied (redis://127.0.0.1:6379). Paste it if the tool asks for a connection.')
-        })}>
+            await runCommand({ type: 'open_database', engine, database, path, tool_id: selectedTool || null })
+            if (engine === 'mongodb' && selectedTool === 'nosqlbooster') setNote((current) => current ?? 'MongoDB connection URI copied. In NoSQLBooster, choose Connect → From URI and paste.')
+            if (engine === 'redis' && selectedTool === 'tinyrdm') setNote((current) => current ?? 'Redis URI copied (redis://127.0.0.1:6379). Paste it if the tool asks for a connection.')
+          })}>
           {busy === 'open' ? <Spinner /> : <ExternalLink className="size-3.5" />}
         </Button>
       </span>
@@ -332,14 +337,14 @@ function ConnectionDetails({ engine, database, path = null }: { engine: string; 
 const ENGINE_NAMES = { mariadb: 'MariaDB', postgres: 'PostgreSQL' } as const
 
 function SqlEngine({ engine, service, ...toolProps }: { engine: 'mariadb' | 'postgres'; service?: ServiceStatus } & DatabaseToolProps) {
-  const [dbs, setDbs] = useState<string[]>(() => cachedSqlDbs[engine] ?? [])
-  const [users, setUsers] = useState<DbUser[]>(() => cachedSqlUsers[engine] ?? [])
+  const [dbs, setDbs] = useState<string[]>(() => sqlDbsCache.get()[engine] ?? [])
+  const [users, setUsers] = useState<DbUser[]>(() => sqlUsersCache.get()[engine] ?? [])
   const [newDb, setNewDb] = useState('')
   const [newDbCreds, setNewDbCreds] = useState<'root' | 'custom'>('root')
   const [dbUser, setDbUser] = useState({ user: '', password: '' })
   const [user, setUser] = useState({ user: '', password: '', database: '' })
   const [openDb, setOpenDb] = useState<string | null>(null)
-  const [backups, setBackups] = useState<DbBackup[]>(() => cachedSqlBackups[engine] ?? [])
+  const [backups, setBackups] = useState<DbBackup[]>(() => sqlBackupsCache.get()[engine] ?? [])
   const [note, setNote] = useState<string | null>(null)
   const [busyDb, setBusyDb] = useState<string | null>(null)
   const [busyBackup, setBusyBackup] = useState<string | null>(null)
@@ -352,22 +357,26 @@ function SqlEngine({ engine, service, ...toolProps }: { engine: 'mariadb' | 'pos
     const [d, u] = await Promise.all([runCommand({ type: 'list_databases', engine }), runCommand({ type: 'list_db_users', engine })])
     if (d.type === 'names') {
       setDbs(d.names)
-      cachedSqlDbs[engine] = d.names
+      sqlDbsCache.set((all) => ({ ...all, [engine]: d.names }))
     }
     if (u.type === 'db_users') {
       setUsers(u.users)
-      cachedSqlUsers[engine] = u.users
+      sqlUsersCache.set((all) => ({ ...all, [engine]: u.users }))
     }
     const b = await runCommand({ type: 'list_db_backups', engine, database: null })
     if (b.type === 'db_backups') {
       setBackups(b.backups)
-      cachedSqlBackups[engine] = b.backups
+      sqlBackupsCache.set((all) => ({ ...all, [engine]: b.backups }))
     }
   }
   useEffect(() => {
     refresh().catch((e) => setError(e))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [running])
+
+  usePoll(async () => {
+    if (running) await refresh().catch(() => undefined)
+  }, 4000)
 
   return (
     <div className="flex flex-col gap-4">
@@ -403,6 +412,14 @@ function SqlEngine({ engine, service, ...toolProps }: { engine: 'mariadb' | 'pos
                   disabled={!newDb || busy !== null || (newDbCreds === 'custom' && (!dbUser.user || !dbUser.password))}
                   onClick={() =>
                     run('db', async () => {
+                      const dbName = newDb.trim()
+                      if (dbName) {
+                        setDbs((prev) => {
+                          const next = prev.includes(dbName) ? prev : [...prev, dbName]
+                          sqlDbsCache.set((all) => ({ ...all, [engine]: next }))
+                          return next
+                        })
+                      }
                       await runCommand({
                         type: 'create_database',
                         engine,
@@ -464,24 +481,24 @@ function SqlEngine({ engine, service, ...toolProps }: { engine: 'mariadb' | 'pos
                   {dbs.map((d) => (
                     <Fragment key={d}>
                       <div className="flex items-center justify-between gap-2 px-3 py-1">
-                      <span className="truncate text-sm font-medium">{d}</span>
-                      <span className="flex shrink-0 items-center gap-0.5">
-                        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" title="Back up this database" disabled={busy !== null} onClick={() => { setBusyDb(d); void run('backup', async () => { const r = await runCommand({ type: 'backup_database', engine, database: d }); if (r.type === 'text') setNote(`Backup saved to ${r.text}`); await refresh() }).finally(() => setBusyDb(null)) }}>
-                          {busyDb === d ? <Spinner /> : <Archive className="size-3.5" />} Back up
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant={openDb === d ? 'secondary' : 'ghost'}
-                          className="h-7 w-7 shrink-0 p-0"
-                          aria-label={`Connection details for ${d}`}
-                          aria-expanded={openDb === d}
-                          title="Show connection details (host, port, user, URI)"
-                          onClick={() => setOpenDb(openDb === d ? null : d)}
-                        >
-                          <Info className="size-3.5" />
-                        </Button>
-                        <OpenDatabaseButton engine={engine} database={d} {...toolProps} showToolSelect={false} />
-                      </span>
+                        <span className="truncate text-sm font-medium">{d}</span>
+                        <span className="flex shrink-0 items-center gap-0.5">
+                          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" title="Back up this database" disabled={busy !== null} onClick={() => { setBusyDb(d); void run('backup', async () => { const r = await runCommand({ type: 'backup_database', engine, database: d }); if (r.type === 'text') setNote(`Backup saved to ${r.text}`); await refresh() }).finally(() => setBusyDb(null)) }}>
+                            {busyDb === d ? <Spinner /> : <Archive className="size-3.5" />} Back up
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={openDb === d ? 'secondary' : 'ghost'}
+                            className="h-7 w-7 shrink-0 p-0"
+                            aria-label={`Connection details for ${d}`}
+                            aria-expanded={openDb === d}
+                            title="Show connection details (host, port, user, URI)"
+                            onClick={() => setOpenDb(openDb === d ? null : d)}
+                          >
+                            <Info className="size-3.5" />
+                          </Button>
+                          <OpenDatabaseButton engine={engine} database={d} {...toolProps} showToolSelect={false} />
+                        </span>
                       </div>
                       {openDb === d && <ConnectionDetails engine={engine} database={d} />}
                     </Fragment>
@@ -532,7 +549,25 @@ function SqlEngine({ engine, service, ...toolProps }: { engine: 'mariadb' | 'pos
                             >
                               {busyBackup === b.file ? <Spinner /> : <RotateCcw className="size-3.5" />} Restore
                             </Button>
-                            <Button size="sm" variant="ghost" title="Delete this backup" disabled={busy !== null} onClick={() => confirmThen('Delete this backup file?', () => run('delete', async () => { await runCommand({ type: 'delete_db_backup', engine, file: b.file }); await refresh() }))}>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              title="Delete this backup"
+                              disabled={busy !== null}
+                              onClick={() =>
+                                confirmThen('Delete this backup file?', () =>
+                                  run('delete', async () => {
+                                    setBackups((prev) => {
+                                      const next = prev.filter((x) => x.file !== b.file)
+                                      sqlBackupsCache.set((all) => ({ ...all, [engine]: next }))
+                                      return next
+                                    })
+                                    await runCommand({ type: 'delete_db_backup', engine, file: b.file })
+                                    await refresh()
+                                  }),
+                                )
+                              }
+                            >
                               <Trash2 className="size-3.5" />
                             </Button>
                           </span>
@@ -563,7 +598,26 @@ function SqlEngine({ engine, service, ...toolProps }: { engine: 'mariadb' | 'pos
                 </Field>
               </div>
               <div>
-                <Button size="sm" className="w-full @lg:w-auto" disabled={!user.user || !user.password || !user.database || busy !== null} onClick={() => run('user', async () => { await runCommand({ type: 'create_db_user', engine, ...user }); setUser({ user: '', password: '', database: '' }); await refresh() })}>
+                <Button
+                  size="sm"
+                  className="w-full @lg:w-auto"
+                  disabled={!user.user || !user.password || !user.database || busy !== null}
+                  onClick={() =>
+                    run('user', async () => {
+                      const newUser = user.user.trim()
+                      if (newUser) {
+                        setUsers((prev) => {
+                          const next = [...prev, { user: newUser, host: '%', databases: [user.database] }]
+                          sqlUsersCache.set((all) => ({ ...all, [engine]: next }))
+                          return next
+                        })
+                      }
+                      await runCommand({ type: 'create_db_user', engine, ...user })
+                      setUser({ user: '', password: '', database: '' })
+                      await refresh()
+                    })
+                  }
+                >
                   Create user with full access to that database
                 </Button>
               </div>

@@ -1,4 +1,5 @@
 UI | uses | Tauri run_command
+UI Pages (Dashboard, Sites, Tunnels, WebServer, Databases, Services, Runtimes, Commands, QuickApps, Profiles, Plugins, Settings, Processes, Tasks) | uses | PersistentCache (ui/src/lib/cache.ts) for instant 0ms cross-session rendering and localStorage persistence
 UI (core/client.ts) | calls | Tauri invoke('run_command')
 olsc (crates/ols-cli) | uses | ols-core control channel (calls CoreCommand over local IPC or background daemon)
 Tauri run_command | uses | Core::dispatch

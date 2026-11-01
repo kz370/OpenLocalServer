@@ -38,6 +38,7 @@ import {
   type TunnelStatus,
   runCommand,
 } from '@/core'
+import { createPersistentCache } from '@/lib/cache'
 import { confirmAction } from '@/lib/confirm'
 import { formatBytes, timeAgo, useAction, usePoll } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
@@ -64,16 +65,16 @@ const STATE_BADGE: Record<TunnelStatus['state'], { label: string; variant: 'succ
 }
 
 /** §56–60, §110–111: public tunnels, their traffic, and a webhook tester. */
-let cachedTunnels: TunnelStatus[] = []
-let cachedTunnelProviders: TunnelProvider[] = []
-let cachedTunnelDomains: DomainSummary[] = []
-let cachedTunnelProjects: Project[] = []
+const tunnelsCache = createPersistentCache<TunnelStatus[]>('tunnels_list', [])
+const tunnelProvidersCache = createPersistentCache<TunnelProvider[]>('tunnels_providers', [])
+const tunnelDomainsCache = createPersistentCache<DomainSummary[]>('tunnels_domains', [])
+const tunnelProjectsCache = createPersistentCache<Project[]>('tunnels_projects', [])
 
 export function TunnelsPage() {
-  const [tunnels, setTunnels] = useState<TunnelStatus[]>(cachedTunnels)
-  const [providers, setProviders] = useState<TunnelProvider[]>(cachedTunnelProviders)
-  const [domains, setDomains] = useState<DomainSummary[]>(cachedTunnelDomains)
-  const [projects, setProjects] = useState<Project[]>(cachedTunnelProjects)
+  const [tunnels, setTunnels] = useState<TunnelStatus[]>(tunnelsCache.get)
+  const [providers, setProviders] = useState<TunnelProvider[]>(tunnelProvidersCache.get)
+  const [domains, setDomains] = useState<DomainSummary[]>(tunnelDomainsCache.get)
+  const [projects, setProjects] = useState<Project[]>(tunnelProjectsCache.get)
   const [editing, setEditing] = useState<TunnelConfig | null>(null)
   const [confirming, setConfirming] = useState<TunnelStatus | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
@@ -83,7 +84,7 @@ export function TunnelsPage() {
     const r = await runCommand({ type: 'list_tunnels' })
     if (r.type === 'tunnels') {
       setTunnels(r.tunnels)
-      cachedTunnels = r.tunnels
+      tunnelsCache.set(r.tunnels)
     }
   }, [])
 
@@ -91,15 +92,15 @@ export function TunnelsPage() {
     const [p, d, pr] = await Promise.all([runCommand({ type: 'list_tunnel_providers' }), runCommand({ type: 'list_domains' }), runCommand({ type: 'list_projects' })])
     if (p.type === 'tunnel_providers') {
       setProviders(p.providers)
-      cachedTunnelProviders = p.providers
+      tunnelProvidersCache.set(p.providers)
     }
     if (d.type === 'domains') {
       setDomains(d.domains)
-      cachedTunnelDomains = d.domains
+      tunnelDomainsCache.set(d.domains)
     }
     if (pr.type === 'projects') {
       setProjects(pr.projects)
-      cachedTunnelProjects = pr.projects
+      tunnelProjectsCache.set(pr.projects)
     }
     await refresh()
   }, [refresh])
@@ -126,6 +127,11 @@ export function TunnelsPage() {
   async function remove(t: TunnelStatus) {
     if (!(await confirmAction(`Delete the tunnel "${t.config.name}"? It stops first if it is running.`))) return
     await run(`remove:${t.config.id}`, async () => {
+      setTunnels((prev) => {
+        const next = prev.filter((x) => x.config.id !== t.config.id)
+        tunnelsCache.set(next)
+        return next
+      })
       await runCommand({ type: 'remove_tunnel', id: t.config.id })
       if (selected === t.config.id) setSelected(null)
       await refresh()

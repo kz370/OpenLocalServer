@@ -18,6 +18,7 @@ import releaseNotes from '../../../release-notes/v2.6.0.md?raw'
 import { Select, SettingRow, SwitchRow, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { type EditorInfo, type HelperService, type ServiceStatus, type StartupSettings, runCommand, requestExit } from '@/core'
+import { createPersistentCache } from '@/lib/cache'
 import { confirmThen } from '@/lib/confirm'
 import { useAction } from '@/lib/hooks'
 import { invalidateDefaultTldCache } from '@/lib/sites'
@@ -64,45 +65,46 @@ async function getStringList(key: string): Promise<string[]> {
   return r.type === 'setting' && Array.isArray(r.value) ? r.value.filter((value): value is string => typeof value === 'string') : []
 }
 
-let cachedStartup: StartupSettings | null = null
-let cachedServices: ServiceStatus[] = []
-let cachedEditors: EditorInfo[] = []
-let cachedEditor = ''
-let cachedEditorId = 'vscode'
-let cachedHelper: HelperService | null = null
-let cachedVersion = ''
-let cachedProjectsDir = ''
-let cachedSitesDir = ''
-let cachedRootFolders: string[] = []
-let cachedDefaultTld = 'local'
-let cachedCustomTld = ''
-let cachedWatchSites = true
-let cachedAutoDomains = true
-let cachedAutoFixDiagnostics = true
-let cachedMcpEnabled = false
-let cachedMcpToken = ''
-let cachedMcpConfigured = false
-let cachedMcpExpiryMode: 'none' | 'hours' | 'at' = 'none'
-let cachedMcpTtlHours = 0
-let cachedMcpExpiresAt = ''
+const startupCache = createPersistentCache<StartupSettings | null>('settings_startup', null)
+const servicesCache = createPersistentCache<ServiceStatus[]>('settings_services', [])
+const editorsCache = createPersistentCache<EditorInfo[]>('settings_editors', [])
+const editorCache = createPersistentCache<string>('settings_editor', '')
+const editorIdCache = createPersistentCache<string>('settings_editor_id', 'vscode')
+const helperCache = createPersistentCache<HelperService | null>('settings_helper', null)
+const versionCache = createPersistentCache<string>('settings_version', '')
+const projectsDirCache = createPersistentCache<string>('settings_projects_dir', '')
+const sitesDirCache = createPersistentCache<string>('settings_sites_dir', '')
+const rootFoldersCache = createPersistentCache<string[]>('settings_root_folders', [])
+const defaultTldCache = createPersistentCache<string>('settings_default_tld', 'local')
+const customTldCache = createPersistentCache<string>('settings_custom_tld', '')
+const watchSitesCache = createPersistentCache<boolean>('settings_watch_sites', true)
+const autoDomainsCache = createPersistentCache<boolean>('settings_auto_domains', true)
+const autoFixDiagnosticsCache = createPersistentCache<boolean>('settings_auto_fix_diagnostics', true)
+const mcpEnabledCache = createPersistentCache<boolean>('settings_mcp_enabled', false)
+const mcpTokenCache = createPersistentCache<string>('settings_mcp_token', '')
+const mcpConfiguredCache = createPersistentCache<boolean>('settings_mcp_configured', false)
+const mcpExpiryModeCache = createPersistentCache<'none' | 'hours' | 'at'>('settings_mcp_expiry_mode', 'none')
+const mcpTtlHoursCache = createPersistentCache<number>('settings_mcp_ttl_hours', 0)
+const mcpExpiresAtCache = createPersistentCache<string>('settings_mcp_expires_at', '')
+const manualCache = createPersistentCache<string | null>('settings_manual', null)
 
 /** §119–121 startup, tray and notification behavior, plus the everyday defaults. */
 export function SettingsPage() {
-  const [startup, setStartup] = useState<StartupSettings | null>(cachedStartup)
-  const [services, setServices] = useState<ServiceStatus[]>(cachedServices)
-  const [editor, setEditor] = useState(cachedEditor)
-  const [editorId, setEditorId] = useState(cachedEditorId)
-  const [editors, setEditors] = useState<EditorInfo[]>(cachedEditors)
-  const [projectsDir, setProjectsDir] = useState(cachedProjectsDir)
-  const [autoDomains, setAutoDomains] = useState(cachedAutoDomains)
-  const [watchSites, setWatchSites] = useState(cachedWatchSites)
-  const [autoFixDiagnostics, setAutoFixDiagnostics] = useState(cachedAutoFixDiagnostics)
-  const [sitesDir, setSitesDir] = useState(cachedSitesDir)
-  const [rootFolders, setRootFolders] = useState<string[]>(cachedRootFolders)
-  const [defaultTld, setDefaultTld] = useState(cachedDefaultTld)
-  const [customTld, setCustomTld] = useState(cachedCustomTld)
-  const [helper, setHelper] = useState<HelperService | null>(cachedHelper)
-  const [version, setVersion] = useState(cachedVersion)
+  const [startup, setStartup] = useState<StartupSettings | null>(startupCache.get)
+  const [services, setServices] = useState<ServiceStatus[]>(servicesCache.get)
+  const [editor, setEditor] = useState(editorCache.get)
+  const [editorId, setEditorId] = useState(editorIdCache.get)
+  const [editors, setEditors] = useState<EditorInfo[]>(editorsCache.get)
+  const [projectsDir, setProjectsDir] = useState(projectsDirCache.get)
+  const [autoDomains, setAutoDomains] = useState(autoDomainsCache.get)
+  const [watchSites, setWatchSites] = useState(watchSitesCache.get)
+  const [autoFixDiagnostics, setAutoFixDiagnostics] = useState(autoFixDiagnosticsCache.get)
+  const [sitesDir, setSitesDir] = useState(sitesDirCache.get)
+  const [rootFolders, setRootFolders] = useState<string[]>(rootFoldersCache.get)
+  const [defaultTld, setDefaultTld] = useState(defaultTldCache.get)
+  const [customTld, setCustomTld] = useState(customTldCache.get)
+  const [helper, setHelper] = useState<HelperService | null>(helperCache.get)
+  const [version, setVersion] = useState(versionCache.get)
   const [saved, setSaved] = useState<string | null>(null)
   const [section, setSection] = useState<Section>(() => {
     try {
@@ -118,16 +120,16 @@ export function SettingsPage() {
     }
     return 'general'
   })
-  const [manual, setManual] = useState<string | null>(null)
+  const [manual, setManual] = useState<string | null>(manualCache.get)
   const [manualTab, setManualTab] = useState<'manual' | 'notes'>('manual')
   const [manualCopied, setManualCopied] = useState(false)
-  const [mcpEnabled, setMcpEnabled] = useState(cachedMcpEnabled)
-  const [mcpToken, setMcpToken] = useState(cachedMcpToken)
+  const [mcpEnabled, setMcpEnabled] = useState(mcpEnabledCache.get)
+  const [mcpToken, setMcpToken] = useState(mcpTokenCache.get)
   const [mcpTokenVisible, setMcpTokenVisible] = useState(false)
-  const [mcpExpiryMode, setMcpExpiryMode] = useState<'none' | 'hours' | 'at'>(cachedMcpExpiryMode)
-  const [mcpTtlHours, setMcpTtlHours] = useState(cachedMcpTtlHours)
-  const [mcpExpiresAt, setMcpExpiresAt] = useState(cachedMcpExpiresAt)
-  const [mcpConfigured, setMcpConfigured] = useState(cachedMcpConfigured)
+  const [mcpExpiryMode, setMcpExpiryMode] = useState<'none' | 'hours' | 'at'>(mcpExpiryModeCache.get)
+  const [mcpTtlHours, setMcpTtlHours] = useState(mcpTtlHoursCache.get)
+  const [mcpExpiresAt, setMcpExpiresAt] = useState(mcpExpiresAtCache.get)
+  const [mcpConfigured, setMcpConfigured] = useState(mcpConfiguredCache.get)
 
   const releaseNotesFiltered = useMemo(() => {
     const lines = releaseNotes.split('\n')
@@ -169,7 +171,7 @@ export function SettingsPage() {
     void runCommand({ type: 'ping' }).then((r) => {
       if (r.type === 'pong') {
         setVersion(r.version)
-        cachedVersion = r.version
+        versionCache.set(r.version)
       }
     })
   }, [])
@@ -179,21 +181,21 @@ export function SettingsPage() {
     void runCommand({ type: 'list_editors' }).then((r) => {
       if (r.type === 'editors') {
         setEditors(r.editors)
-        cachedEditors = r.editors
+        editorsCache.set(r.editors)
       }
     })
     void runCommand({ type: 'get_helper_service' }).then((r) => {
       if (r.type === 'helper_service') {
         setHelper(r)
-        cachedHelper = r
+        helperCache.set(r)
       }
     })
     void Promise.all([getString('editor'), getString('editor.command')]).then(([id, cmd]) => {
       setEditor(cmd)
-      cachedEditor = cmd
+      editorCache.set(cmd)
       const resolvedId = cmd ? 'custom' : id || 'vscode'
       setEditorId(resolvedId)
-      cachedEditorId = resolvedId
+      editorIdCache.set(resolvedId)
     })
   }, [section])
 
@@ -202,14 +204,14 @@ export function SettingsPage() {
     void runCommand({ type: 'get_startup_settings' }).then((r) => {
       if (r.type === 'startup') {
         setStartup(r.settings)
-        cachedStartup = r.settings
+        startupCache.set(r.settings)
       }
     })
     if (section === 'startup') {
       void runCommand({ type: 'list_services' }).then((r) => {
         if (r.type === 'services') {
           setServices(r.services)
-          cachedServices = r.services
+          servicesCache.set(r.services)
         }
       })
     }
@@ -219,28 +221,28 @@ export function SettingsPage() {
     if (section !== 'sites' && section !== 'roots') return
     void getString('quickapps.projects_dir').then((v) => {
       setProjectsDir(v)
-      cachedProjectsDir = v
+      projectsDirCache.set(v)
     })
     void getString('paths.sites_dir').then((v) => {
       setSitesDir(v)
-      cachedSitesDir = v
+      sitesDirCache.set(v)
     })
     void getStringList('projects.roots').then((v) => {
       setRootFolders(v)
-      cachedRootFolders = v
+      rootFoldersCache.set(v)
     })
     void runCommand({ type: 'get_setting', key: 'projects.watch' }).then((r) => {
       if (r.type === 'setting') {
         const val = r.value !== false
         setWatchSites(val)
-        cachedWatchSites = val
+        watchSitesCache.set(val)
       }
     })
     void runCommand({ type: 'get_setting', key: 'domains.auto' }).then((r) => {
       if (r.type === 'setting') {
         const val = r.value !== false
         setAutoDomains(val)
-        cachedAutoDomains = val
+        autoDomainsCache.set(val)
       }
     })
     void getString('domains.default_tld').then((val) => {
@@ -249,13 +251,13 @@ export function SettingsPage() {
       if (presets.includes(tld)) {
         setDefaultTld(tld)
         setCustomTld('')
-        cachedDefaultTld = tld
-        cachedCustomTld = ''
+        defaultTldCache.set(tld)
+        customTldCache.set('')
       } else {
         setDefaultTld('custom')
         setCustomTld(tld)
-        cachedDefaultTld = 'custom'
-        cachedCustomTld = tld
+        defaultTldCache.set('custom')
+        customTldCache.set(tld)
       }
     })
   }, [section])
@@ -266,7 +268,7 @@ export function SettingsPage() {
       if (r.type === 'setting') {
         const val = r.value !== false
         setAutoFixDiagnostics(val)
-        cachedAutoFixDiagnostics = val
+        autoFixDiagnosticsCache.set(val)
       }
     })
   }, [section])
@@ -276,15 +278,15 @@ export function SettingsPage() {
     void runCommand({ type: 'get_setting', key: 'mcp.auth.enabled' }).then((r) => {
       if (r.type === 'setting' && typeof r.value === 'boolean') {
         setMcpEnabled(r.value)
-        cachedMcpEnabled = r.value
+        mcpEnabledCache.set(r.value)
       }
     })
     void runCommand({ type: 'get_secret', key: 'mcp.auth.token' }).then((r) => {
       if (r.type === 'secret') {
         setMcpConfigured(!!r.value)
         setMcpToken(r.value ?? '')
-        cachedMcpConfigured = !!r.value
-        cachedMcpToken = r.value ?? ''
+        mcpConfiguredCache.set(!!r.value)
+        mcpTokenCache.set(r.value ?? '')
       }
     })
     void runCommand({ type: 'get_secret', key: 'mcp.auth.token.expires_at' }).then((r) => {
@@ -294,8 +296,8 @@ export function SettingsPage() {
           const val = new Date(ms).toISOString().slice(0, 16)
           setMcpExpiresAt(val)
           setMcpExpiryMode('at')
-          cachedMcpExpiresAt = val
-          cachedMcpExpiryMode = 'at'
+          mcpExpiresAtCache.set(val)
+          mcpExpiryModeCache.set('at')
         }
       }
     })
@@ -306,8 +308,8 @@ export function SettingsPage() {
           const hours = ttl / (3600 * 1000)
           setMcpTtlHours(hours)
           setMcpExpiryMode('hours')
-          cachedMcpTtlHours = hours
-          cachedMcpExpiryMode = 'hours'
+          mcpTtlHoursCache.set(hours)
+          mcpExpiryModeCache.set('hours')
         }
       }
     })
@@ -316,7 +318,10 @@ export function SettingsPage() {
   useEffect(() => {
     if (section !== 'manual') return
     void runCommand({ type: 'get_app_guide', version: version || '2.6.0' }).then((r) => {
-      if (r.type === 'app_guide') setManual(r.markdown)
+      if (r.type === 'app_guide') {
+        setManual(r.markdown)
+        manualCache.set(r.markdown)
+      }
     })
   }, [section, version])
 
@@ -325,29 +330,29 @@ export function SettingsPage() {
       const r = await runCommand({ type: 'set_startup_settings', settings: startup })
       if (r.type === 'startup') {
         setStartup(r.settings)
-        cachedStartup = r.settings
+        startupCache.set(r.settings)
       }
     }
     const targetEditorId = editorId === 'custom' ? '' : editorId
     const targetEditorCmd = editorId === 'custom' ? editor : ''
     await runCommand({ type: 'set_setting', key: 'editor', value: targetEditorId })
     await runCommand({ type: 'set_setting', key: 'editor.command', value: targetEditorCmd })
-    cachedEditor = targetEditorCmd
-    cachedEditorId = editorId
+    editorCache.set(targetEditorCmd)
+    editorIdCache.set(editorId)
 
     await runCommand({ type: 'set_setting', key: 'quickapps.projects_dir', value: projectsDir })
-    cachedProjectsDir = projectsDir
+    projectsDirCache.set(projectsDir)
 
     await runCommand({ type: 'set_setting', key: 'domains.auto', value: autoDomains })
-    cachedAutoDomains = autoDomains
+    autoDomainsCache.set(autoDomains)
 
     await runCommand({ type: 'set_setting', key: 'projects.watch', value: watchSites })
-    cachedWatchSites = watchSites
+    watchSitesCache.set(watchSites)
 
     const tldValue = defaultTld === 'custom' ? customTld.trim().replace(/^\./, '') : defaultTld
     await runCommand({ type: 'set_setting', key: 'domains.default_tld', value: tldValue || 'local' })
-    cachedDefaultTld = defaultTld
-    cachedCustomTld = customTld
+    defaultTldCache.set(defaultTld)
+    customTldCache.set(customTld)
 
     invalidateDefaultTldCache()
     if (autoDomains) await runCommand({ type: 'sync_auto_domains' })
@@ -357,29 +362,29 @@ export function SettingsPage() {
 
   async function saveMcp() {
     await runCommand({ type: 'set_setting', key: 'mcp.auth.enabled', value: mcpEnabled })
-    cachedMcpEnabled = mcpEnabled
+    mcpEnabledCache.set(mcpEnabled)
     if (mcpToken) {
       await runCommand({ type: 'set_secret', key: 'mcp.auth.token', value: mcpToken })
-      cachedMcpToken = mcpToken
-      cachedMcpConfigured = true
+      mcpTokenCache.set(mcpToken)
+      mcpConfiguredCache.set(true)
       setMcpConfigured(true)
       const now = Date.now()
       await runCommand({ type: 'set_secret', key: 'mcp.auth.token.created_at', value: String(now) })
       if (mcpExpiryMode === 'hours' && mcpTtlHours > 0) {
         await runCommand({ type: 'set_secret', key: 'mcp.auth.token.ttl_ms', value: String(mcpTtlHours * 3600 * 1000) })
         await runCommand({ type: 'set_secret', key: 'mcp.auth.token.expires_at', value: '' })
-        cachedMcpExpiryMode = 'hours'
-        cachedMcpTtlHours = mcpTtlHours
+        mcpExpiryModeCache.set('hours')
+        mcpTtlHoursCache.set(mcpTtlHours)
       } else if (mcpExpiryMode === 'at' && mcpExpiresAt) {
         const expiresMs = new Date(mcpExpiresAt).getTime()
         await runCommand({ type: 'set_secret', key: 'mcp.auth.token.ttl_ms', value: '' })
         await runCommand({ type: 'set_secret', key: 'mcp.auth.token.expires_at', value: String(expiresMs) })
-        cachedMcpExpiryMode = 'at'
-        cachedMcpExpiresAt = mcpExpiresAt
+        mcpExpiryModeCache.set('at')
+        mcpExpiresAtCache.set(mcpExpiresAt)
       } else {
         await runCommand({ type: 'set_secret', key: 'mcp.auth.token.ttl_ms', value: '' })
         await runCommand({ type: 'set_secret', key: 'mcp.auth.token.expires_at', value: '' })
-        cachedMcpExpiryMode = 'none'
+        mcpExpiryModeCache.set('none')
       }
     }
     setSaved('MCP settings saved.')
@@ -400,7 +405,7 @@ export function SettingsPage() {
       const result = await runCommand({ type: 'set_setting', key: 'projects.roots', value: next })
       if (result.type === 'ok') {
         setRootFolders(next)
-        cachedRootFolders = next
+        rootFoldersCache.set(next)
         if (autoDomains) await runCommand({ type: 'sync_auto_domains' })
       }
     })
@@ -412,7 +417,7 @@ export function SettingsPage() {
       const result = await runCommand({ type: 'set_setting', key: 'projects.roots', value: next })
       if (result.type === 'ok') {
         setRootFolders(next)
-        cachedRootFolders = next
+        rootFoldersCache.set(next)
       }
     })
   }
@@ -429,7 +434,7 @@ export function SettingsPage() {
   const set = (patch: Partial<StartupSettings>) => {
     setStartup((prev) => {
       const next = { ...(prev ?? defaultStartup), ...patch }
-      cachedStartup = next
+      startupCache.set(next)
       return next
     })
   }
@@ -440,7 +445,7 @@ export function SettingsPage() {
         ...base,
         autostart_services: on ? [...base.autostart_services, id] : base.autostart_services.filter((s) => s !== id),
       }
-      cachedStartup = next
+      startupCache.set(next)
       return next
     })
   }

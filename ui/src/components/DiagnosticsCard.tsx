@@ -1,5 +1,5 @@
-import { AlertTriangle, ChevronDown, ChevronRight, ChevronUp, Eye, EyeOff, FolderOpen, FolderX, HardDrive, Info, RefreshCw, Wrench, XCircle } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, ChevronUp, Eye, EyeOff, FolderOpen, FolderX, HardDrive, Info, RefreshCw, Wrench, XCircle } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
 import type { Page } from '@/components/layout/Sidebar'
@@ -7,7 +7,7 @@ import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { type Finding, runCommand } from '@/core'
+import { type Finding, type HealthItem, runCommand } from '@/core'
 import { useAction, usePoll } from '@/lib/hooks'
 import { confirmAction } from '@/lib/confirm'
 import { openSitesFilter } from '@/lib/nav'
@@ -19,9 +19,11 @@ const COLOR = { error: 'text-destructive', warning: 'text-warning', info: 'text-
 export function DiagnosticsCard({
   refreshToken = 0,
   onNavigate,
+  healthProblems = [],
 }: {
   refreshToken?: number
   onNavigate?: (p: Page) => void
+  healthProblems?: HealthItem[]
 }) {
   const [findings, setFindings] = useState<Finding[] | null>(null)
   const [open, setOpen] = useState<string | null>(null)
@@ -46,9 +48,30 @@ export function DiagnosticsCard({
   const isMissingFolderFinding = (f: Finding) =>
     f.id.startsWith('site_root_missing:') || f.id.startsWith('project_missing:')
 
-  const active = findings?.filter((f) => !f.ignored) ?? []
-  const ignored = findings?.filter((f) => f.ignored) ?? []
-  const shown = showIgnored ? findings ?? [] : active
+  const syntheticHealthFindings = useMemo<Finding[]>(() => {
+    return healthProblems
+      .filter((h) => h.status !== 'ok')
+      .map((h) => ({
+        id: `health:${h.id}`,
+        problem: h.label,
+        cause: h.detail,
+        fix: h.fix || 'Check service status in the Services panel.',
+        severity: (h.status === 'warn' ? 'warning' : 'error') as 'warning' | 'error',
+        details: [],
+        ignored: false,
+        auto_fixable: false,
+        fix_command: null,
+      }))
+  }, [healthProblems])
+
+  const allFindings = useMemo(() => {
+    if (findings === null) return null
+    return [...findings, ...syntheticHealthFindings]
+  }, [findings, syntheticHealthFindings])
+
+  const active = allFindings?.filter((f) => !f.ignored) ?? []
+  const ignored = allFindings?.filter((f) => f.ignored) ?? []
+  const shown = showIgnored ? allFindings ?? [] : active
 
   const missingFolderFindings = shown.filter(isMissingFolderFinding)
   const standardFindings = shown.filter((f) => !isMissingFolderFinding(f))
@@ -118,13 +141,42 @@ export function DiagnosticsCard({
     await scan()
   }
 
+  // Compact inline status pill when there are no active problems
+  if (findings !== null && active.length === 0) {
+    return (
+      <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-card/60 px-3.5 py-2 shadow-xs transition-colors">
+        <div className="flex items-center gap-2">
+          <CheckCircle2 className="size-4 shrink-0 text-success" />
+          <span className="text-xs font-medium text-foreground">No problems found</span>
+          <span className="hidden text-xs text-muted-foreground sm:inline">· All services and directories are operational</span>
+        </div>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+          disabled={busy !== null}
+          onClick={() => run('scan', scan)}
+          title="Check again"
+        >
+          {busy === 'scan' ? <Spinner className="size-3" /> : <RefreshCw className="size-3" />}
+          <span className="ml-1 hidden sm:inline">Check again</span>
+        </Button>
+      </div>
+    )
+  }
+
   return (
-    <Card>
+    <Card className="border-warning/40 shadow-sm">
       <CardHeader className="flex-row items-start justify-between space-y-0 pb-2">
         <div>
-          <CardTitle className="text-sm">Diagnostics</CardTitle>
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-sm">Diagnostics</CardTitle>
+            <Badge variant="outline" className="border-warning/40 text-warning text-xs font-semibold">
+              {active.length} {active.length === 1 ? 'issue' : 'issues'}
+            </Badge>
+          </div>
           <CardDescription>
-            {findings === null ? 'Checking…' : active.length === 0 ? 'No problems found.' : `${active.length} thing${active.length === 1 ? '' : 's'} to look at.`}
+            {findings === null ? 'Checking…' : `${active.length} thing${active.length === 1 ? '' : 's'} to look at.`}
           </CardDescription>
         </div>
         <div className="flex items-center gap-1">

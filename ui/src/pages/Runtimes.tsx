@@ -16,7 +16,8 @@ import { Input } from '@/components/ui/input'
 import { TechIcon } from '@/components/TechIcon'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { type CatalogEntry, type CustomInstall, type Diagnostic, type RuntimeEvent, runCommand } from '@/core'
-import { formatBytes } from '@/lib/hooks'
+import { formatBytes, usePoll } from '@/lib/hooks'
+import { createPersistentCache } from '@/lib/cache'
 import { confirmAction } from '@/lib/confirm'
 import {
   compareVersionsDesc,
@@ -67,18 +68,18 @@ interface Group {
   rows: Row[]
 }
 
-let cachedRuntimeCatalog: CatalogEntry[] = []
-let cachedCustomInstalls: CustomInstall[] = []
+const runtimeCatalogCache = createPersistentCache<CatalogEntry[]>('runtimes_catalog', [])
+const customInstallsCache = createPersistentCache<CustomInstall[]>('runtimes_custom', [])
 let cachedCatalogStatus: Record<string, CatalogStatus> = {}
 let cachedVerifiedKeys: Set<string> = new Set()
 let cachedHasLoaded = false
 
 export function RuntimesPage() {
-  const [catalog, setCatalog] = useState<CatalogEntry[]>(cachedRuntimeCatalog)
+  const [catalog, setCatalog] = useState<CatalogEntry[]>(runtimeCatalogCache.get)
   const [progress, setProgress] = useState<Record<string, RuntimeEvent | undefined>>({})
   const [error, setError] = useState<Diagnostic | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [loading, setLoading] = useState(!cachedHasLoaded)
+  const [loading, setLoading] = useState(() => !cachedHasLoaded && runtimeCatalogCache.get().length === 0)
   const [catalogRefreshing, setCatalogRefreshing] = useState(false)
   const [catalogStatus, setCatalogStatus] = useState<Record<string, CatalogStatus>>(cachedCatalogStatus)
   const [cachedCatalogIds, setCachedCatalogIds] = useState<Set<string>>(new Set())
@@ -88,7 +89,7 @@ export function RuntimesPage() {
   const [installError, setInstallError] = useState<{ id: string; version: string; message: string } | null>(null)
   const [pending, setPending] = useState<Set<string>>(new Set())
 
-  const [customInstalls, setCustomInstalls] = useState<CustomInstall[]>(cachedCustomInstalls)
+  const [customInstalls, setCustomInstalls] = useState<CustomInstall[]>(customInstallsCache.get)
   const [manageId, setManageId] = useState<string | null>(null)
   const [installChoices, setInstallChoices] = useState<Record<string, string>>({})
   const [versionSearch, setVersionSearch] = useState('')
@@ -143,7 +144,7 @@ export function RuntimesPage() {
           byKey.set(`${entry.id}@${entry.version}`, entry)
         }
         const next = Array.from(byKey.values())
-        cachedRuntimeCatalog = next
+        runtimeCatalogCache.set(next)
         return next
       })
       const nextKeys = new Set([...verifiedKeys, ...res.entries.map((e) => `${e.id}@${e.version}`)])
@@ -153,7 +154,7 @@ export function RuntimesPage() {
     const custom = await runCommand({ type: 'list_custom_installs' })
     if (custom.type === 'custom_installs') {
       setCustomInstalls(custom.entries)
-      cachedCustomInstalls = custom.entries
+      customInstallsCache.set(custom.entries)
     }
     cachedHasLoaded = true
     setLoading(false)
@@ -167,7 +168,7 @@ export function RuntimesPage() {
       const entries = res.entries.filter((entry) => entry.id === id)
       setCatalog((prev) => {
         const next = [...prev.filter((entry) => entry.id !== id), ...entries]
-        cachedRuntimeCatalog = next
+        runtimeCatalogCache.set(next)
         return next
       })
       setVerifiedKeys((prev) => new Set([...prev, ...entries.map((e) => `${e.id}@${e.version}`)]))
@@ -266,14 +267,26 @@ export function RuntimesPage() {
       }
       setProgress((prev) => ({ ...prev, [key]: e }))
       if (e.kind === 'failed') setInstallError({ id: e.id, version: e.version, message: e.message })
-      if (e.kind === 'installed') setInstallError(null)
+      if (e.kind === 'installed') {
+        setInstallError(null)
+        setCatalog((prev) => {
+          const next = prev.map((item) =>
+            item.id === e.id && item.version === e.version ? { ...item, installed: true } : item
+          )
+          runtimeCatalogCache.set(next)
+          return next
+        })
+      }
       if (e.kind === 'installed' || e.kind === 'failed' || e.kind === 'cancelled') void refresh()
     })
     return () => {
       active = false
       void unlisten.then((f) => f())
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  usePoll(() => refresh().catch(() => undefined), 3000)
 
   const install = (entry: CatalogEntry) =>
     guarded(async () => {
@@ -332,20 +345,22 @@ export function RuntimesPage() {
             ? `PHP ${entry.version} is now the default. Site/project pins still take precedence; apply web config to update unpinned PHP sites.`
             : ['node', 'python'].includes(entry.id)
               ? `${entry.name} ${entry.version} is now the default. A project's pinned version still takes precedence.`
-            : `${entry.name} ${entry.version} will be used the next time its service starts.`)
+              : `${entry.name} ${entry.version} will be used the next time its service starts.`)
     })
 
   const removeRuntime = (entry: CatalogEntry) =>
     guarded(async () => {
       if (!(await confirmAction(`Remove the managed ${entry.name} ${entry.version} files? Projects or sites pinned to this version will need another version selected or this version reinstalled. Project files and MariaDB data stay in place.`, 'Remove version'))) return
       await runCommand({ type: 'remove_runtime', id: entry.id, version: entry.version })
-      setCatalog((prev) =>
-        prev.map((e) =>
+      setCatalog((prev) => {
+        const next = prev.map((e) =>
           e.id === entry.id && e.version === entry.version
             ? { ...e, installed: false, is_default: false }
             : e,
-        ),
-      )
+        )
+        runtimeCatalogCache.set(next)
+        return next
+      })
       await refresh()
     })
 
@@ -377,8 +392,8 @@ export function RuntimesPage() {
         const newest = entries
           .filter((entry) => !entry.installed && !isPrerelease(entry.version))
           .sort((a, b) => compareVersionsDesc(a.version, b.version))[0] ?? entries
-          .filter((entry) => !entry.installed)
-          .sort((a, b) => compareVersionsDesc(a.version, b.version))[0]
+            .filter((entry) => !entry.installed)
+            .sort((a, b) => compareVersionsDesc(a.version, b.version))[0]
         if (newest) setInstallChoices((prev) => ({ ...prev, [group.id]: newest.version }))
       })
       .catch((err) => setError(err as Diagnostic))
@@ -1029,8 +1044,8 @@ export function RuntimesPage() {
                         const newest = entries
                           .filter((entry) => !entry.installed && !isPrerelease(entry.version))
                           .sort((a, b) => compareVersionsDesc(a.version, b.version))[0] ?? entries
-                          .filter((entry) => !entry.installed)
-                          .sort((a, b) => compareVersionsDesc(a.version, b.version))[0]
+                            .filter((entry) => !entry.installed)
+                            .sort((a, b) => compareVersionsDesc(a.version, b.version))[0]
                         if (newest) setInstallChoices((prev) => ({ ...prev, [managedGroup!.id]: newest.version }))
                       })
                       .catch((err) => setError(err as Diagnostic))
@@ -1047,45 +1062,45 @@ export function RuntimesPage() {
           </section>
 
           {activeDownloads.length > 0 && (
-          <section>
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <div className="flex flex-col gap-0.5">
-                <h3 className="text-[13px] font-semibold leading-none">Downloads in progress</h3>
-                <p className="text-xs text-muted-foreground">Pausing holds the transfer; stopping deletes the partial download and installs nothing.</p>
+            <section>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div className="flex flex-col gap-0.5">
+                  <h3 className="text-[13px] font-semibold leading-none">Downloads in progress</h3>
+                  <p className="text-xs text-muted-foreground">Pausing holds the transfer; stopping deletes the partial download and installs nothing.</p>
+                </div>
               </div>
-            </div>
-            <div className="overflow-hidden rounded-lg border-border/60 border">
-              {activeDownloads.map(({ key, entry, live }) => {
-                const paused = live.state === 'paused'
-                return (
-                  <div key={key} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border/60 px-3 py-2 last:border-b-0">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-1.5 text-[13px] font-medium tabular-nums">
-                        <span className="font-mono">{entry.version}</span>
-                        {paused && <Badge variant="secondary" className="px-1.5 text-[11px] font-normal">Paused</Badge>}
-                        {isPrerelease(entry.version) && (
-                          <Badge variant="outline" className="px-1.5 text-[11px] font-normal border-amber-500/40 text-amber-600 dark:text-amber-400">
-                            Pre-release
-                          </Badge>
-                        )}
+              <div className="overflow-hidden rounded-lg border-border/60 border">
+                {activeDownloads.map(({ key, entry, live }) => {
+                  const paused = live.state === 'paused'
+                  return (
+                    <div key={key} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border/60 px-3 py-2 last:border-b-0">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-1.5 text-[13px] font-medium tabular-nums">
+                          <span className="font-mono">{entry.version}</span>
+                          {paused && <Badge variant="secondary" className="px-1.5 text-[11px] font-normal">Paused</Badge>}
+                          {isPrerelease(entry.version) && (
+                            <Badge variant="outline" className="px-1.5 text-[11px] font-normal border-amber-500/40 text-amber-600 dark:text-amber-400">
+                              Pre-release
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="mt-0.5 text-[11px] text-muted-foreground">
+                          {live.state}: {formatBytes(live.downloaded)}{live.total ? ` / ${formatBytes(live.total)}` : ''}
+                        </p>
                       </div>
-                      <p className="mt-0.5 text-[11px] text-muted-foreground">
-                        {live.state}: {formatBytes(live.downloaded)}{live.total ? ` / ${formatBytes(live.total)}` : ''}
-                      </p>
+                      <div className="flex shrink-0 items-center gap-0.5">
+                        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs font-normal text-muted-foreground hover:text-foreground" onClick={() => void setPaused(entry, !paused)}>
+                          {paused ? <Play className="size-3.5 opacity-70" /> : <Pause className="size-3.5 opacity-70" />} {paused ? 'Resume' : 'Pause'}
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs font-normal text-muted-foreground hover:text-foreground" onClick={() => void stopInstall(entry)}>
+                          <Square className="size-3 opacity-70" /> Stop
+                        </Button>
+                      </div>
                     </div>
-                    <div className="flex shrink-0 items-center gap-0.5">
-                      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs font-normal text-muted-foreground hover:text-foreground" onClick={() => void setPaused(entry, !paused)}>
-                        {paused ? <Play className="size-3.5 opacity-70" /> : <Pause className="size-3.5 opacity-70" />} {paused ? 'Resume' : 'Pause'}
-                      </Button>
-                      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs font-normal text-muted-foreground hover:text-foreground" onClick={() => void stopInstall(entry)}>
-                        <Square className="size-3 opacity-70" /> Stop
-                      </Button>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </section>
+                  )
+                })}
+              </div>
+            </section>
           )}
 
           <section>
@@ -1101,39 +1116,39 @@ export function RuntimesPage() {
                 const isDefault = !!row.entry?.is_default
                 const isPre = isPrerelease(row.version)
                 return (
-                <div key={row.key} className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border/60 px-3 py-2 last:border-b-0 ${isDefault ? 'bg-primary/[0.06]' : ''}`}>
-                  <div className="flex min-w-0 items-center gap-2">
-                    {isDefault && <span aria-hidden="true" className="h-8 w-0.5 shrink-0 rounded-full bg-primary/70" />}
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-1.5 text-[13px] font-medium tabular-nums">
-                        <span className="font-mono">{row.version}</span>
-                        {isDefault ? (
-                          <Badge variant="secondary" className="px-1.5 text-[11px] font-normal">Default</Badge>
-                        ) : row.kind === 'managed' ? (
-                          <Badge variant="outline" className="px-1.5 text-[11px] font-normal text-muted-foreground">Installed</Badge>
-                        ) : null}
-                        {isPre && (
-                          <Badge variant="outline" className="px-1.5 text-[11px] font-normal border-amber-500/40 text-amber-600 dark:text-amber-400">
-                            Pre-release
-                          </Badge>
-                        )}
-                        {row.kind === 'custom' && <Badge variant="outline" className="px-1.5 text-[11px] font-normal text-muted-foreground">Yours</Badge>}
+                  <div key={row.key} className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border/60 px-3 py-2 last:border-b-0 ${isDefault ? 'bg-primary/[0.06]' : ''}`}>
+                    <div className="flex min-w-0 items-center gap-2">
+                      {isDefault && <span aria-hidden="true" className="h-8 w-0.5 shrink-0 rounded-full bg-primary/70" />}
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-1.5 text-[13px] font-medium tabular-nums">
+                          <span className="font-mono">{row.version}</span>
+                          {isDefault ? (
+                            <Badge variant="secondary" className="px-1.5 text-[11px] font-normal">Default</Badge>
+                          ) : row.kind === 'managed' ? (
+                            <Badge variant="outline" className="px-1.5 text-[11px] font-normal text-muted-foreground">Installed</Badge>
+                          ) : null}
+                          {isPre && (
+                            <Badge variant="outline" className="px-1.5 text-[11px] font-normal border-amber-500/40 text-amber-600 dark:text-amber-400">
+                              Pre-release
+                            </Badge>
+                          )}
+                          {row.kind === 'custom' && <Badge variant="outline" className="px-1.5 text-[11px] font-normal text-muted-foreground">Yours</Badge>}
+                        </div>
+                        {row.custom?.path
+                          ? <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">{row.custom.path}</p>
+                          : row.entry?.installed && <p className="mt-0.5 text-[11px] text-muted-foreground">Managed install</p>}
                       </div>
-                      {row.custom?.path
-                        ? <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">{row.custom.path}</p>
-                        : row.entry?.installed && <p className="mt-0.5 text-[11px] text-muted-foreground">Managed install</p>}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-0.5">
+                      {managedGroup.id === 'php' && (row.entry?.installed || row.kind === 'custom') && <>
+                        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs font-normal text-muted-foreground hover:text-foreground" onClick={() => setExtVersion(row.version)}><Puzzle className="size-3.5 opacity-70" /> Extensions</Button>
+                        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs font-normal text-muted-foreground hover:text-foreground" onClick={() => setXdebugVersion(row.version)}><Bug className="size-3.5 opacity-70" /> Xdebug</Button>
+                      </>}
+                      {row.kind === 'managed' && row.entry && !row.entry.is_default && <Button size="sm" variant="secondary" className="h-7 px-2.5 text-xs font-normal" onClick={() => void chooseDefault(row.entry!)} title="Make this the default version for new projects and services"><Check className="size-3.5 opacity-70" /> Set default</Button>}
+                      {row.kind === 'managed' && row.entry && <Button size="sm" variant="ghost" className="h-7 w-7 px-0 text-muted-foreground hover:text-foreground" onClick={() => void removeRuntime(row.entry!)} title={row.entry.is_default && managedInstalledCount > 1 ? 'Choose another default first' : 'Remove version'} disabled={row.entry.is_default && managedInstalledCount > 1}><Trash2 className="size-3.5 opacity-70" /></Button>}
+                      {row.kind === 'custom' && row.custom && <Button size="sm" variant="ghost" className="h-7 w-7 px-0 text-muted-foreground hover:text-foreground" title="Remove from list" onClick={() => void removeCustomInstall(row.custom!)}><Trash2 className="size-3.5 opacity-70" /></Button>}
                     </div>
                   </div>
-                  <div className="flex shrink-0 items-center gap-0.5">
-                    {managedGroup.id === 'php' && (row.entry?.installed || row.kind === 'custom') && <>
-                      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs font-normal text-muted-foreground hover:text-foreground" onClick={() => setExtVersion(row.version)}><Puzzle className="size-3.5 opacity-70" /> Extensions</Button>
-                      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs font-normal text-muted-foreground hover:text-foreground" onClick={() => setXdebugVersion(row.version)}><Bug className="size-3.5 opacity-70" /> Xdebug</Button>
-                    </>}
-                    {row.kind === 'managed' && row.entry && !row.entry.is_default && <Button size="sm" variant="secondary" className="h-7 px-2.5 text-xs font-normal" onClick={() => void chooseDefault(row.entry!)} title="Make this the default version for new projects and services"><Check className="size-3.5 opacity-70" /> Set default</Button>}
-                    {row.kind === 'managed' && row.entry && <Button size="sm" variant="ghost" className="h-7 w-7 px-0 text-muted-foreground hover:text-foreground" onClick={() => void removeRuntime(row.entry!)} title={row.entry.is_default && managedInstalledCount > 1 ? 'Choose another default first' : 'Remove version'} disabled={row.entry.is_default && managedInstalledCount > 1}><Trash2 className="size-3.5 opacity-70" /></Button>}
-                    {row.kind === 'custom' && row.custom && <Button size="sm" variant="ghost" className="h-7 w-7 px-0 text-muted-foreground hover:text-foreground" title="Remove from list" onClick={() => void removeCustomInstall(row.custom!)}><Trash2 className="size-3.5 opacity-70" /></Button>}
-                  </div>
-                </div>
                 )
               })}
             </div>

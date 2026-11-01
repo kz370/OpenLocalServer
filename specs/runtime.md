@@ -1,7 +1,7 @@
 # RUNTIME
 
 ## Files to Process
-Total meaningful source files: 260 (excluding target/, node_modules/, .git/, dist/, data/services/postgres runtime data, icon bulk).
+Total meaningful source files: 261 (excluding target/, node_modules/, .git/, dist/, data/services/postgres runtime data, icon bulk).
 
 ### Rust core (crates/ols-core/src, 88 files)
 - src/lib.rs, app/ (mod.rs, domains.rs, projects.rs, quickapp.rs, system.rs, web.rs, tests.rs), command/ (mod.rs, types.rs, dispatch.rs, tests.rs), control.rs, api.rs, paths.rs, settings.rs, secrets.rs, db.rs
@@ -29,7 +29,7 @@ Total meaningful source files: 260 (excluding target/, node_modules/, .git/, dis
 - src/components/project/EnvironmentPanel.tsx, project/GitPanel.tsx, project/LoadPanel.tsx, project/ProjectCommands.tsx, project/ProjectImports.tsx, project/RepairPanel.tsx, project/SnapshotsPanel.tsx, project/WorkersPanel.tsx
 - src/components/SiteLogo.tsx, src/components/ProjectTools.tsx, ReleaseCards.tsx, ReleaseNotesView.tsx, SettingsExtras.tsx, ExcludedSitesCard.tsx, IgnoredFoldersCard.tsx, settings/AppearanceSettings.tsx, CustomServices.tsx, DiagnosticsCard.tsx, DoctorDialog.tsx, EnvEditor.tsx, CodeEditor.tsx, Terminal.tsx, SystemMonitor.tsx, MigrateDialog.tsx, OpenWithMenu.tsx, PhpExtensionsDialog.tsx, XdebugDialog.tsx, ErrorCard.tsx, Spinner.tsx, StopIcon.tsx, TechIcon.tsx, TasksPanel.tsx, SaveButton.tsx, PluginConsentDialog.tsx
 - src/components/ui/button.tsx, card.tsx, dialog.tsx, input.tsx, form.tsx, select.tsx, table.tsx, menu.tsx, switch.tsx, badge.tsx, checkbox.tsx, pagination.tsx
-- src/lib/ai.ts, confirm.ts, hooks.ts, nav.ts, releaseNotes.ts, serviceGrouping.ts, pluginConsent.ts, theme.tsx, theme/ (types.ts, color.ts, presets.ts, validation.ts, apply.ts, context.tsx, index.ts), utils.ts, wait.ts, web.ts
+- src/lib/ai.ts, cache.ts, confirm.ts, hooks.ts, nav.ts, releaseNotes.ts, serviceGrouping.ts, pluginConsent.ts, theme.tsx, theme/ (types.ts, color.ts, presets.ts, validation.ts, apply.ts, context.tsx, index.ts), utils.ts, wait.ts, web.ts
 
 ### Docs / Config / Build (24 files)
 - README.md, CONTRIBUTING.md, SECURITY.md, CHANGELOG.md, CODE_OF_CONDUCT.md, OLS_Master_SRS_v4.md
@@ -69,6 +69,10 @@ ui/src/components/layout/SidebarIcons.tsx, ui/src/components/layout/GlobalAurora
 ui/src/lib/serviceGrouping.ts added 2026-11-01; Files Processed is now 247, matching Files to Process.
 
 ui/src/components/ReleaseNotesView.tsx, ui/src/lib/releaseNotes.ts added 2026-11-01; Files Processed is now 260, matching Files to Process.
+
+ui/src/lib/cache.ts added 2026-11-01; Files Processed is now 261, matching Files to Process.
+
+- [2026-11-01] feat(ui,perf): Cross-session persistent caching and optimistic mutation synchronization across all application pages. Implemented persistent caching infrastructure (`ui/src/lib/cache.ts`) using WebView2 `localStorage` with synchronous in-memory read models (`createPersistentCache`, `getCached`, `setCached`, `removeCached`). Migrated all pages (`Dashboard`, `Sites`, `WebServer`, `Databases`, `Services`, `Runtimes`, `Commands`, `QuickApps`, `Profiles`, `Plugins`, `Settings`, `Processes`, `Tasks`) to persistent state, enabling 0ms instantaneous rendering on cold launch and app restart without blank states or loading spinners. Added optimistic mutations and background poll synchronizations (`usePoll`) for instant reactive UI updates on creating, modifying, or deleting sites, runtimes, databases, users, backups, plugins, profiles, and quick apps. Added comprehensive unit tests (`ui/src/lib/__tests__/cache.test.ts`, 50/50 passing). Files Processed is now 261, matching Files to Process.
 
 - [2026-11-01] feat(ui,docs): modernized Release Notes UI and updated in-app User Manual to v2.5.0. (1) Redesigned Release Notes view: created `ui/src/lib/releaseNotes.ts` (Markdown tokenizer and parser with topic-based Lucide icons and match counting) and `ui/src/components/ReleaseNotesView.tsx` with dedicated release metadata header, structured feature cards, expandable technical details, dynamic sections, real-time search filtering, and raw Markdown copy. Styled with quiet inline code tokens in `ui/src/index.css` (.release-notes-prose). Comprehensive unit tests in `ui/src/lib/__tests__/releaseNotes.test.ts` (npm test passing 26/26). (2) Updated User Manual: fully synchronized `crates/ols-core/catalog/user_manual.md` and `docs/OLS_USER_MANUAL.md` across Section 3 (Multi-domain project grouping, Missing folder filter tab, Right-click context menu), Section 4 (Dynamic DNS 12+ providers), Section 8 (PHP 8.5+ built-in OPcache, Windows ASLR file cache, overrides.ini and conf.d/ user directives), Section 9 (Dashboard Services widget grouping and SQL tools), Section 13 (Consolidated missing folder alerts, Disconnected drive detection), Section 14 (Model Context Protocol ols-mcp tools), Section 16 (Win32 UAC ShellExecuteExW elevation, Appearance tokens, and Documentation viewer), and Section 17 (v2.5.0 highlights). (3) Integrated into `ui/src/pages/Settings.tsx` with .release-notes-prose styling on the User Manual view. Verified: npm test (26 passed), npm run lint (0 errors), npm run build (clean). Files Processed is now 260, matching Files to Process.
 

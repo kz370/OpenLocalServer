@@ -206,8 +206,13 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
         await runCommand({ type: 'save_tunnel', tunnel: { ...previous, public_hostname: null, autostart: false } })
       }
     }
-    await apply()
+    await Promise.all([web.refresh(), web.refreshProjects()])
     onSaved(d.hostname)
+    try {
+      await apply()
+    } catch {
+      // apply error
+    }
   }
 
   const siteItems: { id: SiteTab; label: string; icon: ReactNode }[] = [

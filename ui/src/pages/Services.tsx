@@ -13,17 +13,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { type DbTool, type Diagnostic, type PortStatus, type ServiceStatus, runCommand } from '@/core'
+import { createPersistentCache } from '@/lib/cache'
 import { waitForService } from '@/lib/wait'
 import { confirmAction } from '@/lib/confirm'
 
 type ServiceAction = 'start' | 'stop' | 'restart' | 'reload'
 
-let cachedServicesList: ServiceStatus[] = []
-let cachedDbToolsList: DbTool[] = []
+const servicesListCache = createPersistentCache<ServiceStatus[]>('services_list', [])
+const dbToolsListCache = createPersistentCache<DbTool[]>('services_db_tools', [])
 
 export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => void }) {
-  const [services, setServices] = useState<ServiceStatus[]>(cachedServicesList)
-  const [dbTools, setDbTools] = useState<DbTool[]>(cachedDbToolsList)
+  const [services, setServices] = useState<ServiceStatus[]>(servicesListCache.get)
+  const [dbTools, setDbTools] = useState<DbTool[]>(dbToolsListCache.get)
   const [dbName, setDbName] = useState('my_app')
   const [error, setError] = useState<Diagnostic | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -34,12 +35,12 @@ export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => v
       const res = await runCommand({ type: 'list_services' })
       if (res.type === 'services') {
         setServices(res.services)
-        cachedServicesList = res.services
+        servicesListCache.set(res.services)
       }
       const tools = await runCommand({ type: 'list_db_tools' })
       if (tools.type === 'db_tools') {
         setDbTools(tools.tools)
-        cachedDbToolsList = tools.tools
+        dbToolsListCache.set(tools.tools)
       }
     } catch (err) {
       // An empty list and a failed list look identical on screen, so the failure has

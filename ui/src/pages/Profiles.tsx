@@ -10,8 +10,9 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog } from '@/components/ui/dialog'
 import { type EnvironmentManifest, type Profile, runCommand } from '@/core'
+import { createPersistentCache } from '@/lib/cache'
 import { confirmAction } from '@/lib/confirm'
-import { useAction } from '@/lib/hooks'
+import { useAction, usePoll } from '@/lib/hooks'
 
 /** What a profile sets up, as short tags. */
 function summary(e: EnvironmentManifest): string[] {
@@ -44,19 +45,26 @@ environment:
 `
 
 /** §69, §132: reusable environments, their import and export. */
+const profilesCache = createPersistentCache<Profile[]>('profiles_list', [])
+
 export function ProfilesPage() {
-  const [profiles, setProfiles] = useState<Profile[]>([])
+  const [profiles, setProfiles] = useState<Profile[]>(profilesCache.get)
   const [editor, setEditor] = useState<{ title: string; yaml: string } | null>(null)
   const [review, setReview] = useState<{ source: string; profile: Profile } | null>(null)
   const { busy, error, setError, run } = useAction()
 
   const load = useCallback(async () => {
     const r = await runCommand({ type: 'list_profiles' })
-    if (r.type === 'profiles') setProfiles(r.profiles)
+    if (r.type === 'profiles') {
+      setProfiles(r.profiles)
+      profilesCache.set(r.profiles)
+    }
   }, [])
   useEffect(() => {
     load().catch(setError)
   }, [load, setError])
+
+  usePoll(() => load().catch(() => undefined), 4000)
 
   async function edit(p: Profile, copy: boolean) {
     await run(`yaml:${p.id}`, async () => {
@@ -143,6 +151,11 @@ export function ProfilesPage() {
                     onClick={async () => {
                       if (await confirmAction(`Delete the profile "${p.name}"? Projects that used it keep their manifests.`))
                         await run(`del:${p.id}`, async () => {
+                          setProfiles((prev) => {
+                            const next = prev.filter((x) => x.id !== p.id)
+                            profilesCache.set(next)
+                            return next
+                          })
                           await runCommand({ type: 'delete_profile', id: p.id })
                           await load()
                         })

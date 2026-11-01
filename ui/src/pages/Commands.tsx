@@ -15,7 +15,8 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { type CommandSource, type DiscoveredCommand, type HistoryEntry, type ProcessEvent, type ProcessState, type Project, type QuickCommand, runCommand } from '@/core'
-import { timeAgo, useAction } from '@/lib/hooks'
+import { timeAgo, useAction, usePoll } from '@/lib/hooks'
+import { createPersistentCache } from '@/lib/cache'
 import { cn } from '@/lib/utils'
 import { waitForProcessExit } from '@/lib/wait'
 import { confirmThen } from '@/lib/confirm'
@@ -111,14 +112,19 @@ interface CmdRow {
 type Selection = { kind: 'discovered'; source: string; name: string } | { kind: 'quick'; id: string } | null
 
 /** §89–93, Plesk-style: every command the project's tools offer, custom commands, a free runner and history. */
+const commandProjectsCache = createPersistentCache<Project[]>('commands_projects', [])
+const selectedProjectIdCache = createPersistentCache<string>('commands_selected_project_id', '')
+const quickCommandsCache = createPersistentCache<QuickCommand[]>('commands_quick', [])
+const commandHistoryCache = createPersistentCache<HistoryEntry[]>('commands_history', [])
+
 export function CommandsPage() {
-  const [projects, setProjects] = useState<Project[]>([])
-  const [projectId, setProjectId] = useState<string>('')
+  const [projects, setProjects] = useState<Project[]>(commandProjectsCache.get)
+  const [projectId, setProjectId] = useState<string>(selectedProjectIdCache.get)
   const [framework, setFramework] = useState<string>('')
   const [sources, setSources] = useState<CommandSource[]>([])
   const [loadingSources, setLoadingSources] = useState(false)
-  const [commands, setCommands] = useState<QuickCommand[]>([])
-  const [history, setHistory] = useState<HistoryEntry[]>([])
+  const [commands, setCommands] = useState<QuickCommand[]>(quickCommandsCache.get)
+  const [history, setHistory] = useState<HistoryEntry[]>(commandHistoryCache.get)
   const [tab, setTab] = useState('')
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<Selection>(null)
@@ -138,8 +144,14 @@ export function CommandsPage() {
 
   async function refresh() {
     const [c, h] = await Promise.all([runCommand({ type: 'list_quick_commands' }), runCommand({ type: 'list_history' })])
-    if (c.type === 'quick_commands') setCommands(c.commands)
-    if (h.type === 'history') setHistory(h.entries)
+    if (c.type === 'quick_commands') {
+      setCommands(c.commands)
+      quickCommandsCache.set(c.commands)
+    }
+    if (h.type === 'history') {
+      setHistory(h.entries)
+      commandHistoryCache.set(h.entries)
+    }
   }
 
   async function loadSources(id: string, force = false) {
@@ -164,6 +176,7 @@ export function CommandsPage() {
   function pickProject(id: string) {
     if (id === projectId) return
     setProjectId(id)
+    selectedProjectIdCache.set(id)
     setSelected(null)
     setDialogOpen(false)
     setFramework('')
@@ -182,13 +195,16 @@ export function CommandsPage() {
       .then((r) => {
         if (r.type === 'projects') {
           setProjects(r.projects)
-          if (r.projects[0]) pickProject(r.projects[0].id)
+          commandProjectsCache.set(r.projects)
+          if (!selectedProjectIdCache.get() && r.projects[0]) pickProject(r.projects[0].id)
         }
       })
       .catch((e) => setError(asDiagnostic(e)))
     refresh().catch(() => undefined)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  usePoll(() => refresh().catch(() => undefined), 4000)
 
   useEffect(() => {
     const un = listen<ProcessEvent>('process-event', (event) => {

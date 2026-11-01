@@ -13,8 +13,12 @@ import { Field } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/form'
 import { type CatalogView, type PluginInfo, runCommand } from '@/core'
+import { createPersistentCache } from '@/lib/cache'
 import { confirmAction } from '@/lib/confirm'
-import { timeAgo, useAction } from '@/lib/hooks'
+import { timeAgo, useAction, usePoll } from '@/lib/hooks'
+
+const pluginsCache = createPersistentCache<PluginInfo[]>('plugins_list', [])
+const catalogSourcesCache = createPersistentCache<CatalogView[]>('plugins_catalogs', [])
 
 function adds(p: PluginInfo): string[] {
   const out: string[] = []
@@ -27,8 +31,8 @@ function adds(p: PluginInfo): string[] {
 
 /** §133–135: declarative plugins and signed catalogs. */
 export function PluginsPage() {
-  const [plugins, setPlugins] = useState<PluginInfo[]>([])
-  const [catalogs, setCatalogs] = useState<CatalogView[]>([])
+  const [plugins, setPlugins] = useState<PluginInfo[]>(pluginsCache.get)
+  const [catalogs, setCatalogs] = useState<CatalogView[]>(catalogSourcesCache.get)
   const [review, setReview] = useState<PluginInfo | null>(null)
   const [adding, setAdding] = useState(false)
   const [form, setForm] = useState({ name: '', url: '', key: '' })
@@ -37,12 +41,20 @@ export function PluginsPage() {
 
   const load = useCallback(async () => {
     const [p, c] = await Promise.all([runCommand({ type: 'list_plugins' }), runCommand({ type: 'list_catalog_sources' })])
-    if (p.type === 'plugins') setPlugins(p.plugins)
-    if (c.type === 'catalog_sources') setCatalogs(c.catalogs)
+    if (p.type === 'plugins') {
+      pluginsCache.set(p.plugins)
+      setPlugins(p.plugins)
+    }
+    if (c.type === 'catalog_sources') {
+      catalogSourcesCache.set(c.catalogs)
+      setCatalogs(c.catalogs)
+    }
   }, [])
   useEffect(() => {
     load().catch(setError)
   }, [load, setError])
+
+  usePoll(() => load().catch(() => undefined), 4000)
 
   async function install(directory: boolean) {
     const source = await open({ directory, multiple: false, title: directory ? 'Choose the plugin folder' : 'Choose a plugin .zip', filters: directory ? undefined : [{ name: 'Plugin', extensions: ['zip'] }] })
@@ -100,7 +112,22 @@ export function PluginsPage() {
               <div className="flex flex-wrap gap-1">
                 {!p.problem &&
                   (p.enabled ? (
-                    <Button size="sm" variant="secondary" disabled={busy !== null} onClick={() => run(`off:${p.manifest.id}`, async () => { await runCommand({ type: 'set_plugin_enabled', id: p.manifest.id, enabled: false, approve: [] }); await load() })}>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={busy !== null}
+                      onClick={() =>
+                        run(`off:${p.manifest.id}`, async () => {
+                          setPlugins((prev) => {
+                            const next = prev.map((x) => (x.manifest.id === p.manifest.id ? { ...x, enabled: false } : x))
+                            pluginsCache.set(next)
+                            return next
+                          })
+                          await runCommand({ type: 'set_plugin_enabled', id: p.manifest.id, enabled: false, approve: [] })
+                          await load()
+                        })
+                      }
+                    >
                       Turn off
                     </Button>
                   ) : (
@@ -115,7 +142,15 @@ export function PluginsPage() {
                     disabled={busy !== null}
                     onClick={async () => {
                       if (await confirmAction(`Remove ${p.manifest.name}? Its runtimes stay installed, but stop being listed.`, 'Remove plugin')) {
-                        await run(`rm:${p.manifest.id}`, async () => { await runCommand({ type: 'remove_plugin', id: p.manifest.id }); await load() })
+                        await run(`rm:${p.manifest.id}`, async () => {
+                          setPlugins((prev) => {
+                            const next = prev.filter((x) => x.manifest.id !== p.manifest.id)
+                            pluginsCache.set(next)
+                            return next
+                          })
+                          await runCommand({ type: 'remove_plugin', id: p.manifest.id })
+                          await load()
+                        })
                       }
                     }}
                   >
@@ -136,7 +171,20 @@ export function PluginsPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button size="sm" variant="secondary" disabled={busy !== null || catalogs.length === 0} onClick={() => run('refresh', async () => { const r = await runCommand({ type: 'refresh_catalogs', id: null }); if (r.type === 'catalog_sources') setCatalogs(r.catalogs) })}>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={busy !== null || catalogs.length === 0}
+            onClick={() =>
+              run('refresh', async () => {
+                const r = await runCommand({ type: 'refresh_catalogs', id: null })
+                if (r.type === 'catalog_sources') {
+                  catalogSourcesCache.set(r.catalogs)
+                  setCatalogs(r.catalogs)
+                }
+              })
+            }
+          >
             {busy === 'refresh' ? <Spinner /> : <RefreshCw />} Refresh all
           </Button>
           <Button size="sm" onClick={() => setAdding(true)}>
@@ -185,10 +233,41 @@ export function PluginsPage() {
               </div>
             )}
             <div className="flex gap-1">
-              <Button size="sm" variant="secondary" disabled={busy !== null} onClick={() => run(`rf:${c.source.id}`, async () => { const r = await runCommand({ type: 'refresh_catalogs', id: c.source.id }); if (r.type === 'catalog_sources') setCatalogs(r.catalogs) })}>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={busy !== null}
+                onClick={() =>
+                  run(`rf:${c.source.id}`, async () => {
+                    const r = await runCommand({ type: 'refresh_catalogs', id: c.source.id })
+                    if (r.type === 'catalog_sources') {
+                      catalogSourcesCache.set(r.catalogs)
+                      setCatalogs(r.catalogs)
+                    }
+                  })
+                }
+              >
                 {busy === `rf:${c.source.id}` ? <Spinner /> : <RefreshCw />} Refresh
               </Button>
-              <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => run(`rmc:${c.source.id}`, async () => { const r = await runCommand({ type: 'remove_catalog_source', id: c.source.id }); if (r.type === 'catalog_sources') setCatalogs(r.catalogs) })}>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy !== null}
+                onClick={() =>
+                  run(`rmc:${c.source.id}`, async () => {
+                    setCatalogs((prev) => {
+                      const next = prev.filter((x) => x.source.id !== c.source.id)
+                      catalogSourcesCache.set(next)
+                      return next
+                    })
+                    const r = await runCommand({ type: 'remove_catalog_source', id: c.source.id })
+                    if (r.type === 'catalog_sources') {
+                      catalogSourcesCache.set(r.catalogs)
+                      setCatalogs(r.catalogs)
+                    }
+                  })
+                }
+              >
                 <Trash2 /> Remove
               </Button>
             </div>
@@ -232,12 +311,16 @@ export function PluginsPage() {
                 run('addc', async () => {
                   const r = await runCommand({ type: 'add_catalog_source', name: form.name, url: form.url, public_key: form.key })
                   if (r.type !== 'catalog_sources') return
+                  catalogSourcesCache.set(r.catalogs)
                   setCatalogs(r.catalogs)
                   setAdding(false)
                   setForm({ name: '', url: '', key: '' })
                   const id = r.catalogs.find((c) => c.source.name === form.name.trim())?.source.id ?? null
                   const f = await runCommand({ type: 'refresh_catalogs', id })
-                  if (f.type === 'catalog_sources') setCatalogs(f.catalogs)
+                  if (f.type === 'catalog_sources') {
+                    catalogSourcesCache.set(f.catalogs)
+                    setCatalogs(f.catalogs)
+                  }
                 })
               }
             >

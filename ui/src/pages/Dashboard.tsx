@@ -1,35 +1,37 @@
-import { AlertTriangle, CheckCircle2, ChevronDown, FileText, Home, Play, RefreshCw, Rocket, RotateCw, XCircle } from 'lucide-react'
+import { Activity, ChevronDown, FileText, Home, Play, Repeat, Rocket, RotateCw } from 'lucide-react'
 import { memo, useEffect, useMemo, useState } from 'react'
 
 import { DiagnosticsCard } from '@/components/DiagnosticsCard'
 import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
-import { SaveButton } from '@/components/SaveButton'
-import { ServiceIconAction } from '@/components/ServiceIconAction'
 import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
-import { ServiceMark, type ServiceState } from '@/components/TechIcon'
+import { ServiceMark } from '@/components/TechIcon'
 import type { Page } from '@/components/layout/Sidebar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { type DashboardData, type Diagnostic, type HealthItem, type ServerAvailability, type ServiceStatus, type SystemStats, runCommand } from '@/core'
+import { type DashboardData, type Diagnostic, type ServerAvailability, type ServiceStatus, type SystemStats, runCommand } from '@/core'
 import { formatBytes, useAction, usePoll } from '@/lib/hooks'
+import { createPersistentCache } from '@/lib/cache'
 import { cn } from '@/lib/utils'
 import { waitForService } from '@/lib/wait'
 import { confirmAction } from '@/lib/confirm'
 import { groupServices } from '@/lib/serviceGrouping'
 
-let cachedDashboardData: DashboardData | null = null
-let cachedDashboardStats: SystemStats | null = null
-let cachedAccessLines: string[] = []
+const dashboardCache = createPersistentCache<DashboardData | null>('dashboard_data', null)
+const dashboardStatsCache = createPersistentCache<SystemStats | null>('dashboard_stats', null)
+const accessLinesCache = createPersistentCache<string[]>('dashboard_access_lines', [])
 
-/** §173 / §116 / §101: what's running, what's wrong, and one-click ways to act on it. */
+/**
+ * Summary dashboard page: what's running, what's wrong, and one-click ways to act on it.
+ * Uses CSS container queries driven by the page content width.
+ */
 export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page) => void; onOpenLogs: (source: string) => void }) {
-  const [data, setData] = useState<DashboardData | null>(cachedDashboardData)
+  const [data, setData] = useState<DashboardData | null>(dashboardCache.get)
   const [dataError, setDataError] = useState<Diagnostic | null>(null)
   const [diagToken, setDiagToken] = useState(0)
-  const [stats, setStats] = useState<SystemStats | null>(cachedDashboardStats)
-  const [accessLines, setAccessLines] = useState<string[]>(cachedAccessLines)
+  const [stats, setStats] = useState<SystemStats | null>(dashboardStatsCache.get)
+  const [accessLines, setAccessLines] = useState<string[]>(accessLinesCache.get)
   const action = useAction()
   const { busy, error, setError, run } = action
 
@@ -38,12 +40,10 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
       const res = await runCommand({ type: 'get_dashboard' })
       if (res.type === 'dashboard') {
         setData(res.data)
-        cachedDashboardData = res.data
+        dashboardCache.set(res.data)
         setDataError(null)
       }
     } catch (e) {
-      // Swallowing this left the Services and Web server cards on "Loading…" forever with
-      // no way to tell a busy core from a broken one. The next poll retries either way.
       setDataError(asDiagnostic(e))
     }
   }, 3000)
@@ -53,16 +53,16 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
     const r = await runCommand({ type: 'get_system_stats' }).catch(() => null)
     if (r?.type === 'system_stats') {
       setStats(r.stats)
-      cachedDashboardStats = r.stats
+      dashboardStatsCache.set(r.stats)
     }
   }, 3000)
 
-  // Traffic from web access log; no new backend needed.
+  // Traffic from web access log
   usePoll(async () => {
     const r = await runCommand({ type: 'read_log', source: 'web:access', max_lines: 400 }).catch(() => null)
     if (r?.type === 'log_lines') {
       setAccessLines(r.lines)
-      cachedAccessLines = r.lines
+      accessLinesCache.set(r.lines)
     }
   }, 5000)
 
@@ -70,78 +70,50 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
     const res = await runCommand({ type: 'get_dashboard' })
     if (res.type === 'dashboard') {
       setData(res.data)
-      cachedDashboardData = res.data
+      dashboardCache.set(res.data)
     }
   }
 
   const web = data?.web
   const runningServices = data?.services.filter((s) => s.running) ?? []
   const stoppable = (data?.services ?? []).filter((s) => s.installed && !s.running)
-  // Both halves of this button answer "what is true now", never "what is in a list in
-  // Settings". It used to key off `startup.autostart_services`, which is empty on a default
-  // install: the button was then disabled for good with nothing running and nothing wrong,
-  // and a service started by hand — Mailpit is the usual one, installed by default and
-  // almost never in that list — still read "Start all". Neither reading matched the
-  // Services card two inches below it.
-  //
-  // It is also one control, so its two actions are one pair. "Stop all" is `stop_all`,
-  // which stops every service, worker, tunnel and the web stack, so "Start all" starts
-  // every installed service rather than only the autostart subset — otherwise pressing
-  // Stop all and then Start all left a different set running than before.
-  // The web stack counts as running on its own: PHP pools and the DNS server are not
-  // services in the list, and Stop all stops them too.
   const hasRunning = runningServices.length > 0 || web?.running === true
-  const problems = data?.health.filter((h) => h.status !== 'ok') ?? []
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">Your local environment at a glance.</p>
-        </div>
-        <div className="flex max-w-full flex-wrap items-center justify-start gap-1 rounded-lg border border-border bg-card/50 p-1 shadow-sm sm:justify-end">
-          <Button variant="secondary" size="sm" className="h-8 rounded-md px-3 text-[13px] font-medium [&_svg]:size-3.5" onClick={() => onNavigate('quickapps')}>
-            <Rocket /> New from Quick App
-          </Button>
-          <div aria-hidden className="mx-1 h-5 w-px bg-border" />
-          <SaveButton
-            action={action}
-            name="apply"
+    <div className="@container/dashboard flex flex-col gap-3.5 w-full min-w-0">
+      {/* Header: title and actions wrap cleanly without clipping */}
+      <div className="flex flex-wrap items-center justify-between gap-2.5">
+        <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
             variant="secondary"
             size="sm"
-            className="h-8 rounded-md px-3 text-[13px] font-medium [&_svg]:size-3.5"
-            busyLabel={web?.running ? 'Applying…' : 'Starting…'}
-            savedLabel={web?.running ? 'Applied' : 'Started'}
-            onClick={() =>
-              void run('apply', async () => {
-                await runCommand({ type: 'apply_web', overwrite: [] })
-                await refresh()
-                setDiagToken((t) => t + 1)
-              })
-            }
+            className="h-8 rounded-md px-3 text-[13px] font-medium [&_svg]:size-3.5 shrink-0"
+            onClick={() => onNavigate('quickapps')}
           >
-            <Play /> {web?.running ? 'Re-apply web config' : 'Start web server'}
-          </SaveButton>
+            <Rocket /> New from Quick App
+          </Button>
           <Button
             variant={hasRunning ? 'secondary' : 'default'}
             size="sm"
-            className={`h-8 min-w-28 rounded-md px-3 text-[13px] font-medium [&_svg]:size-3.5 ${hasRunning ? 'bg-destructive/10 text-destructive hover:bg-destructive/15 hover:text-destructive dark:bg-destructive/[0.18] dark:text-red-300/90 dark:hover:bg-destructive/25' : ''}`}
+            className={cn(
+              'h-8 min-w-28 rounded-md px-3 text-[13px] font-medium [&_svg]:size-3.5 shrink-0 transition-colors',
+              hasRunning && 'border border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/15 hover:text-destructive dark:bg-destructive/[0.18] dark:text-red-300 dark:hover:bg-destructive/25'
+            )}
             disabled={busy !== null || (!hasRunning && stoppable.length === 0)}
             title={
               hasRunning
                 ? 'Stop every running service, worker, tunnel and the web stack'
-                : stoppable.length > 0
-                  ? `Start ${stoppable.length} stopped service${stoppable.length === 1 ? '' : 's'}`
+                : stoppable.length > 0 || (web && !web.running)
+                  ? `Start ${stoppable.length + (web?.running ? 0 : 1)} stopped service${stoppable.length === 0 ? '' : 's'}`
                   : 'Every installed service is already running'
             }
             onClick={() =>
               hasRunning
-                ? run('stop-all', async () => {
-                    // The same command the tray's Stop all uses, so "Stop all" means one
-                    // thing everywhere: everything stops, and the status mark can reach
-                    // red. It used to stop only the auto-startup set, which left Mailpit
-                    // and any worker running and the icon green.
+                ? void (async () => {
+                  const ok = await confirmAction('Stop all running services, workers, tunnels, and the web stack?')
+                  if (!ok) return
+                  await run('stop-all', async () => {
                     const res = await runCommand({ type: 'stop_all' })
                     if (res.type === 'stopped_everything' && res.still_running.length > 0) {
                       throw {
@@ -153,19 +125,24 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
                     await refresh()
                     setDiagToken((t) => t + 1)
                   })
-                : run('start-all', async () => {
-                    // Re-read the service list first: `stoppable` is one poll old, and a
-                    // service started by hand since then must not be started twice.
-                    const current = await runCommand({ type: 'get_dashboard' })
-                    if (current.type === 'dashboard') setData(current.data)
-                    const targets = (current.type === 'dashboard' ? current.data.services : []).filter(
-                      (s) => s.installed && !s.running,
-                    )
-                    await Promise.all(targets.map((service) => runCommand({ type: 'start_service', id: service.id })))
-                    await Promise.all(targets.map((service) => waitForService(service.id, 'running')))
-                    await refresh()
-                    setDiagToken((t) => t + 1)
-                  })
+                })()
+                : void run('start-all', async () => {
+                  const current = await runCommand({ type: 'get_dashboard' })
+                  if (current.type === 'dashboard') setData(current.data)
+                  const targets = (current.type === 'dashboard' ? current.data.services : []).filter(
+                    (s) => s.installed && !s.running,
+                  )
+                  const promises: Promise<unknown>[] = targets.map((service) =>
+                    runCommand({ type: 'start_service', id: service.id }),
+                  )
+                  if (current.type === 'dashboard' && !current.data.web?.running) {
+                    promises.push(runCommand({ type: 'apply_web', overwrite: [] }))
+                  }
+                  await Promise.all(promises)
+                  await Promise.all(targets.map((service) => waitForService(service.id, 'running')))
+                  await refresh()
+                  setDiagToken((t) => t + 1)
+                })
             }
           >
             {busy === 'stop-all' || busy === 'start-all' ? (
@@ -181,167 +158,169 @@ export function DashboardPage({ onNavigate, onOpenLogs }: { onNavigate: (p: Page
       </div>
 
       <ErrorCard error={error} onDismiss={() => setError(null)} />
+      {dataError && <ErrorCard error={dataError} onDismiss={() => setDataError(null)} />}
 
-      {dataError && (
-        <ErrorCard error={dataError} onDismiss={() => setDataError(null)} />
-      )}
+      {/* Diagnostics: compact pill when clean, expanded card when issues found */}
+      <DiagnosticsCard
+        refreshToken={diagToken}
+        onNavigate={onNavigate}
+        healthProblems={data?.health ?? []}
+      />
 
-      {problems.length > 0 && (
-        <Card className="border-warning/40">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <AlertTriangle className="size-4 text-warning" /> Needs attention
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-2">
-            {problems.map((h) => (
-              <HealthRow key={h.id + h.detail} item={h} />
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card className="order-2 min-w-0 lg:order-none">
-          <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
+      {/*
+        Responsive content-driven layout:
+        - Wide (>=1100px): 2 columns. Left: Resources, Web server, Traffic. Right: Services (full height).
+        - Narrow (<1100px): single column in order: Resources, Web server, Services, Traffic.
+      */}
+      <div className="grid grid-cols-1 @[1100px]/dashboard:grid-cols-2 gap-3.5 items-start">
+        {/* 1. Resources card */}
+        <Card className="order-1 @[1100px]/dashboard:col-start-1 @[1100px]/dashboard:row-start-1 shadow-xs">
+          <CardHeader className="flex-row items-center justify-between space-y-0 px-3.5 py-2.5">
             <div>
-              <CardTitle className="text-sm">Overview</CardTitle>
-              <CardDescription>
-                {data ? `${data.domains.length} sites · ${data.project_count} projects` : 'Loading…'}
+              <CardTitle className="text-sm font-semibold">Overview & Resources</CardTitle>
+              <CardDescription className="text-xs text-muted-foreground mt-0.5">
+                {data ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => onNavigate('sites')}
+                      className="cursor-pointer font-medium text-foreground/80 hover:text-foreground hover:underline underline-offset-2 transition-colors"
+                    >
+                      {data.domains.length} sites
+                    </button>
+                    {' · '}
+                    <button
+                      type="button"
+                      onClick={() => onNavigate('sites')}
+                      className="cursor-pointer font-medium text-foreground/80 hover:text-foreground hover:underline underline-offset-2 transition-colors"
+                    >
+                      {data.project_count} projects
+                    </button>
+                  </>
+                ) : (
+                  'Loading…'
+                )}
               </CardDescription>
             </div>
-            <Button size="sm" variant="secondary" onClick={() => onNavigate('sites')}>
-              Manage Sites
-              <Badge variant="secondary" className="ml-1 tabular-nums">
-                {data?.domains.length ?? '…'}
-              </Badge>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+              onClick={() => onNavigate('processes')}
+              title="Open the Processes page to view system monitor and process details"
+            >
+              View processes
             </Button>
           </CardHeader>
-          {/* One block per row: the card shares the top row with Services, so the two
-              blocks stack instead of sitting side by side. */}
-          <CardContent className="flex flex-col gap-6">
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Resources</span>
-                <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => onNavigate('processes')}>
-                  Details
-                </Button>
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                <Donut
-                  label="CPU"
-                  percent={stats?.cpu_percent ?? 0}
-                  detail={stats ? `${stats.cpu_cores} cores` : '…'}
-                  base="var(--primary)"
+          <CardContent className="px-3.5 pb-3 pt-0">
+            {/* Flattened items: 3 compact columns in 1 row separated by clean dividers */}
+            <div className="grid grid-cols-3 divide-x divide-border/50">
+              <CompactResource
+                label="CPU"
+                percent={stats?.cpu_percent ?? 0}
+                detail={stats ? `${stats.cpu_cores} cores` : '…'}
+                loading={!stats}
+              />
+              <CompactResource
+                label="RAM"
+                percent={stats?.memory_used && stats?.memory_total ? (stats.memory_used / stats.memory_total) * 100 : 0}
+                detail={stats ? `${formatBytes(stats.memory_used)} / ${formatBytes(stats.memory_total)}` : '…'}
+                loading={!stats}
+              />
+              {(stats?.disks ?? []).slice(0, 1).map((d) => (
+                <CompactResource
+                  key={d.mount}
+                  label={`Disk ${d.mount.replace(/\\$/, '')}`}
+                  percent={d.total > 0 ? (d.used / d.total) * 100 : 0}
+                  detail={stats ? `${formatBytes(d.total - d.used)} free` : '…'}
                   loading={!stats}
                 />
-                <Donut
-                  label="RAM"
-                  percent={stats?.memory_used && stats?.memory_total ? (stats.memory_used / stats.memory_total) * 100 : 0}
-                  detail={stats ? `${formatBytes(stats.memory_used)} / ${formatBytes(stats.memory_total)}` : '…'}
-                  base="oklch(0.68 0.12 220)"
-                  loading={!stats}
-                />
-                {(stats?.disks ?? []).slice(0, 1).map((d) => (
-                  <Donut
-                    key={d.mount}
-                    label={`Disk ${d.mount.replace(/\\$/, '')}`}
-                    percent={d.used / Math.max(d.total, 1)}
-                    detail={stats ? `${formatBytes(d.total - d.used)} free` : '…'}
-                    base="oklch(0.66 0.16 295)"
-                    loading={!stats}
-                  />
-                ))}
-              </div>
-            </div>
-            <div className="flex min-w-0 flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Traffic</span>
-                <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => onNavigate('logs')}>
-                  Logs
-                </Button>
-              </div>
-              <TrafficGraph lines={accessLines} tall />
+              ))}
             </div>
           </CardContent>
         </Card>
 
-        {/* In windowed (single-column) mode the Web server card leads, then Overview,
-            then Services. In the 2-column layout it stacks above Services in the right
-            column, so both columns share a top and a bottom edge with Overview. */}
-        <div className="contents min-w-0 lg:flex lg:flex-col lg:gap-4">
-          <Card className="order-1 lg:order-none">
-            <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm">Web server</CardTitle>
-              {web?.running ? (
-                <Badge variant="success" className="shrink-0 whitespace-nowrap">
-                  ● Running
-                </Badge>
-              ) : (
-                <Badge variant="secondary" className="shrink-0 whitespace-nowrap">
-                  Stopped
-                </Badge>
-              )}
-            </CardHeader>
-            <CardContent className="flex flex-col gap-1 text-sm text-muted-foreground">
+        {/* 2. Web server card */}
+        <Card className="order-2 @[1100px]/dashboard:col-start-1 @[1100px]/dashboard:row-start-2 shadow-xs">
+          <CardHeader className="flex-row items-center justify-between space-y-0 px-3.5 py-2.5">
+            <CardTitle className="text-sm font-semibold">Web server</CardTitle>
+            {web?.running ? (
+              <Badge variant="success" className="shrink-0 whitespace-nowrap text-xs">
+                ● Running
+              </Badge>
+            ) : (
+              <Badge variant="secondary" className="shrink-0 whitespace-nowrap text-xs">
+                Stopped
+              </Badge>
+            )}
+          </CardHeader>
+          <CardContent className="flex flex-col gap-1.5 text-xs text-muted-foreground px-3.5 pb-3 pt-0">
+            <div className="font-medium text-foreground/90">
+              {web?.servers.find((s) => s.active)?.name ?? '…'} · ports {web?.http_port ?? '—'} / {web?.https_port ?? '—'}
+            </div>
+            {web?.php_pools && web.php_pools.length > 0 && (
               <div>
-                {web?.servers.find((s) => s.active)?.name ?? '…'} · ports {web?.http_port} / {web?.https_port}
+                {web.php_pools.map((p) => `PHP ${p.version} (${p.ports.length} worker${p.ports.length === 1 ? '' : 's'}${p.running ? '' : ', stopped'})`).join(' · ')}
               </div>
-              {web?.php_pools.map((p) => (
-                <div key={p.version}>
-                  PHP {p.version} · {p.ports.length} worker{p.ports.length === 1 ? '' : 's'} {p.running ? '' : '(stopped)'}
-                </div>
-              ))}
-              {web?.dns_running && <div>Wildcard DNS on port {web.dns_port}</div>}
-              <div className="pt-1">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={!web?.running}
-                  title={web?.running ? 'Open the built-in welcome site' : 'Start the web server first'}
-                  onClick={() => runCommand({ type: 'open_url', url: 'https://openlocalserver.test' }).catch(() => undefined)}
-                >
-                  <Home /> Open home page
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+            )}
+            {web?.dns_running && <div>Wildcard DNS on port {web.dns_port}</div>}
+            <div className="pt-1.5">
+              <Button
+                size="sm"
+                variant="secondary"
+                className="h-7 text-xs font-medium gap-1.5"
+                disabled={!web?.running}
+                title={web?.running ? 'Open the built-in welcome site' : 'Start the web server first'}
+                onClick={() => runCommand({ type: 'open_url', url: 'https://openlocalserver.test' }).catch(() => undefined)}
+              >
+                <Home className="size-3.5" /> Open home page
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
 
-          <div className="order-3 flex min-h-0 min-w-0 flex-1 flex-col lg:order-none">
-            <ServicesWidget
-              services={data?.services ?? null}
-              webServers={data?.web?.servers ?? null}
-              busy={busy}
-              run={run}
-              onNavigate={onNavigate}
-              onOpenLogs={onOpenLogs}
-              onDone={async () => {
-                await refresh()
-                setDiagToken((t) => t + 1)
-              }}
-            />
-          </div>
+        {/* 3. Services card: full height alongside Left column when wide, above Traffic when narrow */}
+        <div className="order-3 @[1100px]/dashboard:col-start-2 @[1100px]/dashboard:row-start-1 @[1100px]/dashboard:row-span-3 flex min-h-0 min-w-0 flex-1 flex-col">
+          <ServicesWidget
+            services={data?.services ?? null}
+            webServers={data?.web?.servers ?? null}
+            busy={busy}
+            run={run}
+            onNavigate={onNavigate}
+            onOpenLogs={onOpenLogs}
+            onDone={async () => {
+              await refresh()
+              setDiagToken((t) => t + 1)
+            }}
+          />
         </div>
-      </div>
-      <DiagnosticsCard refreshToken={diagToken} onNavigate={onNavigate} />
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm">Environment health</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-1.5 md:grid-cols-2">
-          {data?.health.map((h) => <HealthRow key={h.id + h.detail} item={h} />)}
-        </CardContent>
-      </Card>
+        {/* 4. Traffic card: bottom of Left column when wide, after Services when narrow */}
+        <Card className="order-4 @[1100px]/dashboard:col-start-1 @[1100px]/dashboard:row-start-3 shadow-xs">
+          <CardHeader className="flex-row items-center justify-between space-y-0 px-3.5 py-2.5">
+            <CardTitle className="text-sm font-semibold">Traffic</CardTitle>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+              onClick={() => onNavigate('logs')}
+            >
+              Logs
+            </Button>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2.5 px-3.5 pb-3 pt-0">
+            <TrafficGraph lines={accessLines} />
+          </CardContent>
+        </Card>
+      </div>
     </div>
   )
 }
 
-
-/** What the port column means for this row: a web server's HTTP port, or the service's own. */
+/** Port column tooltip: web server HTTP port or background service port. */
 function servicePortTitle(s: ServiceStatus, sites?: number): string {
   if (s.kind !== 'web') return `Port ${s.port}`
-  if (sites === 0) return `HTTP port ${s.port} — no sites assigned to ${s.name} yet, so it serves nothing`
+  if (sites === 0) return `HTTP port ${s.port} — no sites assigned to ${s.name} yet`
   return `HTTP port ${s.port} — ${sites} site${sites === 1 ? '' : 's'} on ${s.name}`
 }
 
@@ -361,8 +340,49 @@ function getInitialCollapsed(): Record<string, boolean> {
 type WidgetAction = 'start' | 'stop' | 'restart' | 'reload'
 
 /**
- * The dashboard's Services card: services grouped by type (Web servers, Databases,
- * Cache & queues, Mail, Other) with collapsible section headers and compact rows.
+ * Standard fixed action button for each service row slot.
+ * Ensures identical dimensions (28px x 28px), fixed slots, and clean visual affordance.
+ */
+function RowActionButton({
+  title,
+  disabled,
+  spinning,
+  onClick,
+  children,
+  variant = 'neutral',
+}: {
+  title: string
+  disabled: boolean
+  spinning?: boolean
+  onClick: (e: React.MouseEvent) => void
+  children: React.ReactNode
+  variant?: 'start' | 'stop' | 'neutral'
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        'size-7 min-w-7 min-h-7 shrink-0 rounded-md border flex items-center justify-center transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+        disabled
+          ? 'opacity-30 cursor-not-allowed border-border/20 bg-muted/10 text-muted-foreground pointer-events-none'
+          : variant === 'start'
+            ? 'cursor-pointer border-success/30 bg-success/5 text-success hover:bg-success/15 hover:border-success/50'
+            : variant === 'stop'
+              ? 'cursor-pointer border-destructive/30 bg-destructive/5 text-destructive hover:bg-destructive/15 hover:border-destructive/50'
+              : 'cursor-pointer border-border/40 bg-muted/20 text-muted-foreground hover:bg-muted/60 hover:text-foreground hover:border-border/80'
+      )}
+    >
+      {spinning ? <Spinner className="size-3.5" /> : children}
+    </button>
+  )
+}
+
+/**
+ * Services card: services grouped by type with collapsible section headers and fixed 4-slot rows.
  */
 function ServicesWidget({
   services,
@@ -376,10 +396,7 @@ function ServicesWidget({
   services: ServiceStatus[] | null
   webServers: ServerAvailability[] | null
   busy: string | null
-  // The page's own `run`, not a local one: a failure has to reach the `ErrorCard` the
-  // page renders. A widget-local action stored its error in state nobody read, so a
-  // start or stop that failed looked like a status that had silently reverted.
-  run: <T,>(key: string, fn: () => Promise<T>) => Promise<T | undefined>
+  run: <T, >(key: string, fn: () => Promise<T>) => Promise<T | undefined>
   onNavigate: (p: Page) => void
   onOpenLogs: (source: string) => void
   onDone: () => Promise<void>
@@ -414,8 +431,6 @@ function ServicesWidget({
   const allServices = groups.flatMap((g) => g.services)
   const running = allServices.filter((s) => s.running).length
   const installed = allServices.filter((s) => s.installed).length
-  // How many sites each web server renders — a running server with none opens no
-  // listener, which is different from one that has stopped answering.
   const webSites = new Map((webServers ?? []).map((s) => [s.id, s.sites]))
 
   async function act(s: ServiceStatus, action: WidgetAction) {
@@ -423,7 +438,6 @@ function ServicesWidget({
     if (action === 'restart' && s.running && !(await confirmAction(`Restart ${s.name}? Anything connected to it will be disconnected.`))) return
     void run(`svc:${s.id}:${action}`, async () => {
       if (action === 'reload') {
-        // A web server reloads its config in place: no dropped connections.
         await runCommand({ type: 'apply_web', overwrite: [] })
       } else if (action === 'restart') {
         await runCommand({ type: 'restart_service', id: s.id })
@@ -436,56 +450,103 @@ function ServicesWidget({
     })
   }
 
+  async function actGroup(group: (typeof groups)[number], action: 'start' | 'stop') {
+    if (action === 'stop') {
+      if (!(await confirmAction(`Stop all running services in ${group.label}? Anything connected to them will be disconnected.`))) return
+      const targets = group.services.filter((s) => s.running)
+      void run(`group:${group.id}:stop`, async () => {
+        await Promise.all(targets.map((s) => runCommand({ type: 'stop_service', id: s.id })))
+        await Promise.all(targets.map((s) => waitForService(s.id, 'stopped')))
+        await onDone()
+      })
+    } else {
+      const targets = group.services.filter((s) => s.installed && !s.running)
+      void run(`group:${group.id}:start`, async () => {
+        await Promise.all(targets.map((s) => runCommand({ type: 'start_service', id: s.id })))
+        await Promise.all(targets.map((s) => waitForService(s.id, 'running')))
+        await onDone()
+      })
+    }
+  }
+
   return (
-    <Card className="flex w-full min-w-0 flex-1 flex-col overflow-hidden py-0">
+    <Card className="flex w-full min-w-0 flex-1 flex-col overflow-hidden py-0 shadow-xs">
       <CardHeader className="flex-row items-center justify-between space-y-0 px-3 py-2.5">
         <div className="flex min-w-0 items-baseline gap-2">
-          <CardTitle className="text-sm">Services</CardTitle>
+          <CardTitle className="text-sm font-semibold">Services</CardTitle>
           <CardDescription className="truncate text-xs tabular-nums">
             {services === null ? 'Loading…' : `${running} running · ${installed} installed`}
           </CardDescription>
         </div>
-        <Button size="sm" variant="ghost" className="h-7 shrink-0 rounded-md px-2 text-xs" onClick={() => onNavigate('services')}>
+        <Button size="sm" variant="ghost" className="h-7 shrink-0 rounded-md px-2 text-xs text-muted-foreground hover:text-foreground" onClick={() => onNavigate('services')}>
           Manage
         </Button>
       </CardHeader>
       <CardContent className="p-0">
         {groups.map((group, groupIndex) => {
-          const isCollapsed = !!collapsed[group.id]
           const runningInGroup = group.services.filter((s) => s.running).length
+          const stoppedInGroup = group.services.filter((s) => s.installed && !s.running).length
+
+          // Default: collapsed when all services are stopped (e.g. Cache & Queues 0/2, Mail 0/1)
+          const isCollapsed = collapsed[group.id] !== undefined
+            ? !!collapsed[group.id]
+            : runningInGroup === 0
+
+          const groupBusy = busy === `group:${group.id}:start` || busy === `group:${group.id}:stop`
+
+          const groupToggleTooltip = runningInGroup > 0
+            ? `Stop ${runningInGroup} running`
+            : `Start ${stoppedInGroup} stopped`
 
           return (
             <div key={group.id} className="min-w-0">
-              <button
-                type="button"
-                onClick={() => toggleGroup(group.id)}
+              <div
                 className={cn(
-                  'flex w-full min-w-0 h-7 items-center justify-between gap-2 px-3 text-left transition-colors hover:bg-muted/30 select-none cursor-pointer',
+                  'flex w-full min-w-0 h-8 items-center justify-between gap-2 px-3 transition-colors hover:bg-muted/30 select-none',
                   groupIndex > 0 && 'border-t border-border/60'
                 )}
-                aria-expanded={!isCollapsed}
               >
-                <span className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  {group.label}
-                </span>
-                <span className="flex shrink-0 items-center gap-1.5 tabular-nums text-xs text-muted-foreground">
-                  {runningInGroup > 0 && (
-                    <span
-                      className="size-1.5 shrink-0 rounded-full bg-success"
-                      title={`${runningInGroup} running`}
-                    />
-                  )}
-                  <span>
-                    {runningInGroup}/{group.services.length}
-                  </span>
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(group.id)}
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left cursor-pointer"
+                  aria-expanded={!isCollapsed}
+                >
                   <ChevronDown
                     className={cn(
                       'size-3.5 shrink-0 text-muted-foreground transition-transform duration-200',
                       isCollapsed && '-rotate-90'
                     )}
                   />
-                </span>
-              </button>
+                  <span className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/90 dark:text-muted-foreground">
+                    {group.label}
+                  </span>
+                  {/* Clean n/m count without duplicate status dot */}
+                  <span className="tabular-nums text-xs text-muted-foreground/80">
+                    {runningInGroup}/{group.services.length}
+                  </span>
+                </button>
+
+                {/* Group toggle aligned in Slot 1 column */}
+                <div className="flex shrink-0 items-center gap-1 w-[7.5rem] justify-end">
+                  <RowActionButton
+                    title={groupToggleTooltip}
+                    disabled={groupBusy || group.services.every((s) => !s.installed)}
+                    spinning={groupBusy}
+                    variant={runningInGroup > 0 ? 'stop' : 'start'}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void actGroup(group, runningInGroup > 0 ? 'stop' : 'start')
+                    }}
+                  >
+                    {runningInGroup > 0 ? <StopIcon className="size-3.5" /> : <Play className="size-3.5" />}
+                  </RowActionButton>
+                  {/* Spacers for slots 2, 3, 4 preserve exact column alignment with rows */}
+                  <span className="size-7 min-w-7 shrink-0" aria-hidden="true" />
+                  <span className="size-7 min-w-7 shrink-0" aria-hidden="true" />
+                  <span className="size-7 min-w-7 shrink-0" aria-hidden="true" />
+                </div>
+              </div>
 
               {!isCollapsed && (
                 <div>
@@ -502,78 +563,73 @@ function ServicesWidget({
                           ? 'unhealthy'
                           : 'running'
                         : 'stopped'
+
                     return (
                       <div
                         key={s.id}
-                        className={cn(
-                          // In the windowed band (`lg` to `xl`) the card is one half of a two-column
-                          // grid and cannot hold five controls, a port and a state on one line: the
-                          // name, the only flexible field, was truncated away to make room. There the
-                          // row becomes two lines — name, port and state on top, the actions on their
-                          // own line under the name. Narrower and wider than that band there is room
-                          // for one line, and the actions sit at the end of it.
-                          'grid grid-cols-[1.25rem_minmax(0,1fr)_5.5rem_auto_auto] items-center gap-x-3 px-3 h-9 transition-colors hover:bg-muted/25 border-t border-border/60',
-                          'lg:grid-cols-[1.25rem_minmax(0,1fr)_5.5rem_auto] lg:grid-rows-[auto_auto] lg:h-auto lg:gap-y-0.5 lg:py-1.5',
-                          'xl:grid-cols-[1.25rem_minmax(0,1fr)_5.5rem_auto_auto] xl:grid-rows-1 xl:py-0 xl:h-9'
-                        )}
+                        className="flex items-center justify-between gap-2 px-3 h-8.5 transition-colors hover:bg-muted/25 border-t border-border/60 min-w-0"
                       >
-                        <span className="shrink-0">
-                          <ServiceMark id={s.id} state={state} className="size-4 [&>svg]:size-3" />
-                        </span>
-                        <span className="min-w-0 truncate text-[13px] font-medium">{s.name}</span>
-                        <span
-                          className="text-right font-mono text-xs tabular-nums text-muted-foreground"
-                          title={servicePortTitle(s, webSites.get(s.id))}
-                        >
-                          {s.port === null ? '—' : s.port}
-                        </span>
-                        <ServiceStatus state={state} />
-                        <span className="flex shrink-0 items-center gap-0.5 lg:col-start-2 lg:row-start-2 lg:col-span-3 xl:col-start-5 xl:row-start-1 xl:col-span-1 xl:justify-end">
-                          <ServiceIconAction
-                            title={`Start ${s.name}`}
-                            disabled={busy !== null || !s.installed || s.running}
-                            spinning={working && busy === `svc:${s.id}:start`}
-                            onClick={() => act(s, 'start')}
-                            iconColor="text-emerald-400"
+                        {/* Service mark with single status badge, name, and port (port hides on narrow) */}
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <span className="shrink-0 flex items-center justify-center" title={`${s.name} (${state})`}>
+                            <ServiceMark id={s.id} state={state} className="size-4 [&>svg]:size-3" />
+                          </span>
+                          <span className="min-w-0 truncate text-[13px] font-medium text-foreground" title={`${s.name} (${state})`}>
+                            {s.name}
+                          </span>
+                          <span
+                            className="hidden @[480px]/dashboard:inline-block font-mono text-xs tabular-nums text-muted-foreground shrink-0 ml-auto mr-1"
+                            title={servicePortTitle(s, webSites.get(s.id))}
                           >
-                            <Play className="size-3.5" />
-                          </ServiceIconAction>
-                          <ServiceIconAction
-                            title={`Stop ${s.name}`}
-                            disabled={busy !== null || !s.installed || !s.running}
-                            spinning={working && busy === `svc:${s.id}:stop`}
-                            onClick={() => act(s, 'stop')}
-                            iconColor="text-destructive/70"
-                          >
-                            <StopIcon className="size-3.5" />
-                          </ServiceIconAction>
-                          <ServiceIconAction
-                            title="Restart"
+                            {s.port === null ? '—' : s.port}
+                          </span>
+                        </div>
+
+                        {/* Fixed 4 action slots in exact order */}
+                        <div className="flex shrink-0 items-center gap-1 w-[7.5rem] justify-end">
+                          {/* Slot 1: Start/Stop toggle button */}
+                          <RowActionButton
+                            title={s.running ? `Stop ${s.name}` : `Start ${s.name}`}
                             disabled={busy !== null || !s.installed}
+                            spinning={working && (busy === `svc:${s.id}:start` || busy === `svc:${s.id}:stop`)}
+                            variant={s.running ? 'stop' : 'start'}
+                            onClick={() => void act(s, s.running ? 'stop' : 'start')}
+                          >
+                            {s.running ? <StopIcon className="size-3.5" /> : <Play className="size-3.5" />}
+                          </RowActionButton>
+
+                          {/* Slot 2: Restart */}
+                          <RowActionButton
+                            title="Restart"
+                            disabled={busy !== null || !s.installed || !s.running}
                             spinning={working && busy === `svc:${s.id}:restart`}
-                            onClick={() => act(s, 'restart')}
-                            iconColor="text-amber-400"
+                            variant="neutral"
+                            onClick={() => void act(s, 'restart')}
                           >
                             <RotateCw className="size-3.5" />
-                          </ServiceIconAction>
-                          <ServiceIconAction
+                          </RowActionButton>
+
+                          {/* Slot 3: Reload config */}
+                          <RowActionButton
                             title="Reload config"
-                            disabled={busy !== null || !s.installed || s.kind !== 'web'}
+                            disabled={busy !== null || !s.installed || !s.running || s.kind !== 'web'}
                             spinning={working && busy === `svc:${s.id}:reload`}
-                            onClick={() => act(s, 'reload')}
-                            iconColor="text-sky-400"
+                            variant="neutral"
+                            onClick={() => void act(s, 'reload')}
                           >
-                            <RefreshCw className="size-3.5" />
-                          </ServiceIconAction>
-                          <ServiceIconAction
-                            title="Logs"
-                            disabled={busy !== null || !s.installed || !s.log_source}
-                            onClick={() => s.log_source && onOpenLogs(s.log_source)}
-                            iconColor="text-violet-400"
+                            <Repeat className="size-3.5" />
+                          </RowActionButton>
+
+                          {/* Slot 4: View logs */}
+                          <RowActionButton
+                            title="View logs"
+                            disabled={busy !== null || !s.installed}
+                            variant="neutral"
+                            onClick={() => onOpenLogs(s.log_source || `service:${s.id}`)}
                           >
                             <FileText className="size-3.5" />
-                          </ServiceIconAction>
-                        </span>
+                          </RowActionButton>
+                        </div>
                       </div>
                     )
                   })}
@@ -587,47 +643,72 @@ function ServicesWidget({
   )
 }
 
-type WidgetState = ServiceState
-
-function ServiceStatus({ state }: { state: WidgetState }) {
-  const config = {
-    running: { dot: 'bg-emerald-500/70', text: 'text-emerald-400', label: 'Active' },
-    unhealthy: { dot: 'bg-amber-500/70', text: 'text-amber-400', label: 'Unhealthy' },
-    stopped: { dot: 'bg-muted-foreground/40', text: 'text-muted-foreground', label: 'Inactive' },
-    missing: { dot: 'bg-muted-foreground/30', text: 'text-muted-foreground/70', label: 'Not installed' },
-  }[state]
-  return (
-    // The dot and the word both show: the two-line row leaves the horizontal room for
-    // them, and the full state is in the tooltip as well.
-    <span className="inline-flex min-w-0 items-center gap-1.5" title={config.label}>
-      <span className={cn('size-1.5 shrink-0 rounded-full', config.dot)} />
-      <span className={cn('truncate text-xs tabular-nums', config.text)}>{config.label}</span>
-    </span>
-  )
+/** Semantic color thresholds: normal (<75%), warning (75-89%), critical (>=90%) */
+function getGaugeColor(percent: number): string {
+  if (percent >= 90) return 'var(--destructive)'
+  if (percent >= 75) return 'var(--warning)'
+  return 'var(--success)'
 }
 
-function Donut({ label, percent, detail, base, loading }: { label: string; percent: number; detail: string; base: string; loading?: boolean }) {  const r = 34
+/**
+ * Compact resource gauge with no nested bordered box.
+ * Adapts size smoothly when space is tight.
+ */
+function CompactResource({
+  label,
+  percent,
+  detail,
+  loading,
+}: {
+  label: string
+  percent: number
+  detail: string
+  loading?: boolean
+}) {
+  const r = 16
   const c = 2 * Math.PI * r
   const p = Math.min(100, Math.max(0, percent))
-  const color = p >= 90 ? 'var(--destructive)' : base
+  const color = getGaugeColor(p)
+
   return (
-    <div className="mx-auto flex w-full max-w-28 flex-col items-center gap-1.5 text-center">
-      <div className="relative size-24">
-        <svg viewBox="0 0 80 80" className="size-full -rotate-90">
-          <circle cx="40" cy="40" r={r} fill="none" stroke="var(--muted)" strokeWidth="8" />
-          <circle cx="40" cy="40" r={r} fill="none" stroke={color} strokeWidth="8" strokeLinecap="round" strokeDasharray={c} strokeDashoffset={c * (1 - p / 100)} className="transition-[stroke-dashoffset,stroke] duration-500" />
+    <div className="flex flex-col sm:flex-row items-center justify-center gap-2 px-2 text-center sm:text-left min-w-0">
+      <div className="relative size-10 @[500px]/dashboard:size-11 shrink-0">
+        <svg viewBox="0 0 40 40" className="size-full -rotate-90">
+          <circle cx="20" cy="20" r={r} fill="none" stroke="var(--muted)" strokeWidth="4" />
+          <circle
+            cx="20"
+            cy="20"
+            r={r}
+            fill="none"
+            stroke={color}
+            strokeWidth="4"
+            strokeLinecap="round"
+            strokeDasharray={c}
+            strokeDashoffset={c * (1 - p / 100)}
+            className="transition-[stroke-dashoffset,stroke] duration-500"
+          />
         </svg>
-        <span className="absolute inset-0 flex items-center justify-center text-lg font-semibold tabular-nums" style={{ color }}>
+        <span
+          className="absolute inset-0 flex items-center justify-center text-[11px] font-semibold tabular-nums"
+          style={{ color }}
+        >
           {loading ? '…' : `${p.toFixed(0)}%`}
         </span>
       </div>
-      <span className="text-sm font-medium">{label}</span>
-      <span className="text-xs text-muted-foreground">{detail}</span>
+      <div className="flex flex-col min-w-0 leading-tight">
+        <span className="text-xs font-medium text-foreground">{label}</span>
+        <span className="text-[11px] text-muted-foreground/80 tabular-nums truncate max-w-full" title={detail}>
+          {detail}
+        </span>
+      </div>
     </div>
   )
 }
 
-const MONTHS: Record<string, number> = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 }
+const MONTHS: Record<string, number> = {
+  Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5,
+  Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11,
+}
 
 function parseAccessTime(line: string): number | null {
   const m = line.match(/\[(\d{2})\/(\w{3})\/(\d{4}):(\d{2}):(\d{2}):(\d{2})/)
@@ -644,31 +725,62 @@ function parseAccessLine(line: string): { t: number | null; bytes: number } {
   return { t, bytes }
 }
 
-const UP_COLOR = 'var(--success)'
-const DOWN_COLOR = 'var(--warning)'
+const REQ_COLOR = 'var(--success)'
+const DATA_COLOR = 'var(--warning)'
 
-function smoothPath(pts: { x: number; y: number }[]): string {
-  if (pts.length === 0) return ''
-  if (pts.length === 1) return `M ${pts[0].x},${pts[0].y}`
-  let d = `M ${pts[0].x},${pts[0].y}`
-  for (let i = 0; i < pts.length - 1; i++) {
-    const p0 = pts[Math.max(0, i - 1)]
-    const p1 = pts[i]
-    const p2 = pts[i + 1]
-    const p3 = pts[Math.min(pts.length - 1, i + 2)]
-    const c1x = p1.x + (p2.x - p0.x) / 6
-    const c1y = p1.y + (p2.y - p0.y) / 6
-    const c2x = p2.x - (p3.x - p1.x) / 6
-    const c2y = p2.y - (p3.y - p1.y) / 6
-    d += ` C ${c1x},${c1y} ${c2x},${c2y} ${p2.x},${p2.y}`
+/** Monotone cubic spline (Fritsch-Carlson) interpolation clamped at the baseline */
+function monotonePath(pts: { x: number; y: number }[], baseline: number): string {
+  const n = pts.length
+  if (n === 0) return ''
+  if (n === 1) return `M ${pts[0].x},${pts[0].y}`
+
+  const m = new Array(n).fill(0)
+  const deltas: number[] = []
+  for (let i = 0; i < n - 1; i++) {
+    const dx = pts[i + 1].x - pts[i].x
+    deltas.push(dx !== 0 ? (pts[i + 1].y - pts[i].y) / dx : 0)
   }
-  return d
+
+  m[0] = deltas[0]
+  m[n - 1] = deltas[n - 2]
+  for (let i = 1; i < n - 1; i++) {
+    if (deltas[i - 1] * deltas[i] <= 0) {
+      m[i] = 0
+    } else {
+      m[i] = (deltas[i - 1] + deltas[i]) / 2
+    }
+  }
+
+  for (let i = 0; i < n - 1; i++) {
+    if (deltas[i] === 0) {
+      m[i] = 0
+      m[i + 1] = 0
+    } else {
+      const alpha = m[i] / deltas[i]
+      const beta = m[i + 1] / deltas[i]
+      const dist = alpha * alpha + beta * beta
+      if (dist > 9) {
+        const tau = 3 / Math.sqrt(dist)
+        m[i] = tau * alpha * deltas[i]
+        m[i + 1] = tau * beta * deltas[i]
+      }
+    }
+  }
+
+  let path = `M ${pts[0].x.toFixed(2)},${pts[0].y.toFixed(2)}`
+  for (let i = 0; i < n - 1; i++) {
+    const dx = pts[i + 1].x - pts[i].x
+    const p1x = pts[i].x + dx / 3
+    const p1y = Math.min(baseline, pts[i].y + (m[i] * dx) / 3)
+    const p2x = pts[i + 1].x - dx / 3
+    const p2y = Math.min(baseline, pts[i + 1].y - (m[i + 1] * dx) / 3)
+    path += ` C ${p1x.toFixed(2)},${p1y.toFixed(2)} ${p2x.toFixed(2)},${p2y.toFixed(2)} ${pts[i + 1].x.toFixed(2)},${pts[i + 1].y.toFixed(2)}`
+  }
+  return path
 }
 
-const TrafficGraph = memo(function TrafficGraph({ lines, tall }: { lines: string[]; tall?: boolean }) {
-  // Stable while lines unchanged: window anchors to last log timestamp,
-  // not Date.now() per render (that slid buckets every 3s poll → jitter).
-  const { req, kb, end } = useMemo(() => {
+const TrafficGraph = memo(function TrafficGraph({ lines }: { lines: string[] }) {
+  const { req, kb, end, totalLogReq, totalLogKb } = useMemo(() => {
     const N = 30
     const WIN_MS = 5 * 60 * 1000
     const r = new Array(N).fill(0) as number[]
@@ -679,7 +791,10 @@ const TrafficGraph = memo(function TrafficGraph({ lines, tall }: { lines: string
     const endMs = latest > 0 ? latest : Date.now()
     let unparsed = 0
     let unparsedBytes = 0
+    let allBytes = 0
+
     for (const p of parsed) {
+      allBytes += p.bytes
       if (p.t === null) {
         unparsed += 1
         unparsedBytes += p.bytes
@@ -695,134 +810,149 @@ const TrafficGraph = memo(function TrafficGraph({ lines, tall }: { lines: string
       r[N - 1] += unparsed
       k[N - 1] += unparsedBytes / 1024
     }
-    return { req: r, kb: k, end: endMs }
+    return {
+      req: r,
+      kb: k,
+      end: endMs,
+      totalLogReq: parsed.length,
+      totalLogKb: allBytes / 1024,
+    }
   }, [lines])
+
   const N = req.length
   const WIN_MS = 5 * 60 * 1000
   const [hover, setHover] = useState<number | null>(null)
-  const maxV = Math.max(1, ...req, ...kb)
-  const niceMax = Math.ceil(maxV)
+
+  // Nice round Y-axis maximum (multiples of 5, minimum 10)
+  const maxV = Math.max(10, ...req, ...kb)
+  const niceMax = Math.ceil(maxV / 5) * 5
+
   const W = 300
-  const H = 120
-  const PAD_L = 22
+  const H = 85
+  const PAD_L = 20
+  const BASELINE = H - 16
+
   const pts = (series: number[]) =>
-    series.map((v, i) => ({ x: PAD_L + (i / (N - 1)) * (W - PAD_L - 4), y: 6 + (1 - v / niceMax) * (H - 26) }))
+    series.map((v, i) => ({
+      x: PAD_L + (i / (N - 1)) * (W - PAD_L - 4),
+      y: Math.min(BASELINE, 6 + (1 - v / niceMax) * (BASELINE - 6)),
+    }))
+
   const upPts = pts(req)
   const downPts = pts(kb)
-  const upLine = smoothPath(upPts)
-  const downLine = smoothPath(downPts)
-  const area = (line: string) => `${line} L ${W - 4},${H - 18} L ${PAD_L},${H - 18} Z`
-  const totalReq = req.reduce((a, b) => a + b, 0)
-  const totalKb = kb.reduce((a, b) => a + b, 0)
+  const upLine = monotonePath(upPts, BASELINE)
+  const downLine = monotonePath(downPts, BASELINE)
+  const area = (line: string) => `${line} L ${W - 4},${BASELINE} L ${PAD_L},${BASELINE} Z`
+
+  const windowReq = req.reduce((a, b) => a + b, 0)
+  const windowKb = kb.reduce((a, b) => a + b, 0)
+
   const fmtT = (ms: number) => new Date(ms).toTimeString().slice(0, 8)
   const bucketT = (i: number) => end - ((N - 1 - i) / N) * WIN_MS
-  const ticks = [...new Set([0, 1, 2, 3, 4].map((i) => Math.round((niceMax / 4) * i)))]
+
+  // Max 3 round ticks: 0, niceMax/2, niceMax
+  const ticks = [0, Math.round(niceMax / 2), niceMax]
+
   const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
     const rect = e.currentTarget.getBoundingClientRect()
     const x = ((e.clientX - rect.left) / rect.width) * W
     const frac = (x - PAD_L) / (W - PAD_L - 4)
     setHover(Math.max(0, Math.min(N - 1, Math.round(frac * (N - 1)))))
   }
+
   const hov = hover !== null ? { i: hover, t: bucketT(hover), r: req[hover], k: kb[hover], x: upPts[hover].x } : null
+
   return (
-    <div className="flex min-w-0 flex-col gap-1">
-      <div className="grid grid-cols-2 gap-x-2 gap-y-2.5 rounded-lg bg-muted/40 px-3 py-2.5 text-center">
-        <div className="leading-tight">
-          <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-            <span className="size-1.5 shrink-0 rounded-full" style={{ background: UP_COLOR }} /> Upstream
-          </div>
-          <div className="mt-0.5 whitespace-nowrap text-sm font-semibold tabular-nums">{req[N - 1] === 0 && totalReq === 0 ? '—' : `${req[N - 1]} req`}</div>
+    <div className="flex min-w-0 flex-col gap-2">
+      {/* Flattened inline metrics: one compact row with clean divider */}
+      <div className="flex items-center justify-between rounded-md bg-muted/30 px-3 py-1.5 text-xs">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="size-1.5 rounded-full shrink-0" style={{ background: REQ_COLOR }} />
+          <span className="text-muted-foreground">Requests:</span>
+          <span className="font-semibold tabular-nums text-foreground">{windowReq}</span>
+          <span className="text-[11px] text-muted-foreground/80 tabular-nums">({totalLogReq} total)</span>
         </div>
-        <div className="leading-tight">
-          <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-            <span className="size-1.5 shrink-0 rounded-full" style={{ background: DOWN_COLOR }} /> Downstream
-          </div>
-          <div className="mt-0.5 whitespace-nowrap text-sm font-semibold tabular-nums">{kb[N - 1].toFixed(2)} KB</div>
-        </div>
-        <div className="leading-tight">
-          <div className="text-xs text-muted-foreground">Total req</div>
-          <div className="mt-0.5 whitespace-nowrap text-sm font-semibold tabular-nums">{totalReq}</div>
-        </div>
-        <div className="leading-tight">
-          <div className="text-xs text-muted-foreground">Total served</div>
-          <div className="mt-0.5 whitespace-nowrap text-sm font-semibold tabular-nums">{totalKb >= 1024 ? `${(totalKb / 1024).toFixed(2)} MB` : `${totalKb.toFixed(2)} KB`}</div>
+        <div className="h-3 w-px bg-border/60 mx-2 shrink-0" />
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="size-1.5 rounded-full shrink-0" style={{ background: DATA_COLOR }} />
+          <span className="text-muted-foreground">Served:</span>
+          <span className="font-semibold tabular-nums text-foreground truncate">
+            {windowKb >= 1024 ? `${(windowKb / 1024).toFixed(1)} MB` : `${windowKb.toFixed(0)} KB`}
+          </span>
+          <span className="text-[11px] text-muted-foreground/80 tabular-nums shrink-0">
+            ({totalLogKb >= 1024 ? `${(totalLogKb / 1024).toFixed(1)} MB` : `${totalLogKb.toFixed(0)} KB`})
+          </span>
         </div>
       </div>
-      <div className="relative" onMouseLeave={() => setHover(null)}>
-        <svg
-          viewBox={`0 0 ${W} ${H}`}
-          className={`w-full ${tall ? 'h-44' : 'h-28'}`}
-          preserveAspectRatio="none"
-          onMouseMove={onMove}
-        >
-          <defs>
-            <linearGradient id="trafUp" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={UP_COLOR} stopOpacity="0.45" />
-              <stop offset="100%" stopColor={UP_COLOR} stopOpacity="0.02" />
-            </linearGradient>
-            <linearGradient id="trafDown" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={DOWN_COLOR} stopOpacity="0.45" />
-              <stop offset="100%" stopColor={DOWN_COLOR} stopOpacity="0.02" />
-            </linearGradient>
-          </defs>
-          {ticks.map((t) => {
-            const y = 6 + (1 - t / niceMax) * (H - 26)
-            return (
-              <g key={t}>
-                <line x1={PAD_L} x2={W - 4} y1={y} y2={y} stroke="var(--border)" strokeWidth="0.5" strokeDasharray="3 3" opacity="0.8" />
-                <text x="2" y={y + 3} fontSize="7" fill="var(--muted-foreground)">
-                  {t}
-                </text>
-              </g>
-            )
-          })}
-          <path d={area(downLine)} fill="url(#trafDown)" />
-          <path d={area(upLine)} fill="url(#trafUp)" />
-          <path d={downLine} fill="none" stroke={DOWN_COLOR} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-          <path d={upLine} fill="none" stroke={UP_COLOR} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-          {hov !== null && (
-            <g>
-              <line x1={hov.x} x2={hov.x} y1="6" y2={H - 18} stroke="var(--muted-foreground)" strokeWidth="0.75" strokeDasharray="2 2" opacity="0.9" />
-              <circle cx={upPts[hov.i].x} cy={upPts[hov.i].y} r="2.4" fill={UP_COLOR} stroke="var(--card)" strokeWidth="1" />
-              <circle cx={downPts[hov.i].x} cy={downPts[hov.i].y} r="2.4" fill={DOWN_COLOR} stroke="var(--card)" strokeWidth="1" />
-            </g>
-          )}
-        </svg>
-        {hov !== null && (
-          <div
-            className="pointer-events-none absolute z-10 -translate-x-1/2 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs shadow-lg"
-            style={{ left: `${Math.min(85, Math.max(15, (hov.x / W) * 100))}%`, top: '4px' }}
+
+      {/* Slim empty state when traffic is basically zero */}
+      {totalLogReq === 0 && windowReq === 0 ? (
+        <div className="flex h-14 items-center justify-center gap-2 rounded-md border border-dashed border-border/50 px-3 text-xs text-muted-foreground/80">
+          <Activity className="size-3.5 opacity-50 shrink-0" />
+          <span>No traffic recorded in the last 5 minutes</span>
+        </div>
+      ) : (
+        <div className="relative" onMouseLeave={() => setHover(null)}>
+          <svg
+            viewBox={`0 0 ${W} ${H}`}
+            className="w-full h-24"
+            preserveAspectRatio="none"
+            onMouseMove={onMove}
           >
-            <div className="font-medium tabular-nums">{fmtT(hov.t)}</div>
-            <div className="flex items-center gap-1.5 tabular-nums">
-              <span className="size-1.5 rounded-full" style={{ background: UP_COLOR }} /> {hov.r} req
+            <defs>
+              <linearGradient id="trafUp" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={REQ_COLOR} stopOpacity="0.45" />
+                <stop offset="100%" stopColor={REQ_COLOR} stopOpacity="0.02" />
+              </linearGradient>
+              <linearGradient id="trafDown" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={DATA_COLOR} stopOpacity="0.45" />
+                <stop offset="100%" stopColor={DATA_COLOR} stopOpacity="0.02" />
+              </linearGradient>
+            </defs>
+            {ticks.map((t) => {
+              const y = 6 + (1 - t / niceMax) * (BASELINE - 6)
+              return (
+                <g key={t}>
+                  <line x1={PAD_L} x2={W - 4} y1={y} y2={y} stroke="var(--border)" strokeWidth="0.5" strokeDasharray="3 3" opacity="0.8" />
+                  <text x="2" y={y + 3} fontSize="7" fill="var(--muted-foreground)" className="hidden @[450px]/dashboard:inline">
+                    {t}
+                  </text>
+                </g>
+              )
+            })}
+            <path d={area(downLine)} fill="url(#trafDown)" />
+            <path d={area(upLine)} fill="url(#trafUp)" />
+            <path d={downLine} fill="none" stroke={DATA_COLOR} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+            <path d={upLine} fill="none" stroke={REQ_COLOR} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+            {hov !== null && (
+              <g>
+                <line x1={hov.x} x2={hov.x} y1="6" y2={BASELINE} stroke="var(--muted-foreground)" strokeWidth="0.75" strokeDasharray="2 2" opacity="0.9" />
+                <circle cx={upPts[hov.i].x} cy={upPts[hov.i].y} r="2.4" fill={REQ_COLOR} stroke="var(--card)" strokeWidth="1" />
+                <circle cx={downPts[hov.i].x} cy={downPts[hov.i].y} r="2.4" fill={DATA_COLOR} stroke="var(--card)" strokeWidth="1" />
+              </g>
+            )}
+          </svg>
+          {hov !== null && (
+            <div
+              className="pointer-events-none absolute z-10 -translate-x-1/2 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs shadow-lg"
+              style={{ left: `${Math.min(85, Math.max(15, (hov.x / W) * 100))}%`, top: '4px' }}
+            >
+              <div className="font-medium tabular-nums">{fmtT(hov.t)}</div>
+              <div className="flex items-center gap-1.5 tabular-nums">
+                <span className="size-1.5 rounded-full" style={{ background: REQ_COLOR }} /> {hov.r} req
+              </div>
+              <div className="flex items-center gap-1.5 tabular-nums">
+                <span className="size-1.5 rounded-full" style={{ background: DATA_COLOR }} /> {hov.k.toFixed(2)} KB
+              </div>
             </div>
-            <div className="flex items-center gap-1.5 tabular-nums">
-              <span className="size-1.5 rounded-full" style={{ background: DOWN_COLOR }} /> {hov.k.toFixed(2)} KB
-            </div>
-          </div>
-        )}
-      </div>
-      <div className="flex justify-between text-[11px] tabular-nums text-muted-foreground">
-        <span>{fmtT(end - WIN_MS)}</span>
-        <span>{fmtT(end)}</span>
+          )}
+        </div>
+      )}
+
+      <div className="flex justify-between text-[11px] tabular-nums text-muted-foreground/80">
+        <span>Last 5 min ({fmtT(end - WIN_MS)})</span>
+        <span>Now ({fmtT(end)})</span>
       </div>
     </div>
   )
 })
-
-function HealthRow({ item }: { item: HealthItem }) {
-  const Icon = item.status === 'ok' ? CheckCircle2 : item.status === 'warn' ? AlertTriangle : XCircle
-  const color = item.status === 'ok' ? 'text-success' : item.status === 'warn' ? 'text-warning' : 'text-destructive'
-  return (
-    <div className="flex items-start gap-2 text-sm">
-      <Icon className={`mt-0.5 size-4 shrink-0 ${color}`} />
-      <div>
-        <span className="font-medium">{item.label}</span>
-        <span className="text-muted-foreground"> · {item.detail}</span>
-        {item.fix && item.status !== 'ok' && <div className="text-xs text-muted-foreground">{item.fix}</div>}
-      </div>
-    </div>
-  )
-}
-

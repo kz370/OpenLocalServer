@@ -1,10 +1,11 @@
 import { save } from '@tauri-apps/plugin-dialog'
-import { AlertTriangle, Download, FolderOpen, History, Plus, RotateCcw, Save, ShieldCheck, Trash2 } from 'lucide-react'
+import { AlertTriangle, Download, FolderOpen, History, Plus, RefreshCw, RotateCcw, Save, ShieldCheck, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import { CodeEditor, DiffView, type EditorLanguage } from '@/components/CodeEditor'
 import { ErrorCard } from '@/components/ErrorCard'
 import { SaveButton } from '@/components/SaveButton'
+import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -39,7 +40,7 @@ export function ConfigPage() {
   const [cfg, setCfg] = useState<WebConfig | null>(cachedWebConfig)
   const [selected, setSelected] = useState<string | null>(null)
   const [historyTick, setHistoryTick] = useState(0)
-  const { error, setError } = useAction()
+  const { busy, error, setError, run } = useAction()
 
   const file = useMemo(() => files.find((f) => fileKey(f) === selected) ?? null, [files, selected])
   const history = useConfigHistory(file?.hostname ?? null)
@@ -80,11 +81,29 @@ export function ConfigPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Web config</h1>
-        <p className="text-sm text-muted-foreground">
-          Every site's generated config for the web server that renders it. Read it, customise it safely, and roll back any change (§23–29).
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Web config</h1>
+          <p className="text-sm text-muted-foreground">
+            Every site's generated config for the web server that renders it. Read it, customise it safely, and roll back any change (§23–29).
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5 shrink-0 text-xs font-medium"
+          disabled={busy !== null}
+          onClick={() =>
+            void run('reapply', async () => {
+              await runCommand({ type: 'apply_web', overwrite: [] })
+              await refreshList(selected ?? undefined)
+            })
+          }
+          title="Force regenerate all web server config files and reload running servers"
+        >
+          {busy === 'reapply' ? <Spinner className="size-3.5" /> : <RefreshCw className="size-3.5" />}
+          Re-apply web config
+        </Button>
       </div>
 
       <ErrorCard error={error} onDismiss={() => setError(null)} />

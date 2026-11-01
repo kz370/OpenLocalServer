@@ -418,7 +418,12 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   async function saveNew(d: Domain) {
     await runCommand({ type: 'add_domain', domain: d })
     setAdding(null)
-    await apply()
+    await Promise.all([refresh(), refreshProjects()])
+    try {
+      await apply()
+    } catch {
+      // apply error handled by ApplyReportCard
+    }
   }
 
   /**

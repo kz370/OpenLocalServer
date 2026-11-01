@@ -13,6 +13,7 @@ import {
   type WebStatus,
   runCommand,
 } from '@/core'
+import { createPersistentCache } from '@/lib/cache'
 import { useAction, usePoll } from '@/lib/hooks'
 
 /** What a bulk site edit did: how many sites changed, and one line per site it refused. */
@@ -25,26 +26,26 @@ export interface BulkOutcome {
  * The web server's state and the "apply" step every site change ends with. Shared by the
  * Projects page (which lists sites) and the Web server page (server, ports, certificates).
  */
-let cachedStatus: WebStatus | null = null
-let cachedCfg: WebConfig | null = null
-let cachedDomains: DomainSummary[] = []
-let cachedCerts: CertInfo[] = []
-let cachedCa: CaInfo | null = null
-let cachedProjects: Project[] = []
-let cachedCatalog: CatalogEntry[] = []
-let cachedCustomPhp: string[] = []
-let cachedReports: ApplyReport[] = []
+const statusCache = createPersistentCache<WebStatus | null>('web_status', null)
+const cfgCache = createPersistentCache<WebConfig | null>('web_cfg', null)
+const domainsCache = createPersistentCache<DomainSummary[]>('web_domains', [])
+const certsCache = createPersistentCache<CertInfo[]>('web_certs', [])
+const caCache = createPersistentCache<CaInfo | null>('web_ca', null)
+const projectsCache = createPersistentCache<Project[]>('web_projects', [])
+const catalogCache = createPersistentCache<CatalogEntry[]>('web_catalog', [])
+const customPhpCache = createPersistentCache<string[]>('web_custom_php', [])
+const reportsCache = createPersistentCache<ApplyReport[]>('web_reports', [])
 
 export function useWeb() {
-  const [status, setStatus] = useState<WebStatus | null>(cachedStatus)
-  const [cfg, setCfg] = useState<WebConfig | null>(cachedCfg)
-  const [domains, setDomains] = useState<DomainSummary[]>(cachedDomains)
-  const [certs, setCerts] = useState<CertInfo[]>(cachedCerts)
-  const [ca, setCa] = useState<CaInfo | null>(cachedCa)
-  const [projects, setProjects] = useState<Project[]>(cachedProjects)
-  const [catalog, setCatalog] = useState<CatalogEntry[]>(cachedCatalog)
-  const [customPhp, setCustomPhp] = useState<string[]>(cachedCustomPhp)
-  const [reports, setReports] = useState<ApplyReport[]>(cachedReports)
+  const [status, setStatus] = useState<WebStatus | null>(statusCache.get)
+  const [cfg, setCfg] = useState<WebConfig | null>(cfgCache.get)
+  const [domains, setDomains] = useState<DomainSummary[]>(domainsCache.get)
+  const [certs, setCerts] = useState<CertInfo[]>(certsCache.get)
+  const [ca, setCa] = useState<CaInfo | null>(caCache.get)
+  const [projects, setProjects] = useState<Project[]>(projectsCache.get)
+  const [catalog, setCatalog] = useState<CatalogEntry[]>(catalogCache.get)
+  const [customPhp, setCustomPhp] = useState<string[]>(customPhpCache.get)
+  const [reports, setReports] = useState<ApplyReport[]>(reportsCache.get)
   const [driftOpen, setDriftOpen] = useState(false)
   /** Hostnames and project ids whose row is mid-removal, so the page can show it. */
   const [removing, setRemoving] = useState<ReadonlySet<string>>(new Set())
@@ -78,26 +79,26 @@ export function useWeb() {
     ])
     if (s.type === 'web_status') {
       setStatus(s.status)
-      cachedStatus = s.status
+      statusCache.set(s.status)
     }
     if (c.type === 'web_config') {
       setCfg((prev) => {
         const next = updateConfig || prev === null ? c.config : prev
-        cachedCfg = next
+        cfgCache.set(next)
         return next
       })
     }
     if (d.type === 'domains') {
       setDomains(d.domains)
-      cachedDomains = d.domains
+      domainsCache.set(d.domains)
     }
     if (k.type === 'certificates') {
       setCerts(k.certs)
-      cachedCerts = k.certs
+      certsCache.set(k.certs)
     }
     if (a.type === 'ca_info') {
       setCa(a.info)
-      cachedCa = a.info
+      caCache.set(a.info)
     }
   }
 
@@ -105,11 +106,13 @@ export function useWeb() {
     const r = await runCommand({ type: 'list_projects' })
     if (r.type === 'projects') {
       setProjects(r.projects)
-      cachedProjects = r.projects
+      projectsCache.set(r.projects)
     }
   }
 
-  usePoll(() => refresh().catch(() => undefined), 4000)
+  usePoll(() => {
+    void Promise.all([refresh(), refreshProjects()]).catch(() => undefined)
+  }, 3000)
   useEffect(() => {
     let alive = true
     let unlisten: (() => void) | undefined
@@ -134,7 +137,7 @@ export function useWeb() {
       .then((r) => {
         if (r.type === 'runtime_catalog') {
           setCatalog(r.entries)
-          cachedCatalog = r.entries
+          catalogCache.set(r.entries)
         }
       })
       .catch(() => undefined)
@@ -143,7 +146,7 @@ export function useWeb() {
         if (r.type === 'custom_installs') {
           const phps = r.entries.filter((c) => c.id === 'php' && c.label).map((c) => c.label)
           setCustomPhp(phps)
-          cachedCustomPhp = phps
+          customPhpCache.set(phps)
         }
       })
       .catch(() => undefined)
@@ -157,6 +160,7 @@ export function useWeb() {
     const res = await runCommand({ type: 'apply_web', overwrite })
     if (res.type === 'applied') {
       setReports(res.reports)
+      reportsCache.set(res.reports)
       if (res.reports.some((r) => r.drifted.length > 0)) setDriftOpen(true)
     }
     await refresh(true)
@@ -175,7 +179,7 @@ export function useWeb() {
   async function deleteSite(hostname: string) {
     if (removing.has(hostname)) return
     markRemoving(hostname)
-    setDomains((list) => list.filter((d) => d.hostname !== hostname))
+    setDomains((list) => { const next = list.filter((d) => d.hostname !== hostname); domainsCache.set(next); return next; })
     try {
       await runCommand({ type: 'delete_site', hostname })
       await refreshProjects()
@@ -196,7 +200,7 @@ export function useWeb() {
   async function hideSite(hostname: string) {
     if (removing.has(hostname)) return
     markRemoving(hostname)
-    setDomains((list) => list.filter((d) => d.hostname !== hostname))
+    setDomains((list) => { const next = list.filter((d) => d.hostname !== hostname); domainsCache.set(next); return next; })
     try {
       await runCommand({ type: 'remove_domain', hostname })
       await refreshProjects()
@@ -214,7 +218,7 @@ export function useWeb() {
   async function deleteProject(id: string) {
     if (removing.has(id)) return
     markRemoving(id)
-    setProjects((list) => list.filter((p) => p.id !== id))
+    setProjects((list) => { const next = list.filter((p) => p.id !== id); projectsCache.set(next); return next; })
     try {
       await runCommand({ type: 'delete_project', id })
     } catch (e) {
@@ -229,7 +233,7 @@ export function useWeb() {
   async function hideProjectFromList(id: string) {
     if (removing.has(id)) return
     markRemoving(id)
-    setProjects((list) => list.filter((p) => p.id !== id))
+    setProjects((list) => { const next = list.filter((p) => p.id !== id); projectsCache.set(next); return next; })
     try {
       await runCommand({ type: 'remove_project', id })
     } catch (e) {
@@ -266,7 +270,11 @@ export function useWeb() {
   ): Promise<BulkOutcome> {
     if (keys.length === 0) return { changed: 0, skipped: [] }
     keys.forEach((key) => markRemoving(key))
-    setDomains(optimistic)
+    setDomains((list) => {
+      const next = optimistic(list)
+      domainsCache.set(next)
+      return next
+    })
     try {
       const res = await runCommand(command)
       const outcome: BulkOutcome = res.type === 'bulk' ? { changed: res.changed, skipped: res.skipped } : { changed: 0, skipped: [] }
