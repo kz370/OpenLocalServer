@@ -406,6 +406,14 @@ olsc guide
     - Borderless service row action buttons with 18px icons, rounded hover tints, and WCAG-compliant ≥ 3:1 contrast tokens.
     - Independent per-service pending states with transitional status indicators, preventing other service rows from dimming while one service starts or stops.
 
+11. **Unified External Database Tools Gallery & Visual Arguments Editor:**
+    - **External Tools Gallery**: Consolidated database GUI explorer detection and management into `Databases > External tools`. Auto-detects HeidiSQL, DBeaver, Letos DB Browser, DB Browser for SQLite, pgAdmin 4, NoSQLBooster, and Tiny RDM on disk.
+    - **Visual Argument Editor (`ToolArgsEditor`)**: Replaced raw space-delimited text boxes with individual argument inputs, eliminating brittle shell quoting and escaping issues.
+    - **Multi-Engine & Per-Engine Arguments**: Allows specifying different launch flags and driver parameters per database engine (e.g. MariaDB, PostgreSQL, SQLite for DBeaver) with a simple mode toggle.
+    - **Interactive Placeholder Chips & Command Preview**: One-click chips (`{host}`, `{port}`, `{database}`, `{path}`, `{uri}`) insert placeholders into active argument inputs, paired with a live "Runs as: program ..." command preview.
+    - **JSON Import/Export**: Export tools to portable JSON (`schemaVersion: 1`) without machine-specific paths; import tools with drag-and-drop and duplicate conflict resolution (Skip, Overwrite, Rename).
+    - **Reliable Windows Launching**: Launches tools with their install folder as working directory (allowing DLLs and plugins to resolve) and passes arguments verbatim to prevent Delphi/HeidiSQL host truncation.
+
 ---
 
 ### Previous Version Notes (v2.5.0)
