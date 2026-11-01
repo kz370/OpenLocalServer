@@ -277,8 +277,7 @@ function toolChoices(engine: string, dbTools: DbTool[], externalTools: ExternalT
 }
 
 function OpenDatabaseButton({ engine, database = null, path = null, dbTools, externalTools, defaultTools, setDefaultTool, showToolSelect = true }: DatabaseToolProps & { engine: string; database?: string | null; path?: string | null; showToolSelect?: boolean }) {
-  const [note, setNote] = useState<string | null>(null)
-  const { busy, error, setError, run } = useAction()
+  const { busy, setError, run } = useAction()
   const choices = toolChoices(engine, dbTools, externalTools)
   const selectedTool = defaultTools[engine] ?? ''
   const selectedChoice = choices.find((tool) => tool.id === selectedTool)
@@ -286,73 +285,70 @@ function OpenDatabaseButton({ engine, database = null, path = null, dbTools, ext
   const isAvailable = selectedChoice ? selectedChoice.available : true
 
   return (
-    <span className="inline-flex flex-col items-end gap-1">
-      <span className="inline-flex items-center gap-1">
-        {showToolSelect && (
-          <span className="inline-flex items-center gap-1.5">
-            <span className="text-xs text-muted-foreground">Open with</span>
-            <Select
-              aria-label={`Open ${engine} databases with`}
-              title={`Open ${engine} databases with`}
-              className="h-7 w-44 sm:w-48 shrink-0 text-xs"
-              value={selectedTool}
-              onChange={(event) => { void setDefaultTool(engine, event.target.value).catch((e) => setError(e as Diagnostic)) }}
-            >
-              <option value="">Automatic tool</option>
-              {choices.map((tool) => (
-                <option
-                  key={tool.id}
-                  value={tool.id}
-                  disabled={!tool.available}
-                  title={!tool.available ? `${tool.name} (Executable not found)` : undefined}
-                >
-                  {tool.name} {!tool.available ? '(Executable not found)' : ''}
-                </option>
-              ))}
-            </Select>
-          </span>
-        )}
-        <Button
-          size="sm"
-          variant="secondary"
-          className="size-7 shrink-0 p-0"
-          aria-label={`Open ${database ?? path ?? 'database'} with ${toolName}`}
-          title={!isAvailable ? `${toolName} executable not found. Fix path under External tools.` : `Open ${database ?? path ?? 'database'} with ${toolName}`}
-          disabled={busy !== null || !isAvailable}
-          onClick={() => run('open', async () => {
-            setNote(null)
-            if (selectedChoice && !selectedChoice.available) {
-              setError({
-                problem: `Executable not found for ${selectedChoice.name}.`,
-                cause: selectedChoice.found_path ? `The file "${selectedChoice.found_path}" does not exist on disk.` : 'No executable path has been chosen.',
-                fix: 'Open the External tools tab and click "Fix path" to locate the executable.',
-              })
-              return
+    <span className="inline-flex shrink-0 items-center gap-1">
+      {showToolSelect && (
+        <span className="inline-flex items-center gap-1.5">
+          <span className="text-xs text-muted-foreground">Open with</span>
+          <Select
+            aria-label={`Open ${engine} databases with`}
+            title={`Open ${engine} databases with`}
+            className="h-7 w-44 sm:w-48 shrink-0 text-xs"
+            value={selectedTool}
+            onChange={(event) => { void setDefaultTool(engine, event.target.value).catch((e) => setError(e as Diagnostic)) }}
+          >
+            <option value="">Automatic tool</option>
+            {choices.map((tool) => (
+              <option
+                key={tool.id}
+                value={tool.id}
+                disabled={!tool.available}
+                title={!tool.available ? `${tool.name} (Executable not found)` : undefined}
+              >
+                {tool.name} {!tool.available ? '(Executable not found)' : ''}
+              </option>
+            ))}
+          </Select>
+        </span>
+      )}
+      <Button
+        size="sm"
+        variant="secondary"
+        className="size-7 shrink-0 p-0"
+        aria-label={`Open ${database ?? path ?? 'database'} with ${toolName}`}
+        title={!isAvailable ? `${toolName} executable not found. Fix path under External tools.` : `Open ${database ?? path ?? 'database'} with ${toolName}`}
+        disabled={busy !== null || !isAvailable}
+        onClick={() => run('open', async () => {
+          if (selectedChoice && !selectedChoice.available) {
+            const diag: Diagnostic = {
+              problem: `Executable not found for ${selectedChoice.name}.`,
+              cause: selectedChoice.found_path ? `The file "${selectedChoice.found_path}" does not exist on disk.` : 'No executable path has been chosen.',
+              fix: 'Open the External tools tab and click "Fix path" to locate the executable.',
             }
+            setError(diag)
+            notify.error(diag.problem, { details: diag.fix ?? undefined })
+            return
+          }
 
-            const isClipboard = selectedChoice?.launchMode === 'clipboard'
-              || (engine === 'mongodb' && (selectedTool === 'nosqlbooster' || !selectedChoice?.found_path))
-              || (engine === 'redis' && (selectedTool === 'tinyrdm' || !selectedChoice?.found_path))
-              || (engine !== 'sqlite' && (selectedChoice?.id === 'letos' || selectedTool === 'letos'))
-            if (isClipboard) {
-              const connection = await runCommand({ type: 'get_connection_info', engine, database, path })
-              if (connection.type === 'connection') {
-                try {
-                  await navigator.clipboard.writeText(connection.info.uri)
-                  const sanitized = connection.info.uri.replace(/:[^:@/]+@/, ':***@')
-                  setNote(`Connection URI copied (${sanitized}). Paste it into ${toolName}.`)
-                } catch {
-                  setNote(`Opened ${toolName}. Connect using ${connection.info.uri.replace(/:[^:@/]+@/, ':***@')}`)
-                }
+          const isClipboard = selectedChoice?.launchMode === 'clipboard'
+            || (engine === 'mongodb' && (selectedTool === 'nosqlbooster' || !selectedChoice?.found_path))
+            || (engine === 'redis' && (selectedTool === 'tinyrdm' || !selectedChoice?.found_path))
+            || (engine !== 'sqlite' && (selectedChoice?.id === 'letos' || selectedTool === 'letos'))
+          if (isClipboard) {
+            const connection = await runCommand({ type: 'get_connection_info', engine, database, path })
+            if (connection.type === 'connection') {
+              try {
+                await navigator.clipboard.writeText(connection.info.uri)
+                const sanitized = connection.info.uri.replace(/:[^:@/]+@/, ':***@')
+                notify.success(`Connection URI copied to clipboard (${sanitized}). Paste it into ${toolName}.`)
+              } catch {
+                notify.info(`Opened ${toolName}. Connect using ${connection.info.uri.replace(/:[^:@/]+@/, ':***@')}`)
               }
             }
-            await runCommand({ type: 'open_database', engine, database, path, tool_id: selectedTool || null })
-          })}>
-          {busy === 'open' ? <Spinner /> : <ExternalLink className="size-3.5" />}
-        </Button>
-      </span>
-      {note && <span className="max-w-80 text-right text-xs text-muted-foreground">{note}</span>}
-      {error && <span className="text-xs text-destructive">{error.problem}</span>}
+          }
+          await runCommand({ type: 'open_database', engine, database, path, tool_id: selectedTool || null })
+        })}>
+        {busy === 'open' ? <Spinner /> : <ExternalLink className="size-3.5" />}
+      </Button>
     </span>
   )
 }
@@ -562,16 +558,16 @@ function SqlEngine({ engine, service, ...toolProps }: { engine: 'mariadb' | 'pos
                 <div className="divide-y divide-border overflow-hidden rounded-lg border border-border">
                   {dbs.map((d) => (
                     <Fragment key={d}>
-                      <div className="flex items-center justify-between gap-2 px-3 py-1">
-                        <span className="truncate text-sm font-medium">{d}</span>
-                        <span className="flex shrink-0 items-center gap-0.5">
-                          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" title="Back up this database" disabled={busy !== null} onClick={() => { setBusyDb(d); void run('backup', async () => { const r = await runCommand({ type: 'backup_database', engine, database: d }); if (r.type === 'text') setNote(`Backup saved to ${r.text}`); await refresh() }).finally(() => setBusyDb(null)) }}>
+                      <div className="flex items-center justify-between gap-2 px-3 py-1.5 min-w-0">
+                        <span className="truncate text-sm font-medium min-w-0 flex-1">{d}</span>
+                        <span className="flex shrink-0 items-center gap-1">
+                          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" title="Back up this database" disabled={busy !== null} onClick={() => { setBusyDb(d); void run('backup', async () => { const r = await runCommand({ type: 'backup_database', engine, database: d }); if (r.type === 'text') notify.success(`Backup saved to ${r.text}`); await refresh() }).finally(() => setBusyDb(null)) }}>
                             {busyDb === d ? <Spinner /> : <Archive className="size-3.5" />} Back up
                           </Button>
                           <Button
                             size="sm"
                             variant={openDb === d ? 'secondary' : 'ghost'}
-                            className="h-7 w-7 shrink-0 p-0"
+                            className="size-7 shrink-0 p-0"
                             aria-label={`Connection details for ${d}`}
                             aria-expanded={openDb === d}
                             title="Show connection details (host, port, user, URI)"
@@ -875,7 +871,7 @@ function Sqlite(toolProps: DatabaseToolProps) {
                 </div>
                 <div className="truncate font-mono text-xs text-muted-foreground">{d.path} · {formatBytes(d.size_bytes)} · {d.backups.length} backup(s)</div>
               </div>
-              <div className="flex gap-1">
+              <div className="flex shrink-0 items-center gap-1">
                 <Button size="sm" variant="ghost" onClick={() => run('check', async () => { const r = await runCommand({ type: 'check_sqlite', path: d.path }); if (r.type === 'integrity') setMsg(r.result.ok ? `${d.name}: integrity check passed.` : `${d.name}: ${r.result.detail}`) })}>Integrity</Button>
                 <Button size="sm" variant="ghost" onClick={() => run('backup', async () => { const r = await runCommand({ type: 'backup_sqlite', path: d.path }); if (r.type === 'text') setMsg(`Backed up to ${r.text}`); await refresh() })}>Backup</Button>
                 <Button size="sm" variant="ghost" disabled={d.backups.length === 0} onClick={() => run('restore', async () => { if (!(await confirmAction('Restore the newest backup? The current file is backed up first.'))) return; const r = await runCommand({ type: 'restore_sqlite', path: d.path, backup: d.backups[0] }); if (r.type === 'text') setMsg(`Restored. Previous file saved as ${r.text || '(none)'}`); await refresh() })}>Restore</Button>
