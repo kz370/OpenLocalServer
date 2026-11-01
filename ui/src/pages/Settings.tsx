@@ -39,7 +39,7 @@ import {
 } from '@/components/layout/SidebarIcons'
 import { AppearanceSettings } from '@/components/settings/AppearanceSettings'
 
-type Section = 'general' | 'appearance' | 'sites' | 'roots' | 'deleted' | 'startup' | 'diagnostics' | 'manual' | 'resources' | 'backups' | 'about' | 'mcp'
+type Section = 'general' | 'appearance' | 'sites' | 'roots' | 'deleted' | 'startup' | 'manual' | 'resources' | 'backups' | 'about' | 'mcp'
 const SECTIONS: { id: Section; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'general', label: 'General', icon: SettingsGeneralIcon },
   { id: 'appearance', label: 'Appearance', icon: SettingsAppearanceIcon },
@@ -48,7 +48,6 @@ const SECTIONS: { id: Section; label: string; icon: React.ComponentType<{ classN
   { id: 'roots', label: 'Root folders', icon: SettingsRootsIcon },
   { id: 'deleted', label: 'Hide/Exclude', icon: SettingsDeletedIcon },
   { id: 'startup', label: 'Startup & tray', icon: SettingsStartupIcon },
-  { id: 'diagnostics', label: 'Diagnostics', icon: SettingsDiagnosticsIcon },
   { id: 'manual', label: 'User Manual', icon: SettingsManualIcon },
   { id: 'resources', label: 'Resources', icon: SettingsResourcesIcon },
   { id: 'backups', label: 'Backups', icon: SettingsBackupsIcon },
@@ -263,7 +262,7 @@ export function SettingsPage() {
   }, [section])
 
   useEffect(() => {
-    if (section !== 'diagnostics') return
+    if (section !== 'general') return
     void runCommand({ type: 'get_setting', key: 'diagnostics.auto_fix' }).then((r) => {
       if (r.type === 'setting') {
         const val = r.value !== false
@@ -580,7 +579,25 @@ export function SettingsPage() {
                   </SettingRow>
                 </CardContent>
               </Card>
-              <UpdatesCard />
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2 text-sm">
+                    <SettingsDiagnosticsIcon className="size-4" /> Diagnostics
+                  </CardTitle>
+                  <CardDescription>Automatically apply safe fixes when a problem is found.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <SwitchRow
+                    checked={autoFixDiagnostics}
+                    onChange={(value) => {
+                      setAutoFixDiagnostics(value)
+                      void run('auto-fix', async () => { await runCommand({ type: 'set_setting', key: 'diagnostics.auto_fix', value }) })
+                    }}
+                    title="Automatically fix safe problems"
+                    hint="Runs at startup and every five minutes. Fixes that may replace or remove data always ask first."
+                  />
+                </CardContent>
+              </Card>
               <ApiCard />
               <SystemCard />
             </>
@@ -724,26 +741,6 @@ export function SettingsPage() {
             </Card>
           )}
 
-          {section === 'diagnostics' && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">Diagnostics</CardTitle>
-                <CardDescription>Automatically apply safe fixes when a problem is found.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <SwitchRow
-                  checked={autoFixDiagnostics}
-                  onChange={(value) => {
-                    setAutoFixDiagnostics(value)
-                    void run('auto-fix', async () => { await runCommand({ type: 'set_setting', key: 'diagnostics.auto_fix', value }) })
-                  }}
-                  title="Automatically fix safe problems"
-                  hint="Runs at startup and every five minutes. Fixes that may replace or remove data always ask first."
-                />
-              </CardContent>
-            </Card>
-          )}
-
           {section === 'manual' && (
             <Card>
               <CardHeader className="pb-2">
@@ -829,7 +826,12 @@ export function SettingsPage() {
               <SettingsBackupsCard />
             </>
           )}
-          {section === 'about' && <AboutCard />}
+          {section === 'about' && (
+            <>
+              <AboutCard />
+              <UpdatesCard />
+            </>
+          )}
 
           {section === 'mcp' && (
             <Card>
