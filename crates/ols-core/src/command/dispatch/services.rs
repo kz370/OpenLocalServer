@@ -112,14 +112,25 @@ impl Core {
                     tracing::info!(command = "start_service", id = %id);
                     if crate::web::SERVER_IDS.contains(&id.as_str()) {
                         // A web server renders the sites assigned to it, then binds its ports.
-                        let res = i.apply_web_server(&id, &[]).map(|_| R::Ok);
-                        match &res {
+                        // Uses `ensure_web_server_started` so concurrent starts coalesce and
+                        // an already-running-and-ready server is a no-op.
+                        match i.ensure_web_server_started(&id) {
                             Ok(_) => i.services.clear_start_failure(&id),
-                            Err(e) => i.services.record_start_failure(&id, e.to_string()),
+                            Err(e) => {
+                                if i.services.is_running_and_ready(&id) {
+                                    i.services.clear_start_failure(&id);
+                                } else {
+                                    i.services.record_start_failure(&id, e.to_string());
+                                    return Err(e);
+                                }
+                            }
                         }
-                        res?;
-                    } else {
-                        i.services.start(&id).map_err(CoreError::ServiceError)?;
+                    } else if let Err(e) = i.services.start(&id) {
+                        if i.services.is_running_and_ready(&id) {
+                            i.services.clear_start_failure(&id);
+                        } else {
+                            return Err(CoreError::ServiceError(e));
+                        }
                     }
                     Ok(R::Ok)
                 }

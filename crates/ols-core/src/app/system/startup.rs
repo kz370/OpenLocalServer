@@ -91,6 +91,7 @@ impl Inner {
         // which is what the removed "start the web server" switch used to do separately.
         let mut web_applied = false;
         let default_web = self.web_config().default_server;
+        let mut seen_targets = std::collections::HashSet::new();
         for id in &startup.autostart_services {
             let web_id = if id == "web" {
                 Some(default_web.as_str())
@@ -99,20 +100,45 @@ impl Inner {
             } else {
                 None
             };
+            let canonical_id = web_id.unwrap_or(id.as_str());
+            if !seen_targets.insert(canonical_id.to_string()) {
+                continue;
+            }
             let result: Result<(), String> = if let Some(target_web) = web_id {
-                self.apply_web_server(target_web, &[])
-                    .map(|_| {
+                match self.ensure_web_server_started(target_web) {
+                    Ok(_) => {
                         self.services.clear_start_failure(target_web);
                         self.services.clear_start_failure(id);
-                    })
-                    .map_err(|e| {
-                        let msg = e.to_string();
-                        self.services.record_start_failure(target_web, &msg);
-                        self.services.record_start_failure(id, &msg);
-                        msg
-                    })
+                        Ok(())
+                    }
+                    Err(e) => {
+                        if self.services.is_running_and_ready(target_web) {
+                            self.services.clear_start_failure(target_web);
+                            self.services.clear_start_failure(id);
+                            Ok(())
+                        } else {
+                            let msg = e.to_string();
+                            self.services.record_start_failure(target_web, &msg);
+                            self.services.record_start_failure(id, &msg);
+                            Err(msg)
+                        }
+                    }
+                }
             } else {
-                self.services.start(id).map(|_| ())
+                match self.services.start(id) {
+                    Ok(_) => {
+                        self.services.clear_start_failure(id);
+                        Ok(())
+                    }
+                    Err(e) => {
+                        if self.services.is_running_and_ready(id) {
+                            self.services.clear_start_failure(id);
+                            Ok(())
+                        } else {
+                            Err(e)
+                        }
+                    }
+                }
             };
             if let Err(e) = result {
                 tracing::warn!(service = %id, error = %e, "autostart: service did not start");

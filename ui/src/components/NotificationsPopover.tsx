@@ -186,6 +186,14 @@ export function NotificationsPopover({ onNavigateLogs }: { onNavigateLogs?: (sou
                           <span className="font-medium text-foreground truncate">
                             {item.title || (item.type.charAt(0).toUpperCase() + item.type.slice(1))}
                           </span>
+                          {item.resolved && (
+                            <span
+                              title={item.resolvedAt ? `Resolved ${new Date(item.resolvedAt).toLocaleTimeString()}` : 'Resolved'}
+                              className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[10px] font-medium bg-success/15 text-success border border-success/30 shrink-0"
+                            >
+                              Resolved{item.resolvedAt ? ` · ${timeAgo(item.resolvedAt)}` : ''}
+                            </span>
+                          )}
                           {item.count > 1 && (
                             <span className="inline-flex items-center px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-muted text-muted-foreground border border-border shrink-0">
                               x{item.count}

@@ -12,8 +12,26 @@ import {
   runCommand,
   setCommandLifecycleHook,
 } from '@/core'
-import { notify } from '@/lib/notify'
-import { waitForService } from '@/lib/wait'
+import {
+  evaluateNotificationConditions,
+  notify,
+  resolveNotificationByKey,
+  resolveNotificationsForService,
+} from '@/lib/notify'
+import {
+  DEFAULT_SERVICE_READY_TIMEOUT_MS,
+  SERVICE_READY_POLL_INTERVAL_MS,
+  SERVICE_READY_TIMEOUTS_MS,
+  getServiceReadyTimeoutMs,
+  waitForService,
+} from '@/lib/wait'
+
+export {
+  DEFAULT_SERVICE_READY_TIMEOUT_MS,
+  SERVICE_READY_POLL_INTERVAL_MS,
+  SERVICE_READY_TIMEOUTS_MS,
+  getServiceReadyTimeoutMs,
+}
 
 // ---------------------------------------------------------------------------
 // Configuration constants (Rules 2 & 3 + Intent & Crash Grouping)
@@ -511,6 +529,134 @@ export function subscribeDiagnosticsRescan(fn: () => void): () => void {
 }
 
 // ---------------------------------------------------------------------------
+// Per-Service Operation Serialization & Live Readiness Verification
+// ---------------------------------------------------------------------------
+
+const serviceOpQueues = new Map<string, Promise<unknown>>()
+const inFlightStartPromises = new Map<string, Promise<unknown>>()
+
+/**
+ * Serializes start/stop/restart operations per service ID:
+ * - A second start while a start is pending joins the first one and does not start a second process.
+ * - A start for an already running and ready service is a no-op and never an error.
+ * - A start after a stop waits for the stop to finish.
+ */
+export async function runSerializedServiceOp<T>(
+  serviceId: string,
+  op: 'start' | 'stop' | 'restart' | 'reload',
+  fn: () => Promise<T>,
+): Promise<T> {
+  const canonicalId = serviceId === 'web' ? defaultWebServerId : serviceId
+
+  if (op === 'start') {
+    const existingStart = inFlightStartPromises.get(canonicalId)
+    if (existingStart) {
+      return (await existingStart) as T
+    }
+    if (currentlyHealthyRunningServices.has(canonicalId)) {
+      resolveNotificationsForService(canonicalId)
+      return undefined as T
+    }
+  }
+
+  const prevOp = serviceOpQueues.get(canonicalId) ?? Promise.resolve()
+  const runNext = async (): Promise<T> => {
+    await prevOp.catch(() => undefined)
+    if (op === 'start' && currentlyHealthyRunningServices.has(canonicalId)) {
+      resolveNotificationsForService(canonicalId)
+      return undefined as T
+    }
+    return await fn()
+  }
+
+  const nextPromise = runNext()
+  serviceOpQueues.set(canonicalId, nextPromise)
+  if (op === 'start') {
+    inFlightStartPromises.set(canonicalId, nextPromise)
+  }
+
+  try {
+    return await nextPromise
+  } finally {
+    if (inFlightStartPromises.get(canonicalId) === nextPromise) {
+      inFlightStartPromises.delete(canonicalId)
+    }
+    if (serviceOpQueues.get(canonicalId) === nextPromise) {
+      serviceOpQueues.delete(canonicalId)
+    }
+  }
+}
+
+/**
+ * Re-checks the current live state of a service before reporting any failure.
+ * If the service is running and ready now (or is currently alive and still binding its port
+ * within the readiness timeout), treats the start as a success and returns `true` (meaning
+ * the service IS ready and no failure notification should be shown).
+ */
+async function isServiceReadyOnLiveRecheck(serviceId: string): Promise<boolean> {
+  const canonicalId = serviceId === 'web' ? defaultWebServerId : serviceId
+  if (currentlyHealthyRunningServices.has(canonicalId)) {
+    resolveNotificationsForService(canonicalId)
+    return true
+  }
+
+  const deadline = Date.now() + getServiceReadyTimeoutMs(canonicalId)
+  while (Date.now() < deadline) {
+    const res = await runCommand({ type: 'list_services' }).catch(() => null)
+    if (res?.type !== 'services') {
+      return currentlyHealthyRunningServices.has(canonicalId)
+    }
+    updateFromServicesList(res.services)
+    const svc = res.services.find((s) => s.id === canonicalId)
+    if (!svc) return false
+    if (svc.running && svc.healthy !== false) {
+      resolveNotificationsForService(canonicalId)
+      return true
+    }
+    // If the process is not running at all (and no start is in flight), it has already exited
+    if (!svc.running && !inFlightStartPromises.has(canonicalId)) {
+      return false
+    }
+    await new Promise((r) => setTimeout(r, SERVICE_READY_POLL_INTERVAL_MS))
+  }
+
+  return currentlyHealthyRunningServices.has(canonicalId)
+}
+
+async function fetchUsefulFailureReason(serviceId: string, fallbackReason: string): Promise<string> {
+  const cleaned = cleanFailureReason(fallbackReason)
+  const isGeneric =
+    !cleaned ||
+    cleaned.toLowerCase() === `${getServiceDisplayName(serviceId).toLowerCase()} failed to start.` ||
+    cleaned.toLowerCase() === `failed to start ${getServiceDisplayName(serviceId).toLowerCase()}.` ||
+    cleaned.toLowerCase() === 'see its output on the logs page.'
+
+  if (!isGeneric) {
+    return cleaned
+  }
+
+  const logRes = await runCommand({
+    type: 'read_log',
+    source: logSourceForService(serviceId),
+    max_lines: 12,
+  }).catch(() => null)
+
+  if (logRes?.type === 'log_lines' && logRes.lines.length > 0) {
+    const failedLine = logRes.lines.find((l) =>
+      l.toLowerCase().startsWith('last start attempt failed:'),
+    )
+    if (failedLine) {
+      const extracted = cleanFailureReason(failedLine)
+      if (extracted) return extracted
+    }
+    const { lastLine } = pickLastErrorLine(logRes.lines)
+    if (lastLine) return lastLine
+  }
+
+  return cleaned || `${getServiceDisplayName(serviceId)} could not be started.`
+}
+
+// ---------------------------------------------------------------------------
 // Event Notifications: Start Failure & Unexpected Exit (with Grouping & Actions)
 // ---------------------------------------------------------------------------
 
@@ -524,6 +670,10 @@ function cleanFailureReason(raw: string): string {
 
 function recordAutostartFailure(serviceId: string, rawReason: string) {
   const canonicalId = serviceId === 'web' ? defaultWebServerId : serviceId
+  if (currentlyHealthyRunningServices.has(canonicalId)) {
+    resolveNotificationsForService(canonicalId)
+    return
+  }
   const intent = serviceIntents.get(canonicalId)
   if (
     autostartFailedServices.has(canonicalId) ||
@@ -538,24 +688,52 @@ function recordAutostartFailure(serviceId: string, rawReason: string) {
   autostartFailedServices.add(canonicalId)
   activeCrashNotifiedServices.add(canonicalId)
   startFailureNotifiedServices.add(canonicalId)
-  userStartingServices.delete(canonicalId)
-  const rec = getOrCreateIntent(canonicalId)
-  rec.expected = 'stopped'
-  emitStateChange()
-  requestDiagnosticsRescan()
 
-  const name = getServiceDisplayName(canonicalId)
-  const reason = cleanFailureReason(rawReason)
-  notify.error(`${name} failed to start.`, {
-    title: 'Service failed to start',
-    details: reason || `${name} could not be started during startup.`,
-    logSource: logSourceForService(canonicalId),
-  })
+  void (async () => {
+    // Before reporting a failure, re-check the live state of the service.
+    // If it is running and ready now, treat the start as success and do NOT notify.
+    if (await isServiceReadyOnLiveRecheck(canonicalId)) {
+      autostartFailedServices.delete(canonicalId)
+      activeCrashNotifiedServices.delete(canonicalId)
+      startFailureNotifiedServices.delete(canonicalId)
+      return
+    }
+    if (isShuttingDown || currentlyHealthyRunningServices.has(canonicalId)) {
+      return
+    }
+
+    userStartingServices.delete(canonicalId)
+    const rec = getOrCreateIntent(canonicalId)
+    rec.expected = 'stopped'
+    emitStateChange()
+    requestDiagnosticsRescan()
+
+    const name = getServiceDisplayName(canonicalId)
+    const reason = await fetchUsefulFailureReason(canonicalId, rawReason)
+    if (currentlyHealthyRunningServices.has(canonicalId)) {
+      resolveNotificationsForService(canonicalId)
+      return
+    }
+
+    const isPortConflict = /port\s+\d+\s+is\s+(already\s+)?in\s+use|bind\(\)|address already in use/i.test(reason)
+    const conditionKey = isPortConflict ? `port-conflict:${canonicalId}` : `start-failed:${canonicalId}`
+
+    notify.error(`${name} failed to start.`, {
+      id: `start-failed:${canonicalId}`,
+      conditionKey,
+      conditionKeys: [`start-failed:${canonicalId}`, `port-conflict:${canonicalId}`],
+      resolveWhen: () => currentlyHealthyRunningServices.has(canonicalId),
+      title: 'Service failed to start',
+      details: reason || `${name} could not be started during startup.`,
+      logSource: logSourceForService(canonicalId),
+    })
+  })()
 }
 
 /**
  * Rule 4: Notify once when a user-requested service start (manual or "Start all") fails.
- * Services that fail to start are reported by this notification only, never as "stopped unexpectedly".
+ * Before reporting a failure, re-checks the current live state of the service; if it is
+ * running and ready now, treats the start as success and does NOT notify.
  */
 export function notifyManualStartFailure(
   serviceId: string,
@@ -564,24 +742,57 @@ export function notifyManualStartFailure(
 ) {
   const canonicalId = serviceId === 'web' ? defaultWebServerId : serviceId
   serviceDisplayNames.set(canonicalId, serviceName)
-  userStartingServices.delete(canonicalId)
-  knownRunningServices.delete(canonicalId)
-  activeCrashNotifiedServices.add(canonicalId)
-  startFailureNotifiedServices.add(canonicalId)
-  pendingUnexpectedExits.delete(canonicalId)
 
-  const rec = getOrCreateIntent(canonicalId)
-  rec.expected = 'stopped'
-  rec.holdUntilMs = Date.now() + INTENT_HOLD_TIMEOUT_MS
-  emitStateChange()
+  if (currentlyHealthyRunningServices.has(canonicalId)) {
+    resolveNotificationsForService(canonicalId)
+    return
+  }
 
-  const problem = diag.problem || `Failed to start ${serviceName}.`
-  const details = diag.cause ? `${diag.cause}${diag.fix ? `\nFix: ${diag.fix}` : ''}` : undefined
-  notify.error(problem, {
-    title: 'Service failed to start',
-    details,
-    logSource: logSourceForService(canonicalId),
-  })
+  void (async () => {
+    if (await isServiceReadyOnLiveRecheck(canonicalId)) {
+      return
+    }
+    if (isShuttingDown || currentlyHealthyRunningServices.has(canonicalId)) {
+      return
+    }
+
+    userStartingServices.delete(canonicalId)
+    knownRunningServices.delete(canonicalId)
+    activeCrashNotifiedServices.add(canonicalId)
+    startFailureNotifiedServices.add(canonicalId)
+    pendingUnexpectedExits.delete(canonicalId)
+
+    const rec = getOrCreateIntent(canonicalId)
+    rec.expected = 'stopped'
+    rec.holdUntilMs = Date.now() + INTENT_HOLD_TIMEOUT_MS
+    emitStateChange()
+
+    const rawCause = diag.cause || diag.problem || ''
+    const usefulReason = await fetchUsefulFailureReason(canonicalId, rawCause)
+    if (currentlyHealthyRunningServices.has(canonicalId)) {
+      resolveNotificationsForService(canonicalId)
+      return
+    }
+
+    const problem = diag.problem || `${serviceName} failed to start.`
+    const details = usefulReason
+      ? `${usefulReason}${diag.fix ? `\nFix: ${diag.fix}` : ''}`
+      : undefined
+    const isPortConflict = /port\s+\d+\s+is\s+(already\s+)?in\s+use|bind\(\)|address already in use/i.test(
+      `${problem} ${usefulReason}`,
+    )
+    const conditionKey = isPortConflict ? `port-conflict:${canonicalId}` : `start-failed:${canonicalId}`
+
+    notify.error(problem, {
+      id: `start-failed:${canonicalId}`,
+      conditionKey,
+      conditionKeys: [`start-failed:${canonicalId}`, `port-conflict:${canonicalId}`],
+      resolveWhen: () => currentlyHealthyRunningServices.has(canonicalId),
+      title: 'Service failed to start',
+      details,
+      logSource: logSourceForService(canonicalId),
+    })
+  })()
 }
 
 // ---------------------------------------------------------------------------
@@ -752,7 +963,9 @@ async function flushUnexpectedExits() {
 
   const resolvedBatch: ResolvedExitInfo[] = []
   for (const entry of entries) {
-    if (isStopOrRestartExpected(entry.serviceId)) continue
+    if (isStopOrRestartExpected(entry.serviceId) || currentlyHealthyRunningServices.has(entry.serviceId)) {
+      continue
+    }
     resolvedBatch.push(await resolveExitInfo(entry))
   }
 
@@ -775,7 +988,10 @@ async function flushUnexpectedExits() {
     targetNotificationId = lastCrashNotificationId
   } else {
     combinedItems = resolvedBatch
-    targetNotificationId = `unexpected_exit_${now}`
+    targetNotificationId =
+      combinedItems.length === 1
+        ? `crashed:${combinedItems[0].serviceId}`
+        : `crashed:${combinedItems.map((i) => i.serviceId).sort().join(',')}`
   }
 
   lastCrashNotificationId = targetNotificationId
@@ -784,8 +1000,12 @@ async function flushUnexpectedExits() {
 
   if (combinedItems.length === 1) {
     const single = combinedItems[0]
+    const conditionKey = `crashed:${single.serviceId}`
     notify.error(single.bodyLine, {
-      id: targetNotificationId,
+      id: conditionKey,
+      conditionKey,
+      conditionKeys: [conditionKey],
+      resolveWhen: () => currentlyHealthyRunningServices.has(single.serviceId),
       title: `${single.serviceName} stopped unexpectedly`,
       details: single.extraDetails,
       logSource: single.logSource,
@@ -800,8 +1020,13 @@ async function flushUnexpectedExits() {
     const names = combinedItems.map((i) => i.serviceName).join(', ')
     const detailsList = combinedItems.map((i) => `${i.serviceName} — ${i.bodyLine}`).join('\n')
     const allIds = combinedItems.map((i) => i.serviceId)
+    const conditionKeys = allIds.map((id) => `crashed:${id}`)
+    const groupKey = `crashed:${[...allIds].sort().join(',')}`
     notify.error(`${names} stopped unexpectedly.`, {
       id: targetNotificationId,
+      conditionKey: groupKey,
+      conditionKeys,
+      resolveWhen: () => allIds.every((id) => currentlyHealthyRunningServices.has(id)),
       title: `${count} services stopped unexpectedly`,
       details: detailsList,
       logSource: combinedItems[0].logSource,
@@ -925,6 +1150,9 @@ function updateFromServicesList(services: ServiceStatus[], webData?: DashboardDa
       }
 
       if (isHealthyRunning) {
+        // Resolve any active condition-based notifications for this service as soon as it is running & ready!
+        resolveNotificationsForService(s.id)
+
         // If restarting and command is still in flight, wait until command finishes before locking 'running'
         if (intent.expected === 'restarting' && intent.inFlightOps > 0) {
           continue
@@ -943,6 +1171,7 @@ function updateFromServicesList(services: ServiceStatus[], webData?: DashboardDa
         autostartFailedServices.delete(s.id)
         activeCrashNotifiedServices.delete(s.id)
         startFailureNotifiedServices.delete(s.id)
+        pendingUnexpectedExits.delete(s.id)
       }
     } else {
       currentlyRunningServices.delete(s.id)
@@ -990,6 +1219,7 @@ function updateFromServicesList(services: ServiceStatus[], webData?: DashboardDa
   }
 
   if (runningSetChanged) {
+    evaluateNotificationConditions()
     emitStateChange()
     requestDiagnosticsRescan()
   }
@@ -1001,6 +1231,16 @@ async function checkAutostartAndProcessHealth() {
   if (checkingAutostartHealth || isShuttingDown) return
   checkingAutostartHealth = true
   try {
+    // Ensure we have a live services snapshot before evaluating process or autostart failures
+    // so we never treat a running service as stopped before the first dashboard poll finishes.
+    if (!liveDashboardLoaded) {
+      const svcRes = await runCommand({ type: 'list_services' }).catch(() => null)
+      if (svcRes?.type === 'services') {
+        liveDashboardLoaded = true
+        updateFromServicesList(svcRes.services)
+      }
+    }
+
     // 1. Inspect supervised processes for any crashed / failed state
     const procRes = await runCommand({ type: 'list_processes' }).catch(() => null)
     if (procRes?.type === 'processes') {
@@ -1008,7 +1248,7 @@ async function checkAutostartAndProcessHealth() {
     }
 
     // 2. For any configured auto-start service not yet running, check if its start attempt failed
-    if (startupSettingsLoaded) {
+    if (startupSettingsLoaded && liveDashboardLoaded) {
       const effective = getEffectiveAutostartIds()
       const graceExpired = Date.now() - appLaunchTimeMs >= STARTUP_GRACE_PERIOD_MS
 
@@ -1017,6 +1257,7 @@ async function checkAutostartAndProcessHealth() {
         const explicitlyStopped = intent?.expected === 'stopped' && intent.updatedAtMs > 0
         if (
           currentlyRunningServices.has(id) ||
+          currentlyHealthyRunningServices.has(id) ||
           autostartFailedServices.has(id) ||
           explicitlyStopped
         ) {
@@ -1059,17 +1300,38 @@ async function checkAutostartAndProcessHealth() {
 }
 
 function handleProcessSnapshot(processes: ProcessInfo[]) {
+  // First identify which service IDs have a live ('running' | 'starting' | 'restarting') process
+  // in the snapshot so a stale failed ProcessInfo record from an earlier or overlapping start attempt
+  // never triggers a false failure while the service is actually running!
+  const aliveServicesInSnapshot = new Set<string>()
   for (const p of processes) {
-    const serviceId = resolveServiceIdFromProcessName(p.name)
-    if (serviceId) {
-      latestProcessByService.set(serviceId, p)
+    const sid = resolveServiceIdFromProcessName(p.name)
+    if (!sid) continue
+    if (p.state === 'running' || p.state === 'starting' || p.state === 'restarting') {
+      aliveServicesInSnapshot.add(sid)
+      latestProcessByService.set(sid, p)
+    } else if (!aliveServicesInSnapshot.has(sid)) {
+      latestProcessByService.set(sid, p)
     }
+  }
 
+  for (const p of processes) {
     if (p.state !== 'crashed' && p.state !== 'failed') continue
     if (notifiedProcessIds.has(p.id)) continue
     notifiedProcessIds.add(p.id)
 
+    const serviceId = resolveServiceIdFromProcessName(p.name)
     if (!serviceId) continue
+
+    // If another process for this service is alive in the snapshot or the service is currently running,
+    // ignore this historical failed process record completely.
+    if (
+      aliveServicesInSnapshot.has(serviceId) ||
+      currentlyHealthyRunningServices.has(serviceId) ||
+      currentlyRunningServices.has(serviceId)
+    ) {
+      continue
+    }
 
     // If stop or restart was requested by user/app, ignore process exit completely
     if (isStopOrRestartExpected(serviceId)) {
@@ -1311,6 +1573,10 @@ export function handleCommandSuccess(command: CoreCommand, response: CoreRespons
       knownRunningServices.add(command.id)
       activeCrashNotifiedServices.delete(command.id)
       startFailureNotifiedServices.delete(command.id)
+      autostartFailedServices.delete(command.id)
+      pendingUnexpectedExits.delete(command.id)
+      resolveNotificationsForService(command.id)
+      evaluateNotificationConditions()
       emitStateChange()
       break
     }
@@ -1357,12 +1623,18 @@ export function handleCommandSuccess(command: CoreCommand, response: CoreRespons
               currentlyRunningServices.add(rep.server)
               currentlyHealthyRunningServices.add(rep.server)
               knownRunningServices.add(rep.server)
+              activeCrashNotifiedServices.delete(rep.server)
+              startFailureNotifiedServices.delete(rep.server)
+              autostartFailedServices.delete(rep.server)
+              pendingUnexpectedExits.delete(rep.server)
+              resolveNotificationsForService(rep.server)
             }
           }
           for (const id of WEB_SERVER_IDS) {
             userStartingServices.delete(id)
           }
           isWebCurrentlyRunning = true
+          evaluateNotificationConditions()
           emitStateChange()
         }
       }
@@ -1648,10 +1920,12 @@ export function evaluateDiagnosticsScan(findings: Finding[], healthProblems: Hea
   }
 
   // Clear resolved issues from baseline / unresolved sets and from pending candidates (Rule 3 & Rule 6)
+  // Also auto-resolve any condition-based diagnostics notifications whose issue cleared (Fix 2)
   let unresolvedChanged = false
   for (const id of [...unresolvedIssueIds]) {
     if (!currentActiveIds.has(id)) {
       unresolvedIssueIds.delete(id)
+      resolveNotificationByKey(`diagnostic:${id}`)
       unresolvedChanged = true
     }
   }
@@ -1662,6 +1936,7 @@ export function evaluateDiagnosticsScan(findings: Finding[], healthProblems: Hea
   for (const id of [...baselineIssueIds]) {
     if (!currentActiveIds.has(id)) {
       baselineIssueIds.delete(id)
+      resolveNotificationByKey(`diagnostic:${id}`)
     }
   }
 
@@ -1716,10 +1991,16 @@ export function evaluateDiagnosticsScan(findings: Finding[], healthProblems: Hea
       .map((f) => f.problem)
       .join('\n')
     const count = confirmedToNotify.length
+    const diagKeys = confirmedToNotify.map((f) => `diagnostic:${f.id}`)
+    const primaryKey =
+      diagKeys.length === 1 ? diagKeys[0] : `diagnostic:${confirmedToNotify.map((f) => f.id).sort().join(',')}`
     notify.recordHistory(
       'warning',
       `Diagnostics: ${count} ${count === 1 ? 'issue requires' : 'issues require'} attention.`,
       {
+        id: primaryKey,
+        conditionKey: primaryKey,
+        conditionKeys: diagKeys,
         title: 'Diagnostics',
         details: issueSummary || undefined,
         logSource: 'diagnostics',

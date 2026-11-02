@@ -2,13 +2,18 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  type NotificationItem,
   clearNotificationHistory,
   dismissNewestNotification,
   dismissNotification,
+  evaluateNotificationConditions,
   getUnreadNotificationCount,
   markAllNotificationsRead,
   notify,
   removeNotificationHistoryItem,
+  resetNotificationsForTest,
+  resolveNotificationByKey,
+  resolveNotificationsForService,
   subscribeNotificationHistory,
   subscribeNotifications,
 } from '../notify.ts'
@@ -226,4 +231,124 @@ test('removeNotificationHistoryItem removes a single entry', () => {
   assert.ok(currentHistory.includes(id2))
 
   unsub()
+})
+
+test('condition-based notifications replace in-place on same key and auto-resolve when condition clears', async () => {
+  resetNotificationsForTest()
+
+  let toasts: NotificationItem[] = []
+  let history: NotificationItem[] = []
+  const unsubToasts = subscribeNotifications((items) => {
+    toasts = items
+  })
+  const unsubHistory = subscribeNotificationHistory((items) => {
+    history = items
+  })
+
+  // 1. Fire start-failed:apache
+  notify.error('Apache failed to start.', {
+    id: 'start-failed:apache',
+    conditionKey: 'start-failed:apache',
+    conditionKeys: ['start-failed:apache', 'port-conflict:apache'],
+    title: 'Service failed to start',
+    details: 'Port 80 is already in use by another program',
+    logSource: 'web:apache:error',
+  })
+
+  assert.equal(toasts.length, 1)
+  assert.equal(history.length, 1)
+  assert.equal(getUnreadNotificationCount(), 1)
+  assert.equal(history[0].resolved, false)
+
+  // 2. Same condition fires again -> replaces existing notification instead of stacking (same key = one notification)
+  notify.error('Apache failed to start.', {
+    id: 'start-failed:apache',
+    conditionKey: 'start-failed:apache',
+    conditionKeys: ['start-failed:apache', 'port-conflict:apache'],
+    title: 'Service failed to start',
+    details: 'Port 8080 is already in use by another program',
+    logSource: 'web:apache:error',
+  })
+
+  assert.equal(toasts.length, 1)
+  assert.equal(history.length, 1)
+  assert.equal(history[0].details, 'Port 8080 is already in use by another program')
+  assert.equal(getUnreadNotificationCount(), 1)
+
+  // 3. One-off event (e.g. "Backup finished") does not auto-resolve
+  notify.success('Backup finished')
+  assert.equal(history.length, 2)
+
+  // 4. When Apache starts and becomes ready, resolveNotificationsForService('apache'):
+  //    - marks toast closing (animating out) and then removes it
+  //    - updates history entry in-place to resolved=true with resolvedAt timestamp (keeps it in history)
+  //    - decrements unread count to 0
+  const didResolve = resolveNotificationsForService('apache')
+  assert.equal(didResolve, true)
+  assert.equal(getUnreadNotificationCount(), 0)
+
+  const apacheHistory = history.find((h) => h.conditionKey === 'start-failed:apache')
+  assert.ok(apacheHistory, 'history entry must be kept, not deleted')
+  assert.equal(apacheHistory.resolved, true)
+  assert.equal(typeof apacheHistory.resolvedAt, 'number')
+  assert.equal(apacheHistory.read, true)
+
+  const backupHistory = history.find((h) => h.message === 'Backup finished')
+  assert.ok(backupHistory)
+  assert.ok(!backupHistory.resolved, 'one-off events do not auto-resolve')
+
+  // Toast animates out (closing = true immediately, then removed after 200ms)
+  await new Promise((r) => setTimeout(r, 250))
+  assert.equal(
+    toasts.filter((t) => t.conditionKey === 'start-failed:apache').length,
+    0,
+    'toast must be dismissed after animate-out',
+  )
+
+  unsubToasts()
+  unsubHistory()
+})
+
+test('evaluateNotificationConditions resolves notifications when resolveWhen predicate becomes true', () => {
+  resetNotificationsForTest()
+
+  let isApacheReady = false
+  let history: NotificationItem[] = []
+  const unsubHistory = subscribeNotificationHistory((items) => {
+    history = items
+  })
+
+  notify.error('Exit code 1: bind() to 0.0.0.0:80 failed', {
+    id: 'crashed:apache',
+    conditionKey: 'crashed:apache',
+    resolveWhen: () => isApacheReady,
+    title: 'Apache stopped unexpectedly',
+  })
+
+  assert.equal(getUnreadNotificationCount(), 1)
+  evaluateNotificationConditions()
+  assert.equal(getUnreadNotificationCount(), 1)
+
+  // Now Apache is running and ready
+  isApacheReady = true
+  evaluateNotificationConditions()
+
+  assert.equal(getUnreadNotificationCount(), 0)
+  assert.equal(history.length, 1)
+  assert.equal(history[0].resolved, true)
+  assert.equal(typeof history[0].resolvedAt, 'number')
+
+  // Direct resolveNotificationByKey on diagnostic issue also resolves it
+  notify.recordHistory('warning', 'Diagnostics: 1 issue requires attention.', {
+    id: 'diagnostic:port_conflict_80',
+    conditionKey: 'diagnostic:port_conflict_80',
+    needsAttention: true,
+    read: false,
+  })
+  assert.equal(getUnreadNotificationCount(), 1)
+  resolveNotificationByKey('diagnostic:port_conflict_80')
+  assert.equal(getUnreadNotificationCount(), 0)
+  assert.equal(history.find((h) => h.conditionKey === 'diagnostic:port_conflict_80')?.resolved, true)
+
+  unsubHistory()
 })

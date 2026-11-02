@@ -181,7 +181,9 @@ function ToastItem({
         item.type === 'warning' && 'border-warning/40 shadow-warning/5',
         item.type === 'error' && 'border-destructive/40 shadow-destructive/5',
         item.type === 'progress' && 'border-primary/40 shadow-primary/5',
-        'animate-in fade-in slide-in-from-bottom-2 motion-reduce:animate-none',
+        item.closing
+          ? 'opacity-0 translate-y-1 scale-95 pointer-events-none'
+          : 'animate-in fade-in slide-in-from-bottom-2 motion-reduce:animate-none',
       )}
     >
       <div className="flex items-start gap-2.5">

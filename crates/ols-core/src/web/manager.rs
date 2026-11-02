@@ -151,6 +151,25 @@ pub struct UsagePlan {
     pub pools: HashMap<String, Vec<ProcessId>>,
 }
 
+pub type InFlightWebStart = Arc<(
+    Mutex<Option<Result<ApplyReport, CoreError>>>,
+    std::sync::Condvar,
+)>;
+
+/// Default readiness timeout (30s) when starting a web server.
+pub const DEFAULT_WEB_READY_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Readiness polling interval (300ms) while waiting for a web server to bind its port.
+pub const WEB_READY_POLL_INTERVAL: Duration = Duration::from_millis(300);
+
+/// Per-web-server readiness timeout configuration.
+pub fn web_ready_timeout(server_id: &str) -> Duration {
+    match server_id {
+        "apache" | "nginx" | "caddy" => DEFAULT_WEB_READY_TIMEOUT,
+        _ => DEFAULT_WEB_READY_TIMEOUT,
+    }
+}
+
 pub struct WebManager {
     paths: AppPaths,
     runtimes: Arc<RuntimeManager>,
@@ -158,6 +177,10 @@ pub struct WebManager {
     certs: Arc<CertificateManager>,
     php: Arc<PhpPools>,
     state: Mutex<State>,
+    /// Per-server operation mutex serializing start/stop/restart/apply per web server ID.
+    server_locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
+    /// Active start operations per web server ID so concurrent starts join the first one.
+    in_flight_starts: Mutex<HashMap<String, InFlightWebStart>>,
     /// Settings → Resources (§129). Memory limits are per-server program flags; the CPU
     /// limit is applied by wrapping the server in the `cpulimit` utility, which is why it
     /// has to happen here at spawn time rather than being another command-line flag.
@@ -252,8 +275,36 @@ impl WebManager {
                 dns: None,
                 site_php: HashMap::new(),
             }),
+            server_locks: Mutex::new(HashMap::new()),
+            in_flight_starts: Mutex::new(HashMap::new()),
             limits: Mutex::new(Default::default()),
         }
+    }
+
+    pub fn server_lock(&self, id: &str) -> Arc<Mutex<()>> {
+        let mut locks = self.server_locks.lock().unwrap();
+        Arc::clone(
+            locks
+                .entry(id.to_string())
+                .or_insert_with(|| Arc::new(Mutex::new(()))),
+        )
+    }
+
+    /// True when the web server's process is alive AND (when it has enabled sites)
+    /// its HTTP port is actively accepting connections.
+    pub fn is_ready(&self, id: &str, cfg: &WebConfig, domains: &[Domain]) -> bool {
+        if !self.is_running_id(id) {
+            return false;
+        }
+        if sites_for_server(cfg, domains, id).is_empty() {
+            return true;
+        }
+        let ports = cfg.effective_ports(id);
+        TcpStream::connect_timeout(
+            &([127, 0, 0, 1], ports.http).into(),
+            Duration::from_millis(300),
+        )
+        .is_ok()
     }
 
     /// The CPU cap from Settings → Resources, applied to the next server start.
@@ -434,13 +485,17 @@ impl WebManager {
     }
 
     /// Stops one web server, leaving every other one running.
+    /// Serialized per server ID so a subsequent start waits for the stop and port release.
     pub fn stop_server(&self, id: &str) {
+        let lock = self.server_lock(id);
+        let _guard = lock.lock().unwrap();
         let running = self.state.lock().unwrap().servers.remove(id);
         if let Some(r) = running {
             self.supervisor.stop(r.process);
             let _ = self
                 .supervisor
                 .wait_for_exit(r.process, Duration::from_secs(5));
+            wait_port_free_all(Duration::from_secs(3));
         }
     }
 
@@ -495,8 +550,107 @@ impl WebManager {
         Ok(out)
     }
 
+    /// Ensures a web server is started and ready.
+    /// - If a start/apply for `server_id` is already in progress, joins the first one and
+    ///   does not start a second process.
+    /// - If `server_id` is already running and ready, returns `Ok` immediately as a no-op.
+    /// - If the start attempt returns an error, re-checks whether `server_id` is running
+    ///   and ready now before reporting failure.
+    pub fn ensure_started(
+        &self,
+        ctx: &ApplyContext,
+        domains: &[Domain],
+        server_id: &str,
+        hashes: &mut Vec<HashUpdate>,
+    ) -> Result<ApplyReport, CoreError> {
+        if let Some(in_flight) = self
+            .in_flight_starts
+            .lock()
+            .unwrap()
+            .get(server_id)
+            .cloned()
+        {
+            let (slot, cvar) = &*in_flight;
+            let mut guard = slot.lock().unwrap();
+            while guard.is_none() {
+                guard = cvar.wait(guard).unwrap();
+            }
+            if let Some(res) = guard.as_ref() {
+                return match res {
+                    Ok(rep) => Ok(rep.clone()),
+                    Err(e) => {
+                        if self.is_ready(server_id, ctx.cfg, domains) {
+                            Ok(ApplyReport {
+                                server: server_id.to_string(),
+                                ..Default::default()
+                            })
+                        } else {
+                            Err(werr(e.to_string()))
+                        }
+                    }
+                };
+            }
+        }
+
+        if self.is_ready(server_id, ctx.cfg, domains) {
+            return Ok(ApplyReport {
+                server: server_id.to_string(),
+                ..Default::default()
+            });
+        }
+
+        self.apply_one(ctx, domains, server_id, hashes)
+    }
+
     /// §28 for one server, rendering only the sites assigned to it.
+    /// Serialized per `server_id` and coalesced with any concurrent `ensure_started` call.
     pub fn apply_one(
+        &self,
+        ctx: &ApplyContext,
+        domains: &[Domain],
+        server_id: &str,
+        hashes: &mut Vec<HashUpdate>,
+    ) -> Result<ApplyReport, CoreError> {
+        let in_flight: InFlightWebStart = Arc::new((Mutex::new(None), std::sync::Condvar::new()));
+        self.in_flight_starts
+            .lock()
+            .unwrap()
+            .insert(server_id.to_string(), Arc::clone(&in_flight));
+
+        let server_lock = self.server_lock(server_id);
+        let _server_guard = server_lock.lock().unwrap();
+
+        let result = self.apply_one_locked(ctx, domains, server_id, hashes);
+        let final_result = match result {
+            Ok(rep) => Ok(rep),
+            Err(e) => {
+                // Before reporting a failure, re-check the current state of the server.
+                // If it is running and ready now, treat the start as success.
+                if self.is_ready(server_id, ctx.cfg, domains) {
+                    Ok(ApplyReport {
+                        server: server_id.to_string(),
+                        started: true,
+                        ..Default::default()
+                    })
+                } else {
+                    Err(e)
+                }
+            }
+        };
+
+        self.in_flight_starts.lock().unwrap().remove(server_id);
+        let (slot, cvar) = &*in_flight;
+        let stored = match &final_result {
+            Ok(rep) => Ok(rep.clone()),
+            Err(e) => Err(werr(e.to_string())),
+        };
+        *slot.lock().unwrap() = Some(stored);
+        cvar.notify_all();
+
+        final_result
+    }
+
+    fn apply_one_locked(
         &self,
         ctx: &ApplyContext,
         domains: &[Domain],
@@ -859,10 +1013,16 @@ impl WebManager {
             let _ = self
                 .supervisor
                 .wait_for_exit(process, Duration::from_secs(5));
-            wait_port_free_all(Duration::from_secs(4));
+            wait_ports_free(&[ports.http, ports.https], Duration::from_secs(5));
         }
 
-        // Ports must be ours to take.
+        // Ports must be ours to take. If a previous instance is just releasing the port,
+        // wait briefly before declaring a port conflict.
+        for (_label, port) in [("HTTP", ports.http), ("HTTPS", ports.https)] {
+            if !crate::port::port_is_free(port) {
+                wait_ports_free(&[port], Duration::from_millis(1200));
+            }
+        }
         for (label, port) in [("HTTP", ports.http), ("HTTPS", ports.https)] {
             if let PortStatus::InUse { pid, process_name } = check_port(port) {
                 return Err(werr(format!(
@@ -893,22 +1053,30 @@ impl WebManager {
             env: vec![],
             restart: None,
         });
-        if let Err(msg) = self.await_start(process, ports.http, expect_listener) {
+        // Register the process immediately so status checks while waiting for port
+        // readiness see the server as alive rather than stopped.
+        self.state
+            .lock()
+            .unwrap()
+            .servers
+            .insert(server.id().to_string(), Running { process });
+
+        let ready_timeout = web_ready_timeout(server.id());
+        if let Err(msg) = self.await_start(process, ports.http, expect_listener, ready_timeout) {
+            self.state.lock().unwrap().servers.remove(server.id());
             self.supervisor.stop(process);
+            let _ = self
+                .supervisor
+                .wait_for_exit(process, Duration::from_secs(3));
             // Give the OS the port back before reporting, or the next start would see
             // our own dying process as the owner of it.
-            wait_port_free_all(Duration::from_secs(3));
+            wait_ports_free(&[ports.http, ports.https], Duration::from_secs(3));
             let log_tail = tail(&server.error_log(layout), 8);
             return Err(werr(format!(
                 "{} did not start: {msg}{log_tail}",
                 server.name()
             )));
         }
-        self.state
-            .lock()
-            .unwrap()
-            .servers
-            .insert(server.id().to_string(), Running { process });
         report.started = true;
         Ok(())
     }
@@ -921,16 +1089,20 @@ impl WebManager {
         process: ProcessId,
         port: u16,
         expect_listener: bool,
+        timeout: Duration,
     ) -> Result<(), String> {
+        let _ = self
+            .supervisor
+            .wait_for_spawn(process, Duration::from_millis(5000));
         if expect_listener {
-            return self.wait_ready(process, port, Duration::from_secs(10));
+            return self.wait_ready(process, port, timeout);
         }
         let deadline = Instant::now() + Duration::from_millis(1500);
         while Instant::now() < deadline {
             if !self.supervisor.is_alive(process) {
                 return Err(self.exit_reason(process));
             }
-            std::thread::sleep(Duration::from_millis(100));
+            std::thread::sleep(Duration::from_millis(250));
         }
         Ok(())
     }
@@ -961,19 +1133,19 @@ impl WebManager {
             }
             if TcpStream::connect_timeout(
                 &([127, 0, 0, 1], port).into(),
-                Duration::from_millis(200),
+                Duration::from_millis(250),
             )
             .is_ok()
             {
                 return Ok(());
             }
-            if started.elapsed() > timeout {
+            if started.elapsed() >= timeout {
                 return Err(format!(
                     "nothing answered on port {port} within {}s",
                     timeout.as_secs()
                 ));
             }
-            std::thread::sleep(Duration::from_millis(100));
+            std::thread::sleep(WEB_READY_POLL_INTERVAL);
         }
     }
 
@@ -1632,6 +1804,16 @@ fn restore(snapshot: &HashMap<PathBuf, Option<String>>) {
 fn wait_port_free_all(timeout: Duration) {
     // Best effort: give the OS a moment to release listening sockets after a kill.
     std::thread::sleep(timeout.min(Duration::from_millis(600)));
+}
+
+fn wait_ports_free(ports: &[u16], timeout: Duration) {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if ports.iter().all(|p| crate::port::port_is_free(*p)) {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
 }
 
 /// Finds `exe` (with common Windows extensions) in `dir`, or on PATH when `dir` is None.

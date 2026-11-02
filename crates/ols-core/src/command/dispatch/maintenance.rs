@@ -110,11 +110,20 @@ impl Core {
                 }
                 C::RestartService { id } => {
                     if crate::web::SERVER_IDS.contains(&id.as_str()) {
-                        // A web server is restarted by re-applying it, so its sites' config
-                        // is re-rendered and reloaded rather than only bounced.
+                        // A web server is restarted by stopping it and re-applying its config.
                         i.services.stop(&id).map_err(CoreError::ServiceError)?;
                         std::thread::sleep(Duration::from_millis(800));
-                        i.apply_web_server(&id, &[]).map(|_| R::Ok)?;
+                        match i.apply_web_server(&id, &[]) {
+                            Ok(_) => i.services.clear_start_failure(&id),
+                            Err(e) => {
+                                if i.services.is_running_and_ready(&id) {
+                                    i.services.clear_start_failure(&id);
+                                } else {
+                                    i.services.record_start_failure(&id, e.to_string());
+                                    return Err(e);
+                                }
+                            }
+                        }
                         return Ok(R::Ok);
                     }
                     // A stop that did not take would only make the following start fail with
@@ -122,7 +131,13 @@ impl Core {
                     i.services.stop(&id).map_err(CoreError::ServiceError)?;
                     // The old process needs a moment to release its port before the new one binds it.
                     std::thread::sleep(Duration::from_millis(800));
-                    i.services.start(&id).map_err(CoreError::ServiceError)?;
+                    if let Err(e) = i.services.start(&id) {
+                        if i.services.is_running_and_ready(&id) {
+                            i.services.clear_start_failure(&id);
+                        } else {
+                            return Err(CoreError::ServiceError(e));
+                        }
+                    }
                     Ok(R::Ok)
                 }
 

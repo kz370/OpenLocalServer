@@ -11,7 +11,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { type Diagnostic, type PortStatus, type ServiceStatus, runCommand } from '@/core'
 import { createPersistentCache } from '@/lib/cache'
-import { notifyManualStartFailure, useStartingServices } from '@/lib/diagnosticsNotify'
+import {
+  notifyManualStartFailure,
+  runSerializedServiceOp,
+  useStartingServices,
+} from '@/lib/diagnosticsNotify'
 import { waitForService } from '@/lib/wait'
 
 type ServiceAction = 'start' | 'stop' | 'restart' | 'reload'
@@ -51,16 +55,18 @@ export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => v
     setError(null)
     setBusy(`svc:${service.id}:${action}`)
     try {
-      if (action === 'reload') {
-        // A web server reloads its config in place: no dropped connections.
-        await runCommand({ type: 'apply_web', overwrite: [] })
-      } else if (action === 'restart') {
-        await runCommand({ type: 'restart_service', id: service.id })
-        await waitForService(service.id, 'running')
-      } else {
-        await runCommand({ type: action === 'start' ? 'start_service' : 'stop_service', id: service.id })
-        await waitForService(service.id, action === 'start' ? 'running' : 'stopped')
-      }
+      await runSerializedServiceOp(service.id, action, async () => {
+        if (action === 'reload') {
+          // A web server reloads its config in place: no dropped connections.
+          await runCommand({ type: 'apply_web', overwrite: [] })
+        } else if (action === 'restart') {
+          await runCommand({ type: 'restart_service', id: service.id })
+          await waitForService(service.id, 'running')
+        } else {
+          await runCommand({ type: action === 'start' ? 'start_service' : 'stop_service', id: service.id })
+          await waitForService(service.id, action === 'start' ? 'running' : 'stopped')
+        }
+      })
       await refresh()
     } catch (err) {
       const diag = asDiagnostic(err)

@@ -11,7 +11,7 @@
 use std::collections::HashMap;
 use std::net::TcpStream;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -22,6 +22,22 @@ use crate::paths::AppPaths;
 use crate::port::port_is_free;
 use crate::process::{ProcessId, ProcessSpec, ProcessSupervisor};
 use crate::runtime::RuntimeManager;
+
+/// Default maximum time to wait for a service to bind its port and become ready.
+pub const DEFAULT_SERVICE_READY_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Poll interval while waiting for a service to become ready (alive + port listening).
+pub const SERVICE_READY_POLL_INTERVAL: Duration = Duration::from_millis(300);
+
+/// Per-service readiness timeout (configurable per service ID, default 30s).
+pub fn service_ready_timeout(id: &str) -> Duration {
+    match id {
+        "mariadb" | "postgres" => Duration::from_secs(45),
+        _ => DEFAULT_SERVICE_READY_TIMEOUT,
+    }
+}
+
+type InFlightServiceStart = Arc<(Mutex<Option<Result<ProcessId, String>>>, Condvar)>;
 
 /// In the order the pages list them. MariaDB is the MySQL-compatible server; MySQL itself
 /// is not offered.
@@ -114,6 +130,10 @@ pub struct ServiceManager {
     /// The web servers, listed and probed here but owned by `WebManager` — the Services
     /// page shows all three rows, and there is only ever one set of processes (§3.3).
     web: Mutex<Option<WebServers>>,
+    /// Per-service operation locks so start/stop/restart serialize per service ID.
+    op_locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
+    /// In-flight start operations per service ID so overlapping start requests join the first one.
+    in_flight_starts: Mutex<HashMap<String, InFlightServiceStart>>,
 }
 
 /// Settings are read fresh on every call, so the web rows always show current ports.
@@ -179,7 +199,18 @@ impl ServiceManager {
             custom,
             limits: Mutex::new(Default::default()),
             web: Mutex::new(None),
+            op_locks: Mutex::new(HashMap::new()),
+            in_flight_starts: Mutex::new(HashMap::new()),
         }
+    }
+
+    fn service_lock(&self, id: &str) -> Arc<Mutex<()>> {
+        self.op_locks
+            .lock()
+            .unwrap()
+            .entry(id.to_string())
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone()
     }
 
     /// Adds the three web servers to this list. They keep running through
@@ -425,6 +456,45 @@ impl ServiceManager {
         map.contains_key(id)
     }
 
+    /// True when the service process is alive AND (if it has a port) listening on its port.
+    pub fn is_running_and_ready(&self, id: &str) -> bool {
+        if let Some(handle) = self.web_handle() {
+            if crate::web::SERVER_IDS.contains(&id) {
+                let cfg = (handle.config)();
+                let domains = (handle.domains)();
+                return handle.web.is_ready(id, &cfg, &domains);
+            }
+        }
+        if !self.is_running(id) {
+            return false;
+        }
+        self.is_service_port_ready(id)
+    }
+
+    fn is_service_port_ready(&self, id: &str) -> bool {
+        if custom_service::is_custom_id(id) {
+            let def = self.custom.lock().unwrap().get(id);
+            return match def.and_then(|d| d.port.map(|p| (p, d.health))) {
+                Some((port, health)) => custom_service::probe(port, &health).unwrap_or_else(|| {
+                    TcpStream::connect_timeout(
+                        &([127, 0, 0, 1], port).into(),
+                        Duration::from_millis(300),
+                    )
+                    .is_ok()
+                }),
+                None => true,
+            };
+        }
+        match primary_port(id) {
+            Some(port) => TcpStream::connect_timeout(
+                &([127, 0, 0, 1], port).into(),
+                Duration::from_millis(300),
+            )
+            .is_ok(),
+            None => true,
+        }
+    }
+
     /// The process backing a running service, so the Logs page can read its
     /// output. `None` while it is stopped — the process is gone with its output.
     pub fn process_id(&self, id: &str) -> Option<ProcessId> {
@@ -528,26 +598,109 @@ impl ServiceManager {
 
     /// §61–68 / §101 one-click "Start". Each service needs a different command line, so
     /// this dispatches to a per-service starter — the shared part (recording the
-    /// resulting `ProcessId`, refusing a double-start) lives here once.
+    /// resulting `ProcessId`, coalescing concurrent starts, and waiting for readiness)
+    /// lives here once.
     ///
-    /// Waits for the spawn to be decided, so a process that never starts is an `Err`
-    /// with the OS reason rather than a success the UI then shows as a status that
-    /// silently reverted.
+    /// Waits for the spawn to be decided and the service port to become ready, so a
+    /// process that never starts or exits early is an `Err` with the OS/log reason
+    /// rather than a success the UI then shows as a status that silently reverted.
     pub fn start(&self, id: &str) -> Result<ProcessId, String> {
+        let inflight = {
+            let mut map = self.in_flight_starts.lock().unwrap();
+            if let Some(existing) = map.get(id).cloned() {
+                drop(map);
+                let (lock, cvar) = &*existing;
+                let mut guard = lock.lock().unwrap();
+                while guard.is_none() {
+                    guard = cvar.wait(guard).unwrap();
+                }
+                return match guard.clone().unwrap() {
+                    Ok(pid) => Ok(pid),
+                    Err(e) => {
+                        if self.is_running_and_ready(id) {
+                            self.clear_start_failure(id);
+                            Ok(self.process_id(id).unwrap_or(ProcessId(0)))
+                        } else {
+                            Err(e)
+                        }
+                    }
+                };
+            }
+            let entry: InFlightServiceStart = Arc::new((Mutex::new(None), Condvar::new()));
+            map.insert(id.to_string(), entry.clone());
+            entry
+        };
+
+        let result = {
+            let op_lock = self.service_lock(id);
+            let _op_guard = op_lock.lock().unwrap();
+            self.start_inner(id)
+        };
+
+        let final_result = match result {
+            Ok(pid) => {
+                self.clear_start_failure(id);
+                Ok(pid)
+            }
+            Err(reason) => {
+                if self.is_running_and_ready(id) {
+                    self.clear_start_failure(id);
+                    Ok(self.process_id(id).unwrap_or(ProcessId(0)))
+                } else {
+                    self.record_start_failure(id, reason.clone());
+                    Err(reason)
+                }
+            }
+        };
+
+        {
+            let (lock, cvar) = &*inflight;
+            *lock.lock().unwrap() = Some(final_result.clone());
+            cvar.notify_all();
+        }
+        self.in_flight_starts.lock().unwrap().remove(id);
+
+        final_result
+    }
+
+    fn start_inner(&self, id: &str) -> Result<ProcessId, String> {
         if let Some(handle) = self.web_handle() {
             if crate::web::SERVER_IDS.contains(&id) {
                 let cfg = (handle.config)();
+                let domains = (handle.domains)();
+                if handle.web.is_ready(id, &cfg, &domains) {
+                    self.clear_start_failure(id);
+                    return Ok(handle.web.running_pid(id).unwrap_or(ProcessId(0)));
+                }
                 let res = handle.web.start_server(id, &cfg).map_err(|e| e.to_string());
-                match &res {
-                    Ok(()) => self.clear_start_failure(id),
-                    Err(reason) => self.record_start_failure(id, reason.clone()),
+                if res.is_err() && handle.web.is_ready(id, &cfg, &domains) {
+                    self.clear_start_failure(id);
+                    return Ok(handle.web.running_pid(id).unwrap_or(ProcessId(0)));
                 }
                 res?;
                 return Ok(handle.web.running_pid(id).unwrap_or(ProcessId(0)));
             }
         }
+        if self.is_running_and_ready(id) {
+            self.clear_start_failure(id);
+            return Ok(self.process_id(id).unwrap_or(ProcessId(0)));
+        }
         if self.is_running(id) {
-            return Err(format!("{id} is already running"));
+            let deadline = Instant::now() + service_ready_timeout(id);
+            while Instant::now() < deadline {
+                if self.is_running_and_ready(id) {
+                    self.clear_start_failure(id);
+                    return Ok(self.process_id(id).unwrap_or(ProcessId(0)));
+                }
+                if !self.is_running(id) {
+                    break;
+                }
+                std::thread::sleep(SERVICE_READY_POLL_INTERVAL);
+            }
+            if self.is_running_and_ready(id) {
+                self.clear_start_failure(id);
+                return Ok(self.process_id(id).unwrap_or(ProcessId(0)));
+            }
         }
         if custom_service::is_custom_id(id) {
             let def = self
@@ -556,13 +709,7 @@ impl ServiceManager {
                 .unwrap()
                 .get(id)
                 .ok_or_else(|| format!("unknown service: {id}"))?;
-            let started = match self.start_custom(&def) {
-                Ok(pid) => pid,
-                Err(reason) => {
-                    self.record_start_failure(id, reason.clone());
-                    return Err(reason);
-                }
-            };
+            let started = self.start_custom(&def)?;
             let process_id = self.track_start(id, started)?;
             return Ok(process_id);
         }
@@ -572,10 +719,7 @@ impl ServiceManager {
             .into_iter()
             .next()
             .ok_or_else(|| {
-                let reason =
-                    format!("{id} is not installed — install it from the Runtimes page first");
-                self.record_start_failure(id, reason.clone());
-                reason
+                format!("{id} is not installed — install it from the Runtimes page first")
             })?;
 
         let display_name = self
@@ -583,16 +727,16 @@ impl ServiceManager {
             .display_name(id)
             .unwrap_or_else(|| id.to_string());
         if let Some(port) = primary_port(id).filter(|p| !port_is_free(*p)) {
-            let reason = format!("port {port} is already in use, so {display_name} can't start");
-            self.record_start_failure(id, reason.clone());
+            if self.is_running_and_ready(id) {
+                self.clear_start_failure(id);
+                return Ok(self.process_id(id).unwrap_or(ProcessId(0)));
+            }
+            let reason = Self::describe_port_conflict(port, &display_name);
             return Err(reason);
         }
         if id == "mailpit" && !port_is_free(mailpit_smtp_port()) {
-            let reason = format!(
-                "SMTP port {} is already in use, so {display_name} can't start",
-                mailpit_smtp_port()
-            );
-            self.record_start_failure(id, reason.clone());
+            let smtp_port = mailpit_smtp_port();
+            let reason = Self::describe_port_conflict(smtp_port, &display_name);
             return Err(reason);
         }
 
@@ -607,16 +751,31 @@ impl ServiceManager {
         };
         match started {
             Ok(process_id) => self.track_start(id, process_id),
-            Err(reason) => {
-                self.record_start_failure(id, reason.clone());
-                Err(reason)
-            }
+            Err(reason) => Err(reason),
         }
     }
 
-    /// Records a freshly started process, and turns "the OS refused to spawn it" into an
-    /// error carrying the reason. Long enough for a local spawn to be decided, short
-    /// enough that a slow disk cannot hang the UI thread.
+    fn describe_port_conflict(port: u16, display_name: &str) -> String {
+        match crate::port::check_port(port) {
+            crate::port::PortStatus::InUse {
+                pid: Some(pid),
+                process_name: Some(name),
+            } => format!(
+                "Port {port} is already in use by {name} (PID {pid}), so {display_name} can't start"
+            ),
+            crate::port::PortStatus::InUse {
+                pid: None,
+                process_name: Some(name),
+            } => format!("Port {port} is already in use by {name}, so {display_name} can't start"),
+            _ => format!(
+                "Port {port} is already in use by another program, so {display_name} can't start"
+            ),
+        }
+    }
+
+    /// Records a freshly started process, waits for spawn, and polls for readiness
+    /// (process alive AND listening on its port) every 300ms up to the per-service
+    /// readiness timeout (~30s default, 45s for SQL servers).
     fn track_start(&self, id: &str, process_id: ProcessId) -> Result<ProcessId, String> {
         match self
             .supervisor
@@ -631,8 +790,51 @@ impl ServiceManager {
                     .lock()
                     .unwrap()
                     .insert(id.to_string(), process_id);
-                self.start_failures.lock().unwrap().remove(id);
-                Ok(process_id)
+
+                let timeout = service_ready_timeout(id);
+                let deadline = Instant::now() + timeout;
+                loop {
+                    if !self.supervisor.is_alive(process_id) {
+                        self.running.lock().unwrap().remove(id);
+                        if self.is_running_and_ready(id) {
+                            self.start_failures.lock().unwrap().remove(id);
+                            return Ok(self.process_id(id).unwrap_or(process_id));
+                        }
+                        let detail = self.extract_exit_reason(process_id);
+                        tracing::error!(service = id, %detail, "service exited before becoming ready");
+                        return Err(format!("{id} failed to start: {detail}"));
+                    }
+                    if self.is_service_port_ready(id) {
+                        self.start_failures.lock().unwrap().remove(id);
+                        return Ok(process_id);
+                    }
+                    if Instant::now() >= deadline {
+                        break;
+                    }
+                    std::thread::sleep(SERVICE_READY_POLL_INTERVAL);
+                }
+
+                if self.is_running_and_ready(id) {
+                    self.start_failures.lock().unwrap().remove(id);
+                    return Ok(process_id);
+                }
+
+                self.supervisor.stop(process_id);
+                let _ = self
+                    .supervisor
+                    .wait_for_exit(process_id, Duration::from_secs(3));
+                self.running.lock().unwrap().remove(id);
+                let detail = self.extract_exit_reason(process_id);
+                let reason = if detail.is_empty() {
+                    format!("{id} did not become ready within {}s", timeout.as_secs())
+                } else {
+                    format!(
+                        "{id} did not become ready within {}s: {detail}",
+                        timeout.as_secs()
+                    )
+                };
+                tracing::error!(service = id, %reason, "service readiness timed out");
+                Err(reason)
             }
             Err(reason) => {
                 // The record is already terminal `Failed` and owns no PID, so there is
@@ -640,12 +842,30 @@ impl ServiceManager {
                 self.running.lock().unwrap().remove(id);
                 self.last_process.lock().unwrap().remove(id);
                 tracing::error!(service = id, %reason, "service failed to start");
-                self.start_failures
-                    .lock()
-                    .unwrap()
-                    .insert(id.to_string(), reason.clone());
                 Err(format!("{id} could not be started: {reason}"))
             }
+        }
+    }
+
+    fn extract_exit_reason(&self, process_id: ProcessId) -> String {
+        let exit_code = self
+            .supervisor
+            .snapshot()
+            .into_iter()
+            .find(|p| p.id == process_id)
+            .and_then(|p| p.exit_code);
+        let lines = self.supervisor.recent_output(process_id);
+        let last_line = lines
+            .iter()
+            .rev()
+            .map(|l| l.trim())
+            .find(|l| !l.is_empty())
+            .map(|s| s.to_string());
+        match (exit_code, last_line) {
+            (Some(code), Some(line)) => format!("Exit code {code}: {line}"),
+            (Some(code), None) => format!("Exit code {code}"),
+            (None, Some(line)) => line,
+            (None, None) => "process exited unexpectedly".to_string(),
         }
     }
 
@@ -666,10 +886,11 @@ impl ServiceManager {
         self.start_failures.lock().unwrap().remove(id);
     }
 
-    /// Stops a service and waits for the process to actually be gone. This used to
-    /// return `()` unconditionally, so a kill the OS ignored reported success and the
-    /// row went back to Inactive on the next poll with nothing said about it.
+    /// Stops a service and waits for the process to actually be gone and its port released.
+    /// Serialized per service ID so a subsequent `start` waits for the stop to finish.
     pub fn stop(&self, id: &str) -> Result<(), String> {
+        let op_lock = self.service_lock(id);
+        let _op_guard = op_lock.lock().unwrap();
         if let Some(handle) = self.web_handle() {
             if crate::web::SERVER_IDS.contains(&id) {
                 handle.web.stop_server(id);
@@ -687,6 +908,16 @@ impl ServiceManager {
             .supervisor
             .wait_for_exit(process_id, Duration::from_secs(10))
         {
+            if let Some(port) = primary_port(id).or_else(|| {
+                custom_service::is_custom_id(id)
+                    .then(|| self.custom.lock().unwrap().get(id).and_then(|d| d.port))
+                    .flatten()
+            }) {
+                let deadline = Instant::now() + Duration::from_secs(5);
+                while Instant::now() < deadline && !port_is_free(port) {
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+            }
             return Ok(());
         }
         Err(format!(

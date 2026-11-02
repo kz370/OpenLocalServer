@@ -22,6 +22,18 @@ export interface NotificationItem {
   statusText?: string
   duration?: number // auto-hide duration in ms (undefined = persistent)
   needsAttention?: boolean
+  /** Condition key for condition-based notifications (e.g. "start-failed:apache", "crashed:apache"). */
+  conditionKey?: string
+  /** Multiple condition keys for grouped notifications (e.g. ["crashed:apache", "crashed:mariadb"]). */
+  conditionKeys?: string[]
+  /** Keys within conditionKeys that have already resolved. */
+  resolvedConditionKeys?: string[]
+  /** True once the underlying error/warning condition has cleared. */
+  resolved?: boolean
+  /** Timestamp (ms) when the condition resolved. */
+  resolvedAt?: number
+  /** True while the toast is animating out before dismissal. */
+  closing?: boolean
 }
 
 export interface ProgressNotificationHandle {
@@ -50,12 +62,13 @@ function loadHistory(): NotificationItem[] {
     return (parsed as NotificationItem[])
       .filter((item) => {
         if (!item || typeof item.message !== 'string') return false
-        // Drop legacy pre-fix startup diagnostics and false stop-exit history entries
+        // Drop legacy pre-fix startup diagnostics, false stop-exit, and unkeyed false start-failed history entries
         if (
           (item.logSource === 'diagnostics' &&
             (item.message === 'Diagnostics: All issues resolved.' ||
               /^Diagnostics:\s*\d+\s+issues?\s+require/i.test(item.message))) ||
-          item.title === 'Service exited unexpectedly'
+          item.title === 'Service exited unexpectedly' ||
+          (item.title === 'Service failed to start' && !item.conditionKey)
         ) {
           return false
         }
@@ -85,6 +98,7 @@ let toasts: NotificationItem[] = []
 let history: NotificationItem[] = loadHistory()
 const listeners = new Set<(items: NotificationItem[]) => void>()
 const historyListeners = new Set<(items: NotificationItem[]) => void>()
+const conditionPredicates = new Map<string, () => boolean>()
 
 function emitToasts() {
   listeners.forEach((fn) => fn([...toasts]))
@@ -104,6 +118,7 @@ export function canMergeNotification(
   logSource?: string | null,
   details?: string | null,
 ): boolean {
+  if (prev.resolved) return false
   if (prev.type !== type) return false
   if (prev.message !== message) return false
   if ((prev.logSource ?? null) !== (logSource ?? null)) return false
@@ -117,11 +132,21 @@ function nextId(): string {
   return `notify_${Date.now()}_${++idCounter}`
 }
 
+function matchesConditionKey(item: NotificationItem, key: string): boolean {
+  if (!key) return false
+  if (item.conditionKey === key || item.id === key) return true
+  if (item.conditionKeys && item.conditionKeys.includes(key)) return true
+  return false
+}
+
 function pushNotification(
   type: NotificationType,
   message: string,
   opts: {
     id?: string
+    conditionKey?: string
+    conditionKeys?: string[]
+    resolveWhen?: () => boolean
     title?: string
     details?: string | null
     logSource?: string | null
@@ -136,10 +161,68 @@ function pushNotification(
 ): string {
   const showToast = opts.toast !== false
   const now = Date.now()
-  let targetId = opts.id || nextId()
+  const conditionKey = opts.conditionKey ?? (opts.id && opts.id.includes(':') ? opts.id : undefined)
+  const conditionKeys = opts.conditionKeys
+  let targetId = opts.id || conditionKey || nextId()
 
-  // 1. Toast de-duplication: only merge with consecutive toasts[0] within 5 minutes
-  if (showToast && toasts.length > 0 && !opts.action && canMergeNotification(toasts[0], type, message, opts.logSource, opts.details)) {
+  if (conditionKey && opts.resolveWhen) {
+    conditionPredicates.set(conditionKey, opts.resolveWhen)
+  }
+  if (conditionKeys && opts.resolveWhen) {
+    for (const k of conditionKeys) {
+      conditionPredicates.set(k, opts.resolveWhen)
+    }
+  }
+
+  // 1. Toast handling: replace by conditionKey / id if present (same key = one notification), or merge consecutive
+  const existingToastByKeyIdx = showToast
+    ? toasts.findIndex(
+        (t) =>
+          (opts.id && t.id === opts.id) ||
+          (conditionKey && (t.conditionKey === conditionKey || t.id === conditionKey)),
+      )
+    : -1
+
+  if (showToast && existingToastByKeyIdx !== -1) {
+    const prev = toasts[existingToastByKeyIdx]
+    targetId = prev.id
+    let duration = opts.duration
+    if (duration === undefined) {
+      if (type === 'progress' || type === 'error') duration = undefined
+      else if (opts.action) duration = opts.action.isUndo ? UNDO_ACTION_MS : undefined
+      else if (type === 'warning') duration = WARNING_MS
+      else duration = SUCCESS_INFO_MS
+    }
+    toasts[existingToastByKeyIdx] = {
+      id: targetId,
+      type,
+      title: opts.title,
+      message,
+      details: opts.details,
+      logSource: opts.logSource,
+      action: opts.action,
+      count: 1,
+      createdAt: now,
+      read: opts.read ?? false,
+      progress: opts.progress,
+      statusText: opts.statusText,
+      duration,
+      needsAttention: opts.needsAttention,
+      conditionKey,
+      conditionKeys,
+      resolvedConditionKeys: undefined,
+      resolved: false,
+      resolvedAt: undefined,
+      closing: false,
+    }
+    emitToasts()
+  } else if (
+    showToast &&
+    toasts.length > 0 &&
+    !opts.action &&
+    !conditionKey &&
+    canMergeNotification(toasts[0], type, message, opts.logSource, opts.details)
+  ) {
     const prev = toasts[0]
     targetId = prev.id
     const updated: NotificationItem = {
@@ -147,6 +230,7 @@ function pushNotification(
       count: prev.count + 1,
       createdAt: now,
       duration: opts.duration ?? prev.duration,
+      closing: false,
     }
     toasts[0] = updated
     emitToasts()
@@ -182,22 +266,27 @@ function pushNotification(
       statusText: opts.statusText,
       duration,
       needsAttention: opts.needsAttention,
+      conditionKey,
+      conditionKeys,
+      resolved: false,
+      closing: false,
     }
 
-    const existingToastIdx = opts.id ? toasts.findIndex((t) => t.id === opts.id) : -1
-    if (existingToastIdx !== -1) {
-      toasts[existingToastIdx] = item
-    } else {
-      toasts = [item, ...toasts].slice(0, MAX_VISIBLE)
-    }
+    toasts = [item, ...toasts].slice(0, MAX_VISIBLE)
     emitToasts()
   }
 
-  // 2. History de-duplication: replace by explicit id or merge with consecutive history[0] within 5 minutes
+  // 2. History de-duplication: replace by conditionKey or explicit id (same key = one notification), or merge consecutive
   if (type !== 'progress') {
-    const existingHistoryIdx = opts.id ? history.findIndex((h) => h.id === opts.id) : -1
+    const existingHistoryIdx = history.findIndex(
+      (h) =>
+        (opts.id && h.id === opts.id) ||
+        (conditionKey && (h.conditionKey === conditionKey || h.id === conditionKey)),
+    )
     if (existingHistoryIdx !== -1) {
-      history[existingHistoryIdx] = {
+      const prev = history[existingHistoryIdx]
+      targetId = prev.id
+      const updatedItem: NotificationItem = {
         id: targetId,
         type,
         title: opts.title,
@@ -210,9 +299,21 @@ function pushNotification(
         read: opts.read ?? false,
         duration: opts.duration,
         needsAttention: opts.needsAttention,
+        conditionKey,
+        conditionKeys,
+        resolvedConditionKeys: undefined,
+        resolved: false,
+        resolvedAt: undefined,
       }
+      // Move replaced condition notification to top of history so its fresh occurrence is visible
+      history = [updatedItem, ...history.filter((_, idx) => idx !== existingHistoryIdx)].slice(0, MAX_HISTORY)
       emitHistory()
-    } else if (history.length > 0 && !opts.action && canMergeNotification(history[0], type, message, opts.logSource, opts.details)) {
+    } else if (
+      history.length > 0 &&
+      !opts.action &&
+      !conditionKey &&
+      canMergeNotification(history[0], type, message, opts.logSource, opts.details)
+    ) {
       const prev = history[0]
       const updated: NotificationItem = {
         ...prev,
@@ -237,6 +338,9 @@ function pushNotification(
         read: opts.read ?? false,
         duration: opts.duration,
         needsAttention: opts.needsAttention,
+        conditionKey,
+        conditionKeys,
+        resolved: false,
       }
       history = [historyItem, ...history].slice(0, MAX_HISTORY)
       emitHistory()
@@ -246,9 +350,174 @@ function pushNotification(
   return targetId
 }
 
-export function dismissNotification(id: string) {
+const TOAST_CLOSE_ANIMATION_MS = 200
+
+export function dismissNotification(id: string, animate = false) {
+  if (animate && typeof setTimeout !== 'undefined') {
+    const idx = toasts.findIndex((t) => t.id === id)
+    if (idx !== -1 && !toasts[idx].closing) {
+      toasts[idx] = { ...toasts[idx], closing: true }
+      emitToasts()
+      setTimeout(() => {
+        toasts = toasts.filter((t) => t.id !== id)
+        emitToasts()
+      }, TOAST_CLOSE_ANIMATION_MS)
+      return
+    }
+  }
   toasts = toasts.filter((t) => t.id !== id)
   emitToasts()
+}
+
+/**
+ * Registers a resolve condition predicate for a condition key (e.g. "start-failed:apache").
+ */
+export function registerNotificationCondition(conditionKey: string, isResolved: () => boolean) {
+  conditionPredicates.set(conditionKey, isResolved)
+}
+
+/**
+ * Evaluates all registered condition predicates and resolves any whose condition has cleared.
+ */
+export function evaluateNotificationConditions() {
+  for (const [key, isResolved] of Array.from(conditionPredicates.entries())) {
+    try {
+      if (isResolved()) {
+        resolveNotificationByKey(key)
+      }
+    } catch {
+      // ignore predicate error
+    }
+  }
+}
+
+/**
+ * Resolves a condition-based notification by its key (e.g. "start-failed:apache", "crashed:apache"):
+ * 1. Dismisses the visible toast (animates out).
+ * 2. Updates the history entry in-place to "Resolved" with a timestamp (keeps it in history).
+ * 3. Removes it from the unread count so the bell badge decrements immediately.
+ */
+export function resolveNotificationByKey(conditionKey: string): boolean {
+  if (!conditionKey) return false
+  const now = Date.now()
+  let resolvedAny = false
+
+  // 1. Check visible toasts
+  const toastIdsToDismiss: string[] = []
+  let toastsUpdated = false
+  toasts = toasts.map((t) => {
+    if (!matchesConditionKey(t, conditionKey)) return t
+    if (t.conditionKeys && t.conditionKeys.length > 1) {
+      const prevResolved = new Set(t.resolvedConditionKeys ?? [])
+      prevResolved.add(conditionKey)
+      const allResolved = t.conditionKeys.every((k) => prevResolved.has(k))
+      if (allResolved) {
+        toastIdsToDismiss.push(t.id)
+      }
+      toastsUpdated = true
+      return { ...t, resolvedConditionKeys: Array.from(prevResolved) }
+    }
+    toastIdsToDismiss.push(t.id)
+    return t
+  })
+  if (toastsUpdated) {
+    emitToasts()
+  }
+  for (const id of toastIdsToDismiss) {
+    resolvedAny = true
+    dismissNotification(id, true)
+  }
+
+  // 2. Update history entry in-place to "Resolved" with a timestamp (keep in history, do not delete)
+  let historyChanged = false
+  history = history.map((h) => {
+    if (!matchesConditionKey(h, conditionKey)) return h
+    if (h.conditionKeys && h.conditionKeys.length > 1) {
+      const prevResolved = new Set(h.resolvedConditionKeys ?? [])
+      prevResolved.add(conditionKey)
+      const allResolved = h.conditionKeys.every((k) => prevResolved.has(k))
+      if (allResolved && !h.resolved) {
+        historyChanged = true
+        resolvedAny = true
+        return {
+          ...h,
+          resolvedConditionKeys: Array.from(prevResolved),
+          resolved: true,
+          resolvedAt: now,
+          read: true,
+          needsAttention: false,
+          action: undefined,
+        }
+      }
+      if (prevResolved.size !== (h.resolvedConditionKeys?.length ?? 0)) {
+        historyChanged = true
+        return { ...h, resolvedConditionKeys: Array.from(prevResolved) }
+      }
+      return h
+    }
+    if (!h.resolved || !h.read || h.needsAttention) {
+      historyChanged = true
+      resolvedAny = true
+      return {
+        ...h,
+        resolved: true,
+        resolvedAt: h.resolvedAt ?? now,
+        read: true,
+        needsAttention: false,
+        action: undefined,
+      }
+    }
+    return h
+  })
+
+  if (historyChanged) {
+    emitHistory()
+  }
+
+  return resolvedAny
+}
+
+/**
+ * Resolves all condition-based notifications for a given service ID
+ * (start-failed:<id>, crashed:<id>, port-conflict:<id>, diagnostic:service-unhealthy:<id>, etc.).
+ */
+export function resolveNotificationsForService(serviceId: string): boolean {
+  const norm = serviceId.trim().toLowerCase()
+  if (!norm) return false
+  const keys = [
+    `start-failed:${norm}`,
+    `crashed:${norm}`,
+    `port-conflict:${norm}`,
+    `diagnostic:service-unhealthy:${norm}`,
+    `diagnostic:web-stopped:${norm}`,
+    `diagnostic:port-conflict:${norm}`,
+  ]
+  let any = false
+  for (const key of keys) {
+    if (resolveNotificationByKey(key)) {
+      any = true
+    }
+  }
+  // Also resolve any active toast or history item whose conditionKey ends with `:${norm}` or logSource is for this service
+  const extraKeys = new Set<string>()
+  for (const item of [...toasts, ...history]) {
+    if (item.conditionKey && item.conditionKey.toLowerCase().endsWith(`:${norm}`)) {
+      extraKeys.add(item.conditionKey)
+    }
+    if (item.conditionKeys) {
+      for (const k of item.conditionKeys) {
+        if (k.toLowerCase().endsWith(`:${norm}`)) {
+          extraKeys.add(k)
+        }
+      }
+    }
+  }
+  for (const key of extraKeys) {
+    if (resolveNotificationByKey(key)) {
+      any = true
+    }
+  }
+  return any
 }
 
 export function dismissNewestNotification(): boolean {
@@ -297,12 +566,21 @@ export function markAllNotificationsRead() {
 }
 
 export function isAttentionItem(item: NotificationItem): boolean {
+  if (item.resolved) return false
   if (item.needsAttention !== undefined) return item.needsAttention
   return item.type === 'error' || item.type === 'warning'
 }
 
 export function getUnreadNotificationCount(): number {
   return history.filter((h) => !h.read && isAttentionItem(h)).length
+}
+
+export function resetNotificationsForTest() {
+  toasts = []
+  history = []
+  conditionPredicates.clear()
+  emitToasts()
+  emitHistory()
 }
 
 export const notify = {
@@ -335,6 +613,10 @@ export const notify = {
   warning(
     message: string,
     opts?: {
+      id?: string
+      conditionKey?: string
+      conditionKeys?: string[]
+      resolveWhen?: () => boolean
       title?: string
       action?: NotificationAction
       duration?: number
@@ -349,6 +631,9 @@ export const notify = {
     message: string,
     opts?: {
       id?: string
+      conditionKey?: string
+      conditionKeys?: string[]
+      resolveWhen?: () => boolean
       title?: string
       details?: string | null
       logSource?: string | null
@@ -362,6 +647,10 @@ export const notify = {
     type: NotificationType,
     message: string,
     opts: {
+      id?: string
+      conditionKey?: string
+      conditionKeys?: string[]
+      resolveWhen?: () => boolean
       title?: string
       details?: string | null
       logSource?: string | null

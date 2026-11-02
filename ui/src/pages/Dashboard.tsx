@@ -21,8 +21,12 @@ import {
 } from '@/core'
 import { formatBytes, useAction, usePoll } from '@/lib/hooks'
 import { createPersistentCache } from '@/lib/cache'
-import { notifyManualStartFailure, useStartingServices } from '@/lib/diagnosticsNotify'
-import { notify } from '@/lib/notify'
+import {
+  notifyManualStartFailure,
+  runSerializedServiceOp,
+  useStartingServices,
+} from '@/lib/diagnosticsNotify'
+import { notify, resolveNotificationsForService } from '@/lib/notify'
 import { cn } from '@/lib/utils'
 import { waitForService } from '@/lib/wait'
 import { confirmAction } from '@/lib/confirm'
@@ -117,15 +121,17 @@ export function DashboardPage({
         return next
       })
       try {
-        if (action === 'reload') {
-          await runCommand({ type: 'apply_web', overwrite: [] })
-        } else if (action === 'restart') {
-          await runCommand({ type: 'restart_service', id: s.id })
-          await waitForService(s.id, 'running')
-        } else {
-          await runCommand({ type: action === 'start' ? 'start_service' : 'stop_service', id: s.id })
-          await waitForService(s.id, action === 'start' ? 'running' : 'stopped')
-        }
+        await runSerializedServiceOp(s.id, action, async () => {
+          if (action === 'reload') {
+            await runCommand({ type: 'apply_web', overwrite: [] })
+          } else if (action === 'restart') {
+            await runCommand({ type: 'restart_service', id: s.id })
+            await waitForService(s.id, 'running')
+          } else {
+            await runCommand({ type: action === 'start' ? 'start_service' : 'stop_service', id: s.id })
+            await waitForService(s.id, action === 'start' ? 'running' : 'stopped')
+          }
+        })
         await refresh()
         setDiagToken((t) => t + 1)
       } catch (e) {
@@ -241,38 +247,55 @@ export function DashboardPage({
                   })()
                 : void (async () => {
                     await run('start-all', async () => {
-                      const promises: Promise<unknown>[] = targetsToStart.map((service) =>
-                        runCommand({ type: 'start_service', id: service.id })
+                      // Build deduplicated start targets so we never dispatch both start_service(apache)
+                      // and apply_web for the same web server simultaneously.
+                      const effectiveTargets = [...targetsToStart]
+                      const hasWebTarget = effectiveTargets.some((s) =>
+                        ['nginx', 'apache', 'caddy'].includes(s.id),
                       )
-                      if (shouldStartWeb) {
-                        promises.push(runCommand({ type: 'apply_web', overwrite: [] }))
+                      if (shouldStartWeb && !hasWebTarget && web?.default_server) {
+                        const defaultWebSvc = (data?.services ?? []).find(
+                          (s) => s.id === web.default_server && s.installed && !s.running,
+                        )
+                        if (defaultWebSvc) {
+                          effectiveTargets.push(defaultWebSvc)
+                        }
                       }
-                      const results = await Promise.allSettled(promises)
-                      await Promise.all(
-                        targetsToStart.map((service) => waitForService(service.id, 'running').catch(() => undefined))
+
+                      const promises: Promise<unknown>[] = effectiveTargets.map((service) =>
+                        runSerializedServiceOp(service.id, 'start', async () => {
+                          await runCommand({ type: 'start_service', id: service.id })
+                          await waitForService(service.id, 'running')
+                        }),
                       )
-                      await refresh()
+                      const results = await Promise.allSettled(promises)
+                      const latestData = await refresh()
                       setDiagToken((t) => t + 1)
 
-                      const failedItems: string[] = []
+                      const liveServices = latestData?.services ?? []
+                      const failedEntries: { svc: ServiceStatus; diag: Diagnostic }[] = []
+
                       results.forEach((r, i) => {
+                        const svc = effectiveTargets[i]
+                        if (!svc) return
+                        const liveSvc = liveServices.find((x) => x.id === svc.id)
+                        const isReadyNow = Boolean(liveSvc && liveSvc.running && liveSvc.healthy !== false)
+                        if (isReadyNow) {
+                          resolveNotificationsForService(svc.id)
+                          return
+                        }
                         if (r.status === 'rejected') {
-                          const svc = targetsToStart[i]
-                          const name = svc?.name ?? (i === targetsToStart.length && shouldStartWeb ? 'Web server' : `Service ${i}`)
-                          const diag = asDiagnostic(r.reason)
-                          failedItems.push(`${name}: ${diag.cause || diag.problem}`)
+                          failedEntries.push({ svc, diag: asDiagnostic(r.reason) })
                         }
                       })
-                      if (failedItems.length > 0) {
-                        notify.error(
-                          failedItems.length === 1
-                            ? `Failed to start ${failedItems[0].split(':')[0]}.`
-                            : `${failedItems.length} services failed to start.`,
-                          {
-                            title: 'Service failed to start',
-                            details: failedItems.join('\n'),
-                          },
-                        )
+
+                      if (failedEntries.length === 1) {
+                        const { svc, diag } = failedEntries[0]
+                        notifyManualStartFailure(svc.id, svc.name, diag)
+                      } else if (failedEntries.length > 1) {
+                        for (const { svc, diag } of failedEntries) {
+                          notifyManualStartFailure(svc.id, svc.name, diag)
+                        }
                       }
                     })
                   })()

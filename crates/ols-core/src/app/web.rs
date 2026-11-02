@@ -185,6 +185,36 @@ impl Inner {
         Ok(report)
     }
 
+    /// Starts a single web server if it is not already running and ready, joining any
+    /// in-flight start for `server_id` and treating an already-running-and-ready server
+    /// as a no-op.
+    pub fn ensure_web_server_started(&self, server_id: &str) -> Result<ApplyReport, CoreError> {
+        let cfg = self.web_config();
+        Self::require_distinct_ports(&cfg)?;
+        let php_for = |d: &Domain| -> Option<String> {
+            let detail = self.project_detail(d.project_id.as_deref()?)?;
+            detail
+                .resolved
+                .into_iter()
+                .find(|r| r.id == "php")
+                .and_then(|r| r.installed_version)
+        };
+        let runtime_bin = |d: &Domain, rt: &str| self.runtime_bin_for(d.project_id.as_deref(), rt);
+        let ctx = ApplyContext {
+            cfg: &cfg,
+            php_for: &php_for,
+            runtime_bin: &runtime_bin,
+            overwrite: &[],
+        };
+        let snapshot = self.domains.lock().unwrap().list();
+        let mut hashes = Vec::new();
+        let report = self
+            .web
+            .ensure_started(&ctx, &snapshot, server_id, &mut hashes)?;
+        self.record_generated_hashes(&hashes)?;
+        Ok(report)
+    }
+
     /// Stores the hashes an apply produced, so a hand-edited config file is reported as
     /// drift on the next apply instead of being silently overwritten.
     pub(crate) fn record_generated_hashes(
