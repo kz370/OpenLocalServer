@@ -77,6 +77,17 @@ curl -H "Authorization: Bearer ols_..." -H "Content-Type: application/json" \
 ```
 Success `{"ok":true,"result":{...}}`. Fail `{"ok":false,"error":{problem,cause,fix}}` with 4xx.
 
+## Model Context Protocol (MCP — `ols-mcp`)
+Exposes local OpenLocalServer capabilities over JSON-RPC 2.0 stdio to AI assistants and agents (Claude Desktop, Cursor, Antigravity, etc.).
+- Authentication: Opt-in bearer token (`--token <token>` or `OLS_MCP_TOKEN`). Stored in OS keyring.
+- Exposed tools:
+  - Sites & Domains: `ols_get_sites_dir`, `ols_list_domains`, `ols_get_domain`, `ols_add_domain`, `ols_update_domain`, `ols_remove_domain`, `ols_delete_site`, `ols_inspect_site_folder`, `ols_restart_site_app`
+  - Projects: `ols_list_projects`, `ols_add_project` (with auto-detection and duplicate protection), `ols_update_project`, `ols_inspect_project_folder`, `ols_list_project_types`, `ols_add_custom_project_type`, `ols_rename_custom_project_type`, `ols_remove_custom_project_type`
+  - Editors & Tools: `ols_list_editors`
+  - Databases: `ols_list_databases`, `ols_create_database`, `ols_list_tables`, `ols_execute_sql`
+  - Services & Runtimes: `ols_list_services`, `ols_start_service`, `ols_stop_service`, `ols_restart_service`, `ols_list_runtimes`, `ols_install_runtime`, `ols_refresh_runtimes`
+  - Web & Tasks: `ols_apply_web`, `ols_validate_web`, `ols_list_tasks`, `ols_run_command` (raw CoreCommand dispatcher)
+
 ## Errors
 All layers return Diagnostic: `problem` (short), `cause` (root), `fix` (actionable, often runnable CoreCommand). UI renders ErrorCard with Fix/Details. CLI prints aligned problem/cause/fix. Never expose secrets, keys, tokens, or absolute home paths (masked + redacted).
 

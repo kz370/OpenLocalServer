@@ -364,6 +364,14 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
   }
 
   const handleHideProject = async (p: Project) => {
+    const linked = getProjectDomains(p)
+    if (linked.length > 0) {
+      notify.error(
+        `Cannot hide "${p.name}" because it is currently connected to site(s): ${linked.map((d) => d.hostname).join(', ')}. Delete or unlink the site(s) first.`,
+      )
+      return
+    }
+
     const ok = await confirmAction(
       `This will remove "${p.name}" from your projects list in OpenLocalServer. The project directory and all files on disk remain untouched.`,
       `Hide project "${p.name}"?`,
@@ -448,6 +456,8 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
         label: 'Hide from list',
         icon: <EyeOff className="size-4" />,
         danger: true,
+        disabled: linked.length > 0,
+        hint: linked.length > 0 ? 'Connected to site' : undefined,
         onSelect: () => void handleHideProject(p),
       },
     ]

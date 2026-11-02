@@ -348,34 +348,87 @@ impl Inner {
     /// Reads one skip list, oldest entries last. Values written by earlier versions were
     /// plain strings and are read as entries with no timestamp.
     pub fn remove_project(&self, id: &str) -> Result<(), CoreError> {
-        let path = self
-            .projects
-            .lock()
-            .unwrap()
-            .get(id)
-            .map(|p| p.path.clone());
+        let (path, name) = {
+            let projects = self.projects.lock().unwrap();
+            let p = projects.get(id);
+            (
+                p.as_ref().map(|pr| pr.path.clone()),
+                p.as_ref().map(|pr| pr.name.clone()),
+            )
+        };
+
+        // Guard: A project cannot be removed if it is connected to a site
+        if let Some(ref path_str) = path {
+            let domains = self.domains.lock().unwrap();
+            let connected: Vec<String> = domains
+                .list()
+                .into_iter()
+                .filter(|d| {
+                    d.project_id.as_deref() == Some(id)
+                        || (!d.root.is_empty() && crate::project::same_path(&d.root, path_str))
+                })
+                .map(|d| d.hostname)
+                .collect();
+
+            if !connected.is_empty() {
+                let project_name = name.unwrap_or_else(|| id.to_string());
+                let site_list = connected.join(", ");
+                return Err(CoreError::failed_fix(
+                    "Cannot remove project connected to a site.",
+                    format!(
+                        "Project '{project_name}' is currently connected to site(s): {site_list}."
+                    ),
+                    "Delete or unlink the connected site(s) before removing this project.",
+                ));
+            }
+        }
+
         self.projects.lock().unwrap().remove(id)?;
         if let Some(path) = path {
             self.push_skip(PROJECT_SKIP, &path)?;
         }
+        let _ = self.project_events.send(());
         Ok(())
     }
 
     /// Deletes a project without a domain by moving its folder into an `ols_excluded_sites` folder
     /// in the same directory instead of permanently deleting it.
     pub fn delete_project(&self, id: &str) -> Result<(), CoreError> {
-        let path_str = {
-            let mut projects = self.projects.lock().unwrap();
+        let (path_str, name) = {
+            let projects = self.projects.lock().unwrap();
             let p = projects.get(id).ok_or_else(|| {
                 CoreError::failed(
                     "Project not found",
                     format!("{id} is not a registered project"),
                 )
             })?;
-            let path = p.path.clone();
-            projects.remove(id)?;
-            path
+            (p.path.clone(), p.name.clone())
         };
+
+        // Guard: A project cannot be deleted if it is connected to a site
+        {
+            let domains = self.domains.lock().unwrap();
+            let connected: Vec<String> = domains
+                .list()
+                .into_iter()
+                .filter(|d| {
+                    d.project_id.as_deref() == Some(id)
+                        || (!d.root.is_empty() && crate::project::same_path(&d.root, &path_str))
+                })
+                .map(|d| d.hostname)
+                .collect();
+
+            if !connected.is_empty() {
+                let site_list = connected.join(", ");
+                return Err(CoreError::failed_fix(
+                    "Cannot delete project connected to a site.",
+                    format!("Project '{name}' is currently connected to site(s): {site_list}."),
+                    "Delete or unlink the connected site(s) before deleting this project.",
+                ));
+            }
+        }
+
+        self.projects.lock().unwrap().remove(id)?;
         let folder_path = PathBuf::from(&path_str);
         if folder_path.is_dir() {
             let excluded_folder = self.primary_excluded_folder();

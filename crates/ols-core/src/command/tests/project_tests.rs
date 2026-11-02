@@ -707,3 +707,65 @@ fn inspect_project_folder_detects_tauri_and_auto_adds_project() {
     };
     assert_eq!(p.project_type.as_deref(), Some("custom:Tauri"));
 }
+
+#[test]
+fn cannot_remove_or_delete_project_connected_to_a_site() {
+    let (core, home) = test_core();
+    let dir = home.paths.root().join("connected-app");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let project = match core
+        .dispatch(CoreCommand::AddProject {
+            path: dir.display().to_string(),
+            name: Some("Connected App".into()),
+            project_type: None,
+        })
+        .unwrap()
+    {
+        CoreResponse::Project { project } => project,
+        other => panic!("expected Project, got {other:?}"),
+    };
+
+    // Connect a site to this project
+    let domain = Domain {
+        hostname: "connected.test".into(),
+        project_id: Some(project.id.clone()),
+        root: dir.display().to_string(),
+        kind: crate::domain::SiteKind::Static,
+        https: false,
+        redirect_https: false,
+        wildcard: false,
+        enabled: true,
+        ownership: Ownership::Managed,
+        app: None,
+        blocks: Default::default(),
+        generated_hashes: Default::default(),
+        public_domain: None,
+        tunnel_id: None,
+        server: None,
+        path_prefix: None,
+        icon: None,
+        ..Default::default()
+    };
+    core.inner().domains.lock().unwrap().add(domain).unwrap();
+
+    // Trying to remove_project must fail
+    let remove_err = core
+        .dispatch(CoreCommand::RemoveProject {
+            id: project.id.clone(),
+        })
+        .unwrap_err();
+    assert!(remove_err
+        .to_string()
+        .contains("Cannot remove project connected to a site"));
+
+    // Trying to delete_project must fail
+    let delete_err = core
+        .dispatch(CoreCommand::DeleteProject {
+            id: project.id.clone(),
+        })
+        .unwrap_err();
+    assert!(delete_err
+        .to_string()
+        .contains("Cannot delete project connected to a site"));
+}

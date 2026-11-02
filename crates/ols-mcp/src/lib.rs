@@ -451,6 +451,105 @@ fn mcp_tools() -> Vec<McpTool> {
                 "required": ["command", "args"]
             }),
         },
+        McpTool {
+            name: "ols_list_projects".into(),
+            description: Some("List all registered standalone and site-linked projects including name, path, project type (preset or custom, e.g. Tauri), health status, and standalone flag.".to_string()),
+            input_schema: json!({ "type": "object", "properties": {} }),
+        },
+        McpTool {
+            name: "ols_add_project".into(),
+            description: Some("Register/add a folder as a project in OpenLocalServer. Validates path uniqueness, auto-detects framework/project type (e.g. Tauri, Laravel, React, etc.) if omitted or set to 'auto', and ensures it is tracked.".to_string()),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Folder path of the project. If relative, resolved against OLS_SITES_DIR."
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Optional display name for the project (defaults to folder name)."
+                    },
+                    "project_type": {
+                        "type": "string",
+                        "description": "Optional project type or framework preset (e.g. 'laravel', 'react', 'nextjs', 'custom:Tauri', 'custom:Rust') or 'auto'."
+                    }
+                },
+                "required": ["path"]
+            }),
+        },
+        McpTool {
+            name: "ols_update_project".into(),
+            description: Some("Update settings for an existing project by project ID.".to_string()),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "The project ID." },
+                    "name": { "type": "string", "description": "Optional updated display name." },
+                    "project_type": { "type": "string", "description": "Optional updated project type / framework preset." },
+                    "icon": { "type": "string", "description": "Optional updated Font Awesome icon name." }
+                },
+                "required": ["id"]
+            }),
+        },
+        McpTool {
+            name: "ols_inspect_project_folder".into(),
+            description: Some("Inspect a directory to detect framework presets (Laravel, Symfony, WordPress, PHP, Node, Next.js, React, Vue, Go, Rust, .NET, Java, Static HTML, Tauri), check whether it is already registered or duplicate, and suggest project name.".to_string()),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Folder path to inspect. If relative, resolved against OLS_SITES_DIR."
+                    }
+                },
+                "required": ["path"]
+            }),
+        },
+        McpTool {
+            name: "ols_list_project_types".into(),
+            description: Some("List available project types: bundled framework presets and custom project types (e.g. Tauri).".to_string()),
+            input_schema: json!({ "type": "object", "properties": {} }),
+        },
+        McpTool {
+            name: "ols_add_custom_project_type".into(),
+            description: Some("Add a new custom project type to OpenLocalServer.".to_string()),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "Name of the custom project type (e.g. 'Tauri', 'Rust', 'SvelteKit')." }
+                },
+                "required": ["name"]
+            }),
+        },
+        McpTool {
+            name: "ols_rename_custom_project_type".into(),
+            description: Some("Rename an existing custom project type, automatically updating all projects using it.".to_string()),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "old_name": { "type": "string", "description": "Current name of the custom project type." },
+                    "new_name": { "type": "string", "description": "New name for the custom project type." }
+                },
+                "required": ["old_name", "new_name"]
+            }),
+        },
+        McpTool {
+            name: "ols_remove_custom_project_type".into(),
+            description: Some("Remove a custom project type, safely resetting projects using it to Auto.".to_string()),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "Name of the custom project type to remove." }
+                },
+                "required": ["name"]
+            }),
+        },
+        McpTool {
+            name: "ols_list_editors".into(),
+            description: Some("List auto-detected and configured development code editors/IDEs (VS Code, Cursor, Windsurf, Trae, Zed, JetBrains IDEs, etc.) and their visibility status.".to_string()),
+            input_schema: json!({ "type": "object", "properties": {} }),
+        },
     ]
 }
 
@@ -895,6 +994,53 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
             serde_json::from_value::<CoreCommand>(cmd_args)
                 .map_err(|e| format!("failed to deserialize command '{cmd_name}': {e}"))?
         }
+        "ols_list_projects" => C::ListProjects,
+        "ols_add_project" => {
+            let path_raw = req_str!("path");
+            let p = std::path::Path::new(&path_raw);
+            let resolved_path = if p.is_absolute() {
+                p.to_path_buf()
+            } else {
+                resolve_sites_dir().join(p)
+            };
+            C::AddProject {
+                path: resolved_path.to_string_lossy().to_string(),
+                name: opt_str!("name"),
+                project_type: opt_str!("project_type"),
+            }
+        }
+        "ols_update_project" => C::UpdateProject {
+            id: req_str!("id"),
+            name: opt_str!("name"),
+            icon: opt_str!("icon"),
+            clear_icon: opt_bool!("clear_icon").unwrap_or(false),
+            project_type: opt_str!("project_type"),
+            clear_project_type: opt_bool!("clear_project_type").unwrap_or(false),
+        },
+        "ols_inspect_project_folder" => {
+            let path_raw = req_str!("path");
+            let p = std::path::Path::new(&path_raw);
+            let resolved_path = if p.is_absolute() {
+                p.to_path_buf()
+            } else {
+                resolve_sites_dir().join(p)
+            };
+            C::InspectProjectFolder {
+                path: resolved_path.to_string_lossy().to_string(),
+            }
+        }
+        "ols_list_project_types" => C::ListCustomProjectTypes,
+        "ols_add_custom_project_type" => C::AddCustomProjectType {
+            name: req_str!("name"),
+        },
+        "ols_rename_custom_project_type" => C::RenameCustomProjectType {
+            old_name: req_str!("old_name"),
+            new_name: req_str!("new_name"),
+        },
+        "ols_remove_custom_project_type" => C::RemoveCustomProjectType {
+            name: req_str!("name"),
+        },
+        "ols_list_editors" => C::ListEditors,
         _ => return Err(format!("unknown tool: {name}")),
     })
 }
@@ -1109,6 +1255,74 @@ fn format_response(response: &CoreResponse) -> String {
                             .unwrap_or_else(|| "-".into()),
                         e.duration_ms,
                         e.timed_out
+                    ));
+                }
+                out
+            }
+        }
+        CoreResponse::Projects { projects } => {
+            if projects.is_empty() {
+                "No projects registered.".into()
+            } else {
+                let mut out = String::from("Registered projects:\n");
+                for p in projects {
+                    let ptype = p.project_type.as_deref().unwrap_or("auto");
+                    out.push_str(&format!(
+                        "- {} [{}] (type: {}, path: {}, standalone: {})\n",
+                        p.name, p.id, ptype, p.path, p.standalone
+                    ));
+                }
+                out
+            }
+        }
+        CoreResponse::Project { project } => {
+            format!(
+                "Project '{}' [{}]:\n- Path: {}\n- Type: {}\n- Health: {:?}\n- Standalone: {}",
+                project.name,
+                project.id,
+                project.path,
+                project.project_type.as_deref().unwrap_or("auto"),
+                project.health,
+                project.standalone
+            )
+        }
+        CoreResponse::ProjectFolderInspection { inspection } => {
+            let mut out = format!(
+                "Project Folder Inspection:\n- Path: {}\n- Exists: {}\n- Is directory: {}\n- Suggested name: {}\n- Detected type: {}\n",
+                inspection.path,
+                inspection.exists,
+                inspection.is_dir,
+                inspection.suggested_name,
+                inspection.detected_type.as_deref().unwrap_or("unknown")
+            );
+            if let Some(dup) = &inspection.duplicate_of {
+                out.push_str(&format!(
+                    "- Duplicate of existing project: '{}' ({})\n",
+                    dup.name, dup.id
+                ));
+            }
+            out
+        }
+        CoreResponse::CustomProjectTypes { types } => {
+            if types.is_empty() {
+                "No custom project types registered.".into()
+            } else {
+                let mut out = String::from("Custom project types:\n");
+                for t in types {
+                    out.push_str(&format!("- {} ({})\n", t.name, t.id));
+                }
+                out
+            }
+        }
+        CoreResponse::Editors { editors } => {
+            if editors.is_empty() {
+                "No editors found.".into()
+            } else {
+                let mut out = String::from("Configured & detected editors:\n");
+                for e in editors {
+                    out.push_str(&format!(
+                        "- {} [{}] (exe: {}, installed: {}, visible: {})\n",
+                        e.name, e.id, e.executable, e.installed, !e.hidden
                     ));
                 }
                 out
@@ -2062,6 +2276,69 @@ mod tests {
             assert!(path.ends_with("app.db"));
         } else {
             panic!("expected CreateSqlite");
+        }
+    }
+
+    #[test]
+    fn build_command_project_and_editor_tools() {
+        let tools = mcp_tools();
+        assert!(tools.iter().any(|t| t.name == "ols_list_projects"));
+        assert!(tools.iter().any(|t| t.name == "ols_add_project"));
+        assert!(tools.iter().any(|t| t.name == "ols_update_project"));
+        assert!(tools.iter().any(|t| t.name == "ols_inspect_project_folder"));
+        assert!(tools.iter().any(|t| t.name == "ols_list_project_types"));
+        assert!(tools
+            .iter()
+            .any(|t| t.name == "ols_add_custom_project_type"));
+        assert!(tools
+            .iter()
+            .any(|t| t.name == "ols_rename_custom_project_type"));
+        assert!(tools
+            .iter()
+            .any(|t| t.name == "ols_remove_custom_project_type"));
+        assert!(tools.iter().any(|t| t.name == "ols_list_editors"));
+
+        let list_proj_cmd = build_command("ols_list_projects", &json!({})).unwrap();
+        assert!(matches!(list_proj_cmd, CoreCommand::ListProjects));
+
+        let add_proj_cmd = build_command(
+            "ols_add_project",
+            &json!({ "path": "my-tauri-app", "project_type": "custom:Tauri" }),
+        )
+        .unwrap();
+        if let CoreCommand::AddProject {
+            path, project_type, ..
+        } = add_proj_cmd
+        {
+            assert!(path.ends_with("my-tauri-app"));
+            assert_eq!(project_type.as_deref(), Some("custom:Tauri"));
+        } else {
+            panic!("expected AddProject");
+        }
+
+        let inspect_cmd = build_command(
+            "ols_inspect_project_folder",
+            &json!({ "path": "C:/dev/app" }),
+        )
+        .unwrap();
+        if let CoreCommand::InspectProjectFolder { path } = inspect_cmd {
+            assert_eq!(path, "C:/dev/app");
+        } else {
+            panic!("expected InspectProjectFolder");
+        }
+
+        let list_types_cmd = build_command("ols_list_project_types", &json!({})).unwrap();
+        assert!(matches!(
+            list_types_cmd,
+            CoreCommand::ListCustomProjectTypes
+        ));
+
+        let add_custom_cmd =
+            build_command("ols_add_custom_project_type", &json!({ "name": "Tauri" })).unwrap();
+        if let CoreCommand::AddCustomProjectType { name } = add_custom_cmd {
+            assert_eq!(name, "Tauri");
+        } else {
+            panic!("expected AddCustomProjectType");
         }
     }
 }
