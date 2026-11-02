@@ -464,6 +464,8 @@ fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
     let start_all = MenuItem::with_id(app, "start_all", "▶ Start all", true, None::<&str>)?;
     let stop_all = MenuItem::with_id(app, "stop_all", "■ Stop all", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
+    // A muda item has one parent; appending the same separator twice is undefined there.
+    let separator_end = PredefinedMenuItem::separator(app)?;
 
     let mut site_items: Vec<Box<dyn tauri::menu::IsMenuItem<Wry>>> = Vec::new();
     for site in core.inner().domains.lock().unwrap().list() {
@@ -704,7 +706,7 @@ fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
             &quick,
             &tools,
             &preferences,
-            &separator,
+            &separator_end,
             &quit,
         ],
     )
@@ -773,6 +775,38 @@ fn tray_fingerprint(core: &Core) -> u64 {
     hasher.finish()
 }
 
+/// Set when the tray menu content changed but could not be swapped yet because the
+/// user had the popup open. The swap happens on the first refresh after it closes.
+static TRAY_MENU_DIRTY: AtomicBool = AtomicBool::new(false);
+
+/// True while the calling (main) thread is inside a menu loop, i.e. the tray popup is
+/// showing. `TrackPopupMenu` pumps the main thread's messages, so a `run_on_main_thread`
+/// closure runs *inside* the open menu; replacing the tray menu there destroys the
+/// `HMENU` Windows is still tracking, and the next message into it is a use-after-free
+/// (an access violation in release builds, where timing and shell hooks differ from dev).
+#[cfg(windows)]
+fn tray_menu_is_open() -> bool {
+    use windows::Win32::System::Threading::GetCurrentThreadId;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetGUIThreadInfo, GUITHREADINFO, GUI_INMENUMODE, GUI_POPUPMENUMODE,
+    };
+
+    let mut info = GUITHREADINFO {
+        cbSize: std::mem::size_of::<GUITHREADINFO>() as u32,
+        ..Default::default()
+    };
+    // SAFETY: `info` is a correctly sized, writable GUITHREADINFO that outlives the call.
+    if unsafe { GetGUIThreadInfo(GetCurrentThreadId(), &mut info) }.is_err() {
+        return false;
+    }
+    (info.flags & (GUI_INMENUMODE | GUI_POPUPMENUMODE)).0 != 0
+}
+
+#[cfg(not(windows))]
+fn tray_menu_is_open() -> bool {
+    false
+}
+
 fn refresh_tray(app: &AppHandle, core: &Core) {
     if SHUTDOWN_IN_PROGRESS.load(Ordering::SeqCst) {
         return;
@@ -782,19 +816,26 @@ fn refresh_tray(app: &AppHandle, core: &Core) {
     let mut last_fp = TRAY_MENU_FINGERPRINT
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    let menu_changed = *last_fp != Some(fp);
-    if menu_changed {
+    if *last_fp != Some(fp) {
         *last_fp = Some(fp);
+        TRAY_MENU_DIRTY.store(true, Ordering::SeqCst);
     }
     drop(last_fp);
 
     let app_handle = app.clone();
     let core_clone = core.clone();
     let _ = app.run_on_main_thread(move || {
-        if menu_changed {
+        // Never swap the menu under an open popup; try again on the next refresh.
+        if TRAY_MENU_DIRTY.load(Ordering::SeqCst) && !tray_menu_is_open() {
+            TRAY_MENU_DIRTY.store(false, Ordering::SeqCst);
             if let Some(tray) = app_handle.tray_by_id("main") {
-                if let Ok(menu) = tray_menu(&app_handle, &core_clone) {
-                    let _ = tray.set_menu(Some(menu));
+                match tray_menu(&app_handle, &core_clone) {
+                    Ok(menu) => {
+                        if let Err(e) = tray.set_menu(Some(menu)) {
+                            tracing::warn!(error = %e, "the tray menu could not be replaced");
+                        }
+                    }
+                    Err(e) => tracing::warn!(error = %e, "the tray menu could not be rebuilt"),
                 }
             }
         }
@@ -1284,8 +1325,9 @@ pub fn run() {
                 if SHUTDOWN_IN_PROGRESS.load(Ordering::SeqCst) {
                     break;
                 }
-                sync_status_icon(&status_handle, &status_core);
-                sync_tray_tooltip(&status_handle, &status_core);
+                // Also applies a menu swap that was held back while the popup was open,
+                // and picks up services that died on their own.
+                refresh_tray(&status_handle, &status_core);
             });
             // §106: scheduled tasks run while the app is open.
             ols_core::scheduler::start_clock(core.inner());
