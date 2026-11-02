@@ -607,7 +607,7 @@ export function AppearanceSettings() {
             {/* Mini Card sample */}
             <div className="flex min-w-44 flex-1 flex-col gap-1 rounded-lg border border-border bg-card p-2.5 text-xs">
               <span className="font-semibold text-foreground">Sample Card Panel</span>
-              <span className="text-muted-foreground">Cards remain solid & high contrast.</span>
+              <span className="text-muted-foreground">Cards remain legible & high contrast.</span>
             </div>
           </div>
         </CardContent>

@@ -107,6 +107,13 @@ export function applyThemeToDom(
     root.style.setProperty('--gradient-angle', `${angle}deg`)
     root.style.setProperty('--app-background', `linear-gradient(${angle}deg, ${from}, ${to})`)
     root.dataset.bgType = 'gradient'
+
+    // Subtle frosted acrylic card surface when gradient mode is active
+    const cardColor = parseColor(tokens.card)
+    if (cardColor && tokens.card !== '#000000') {
+      const glassAlpha = resolvedMode === 'dark' ? 0.45 : 0.6
+      root.style.setProperty('--card', `rgba(${cardColor.r}, ${cardColor.g}, ${cardColor.b}, ${glassAlpha})`)
+    }
   } else {
     root.style.removeProperty('--gradient-from')
     root.style.removeProperty('--gradient-to')
