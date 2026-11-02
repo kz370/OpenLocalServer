@@ -878,14 +878,24 @@ mod tests {
 
         // 1. Add first folder named my_app
         let p1 = store
-            .add_new(app1_dir.to_str().unwrap(), None, Some("laravel".into()), true)
+            .add_new(
+                app1_dir.to_str().unwrap(),
+                None,
+                Some("laravel".into()),
+                true,
+            )
             .unwrap();
         assert_eq!(p1.name, "my_app");
         assert_eq!(p1.project_type.as_deref(), Some("laravel"));
 
         // 2. Add second folder with the exact same name "my_app" but different path -> must succeed
         let p2 = store
-            .add_new(app2_dir.to_str().unwrap(), None, Some("custom:Rust".into()), true)
+            .add_new(
+                app2_dir.to_str().unwrap(),
+                None,
+                Some("custom:Rust".into()),
+                true,
+            )
             .unwrap();
         assert_eq!(p2.name, "my_app");
         assert_ne!(p1.id, p2.id);

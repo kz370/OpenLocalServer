@@ -394,6 +394,31 @@ olsc guide
 5. **Deep-Linked Settings Navigation:**
    - Seamless cross-page navigation helper allowing 1-click jumps directly from menus (e.g. "Edit editors...") straight to the target Settings section.
 
+6. **Project Type Tabs & Filter Navigation:**
+   - Projects are grouped into dedicated tabs by framework preset and custom types alongside the main "All" and "Folder not found" tabs.
+   - Live badge counters display total project counts per type.
+   - Smooth horizontal scroll navigation strip accommodates custom types without layout wrapping.
+
+7. **Folder Drag-and-Drop Dropzone:**
+   - Drop any folder from Windows Explorer directly onto the Projects page.
+   - Animated full-screen drop overlay with backdrop blur and icon feedback.
+   - Queues the Add Project dialog, automatically populating folder names, paths, and detecting framework presets via `inspect_project_folder`.
+   - Supports multi-folder queue processing.
+
+8. **Windows Explorer Context Menu Integration:**
+   - Right-clicking any folder in Windows Explorer displays **"Add folder to OLS projects"**.
+   - Invokes OLS with `--add-project <folder>`, bringing the application to focus and opening the project setup modal pre-filled with inspected folder data.
+
+9. **Duplicate Path Validation & Diagnostic Errors:**
+   - Normalized path matching (`same_path`) handles forward/backward slashes, letter casing, trailing slashes, and Windows verbatim path prefixes (`\\?\`).
+   - Rejects identical paths with helpful `Diagnostic` guidance (problem, cause, fix).
+   - Allows identically named folders located at different filesystem paths to be registered simultaneously.
+
+10. **Custom Project Types Management (CRUD):**
+    - Manage, create, rename, and remove custom project types via `ManageProjectTypesDialog`.
+    - Renaming custom project types automatically updates all existing projects referencing that type.
+    - Removing a custom type safely resets associated projects to "Auto", preventing orphaned metadata.
+
 ---
 
 ### Previous Version Notes (v2.6.0)
