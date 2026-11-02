@@ -50,21 +50,21 @@ Keep code examples separate from explanations.
 
 Highlight important warnings, decisions, and takeaways.
 
-## 5. Version Bump & Release Synchronization Mandate (binding)
+## 5. Version Bump & Release Notes Synchronization Mandate (binding)
 
-Whenever the application version is bumped or changed (e.g. via `scripts/update-version.bat` or manual edits), all contributors and AI agents MUST update and synchronize the following files in the same pull request / commit:
+Whenever the application version is bumped or changed (e.g. via `scripts/update-version.bat` or manual edits), **or whenever `release-notes/v<version>.md` is updated**, all contributors and AI agents MUST update and synchronize the following files in the same pull request / commit:
 
-1. **Manifests & Packages:**
+1. **Manifests & Packages (on version bump):**
    - Root `Cargo.toml` (`[workspace.package] version = "<version>"`)
    - `src-tauri/tauri.conf.json` (`version: "<version>"`)
    - `ui/package.json` and `ui/package-lock.json` (`"version": "<version>"`)
-2. **Release Notes & Documentation:**
-   - `release-notes/v<version>.md`: Create/update the version release notes.
-   - `CHANGELOG.md`: Add the new `## [<version>] — YYYY-MM-DD` section linking to `release-notes/v<version>.md`.
-   - `crates/ols-core/catalog/user_manual.md`: Update header `> **Version:** <version>`, Table of Contents, and Section 17 "What's New in Version <version>".
-   - `docs/OLS_USER_MANUAL.md`: Update header `> **Version:** <version>` and Section 17 "What's New in Version <version>".
+2. **Release Notes & Settings User Manual (on every release notes update AND version bump):**
+   - `release-notes/v<version>.md`: Create/update the version release notes (rendered in `Settings → User Manual → Release Notes`).
+   - `CHANGELOG.md`: Keep the `## [<version>] — YYYY-MM-DD` section synchronized with `release-notes/v<version>.md`.
+   - `crates/ols-core/catalog/user_manual.md`: Update header `> **Version:** <version>`, Table of Contents, and Section 17 ("Version <version> Specific Notes & What's New" — rendered in `Settings → User Manual → User Manual`) whenever release notes are added or modified.
+   - `docs/OLS_USER_MANUAL.md`: Keep header `> **Version:** <version>` and Section 17 ("Version <version> Specific Notes & What's New") identical to `crates/ols-core/catalog/user_manual.md`.
 3. **In-App Manual & Settings Viewer:**
-   - `ui/src/pages/Settings.tsx`: Update the `releaseNotes` import to target `../../../release-notes/v<version>.md?raw` and ensure `get_app_guide` queries the updated version.
-4. **Website & Landing Page:**
+   - `ui/src/pages/Settings.tsx`: Ensure the `releaseNotes` import targets `../../../release-notes/v<version>.md?raw`, the header version badge fallback matches `<version>`, and `get_app_guide` queries the updated version.
+4. **Website & Landing Page (on version bump):**
    - `index.html` and `website/`: Update version badges, download links (`OLS-<version>-setup.exe`, portable zip, SHA256 checksums), and footer version marks.
    - `README.md`: Update the version badge link (`version-<version>-blue`).

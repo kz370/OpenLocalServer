@@ -18,13 +18,13 @@ Feature and UI release. Full notes: [`release-notes/v2.6.0.md`](./release-notes/
 - **Robust Windows GUI Launching**: Executes tools with their parent directory set as the working directory, ensuring DLLs and plugins load properly. Emits verbatim raw arguments on Windows to prevent Delphi and HeidiSQL dot-truncation bugs.
 - **Persistent UI Caching**: Instantaneous 0ms page rendering across application restarts; optimistic live updates for sites, databases, and runtimes without manual page refresh.
 - **Dashboard Layout & Controls**: Responsive container (up to 1680px content area), full-width Web server status strip, clean borderless action buttons, and isolated per-service pending states.
-- **Unified Notification System**: Centralized toasts with semantic tokens, smart pause/resume on blur/hover, deduplication, live progress for background tasks and runtimes, and a persistent notification history dropdown.
+- **Unified Notification System**: Centralized toasts with semantic tokens, smart pause/resume on blur/hover, deduplication, auto-resolving condition alerts, startup grace period, live progress for background tasks and runtimes, and a persistent notification history dropdown.
 - **State Banners & Clean Confirmations**: Persistent inline banners for active conditions (unapplied web server changes, port collisions); replaced noisy confirmation dialogs for reversible actions with instant Undo toasts.
 - **Runtime Updates UI**: Separated installation status from update availability, standardized action buttons, filter tabs, and bulk "Update all".
 - **Major Upgrade Protection**: Semver major boundary detection with breaking change confirmation modals.
 - **Prerelease Filtering**: Excluded pre-releases from default updates; added channel toggle in Manage panel; Node.js strictly targets LTS.
 - **Dynamic Checksum Resolution**: Automatically verifies upstream SHA-256 sidecars on vendor in-place archive rebuilds.
-- **Process & Port Fixes**: Scoped runtime version deletion guard; fixed Port Checker false positives showing PID 0 as "System Idle Process".
+- **Process & Port Fixes**: Serialized per-service start/stop operations with port readiness verification and intent tracking; scoped runtime version deletion guard; fixed Port Checker false positives showing PID 0 as "System Idle Process".
 
 ## [2.5.0] — 2026-10-31
 

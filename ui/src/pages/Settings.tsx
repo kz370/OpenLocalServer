@@ -753,7 +753,7 @@ export function SettingsPage() {
                     </CardDescription>
                   </div>
                   <Badge variant="outline" className="text-xs px-2.5 py-0.5 w-fit border-border/80">
-                    v{version || '2.5.0'}
+                    v{version || '2.6.0'}
                   </Badge>
                 </div>
               </CardHeader>

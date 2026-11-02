@@ -397,7 +397,8 @@ olsc guide
    - Synchronous 0ms page rendering backed by persistent storage across app restarts; instant optimistic updates for sites, databases, and runtimes without manual page refresh.
 
 9. **Unified Notifications & State Banners:**
-   - Centralized toasts with semantic tokens, smart pause/resume on blur/hover, deduplication, live progress for background tasks and runtimes, and a persistent notification history dropdown.
+   - Centralized toasts with semantic tokens, smart pause/resume on blur/hover, deduplication, auto-resolving condition alerts (`Resolved` history state and automatic toast dismissal when a service recovers), startup grace period, live progress for background tasks and runtimes, and a persistent notification history dropdown.
+   - Serialized per-service start/stop operations with port readiness verification and intent tracking so manual stops and slow starts never trigger false failure or crash alerts.
    - Persistent inline banners for active conditions (unapplied web server changes, port collisions); replaced noisy confirmation dialogs for reversible actions with instant Undo toasts.
 
 10. **Dashboard Layout & Service Controls:**
