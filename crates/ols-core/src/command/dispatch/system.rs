@@ -263,11 +263,22 @@ impl Core {
                     project_type,
                 } => {
                     tracing::info!(command = "add_project", path = %path);
+                    let effective_type = match project_type.as_deref() {
+                        None | Some("auto") => {
+                            let inspection = i.inspect_project_folder(&path);
+                            inspection.detected_type
+                        }
+                        Some(t) if t.trim().is_empty() => {
+                            let inspection = i.inspect_project_folder(&path);
+                            inspection.detected_type
+                        }
+                        Some(t) => Some(t.to_string()),
+                    };
                     let project =
                         i.projects
                             .lock()
                             .unwrap()
-                            .add_new(&path, name, project_type, true)?;
+                            .add_new(&path, name, effective_type, true)?;
                     let _ = i.clear_project_skip(&project.path);
                     i.notify_project_events();
                     Ok(R::Project { project })

@@ -23,6 +23,7 @@ export interface SiteLogoPanelProps {
   initialIcon?: string | null
   initialImage?: string | null
   isProxy?: boolean
+  fallback?: 'globe' | 'folder'
   onUpdated?: () => Promise<void> | void
 }
 
@@ -39,6 +40,7 @@ export function SiteLogoPanel({
   initialIcon = null,
   initialImage = null,
   isProxy = false,
+  fallback = 'globe',
   onUpdated,
 }: SiteLogoPanelProps) {
   const [activeTab, setActiveTab] = useState<'photo' | 'fa'>('photo')
@@ -287,6 +289,10 @@ export function SiteLogoPanel({
               <Badge variant="outline" className="border-sky-500/40 bg-sky-500/10 text-sky-500 text-[10px]">
                 Font Awesome ({parseIconSpec(currentIcon).name})
               </Badge>
+            ) : fallback === 'folder' ? (
+              <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-500 dark:text-amber-400 text-[10px]">
+                Default Folder Icon
+              </Badge>
             ) : (
               <Badge variant="outline" className="border-[#00b4d8]/40 bg-[#00b4d8]/10 text-[#00b4d8] dark:text-[#06b6d4] text-[10px]">
                 Default Internet Icon
@@ -300,6 +306,7 @@ export function SiteLogoPanel({
               icon={currentIcon}
               iconImage={currentImage}
               hostname={displayName}
+              fallback={fallback}
               className={currentImage ? 'size-8' : 'size-6'}
             />
           </div>

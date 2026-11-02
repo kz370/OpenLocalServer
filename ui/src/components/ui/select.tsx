@@ -362,10 +362,10 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
               }}
               onKeyDown={handleKeyDown}
               {...getFloatingProps()}
-              className="z-[99] flex flex-col rounded-lg border border-border dark:border-white/15 bg-popover text-sm text-popover-foreground shadow-2xl select-none focus:outline-none overflow-hidden"
+              className="z-[99] flex flex-col rounded-lg border border-border/80 dark:border-white/15 bg-white dark:bg-[#0b1426] text-sm text-popover-foreground shadow-2xl select-none focus:outline-none overflow-hidden"
             >
               {props.searchable && (
-                <div className="border-b border-border/70 bg-popover p-1.5 shrink-0">
+                <div className="border-b border-border/70 bg-white dark:bg-[#0b1426] p-1.5 shrink-0">
                   <div className="relative">
                     <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
                     <input
@@ -401,7 +401,7 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
 
               <div
                 ref={listRef}
-                className="overflow-y-auto max-h-64 p-1 flex flex-col gap-0.5 bg-popover"
+                className="overflow-y-auto max-h-64 p-1 flex flex-col gap-0.5 bg-white dark:bg-[#0b1426]"
               >
                 {filteredItems.length === 0 ? (
                   <div className="py-4 text-center text-xs text-muted-foreground">
@@ -413,7 +413,7 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
                       return (
                         <div
                           key={`group-${item.label}-${index}`}
-                          className="sticky top-0 z-10 bg-popover px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground border-b border-border/50 shadow-xs"
+                          className="sticky -top-1 -mx-1 z-10 bg-white dark:bg-[#0b1426] px-3.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground border-b border-border/80 shadow-xs"
                         >
                           {item.label}
                         </div>

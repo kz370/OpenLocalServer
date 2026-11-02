@@ -30,7 +30,8 @@ export function getProjectDisplayType(
       (c) => c.id.toLowerCase() === p.project_type?.toLowerCase() || c.name.toLowerCase() === rawName.toLowerCase(),
     )
     const name = found?.name ?? rawName
-    return { id: 'custom', label: name, isCustom: true }
+    const icon = name.toLowerCase() === 'tauri' ? 'tauri' : name.toLowerCase() === 'rust' ? 'rust' : 'custom'
+    return { id: icon, label: name, isCustom: true }
   }
 
   const preset = presets.find((pr) => pr.id.toLowerCase() === p.project_type?.toLowerCase())
@@ -100,10 +101,12 @@ export function groupProjectsByType(
     const customId = ct.id.startsWith('custom:') ? ct.id : `custom:${ct.name}`
     const count = counts.get(customId) ?? 0
     if (count > 0) {
+      const lower = ct.name.toLowerCase()
+      const icon = lower === 'tauri' ? 'tauri' : lower === 'rust' ? 'rust' : 'custom'
       tabs.push({
         id: customId,
         label: ct.name,
-        icon: 'custom',
+        icon,
         count,
         isCustom: true,
       })
@@ -115,10 +118,12 @@ export function groupProjectsByType(
   for (const [key, count] of counts.entries()) {
     if (key.startsWith('custom:') && !encounteredCustom.has(key.toLowerCase()) && count > 0) {
       const name = key.replace(/^custom:/, '')
+      const lower = name.toLowerCase()
+      const icon = lower === 'tauri' ? 'tauri' : lower === 'rust' ? 'rust' : 'custom'
       tabs.push({
         id: key,
         label: name,
-        icon: 'custom',
+        icon,
         count,
         isCustom: true,
       })

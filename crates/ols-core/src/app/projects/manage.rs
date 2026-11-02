@@ -752,18 +752,82 @@ impl Inner {
                 .find(|pr| crate::project::same_path(&pr.path, &canonical_str))
         };
 
-        let detection = crate::detection::detect(&canonical);
-        let detected_type = match detection.framework {
-            crate::detection::Framework::Laravel => Some("laravel".to_string()),
-            crate::detection::Framework::Symfony => Some("symfony".to_string()),
-            crate::detection::Framework::WordPress => Some("wordpress".to_string()),
-            crate::detection::Framework::GenericPhp => Some("php".to_string()),
-            crate::detection::Framework::Node => Some("node".to_string()),
-            crate::detection::Framework::Django => Some("django".to_string()),
-            crate::detection::Framework::Flask => Some("flask".to_string()),
-            crate::detection::Framework::FastApi => Some("fastapi".to_string()),
-            crate::detection::Framework::GenericPython => Some("python".to_string()),
-            crate::detection::Framework::Unknown => None,
+        let is_tauri = canonical
+            .join("src-tauri")
+            .join("tauri.conf.json")
+            .is_file()
+            || canonical.join("src-tauri").join("Cargo.toml").is_file()
+            || canonical.join("tauri.conf.json").is_file()
+            || (canonical.join("package.json").is_file() && {
+                std::fs::read_to_string(canonical.join("package.json"))
+                    .map(|s| s.contains("@tauri-apps/api") || s.contains("@tauri-apps/cli"))
+                    .unwrap_or(false)
+            });
+
+        let detected_type = if is_tauri {
+            Some("custom:Tauri".to_string())
+        } else {
+            let detection = crate::detection::detect(&canonical);
+            let mut dt = match detection.framework {
+                crate::detection::Framework::Laravel => Some("laravel".to_string()),
+                crate::detection::Framework::Symfony => Some("symfony".to_string()),
+                crate::detection::Framework::WordPress => Some("wordpress".to_string()),
+                crate::detection::Framework::GenericPhp => Some("php".to_string()),
+                crate::detection::Framework::Node => Some("node".to_string()),
+                crate::detection::Framework::Django => Some("django".to_string()),
+                crate::detection::Framework::Flask => Some("flask".to_string()),
+                crate::detection::Framework::FastApi => Some("fastapi".to_string()),
+                crate::detection::Framework::GenericPython => Some("python".to_string()),
+                crate::detection::Framework::Unknown => None,
+            };
+
+            // Refine generic Node or Unknown if popular presets exist
+            if dt.as_deref() == Some("node") || dt.is_none() {
+                if let Ok(pkg) = std::fs::read_to_string(canonical.join("package.json")) {
+                    if pkg.contains("\"next\"")
+                        || canonical.join("next.config.js").is_file()
+                        || canonical.join("next.config.mjs").is_file()
+                        || canonical.join("next.config.ts").is_file()
+                    {
+                        dt = Some("nextjs".to_string());
+                    } else if pkg.contains("\"vue\"") || canonical.join("vue.config.js").is_file() {
+                        dt = Some("vue".to_string());
+                    } else if pkg.contains("\"react\"") {
+                        dt = Some("react".to_string());
+                    }
+                }
+            }
+
+            // Other language presets if still undetected
+            if dt.is_none() {
+                if canonical.join("go.mod").is_file() {
+                    dt = Some("go".to_string());
+                } else if canonical.join("Cargo.toml").is_file() {
+                    dt = Some("custom:Rust".to_string());
+                } else if canonical.join("pom.xml").is_file()
+                    || canonical.join("build.gradle").is_file()
+                {
+                    dt = Some("java".to_string());
+                } else if std::fs::read_dir(&canonical)
+                    .ok()
+                    .map(|mut r| {
+                        r.any(|e| {
+                            e.ok()
+                                .map(|entry| {
+                                    let name = entry.file_name().to_string_lossy().to_lowercase();
+                                    name.ends_with(".csproj") || name.ends_with(".sln")
+                                })
+                                .unwrap_or(false)
+                        })
+                    })
+                    .unwrap_or(false)
+                {
+                    dt = Some("dotnet".to_string());
+                } else if canonical.join("index.html").is_file() {
+                    dt = Some("static".to_string());
+                }
+            }
+            dt
         };
 
         ProjectFolderInspection {
@@ -783,6 +847,11 @@ impl Inner {
             .get(CUSTOM_PROJECT_TYPES_SETTING)
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default();
+
+        // Always ensure "Tauri" is offered in the custom project type list
+        if !names.iter().any(|n| n.eq_ignore_ascii_case("tauri")) {
+            names.push("Tauri".to_string());
+        }
 
         // Also check if any existing projects use a custom:<name> not yet in settings
         let projects = lock(&self.projects).list();

@@ -50,8 +50,15 @@ describe('projectTypes', () => {
     })
 
     assert.deepStrictEqual(getProjectDisplayType(pCustom, samplePresets, sampleCustom), {
-      id: 'custom',
+      id: 'rust',
       label: 'Rust',
+      isCustom: true,
+    })
+
+    const pTauri: Project = { id: '4', name: 'P4', path: 'C:/p4', project_type: 'custom:Tauri' }
+    assert.deepStrictEqual(getProjectDisplayType(pTauri, samplePresets, sampleCustom), {
+      id: 'tauri',
+      label: 'Tauri',
       isCustom: true,
     })
 

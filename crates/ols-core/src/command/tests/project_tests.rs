@@ -628,6 +628,7 @@ fn custom_project_types_crud_and_project_updates() {
     };
     assert!(types.iter().any(|t| t.name == "Go Service"));
     assert!(types.iter().any(|t| t.name == "Rust")); // Automatically recognized from existing project
+    assert!(types.iter().any(|t| t.name == "Tauri")); // Pre-seeded custom type
 
     // 3. Rename "Rust" to "Rust Backend" -> must update the project's type
     let renamed_types = match core
@@ -671,4 +672,38 @@ fn custom_project_types_crud_and_project_updates() {
     };
     let p_after = projects_after.iter().find(|pr| pr.id == p.id).unwrap();
     assert_eq!(p_after.project_type, None);
+}
+
+#[test]
+fn inspect_project_folder_detects_tauri_and_auto_adds_project() {
+    let (core, home) = test_core();
+    let dir = home.paths.root().join("my-desktop-app");
+    let src_tauri = dir.join("src-tauri");
+    std::fs::create_dir_all(&src_tauri).unwrap();
+    std::fs::write(src_tauri.join("tauri.conf.json"), "{}").unwrap();
+
+    let inspection = match core
+        .dispatch(CoreCommand::InspectProjectFolder {
+            path: dir.display().to_string(),
+        })
+        .unwrap()
+    {
+        CoreResponse::ProjectFolderInspection { inspection } => inspection,
+        other => panic!("expected ProjectFolderInspection, got {other:?}"),
+    };
+    assert_eq!(inspection.detected_type.as_deref(), Some("custom:Tauri"));
+
+    // AddProject with project_type = None should auto-detect "custom:Tauri"
+    let p = match core
+        .dispatch(CoreCommand::AddProject {
+            path: dir.display().to_string(),
+            name: None,
+            project_type: None,
+        })
+        .unwrap()
+    {
+        CoreResponse::Project { project } => project,
+        other => panic!("expected Project, got {other:?}"),
+    };
+    assert_eq!(p.project_type.as_deref(), Some("custom:Tauri"));
 }

@@ -236,6 +236,7 @@ export function ProjectSettingsDialog({
               displayName={project.name}
               initialIcon={project.icon}
               initialImage={project.icon_image}
+              fallback="folder"
               onUpdated={async () => {
                 await onUpdated()
               }}

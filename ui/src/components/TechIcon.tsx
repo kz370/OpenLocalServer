@@ -29,8 +29,10 @@ import {
   siPython,
   siReact,
   siRedis,
+  siRust,
   siSqlite,
   siSymfony,
+  siTauri,
   siVuedotjs,
   siWordpress,
   siYarn,
@@ -76,6 +78,8 @@ const BRANDS: Record<string, SimpleIcon> = {
   redis: siRedis,
   sqlite: siSqlite,
   git: siGit,
+  tauri: siTauri,
+  rust: siRust,
 }
 
 /**
@@ -209,6 +213,7 @@ const GENERIC: Record<string, ReactNode> = {
   proxy: <ArrowLeftRight />,
   'reverse-proxy': <ArrowLeftRight />,
   other: <Package />,
+  folder: <FolderCode className="text-amber-500/90" />,
   none: <FolderCode className="text-muted-foreground/80" />,
   'no-domain': <FolderCode className="text-muted-foreground/80" />,
   memcached: MEMCACHED_MARK,

@@ -28,6 +28,32 @@ export function DefaultInternetIcon({ className = 'size-5' }: { className?: stri
   )
 }
 
+/**
+ * A clean, modern folder icon for standalone projects when no custom icon is set.
+ */
+export function DefaultFolderIcon({ className = 'size-5' }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={cn('shrink-0 select-none text-amber-500/90 dark:text-amber-400', className)}
+      xmlns="http://www.w3.org/2000/svg"
+      aria-label="Default project folder icon"
+      role="img"
+    >
+      <path
+        d="M3 7.5A2.5 2.5 0 0 1 5.5 5h3.17a2.5 2.5 0 0 1 1.77.73l1.06 1.07c.47.47 1.1.7 1.77.7H18.5A2.5 2.5 0 0 1 21 10v7.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5V7.5Z"
+        fill="currentColor"
+        fillOpacity="0.16"
+      />
+    </svg>
+  )
+}
+
 import faIconsData from './faIconsData.json'
 
 /** Offline Font Awesome Free icon registry with SVG path data (viewBox 0 0 512 512). */
@@ -85,17 +111,23 @@ export function FontAwesomeIcon({
   color,
   className = 'size-4',
   style,
+  fallback = 'globe',
 }: {
   name: string
   color?: string
   className?: string
   style?: React.CSSProperties
+  fallback?: 'globe' | 'folder'
 }) {
   const parsed = parseIconSpec(name)
   const icon = findFaIcon(parsed.name)
   if (!icon) {
-    // If not found in the custom FA catalog, render the default internet icon as a graceful fallback
-    return <DefaultInternetIcon className={className} />
+    // If not found in the custom FA catalog, render the appropriate fallback icon
+    return fallback === 'folder' ? (
+      <DefaultFolderIcon className={className} />
+    ) : (
+      <DefaultInternetIcon className={className} />
+    )
   }
 
   const activeColor = color ?? parsed.color ?? icon.color
@@ -120,17 +152,19 @@ export function FontAwesomeIcon({
  * 1. iconImage: local `ols_site_icon.webp` file in project directory (data URL)
  *    Rendered square with border radius, subtle shadow, and object-cover.
  * 2. icon: Font Awesome icon name (offline version)
- * 3. Default: Clean, colorful modern internet globe icon (no box/border)
+ * 3. Default: Clean, colorful modern internet globe icon (or folder icon for standalone projects)
  */
 export function SiteLogo({
   icon,
   iconImage,
   hostname,
+  fallback = 'globe',
   className,
 }: {
   icon?: string | null
   iconImage?: string | null
   hostname?: string
+  fallback?: 'globe' | 'folder'
   className?: string
 }) {
   if (iconImage) {
@@ -151,7 +185,11 @@ export function SiteLogo({
   }
 
   if (icon) {
-    return <FontAwesomeIcon name={icon} className={cn('size-6', className)} />
+    return <FontAwesomeIcon name={icon} className={cn('size-6', className)} fallback={fallback} />
+  }
+
+  if (fallback === 'folder') {
+    return <DefaultFolderIcon className={cn('size-6', className)} />
   }
 
   return <DefaultInternetIcon className={cn('size-6', className)} />
