@@ -36,7 +36,7 @@ impl Inner {
                 let question =
                     need(&req.question, "what you want to know about OpenLocalServer")?.to_string();
                 attachments.push((
-                    "OpenLocalServer User Manual (v2.6.0 Knowledge Base)".into(),
+                    "OpenLocalServer User Manual (v2.7.0 Knowledge Base)".into(),
                     APP_GUIDE_MD.to_string(),
                 ));
 

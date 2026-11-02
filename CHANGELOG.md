@@ -7,7 +7,27 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [2.7.0] — 2026-11-02
 
-Feature release. Full notes: [elease-notes/v2.7.0.md](./release-notes/v2.7.0.md).
+Feature release. Full notes: [`release-notes/v2.7.0.md`](./release-notes/v2.7.0.md).
+
+### Highlights
+- **Dedicated Projects Management Page**: Manage standalone project directories with or without local virtual host domains from a dedicated UI view (`Projects`). Features real-time search across names, filesystem paths, and connected domains, plus pagination with configurable page sizes.
+- **Folder Status & Drive Filtering**: Features an **All** vs **Folder not found** tab view to instantly isolate projects whose local folders or external drives are disconnected or missing, with quick locate and copy-path actions.
+- **Project Actions & Right-Click Context Menu**: Right-clicking any project row (or clicking the Actions trigger) opens a cursor-anchored context menu with active row highlighting:
+  - **Create site from project**: 1-click local site creation for projects without a linked local virtual host.
+  - **Open project directory**: Instantly launches the project folder in Windows Explorer.
+  - **Open with editor**: Submenu listing all installed and visible code editors.
+  - **Open terminal**: Spawns an external Windows Terminal (`wt.exe`) or PowerShell session rooted in the project directory.
+  - **Project settings**: Modify display name, project type, and custom WebP icons.
+  - **Hide from list**: Safely hides registered projects from the main list.
+- **Project Metadata & Framework Presets**: Edit project metadata via `ProjectSettingsDialog`. Includes a bundled preset catalog (`catalog/project-types.yaml`) covering 17 popular frameworks and languages (Laravel, Symfony, WordPress, PHP, Python, Django, Flask, FastAPI, Node, Next.js, React, Vue, Go, .NET, Java, Static HTML, Other) with custom type support.
+- **Multi-Editor Configuration & Broad Auto-Detection**: Auto-detects installed development IDEs and editors: VS Code, Cursor, Windsurf, Trae, Antigravity, Zed, VSCodium, Sublime Text, Notepad++, and JetBrains IDEs (PhpStorm, WebStorm, PyCharm, IntelliJ IDEA, GoLand, RustRover, Rider via JetBrains Toolbox and standard program roots). Windows Notepad is excluded from the auto-detected code editor list.
+- **Custom Code Editors & Visibility Toggles**: Add any custom code editor by executable path (`AddEditor`, `UpdateEditor`, `RemoveEditor`). Hide or show any auto-detected or custom editor from menus and pickers with an Eye/EyeOff toggle in `Settings > General > Code editor` (`CONFIGURED EDITORS`).
+- **System Tray Projects Submenu**: The right-click system tray menu now features a categorized **Projects** submenu directly below Sites. Each registered project provides two dedicated actions:
+  - **Open directory**: Opens the project directory in Windows Explorer (`open_path`).
+  - **Open with**: Submenu listing all installed, non-hidden code editors (`open_with`).
+  - **Open projects**: Bottom navigation item switching the main window directly to the Projects page (`navigate(app, "projects")`).
+  - **Dynamic Tray Synchronization**: Tray menus dynamically rebuild in real-time when projects or editors are added, renamed, or modified.
+- **Deep-Linked Settings Navigation**: Seamless cross-page navigation (`openSettingsSection`) allows 1-click jumps directly from menus (e.g. "Edit editors...") straight to the target Settings section.
 
 ## [2.6.0] — 2026-11-02
 

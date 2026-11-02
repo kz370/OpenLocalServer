@@ -250,21 +250,6 @@ pub fn detect() -> Vec<EditorInfo> {
         });
     }
 
-    // Windows Notepad
-    let sys_notepad = crate::exec::windows_system_dir().join("notepad.exe");
-    let notepad_path = if sys_notepad.is_file() {
-        Some(sys_notepad)
-    } else {
-        crate::web::manager::find_executable(None, "notepad")
-    };
-    out.push(EditorInfo {
-        id: "notepad".to_string(),
-        name: "Notepad".to_string(),
-        path: notepad_path.map(|p| p.display().to_string()),
-        custom: false,
-        hidden: false,
-    });
-
     out
 }
 
@@ -332,5 +317,10 @@ mod tests {
     #[test]
     fn antigravity_is_not_offered() {
         assert!(detect().iter().all(|e| e.id != "antigravity"));
+    }
+
+    #[test]
+    fn notepad_is_not_offered() {
+        assert!(detect().iter().all(|e| e.id != "notepad"));
     }
 }

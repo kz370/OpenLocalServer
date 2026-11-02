@@ -1,6 +1,6 @@
 # OpenLocalServer (OLS) — Comprehensive User Manual & Operations Guide
 
-> **Version:** 2.6.0  
+> **Version:** 2.7.0  
 > **Platform:** Windows 10 / Windows 11 (64-bit)  
 > **License:** GPL-3.0-only  
 > **CLI Binary:** `olsc`  
@@ -26,7 +26,7 @@
 14. [AI Assistant & Model Context Protocol (MCP)](#14-ai-assistant--model-context-protocol-mcp)
 15. [Command Line Interface (CLI — `olsc`)](#15-command-line-interface-cli--olsc)
 16. [Keyboard Shortcuts, Settings, Themes & Documentation](#16-keyboard-shortcuts-settings-themes--documentation)
-17. [Version 2.6.0 Specific Notes & What's New](#17-version-260-specific-notes--whats-new)
+17. [Version 2.7.0 Specific Notes & What's New](#17-version-270-specific-notes--whats-new)
 
 ---
 
@@ -361,9 +361,42 @@ olsc guide
 
 ---
 
-## 17. Version 2.6.0 Specific Notes & What's New
+## 17. Version 2.7.0 Specific Notes & What's New
 
-### New Features in v2.6.0
+### New Features in v2.7.0
+1. **Dedicated Projects Management Page:**
+   - Centralized view (`Projects`) to manage standalone project directories, whether linked to a local virtual host domain or not.
+   - Filter tabs: **All** vs **Folder not found** (isolates projects whose physical directory or external drive was moved or disconnected).
+   - Real-time search across names, filesystem paths, and connected domains, with pagination support.
+   - Actions per project:
+     - **Create site from project**: 1-click local site creation for unlinked project directories.
+     - **Open project directory**: Instantly opens the project folder in Windows Explorer.
+     - **Open with editor**: Submenu listing all installed and visible code editors.
+     - **Open terminal**: Spawns external Windows Terminal (`wt.exe`) or PowerShell in the project directory.
+     - **Project settings**: Edit display name, project type, and project icon.
+     - **Hide from list**: Moves project path to ignore list without touching files on disk.
+
+2. **Project Metadata & Framework Presets:**
+   - Customize project name, preset or custom project type, and custom logo/icon (via WebP image integration).
+   - Bundled framework catalog (`catalog/project-types.yaml`) featuring 17 popular presets (Laravel, Symfony, WordPress, PHP, Python, Django, Flask, FastAPI, Node, Next.js, React, Vue, Go, .NET, Java, Static HTML, Other) with custom type support.
+
+3. **Multi-Editor Configuration & System Auto-Detection:**
+   - Auto-detects installed development IDEs and editors: VS Code, Cursor, Windsurf, Trae, Antigravity, Zed, VSCodium, Sublime Text, Notepad++, and JetBrains IDEs (PhpStorm, WebStorm, PyCharm, IntelliJ IDEA, GoLand, RustRover, Rider via JetBrains Toolbox and standard program roots). Windows Notepad is excluded from the auto-detected code editor list.
+   - Custom editor management: add any custom editor executable by path (`AddEditor`, `UpdateEditor`, `RemoveEditor`).
+   - Editor visibility toggles: hide/show any auto-detected or custom editor from menus with an Eye/EyeOff toggle in `Settings > General > Code editor` (`CONFIGURED EDITORS`).
+
+4. **System Tray Projects Submenu:**
+   - Right-click system tray menu features a categorized **Projects** submenu directly below Sites.
+   - Each registered project provides two dedicated actions: "Open directory" and "Open with" (submenu of configured editors).
+   - Bottom navigation item "Open projects" switches the main window directly to the Projects page (`navigate(app, "projects")`).
+   - Tray menus dynamically rebuild in real-time when projects or editors change via broadcast `project_events`.
+
+5. **Deep-Linked Settings Navigation:**
+   - Seamless cross-page navigation helper allowing 1-click jumps directly from menus (e.g. "Edit editors...") straight to the target Settings section.
+
+---
+
+### Previous Version Notes (v2.6.0)
 1. **Installed Software UI Overhaul:**
    - **Accurate Status Display**: Separated installation status from update availability. Accurately communicates "Up to date" (green indicator), "Update available" (sky indicator with non-link neutral text), and "Not installed".
    - **Multi-Version Tracking**: Shows total installed counts (e.g. "2 installed") without mistaking older uninstalled versions for pending updates. Displays the "Default" badge only where relevant.
