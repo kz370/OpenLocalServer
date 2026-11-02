@@ -419,6 +419,35 @@ olsc guide
     - Renaming custom project types automatically updates all existing projects referencing that type.
     - Removing a custom type safely resets associated projects to "Auto", preventing orphaned metadata.
 
+11. **Responsive Single-Line Project Type Filter Bar:**
+    - Single-line responsive layout utilizing `ResizeObserver` and offscreen button measurement.
+    - Automatically filters down to types with ≥ 1 project (excluding empty presets and unused custom types), keeps "All" first, and pins "Manage types" to the far right.
+    - Chips exceeding available bar width collapse into a "+N more ▾" popover with integrated instant search and total project counts.
+    - Selecting a type from the popover dynamically swaps it into the visible row, combined with instant search (`AND` logic, counts staying totals).
+    - Remembers the last selected tab across sessions with automatic fallback to "All" when a type is removed or becomes empty.
+
+12. **Drag-to-Reorder & Pinning in Manage Types:**
+    - HTML5 drag-and-drop reordering for custom type tab sequences in `ManageProjectTypesDialog`.
+    - Inline "Pin to filter bar" toggles to pin preferred types directly to the main filter bar ahead of higher-count chips.
+    - Inline renaming that preserves pin status, position index, and active filter preferences.
+
+13. **On-Accent Contrast & Theme Icon Rendering:**
+    - Added `--on-accent` CSS variable dynamically derived from accent color luminance (OKLCH relative color syntax with JS relative luminance fallback in `applyThemeToDom`).
+    - Ensures high contrast for text, icons, and count badges on active accent chips and primary buttons.
+    - Converted generic and brand icons (`FolderCode`, brands) to `currentColor`.
+    - Dual WCAG contrast warnings in the custom theme editor evaluating accent vs background and accent vs on-accent.
+
+14. **Tauri Preset & Project Auto-Detection:**
+    - Native auto-detection for Tauri applications (`src-tauri/tauri.conf.json`, `Cargo.toml`, etc.) resolving to `custom:Tauri` with official Tauri branding.
+
+15. **Project Removal Protection & Safe Deletion:**
+    - Standalone projects connected to active virtual host sites are protected from accidental removal or deletion with clear diagnostic messages (`CoreError::failed_fix`).
+    - Scanned projects remain removable and trackable in the deletion skip history (`PROJECT_SKIP`).
+    - Windows 8.3 short name (e.g. `RUNNER~1` on CI runners) canonicalization in path matching (`same_path`).
+
+16. **Model Context Protocol (MCP) Project & Editor Tools:**
+    - 9 new MCP tools for AI coding assistants: `ols_list_projects`, `ols_add_project`, `ols_update_project`, `ols_inspect_project_folder`, `ols_list_project_types`, `ols_add_custom_project_type`, `ols_rename_custom_project_type`, `ols_remove_custom_project_type`, and `ols_list_editors`.
+
 ---
 
 ### Previous Version Notes (v2.6.0)
