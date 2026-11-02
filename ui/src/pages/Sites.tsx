@@ -184,6 +184,9 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       const matched = (d.project_id && d.project_id === p.id) || (np !== '' && normPath(d.folder) === np)
       return Boolean(matched)
     })
+    if (p.standalone && matching.length === 0) {
+      continue
+    }
     for (const d of matching) claimedDomains.add(d.hostname)
     buckets.push({ project: p, domains: matching })
   }

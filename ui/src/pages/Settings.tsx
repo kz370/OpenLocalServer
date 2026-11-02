@@ -2,7 +2,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { Book, Check, Copy, ExternalLink, Eye, EyeOff, FolderPlus, FolderSearch, RefreshCw, ShieldCheck, Sparkles, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
-import { ErrorCard } from '@/components/ErrorCard'
+import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
 import { ExcludedSitesCard } from '@/components/ExcludedSitesCard'
 import { IgnoredFoldersCard } from '@/components/IgnoredFoldersCard'
 import { Markdown } from '@/components/ui/Markdown'
@@ -94,6 +94,9 @@ export function SettingsPage() {
   const [editor, setEditor] = useState(editorCache.get)
   const [editorId, setEditorId] = useState(editorIdCache.get)
   const [editors, setEditors] = useState<EditorInfo[]>(editorsCache.get)
+  const [showAddEditor, setShowAddEditor] = useState(false)
+  const [newEditorName, setNewEditorName] = useState('')
+  const [newEditorPath, setNewEditorPath] = useState('')
   const [projectsDir, setProjectsDir] = useState(projectsDirCache.get)
   const [autoDomains, setAutoDomains] = useState(autoDomainsCache.get)
   const [watchSites, setWatchSites] = useState(watchSitesCache.get)
@@ -449,6 +452,38 @@ export function SettingsPage() {
     })
   }
 
+  const handleAddEditor = async () => {
+    if (!newEditorName.trim() || !newEditorPath.trim()) return
+    try {
+      const res = await runCommand({
+        type: 'add_editor',
+        name: newEditorName.trim(),
+        path: newEditorPath.trim(),
+      })
+      if (res.type === 'editors') {
+        setEditors(res.editors)
+        editorsCache.set(res.editors)
+        setShowAddEditor(false)
+        setNewEditorName('')
+        setNewEditorPath('')
+      }
+    } catch (e) {
+      setError(asDiagnostic(e))
+    }
+  }
+
+  const handleRemoveEditor = async (id: string) => {
+    try {
+      const res = await runCommand({ type: 'remove_editor', id })
+      if (res.type === 'editors') {
+        setEditors(res.editors)
+        editorsCache.set(res.editors)
+      }
+    } catch (e) {
+      setError(asDiagnostic(e))
+    }
+  }
+
   const editorField = (
     <div className="flex flex-col gap-2">
       <Select value={editorId} onChange={(e) => setEditorId(e.target.value)} className="w-72">
@@ -458,6 +493,7 @@ export function SettingsPage() {
             <option key={e.id} value={e.id}>
               {e.name}
               {e.id === 'vscode' ? ' (default)' : ''}
+              {e.custom ? ' (custom)' : ''}
             </option>
           ))}
         {editorId !== 'custom' && !editors.some((e) => e.id === editorId && e.path) && (
@@ -473,6 +509,85 @@ export function SettingsPage() {
           </Button>
         </div>
       )}
+
+      {/* Configured Custom Editors */}
+      <div className="mt-3 flex flex-col gap-2 pt-2 border-t border-border/60">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Configured Editors</span>
+          {!showAddEditor && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-6 text-xs px-2"
+              onClick={() => setShowAddEditor(true)}
+            >
+              <FolderPlus className="size-3 mr-1" /> Add editor
+            </Button>
+          )}
+        </div>
+
+        {editors.filter((e) => e.custom).map((ce) => (
+          <div key={ce.id} className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted/20 p-2 text-xs">
+            <div className="min-w-0 flex-1">
+              <span className="font-medium text-foreground block truncate">{ce.name}</span>
+              <span className="font-mono text-[11px] text-muted-foreground block truncate" title={ce.path ?? ''}>{ce.path}</span>
+            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive cursor-pointer"
+              title={`Remove ${ce.name}`}
+              onClick={() => void handleRemoveEditor(ce.id)}
+            >
+              <Trash2 className="size-3" />
+            </Button>
+          </div>
+        ))}
+
+        {showAddEditor && (
+          <div className="flex flex-col gap-2 rounded-md border border-primary/30 bg-accent/20 p-2.5">
+            <span className="text-xs font-medium">Add New Editor</span>
+            <Input
+              value={newEditorName}
+              onChange={(e) => setNewEditorName(e.target.value)}
+              placeholder="Editor name (e.g. Sublime Text, PhpStorm)"
+              className="h-7 text-xs"
+            />
+            <div className="flex gap-2">
+              <Input
+                value={newEditorPath}
+                onChange={(e) => setNewEditorPath(e.target.value)}
+                placeholder="Executable path (.exe, .cmd, .bat)"
+                className="h-7 text-xs font-mono"
+              />
+              <Button
+                variant="secondary"
+                size="sm"
+                className="h-7 text-xs px-2 shrink-0"
+                onClick={async () => {
+                  const p = await open({ filters: [{ name: 'Program', extensions: ['exe', 'cmd', 'bat'] }] })
+                  if (p && !Array.isArray(p)) setNewEditorPath(p)
+                }}
+              >
+                <FolderSearch className="size-3 mr-1" /> Browse
+              </Button>
+            </div>
+            <div className="flex justify-end gap-1.5 pt-1">
+              <Button size="sm" variant="ghost" className="h-6 text-xs cursor-pointer" onClick={() => setShowAddEditor(false)}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                className="h-6 text-xs cursor-pointer"
+                disabled={!newEditorName.trim() || !newEditorPath.trim()}
+                onClick={() => void handleAddEditor()}
+              >
+                Save
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 

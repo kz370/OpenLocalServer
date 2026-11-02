@@ -180,6 +180,20 @@ impl Inner {
                 cmd.spawn().map(|_| ()).map_err(|e| err(e.to_string()))
             }
             editor_id => {
+                let settings = self.settings.lock().unwrap();
+                let custom_list = crate::editors::list_custom(&settings);
+                if let Some(c) = custom_list.iter().find(|e| e.id == editor_id) {
+                    drop(settings);
+                    let exe = Path::new(&c.path);
+                    if !exe.exists() {
+                        return Err(err(format!(
+                            "Custom editor '{}' was not found at {}",
+                            c.name, c.path
+                        )));
+                    }
+                    return self.launch_editor(exe, path);
+                }
+                drop(settings);
                 let found = crate::editors::detect()
                     .into_iter()
                     .find(|e| e.id == editor_id)

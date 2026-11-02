@@ -133,6 +133,15 @@ export interface Project {
   path: string
   icon_image?: string | null
   health?: ProjectHealth
+  standalone?: boolean
+  icon?: string | null
+  project_type?: string | null
+}
+
+export interface ProjectTypePreset {
+  id: string
+  name: string
+  icon: string
 }
 
 /**

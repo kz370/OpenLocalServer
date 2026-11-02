@@ -6,6 +6,7 @@ use std::time::Duration;
 use tokio::sync::broadcast;
 
 use crate::app::*;
+use crate::domain::Domain;
 use crate::error::CoreError;
 use crate::project::{build_detail, Project, ProjectDetail};
 
@@ -420,6 +421,224 @@ impl Inner {
         }
 
         Ok(project)
+    }
+
+    /// Updates metadata (name, icon spec, and project type) on a registered project.
+    pub fn update_project(
+        &self,
+        id: &str,
+        name: Option<String>,
+        icon: Option<String>,
+        clear_icon: Option<bool>,
+        project_type: Option<String>,
+        clear_project_type: Option<bool>,
+    ) -> Result<Project, CoreError> {
+        let mut projects = lock(&self.projects);
+        let updated =
+            projects.update_meta(id, name, icon, clear_icon, project_type, clear_project_type)?;
+        let _ = self.project_events.send(());
+        Ok(updated)
+    }
+
+    /// Creates a site domain for a project if possible, or returns needs_setup if manual configuration is required.
+    pub fn create_site_for_project(
+        &self,
+        project_id: &str,
+    ) -> Result<crate::command::CreateSiteResult, CoreError> {
+        let project = self.ensure_project_available(project_id)?;
+        let path = Path::new(&project.path);
+
+        // 1. If an existing domain matches this project id or folder, return it.
+        {
+            let domains = lock(&self.domains);
+            let projects = lock(&self.projects).list();
+            let norm = |p: &str| {
+                p.replace('/', "\\")
+                    .trim_end_matches('\\')
+                    .to_ascii_lowercase()
+            };
+            let proj_norm = norm(&project.path);
+            if let Some(existing) = domains.list().into_iter().find(|d| {
+                d.project_id.as_deref() == Some(project_id)
+                    || norm(&d.root) == proj_norm
+                    || norm(&crate::app::domains::site_folder(d, &projects)) == proj_norm
+            }) {
+                return Ok(crate::command::CreateSiteResult {
+                    domain: Some(Box::new(existing.clone())),
+                    needs_setup: false,
+                    suggested_hostname: existing.hostname,
+                });
+            }
+        }
+
+        // 2. Derive suggested hostname
+        let default_tld = self
+            .settings
+            .lock()
+            .unwrap()
+            .get("domains.default_tld")
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim().trim_start_matches('.').to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "local".to_string());
+        let auto_template = format!("{{project}}.{default_tld}");
+        let tld_suffix = format!(".{default_tld}");
+        let effective_name = project.name.strip_suffix(&tld_suffix).unwrap_or(&project.name);
+        let base_hostname = crate::domain::apply_template(&auto_template, effective_name);
+
+        let candidate_hostname = {
+            let domains = lock(&self.domains);
+            if domains.get(&base_hostname).is_none() {
+                base_hostname
+            } else {
+                let mut idx = 1;
+                loop {
+                    let next = format!("{effective_name}-{idx}.{default_tld}");
+                    if domains.get(&next).is_none() {
+                        break next;
+                    }
+                    idx += 1;
+                }
+            }
+        };
+
+        // 3. Check if auto_site can serve it
+        let Some((kind, root)) = crate::app::domains::sync::auto_site(path) else {
+            return Ok(crate::command::CreateSiteResult {
+                domain: None,
+                needs_setup: true,
+                suggested_hostname: candidate_hostname,
+            });
+        };
+
+        let domain = Domain {
+            hostname: candidate_hostname.clone(),
+            project_id: Some(project.id.clone()),
+            root: root.display().to_string(),
+            kind,
+            https: true,
+            redirect_https: true,
+            wildcard: false,
+            enabled: true,
+            icon: project.icon.clone(),
+            ..Default::default()
+        };
+
+        let created = self.add_domain(domain)?;
+        if created.enabled && !self.web.dns_covers(&created.hostname) {
+            let _ = crate::hosts::ensure(&[created.hostname.clone()]);
+        }
+        if self.web.is_running() {
+            let _ = self.apply_web(&[]);
+        }
+
+        Ok(crate::command::CreateSiteResult {
+            domain: Some(Box::new(created)),
+            needs_setup: false,
+            suggested_hostname: candidate_hostname,
+        })
+    }
+
+    /// Opens an external Windows Terminal window in the project's directory, falling back to PowerShell.
+    pub fn open_project_terminal(&self, project_id: &str) -> Result<(), CoreError> {
+        let project = self.ensure_project_available(project_id)?;
+        let dir = Path::new(&project.path);
+        let mut wt = std::process::Command::new("wt.exe");
+        wt.arg("-w").arg("new").arg("-d").arg(dir);
+        if wt.spawn().is_ok() {
+            return Ok(());
+        }
+        std::process::Command::new(crate::exec::powershell_path())
+            .arg("-NoExit")
+            .current_dir(dir)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| {
+                CoreError::failed_fix(
+                    "Could not open external terminal window.",
+                    e.to_string(),
+                    "Ensure Windows Terminal or PowerShell is available on this system.",
+                )
+            })
+    }
+
+    /// Adds a custom editor to the configuration and returns the updated editor list.
+    pub fn add_editor(&self, name: &str, path: &str) -> Result<Vec<crate::editors::EditorInfo>, CoreError> {
+        let name = name.trim();
+        let path = path.trim();
+        if name.is_empty() {
+            return Err(CoreError::failed_fix(
+                "Editor name cannot be blank.",
+                "An editor name is required.",
+                "Enter a display name for the editor.",
+            ));
+        }
+        if !Path::new(path).is_file() {
+            return Err(CoreError::failed_fix(
+                "Editor executable not found.",
+                format!("'{path}' is not a valid executable file."),
+                "Select a valid .exe, .cmd, or .bat file on your system.",
+            ));
+        }
+        let mut settings = lock(&self.settings);
+        let mut list = crate::editors::list_custom(&settings);
+        let slug = name.to_lowercase().replace(|c: char| !c.is_alphanumeric(), "-");
+        let id = format!("custom:{}", slug.trim_matches('-'));
+        if let Some(existing) = list.iter_mut().find(|e| e.id == id || e.path.eq_ignore_ascii_case(path)) {
+            existing.name = name.to_string();
+            existing.path = path.to_string();
+        } else {
+            list.push(crate::editors::CustomEditor {
+                id,
+                name: name.to_string(),
+                path: path.to_string(),
+                args: None,
+            });
+        }
+        crate::editors::save_custom(&mut settings, &list)?;
+        Ok(crate::editors::list_all(&settings))
+    }
+
+    /// Updates an existing custom editor's display name or executable path.
+    pub fn update_editor(&self, id: &str, name: &str, path: &str) -> Result<Vec<crate::editors::EditorInfo>, CoreError> {
+        let name = name.trim();
+        let path = path.trim();
+        if name.is_empty() {
+            return Err(CoreError::failed_fix(
+                "Editor name cannot be blank.",
+                "An editor name is required.",
+                "Enter a display name for the editor.",
+            ));
+        }
+        if !Path::new(path).is_file() {
+            return Err(CoreError::failed_fix(
+                "Editor executable not found.",
+                format!("'{path}' is not a valid executable file."),
+                "Select a valid .exe, .cmd, or .bat file on your system.",
+            ));
+        }
+        let mut settings = lock(&self.settings);
+        let mut list = crate::editors::list_custom(&settings);
+        let item = list.iter_mut().find(|e| e.id == id).ok_or_else(|| {
+            CoreError::failed_fix(
+                "Editor not found.",
+                format!("No custom editor with id '{id}' was found."),
+                "Check the editor ID and try again.",
+            )
+        })?;
+        item.name = name.to_string();
+        item.path = path.to_string();
+        crate::editors::save_custom(&mut settings, &list)?;
+        Ok(crate::editors::list_all(&settings))
+    }
+
+    /// Removes a custom editor by id and returns the updated editor list.
+    pub fn remove_editor(&self, id: &str) -> Result<Vec<crate::editors::EditorInfo>, CoreError> {
+        let mut settings = lock(&self.settings);
+        let mut list = crate::editors::list_custom(&settings);
+        list.retain(|e| e.id != id);
+        crate::editors::save_custom(&mut settings, &list)?;
+        Ok(crate::editors::list_all(&settings))
     }
 }
 

@@ -140,7 +140,7 @@ function SshKeyPicker({ value, onChange }: { value: string; onChange: (v: string
 }
 
 /** §125: clone a repository into a new folder, registered as a project with its own site. */
-export function GitCloneButton({ defaultParent, onDone }: { defaultParent: string; onDone: (p: Project) => void }) {
+export function GitCloneButton({ defaultParent, onDone, standalone }: { defaultParent: string; onDone: (p: Project) => void; standalone?: boolean }) {
   const [openDialog, setOpen] = useState(false)
   const [url, setUrl] = useState('')
   const [domain, setDomain] = useState('')
@@ -237,9 +237,9 @@ export function GitCloneButton({ defaultParent, onDone }: { defaultParent: strin
                       : authMode === 'ssh'
                         ? { type: 'ssh' as const, key_path: keyPath, remember, passphrase: passphrase || null }
                         : null
-                  const r = await runCommand({ type: 'git_clone', url: url.trim(), target: dest, branch: branch.trim() || null, auth })
+                  const r = await runCommand({ type: 'git_clone', url: url.trim(), target: dest, branch: branch.trim() || null, auth, standalone: standalone ?? false })
                   if (r.type === 'project') {
-                    const desiredDomain = domain.trim().toLowerCase()
+                    const desiredDomain = !standalone ? domain.trim().toLowerCase() : ''
                     if (desiredDomain) {
                       try {
                         const existing = await runCommand({ type: 'get_domain', hostname: desiredDomain })

@@ -1,0 +1,53 @@
+types:
+  - id: laravel
+    name: Laravel
+    icon: laravel
+  - id: symfony
+    name: Symfony
+    icon: symfony
+  - id: wordpress
+    name: WordPress
+    icon: wordpress
+  - id: php
+    name: PHP
+    icon: php
+  - id: python
+    name: Python
+    icon: python
+  - id: django
+    name: Django
+    icon: django
+  - id: flask
+    name: Flask
+    icon: python
+  - id: fastapi
+    name: FastAPI
+    icon: fastapi
+  - id: node
+    name: Node.js
+    icon: node
+  - id: nextjs
+    name: Next.js
+    icon: nextjs
+  - id: react
+    name: React
+    icon: react
+  - id: vue
+    name: Vue
+    icon: vue
+  - id: go
+    name: Go
+    icon: go
+  - id: dotnet
+    name: .NET
+    icon: dotnet
+  - id: java
+    name: Java
+    icon: openjdk
+  - id: static
+    name: Static HTML
+    icon: html5
+  - id: other
+    name: Other
+    icon: folder
+

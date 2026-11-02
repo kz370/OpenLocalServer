@@ -26,6 +26,19 @@ export type CoreCommand =
   | { type: 'cancel_runtime'; id: string; version: string }
   | { type: 'remove_runtime'; id: string; version: string }
   | { type: 'register_project'; path: string }
+  | { type: 'add_project'; path: string }
+  | {
+      type: 'update_project'
+      id: string
+      name?: string
+      icon?: string | null
+      clear_icon?: boolean
+      project_type?: string | null
+      clear_project_type?: boolean
+    }
+  | { type: 'create_site_for_project'; project_id: string }
+  | { type: 'open_project_terminal'; project_id: string }
+  | { type: 'list_project_types' }
   | { type: 'scan_and_register_projects'; path: string }
   | { type: 'list_projects' }
   | { type: 'sync_auto_domains' }
@@ -180,6 +193,9 @@ export type CoreCommand =
   | { type: 'close_terminal'; id: number }
   | { type: 'list_project_shortcuts'; project_id: string }
   | { type: 'list_editors' }
+  | { type: 'add_editor'; name: string; path: string }
+  | { type: 'update_editor'; id: string; name: string; path: string }
+  | { type: 'remove_editor'; id: string }
   | { type: 'get_system_stats' }
   | { type: 'list_migration_sources' }
   | { type: 'list_foreign_databases'; source_id: string; password: string }
@@ -312,7 +328,7 @@ export type CoreCommand =
   | { type: 'git_add_ignore'; project_id: string; template: string }
   | { type: 'git_set_credentials'; host: string; username: string; token: string | null }
   | { type: 'list_ssh_keys' }
-  | { type: 'git_clone'; url: string; target: string; branch: string | null; auth: { type: 'https'; username: string; password: string; remember: boolean } | { type: 'ssh'; key_path: string; remember: boolean; passphrase: string | null } | null }
+  | { type: 'git_clone'; url: string; target: string; branch: string | null; auth: { type: 'https'; username: string; password: string; remember: boolean } | { type: 'ssh'; key_path: string; remember: boolean; passphrase: string | null } | null; standalone?: boolean | null }
   | { type: 'list_plugins' }
   | { type: 'install_plugin'; source: string }
   | { type: 'set_plugin_enabled'; id: string; enabled: boolean; approve: string[] }

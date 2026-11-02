@@ -155,6 +155,14 @@ pub fn allowed(cmd: &CoreCommand) -> bool {
             | C::RenameDomain { .. }
             | C::SyncAutoDomains
             | C::RegisterProject { .. }
+            | C::AddProject { .. }
+            | C::UpdateProject { .. }
+            | C::CreateSiteForProject { .. }
+            | C::OpenProjectTerminal { .. }
+            | C::ListProjectTypes
+            | C::AddEditor { .. }
+            | C::UpdateEditor { .. }
+            | C::RemoveEditor { .. }
             | C::RelocateProject { .. }
             | C::RemoveProject { .. }
             | C::DeleteProject { .. }

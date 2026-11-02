@@ -143,10 +143,11 @@ impl Core {
                     target,
                     branch,
                     auth,
+                    standalone,
                 } => {
                     tracing::info!(command = "git_clone", target = %target);
                     Ok(R::Project {
-                        project: i.git_clone(&url, &target, branch.as_deref(), auth)?,
+                        project: i.git_clone(&url, &target, branch.as_deref(), auth, standalone)?,
                     })
                 }
 

@@ -234,6 +234,7 @@ pub fn project(ctx: &Ctx, cmd: ProjectCmd) -> R<()> {
                 target: target.display().to_string(),
                 branch: None,
                 auth: None,
+                standalone: None,
             })? {
                 println!(
                     "{} is ready at {}. Next: cd there and run `olsc setup`.",

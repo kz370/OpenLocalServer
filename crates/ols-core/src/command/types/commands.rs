@@ -65,6 +65,41 @@ pub enum CoreCommand {
     RegisterProject {
         path: String,
     },
+    AddProject {
+        path: String,
+    },
+    UpdateProject {
+        id: String,
+        #[serde(default)]
+        name: Option<String>,
+        #[serde(default)]
+        icon: Option<String>,
+        #[serde(default)]
+        clear_icon: Option<bool>,
+        #[serde(default)]
+        project_type: Option<String>,
+        #[serde(default)]
+        clear_project_type: Option<bool>,
+    },
+    CreateSiteForProject {
+        project_id: String,
+    },
+    OpenProjectTerminal {
+        project_id: String,
+    },
+    ListProjectTypes,
+    AddEditor {
+        name: String,
+        path: String,
+    },
+    UpdateEditor {
+        id: String,
+        name: String,
+        path: String,
+    },
+    RemoveEditor {
+        id: String,
+    },
     ScanAndRegisterProjects {
         path: String,
     },
@@ -975,6 +1010,8 @@ pub enum CoreCommand {
         target: String,
         branch: Option<String>,
         auth: Option<crate::git::GitAuth>,
+        #[serde(default)]
+        standalone: Option<bool>,
     },
     ListPlugins,
     InstallPlugin {

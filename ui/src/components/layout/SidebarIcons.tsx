@@ -50,6 +50,39 @@ export function DashboardIcon({ className, monochrome }: { className?: string; m
   )
 }
 
+export function ProjectsIcon({ className, monochrome }: { className?: string; monochrome?: boolean }) {
+  if (useIsMonochrome(monochrome)) {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={cn('size-5 shrink-0', className)}>
+        <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
+        <path d="m10 13 2 2 4-4" />
+      </svg>
+    )
+  }
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={cn('size-5 shrink-0', className)}>
+      <defs>
+        <radialGradient id="sb-proj-bg" cx="12" cy="12" r="9" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.22" />
+          <stop offset="100%" stopColor="#1d4ed8" stopOpacity="0.06" />
+        </radialGradient>
+        <linearGradient id="sb-proj-stroke" x1="3" y1="3" x2="21" y2="21" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#60a5fa" />
+          <stop offset="50%" stopColor="#3b82f6" />
+          <stop offset="100%" stopColor="#2563eb" />
+        </linearGradient>
+      </defs>
+      <path
+        d="M3 6.5C3 5.67 3.67 5 4.5 5H9.2C9.7 5 10.2 5.25 10.5 5.65L11.8 7.35C12.1 7.75 12.6 8 13.1 8H19.5C20.33 8 21 8.67 21 9.5V17.5C21 18.33 20.33 19 19.5 19H4.5C3.67 19 3 18.33 3 17.5V6.5Z"
+        fill="url(#sb-proj-bg)"
+        stroke="url(#sb-proj-stroke)"
+        strokeWidth="1.8"
+      />
+      <path d="m9.5 13.5 2 2 4-4" stroke="url(#sb-proj-stroke)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
 export function SitesIcon({ className, monochrome }: { className?: string; monochrome?: boolean }) {
   if (useIsMonochrome(monochrome)) {
     return (

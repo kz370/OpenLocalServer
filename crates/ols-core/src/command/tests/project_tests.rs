@@ -397,3 +397,194 @@ fn forgetting_nothing_says_so_instead_of_doing_nothing_quietly() {
         "an empty value must be reported, not ignored: {err:?}"
     );
 }
+
+#[test]
+fn standalone_projects_do_not_get_auto_domains_and_can_create_site() {
+    let (core, home) = test_core();
+    let p_dir = home.paths.root().join("my-standalone-project");
+    std::fs::create_dir_all(&p_dir).unwrap();
+    std::fs::write(p_dir.join("index.html"), "<h1>Hello</h1>").unwrap();
+
+    let project = match core
+        .dispatch(CoreCommand::AddProject {
+            path: p_dir.display().to_string(),
+        })
+        .unwrap()
+    {
+        CoreResponse::Project { project } => project,
+        other => panic!("expected Project, got {other:?}"),
+    };
+    assert!(project.standalone, "added project must have standalone = true");
+
+    // SyncAutoDomains should not create a domain for standalone project
+    core.dispatch(CoreCommand::SyncAutoDomains).unwrap();
+    match core.dispatch(CoreCommand::ListDomains).unwrap() {
+        CoreResponse::Domains { domains } => {
+            assert!(
+                !domains.iter().any(|d| d.project_id.as_deref() == Some(&project.id)),
+                "standalone project must not receive automatic domain"
+            );
+        }
+        other => panic!("expected Domains, got {other:?}"),
+    }
+
+    // Now call CreateSiteForProject
+    let res = match core
+        .dispatch(CoreCommand::CreateSiteForProject {
+            project_id: project.id.clone(),
+        })
+        .unwrap()
+    {
+        CoreResponse::CreateSiteForProject {
+            domain,
+            needs_setup,
+            suggested_hostname,
+        } => (domain, needs_setup, suggested_hostname),
+        other => panic!("expected CreateSiteForProject, got {other:?}"),
+    };
+
+    assert!(!res.1, "should not need setup for static index.html site");
+    let domain = res.0.expect("should have created domain");
+    assert_eq!(domain.project_id.as_deref(), Some(project.id.as_str()));
+
+    // Idempotent: calling again returns the existing domain
+    let res2 = match core
+        .dispatch(CoreCommand::CreateSiteForProject {
+            project_id: project.id.clone(),
+        })
+        .unwrap()
+    {
+        CoreResponse::CreateSiteForProject {
+            domain,
+            needs_setup,
+            ..
+        } => (domain, needs_setup),
+        other => panic!("expected CreateSiteForProject, got {other:?}"),
+    };
+    assert!(!res2.1);
+    assert_eq!(res2.0.unwrap().hostname, domain.hostname);
+}
+
+#[test]
+fn project_metadata_update_persists_icon_and_type() {
+    let (core, home) = test_core();
+    let p_dir = home.paths.root().join("test-proj-meta");
+    std::fs::create_dir_all(&p_dir).unwrap();
+
+    let project = match core
+        .dispatch(CoreCommand::AddProject {
+            path: p_dir.display().to_string(),
+        })
+        .unwrap()
+    {
+        CoreResponse::Project { project } => project,
+        other => panic!("expected Project, got {other:?}"),
+    };
+
+    let updated = match core
+        .dispatch(CoreCommand::UpdateProject {
+            id: project.id.clone(),
+            name: Some("Renamed Proj".into()),
+            icon: Some("fa:rocket:#38bdf8".into()),
+            clear_icon: None,
+            project_type: Some("python".into()),
+            clear_project_type: None,
+        })
+        .unwrap()
+    {
+        CoreResponse::Project { project } => project,
+        other => panic!("expected Project, got {other:?}"),
+    };
+
+    assert_eq!(updated.name, "Renamed Proj");
+    assert_eq!(updated.icon.as_deref(), Some("fa:rocket:#38bdf8"));
+    assert_eq!(updated.project_type.as_deref(), Some("python"));
+
+    // Reload projects to verify persistence
+    match core.dispatch(CoreCommand::ListProjects).unwrap() {
+        CoreResponse::Projects { projects } => {
+            let found = projects.iter().find(|p| p.id == project.id).unwrap();
+            assert_eq!(found.name, "Renamed Proj");
+            assert_eq!(found.icon.as_deref(), Some("fa:rocket:#38bdf8"));
+            assert_eq!(found.project_type.as_deref(), Some("python"));
+        }
+        other => panic!("expected Projects, got {other:?}"),
+    }
+
+    // Clear icon
+    let cleared = match core
+        .dispatch(CoreCommand::UpdateProject {
+            id: project.id.clone(),
+            name: None,
+            icon: None,
+            clear_icon: Some(true),
+            project_type: None,
+            clear_project_type: None,
+        })
+        .unwrap()
+    {
+        CoreResponse::Project { project } => project,
+        other => panic!("expected Project, got {other:?}"),
+    };
+    assert!(cleared.icon.is_none());
+    assert_eq!(cleared.project_type.as_deref(), Some("python"));
+}
+
+#[test]
+fn custom_editors_crud_and_project_types() {
+    let (core, home) = test_core();
+    let fake_exe = home.paths.root().join("my-custom-editor.exe");
+    std::fs::write(&fake_exe, "mock exe").unwrap();
+
+    // 1. Add editor
+    let editors = match core
+        .dispatch(CoreCommand::AddEditor {
+            name: "Awesome Editor".into(),
+            path: fake_exe.display().to_string(),
+        })
+        .unwrap()
+    {
+        CoreResponse::Editors { editors } => editors,
+        other => panic!("expected Editors, got {other:?}"),
+    };
+
+    let custom = editors.iter().find(|e| e.name == "Awesome Editor").unwrap();
+    assert!(custom.custom);
+    assert_eq!(custom.path.as_deref(), Some(fake_exe.to_str().unwrap()));
+    let custom_id = custom.id.clone();
+
+    // 2. Update editor
+    let updated_editors = match core
+        .dispatch(CoreCommand::UpdateEditor {
+            id: custom_id.clone(),
+            name: "Awesome Editor Pro".into(),
+            path: fake_exe.display().to_string(),
+        })
+        .unwrap()
+    {
+        CoreResponse::Editors { editors } => editors,
+        other => panic!("expected Editors, got {other:?}"),
+    };
+    assert!(updated_editors.iter().any(|e| e.id == custom_id && e.name == "Awesome Editor Pro"));
+
+    // 3. Remove editor
+    let remaining = match core
+        .dispatch(CoreCommand::RemoveEditor {
+            id: custom_id.clone(),
+        })
+        .unwrap()
+    {
+        CoreResponse::Editors { editors } => editors,
+        other => panic!("expected Editors, got {other:?}"),
+    };
+    assert!(!remaining.iter().any(|e| e.id == custom_id));
+
+    // 4. Project types
+    let types = match core.dispatch(CoreCommand::ListProjectTypes).unwrap() {
+        CoreResponse::ProjectTypes { types } => types,
+        other => panic!("expected ProjectTypes, got {other:?}"),
+    };
+    assert!(!types.is_empty());
+    assert!(types.iter().any(|t| t.id == "laravel"));
+    assert!(types.iter().any(|t| t.id == "python"));
+}

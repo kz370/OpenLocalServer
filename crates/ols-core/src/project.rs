@@ -39,6 +39,31 @@ pub struct Project {
     pub icon_image: Option<String>,
     #[serde(default)]
     pub health: ProjectHealth,
+    #[serde(default)]
+    pub standalone: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectTypePreset {
+    pub id: String,
+    pub name: String,
+    pub icon: String,
+}
+
+/// Shipped preset project types for the project settings dropdown.
+pub fn list_project_types() -> Vec<ProjectTypePreset> {
+    #[derive(Deserialize)]
+    struct Catalog {
+        types: Vec<ProjectTypePreset>,
+    }
+    let raw = include_str!("../catalog/project-types.yaml");
+    serde_yaml_ng::from_str::<Catalog>(raw)
+        .map(|c| c.types)
+        .unwrap_or_default()
 }
 
 /// Finds the root volume or mount point of a path.
@@ -204,6 +229,16 @@ impl ProjectStore {
     /// Registers an existing folder. Idempotent — registering the same path twice
     /// returns the existing project rather than creating a duplicate.
     pub fn register(&mut self, path: &str) -> Result<Project, CoreError> {
+        self.register_with_standalone(path, false)
+    }
+
+    /// Registers an existing folder, optionally flagging it as a standalone project
+    /// that does not receive an automatic site domain.
+    pub fn register_with_standalone(
+        &mut self,
+        path: &str,
+        standalone: bool,
+    ) -> Result<Project, CoreError> {
         let path_buf = PathBuf::from(path);
         if !path_buf.is_dir() {
             return Err(CoreError::InvalidProjectPath(path.to_string()));
@@ -233,10 +268,59 @@ impl ProjectStore {
             path: canonical_str,
             icon_image: None,
             health: ProjectHealth::Healthy,
+            standalone,
+            icon: None,
+            project_type: None,
         };
         self.projects.push(project.clone());
         self.persist()?;
         Ok(project)
+    }
+
+    /// Updates metadata (display name, icon spec, and project type) on a project.
+    pub fn update_meta(
+        &mut self,
+        id: &str,
+        name: Option<String>,
+        icon: Option<String>,
+        clear_icon: Option<bool>,
+        project_type: Option<String>,
+        clear_project_type: Option<bool>,
+    ) -> Result<Project, CoreError> {
+        let p = self
+            .projects
+            .iter_mut()
+            .find(|p| p.id == id)
+            .ok_or_else(|| CoreError::InvalidProjectPath(id.to_string()))?;
+        if let Some(n) = name {
+            let trimmed = n.trim();
+            if !trimmed.is_empty() {
+                p.name = trimmed.to_string();
+            }
+        }
+        if clear_icon.unwrap_or(false) {
+            p.icon = None;
+        } else if let Some(ic) = icon {
+            let trimmed = ic.trim();
+            p.icon = if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            };
+        }
+        if clear_project_type.unwrap_or(false) {
+            p.project_type = None;
+        } else if let Some(pt) = project_type {
+            let trimmed = pt.trim();
+            p.project_type = if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            };
+        }
+        let out = p.clone();
+        self.persist()?;
+        Ok(out)
     }
 
     /// A display name other than the folder's (clones and imports choose their own).

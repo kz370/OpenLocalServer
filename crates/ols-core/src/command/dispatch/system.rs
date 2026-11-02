@@ -257,6 +257,52 @@ impl Core {
                     }
                     Ok(R::Project { project })
                 }
+                C::AddProject { path } => {
+                    tracing::info!(command = "add_project", path = %path);
+                    let project = i
+                        .projects
+                        .lock()
+                        .unwrap()
+                        .register_with_standalone(&path, true)?;
+                    let _ = i.clear_project_skip(&project.path);
+                    Ok(R::Project { project })
+                }
+                C::UpdateProject {
+                    id,
+                    name,
+                    icon,
+                    clear_icon,
+                    project_type,
+                    clear_project_type,
+                } => {
+                    tracing::info!(command = "update_project", id = %id);
+                    let project = i.update_project(
+                        &id,
+                        name,
+                        icon,
+                        clear_icon,
+                        project_type,
+                        clear_project_type,
+                    )?;
+                    Ok(R::Project { project })
+                }
+                C::CreateSiteForProject { project_id } => {
+                    tracing::info!(command = "create_site_for_project", project_id = %project_id);
+                    let res = i.create_site_for_project(&project_id)?;
+                    Ok(R::CreateSiteForProject {
+                        domain: res.domain,
+                        needs_setup: res.needs_setup,
+                        suggested_hostname: res.suggested_hostname,
+                    })
+                }
+                C::OpenProjectTerminal { project_id } => {
+                    tracing::info!(command = "open_project_terminal", project_id = %project_id);
+                    i.open_project_terminal(&project_id)?;
+                    Ok(R::Ok)
+                }
+                C::ListProjectTypes => Ok(R::ProjectTypes {
+                    types: crate::project::list_project_types(),
+                }),
                 C::ScanAndRegisterProjects { path } => {
                     tracing::info!(command = "scan_and_register_projects", path = %path);
                     let root = std::path::PathBuf::from(&path);

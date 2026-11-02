@@ -15,6 +15,7 @@ import {
   PluginsIcon,
   ProcessesIcon,
   ProfilesIcon,
+  ProjectsIcon,
   QuickAppsIcon,
   RuntimesIcon,
   SearchNavIcon,
@@ -30,6 +31,7 @@ import {
 
 export type Page =
   | 'dashboard'
+  | 'projects'
   | 'sites'
   | 'quickapps'
   | 'commands'
@@ -60,6 +62,7 @@ const NAV_GROUPS: { id: string; label: string; items: NavItem[] }[] = [
     id: 'sites',
     label: 'Sites',
     items: [
+      { id: 'projects', label: 'Projects', icon: ProjectsIcon },
       { id: 'sites', label: 'Sites', icon: SitesIcon },
       { id: 'quickapps', label: 'Quick Apps', icon: QuickAppsIcon },
       { id: 'commands', label: 'Commands', icon: CommandsIcon },

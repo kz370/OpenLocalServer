@@ -18,7 +18,7 @@ pub mod types;
 #[cfg(test)]
 mod tests;
 
-pub use self::types::{CoreCommand, CoreResponse, DashboardData};
+pub use self::types::{CoreCommand, CoreResponse, CreateSiteResult, DashboardData};
 
 /// Reports a background task's completion status.
 pub(crate) fn report<T>(h: &crate::tasks::TaskHandle, r: Result<T, CoreError>) {

@@ -21,6 +21,7 @@ import { ProcessesPage } from '@/pages/Processes'
 import { TasksPage } from '@/pages/Tasks'
 import { PluginsPage } from '@/pages/Plugins'
 import { ProfilesPage } from '@/pages/Profiles'
+import { ProjectsPage } from '@/pages/Projects'
 import { SitesPage } from '@/pages/Sites'
 import { QuickAppsPage } from '@/pages/QuickApps'
 import { RuntimesPage } from '@/pages/Runtimes'
@@ -30,6 +31,7 @@ import { TunnelsPage } from '@/pages/Tunnels'
 
 const VALID_PAGES: readonly Page[] = [
   'dashboard',
+  'projects',
   'sites',
   'quickapps',
   'commands',
@@ -246,6 +248,7 @@ export default function App() {
           <DoctorDialog open={doctor} onClose={() => setDoctor(false)} />
           <main className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-6">
             {page === 'dashboard' && <DashboardPage onNavigate={navigate} onOpenLogs={openLogs} />}
+            {page === 'projects' && <ProjectsPage onNavigate={navigate} />}
             {page === 'sites' && <SitesPage onNavigate={navigate} />}
             {page === 'quickapps' && <QuickAppsPage onNavigate={navigate} />}
             {page === 'commands' && <CommandsPage />}

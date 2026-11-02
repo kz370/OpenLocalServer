@@ -12,6 +12,72 @@ pub struct EditorInfo {
     pub name: String,
     /// Where it was found; `None` when it isn't installed.
     pub path: Option<String>,
+    #[serde(default)]
+    pub custom: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomEditor {
+    pub id: String,
+    pub name: String,
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub args: Option<Vec<String>>,
+}
+
+pub const CUSTOM_EDITORS_SETTING: &str = "editors.custom";
+
+/// Reads user-configured custom editors from settings.
+pub fn list_custom(settings: &crate::settings::SettingsService) -> Vec<CustomEditor> {
+    if let Some(val) = settings.get(CUSTOM_EDITORS_SETTING) {
+        if let Ok(list) = serde_json::from_value::<Vec<CustomEditor>>(val.clone()) {
+            return list;
+        }
+    }
+    // Backward compatibility: if no custom editors yet, but `editor.command` exists:
+    if let Some(cmd) = settings
+        .get("editor.command")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        let name = Path::new(cmd)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("Custom Editor")
+            .to_string();
+        return vec![CustomEditor {
+            id: "custom:default".to_string(),
+            name,
+            path: cmd.to_string(),
+            args: None,
+        }];
+    }
+    Vec::new()
+}
+
+/// Persists custom editors list to settings.
+pub fn save_custom(
+    settings: &mut crate::settings::SettingsService,
+    list: &[CustomEditor],
+) -> Result<(), crate::error::CoreError> {
+    let val = serde_json::to_value(list).map_err(|e| crate::error::CoreError::ServiceError(e.to_string()))?;
+    settings.set(CUSTOM_EDITORS_SETTING, val)
+}
+
+/// Returns all editors: detected system editors plus user-configured custom editors.
+pub fn list_all(settings: &crate::settings::SettingsService) -> Vec<EditorInfo> {
+    let mut all = detect();
+    let custom = list_custom(settings);
+    for c in custom {
+        all.push(EditorInfo {
+            id: c.id,
+            name: c.name,
+            path: Some(c.path),
+            custom: true,
+        });
+    }
+    all
 }
 
 /// (id, display name, exe name, install folders relative to the usual roots, PATH shim).
@@ -80,6 +146,7 @@ pub fn detect() -> Vec<EditorInfo> {
                 id: id.to_string(),
                 name: name.to_string(),
                 path: path.map(|p| p.display().to_string()),
+                custom: false,
             }
         })
         .collect()

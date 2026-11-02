@@ -1019,6 +1019,7 @@ impl Inner {
         target: &str,
         branch: Option<&str>,
         auth: Option<GitAuth>,
+        standalone: Option<bool>,
     ) -> Result<crate::project::Project, CoreError> {
         let url = url.trim();
         if url.is_empty() || url.starts_with('-') {
@@ -1140,9 +1141,16 @@ impl Inner {
         if !out.success() {
             return Err(err(scrub(&out.combined())));
         }
-        let project = self.projects.lock().unwrap().register(&target_s)?;
-        if let Err(e) = self.sync_auto_domains() {
-            tracing::warn!(error = %e, "automatic domains could not be synced");
+        let is_standalone = standalone.unwrap_or(false);
+        let project = self
+            .projects
+            .lock()
+            .unwrap()
+            .register_with_standalone(&target_s, is_standalone)?;
+        if !is_standalone {
+            if let Err(e) = self.sync_auto_domains() {
+                tracing::warn!(error = %e, "automatic domains could not be synced");
+            }
         }
         Ok(project)
     }

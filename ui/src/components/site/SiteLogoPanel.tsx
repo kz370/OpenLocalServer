@@ -17,6 +17,7 @@ import { runCommand } from '@/core'
 
 export interface SiteLogoPanelProps {
   hostname: string | null
+  projectId?: string | null
   folder: string
   displayName: string
   initialIcon?: string | null
@@ -32,6 +33,7 @@ export interface SiteLogoPanelProps {
  */
 export function SiteLogoPanel({
   hostname,
+  projectId = null,
   folder,
   displayName,
   initialIcon = null,
@@ -187,8 +189,8 @@ export function SiteLogoPanel({
   }
 
   const handleSelectFaIcon = async (iconId: string, colorToApply?: string) => {
-    if (!hostname) {
-      setError('Font Awesome icons require a site domain.')
+    if (!hostname && !projectId) {
+      setError('Font Awesome icons require a site domain or registered project.')
       return
     }
     const color = colorToApply !== undefined ? colorToApply : customColor
@@ -200,11 +202,19 @@ export function SiteLogoPanel({
     flashSaved()
 
     try {
-      await runCommand({
-        type: 'set_domain_icon',
-        hostname,
-        icon: iconSpec,
-      })
+      if (hostname) {
+        await runCommand({
+          type: 'set_domain_icon',
+          hostname,
+          icon: iconSpec,
+        })
+      } else if (projectId) {
+        await runCommand({
+          type: 'update_project',
+          id: projectId,
+          icon: iconSpec,
+        })
+      }
       void onUpdated?.()
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e))
@@ -219,7 +229,7 @@ export function SiteLogoPanel({
   }
 
   const handleClearFaIcon = async () => {
-    if (!hostname) return
+    if (!hostname && !projectId) return
     setError(null)
 
     // Optimistic update
@@ -229,11 +239,19 @@ export function SiteLogoPanel({
     flashSaved()
 
     try {
-      await runCommand({
-        type: 'set_domain_icon',
-        hostname,
-        icon: null,
-      })
+      if (hostname) {
+        await runCommand({
+          type: 'set_domain_icon',
+          hostname,
+          icon: null,
+        })
+      } else if (projectId) {
+        await runCommand({
+          type: 'update_project',
+          id: projectId,
+          clear_icon: true,
+        })
+      }
       void onUpdated?.()
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e))

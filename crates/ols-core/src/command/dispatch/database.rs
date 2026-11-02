@@ -446,7 +446,16 @@ impl Core {
                     Ok(R::Ok)
                 }
                 C::ListEditors => Ok(R::Editors {
-                    editors: crate::editors::detect(),
+                    editors: crate::editors::list_all(&i.settings.lock().unwrap()),
+                }),
+                C::AddEditor { name, path } => Ok(R::Editors {
+                    editors: i.add_editor(&name, &path)?,
+                }),
+                C::UpdateEditor { id, name, path } => Ok(R::Editors {
+                    editors: i.update_editor(&id, &name, &path)?,
+                }),
+                C::RemoveEditor { id } => Ok(R::Editors {
+                    editors: i.remove_editor(&id)?,
                 }),
                 C::GetSystemStats => Ok(R::SystemStats {
                     stats: Box::new(i.system_stats()),

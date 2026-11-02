@@ -110,7 +110,7 @@ impl Inner {
                 let _ = self.domains.lock().unwrap().update(domain);
             }
 
-            if already_served {
+            if already_served || p.standalone {
                 continue;
             }
             let Some((kind, root)) = auto_site(path) else {
@@ -185,7 +185,7 @@ fn has_index(dir: &Path) -> bool {
 
 /// How an automatic domain serves a project, or `None` when it needs a dev server
 /// (Node/Python) that a plain domain can't start.
-fn auto_site(path: &Path) -> Option<(SiteKind, PathBuf)> {
+pub(crate) fn auto_site(path: &Path) -> Option<(SiteKind, PathBuf)> {
     use crate::detection::Framework as F;
     let detection = crate::detection::detect(path);
     let root = detection

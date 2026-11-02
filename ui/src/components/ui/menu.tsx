@@ -8,16 +8,25 @@ import {
   useDismiss,
   useFloating,
   useInteractions,
+  type Placement,
   type VirtualElement,
 } from '@floating-ui/react'
-import { MoreHorizontal } from 'lucide-react'
+import { ChevronRight, MoreHorizontal } from 'lucide-react'
 import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 export type MenuItem =
-  | { label: string; icon?: ReactNode; onSelect: () => void; danger?: boolean; disabled?: boolean; hint?: string }
+  | {
+      label: string
+      icon?: ReactNode
+      onSelect?: () => void
+      danger?: boolean
+      disabled?: boolean
+      hint?: string
+      submenu?: MenuItem[]
+    }
   | 'separator'
 
 export type MenuAnchor =
@@ -44,13 +53,16 @@ export function FloatingMenu({
   items,
   anchor,
   header,
+  placement,
   onClose,
 }: {
   items: MenuItem[]
   anchor: MenuAnchor
   header?: ReactNode
+  placement?: Placement
   onClose: () => void
 }) {
+  const [activeSubmenu, setActiveSubmenu] = useState<string | null>(null)
   const referenceElement = useMemo<Element | VirtualElement>(() => {
     if (anchor.type === 'button' && anchor.element) {
       return anchor.element
@@ -82,13 +94,13 @@ export function FloatingMenu({
       if (!isOpen) onClose()
     },
     strategy: 'fixed',
-    placement: anchor.type === 'button' ? 'bottom-end' : 'bottom-start',
+    placement: placement ?? (anchor.type === 'button' ? 'bottom-end' : 'bottom-start'),
     whileElementsMounted: autoUpdate,
     elements: {
       reference: anchor.type === 'button' ? (anchor.element ?? null) : null,
     },
     middleware: [
-      offset(anchor.type === 'button' ? 4 : 2),
+      offset(anchor.type === 'button' ? (placement === 'right-start' ? 6 : 4) : 2),
       flip({
         padding: VIEWPORT_PADDING,
         fallbackAxisSideDirection: 'end',
@@ -165,27 +177,83 @@ export function FloatingMenu({
           item === 'separator' ? (
             <div key={`sep-${i}`} className="my-1 h-px bg-border" />
           ) : (
-            <button
+            <MenuItemRow
               key={item.label}
-              role="menuitem"
-              disabled={item.disabled}
-              title={item.hint}
-              onClick={() => {
-                onClose()
-                item.onSelect()
-              }}
-              className={cn(
-                'flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-left transition-colors hover:bg-accent/80 hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-3.5 [&_svg]:shrink-0',
-                item.danger ? 'text-destructive hover:bg-destructive/10 hover:text-destructive' : '',
-              )}
-            >
-              {item.icon}
-              {item.label}
-            </button>
+              item={item}
+              onClose={onClose}
+              activeSubmenu={activeSubmenu}
+              setActiveSubmenu={setActiveSubmenu}
+            />
           ),
         )}
       </div>
     </FloatingPortal>
+  )
+}
+
+function MenuItemRow({
+  item,
+  onClose,
+  activeSubmenu,
+  setActiveSubmenu,
+}: {
+  item: Exclude<MenuItem, 'separator'>
+  onClose: () => void
+  activeSubmenu: string | null
+  setActiveSubmenu: (name: string | null) => void
+}) {
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const isSubmenuOpen = activeSubmenu === item.label && Boolean(item.submenu && item.submenu.length > 0)
+
+  const handleMouseEnter = () => {
+    if (item.submenu && item.submenu.length > 0) {
+      setActiveSubmenu(item.label)
+    } else {
+      setActiveSubmenu(null)
+    }
+  }
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        role="menuitem"
+        disabled={item.disabled}
+        title={item.hint}
+        onMouseEnter={handleMouseEnter}
+        onClick={() => {
+          if (item.submenu && item.submenu.length > 0) {
+            setActiveSubmenu(isSubmenuOpen ? null : item.label)
+            return
+          }
+          onClose()
+          item.onSelect?.()
+        }}
+        className={cn(
+          'flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-left transition-colors hover:bg-accent/80 hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-3.5 [&_svg]:shrink-0',
+          item.danger ? 'text-destructive hover:bg-destructive/10 hover:text-destructive' : '',
+          isSubmenuOpen ? 'bg-accent/80 text-accent-foreground' : '',
+        )}
+      >
+        {item.icon}
+        <span className="flex-1 truncate">{item.label}</span>
+        {item.submenu && item.submenu.length > 0 && (
+          <ChevronRight className="ml-auto size-3 opacity-60 shrink-0" />
+        )}
+      </button>
+      {isSubmenuOpen && buttonRef.current && (
+        <FloatingMenu
+          items={item.submenu!}
+          anchor={{
+            type: 'button',
+            rect: buttonRef.current.getBoundingClientRect(),
+            element: buttonRef.current,
+          }}
+          placement="right-start"
+          onClose={onClose}
+        />
+      )}
+    </>
   )
 }
 

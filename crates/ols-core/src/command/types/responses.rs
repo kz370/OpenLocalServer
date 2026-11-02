@@ -20,6 +20,13 @@ use crate::web::WebConfig;
 use crate::xdebug::XdebugReport;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateSiteResult {
+    pub domain: Option<Box<Domain>>,
+    pub needs_setup: bool,
+    pub suggested_hostname: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DashboardData {
     pub services: Vec<ServiceStatus>,
     pub web: WebStatus,
@@ -77,6 +84,14 @@ pub enum CoreResponse {
     },
     ProjectDetail {
         detail: Box<ProjectDetail>,
+    },
+    CreateSiteForProject {
+        domain: Option<Box<Domain>>,
+        needs_setup: bool,
+        suggested_hostname: String,
+    },
+    ProjectTypes {
+        types: Vec<crate::project::ProjectTypePreset>,
     },
     SiteFolderInspection {
         inspection: crate::detection::SiteFolderInspection,

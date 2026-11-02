@@ -19,6 +19,7 @@ interface Action {
 
 const PAGES: [Page, string][] = [
   ['dashboard', 'Dashboard'],
+  ['projects', 'Projects'],
   ['sites', 'Sites'],
   ['quickapps', 'Quick Apps'],
   ['commands', 'Commands'],
