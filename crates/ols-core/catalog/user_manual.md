@@ -381,7 +381,7 @@ olsc guide
    - Bundled framework catalog (`catalog/project-types.yaml`) featuring 17 popular presets (Laravel, Symfony, WordPress, PHP, Python, Django, Flask, FastAPI, Node, Next.js, React, Vue, Go, .NET, Java, Static HTML, Other) with custom type support.
 
 3. **Multi-Editor Configuration & System Auto-Detection:**
-   - Auto-detects installed development IDEs and editors: VS Code, Cursor, Windsurf, Trae, Antigravity, Zed, VSCodium, Sublime Text, Notepad++, and JetBrains IDEs (PhpStorm, WebStorm, PyCharm, IntelliJ IDEA, GoLand, RustRover, Rider via JetBrains Toolbox and standard program roots). Windows Notepad is excluded from the auto-detected code editor list.
+   - Auto-detects installed development IDEs and editors: VS Code, Cursor, Windsurf, Trae, Zed, VSCodium, Sublime Text, Notepad++, and JetBrains IDEs (PhpStorm, WebStorm, PyCharm, IntelliJ IDEA, GoLand, RustRover, Rider via JetBrains Toolbox and standard program roots). Windows Notepad is excluded from the auto-detected code editor list.
    - Custom editor management: add any custom editor executable by path (`AddEditor`, `UpdateEditor`, `RemoveEditor`).
    - Editor visibility toggles: hide/show any auto-detected or custom editor from menus with an Eye/EyeOff toggle in `Settings > General > Code editor` (`CONFIGURED EDITORS`).
 

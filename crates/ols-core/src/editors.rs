@@ -133,13 +133,6 @@ const KNOWN: &[(&str, &str, &str, &[&str], &str)] = &[
         "windsurf",
     ),
     ("trae", "Trae", "Trae.exe", &["Trae", "trae"], "trae"),
-    (
-        "antigravity",
-        "Antigravity",
-        "Antigravity.exe",
-        &["Antigravity", "antigravity"],
-        "antigravity",
-    ),
     ("zed", "Zed", "Zed.exe", &["Zed", "zed"], "zed"),
     (
         "vscodium",
