@@ -348,38 +348,41 @@ impl Inner {
     /// Reads one skip list, oldest entries last. Values written by earlier versions were
     /// plain strings and are read as entries with no timestamp.
     pub fn remove_project(&self, id: &str) -> Result<(), CoreError> {
-        let (path, name) = {
+        let (path, name, standalone) = {
             let projects = self.projects.lock().unwrap();
             let p = projects.get(id);
             (
                 p.as_ref().map(|pr| pr.path.clone()),
                 p.as_ref().map(|pr| pr.name.clone()),
+                p.as_ref().map(|pr| pr.standalone).unwrap_or(false),
             )
         };
 
-        // Guard: A project cannot be removed if it is connected to a site
-        if let Some(ref path_str) = path {
-            let domains = self.domains.lock().unwrap();
-            let connected: Vec<String> = domains
-                .list()
-                .into_iter()
-                .filter(|d| {
-                    d.project_id.as_deref() == Some(id)
-                        || (!d.root.is_empty() && crate::project::same_path(&d.root, path_str))
-                })
-                .map(|d| d.hostname)
-                .collect();
+        // Guard: A standalone project cannot be removed if it is connected to a site
+        if standalone {
+            if let Some(ref path_str) = path {
+                let domains = self.domains.lock().unwrap();
+                let connected: Vec<String> = domains
+                    .list()
+                    .into_iter()
+                    .filter(|d| {
+                        d.project_id.as_deref() == Some(id)
+                            || (!d.root.is_empty() && crate::project::same_path(&d.root, path_str))
+                    })
+                    .map(|d| d.hostname)
+                    .collect();
 
-            if !connected.is_empty() {
-                let project_name = name.unwrap_or_else(|| id.to_string());
-                let site_list = connected.join(", ");
-                return Err(CoreError::failed_fix(
-                    "Cannot remove project connected to a site.",
-                    format!(
-                        "Project '{project_name}' is currently connected to site(s): {site_list}."
-                    ),
-                    "Delete or unlink the connected site(s) before removing this project.",
-                ));
+                if !connected.is_empty() {
+                    let project_name = name.unwrap_or_else(|| id.to_string());
+                    let site_list = connected.join(", ");
+                    return Err(CoreError::failed_fix(
+                        "Cannot remove project connected to a site.",
+                        format!(
+                            "Project '{project_name}' is currently connected to site(s): {site_list}."
+                        ),
+                        "Delete or unlink the connected site(s) before removing this project.",
+                    ));
+                }
             }
         }
 
