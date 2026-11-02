@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { type Diagnostic, type PortStatus, type ServiceStatus, runCommand } from '@/core'
 import { createPersistentCache } from '@/lib/cache'
+import { notifyManualStartFailure, useStartingServices } from '@/lib/diagnosticsNotify'
 import { waitForService } from '@/lib/wait'
 
 type ServiceAction = 'start' | 'stop' | 'restart' | 'reload'
@@ -21,6 +22,7 @@ export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => v
   const [services, setServices] = useState<ServiceStatus[]>(servicesListCache.get)
   const [error, setError] = useState<Diagnostic | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  const startingServices = useStartingServices()
 
   async function refresh() {
     try {
@@ -61,7 +63,11 @@ export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => v
       }
       await refresh()
     } catch (err) {
-      setError(asDiagnostic(err))
+      const diag = asDiagnostic(err)
+      setError(diag)
+      if (action === 'start' || action === 'restart') {
+        notifyManualStartFailure(service.id, service.name, diag)
+      }
       await refresh().catch(() => undefined)
     } finally {
       setBusy(null)
@@ -94,6 +100,7 @@ export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => v
           <ServiceTable
             services={webServers}
             busy={busy}
+            startingServices={startingServices}
             onAct={act}
             onOpenLogs={onOpenLogs}
             onError={setError}
@@ -107,7 +114,14 @@ export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => v
           <CardTitle className="text-sm">Services</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <ServiceTable services={otherServices} busy={busy} onAct={act} onOpenLogs={onOpenLogs} onError={setError} />
+          <ServiceTable
+            services={otherServices}
+            busy={busy}
+            startingServices={startingServices}
+            onAct={act}
+            onOpenLogs={onOpenLogs}
+            onError={setError}
+          />
         </CardContent>
       </Card>
 
@@ -120,6 +134,7 @@ export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => v
 function ServiceTable({
   services,
   busy,
+  startingServices,
   onAct,
   onOpenLogs,
   onError,
@@ -127,6 +142,7 @@ function ServiceTable({
 }: {
   services: ServiceStatus[]
   busy: string | null
+  startingServices: Set<string>
   onAct: (s: ServiceStatus, action: ServiceAction) => void
   onOpenLogs: (source: string) => void
   onError: (e: Diagnostic) => void
@@ -143,13 +159,25 @@ function ServiceTable({
         </TableRow>
       </TableHeader>
       <TableBody>
-        {services.map((s) => (
+        {services.map((s) => {
+          const isStarting = s.installed && !s.running && startingServices.has(s.id)
+          return (
           <TableRow key={s.id}>
             <TableCell>
               <span className="flex items-center gap-2">
                 <ServiceMark
                   id={s.id}
-                  state={!s.installed ? 'missing' : s.running ? (s.healthy === false ? 'unhealthy' : 'running') : 'stopped'}
+                  state={
+                    !s.installed
+                      ? 'missing'
+                      : s.running
+                        ? s.healthy === false
+                          ? 'unhealthy'
+                          : 'running'
+                        : isStarting
+                          ? 'starting'
+                          : 'stopped'
+                  }
                 />
                 <span className="font-medium">{s.name}</span>
               </span>
@@ -167,6 +195,8 @@ function ServiceTable({
                   {s.port_status === 'in_use' && <Badge variant="warning">port in use</Badge>}
                   {s.kind === 'web' && (s.sites ?? 0) === 0 && <Badge variant="outline">no sites</Badge>}
                 </span>
+              ) : isStarting ? (
+                <Badge variant="secondary">Starting…</Badge>
               ) : (
                 <span className="flex flex-col items-start gap-1">
                   <span className="flex flex-wrap items-center gap-1.5">
@@ -242,7 +272,8 @@ function ServiceTable({
               </div>
             </TableCell>
           </TableRow>
-        ))}
+          )
+        })}
         {services.length === 0 && (
           <TableRow>
             <TableCell colSpan={4} className="text-center text-sm text-muted-foreground">

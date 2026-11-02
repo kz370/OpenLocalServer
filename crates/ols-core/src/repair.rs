@@ -483,6 +483,18 @@ impl Inner {
     }
 }
 
+/// Service lifecycle commands (starting/restarting stopped or unhealthy services) must not
+/// be executed silently by background diagnostic auto-fix: starting services is controlled
+/// by the user and by `run_autostart`, never behind the user's back on a timer.
+fn is_background_auto_fixable(command: &CoreCommand) -> bool {
+    !matches!(
+        command,
+        CoreCommand::ApplyWeb { .. }
+            | CoreCommand::StartService { .. }
+            | CoreCommand::RestartService { .. }
+    )
+}
+
 impl Core {
     /// Apply newly discovered, safe diagnostic fixes at most once per finding per session.
     /// A failed attempt is retained on the finding so periodic scans do not retry in a loop.
@@ -496,15 +508,18 @@ impl Core {
             .into_iter()
             .filter(|f| !f.ignored && f.auto_fixable)
         {
+            let Some(command) = f.fix_command.as_ref() else {
+                continue;
+            };
+            if !is_background_auto_fixable(command) {
+                continue;
+            }
             {
                 let mut attempted = self.inner().auto_fix_attempted.lock().unwrap();
                 if !attempted.insert(f.id.clone()) {
                     continue;
                 }
             }
-            let Some(command) = f.fix_command.as_ref() else {
-                continue;
-            };
             match self.run_fix(command) {
                 Ok(detail) => {
                     self.inner().auto_fix_failures.lock().unwrap().remove(&f.id);

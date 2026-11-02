@@ -438,6 +438,9 @@ impl WebManager {
         let running = self.state.lock().unwrap().servers.remove(id);
         if let Some(r) = running {
             self.supervisor.stop(r.process);
+            let _ = self
+                .supervisor
+                .wait_for_exit(r.process, Duration::from_secs(5));
         }
     }
 
@@ -853,6 +856,9 @@ impl WebManager {
             // No graceful reload (Apache in foreground mode) or it failed: restart.
             self.supervisor.stop(process);
             self.state.lock().unwrap().servers.remove(server.id());
+            let _ = self
+                .supervisor
+                .wait_for_exit(process, Duration::from_secs(5));
             wait_port_free_all(Duration::from_secs(4));
         }
 

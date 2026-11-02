@@ -46,7 +46,26 @@ function loadHistory(): NotificationItem[] {
     const raw = localStorage.getItem(HISTORY_STORAGE_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed : []
+    if (!Array.isArray(parsed)) return []
+    return (parsed as NotificationItem[])
+      .filter((item) => {
+        if (!item || typeof item.message !== 'string') return false
+        // Drop legacy pre-fix startup diagnostics and false stop-exit history entries
+        if (
+          (item.logSource === 'diagnostics' &&
+            (item.message === 'Diagnostics: All issues resolved.' ||
+              /^Diagnostics:\s*\d+\s+issues?\s+require/i.test(item.message))) ||
+          item.title === 'Service exited unexpectedly'
+        ) {
+          return false
+        }
+        return true
+      })
+      .map((item) => ({
+        ...item,
+        // Rule 6: Previous-session items do not carry an unread badge into a new launch
+        read: true,
+      }))
   } catch {
     return []
   }
@@ -165,13 +184,35 @@ function pushNotification(
       needsAttention: opts.needsAttention,
     }
 
-    toasts = [item, ...toasts].slice(0, MAX_VISIBLE)
+    const existingToastIdx = opts.id ? toasts.findIndex((t) => t.id === opts.id) : -1
+    if (existingToastIdx !== -1) {
+      toasts[existingToastIdx] = item
+    } else {
+      toasts = [item, ...toasts].slice(0, MAX_VISIBLE)
+    }
     emitToasts()
   }
 
-  // 2. History de-duplication: only merge with consecutive history[0] within 5 minutes
+  // 2. History de-duplication: replace by explicit id or merge with consecutive history[0] within 5 minutes
   if (type !== 'progress') {
-    if (history.length > 0 && !opts.action && canMergeNotification(history[0], type, message, opts.logSource, opts.details)) {
+    const existingHistoryIdx = opts.id ? history.findIndex((h) => h.id === opts.id) : -1
+    if (existingHistoryIdx !== -1) {
+      history[existingHistoryIdx] = {
+        id: targetId,
+        type,
+        title: opts.title,
+        message,
+        details: opts.details,
+        logSource: opts.logSource,
+        action: opts.action,
+        count: 1,
+        createdAt: now,
+        read: opts.read ?? false,
+        duration: opts.duration,
+        needsAttention: opts.needsAttention,
+      }
+      emitHistory()
+    } else if (history.length > 0 && !opts.action && canMergeNotification(history[0], type, message, opts.logSource, opts.details)) {
       const prev = history[0]
       const updated: NotificationItem = {
         ...prev,
@@ -307,6 +348,7 @@ export const notify = {
   error(
     message: string,
     opts?: {
+      id?: string
       title?: string
       details?: string | null
       logSource?: string | null
@@ -409,6 +451,10 @@ const activeProgressHandles = new Map<string, ProgressNotificationHandle>()
 export function initGlobalNotificationListeners() {
   if (backgroundListenersInitialized || typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return
   backgroundListenersInitialized = true
+
+  void import('@/lib/diagnosticsNotify').then(({ initDiagnosticsNotificationMonitor }) => {
+    initDiagnosticsNotificationMonitor()
+  })
 
   void import('@tauri-apps/api/event').then(({ listen }) => {
     // Listen to background tasks (§164)

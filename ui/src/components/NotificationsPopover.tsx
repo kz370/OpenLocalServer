@@ -159,7 +159,13 @@ export function NotificationsPopover({ onNavigateLogs }: { onNavigateLogs?: (sou
               </div>
             ) : (
               history.map((item) => {
-                const fullText = item.details ? `${item.message}\n\n${item.details}` : item.message
+                const hasExtraDetails = Boolean(
+                  item.details &&
+                    item.details.trim().length > 0 &&
+                    item.details.trim() !== item.message.trim(),
+                )
+                const header = item.title ? `${item.title}\n${item.message}` : item.message
+                const fullText = hasExtraDetails ? `${header}\n\n${item.details}` : header
                 const isCopied = copiedId === item.id
 
                 return (
@@ -206,7 +212,7 @@ export function NotificationsPopover({ onNavigateLogs }: { onNavigateLogs?: (sou
                         {item.message}
                       </p>
 
-                      {item.details && (
+                      {hasExtraDetails && (
                         <pre className="mt-1 max-h-24 overflow-y-auto rounded bg-muted/70 p-1.5 text-[10px] font-mono text-muted-foreground whitespace-pre-wrap break-all border border-border/40">
                           {item.details}
                         </pre>
@@ -219,7 +225,7 @@ export function NotificationsPopover({ onNavigateLogs }: { onNavigateLogs?: (sou
                           className="cursor-pointer inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
                         >
                           {isCopied ? <Check className="size-2.5 text-success" /> : <Copy className="size-2.5" />}
-                          {isCopied ? 'Copied' : 'Copy'}
+                          {isCopied ? 'Copied' : 'Copy details'}
                         </button>
                         {item.type === 'error' && onNavigateLogs && (
                           <button

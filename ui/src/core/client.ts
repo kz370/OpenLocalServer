@@ -3,12 +3,30 @@ import type { Diagnostic } from './types/system'
 import type { CoreCommand } from './commands'
 import type { CoreResponse } from './responses'
 
+export interface CommandLifecycleHook {
+  onBeforeCommand?: (command: CoreCommand) => void
+  onCommandSuccess?: (command: CoreCommand, response: CoreResponse) => void
+  onCommandError?: (command: CoreCommand, error: Diagnostic) => void
+  onBeforeExit?: () => void
+}
+
+let lifecycleHook: CommandLifecycleHook | null = null
+
+export function setCommandLifecycleHook(hook: CommandLifecycleHook | null) {
+  lifecycleHook = hook
+}
+
 export async function runCommand(command: CoreCommand): Promise<CoreResponse> {
+  lifecycleHook?.onBeforeCommand?.(command)
   try {
-    return await invoke<CoreResponse>('run_command', { command })
+    const response = await invoke<CoreResponse>('run_command', { command })
+    lifecycleHook?.onCommandSuccess?.(command, response)
+    return response
   } catch (err) {
     // Tauri surfaces our Diagnostic as the rejection value.
-    throw err as Diagnostic
+    const diag = err as Diagnostic
+    lifecycleHook?.onCommandError?.(command, diag)
+    throw diag
   }
 }
 
@@ -40,13 +58,10 @@ export function runCommandWithin(command: CoreCommand, ms: number): Promise<Core
  * Requests graceful shutdown of OpenLocalServer via Tauri.
  */
 export async function requestExit(): Promise<void> {
+  lifecycleHook?.onBeforeExit?.()
   try {
     await invoke('request_exit')
   } catch {
     // ignore
   }
 }
-
-
-// ---- Stage 16: plugins and signed catalogs ---------------------------------------------
-

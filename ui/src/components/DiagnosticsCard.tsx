@@ -8,6 +8,13 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { asDiagnostic } from '@/components/ErrorCard'
 import { type Finding, type HealthItem, runCommand } from '@/core'
+import {
+  DIAGNOSTICS_POLL_INTERVAL_MS,
+  buildDiagnosticsBarFindings,
+  evaluateDiagnosticsScan,
+  subscribeDiagnosticsRescan,
+  useStartingServices,
+} from '@/lib/diagnosticsNotify'
 import { useAction, usePoll } from '@/lib/hooks'
 import { openSitesFilter } from '@/lib/nav'
 import { notify } from '@/lib/notify'
@@ -45,17 +52,12 @@ export function DiagnosticsCard({
   const [lastChecked, setLastChecked] = useState<number | null>(null)
   const [now, setNow] = useState<number>(Date.now())
   const { busy, run } = useAction()
+  const startingServices = useStartingServices()
 
-  // Track previous scan state for Rule 2, 3, 5
-  const previousStateRef = useRef<{
-    issueCount: number
-    issueIds: Set<string>
-    hasRunOnce: boolean
-  }>({
-    issueCount: 0,
-    issueIds: new Set(),
-    hasRunOnce: false,
-  })
+  const healthProblemsRef = useRef<HealthItem[]>(healthProblems)
+  useEffect(() => {
+    healthProblemsRef.current = healthProblems
+  }, [healthProblems])
 
   // Timer ticker for relative time ("just now", "1m ago", etc.)
   useEffect(() => {
@@ -65,54 +67,7 @@ export function DiagnosticsCard({
 
   const evaluateDiagnostics = useCallback(
     (newFindings: Finding[], currentHealth: HealthItem[]) => {
-      const activeFindings = newFindings.filter((f) => !f.ignored)
-      const activeHealth = currentHealth.filter((h) => h.status !== 'ok')
-      const totalProblems = activeFindings.length + activeHealth.length
-      const currentIssueIds = new Set([
-        ...activeFindings.map((f) => f.id),
-        ...activeHealth.map((h) => `health:${h.id}`),
-      ])
-
-      const prev = previousStateRef.current
-
-      // Rule 2 & Rule 5: Check finds problems that were not there before
-      if (prev.hasRunOnce && totalProblems > 0) {
-        const hasNewIssue = [...currentIssueIds].some((id) => !prev.issueIds.has(id))
-        const countIncreased = totalProblems > prev.issueCount
-
-        if (hasNewIssue || countIncreased) {
-          // Add history entry (and unread badge) only if the issue count increased
-          // or new issue types appeared. NO toast.
-          const issueSummary = activeFindings.slice(0, 3).map((f) => f.problem).join('\n')
-          notify.recordHistory(
-            'warning',
-            `Diagnostics: ${totalProblems} ${totalProblems === 1 ? 'issue requires' : 'issues require'} attention.`,
-            {
-              title: 'Diagnostics',
-              details: issueSummary || undefined,
-              logSource: 'diagnostics',
-              read: false,
-              needsAttention: true,
-            },
-          )
-        }
-      } else if (prev.hasRunOnce && prev.issueCount > 0 && totalProblems === 0) {
-        // Rule 3: Issues resolved (from problems to none): the bar updates; no toast.
-        // Optional: quiet "Resolved" history entry, no unread badge.
-        notify.recordHistory('info', 'Diagnostics: All issues resolved.', {
-          title: 'Diagnostics',
-          logSource: 'diagnostics',
-          read: true,
-          needsAttention: false,
-        })
-      }
-      // Rule 1: Manual or automatic check with no problems: NO toast, NO history entry, NO unread badge.
-
-      previousStateRef.current = {
-        issueCount: totalProblems,
-        issueIds: currentIssueIds,
-        hasRunOnce: true,
-      }
+      evaluateDiagnosticsScan(newFindings, currentHealth)
       setLastChecked(Date.now())
     },
     [],
@@ -123,19 +78,29 @@ export function DiagnosticsCard({
       const res = await runCommand({ type: 'run_diagnostics' })
       if (res.type === 'diagnostics') {
         setFindings(res.findings)
-        evaluateDiagnostics(res.findings, healthProblems)
+        evaluateDiagnostics(res.findings, healthProblemsRef.current)
       }
     } catch {
       // background scan silently catches
     }
-  }, [evaluateDiagnostics, healthProblems])
+  }, [evaluateDiagnostics])
 
+  const lastRefreshTokenRef = useRef(refreshToken)
   useEffect(() => {
-    scan().catch(() => setFindings([]))
+    if (lastRefreshTokenRef.current !== refreshToken) {
+      lastRefreshTokenRef.current = refreshToken
+      scan().catch(() => setFindings([]))
+    }
   }, [scan, refreshToken])
 
+  useEffect(() => {
+    return subscribeDiagnosticsRescan(() => {
+      scan().catch(() => undefined)
+    })
+  }, [scan])
+
   // Poll diagnostics periodically to stay in sync with service operations
-  usePoll(() => scan().catch(() => undefined), 8000)
+  usePoll(() => scan().catch(() => undefined), DIAGNOSTICS_POLL_INTERVAL_MS)
 
   const handleManualCheck = useCallback(async () => {
     await run('scan', async () => {
@@ -190,33 +155,17 @@ export function DiagnosticsCard({
         await new Promise((resolve) => setTimeout(resolve, 400 - elapsed))
       }
 
-      evaluateDiagnostics(resFindings, refreshedHealth ?? healthProblems)
+      evaluateDiagnostics(resFindings, refreshedHealth ?? healthProblemsRef.current)
     })
-  }, [run, onRefresh, healthProblems, evaluateDiagnostics])
+  }, [run, onRefresh, evaluateDiagnostics])
 
   const isMissingFolderFinding = (f: Finding) =>
     f.id.startsWith('site_root_missing:') || f.id.startsWith('project_missing:')
 
-  const syntheticHealthFindings = useMemo<Finding[]>(() => {
-    return healthProblems
-      .filter((h) => h.status !== 'ok')
-      .map((h) => ({
-        id: `health:${h.id}`,
-        problem: h.label,
-        cause: h.detail,
-        fix: h.fix || 'Check service status in the Services panel.',
-        severity: (h.status === 'warn' ? 'warning' : 'error') as 'warning' | 'error',
-        details: [],
-        ignored: false,
-        auto_fixable: false,
-        fix_command: null,
-      }))
-  }, [healthProblems])
-
   const allFindings = useMemo(() => {
     if (findings === null) return null
-    return [...findings, ...syntheticHealthFindings]
-  }, [findings, syntheticHealthFindings])
+    return buildDiagnosticsBarFindings(findings, healthProblems, startingServices)
+  }, [findings, healthProblems, startingServices])
 
   const active = allFindings?.filter((f) => !f.ignored) ?? []
   const missingFolderFindings = active.filter(isMissingFolderFinding)

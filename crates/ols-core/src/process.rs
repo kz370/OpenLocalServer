@@ -478,12 +478,34 @@ fn run_process_attempt(
         };
 
         let pid = child.id();
-        set_state(&processes, id, ProcessState::Running, pid);
-        tracing::info!(process = %spec.name, pid = ?pid, "process running");
-        let _ = events_tx.send(ProcessEvent::StateChanged {
-            id,
-            state: ProcessState::Running,
-        });
+        let already_stopping = {
+            let mut guard = processes.lock().unwrap();
+            if let Some(rec) = guard.get_mut(&id.0) {
+                rec.info.pid = pid;
+                if rec.stop_requested {
+                    rec.info.state = ProcessState::Stopping;
+                    true
+                } else {
+                    rec.info.state = ProcessState::Running;
+                    false
+                }
+            } else {
+                true
+            }
+        };
+        if already_stopping {
+            if let Some(p) = pid {
+                tokio::spawn(async move {
+                    kill_tree(p).await;
+                });
+            }
+        } else {
+            tracing::info!(process = %spec.name, pid = ?pid, "process running");
+            let _ = events_tx.send(ProcessEvent::StateChanged {
+                id,
+                state: ProcessState::Running,
+            });
+        }
 
         if let Some(stdout) = child.stdout.take() {
             spawn_line_reader(

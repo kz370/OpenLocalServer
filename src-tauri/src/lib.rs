@@ -932,24 +932,32 @@ pub fn run() {
                     // taskbar mark should say.
                     sync_status_icon(&process_handle, &process_core);
                     sync_tray_tooltip(&process_handle, &process_core);
-                    // §119: tell the user when something they rely on dies.
+                    // §119: tell the user when something they rely on dies while the window is hidden.
+                    // In-app unexpected exits are reported with full intent tracking, log lines and
+                    // Restart actions by `diagnosticsNotify.ts`.
                     if let ProcessEvent::StateChanged {
                         id,
                         state: ProcessState::Crashed | ProcessState::Failed,
                     } = &event
                     {
-                        let name = process_core
-                            .supervisor()
-                            .snapshot()
-                            .into_iter()
-                            .find(|p| p.id == *id)
-                            .map(|p| p.name)
-                            .unwrap_or_default();
-                        notify(
-                            &process_core,
-                            "A process stopped unexpectedly",
-                            &name,
-                        );
+                        let window_visible = process_handle
+                            .get_webview_window("main")
+                            .and_then(|w| w.is_visible().ok())
+                            .unwrap_or(false);
+                        if !SHUTDOWN_IN_PROGRESS.load(Ordering::Relaxed) && !window_visible {
+                            let name = process_core
+                                .supervisor()
+                                .snapshot()
+                                .into_iter()
+                                .find(|p| p.id == *id)
+                                .map(|p| p.name)
+                                .unwrap_or_default();
+                            notify(
+                                &process_core,
+                                "A process stopped unexpectedly",
+                                &name,
+                            );
+                        }
                     }
                 }
             });
@@ -1095,6 +1103,7 @@ pub fn run() {
             let auto_fix_app = app.handle().clone();
             std::thread::spawn(move || {
                 autostart_core.inner().run_autostart();
+                let _ = auto_fix_app.emit("ols:autostart-complete", ());
                 sync_status_icon(&auto_fix_app, &autostart_core);
                 sync_tray_tooltip(&auto_fix_app, &autostart_core);
                 loop {

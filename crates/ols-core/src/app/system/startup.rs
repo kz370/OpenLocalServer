@@ -90,18 +90,34 @@ impl Inner {
         // on a web server id only launches the process against whatever config is on disk,
         // which is what the removed "start the web server" switch used to do separately.
         let mut web_applied = false;
+        let default_web = self.web_config().default_server;
         for id in &startup.autostart_services {
-            let result: Result<(), String> = if crate::web::SERVER_IDS.contains(&id.as_str()) {
-                self.apply_web_server(id, &[])
-                    .map(|_| ())
-                    .map_err(|e| e.to_string())
+            let web_id = if id == "web" {
+                Some(default_web.as_str())
+            } else if crate::web::SERVER_IDS.contains(&id.as_str()) {
+                Some(id.as_str())
+            } else {
+                None
+            };
+            let result: Result<(), String> = if let Some(target_web) = web_id {
+                self.apply_web_server(target_web, &[])
+                    .map(|_| {
+                        self.services.clear_start_failure(target_web);
+                        self.services.clear_start_failure(id);
+                    })
+                    .map_err(|e| {
+                        let msg = e.to_string();
+                        self.services.record_start_failure(target_web, &msg);
+                        self.services.record_start_failure(id, &msg);
+                        msg
+                    })
             } else {
                 self.services.start(id).map(|_| ())
             };
             if let Err(e) = result {
                 tracing::warn!(service = %id, error = %e, "autostart: service did not start");
             }
-            if crate::web::SERVER_IDS.contains(&id.as_str()) {
+            if web_id.is_some() {
                 web_applied = true;
             }
         }

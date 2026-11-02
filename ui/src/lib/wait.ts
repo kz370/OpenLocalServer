@@ -22,12 +22,12 @@ export async function waitForService(id: string, want: 'running' | 'stopped', ti
       const r = await runCommand({ type: 'list_services' })
       const s = r.type === 'services' ? r.services.find((x) => x.id === id) : undefined
       if (!s) return true
-      if (want === 'stopped') return !s.running && s.port_status !== 'in_use'
+      if (want === 'stopped') return !s.running
       // The process vanished after being asked to start: it crashed on the way up.
       if (!s.running && Date.now() - started > 1500) {
         throw { problem: `${s.name} stopped right after starting.`, cause: 'See its output on the Logs page.', fix: null } satisfies Diagnostic
       }
-      return s.running && (s.port === null || s.healthy === true)
+      return s.running && s.healthy !== false
     },
     want === 'running' ? `Starting ${id}` : `Stopping ${id}`,
     timeoutMs,
@@ -38,7 +38,7 @@ export async function waitForWebStopped(timeoutMs = 20_000): Promise<void> {
   await until(
     async () => {
       const r = await runCommand({ type: 'get_web_status' })
-      return r.type === 'web_status' && !r.status.running && r.status.port_conflicts.length === 0
+      return r.type === 'web_status' && !r.status.running
     },
     'Stopping the web server',
     timeoutMs,

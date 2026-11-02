@@ -112,7 +112,12 @@ impl Core {
                     tracing::info!(command = "start_service", id = %id);
                     if crate::web::SERVER_IDS.contains(&id.as_str()) {
                         // A web server renders the sites assigned to it, then binds its ports.
-                        i.apply_web_server(&id, &[]).map(|_| R::Ok)?;
+                        let res = i.apply_web_server(&id, &[]).map(|_| R::Ok);
+                        match &res {
+                            Ok(_) => i.services.clear_start_failure(&id),
+                            Err(e) => i.services.record_start_failure(&id, e.to_string()),
+                        }
+                        res?;
                     } else {
                         i.services.start(&id).map_err(CoreError::ServiceError)?;
                     }
@@ -121,6 +126,7 @@ impl Core {
                 C::StopService { id } => {
                     if crate::web::SERVER_IDS.contains(&id.as_str()) {
                         i.web.stop_server(&id);
+                        i.services.clear_start_failure(&id);
                     } else {
                         i.services.stop(&id).map_err(CoreError::ServiceError)?;
                     }

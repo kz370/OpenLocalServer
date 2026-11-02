@@ -21,6 +21,7 @@ import {
 } from '@/core'
 import { formatBytes, useAction, usePoll } from '@/lib/hooks'
 import { createPersistentCache } from '@/lib/cache'
+import { notifyManualStartFailure, useStartingServices } from '@/lib/diagnosticsNotify'
 import { notify } from '@/lib/notify'
 import { cn } from '@/lib/utils'
 import { waitForService } from '@/lib/wait'
@@ -54,6 +55,7 @@ export function DashboardPage({
   const [accessLines, setAccessLines] = useState<string[]>(accessLinesCache.get)
   const [startup, setStartup] = useState<StartupSettings | null>(null)
   const [pendingServices, setPendingServices] = useState<Map<string, WidgetAction>>(new Map())
+  const startingServices = useStartingServices()
 
   const action = useAction()
   const { busy, error, setError, run } = action
@@ -128,9 +130,13 @@ export function DashboardPage({
         setDiagToken((t) => t + 1)
       } catch (e) {
         const diag = asDiagnostic(e)
-        notify.error(diag.problem || `Failed to ${action} ${s.name}`, {
-          details: diag.cause,
-        })
+        if (action === 'start' || action === 'restart' || action === 'reload') {
+          notifyManualStartFailure(s.id, s.name, diag)
+        } else {
+          notify.error(diag.problem || `Failed to ${action} ${s.name}`, {
+            details: diag.cause,
+          })
+        }
       } finally {
         setPendingServices((prev) => {
           const next = new Map(prev)
@@ -214,14 +220,14 @@ export function DashboardPage({
                       if (res.type === 'stopped_everything') {
                         const failed = res.still_running.length
                         const total = totalRunningCount
-                        notify.batch({
-                          operation: 'services stopped',
-                          total: Math.max(total, 1),
-                          succeeded: Math.max(0, total - failed),
-                          failed,
-                          failedItems: res.still_running,
-                        })
                         if (failed > 0) {
+                          notify.batch({
+                            operation: 'services stopped',
+                            total: Math.max(total, 1),
+                            succeeded: Math.max(0, total - failed),
+                            failed,
+                            failedItems: res.still_running,
+                          })
                           throw {
                             problem: 'Something did not stop.',
                             cause: `Still running after Stop all: ${res.still_running.join(', ')}`,
@@ -249,18 +255,25 @@ export function DashboardPage({
                       setDiagToken((t) => t + 1)
 
                       const failedItems: string[] = []
-                      let succeeded = 0
                       results.forEach((r, i) => {
-                        if (r.status === 'fulfilled') succeeded++
-                        else failedItems.push(targetsToStart[i]?.name ?? `Service ${i}`)
+                        if (r.status === 'rejected') {
+                          const svc = targetsToStart[i]
+                          const name = svc?.name ?? (i === targetsToStart.length && shouldStartWeb ? 'Web server' : `Service ${i}`)
+                          const diag = asDiagnostic(r.reason)
+                          failedItems.push(`${name}: ${diag.cause || diag.problem}`)
+                        }
                       })
-                      notify.batch({
-                        operation: 'services started',
-                        total: promises.length,
-                        succeeded,
-                        failed: failedItems.length,
-                        failedItems,
-                      })
+                      if (failedItems.length > 0) {
+                        notify.error(
+                          failedItems.length === 1
+                            ? `Failed to start ${failedItems[0].split(':')[0]}.`
+                            : `${failedItems.length} services failed to start.`,
+                          {
+                            title: 'Service failed to start',
+                            details: failedItems.join('\n'),
+                          },
+                        )
+                      }
                     })
                   })()
             }
@@ -302,6 +315,10 @@ export function DashboardPage({
           {web?.running ? (
             <Badge variant="success" className="shrink-0 whitespace-nowrap text-xs py-0.5">
               ● Running
+            </Badge>
+          ) : startingServices.has('web') ? (
+            <Badge variant="warning" className="shrink-0 whitespace-nowrap text-xs py-0.5">
+              Starting…
             </Badge>
           ) : (
             <Badge variant="secondary" className="shrink-0 whitespace-nowrap text-xs py-0.5">
@@ -474,6 +491,7 @@ export function DashboardPage({
             services={data?.services ?? null}
             webServers={data?.web?.servers ?? null}
             pendingServices={pendingServices}
+            startingServices={startingServices}
             onAction={onServiceAction}
             onNavigate={onNavigate}
             onOpenLogs={onOpenLogs}
@@ -512,6 +530,7 @@ function ServicesWidget({
   services,
   webServers,
   pendingServices,
+  startingServices,
   onAction,
   onNavigate,
   onOpenLogs,
@@ -519,6 +538,7 @@ function ServicesWidget({
   services: ServiceStatus[] | null
   webServers: ServerAvailability[] | null
   pendingServices: Map<string, WidgetAction>
+  startingServices: Set<string>
   onAction: (s: ServiceStatus, action: WidgetAction) => Promise<void>
   onNavigate: (p: Page) => void
   onOpenLogs: (source: string) => void
@@ -580,8 +600,12 @@ function ServicesWidget({
       <CardContent className="p-0">
         {groups.map((group, groupIndex) => {
           const runningInGroup = group.services.filter((s) => s.running).length
-          // Collapsed by default when all services in group are stopped
-          const isCollapsed = collapsed[group.id] !== undefined ? !!collapsed[group.id] : runningInGroup === 0
+          const activeOrStartingInGroup = group.services.filter(
+            (s) => s.running || startingServices.has(s.id),
+          ).length
+          // Collapsed by default when all services in group are stopped (and none starting)
+          const isCollapsed =
+            collapsed[group.id] !== undefined ? !!collapsed[group.id] : activeOrStartingInGroup === 0
 
           return (
             <div key={group.id} className="min-w-0">
@@ -622,16 +646,22 @@ function ServicesWidget({
                 <div>
                   {group.services.map((s) => {
                     const pendingAction = pendingServices.get(s.id)
+                    const isStarting =
+                      pendingAction === 'start' ||
+                      pendingAction === 'restart' ||
+                      (!s.running && startingServices.has(s.id))
                     const isPending = pendingAction !== undefined
                     const state = !s.installed
                       ? 'missing'
-                      : isPending
-                        ? 'unhealthy'
-                        : s.running
-                          ? s.healthy === false
-                            ? 'unhealthy'
-                            : 'running'
-                          : 'stopped'
+                      : isStarting
+                        ? 'starting'
+                        : isPending
+                          ? 'unhealthy'
+                          : s.running
+                            ? s.healthy === false
+                              ? 'unhealthy'
+                              : 'running'
+                            : 'stopped'
 
                     return (
                       <div

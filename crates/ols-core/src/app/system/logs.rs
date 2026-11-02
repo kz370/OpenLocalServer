@@ -120,7 +120,7 @@ impl Inner {
                 let id = &s[8..];
                 let lines = self
                     .services
-                    .process_id(id)
+                    .recent_process_id(id)
                     .map(|process_id| tail(self.supervisor.recent_output(process_id)))
                     .unwrap_or_default();
                 if !lines.is_empty() {
@@ -196,7 +196,7 @@ impl Inner {
             s if s.starts_with("service:") => {
                 // Nothing to clear while the service is stopped: the buffer that
                 // held its output went away with the process.
-                if let Some(process_id) = self.services.process_id(&s[8..]) {
+                if let Some(process_id) = self.services.recent_process_id(&s[8..]) {
                     self.supervisor.clear_output(process_id);
                 }
                 Ok(())

@@ -142,9 +142,16 @@ function ToastItem({
     return clearTimer
   }, [clearTimer, isFocused, isHovered, item.duration, item.id, startTimer, windowFocused])
 
+  const hasExtraDetails = Boolean(
+    item.details &&
+      item.details.trim().length > 0 &&
+      item.details.trim() !== item.message.trim(),
+  )
+
   const copyDetails = async () => {
-    if (!item.details && !item.message) return
-    const text = item.details ? `${item.message}\n\nDetails:\n${item.details}` : item.message
+    if (!item.details && !item.message && !item.title) return
+    const header = item.title ? `${item.title}\n${item.message}` : item.message
+    const text = hasExtraDetails ? `${header}\n\nDetails:\n${item.details}` : header
     try {
       await navigator.clipboard.writeText(text)
       setCopied(true)
@@ -221,25 +228,23 @@ function ToastItem({
           {/* Error actions: Copy details, View logs, Details toggle */}
           {item.type === 'error' && (
             <div className="mt-1 flex items-center gap-2 flex-wrap text-xs">
-              {item.details && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setShowDetails((prev) => !prev)}
-                    className="cursor-pointer text-[11px] font-medium text-muted-foreground hover:text-foreground underline underline-offset-2"
-                  >
-                    {showDetails ? 'Hide details' : 'Show details'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={copyDetails}
-                    className="cursor-pointer inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
-                  >
-                    {copied ? <Check className="size-3 text-success" /> : <Copy className="size-3" />}
-                    {copied ? 'Copied' : 'Copy details'}
-                  </button>
-                </>
+              {hasExtraDetails && (
+                <button
+                  type="button"
+                  onClick={() => setShowDetails((prev) => !prev)}
+                  className="cursor-pointer text-[11px] font-medium text-muted-foreground hover:text-foreground underline underline-offset-2"
+                >
+                  {showDetails ? 'Hide details' : 'Show details'}
+                </button>
               )}
+              <button
+                type="button"
+                onClick={copyDetails}
+                className="cursor-pointer inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+              >
+                {copied ? <Check className="size-3 text-success" /> : <Copy className="size-3" />}
+                {copied ? 'Copied' : 'Copy details'}
+              </button>
               {onNavigateLogs && (
                 <button
                   type="button"
@@ -252,7 +257,7 @@ function ToastItem({
             </div>
           )}
 
-          {showDetails && item.details && (
+          {showDetails && hasExtraDetails && (
             <pre className="mt-1.5 max-h-32 overflow-y-auto rounded-md bg-muted/60 p-2 text-[10px] text-muted-foreground font-mono whitespace-pre-wrap break-all border border-border/50">
               {item.details}
             </pre>

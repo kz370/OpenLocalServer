@@ -100,6 +100,9 @@ pub struct ServiceManager {
     runtimes: Arc<RuntimeManager>,
     supervisor: Arc<ProcessSupervisor>,
     running: Mutex<HashMap<String, ProcessId>>,
+    /// Most recent supervised process id for each service while running or after an
+    /// unexpected exit, cleared on explicit stop so crashed services keep their output log.
+    last_process: Mutex<HashMap<String, ProcessId>>,
     /// The last reason a Start failed for each service, kept after the failed process
     /// record is gone. A process that never spawned has no output ring to read and no
     /// row left in `running`, so without this its only trace was a log line nobody
@@ -171,6 +174,7 @@ impl ServiceManager {
             runtimes,
             supervisor,
             running: Mutex::new(HashMap::new()),
+            last_process: Mutex::new(HashMap::new()),
             start_failures: Mutex::new(HashMap::new()),
             custom,
             limits: Mutex::new(Default::default()),
@@ -428,6 +432,13 @@ impl ServiceManager {
         self.running.lock().unwrap().get(id).copied()
     }
 
+    /// Returns the running process id, or the last process id if the service exited
+    /// unexpectedly without an explicit stop.
+    pub fn recent_process_id(&self, id: &str) -> Option<ProcessId> {
+        self.process_id(id)
+            .or_else(|| self.last_process.lock().unwrap().get(id).copied())
+    }
+
     /// Is anything running at all? A couple of locks with no port probes, so
     /// callers like the tray/taskbar status icon can poll it cheaply (§122).
     pub fn any_running(&self) -> bool {
@@ -526,10 +537,12 @@ impl ServiceManager {
         if let Some(handle) = self.web_handle() {
             if crate::web::SERVER_IDS.contains(&id) {
                 let cfg = (handle.config)();
-                handle
-                    .web
-                    .start_server(id, &cfg)
-                    .map_err(|e| e.to_string())?;
+                let res = handle.web.start_server(id, &cfg).map_err(|e| e.to_string());
+                match &res {
+                    Ok(()) => self.clear_start_failure(id),
+                    Err(reason) => self.record_start_failure(id, reason.clone()),
+                }
+                res?;
                 return Ok(handle.web.running_pid(id).unwrap_or(ProcessId(0)));
             }
         }
@@ -543,7 +556,14 @@ impl ServiceManager {
                 .unwrap()
                 .get(id)
                 .ok_or_else(|| format!("unknown service: {id}"))?;
-            let process_id = self.track_start(id, self.start_custom(&def)?)?;
+            let started = match self.start_custom(&def) {
+                Ok(pid) => pid,
+                Err(reason) => {
+                    self.record_start_failure(id, reason.clone());
+                    return Err(reason);
+                }
+            };
+            let process_id = self.track_start(id, started)?;
             return Ok(process_id);
         }
         let version = self
@@ -552,8 +572,29 @@ impl ServiceManager {
             .into_iter()
             .next()
             .ok_or_else(|| {
-                format!("{id} is not installed — install it from the Runtimes page first")
+                let reason =
+                    format!("{id} is not installed — install it from the Runtimes page first");
+                self.record_start_failure(id, reason.clone());
+                reason
             })?;
+
+        let display_name = self
+            .runtimes
+            .display_name(id)
+            .unwrap_or_else(|| id.to_string());
+        if let Some(port) = primary_port(id).filter(|p| !port_is_free(*p)) {
+            let reason = format!("port {port} is already in use, so {display_name} can't start");
+            self.record_start_failure(id, reason.clone());
+            return Err(reason);
+        }
+        if id == "mailpit" && !port_is_free(mailpit_smtp_port()) {
+            let reason = format!(
+                "SMTP port {} is already in use, so {display_name} can't start",
+                mailpit_smtp_port()
+            );
+            self.record_start_failure(id, reason.clone());
+            return Err(reason);
+        }
 
         let started = match id {
             "mailpit" => self.start_mailpit(&version),
@@ -564,7 +605,13 @@ impl ServiceManager {
             "memcached" => self.start_memcached(&version),
             other => return Err(format!("unknown service: {other}")),
         };
-        self.track_start(id, started?)
+        match started {
+            Ok(process_id) => self.track_start(id, process_id),
+            Err(reason) => {
+                self.record_start_failure(id, reason.clone());
+                Err(reason)
+            }
+        }
     }
 
     /// Records a freshly started process, and turns "the OS refused to spawn it" into an
@@ -580,6 +627,10 @@ impl ServiceManager {
                     .lock()
                     .unwrap()
                     .insert(id.to_string(), process_id);
+                self.last_process
+                    .lock()
+                    .unwrap()
+                    .insert(id.to_string(), process_id);
                 self.start_failures.lock().unwrap().remove(id);
                 Ok(process_id)
             }
@@ -587,6 +638,7 @@ impl ServiceManager {
                 // The record is already terminal `Failed` and owns no PID, so there is
                 // nothing to kill — and `stop` would overwrite that state with `Stopping`.
                 self.running.lock().unwrap().remove(id);
+                self.last_process.lock().unwrap().remove(id);
                 tracing::error!(service = id, %reason, "service failed to start");
                 self.start_failures
                     .lock()
@@ -603,6 +655,17 @@ impl ServiceManager {
         self.start_failures.lock().unwrap().get(id).cloned()
     }
 
+    pub fn record_start_failure(&self, id: &str, reason: impl Into<String>) {
+        self.start_failures
+            .lock()
+            .unwrap()
+            .insert(id.to_string(), reason.into());
+    }
+
+    pub fn clear_start_failure(&self, id: &str) {
+        self.start_failures.lock().unwrap().remove(id);
+    }
+
     /// Stops a service and waits for the process to actually be gone. This used to
     /// return `()` unconditionally, so a kill the OS ignored reported success and the
     /// row went back to Inactive on the next poll with nothing said about it.
@@ -610,9 +673,11 @@ impl ServiceManager {
         if let Some(handle) = self.web_handle() {
             if crate::web::SERVER_IDS.contains(&id) {
                 handle.web.stop_server(id);
+                self.clear_start_failure(id);
                 return Ok(());
             }
         }
+        self.last_process.lock().unwrap().remove(id);
         let Some(process_id) = self.running.lock().unwrap().remove(id) else {
             return Ok(());
         };
@@ -634,6 +699,7 @@ impl ServiceManager {
     /// without this manager needing its own event subscription.
     pub fn mark_stopped(&self, id: &str) {
         self.running.lock().unwrap().remove(id);
+        self.last_process.lock().unwrap().remove(id);
     }
 
     fn start_mailpit(&self, version: &str) -> Result<ProcessId, String> {

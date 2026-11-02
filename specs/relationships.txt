@@ -223,3 +223,5 @@ SettingsPage (General) | renders | Diagnostics card (autoFixDiagnostics setting 
 ReleaseNotesView | uses | releaseNotes::parseReleaseNotes & filterReleaseNotes (tokenizes raw Markdown with marked.lexer and maps topic icons)
 PluginsPage | renders | PluginConsentDialog (when turning on a plugin)
 PluginConsentDialog | uses | pluginConsent (buildPluginConsentSummary, formatDownloadSource, extractHostname, formatSize)
+DiagnosticsCard & DashboardPage & ServicesPage | uses | diagnosticsNotify (startup grace period, silent baseline, 2-check persistence, per-service expected-state intent tracking, and unexpected exit notifications)
+CoreClient (ui/src/core/client.ts) | notifies | diagnosticsNotify via setCommandLifecycleHook (onBeforeCommand, onCommandSuccess, onCommandError, onBeforeExit)
