@@ -414,14 +414,19 @@ fn standalone_projects_do_not_get_auto_domains_and_can_create_site() {
         CoreResponse::Project { project } => project,
         other => panic!("expected Project, got {other:?}"),
     };
-    assert!(project.standalone, "added project must have standalone = true");
+    assert!(
+        project.standalone,
+        "added project must have standalone = true"
+    );
 
     // SyncAutoDomains should not create a domain for standalone project
     core.dispatch(CoreCommand::SyncAutoDomains).unwrap();
     match core.dispatch(CoreCommand::ListDomains).unwrap() {
         CoreResponse::Domains { domains } => {
             assert!(
-                !domains.iter().any(|d| d.project_id.as_deref() == Some(&project.id)),
+                !domains
+                    .iter()
+                    .any(|d| d.project_id.as_deref() == Some(&project.id)),
                 "standalone project must not receive automatic domain"
             );
         }
@@ -565,7 +570,9 @@ fn custom_editors_crud_and_project_types() {
         CoreResponse::Editors { editors } => editors,
         other => panic!("expected Editors, got {other:?}"),
     };
-    assert!(updated_editors.iter().any(|e| e.id == custom_id && e.name == "Awesome Editor Pro"));
+    assert!(updated_editors
+        .iter()
+        .any(|e| e.id == custom_id && e.name == "Awesome Editor Pro"));
 
     // 3. Remove editor
     let remaining = match core

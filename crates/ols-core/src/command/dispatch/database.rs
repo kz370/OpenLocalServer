@@ -457,6 +457,9 @@ impl Core {
                 C::RemoveEditor { id } => Ok(R::Editors {
                     editors: i.remove_editor(&id)?,
                 }),
+                C::SetEditorHidden { id, hidden } => Ok(R::Editors {
+                    editors: i.set_editor_hidden(&id, hidden)?,
+                }),
                 C::GetSystemStats => Ok(R::SystemStats {
                     stats: Box::new(i.system_stats()),
                 }),

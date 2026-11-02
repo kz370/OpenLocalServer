@@ -9,7 +9,7 @@ import {
   useFloating,
   useInteractions,
 } from '@floating-ui/react'
-import { Check, ChevronDown } from 'lucide-react'
+import { Check, ChevronDown, Search, X } from 'lucide-react'
 import * as React from 'react'
 
 import { cn } from '@/lib/utils'
@@ -20,6 +20,8 @@ export interface SelectProps extends Omit<React.SelectHTMLAttributes<HTMLSelectE
   triggerClassName?: string
   placeholder?: string
   defaultValue?: string | number
+  searchable?: boolean
+  searchPlaceholder?: string
 }
 
 interface ParsedOption {
@@ -115,9 +117,35 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
 
     const [open, setOpen] = React.useState(false)
     const [activeIndex, setActiveIndex] = React.useState<number>(-1)
+    const [searchTerm, setSearchTerm] = React.useState('')
     const listRef = React.useRef<HTMLDivElement>(null)
+    const searchInputRef = React.useRef<HTMLInputElement>(null)
     const triggerRef = React.useRef<HTMLButtonElement>(null)
     const selectRef = React.useRef<HTMLSelectElement>(null)
+
+    React.useEffect(() => {
+      if (!open) {
+        setSearchTerm('')
+      } else if (props.searchable) {
+        setTimeout(() => searchInputRef.current?.focus(), 50)
+      }
+    }, [open, props.searchable])
+
+    const filteredItems = React.useMemo(() => {
+      if (!props.searchable || !searchTerm.trim()) {
+        return parsedItems
+      }
+      const term = searchTerm.trim().toLowerCase()
+      const matchingOptions = options.filter((o) => o.label.toLowerCase().includes(term))
+      const matchingGroups = new Set(matchingOptions.map((o) => o.group).filter(Boolean))
+
+      return parsedItems.filter((item) => {
+        if (item.type === 'group') {
+          return matchingGroups.has(item.label)
+        }
+        return matchingOptions.includes(item)
+      })
+    }, [parsedItems, options, props.searchable, searchTerm])
 
     React.useImperativeHandle(ref, () => selectRef.current as HTMLSelectElement)
 
@@ -325,7 +353,6 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
           <FloatingPortal>
             <div
               ref={(el) => {
-                listRef.current = el
                 refs.setFloating(el)
               }}
               role="listbox"
@@ -335,49 +362,95 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
               }}
               onKeyDown={handleKeyDown}
               {...getFloatingProps()}
-              className="z-[99] flex flex-col gap-0.5 overflow-y-auto rounded-lg border border-border dark:border-white/15 bg-popover/95 backdrop-blur-md p-1 text-sm text-popover-foreground shadow-2xl select-none focus:outline-none"
+              className="z-[99] flex flex-col rounded-lg border border-border dark:border-white/15 bg-popover text-sm text-popover-foreground shadow-2xl select-none focus:outline-none overflow-hidden"
             >
-              {parsedItems.map((item, index) => {
-                if (item.type === 'group') {
-                  return (
-                    <div
-                      key={`group-${item.label}-${index}`}
-                      className="sticky top-0 z-10 bg-popover/95 backdrop-blur-xs px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80"
-                    >
-                      {item.label}
-                    </div>
-                  )
-                }
-
-                const isSelected = item.value === String(currentValue)
-                const optionIdx = options.indexOf(item)
-                const isFocused = optionIdx === activeIndex
-
-                return (
-                  <button
-                    key={`opt-${item.value}-${index}`}
-                    type="button"
-                    role="option"
-                    data-index={optionIdx}
-                    aria-selected={isSelected}
-                    disabled={item.disabled}
-                    onClick={() => handleSelect(item.value)}
-                    onMouseEnter={() => !item.disabled && setActiveIndex(optionIdx)}
-                    className={cn(
-                      'flex w-full cursor-pointer items-center justify-between rounded-md px-2.5 py-1.5 text-left text-xs transition-colors',
-                      isSelected
-                        ? 'bg-primary/15 text-primary font-medium'
-                        : isFocused
-                        ? 'bg-accent/80 text-accent-foreground'
-                        : 'text-foreground hover:bg-accent/80 hover:text-accent-foreground',
-                      item.disabled && 'opacity-50 cursor-not-allowed pointer-events-none',
+              {props.searchable && (
+                <div className="border-b border-border/70 bg-popover p-1.5 shrink-0">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                    <input
+                      ref={searchInputRef}
+                      type="text"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      placeholder={props.searchPlaceholder || 'Search options...'}
+                      className="h-8 w-full rounded-md bg-muted/60 pl-8 pr-7 text-xs text-foreground placeholder:text-muted-foreground focus:bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => {
+                        e.stopPropagation()
+                        if (e.key === 'Escape') {
+                          setOpen(false)
+                        }
+                      }}
+                    />
+                    {searchTerm && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setSearchTerm('')
+                        }}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-muted-foreground hover:text-foreground cursor-pointer"
+                      >
+                        <X className="size-3" />
+                      </button>
                     )}
-                  >
-                    <span className="truncate mr-2">{item.rawChildren || item.label}</span>
-                    {isSelected && <Check className="size-3.5 text-primary shrink-0" />}
-                  </button>
-                )
-              })}
+                  </div>
+                </div>
+              )}
+
+              <div
+                ref={listRef}
+                className="overflow-y-auto max-h-64 p-1 flex flex-col gap-0.5 bg-popover"
+              >
+                {filteredItems.length === 0 ? (
+                  <div className="py-4 text-center text-xs text-muted-foreground">
+                    No options found
+                  </div>
+                ) : (
+                  filteredItems.map((item, index) => {
+                    if (item.type === 'group') {
+                      return (
+                        <div
+                          key={`group-${item.label}-${index}`}
+                          className="sticky top-0 z-10 bg-popover px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground border-b border-border/50 shadow-xs"
+                        >
+                          {item.label}
+                        </div>
+                      )
+                    }
+
+                    const isSelected = item.value === String(currentValue)
+                    const optionIdx = options.indexOf(item)
+                    const isFocused = optionIdx === activeIndex
+
+                    return (
+                      <button
+                        key={`opt-${item.value}-${index}`}
+                        type="button"
+                        role="option"
+                        data-index={optionIdx}
+                        aria-selected={isSelected}
+                        disabled={item.disabled}
+                        onClick={() => handleSelect(item.value)}
+                        onMouseEnter={() => !item.disabled && setActiveIndex(optionIdx)}
+                        className={cn(
+                          'flex w-full cursor-pointer items-center justify-between rounded-md px-2.5 py-1.5 text-left text-xs transition-colors',
+                          isSelected
+                            ? 'bg-primary/15 text-primary font-medium'
+                            : isFocused
+                            ? 'bg-accent/80 text-accent-foreground'
+                            : 'text-foreground hover:bg-accent/80 hover:text-accent-foreground',
+                          item.disabled && 'opacity-50 cursor-not-allowed pointer-events-none',
+                        )}
+                      >
+                        <span className="truncate mr-2">{item.rawChildren || item.label}</span>
+                        {isSelected && <Check className="size-3.5 text-primary shrink-0" />}
+                      </button>
+                    )
+                  })
+                )}
+              </div>
             </div>
           </FloatingPortal>
         )}

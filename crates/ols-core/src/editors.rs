@@ -14,6 +14,8 @@ pub struct EditorInfo {
     pub path: Option<String>,
     #[serde(default)]
     pub custom: bool,
+    #[serde(default)]
+    pub hidden: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -26,6 +28,27 @@ pub struct CustomEditor {
 }
 
 pub const CUSTOM_EDITORS_SETTING: &str = "editors.custom";
+pub const HIDDEN_EDITORS_SETTING: &str = "editors.hidden";
+
+/// Reads user-configured hidden editor IDs from settings.
+pub fn list_hidden(settings: &crate::settings::SettingsService) -> Vec<String> {
+    if let Some(val) = settings.get(HIDDEN_EDITORS_SETTING) {
+        if let Ok(list) = serde_json::from_value::<Vec<String>>(val.clone()) {
+            return list;
+        }
+    }
+    Vec::new()
+}
+
+/// Persists hidden editor IDs to settings.
+pub fn save_hidden(
+    settings: &mut crate::settings::SettingsService,
+    list: &[String],
+) -> Result<(), crate::error::CoreError> {
+    let val = serde_json::to_value(list)
+        .map_err(|e| crate::error::CoreError::ServiceError(e.to_string()))?;
+    settings.set(HIDDEN_EDITORS_SETTING, val)
+}
 
 /// Reads user-configured custom editors from settings.
 pub fn list_custom(settings: &crate::settings::SettingsService) -> Vec<CustomEditor> {
@@ -61,12 +84,14 @@ pub fn save_custom(
     settings: &mut crate::settings::SettingsService,
     list: &[CustomEditor],
 ) -> Result<(), crate::error::CoreError> {
-    let val = serde_json::to_value(list).map_err(|e| crate::error::CoreError::ServiceError(e.to_string()))?;
+    let val = serde_json::to_value(list)
+        .map_err(|e| crate::error::CoreError::ServiceError(e.to_string()))?;
     settings.set(CUSTOM_EDITORS_SETTING, val)
 }
 
 /// Returns all editors: detected system editors plus user-configured custom editors.
 pub fn list_all(settings: &crate::settings::SettingsService) -> Vec<EditorInfo> {
+    let hidden = list_hidden(settings);
     let mut all = detect();
     let custom = list_custom(settings);
     for c in custom {
@@ -75,7 +100,11 @@ pub fn list_all(settings: &crate::settings::SettingsService) -> Vec<EditorInfo> 
             name: c.name,
             path: Some(c.path),
             custom: true,
+            hidden: false,
         });
+    }
+    for e in &mut all {
+        e.hidden = hidden.contains(&e.id);
     }
     all
 }
@@ -103,6 +132,14 @@ const KNOWN: &[(&str, &str, &str, &[&str], &str)] = &[
         &["Windsurf", "windsurf"],
         "windsurf",
     ),
+    ("trae", "Trae", "Trae.exe", &["Trae", "trae"], "trae"),
+    (
+        "antigravity",
+        "Antigravity",
+        "Antigravity.exe",
+        &["Antigravity", "antigravity"],
+        "antigravity",
+    ),
     ("zed", "Zed", "Zed.exe", &["Zed", "zed"], "zed"),
     (
         "vscodium",
@@ -127,6 +164,54 @@ const KNOWN: &[(&str, &str, &str, &[&str], &str)] = &[
     ),
 ];
 
+const JETBRAINS: &[(&str, &str, &str, &str)] = &[
+    ("phpstorm", "PhpStorm", "PhpStorm", "phpstorm64.exe"),
+    ("webstorm", "WebStorm", "WebStorm", "webstorm64.exe"),
+    ("pycharm", "PyCharm", "PyCharm", "pycharm64.exe"),
+    ("intellij", "IntelliJ IDEA", "IntelliJ IDEA", "idea64.exe"),
+    ("goland", "GoLand", "GoLand", "goland64.exe"),
+    ("rustrover", "RustRover", "RustRover", "rustrover64.exe"),
+    ("rider", "Rider", "Rider", "rider64.exe"),
+];
+
+fn find_jetbrains(roots: &[PathBuf], product_prefix: &str, exe_name: &str) -> Option<PathBuf> {
+    for r in roots {
+        let jb = r.join("JetBrains");
+        if let Ok(entries) = std::fs::read_dir(&jb) {
+            for entry in entries.filter_map(Result::ok) {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name
+                    .to_lowercase()
+                    .starts_with(&product_prefix.to_lowercase())
+                {
+                    let bin_exe = entry.path().join("bin").join(exe_name);
+                    if bin_exe.is_file() {
+                        return Some(bin_exe);
+                    }
+                }
+            }
+        }
+        let tb = r
+            .join("JetBrains")
+            .join("Toolbox")
+            .join("apps")
+            .join(product_prefix);
+        if let Ok(channels) = std::fs::read_dir(&tb) {
+            for ch in channels.filter_map(Result::ok) {
+                if let Ok(builds) = std::fs::read_dir(ch.path()) {
+                    for build in builds.filter_map(Result::ok) {
+                        let bin_exe = build.path().join("bin").join(exe_name);
+                        if bin_exe.is_file() {
+                            return Some(bin_exe);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 /// Every known editor, with where it's installed (if it is).
 pub fn detect() -> Vec<EditorInfo> {
     let roots: Vec<PathBuf> = ["LOCALAPPDATA", "ProgramFiles", "ProgramFiles(x86)"]
@@ -134,7 +219,8 @@ pub fn detect() -> Vec<EditorInfo> {
         .filter_map(|v| std::env::var_os(v).map(PathBuf::from))
         .flat_map(|r| [r.join("Programs"), r])
         .collect();
-    KNOWN
+
+    let mut out: Vec<EditorInfo> = KNOWN
         .iter()
         .map(|(id, name, exe, folders, shim)| {
             let installed = roots
@@ -147,9 +233,39 @@ pub fn detect() -> Vec<EditorInfo> {
                 name: name.to_string(),
                 path: path.map(|p| p.display().to_string()),
                 custom: false,
+                hidden: false,
             }
         })
-        .collect()
+        .collect();
+
+    for (id, name, prefix, exe) in JETBRAINS {
+        let path = find_jetbrains(&roots, prefix, exe)
+            .or_else(|| crate::web::manager::find_executable(None, id));
+        out.push(EditorInfo {
+            id: id.to_string(),
+            name: name.to_string(),
+            path: path.map(|p| p.display().to_string()),
+            custom: false,
+            hidden: false,
+        });
+    }
+
+    // Windows Notepad
+    let sys_notepad = crate::exec::windows_system_dir().join("notepad.exe");
+    let notepad_path = if sys_notepad.is_file() {
+        Some(sys_notepad)
+    } else {
+        crate::web::manager::find_executable(None, "notepad")
+    };
+    out.push(EditorInfo {
+        id: "notepad".to_string(),
+        name: "Notepad".to_string(),
+        path: notepad_path.map(|p| p.display().to_string()),
+        custom: false,
+        hidden: false,
+    });
+
+    out
 }
 
 /// The executable to open things with: a custom path wins, then the chosen editor, then

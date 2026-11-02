@@ -59,6 +59,7 @@ export interface EditorInfo {
   name: string
   path: string | null
   custom?: boolean
+  hidden?: boolean
 }
 
 export interface XdebugSettings {

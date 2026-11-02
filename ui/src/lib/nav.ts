@@ -59,3 +59,31 @@ export function onOpenSitesFilter(fn: (filter: string) => void): () => void {
   return () => window.removeEventListener(SITES_FILTER_EVENT, handler)
 }
 
+const SETTINGS_SECTION_EVENT = 'ols:open-settings-section'
+let pendingSettingsSection: string | null = null
+
+/** Asks the Settings page to show a specific section (e.g. 'general'); remembered until mounted. */
+export function openSettingsSection(section: string) {
+  pendingSettingsSection = section
+  try {
+    sessionStorage.setItem('ols:settings-section', section)
+  } catch {}
+  window.dispatchEvent(new CustomEvent<string>(SETTINGS_SECTION_EVENT, { detail: section }))
+}
+
+export function takePendingSettingsSection(): string | null {
+  const s = pendingSettingsSection
+  pendingSettingsSection = null
+  return s
+}
+
+export function onOpenSettingsSection(fn: (section: string) => void): () => void {
+  const handler = (e: Event) => {
+    pendingSettingsSection = null
+    fn((e as CustomEvent<string>).detail)
+  }
+  window.addEventListener(SETTINGS_SECTION_EVENT, handler)
+  return () => window.removeEventListener(SETTINGS_SECTION_EVENT, handler)
+}
+
+

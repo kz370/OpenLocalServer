@@ -21,6 +21,7 @@ import { type EditorInfo, type HelperService, type ServiceStatus, type StartupSe
 import { createPersistentCache } from '@/lib/cache'
 import { confirmThen } from '@/lib/confirm'
 import { useAction } from '@/lib/hooks'
+import { onOpenSettingsSection, takePendingSettingsSection } from '@/lib/nav'
 import { invalidateDefaultTldCache } from '@/lib/sites'
 import { cn } from '@/lib/utils'
 import {
@@ -122,6 +123,18 @@ export function SettingsPage() {
     }
     return 'general'
   })
+
+  useEffect(() => {
+    const pending = takePendingSettingsSection()
+    if (pending && SECTIONS.some((s) => s.id === pending)) {
+      setSection(pending as Section)
+    }
+    return onOpenSettingsSection((s) => {
+      if (SECTIONS.some((sec) => sec.id === s)) {
+        setSection(s as Section)
+      }
+    })
+  }, [])
   const [manual, setManual] = useState<string | null>(manualCache.get)
   const [manualTab, setManualTab] = useState<'manual' | 'notes'>('manual')
   const [manualCopied, setManualCopied] = useState(false)
@@ -484,41 +497,58 @@ export function SettingsPage() {
     }
   }
 
-  const editorField = (
-    <div className="flex flex-col gap-2">
-      <Select value={editorId} onChange={(e) => setEditorId(e.target.value)} className="w-72">
-        {editors
-          .filter((e) => e.path)
-          .map((e) => (
-            <option key={e.id} value={e.id}>
-              {e.name}
-              {e.id === 'vscode' ? ' (default)' : ''}
-              {e.custom ? ' (custom)' : ''}
-            </option>
-          ))}
-        {editorId !== 'custom' && !editors.some((e) => e.id === editorId && e.path) && (
-          <option value={editorId}>{editors.find((e) => e.id === editorId)?.name ?? editorId} (not found)</option>
-        )}
-        <option value="custom">Another program…</option>
-      </Select>
-      {editorId === 'custom' && (
-        <div className="flex gap-2">
-          <Input value={editor} onChange={(e) => setEditor(e.target.value)} placeholder="C:\Program Files\JetBrains\PhpStorm\bin\phpstorm64.exe" />
-          <Button variant="secondary" onClick={async () => { const p = await open({ filters: [{ name: 'Program', extensions: ['exe', 'cmd', 'bat'] }] }); if (p && !Array.isArray(p)) setEditor(p) }}>
-            <FolderSearch /> Browse
-          </Button>
-        </div>
-      )}
+  const handleToggleEditorHidden = async (id: string, hidden: boolean) => {
+    try {
+      const res = await runCommand({ type: 'set_editor_hidden', id, hidden })
+      if (res.type === 'editors') {
+        setEditors(res.editors)
+        editorsCache.set(res.editors)
+      }
+    } catch (e) {
+      setError(asDiagnostic(e))
+    }
+  }
 
-      {/* Configured Custom Editors */}
-      <div className="mt-3 flex flex-col gap-2 pt-2 border-t border-border/60">
+  const editorField = (
+    <div className="flex w-full flex-col gap-3">
+      <div className="flex flex-col gap-2 w-full max-w-md">
+        <Select value={editorId} onChange={(e) => setEditorId(e.target.value)} className="w-full">
+          {editors
+            .filter((e) => e.path && !e.hidden)
+            .map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.name}
+                {e.id === 'vscode' ? ' (default)' : ''}
+                {e.custom ? ' (custom)' : ''}
+              </option>
+            ))}
+          {editorId !== 'custom' && !editors.some((e) => e.id === editorId && e.path && !e.hidden) && (
+            <option value={editorId}>
+              {editors.find((e) => e.id === editorId)?.name ?? editorId}
+              {editors.find((e) => e.id === editorId)?.hidden ? ' (hidden)' : ' (not found)'}
+            </option>
+          )}
+          <option value="custom">Another program…</option>
+        </Select>
+        {editorId === 'custom' && (
+          <div className="flex gap-2">
+            <Input value={editor} onChange={(e) => setEditor(e.target.value)} placeholder="C:\Program Files\JetBrains\PhpStorm\bin\phpstorm64.exe" className="flex-1" />
+            <Button variant="secondary" onClick={async () => { const p = await open({ filters: [{ name: 'Program', extensions: ['exe', 'cmd', 'bat'] }] }); if (p && !Array.isArray(p)) setEditor(p) }}>
+              <FolderSearch /> Browse
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {/* Configured Editors (Auto-detected & Custom) */}
+      <div className="mt-2 flex w-full flex-col gap-2.5 pt-3 border-t border-border/60">
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Configured Editors</span>
           {!showAddEditor && (
             <Button
               size="sm"
               variant="outline"
-              className="h-6 text-xs px-2"
+              className="h-7 text-xs px-2.5 cursor-pointer"
               onClick={() => setShowAddEditor(true)}
             >
               <FolderPlus className="size-3 mr-1" /> Add editor
@@ -526,59 +556,96 @@ export function SettingsPage() {
           )}
         </div>
 
-        {editors.filter((e) => e.custom).map((ce) => (
-          <div key={ce.id} className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted/20 p-2 text-xs">
+        {editors.filter((e) => e.path).map((ce) => (
+          <div
+            key={ce.id}
+            className={cn(
+              'flex items-center justify-between gap-3 rounded-md border border-border p-2.5 text-xs transition-opacity',
+              ce.hidden ? 'bg-muted/10 opacity-60' : 'bg-muted/20',
+            )}
+          >
             <div className="min-w-0 flex-1">
-              <span className="font-medium text-foreground block truncate">{ce.name}</span>
-              <span className="font-mono text-[11px] text-muted-foreground block truncate" title={ce.path ?? ''}>{ce.path}</span>
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-foreground truncate">{ce.name}</span>
+                {ce.custom ? (
+                  <Badge variant="outline" className="text-[10px] py-0 px-1.5 font-normal">
+                    Custom
+                  </Badge>
+                ) : (
+                  <Badge variant="secondary" className="text-[10px] py-0 px-1.5 font-normal">
+                    Auto-detected
+                  </Badge>
+                )}
+                {ce.hidden && (
+                  <Badge variant="outline" className="text-[10px] py-0 px-1.5 text-muted-foreground border-dashed">
+                    Hidden
+                  </Badge>
+                )}
+              </div>
+              <span className="font-mono text-[11px] text-muted-foreground block truncate mt-0.5" title={ce.path ?? ''}>
+                {ce.path}
+              </span>
             </div>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive cursor-pointer"
-              title={`Remove ${ce.name}`}
-              onClick={() => void handleRemoveEditor(ce.id)}
-            >
-              <Trash2 className="size-3" />
-            </Button>
+            <div className="flex items-center gap-1 shrink-0">
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground cursor-pointer"
+                title={ce.hidden ? `Show ${ce.name} in editor menus` : `Hide ${ce.name} from editor menus`}
+                onClick={() => void handleToggleEditorHidden(ce.id, !ce.hidden)}
+              >
+                {ce.hidden ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+              </Button>
+              {ce.custom && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive cursor-pointer"
+                  title={`Remove ${ce.name}`}
+                  onClick={() => void handleRemoveEditor(ce.id)}
+                >
+                  <Trash2 className="size-3.5" />
+                </Button>
+              )}
+            </div>
           </div>
         ))}
 
         {showAddEditor && (
-          <div className="flex flex-col gap-2 rounded-md border border-primary/30 bg-accent/20 p-2.5">
-            <span className="text-xs font-medium">Add New Editor</span>
+          <div className="flex w-full flex-col gap-2.5 rounded-lg border border-primary/30 bg-accent/20 p-3.5">
+            <span className="text-xs font-medium text-foreground">Add New Editor</span>
             <Input
               value={newEditorName}
               onChange={(e) => setNewEditorName(e.target.value)}
               placeholder="Editor name (e.g. Sublime Text, PhpStorm)"
-              className="h-7 text-xs"
+              className="h-8 text-xs"
             />
             <div className="flex gap-2">
               <Input
                 value={newEditorPath}
                 onChange={(e) => setNewEditorPath(e.target.value)}
                 placeholder="Executable path (.exe, .cmd, .bat)"
-                className="h-7 text-xs font-mono"
+                className="h-8 text-xs font-mono flex-1 min-w-0"
               />
               <Button
                 variant="secondary"
                 size="sm"
-                className="h-7 text-xs px-2 shrink-0"
+                className="h-8 text-xs px-3 shrink-0 cursor-pointer"
                 onClick={async () => {
                   const p = await open({ filters: [{ name: 'Program', extensions: ['exe', 'cmd', 'bat'] }] })
                   if (p && !Array.isArray(p)) setNewEditorPath(p)
                 }}
               >
-                <FolderSearch className="size-3 mr-1" /> Browse
+                <FolderSearch className="size-3.5 mr-1" /> Browse
               </Button>
             </div>
-            <div className="flex justify-end gap-1.5 pt-1">
-              <Button size="sm" variant="ghost" className="h-6 text-xs cursor-pointer" onClick={() => setShowAddEditor(false)}>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button size="sm" variant="ghost" className="h-7 text-xs cursor-pointer" onClick={() => setShowAddEditor(false)}>
                 Cancel
               </Button>
               <Button
                 size="sm"
-                className="h-6 text-xs cursor-pointer"
+                className="h-7 text-xs cursor-pointer"
                 disabled={!newEditorName.trim() || !newEditorPath.trim()}
                 onClick={() => void handleAddEditor()}
               >
@@ -679,7 +746,7 @@ export function SettingsPage() {
                   <CardTitle className="text-sm">Defaults</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <SettingRow title="Code editor" hint="Sites, projects and config files open here. Only editors installed on this PC are listed.">
+                  <SettingRow stacked title="Code editor" hint="Sites, projects and config files open here. Only editors installed on this PC are listed.">
                     {editorField}
                   </SettingRow>
                   {/* Stacked: the badge plus two buttons are wider than the side-by-side

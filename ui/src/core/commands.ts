@@ -196,6 +196,7 @@ export type CoreCommand =
   | { type: 'add_editor'; name: string; path: string }
   | { type: 'update_editor'; id: string; name: string; path: string }
   | { type: 'remove_editor'; id: string }
+  | { type: 'set_editor_hidden'; id: string; hidden: boolean }
   | { type: 'get_system_stats' }
   | { type: 'list_migration_sources' }
   | { type: 'list_foreign_databases'; source_id: string; password: string }

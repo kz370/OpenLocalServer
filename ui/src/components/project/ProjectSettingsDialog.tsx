@@ -191,6 +191,8 @@ export function ProjectSettingsDialog({
                 value={projectTypeMode}
                 onChange={(e) => setProjectTypeMode(e.target.value)}
                 className="w-full"
+                searchable={true}
+                searchPlaceholder="Search frameworks & languages..."
                 disabled={saving}
               >
                 <option value="auto">Auto-detect from project files (default)</option>

@@ -483,7 +483,10 @@ impl Inner {
             .unwrap_or_else(|| "local".to_string());
         let auto_template = format!("{{project}}.{default_tld}");
         let tld_suffix = format!(".{default_tld}");
-        let effective_name = project.name.strip_suffix(&tld_suffix).unwrap_or(&project.name);
+        let effective_name = project
+            .name
+            .strip_suffix(&tld_suffix)
+            .unwrap_or(&project.name);
         let base_hostname = crate::domain::apply_template(&auto_template, effective_name);
 
         let candidate_hostname = {
@@ -563,7 +566,11 @@ impl Inner {
     }
 
     /// Adds a custom editor to the configuration and returns the updated editor list.
-    pub fn add_editor(&self, name: &str, path: &str) -> Result<Vec<crate::editors::EditorInfo>, CoreError> {
+    pub fn add_editor(
+        &self,
+        name: &str,
+        path: &str,
+    ) -> Result<Vec<crate::editors::EditorInfo>, CoreError> {
         let name = name.trim();
         let path = path.trim();
         if name.is_empty() {
@@ -582,9 +589,14 @@ impl Inner {
         }
         let mut settings = lock(&self.settings);
         let mut list = crate::editors::list_custom(&settings);
-        let slug = name.to_lowercase().replace(|c: char| !c.is_alphanumeric(), "-");
+        let slug = name
+            .to_lowercase()
+            .replace(|c: char| !c.is_alphanumeric(), "-");
         let id = format!("custom:{}", slug.trim_matches('-'));
-        if let Some(existing) = list.iter_mut().find(|e| e.id == id || e.path.eq_ignore_ascii_case(path)) {
+        if let Some(existing) = list
+            .iter_mut()
+            .find(|e| e.id == id || e.path.eq_ignore_ascii_case(path))
+        {
             existing.name = name.to_string();
             existing.path = path.to_string();
         } else {
@@ -600,7 +612,12 @@ impl Inner {
     }
 
     /// Updates an existing custom editor's display name or executable path.
-    pub fn update_editor(&self, id: &str, name: &str, path: &str) -> Result<Vec<crate::editors::EditorInfo>, CoreError> {
+    pub fn update_editor(
+        &self,
+        id: &str,
+        name: &str,
+        path: &str,
+    ) -> Result<Vec<crate::editors::EditorInfo>, CoreError> {
         let name = name.trim();
         let path = path.trim();
         if name.is_empty() {
@@ -638,6 +655,25 @@ impl Inner {
         let mut list = crate::editors::list_custom(&settings);
         list.retain(|e| e.id != id);
         crate::editors::save_custom(&mut settings, &list)?;
+        Ok(crate::editors::list_all(&settings))
+    }
+
+    /// Sets whether an editor is hidden from menus and pickers, returning the updated list.
+    pub fn set_editor_hidden(
+        &self,
+        id: &str,
+        hidden: bool,
+    ) -> Result<Vec<crate::editors::EditorInfo>, CoreError> {
+        let mut settings = lock(&self.settings);
+        let mut list = crate::editors::list_hidden(&settings);
+        if hidden {
+            if !list.iter().any(|h| h == id) {
+                list.push(id.to_string());
+            }
+        } else {
+            list.retain(|h| h != id);
+        }
+        crate::editors::save_hidden(&mut settings, &list)?;
         Ok(crate::editors::list_all(&settings))
     }
 }

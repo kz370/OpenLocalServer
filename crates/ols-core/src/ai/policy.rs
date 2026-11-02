@@ -163,6 +163,7 @@ pub fn allowed(cmd: &CoreCommand) -> bool {
             | C::AddEditor { .. }
             | C::UpdateEditor { .. }
             | C::RemoveEditor { .. }
+            | C::SetEditorHidden { .. }
             | C::RelocateProject { .. }
             | C::RemoveProject { .. }
             | C::DeleteProject { .. }

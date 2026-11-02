@@ -100,6 +100,10 @@ pub enum CoreCommand {
     RemoveEditor {
         id: String,
     },
+    SetEditorHidden {
+        id: String,
+        hidden: bool,
+    },
     ScanAndRegisterProjects {
         path: String,
     },
