@@ -408,6 +408,8 @@ fn standalone_projects_do_not_get_auto_domains_and_can_create_site() {
     let project = match core
         .dispatch(CoreCommand::AddProject {
             path: p_dir.display().to_string(),
+            name: None,
+            project_type: None,
         })
         .unwrap()
     {
@@ -479,6 +481,8 @@ fn project_metadata_update_persists_icon_and_type() {
     let project = match core
         .dispatch(CoreCommand::AddProject {
             path: p_dir.display().to_string(),
+            name: None,
+            project_type: None,
         })
         .unwrap()
     {
@@ -598,7 +602,7 @@ fn custom_editors_crud_and_project_types() {
 
 #[test]
 fn custom_project_types_crud_and_project_updates() {
-    let core = test_core();
+    let (core, _home) = test_core();
     let dir = core.inner().paths.root().join("test_custom_type_app");
     std::fs::create_dir_all(&dir).unwrap();
 
@@ -756,7 +760,7 @@ fn cannot_remove_or_delete_project_connected_to_a_site() {
         })
         .unwrap_err();
     assert!(remove_err
-        .to_string()
+        .problem
         .contains("Cannot remove project connected to a site"));
 
     // Trying to delete_project must fail
@@ -766,6 +770,6 @@ fn cannot_remove_or_delete_project_connected_to_a_site() {
         })
         .unwrap_err();
     assert!(delete_err
-        .to_string()
+        .problem
         .contains("Cannot delete project connected to a site"));
 }

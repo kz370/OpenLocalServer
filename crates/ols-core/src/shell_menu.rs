@@ -334,33 +334,33 @@ mod tests {
     /// The two lines below are exactly what a broken install holds.
     #[test]
     fn a_menu_pointing_at_the_app_is_not_reported_as_installed() {
-        assert!(!command_runs_the_cli(
+        assert!(!command_is_add_project(
             r#""I:\OLS\ols.exe" project add "%V""#
         ));
-        assert!(!command_runs_the_cli(
+        assert!(!command_is_add_project(
             r#""C:\Program Files\OLS\Open Local Server.exe" project add "%V""#
         ));
-        assert!(command_runs_the_cli(
-            r#""I:\OLS\olsc.exe" project add "%V""#
+        assert!(command_is_add_project(
+            r#""I:\OLS\OLS.exe" --add-project "%V""#
         ));
         // Case is the whole point: Windows does not distinguish the two names.
-        assert!(command_runs_the_cli(
-            r#""I:\OLS\olsc.EXE" project add "%V""#
+        assert!(command_is_add_project(
+            r#""I:\OLS\ols.EXE" --add-project "%V""#
         ));
         // The second entry runs cmd.exe, which is correct and must not be read as a
         // broken CLI; the first entry is the one that decides.
-        assert!(!command_runs_the_cli(
+        assert!(!command_is_add_project(
             r#"cmd.exe /k ""C:\OLS\olsc.exe" setup --path "%V"""#
         ));
-        assert!(!command_runs_the_cli(""));
+        assert!(!command_is_add_project(""));
     }
 
     #[test]
     fn the_registry_value_is_read_out_of_reg_query_output() {
-        let out = "\r\nHKEY_CURRENT_USER\\Software\\Classes\\Directory\\shell\\OpenLocalServer.Add\\command\r\n    (Default)    REG_SZ    \"I:\\OLS\\olsc.exe\" project add \"%V\"\r\n\r\n";
+        let out = "\r\nHKEY_CURRENT_USER\\Software\\Classes\\Directory\\shell\\OpenLocalServer.Add\\command\r\n    (Default)    REG_SZ    \"I:\\OLS\\OLS.exe\" --add-project \"%V\"\r\n\r\n";
         let v = reg_value(out).expect("value");
-        assert_eq!(v, r#""I:\OLS\olsc.exe" project add "%V""#);
-        assert!(command_runs_the_cli(&v));
+        assert_eq!(v, r#""I:\OLS\OLS.exe" --add-project "%V""#);
+        assert!(command_is_add_project(&v));
         // A key with no (Default) line is not a command.
         assert!(reg_value("HKEY_CURRENT_USER\\x\n    (Default)    REG_DWORD    0x1\n").is_none());
     }
