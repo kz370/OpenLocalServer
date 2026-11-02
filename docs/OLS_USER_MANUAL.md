@@ -364,89 +364,16 @@ olsc guide
 ## 17. Version 2.7.0 Specific Notes & What's New
 
 ### New Features in v2.7.0
-1. **Dedicated Projects Management Page:**
-   - Centralized view (`Projects`) to manage standalone project directories, whether linked to a local virtual host domain or not.
-   - Filter tabs: **All** vs **Folder not found** (isolates projects whose physical directory or external drive was moved or disconnected).
-   - Real-time search across names, filesystem paths, and connected domains, with pagination support.
-   - Actions per project:
-     - **Create site from project**: 1-click local site creation for unlinked project directories.
-     - **Open project directory**: Instantly opens the project folder in Windows Explorer.
-     - **Open with editor**: Submenu listing all installed and visible code editors.
-     - **Open terminal**: Spawns external Windows Terminal (`wt.exe`) or PowerShell in the project directory.
-     - **Project settings**: Edit display name, project type, and project icon.
-     - **Hide from list**: Moves project path to ignore list without touching files on disk.
-
-2. **Project Metadata & Framework Presets:**
-   - Customize project name, preset or custom project type, and custom logo/icon (via WebP image integration).
-   - Bundled framework catalog (`catalog/project-types.yaml`) featuring 17 popular presets (Laravel, Symfony, WordPress, PHP, Python, Django, Flask, FastAPI, Node, Next.js, React, Vue, Go, .NET, Java, Static HTML, Other) with custom type support.
-
-3. **Multi-Editor Configuration & System Auto-Detection:**
-   - Auto-detects installed development IDEs and editors: VS Code, Cursor, Windsurf, Trae, Zed, VSCodium, Sublime Text, Notepad++, and JetBrains IDEs (PhpStorm, WebStorm, PyCharm, IntelliJ IDEA, GoLand, RustRover, Rider via JetBrains Toolbox and standard program roots). Windows Notepad is excluded from the auto-detected code editor list.
-   - Custom editor management: add any custom editor executable by path (`AddEditor`, `UpdateEditor`, `RemoveEditor`).
-   - Editor visibility toggles: hide/show any auto-detected or custom editor from menus with an Eye/EyeOff toggle in `Settings > General > Code editor` (`CONFIGURED EDITORS`).
-
-4. **System Tray Projects Submenu:**
-   - Right-click system tray menu features a categorized **Projects** submenu directly below Sites.
-   - Each registered project provides two dedicated actions: "Open directory" and "Open with" (submenu of configured editors).
-   - Bottom navigation item "Open projects" switches the main window directly to the Projects page (`navigate(app, "projects")`).
-   - Tray menus dynamically rebuild in real-time when projects or editors change via broadcast `project_events`.
-
-5. **Deep-Linked Settings Navigation:**
-   - Seamless cross-page navigation helper allowing 1-click jumps directly from menus (e.g. "Edit editors...") straight to the target Settings section.
-
-6. **Project Type Tabs & Filter Navigation:**
-   - Projects are grouped into dedicated tabs by framework preset and custom types alongside the main "All" and "Folder not found" tabs.
-   - Live badge counters display total project counts per type.
-   - Smooth horizontal scroll navigation strip accommodates custom types without layout wrapping.
-
-7. **Folder Drag-and-Drop Dropzone:**
-   - Drop any folder from Windows Explorer directly onto the Projects page.
-   - Animated full-screen drop overlay with backdrop blur and icon feedback.
-   - Queues the Add Project dialog, automatically populating folder names, paths, and detecting framework presets via `inspect_project_folder`.
-   - Supports multi-folder queue processing.
-
-8. **Windows Explorer Context Menu Integration:**
-   - Right-clicking any folder in Windows Explorer displays **"Add folder to OLS projects"**.
-   - Invokes OLS with `--add-project <folder>`, bringing the application to focus and opening the project setup modal pre-filled with inspected folder data.
-
-9. **Duplicate Path Validation & Diagnostic Errors:**
-   - Normalized path matching (`same_path`) handles forward/backward slashes, letter casing, trailing slashes, and Windows verbatim path prefixes (`\\?\`).
-   - Rejects identical paths with helpful `Diagnostic` guidance (problem, cause, fix).
-   - Allows identically named folders located at different filesystem paths to be registered simultaneously.
-
-10. **Custom Project Types Management (CRUD):**
-    - Manage, create, rename, and remove custom project types via `ManageProjectTypesDialog`.
-    - Renaming custom project types automatically updates all existing projects referencing that type.
-    - Removing a custom type safely resets associated projects to "Auto", preventing orphaned metadata.
-
-11. **Responsive Single-Line Project Type Filter Bar:**
-    - Single-line responsive layout utilizing `ResizeObserver` and offscreen button measurement.
-    - Automatically filters down to types with ≥ 1 project (excluding empty presets and unused custom types), keeps "All" first, and pins "Manage types" to the far right.
-    - Chips exceeding available bar width collapse into a "+N more ▾" popover with integrated instant search and total project counts.
-    - Selecting a type from the popover dynamically swaps it into the visible row, combined with instant search (`AND` logic, counts staying totals).
-    - Remembers the last selected tab across sessions with automatic fallback to "All" when a type is removed or becomes empty.
-
-12. **Drag-to-Reorder & Pinning in Manage Types:**
-    - HTML5 drag-and-drop reordering for custom type tab sequences in `ManageProjectTypesDialog`.
-    - Inline "Pin to filter bar" toggles to pin preferred types directly to the main filter bar ahead of higher-count chips.
-    - Inline renaming that preserves pin status, position index, and active filter preferences.
-
-13. **On-Accent Contrast & Theme Icon Rendering:**
-    - Added `--on-accent` CSS variable dynamically derived from accent color luminance (OKLCH relative color syntax with JS relative luminance fallback in `applyThemeToDom`).
-    - Ensures high contrast for text, icons, and count badges on active accent chips and primary buttons.
-    - Converted generic and brand icons (`FolderCode`, brands) to `currentColor`.
-    - Dual WCAG contrast warnings in the custom theme editor evaluating accent vs background and accent vs on-accent.
-
-14. **Tauri Preset & Project Auto-Detection:**
-    - Native auto-detection for Tauri applications (`src-tauri/tauri.conf.json`, `Cargo.toml`, etc.) resolving to `custom:Tauri` with official Tauri branding.
-
-15. **Project Removal Protection & Safe Deletion:**
-    - Standalone projects connected to active virtual host sites are protected from accidental removal or deletion with clear diagnostic messages (`CoreError::failed_fix`).
-    - Scanned projects remain removable and trackable in the deletion skip history (`PROJECT_SKIP`).
-    - Windows 8.3 short name (e.g. `RUNNER~1` on CI runners) canonicalization in path matching (`same_path`).
-
-16. **Model Context Protocol (MCP) Project & Editor Tools:**
-    - 9 new MCP tools for AI coding assistants: `ols_list_projects`, `ols_add_project`, `ols_update_project`, `ols_inspect_project_folder`, `ols_list_project_types`, `ols_add_custom_project_type`, `ols_rename_custom_project_type`, `ols_remove_custom_project_type`, and `ols_list_editors`.
+1. **Projects Management**: Dedicated Projects page to browse, search, and manage local project folders with or without virtual host domains.
+2. **Responsive Type Filter Bar**: Single-line filter bar that shows only types with projects, collapses overflow into a "+N more" popover with search, and remembers selected tabs.
+3. **Custom Project Types**: Create, rename, delete, and drag-to-reorder custom project types, with pinning to the filter bar.
+4. **Framework Presets & Tauri**: Bundled presets for 17 frameworks and languages, plus native Tauri project auto-detection.
+5. **Folder Drag-and-Drop & Explorer Menu**: Drop folders directly onto the Projects page or right-click any folder in Windows Explorer to add it to OLS.
+6. **Multi-Editor Configuration**: Broad auto-detection for IDEs (VS Code, Cursor, Windsurf, Zed, JetBrains, Sublime, Notepad++), with custom editor paths and visibility toggles.
+7. **System Tray Submenu**: Right-click tray menu includes a categorized Projects submenu to open project directories or launch editors in 1 click.
+8. **Theme Contrast & Icons**: High-contrast `--on-accent` styling for active chips and buttons, currentColor icons, and dual contrast warnings in theme settings.
+9. **MCP Server Tools**: 9 new Model Context Protocol tools for AI assistants to inspect, add, update, and manage projects and editors.
+10. **Safe Project Removal**: Guards projects connected to active sites against accidental deletion while keeping scanned project skips in history.
 
 ---
 
