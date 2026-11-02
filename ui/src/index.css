@@ -18,6 +18,7 @@
 
   --primary: #059669;
   --primary-foreground: #FFFFFF;
+  --on-accent: oklch(from var(--primary) clamp(0, (0.6 - l) * 9999, 1) 0 0);
 
   --secondary: rgba(240, 244, 255, 0.85);
   --secondary-foreground: #1E293B;
@@ -70,6 +71,7 @@
 
   --primary: #00E599;
   --primary-foreground: #04120C;
+  --on-accent: oklch(from var(--primary) clamp(0, (0.6 - l) * 9999, 1) 0 0);
 
   --secondary: rgba(19, 32, 60, 0.75);
   --secondary-foreground: #F8FAFC;

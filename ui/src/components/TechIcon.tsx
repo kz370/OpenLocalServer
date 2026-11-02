@@ -213,9 +213,9 @@ const GENERIC: Record<string, ReactNode> = {
   proxy: <ArrowLeftRight />,
   'reverse-proxy': <ArrowLeftRight />,
   other: <Package />,
-  folder: <FolderCode className="text-amber-500/90" />,
-  none: <FolderCode className="text-muted-foreground/80" />,
-  'no-domain': <FolderCode className="text-muted-foreground/80" />,
+  folder: <FolderCode />,
+  none: <FolderCode />,
+  'no-domain': <FolderCode />,
   memcached: MEMCACHED_MARK,
   pgadmin: PGADMIN,
   heidisql: HEIDISQL,
@@ -243,7 +243,7 @@ export function TechIcon({ id, className }: { id: string; className?: string }) 
     return <span className={cn('inline-flex size-4 shrink-0 [&>svg]:size-full', className)}>{generic}</span>
   }
   return (
-    <svg viewBox="0 0 24 24" role="img" aria-label={brand.title} className={cn('size-4 shrink-0', className)} fill={isDark(brand.hex) ? 'currentColor' : `#${brand.hex}`}>
+    <svg viewBox="0 0 24 24" role="img" aria-label={brand.title} className={cn('size-4 shrink-0', className)} fill="currentColor">
       <path d={brand.path} />
     </svg>
   )

@@ -13,7 +13,6 @@ import {
   MoreHorizontal,
   Search,
   Settings,
-  SlidersHorizontal,
   SquareTerminal,
   X,
 } from 'lucide-react'
@@ -24,6 +23,7 @@ import { AddProjectDialog, type AddProjectItem } from '@/components/project/AddP
 import { ManageProjectTypesDialog } from '@/components/project/ManageProjectTypesDialog'
 import { GitCloneButton } from '@/components/project/ProjectImports'
 import { ProjectSettingsDialog } from '@/components/project/ProjectSettingsDialog'
+import { ProjectTypeFilterBar } from '@/components/project/ProjectTypeFilterBar'
 import { SiteLogo } from '@/components/SiteLogo'
 import { TechIcon } from '@/components/TechIcon'
 import { Badge } from '@/components/ui/badge'
@@ -55,8 +55,11 @@ import { openProject, openSettingsSection } from '@/lib/nav'
 import { notify } from '@/lib/notify'
 import {
   getProjectDisplayType,
+  getProjectFilterPreferences,
   getProjectTypeId,
   groupProjectsByType,
+  PROJECTS_TAB_KEY,
+  type ProjectFilterPreferences,
 } from '@/lib/projectTypes'
 import { cn } from '@/lib/utils'
 
@@ -79,9 +82,16 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
   const [customTypes, setCustomTypes] = useState<CustomProjectType[]>(customTypesCache.get)
 
   const [query, setQuery] = useState('')
+  const [preferences, setPreferences] = useState<ProjectFilterPreferences>(() =>
+    getProjectFilterPreferences(),
+  )
   const [typeTab, setTypeTab] = useState<string>(() => {
     try {
-      return sessionStorage.getItem('ols:projects-tab') || 'all'
+      return (
+        localStorage.getItem(PROJECTS_TAB_KEY) ||
+        sessionStorage.getItem('ols:projects-tab') ||
+        'all'
+      )
     } catch {
       return 'all'
     }
@@ -89,6 +99,15 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
   const [missingOnly, setMissingOnly] = useState<boolean>(false)
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(25)
+
+  const handleSelectTypeTab = useCallback((id: string) => {
+    setTypeTab(id)
+    setPage(1)
+    try {
+      localStorage.setItem(PROJECTS_TAB_KEY, id)
+      sessionStorage.setItem('ols:projects-tab', id)
+    } catch {}
+  }, [])
 
   const [activeMenu, setActiveMenu] = useState<{ id: string; anchor: MenuAnchor } | null>(null)
   const [editingProject, setEditingProject] = useState<Project | null>(null)
@@ -160,6 +179,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
   }, [])
 
   const refreshAll = useCallback(async () => {
+    setPreferences(getProjectFilterPreferences())
     await Promise.all([
       refreshProjects(),
       refreshDomains(),
@@ -259,16 +279,20 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
 
   // Group tabs by type
   const typeGroups = useMemo(() => {
-    return groupProjectsByType(allProjects, presets, customTypes)
-  }, [allProjects, presets, customTypes])
+    return groupProjectsByType(allProjects, presets, customTypes, preferences)
+  }, [allProjects, presets, customTypes, preferences])
 
-  // Reset typeTab if active tab no longer exists in available tabs
+  // Reset typeTab if active tab no longer exists in available tabs or becomes empty (count < 1)
   useEffect(() => {
-    if (typeTab !== 'all' && !typeGroups.tabs.some((t) => t.id === typeTab)) {
-      setTypeTab('all')
-      try {
-        sessionStorage.setItem('ols:projects-tab', 'all')
-      } catch {}
+    if (typeTab !== 'all') {
+      const tabExists = typeGroups.tabs.some((t) => t.id === typeTab && t.count >= 1)
+      if (!tabExists) {
+        setTypeTab('all')
+        try {
+          localStorage.setItem(PROJECTS_TAB_KEY, 'all')
+          sessionStorage.setItem('ols:projects-tab', 'all')
+        } catch {}
+      }
     }
   }, [typeGroups.tabs, typeTab])
 
@@ -512,104 +536,45 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
         <CardContent className="p-0">
           {/* Top toolbar: Type tabs, missing filter, manage types, and search */}
           <div className="flex flex-col gap-3 p-4 border-b border-border/80">
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-              {/* Type tabs & action chips */}
-              <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-1 lg:pb-0 max-w-full">
-                {typeGroups.tabs.map((tab) => {
-                  const isSelected = typeTab === tab.id
-                  return (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => {
-                        setTypeTab(tab.id)
-                        setPage(1)
-                        try {
-                          sessionStorage.setItem('ols:projects-tab', tab.id)
-                        } catch {}
-                      }}
-                      className={cn(
-                        'cursor-pointer rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors flex items-center gap-1.5 shrink-0',
-                        isSelected
-                          ? 'bg-primary text-primary-foreground shadow-xs font-semibold'
-                          : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground',
-                      )}
-                    >
-                      <TechIcon id={tab.icon} className="size-3.5 shrink-0" />
-                      <span>{tab.label}</span>
-                      <span
-                        className={cn(
-                          'ml-0.5 text-[10px] opacity-75',
-                          isSelected ? 'text-primary-foreground' : 'text-muted-foreground',
-                        )}
-                      >
-                        {tab.count}
-                      </span>
-                    </button>
-                  )
-                })}
+            {/* Type filter row: All first, chips, +N more popover, Manage types pinned right */}
+            <ProjectTypeFilterBar
+              tabs={typeGroups.tabs}
+              selectedTab={typeTab}
+              onSelectTab={handleSelectTypeTab}
+              missingCount={typeGroups.missingCount}
+              missingOnly={missingOnly}
+              onToggleMissingOnly={() => {
+                setMissingOnly((prev) => !prev)
+                setPage(1)
+              }}
+              onOpenManageTypes={() => setManageTypesOpen(true)}
+              pinnedIds={preferences.pinnedIds}
+            />
 
-                {/* Filter for missing folders */}
-                {typeGroups.missingCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMissingOnly((prev) => !prev)
-                      setPage(1)
-                    }}
-                    className={cn(
-                      'cursor-pointer rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors flex items-center gap-1.5 shrink-0',
-                      missingOnly
-                        ? 'bg-destructive/20 text-destructive border border-destructive/40 shadow-xs'
-                        : 'text-destructive/80 hover:bg-destructive/10',
-                    )}
-                  >
-                    <FolderX className="size-3.5" />
-                    Folder not found
-                    <Badge variant="destructive" className="ml-1 px-1 py-0 text-[10px]">
-                      {typeGroups.missingCount}
-                    </Badge>
-                  </button>
-                )}
-
-                {/* Manage custom types button */}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setManageTypesOpen(true)}
-                  className="h-8 px-2.5 text-xs cursor-pointer gap-1.5 shrink-0"
-                  title="Manage custom project types"
-                >
-                  <SlidersHorizontal className="size-3.5" />
-                  <span>Manage types</span>
-                </Button>
-              </div>
-
-              {/* Search */}
-              <div className="relative w-full lg:w-72 shrink-0">
-                <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={query}
-                  onChange={(e) => {
-                    setQuery(e.target.value)
+            {/* Search */}
+            <div className="relative w-full">
+              <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value)
+                  setPage(1)
+                }}
+                placeholder="Search projects by name, path, site..."
+                className="pl-8 pr-7 h-9 text-xs"
+              />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuery('')
                     setPage(1)
                   }}
-                  placeholder="Search projects by name, path, site..."
-                  className="pl-8 pr-7 h-9 text-xs"
-                />
-                {query && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setQuery('')
-                      setPage(1)
-                    }}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-muted-foreground hover:text-foreground cursor-pointer"
-                  >
-                    <X className="size-3.5" />
-                  </button>
-                )}
-              </div>
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-muted-foreground hover:text-foreground cursor-pointer"
+                >
+                  <X className="size-3.5" />
+                </button>
+              )}
             </div>
           </div>
 

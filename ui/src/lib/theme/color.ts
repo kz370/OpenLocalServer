@@ -114,35 +114,59 @@ export function hexToRgba(hex: string, alpha: number): string {
 }
 
 /**
- * Check if an accent color provides sufficient contrast against card / background.
+ * Check if an accent color provides sufficient contrast against card / background
+ * AND against on-accent text/icon color.
  * WCAG AA requires >= 4.5:1 for normal text, >= 3.0:1 for graphical UI objects and large text.
  */
 export function getContrastWarning(
   accent: string,
   isDark: boolean,
-): { isLow: boolean; ratio: number; message: string | null } {
+): { isLow: boolean; ratio: number; message: string | null; onAccentRatio?: number } {
   const bgToTest = isDark ? '#050B16' : '#F8FAFF'
-  const ratio = contrastRatio(accent, bgToTest)
+  const bgRatio = contrastRatio(accent, bgToTest)
+  const onAccent = pickReadableForeground(accent, '#FFFFFF', '#0F172A')
+  const onAccentRatio = contrastRatio(accent, onAccent)
 
-  if (ratio < 2.5) {
+  if (bgRatio < 2.5) {
     return {
       isLow: true,
-      ratio: Math.round(ratio * 10) / 10,
-      message: `Poor contrast (${ratio.toFixed(1)}:1 against background). Text or icons with this accent may be hard to distinguish.`,
+      ratio: Math.round(bgRatio * 10) / 10,
+      onAccentRatio: Math.round(onAccentRatio * 10) / 10,
+      message: `Poor contrast (${bgRatio.toFixed(1)}:1 against background). Text or icons with this accent may be hard to distinguish.`,
     }
   }
 
-  if (ratio < 3.5) {
+  if (onAccentRatio < 3.0) {
     return {
       isLow: true,
-      ratio: Math.round(ratio * 10) / 10,
-      message: `Moderate contrast (${ratio.toFixed(1)}:1). Consider choosing a slightly ${isDark ? 'brighter' : 'darker'} tone for optimal readability.`,
+      ratio: Math.round(bgRatio * 10) / 10,
+      onAccentRatio: Math.round(onAccentRatio * 10) / 10,
+      message: `Poor text contrast (${onAccentRatio.toFixed(1)}:1 between accent and text/icons). Labels and icons on active chips and primary buttons will be hard to read.`,
+    }
+  }
+
+  if (bgRatio < 3.5) {
+    return {
+      isLow: true,
+      ratio: Math.round(bgRatio * 10) / 10,
+      onAccentRatio: Math.round(onAccentRatio * 10) / 10,
+      message: `Moderate contrast (${bgRatio.toFixed(1)}:1 against background). Consider choosing a slightly ${isDark ? 'brighter' : 'darker'} tone for optimal readability.`,
+    }
+  }
+
+  if (onAccentRatio < 4.5) {
+    return {
+      isLow: true,
+      ratio: Math.round(bgRatio * 10) / 10,
+      onAccentRatio: Math.round(onAccentRatio * 10) / 10,
+      message: `Moderate text contrast (${onAccentRatio.toFixed(1)}:1 between accent and text/icons). Consider adjusting the accent brightness for clearer text and icons.`,
     }
   }
 
   return {
     isLow: false,
-    ratio: Math.round(ratio * 10) / 10,
+    ratio: Math.round(bgRatio * 10) / 10,
+    onAccentRatio: Math.round(onAccentRatio * 10) / 10,
     message: null,
   }
 }

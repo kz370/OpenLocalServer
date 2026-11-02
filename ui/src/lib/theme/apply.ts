@@ -94,6 +94,11 @@ export function applyThemeToDom(
     }
   }
 
+  // 2b. JS luminance fallback for --on-accent (derived from primary / accent color)
+  const primaryColor = tokens.primary || (resolvedMode === 'dark' ? '#00E599' : '#059669')
+  const onAccent = pickReadableForeground(primaryColor, '#FFFFFF', '#0F172A')
+  root.style.setProperty('--on-accent', onAccent)
+
   // 3. Set radius
   if (options.radius) {
     root.style.setProperty('--radius', options.radius)

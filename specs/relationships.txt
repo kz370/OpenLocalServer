@@ -207,7 +207,8 @@ Tauri request_exit | calls | begin_shutdown
 CommandPalette & SettingsPage | invoke | requestExit
 SitesPage | uses | FloatingMenu (shared context menu on table row onContextMenu and Actions button click; portaled via @floating-ui/react FloatingPortal with flip, shift, size, offset, autoUpdate, and useDismiss below the 36px titlebar at z-[95])
 SitesPage | filters | 'missing' tab (isolates sites whose project folder is missing or offline from 'enabled' / 'disabled' tabs)
-ProjectsPage | uses | ProjectSettingsDialog, AddProjectDialog, ManageProjectTypesDialog, ProjectTypePicker, projectTypes, FloatingMenu, Pagination, SiteLogo, TechIcon, GitCloneButton
+ProjectsPage | uses | ProjectTypeFilterBar, ProjectSettingsDialog, AddProjectDialog, ManageProjectTypesDialog, ProjectTypePicker, projectTypes, FloatingMenu, Pagination, SiteLogo, TechIcon, GitCloneButton
+ProjectTypeFilterBar | uses | TechIcon, Badge, Button, Input, FloatingPortal, useFloating, useDismiss, useInteractions
 ProjectsPage | reads | list_projects, list_domains, list_editors, list_project_types, list_custom_project_types, take_pending_add_project
 ProjectsPage | calls | add_project, inspect_project_folder, add_custom_project_type, rename_custom_project_type, remove_custom_project_type, update_project, relocate_project, remove_project, create_site_for_project, open_project_terminal, open_with, set_editor_hidden
 TauriApp (refresh_tray & sync_tray_tooltip) | updates_on | run_command IPC (site start/stop/add/remove/apply), process_events, project_events, autostart, and periodic 2-second heartbeat

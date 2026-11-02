@@ -79,6 +79,11 @@ describe('Theme Color & Contrast Helpers', () => {
     const poor = getContrastWarning('#0a0f1d', true)
     assert.equal(poor.isLow, true)
     assert.ok(poor.message !== null)
+
+    // Mid-gray accent with low contrast against on-accent text (#777777)
+    const midTone = getContrastWarning('#777777', false)
+    assert.equal(midTone.isLow, true)
+    assert.ok(midTone.message?.includes('contrast'))
   })
 
   it('adjusts accent per mode if needed', () => {
