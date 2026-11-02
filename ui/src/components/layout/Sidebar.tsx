@@ -104,7 +104,8 @@ const NAV_GROUPS: { id: string; label: string; items: NavItem[] }[] = [
 const SOON_ITEMS: string[] = []
 
 export function Sidebar({ page, onNavigate }: { page: Page; onNavigate: (p: Page) => void }) {
-  const { theme, resolvedTheme, setTheme } = useTheme()
+  const { theme, resolvedTheme, setTheme, options } = useTheme()
+  const isGradient = options?.background?.type === 'gradient'
   // §59: always visible when something is public.
   const [publicCount, setPublicCount] = useState(0)
   const network = useOnline()
@@ -164,7 +165,12 @@ export function Sidebar({ page, onNavigate }: { page: Page; onNavigate: (p: Page
   const mark = useAppMarkPath()
 
   return (
-    <aside className="flex h-full w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar/85 backdrop-blur-xl text-sidebar-foreground">
+    <aside
+      className={cn(
+        'flex h-full w-60 shrink-0 flex-col border-r border-sidebar-border backdrop-blur-xl text-sidebar-foreground transition-colors duration-300',
+        isGradient ? 'bg-sidebar/40' : 'bg-sidebar/85',
+      )}
+    >
       <div className="flex items-center gap-2.5 px-4 py-4">
         <img
           src={mark}

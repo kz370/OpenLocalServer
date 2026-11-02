@@ -2,6 +2,7 @@ import { Copy, Minus, Square, X } from 'lucide-react'
 
 import { NotificationsPopover } from '@/components/NotificationsPopover'
 import { useAppMarkPath, useWindowState } from '@/lib/hooks'
+import { useThemeSafe } from '@/lib/theme'
 import { cn } from '@/lib/utils'
 
 function isTauri(): boolean {
@@ -10,6 +11,8 @@ function isTauri(): boolean {
 
 export function Titlebar({ onNavigateLogs }: { onNavigateLogs?: (source?: string | null) => void }) {
   const { maximized } = useWindowState()
+  const theme = useThemeSafe()
+  const isGradient = theme?.options?.background?.type === 'gradient'
   // Same four colourways (light/dark × running/stopped) the tray and taskbar use.
   const mark = useAppMarkPath()
 
@@ -23,7 +26,10 @@ export function Titlebar({ onNavigateLogs }: { onNavigateLogs?: (source?: string
     <header
       data-tauri-drag-region
       onDoubleClick={action((win) => void win.toggleMaximize().catch(() => undefined))}
-      className="relative z-[100] flex h-9 shrink-0 select-none items-center gap-2 border-b border-sidebar-border bg-sidebar/85 backdrop-blur-xl px-3"
+      className={cn(
+        'relative z-[100] flex h-9 shrink-0 select-none items-center gap-2 border-b border-sidebar-border backdrop-blur-xl px-3 transition-colors duration-300',
+        isGradient ? 'bg-sidebar/40' : 'bg-sidebar/85',
+      )}
     >
       <span className="flex items-center gap-2 text-xs font-medium text-sidebar-foreground">
         {/* Same four colourways (light/dark × running/stopped) the tray and the
