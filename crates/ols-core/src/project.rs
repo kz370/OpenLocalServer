@@ -54,6 +54,12 @@ pub struct ProjectTypePreset {
     pub icon: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CustomProjectType {
+    pub id: String,
+    pub name: String,
+}
+
 /// Shipped preset project types for the project settings dropdown.
 pub fn list_project_types() -> Vec<ProjectTypePreset> {
     #[derive(Deserialize)]
@@ -155,6 +161,25 @@ pub fn strip_verbatim_prefix(path: &str) -> String {
     path.strip_prefix(r"\\?\").unwrap_or(path).to_string()
 }
 
+/// Normalizes a filesystem path for project deduplication and identity comparisons:
+/// strips Windows verbatim prefixes (`\\?\`), converts backslashes to slashes,
+/// trims trailing slashes, and performs case-insensitive normalization on Windows.
+pub fn normalize_path_for_comparison(path: &str) -> String {
+    let stripped = strip_verbatim_prefix(path);
+    let normalized = stripped.replace('\\', "/");
+    let trimmed = normalized.trim_end_matches('/');
+    if cfg!(windows) || (trimmed.len() >= 2 && trimmed.as_bytes()[1] == b':') {
+        trimmed.to_ascii_lowercase()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// Checks whether two path strings refer to the same project directory location.
+pub fn same_path(a: &str, b: &str) -> bool {
+    normalize_path_for_comparison(a) == normalize_path_for_comparison(b)
+}
+
 pub struct ProjectStore {
     paths: AppPaths,
     projects: Vec<Project>,
@@ -249,7 +274,7 @@ impl ProjectStore {
         // anywhere it's displayed or fed back into a normal command line. Strip it.
         let canonical_str = strip_verbatim_prefix(&canonical.display().to_string());
 
-        if let Some(existing) = self.projects.iter().find(|p| p.path == canonical_str) {
+        if let Some(existing) = self.projects.iter().find(|p| same_path(&p.path, &canonical_str)) {
             return Ok(existing.clone());
         }
 
@@ -271,6 +296,64 @@ impl ProjectStore {
             standalone,
             icon: None,
             project_type: None,
+        };
+        self.projects.push(project.clone());
+        self.persist()?;
+        Ok(project)
+    }
+
+    /// Adds a project explicitly (from UI "Add project", drag-and-drop, or Explorer context menu).
+    /// Rejects an identical path with CoreError::ProjectAlreadyAdded.
+    /// Allows folders with the same name if their paths are different.
+    pub fn add_new(
+        &mut self,
+        path: &str,
+        name: Option<String>,
+        project_type: Option<String>,
+        standalone: bool,
+    ) -> Result<Project, CoreError> {
+        let path_buf = PathBuf::from(path);
+        if !path_buf.is_dir() {
+            return Err(CoreError::InvalidProjectPath(path.to_string()));
+        }
+        let canonical = std::fs::canonicalize(&path_buf).unwrap_or(path_buf.clone());
+        let canonical_str = strip_verbatim_prefix(&canonical.display().to_string());
+
+        if let Some(existing) = self.projects.iter().find(|p| same_path(&p.path, &canonical_str)) {
+            return Err(CoreError::ProjectAlreadyAdded {
+                name: existing.name.clone(),
+                path: existing.path.clone(),
+            });
+        }
+
+        let project_name = name
+            .map(|n| n.trim().to_string())
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| {
+                canonical
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("project")
+                    .to_string()
+            });
+
+        let mut hasher = Sha256::new();
+        hasher.update(canonical_str.as_bytes());
+        let id = format!("{:x}", hasher.finalize())[..16].to_string();
+
+        let pt = project_type
+            .map(|t| t.trim().to_string())
+            .filter(|t| !t.is_empty() && !t.eq_ignore_ascii_case("auto"));
+
+        let project = Project {
+            id,
+            name: project_name,
+            path: canonical_str,
+            icon_image: None,
+            health: ProjectHealth::Healthy,
+            standalone,
+            icon: None,
+            project_type: pt,
         };
         self.projects.push(project.clone());
         self.persist()?;

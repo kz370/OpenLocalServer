@@ -20,6 +20,9 @@ pub enum CoreError {
     #[error("not a directory: {0}")]
     InvalidProjectPath(String),
 
+    #[error("project folder '{path}' is already added as '{name}'")]
+    ProjectAlreadyAdded { name: String, path: String },
+
     #[error("project folder missing for {name}: {path}")]
     ProjectFolderMissing { name: String, path: String },
 
@@ -125,6 +128,11 @@ impl From<&CoreError> for Diagnostic {
                 problem: "That folder can't be added as a project.".into(),
                 cause: format!("\"{p}\" is not a directory on disk."),
                 fix: Some("Check the path and try again.".into()),
+            },
+            CoreError::ProjectAlreadyAdded { name, path } => Diagnostic {
+                problem: "This folder is already a project.".into(),
+                cause: format!("\"{path}\" is already registered as \"{name}\"."),
+                fix: Some("Open it from the Projects list, or choose a different folder.".into()),
             },
             CoreError::ProjectFolderMissing { name, path } => Diagnostic {
                 problem: format!("The folder for '{name}' no longer exists."),

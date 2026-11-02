@@ -10,6 +10,18 @@ use crate::domain::Domain;
 use crate::error::CoreError;
 use crate::project::{build_detail, Project, ProjectDetail};
 
+pub const CUSTOM_PROJECT_TYPES_SETTING: &str = "projects.custom_types";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectFolderInspection {
+    pub exists: bool,
+    pub is_dir: bool,
+    pub path: String,
+    pub suggested_name: String,
+    pub duplicate_of: Option<Project>,
+    pub detected_type: Option<String>,
+}
+
 impl Inner {
     pub fn subscribe_project_events(&self) -> broadcast::Receiver<()> {
         self.project_events.subscribe()
@@ -679,6 +691,300 @@ impl Inner {
         crate::editors::save_hidden(&mut settings, &list)?;
         let _ = self.project_events.send(());
         Ok(crate::editors::list_all(&settings))
+    }
+
+    pub fn set_pending_add_project(&self, path: String) {
+        *self.pending_add_project.lock().unwrap() = Some(path);
+    }
+
+    pub fn take_pending_add_project(&self) -> Option<String> {
+        self.pending_add_project.lock().unwrap().take()
+    }
+
+    pub fn inspect_project_folder(&self, path: &str) -> ProjectFolderInspection {
+        let p = Path::new(path);
+        if !p.exists() {
+            return ProjectFolderInspection {
+                exists: false,
+                is_dir: false,
+                path: path.to_string(),
+                suggested_name: p
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("project")
+                    .to_string(),
+                duplicate_of: None,
+                detected_type: None,
+            };
+        }
+        if !p.is_dir() {
+            return ProjectFolderInspection {
+                exists: true,
+                is_dir: false,
+                path: path.to_string(),
+                suggested_name: p
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("project")
+                    .to_string(),
+                duplicate_of: None,
+                detected_type: None,
+            };
+        }
+
+        let canonical = std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+        let canonical_str = crate::project::strip_verbatim_prefix(&canonical.display().to_string());
+        let name = canonical
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("project")
+            .to_string();
+
+        let duplicate_of = {
+            let projects = lock(&self.projects);
+            projects
+                .list()
+                .into_iter()
+                .find(|pr| crate::project::same_path(&pr.path, &canonical_str))
+        };
+
+        let detection = crate::detection::detect(&canonical);
+        let detected_type = match detection.framework {
+            crate::detection::Framework::Laravel => Some("laravel".to_string()),
+            crate::detection::Framework::Symfony => Some("symfony".to_string()),
+            crate::detection::Framework::WordPress => Some("wordpress".to_string()),
+            crate::detection::Framework::GenericPhp => Some("php".to_string()),
+            crate::detection::Framework::Node => Some("node".to_string()),
+            crate::detection::Framework::Django => Some("django".to_string()),
+            crate::detection::Framework::Flask => Some("flask".to_string()),
+            crate::detection::Framework::FastApi => Some("fastapi".to_string()),
+            crate::detection::Framework::GenericPython => Some("python".to_string()),
+            crate::detection::Framework::Unknown => None,
+        };
+
+        ProjectFolderInspection {
+            exists: true,
+            is_dir: true,
+            path: canonical_str,
+            suggested_name: name,
+            duplicate_of,
+            detected_type,
+        }
+    }
+
+    /// Reads custom project types from settings and existing registered projects.
+    pub fn list_custom_project_types(&self) -> Vec<crate::project::CustomProjectType> {
+        let settings = lock(&self.settings);
+        let mut names: Vec<String> = settings
+            .get(CUSTOM_PROJECT_TYPES_SETTING)
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default();
+
+        // Also check if any existing projects use a custom:<name> not yet in settings
+        let projects = lock(&self.projects).list();
+        for p in projects {
+            if let Some(ref pt) = p.project_type {
+                if let Some(custom_name) = pt.strip_prefix("custom:") {
+                    let trimmed = custom_name.trim();
+                    if !trimmed.is_empty()
+                        && !names.iter().any(|n| n.eq_ignore_ascii_case(trimmed))
+                    {
+                        names.push(trimmed.to_string());
+                    }
+                }
+            }
+        }
+
+        names.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+        names
+            .into_iter()
+            .map(|name| crate::project::CustomProjectType {
+                id: format!("custom:{name}"),
+                name,
+            })
+            .collect()
+    }
+
+    pub fn add_custom_project_type(
+        &self,
+        name: &str,
+    ) -> Result<Vec<crate::project::CustomProjectType>, CoreError> {
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            return Err(CoreError::failed_fix(
+                "Type name cannot be blank.",
+                "A project type name is required.",
+                "Enter a name for the custom project type (e.g. Rust, Go API).",
+            ));
+        }
+        if trimmed.len() > 40 {
+            return Err(CoreError::failed_fix(
+                "Type name is too long.",
+                "Project type names cannot exceed 40 characters.",
+                "Choose a shorter name for the custom project type.",
+            ));
+        }
+        if trimmed.eq_ignore_ascii_case("all") || trimmed.eq_ignore_ascii_case("auto") {
+            return Err(CoreError::failed_fix(
+                "Reserved project type name.",
+                format!("'{trimmed}' is a reserved type name in OpenLocalServer."),
+                "Choose a different custom type name.",
+            ));
+        }
+
+        let presets = crate::project::list_project_types();
+        if presets
+            .iter()
+            .any(|p| p.name.eq_ignore_ascii_case(trimmed) || p.id.eq_ignore_ascii_case(trimmed))
+        {
+            return Err(CoreError::failed_fix(
+                "Type name already exists.",
+                format!("'{trimmed}' matches a built-in framework preset."),
+                "Choose a different custom name or select the existing preset from the list.",
+            ));
+        }
+
+        let mut settings = lock(&self.settings);
+        let mut list: Vec<String> = settings
+            .get(CUSTOM_PROJECT_TYPES_SETTING)
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default();
+
+        if list.iter().any(|n| n.eq_ignore_ascii_case(trimmed)) {
+            return Err(CoreError::failed_fix(
+                "Type name already exists.",
+                format!("A custom project type named '{trimmed}' is already configured."),
+                "Enter a unique name or edit the existing custom type.",
+            ));
+        }
+
+        list.push(trimmed.to_string());
+        settings.set(CUSTOM_PROJECT_TYPES_SETTING, serde_json::to_value(&list)?)?;
+
+        drop(settings);
+        let _ = self.project_events.send(());
+        Ok(self.list_custom_project_types())
+    }
+
+    pub fn rename_custom_project_type(
+        &self,
+        old_name: &str,
+        new_name: &str,
+    ) -> Result<Vec<crate::project::CustomProjectType>, CoreError> {
+        let old_trimmed = old_name.trim();
+        let new_trimmed = new_name.trim();
+        if new_trimmed.is_empty() {
+            return Err(CoreError::failed_fix(
+                "Type name cannot be blank.",
+                "A project type name is required.",
+                "Enter a new name for the custom project type.",
+            ));
+        }
+        if new_trimmed.len() > 40 {
+            return Err(CoreError::failed_fix(
+                "Type name is too long.",
+                "Project type names cannot exceed 40 characters.",
+                "Choose a shorter name for the custom project type.",
+            ));
+        }
+        if new_trimmed.eq_ignore_ascii_case("all") || new_trimmed.eq_ignore_ascii_case("auto") {
+            return Err(CoreError::failed_fix(
+                "Reserved project type name.",
+                format!("'{new_trimmed}' is a reserved type name in OpenLocalServer."),
+                "Choose a different custom type name.",
+            ));
+        }
+
+        let presets = crate::project::list_project_types();
+        if presets
+            .iter()
+            .any(|p| p.name.eq_ignore_ascii_case(new_trimmed) || p.id.eq_ignore_ascii_case(new_trimmed))
+        {
+            return Err(CoreError::failed_fix(
+                "Type name already exists.",
+                format!("'{new_trimmed}' matches a built-in framework preset."),
+                "Choose a different custom name.",
+            ));
+        }
+
+        let mut settings = lock(&self.settings);
+        let mut list: Vec<String> = settings
+            .get(CUSTOM_PROJECT_TYPES_SETTING)
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default();
+
+        if let Some(pos) = list.iter().position(|n| n.eq_ignore_ascii_case(old_trimmed)) {
+            list[pos] = new_trimmed.to_string();
+        } else {
+            list.push(new_trimmed.to_string());
+        }
+        settings.set(CUSTOM_PROJECT_TYPES_SETTING, serde_json::to_value(&list)?)?;
+        drop(settings);
+
+        // Update all projects using old_name to new_name
+        let old_target = format!("custom:{old_trimmed}").to_lowercase();
+        let new_type = format!("custom:{new_trimmed}");
+        {
+            let mut projects = lock(&self.projects);
+            let list = projects.list();
+            for p in list {
+                if let Some(ref pt) = p.project_type {
+                    if pt.to_lowercase() == old_target {
+                        let _ = projects.update_meta(
+                            &p.id,
+                            None,
+                            None,
+                            None,
+                            Some(new_type.clone()),
+                            None,
+                        );
+                    }
+                }
+            }
+        }
+
+        let _ = self.project_events.send(());
+        Ok(self.list_custom_project_types())
+    }
+
+    pub fn remove_custom_project_type(
+        &self,
+        name: &str,
+    ) -> Result<Vec<crate::project::CustomProjectType>, CoreError> {
+        let trimmed = name.trim();
+        let mut settings = lock(&self.settings);
+        let mut list: Vec<String> = settings
+            .get(CUSTOM_PROJECT_TYPES_SETTING)
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default();
+
+        list.retain(|n| !n.eq_ignore_ascii_case(trimmed));
+        settings.set(CUSTOM_PROJECT_TYPES_SETTING, serde_json::to_value(&list)?)?;
+        drop(settings);
+
+        // Reset projects using this type to Auto (None)
+        let target = format!("custom:{trimmed}").to_lowercase();
+        {
+            let mut projects = lock(&self.projects);
+            let list = projects.list();
+            for p in list {
+                if let Some(ref pt) = p.project_type {
+                    if pt.to_lowercase() == target {
+                        let _ = projects.update_meta(
+                            &p.id,
+                            None,
+                            None,
+                            None,
+                            None,
+                            Some(true),
+                        );
+                    }
+                }
+            }
+        }
+
+        let _ = self.project_events.send(());
+        Ok(self.list_custom_project_types())
     }
 }
 

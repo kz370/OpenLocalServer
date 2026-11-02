@@ -107,6 +107,7 @@ pub struct Inner {
     pub auto_fix_attempted: Mutex<HashSet<String>>,
     /// Last automatic-fix failures, shown in the corresponding diagnostic's details.
     pub auto_fix_failures: Mutex<HashMap<String, String>>,
+    pub pending_add_project: Mutex<Option<String>>,
     project_events: broadcast::Sender<()>,
 }
 
@@ -279,6 +280,7 @@ impl Inner {
             tasks: Default::default(),
             auto_fix_attempted: Mutex::new(HashSet::new()),
             auto_fix_failures: Mutex::new(HashMap::new()),
+            pending_add_project: Mutex::new(None),
             project_events,
             paths,
         });
