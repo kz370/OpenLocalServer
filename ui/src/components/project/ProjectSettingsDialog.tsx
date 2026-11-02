@@ -1,12 +1,17 @@
 import { Image as ImageIcon, Save, Settings } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
+import { ProjectTypePicker } from '@/components/project/ProjectTypePicker'
 import { SiteLogoPanel } from '@/components/site/SiteLogoPanel'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { Select } from '@/components/ui/select'
-import { type Project, type ProjectTypePreset, runCommand } from '@/core'
+import {
+  type CustomProjectType,
+  type Project,
+  type ProjectTypePreset,
+  runCommand,
+} from '@/core'
 import { notify } from '@/lib/notify'
 
 interface ProjectSettingsDialogProps {
@@ -14,6 +19,9 @@ interface ProjectSettingsDialogProps {
   open: boolean
   onClose: () => void
   onUpdated: () => Promise<void> | void
+  presets?: ProjectTypePreset[]
+  customTypes?: CustomProjectType[]
+  onCustomTypesChanged?: () => Promise<void> | void
 }
 
 export function ProjectSettingsDialog({
@@ -21,44 +29,55 @@ export function ProjectSettingsDialog({
   open,
   onClose,
   onUpdated,
+  presets: initialPresets,
+  customTypes: initialCustomTypes,
+  onCustomTypesChanged,
 }: ProjectSettingsDialogProps) {
   const [activeTab, setActiveTab] = useState<'general' | 'icon'>('general')
   const [name, setName] = useState('')
-  const [projectTypeMode, setProjectTypeMode] = useState<string>('auto')
-  const [customType, setCustomType] = useState<string>('')
-  const [presets, setPresets] = useState<ProjectTypePreset[]>([])
+  const [projectType, setProjectType] = useState<string | null>(null)
+  const [presets, setPresets] = useState<ProjectTypePreset[]>(initialPresets ?? [])
+  const [customTypes, setCustomTypes] = useState<CustomProjectType[]>(initialCustomTypes ?? [])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    if (initialPresets) setPresets(initialPresets)
+  }, [initialPresets])
+
+  useEffect(() => {
+    if (initialCustomTypes) setCustomTypes(initialCustomTypes)
+  }, [initialCustomTypes])
+
+  useEffect(() => {
     if (!open || !project) return
     setName(project.name)
+    setProjectType(project.project_type ?? null)
     setActiveTab('general')
     setError(null)
 
-    // Load presets
-    runCommand({ type: 'list_project_types' })
-      .then((res) => {
-        if (res.type === 'project_types') {
-          setPresets(res.types)
-        }
-      })
-      .catch(() => undefined)
-
-    if (!project.project_type) {
-      setProjectTypeMode('auto')
-      setCustomType('')
-    } else if (
-      project.project_type.startsWith('custom:') ||
-      !presets.some((p) => p.id === project.project_type)
-    ) {
-      setProjectTypeMode('custom')
-      setCustomType(project.project_type.replace(/^custom:/, ''))
-    } else {
-      setProjectTypeMode(project.project_type)
-      setCustomType('')
+    // Load presets if not provided
+    if (!initialPresets) {
+      runCommand({ type: 'list_project_types' })
+        .then((res) => {
+          if (res.type === 'project_types') {
+            setPresets(res.types)
+          }
+        })
+        .catch(() => undefined)
     }
-  }, [open, project])
+
+    // Load custom types if not provided
+    if (!initialCustomTypes) {
+      runCommand({ type: 'list_custom_project_types' })
+        .then((res) => {
+          if (res.type === 'custom_project_types') {
+            setCustomTypes(res.types)
+          }
+        })
+        .catch(() => undefined)
+    }
+  }, [open, project, initialPresets, initialCustomTypes])
 
   if (!project) return null
 
@@ -73,19 +92,14 @@ export function ProjectSettingsDialog({
     setSaving(true)
     setError(null)
     try {
-      const typeToSet =
-        projectTypeMode === 'auto'
-          ? null
-          : projectTypeMode === 'custom'
-            ? customType.trim() ? `custom:${customType.trim()}` : null
-            : projectTypeMode
+      const isAuto = !projectType || projectType === 'auto'
 
       await runCommand({
         type: 'update_project',
         id: project.id,
         name: trimmedName,
-        project_type: typeToSet,
-        clear_project_type: projectTypeMode === 'auto' || (projectTypeMode === 'custom' && !customType.trim()),
+        project_type: isAuto ? null : projectType,
+        clear_project_type: isAuto,
       })
 
       notify.success(`Updated settings for "${trimmedName}"`)
@@ -96,6 +110,16 @@ export function ProjectSettingsDialog({
     } finally {
       setSaving(false)
     }
+  }
+
+  const handleRefreshCustomTypes = async () => {
+    try {
+      const res = await runCommand({ type: 'list_custom_project_types' })
+      if (res.type === 'custom_project_types') {
+        setCustomTypes(res.types)
+      }
+      await onCustomTypesChanged?.()
+    } catch {}
   }
 
   return (
@@ -187,40 +211,18 @@ export function ProjectSettingsDialog({
 
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-semibold text-foreground">Project Type</label>
-              <Select
-                value={projectTypeMode}
-                onChange={(e) => setProjectTypeMode(e.target.value)}
-                className="w-full"
-                searchable={true}
-                searchPlaceholder="Search frameworks & languages..."
+              <ProjectTypePicker
+                value={projectType}
+                onChange={setProjectType}
+                presets={presets}
+                customTypes={customTypes}
+                onCustomTypesChanged={handleRefreshCustomTypes}
                 disabled={saving}
-              >
-                <option value="auto">Auto-detect from project files (default)</option>
-                <optgroup label="Preset Frameworks & Languages">
-                  {presets.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </optgroup>
-                <option value="custom">Custom project type…</option>
-              </Select>
+              />
               <span className="text-[11px] text-muted-foreground">
                 Determines the badge and tech icon shown for this project.
               </span>
             </div>
-
-            {projectTypeMode === 'custom' && (
-              <div className="flex flex-col gap-1.5 pl-2 border-l-2 border-primary/40">
-                <label className="text-xs font-medium text-foreground">Custom Type Name</label>
-                <Input
-                  value={customType}
-                  onChange={(e) => setCustomType(e.target.value)}
-                  placeholder="e.g. Rust, Go API, SvelteKit"
-                  disabled={saving}
-                />
-              </div>
-            )}
           </div>
         )}
 

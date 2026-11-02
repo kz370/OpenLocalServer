@@ -1,4 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
+import { getCurrentWebview } from '@tauri-apps/api/webview'
 import {
   Code2,
   Copy,
@@ -12,12 +13,15 @@ import {
   MoreHorizontal,
   Search,
   Settings,
+  SlidersHorizontal,
   SquareTerminal,
   X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { type Page } from '@/components/layout/Sidebar'
+import { AddProjectDialog, type AddProjectItem } from '@/components/project/AddProjectDialog'
+import { ManageProjectTypesDialog } from '@/components/project/ManageProjectTypesDialog'
 import { GitCloneButton } from '@/components/project/ProjectImports'
 import { ProjectSettingsDialog } from '@/components/project/ProjectSettingsDialog'
 import { SiteLogo } from '@/components/SiteLogo'
@@ -37,6 +41,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import {
+  type CustomProjectType,
   type DomainSummary,
   type EditorInfo,
   type Project,
@@ -48,12 +53,18 @@ import { confirmAction } from '@/lib/confirm'
 import { usePoll } from '@/lib/hooks'
 import { openProject, openSettingsSection } from '@/lib/nav'
 import { notify } from '@/lib/notify'
+import {
+  getProjectDisplayType,
+  getProjectTypeId,
+  groupProjectsByType,
+} from '@/lib/projectTypes'
 import { cn } from '@/lib/utils'
 
 const projectsCache = createPersistentCache<Project[]>('projects_page_list', [])
 const domainsCache = createPersistentCache<DomainSummary[]>('projects_page_domains', [])
 const editorsCache = createPersistentCache<EditorInfo[]>('projects_page_editors', [])
 const presetsCache = createPersistentCache<ProjectTypePreset[]>('projects_page_types', [])
+const customTypesCache = createPersistentCache<CustomProjectType[]>('projects_page_custom_types', [])
 
 function normPath(p: string | null | undefined): string {
   if (!p) return ''
@@ -65,14 +76,28 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
   const [domains, setDomains] = useState<DomainSummary[]>(domainsCache.get)
   const [editors, setEditors] = useState<EditorInfo[]>(editorsCache.get)
   const [presets, setPresets] = useState<ProjectTypePreset[]>(presetsCache.get)
+  const [customTypes, setCustomTypes] = useState<CustomProjectType[]>(customTypesCache.get)
 
   const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState<'all' | 'missing'>('all')
+  const [typeTab, setTypeTab] = useState<string>(() => {
+    try {
+      return sessionStorage.getItem('ols:projects-tab') || 'all'
+    } catch {
+      return 'all'
+    }
+  })
+  const [missingOnly, setMissingOnly] = useState<boolean>(false)
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(25)
 
   const [activeMenu, setActiveMenu] = useState<{ id: string; anchor: MenuAnchor } | null>(null)
   const [editingProject, setEditingProject] = useState<Project | null>(null)
+
+  // Drag and drop state
+  const [isDragOver, setIsDragOver] = useState(false)
+  const [addProjectQueue, setAddProjectQueue] = useState<AddProjectItem[]>([])
+  const [addProjectOpen, setAddProjectOpen] = useState(false)
+  const [manageTypesOpen, setManageTypesOpen] = useState(false)
 
   const refreshProjects = useCallback(async () => {
     try {
@@ -122,15 +147,87 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
     }
   }, [])
 
+  const refreshCustomTypes = useCallback(async () => {
+    try {
+      const res = await runCommand({ type: 'list_custom_project_types' })
+      if (res.type === 'custom_project_types') {
+        setCustomTypes(res.types)
+        customTypesCache.set(res.types)
+      }
+    } catch {
+      // quiet
+    }
+  }, [])
+
   const refreshAll = useCallback(async () => {
-    await Promise.all([refreshProjects(), refreshDomains(), refreshEditors(), refreshPresets()])
-  }, [refreshProjects, refreshDomains, refreshEditors, refreshPresets])
+    await Promise.all([
+      refreshProjects(),
+      refreshDomains(),
+      refreshEditors(),
+      refreshPresets(),
+      refreshCustomTypes(),
+    ])
+  }, [refreshProjects, refreshDomains, refreshEditors, refreshPresets, refreshCustomTypes])
 
   useEffect(() => {
     void refreshAll()
   }, [refreshAll])
 
   usePoll(refreshAll, 3000)
+
+  // Listen for Tauri drag & drop events
+  useEffect(() => {
+    let unlisten: (() => void) | undefined
+    try {
+      getCurrentWebview()
+        .onDragDropEvent((event) => {
+          if (event.payload.type === 'enter' || event.payload.type === 'over') {
+            setIsDragOver(true)
+          } else if (event.payload.type === 'leave') {
+            setIsDragOver(false)
+          } else if (event.payload.type === 'drop') {
+            setIsDragOver(false)
+            const droppedPaths = event.payload.paths
+            if (droppedPaths && droppedPaths.length > 0) {
+              const queueItems: AddProjectItem[] = droppedPaths.map((p) => ({ path: p }))
+              setAddProjectQueue(queueItems)
+              setAddProjectOpen(true)
+            }
+          }
+        })
+        .then((cleanup) => {
+          unlisten = cleanup
+        })
+        .catch(() => undefined)
+    } catch {
+      // not in Tauri environment
+    }
+    return () => unlisten?.()
+  }, [])
+
+  // Listen for context menu triggers and cold start pending project
+  useEffect(() => {
+    const handleTriggerAddProject = (e: Event) => {
+      const path = (e as CustomEvent<string>).detail
+      if (path) {
+        setAddProjectQueue([{ path }])
+        setAddProjectOpen(true)
+      }
+    }
+    window.addEventListener('ols:trigger-add-project', handleTriggerAddProject)
+
+    // Check cold-start pending path on mount
+    runCommand({ type: 'take_pending_add_project' })
+      .then((res) => {
+        if (res.type === 'pending_add_project' && res.path) {
+          setAddProjectQueue([{ path: res.path }])
+          setAddProjectOpen(true)
+        }
+      })
+      .catch(() => undefined)
+
+    return () => window.removeEventListener('ols:trigger-add-project', handleTriggerAddProject)
+  }, [])
 
   // Map of project id / normalized folder to linked domains
   const getProjectDomains = useCallback(
@@ -160,17 +257,38 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
     return [...projects].sort((a, b) => a.name.localeCompare(b.name))
   }, [projects])
 
-  const missingCount = useMemo(() => {
-    return allProjects.filter(isProjectMissing).length
-  }, [allProjects])
+  // Group tabs by type
+  const typeGroups = useMemo(() => {
+    return groupProjectsByType(allProjects, presets, customTypes)
+  }, [allProjects, presets, customTypes])
+
+  // Reset typeTab if active tab no longer exists in available tabs
+  useEffect(() => {
+    if (typeTab !== 'all' && !typeGroups.tabs.some((t) => t.id === typeTab)) {
+      setTypeTab('all')
+      try {
+        sessionStorage.setItem('ols:projects-tab', 'all')
+      } catch {}
+    }
+  }, [typeGroups.tabs, typeTab])
 
   const filteredProjects = useMemo(() => {
     const term = query.trim()
     return allProjects.filter((p) => {
-      if (filter === 'missing' && !isProjectMissing(p)) return false
+      if (missingOnly && !isProjectMissing(p)) return false
+      if (typeTab !== 'all') {
+        const typeId = getProjectTypeId(p)
+        if (typeTab === 'auto') {
+          if (typeId !== 'auto') return false
+        } else if (typeTab.startsWith('custom:')) {
+          if (p.project_type?.toLowerCase() !== typeTab.toLowerCase()) return false
+        } else {
+          if (p.project_type?.toLowerCase() !== typeTab.toLowerCase()) return false
+        }
+      }
       return matchesQuery(p, term)
     })
-  }, [allProjects, filter, query, domains])
+  }, [allProjects, missingOnly, typeTab, query, domains])
 
   // Pagination slice
   const total = filteredProjects.length
@@ -184,20 +302,16 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
     try {
       const selected = await open({
         directory: true,
-        multiple: false,
+        multiple: true,
         title: 'Select project folder',
       })
-      if (!selected || typeof selected !== 'string') return
-      const res = await runCommand({
-        type: 'add_project',
-        path: selected,
-      })
-      if (res.type === 'project') {
-        notify.success(`Added project "${res.project.name}"`)
-        await refreshAll()
-      }
+      if (!selected) return
+      const paths = Array.isArray(selected) ? selected : [selected]
+      if (paths.length === 0) return
+      setAddProjectQueue(paths.map((p) => ({ path: p })))
+      setAddProjectOpen(true)
     } catch (e) {
-      notify.error(`Failed to add project: ${e instanceof Error ? e.message : String(e)}`)
+      notify.error(`Failed to select project folder: ${e instanceof Error ? e.message : String(e)}`)
     }
   }
 
@@ -263,19 +377,6 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
       await refreshAll()
     } catch (e) {
       notify.error(`Failed to hide project: ${e instanceof Error ? e.message : String(e)}`)
-    }
-  }
-
-  const getProjectTypeDisplay = (p: Project) => {
-    if (!p.project_type) return { id: 'folder', label: 'Auto' }
-    if (p.project_type.startsWith('custom:')) {
-      const customName = p.project_type.replace(/^custom:/, '')
-      return { id: customName.toLowerCase(), label: customName }
-    }
-    const preset = presets.find((pr) => pr.id === p.project_type)
-    return {
-      id: preset?.id ?? p.project_type,
-      label: preset?.name ?? p.project_type,
     }
   }
 
@@ -355,12 +456,12 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
   const effectiveParent = projects[0]?.path.replace(/[\\/][^\\/]+$/, '') || ''
 
   return (
-    <div className="space-y-4">
+    <div className="relative space-y-4">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-foreground">Projects</h1>
         <p className="text-sm text-muted-foreground">
-          Manage your project directories, open them in your preferred code editors or terminal, and link them to local sites.
+          Manage your project directories, organize them by project type, open them in your preferred code editors or terminal, and link them to local sites.
         </p>
       </div>
 
@@ -373,77 +474,132 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
       </div>
 
       {/* Main card */}
-      <Card>
-        <CardContent className="p-0">
-          {/* Top toolbar: filters and search */}
-          <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between border-b border-border/80">
-            {/* Filter tabs */}
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => {
-                  setFilter('all')
-                  setPage(1)
-                }}
-                className={cn(
-                  'cursor-pointer rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                  filter === 'all'
-                    ? 'bg-primary text-primary-foreground shadow-xs'
-                    : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground',
-                )}
-              >
-                All <span className="ml-1 opacity-70">{allProjects.length}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setFilter('missing')
-                  setPage(1)
-                }}
-                className={cn(
-                  'cursor-pointer rounded-md px-3 py-1.5 text-xs font-medium transition-colors flex items-center gap-1.5',
-                  filter === 'missing'
-                    ? 'bg-destructive/20 text-destructive border border-destructive/40 shadow-xs'
-                    : missingCount > 0
-                      ? 'text-destructive/80 hover:bg-destructive/10'
-                      : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground',
-                )}
-              >
-                <FolderX className="size-3.5" />
-                Folder not found
-                {missingCount > 0 && (
-                  <Badge variant="destructive" className="ml-1 px-1 py-0 text-[10px]">
-                    {missingCount}
-                  </Badge>
-                )}
-              </button>
+      <Card
+        className="relative overflow-hidden"
+        onDragOver={(e) => {
+          e.preventDefault()
+          setIsDragOver(true)
+        }}
+        onDragLeave={() => setIsDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault()
+          setIsDragOver(false)
+        }}
+      >
+        {/* Drag and Drop Visual Overlay */}
+        {isDragOver && (
+          <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-background/90 backdrop-blur-xs border-2 border-dashed border-primary rounded-xl p-6 text-center animate-in fade-in duration-150 pointer-events-none">
+            <div className="size-16 rounded-full bg-primary/10 flex items-center justify-center text-primary mb-3">
+              <FolderPlus className="size-8" />
             </div>
+            <h3 className="text-lg font-semibold text-foreground">Drop folder to add as project</h3>
+            <p className="text-xs text-muted-foreground max-w-sm mt-1">
+              Release folder here to open the settings modal and add it to OpenLocalServer.
+            </p>
+          </div>
+        )}
 
-            {/* Search */}
-            <div className="relative w-full max-w-xs">
-              <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={query}
-                onChange={(e) => {
-                  setQuery(e.target.value)
-                  setPage(1)
-                }}
-                placeholder="Search projects by name, path, site..."
-                className="pl-8 pr-7 h-9 text-xs"
-              />
-              {query && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setQuery('')
+        <CardContent className="p-0">
+          {/* Top toolbar: Type tabs, missing filter, manage types, and search */}
+          <div className="flex flex-col gap-3 p-4 border-b border-border/80">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+              {/* Type tabs & action chips */}
+              <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-1 lg:pb-0 max-w-full">
+                {typeGroups.tabs.map((tab) => {
+                  const isSelected = typeTab === tab.id
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => {
+                        setTypeTab(tab.id)
+                        setPage(1)
+                        try {
+                          sessionStorage.setItem('ols:projects-tab', tab.id)
+                        } catch {}
+                      }}
+                      className={cn(
+                        'cursor-pointer rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors flex items-center gap-1.5 shrink-0',
+                        isSelected
+                          ? 'bg-primary text-primary-foreground shadow-xs font-semibold'
+                          : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground',
+                      )}
+                    >
+                      <TechIcon id={tab.icon} className="size-3.5 shrink-0" />
+                      <span>{tab.label}</span>
+                      <span
+                        className={cn(
+                          'ml-0.5 text-[10px] opacity-75',
+                          isSelected ? 'text-primary-foreground' : 'text-muted-foreground',
+                        )}
+                      >
+                        {tab.count}
+                      </span>
+                    </button>
+                  )
+                })}
+
+                {/* Filter for missing folders */}
+                {typeGroups.missingCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMissingOnly((prev) => !prev)
+                      setPage(1)
+                    }}
+                    className={cn(
+                      'cursor-pointer rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors flex items-center gap-1.5 shrink-0',
+                      missingOnly
+                        ? 'bg-destructive/20 text-destructive border border-destructive/40 shadow-xs'
+                        : 'text-destructive/80 hover:bg-destructive/10',
+                    )}
+                  >
+                    <FolderX className="size-3.5" />
+                    Folder not found
+                    <Badge variant="destructive" className="ml-1 px-1 py-0 text-[10px]">
+                      {typeGroups.missingCount}
+                    </Badge>
+                  </button>
+                )}
+
+                {/* Manage custom types button */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setManageTypesOpen(true)}
+                  className="h-8 px-2.5 text-xs cursor-pointer gap-1.5 shrink-0"
+                  title="Manage custom project types"
+                >
+                  <SlidersHorizontal className="size-3.5" />
+                  <span>Manage types</span>
+                </Button>
+              </div>
+
+              {/* Search */}
+              <div className="relative w-full lg:w-72 shrink-0">
+                <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={query}
+                  onChange={(e) => {
+                    setQuery(e.target.value)
                     setPage(1)
                   }}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-muted-foreground hover:text-foreground cursor-pointer"
-                >
-                  <X className="size-3.5" />
-                </button>
-              )}
+                  placeholder="Search projects by name, path, site..."
+                  className="pl-8 pr-7 h-9 text-xs"
+                />
+                {query && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuery('')
+                      setPage(1)
+                    }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-muted-foreground hover:text-foreground cursor-pointer"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -462,12 +618,14 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
                 <TableRow>
                   <TableCell colSpan={4} className="h-32 text-center text-sm text-muted-foreground">
                     {allProjects.length === 0
-                      ? 'No projects added yet. Click "Add project folder" or "Clone from Git" to add one.'
+                      ? 'No projects added yet. Click "Add project folder", drag and drop a folder, or use the Windows Explorer context menu to add one.'
                       : query.trim()
                         ? `No projects matching "${query.trim()}".`
-                        : filter === 'missing'
+                        : missingOnly
                           ? 'No projects with missing or offline directories.'
-                          : 'No projects found.'}
+                          : typeTab !== 'all'
+                            ? `No projects under the "${typeGroups.tabs.find((t) => t.id === typeTab)?.label ?? typeTab}" type.`
+                            : 'No projects found.'}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -477,7 +635,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
                   const linkedDomains = getProjectDomains(p)
                   const primaryDomain = linkedDomains[0]
                   const extraDomainsCount = linkedDomains.length > 1 ? linkedDomains.length - 1 : 0
-                  const { id: typeId, label: typeLabel } = getProjectTypeDisplay(p)
+                  const { id: typeId, label: typeLabel } = getProjectDisplayType(p, presets, customTypes)
 
                   return (
                     <TableRow
@@ -718,12 +876,39 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
         </CardContent>
       </Card>
 
+      {/* Add Project Dialog (for drag-drop, context menu, and add button) */}
+      <AddProjectDialog
+        items={addProjectQueue}
+        open={addProjectOpen}
+        presets={presets}
+        customTypes={customTypes}
+        onCustomTypesChanged={refreshCustomTypes}
+        onClose={() => {
+          setAddProjectOpen(false)
+          setAddProjectQueue([])
+        }}
+        onAdded={refreshAll}
+      />
+
+      {/* Manage Project Types Dialog */}
+      <ManageProjectTypesDialog
+        open={manageTypesOpen}
+        onClose={() => setManageTypesOpen(false)}
+        presets={presets}
+        customTypes={customTypes}
+        projects={projects}
+        onUpdated={refreshAll}
+      />
+
       {/* Project Settings Dialog */}
       <ProjectSettingsDialog
         project={editingProject}
         open={Boolean(editingProject)}
         onClose={() => setEditingProject(null)}
         onUpdated={refreshAll}
+        presets={presets}
+        customTypes={customTypes}
+        onCustomTypesChanged={refreshCustomTypes}
       />
     </div>
   )

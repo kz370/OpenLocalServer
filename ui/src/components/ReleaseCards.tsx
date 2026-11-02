@@ -485,7 +485,7 @@ export function SystemCard() {
               <div className="flex items-center gap-2 font-medium">
                 <TerminalSquare className="size-4" /> Explorer right-click menu {menu.installed ? <Badge variant="success">installed</Badge> : <Badge variant="outline">off</Badge>}
               </div>
-              <p className="text-muted-foreground">Adds "Add to OLS" and "Set up with OLS" to a folder's menu. Only for your user; no administrator prompt.</p>
+              <p className="text-muted-foreground">Adds "Add folder to OLS projects" and "Set up with OLS" to a folder's menu. Only for your user; no administrator prompt.</p>
             </div>
             <Button variant="secondary" disabled={busy !== null || (!menu.installed && !menu.cli_path)} onClick={() => run('menu', async () => { const r = await runCommand({ type: menu.installed ? 'remove_shell_menu' : 'install_shell_menu' }); if (r.type === 'shell_menu') setMenu(r.status) })}>
               {menu.installed ? 'Remove' : 'Add to Explorer'}

@@ -60,6 +60,31 @@ fn find_cli() -> Option<std::path::PathBuf> {
     })
 }
 
+/// Where the main OLS desktop app is: the running exe, beside the CLI, or beside current exe.
+fn find_app() -> Option<std::path::PathBuf> {
+    let name = if cfg!(windows) { "OLS.exe" } else { "OLS" };
+    if let Ok(exe) = std::env::current_exe() {
+        if exe
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.eq_ignore_ascii_case(name))
+        {
+            return Some(exe);
+        }
+        let beside = exe.with_file_name(name);
+        if beside.is_file() {
+            return Some(beside);
+        }
+    }
+    if let Some(cli) = find_cli() {
+        let beside = cli.with_file_name(name);
+        if beside.is_file() {
+            return Some(beside);
+        }
+    }
+    None
+}
+
 /// The icon the menu entries show.
 ///
 /// The app's own `icon.ico`, which the installer puts in the same folder as the CLI.
@@ -87,9 +112,13 @@ fn menu_icon(cli: &Path) -> String {
 }
 
 /// The command each entry runs; `%V` is the folder Explorer passes.
-fn commands(cli: &str) -> [(&'static str, &'static str, String); 2] {
+fn commands(app: &str, cli: &str) -> [(&'static str, &'static str, String); 2] {
     [
-        (ADD, "Add to OLS", format!("\"{cli}\" project add \"%V\"")),
+        (
+            ADD,
+            "Add folder to OLS projects",
+            format!("\"{app}\" --add-project \"%V\""),
+        ),
         (
             SETUP,
             "Set up with OLS",
@@ -110,22 +139,17 @@ fn command_program(command: &str) -> Option<&str> {
     }
 }
 
-/// Whether a stored command line still runs the CLI.
-///
-/// Keys alone are not enough. An entry written before the rename, or by any build
-/// whose lookup found the app, launches OLS instead of the CLI, and the keys read as
-/// installed — so the card shows "installed" and offers only Remove, and the menu
-/// stays broken with nothing to click. The name is what distinguishes them, and it
-/// is compared without case because Windows does.
+/// Whether a stored command line runs the app with --add-project.
 #[cfg(any(windows, test))]
-fn command_runs_the_cli(command: &str) -> bool {
+fn command_is_add_project(command: &str) -> bool {
     let Some(program) = command_program(command) else {
         return false;
     };
-    std::path::Path::new(program)
+    let is_app = std::path::Path::new(program)
         .file_name()
         .and_then(|n| n.to_str())
-        .is_some_and(|n| n.eq_ignore_ascii_case(CLI))
+        .is_some_and(|n| n.eq_ignore_ascii_case("OLS.exe") || n.eq_ignore_ascii_case("OLS"));
+    is_app && command.contains("--add-project")
 }
 
 /// The `(Default)` value out of `reg query ... /ve` output.
@@ -162,15 +186,15 @@ impl Inner {
         let keys = ROOTS
             .iter()
             .all(|r| reg(&["query", &format!("{r}\\{ADD}")]).is_ok());
-        // A menu whose entry runs something other than the CLI is not installed for
-        // any purpose the user cares about, so the card says so and offers Add again.
+        // A menu whose entry does not launch the app's --add-project command is not correctly
+        // installed for the project manager modal, so the card offers Install again.
         let installed = keys
             && ROOTS.iter().all(|r| {
                 reg(&["query", &format!("{r}\\{ADD}\\command"), "/ve"])
                     .ok()
                     .as_deref()
                     .and_then(reg_value)
-                    .is_some_and(|v| command_runs_the_cli(&v))
+                    .is_some_and(|v| command_is_add_project(&v))
             });
         ShellMenuStatus {
             installed,
@@ -187,11 +211,14 @@ impl Inner {
                 "Reinstall OLS, or add the folder holding olsc.exe to PATH.",
             )
         })?;
-        let cli = cli.display().to_string();
-        let icon = menu_icon(Path::new(&cli));
+        let app = find_app()
+            .unwrap_or_else(|| cli.with_file_name(if cfg!(windows) { "OLS.exe" } else { "OLS" }));
+        let app_str = app.display().to_string();
+        let cli_str = cli.display().to_string();
+        let icon = menu_icon(&app);
         let result = (|| -> Result<(), String> {
             for root in ROOTS {
-                for (key, label, command) in commands(&cli) {
+                for (key, label, command) in commands(&app_str, &cli_str) {
                     let base = format!("{root}\\{key}");
                     reg(&["add", &base, "/ve", "/d", label, "/f"])?;
                     reg(&["add", &base, "/v", "Icon", "/d", &icon, "/f"])?;
@@ -253,12 +280,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn entries_run_only_the_cli_with_the_chosen_folder() {
-        let c = commands(r"C:\Program Files\OLS\olsc.exe");
+    fn entries_run_correct_commands_with_the_chosen_folder() {
+        let c = commands(
+            r"C:\Program Files\OLS\OLS.exe",
+            r"C:\Program Files\OLS\olsc.exe",
+        );
         assert_eq!(
             c[0].2,
-            r#""C:\Program Files\OLS\olsc.exe" project add "%V""#
+            r#""C:\Program Files\OLS\OLS.exe" --add-project "%V""#
         );
+        assert_eq!(c[0].1, "Add folder to OLS projects");
         assert!(c[1].2.contains("setup --path \"%V\""));
         assert!(c.iter().all(|(k, _, _)| k.starts_with("OpenLocalServer.")));
     }

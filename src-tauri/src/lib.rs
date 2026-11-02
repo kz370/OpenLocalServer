@@ -946,14 +946,35 @@ pub fn run() {
     if let Err(e) = ols_core::control::serve(core.clone(), &paths, "app") {
         tracing::warn!(error = %e, "the command-line control channel is not available");
     }
+    // Check for --add-project argument on cold start
+    let mut pending_add_path = None;
+    let mut args_iter = std::env::args().skip(1);
+    while let Some(arg) = args_iter.next() {
+        if arg == "--add-project" {
+            if let Some(path) = args_iter.next() {
+                pending_add_path = Some(path);
+            }
+            break;
+        }
+    }
+    let has_add_project = pending_add_path.is_some();
+    if let Some(ref path) = pending_add_path {
+        core.inner().set_pending_add_project(path.clone());
+    }
+
     // The preference decides. A manual launch honours it exactly like the startup
     // entry does, so the toggle means what it says instead of only mattering at
     // login. `--minimized` still forces a hidden start for the rare case where the
     // preference is off and something else (a script, a shortcut) wants the tray.
-    let start_hidden = ols_core::app::should_start_hidden(
-        core.inner().setting_bool("startup.minimized", true),
-        std::env::args(),
-    );
+    // If launched via Explorer to add a project, the window must be visible.
+    let start_hidden = if has_add_project {
+        false
+    } else {
+        ols_core::app::should_start_hidden(
+            core.inner().setting_bool("startup.minimized", true),
+            std::env::args(),
+        )
+    };
     ols_core::app::migrate_startup_entry();
 
     let setup_core = core.clone();
@@ -962,8 +983,25 @@ pub fn run() {
     // (JSON, redacted, to disk — §118/§141). tauri-plugin-log would try to install a
     // second global logger and panic on startup, so it is intentionally not used here.
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             show_main_window(app);
+            let mut pending_add = None;
+            let mut args_iter = args.into_iter().skip(1);
+            while let Some(arg) = args_iter.next() {
+                if arg == "--add-project" {
+                    if let Some(path) = args_iter.next() {
+                        pending_add = Some(path);
+                    }
+                    break;
+                }
+            }
+            if let Some(path) = pending_add {
+                if let Some(core) = app.try_state::<Core>().map(|c| c.inner().clone()) {
+                    core.set_pending_add_project(path.clone());
+                }
+                let _ = app.emit("ols:navigate", "projects");
+                let _ = app.emit("ols:add-project", path);
+            }
             // A second launch is also a moment to be sure the mark matches reality —
             // it is the one user action that reaches an app whose window was hidden,
             // so this is also when the taskbar entry first becomes worth colouring.

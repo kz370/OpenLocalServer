@@ -257,14 +257,19 @@ impl Core {
                     }
                     Ok(R::Project { project })
                 }
-                C::AddProject { path } => {
+                C::AddProject {
+                    path,
+                    name,
+                    project_type,
+                } => {
                     tracing::info!(command = "add_project", path = %path);
-                    let project = i
-                        .projects
-                        .lock()
-                        .unwrap()
-                        .register_with_standalone(&path, true)?;
+                    let project =
+                        i.projects
+                            .lock()
+                            .unwrap()
+                            .add_new(&path, name, project_type, true)?;
                     let _ = i.clear_project_skip(&project.path);
+                    i.notify_project_events();
                     Ok(R::Project { project })
                 }
                 C::UpdateProject {
@@ -302,6 +307,33 @@ impl Core {
                 }
                 C::ListProjectTypes => Ok(R::ProjectTypes {
                     types: crate::project::list_project_types(),
+                }),
+                C::InspectProjectFolder { path } => {
+                    tracing::info!(command = "inspect_project_folder", path = %path);
+                    Ok(R::ProjectFolderInspection {
+                        inspection: i.inspect_project_folder(&path),
+                    })
+                }
+                C::ListCustomProjectTypes => Ok(R::CustomProjectTypes {
+                    types: i.list_custom_project_types(),
+                }),
+                C::AddCustomProjectType { name } => {
+                    tracing::info!(command = "add_custom_project_type", name = %name);
+                    let types = i.add_custom_project_type(&name)?;
+                    Ok(R::CustomProjectTypes { types })
+                }
+                C::RenameCustomProjectType { old_name, new_name } => {
+                    tracing::info!(command = "rename_custom_project_type", old_name = %old_name, new_name = %new_name);
+                    let types = i.rename_custom_project_type(&old_name, &new_name)?;
+                    Ok(R::CustomProjectTypes { types })
+                }
+                C::RemoveCustomProjectType { name } => {
+                    tracing::info!(command = "remove_custom_project_type", name = %name);
+                    let types = i.remove_custom_project_type(&name)?;
+                    Ok(R::CustomProjectTypes { types })
+                }
+                C::TakePendingAddProject => Ok(R::PendingAddProject {
+                    path: i.take_pending_add_project(),
                 }),
                 C::ScanAndRegisterProjects { path } => {
                     tracing::info!(command = "scan_and_register_projects", path = %path);

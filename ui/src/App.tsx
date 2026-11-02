@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
 
+import { runCommand } from '@/core'
+
 import { CommandPalette } from '@/components/CommandPalette'
 import { ConfirmHost } from '@/components/ConfirmHost'
 import { NotificationHost } from '@/components/NotificationHost'
@@ -227,6 +229,31 @@ export default function App() {
       unlisten = cleanup
     })
     return () => unlisten?.()
+  }, [navigate])
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined
+    void listen<string>('ols:add-project', (event) => {
+      const path = event.payload
+      if (path) {
+        navigate('projects')
+        window.dispatchEvent(new CustomEvent('ols:trigger-add-project', { detail: path }))
+      }
+    }).then((cleanup) => {
+      unlisten = cleanup
+    })
+    return () => unlisten?.()
+  }, [navigate])
+
+  useEffect(() => {
+    runCommand({ type: 'take_pending_add_project' })
+      .then((res) => {
+        if (res.type === 'pending_add_project' && res.path) {
+          navigate('projects')
+          window.dispatchEvent(new CustomEvent('ols:trigger-add-project', { detail: res.path }))
+        }
+      })
+      .catch(() => undefined)
   }, [navigate])
 
   return (

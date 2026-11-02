@@ -274,7 +274,11 @@ impl ProjectStore {
         // anywhere it's displayed or fed back into a normal command line. Strip it.
         let canonical_str = strip_verbatim_prefix(&canonical.display().to_string());
 
-        if let Some(existing) = self.projects.iter().find(|p| same_path(&p.path, &canonical_str)) {
+        if let Some(existing) = self
+            .projects
+            .iter()
+            .find(|p| same_path(&p.path, &canonical_str))
+        {
             return Ok(existing.clone());
         }
 
@@ -319,7 +323,11 @@ impl ProjectStore {
         let canonical = std::fs::canonicalize(&path_buf).unwrap_or(path_buf.clone());
         let canonical_str = strip_verbatim_prefix(&canonical.display().to_string());
 
-        if let Some(existing) = self.projects.iter().find(|p| same_path(&p.path, &canonical_str)) {
+        if let Some(existing) = self
+            .projects
+            .iter()
+            .find(|p| same_path(&p.path, &canonical_str))
+        {
             return Err(CoreError::ProjectAlreadyAdded {
                 name: existing.name.clone(),
                 path: existing.path.clone(),
@@ -787,5 +795,117 @@ mod tests {
             reloaded.get(&project.id).unwrap().health,
             ProjectHealth::Healthy
         );
+    }
+
+    #[test]
+    fn same_path_normalizes_slashes_case_and_verbatim_prefixes() {
+        assert!(same_path(r"C:\App\Folder", r"c:\app\folder"));
+        assert!(same_path(r"C:\App\Folder\", r"C:/App/Folder"));
+        assert!(same_path(r"\\?\C:\App\Folder", r"c:\app\folder\"));
+        assert!(!same_path(r"C:\App\Folder1", r"C:\App\Folder2"));
+    }
+
+    #[test]
+    fn add_new_allows_same_name_different_path_and_rejects_identical_path() {
+        let home = crate::test_support::isolated_home();
+        let app1_dir = home.paths.root().join("parent1").join("my_app");
+        let app2_dir = home.paths.root().join("parent2").join("my_app");
+        std::fs::create_dir_all(&app1_dir).unwrap();
+        std::fs::create_dir_all(&app2_dir).unwrap();
+
+        let mut store = ProjectStore::load(&home.paths).unwrap();
+
+        // 1. Add first folder named my_app
+        let p1 = store
+            .add_new(
+                app1_dir.to_str().unwrap(),
+                None,
+                Some("laravel".into()),
+                true,
+            )
+            .unwrap();
+        assert_eq!(p1.name, "my_app");
+        assert_eq!(p1.project_type.as_deref(), Some("laravel"));
+
+        // 2. Add second folder with the exact same name "my_app" but different path -> must succeed
+        let p2 = store
+            .add_new(
+                app2_dir.to_str().unwrap(),
+                None,
+                Some("custom:Rust".into()),
+                true,
+            )
+            .unwrap();
+        assert_eq!(p2.name, "my_app");
+        assert_ne!(p1.id, p2.id);
+        assert_ne!(p1.path, p2.path);
+        assert_eq!(p2.project_type.as_deref(), Some("custom:Rust"));
+
+        // 3. Adding the identical path again (even with trailing slash or altered case) must be rejected
+        let duplicate_attempt = store.add_new(
+            &format!("{}/", app1_dir.to_str().unwrap()),
+            Some("Renamed".into()),
+            None,
+            true,
+        );
+
+        match duplicate_attempt {
+            Err(CoreError::ProjectAlreadyAdded { name, path }) => {
+                assert_eq!(name, "my_app");
+                assert!(same_path(&path, app1_dir.to_str().unwrap()));
+            }
+            other => panic!("expected ProjectAlreadyAdded, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn same_path_normalizes_slashes_case_and_verbatim_prefixes() {
+        assert!(same_path(r"C:\App\Folder", r"c:\app\folder"));
+        assert!(same_path(r"C:\App\Folder\", r"C:/App/Folder"));
+        assert!(same_path(r"\\?\C:\App\Folder", r"c:\app\folder\"));
+        assert!(!same_path(r"C:\App\Folder1", r"C:\App\Folder2"));
+    }
+
+    #[test]
+    fn add_new_allows_same_name_different_path_and_rejects_identical_path() {
+        let home = crate::test_support::isolated_home();
+        let app1_dir = home.paths.root().join("parent1").join("my_app");
+        let app2_dir = home.paths.root().join("parent2").join("my_app");
+        std::fs::create_dir_all(&app1_dir).unwrap();
+        std::fs::create_dir_all(&app2_dir).unwrap();
+
+        let mut store = ProjectStore::load(&home.paths).unwrap();
+
+        // 1. Add first folder named my_app
+        let p1 = store
+            .add_new(app1_dir.to_str().unwrap(), None, Some("laravel".into()), true)
+            .unwrap();
+        assert_eq!(p1.name, "my_app");
+        assert_eq!(p1.project_type.as_deref(), Some("laravel"));
+
+        // 2. Add second folder with the exact same name "my_app" but different path -> must succeed
+        let p2 = store
+            .add_new(app2_dir.to_str().unwrap(), None, Some("custom:Rust".into()), true)
+            .unwrap();
+        assert_eq!(p2.name, "my_app");
+        assert_ne!(p1.id, p2.id);
+        assert_ne!(p1.path, p2.path);
+        assert_eq!(p2.project_type.as_deref(), Some("custom:Rust"));
+
+        // 3. Adding the identical path again (even with trailing slash or altered case) must be rejected
+        let duplicate_attempt = store.add_new(
+            &format!("{}/", app1_dir.to_str().unwrap()),
+            Some("Renamed".into()),
+            None,
+            true,
+        );
+
+        match duplicate_attempt {
+            Err(CoreError::ProjectAlreadyAdded { name, path }) => {
+                assert_eq!(name, "my_app");
+                assert!(same_path(&path, app1_dir.to_str().unwrap()));
+            }
+            other => panic!("expected ProjectAlreadyAdded, got {other:?}"),
+        }
     }
 }

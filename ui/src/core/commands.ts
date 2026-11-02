@@ -26,7 +26,7 @@ export type CoreCommand =
   | { type: 'cancel_runtime'; id: string; version: string }
   | { type: 'remove_runtime'; id: string; version: string }
   | { type: 'register_project'; path: string }
-  | { type: 'add_project'; path: string }
+  | { type: 'add_project'; path: string; name?: string; project_type?: string | null }
   | {
       type: 'update_project'
       id: string
@@ -39,6 +39,12 @@ export type CoreCommand =
   | { type: 'create_site_for_project'; project_id: string }
   | { type: 'open_project_terminal'; project_id: string }
   | { type: 'list_project_types' }
+  | { type: 'inspect_project_folder'; path: string }
+  | { type: 'list_custom_project_types' }
+  | { type: 'add_custom_project_type'; name: string }
+  | { type: 'rename_custom_project_type'; old_name: string; new_name: string }
+  | { type: 'remove_custom_project_type'; name: string }
+  | { type: 'take_pending_add_project' }
   | { type: 'scan_and_register_projects'; path: string }
   | { type: 'list_projects' }
   | { type: 'sync_auto_domains' }

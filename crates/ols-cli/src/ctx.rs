@@ -83,11 +83,30 @@ impl Ctx {
         let CoreResponse::Projects { projects } = self.call(CoreCommand::ListProjects)? else {
             return Err("unexpected reply".into());
         };
-        projects
+        // Exact ID match takes highest precedence
+        if let Some(p) = projects.iter().find(|p| p.id == name) {
+            return Ok(p.id.clone());
+        }
+        let matches: Vec<&ols_core::project::Project> = projects
             .iter()
-            .find(|p| p.id == name || p.name.eq_ignore_ascii_case(name))
-            .map(|p| p.id.clone())
-            .ok_or_else(|| format!("no project named \"{name}\" (see `olsc project list`)"))
+            .filter(|p| p.name.eq_ignore_ascii_case(name))
+            .collect();
+        if matches.is_empty() {
+            return Err(format!(
+                "no project named \"{name}\" (see `olsc project list`)"
+            ));
+        }
+        if matches.len() > 1 {
+            let details = matches
+                .iter()
+                .map(|p| format!("  - {} (id: {}, path: {})", p.name, p.id, p.path))
+                .collect::<Vec<_>>()
+                .join("\n");
+            return Err(format!(
+                "multiple projects named \"{name}\":\n{details}\nSpecify the project by its ID instead."
+            ));
+        }
+        Ok(matches[0].id.clone())
     }
 
     /// The project for a folder, registering it when it isn't one yet.

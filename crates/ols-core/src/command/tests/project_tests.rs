@@ -595,3 +595,80 @@ fn custom_editors_crud_and_project_types() {
     assert!(types.iter().any(|t| t.id == "laravel"));
     assert!(types.iter().any(|t| t.id == "python"));
 }
+
+#[test]
+fn custom_project_types_crud_and_project_updates() {
+    let core = test_core();
+    let dir = core.inner().paths.root().join("test_custom_type_app");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    // 1. Add a project with custom type "custom:Rust"
+    let p = match core
+        .dispatch(CoreCommand::AddProject {
+            path: dir.to_str().unwrap().to_string(),
+            name: Some("Rust App".into()),
+            project_type: Some("custom:Rust".into()),
+        })
+        .unwrap()
+    {
+        CoreResponse::Project { project } => project,
+        other => panic!("expected Project, got {other:?}"),
+    };
+    assert_eq!(p.project_type.as_deref(), Some("custom:Rust"));
+
+    // 2. Add custom type via command
+    let types = match core
+        .dispatch(CoreCommand::AddCustomProjectType {
+            name: "Go Service".into(),
+        })
+        .unwrap()
+    {
+        CoreResponse::CustomProjectTypes { types } => types,
+        other => panic!("expected CustomProjectTypes, got {other:?}"),
+    };
+    assert!(types.iter().any(|t| t.name == "Go Service"));
+    assert!(types.iter().any(|t| t.name == "Rust")); // Automatically recognized from existing project
+
+    // 3. Rename "Rust" to "Rust Backend" -> must update the project's type
+    let renamed_types = match core
+        .dispatch(CoreCommand::RenameCustomProjectType {
+            old_name: "Rust".into(),
+            new_name: "Rust Backend".into(),
+        })
+        .unwrap()
+    {
+        CoreResponse::CustomProjectTypes { types } => types,
+        other => panic!("expected CustomProjectTypes, got {other:?}"),
+    };
+    assert!(renamed_types.iter().any(|t| t.name == "Rust Backend"));
+    assert!(!renamed_types.iter().any(|t| t.name == "Rust"));
+
+    let projects = match core.dispatch(CoreCommand::ListProjects).unwrap() {
+        CoreResponse::Projects { projects } => projects,
+        other => panic!("expected Projects, got {other:?}"),
+    };
+    let updated_p = projects.iter().find(|pr| pr.id == p.id).unwrap();
+    assert_eq!(
+        updated_p.project_type.as_deref(),
+        Some("custom:Rust Backend")
+    );
+
+    // 4. Remove "Rust Backend" -> project must reset to None ("Auto")
+    let after_remove = match core
+        .dispatch(CoreCommand::RemoveCustomProjectType {
+            name: "Rust Backend".into(),
+        })
+        .unwrap()
+    {
+        CoreResponse::CustomProjectTypes { types } => types,
+        other => panic!("expected CustomProjectTypes, got {other:?}"),
+    };
+    assert!(!after_remove.iter().any(|t| t.name == "Rust Backend"));
+
+    let projects_after = match core.dispatch(CoreCommand::ListProjects).unwrap() {
+        CoreResponse::Projects { projects } => projects,
+        other => panic!("expected Projects, got {other:?}"),
+    };
+    let p_after = projects_after.iter().find(|pr| pr.id == p.id).unwrap();
+    assert_eq!(p_after.project_type, None);
+}

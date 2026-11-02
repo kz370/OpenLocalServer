@@ -27,6 +27,10 @@ impl Inner {
         self.project_events.subscribe()
     }
 
+    pub fn notify_project_events(&self) {
+        let _ = self.project_events.send(());
+    }
+
     pub(crate) fn start_projects_watcher(self: &Arc<Self>) {
         if !self.setting_bool("projects.watch", true) {
             return;
@@ -786,8 +790,7 @@ impl Inner {
             if let Some(ref pt) = p.project_type {
                 if let Some(custom_name) = pt.strip_prefix("custom:") {
                     let trimmed = custom_name.trim();
-                    if !trimmed.is_empty()
-                        && !names.iter().any(|n| n.eq_ignore_ascii_case(trimmed))
+                    if !trimmed.is_empty() && !names.iter().any(|n| n.eq_ignore_ascii_case(trimmed))
                     {
                         names.push(trimmed.to_string());
                     }
@@ -896,10 +899,9 @@ impl Inner {
         }
 
         let presets = crate::project::list_project_types();
-        if presets
-            .iter()
-            .any(|p| p.name.eq_ignore_ascii_case(new_trimmed) || p.id.eq_ignore_ascii_case(new_trimmed))
-        {
+        if presets.iter().any(|p| {
+            p.name.eq_ignore_ascii_case(new_trimmed) || p.id.eq_ignore_ascii_case(new_trimmed)
+        }) {
             return Err(CoreError::failed_fix(
                 "Type name already exists.",
                 format!("'{new_trimmed}' matches a built-in framework preset."),
@@ -913,7 +915,10 @@ impl Inner {
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default();
 
-        if let Some(pos) = list.iter().position(|n| n.eq_ignore_ascii_case(old_trimmed)) {
+        if let Some(pos) = list
+            .iter()
+            .position(|n| n.eq_ignore_ascii_case(old_trimmed))
+        {
             list[pos] = new_trimmed.to_string();
         } else {
             list.push(new_trimmed.to_string());
@@ -970,14 +975,7 @@ impl Inner {
             for p in list {
                 if let Some(ref pt) = p.project_type {
                     if pt.to_lowercase() == target {
-                        let _ = projects.update_meta(
-                            &p.id,
-                            None,
-                            None,
-                            None,
-                            None,
-                            Some(true),
-                        );
+                        let _ = projects.update_meta(&p.id, None, None, None, None, Some(true));
                     }
                 }
             }

@@ -67,6 +67,10 @@ pub enum CoreCommand {
     },
     AddProject {
         path: String,
+        #[serde(default)]
+        name: Option<String>,
+        #[serde(default)]
+        project_type: Option<String>,
     },
     UpdateProject {
         id: String,
@@ -88,6 +92,21 @@ pub enum CoreCommand {
         project_id: String,
     },
     ListProjectTypes,
+    InspectProjectFolder {
+        path: String,
+    },
+    ListCustomProjectTypes,
+    AddCustomProjectType {
+        name: String,
+    },
+    RenameCustomProjectType {
+        old_name: String,
+        new_name: String,
+    },
+    RemoveCustomProjectType {
+        name: String,
+    },
+    TakePendingAddProject,
     AddEditor {
         name: String,
         path: String,

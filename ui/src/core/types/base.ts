@@ -144,6 +144,20 @@ export interface ProjectTypePreset {
   icon: string
 }
 
+export interface CustomProjectType {
+  id: string
+  name: string
+}
+
+export interface ProjectFolderInspection {
+  exists: boolean
+  is_dir: boolean
+  path: string
+  suggested_name: string
+  duplicate_of?: Project | null
+  detected_type?: string | null
+}
+
 /**
  * A registered project the backend found to be a WordPress install, with the site that
  * serves it. Read on the Sites page to decide which rows get a "WP Admin" action.

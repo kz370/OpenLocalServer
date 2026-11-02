@@ -93,6 +93,15 @@ pub enum CoreResponse {
     ProjectTypes {
         types: Vec<crate::project::ProjectTypePreset>,
     },
+    ProjectFolderInspection {
+        inspection: crate::app::projects::manage::ProjectFolderInspection,
+    },
+    CustomProjectTypes {
+        types: Vec<crate::project::CustomProjectType>,
+    },
+    PendingAddProject {
+        path: Option<String>,
+    },
     SiteFolderInspection {
         inspection: crate::detection::SiteFolderInspection,
     },

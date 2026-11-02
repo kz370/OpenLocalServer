@@ -1,6 +1,6 @@
 import type { AiDetected, AiJobView, AiModel, AiPrompt, AiState, AiTestResult } from './types/ai'
 import type { DashboardData, HealthItem, HistoryEntry, LogSource, QuickCommand, QuickEntryDetail, QuickEntryView, QuickPlanResult, RunView, StartupSettings } from './types/apps'
-import type { CatalogEntry, CommandHistoryEntry, CustomInstall, CustomServiceDef, DbBackup, DbTool, DeletedItem, EnvironmentManifest, PortStatus, ProcessId, ProcessInfo, Project, ProjectDetail, ProjectTypePreset, ServiceStatus, Shortcut, WpProject } from './types/base'
+import type { CatalogEntry, CommandHistoryEntry, CustomInstall, CustomServiceDef, DbBackup, DbTool, DeletedItem, EnvironmentManifest, PortStatus, ProcessId, ProcessInfo, Project, ProjectDetail, ProjectTypePreset, CustomProjectType, ProjectFolderInspection, ServiceStatus, Shortcut, WpProject } from './types/base'
 import type { CommandSource, ComposerInfo, EditorInfo, EnvDiffRow, EnvFileInfo, EnvFileView, EnvironmentPlan, Finding, MailCheck, MailEnvPlan, ManifestInfo, MigratedDb, MigrationProgress, MigrationSource, Operation, PackageManagerInfo, PhpExtensions, SetupReport, SiteFolderInspection, SystemStats, VenvInfo, XdebugReport } from './types/environment'
 import type { ApiStatus, CatalogView, DoctorReport, GitBranch, GitCommit, GitStatus, LoadOverview, LoadProfile, LoadRun, NetworkStatus, PluginDetection, PluginInfo, RecordedRequest, RepairPlan, RepairReport, SearchHit, ShellMenuStatus, UpdateInfo, UpdaterStatus } from './types/system'
 import type { AutoBackupRun, AutoBackupStatus, BundleImportResult, BundlePreview, CloneResult, CpuCapStatus, ImportPreview, ModeResult, ModesView, Profile, ResourceLimits, RestoreResult, SettingsBackup, SnapshotInfo, TaskRun, TaskStatus, TaskView, TunnelProvider, TunnelStatus, WorkerPreset, WorkerStatus } from './types/tasks'
@@ -23,6 +23,9 @@ export type CoreResponse =
   | { type: 'project_detail'; detail: ProjectDetail }
   | { type: 'create_site_for_project'; domain: Domain | null; needs_setup: boolean; suggested_hostname: string }
   | { type: 'project_types'; types: ProjectTypePreset[] }
+  | { type: 'project_folder_inspection'; inspection: ProjectFolderInspection }
+  | { type: 'custom_project_types'; types: CustomProjectType[] }
+  | { type: 'pending_add_project'; path: string | null }
   | { type: 'site_folder_inspection'; inspection: SiteFolderInspection }
   | { type: 'wp_projects'; projects: WpProject[] }
   | { type: 'wp_sign_in'; url: string; expires_at: number }

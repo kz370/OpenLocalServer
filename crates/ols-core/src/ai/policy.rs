@@ -160,6 +160,12 @@ pub fn allowed(cmd: &CoreCommand) -> bool {
             | C::CreateSiteForProject { .. }
             | C::OpenProjectTerminal { .. }
             | C::ListProjectTypes
+            | C::InspectProjectFolder { .. }
+            | C::ListCustomProjectTypes
+            | C::AddCustomProjectType { .. }
+            | C::RenameCustomProjectType { .. }
+            | C::RemoveCustomProjectType { .. }
+            | C::TakePendingAddProject
             | C::AddEditor { .. }
             | C::UpdateEditor { .. }
             | C::RemoveEditor { .. }

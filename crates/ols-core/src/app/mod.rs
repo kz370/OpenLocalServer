@@ -108,7 +108,7 @@ pub struct Inner {
     /// Last automatic-fix failures, shown in the corresponding diagnostic's details.
     pub auto_fix_failures: Mutex<HashMap<String, String>>,
     pub pending_add_project: Mutex<Option<String>>,
-    project_events: broadcast::Sender<()>,
+    pub(crate) project_events: broadcast::Sender<()>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

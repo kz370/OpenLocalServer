@@ -115,6 +115,14 @@ impl Core {
         self.inner.services.clone()
     }
 
+    pub fn set_pending_add_project(&self, path: String) {
+        self.inner.set_pending_add_project(path);
+    }
+
+    pub fn take_pending_add_project(&self) -> Option<String> {
+        self.inner.take_pending_add_project()
+    }
+
     /// Dispatches a `CoreCommand` and converts any error into a user diagnostic.
     pub fn dispatch(&self, command: CoreCommand) -> Result<CoreResponse, Diagnostic> {
         self.dispatch_inner(command)
