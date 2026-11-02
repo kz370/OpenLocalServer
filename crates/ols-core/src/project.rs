@@ -176,8 +176,29 @@ pub fn normalize_path_for_comparison(path: &str) -> String {
 }
 
 /// Checks whether two path strings refer to the same project directory location.
+/// Performs fast string-level normalization first (slashes, casing on Windows, verbatim prefixes),
+/// and falls back to filesystem canonicalization to resolve 8.3 short names (e.g. `RUNNER~1` on CI runners),
+/// symlinks, or junctions when paths exist on disk.
 pub fn same_path(a: &str, b: &str) -> bool {
-    normalize_path_for_comparison(a) == normalize_path_for_comparison(b)
+    let norm_a = normalize_path_for_comparison(a);
+    let norm_b = normalize_path_for_comparison(b);
+    if norm_a == norm_b {
+        return true;
+    }
+
+    let canon_a = std::fs::canonicalize(a)
+        .ok()
+        .map(|p| normalize_path_for_comparison(&p.display().to_string()));
+    let canon_b = std::fs::canonicalize(b)
+        .ok()
+        .map(|p| normalize_path_for_comparison(&p.display().to_string()));
+
+    match (canon_a, canon_b) {
+        (Some(ca), Some(cb)) => ca == cb,
+        (Some(ca), None) => ca == norm_b,
+        (None, Some(cb)) => norm_a == cb,
+        (None, None) => false,
+    }
 }
 
 pub struct ProjectStore {
