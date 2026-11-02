@@ -468,7 +468,10 @@ fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
     let separator_end = PredefinedMenuItem::separator(app)?;
 
     let mut site_items: Vec<Box<dyn tauri::menu::IsMenuItem<Wry>>> = Vec::new();
-    for site in core.inner().domains.lock().unwrap().list() {
+    // Read the list first: holding the domains lock across `MenuItem::with_id` (which
+    // waits on the main thread) can deadlock against a menu handler that needs it.
+    let site_list = core.inner().domains.lock().unwrap().list();
+    for site in site_list {
         site_items.push(Box::new(MenuItem::with_id(
             app,
             &format!("site:{}", site.hostname),
@@ -496,13 +499,10 @@ fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
     let sites = Submenu::with_items(app, "Sites", true, &site_refs)?;
 
     let project_list = core.inner().projects.lock().unwrap().list();
-    let editors: Vec<ols_core::editors::EditorInfo> = {
-        let settings = core.inner().settings.lock().unwrap();
-        ols_core::editors::list_all(&settings)
-            .into_iter()
-            .filter(|e| e.path.is_some() && !e.hidden)
-            .collect()
-    };
+    let editors: Vec<ols_core::editors::EditorInfo> = tray_editors(core)
+        .into_iter()
+        .filter(|e| e.path.is_some() && !e.hidden)
+        .collect();
     let mut project_items: Vec<Box<dyn tauri::menu::IsMenuItem<Wry>>> = Vec::new();
     let mut held_project_items: Vec<Box<dyn tauri::menu::IsMenuItem<Wry>>> = Vec::new();
 
@@ -762,14 +762,12 @@ fn tray_fingerprint(core: &Core) -> u64 {
         }
     }
 
-    // 5. Installed / configured editors
-    if let Ok(settings) = core.inner().settings.lock() {
-        for e in ols_core::editors::list_all(&settings) {
-            e.id.hash(&mut hasher);
-            e.name.hash(&mut hasher);
-            e.hidden.hash(&mut hasher);
-            e.path.is_some().hash(&mut hasher);
-        }
+    // 5. Installed / configured editors (cached: detection walks the disk)
+    for e in tray_editors(core) {
+        e.id.hash(&mut hasher);
+        e.name.hash(&mut hasher);
+        e.hidden.hash(&mut hasher);
+        e.path.is_some().hash(&mut hasher);
     }
 
     hasher.finish()
@@ -807,41 +805,80 @@ fn tray_menu_is_open() -> bool {
     false
 }
 
+/// Installed/configured editors for the tray, cached for 30 seconds. Detection walks the
+/// disk (JetBrains/Toolbox folders, PATH shims) while holding the settings lock, which is
+/// far too heavy to repeat on every 2-second tick, and a slow drive would stall anything
+/// else waiting on that lock, the window's close handler included.
+fn tray_editors(core: &Core) -> Vec<ols_core::editors::EditorInfo> {
+    static CACHE: Mutex<Option<(std::time::Instant, Vec<ols_core::editors::EditorInfo>)>> =
+        Mutex::new(None);
+    if let Some((at, list)) = CACHE.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+        if at.elapsed() < Duration::from_secs(30) {
+            return list.clone();
+        }
+    }
+    let list = {
+        let settings = core
+            .inner()
+            .settings
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        ols_core::editors::list_all(&settings)
+    };
+    *CACHE.lock().unwrap_or_else(|e| e.into_inner()) =
+        Some((std::time::Instant::now(), list.clone()));
+    list
+}
+
+/// Serialises refreshes so two threads cannot build menus and swap them out of order.
+static TRAY_REFRESH: Mutex<()> = Mutex::new(());
+
+/// Must run on a background thread, never the main thread: it reads core state (locks that
+/// long-running commands hold), scans editors and builds the menu. Doing that on the main
+/// thread freezes the window ("Not Responding"). Only the final swap runs on the main thread.
 fn refresh_tray(app: &AppHandle, core: &Core) {
     if SHUTDOWN_IN_PROGRESS.load(Ordering::SeqCst) {
         return;
     }
 
-    let fp = tray_fingerprint(core);
-    let mut last_fp = TRAY_MENU_FINGERPRINT
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    if *last_fp != Some(fp) {
-        *last_fp = Some(fp);
-        TRAY_MENU_DIRTY.store(true, Ordering::SeqCst);
-    }
-    drop(last_fp);
+    {
+        let _serial = TRAY_REFRESH.lock().unwrap_or_else(|e| e.into_inner());
+        let fp = tray_fingerprint(core);
+        let mut last_fp = TRAY_MENU_FINGERPRINT
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if *last_fp != Some(fp) {
+            *last_fp = Some(fp);
+            TRAY_MENU_DIRTY.store(true, Ordering::SeqCst);
+        }
+        drop(last_fp);
 
-    let app_handle = app.clone();
-    let core_clone = core.clone();
-    let _ = app.run_on_main_thread(move || {
-        // Never swap the menu under an open popup; try again on the next refresh.
-        if TRAY_MENU_DIRTY.load(Ordering::SeqCst) && !tray_menu_is_open() {
-            TRAY_MENU_DIRTY.store(false, Ordering::SeqCst);
-            if let Some(tray) = app_handle.tray_by_id("main") {
-                match tray_menu(&app_handle, &core_clone) {
-                    Ok(menu) => {
-                        if let Err(e) = tray.set_menu(Some(menu)) {
-                            tracing::warn!(error = %e, "the tray menu could not be replaced");
+        if TRAY_MENU_DIRTY.swap(false, Ordering::SeqCst) {
+            match tray_menu(app, core) {
+                Ok(menu) => {
+                    let handle = app.clone();
+                    let _ = app.run_on_main_thread(move || {
+                        // Never swap the menu under an open popup; the next tick retries.
+                        if tray_menu_is_open() {
+                            TRAY_MENU_DIRTY.store(true, Ordering::SeqCst);
+                            return;
                         }
-                    }
-                    Err(e) => tracing::warn!(error = %e, "the tray menu could not be rebuilt"),
+                        if let Some(tray) = handle.tray_by_id("main") {
+                            if let Err(e) = tray.set_menu(Some(menu)) {
+                                tracing::warn!(error = %e, "the tray menu could not be replaced");
+                            }
+                        }
+                    });
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "the tray menu could not be rebuilt");
+                    TRAY_MENU_DIRTY.store(true, Ordering::SeqCst);
                 }
             }
         }
-        sync_status_icon(&app_handle, &core_clone);
-        sync_tray_tooltip(&app_handle, &core_clone);
-    });
+    }
+    sync_status_icon(app, core);
+    sync_tray_tooltip(app, core);
 }
 
 fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
@@ -915,8 +952,12 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
                     });
                 }
                 "web_stop" => {
-                    core.inner().web.stop();
-                    refresh_tray(app, &core);
+                    // Off the main thread: stopping waits on the child processes.
+                    let handle = app.clone();
+                    std::thread::spawn(move || {
+                        core.inner().web.stop();
+                        refresh_tray(&handle, &core);
+                    });
                 }
                 "mailpit" => {
                     let _ = core.inner().open_url("http://127.0.0.1:8025");
@@ -985,32 +1026,43 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
                         .split_once(':')
                         .map(|(_, value)| value)
                         .unwrap_or_default();
-                    if core
-                        .services()
-                        .list()
-                        .into_iter()
-                        .find(|service| service.id == service_id)
-                        .map(|service| service.running)
-                        .unwrap_or(false)
-                    {
-                        if let Err(e) = core.services().stop(service_id) {
-                            notify(
-                                &core,
-                                "A service did not stop",
-                                &format!("{service_id}: {e}"),
-                            );
+                    // Off the main thread: a stop waits up to 10s and a start can take
+                    // seconds, and the main thread is also the window's and the menu's.
+                    let service_id = service_id.to_string();
+                    let handle = app.clone();
+                    std::thread::spawn(move || {
+                        let running = core
+                            .services()
+                            .list()
+                            .into_iter()
+                            .find(|service| service.id == service_id)
+                            .map(|service| service.running)
+                            .unwrap_or(false);
+                        if running {
+                            if let Err(e) = core.services().stop(&service_id) {
+                                notify(
+                                    &core,
+                                    "A service did not stop",
+                                    &format!("{service_id}: {e}"),
+                                );
+                            }
+                        } else {
+                            let _ = core.services().start(&service_id);
                         }
-                    } else {
-                        let _ = core.services().start(service_id);
-                    }
-                    refresh_tray(app, &core);
+                        refresh_tray(&handle, &core);
+                    });
                 }
                 id if id.starts_with("server:") => {
-                    let _ = core.dispatch(CoreCommand::SetSetting {
-                        key: "web.server".into(),
-                        value: serde_json::Value::String(id[7..].into()),
+                    // Off the main thread: switching the server re-applies the web stack.
+                    let server = id[7..].to_string();
+                    let handle = app.clone();
+                    std::thread::spawn(move || {
+                        let _ = core.dispatch(CoreCommand::SetSetting {
+                            key: "web.server".into(),
+                            value: serde_json::Value::String(server),
+                        });
+                        refresh_tray(&handle, &core);
                     });
-                    refresh_tray(app, &core);
                 }
                 "quit" => begin_shutdown(app, core.clone()),
                 _ => {}
