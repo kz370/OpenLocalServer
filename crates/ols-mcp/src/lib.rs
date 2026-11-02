@@ -1013,9 +1013,9 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
             id: req_str!("id"),
             name: opt_str!("name"),
             icon: opt_str!("icon"),
-            clear_icon: opt_bool!("clear_icon").unwrap_or(false),
+            clear_icon: opt_bool!("clear_icon"),
             project_type: opt_str!("project_type"),
-            clear_project_type: opt_bool!("clear_project_type").unwrap_or(false),
+            clear_project_type: opt_bool!("clear_project_type"),
         },
         "ols_inspect_project_folder" => {
             let path_raw = req_str!("path");
@@ -1320,9 +1320,11 @@ fn format_response(response: &CoreResponse) -> String {
             } else {
                 let mut out = String::from("Configured & detected editors:\n");
                 for e in editors {
+                    let exe = e.path.as_deref().unwrap_or("none");
+                    let installed = e.path.is_some();
                     out.push_str(&format!(
-                        "- {} [{}] (exe: {}, installed: {}, visible: {})\n",
-                        e.name, e.id, e.executable, e.installed, !e.hidden
+                        "- {} [{}] (path: {}, installed: {}, visible: {})\n",
+                        e.name, e.id, exe, installed, !e.hidden
                     ));
                 }
                 out
