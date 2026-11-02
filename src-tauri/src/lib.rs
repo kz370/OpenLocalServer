@@ -486,6 +486,81 @@ fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
         site_items.iter().map(|item| item.as_ref()).collect();
     let sites = Submenu::with_items(app, "Sites", true, &site_refs)?;
 
+    let project_list = core.inner().projects.lock().unwrap().list();
+    let editors: Vec<ols_core::editors::EditorInfo> = {
+        let settings = core.inner().settings.lock().unwrap();
+        ols_core::editors::list_all(&settings)
+            .into_iter()
+            .filter(|e| e.path.is_some() && !e.hidden)
+            .collect()
+    };
+    let mut project_items: Vec<Box<dyn tauri::menu::IsMenuItem<Wry>>> = Vec::new();
+    let mut held_project_items: Vec<Box<dyn tauri::menu::IsMenuItem<Wry>>> = Vec::new();
+
+    if project_list.is_empty() {
+        project_items.push(Box::new(MenuItem::with_id(
+            app,
+            "no_projects",
+            "No projects registered",
+            false,
+            None::<&str>,
+        )?));
+    } else {
+        for project in &project_list {
+            let open_dir = MenuItem::with_id(
+                app,
+                &format!("project_dir:{}", project.id),
+                "Open directory",
+                true,
+                None::<&str>,
+            )?;
+
+            let mut editor_items: Vec<Box<dyn tauri::menu::IsMenuItem<Wry>>> = Vec::new();
+            if editors.is_empty() {
+                editor_items.push(Box::new(MenuItem::with_id(
+                    app,
+                    "no_editors",
+                    "No editors found",
+                    false,
+                    None::<&str>,
+                )?));
+            } else {
+                for ed in &editors {
+                    editor_items.push(Box::new(MenuItem::with_id(
+                        app,
+                        &format!("project_editor:{}:{}", project.id, ed.id),
+                        &ed.name,
+                        true,
+                        None::<&str>,
+                    )?));
+                }
+            }
+            let editor_refs: Vec<&dyn tauri::menu::IsMenuItem<Wry>> =
+                editor_items.iter().map(|item| item.as_ref()).collect();
+            let open_with = Submenu::with_items(app, "Open with", true, &editor_refs)?;
+
+            let project_submenu =
+                Submenu::with_items(app, &project.name, true, &[&open_dir, &open_with])?;
+
+            held_project_items.extend(editor_items);
+            held_project_items.push(Box::new(open_dir));
+            held_project_items.push(Box::new(open_with));
+
+            project_items.push(Box::new(project_submenu));
+        }
+    }
+    project_items.push(Box::new(PredefinedMenuItem::separator(app)?));
+    project_items.push(Box::new(MenuItem::with_id(
+        app,
+        "projects_page",
+        "Open projects",
+        true,
+        None::<&str>,
+    )?));
+    let project_refs: Vec<&dyn tauri::menu::IsMenuItem<Wry>> =
+        project_items.iter().map(|item| item.as_ref()).collect();
+    let projects = Submenu::with_items(app, "Projects", true, &project_refs)?;
+
     let web_start = MenuItem::with_id(
         app,
         "web_start",
@@ -614,6 +689,7 @@ fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
             &stop_all,
             &separator,
             &sites,
+            &projects,
             &web,
             &php,
             &databases,
@@ -755,6 +831,28 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
                 "terminal" => navigate(app, "terminal"),
                 "doctor" => navigate(app, "diagnostics"),
                 "site_add" => navigate(app, "sites"),
+                "projects_page" => navigate(app, "projects"),
+                id if id.starts_with("project_dir:") => {
+                    let project_id = &id["project_dir:".len()..];
+                    if let Some(project) = core.inner().projects.lock().unwrap().get(project_id) {
+                        if let Err(e) = core.inner().open_path(&project.path) {
+                            notify(&core, "Could not open project directory", &e.to_string());
+                        }
+                    }
+                }
+                id if id.starts_with("project_editor:") => {
+                    if let Some(rest) = id.strip_prefix("project_editor:") {
+                        if let Some((proj_id, editor_id)) = rest.split_once(':') {
+                            if let Some(project) =
+                                core.inner().projects.lock().unwrap().get(proj_id)
+                            {
+                                if let Err(e) = core.inner().open_with(&project.path, editor_id) {
+                                    notify(&core, "Could not open editor", &e.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
                 id if id.starts_with("site:") => {
                     if let Some(site) = core.inner().domains.lock().unwrap().get(&id[5..]) {
                         let _ = core.inner().open_url(&format!(
@@ -1009,8 +1107,7 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 while project_events.recv().await.is_ok() {
                     let _ = projects_handle.emit("projects-changed", ());
-                    sync_status_icon(&projects_handle, &projects_core);
-                    sync_tray_tooltip(&projects_handle, &projects_core);
+                    refresh_tray(&projects_handle, &projects_core);
                 }
             });
 

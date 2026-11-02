@@ -127,6 +127,7 @@ DatabasesPage ServiceBanner | uses | TechIcon.ServiceMark (a service banner now 
 DatabasesPage (External Tools) | uses | presetsCatalog (ui/src/data/presets.json), externalTools (ui/src/lib/externalTools.ts) for validation, import/export, and preset auto-fill
 CustomServices | uses | TechIcon id=custom (a custom service row carries the generic custom mark, so the list reads as service definitions and not as loose paths)
 TauriApp tray menu | uses | Core.services().list (one read per build, feeding the row glyphs, the submenu counts and the tooltip, so the three cannot disagree on what is running)
+TauriApp tray menu | uses | ProjectStore.list & editors::list_all (builds the Projects submenu where each project offers Open directory via open_path and Open with via open_with)
 
 ServicesPage | uses | App.openLogs (View Logs opens the Logs page on that service's log_source)
 ServicesPage | sends | startup services through start_service, which applies a web server's config before starting it

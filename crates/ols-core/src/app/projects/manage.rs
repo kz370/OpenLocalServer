@@ -608,6 +608,7 @@ impl Inner {
             });
         }
         crate::editors::save_custom(&mut settings, &list)?;
+        let _ = self.project_events.send(());
         Ok(crate::editors::list_all(&settings))
     }
 
@@ -646,6 +647,7 @@ impl Inner {
         item.name = name.to_string();
         item.path = path.to_string();
         crate::editors::save_custom(&mut settings, &list)?;
+        let _ = self.project_events.send(());
         Ok(crate::editors::list_all(&settings))
     }
 
@@ -655,6 +657,7 @@ impl Inner {
         let mut list = crate::editors::list_custom(&settings);
         list.retain(|e| e.id != id);
         crate::editors::save_custom(&mut settings, &list)?;
+        let _ = self.project_events.send(());
         Ok(crate::editors::list_all(&settings))
     }
 
@@ -674,6 +677,7 @@ impl Inner {
             list.retain(|h| h != id);
         }
         crate::editors::save_hidden(&mut settings, &list)?;
+        let _ = self.project_events.send(());
         Ok(crate::editors::list_all(&settings))
     }
 }
