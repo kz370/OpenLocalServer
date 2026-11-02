@@ -128,6 +128,13 @@ const WINDOW_ICON_DARK_STOPPED: &[u8] = include_bytes!("../icons/dark/red/128x12
 static ICON_SHOWS: Mutex<Option<(bool, bool)>> = Mutex::new(None);
 static TOOLTIP_SHOWS: Mutex<Option<String>> = Mutex::new(None);
 
+/// Fingerprint of the tray menu structure and content.
+/// Rebuilding the Win32 tray menu destroys the active HMENU; doing so while
+/// the user has the popup menu open causes visual artifacts and Win32 crashes.
+/// Caching the fingerprint ensures the menu is only reconstructed when its
+/// items, labels, or states actually change.
+static TRAY_MENU_FINGERPRINT: Mutex<Option<u64>> = Mutex::new(None);
+
 /// Theme the UI last reported, so a status repaint lands on the right colourway.
 /// The UI owns the theme (it is a UI-local setting with no core counterpart), so
 /// this starts from what the OS reports and is corrected by `ols:theme`.
@@ -519,7 +526,7 @@ fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
             if editors.is_empty() {
                 editor_items.push(Box::new(MenuItem::with_id(
                     app,
-                    "no_editors",
+                    &format!("no_editors:{}", project.id),
                     "No editors found",
                     false,
                     None::<&str>,
@@ -719,18 +726,88 @@ fn sync_tray_tooltip(app: &AppHandle, core: &Core) {
     }
 }
 
-fn refresh_tray(app: &AppHandle, core: &Core) {
-    if let Some(tray) = app.tray_by_id("main") {
-        if let Ok(menu) = tray_menu(app, core) {
-            let _ = tray.set_menu(Some(menu));
+fn tray_fingerprint(core: &Core) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = DefaultHasher::new();
+
+    // 1. Services state & kind
+    for s in core.services().list() {
+        s.id.hash(&mut hasher);
+        s.running.hash(&mut hasher);
+    }
+
+    // 2. Web server default & PHP versions
+    let web_cfg = core.inner().web_config();
+    web_cfg.default_server.hash(&mut hasher);
+    let installed_php = core.inner().runtimes.installed_versions("php");
+    installed_php.hash(&mut hasher);
+
+    // 3. Registered sites / domains
+    if let Ok(domains) = core.inner().domains.lock() {
+        for d in domains.list() {
+            d.hostname.hash(&mut hasher);
         }
     }
-    sync_status_icon(app, core);
-    sync_tray_tooltip(app, core);
+
+    // 4. Registered projects
+    if let Ok(projects) = core.inner().projects.lock() {
+        for p in projects.list() {
+            p.id.hash(&mut hasher);
+            p.name.hash(&mut hasher);
+            p.path.hash(&mut hasher);
+        }
+    }
+
+    // 5. Installed / configured editors
+    if let Ok(settings) = core.inner().settings.lock() {
+        for e in ols_core::editors::list_all(&settings) {
+            e.id.hash(&mut hasher);
+            e.name.hash(&mut hasher);
+            e.hidden.hash(&mut hasher);
+            e.path.is_some().hash(&mut hasher);
+        }
+    }
+
+    hasher.finish()
+}
+
+fn refresh_tray(app: &AppHandle, core: &Core) {
+    if SHUTDOWN_IN_PROGRESS.load(Ordering::SeqCst) {
+        return;
+    }
+
+    let fp = tray_fingerprint(core);
+    let mut last_fp = TRAY_MENU_FINGERPRINT
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let menu_changed = *last_fp != Some(fp);
+    if menu_changed {
+        *last_fp = Some(fp);
+    }
+    drop(last_fp);
+
+    let app_handle = app.clone();
+    let core_clone = core.clone();
+    let _ = app.run_on_main_thread(move || {
+        if menu_changed {
+            if let Some(tray) = app_handle.tray_by_id("main") {
+                if let Ok(menu) = tray_menu(&app_handle, &core_clone) {
+                    let _ = tray.set_menu(Some(menu));
+                }
+            }
+        }
+        sync_status_icon(&app_handle, &core_clone);
+        sync_tray_tooltip(&app_handle, &core_clone);
+    });
 }
 
 fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
     let menu = tray_menu(app, &core)?;
+    *TRAY_MENU_FINGERPRINT
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = Some(tray_fingerprint(&core));
     let menu_core = core.clone();
     let mut builder = TrayIconBuilder::with_id("main")
         .tooltip(tray_tooltip(&core))
