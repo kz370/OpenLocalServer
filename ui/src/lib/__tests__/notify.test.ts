@@ -352,3 +352,35 @@ test('evaluateNotificationConditions resolves notifications when resolveWhen pre
 
   unsubHistory()
 })
+
+test('resolving every service in a stop-all crash notification dismisses it without unread errors', async () => {
+  resetNotificationsForTest()
+  let visibleToasts: NotificationItem[] = []
+  let history: NotificationItem[] = []
+  const unsubscribeToasts = subscribeNotifications((items) => {
+    visibleToasts = items
+  })
+  const unsubscribeHistory = subscribeNotificationHistory((items) => {
+    history = items
+  })
+  const serviceIds = ['mariadb', 'nginx', 'apache', 'caddy']
+  const conditionKeys = serviceIds.map((id) => `crashed:${id}`)
+  const groupKey = `crashed:${serviceIds.join(',')}`
+  const toastId = notify.error('MariaDB, Nginx, Apache, Caddy stopped unexpectedly.', {
+    id: groupKey,
+    conditionKey: groupKey,
+    conditionKeys,
+    title: '4 services stopped unexpectedly',
+  })
+
+  for (const id of serviceIds) {
+    resolveNotificationsForService(id)
+  }
+
+  assert.equal(getUnreadNotificationCount(), 0)
+  assert.equal(history[0]?.resolved, true)
+  await new Promise((resolve) => setTimeout(resolve, 250))
+  assert.ok(!visibleToasts.some((item) => item.id === toastId), 'grouped error toast should be dismissed')
+  unsubscribeToasts()
+  unsubscribeHistory()
+})

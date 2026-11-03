@@ -87,8 +87,13 @@ export function ProjectCommands({ projectId, framework, onShowIssues }: { projec
     const un = listen<ProcessEvent>('process-event', (event) => {
       const e = event.payload
       if (processId === null || e.id !== processId) return
-      if (e.kind === 'output') setOutput((prev) => [...prev.slice(-1999), e.line])
-      else setProcessState(e.state)
+      if (e.kind === 'output') {
+        setOutput((prev) => [...prev.slice(-1999), e.line])
+      } else if (e.kind === 'state_changed') {
+        setProcessState(e.state)
+      } else {
+        setProcessState('stopping')
+      }
     })
     return () => {
       un.then((f) => f())

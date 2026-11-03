@@ -916,6 +916,7 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
                     });
                 }
                 "stop_all" => {
+                    let _ = app.emit("ols:stop-all-requested", ());
                     // One definition of "stop everything" (CoreCommand::StopAll), shared
                     // with the Dashboard's Stop all. It used to exist here alone and only
                     // covered the web stack and services, so a worker or a service
@@ -1048,7 +1049,9 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
                                     &format!(
                                         "{}\nFix: {}",
                                         e.cause,
-                                        e.fix.as_deref().unwrap_or("Try stopping the service again.")
+                                        e.fix
+                                            .as_deref()
+                                            .unwrap_or("Try stopping the service again.")
                                     ),
                                 );
                             }

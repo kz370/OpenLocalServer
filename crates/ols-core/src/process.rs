@@ -511,10 +511,7 @@ fn run_process_attempt(
                     ProcessState::Failed
                 };
                 set_state(&processes, id, state, None);
-                let _ = events_tx.send(ProcessEvent::StateChanged {
-                    id,
-                    state,
-                });
+                let _ = events_tx.send(ProcessEvent::StateChanged { id, state });
                 if !expected_stop {
                     let _ = events_tx.send(ProcessEvent::Output {
                         id,
@@ -1006,9 +1003,7 @@ mod tests {
                 matches!(
                     event,
                     ProcessEvent::StateChanged {
-                        state: ProcessState::Stopped
-                            | ProcessState::Crashed
-                            | ProcessState::Failed,
+                        state: ProcessState::Stopped | ProcessState::Crashed | ProcessState::Failed,
                         ..
                     }
                 )

@@ -38,6 +38,20 @@ export function handleExpectedServiceStop(serviceId: string) {
   emitStateChange()
 }
 
+export function handleExpectedStopAll() {
+  const allIds = new Set<string>([
+    ...Object.keys(BUILTIN_SERVICE_NAMES),
+    ...serviceDisplayNames.keys(),
+    ...currentlyRunningServices,
+    ...knownRunningServices,
+  ])
+  for (const id of allIds) {
+    setServiceIntent(id, 'stopped')
+  }
+  isWebCurrentlyRunning = false
+  emitStateChange()
+}
+
 // ---------------------------------------------------------------------------
 // Configuration constants (Rules 2 & 3 + Intent & Crash Grouping)
 // ---------------------------------------------------------------------------
@@ -2082,6 +2096,10 @@ export function initDiagnosticsNotificationMonitor() {
           emitStateChange()
           requestDiagnosticsRescan()
         })
+    })
+
+    void listen('ols:stop-all-requested', () => {
+        handleExpectedStopAll()
     })
 
     void listen<{ kind: string; id: number; state?: string; name?: string }>(
