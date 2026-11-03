@@ -207,9 +207,9 @@ export function ExcludedSitesCard() {
                           <p className="truncate text-sm font-medium" title={row.item.value}>
                             {row.item.value}
                           </p>
-                          <p className="truncate text-xs text-muted-foreground">
+                          <div className="truncate text-xs text-muted-foreground">
                             {when(row.item)} · <Badge variant="secondary">site</Badge>
-                          </p>
+                          </div>
                         </div>
                         <Button
                           size="sm"
@@ -240,9 +240,9 @@ export function ExcludedSitesCard() {
                         <p className="truncate text-sm font-medium" title={row.folder.value}>
                           {row.folder.value}
                         </p>
-                        <p className="truncate text-xs text-muted-foreground">
+                        <div className="truncate text-xs text-muted-foreground">
                           {when(row.folder)} · <Badge variant="secondary">folder</Badge>
-                        </p>
+                        </div>
                         {row.domains.length > 0 && (
                           <div className="flex min-w-0 flex-wrap gap-1.5 pt-1.5">
                             {row.domains.map((domain) => (
