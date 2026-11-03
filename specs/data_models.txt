@@ -121,3 +121,4 @@ Schemas/interfaces (TypeScript core.ts mirrors Rust):
 - AppBackground: `{ type: 'solid' } | { type: 'gradient', from: string, to: string, angle: number }`.
 
 - ExternalTool preset engine scope (2026-11-02): Letos DB Browser is a SQLite file manager (`letos.exe [options] file`, no MySQL/PostgreSQL plugins), so its preset and detection are `sqlite` only and `ExternalToolStore::load` resets a saved `letos` entry to `[sqlite]`. DBeaver's preset uses per-engine args (`driver=mariaDB` / `postgres-jdbc` / `sqlite_jdbc`) and covers mariadb, postgres and sqlite. HeidiSQL covers mariadb, postgres and sqlite.
+- HealthProgress (Tauri channel payload): `{name, step}` where null `step` marks a check stage as running and `HealthStep{name,ok,skipped,detail}` marks it complete; sent in DNS, TCP, TLS, Certificate, Trust, HTTP order by `run_health_check`.

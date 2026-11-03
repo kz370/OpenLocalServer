@@ -113,7 +113,7 @@ UpdatesCard | renders | UpdateInfo.notes as Markdown
 PluginManager | uses | Catalog
 WebConfig | resolves | Domain.server -> resolved_server(domain, cfg)
 SitesPage | uses | UseWeb hook
-SitesPage Health Check | shows | DNS/TCP/TLS/Certificate/Trust/HTTP rows with individual spinners until health_check returns, then replaces them with the report
+SitesPage Health Check | streams | run_health_check channel progress from the shared core check, updating one stage at a time before rendering the final report
 SitesPage | uses | ConfirmAction (the dialog title names the site or project; the destructive button repeats the action)
 SitesPage | filters rows by | Enabled (default), Disabled, website type, or All (last); status filters include sites only, and search falls back to All when the current filter has no match
 SitesPage | groups rows by | project / folder path into a single row with primary domain and extra-domain badge pills
