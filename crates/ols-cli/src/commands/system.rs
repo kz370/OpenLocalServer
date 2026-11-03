@@ -256,24 +256,19 @@ pub fn guide(ctx: &Ctx, version: Option<String>) -> R<()> {
 }
 
 pub fn stop_everything(ctx: &Ctx) -> R<()> {
-    if let CoreResponse::Tunnels { tunnels } = ctx.call(CoreCommand::ListTunnels)? {
-        for t in tunnels.into_iter().filter(|t| t.state != "stopped") {
-            ctx.call(CoreCommand::StopTunnel { id: t.config.id })?;
+    let response = ctx.call(CoreCommand::StopAll)?;
+    if let CoreResponse::StoppedEverything { still_running } = &response {
+        if !still_running.is_empty() {
+            return Err(format!(
+                "Some processes are still running: {}",
+                still_running.join(", ")
+            )
+            .into());
         }
     }
-    if let CoreResponse::Projects { projects } = ctx.call(CoreCommand::ListProjects)? {
-        for p in projects {
-            ctx.call(CoreCommand::StopProjectWorkers { project_id: p.id })?;
-        }
+    if !ctx.print_json(&response) {
+        println!("Everything is stopped.");
     }
-    ctx.call(CoreCommand::StopWeb)?;
-    if let CoreResponse::Services { services } = ctx.call(CoreCommand::ListServices)? {
-        for s in services.into_iter().filter(|s| s.running) {
-            ctx.call(CoreCommand::StopService { id: s.id.clone() })?;
-            println!("Stopped {}.", s.name);
-        }
-    }
-    println!("Everything is stopped.");
     Ok(())
 }
 
