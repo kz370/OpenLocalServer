@@ -36,6 +36,12 @@ const catalogCache = createPersistentCache<CatalogEntry[]>('web_catalog', [])
 const customPhpCache = createPersistentCache<string[]>('web_custom_php', [])
 const reportsCache = createPersistentCache<ApplyReport[]>('web_reports', [])
 
+/** Prevent a restored project/site list from reopening with the pre-restore snapshot. */
+export function invalidateWebSitesCache() {
+  domainsCache.set([])
+  projectsCache.set([])
+}
+
 export function useWeb() {
   const [status, setStatus] = useState<WebStatus | null>(statusCache.get)
   const [cfg, setCfg] = useState<WebConfig | null>(cfgCache.get)

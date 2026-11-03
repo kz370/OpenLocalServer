@@ -1,7 +1,7 @@
-import { Trash2 } from 'lucide-react'
+import { Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
-import { ErrorCard } from '@/components/ErrorCard'
+import { asDiagnostic, ErrorCard } from '@/components/ErrorCard'
 import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -9,13 +9,58 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { type DeletedItem, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
 import { timeAgo, useAction } from '@/lib/hooks'
+import { invalidateWebSitesCache } from '@/lib/web'
 
 /** Newest entries are the ones a user is looking for; the rest scroll. */
 const VISIBLE = 200
+const DEFAULT_TLD = 'local'
+
+type ExcludedRow =
+  | { kind: 'project'; folder: DeletedItem; domains: DeletedItem[] }
+  | { kind: 'standalone'; item: DeletedItem }
 
 function when(item: DeletedItem): string {
   // Entries stored before the history kept a timestamp read as 0.
   return item.deleted_at > 0 ? timeAgo(item.deleted_at) : 'date unknown'
+}
+
+function projectHostname(path: string, defaultTld: string): string | null {
+  const folderName = path.replace(/[\\/]+$/, '').split(/[\\/]/).at(-1)
+  if (!folderName) return null
+  const name = folderName.replace(new RegExp(`\\.${defaultTld.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'), '')
+  const slug = name
+    .replace(/[^a-z0-9]+/gi, '-')
+    .replace(/^-|-$/g, '')
+    .toLowerCase()
+  return slug ? `${slug}.${defaultTld}` : null
+}
+
+function groupItems(items: DeletedItem[], defaultTld: string): ExcludedRow[] {
+  const folders = items.filter((item) => item.kind === 'project')
+  const domains = items.filter((item) => item.kind === 'domain')
+  const groups = folders.map((folder) => ({ kind: 'project' as const, folder, domains: [] as DeletedItem[] }))
+  const foldersByHostname = new Map<string, typeof groups>()
+
+  for (const group of groups) {
+    const hostname = projectHostname(group.folder.value, defaultTld)?.toLowerCase()
+    if (!hostname) continue
+    const matches = foldersByHostname.get(hostname) ?? []
+    matches.push(group)
+    foldersByHostname.set(hostname, matches)
+  }
+
+  const standalone: ExcludedRow[] = []
+  for (const item of domains) {
+    const matches = foldersByHostname.get(item.value.toLowerCase())
+    if (matches?.length === 1) matches[0].domains.push(item)
+    else standalone.push({ kind: 'standalone', item })
+  }
+
+  return [...groups, ...standalone].sort((a, b) => {
+    const aTime = a.kind === 'project' ? a.folder.deleted_at : a.item.deleted_at
+    const bTime = b.kind === 'project' ? b.folder.deleted_at : b.item.deleted_at
+    return bTime - aTime
+  })
 }
 
 /**
@@ -25,13 +70,43 @@ function when(item: DeletedItem): string {
  */
 export function ExcludedSitesCard() {
   const [items, setItems] = useState<DeletedItem[] | null>(null)
+  const [defaultTld, setDefaultTld] = useState(DEFAULT_TLD)
   const [saved, setSaved] = useState<string | null>(null)
   const { busy, error, setError, run } = useAction()
 
   const load = useCallback(async () => {
-    const r = await runCommand({ type: 'list_deleted_items' })
-    if (r.type === 'deleted_items') setItems(r.items)
-  }, [])
+    try {
+      const r = await runCommand({ type: 'list_deleted_items' })
+      if (r.type !== 'deleted_items') {
+        setError({
+          problem: 'The excluded list could not be loaded.',
+          cause: 'The app answered with an unexpected result.',
+          fix: 'Close Settings and open it again.',
+        })
+        return
+      }
+      setItems(r.items)
+    } catch (e) {
+      setError(asDiagnostic(e))
+      return
+    }
+
+    try {
+      const r = await runCommand({ type: 'get_setting', key: 'domains.default_tld' })
+      if (r.type !== 'setting') {
+        setError({
+          problem: 'Hidden sites could not be matched to their project folders.',
+          cause: 'The app answered with an unexpected result.',
+          fix: 'Close Settings and open it again.',
+        })
+        return
+      }
+      const tld = typeof r.value === 'string' ? r.value.trim().replace(/^\.+/, '') : DEFAULT_TLD
+      setDefaultTld(tld || DEFAULT_TLD)
+    } catch (e) {
+      setError(asDiagnostic(e))
+    }
+  }, [setError])
   useEffect(() => {
     void load()
   }, [load])
@@ -55,10 +130,29 @@ export function ExcludedSitesCard() {
     }
   }
 
-  async function forget(item: DeletedItem) {
+  async function forget(itemsToForget: DeletedItem[], done: string, message: string, title: string) {
+    const ok = await confirmAction(message, title, 'Restore')
+    if (!ok) return
     await run('forget', async () => {
-      const r = await runCommand({ type: 'forget_deleted_item', value: item.value })
-      await apply(r, item.kind === 'domain' ? `${item.value} can be created again.` : `${item.value} can be scanned again.`)
+      let latestItems: DeletedItem[] | null = null
+      try {
+        for (const item of itemsToForget) {
+          const r = await runCommand({ type: 'forget_deleted_item', value: item.value })
+          if (r.type !== 'deleted_items') {
+            throw new Error('The app answered with an unexpected result while restoring hidden items.')
+          }
+          latestItems = r.items
+        }
+        if (latestItems) {
+          setItems(latestItems)
+          flash(done)
+        }
+      } finally {
+        if (latestItems) {
+          setItems(latestItems)
+          invalidateWebSitesCache()
+        }
+      }
     })
   }
 
@@ -77,7 +171,8 @@ export function ExcludedSitesCard() {
   }
 
   if (!items) return null
-  const shown = items.slice(0, VISIBLE)
+  const rows = groupItems(items, defaultTld)
+  const shown = rows.slice(0, VISIBLE)
 
   return (
     <>
@@ -97,39 +192,112 @@ export function ExcludedSitesCard() {
             <>
               <div className="flex items-center justify-between gap-3" aria-live="polite">
                 <span className="text-xs text-muted-foreground">
-                  {items.length} hidden {items.length === 1 ? 'entry' : 'entries'}
+                  {rows.length} hidden {rows.length === 1 ? 'project' : 'projects'}
                 </span>
                 <Button size="sm" variant="ghost" className="text-destructive" disabled={busy !== null} onClick={clearAll}>
                   <Trash2 className="size-3.5" /> Clear all
                 </Button>
               </div>
               <div className="divide-y divide-border overflow-hidden rounded-lg border border-border">
-                {shown.map((item) => (
-                  <div key={`${item.kind}:${item.value}`} className="flex items-center justify-between gap-3 px-3 py-2">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium" title={item.value}>
-                        {item.value}
-                      </p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {when(item)} · <Badge variant="secondary">{item.kind === 'domain' ? 'site' : 'folder'}</Badge>
-                      </p>
+                {shown.map((row) => {
+                  if (row.kind === 'standalone') {
+                    return (
+                      <div key={`${row.item.kind}:${row.item.value}`} className="flex items-center justify-between gap-3 px-3 py-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium" title={row.item.value}>
+                            {row.item.value}
+                          </p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {when(row.item)} · <Badge variant="secondary">site</Badge>
+                          </p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="size-7 shrink-0 px-0"
+                          disabled={busy !== null}
+                          title="Restore this domain only"
+                          aria-label={`Restore ${row.item.value} only`}
+                          onClick={() =>
+                            void forget(
+                              [row.item],
+                              `${row.item.value} can be created again.`,
+                              `Restore ${row.item.value}? It will be available to automatic domains again.`,
+                              'Restore site',
+                            )
+                          }
+                        >
+                          {busy === 'forget' ? <Spinner /> : <Trash2 className="size-3.5" />}
+                        </Button>
+                      </div>
+                    )
+                  }
+
+                  const groupItems = [row.folder, ...row.domains]
+                  return (
+                    <div key={`project:${row.folder.value}`} className="flex items-start justify-between gap-3 px-3 py-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium" title={row.folder.value}>
+                          {row.folder.value}
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {when(row.folder)} · <Badge variant="secondary">folder</Badge>
+                        </p>
+                        {row.domains.length > 0 && (
+                          <div className="flex min-w-0 flex-wrap gap-1.5 pt-1.5">
+                            {row.domains.map((domain) => (
+                              <Badge key={domain.value} variant="secondary" className="max-w-full min-w-0 gap-1 px-2 py-0.5">
+                                <span className="min-w-0 truncate" title={domain.value}>
+                                  {domain.value}
+                                </span>
+                                <span className="shrink-0 text-muted-foreground">site</span>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="size-4 shrink-0 rounded-full p-0 text-muted-foreground [&_svg]:size-3"
+                                  disabled={busy !== null}
+                                  title="Restore this domain only"
+                                  aria-label={`Restore ${domain.value} only`}
+                                  onClick={() =>
+                                    void forget(
+                                      [domain],
+                                      `${domain.value} can be created again.`,
+                                      `Restore ${domain.value} only? Its project folder and other hidden domains will remain hidden.`,
+                                      'Restore site',
+                                    )
+                                  }
+                                >
+                                  <X />
+                                </Button>
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="size-7 shrink-0 px-0"
+                        disabled={busy !== null}
+                        title="Restore project and its domains"
+                        aria-label={`Restore project and its domains: ${row.folder.value}`}
+                        onClick={() =>
+                          void forget(
+                            groupItems,
+                            `${row.folder.value} and its domains can be scanned again.`,
+                            `Restore ${row.folder.value} and its ${row.domains.length} hidden ${row.domains.length === 1 ? 'domain' : 'domains'}? They will be available to folder scans and automatic domains again.`,
+                            'Restore project',
+                          )
+                        }
+                      >
+                        {busy === 'forget' ? <Spinner /> : <Trash2 className="size-3.5" />}
+                      </Button>
                     </div>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="size-7 shrink-0 px-0"
-                      disabled={busy !== null}
-                      title={item.kind === 'domain' ? 'Let automatic domains create this site again' : 'Let folder scans register this folder again'}
-                      aria-label={`Stop excluding ${item.value}`}
-                      onClick={() => forget(item)}
-                    >
-                      {busy === 'forget' ? <Spinner /> : <Trash2 className="size-3.5" />}
-                    </Button>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
-              {items.length > shown.length && (
-                <p className="text-xs text-muted-foreground">Showing the {shown.length} newest of {items.length}.</p>
+              {rows.length > shown.length && (
+                <p className="text-xs text-muted-foreground">Showing the {shown.length} newest of {rows.length}.</p>
               )}
             </>
           )}
