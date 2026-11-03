@@ -1,6 +1,8 @@
 import { RotateCcw, Save } from 'lucide-react'
+import { useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
+import { Spinner } from '@/components/Spinner'
 import { Button } from '@/components/ui/button'
 import { discardDirtyForms, getDirtyForms, saveDirtyForms, useDirtyFormCount, useDirtyFormRevision, type DirtyFormScope } from '@/lib/dirtyForms'
 import { cn } from '@/lib/utils'
@@ -10,7 +12,9 @@ export function DirtySaveBar({ scope }: { scope: DirtyFormScope }) {
   const count = useDirtyFormCount(scope)
   const forms = getDirtyForms(scope)
   const error = forms.find((form) => form.error)?.error ?? null
-  const busy = forms.some((form) => form.busy)
+  const busyFromForms = forms.some((form) => form.busy)
+  const [saving, setSaving] = useState(false)
+  const busy = busyFromForms || saving
   if (count === 0) return null
 
   return (
@@ -39,8 +43,8 @@ export function DirtySaveBar({ scope }: { scope: DirtyFormScope }) {
             <Button variant="ghost" disabled={busy} onClick={() => discardDirtyForms(scope)}>
               <RotateCcw className="size-4" /> Discard
             </Button>
-            <Button disabled={busy} onClick={() => void saveDirtyForms(scope)}>
-              <Save className="size-4" /> Save
+            <Button disabled={busy} onClick={() => { setSaving(true); void saveDirtyForms(scope).finally(() => setSaving(false)) }}>
+              {busy ? <Spinner className="size-4" /> : <Save className="size-4" />} {busy ? 'Saving…' : 'Save'}
             </Button>
           </div>
         </div>

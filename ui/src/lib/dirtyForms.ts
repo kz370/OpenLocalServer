@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 
 import { asDiagnostic } from '@/components/ErrorCard'
+import { confirmAction } from '@/lib/confirm'
 import type { Diagnostic } from '@/core'
 
 export type DirtyFormScope = 'app' | 'dialog'
@@ -238,20 +239,22 @@ export function normalizeValue(value: unknown): unknown {
   return value
 }
 export function installDirtyFormGuards() {
-  const beforeUnload = (event: BeforeUnloadEvent) => {
-    if (getDirtyForms().length === 0) return
-    event.preventDefault()
-    event.returnValue = ''
-  }
   const onKeyDown = (event: KeyboardEvent) => {
-    if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's' || getDirtyForms().length === 0) return
-    event.preventDefault()
-    void saveDirtyForms()
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's' && getDirtyForms().length > 0) {
+      event.preventDefault()
+      void saveDirtyForms()
+      return
+    }
+    const isRefresh = event.key === 'F5' || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'r')
+    if (isRefresh && getDirtyForms().length > 0) {
+      event.preventDefault()
+      void confirmAction('You have unsaved changes. Reload the page and discard them?', 'Unsaved changes', 'Reload').then((ok) => {
+        if (ok) window.location.reload()
+      })
+    }
   }
-  window.addEventListener('beforeunload', beforeUnload)
   window.addEventListener('keydown', onKeyDown)
   return () => {
-    window.removeEventListener('beforeunload', beforeUnload)
     window.removeEventListener('keydown', onKeyDown)
   }
 }
