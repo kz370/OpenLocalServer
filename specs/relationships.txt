@@ -3,7 +3,7 @@ UI Pages (Dashboard, Sites, Tunnels, WebServer, Databases, Services, Runtimes, C
 UI Pages & Dialogs | uses | NotificationSystem (ui/src/lib/notify.ts) for toasts, Undo actions, and batch summaries
 Titlebar | mounts | NotificationsPopover (ui/src/components/NotificationsPopover.tsx) for recent notification history
 App | mounts | NotificationHost (ui/src/components/NotificationHost.tsx) for global toast rendering
-App | lazy-loads | the selected page module with `React.lazy`/`Suspense`, splitting page bundles from the initial UI bundle and showing a page-specific accessible loading skeleton across the content area while the chunk loads
+App | imports | all page modules with static imports so every page is ready at shell startup and navigation does not wait for a page chunk to load
 App | mounts | TooltipProvider (ui/src/components/ui/tooltip.tsx) for modern themed tooltips and global title/data-tooltip interception
 UI (core/client.ts) | calls | Tauri invoke('run_command')
 olsc (crates/ols-cli) | uses | ols-core control channel (calls CoreCommand over local IPC or background daemon)
@@ -42,6 +42,7 @@ Inner | uses | WebManager
 Inner | uses | DomainStore
 Inner | uses | CertificateManager
 Inner | uses | ProjectStore
+Inner::start_projects_watcher | compares | immediate project-root directory snapshots before invoking sync_auto_domains; unrelated filesystem events still notify project subscribers without a full scan
 Inner::wp_projects | decides_from | wordpress::describe (folder on disk: wp-config.php / wp-admin/index.php / wp-includes+wp-content), then fills hostname+url from the project's first enabled Domain and pending_until from wordpress::sweep (which deletes expired and unparseable bridges as it goes)
 Inner::wp_signin | requires | WebManager::is_running + one of the project's enabled Domains (a project with no domain has no URL to hand a browser), then wordpress::issue writes the single bridge; the token URL is returned and never traced
 Inner::wp_signin_revoke | calls | wordpress::revoke — the pending bridge file IS the capability, so deleting it is the whole cancellation
@@ -268,7 +269,7 @@ Dashboard / Tray / CLI | read | CoreCommand::GetServiceAggregate / Core::service
 CLI stop | dispatches | CoreCommand::StopAll, identical to Dashboard and tray; tunnels, workers, web servers, services and supervisor strays follow one stop path
 TrayMenuItems | retains | managed bulk-toggle MenuItem handle; service-state events update its label and rebuild submenu marks/counts from one ServiceAggregate snapshot
 Tray Quick App menu | lists | QuickCatalog entries as direct Create actions; selecting one emits `ols:navigate` with the recipe id and name
-App | routes | the selected Quick App id and name to QuickAppsPage and holds them until its lazy page mounts
+App | routes | the selected Quick App id and name to QuickAppsPage and holds them until its page mounts
 QuickAppsPage | opens | the existing Wizard for the selected tray recipe, preserving planning, review and trust approval
 Tray Web server | toggles | CoreCommand::ApplyWeb / CoreCommand::StopWeb through the same Core::dispatch path; Reload remains a separate ApplyWeb action.
 
