@@ -129,8 +129,8 @@ export function ConfigPage() {
                       <FileRow
                         f={f}
                         active={selected === fileKey(f)}
-                        onClick={() => {
-                          if (selected !== fileKey(f) && warnBeforeLeavingUnsavedChanges('app')) setSelected(fileKey(f))
+                        onClick={async () => {
+                          if (selected !== fileKey(f) && (await warnBeforeLeavingUnsavedChanges('app'))) setSelected(fileKey(f))
                         }}
                         label={f.hostname ?? 'Main config'}
                       />
@@ -138,8 +138,8 @@ export function ConfigPage() {
                         <FileRow
                           f={custom}
                           active={selected === fileKey(custom)}
-                          onClick={() => {
-                            if (selected !== fileKey(custom) && warnBeforeLeavingUnsavedChanges('app')) setSelected(fileKey(custom))
+                          onClick={async () => {
+                            if (selected !== fileKey(custom) && (await warnBeforeLeavingUnsavedChanges('app'))) setSelected(fileKey(custom))
                           }}
                           label="↳ your snippet"
                           indent
@@ -369,8 +369,8 @@ export function ConfigFilePane({
           ...(file.hostname ? [{ id: 'history' as const, label: 'History' }] : []),
         ]}
         value={tab}
-        onChange={(next) => {
-          if (next !== tab && warnBeforeLeavingUnsavedChanges(dirtyScope)) setTab(next)
+        onChange={async (next) => {
+          if (next !== tab && (await warnBeforeLeavingUnsavedChanges(dirtyScope))) setTab(next)
         }}
       />
 
@@ -469,8 +469,8 @@ export function SiteConfigTab({ hostname }: { hostname: string }) {
             { id: 'custom', label: 'Your snippet' },
           ]}
           value={part}
-          onChange={(next) => {
-            if (next !== part && warnBeforeLeavingUnsavedChanges('dialog')) setPart(next)
+          onChange={async (next) => {
+            if (next !== part && (await warnBeforeLeavingUnsavedChanges('dialog'))) setPart(next)
           }}
         />
       )}

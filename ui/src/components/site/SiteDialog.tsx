@@ -97,8 +97,8 @@ const READ_TIMEOUT_MS = 20_000
  */
 export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target: SiteTarget; web: Web; onClose: () => void; onSaved: (hostname: string) => void }) {
   const { state, close: closeAnimated } = useAnimatedClose(closeNow)
-  const onClose = useCallback(() => {
-    if (warnBeforeLeavingUnsavedChanges('dialog')) closeAnimated()
+  const onClose = useCallback(async () => {
+    if (await warnBeforeLeavingUnsavedChanges('dialog')) closeAnimated()
   }, [closeAnimated])
   const dirtyDialogCount = useDirtyFormCount('dialog')
   const { projects, installedPhp, run, apply, busy, error, setError } = web
@@ -119,8 +119,8 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
   const [siteProjectId, setSiteProjectId] = useState<string | null>(target.projectId)
   const projectId = domain?.project_id ?? siteProjectId
   const project = projects.find((p) => p.id === projectId) ?? null
-  const changeTab = (next: SiteTab) => {
-    if (next !== tab && !warnBeforeLeavingUnsavedChanges('dialog')) return
+  const changeTab = async (next: SiteTab) => {
+    if (next !== tab && !(await warnBeforeLeavingUnsavedChanges('dialog'))) return
     setTab(next)
   }
 

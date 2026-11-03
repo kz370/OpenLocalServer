@@ -126,12 +126,12 @@ export default function App() {
   }, [])
 
   const navigate = useCallback(
-    (target: Page) => {
+    async (target: Page) => {
       const targetPage = target === 'config' ? 'webserver' : target
       const alreadySelected = page === targetPage &&
         (target === 'config' ? webServerTab === 'config' : target === 'webserver' ? webServerTab === 'server' : true)
       if (alreadySelected) return
-      if (!warnBeforeLeavingUnsavedChanges()) return
+      if (!(await warnBeforeLeavingUnsavedChanges())) return
       if (target === 'config') {
         setWebServerTab('config')
         try {
@@ -157,9 +157,9 @@ export default function App() {
 
   /** Logs opened for one service: switch page and preselect that service's source. */
   const openLogs = useCallback(
-    (source?: string | null) => {
+    async (source?: string | null) => {
       if (page === 'logs' && (!source || source === logSource)) return
-      if (!warnBeforeLeavingUnsavedChanges()) return
+      if (!(await warnBeforeLeavingUnsavedChanges())) return
       if (source) {
         setLogSource(source)
         try {
