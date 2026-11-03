@@ -1,7 +1,7 @@
 # RUNTIME
 
 ## Files to Process
-Total meaningful source files: 280 (excluding target/, node_modules/, .git/, dist/, data/services/postgres runtime data, icon bulk).
+Total meaningful source files: 281 (excluding target/, node_modules/, .git/, dist/, data/services/postgres runtime data, icon bulk).
 
 ### Rust core (crates/ols-core/src, 88 files)
 - src/lib.rs, app/ (mod.rs, domains.rs, projects.rs, quickapp.rs, system.rs, web.rs, tests.rs), command/ (mod.rs, types.rs, dispatch.rs, tests.rs), control.rs, api.rs, paths.rs, settings.rs, secrets.rs, db.rs
@@ -400,3 +400,4 @@ um() fallbacks are gone; min/max clamp both typing and stepping (PHP workers 1-1
 - [2026-11-03] fix(services,tray): Made core lifecycle state the shared source for service transitions and replaced separate tray Start/Stop entries with state-aware toggles. ServiceManager publishes batched Starting/Stopping/Restarting and terminal states; Tauri forwards them, and the UI subscribes before its status snapshot with buffered/batched updates. Dashboard, Services and Databases animate from shared status; the tray bulk toggle preserves its existing autostart Start scope and full StopAll behavior, and Web has one Start/Stop toggle with Reload kept separately. Updated service status/event specs and added `ui/src/lib/serviceStatus.ts` to the runtime inventory. Validation is pending; live tray/window/CLI checks require a running app. Files Processed is now 276, matching Files to Process.
 - [2026-11-03] fix(tray): Renamed the tray's PHP-labeled navigation item to "Open runtimes" to match its Runtimes-page destination; the click handler is unchanged. Files Processed remains 276, matching Files to Process.
 - [2026-11-03] fix(tray): Limited direct Quick App tray entries to favorites; Browse all still opens the complete catalog and the empty state now says no favorites are available. Files Processed remains 276, matching Files to Process.
+- [2026-11-03] fix(settings): General -> Confirm before exit, Confirm before Stop all, and Diagnostics auto-fix now commit only through the Settings Save bar instead of writing on toggle. Added ui/src/lib/settingsWrite.ts (pure write-payload builder, unit-tested) and folded the three flags into the General useDirtyForm draft; saveAll() is the only writer and the load effect syncs the full draft into the saved baseline. Updated catalog.txt, full_documentation.md, and runtime.md. Files Processed is now 281, matching Files to Process.
