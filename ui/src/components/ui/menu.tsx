@@ -23,6 +23,7 @@ export type MenuItem =
       icon?: ReactNode
       onSelect?: () => void
       danger?: boolean
+      tone?: 'amber'
       disabled?: boolean
       hint?: string
       description?: string
@@ -233,6 +234,7 @@ function MenuItemRow({
         className={cn(
           'flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-left transition-colors hover:bg-accent/80 hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-3.5 [&_svg]:shrink-0',
           item.danger ? 'text-destructive hover:bg-destructive/10 hover:text-destructive' : '',
+          item.tone === 'amber' ? 'text-amber-600 dark:text-amber-400 [&_svg]:text-amber-500' : '',
           isSubmenuOpen ? 'bg-accent/80 text-accent-foreground' : '',
         )}
       >

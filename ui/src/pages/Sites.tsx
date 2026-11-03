@@ -816,15 +816,17 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       })
       items.push({
         label: 'Move to excluded folder',
-        icon: <FolderArchive className="text-amber-500" />,
+        icon: <FolderArchive />,
+        tone: 'amber',
         hint: 'Moves the folder to ols_excluded_sites. Restore it from Projects.',
         disabled: allHosts.some((h) => removing.has(h)) || busy === `delete:${key}`,
         onSelect: async () => {
           const hostLabel = allHosts.length > 1 ? `${d.hostname} (+${r.extraDomains.length} extra domains)` : d.hostname
           const ok = await confirmAction(
             `${p?.name ?? d.hostname}\nFolder: ${folder ?? 'Unknown'}\nDestination: ${folder ? `${folder.replace(/[\\/][^\\/]+$/, '')}\\ols_excluded_sites` : 'ols_excluded_sites'}\nMove the folder and remove the site from OpenLocalServer. Restore it by moving it back from the excluded folder, then add it again from Projects.`,
-            `Remove ${hostLabel} and its project folder?`,
+            `Move ${hostLabel} to excluded?`,
             'Move to excluded',
+            'amber',
           )
           if (!ok) return
           await run(`delete:${key}`, () => web.deleteSites(allHosts))

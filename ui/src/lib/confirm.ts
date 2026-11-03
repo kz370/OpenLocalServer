@@ -8,6 +8,7 @@ export interface ConfirmRequest {
   title: string
   /** The destructive button's own wording, so it names the action and not "continue". */
   confirmLabel?: string
+  confirmTone?: 'destructive' | 'amber'
   resolve: (ok: boolean) => void
 }
 
@@ -18,11 +19,11 @@ export function registerConfirmHost(fn: ((req: ConfirmRequest) => void) | null) 
   show = fn
 }
 
-export function confirmAction(message: string, title = 'Are you sure?', confirmLabel?: string): Promise<boolean> {
+export function confirmAction(message: string, title = 'Are you sure?', confirmLabel?: string, confirmTone: 'destructive' | 'amber' = 'destructive'): Promise<boolean> {
   return new Promise((resolve) => {
     // No host mounted means no way to ask, which must never count as "yes".
     if (!show) return resolve(false)
-    show({ message, title, confirmLabel, resolve })
+    show({ message, title, confirmLabel, confirmTone, resolve })
   })
 }
 

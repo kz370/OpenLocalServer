@@ -41,13 +41,9 @@ pub fn migrate_legacy_settings(settings: &mut crate::settings::SettingsService) 
     let mut list = settings.get(CUSTOM_EDITORS_SETTING)
         .and_then(|v| serde_json::from_value::<Vec<CustomEditor>>(v.clone()).ok())
         .unwrap_or_default();
-    if old_id == "vscode" {
-        if let Some(path) = detect().into_iter().find(|e| e.id == "vscode").and_then(|e| e.path) {
-            if !list.iter().any(|e| e.id == "legacy:vscode") {
-                list.push(CustomEditor { id: "legacy:vscode".into(), name: "VS Code".into(), path, args: None });
-            }
-        }
-    }
+    // VS Code is already part of the detected editor list, so retaining it as a custom
+    // editor would show a duplicate entry. The legacy choice now resolves to that entry.
+    let _migrated_vscode_choice = old_id == "vscode";
     if !old_command.is_empty() && !list.iter().any(|e| e.id == "legacy:custom") {
         let name = Path::new(old_command).file_stem().and_then(|s| s.to_str()).unwrap_or("Custom Editor").to_string();
         list.push(CustomEditor { id: "legacy:custom".into(), name, path: old_command.to_string(), args: None });

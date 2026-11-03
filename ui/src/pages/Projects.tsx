@@ -444,15 +444,14 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
     const visibleEditors = editors.filter((ed) => ed.path && !ed.hidden)
 
     const editorSubmenu: MenuItem[] = [
-      ...(visibleEditors.length > 0
-        ? visibleEditors.map((ed) => ({
+      ...visibleEditors.map((ed) => ({
             label: ed.name,
             icon: <Code2 className="size-3.5" />,
             onSelect: () => {
               void runCommand({ type: 'open_with', app: ed.id, path: p.path })
             },
-          }))
-        : [{ label: 'No editors configured', disabled: true }]),
+          })),
+      ...(visibleEditors.length === 0 ? [{ label: 'No editors configured', disabled: true } as MenuItem] : []),
       'separator',
       {
         label: 'Edit editors...',
@@ -488,7 +487,12 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
         label: 'Open with editor',
         icon: <Code2 className="size-4" />,
         disabled: !isHealthy,
-        submenu: editorSubmenu,
+        ...(visibleEditors.length > 1 ? { submenu: editorSubmenu } : {}),
+        onSelect: visibleEditors.length === 1
+          ? () => void runCommand({ type: 'open_with', app: visibleEditors[0].id, path: p.path })
+          : visibleEditors.length === 0
+            ? () => { openSettingsSection('general'); onNavigate('settings') }
+            : undefined,
       },
       {
         label: 'Open terminal',
