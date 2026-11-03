@@ -22,6 +22,7 @@ import { confirmThen } from '@/lib/confirm'
 import { useDirtyForm, warnBeforeLeavingUnsavedChanges } from '@/lib/dirtyForms'
 import { useAction } from '@/lib/hooks'
 import { onOpenSettingsSection, takePendingSettingsSection } from '@/lib/nav'
+import { generalSettingWrites } from '@/lib/settingsWrite'
 import { invalidateDefaultTldCache } from '@/lib/sites'
 import { cn } from '@/lib/utils'
 import {
@@ -42,7 +43,7 @@ import { AppearanceSettings } from '@/components/settings/AppearanceSettings'
 
 type Section = 'general' | 'appearance' | 'sites' | 'roots' | 'deleted' | 'startup' | 'manual' | 'resources' | 'backups' | 'about' | 'mcp'
 type SettingsDraft =
-  | { section: 'general'; editor: string; editorId: string }
+  | { section: 'general'; editor: string; editorId: string; confirmExit: boolean; confirmStopAll: boolean; autoFixDiagnostics: boolean }
   | { section: 'sites'; projectsDir: string; autoDomains: boolean; watchSites: boolean; defaultTld: string; customTld: string }
   | { section: 'startup'; startup: StartupSettings | null }
   | { section: 'mcp'; enabled: boolean; token: string; expiryMode: 'none' | 'hours' | 'at'; ttlHours: number; expiresAt: string }
@@ -201,8 +202,8 @@ export function SettingsPage() {
     if (section === 'sites') return { section, projectsDir, autoDomains, watchSites, defaultTld, customTld }
     if (section === 'startup') return { section, startup }
     if (section === 'mcp') return { section, enabled: mcpEnabled, token: mcpToken, expiryMode: mcpExpiryMode, ttlHours: mcpTtlHours, expiresAt: mcpExpiresAt }
-    return { section: 'general', editor, editorId }
-  }, [autoDomains, customTld, defaultTld, editor, editorId, mcpEnabled, mcpExpiresAt, mcpExpiryMode, mcpTtlHours, mcpToken, projectsDir, section, startup, watchSites])
+    return { section: 'general', editor, editorId, confirmExit, confirmStopAll, autoFixDiagnostics }
+  }, [autoDomains, autoFixDiagnostics, confirmExit, confirmStopAll, customTld, defaultTld, editor, editorId, mcpEnabled, mcpExpiresAt, mcpExpiryMode, mcpTtlHours, mcpToken, projectsDir, section, startup, watchSites])
   const settingsForm = useDirtyForm<SettingsDraft>({
     formKey: section,
     value: settingsDraft,
@@ -213,6 +214,9 @@ export function SettingsPage() {
       if (draft.section === 'general') {
         setEditor(draft.editor)
         setEditorId(draft.editorId)
+        setConfirmExit(draft.confirmExit)
+        setConfirmStopAll(draft.confirmStopAll)
+        setAutoFixDiagnostics(draft.autoFixDiagnostics)
       } else if (draft.section === 'sites') {
         setProjectsDir(draft.projectsDir)
         setAutoDomains(draft.autoDomains)
@@ -249,16 +253,6 @@ export function SettingsPage() {
 
   useEffect(() => {
     if (section !== 'general') return
-    void runCommand({ type: 'get_setting', key: 'exit.confirmation.enabled' }).then((r) => {
-      if (r.type === 'setting') {
-        setConfirmExit(r.value !== false)
-      }
-    })
-    void runCommand({ type: 'get_setting', key: 'tray.stop_all.confirmation.enabled' }).then((r) => {
-      if (r.type === 'setting') {
-        setConfirmStopAll(r.value !== false)
-      }
-    })
     void runCommand({ type: 'list_editors' }).then((r) => {
       if (r.type === 'editors') {
         setEditors(r.editors)
@@ -271,13 +265,28 @@ export function SettingsPage() {
         helperCache.set(r)
       }
     })
-    void Promise.all([getString('editor'), getString('editor.command')]).then(([id, cmd]) => {
+    // One load for the whole General draft: the editor pair and the three switches
+    // must reach the saved baseline together, or the Save bar opens already dirty.
+    void Promise.all([
+      runCommand({ type: 'get_setting', key: 'exit.confirmation.enabled' }),
+      runCommand({ type: 'get_setting', key: 'tray.stop_all.confirmation.enabled' }),
+      runCommand({ type: 'get_setting', key: 'diagnostics.auto_fix' }),
+      getString('editor'),
+      getString('editor.command'),
+    ]).then(([exit, stopAll, autoFix, id, cmd]) => {
+      const exitVal = exit.type === 'setting' ? exit.value !== false : true
+      const stopVal = stopAll.type === 'setting' ? stopAll.value !== false : true
+      const fixVal = autoFix.type === 'setting' ? autoFix.value !== false : true
+      setConfirmExit(exitVal)
+      setConfirmStopAll(stopVal)
+      setAutoFixDiagnostics(fixVal)
+      autoFixDiagnosticsCache.set(fixVal)
       setEditor(cmd)
       editorCache.set(cmd)
       const resolvedId = cmd ? 'custom' : id || 'vscode'
       setEditorId(resolvedId)
       editorIdCache.set(resolvedId)
-      settingsForm.syncSaved({ section: 'general', editor: cmd, editorId: resolvedId }, 'general')
+      settingsForm.syncSaved({ section: 'general', editor: cmd, editorId: resolvedId, confirmExit: exitVal, confirmStopAll: stopVal, autoFixDiagnostics: fixVal }, 'general')
     })
   }, [section, settingsForm.syncSaved])
 
@@ -350,17 +359,6 @@ export function SettingsPage() {
   }, [section, settingsForm.syncSaved])
 
   useEffect(() => {
-    if (section !== 'general') return
-    void runCommand({ type: 'get_setting', key: 'diagnostics.auto_fix' }).then((r) => {
-      if (r.type === 'setting') {
-        const val = r.value !== false
-        setAutoFixDiagnostics(val)
-        autoFixDiagnosticsCache.set(val)
-      }
-    })
-  }, [section])
-
-  useEffect(() => {
     if (section !== 'mcp') return
     void runCommand({ type: 'get_setting', key: 'mcp.auth.enabled' }).then((r) => {
       if (r.type === 'setting' && typeof r.value === 'boolean') {
@@ -424,12 +422,12 @@ export function SettingsPage() {
         startupCache.set(r.settings)
       }
     }
-    const targetEditorId = editorId === 'custom' ? '' : editorId
-    const targetEditorCmd = editorId === 'custom' ? editor : ''
-    await runCommand({ type: 'set_setting', key: 'editor', value: targetEditorId })
-    await runCommand({ type: 'set_setting', key: 'editor.command', value: targetEditorCmd })
-    editorCache.set(targetEditorCmd)
+    for (const { key, value } of generalSettingWrites({ editor, editorId, confirmExit, confirmStopAll, autoFixDiagnostics })) {
+      await runCommand({ type: 'set_setting', key, value })
+    }
+    editorCache.set(editorId === 'custom' ? editor : '')
     editorIdCache.set(editorId)
+    autoFixDiagnosticsCache.set(autoFixDiagnostics)
 
     await runCommand({ type: 'set_setting', key: 'quickapps.projects_dir', value: projectsDir })
     projectsDirCache.set(projectsDir)
@@ -824,33 +822,15 @@ export function SettingsPage() {
                   </SettingRow>
                   <SwitchRow
                     checked={confirmExit}
-                    onChange={(value) => {
-                      setConfirmExit(value)
-                      void run('exit-confirmation', async () => {
-                        await runCommand({
-                          type: 'set_setting',
-                          key: 'exit.confirmation.enabled',
-                          value,
-                        })
-                      })
-                    }}
+                    onChange={setConfirmExit}
                     title="Confirm before exit"
-                    hint="Ask before exiting OpenLocalServer. This does not affect the Stop all confirmation."
+                    hint="Ask before exiting OpenLocalServer. This does not affect the Stop all confirmation. Saved with the Save button below."
                   />
                   <SwitchRow
                     checked={confirmStopAll}
-                    onChange={(value) => {
-                      setConfirmStopAll(value)
-                      void run('stop-all-confirmation', async () => {
-                        await runCommand({
-                          type: 'set_setting',
-                          key: 'tray.stop_all.confirmation.enabled',
-                          value,
-                        })
-                      })
-                    }}
+                    onChange={setConfirmStopAll}
                     title="Confirm before Stop all"
-                    hint="Ask before Stop all from the tray. This does not affect the Exit confirmation."
+                    hint="Ask before Stop all from the tray. This does not affect the Exit confirmation. Saved with the Save button below."
                   />
                 </CardContent>
               </Card>
@@ -864,12 +844,9 @@ export function SettingsPage() {
                 <CardContent>
                   <SwitchRow
                     checked={autoFixDiagnostics}
-                    onChange={(value) => {
-                      setAutoFixDiagnostics(value)
-                      void run('auto-fix', async () => { await runCommand({ type: 'set_setting', key: 'diagnostics.auto_fix', value }) })
-                    }}
+                    onChange={setAutoFixDiagnostics}
                     title="Automatically fix safe problems"
-                    hint="Runs at startup and every five minutes. Fixes that may replace or remove data always ask first."
+                    hint="Runs at startup and every five minutes. Fixes that may replace or remove data always ask first. Saved with the Save button below."
                   />
                 </CardContent>
               </Card>
