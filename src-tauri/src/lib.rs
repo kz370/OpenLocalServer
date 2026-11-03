@@ -142,6 +142,7 @@ const WINDOW_ICON_DARK_STOPPED: &[u8] = include_bytes!("../icons/dark/red/128x12
 /// state, and a service state change repaints without touching the theme.
 static ICON_SHOWS: Mutex<Option<(bool, bool)>> = Mutex::new(None);
 static TOOLTIP_SHOWS: Mutex<Option<String>> = Mutex::new(None);
+static TRAY_OPERATION_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 
 /// Fingerprint of the tray menu structure and content.
 /// Rebuilding the Win32 tray menu destroys the active HMENU; doing so while
@@ -157,6 +158,52 @@ static THEME_IS_DARK: AtomicBool = AtomicBool::new(false);
 
 fn decode_icon(bytes: &[u8]) -> Option<tauri::image::Image<'static>> {
     tauri::image::Image::from_bytes(bytes).ok()
+}
+
+fn busy_tray_icon(red: bool, dark: bool) -> Option<tauri::image::Image<'static>> {
+    let bytes = match (red, dark) {
+        (false, false) => TRAY_ICON_LIGHT_RUNNING,
+        (true, false) => TRAY_ICON_LIGHT_STOPPED,
+        (false, true) => TRAY_ICON_DARK_RUNNING,
+        (true, true) => TRAY_ICON_DARK_STOPPED,
+    };
+    let Some(base) = decode_icon(bytes) else {
+        tracing::warn!("the tray busy mark could not be decoded");
+        return None;
+    };
+    let (width, height) = (base.width(), base.height());
+    if width != 32 || height != 32 {
+        tracing::warn!(
+            width,
+            height,
+            "the tray busy mark has unexpected dimensions"
+        );
+        return None;
+    }
+
+    let mut rgba = base.rgba().to_vec();
+    const DOTS: [(i32, i32); 8] = [
+        (0, -4),
+        (3, -3),
+        (4, 0),
+        (3, 3),
+        (0, 4),
+        (-3, 3),
+        (-4, 0),
+        (-3, -3),
+    ];
+    const BRIGHTNESS: [u8; 8] = [255, 225, 195, 165, 135, 105, 105, 135];
+    for (index, (dx, dy)) in DOTS.into_iter().enumerate() {
+        for offset_y in 0..2 {
+            for offset_x in 0..2 {
+                let x = (25 + dx + offset_x) as usize;
+                let y = (25 + dy + offset_y) as usize;
+                let pixel = (y * width as usize + x) * 4;
+                rgba[pixel..pixel + 4].copy_from_slice(&[255, BRIGHTNESS[index], 0, 255]);
+            }
+        }
+    }
+    Some(tauri::image::Image::new_owned(rgba, width, height))
 }
 
 /// The taskbar/Alt+Tab icon, held so the handle outlives the `WM_SETICON` that used it.
@@ -269,7 +316,12 @@ fn apply_status_icon(app: &AppHandle, red: bool, force: bool) {
     // tray that did not exist yet, a decode that failed, or a `set_icon` that
     // errored all looked like "already painted" and froze the mark for the session.
     let mut painted = false;
-    if let Some(icon) = decode_icon(tray_bytes) {
+    let tray_icon = if TRAY_OPERATION_IN_PROGRESS.load(Ordering::Relaxed) {
+        busy_tray_icon(red, dark).or_else(|| decode_icon(tray_bytes))
+    } else {
+        decode_icon(tray_bytes)
+    };
+    if let Some(icon) = tray_icon {
         match app.tray_by_id("main") {
             Some(tray) => match tray.set_icon(Some(icon)) {
                 Ok(()) => painted = true,
@@ -367,7 +419,7 @@ fn shutdown(core: &Core) -> bool {
 
 #[cfg(test)]
 mod tray_tests {
-    use super::autostart_service_ids;
+    use super::{autostart_service_ids, busy_tray_icon, tray_start_failure_summary};
 
     #[test]
     fn tray_start_all_includes_only_configured_autostart_services() {
@@ -378,6 +430,26 @@ mod tray_tests {
 
         assert_eq!(selected, ["mariadb", "nginx"]);
         assert!(!selected.iter().any(|id| id == "mailpit"));
+    }
+
+    #[test]
+    fn tray_start_failure_summary_names_partial_failures_once() {
+        assert_eq!(
+            tray_start_failure_summary(5, 6, &["MariaDB".into()]),
+            "Started 5 of 6, MariaDB failed"
+        );
+        assert_eq!(
+            tray_start_failure_summary(4, 6, &["MariaDB".into(), "Redis".into()]),
+            "Started 4 of 6, MariaDB and Redis failed"
+        );
+    }
+
+    #[test]
+    fn tray_busy_icon_overlays_a_spinner_on_the_current_mark() {
+        let icon = busy_tray_icon(false, false).expect("busy tray icon");
+        assert_eq!((icon.width(), icon.height()), (32, 32));
+        let pixel = (21 * icon.width() as usize + 25) * 4;
+        assert_eq!(&icon.rgba()[pixel..pixel + 4], &[255, 255, 0, 255]);
     }
 }
 
@@ -475,6 +547,168 @@ fn tray_tooltip(core: &Core) -> String {
     format!("OpenLocalServer — {running} of {} running", services.len())
 }
 
+#[derive(Clone, Copy)]
+enum TrayBulkAction {
+    Start,
+    Stop,
+}
+
+struct TrayOperationGuard {
+    app: AppHandle,
+    core: Core,
+}
+
+impl Drop for TrayOperationGuard {
+    fn drop(&mut self) {
+        TRAY_OPERATION_IN_PROGRESS.store(false, Ordering::SeqCst);
+        if SHUTDOWN_IN_PROGRESS.load(Ordering::SeqCst) {
+            return;
+        }
+
+        apply_status_icon(&self.app, status_mark(Some(&self.core)), true);
+        sync_tray_tooltip(&self.app, &self.core);
+        TRAY_MENU_DIRTY.store(true, Ordering::SeqCst);
+        refresh_tray(&self.app, &self.core);
+    }
+}
+
+fn tray_start_failure_summary(started: usize, total: usize, failed: &[String]) -> String {
+    let failed_names = match failed {
+        [name] => name.clone(),
+        [first, second] => format!("{first} and {second}"),
+        [rest @ .., last] => format!("{}, and {last}", rest.join(", ")),
+        [] => String::new(),
+    };
+    format!("Started {started} of {total}, {failed_names} failed")
+}
+
+fn run_tray_start_all(core: &Core) {
+    let settings = match core.dispatch(CoreCommand::GetStartupSettings) {
+        Ok(CoreResponse::Startup { settings }) => settings,
+        Ok(_) => {
+            notify(
+                core,
+                "Could not start startup services",
+                "The startup settings response was invalid.",
+            );
+            return;
+        }
+        Err(e) => {
+            notify(core, &e.problem, &format!("{}", e.cause));
+            return;
+        }
+    };
+
+    let default_web = core.inner().web_config().default_server;
+    let service_ids: std::collections::HashSet<_> =
+        autostart_service_ids(settings.autostart_services, &default_web)
+            .into_iter()
+            .collect();
+    let targets: Vec<_> = core
+        .services()
+        .list()
+        .into_iter()
+        .filter(|service| {
+            service_ids.contains(&service.id) && service.installed && !service.running
+        })
+        .map(|service| (service.id, service.name))
+        .collect();
+
+    let total = targets.len();
+    let mut started = 0;
+    let mut failed = Vec::new();
+    for (id, name) in targets {
+        match core.dispatch(CoreCommand::StartService { id: id.clone() }) {
+            Ok(_) => started += 1,
+            Err(error) => {
+                tracing::warn!(service = %id, error = %error, "a tray startup service did not start");
+                failed.push(name);
+            }
+        }
+    }
+
+    if !failed.is_empty() {
+        notify(
+            core,
+            "Some startup services did not start",
+            &tray_start_failure_summary(started, total, &failed),
+        );
+    }
+}
+
+fn run_tray_stop_all(app: &AppHandle, core: &Core) {
+    if let Err(error) = app.emit("ols:stop-all-requested", ()) {
+        tracing::warn!(error = %error, "the expected Stop all event could not be sent");
+    }
+
+    match core.dispatch(CoreCommand::StopAll) {
+        Ok(CoreResponse::StoppedEverything { still_running }) if !still_running.is_empty() => {
+            notify(
+                core,
+                "Something did not stop",
+                &format!("Still running after Stop all: {}", still_running.join(", ")),
+            );
+        }
+        Ok(_) => {}
+        Err(e) => notify(
+            core,
+            "Stop all failed",
+            &format!("{} — {}", e.problem, e.cause),
+        ),
+    }
+}
+
+fn start_tray_bulk_action(app: &AppHandle, core: &Core, action: TrayBulkAction) {
+    if TRAY_OPERATION_IN_PROGRESS
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return;
+    }
+
+    let tooltip = match action {
+        TrayBulkAction::Start => "Starting services…",
+        TrayBulkAction::Stop => "Stopping services…",
+    };
+    apply_status_icon(app, status_mark(Some(core)), true);
+    if let Some(tray) = app.tray_by_id("main") {
+        if let Err(error) = tray.set_tooltip(Some(tooltip)) {
+            tracing::warn!(error = %error, "the tray operation tooltip could not be set");
+        }
+    }
+    *TOOLTIP_SHOWS.lock().unwrap_or_else(|e| e.into_inner()) = Some(tooltip.into());
+
+    let worker_app = app.clone();
+    let worker_core = core.clone();
+    let guard = TrayOperationGuard {
+        app: worker_app.clone(),
+        core: worker_core.clone(),
+    };
+    let action_name = match action {
+        TrayBulkAction::Start => "tray-start-all",
+        TrayBulkAction::Stop => "tray-stop-all",
+    };
+    let spawn = std::thread::Builder::new()
+        .name(action_name.into())
+        .spawn(move || {
+            let _guard = guard;
+            TRAY_MENU_DIRTY.store(true, Ordering::SeqCst);
+            refresh_tray(&worker_app, &worker_core);
+            match action {
+                TrayBulkAction::Start => run_tray_start_all(&worker_core),
+                TrayBulkAction::Stop => run_tray_stop_all(&worker_app, &worker_core),
+            }
+        });
+    if let Err(error) = spawn {
+        tracing::error!(error = %error, "the tray service operation could not be started");
+        notify(
+            core,
+            "Could not run the tray service action",
+            &error.to_string(),
+        );
+    }
+}
+
 fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
     // One list read feeds the marks, the submenu titles and the tooltip below, so the
     // three can never disagree about how many services are up.
@@ -492,8 +726,21 @@ fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
         .count();
 
     let open = MenuItem::with_id(app, "open", "Open OpenLocalServer", true, None::<&str>)?;
-    let start_all = MenuItem::with_id(app, "start_all", "▶ Start all", true, None::<&str>)?;
-    let stop_all = MenuItem::with_id(app, "stop_all", "■ Stop all", true, None::<&str>)?;
+    let bulk_actions_enabled = !TRAY_OPERATION_IN_PROGRESS.load(Ordering::Relaxed);
+    let start_all = MenuItem::with_id(
+        app,
+        "start_all",
+        "▶ Start all",
+        bulk_actions_enabled,
+        None::<&str>,
+    )?;
+    let stop_all = MenuItem::with_id(
+        app,
+        "stop_all",
+        "■ Stop all",
+        bulk_actions_enabled,
+        None::<&str>,
+    )?;
     let separator = PredefinedMenuItem::separator(app)?;
     // A muda item has one parent; appending the same separator twice is undefined there.
     let separator_end = PredefinedMenuItem::separator(app)?;
@@ -744,7 +991,9 @@ fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
 }
 
 fn sync_tray_tooltip(app: &AppHandle, core: &Core) {
-    if SHUTDOWN_IN_PROGRESS.load(Ordering::SeqCst) {
+    if SHUTDOWN_IN_PROGRESS.load(Ordering::SeqCst)
+        || TRAY_OPERATION_IN_PROGRESS.load(Ordering::Relaxed)
+    {
         return;
     }
     let tip = tray_tooltip(core);
@@ -764,6 +1013,10 @@ fn tray_fingerprint(core: &Core) -> u64 {
     use std::hash::{Hash, Hasher};
 
     let mut hasher = DefaultHasher::new();
+
+    TRAY_OPERATION_IN_PROGRESS
+        .load(Ordering::Relaxed)
+        .hash(&mut hasher);
 
     // 1. Services state & kind
     for s in core.services().list() {
@@ -926,101 +1179,21 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
             let core = core.clone();
             match event.id.as_ref() {
                 "open" => show_main_window(app),
-                "start_all" | "web_start" => {
-                    let start_autostart = event.id.as_ref() == "start_all";
+                "start_all" => {
+                    start_tray_bulk_action(app, &core, TrayBulkAction::Start);
+                }
+                "web_start" => {
                     let handle = app.clone();
                     std::thread::spawn(move || {
-                        if start_autostart {
-                            let settings = match core.dispatch(CoreCommand::GetStartupSettings) {
-                                Ok(CoreResponse::Startup { settings }) => settings,
-                                Ok(_) => {
-                                    notify(
-                                        &core,
-                                        "Could not start startup services",
-                                        "The startup settings response was invalid.",
-                                    );
-                                    refresh_tray(&handle, &core);
-                                    return;
-                                }
-                                Err(e) => {
-                                    notify(&core, &e.problem, &format!("{}", e.cause));
-                                    refresh_tray(&handle, &core);
-                                    return;
-                                }
-                            };
-                            let default_web = core.inner().web_config().default_server;
-                            let service_ids =
-                                autostart_service_ids(settings.autostart_services, &default_web);
-                            let running: std::collections::HashSet<_> = core
-                                .services()
-                                .list()
-                                .into_iter()
-                                .filter(|service| service.running)
-                                .map(|service| service.id)
-                                .collect();
-                            let mut failures = Vec::new();
-                            for id in service_ids {
-                                if running.contains(&id) {
-                                    continue;
-                                }
-                                if let Err(e) =
-                                    core.dispatch(CoreCommand::StartService { id: id.clone() })
-                                {
-                                    failures.push(format!("{}: {}", id, e.problem));
-                                }
-                            }
-                            if !failures.is_empty() {
-                                notify(
-                                    &core,
-                                    "Some startup services did not start",
-                                    &failures.join("\n"),
-                                );
-                            }
-                        } else {
-                            match core.inner().apply_web(&[]) {
-                                Ok(_) => notify(&core, "Web server", "Sites are up to date."),
-                                Err(e) => notify(&core, "Web server failed", &e.to_string()),
-                            }
+                        match core.inner().apply_web(&[]) {
+                            Ok(_) => notify(&core, "Web server", "Sites are up to date."),
+                            Err(e) => notify(&core, "Web server failed", &e.to_string()),
                         }
                         refresh_tray(&handle, &core);
                     });
                 }
                 "stop_all" => {
-                    let _ = app.emit("ols:stop-all-requested", ());
-                    // One definition of "stop everything" (CoreCommand::StopAll), shared
-                    // with the Dashboard's Stop all. It used to exist here alone and only
-                    // covered the web stack and services, so a worker or a service
-                    // outside the auto-startup set survived and held the status mark
-                    // green after the user asked for everything to stop.
-                    //
-                    // Off the menu thread: the command waits up to 10s per service and
-                    // sweeps for another 10s, which would otherwise freeze the window
-                    // and the tray's own menu for the whole thing.
-                    let core = core.clone();
-                    let handle = app.clone();
-                    std::thread::spawn(move || {
-                        match core.dispatch(CoreCommand::StopAll) {
-                            Ok(CoreResponse::StoppedEverything { still_running })
-                                if !still_running.is_empty() =>
-                            {
-                                notify(
-                                    &core,
-                                    "Something did not stop",
-                                    &format!(
-                                        "Still running after Stop all: {}",
-                                        still_running.join(", ")
-                                    ),
-                                );
-                            }
-                            Ok(_) => {}
-                            Err(e) => notify(
-                                &core,
-                                "Stop all failed",
-                                &format!("{} — {}", e.problem, e.cause),
-                            ),
-                        }
-                        refresh_tray(&handle, &core);
-                    });
+                    start_tray_bulk_action(app, &core, TrayBulkAction::Stop);
                 }
                 "web_stop" => {
                     // Off the main thread: stopping waits on the child processes.
@@ -1330,7 +1503,10 @@ pub fn run() {
                             .get_webview_window("main")
                             .and_then(|w| w.is_visible().ok())
                             .unwrap_or(false);
-                        if !SHUTDOWN_IN_PROGRESS.load(Ordering::Relaxed) && !window_visible {
+                        if !SHUTDOWN_IN_PROGRESS.load(Ordering::Relaxed)
+                            && !TRAY_OPERATION_IN_PROGRESS.load(Ordering::Relaxed)
+                            && !window_visible
+                        {
                             let name = process_core
                                 .supervisor()
                                 .snapshot()
