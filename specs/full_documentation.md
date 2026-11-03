@@ -50,9 +50,9 @@ CLI `olsc` (`crates/ols-cli`) never manages directly; modularized into clean sub
 
 ## 4. File Analysis
 ### WordPress core repair surfaces
-- `ui/src/pages/Sites.tsx`: adds a WordPress-only action-menu command to restore missing core files; the command reports the installed version and restored-file count and refreshes site/project state.
-- `ui/src/components/project/RepairPanel.tsx` and `ProjectTools.tsx`: show the same repair action on the project's Repair page only when framework detection identifies WordPress. The shared panel reports that internet access is needed.
-- `crates/ols-core/src/wordpress.rs`: reads the installed version, obtains the official WordPress.org checksums and same-version archive, validates missing files before writing, and does not replace present files or write into `wp-content`.
+- `ui/src/pages/Sites.tsx`: adds a WordPress-only action-menu command to restore missing core files; a persistent progress notification appears immediately, then reports the release and restored-file count or a failure, and the menu refreshes site/project state.
+- `ui/src/components/project/RepairPanel.tsx` and `ProjectTools.tsx`: show the same repair action on the project's Repair page only when framework detection identifies WordPress. The shared panel reports that internet access is needed and uses the same progress notification.
+- `crates/ols-core/src/wordpress.rs`: reads the installed version when `version.php` is present; if it is missing, identifies the best matching maintenance release by comparing surviving core files with WordPress.org checksums. It downloads the archive only when files are missing, validates each file before writing, and does not replace present files or write into `wp-content`.
 
 ### Rust core essentials
 - `lib.rs`: Purpose: crate root + re-exports. Key exports Core/CoreCommand/CoreResponse. Depends on command/paths/process/project/runtime/service/settings.

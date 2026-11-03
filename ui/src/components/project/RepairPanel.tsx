@@ -23,17 +23,26 @@ export function RepairPanel({ projectId, wordpress = false }: { projectId: strin
 
   async function repairWordPressCore() {
     await run('wp-core', async () => {
-      const r = await runCommand({ type: 'wp_core_repair', project_id: projectId })
-      if (r.type !== 'wp_core_repair') return
-      const refreshed = await runCommand({ type: 'plan_repair', project_id: projectId })
-      if (refreshed.type === 'repair_plan') {
-        setPlan(refreshed.plan)
-        setChosen(new Set(refreshed.plan.actions.filter((a) => !a.destructive).map((a) => a.finding_id)))
+      const progress = notify.progress('Repairing WordPress core', 'Checking installed files against WordPress.org…')
+      try {
+        const r = await runCommand({ type: 'wp_core_repair', project_id: projectId })
+        if (r.type !== 'wp_core_repair') {
+          progress.dismiss()
+          return
+        }
+        const refreshed = await runCommand({ type: 'plan_repair', project_id: projectId })
+        if (refreshed.type === 'repair_plan') {
+          setPlan(refreshed.plan)
+          setChosen(new Set(refreshed.plan.actions.filter((a) => !a.destructive).map((a) => a.finding_id)))
+        }
+        const count = r.result.restored
+        progress.success(count > 0
+          ? `Restored ${count} missing WordPress core file${count === 1 ? '' : 's'} (version ${r.result.version}).`
+          : `WordPress ${r.result.version} core files are present.`)
+      } catch (error) {
+        progress.error('WordPress core repair failed.', { details: error instanceof Error ? error.message : String(error) })
+        throw error
       }
-      const count = r.result.restored
-      notify.info(count > 0
-        ? `Restored ${count} missing WordPress core file${count === 1 ? '' : 's'} (version ${r.result.version}).`
-        : `WordPress ${r.result.version} core files are present.`)
     })
   }
 
@@ -89,7 +98,7 @@ export function RepairPanel({ projectId, wordpress = false }: { projectId: strin
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-3">
           <div className="min-w-0">
             <p className="text-sm font-medium">WordPress core files</p>
-            <p className="text-xs text-muted-foreground">Restore missing files from the installed WordPress version. Requires an internet connection.</p>
+            <p className="text-xs text-muted-foreground">Restore missing core files. If version.php is missing, OLS identifies the release from surviving core files. Requires internet.</p>
           </div>
           <Button size="sm" variant="secondary" onClick={() => void repairWordPressCore()} disabled={busy !== null}>
             {busy === 'wp-core' ? <Spinner /> : <Wrench />} Repair core files

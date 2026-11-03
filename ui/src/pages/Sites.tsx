@@ -677,15 +677,24 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       items.push({
         label: 'Repair WordPress core files',
         icon: <Wrench />,
-        hint: 'Restore missing core files for the installed WordPress version; internet required',
+        hint: 'Restore missing core files; identifies the release from surviving files if version.php is missing. Internet required.',
         disabled: busy === `wp-core:${projectId}`,
         onSelect: () => void run(`wp-core:${projectId}`, async () => {
-          const result = await runCommand({ type: 'wp_core_repair', project_id: projectId })
-          if (result.type !== 'wp_core_repair') return
-          notify.info(result.result.restored > 0
-            ? `Restored ${result.result.restored} missing WordPress core file${result.result.restored === 1 ? '' : 's'} (version ${result.result.version}).`
-            : `WordPress ${result.result.version} core files are present.`)
-          await Promise.all([refresh(), refreshWpProjects()])
+          const progress = notify.progress('Repairing WordPress core', 'Checking installed files against WordPress.org…')
+          try {
+            const result = await runCommand({ type: 'wp_core_repair', project_id: projectId })
+            if (result.type !== 'wp_core_repair') {
+              progress.dismiss()
+              return
+            }
+            await Promise.all([refresh(), refreshWpProjects()])
+            progress.success(result.result.restored > 0
+              ? `Restored ${result.result.restored} missing WordPress core file${result.result.restored === 1 ? '' : 's'} (version ${result.result.version}).`
+              : `WordPress ${result.result.version} core files are present.`)
+          } catch (error) {
+            progress.error('WordPress core repair failed.', { details: error instanceof Error ? error.message : String(error) })
+            throw error
+          }
         }),
       })
       items.push({
