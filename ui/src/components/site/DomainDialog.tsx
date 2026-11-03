@@ -315,6 +315,7 @@ export function DomainSettings({
       document.removeEventListener('pointerdown', closeOutside)
     }
   }, [projectPickerOpen])
+
   const [rootTouched, setRootTouched] = useState(false)
   const [domainTouched, setDomainTouched] = useState(false)
   /** Set once the user types a localhost prefix, so a later project-name change leaves it alone. */
@@ -404,7 +405,27 @@ export function DomainSettings({
   const [defaultTld, setDefaultTld] = useState('local')
   const [template, setTemplate] = useState(`{project}.local`)
   const [showApps, setShowApps] = useState(false)
+  const [quickAppSearch, setQuickAppSearch] = useState('')
+  const [activeQuickAppIndex, setActiveQuickAppIndex] = useState(0)
+  const [selectedQuickAppId, setSelectedQuickAppId] = useState<string | null>(null)
   const [quickApps, setQuickApps] = useState<QuickEntryView[]>([])
+  const quickAppTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const quickAppPopoverRef = useRef<HTMLDivElement | null>(null)
+  const [quickAppPopoverPosition, setQuickAppPopoverPosition] = useState<{ top: number; left: number; width: number } | null>(null)
+  const orderedQuickApps = useMemo(() => [...quickApps].sort((a, b) => {
+    const aCustom = a.name.trim().toLowerCase() === 'custom app' || a.id.toLowerCase().includes('custom')
+    const bCustom = b.name.trim().toLowerCase() === 'custom app' || b.id.toLowerCase().includes('custom')
+    if (aCustom !== bCustom) return aCustom ? -1 : 1
+    return a.name.localeCompare(b.name)
+  }), [quickApps])
+  const filteredQuickApps = useMemo(() => {
+    const query = quickAppSearch.trim().toLowerCase()
+    if (!query) return orderedQuickApps
+    return orderedQuickApps.filter((app) =>
+      [app.name, app.description, app.category, app.id, app.origin ?? '', app.source]
+        .some((value) => value.toLowerCase().includes(query)),
+    )
+  }, [orderedQuickApps, quickAppSearch])
   const [webServers, setWebServers] = useState<{ id: string; name: string; http: number; https: number; default: boolean }[]>([])
   const [err, setErr] = useState<string | null>(null)
   const siteSettingsDraft = useMemo(() => buildDomainFromForm(), [d, inspection?.detected_venv, nodeAppLine, nodeVersion, pythonAppLine, pythonInterpreter, serveMode])
@@ -642,6 +663,35 @@ export function DomainSettings({
     if (!showApps) return
     void runCommand({ type: 'list_quick_apps' }).then((r) => r.type === 'quick_apps' && setQuickApps(r.apps))
   }, [showApps])
+
+  useEffect(() => {
+    if (!showApps) return
+    const updatePosition = () => {
+      const rect = quickAppTriggerRef.current?.getBoundingClientRect()
+      if (rect) setQuickAppPopoverPosition({ top: rect.bottom + 4, left: rect.left, width: rect.width })
+    }
+    const closeOutside = (event: PointerEvent) => {
+      const target = event.target as Node
+      if (!quickAppTriggerRef.current?.contains(target) && !quickAppPopoverRef.current?.contains(target)) {
+        setShowApps(false)
+      }
+    }
+    updatePosition()
+    window.addEventListener('resize', updatePosition)
+    window.addEventListener('scroll', updatePosition, true)
+    document.addEventListener('pointerdown', closeOutside)
+    return () => {
+      window.removeEventListener('resize', updatePosition)
+      window.removeEventListener('scroll', updatePosition, true)
+      document.removeEventListener('pointerdown', closeOutside)
+    }
+  }, [showApps])
+
+  useEffect(() => {
+    if (!showApps) return
+    const activeId = filteredQuickApps[activeQuickAppIndex]?.id
+    if (activeId) document.getElementById(`add-site-quick-app-${activeId}`)?.scrollIntoView({ block: 'nearest' })
+  }, [activeQuickAppIndex, filteredQuickApps, showApps])
 
   useEffect(() => {
     void runCommand({ type: 'get_web_status' }).then((r) => {
@@ -1171,29 +1221,108 @@ export function DomainSettings({
             document.body,
           )}
           {projectMode === 'new' && onQuickApp && (
-            <div className="flex flex-col gap-2">
-              <Button variant="secondary" size="sm" className="self-start" onClick={() => setShowApps((v) => !v)}>
-                <Rocket /> {showApps ? 'Hide Quick Apps' : 'Create from a Quick App'}
-              </Button>
-              {showApps && (
-                <div className="grid max-h-60 gap-2 overflow-y-auto rounded-lg border border-border p-2 sm:grid-cols-2">
-                  {quickApps.length === 0 && <p className="p-2 text-sm text-muted-foreground">No Quick Apps available.</p>}
-                  {quickApps.map((a) => (
-                    <button
-                      key={a.id}
-                      onClick={() => onQuickApp(a.id)}
-                      className="flex min-h-14 items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm transition-colors hover:bg-accent"
-                    >
-                      <TechTile id={a.category} className="size-8 rounded-md [&_svg]:size-4" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13px] font-medium">{a.name}</span>
-                        <span className="block truncate text-xs text-muted-foreground">{a.description}</span>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
+            <div className="max-w-sm">
+              <button
+                ref={quickAppTriggerRef}
+                type="button"
+                role="combobox"
+                aria-haspopup="listbox"
+                aria-expanded={showApps}
+                aria-label="Create from a Quick App"
+                onClick={() => {
+                  setQuickAppSearch('')
+                  setActiveQuickAppIndex(0)
+                  setShowApps(true)
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === 'ArrowDown') {
+                    event.preventDefault()
+                    setQuickAppSearch('')
+                    setActiveQuickAppIndex(0)
+                    setShowApps(true)
+                  } else if (event.key === 'Escape') {
+                    setShowApps(false)
+                  }
+                }}
+                className="flex h-9 w-full items-center gap-2 rounded-lg border border-border/80 bg-input/60 px-3 text-left text-sm hover:border-muted-foreground/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+              >
+                {selectedQuickAppId ? (() => {
+                  const selected = quickApps.find((app) => app.id === selectedQuickAppId)
+                  return selected ? <><TechTile id={selected.category} className="size-7 rounded-md [&_svg]:size-3.5" /><span className="truncate">{selected.name}</span></> : <><Rocket className="size-4" /><span>Create from a Quick App</span></>
+                })() : <><Rocket className="size-4" /><span>Create from a Quick App</span></>}
+                <span aria-hidden="true" className="ml-auto text-muted-foreground">⌄</span>
+              </button>
             </div>
+          )}
+          {showApps && quickAppPopoverPosition && createPortal(
+            <div
+              ref={quickAppPopoverRef}
+              style={{ position: 'fixed', top: quickAppPopoverPosition.top, left: quickAppPopoverPosition.left, width: quickAppPopoverPosition.width }}
+              className="z-[120] overflow-hidden rounded-lg border border-border bg-popover shadow-xl"
+            >
+              <div className="border-b border-border/70 p-1.5">
+                <Input
+                  autoFocus
+                  value={quickAppSearch}
+                  onChange={(event) => {
+                    setQuickAppSearch(event.target.value)
+                    setActiveQuickAppIndex(0)
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'ArrowDown') {
+                      event.preventDefault()
+                      setActiveQuickAppIndex((index) => Math.min(index + 1, Math.max(filteredQuickApps.length - 1, 0)))
+                    } else if (event.key === 'ArrowUp') {
+                      event.preventDefault()
+                      setActiveQuickAppIndex((index) => Math.max(index - 1, 0))
+                    } else if (event.key === 'Enter') {
+                      event.preventDefault()
+                      const app = filteredQuickApps[activeQuickAppIndex]
+                      if (app) {
+                        setSelectedQuickAppId(app.id)
+                        setShowApps(false)
+                        onQuickApp?.(app.id)
+                      }
+                    } else if (event.key === 'Escape') {
+                      event.stopPropagation()
+                      setShowApps(false)
+                      quickAppTriggerRef.current?.focus()
+                    }
+                  }}
+                  placeholder="Search Quick Apps…"
+                  aria-label="Search Quick Apps by name, framework, or runtime"
+                  aria-controls="add-site-quick-app-options"
+                  aria-activedescendant={filteredQuickApps[activeQuickAppIndex] ? `add-site-quick-app-${filteredQuickApps[activeQuickAppIndex].id}` : undefined}
+                  className="h-8 min-h-8 rounded-md border-border/60 px-2.5 text-xs focus-visible:border-ring/60 focus-visible:ring-1 focus-visible:ring-ring/20"
+                />
+              </div>
+              <div id="add-site-quick-app-options" role="listbox" aria-label="Quick Apps" className="max-h-60 overflow-y-auto p-0.5">
+                {filteredQuickApps.length === 0 ? (
+                  <p className="px-2.5 py-2 text-xs text-muted-foreground">No quick apps match</p>
+                ) : filteredQuickApps.map((app, index) => (
+                  <button
+                    key={app.id}
+                    id={`add-site-quick-app-${app.id}`}
+                    type="button"
+                    role="option"
+                    aria-selected={activeQuickAppIndex === index}
+                    title={app.description}
+                    onMouseEnter={() => setActiveQuickAppIndex(index)}
+                    onClick={() => {
+                      setSelectedQuickAppId(app.id)
+                      setShowApps(false)
+                      onQuickApp?.(app.id)
+                    }}
+                    className={cn('flex h-10 w-full items-center gap-2 rounded px-2 text-left hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/40', activeQuickAppIndex === index && 'bg-accent/70')}
+                  >
+                    <TechTile id={app.category} className="size-7 rounded-md [&_svg]:size-3.5" />
+                    <span className="shrink-0 text-xs font-medium">{app.name}</span>
+                    <span className="min-w-0 flex-1 truncate text-left text-[11px] text-muted-foreground" title={app.description}>{app.description}</span>
+                  </button>
+                ))}
+              </div>
+            </div>,
+            document.body,
           )}
         </FormSection>
       )}
