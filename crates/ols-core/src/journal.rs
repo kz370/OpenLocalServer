@@ -156,15 +156,9 @@ impl Journal {
 fn prune_entries(entries: &mut Vec<Operation>) -> bool {
     let before = entries.len();
     let cutoff = now_ms().saturating_sub(30 * 24 * 60 * 60 * 1000);
-    entries.retain(|entry| entry.status == OpStatus::Running || entry.started_ms >= cutoff);
-    while entries.len() > KEEP {
-        let Some(index) = entries
-            .iter()
-            .position(|entry| entry.status != OpStatus::Running)
-        else {
-            break;
-        };
-        entries.remove(index);
+    entries.retain(|entry| entry.started_ms >= cutoff);
+    if entries.len() > KEEP {
+        entries.drain(..entries.len() - KEEP);
     }
     entries.len() != before
 }
@@ -279,7 +273,7 @@ mod tests {
     }
 
     #[test]
-    fn the_journal_is_capped_but_never_drops_a_running_operation() {
+    fn journal_retention_keeps_only_the_newest_one_hundred_operations() {
         let home = crate::test_support::isolated_home();
         let mut j = Journal::load(&home.paths);
         let running = j.begin("long", "Still going", None, None);
@@ -287,8 +281,8 @@ mod tests {
             let id = j.begin("k", &format!("op {n}"), None, None);
             j.finish(id, &Ok(()));
         }
-        assert!(j.list().len() <= KEEP + 1);
-        assert!(j.list().iter().any(|e| e.id == running));
+        assert_eq!(j.list().len(), KEEP);
+        assert!(!j.list().iter().any(|e| e.id == running));
     }
 
     #[test]

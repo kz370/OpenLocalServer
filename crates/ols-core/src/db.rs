@@ -109,10 +109,6 @@ pub fn connect(paths: &AppPaths) -> Result<Connection, CoreError> {
 /// A failure is returned as a structured diagnostic; startup callers may continue with the
 /// original JSON tables because all migration work is transactional and additive.
 pub fn migrate(paths: &AppPaths) -> Result<(), CoreError> {
-    let mut conn = connect(paths)?;
-    let mut version: i64 = conn
-        .pragma_query_value(None, "user_version", |row| row.get(0))
-        .map_err(map_err)?;
     for (target, apply) in [
         (
             1,
@@ -120,30 +116,53 @@ pub fn migrate(paths: &AppPaths) -> Result<(), CoreError> {
         ),
         (2, migrate_operation_retention),
     ] {
-        if version >= target {
-            continue;
-        }
-        let tx = conn
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(map_err)?;
-        if let Err(error) = backup_database(paths, version, target) {
-            let _ = tx.rollback();
-            return Err(migration_error(target, error.to_string()));
-        }
-        let result = apply(&tx).and_then(|()| {
-            tx.pragma_update(None, "user_version", target)?;
-            Ok(())
-        });
-        match result {
-            Ok(()) => tx
-                .commit()
-                .map_err(|error| migration_error(target, error.to_string()))?,
-            Err(error) => {
-                let _ = tx.rollback();
-                return Err(migration_error(target, error.to_string()));
+        loop {
+            let current_version: i64 = {
+                let conn =
+                    connect(paths).map_err(|error| migration_error(target, error.to_string()))?;
+                conn.pragma_query_value(None, "user_version", |row| row.get(0))
+                    .map_err(|error| migration_error(target, error.to_string()))?
+            };
+            if current_version >= target {
+                break;
             }
+            // SQLite checkpoints on last close. Copy the database and any remaining sidecars
+            // without an open handle, which is required on Windows where SQLite locks SHM.
+            backup_database(paths, current_version, target)
+                .map_err(|error| migration_error(target, error.to_string()))?;
+            let mut conn =
+                connect(paths).map_err(|error| migration_error(target, error.to_string()))?;
+            let tx = conn
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .map_err(|error| migration_error(target, error.to_string()))?;
+            let locked_version: i64 =
+                match tx.pragma_query_value(None, "user_version", |row| row.get(0)) {
+                    Ok(version) => version,
+                    Err(error) => {
+                        let _ = tx.rollback();
+                        return Err(migration_error(target, error.to_string()));
+                    }
+                };
+            if locked_version != current_version {
+                tx.rollback()
+                    .map_err(|error| migration_error(target, error.to_string()))?;
+                continue;
+            }
+            let result = apply(&tx).and_then(|()| {
+                tx.pragma_update(None, "user_version", target)?;
+                Ok(())
+            });
+            match result {
+                Ok(()) => tx
+                    .commit()
+                    .map_err(|error| migration_error(target, error.to_string()))?,
+                Err(error) => {
+                    let _ = tx.rollback();
+                    return Err(migration_error(target, error.to_string()));
+                }
+            }
+            break;
         }
-        version = target;
     }
     Ok(())
 }
@@ -162,6 +181,7 @@ fn migrate_read_views(tx: &rusqlite::Transaction<'_>) -> rusqlite::Result<()> {
         CREATE VIEW IF NOT EXISTS sites_view AS
         SELECT json_extract(data,'$.hostname') AS hostname,
                json_extract(data,'$.kind.type') AS kind,
+               json_extract(data,'$.kind.type') AS kind_type,
                json_extract(data,'$.kind.upstream_port') AS upstream_port,
                json_extract(data,'$.root') AS root,
                json_extract(data,'$.https') AS https,
@@ -534,16 +554,29 @@ mod tests {
                 load_docs::<crate::domain::Domain>(&home.paths, "domains").unwrap()
             )
             .unwrap(),
-            serde_json::to_value(domains_before).unwrap()
+            serde_json::to_value(&domains_before).unwrap()
         );
         assert_eq!(
             serde_json::to_value(
                 load_docs::<crate::project::Project>(&home.paths, "projects").unwrap()
             )
             .unwrap(),
-            serde_json::to_value(projects_before).unwrap()
+            serde_json::to_value(&projects_before).unwrap()
         );
         assert_eq!(load_settings(&home.paths).unwrap(), settings_before);
+        let expected_unconnected: std::collections::HashSet<String> = projects_before
+            .iter()
+            .filter(|project| {
+                !domains_before
+                    .iter()
+                    .any(|domain| domain.project_id.as_deref() == Some(project.id.as_str()))
+            })
+            .map(|project| project.id.clone())
+            .collect();
+        assert_eq!(
+            unconnected_project_ids(&home.paths).unwrap().unwrap(),
+            expected_unconnected
+        );
         let conn = connect(&home.paths).unwrap();
         let version: i64 = conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
@@ -582,6 +615,14 @@ mod tests {
             .unwrap();
         assert_eq!(after_docs_schema, docs_schema);
         assert_eq!(after_settings_schema, settings_schema);
+        let sites_view_count: usize = conn
+            .query_row("SELECT COUNT(*) FROM sites_view", [], |row| row.get(0))
+            .unwrap();
+        let projects_view_count: usize = conn
+            .query_row("SELECT COUNT(*) FROM projects_view", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(sites_view_count, domains_before.len());
+        assert_eq!(projects_view_count, projects_before.len());
         let backup_names: Vec<String> = std::fs::read_dir(home.paths.db_file().parent().unwrap())
             .unwrap()
             .flatten()
@@ -589,8 +630,22 @@ mod tests {
             .filter(|name| name.starts_with("app.db.v") && name.ends_with(".bak"))
             .collect();
         assert_eq!(
-            backup_names.len(), 2,
+            backup_names.len(),
+            2,
             "a second migration run must not make new backups: {backup_names:?}"
         );
+        drop(conn);
+        for _ in 0..4 {
+            backup_database(&home.paths, 2, 3).unwrap();
+        }
+        let retained_backups = std::fs::read_dir(home.paths.db_file().parent().unwrap())
+            .unwrap()
+            .flatten()
+            .filter(|entry| {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                name.starts_with("app.db.v") && name.ends_with(".bak")
+            })
+            .count();
+        assert_eq!(retained_backups, 3, "only the newest three backups remain");
     }
 }
