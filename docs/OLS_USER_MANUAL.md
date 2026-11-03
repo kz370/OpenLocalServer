@@ -371,9 +371,10 @@ olsc guide
 5. **Folder Drag-and-Drop & Explorer Menu**: Drop folders directly onto the Projects page or right-click any folder in Windows Explorer to add it to OLS.
 6. **Multi-Editor Configuration**: Broad auto-detection for IDEs (VS Code, Cursor, Windsurf, Zed, JetBrains, Sublime, Notepad++), with custom editor paths and visibility toggles.
 7. **System Tray Submenu**: Right-click tray menu includes a categorized Projects submenu to open project directories or launch editors in 1 click.
-8. **Theme Contrast & Icons**: High-contrast `--on-accent` styling for active chips and buttons, currentColor icons, and dual contrast warnings in theme settings.
-9. **MCP Server Tools**: 9 new Model Context Protocol tools for AI assistants to inspect, add, update, and manage projects and editors.
-10. **Safe Project Removal**: Guards projects connected to active sites against accidental deletion while keeping scanned project skips in history.
+8. **Favorite Quick Apps in Tray**: Create Quick Apps directly from favorites in the tray; Browse all remains available.
+9. **Theme Contrast & Icons**: High-contrast `--on-accent` styling for active chips and buttons, currentColor icons, and dual contrast warnings in theme settings.
+10. **MCP Server Tools**: 9 new Model Context Protocol tools for AI assistants to inspect, add, update, and manage projects and editors.
+11. **Safe Project Removal**: Guards projects connected to active sites against accidental deletion while keeping scanned project skips in history.
 
 ---
 
