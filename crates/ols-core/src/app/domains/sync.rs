@@ -92,12 +92,25 @@ impl Inner {
                     let d_folder = site_folder(d, &projects);
                     Path::new(&d_folder) == path || Path::new(&d.root) == path
                 });
+                // Never create a duplicate auto domain for a project that already has
+                // any domain (regardless of TLD), so changing the default TLD does not
+                // rename or shadow existing sites.
+                let has_any_domain = domains.list().iter().any(|d| {
+                    d.project_id.as_deref() == Some(&p.id)
+                        || {
+                            let d_folder = site_folder(d, &projects);
+                            Path::new(&d_folder) == path || Path::new(&d.root) == path
+                        }
+                        || d.hostname.contains(&p.name)
+                });
 
                 if let Some(mut existing) = matching_by_path {
                     if existing.project_id.as_deref() != Some(&p.id) {
                         existing.project_id = Some(p.id.clone());
                         domain_to_link = Some(existing);
                     }
+                    true
+                } else if has_any_domain {
                     true
                 } else {
                     linked

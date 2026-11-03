@@ -540,7 +540,9 @@ export function DomainSettings({
       setDefaultTld(tld)
       const tpl = `{project}.${tld}`
       setTemplate(tpl)
-      if (projectName.trim() && !domainTouched) {
+      // New sites follow the template; an existing site keeps its saved hostname, so
+    // changing the default TLD in Settings never rewrites old domains on open.
+    if (isNew && projectName.trim() && !domainTouched) {
         const slug = slugify(projectName.trim())
         if (slug) setD((cur) => ({ ...cur, hostname: tpl.replace('{project}', slug) }))
       }

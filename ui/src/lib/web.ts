@@ -131,7 +131,9 @@ export function useWeb() {
       else dispose()
     })
     void refreshProjects().catch(() => undefined)
-    // Laragon-style: new folders in your projects folder show up as <name>.test.
+    // Laragon-style: new folders in your projects folder show up as <name>.<default tld>.
+    // Existing sites are protected by the backend's has-any-domain guard, so this never
+    // renames or duplicates an already-created site.
     runCommand({ type: 'sync_auto_domains' })
       .then((r) => {
         if (r.type === 'count' && r.count > 0) void refresh()

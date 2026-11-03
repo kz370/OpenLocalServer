@@ -82,10 +82,14 @@ export function useDirtyForm<T>({
 }: DirtyFormOptions<T>) {
   const generatedId = useId()
   const id = `dirty-form-${generatedId}`
+  const [settled, setSettled] = useState(false)
   const normalizeRef = useRef(normalize ?? normalizeValue as (value: T) => unknown)
   useEffect(() => {
     normalizeRef.current = normalize ?? (normalizeValue as (value: T) => unknown)
   }, [normalize])
+  useEffect(() => {
+    setSettled(true)
+  }, [])
   const serialize = useCallback((v: T) => JSON.stringify(normalizeRef.current(v)), [])
   const serialized = serialize(value)
   const [baseline, setBaseline] = useStateSnapshot(formKey, value, serialized)
@@ -93,7 +97,7 @@ export function useDirtyForm<T>({
   useEffect(() => {
     baselineRef.current = baseline
   }, [baseline])
-  const currentDirty = enabled && baseline.key === formKey && baseline.serialized !== serialized
+  const currentDirty = settled && enabled && baseline.key === formKey && baseline.serialized !== serialized
   const valueRef = useLatest(value)
   const keyRef = useLatest(formKey)
   const onSaveRef = useLatest(onSave)
@@ -147,6 +151,13 @@ export function useDirtyForm<T>({
   useEffect(() => {
     if (baseline.key !== formKey) updateBaseline(formKey, value)
   }, [baseline.key, formKey, serialized, updateBaseline, value])
+  // Keep the saved baseline in sync with the value while the form is not dirty,
+  // so async data loads after mount do not falsely mark the form as unsaved.
+  useEffect(() => {
+    if (!enabled || !settled) return
+    if (currentDirty) return
+    updateBaseline(formKey, value)
+  }, [enabled, settled, serialized, currentDirty, formKey, updateBaseline, value])
 
   useEffect(() => {
     if (!enabled) {
