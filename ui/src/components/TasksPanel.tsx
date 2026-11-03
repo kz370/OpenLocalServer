@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { type TaskEvent, type TaskView, runCommand } from '@/core'
 import { formatBytes, timeAgo, usePoll } from '@/lib/hooks'
-import { getTaskHistory, mergeTaskHistory, saveTaskHistory } from '@/lib/taskHistory'
+import { getTaskHistory, mergeTaskHistory, saveTaskHistory, type HistoryTask } from '@/lib/taskHistory'
 import { cn } from '@/lib/utils'
 
 /**
@@ -37,8 +37,7 @@ export function TasksPanel() {
       if (!alive) return
       const task = event.payload.task
       setTasks((current) => {
-        const next = current.filter((t) => t.id !== task.id)
-        next.unshift(task)
+        const next = mergeTaskHistory([...current.filter((t) => t.id !== task.id), task])
         saveTaskHistory(next)
         return next
       })
@@ -64,8 +63,7 @@ export function TasksPanel() {
             Background tasks · {running.length} running, {finished.length} finished
           </CardTitle>
           <CardDescription>
-            Imports, exports and snapshots the app runs for you. Each row shows its own steps; a finished task keeps its
-            report until you clear it.
+            Site operations and other background work, newest first. Finished tasks stay here after restart until cleared.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
@@ -115,16 +113,22 @@ const STEP_MARK: Record<string, string> = {
   skipped: 'text-muted-foreground',
 }
 
-function TaskRow({ task }: { task: TaskView }) {
+function TaskRow({ task }: { task: HistoryTask }) {
   const [busy, setBusy] = useState(false)
   const live = task.state === 'running'
+  const cancellable = live && task.id.startsWith('task-')
   const { done, total, bytes, bytes_total } = task.progress
   const fraction = total > 0 ? Math.min(1, done / total) : null
 
   const act = async (command: 'cancel_task' | 'dismiss_task') => {
     setBusy(true)
     try {
-      await runCommand({ type: command, id: task.id })
+      const ids = command === 'dismiss_task' ? (task.repeat_ids ?? [task.id]) : [task.id]
+      await Promise.all(
+        ids
+          .filter((id) => id.startsWith('task-'))
+          .map((id) => runCommand({ type: command, id })),
+      )
       if (command === 'dismiss_task') {
         // TaskManager cannot dismiss synthetic command-history rows; remove either kind here.
         const next = getTaskHistory().filter((item) => item.id !== task.id)
@@ -140,7 +144,7 @@ function TaskRow({ task }: { task: TaskView }) {
       <div className="flex flex-wrap items-center gap-2">
         {live ? <Spinner className="size-3.5" /> : <StateIcon state={task.state} />}
         <span className="min-w-0 flex-1 truncate text-sm font-medium" title={task.title}>
-          {task.title}
+          {task.title}{(task.repeat_count ?? 1) > 1 && ` ×${task.repeat_count}`}
         </span>
         <Badge variant={STATE_BADGE[task.state].variant}>{STATE_BADGE[task.state].label}</Badge>
         <span
@@ -149,11 +153,11 @@ function TaskRow({ task }: { task: TaskView }) {
         >
           {new Date(task.finished_ms ?? task.started_ms).toLocaleString()}
         </span>
-        {live ? (
+        {cancellable ? (
           <Button size="sm" variant="outline" className="h-7 text-xs" disabled={busy} onClick={() => void act('cancel_task')}>
             Stop
           </Button>
-        ) : (
+        ) : live ? null : (
           <Button
             size="icon"
             variant="ghost"

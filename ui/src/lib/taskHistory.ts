@@ -8,7 +8,7 @@ const taskTargets = new Map<string, string>()
 let sequence = 0
 let recovered = false
 
-export type HistoryTask = TaskView & { repeat_count?: number }
+export type HistoryTask = TaskView & { repeat_count?: number; repeat_ids?: string[] }
 
 export function getTaskHistory(): HistoryTask[] {
   recoverInterruptedTasks()
@@ -27,10 +27,19 @@ export function commandTaskKey(command: CoreCommand): string | null {
   return shouldTrackCommand(command) ? `${command.type}:${commandTarget(command)}` : null
 }
 
-export function mergeTaskHistory(tasks: TaskView[]): TaskView[] {
+export function mergeTaskHistory(tasks: TaskView[]): HistoryTask[] {
   recoverInterruptedTasks()
-  const merged = new Map<string, TaskView>()
-  for (const task of [...history.get(), ...tasks]) merged.set(task.id, task)
+  const merged = new Map<string, HistoryTask>()
+  for (const task of history.get() as HistoryTask[]) merged.set(task.id, task)
+  for (const task of tasks) {
+    const previous = merged.get(task.id)
+    merged.set(
+      task.id,
+      previous?.repeat_count
+        ? { ...task, repeat_count: previous.repeat_count, repeat_ids: previous.repeat_ids }
+        : task as HistoryTask,
+    )
+  }
   const next = collapseFinished([...merged.values()].sort((a, b) => b.started_ms - a.started_ms))
   history.set(next)
   return next
@@ -206,9 +215,14 @@ function collapseFinished(tasks: TaskView[]): HistoryTask[] {
       previous.target === task.target
     ) {
       previous.repeat_count = (previous.repeat_count ?? 1) + (task.repeat_count ?? 1)
+      previous.repeat_ids = [...(previous.repeat_ids ?? [previous.id]), ...(task.repeat_ids ?? [task.id])]
       continue
     }
-    collapsed.push({ ...task, repeat_count: task.repeat_count ?? 1 })
+    collapsed.push({
+      ...task,
+      repeat_count: task.repeat_count ?? 1,
+      repeat_ids: task.repeat_ids ?? [task.id],
+    })
   }
   return collapsed
 }
