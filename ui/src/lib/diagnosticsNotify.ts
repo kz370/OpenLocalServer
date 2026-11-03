@@ -2099,7 +2099,11 @@ export function initDiagnosticsNotificationMonitor() {
     })
 
     void listen('ols:stop-all-requested', () => {
-        handleExpectedStopAll()
+      handleExpectedStopAll()
+    })
+
+    void listen<string>('ols:service-stop-requested', (event) => {
+      handleExpectedServiceStop(event.payload)
     })
 
     void listen<{ kind: string; id: number; state?: string; name?: string }>(

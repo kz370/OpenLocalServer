@@ -45,6 +45,21 @@ fn notifications_enabled(core: &Core) -> bool {
     core.inner().setting_bool("notifications.enabled", true)
 }
 
+fn autostart_service_ids(configured_ids: Vec<String>, default_web: &str) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    configured_ids
+        .into_iter()
+        .map(|id| {
+            if id == "web" {
+                default_web.to_string()
+            } else {
+                id
+            }
+        })
+        .filter(|id| seen.insert(id.clone()))
+        .collect()
+}
+
 /// §119: a desktop alert of our own, unless the user turned them off.
 fn notify(core: &Core, title: &str, body: &str) {
     if !notifications_enabled(core) {
@@ -348,6 +363,22 @@ fn shutdown(core: &Core) -> bool {
         }
     }
     core.supervisor().stop_all_and_wait(Duration::from_secs(5))
+}
+
+#[cfg(test)]
+mod tray_tests {
+    use super::autostart_service_ids;
+
+    #[test]
+    fn tray_start_all_includes_only_configured_autostart_services() {
+        let selected = autostart_service_ids(
+            vec!["mariadb".into(), "web".into(), "mariadb".into()],
+            "nginx",
+        );
+
+        assert_eq!(selected, ["mariadb", "nginx"]);
+        assert!(!selected.iter().any(|id| id == "mailpit"));
+    }
 }
 
 #[tauri::command]
@@ -896,20 +927,59 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
             match event.id.as_ref() {
                 "open" => show_main_window(app),
                 "start_all" | "web_start" => {
+                    let start_autostart = event.id.as_ref() == "start_all";
                     let handle = app.clone();
                     std::thread::spawn(move || {
-                        match core.inner().apply_web(&[]) {
-                            Ok(_) => notify(&core, "Web server", "Sites are up to date."),
-                            Err(e) => notify(&core, "Web server failed", &e.to_string()),
-                        }
-                        if event.id.as_ref() == "start_all" {
-                            for service in core
+                        if start_autostart {
+                            let settings = match core.dispatch(CoreCommand::GetStartupSettings) {
+                                Ok(CoreResponse::Startup { settings }) => settings,
+                                Ok(_) => {
+                                    notify(
+                                        &core,
+                                        "Could not start startup services",
+                                        "The startup settings response was invalid.",
+                                    );
+                                    refresh_tray(&handle, &core);
+                                    return;
+                                }
+                                Err(e) => {
+                                    notify(&core, &e.problem, &format!("{}", e.cause));
+                                    refresh_tray(&handle, &core);
+                                    return;
+                                }
+                            };
+                            let default_web = core.inner().web_config().default_server;
+                            let service_ids =
+                                autostart_service_ids(settings.autostart_services, &default_web);
+                            let running: std::collections::HashSet<_> = core
                                 .services()
                                 .list()
                                 .into_iter()
-                                .filter(|service| !service.running)
-                            {
-                                let _ = core.services().start(&service.id);
+                                .filter(|service| service.running)
+                                .map(|service| service.id)
+                                .collect();
+                            let mut failures = Vec::new();
+                            for id in service_ids {
+                                if running.contains(&id) {
+                                    continue;
+                                }
+                                if let Err(e) =
+                                    core.dispatch(CoreCommand::StartService { id: id.clone() })
+                                {
+                                    failures.push(format!("{}: {}", id, e.problem));
+                                }
+                            }
+                            if !failures.is_empty() {
+                                notify(
+                                    &core,
+                                    "Some startup services did not start",
+                                    &failures.join("\n"),
+                                );
+                            }
+                        } else {
+                            match core.inner().apply_web(&[]) {
+                                Ok(_) => notify(&core, "Web server", "Sites are up to date."),
+                                Err(e) => notify(&core, "Web server failed", &e.to_string()),
                             }
                         }
                         refresh_tray(&handle, &core);
@@ -1040,6 +1110,7 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
                             .map(|service| service.running)
                             .unwrap_or(false);
                         if running {
+                            let _ = handle.emit("ols:service-stop-requested", &service_id);
                             if let Err(e) = core.dispatch(CoreCommand::StopService {
                                 id: service_id.clone(),
                             }) {
