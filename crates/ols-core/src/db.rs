@@ -9,7 +9,7 @@
 
 use std::path::PathBuf;
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, TransactionBehavior};
 use serde_json::Value;
 
 use crate::error::CoreError;
@@ -123,31 +123,37 @@ pub fn migrate(paths: &AppPaths) -> Result<(), CoreError> {
         if version >= target {
             continue;
         }
-        backup_database(paths, version, target)?;
-        let tx = conn.transaction().map_err(map_err)?;
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(map_err)?;
+        if let Err(error) = backup_database(paths, version, target) {
+            let _ = tx.rollback();
+            return Err(migration_error(target, error.to_string()));
+        }
         let result = apply(&tx).and_then(|()| {
             tx.pragma_update(None, "user_version", target)?;
             Ok(())
         });
         match result {
-            Ok(()) => tx.commit().map_err(map_err)?,
+            Ok(()) => tx
+                .commit()
+                .map_err(|error| migration_error(target, error.to_string()))?,
             Err(error) => {
                 let _ = tx.rollback();
-                let diagnostic = crate::error::Diagnostic {
-                    problem: format!("Database migration {target} could not be applied."),
-                    cause: error.to_string(),
-                    fix: Some("The original database was kept. Check that the database is writable, then restart OLS to retry.".into()),
-                };
-                return Err(CoreError::failed_fix(
-                    diagnostic.problem,
-                    diagnostic.cause,
-                    diagnostic.fix.unwrap_or_default(),
-                ));
+                return Err(migration_error(target, error.to_string()));
             }
         }
         version = target;
     }
     Ok(())
+}
+
+fn migration_error(target: i64, cause: String) -> CoreError {
+    CoreError::failed_fix(
+        format!("Database migration {target} could not be applied."),
+        cause,
+        "The original database was kept. Check that the database is writable, then restart OLS to retry.",
+    )
 }
 
 fn migrate_read_views(tx: &rusqlite::Transaction<'_>) -> rusqlite::Result<()> {
@@ -310,7 +316,12 @@ fn backup_database(paths: &AppPaths, from: i64, to: i64) -> Result<(), CoreError
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis();
-    let base = db.with_file_name(format!("app.db.v{from}-v{to}.{stamp}.bak"));
+    let mut base = db.with_file_name(format!("app.db.v{from}-v{to}.{stamp}.bak"));
+    let mut suffix = 1;
+    while base.exists() {
+        base = db.with_file_name(format!("app.db.v{from}-v{to}.{stamp}-{suffix}.bak"));
+        suffix += 1;
+    }
     fs::copy(&db, &base).map_err(CoreError::Io)?;
     for suffix in ["-wal", "-shm"] {
         let sidecar = std::path::PathBuf::from(format!("{}{suffix}", db.display()));
@@ -571,14 +582,15 @@ mod tests {
             .unwrap();
         assert_eq!(after_docs_schema, docs_schema);
         assert_eq!(after_settings_schema, settings_schema);
-        let backups = std::fs::read_dir(home.paths.root())
+        let backup_names: Vec<String> = std::fs::read_dir(home.paths.db_file().parent().unwrap())
             .unwrap()
             .flatten()
-            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "bak"))
-            .count();
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .filter(|name| name.starts_with("app.db.v") && name.ends_with(".bak"))
+            .collect();
         assert_eq!(
-            backups, 2,
-            "a second migration run must not make new backups"
+            backup_names.len(), 2,
+            "a second migration run must not make new backups: {backup_names:?}"
         );
     }
 }

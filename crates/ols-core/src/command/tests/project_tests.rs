@@ -301,7 +301,7 @@ fn a_deleted_project_can_be_taken_back_out_of_the_history() {
 
     let projects = |core: &Core| -> Vec<Project> {
         match core.dispatch(CoreCommand::ListProjects).unwrap() {
-            CoreResponse::Projects { projects } => projects,
+            CoreResponse::Projects { projects, .. } => projects,
             _ => panic!("expected Projects"),
         }
     };
@@ -363,7 +363,7 @@ fn clearing_the_history_returns_the_deleted_items_to_a_scan() {
     })
     .unwrap();
     let ids: Vec<String> = match core.dispatch(CoreCommand::ListProjects).unwrap() {
-        CoreResponse::Projects { projects } => projects.into_iter().map(|p| p.id).collect(),
+        CoreResponse::Projects { projects, .. } => projects.into_iter().map(|p| p.id).collect(),
         _ => panic!("expected Projects"),
     };
     for id in ids {
@@ -379,7 +379,7 @@ fn clearing_the_history_returns_the_deleted_items_to_a_scan() {
     })
     .unwrap();
     match core.dispatch(CoreCommand::ListProjects).unwrap() {
-        CoreResponse::Projects { projects } => assert_eq!(projects.len(), 2),
+        CoreResponse::Projects { projects, .. } => assert_eq!(projects.len(), 2),
         _ => panic!("expected Projects"),
     }
 }
@@ -513,7 +513,7 @@ fn project_metadata_update_persists_icon_and_type() {
 
     // Reload projects to verify persistence
     match core.dispatch(CoreCommand::ListProjects).unwrap() {
-        CoreResponse::Projects { projects } => {
+        CoreResponse::Projects { projects, .. } => {
             let found = projects.iter().find(|p| p.id == project.id).unwrap();
             assert_eq!(found.name, "Renamed Proj");
             assert_eq!(found.icon.as_deref(), Some("fa:rocket:#38bdf8"));
@@ -652,7 +652,7 @@ fn custom_project_types_crud_and_project_updates() {
     assert!(!renamed_types.iter().any(|t| t.name == "Rust"));
 
     let projects = match core.dispatch(CoreCommand::ListProjects).unwrap() {
-        CoreResponse::Projects { projects } => projects,
+        CoreResponse::Projects { projects, .. } => projects,
         other => panic!("expected Projects, got {other:?}"),
     };
     let updated_p = projects.iter().find(|pr| pr.id == p.id).unwrap();
@@ -674,7 +674,7 @@ fn custom_project_types_crud_and_project_updates() {
     assert!(!after_remove.iter().any(|t| t.name == "Rust Backend"));
 
     let projects_after = match core.dispatch(CoreCommand::ListProjects).unwrap() {
-        CoreResponse::Projects { projects } => projects,
+        CoreResponse::Projects { projects, .. } => projects,
         other => panic!("expected Projects, got {other:?}"),
     };
     let p_after = projects_after.iter().find(|pr| pr.id == p.id).unwrap();
