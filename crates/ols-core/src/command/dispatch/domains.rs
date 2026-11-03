@@ -327,10 +327,8 @@ impl Core {
                 C::SyncHosts => {
                     // Reconciliation is the only source for managed hosts entries,
                     // so hidden and marker-file sites cannot be reintroduced here.
-                    i.reconcile()?;
-                    Ok(R::Text {
-                        text: "The hosts file was reconciled with active sites.".into(),
-                    })
+                    let (_, reports) = i.reconcile_with_reports()?;
+                    Ok(R::Applied { reports })
                 }
                 other => {
                     unhandled = Some(other);

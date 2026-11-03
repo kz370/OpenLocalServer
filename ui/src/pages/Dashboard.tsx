@@ -118,7 +118,6 @@ export function DashboardPage({
           }
         })
         await refresh()
-        if (action === 'restart') notify.success(`${s.name} restarted successfully.`)
         setDiagToken((t) => t + 1)
       } catch (e) {
         const diag = asDiagnostic(e)

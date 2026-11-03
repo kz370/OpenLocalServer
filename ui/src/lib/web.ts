@@ -37,6 +37,25 @@ const catalogCache = createPersistentCache<CatalogEntry[]>('web_catalog', [])
 const customPhpCache = createPersistentCache<string[]>('web_custom_php', [])
 const reportsCache = createPersistentCache<ApplyReport[]>('web_reports', [])
 
+function notifyAppliedChanges(reports: ApplyReport[]) {
+  const changed = reports.some((report) =>
+    report.written.length > 0 || report.started || report.reloaded || report.hosts_updated,
+  )
+  if (!changed) return
+
+  const details = reports.flatMap((report) => {
+    const actions = [report.started ? 'started' : report.reloaded ? 'reloaded' : null].filter(Boolean)
+    const config = report.written.length > 0 ? `Updated: ${report.written.join(', ')}.` : 'Config already up to date.'
+    const warnings = report.warnings.map((warning) => `${report.server}: ${warning}`)
+    return [`${report.server}${actions.length > 0 ? ` — ${actions.join(', ')}` : ''}. ${config}`, ...warnings]
+  })
+  if (reports.some((report) => report.hosts_updated)) details.push('Hosts file updated.')
+  notify.success(
+    reports.length === 1 ? `Applied changes to ${reports[0].server}.` : `Applied changes to ${reports.length} web servers.`,
+    { title: 'Web server changes applied', details: details.join('\n') },
+  )
+}
+
 /** Prevent a restored project/site list from reopening with the pre-restore snapshot. */
 export function invalidateWebSitesCache() {
   domainsCache.set([])
@@ -79,7 +98,8 @@ export function useWeb() {
   async function reconcileSites() {
     setApplying(true)
     try {
-      await runCommand({ type: 'sync_hosts' })
+      const result = await runCommand({ type: 'sync_hosts' })
+      if (result.type === 'applied') notifyAppliedChanges(result.reports)
       await Promise.all([refresh(), refreshProjects()])
     } finally {
       setApplying(false)
@@ -188,22 +208,7 @@ export function useWeb() {
     if (res.type === 'applied') {
       setReports(res.reports)
       reportsCache.set(res.reports)
-      const changed = res.reports.some((report) =>
-        report.written.length > 0 || report.started || report.reloaded || report.hosts_updated,
-      )
-      if (changed) {
-        const details = res.reports.flatMap((report) => {
-          const actions = [report.started ? 'started' : report.reloaded ? 'reloaded' : null].filter(Boolean)
-          const config = report.written.length > 0 ? `Updated: ${report.written.join(', ')}.` : 'Config already up to date.'
-          const warnings = report.warnings.map((warning) => `${report.server}: ${warning}`)
-          return [`${report.server}${actions.length > 0 ? ` — ${actions.join(', ')}` : ''}. ${config}`, ...warnings]
-        })
-        if (res.reports.some((report) => report.hosts_updated)) details.push('Hosts file updated.')
-        notify.success(
-          res.reports.length === 1 ? `Applied changes to ${res.reports[0].server}.` : `Applied changes to ${res.reports.length} web servers.`,
-          { title: 'Web server changes applied', details: details.join('\n') },
-        )
-      }
+      notifyAppliedChanges(res.reports)
       if (res.reports.some((r) => r.drifted.length > 0)) setDriftOpen(true)
     }
     await refresh(true)

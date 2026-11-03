@@ -21,7 +21,6 @@ import {
   notifyManualStartFailure,
   runSerializedServiceOp,
 } from '@/lib/diagnosticsNotify'
-import { notify } from '@/lib/notify'
 import { getServiceLifecycleState, useServiceStatuses } from '@/lib/serviceStatus'
 import { waitForService } from '@/lib/wait'
 
@@ -73,7 +72,6 @@ export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => v
         }
       })
       await refresh()
-      if (action === 'restart') notify.success(`${service.name} restarted successfully.`)
     } catch (err) {
       const diag = asDiagnostic(err)
       setError(diag)

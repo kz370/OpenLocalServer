@@ -13,6 +13,12 @@ impl Inner {
     }
 
     pub fn reconcile(&self) -> Result<usize, CoreError> {
+        self.reconcile_with_reports().map(|(active, _)| active)
+    }
+
+    pub fn reconcile_with_reports(
+        &self,
+    ) -> Result<(usize, Vec<crate::web::manager::ApplyReport>), CoreError> {
         let records = self.domains.lock().unwrap().list();
         let active: Vec<_> = records.iter().filter(|domain| self.site_is_active(domain)).cloned().collect();
         let hosts: Vec<_> = active.iter()
@@ -25,10 +31,12 @@ impl Inner {
         // Applying configs is useful for a running server: it removes inactive
         // vhosts and reloads the server. A stopped/uninstalled server has nothing
         // to reload, and reconciliation must still update the stores and hosts file.
-        if self.web.is_running() {
-            self.apply_web(&[])?;
-        }
-        Ok(active.len())
+        let reports = if self.web.is_running() {
+            self.apply_web(&[])?
+        } else {
+            Vec::new()
+        };
+        Ok((active.len(), reports))
     }
 
     pub fn sync_auto_domains(&self) -> Result<usize, CoreError> {
