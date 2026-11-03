@@ -80,6 +80,26 @@ export function TrayConfirmationWindow() {
   }, [])
 
   useEffect(() => {
+    let unlisten: (() => void) | undefined
+    void listen<string>('ols:tray-confirmation-play-sound', (event) => {
+      const sound = event.payload
+      if (sound !== 'open' && sound !== 'confirm' && sound !== 'cancel') {
+        console.error('Unknown tray confirmation sound:', sound)
+        return
+      }
+      const audio = new Audio(`/sounds/tray-confirmation-${sound}.wav`)
+      void audio.play().catch((reason: unknown) => {
+        console.error('Could not play the tray confirmation sound:', reason)
+      })
+    }).then((cleanup) => {
+      unlisten = cleanup
+    }).catch((reason: unknown) => {
+      console.error('Could not listen for tray confirmation sounds:', reason)
+    })
+    return () => unlisten?.()
+  }, [])
+
+  useEffect(() => {
     if (!request) return
     confirmButton.current?.focus()
     void emit('ols:tray-confirmation-show-ready').catch((reason: unknown) => {

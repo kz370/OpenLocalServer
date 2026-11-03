@@ -1,5 +1,7 @@
 Data models (SQLite app.db: settings table + docs collections holding JSON blobs).
 
+Settings: `exit.confirmation.enabled` (boolean, default true) asks before exiting OpenLocalServer from the tray, UI exit action, or window close. `tray.stop_all.confirmation.enabled` (boolean, default true) controls the tray Stop all confirmation independently. Disabling either preference does not change the other.
+
 Entities:
 - Project {id: sha256(path)[..16], name, path, icon_image: Option<String>, health: ProjectHealth, standalone: bool, icon: Option<String>, project_type: Option<String>}
 - `ProjectTypePreset { id: String, name: String, icon: String }` — preset project framework or language (Laravel, Symfony, WordPress, PHP, Python, Django, Flask, FastAPI, Node, Next.js, React, Vue, Go, .NET, Java, Static HTML, Other) loaded from `crates/ols-core/catalog/project-types.yaml`.

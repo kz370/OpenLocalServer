@@ -240,8 +240,10 @@ diagnosticsNotify | drives | notify condition resolution (registerNotificationCo
 TechIcon | renders | Simple Icons with their official brand hex color; TechTile adds a matching background tint and ServiceMark layers independent service state on top.
 LogsPage | offers | an `Auto-scroll` toggle independent of Live/Paused log fetching.
 Tray Start all / Stop all | dispatch | A single dynamic toggle uses the shared ServiceAggregate running count and start plan; tray Stop all requests the preloaded themed TrayConfirmationWindow and only dispatches StopAll on approval, then manual-stop intent suppresses unexpected-exit reporting, busy state disables the item, and completion restores the real state via `ols:status-icon` and the tray tooltip.
-Tray Quit | requests | the preloaded themed TrayConfirmationWindow before invoking graceful shutdown; the main window stays hidden
-TrayConfirmationWindow | follows | OLS appearance/theme updates and returns approved or canceled Stop all / Quit responses to the Tauri shell without showing the main window
+Tray Quit / UI Exit / Main-window close | checks | `exit.confirmation.enabled` (default true); shows the preloaded themed TrayConfirmationWindow when enabled, otherwise starts graceful shutdown
+Tray Stop all | checks | `tray.stop_all.confirmation.enabled` (default true); shows TrayConfirmationWindow when enabled, otherwise dispatches the same StopAll action directly
+TrayConfirmationWindow | follows | OLS appearance/theme updates, plays open/confirm/cancel sounds, and returns approved or canceled Stop all / Exit responses to the Tauri shell without showing the main window
+SettingsPage General | persists | independent `exit.confirmation.enabled` and `tray.stop_all.confirmation.enabled` settings, both default true
 Dashboard / Tray / CLI | read | CoreCommand::GetServiceAggregate / Core::service_aggregate; shared running count and start plan (configured autostart IDs, or all installed services when unset)
 CLI stop | dispatches | CoreCommand::StopAll, identical to Dashboard and tray; tunnels, workers, web servers, services and supervisor strays follow one stop path
 TrayMenuItems | retains | managed bulk-toggle MenuItem handle; service-state events update its label and rebuild submenu marks/counts from one ServiceAggregate snapshot

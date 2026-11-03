@@ -116,6 +116,76 @@ struct TrayConfirmationResponse {
     confirmed: bool,
 }
 
+const EXIT_CONFIRMATION_SETTING: &str = "exit.confirmation.enabled";
+const STOP_ALL_CONFIRMATION_SETTING: &str = "tray.stop_all.confirmation.enabled";
+
+#[derive(Clone, Copy)]
+enum TrayConfirmationSound {
+    Open,
+    Confirm,
+    Cancel,
+}
+
+fn request_exit_or_confirm(app: &AppHandle, core: Core) {
+    if core.inner().setting_bool(EXIT_CONFIRMATION_SETTING, true) {
+        send_tray_confirmation_action(app, "quit");
+    } else {
+        begin_shutdown(app, core);
+    }
+}
+
+fn request_stop_all_or_confirm(app: &AppHandle, core: &Core) {
+    if core
+        .inner()
+        .setting_bool(STOP_ALL_CONFIRMATION_SETTING, true)
+    {
+        send_tray_confirmation_action(app, "stop-all");
+    } else {
+        start_tray_bulk_action(app, core, TrayBulkAction::Stop);
+    }
+}
+
+fn play_tray_confirmation_sound(app: &AppHandle, sound: TrayConfirmationSound) {
+    #[cfg(windows)]
+    {
+        use windows::core::PCSTR;
+        use windows::Win32::Media::Audio::{PlaySoundA, SND_ASYNC, SND_MEMORY, SND_NODEFAULT};
+
+        static OPEN: &[u8] = include_bytes!("../../ui/public/sounds/tray-confirmation-open.wav");
+        static CONFIRM: &[u8] =
+            include_bytes!("../../ui/public/sounds/tray-confirmation-confirm.wav");
+        static CANCEL: &[u8] =
+            include_bytes!("../../ui/public/sounds/tray-confirmation-cancel.wav");
+        let sound = match sound {
+            TrayConfirmationSound::Open => OPEN,
+            TrayConfirmationSound::Confirm => CONFIRM,
+            TrayConfirmationSound::Cancel => CANCEL,
+        };
+        let played = unsafe {
+            PlaySoundA(
+                PCSTR(sound.as_ptr()),
+                None,
+                SND_ASYNC | SND_MEMORY | SND_NODEFAULT,
+            )
+        };
+        if played.0 == 0 {
+            tracing::warn!("the tray confirmation sound could not be played");
+        }
+        let _ = app;
+    }
+    #[cfg(not(windows))]
+    {
+        let sound = match sound {
+            TrayConfirmationSound::Open => "open",
+            TrayConfirmationSound::Confirm => "confirm",
+            TrayConfirmationSound::Cancel => "cancel",
+        };
+        if let Err(error) = app.emit("ols:tray-confirmation-play-sound", sound) {
+            tracing::warn!(error = %error, "the tray confirmation sound could not be requested");
+        }
+    }
+}
+
 static SHUTDOWN_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 
 /// Set once the main window has been shown for the first time, so the readiness
@@ -477,7 +547,7 @@ mod tray_tests {
 
 #[tauri::command]
 fn request_exit(app: AppHandle, state: tauri::State<'_, Core>) {
-    begin_shutdown(&app, state.inner().clone());
+    request_exit_or_confirm(&app, state.inner().clone());
 }
 
 fn begin_shutdown(app: &AppHandle, core: Core) {
@@ -1336,7 +1406,7 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
                 "open" => show_main_window(app),
                 "toggle_all" => {
                     if core.service_aggregate().running > 0 {
-                        send_tray_confirmation_action(app, "stop-all");
+                        request_stop_all_or_confirm(app, &core);
                     } else {
                         start_tray_bulk_action(app, &core, TrayBulkAction::Start);
                     }
@@ -1540,9 +1610,7 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
                         refresh_tray(&handle, &core);
                     });
                 }
-                "quit" => {
-                    send_tray_confirmation_action(app, "quit");
-                }
+                "quit" => request_exit_or_confirm(app, core.clone()),
                 _ => {}
             }
         })
@@ -1698,6 +1766,7 @@ pub fn run() {
                     if let Err(error) = window.emit("ols:tray-confirmation-animate", ()) {
                         tracing::warn!(error = %error, "the tray confirmation entrance animation could not be started");
                     }
+                    play_tray_confirmation_sound(&confirmation_show_app, TrayConfirmationSound::Open);
                 } else {
                     tracing::error!("the preloaded tray confirmation window is unavailable");
                 }
@@ -1713,6 +1782,14 @@ pub fn run() {
                         return;
                     }
                 };
+                play_tray_confirmation_sound(
+                    &confirmation_response_app,
+                    if response.confirmed {
+                        TrayConfirmationSound::Confirm
+                    } else {
+                        TrayConfirmationSound::Cancel
+                    },
+                );
                 if let Some(window) =
                     confirmation_response_app.get_webview_window("tray-confirmation")
                 {
@@ -2047,7 +2124,10 @@ pub fn run() {
                 let _ = window.hide();
                 } else {
                 api.prevent_close();
-                begin_shutdown(&window.app_handle(), window_core.clone());
+                if let Err(error) = window.hide() {
+                    tracing::warn!(error = %error, "the main window could not be hidden before exit confirmation");
+                }
+                request_exit_or_confirm(&window.app_handle(), window_core.clone());
                 }
             }
         })

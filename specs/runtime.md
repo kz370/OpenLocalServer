@@ -1,7 +1,7 @@
 # RUNTIME
 
 ## Files to Process
-Total meaningful source files: 277 (excluding target/, node_modules/, .git/, dist/, data/services/postgres runtime data, icon bulk).
+Total meaningful source files: 280 (excluding target/, node_modules/, .git/, dist/, data/services/postgres runtime data, icon bulk).
 
 ### Rust core (crates/ols-core/src, 88 files)
 - src/lib.rs, app/ (mod.rs, domains.rs, projects.rs, quickapp.rs, system.rs, web.rs, tests.rs), command/ (mod.rs, types.rs, dispatch.rs, tests.rs), control.rs, api.rs, paths.rs, settings.rs, secrets.rs, db.rs
@@ -30,6 +30,7 @@ Total meaningful source files: 277 (excluding target/, node_modules/, .git/, dis
 - src/components/SiteLogo.tsx, src/components/ProjectTools.tsx, ReleaseCards.tsx, ReleaseNotesView.tsx, NotificationHost.tsx, NotificationsPopover.tsx, SettingsExtras.tsx, ExcludedSitesCard.tsx, IgnoredFoldersCard.tsx, settings/AppearanceSettings.tsx, CustomServices.tsx, DiagnosticsCard.tsx, DoctorDialog.tsx, EnvEditor.tsx, CodeEditor.tsx, Terminal.tsx, SystemMonitor.tsx, MigrateDialog.tsx, OpenWithMenu.tsx, PhpExtensionsDialog.tsx, XdebugDialog.tsx, ErrorCard.tsx, Spinner.tsx, StopIcon.tsx, TechIcon.tsx, TasksPanel.tsx, SaveButton.tsx, PluginConsentDialog.tsx
 - src/components/ui/button.tsx, card.tsx, dialog.tsx, input.tsx, form.tsx, select.tsx, table.tsx, menu.tsx, switch.tsx, badge.tsx, checkbox.tsx, pagination.tsx, tooltip.tsx
 - src/lib/ai.ts, cache.ts, confirm.ts, diagnosticsNotify.ts, hooks.ts, nav.ts, notify.ts, releaseNotes.ts, serviceGrouping.ts, serviceStatus.ts, pluginConsent.ts, projectTypes.ts, theme.tsx, theme/ (types.ts, color.ts, presets.ts, validation.ts, apply.ts, context.tsx, index.ts), utils.ts, wait.ts, web.ts, tooltip.ts
+- ui/public/sounds/tray-confirmation-open.wav, tray-confirmation-confirm.wav, tray-confirmation-cancel.wav
 
 ### Docs / Config / Build (24 files)
 - README.md, CONTRIBUTING.md, SECURITY.md, CHANGELOG.md, CODE_OF_CONDUCT.md, OLS_Master_SRS_v4.md
@@ -82,6 +83,10 @@ ui/src/lib/notify.ts, ui/src/components/NotificationHost.tsx, ui/src/components/
 - [2026-11-03] fix(tray): Preload the separate tray confirmation webview to avoid its startup delay; use the app background token on its opaque window to prevent desktop bleed at the rounded corners, and sync live appearance changes. Updated catalog.txt, relationships.txt, and full_documentation.md. Files Processed remains 277, matching Files to Process.
 - [2026-11-03] fix(tray): Remove the confirmation card's visible border while keeping its rounded, app-background-matched surface. Updated catalog.txt and full_documentation.md. Files Processed remains 277, matching Files to Process.
 - [2026-11-03] fix(tray): Start the confirmation card entrance animation only after showing the preloaded native window, so the animation is visible on each tray request. Updated catalog.txt and full_documentation.md. Files Processed remains 277, matching Files to Process.
+- [2026-11-03] feat(tray): Use the three synthesized NileAsk dialog sounds for confirmation open, confirm, and cancel; add General → Confirm before exit (default on), applying it to Exit only. Stop all still always confirms. Updated catalog.txt, relationships.txt, full_documentation.md, and data_models.txt; added three WAV assets. Files Processed is now 280, matching Files to Process.
+- [2026-11-03] feat(settings): Add independent General → Confirm before Stop all switch (default on), allowing tray Stop all to skip its confirmation without changing the Exit preference. Updated catalog.txt, relationships.txt, full_documentation.md, and data_models.txt. Files Processed remains 280, matching Files to Process.
+- [2026-11-03] fix(ui): Place Settings Save at the end of applicable sections in a separated, right-aligned in-flow footer to improve discoverability without covering content. Updated catalog.txt and full_documentation.md. Files Processed remains 280, matching Files to Process.
+- [2026-11-03] fix(ui): Move Save settings next to the Settings heading so it is immediately visible without scrolling. Updated catalog.txt and full_documentation.md. Files Processed remains 280, matching Files to Process.
 - [2026-11-03] fix(startup): Initialize service-status tracking at UI mount and route configured autostart services through CoreCommand::StartService, so status changes appear without revisiting a page and web startup emits transition/failure states. Added a web autostart event regression test. Files Processed remains 276, matching Files to Process.
 - [2026-11-03] fix(quick-apps): Include the selected tray recipe name in navigation and show it immediately in the wizard while details load; replace the misleading Review control with a loading status until the recipe is ready. Updated catalog.txt, relationships.txt and full_documentation.md. Files Processed remains 276, matching Files to Process.
 - [2026-11-03] fix(ui): grouped legacy hidden automatic domains under their matching hidden project folders in Settings → Hide/Exclude, with confirmed project/domain restore actions and invalidation of the persistent Sites page caches after restore. The grouping is display-only and uses the existing folder-name slug/default-TLD hostname rule; hidden history storage and backend behavior are unchanged. Updated catalog.txt, relationships.txt, and full_documentation.md. Files Processed remains 275, matching Files to Process.

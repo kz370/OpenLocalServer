@@ -102,6 +102,8 @@ export function SettingsPage() {
   const [autoDomains, setAutoDomains] = useState(autoDomainsCache.get)
   const [watchSites, setWatchSites] = useState(watchSitesCache.get)
   const [autoFixDiagnostics, setAutoFixDiagnostics] = useState(autoFixDiagnosticsCache.get)
+  const [confirmExit, setConfirmExit] = useState(true)
+  const [confirmStopAll, setConfirmStopAll] = useState(true)
   const [sitesDir, setSitesDir] = useState(sitesDirCache.get)
   const [rootFolders, setRootFolders] = useState<string[]>(rootFoldersCache.get)
   const [defaultTld, setDefaultTld] = useState(defaultTldCache.get)
@@ -193,6 +195,16 @@ export function SettingsPage() {
 
   useEffect(() => {
     if (section !== 'general') return
+    void runCommand({ type: 'get_setting', key: 'exit.confirmation.enabled' }).then((r) => {
+      if (r.type === 'setting') {
+        setConfirmExit(r.value !== false)
+      }
+    })
+    void runCommand({ type: 'get_setting', key: 'tray.stop_all.confirmation.enabled' }).then((r) => {
+      if (r.type === 'setting') {
+        setConfirmStopAll(r.value !== false)
+      }
+    })
     void runCommand({ type: 'list_editors' }).then((r) => {
       if (r.type === 'editors') {
         setEditors(r.editors)
@@ -697,9 +709,17 @@ export function SettingsPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-        <p className="text-sm text-muted-foreground">OLS {version && `v${version}`}</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+          <p className="text-sm text-muted-foreground">OLS {version && `v${version}`}</p>
+        </div>
+        {showSave && (
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            {saved && <span className="text-sm text-success" role="status">{saved}</span>}
+            <SaveButton action={action} name="save" busyLabel="Saving…" onClick={() => void run('save', section === 'mcp' ? saveMcp : saveAll)}>Save settings</SaveButton>
+          </div>
+        )}
       </div>
 
       <ErrorCard error={error} onDismiss={() => setError(null)} />
@@ -759,6 +779,36 @@ export function SettingsPage() {
                   >
                     {helperField}
                   </SettingRow>
+                  <SwitchRow
+                    checked={confirmExit}
+                    onChange={(value) => {
+                      setConfirmExit(value)
+                      void run('exit-confirmation', async () => {
+                        await runCommand({
+                          type: 'set_setting',
+                          key: 'exit.confirmation.enabled',
+                          value,
+                        })
+                      })
+                    }}
+                    title="Confirm before exit"
+                    hint="Ask before exiting OpenLocalServer. This does not affect the Stop all confirmation."
+                  />
+                  <SwitchRow
+                    checked={confirmStopAll}
+                    onChange={(value) => {
+                      setConfirmStopAll(value)
+                      void run('stop-all-confirmation', async () => {
+                        await runCommand({
+                          type: 'set_setting',
+                          key: 'tray.stop_all.confirmation.enabled',
+                          value,
+                        })
+                      })
+                    }}
+                    title="Confirm before Stop all"
+                    hint="Ask before Stop all from the tray. This does not affect the Exit confirmation."
+                  />
                 </CardContent>
               </Card>
               <Card>
@@ -1122,12 +1172,6 @@ export function SettingsPage() {
             </Card>
           )}
 
-          {showSave && (
-            <div className="flex items-center gap-3">
-              <SaveButton action={action} name="save" busyLabel="Saving…" onClick={() => void run('save', section === 'mcp' ? saveMcp : saveAll)}>Save settings</SaveButton>
-              {saved && <span className="text-sm text-success">{saved}</span>}
-            </div>
-          )}
         </div>
       </div>
     </div>
