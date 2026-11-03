@@ -233,4 +233,5 @@ DiagnosticsCard & DashboardPage & ServicesPage | uses | diagnosticsNotify (start
 CoreClient (ui/src/core/client.ts) | notifies | diagnosticsNotify via setCommandLifecycleHook (onBeforeCommand, onCommandSuccess, onCommandError, onBeforeExit)
 diagnosticsNotify | drives | notify condition resolution (registerNotificationCondition, evaluateNotificationConditions, resolveNotificationByKey, resolveNotificationsForService)
 TechIcon | renders | Simple Icons with their official brand hex color; TechTile adds a matching background tint and ServiceMark layers independent service state on top.
+LogsPage | offers | an `Auto-scroll` toggle independent of Live/Paused log fetching.
 Tray Start all / Stop all | dispatch | CoreCommand::StartService / CoreCommand::StopAll asynchronously; manual Stop all intent suppresses unexpected-exit reporting, busy state disables both items, and completion restores the real state via `ols:status-icon` and the tray tooltip.

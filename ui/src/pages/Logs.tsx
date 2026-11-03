@@ -141,7 +141,7 @@ export function LogsPage({
             <option value="info">Info</option>
             <option value="debug">Debug</option>
           </Select>
-          <Toggle checked={follow} onChange={setFollow} label="Follow" />
+          <Toggle checked={follow} onChange={setFollow} label="Auto-scroll" />
           <div className="ml-auto flex gap-1">
             <Button size="sm" variant="secondary" onClick={() => setLive(!live)}>
               {live ? <Pause /> : <Play />} {live ? 'Live' : 'Paused'}
