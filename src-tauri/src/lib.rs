@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use ols_core::process::{ProcessEvent, ProcessState};
 use ols_core::quickapp::EntryView;
 use ols_core::runtime::RuntimeEvent;
+use ols_core::health::HealthProgress;
 use ols_core::{
     AppPaths, Core, CoreCommand, CoreResponse, Diagnostic, ProcessSupervisor, RuntimeManager,
     SettingsService,
@@ -44,6 +45,35 @@ async fn run_command(
     // that synchronously here added about a second to every read (site reads
     // included) before the response ever reached the UI. The 2-second tray
     // heartbeat keeps the tray fresh regardless.
+    let state = state.inner().clone();
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        sync_status_icon(&app_handle, &state);
+        sync_tray_tooltip(&app_handle, &state);
+    });
+    dispatched
+}
+
+/// Health-check variant of `run_command` that streams completed stages to the UI.
+#[tauri::command]
+async fn run_health_check(
+    hostname: String,
+    on_progress: tauri::ipc::Channel<HealthProgress>,
+    state: tauri::State<'_, Core>,
+    app: AppHandle,
+) -> Result<CoreResponse, Diagnostic> {
+    let core = state.inner().clone();
+    let dispatched = tauri::async_runtime::spawn_blocking(move || {
+        core.health_check_with_progress(&hostname, |progress| {
+            let _ = on_progress.send(progress);
+        })
+    })
+    .await
+    .map_err(|e| Diagnostic {
+        problem: "The command crashed.".into(),
+        cause: e.to_string(),
+        fix: None,
+    })?;
     let state = state.inner().clone();
     let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -2159,7 +2189,7 @@ pub fn run() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![run_command, request_exit])
+        .invoke_handler(tauri::generate_handler![run_command, run_health_check, request_exit])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use crate::app::Inner;
 use crate::error::{CoreError, Diagnostic};
+use crate::health::HealthProgress;
 use crate::paths::AppPaths;
 use crate::process::ProcessSupervisor;
 use crate::runtime::RuntimeManager;
@@ -216,5 +217,18 @@ impl Core {
             .map_err(|e| Diagnostic::from(&e));
         services.finish_transitions(&transitions);
         result
+    }
+
+    /// Runs a site health check while reporting each step's start and result.
+    /// The regular `HealthCheck` dispatch remains available to non-UI callers.
+    pub fn health_check_with_progress(
+        &self,
+        hostname: &str,
+        progress: impl FnMut(HealthProgress),
+    ) -> Result<CoreResponse, Diagnostic> {
+        self.inner
+            .health_check_with_progress(hostname, progress)
+            .map(|report| CoreResponse::Health { report })
+            .map_err(|error| Diagnostic::from(&error))
     }
 }

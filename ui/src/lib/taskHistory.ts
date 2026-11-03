@@ -226,3 +226,5 @@ function collapseFinished(tasks: TaskView[]): HistoryTask[] {
   }
   return collapsed
 }
+
+recoverInterruptedTasks()

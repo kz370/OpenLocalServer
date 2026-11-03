@@ -3,10 +3,18 @@ use std::path::PathBuf;
 use crate::app::*;
 use crate::domain::Domain;
 use crate::error::CoreError;
-use crate::health::{HealthReport, HealthTarget};
+use crate::health::{HealthProgress, HealthReport, HealthTarget};
 
 impl Inner {
     pub fn health_check(&self, hostname: &str) -> Result<HealthReport, CoreError> {
+        self.health_check_with_progress(hostname, |_| {})
+    }
+
+    pub fn health_check_with_progress(
+        &self,
+        hostname: &str,
+        progress: impl FnMut(HealthProgress),
+    ) -> Result<HealthReport, CoreError> {
         let cfg = self.web_config();
         let d =
             self.domains.lock().unwrap().get(hostname).ok_or_else(|| {
@@ -15,7 +23,7 @@ impl Inner {
         let cert = self.certs.info(hostname);
         let ca_info = self.certs.ca_info();
         let ca_path = PathBuf::from(&ca_info.cert_path);
-        Ok(crate::health::check_site(&HealthTarget {
+        Ok(crate::health::check_site_with_progress(&HealthTarget {
             hostname,
             https: d.https,
             http_port: cfg.http_port(),
@@ -23,7 +31,7 @@ impl Inner {
             ca_pem: &ca_path,
             ca_trusted: ca_info.trusted,
             cert: cert.as_ref(),
-        }))
+        }, progress))
     }
 
     // ------------------------------------------------------------------ databases

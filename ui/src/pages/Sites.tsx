@@ -24,7 +24,7 @@ import { Input } from '@/components/ui/input'
 import { FloatingMenu, type MenuAnchor, type MenuItem } from '@/components/ui/menu'
 import { Pagination } from '@/components/ui/pagination'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { type Domain, type DomainSummary, type EditorInfo, type HealthReport, type Project, type WpProject, runCommand } from '@/core'
+import { type Domain, type DomainSummary, type EditorInfo, type HealthProgress, type HealthReport, type HealthStep, type Project, type WpProject, runCommand } from '@/core'
 import { getCached, setCached } from '@/lib/cache'
 import { confirmAction } from '@/lib/confirm'
 import { notify } from '@/lib/notify'
@@ -61,6 +61,7 @@ const GROUPS: { id: Group; label: string; icon: string }[] = [
 ]
 
 const HEALTH_CHECK_STEPS = ['DNS', 'TCP', 'TLS', 'Certificate', 'Trust', 'HTTP']
+type HealthStepState = 'running' | HealthStep
 
 const groupOf = (r: Row): Group => r.site?.group ?? 'none'
 
@@ -86,6 +87,36 @@ function StatusDot({ site, running }: { site: DomainSummary | null; running: boo
   )
 }
 
+function HealthProgressRow({ name, state }: { name: string; state: HealthStepState | undefined }) {
+  if (!state) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <span className="size-4 shrink-0 text-center" aria-hidden="true">·</span>
+        <span className="font-medium text-foreground">{name}</span>
+        <span>Waiting…</span>
+      </div>
+    )
+  }
+  if (state === 'running') {
+    return (
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Spinner className="size-4 shrink-0 text-primary" />
+        <span className="font-medium text-foreground">{name}</span>
+        <span>Checking…</span>
+      </div>
+    )
+  }
+  return (
+    <div className="flex items-start gap-2 text-sm">
+      <span className={state.skipped ? 'text-muted-foreground' : state.ok ? 'text-success' : 'text-destructive'}>{state.skipped ? '–' : state.ok ? '✓' : '✗'}</span>
+      <div>
+        <span className="font-medium">{state.name}</span>
+        <div className="text-xs text-muted-foreground">{state.detail}</div>
+      </div>
+    </div>
+  )
+}
+
 let cachedWpProjects: WpProject[] = []
 
 export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
@@ -104,6 +135,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   const [healthOpen, setHealthOpen] = useState(false)
   const [healthChecking, setHealthChecking] = useState(false)
   const [healthHostname, setHealthHostname] = useState('')
+  const [healthStepStates, setHealthStepStates] = useState<Record<string, HealthStepState>>({})
   const [dupOf, setDupOf] = useState<string | null>(null)
   const [dupName, setDupName] = useState('')
   const [query, setQuery] = useState('')
@@ -736,10 +768,13 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         onSelect: () => {
           setHealth(null)
           setHealthHostname(d.hostname)
+          setHealthStepStates({ DNS: 'running' })
           setHealthChecking(true)
           setHealthOpen(true)
           void run('health', async () => {
-            const r = await runCommand({ type: 'health_check', hostname: d.hostname })
+            const r = await runCommand({ type: 'health_check', hostname: d.hostname }, (progress: HealthProgress) => {
+              setHealthStepStates((current) => ({ ...current, [progress.name]: progress.step ?? 'running' }))
+            })
             if (r.type === 'health') setHealth(r.report)
           }).finally(() => setHealthChecking(false))
         },
@@ -1499,13 +1534,9 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         description={healthChecking ? 'Checking DNS, TCP, TLS, certificate trust, and HTTP…' : health?.ok ? 'Every link in the chain works.' : health ? 'Something in the chain is broken. The first failing step is the one to fix.' : 'The health check did not return a report. See the page error for details.'}
       >
         {healthChecking ? (
-          <div className="flex flex-col gap-3" role="status" aria-live="polite">
+          <div className="flex flex-col gap-3" aria-live="polite">
             {HEALTH_CHECK_STEPS.map((step) => (
-              <div key={step} className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Spinner className="size-4 shrink-0 text-primary" />
-                <span className="font-medium text-foreground">{step}</span>
-                <span>Checking…</span>
-              </div>
+              <HealthProgressRow key={step} name={step} state={healthStepStates[step]} />
             ))}
           </div>
         ) : (

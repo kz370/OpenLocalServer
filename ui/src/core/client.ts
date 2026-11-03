@@ -1,5 +1,6 @@
-import { invoke } from '@tauri-apps/api/core'
+import { Channel, invoke } from '@tauri-apps/api/core'
 import type { Diagnostic } from './types/system'
+import type { HealthProgress } from './types/web'
 import type { CoreCommand } from './commands'
 import type { CoreResponse } from './responses'
 import { beginCommandTask, commandTaskKey, discardCommandTask, finishCommandTask } from '@/lib/taskHistory'
@@ -18,7 +19,7 @@ export function setCommandLifecycleHook(hook: CommandLifecycleHook | null) {
   lifecycleHook = hook
 }
 
-export function runCommand(command: CoreCommand): Promise<CoreResponse> {
+export function runCommand(command: CoreCommand, onHealthProgress?: (progress: HealthProgress) => void): Promise<CoreResponse> {
   const taskKey = commandTaskKey(command)
   if (taskKey) {
     const existing = inFlightTasks.get(taskKey)
@@ -27,7 +28,13 @@ export function runCommand(command: CoreCommand): Promise<CoreResponse> {
 
   lifecycleHook?.onBeforeCommand?.(command)
   const taskId = beginCommandTask(command)
-  const request = invoke<CoreResponse>('run_command', { command })
+  const invokeCommand = command.type === 'health_check' && onHealthProgress
+    ? invoke<CoreResponse>('run_health_check', {
+        hostname: command.hostname,
+        onProgress: new Channel<HealthProgress>(onHealthProgress),
+      })
+    : invoke<CoreResponse>('run_command', { command })
+  const request = invokeCommand
     .then((response) => {
       if (response.type === 'task_started') discardCommandTask(taskId)
       else finishCommandTask(taskId)
