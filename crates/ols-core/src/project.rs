@@ -486,6 +486,15 @@ impl ProjectStore {
         self.persist()
     }
 
+    /// Restores a project record preserved by the session's excluded-folder undo action.
+    pub fn restore(&mut self, project: Project) -> Result<(), CoreError> {
+        if self.projects.iter().any(|p| p.id == project.id) {
+            return Ok(());
+        }
+        self.projects.push(project);
+        self.persist()
+    }
+
     fn persist(&self) -> Result<(), CoreError> {
         let refs: Vec<(String, &Project)> =
             self.projects.iter().map(|p| (p.id.clone(), p)).collect();

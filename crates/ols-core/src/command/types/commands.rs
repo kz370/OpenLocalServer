@@ -249,6 +249,9 @@ pub enum CoreCommand {
     DeleteSite {
         hostname: String,
     },
+    RestoreExcludedSite {
+        hostname: String,
+    },
     SetDomainEnabled {
         hostname: String,
         enabled: bool,

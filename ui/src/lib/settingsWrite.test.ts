@@ -3,8 +3,6 @@ import assert from 'node:assert/strict'
 import { generalSettingWrites, type GeneralSettingsDraft } from './settingsWrite.ts'
 
 const base: GeneralSettingsDraft = {
-  editor: '',
-  editorId: 'vscode',
   confirmExit: true,
   confirmStopAll: true,
   autoFixDiagnostics: true,
@@ -27,18 +25,11 @@ test('writes the confirmation and diagnostics switches with their current values
   )
 })
 
-test('preset editor writes its id and blanks the custom command', () => {
-  const writes = generalSettingWrites({ ...base, editorId: 'vscode', editor: 'ignored' })
-  assert.deepEqual(writes.slice(0, 2), [
-    { key: 'editor', value: 'vscode' },
-    { key: 'editor.command', value: '' },
-  ])
-})
-
-test('custom editor blanks the id and writes the path', () => {
-  const writes = generalSettingWrites({ ...base, editorId: 'custom', editor: 'C:\\bin\\code.cmd' })
-  assert.deepEqual(writes.slice(0, 2), [
-    { key: 'editor', value: '' },
-    { key: 'editor.command', value: 'C:\\bin\\code.cmd' },
+test('does not write legacy editor settings', () => {
+  const keys = generalSettingWrites(base).map((write) => write.key)
+  assert.deepEqual(keys, [
+    'exit.confirmation.enabled',
+    'tray.stop_all.confirmation.enabled',
+    'diagnostics.auto_fix',
   ])
 })

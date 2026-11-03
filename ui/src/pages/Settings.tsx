@@ -253,6 +253,7 @@ export function SettingsPage() {
       if (r.type === 'editors') {
         setEditors(r.editors)
         editorsCache.set(r.editors)
+        if (!r.editors.some((editor) => editor.path && !editor.hidden)) setShowAddEditor(true)
       }
     })
     void runCommand({ type: 'get_helper_service' }).then((r) => {

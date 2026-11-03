@@ -71,6 +71,20 @@ impl Core {
                 C::DeleteSite { hostname } => {
                     i.delete_site(&hostname)?;
                     i.reconcile()?;
+                    let moved = i.pending_site_undo.lock().unwrap().get(&hostname).cloned();
+                    if let Some(moved) = moved {
+                        Ok(R::ExcludedSiteMoved {
+                            hostname,
+                            source: moved.source.display().to_string(),
+                            destination: moved.destination.display().to_string(),
+                        })
+                    } else {
+                        Ok(R::Ok)
+                    }
+                }
+                C::RestoreExcludedSite { hostname } => {
+                    i.restore_excluded_site(&hostname)?;
+                    i.reconcile()?;
                     Ok(R::Ok)
                 }
                 C::SetDomainEnabled { hostname, enabled } => {

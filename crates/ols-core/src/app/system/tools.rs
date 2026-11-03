@@ -235,11 +235,13 @@ impl Inner {
         let editor = crate::editors::list_all(&settings)
             .into_iter()
             .find(|e| !e.hidden && e.path.is_some())
-            .ok_or_else(|| CoreError::failed_fix(
-                "No editor is configured.",
-                "Open with editor needs at least one editor in the editor list.",
-                "Add an editor in Settings > General, then try again.",
-            ))?;
+            .ok_or_else(|| {
+                CoreError::failed_fix(
+                    "No editor is configured.",
+                    "Open with editor needs at least one editor in the editor list.",
+                    "Add an editor in Settings > General, then try again.",
+                )
+            })?;
         let exe = PathBuf::from(editor.path.unwrap());
         drop(settings);
         self.launch_editor(&exe, path)

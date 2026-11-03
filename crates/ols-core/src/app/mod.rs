@@ -11,12 +11,12 @@ use tokio::sync::broadcast;
 use crate::certs::CertificateManager;
 use crate::custom_install::CustomInstallStore;
 use crate::dbtools::ExternalToolStore;
-use crate::domain::{AppSpec, DomainStore, SiteBlocks, SiteKind};
+use crate::domain::{AppSpec, Domain, DomainStore, SiteBlocks, SiteKind};
 use crate::error::CoreError;
 use crate::paths::AppPaths;
 use crate::php::PhpPools;
 use crate::process::{ProcessId, ProcessSpec, ProcessSupervisor};
-use crate::project::ProjectStore;
+use crate::project::{Project, ProjectStore};
 use crate::quickapp::commands::{CommandHistory, QuickCommandStore};
 use crate::quickapp::plan::{self, PlanCtx, RunPlan};
 use crate::quickapp::{QuickCatalog, RunManager};
@@ -108,7 +108,16 @@ pub struct Inner {
     /// Last automatic-fix failures, shown in the corresponding diagnostic's details.
     pub auto_fix_failures: Mutex<HashMap<String, String>>,
     pub pending_add_project: Mutex<Option<String>>,
+    pub(crate) pending_site_undo: Mutex<HashMap<String, PendingSiteUndo>>,
     pub(crate) project_events: broadcast::Sender<()>,
+}
+
+#[derive(Clone)]
+pub(crate) struct PendingSiteUndo {
+    pub source: PathBuf,
+    pub destination: PathBuf,
+    pub domains: Vec<Domain>,
+    pub project: Option<Project>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -286,6 +295,7 @@ impl Inner {
             auto_fix_attempted: Mutex::new(HashSet::new()),
             auto_fix_failures: Mutex::new(HashMap::new()),
             pending_add_project: Mutex::new(None),
+            pending_site_undo: Mutex::new(HashMap::new()),
             project_events,
             paths,
         });

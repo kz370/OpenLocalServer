@@ -119,11 +119,20 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   const [wpProjects, setWpProjects] = useState<WpProject[]>(cachedWpProjects)
   const [unconnectedProjectIds, setUnconnectedProjectIds] = useState<string[] | null>(null)
   const [editors, setEditors] = useState<EditorInfo[]>([])
+  const [excludedFolder, setExcludedFolder] = useState('ols_excluded_sites')
 
   useEffect(() => {
     void runCommand({ type: 'list_editors' }).then((r) => {
       if (r.type === 'editors') setEditors(r.editors)
     }).catch(() => setEditors([]))
+  }, [])
+
+  useEffect(() => {
+    void runCommand({ type: 'get_setting', key: 'projects.ignored_folders' }).then((r) => {
+      if (r.type !== 'setting' || !Array.isArray(r.value)) return
+      const reserved = r.value.find((value): value is string => typeof value === 'string' && /excluded_sites/i.test(value))
+      if (reserved) setExcludedFolder(reserved)
+    }).catch(() => undefined)
   }, [])
 
   useEffect(() => {
@@ -797,6 +806,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       items.push({
         label: 'Remove from list',
         icon: <ListX />,
+        hint: 'Removes the site entry but keeps its project. Add it again from Projects.',
         disabled: removing.has(key) || busy === `remove:${key}`,
         onSelect: async () => {
           const ok = await confirmAction(
@@ -818,24 +828,37 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         label: 'Move to excluded folder',
         icon: <FolderArchive />,
         tone: 'amber',
-        hint: 'Moves the folder to ols_excluded_sites. Restore it from Projects.',
+        hint: `Moves the folder to ${excludedFolder}. Restore it from Projects.`,
         disabled: allHosts.some((h) => removing.has(h)) || busy === `delete:${key}`,
         onSelect: async () => {
           const hostLabel = allHosts.length > 1 ? `${d.hostname} (+${r.extraDomains.length} extra domains)` : d.hostname
           const ok = await confirmAction(
-            `${p?.name ?? d.hostname}\nFolder: ${folder ?? 'Unknown'}\nDestination: ${folder ? `${folder.replace(/[\\/][^\\/]+$/, '')}\\ols_excluded_sites` : 'ols_excluded_sites'}\nMove the folder and remove the site from OpenLocalServer. Restore it by moving it back from the excluded folder, then add it again from Projects.`,
+            `${p?.name ?? d.hostname}\nFolder: ${folder ?? 'Unknown'}\nDestination: ${folder ? `${folder.replace(/[\\/][^\\/]+$/, '')}\\${excludedFolder}` : excludedFolder}\nMove the folder and remove the site from OpenLocalServer. Restore it by moving it back from the excluded folder, then add it again from Projects.`,
             `Move ${hostLabel} to excluded?`,
             'Move to excluded',
             'amber',
           )
           if (!ok) return
-          await run(`delete:${key}`, () => web.deleteSites(allHosts))
+          await run(`delete:${key}`, async () => {
+            const result = await web.deleteSites(allHosts)
+            if (result.changed > 0) notify.success(`${d.hostname} moved to excluded. Undo`, {
+              action: {
+                label: 'Undo',
+                isUndo: true,
+                onClick: async () => {
+                  await web.restoreDeletedSite(d.hostname)
+                  notify.success(`${d.hostname} restored`)
+                },
+              },
+            })
+          })
         },
       })
     } else if (p) {
       items.push({
         label: 'Hide',
         icon: <EyeOff />,
+        hint: 'Stops serving this site. Restore it from Settings > Hidden sites.',
         disabled: removing.has(p.id) || busy === `hide:${p.id}`,
         onSelect: async () => {
           const ok = await confirmAction(

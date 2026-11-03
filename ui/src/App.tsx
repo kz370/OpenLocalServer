@@ -266,6 +266,12 @@ export default function App() {
         setDoctor(true)
         return
       }
+      if (event.payload === 'settings:editors') {
+        try { sessionStorage.setItem('ols:settings-section', 'editors') } catch {}
+        navigate('settings')
+        window.dispatchEvent(new CustomEvent<string>('ols:open-settings-section', { detail: 'editors' }))
+        return
+      }
       const route = event.payload === 'quick-apps' ? 'quickapps' : event.payload === 'terminal' ? 'processes' : event.payload
       if (VALID_PAGES.includes(route as Page)) {
         navigate(route as Page)

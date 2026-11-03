@@ -81,6 +81,7 @@ export type CoreResponse =
   | { type: 'log_lines'; source: string; lines: string[] }
   | { type: 'startup'; settings: StartupSettings }
   | { type: 'editors'; editors: EditorInfo[] }
+  | { type: 'excluded_site_moved'; hostname: string; source: string; destination: string }
   | { type: 'count'; count: number }
   /** What a bulk site edit did. `skipped` names every site the batch refused and why, so
    *  a partly applied edit is reported rather than looking like it fully worked. */

@@ -229,9 +229,10 @@ export function useWeb() {
     markRemoving(hostname)
     setDomains((list) => { const next = list.filter((d) => d.hostname !== hostname); domainsCache.set(next); return next; })
     try {
-      await runCommand({ type: 'delete_site', hostname })
+      const result = await runCommand({ type: 'delete_site', hostname })
       await refreshProjects()
       await applyTracked()
+      return result
     } catch (e) {
       await refresh().catch(() => undefined)
       await refreshProjects().catch(() => undefined)
@@ -239,6 +240,12 @@ export function useWeb() {
     } finally {
       markRemoving(hostname, false)
     }
+  }
+
+  async function restoreDeletedSite(hostname: string) {
+    await runCommand({ type: 'restore_excluded_site', hostname })
+    await Promise.all([refresh(), refreshProjects()])
+    await applyTracked()
   }
 
   /**
@@ -389,6 +396,7 @@ export function useWeb() {
     removing,
     applying,
     deleteSite,
+    restoreDeletedSite,
     deleteSites,
     deleteProject,
     relocateProject,

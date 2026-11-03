@@ -932,9 +932,9 @@ fn tray_menu(
             if editors.is_empty() {
                 editor_items.push(Box::new(MenuItem::with_id(
                     app,
-                    &format!("no_editors:{}", project.id),
-                    "No editors found",
-                    false,
+                    &format!("editors_settings:{}", project.id),
+                    "Add an editor…",
+                    true,
                     None::<&str>,
                 )?));
             } else {
@@ -1541,6 +1541,7 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
                 "doctor" => navigate(app, "diagnostics"),
                 "site_add" => navigate(app, "sites"),
                 "projects_page" => navigate(app, "projects"),
+                id if id.starts_with("editors_settings:") => navigate(app, "settings:editors"),
                 id if id.starts_with("project_dir:") => {
                     let project_id = &id["project_dir:".len()..];
                     if let Some(project) = core.inner().projects.lock().unwrap().get(project_id) {

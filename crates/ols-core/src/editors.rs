@@ -33,23 +33,47 @@ const LEGACY_EDITOR_MIGRATED_SETTING: &str = "editors.legacy_migrated";
 
 /// Migrate the removed default-editor pair exactly once, retaining the legacy values.
 pub fn migrate_legacy_settings(settings: &mut crate::settings::SettingsService) {
-    if settings.get(LEGACY_EDITOR_MIGRATED_SETTING).and_then(|v| v.as_bool()) == Some(true) {
+    if settings
+        .get(LEGACY_EDITOR_MIGRATED_SETTING)
+        .and_then(|v| v.as_bool())
+        == Some(true)
+    {
         return;
     }
-    let old_id = settings.get("editor").and_then(|v| v.as_str()).unwrap_or("");
-    let old_command = settings.get("editor.command").and_then(|v| v.as_str()).unwrap_or("").trim();
-    let mut list = settings.get(CUSTOM_EDITORS_SETTING)
+    let old_id = settings
+        .get("editor")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let old_command = settings
+        .get("editor.command")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim();
+    let mut list = settings
+        .get(CUSTOM_EDITORS_SETTING)
         .and_then(|v| serde_json::from_value::<Vec<CustomEditor>>(v.clone()).ok())
         .unwrap_or_default();
     // VS Code is already part of the detected editor list, so retaining it as a custom
     // editor would show a duplicate entry. The legacy choice now resolves to that entry.
     let _migrated_vscode_choice = old_id == "vscode";
     if !old_command.is_empty() && !list.iter().any(|e| e.id == "legacy:custom") {
-        let name = Path::new(old_command).file_stem().and_then(|s| s.to_str()).unwrap_or("Custom Editor").to_string();
-        list.push(CustomEditor { id: "legacy:custom".into(), name, path: old_command.to_string(), args: None });
+        let name = Path::new(old_command)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("Custom Editor")
+            .to_string();
+        list.push(CustomEditor {
+            id: "legacy:custom".into(),
+            name,
+            path: old_command.to_string(),
+            args: None,
+        });
     }
     let _ = save_custom(settings, &list);
-    let _ = settings.set(LEGACY_EDITOR_MIGRATED_SETTING, serde_json::Value::Bool(true));
+    let _ = settings.set(
+        LEGACY_EDITOR_MIGRATED_SETTING,
+        serde_json::Value::Bool(true),
+    );
 }
 
 /// Reads user-configured hidden editor IDs from settings.

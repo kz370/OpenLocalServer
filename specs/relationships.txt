@@ -216,7 +216,7 @@ ExitingOverlay | listens | ols:exiting (renders full-screen animated shutdown lo
 Tauri request_exit | calls | begin_shutdown
 CommandPalette & SettingsPage | invoke | requestExit
 SitesPage | uses | FloatingMenu (shared context menu on table row onContextMenu and Actions button click; portaled via @floating-ui/react FloatingPortal with flip, shift, size, offset, autoUpdate, and useDismiss below the 36px titlebar at z-[95])
-SitesPage safe delete action | displays | `Safe delete` with the visible description `Moves folder to excluded, restorable`; confirmation button repeats the action label
+SitesPage move-to-excluded action | displays | `Move to excluded folder` with a neutral tooltip, amber icon/title, source/destination confirmation and an Undo toast that restores folder plus site records
 SitesPage | filters | 'missing' tab (isolates sites whose project folder is missing or offline from 'enabled' / 'disabled' tabs)
 ProjectsPage | uses | ProjectTypeFilterBar, ProjectSettingsDialog, AddProjectDialog, ManageProjectTypesDialog, ProjectTypePicker, projectTypes, FloatingMenu, Pagination, SiteLogo, TechIcon, GitCloneButton
 ProjectTypeFilterBar | uses | TechIcon, Badge, Button, Input, FloatingPortal, useFloating, useDismiss, useInteractions
@@ -274,6 +274,7 @@ SitesPage focus/visibility | refreshes | read-only list_domains + list_projects 
 RemoveSiteFromList | returns after | removing the domain and preserving/registering its project as standalone; SitesPage refreshes rows immediately, then invokes SyncHosts asynchronously with an updating status
 scan_and_register_projects + sync_auto_domains | skip | .ols_ignore_me paths and hidden-site paths
 SitesPage | removes a site from the list via | remove_site_from_list; removes only the site record, retains/registers the project, then reconciles hosts and web config
+Editor settings migration | reads legacy `editor` and `editor.command` once, migrates any custom command into `editors.custom`, leaves legacy values intact, and never reads them again
 SitesPage Remove site only | updates | projects_page_domains persistent cache immediately after remove_site_from_list succeeds; ProjectsPage reads that cache for its initial Connected Site state
 useWeb.apply | notifies via | notify.success when config files, server state, or hosts file changed; unchanged apply is silent, while drifted config opens DriftDialog
 SyncHosts | returns | Applied reports from reconciliation so useWeb.reconcileSites can notify about web servers that actually reloaded after a site change

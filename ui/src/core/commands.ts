@@ -91,6 +91,7 @@ export type CoreCommand =
   | { type: 'update_domain'; domain: Domain }
   | { type: 'remove_domain'; hostname: string }
   | { type: 'delete_site'; hostname: string }
+  | { type: 'restore_excluded_site'; hostname: string }
   | { type: 'set_domain_enabled'; hostname: string; enabled: boolean }
   | { type: 'bulk_set_domains_enabled'; hostnames: string[]; enabled: boolean }
   | { type: 'bulk_remove_domains'; hostnames: string[] }

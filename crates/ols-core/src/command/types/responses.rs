@@ -306,6 +306,11 @@ pub enum CoreResponse {
     Editors {
         editors: Vec<crate::editors::EditorInfo>,
     },
+    ExcludedSiteMoved {
+        hostname: String,
+        source: String,
+        destination: String,
+    },
     Xdebug {
         report: XdebugReport,
     },
