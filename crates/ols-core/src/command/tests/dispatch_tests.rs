@@ -360,6 +360,7 @@ fn delete_site_moves_folder_to_ols_excluded_sites() {
 
     // Project folder was moved into ols_excluded_sites in the same directory
     assert!(!project_dir.exists());
+    assert!(core.inner().domains.lock().unwrap().get(&hostname).is_none());
     let excluded_dir = tmp.path().join("ols_excluded_sites").join("my-site");
     assert!(excluded_dir.exists());
     assert!(excluded_dir.join("index.html").exists());

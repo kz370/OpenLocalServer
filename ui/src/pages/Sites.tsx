@@ -761,22 +761,20 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
             await run(`hide:${key}`, () => web.hideSites(allHosts))
           },
         })
-      if (p) {
-        items.push({
-          label: 'Remove from list',
-          icon: <X />,
-          disabled: removing.has(p.id) || busy === `remove:${p.id}`,
-          onSelect: async () => {
-            const ok = await confirmAction(
-              `This site will stop being served. If its folder is under a discover folder, a .ols_ignore_me marker will be written and its database record kept; removing the marker restores it. Otherwise its database record will be removed. Project files stay on disk.`,
-              `Remove ${p.name} from list?`,
-              'Remove from list',
-            )
-            if (!ok) return
-            await run(`remove:${p.id}`, () => runCommand({ type: 'ignore_project', id: p.id }))
-          },
-        })
-      }
+      items.push({
+        label: 'Remove from list',
+        icon: <X />,
+        disabled: removing.has(key) || busy === `remove:${key}`,
+        onSelect: async () => {
+          const ok = await confirmAction(
+            `This site will stop being served. If its folder is under a discover folder, a .ols_ignore_me marker will be written and its database record kept; removing the marker restores it. Otherwise its database record will be removed. Project files stay on disk.`,
+            `Remove ${p?.name ?? d.hostname} from list?`,
+            'Remove from list',
+          )
+          if (!ok) return
+          await run(`remove:${key}`, () => runCommand({ type: 'remove_site_from_list', hostname: key }))
+        },
+      })
       items.push({
         label: 'Move to excluded folder',
         icon: <Trash2 />,
@@ -1145,7 +1143,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                               </>
                             )}
                           </div>
-                          {d && p && !p.standalone && (
+                          {d && p?.auto_discovered === true && (
                             <div className="mt-0.5 text-[10px] text-muted-foreground">Auto-discovered</div>
                           )}
                         </div>

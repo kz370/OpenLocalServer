@@ -637,12 +637,7 @@ impl Inner {
         };
 
         let created = self.add_domain(domain)?;
-        if created.enabled && !self.web.dns_covers(&created.hostname) {
-            let _ = crate::hosts::ensure(&[created.hostname.clone()]);
-        }
-        if self.web.is_running() {
-            let _ = self.apply_web(&[]);
-        }
+        self.reconcile()?;
 
         Ok(crate::command::CreateSiteResult {
             domain: Some(Box::new(created)),

@@ -41,6 +41,9 @@ pub struct Project {
     pub health: ProjectHealth,
     #[serde(default)]
     pub standalone: bool,
+    /// Computed by ListProjects from configured discovery roots; not persisted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_discovered: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -319,6 +322,7 @@ impl ProjectStore {
             icon_image: None,
             health: ProjectHealth::Healthy,
             standalone,
+            auto_discovered: None,
             icon: None,
             project_type: None,
         };
@@ -381,6 +385,7 @@ impl ProjectStore {
             icon_image: None,
             health: ProjectHealth::Healthy,
             standalone,
+            auto_discovered: None,
             icon: None,
             project_type: pt,
         };

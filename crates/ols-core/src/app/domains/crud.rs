@@ -352,11 +352,50 @@ impl Inner {
 
     /// Hides a site while retaining its database record and project settings.
     pub fn remove_domain(&self, hostname: &str) -> Result<(), CoreError> {
+        if hostname == crate::domain::HOME_HOSTNAME {
+            return Err(CoreError::failed_fix(
+                "The built-in home site cannot be hidden.",
+                "openlocalserver.test is required by OpenLocalServer.",
+                "Hide or remove another site instead.",
+            ));
+        }
         if self.domains.lock().unwrap().get(hostname).is_none() {
             return Err(CoreError::DomainError(format!("{hostname} is not a known domain")));
         }
         self.push_skip(AUTO_SKIP, hostname)?;
         self.web.restart_app(hostname);
+        Ok(())
+    }
+
+    /// Removes a site from OLS, keeping its files. Sites inside a configured discovery
+    /// root are retained with a marker so a later scan cannot add them again.
+    pub fn remove_site_from_list(&self, hostname: &str) -> Result<(), CoreError> {
+        let domain = self.domains.lock().unwrap().get(hostname).ok_or_else(|| {
+            CoreError::DomainError(format!("{hostname} is not a known domain"))
+        })?;
+        let projects = self.projects.lock().unwrap().list();
+        let folder = site_folder(&domain, &projects);
+        let is_discovered = self.string_list(PROJECT_ROOTS).iter().any(|root| {
+            Path::new(&folder).starts_with(Path::new(root))
+        });
+
+        if is_discovered {
+            std::fs::write(Path::new(&folder).join(".ols_ignore_me"), "")
+                .map_err(|e| CoreError::DomainError(format!("could not write .ols_ignore_me: {e}")))?;
+            return Ok(());
+        }
+
+        let mut domains = self.domains.lock().unwrap();
+        domains.remove(hostname)?;
+        drop(domains);
+        if let Some(project_id) = domain.project_id {
+            let still_used = self.domains.lock().unwrap().list().iter().any(|other| {
+                other.project_id.as_deref() == Some(&project_id)
+            });
+            if !still_used {
+                let _ = self.projects.lock().unwrap().remove(&project_id);
+            }
+        }
         Ok(())
     }
 
@@ -372,34 +411,39 @@ impl Inner {
             ));
         }
         let (orphan_project, folder_to_move) = {
-            let mut domains = self.domains.lock().unwrap();
+            let domains = self.domains.lock().unwrap();
             let domain = domains.get(hostname).ok_or_else(|| {
                 CoreError::DomainError(format!("{hostname} is not a known domain"))
             })?;
             let projects = self.projects.lock().unwrap().list();
             let folder = site_folder(&domain, &projects);
-            let orphan_project = domain.project_id.clone().filter(|project_id| {
+            let project_id = domain.project_id.clone().or_else(|| {
+                projects
+                    .iter()
+                    .find(|project| crate::project::same_path(&project.path, &folder))
+                    .map(|project| project.id.clone())
+            });
+            let orphan_project = project_id.filter(|project_id| {
                 !domains
                     .list()
                     .iter()
                     .any(|d| d.hostname != hostname && d.project_id.as_ref() == Some(project_id))
             });
-            domains.remove(hostname)?;
             (orphan_project, folder)
         };
-
-        let _ = self.certs.revoke(hostname);
-        self.web.restart_app(hostname);
-
-        if let Some(ref id) = orphan_project {
-            let _ = self.projects.lock().unwrap().remove(id);
-        }
 
         let folder_path = PathBuf::from(&folder_to_move);
         if folder_path.is_dir() {
             let excluded_folder = self.primary_excluded_folder();
             let _ = move_to_excluded_dir(&folder_path, &excluded_folder)?;
         }
+
+        self.domains.lock().unwrap().remove(hostname)?;
+        if let Some(ref id) = orphan_project {
+            let _ = self.projects.lock().unwrap().remove(id);
+        }
+        let _ = self.certs.revoke(hostname);
+        self.web.restart_app(hostname);
 
         Ok(())
     }

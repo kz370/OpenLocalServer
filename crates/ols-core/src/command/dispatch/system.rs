@@ -413,7 +413,11 @@ impl Core {
                     let mut projects = i.projects.lock().unwrap().list();
                     projects.retain(|p| !std::path::Path::new(&p.path).join(".ols_ignore_me").exists()
                         && !hidden_paths.iter().any(|path| crate::project::same_path(path, &p.path)));
+                    let roots = i.string_list(crate::app::PROJECT_ROOTS);
                     for p in &mut projects {
+                        p.auto_discovered = Some(roots.iter().any(|root| {
+                            std::path::Path::new(&p.path).starts_with(std::path::Path::new(root))
+                        }));
                         p.icon_image = crate::app::read_site_icon_image(&p.path);
                     }
                     Ok(R::Projects { projects })
@@ -424,6 +428,11 @@ impl Core {
                 }
                 C::IgnoreProject { id } => {
                     i.ignore_project(&id)?;
+                    i.reconcile()?;
+                    Ok(R::Ok)
+                }
+                C::RemoveSiteFromList { hostname } => {
+                    i.remove_site_from_list(&hostname)?;
                     i.reconcile()?;
                     Ok(R::Ok)
                 }

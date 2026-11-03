@@ -324,23 +324,11 @@ impl Core {
                     Ok(R::Ok)
                 }
                 C::SyncHosts => {
-                    // Names our local DNS already answers for don't need a hosts entry.
-                    let hostnames: Vec<String> = i
-                        .domains
-                        .lock()
-                        .unwrap()
-                        .list()
-                        .into_iter()
-                        .filter(|d| d.enabled && !i.web.dns_covers(&d.hostname))
-                        .map(|d| d.hostname)
-                        .collect();
-                    let changed = crate::hosts::ensure(&hostnames).map_err(CoreError::WebError)?;
+                    // Reconciliation is the only source for managed hosts entries,
+                    // so hidden and marker-file sites cannot be reintroduced here.
+                    i.reconcile()?;
                     Ok(R::Text {
-                        text: if changed {
-                            "The hosts file was updated.".into()
-                        } else {
-                            "The hosts file was already up to date.".into()
-                        },
+                        text: "The hosts file was reconciled with active sites.".into(),
                     })
                 }
                 other => {

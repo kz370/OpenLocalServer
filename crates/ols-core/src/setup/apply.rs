@@ -245,7 +245,9 @@ impl Inner {
                     .unwrap()
                     .list()
                     .into_iter()
-                    .filter(|d| d.enabled && !self.web.dns_covers(&d.hostname))
+                    .filter(|d| {
+                        d.enabled && self.site_is_active(d) && !self.web.dns_covers(&d.hostname)
+                    })
                     .map(|d| d.hostname)
                     .collect();
                 crate::hosts::ensure(&hostnames)?;
@@ -392,10 +394,15 @@ impl Inner {
         let mut done = Vec::new();
         for u in undo.into_iter().rev() {
             let (what, result): (String, Result<(), String>) = match u {
-                Undo::RemoveDomain(h) => (
-                    format!("removed site {h}"),
-                    self.remove_domain(&h).map_err(|e| e.to_string()),
-                ),
+                Undo::RemoveDomain(h) => {
+                    let removed = { self.domains.lock().unwrap().remove(&h) };
+                    (
+                        format!("removed site {h}"),
+                        removed
+                            .map_err(|e| e.to_string())
+                            .and_then(|()| self.reconcile().map(|_| ()).map_err(|e| e.to_string())),
+                    )
+                }
                 Undo::RestoreDomain(d) => (
                     format!("restored site {}", d.hostname),
                     self.update_domain(*d)

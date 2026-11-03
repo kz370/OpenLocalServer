@@ -3,7 +3,7 @@ Data models (SQLite app.db: settings table + docs collections holding JSON blobs
 Settings: `exit.confirmation.enabled` (boolean, default true) asks before exiting OpenLocalServer from the tray, UI exit action, or window close. `tray.stop_all.confirmation.enabled` (boolean, default true) controls the tray Stop all confirmation independently. Disabling either preference does not change the other.
 
 Entities:
-- Project {id: sha256(path)[..16], name, path, icon_image: Option<String>, health: ProjectHealth, standalone: bool, icon: Option<String>, project_type: Option<String>}
+- Project {id: sha256(path)[..16], name, path, icon_image: Option<String>, health: ProjectHealth, standalone: bool, auto_discovered: Option<bool> (computed for ListProjects from configured discovery roots; not persisted), icon: Option<String>, project_type: Option<String>}
 - `ProjectTypePreset { id: String, name: String, icon: String }` — preset project framework or language (Laravel, Symfony, WordPress, PHP, Python, Django, Flask, FastAPI, Node, Next.js, React, Vue, Go, .NET, Java, Static HTML, Other) loaded from `crates/ols-core/catalog/project-types.yaml`.
 - `CustomProjectType { id: String, name: String }` — user-defined custom project type stored under `projects.custom_types` in settings and referenced on projects as `custom:<name>`, supporting custom project categorization and type tabs.
 - `ProjectFolderInspection { exists: bool, is_dir: bool, path: String, suggested_name: String, duplicate_of: Option<Project>, detected_type: Option<String> }` — folder inspection details for add project modals, evaluating directory existence, path canonicalization, duplicate detection via `same_path`, and framework auto-detection.

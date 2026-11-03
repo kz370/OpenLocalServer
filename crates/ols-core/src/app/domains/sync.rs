@@ -22,7 +22,12 @@ impl Inner {
         if let Err(error) = crate::hosts::sync(&hosts) {
             tracing::warn!(%error, "hosts file could not be reconciled");
         }
-        self.apply_web(&[])?;
+        // Applying configs is useful for a running server: it removes inactive
+        // vhosts and reloads the server. A stopped/uninstalled server has nothing
+        // to reload, and reconciliation must still update the stores and hosts file.
+        if self.web.is_running() {
+            self.apply_web(&[])?;
+        }
         Ok(active.len())
     }
 

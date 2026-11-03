@@ -50,6 +50,7 @@ export type CoreCommand =
   | { type: 'sync_auto_domains' }
   | { type: 'remove_project'; id: string }
   | { type: 'ignore_project'; id: string }
+  | { type: 'remove_site_from_list'; hostname: string }
   | { type: 'delete_project'; id: string }
   | { type: 'relocate_project'; id: string; path: string }
   | { type: 'rename_ignored_folder'; old_name: string; new_name: string }
