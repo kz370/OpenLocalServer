@@ -243,7 +243,13 @@ export function TechIcon({ id, className }: { id: string; className?: string }) 
     return <span className={cn('inline-flex size-4 shrink-0 [&>svg]:size-full', className)}>{generic}</span>
   }
   return (
-    <svg viewBox="0 0 24 24" role="img" aria-label={brand.title} className={cn('size-4 shrink-0', className)} fill="currentColor">
+    <svg
+      viewBox="0 0 24 24"
+      role="img"
+      aria-label={brand.title}
+      className={cn('size-4 shrink-0', className)}
+      fill={`#${brand.hex}`}
+    >
       <path d={brand.path} />
     </svg>
   )

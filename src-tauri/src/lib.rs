@@ -621,7 +621,12 @@ fn run_tray_start_all(core: &Core) {
         match core.dispatch(CoreCommand::StartService { id: id.clone() }) {
             Ok(_) => started += 1,
             Err(error) => {
-                tracing::warn!(service = %id, error = %error, "a tray startup service did not start");
+                tracing::warn!(
+                    service = %id,
+                    problem = %error.problem,
+                    cause = %error.cause,
+                    "a tray startup service did not start"
+                );
                 failed.push(name);
             }
         }
