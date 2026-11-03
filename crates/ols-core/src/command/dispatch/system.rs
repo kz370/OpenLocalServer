@@ -363,6 +363,9 @@ impl Core {
                     let mut registered = Vec::with_capacity(candidates.len());
                     for candidate in candidates {
                         if let Some(s) = candidate.to_str() {
+                            if candidate.join(".ols_ignore_me").exists() {
+                                continue;
+                            }
                             // Bulk scans don't resurrect folders removed from the list.
                             if crate::app::skip_matches(&skipped, s) {
                                 continue;
@@ -387,6 +390,7 @@ impl Core {
                     // the right-click menu is written by another process.
                     i.reload_external_changes();
                     let mut projects = i.projects.lock().unwrap().list();
+                    projects.retain(|p| !std::path::Path::new(&p.path).join(".ols_ignore_me").exists());
                     for p in &mut projects {
                         p.icon_image = crate::app::read_site_icon_image(&p.path);
                     }
@@ -394,6 +398,10 @@ impl Core {
                 }
                 C::RemoveProject { id } => {
                     i.remove_project(&id)?;
+                    Ok(R::Ok)
+                }
+                C::IgnoreProject { id } => {
+                    i.ignore_project(&id)?;
                     Ok(R::Ok)
                 }
                 C::RelocateProject { id, path } => {

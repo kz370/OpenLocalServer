@@ -53,7 +53,7 @@ const SECTIONS: { id: Section; label: string; icon: React.ComponentType<{ classN
   { id: 'mcp', label: 'MCP / AI tools', icon: SettingsMcpIcon },
   { id: 'sites', label: 'Sites & domains', icon: SettingsSitesIcon },
   { id: 'roots', label: 'Root folders', icon: SettingsRootsIcon },
-  { id: 'deleted', label: 'Hide/Exclude', icon: SettingsDeletedIcon },
+  { id: 'deleted', label: 'Hidden sites', icon: SettingsDeletedIcon },
   { id: 'startup', label: 'Startup & tray', icon: SettingsStartupIcon },
   { id: 'manual', label: 'User Manual', icon: SettingsManualIcon },
   { id: 'resources', label: 'Resources', icon: SettingsResourcesIcon },

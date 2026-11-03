@@ -412,6 +412,22 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
     }
   }
 
+  const handleRemoveFromList = async (p: Project) => {
+    const ok = await confirmAction(
+      `Remove "${p.name}" from the list? Its folder and database entry are removed from OpenLocalServer but files on disk are not touched.`,
+      `Remove ${p.name} from list?`,
+      'Remove from list',
+    )
+    if (!ok) return
+    try {
+      await runCommand({ type: 'ignore_project', id: p.id })
+      notify.success(`Removed "${p.name}" from list`)
+      await refreshAll()
+    } catch (e) {
+      notify.error(`Failed to remove project: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
   const menuFor = (p: Project): MenuItem[] => {
     const isHealthy = p.health?.status === 'healthy' || !p.health
     const linked = getProjectDomains(p)
@@ -483,6 +499,12 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
         disabled: linked.length > 0,
         hint: linked.length > 0 ? 'Connected to site' : undefined,
         onSelect: () => void handleHideProject(p),
+      },
+      {
+        label: 'Remove from list',
+        icon: <X className="size-4" />,
+        danger: true,
+        onSelect: () => void handleRemoveFromList(p),
       },
     ]
   }

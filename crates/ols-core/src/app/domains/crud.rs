@@ -229,6 +229,9 @@ impl Inner {
                     proxy_target: d.kind.upstream_url(),
                 }
             })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .filter(|s| s.folder.is_empty() || !std::path::Path::new(&s.folder).join(".ols_ignore_me").exists())
             .collect()
     }
 
@@ -353,9 +356,6 @@ impl Inner {
     /// (§`PROJECT_SKIP`) so folder rescans don't bring the project back.
     pub fn remove_domain(&self, hostname: &str) -> Result<(), CoreError> {
         let mut domains = self.domains.lock().unwrap();
-        let was_auto = domains
-            .get(hostname)
-            .is_some_and(|d| d.project_id.is_some());
         // The project goes too when this was its last site; another site of the same
         // project keeps it on the list.
         let orphan_project = domains
@@ -371,10 +371,8 @@ impl Inner {
         // Released before anything else locks the project store: a summary read takes
         // projects first and domains second, and holding both ways round deadlocks.
         drop(domains);
-        if was_auto {
-            // Deleted on purpose: automatic domains must not bring it back.
-            self.push_skip(AUTO_SKIP, hostname)?;
-        }
+        // Deleted on purpose: hidden list must reflect it, even for proxy/manual sites.
+        self.push_skip(AUTO_SKIP, hostname)?;
         let _ = self.certs.revoke(hostname);
         self.web.restart_app(hostname);
         let proxy_icon = self

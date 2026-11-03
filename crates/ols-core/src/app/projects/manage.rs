@@ -394,6 +394,44 @@ impl Inner {
         Ok(())
     }
 
+    pub fn ignore_project(&self, id: &str) -> Result<(), CoreError> {
+        let (path, standalone) = {
+            let projects = self.projects.lock().unwrap();
+            let p = projects.get(id);
+            (
+                p.as_ref().map(|pr| pr.path.clone()),
+                p.as_ref().map(|pr| pr.standalone).unwrap_or(false),
+            )
+        };
+        if let Some(path) = path {
+            // Disable any sites tied to this project so it stops working.
+            let hostnames: Vec<String> = {
+                let domains = self.domains.lock().unwrap();
+                domains
+                    .list()
+                    .into_iter()
+                    .filter(|d| {
+                        d.project_id.as_deref() == Some(id)
+                            || (!d.root.is_empty() && crate::project::same_path(&d.root, &path))
+                    })
+                    .map(|d| d.hostname)
+                    .collect()
+            };
+            for h in hostnames {
+                let _ = self.remove_domain(&h);
+            }
+            if standalone {
+                self.projects.lock().unwrap().remove(id)?;
+            } else {
+                let ignore_file = std::path::Path::new(&path).join(".ols_ignore_me");
+                let _ = std::fs::write(&ignore_file, "");
+                let _ = self.projects.lock().unwrap().remove(id);
+            }
+        }
+        let _ = self.project_events.send(());
+        Ok(())
+    }
+
     /// Deletes a project without a domain by moving its folder into an `ols_excluded_sites` folder
     /// in the same directory instead of permanently deleting it.
     pub fn delete_project(&self, id: &str) -> Result<(), CoreError> {

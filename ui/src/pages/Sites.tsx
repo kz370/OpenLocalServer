@@ -745,33 +745,53 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     if (d) {
       const allHosts = [d.hostname, ...r.extraDomains.map((e) => e.hostname)]
       const key = d.hostname
+      if (!isProxy) {
+        items.push({
+          label: 'Hide',
+          icon: <EyeOff />,
+          disabled: allHosts.some((h) => removing.has(h)) || busy === `hide:${key}`,
+          onSelect: async () => {
+            const last = p ? ` ${p.name} leaves the list with it.` : ''
+            const hostLabel = allHosts.length > 1 ? `${d.hostname} (+${r.extraDomains.length} extra domains)` : d.hostname
+            const ok = await confirmAction(
+              `Its certificate is revoked and its config file is removed.${last} The project folder on disk is not touched. It stays hidden until cleared in Settings > Hide/Exclude.`,
+              `Hide/Exclude ${hostLabel}?`,
+              'Hide',
+            )
+            if (!ok) return
+            await run(`hide:${key}`, () => web.hideSites(allHosts))
+          },
+        })
+      }
+      if (p) {
+        items.push({
+          label: 'Remove from list',
+          icon: <X />,
+          disabled: removing.has(p.id) || busy === `remove:${p.id}`,
+          onSelect: async () => {
+            const ok = await confirmAction(
+              `Remove \"${p.name}\" from the list?`,
+              `Remove ${p.name} from list?`,
+              'Remove from list',
+            )
+            if (!ok) return
+            await run(`remove:${p.id}`, () => runCommand({ type: 'ignore_project', id: p.id }))
+          },
+        })
+      }
       items.push({
-        label: 'Hide/Exclude',
-        icon: <EyeOff />,
-        disabled: allHosts.some((h) => removing.has(h)) || busy === `hide:${key}`,
-        onSelect: async () => {
-          const last = p ? ` ${p.name} leaves the list with it.` : ''
-          const hostLabel = allHosts.length > 1 ? `${d.hostname} (+${r.extraDomains.length} extra domains)` : d.hostname
-          const ok = await confirmAction(
-            `Its certificate is revoked and its config file is removed.${last} The project folder on disk is not touched. It stays hidden until cleared in Settings > Hide/Exclude.`,
-            `Hide/Exclude ${hostLabel}?`,
-            'Hide/Exclude',
-          )
-          if (!ok) return
-          await run(`hide:${key}`, () => web.hideSites(allHosts))
-        },
-      })
-      items.push({
-        label: 'Delete site',
+        label: 'Move to excluded folder',
         icon: <Trash2 />,
         danger: true,
         disabled: allHosts.some((h) => removing.has(h)) || busy === `delete:${key}`,
         onSelect: async () => {
           const hostLabel = allHosts.length > 1 ? `${d.hostname} (+${r.extraDomains.length} extra domains)` : d.hostname
           const ok = await confirmAction(
-            `Moves the project into an "ols_excluded_sites" folder in the same directory instead of permanently deleting it. Certificate is revoked and server configuration is removed.`,
+            isProxy
+              ? `Removes the reverse-proxy site configuration and revokes its certificate.`
+              : `Moves the project into an "ols_excluded_sites" folder in the same directory instead of permanently deleting it. Certificate is revoked and server configuration is removed.`,
             `Delete ${hostLabel}?`,
-            'Delete site',
+            'Move to excluded folder',
           )
           if (!ok) return
           await run(`delete:${key}`, () => web.deleteSites(allHosts))
@@ -779,17 +799,31 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       })
     } else if (p) {
       items.push({
-        label: 'Hide/Exclude',
+        label: 'Hide',
         icon: <EyeOff />,
         disabled: removing.has(p.id) || busy === `hide:${p.id}`,
         onSelect: async () => {
           const ok = await confirmAction(
             `"${p.name}" leaves the list, but its folder on disk is not touched. It stays hidden until cleared in Settings > Hide/Exclude.`,
             `Hide/Exclude ${p.name}?`,
-            'Hide/Exclude',
+            'Hide',
           )
           if (!ok) return
           await run(`hide:${p.id}`, () => web.hideProjectFromList(p.id))
+        },
+      })
+      items.push({
+        label: 'Remove from list',
+        icon: <X />,
+        disabled: removing.has(p.id) || busy === `remove:${p.id}`,
+        onSelect: async () => {
+          const ok = await confirmAction(
+            `Remove "${p.name}" from the list? Its folder and database entry are removed from OpenLocalServer but files on disk are not touched.`,
+            `Remove ${p.name} from list?`,
+            'Remove from list',
+          )
+          if (!ok) return
+          await run(`remove:${p.id}`, () => web.hideProjectFromList(p.id))
         },
       })
       items.push({
@@ -1115,6 +1149,9 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                               </>
                             )}
                           </div>
+                          {d && p && !p.standalone && (
+                            <div className="mt-0.5 text-[10px] text-muted-foreground">Auto-discovered</div>
+                          )}
                         </div>
                         {d && (
                           <>

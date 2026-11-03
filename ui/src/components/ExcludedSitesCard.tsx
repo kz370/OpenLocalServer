@@ -179,7 +179,7 @@ export function ExcludedSitesCard() {
       <ErrorCard error={error} onDismiss={() => setError(null)} />
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm">Hide/Exclude</CardTitle>
+          <CardTitle className="text-sm">Hidden sites</CardTitle>
           <CardDescription>
             Sites and project folders hidden from folder scans and automatic domains via Hide/Exclude. Clear an entry here to
             let it come back; files on disk are never touched.

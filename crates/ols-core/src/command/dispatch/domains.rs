@@ -30,6 +30,25 @@ impl Core {
                     if i.reload_external_changes() {
                         tracing::info!("re-read the stores after an outside change");
                     }
+                    // Folders marked with .ols_ignore_me must not keep serving.
+                    let ignored_hosts: Vec<String> = i
+                        .domains
+                        .lock()
+                        .unwrap()
+                        .list()
+                        .into_iter()
+                        .filter(|d| {
+                            let folder = if d.root.is_empty() { String::new() } else { d.root.clone() };
+                            !folder.is_empty() && std::path::Path::new(&folder).join(".ols_ignore_me").exists()
+                        })
+                        .map(|d| d.hostname)
+                        .collect();
+                    for h in &ignored_hosts {
+                        let _ = i.remove_domain(&h);
+                    }
+                    if !ignored_hosts.is_empty() {
+                        let _ = i.apply_web(&ignored_hosts);
+                    }
                     Ok(R::Domains {
                         domains: i.domain_summaries(),
                     })

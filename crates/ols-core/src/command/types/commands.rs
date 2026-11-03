@@ -131,6 +131,9 @@ pub enum CoreCommand {
     RemoveProject {
         id: String,
     },
+    IgnoreProject {
+        id: String,
+    },
     RelocateProject {
         id: String,
         path: String,
