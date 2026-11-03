@@ -367,35 +367,37 @@ impl Inner {
         Ok(())
     }
 
-    /// Removes a site from OLS, keeping its files. Sites inside a configured discovery
-    /// root are retained with a marker so a later scan cannot add them again.
+    /// Removes only the site from OLS, keeping its project registration and files.
     pub fn remove_site_from_list(&self, hostname: &str) -> Result<(), CoreError> {
         let domain = self.domains.lock().unwrap().get(hostname).ok_or_else(|| {
             CoreError::DomainError(format!("{hostname} is not a known domain"))
         })?;
         let projects = self.projects.lock().unwrap().list();
         let folder = site_folder(&domain, &projects);
-        let is_discovered = self.string_list(PROJECT_ROOTS).iter().any(|root| {
-            Path::new(&folder).starts_with(Path::new(root))
+        let project_id = domain.project_id.clone().or_else(|| {
+            projects
+                .iter()
+                .find(|project| crate::project::same_path(&project.path, &folder))
+                .map(|project| project.id.clone())
         });
 
-        if is_discovered {
-            std::fs::write(Path::new(&folder).join(".ols_ignore_me"), "")
-                .map_err(|e| CoreError::DomainError(format!("could not write .ols_ignore_me: {e}")))?;
-            return Ok(());
-        }
-
-        let mut domains = self.domains.lock().unwrap();
-        domains.remove(hostname)?;
-        drop(domains);
-        if let Some(project_id) = domain.project_id {
-            let still_used = self.domains.lock().unwrap().list().iter().any(|other| {
-                other.project_id.as_deref() == Some(&project_id)
-            });
-            if !still_used {
-                let _ = self.projects.lock().unwrap().remove(&project_id);
+        {
+            let mut projects = lock(&self.projects);
+            let project_id = match project_id {
+                Some(id) if projects.get(&id).is_some() => Some(id),
+                _ if Path::new(&folder).is_dir() => Some(
+                    projects
+                        .register_with_standalone(&folder, true)?
+                        .id,
+                ),
+                _ => None,
+            };
+            if let Some(project_id) = project_id {
+                projects.set_standalone(&project_id, true)?;
             }
         }
+        self.domains.lock().unwrap().remove(hostname)?;
+        self.web.restart_app(hostname);
         Ok(())
     }
 

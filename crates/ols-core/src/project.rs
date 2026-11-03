@@ -453,6 +453,20 @@ impl ProjectStore {
         Ok(out)
     }
 
+    /// Prevents folder synchronization from recreating an automatic site for this project.
+    pub fn set_standalone(&mut self, id: &str, standalone: bool) -> Result<(), CoreError> {
+        let p = self
+            .projects
+            .iter_mut()
+            .find(|p| p.id == id)
+            .ok_or_else(|| CoreError::InvalidProjectPath(id.to_string()))?;
+        if p.standalone == standalone {
+            return Ok(());
+        }
+        p.standalone = standalone;
+        self.persist()
+    }
+
     /// Relocates a registered project to a new directory path on disk.
     pub fn relocate(&mut self, id: &str, new_path: &str) -> Result<Project, CoreError> {
         let p = self

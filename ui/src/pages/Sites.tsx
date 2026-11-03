@@ -762,14 +762,14 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
           },
         })
       items.push({
-        label: 'Remove from list',
+        label: 'Remove site only',
         icon: <X />,
         disabled: removing.has(key) || busy === `remove:${key}`,
         onSelect: async () => {
           const ok = await confirmAction(
-            `This site will stop being served. If its folder is under a discover folder, a .ols_ignore_me marker will be written and its database record kept; removing the marker restores it. Otherwise its database record will be removed. Project files stay on disk.`,
-            `Remove ${p?.name ?? d.hostname} from list?`,
-            'Remove from list',
+            `This site will stop being served and removed from OLS. Its project stays in the Projects list and its folder stays on disk.`,
+            `Remove the site for ${p?.name ?? d.hostname}?`,
+            'Remove site only',
           )
           if (!ok) return
           await run(`remove:${key}`, async () => {
@@ -780,15 +780,15 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         },
       })
       items.push({
-        label: 'Move to excluded folder',
+        label: 'Remove site and move project folder',
         icon: <Trash2 />,
         danger: true,
         disabled: allHosts.some((h) => removing.has(h)) || busy === `delete:${key}`,
         onSelect: async () => {
           const hostLabel = allHosts.length > 1 ? `${d.hostname} (+${r.extraDomains.length} extra domains)` : d.hostname
           const ok = await confirmAction(
-            `This site will stop being served. Its project folder will move into an "ols_excluded_sites" folder in the same directory. The database record, vhost and hosts entry will be removed.`,
-            `Move ${hostLabel} to excluded folder?`,
+            `This site will stop being served. Its project folder will move into an "ols_excluded_sites" folder in the same directory, and the site and project records will be removed from OLS.`,
+            `Remove ${hostLabel} and its project folder?`,
             'Move to excluded folder',
           )
           if (!ok) return
@@ -811,14 +811,14 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         },
       })
       items.push({
-        label: 'Remove from list',
+        label: 'Remove project only',
         icon: <X />,
         disabled: removing.has(p.id) || busy === `remove:${p.id}`,
         onSelect: async () => {
           const ok = await confirmAction(
-            `Remove "${p.name}" from the list? Its folder and database entry are removed from OpenLocalServer but files on disk are not touched.`,
-            `Remove ${p.name} from list?`,
-            'Remove from list',
+            `Remove "${p.name}" from OpenLocalServer? Its project entry leaves the list, but its folder and files stay on disk.`,
+            `Remove project ${p.name}?`,
+            'Remove project only',
           )
           if (!ok) return
           await run(`remove:${p.id}`, () => web.hideProjectFromList(p.id))
