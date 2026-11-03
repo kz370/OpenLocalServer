@@ -15,8 +15,8 @@ export function TasksPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Background tasks</h1>
         <p className="text-sm text-muted-foreground">
-          Imports, exports and snapshots the app runs for you. Each one reports its own steps and progress, and a finished
-          task keeps its report until you clear it.
+          Background operations with their site, status and time. Running tasks report progress; completed history stays
+          here after restart until you clear it.
         </p>
       </div>
 

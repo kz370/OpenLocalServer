@@ -7,8 +7,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { type TaskEvent, type TaskView, runCommand } from '@/core'
-import { createPersistentCache } from '@/lib/cache'
 import { formatBytes, timeAgo, usePoll } from '@/lib/hooks'
+import { getTaskHistory, mergeTaskHistory, saveTaskHistory } from '@/lib/taskHistory'
 import { cn } from '@/lib/utils'
 
 /**
@@ -19,16 +19,13 @@ import { cn } from '@/lib/utils'
  * (it was reloading, or it fell behind the broadcast), the list catches up within a second
  * rather than sitting on a stale row.
  */
-const tasksCache = createPersistentCache<TaskView[]>('tasks_list', [])
-
 export function TasksPanel() {
-  const [tasks, setTasks] = useState<TaskView[]>(tasksCache.get)
+  const [tasks, setTasks] = useState<TaskView[]>(getTaskHistory)
 
   const refresh = useCallback(async () => {
     const r = await runCommand({ type: 'list_tasks' })
     if (r.type === 'tasks') {
-      setTasks(r.tasks)
-      tasksCache.set(r.tasks)
+      setTasks(mergeTaskHistory(r.tasks))
     }
   }, [])
 
@@ -42,7 +39,7 @@ export function TasksPanel() {
       setTasks((current) => {
         const next = current.filter((t) => t.id !== task.id)
         next.unshift(task)
-        tasksCache.set(next)
+        saveTaskHistory(next)
         return next
       })
     }).then((dispose) => {
@@ -83,7 +80,16 @@ export function TasksPanel() {
                 size="sm"
                 variant="ghost"
                 className="h-7 text-xs"
-                onClick={() => void runCommand({ type: 'clear_finished_tasks' }).then(() => refresh())}
+                onClick={() =>
+                  void runCommand({ type: 'clear_finished_tasks' }).then(() => {
+                    setTasks((current) => {
+                      const next = current.filter((task) => task.state === 'running')
+                      saveTaskHistory(next)
+                      return next
+                    })
+                    return refresh()
+                  })
+                }
               >
                 Clear finished
               </Button>
@@ -119,6 +125,11 @@ function TaskRow({ task }: { task: TaskView }) {
     setBusy(true)
     try {
       await runCommand({ type: command, id: task.id })
+      if (command === 'dismiss_task') {
+        // TaskManager cannot dismiss synthetic command-history rows; remove either kind here.
+        const next = getTaskHistory().filter((item) => item.id !== task.id)
+        saveTaskHistory(next)
+      }
     } finally {
       setBusy(false)
     }
@@ -132,8 +143,11 @@ function TaskRow({ task }: { task: TaskView }) {
           {task.title}
         </span>
         <Badge variant={STATE_BADGE[task.state].variant}>{STATE_BADGE[task.state].label}</Badge>
-        <span className="whitespace-nowrap text-xs text-muted-foreground">
-          {timeAgo(task.finished_ms ?? task.started_ms)}
+        <span
+          className="whitespace-nowrap text-xs text-muted-foreground"
+          title={timeAgo(task.finished_ms ?? task.started_ms)}
+        >
+          {new Date(task.finished_ms ?? task.started_ms).toLocaleString()}
         </span>
         {live ? (
           <Button size="sm" variant="outline" className="h-7 text-xs" disabled={busy} onClick={() => void act('cancel_task')}>

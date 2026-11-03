@@ -60,6 +60,8 @@ const GROUPS: { id: Group; label: string; icon: string }[] = [
   { id: 'none', label: 'No domain', icon: 'none' },
 ]
 
+const HEALTH_CHECK_STEPS = ['DNS', 'TCP', 'TLS', 'Certificate', 'Trust', 'HTTP']
+
 const groupOf = (r: Row): Group => r.site?.group ?? 'none'
 
 /** Compact status: coloured dot + short label; full meaning shows on hover. */
@@ -99,6 +101,9 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   const [adding, setAdding] = useState<Domain | null>(null)
   const [wizardId, setWizardId] = useState<string | null>(null)
   const [health, setHealth] = useState<HealthReport | null>(null)
+  const [healthOpen, setHealthOpen] = useState(false)
+  const [healthChecking, setHealthChecking] = useState(false)
+  const [healthHostname, setHealthHostname] = useState('')
   const [dupOf, setDupOf] = useState<string | null>(null)
   const [dupName, setDupName] = useState('')
   const [query, setQuery] = useState('')
@@ -728,11 +733,16 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         label: 'Health check',
         icon: <Activity />,
         hint: 'DNS → TCP → TLS → certificate → trust → HTTP',
-        onSelect: () =>
+        onSelect: () => {
+          setHealth(null)
+          setHealthHostname(d.hostname)
+          setHealthChecking(true)
+          setHealthOpen(true)
           void run('health', async () => {
             const r = await runCommand({ type: 'health_check', hostname: d.hostname })
             if (r.type === 'health') setHealth(r.report)
-          }),
+          }).finally(() => setHealthChecking(false))
+        },
       })
       if (d.has_app) items.push({ label: 'Restart app process', icon: <RefreshCw />, onSelect: () => void run('restart', () => runCommand({ type: 'restart_site_app', hostname: d.hostname })) })
       items.push({
@@ -1483,22 +1493,35 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       />
 
       <Dialog
-        open={!!health}
-        onClose={() => setHealth(null)}
-        title={`Health: ${health?.hostname ?? ''}`}
-        description={health?.ok ? 'Every link in the chain works.' : 'Something in the chain is broken. The first failing step is the one to fix.'}
+        open={healthOpen}
+        onClose={() => setHealthOpen(false)}
+        title={`Health: ${health?.hostname ?? healthHostname}`}
+        description={healthChecking ? 'Checking DNS, TCP, TLS, certificate trust, and HTTP…' : health?.ok ? 'Every link in the chain works.' : health ? 'Something in the chain is broken. The first failing step is the one to fix.' : 'The health check did not return a report. See the page error for details.'}
       >
-        <div className="flex flex-col gap-2">
-          {health?.steps.map((s) => (
-            <div key={s.name} className="flex items-start gap-2 text-sm">
-              <span className={s.skipped ? 'text-muted-foreground' : s.ok ? 'text-success' : 'text-destructive'}>{s.skipped ? '–' : s.ok ? '✓' : '✗'}</span>
-              <div>
-                <span className="font-medium">{s.name}</span>
-                <div className="text-xs text-muted-foreground">{s.detail}</div>
+        {healthChecking ? (
+          <div className="flex flex-col gap-3" role="status" aria-live="polite">
+            {HEALTH_CHECK_STEPS.map((step) => (
+              <div key={step} className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Spinner className="size-4 shrink-0 text-primary" />
+                <span className="font-medium text-foreground">{step}</span>
+                <span>Checking…</span>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {health?.steps.map((s) => (
+              <div key={s.name} className="flex items-start gap-2 text-sm">
+                <span className={s.skipped ? 'text-muted-foreground' : s.ok ? 'text-success' : 'text-destructive'}>{s.skipped ? '–' : s.ok ? '✓' : '✗'}</span>
+                <div>
+                  <span className="font-medium">{s.name}</span>
+                  <div className="text-xs text-muted-foreground">{s.detail}</div>
+                </div>
+              </div>
+            ))}
+            {!health && <p className="text-sm text-muted-foreground">No health check result is available.</p>}
+          </div>
+        )}
       </Dialog>
 
       <Dialog

@@ -113,6 +113,7 @@ UpdatesCard | renders | UpdateInfo.notes as Markdown
 PluginManager | uses | Catalog
 WebConfig | resolves | Domain.server -> resolved_server(domain, cfg)
 SitesPage | uses | UseWeb hook
+SitesPage Health Check | shows | DNS/TCP/TLS/Certificate/Trust/HTTP rows with individual spinners until health_check returns, then replaces them with the report
 SitesPage | uses | ConfirmAction (the dialog title names the site or project; the destructive button repeats the action)
 SitesPage | filters rows by | Enabled (default), Disabled, website type, or All (last); status filters include sites only, and search falls back to All when the current filter has no match
 SitesPage | groups rows by | project / folder path into a single row with primary domain and extra-domain badge pills
@@ -175,7 +176,7 @@ TauriApp | reads | ols-core `app::should_start_hidden` (startup.minimized prefer
 TauriApp | raises | desktop alerts itself, under its own AppUserModelID `dev.openlocalserver.app` and with no inline toast image — the header mark is read from the registered identity, and an identity with no Start Menu shortcut makes the shell draw the alert as a notification group
 TauriApp notify | reads | `notifications.enabled` (Settings > Startup, default on; every alert path checks it before showing)
 TauriApp notify | writes | `HKCU\Software\Classes\AppUserModelId\dev.openlocalserver.app` (DisplayName, IconUri), `%APPDATA%\Microsoft\Windows\Start Menu\Programs\OLS.lnk` (the AUMID shortcut an installer would create) and `<data>/notification-icon.png`; the latter is rewritten on `ols:theme` so an alert carries the colourway the tray is painting
-Inner.tasks (TaskManager) | hosts | every background task the Processes page lists (§164). One record plus one thread per task, in memory only; work that was running when the app stopped is reported by the Journal instead, which is the record that survives a restart
+Inner.tasks (TaskManager) | hosts | live progress jobs (§164), one record plus one thread per task, in memory only; completed operation history is persisted by the UI task-history cache across restarts
 TauriApp setup | forwards | ols-core `TaskManager::subscribe` as the `task-event` Tauri event, and raises a desktop alert on a `Finished` task that reported no problems (a task that stopped on request says "Task stopped", not "Task finished")
 TaskHandle::advance / set_bytes | throttled_by | 200ms, for the same reason RuntimeManager's ProgressThrottle exists — a dump reports bytes, and an event per chunk froze the Runtimes page before
 sitebundle::export | uses | snapshots::snapshot_content (as the configuration document, with the .env contents and dump names stripped so the manifest holds no secret), dbbackup::backup (per database, server started first when installed but stopped, skipped for mongodb), snapshots::project_files
@@ -193,7 +194,7 @@ CoreCommand::ImportSites | excluded_from | the HTTP `operate` allow-list, the AI
 sitebundle | absent_from | api::NEVER and api::OPERATE (not reachable over HTTP in operate mode), ai::allowed (not offered to the assistant)
 SitesPage | renders | SiteExportDialog once (opened from a row's "Export to bundle…" and from the bulk bar's Export) and SiteImportButton; both hand the started task off to the Processes page by navigating there
 ProcessesPage | shows | TasksPanel (the §164 list) beside the process supervisor, under two tabs each badged with what is running, so work started elsewhere is still counted
-ui/src/components/TasksPanel.tsx | reads | `task-event` (whole task every time — there is no delta to reconcile) patched over one `list_tasks` read, with a 1s poll so a reloaded webview catches up rather than sitting on a stale row
+ui/src/components/TasksPanel.tsx | reads | `task-event` (whole task every time) and `list_tasks`, merged with persistent UI command history for operation names, site targets, status and timestamps; start/restart/reload for runtimes and services are excluded
 ui/src/components/site/SiteBundle.tsx | reads | `paths.backups_dir` for the export destination default, and `preview_site_bundle` before anything is created so the update/rename choice is made on which hostnames actually clash
 SitesPage | uses | SiteLogo (renders site custom photo icon, font-awesome offline vector, or cyan globe fallback next to vertical divider and site name)
 SitesPage | opens | SiteDialog (with active tab 'icon' when user clicks the row's SiteLogo button or selects Site logo / icon…)

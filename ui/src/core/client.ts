@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import type { Diagnostic } from './types/system'
 import type { CoreCommand } from './commands'
 import type { CoreResponse } from './responses'
+import { beginCommandTask, commandTaskKey, discardCommandTask, finishCommandTask } from '@/lib/taskHistory'
 
 export interface CommandLifecycleHook {
   onBeforeCommand?: (command: CoreCommand) => void
@@ -11,23 +12,40 @@ export interface CommandLifecycleHook {
 }
 
 let lifecycleHook: CommandLifecycleHook | null = null
+const inFlightTasks = new Map<string, Promise<CoreResponse>>()
 
 export function setCommandLifecycleHook(hook: CommandLifecycleHook | null) {
   lifecycleHook = hook
 }
 
-export async function runCommand(command: CoreCommand): Promise<CoreResponse> {
-  lifecycleHook?.onBeforeCommand?.(command)
-  try {
-    const response = await invoke<CoreResponse>('run_command', { command })
-    lifecycleHook?.onCommandSuccess?.(command, response)
-    return response
-  } catch (err) {
-    // Tauri surfaces our Diagnostic as the rejection value.
-    const diag = err as Diagnostic
-    lifecycleHook?.onCommandError?.(command, diag)
-    throw diag
+export function runCommand(command: CoreCommand): Promise<CoreResponse> {
+  const taskKey = commandTaskKey(command)
+  if (taskKey) {
+    const existing = inFlightTasks.get(taskKey)
+    if (existing) return existing
   }
+
+  lifecycleHook?.onBeforeCommand?.(command)
+  const taskId = beginCommandTask(command)
+  const request = invoke<CoreResponse>('run_command', { command })
+    .then((response) => {
+      if (response.type === 'task_started') discardCommandTask(taskId)
+      else finishCommandTask(taskId)
+      lifecycleHook?.onCommandSuccess?.(command, response)
+      return response
+    })
+    .catch((err: unknown) => {
+      // Tauri surfaces our Diagnostic as the rejection value.
+      const diag = err as Diagnostic
+      finishCommandTask(taskId, diag)
+      lifecycleHook?.onCommandError?.(command, diag)
+      throw diag
+    })
+    .finally(() => {
+      if (taskKey && inFlightTasks.get(taskKey) === request) inFlightTasks.delete(taskKey)
+    })
+  if (taskKey) inFlightTasks.set(taskKey, request)
+  return request
 }
 
 /**

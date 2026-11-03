@@ -4,14 +4,36 @@ import type { TaskView } from '@/core/types/tasks'
 import { createPersistentCache } from '@/lib/cache'
 
 const history = createPersistentCache<TaskView[]>('tasks_list', [])
+const taskTargets = new Map<string, string>()
 let sequence = 0
+let recovered = false
 
-export function getTaskHistory(): TaskView[] {
-  return history.get()
+export type HistoryTask = TaskView & { repeat_count?: number }
+
+export function getTaskHistory(): HistoryTask[] {
+  recoverInterruptedTasks()
+  return history.get() as HistoryTask[]
 }
 
 export function saveTaskHistory(tasks: TaskView[]): void {
   history.set(tasks)
+}
+
+export function registerTaskTarget(id: string, label: string): void {
+  taskTargets.set(id, label)
+}
+
+export function commandTaskKey(command: CoreCommand): string | null {
+  return shouldTrackCommand(command) ? `${command.type}:${commandTarget(command)}` : null
+}
+
+export function mergeTaskHistory(tasks: TaskView[]): TaskView[] {
+  recoverInterruptedTasks()
+  const merged = new Map<string, TaskView>()
+  for (const task of [...history.get(), ...tasks]) merged.set(task.id, task)
+  const next = collapseFinished([...merged.values()].sort((a, b) => b.started_ms - a.started_ms))
+  history.set(next)
+  return next
 }
 
 export function shouldTrackCommand(command: CoreCommand): boolean {
@@ -25,6 +47,26 @@ export function shouldTrackCommand(command: CoreCommand): boolean {
     type === 'cancel_task' ||
     type === 'dismiss_task' ||
     type === 'clear_finished_tasks' ||
+    type === 'take_pending_add_project' ||
+    type === 'global_search' ||
+    type === 'doctor' ||
+    type === 'run_diagnostics' ||
+    type === 'git_status' ||
+    type === 'git_branches' ||
+    type === 'git_diff' ||
+    type === 'git_log' ||
+    type === 'git_show' ||
+    type === 'list_processes' ||
+    type === 'list_command_history' ||
+    type === 'list_history' ||
+    type === 'list_database_tables' ||
+    type === 'list_php_extensions' ||
+    type === 'list_pecl_packages' ||
+    type === 'list_foreign_databases' ||
+    type === 'list_migration_sources' ||
+    type === 'list_tunnel_providers' ||
+    type === 'get_process_output' ||
+    type === 'get_domain' ||
     type.startsWith('list_') ||
     type.startsWith('get_') ||
     type.startsWith('read_') ||
@@ -36,87 +78,11 @@ export function shouldTrackCommand(command: CoreCommand): boolean {
     type.startsWith('detect_') ||
     type.startsWith('suggest_') ||
     type.startsWith('describe_') ||
-    type.startsWith('doctor') ||
-    type.startsWith('diagnose_') ||
     type.startsWith('load_') ||
     type.startsWith('ai_get_') ||
     type.startsWith('ai_models') ||
     type.startsWith('ai_probe') ||
-    type.startsWith('ai_preview') ||
-    type.startsWith('git_status') ||
-    type.startsWith('git_branches') ||
-    type.startsWith('git_diff') ||
-    type.startsWith('git_log') ||
-    type.startsWith('git_show') ||
-    type.startsWith('list_') ||
-    type === 'get_dashboard' ||
-    type === 'get_environment_health' ||
-    type === 'get_system_stats' ||
-    type === 'get_resource_limits' ||
-    type === 'get_composer_info' ||
-    type === 'get_package_managers' ||
-    type === 'get_venv' ||
-    type === 'get_migration_progress' ||
-    type === 'get_setup_progress' ||
-    type === 'get_auto_backup' ||
-    type === 'get_web_status' ||
-    type === 'get_web_config' ||
-    type === 'get_ca_info' ||
-    type === 'get_xdebug' ||
-    type === 'get_app_guide' ||
-    type === 'global_search' ||
-    type === 'get_api_status' ||
-    type === 'get_updater_status' ||
-    type === 'get_shell_menu' ||
-    type === 'get_startup_settings' ||
-    type === 'get_helper_service' ||
-    type === 'get_manifest' ||
-    type === 'get_project_modes' ||
-    type === 'get_connection_info' ||
-    type === 'get_quick_app' ||
-    type === 'get_quick_run' ||
-    type === 'get_findings' ||
-    type === 'get_app_guide' ||
-    type === 'get_service_aggregate' ||
-    type === 'list_processes' ||
-    type === 'list_command_history' ||
-    type === 'list_history' ||
-    type === 'list_database_tables' ||
-    type === 'list_php_extensions' ||
-    type === 'list_pecl_packages' ||
-    type === 'list_foreign_databases' ||
-    type === 'list_migration_sources' ||
-    type === 'list_tunnel_providers' ||
-    type === 'list_project_types' ||
-    type === 'take_pending_add_project' ||
-    type === 'get_process_output' ||
-    type === 'get_domain' ||
-    type === 'get_setup_progress' ||
-    type === 'get_resource_limits' ||
-    type === 'get_web_config' ||
-    type === 'get_web_status' ||
-    type === 'get_auto_backup' ||
-    type === 'get_environment_health' ||
-    type === 'get_dashboard' ||
-    type === 'get_system_stats' ||
-    type === 'get_setting' ||
-    type === 'get_secret' ||
-    type === 'get_updater_status' ||
-    type === 'get_api_status' ||
-    type === 'get_startup_settings' ||
-    type === 'get_helper_service' ||
-    type === 'get_ca_info' ||
-    type === 'get_xdebug' ||
-    type === 'get_manifest' ||
-    type === 'get_project_detail' ||
-    type === 'get_quick_app' ||
-    type === 'get_quick_run' ||
-    type === 'get_composer_info' ||
-    type === 'get_package_managers' ||
-    type === 'get_venv' ||
-    type === 'get_migration_progress' ||
-    type === 'get_connection_info' ||
-    type === 'get_findings'
+    type.startsWith('ai_preview')
   ) {
     return false
   }
@@ -129,6 +95,7 @@ export function shouldTrackCommand(command: CoreCommand): boolean {
 
 export function beginCommandTask(command: CoreCommand): string | null {
   if (!shouldTrackCommand(command)) return null
+  recoverInterruptedTasks()
 
   const now = Date.now()
   const id = `command-${now}-${sequence++}`
@@ -155,7 +122,7 @@ export function finishCommandTask(id: string | null, error?: Diagnostic): void {
   if (!id) return
   const finished = Date.now()
   history.set(
-    history.get().map((task) =>
+    collapseFinished(history.get().map((task) =>
       task.id === id
         ? {
             ...task,
@@ -165,7 +132,7 @@ export function finishCommandTask(id: string | null, error?: Diagnostic): void {
             problems: error ? [error.problem] : [],
           }
         : task,
-    ),
+    )),
   )
 }
 
@@ -191,6 +158,9 @@ function commandTitle(command: CoreCommand): string {
 
 function commandTarget(command: CoreCommand): string {
   const value = command as CoreCommand & Record<string, unknown>
+  if (typeof value.project_id === 'string' && taskTargets.has(value.project_id)) {
+    return taskTargets.get(value.project_id)!
+  }
   const direct = value.hostname ?? value.project_id ?? value.projectId ?? value.target ?? value.path ?? value.id
   if (typeof direct === 'string') return direct
   if (command.type === 'bulk_delete_sites' || command.type === 'bulk_remove_domains') {
@@ -198,4 +168,47 @@ function commandTarget(command: CoreCommand): string {
     return hostnames.join(', ')
   }
   return ''
+}
+
+function recoverInterruptedTasks(): void {
+  if (recovered) return
+  recovered = true
+  const now = Date.now()
+  history.set(
+    history.get().map((task) =>
+      task.state === 'running'
+        ? {
+            ...task,
+            state: 'failed',
+            finished_ms: now,
+            error: {
+              problem: 'The task was interrupted.',
+              cause: 'OpenLocalServer closed before this task finished.',
+              fix: 'Check the site state, then run the operation again if it is still needed.',
+            },
+            problems: ['The operation was interrupted when OpenLocalServer closed.'],
+          }
+        : task,
+    ),
+  )
+}
+
+function collapseFinished(tasks: TaskView[]): HistoryTask[] {
+  const collapsed: HistoryTask[] = []
+  for (const task of tasks as HistoryTask[]) {
+    const previous = collapsed.at(-1)
+    if (
+      previous &&
+      previous.state !== 'running' &&
+      task.state !== 'running' &&
+      previous.kind === task.kind &&
+      previous.title === task.title &&
+      previous.target === task.target
+    ) {
+      previous.repeat_count = (previous.repeat_count ?? 1) + (task.repeat_count ?? 1)
+      continue
+    }
+    collapsed.push({ ...task, repeat_count: task.repeat_count ?? 1 })
+  }
+  return collapsed
 }

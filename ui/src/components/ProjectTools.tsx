@@ -30,6 +30,7 @@ import {
 import { useAction } from '@/lib/hooks'
 import { confirmThen } from '@/lib/confirm'
 import { notify } from '@/lib/notify'
+import { registerTaskTarget } from '@/lib/taskHistory'
 
 export type ToolTab = 'environment' | 'terminal' | 'env' | 'git' | 'workers' | 'backups' | 'repair' | 'mail' | 'composer' | 'node' | 'python' | 'xdebug' | 'load'
 
@@ -72,6 +73,10 @@ export function ProjectTools({ detail, start, refreshKey, tab }: { detail: Proje
     if (m?.type === 'package_managers') setManagers(m.info)
     if (v?.type === 'venv') setVenv(v.info)
   }, [id])
+
+  useEffect(() => {
+    registerTaskTarget(id, detail.project.name)
+  }, [detail.project.name, id])
 
   useEffect(() => {
     void load()
