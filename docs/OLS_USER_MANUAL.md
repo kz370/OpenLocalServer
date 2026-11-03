@@ -1,6 +1,6 @@
 # OpenLocalServer (OLS) — Comprehensive User Manual & Operations Guide
 
-> **Version:** 2.7.0  
+> **Version:** 2.8.0
 > **Platform:** Windows 10 / Windows 11 (64-bit)  
 > **License:** GPL-3.0-only  
 > **CLI Binary:** `olsc`  
@@ -26,7 +26,7 @@
 14. [AI Assistant & Model Context Protocol (MCP)](#14-ai-assistant--model-context-protocol-mcp)
 15. [Command Line Interface (CLI — `olsc`)](#15-command-line-interface-cli--olsc)
 16. [Keyboard Shortcuts, Settings, Themes & Documentation](#16-keyboard-shortcuts-settings-themes--documentation)
-17. [Version 2.7.0 Specific Notes & What's New](#17-version-270-specific-notes--whats-new)
+17. [Version 2.8.0 Specific Notes & What's New](#17-version-280-specific-notes--whats-new)
 
 ---
 
@@ -361,24 +361,12 @@ olsc guide
 
 ---
 
-## 17. Version 2.7.0 Specific Notes & What's New
+## 17. Version 2.8.0 Specific Notes & What's New
 
-### New Features in v2.7.0
-1. **Projects Management**: Dedicated Projects page to browse, search, and manage local project folders with or without virtual host domains.
-2. **Responsive Type Filter Bar**: Single-line filter bar that shows only types with projects, collapses overflow into a "+N more" popover with search, and remembers selected tabs.
-3. **Custom Project Types**: Create, rename, delete, and drag-to-reorder custom project types, with pinning to the filter bar.
-4. **Framework Presets & Tauri**: Bundled presets for 17 frameworks and languages, plus native Tauri project auto-detection.
-5. **Folder Drag-and-Drop & Explorer Menu**: Drop folders directly onto the Projects page or right-click any folder in Windows Explorer to add it to OLS.
-6. **Multi-Editor Configuration**: Broad auto-detection for IDEs (VS Code, Cursor, Windsurf, Zed, JetBrains, Sublime, Notepad++), with custom editor paths and visibility toggles.
-7. **System Tray Submenu**: Right-click tray menu includes a categorized Projects submenu to open project directories or launch editors in 1 click.
-8. **Favorite Quick Apps in Tray**: Create Quick Apps directly from favorites in the tray; Browse all remains available.
-9. **Theme Contrast & Icons**: High-contrast `--on-accent` styling for active chips and buttons, currentColor icons, and dual contrast warnings in theme settings.
-10. **MCP Server Tools**: 9 new Model Context Protocol tools for AI assistants to inspect, add, update, and manage projects and editors.
-11. **Safe Project Removal**: Guards projects connected to active sites against accidental deletion while keeping scanned project skips in history.
-12. **Shared Save Bar**: One fixed Save/Discard bar for unsaved settings and site changes, with Ctrl+S support.
-
----
-
+### New Features in v2.8.0
+- **Project and Site Selection**: Keep discovered projects standalone unless creating a site is requested, then attach an existing unconnected project from site selection; Quick Apps are searchable.
+- **Readable Database Views**: Query sites, projects, operations, workers, schedules, and command history through read-only SQLite views and indexes.
+- **Safe Database Maintenance**: Versioned migrations create timestamped backups, while operation history is retained and repeated failures are collapsed.
 ### Previous Version Notes (v2.6.0)
 1. **Installed Software UI Overhaul:**
    - **Accurate Status Display**: Separated installation status from update availability. Accurately communicates "Up to date" (green indicator), "Update available" (sky indicator with non-link neutral text), and "Not installed".

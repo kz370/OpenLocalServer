@@ -7,7 +7,12 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [2.8.0] — 2026-11-03
 
-Feature release. Full notes: [elease-notes/v2.8.0.md](./release-notes/v2.8.0.md).
+Feature release. Full notes: [`release-notes/v2.8.0.md`](./release-notes/v2.8.0.md).
+
+### Highlights
+- Projects stay standalone by default and can be connected to a site later; Quick App selection is searchable.
+- Read-only SQLite views and indexes, with versioned, backed-up migrations.
+- Automatic operation-history retention and repeated-failure cleanup.
 
 ## [2.7.0] — 2026-11-02
 
