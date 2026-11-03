@@ -213,9 +213,9 @@ export function discardDirtyForms(scope?: DirtyFormScope) {
   for (const form of getDirtyForms(scope)) form.discard()
 }
 
-export function warnBeforeLeavingUnsavedChanges(scope?: DirtyFormScope) {
+export async function warnBeforeLeavingUnsavedChanges(scope?: DirtyFormScope): Promise<boolean> {
   if (getDirtyForms(scope).length === 0) return true
-  const confirmed = window.confirm('You have unsaved changes. Discard them and leave?')
+  const confirmed = await confirmAction('You have unsaved changes. Discard them and leave?', 'Unsaved changes', 'Discard')
   if (confirmed) discardDirtyForms(scope)
   return confirmed
 }
@@ -245,16 +245,19 @@ export function installDirtyFormGuards() {
       void saveDirtyForms()
       return
     }
-    const isRefresh = event.key === 'F5' || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'r')
+    const isRefresh = event.key === 'F5' || event.code === 'F5' || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'r')
     if (isRefresh && getDirtyForms().length > 0) {
       event.preventDefault()
+      event.stopPropagation()
+      event.stopImmediatePropagation()
       void confirmAction('You have unsaved changes. Reload the page and discard them?', 'Unsaved changes', 'Reload').then((ok) => {
         if (ok) window.location.reload()
       })
+      return false
     }
   }
-  window.addEventListener('keydown', onKeyDown)
+  window.addEventListener('keydown', onKeyDown, true)
   return () => {
-    window.removeEventListener('keydown', onKeyDown)
+    window.removeEventListener('keydown', onKeyDown, true)
   }
 }

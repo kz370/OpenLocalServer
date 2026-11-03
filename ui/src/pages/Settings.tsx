@@ -19,7 +19,7 @@ import { Input } from '@/components/ui/input'
 import { type EditorInfo, type HelperService, type ServiceStatus, type StartupSettings, runCommand, requestExit } from '@/core'
 import { createPersistentCache } from '@/lib/cache'
 import { confirmThen } from '@/lib/confirm'
-import { useDirtyForm, warnBeforeLeavingUnsavedChanges } from '@/lib/dirtyForms'
+import { getDirtyForms, useDirtyForm, warnBeforeLeavingUnsavedChanges } from '@/lib/dirtyForms'
 import { useAction } from '@/lib/hooks'
 import { onOpenSettingsSection, takePendingSettingsSection } from '@/lib/nav'
 import { generalSettingWrites } from '@/lib/settingsWrite'
@@ -276,6 +276,7 @@ export function SettingsPage() {
       getString('editor'),
       getString('editor.command'),
     ]).then(([exit, stopAll, autoFix, id, cmd]) => {
+      if (getDirtyForms('app').length > 0) return
       const exitVal = exit.type === 'setting' ? exit.value !== false : true
       const stopVal = stopAll.type === 'setting' ? stopAll.value !== false : true
       const fixVal = autoFix.type === 'setting' ? autoFix.value !== false : true
