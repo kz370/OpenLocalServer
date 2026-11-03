@@ -15,6 +15,7 @@ import { ExitingOverlay } from '@/components/layout/ExitingOverlay'
 import { useWindowState } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 import { initDiagnosticsNotificationMonitor } from '@/lib/diagnosticsNotify'
+import { initializeServiceStatusTracking } from '@/lib/serviceStatus'
 const CommandsPage = lazy(() => import('@/pages/Commands').then((module) => ({ default: module.CommandsPage })))
 const DashboardPage = lazy(() => import('@/pages/Dashboard').then((module) => ({ default: module.DashboardPage })))
 const DatabasesPage = lazy(() => import('@/pages/Databases').then((module) => ({ default: module.DatabasesPage })))
@@ -107,6 +108,7 @@ export default function App() {
 
   useEffect(() => {
     initDiagnosticsNotificationMonitor()
+    initializeServiceStatusTracking()
   }, [])
 
   const changePage = useCallback((target: Page) => {

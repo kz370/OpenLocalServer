@@ -66,7 +66,7 @@ function reportStatusLoadError(error: unknown) {
   notify.error('Could not load service status', { details })
 }
 
-function initializeStatusSnapshot() {
+export function initializeServiceStatusTracking() {
   if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window) || snapshotPromise) {
     return
   }
@@ -117,7 +117,7 @@ export function useServiceStatuses(): ReadonlyMap<string, ServiceLifecycleState>
   )
 
   useEffect(() => {
-    initializeStatusSnapshot()
+    initializeServiceStatusTracking()
   }, [])
 
   return current

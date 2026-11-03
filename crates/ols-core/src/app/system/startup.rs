@@ -1,6 +1,8 @@
 use std::path::Path;
+use std::sync::Arc;
 
 use crate::app::*;
+use crate::command::{Core, CoreCommand};
 use crate::error::CoreError;
 
 impl Inner {
@@ -71,7 +73,7 @@ impl Inner {
 
     /// Runs what the user asked to have started with the app (§121). Failures are logged,
     /// never fatal — a service that won't start shouldn't stop the app opening.
-    pub fn run_autostart(&self) {
+    pub fn run_autostart(self: &Arc<Self>) {
         if let Err(e) = self.sync_auto_domains() {
             tracing::warn!(error = %e, "automatic domains could not be synced");
         }
@@ -91,6 +93,7 @@ impl Inner {
         // which is what the removed "start the web server" switch used to do separately.
         let mut web_applied = false;
         let default_web = self.web_config().default_server;
+        let core = Core::from_inner(Arc::clone(self));
         let mut seen_targets = std::collections::HashSet::new();
         for id in &startup.autostart_services {
             let web_id = if id == "web" {
@@ -104,40 +107,19 @@ impl Inner {
             if !seen_targets.insert(canonical_id.to_string()) {
                 continue;
             }
-            let result: Result<(), String> = if let Some(target_web) = web_id {
-                match self.ensure_web_server_started(target_web) {
-                    Ok(_) => {
-                        self.services.clear_start_failure(target_web);
-                        self.services.clear_start_failure(id);
-                        Ok(())
-                    }
-                    Err(e) => {
-                        if self.services.is_running_and_ready(target_web) {
-                            self.services.clear_start_failure(target_web);
-                            self.services.clear_start_failure(id);
-                            Ok(())
-                        } else {
-                            let msg = e.to_string();
-                            self.services.record_start_failure(target_web, &msg);
-                            self.services.record_start_failure(id, &msg);
-                            Err(msg)
-                        }
-                    }
+            let result = match core.dispatch(CoreCommand::StartService {
+                id: canonical_id.to_string(),
+            }) {
+                Ok(_) => {
+                    self.services.clear_start_failure(canonical_id);
+                    self.services.clear_start_failure(id);
+                    Ok(())
                 }
-            } else {
-                match self.services.start(id) {
-                    Ok(_) => {
-                        self.services.clear_start_failure(id);
-                        Ok(())
-                    }
-                    Err(e) => {
-                        if self.services.is_running_and_ready(id) {
-                            self.services.clear_start_failure(id);
-                            Ok(())
-                        } else {
-                            Err(e)
-                        }
-                    }
+                Err(diagnostic) => {
+                    let message = format!("{}: {}", diagnostic.problem, diagnostic.cause);
+                    self.services.record_start_failure(canonical_id, &message);
+                    self.services.record_start_failure(id, &message);
+                    Err(message)
                 }
             };
             if let Err(e) = result {
@@ -162,6 +144,35 @@ impl Inner {
                 tracing::warn!(tunnel = %t.config.name, error = %e, "autostart: named Cloudflare tunnel did not start");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn web_autostart_publishes_starting_and_failure_states() {
+        let home = crate::test_support::isolated_home();
+        let mut settings = crate::settings::SettingsService::load(&home.paths).unwrap();
+        settings
+            .set("startup.services", serde_json::json!(["nginx"]))
+            .unwrap();
+        let core = Core::new(settings, home.paths.clone());
+        let mut events = core.services().subscribe_status_events();
+
+        core.inner().run_autostart();
+
+        let states: Vec<_> = std::iter::from_fn(|| events.try_recv().ok())
+            .flat_map(|event| event.services.into_iter().map(|service| service.state))
+            .collect();
+        assert_eq!(
+            states,
+            [
+                crate::service::ServiceState::Starting,
+                crate::service::ServiceState::Error
+            ]
+        );
     }
 }
 

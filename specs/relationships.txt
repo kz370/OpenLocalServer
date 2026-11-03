@@ -135,7 +135,8 @@ TauriApp tray menu | uses | ProjectStore.list & editors::list_all (builds the Pr
 
 ServicesPage | uses | App.openLogs (View Logs opens the Logs page on that service's log_source)
 ServicesPage | sends | startup services through start_service, which applies a web server's config before starting it
-Inner::run_autostart | applies | each web server named in startup.autostart_services, then starts it (the removed "start the web server" switch is only read once, to seed that list)
+Inner::run_autostart | dispatches | each configured service through CoreCommand::StartService so web and non-web starts publish Starting and result events; web config is applied before starting
+UI App | initializes | service status event subscription and snapshot at mount, regardless of active page
 ServicesWidget | lays_out | its rows as a 5-track grid that becomes two lines between lg and xl (controls under the name) so the controls never clip and the name is never truncated away; single line below lg and from xl up
 SiteDialog | uses | CoreClient (get_domain once per trigger, unchanged read dropped — it seeds DomainSettings; both gating reads are deadline-bounded and surface their Diagnostic, and the project id comes from the get_domain answer rather than racing the caller's)
 TerminalComp | uses | TerminalManager
