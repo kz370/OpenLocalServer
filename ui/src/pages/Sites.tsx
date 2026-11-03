@@ -1,5 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Activity, Check, CircleOff, Code2, Copy, Download, ExternalLink, EyeOff, FolderOpen, FolderPlus, FolderSearch, FolderX, Globe, HardDrive, Image as ImageIcon, KeyRound, List, ListX, MoreHorizontal, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2, Wrench, X, Zap } from 'lucide-react'
+import { Activity, Check, CircleOff, Code2, Copy, Download, ExternalLink, EyeOff, FolderOpen, FolderPlus, FolderSearch, FolderX, Globe, HardDrive, KeyRound, List, ListX, MoreHorizontal, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2, Wrench, X, Zap } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
@@ -677,7 +677,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       items.push({
         label: 'Repair WordPress core files',
         icon: <Wrench />,
-        hint: 'Restore missing core files; identifies the release from surviving files if version.php is missing. Internet required.',
+        hint: 'Restore missing core files; can identify the release without version.php. The first download needs internet; cached versions work offline.',
         disabled: busy === `wp-core:${projectId}`,
         onSelect: () => void run(`wp-core:${projectId}`, async () => {
           const progress = notify.progress('Repairing WordPress core', 'Checking installed files against WordPress.org…')
@@ -736,18 +736,6 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       })
       if (d.has_app) items.push({ label: 'Restart app process', icon: <RefreshCw />, onSelect: () => void run('restart', () => runCommand({ type: 'restart_site_app', hostname: d.hostname })) })
       items.push({
-        label: 'Domains & DNS…',
-        icon: <Globe />,
-        hint: 'Domain aliases, Dynamic DNS (Cloudflare/DuckDNS), SSL certificates',
-        onSelect: () => setTarget({ hostname: d.hostname, projectId: p?.id ?? null, tab: 'domains' }),
-      })
-      items.push({
-        label: 'Site logo / icon…',
-        icon: <ImageIcon />,
-        hint: 'Custom ols_site_icon.webp or offline Font Awesome icon',
-        onSelect: () => setTarget({ hostname: d.hostname, projectId: p?.id ?? null, tab: 'icon' }),
-      })
-      items.push({
         label: 'Export to bundle…',
         icon: <Download />,
         hint: 'Its settings, .env files, database and files — pick what goes in',
@@ -790,12 +778,6 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       )
     } else if (p) {
       items.push(
-        {
-          label: 'Site logo / icon…',
-          icon: <ImageIcon />,
-          hint: 'Custom ols_site_icon.webp in project folder',
-          onSelect: () => setTarget({ hostname: null, projectId: p.id, tab: 'icon' }),
-        },
         {
           label: 'Add auto domain',
           icon: <Globe />,

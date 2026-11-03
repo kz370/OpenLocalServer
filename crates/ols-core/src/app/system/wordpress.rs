@@ -11,7 +11,7 @@ impl Inner {
         project_id: &str,
     ) -> Result<crate::wordpress::WpCoreRepair, CoreError> {
         let project = self.ensure_project_available(project_id)?;
-        crate::wordpress::repair_missing_core(Path::new(&project.path))
+        crate::wordpress::repair_missing_core(Path::new(&project.path), &self.paths.cache_dir())
     }
 
     pub fn wp_projects(&self) -> Vec<crate::wordpress::WpProject> {

@@ -98,7 +98,7 @@ export function RepairPanel({ projectId, wordpress = false }: { projectId: strin
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-3">
           <div className="min-w-0">
             <p className="text-sm font-medium">WordPress core files</p>
-            <p className="text-xs text-muted-foreground">Restore missing core files. If version.php is missing, OLS identifies the release from surviving core files. Requires internet.</p>
+            <p className="text-xs text-muted-foreground">Restore missing files. If version.php is missing, OLS identifies the release from surviving files. The first download needs internet; cached versions work offline.</p>
           </div>
           <Button size="sm" variant="secondary" onClick={() => void repairWordPressCore()} disabled={busy !== null}>
             {busy === 'wp-core' ? <Spinner /> : <Wrench />} Repair core files

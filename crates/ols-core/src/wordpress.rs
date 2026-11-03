@@ -100,7 +100,7 @@ pub fn is_wordpress(dir: &Path) -> bool {
 /// Restores only missing core files from the same WordPress version. WordPress.org's core
 /// checksum API is the source of truth for the files; its published per-file digests are
 /// MD5, so each archive member is checked against that API before it is written.
-pub fn repair_missing_core(dir: &Path) -> Result<WpCoreRepair, CoreError> {
+pub fn repair_missing_core(dir: &Path, cache_dir: &Path) -> Result<WpCoreRepair, CoreError> {
     use md5::Digest as _;
 
     if !is_wordpress(dir) {
@@ -133,6 +133,7 @@ pub fn repair_missing_core(dir: &Path) -> Result<WpCoreRepair, CoreError> {
         })
         .map(str::to_owned);
 
+    let cache_dir = cache_dir.join("wordpress-core");
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -142,8 +143,19 @@ pub fn repair_missing_core(dir: &Path) -> Result<WpCoreRepair, CoreError> {
             .timeout(std::time::Duration::from_secs(120))
             .build()?;
         if let Some(version) = known_version {
-            let checksums = fetch_core_checksums(&client, &version).await?;
+            let checksums = match load_cached_checksums(&cache_dir, &version) {
+                Some(checksums) => checksums,
+                None => {
+                    let checksums = fetch_core_checksums(&client, &version).await?;
+                    store_cached_checksums(&cache_dir, &version, &checksums);
+                    checksums
+                }
+            };
             return Ok::<_, Box<dyn std::error::Error + Send + Sync>>((version, checksums));
+        }
+
+        if let Some((version, checksums)) = best_cached_release(dir, &load_cached_releases(&cache_dir)) {
+            return Ok((version, checksums));
         }
 
         // version.php can itself be missing. In that case identify the installed release
@@ -168,6 +180,7 @@ pub fn repair_missing_core(dir: &Path) -> Result<WpCoreRepair, CoreError> {
         }
         let first = candidates.first().ok_or_else(|| std::io::Error::other("WordPress.org returned no candidate releases"))?;
         let first_checksums = fetch_core_checksums(&client, first).await?;
+        store_cached_checksums(&cache_dir, first, &first_checksums);
         let mut sample = Vec::new();
         for relative in first_checksums.keys() {
             let path = std::path::Path::new(relative);
@@ -201,11 +214,12 @@ pub fn repair_missing_core(dir: &Path) -> Result<WpCoreRepair, CoreError> {
         if best_score * 100 < sample.len() * 70 {
             return Err(std::io::Error::other("surviving WordPress core files do not match a known release closely enough").into());
         }
+        store_cached_checksums(&cache_dir, &best_version, &best_checksums);
         Ok((best_version, best_checksums))
     }).map_err(|e| CoreError::failed_fix(
         "WordPress core files could not be downloaded.",
         format!("The WordPress.org checksum or release request failed: {e}"),
-            "Connect to the internet and try again. If version.php is missing, repair identifies the release from surviving core files.",
+            "Connect to the internet for the first repair. Later repairs use the cached release and checksums when they match this site.",
     ))?;
 
     let has_missing = checksums.keys().any(|relative| {
@@ -220,21 +234,41 @@ pub fn repair_missing_core(dir: &Path) -> Result<WpCoreRepair, CoreError> {
             restored: 0,
         });
     }
-    let archive = rt
-        .block_on(async {
-            let url = format!("https://downloads.wordpress.org/release/wordpress-{version}.zip");
-            let client = reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(120))
-                .build()?;
-            Ok::<_, reqwest::Error>(client.get(url).send().await?.error_for_status()?.bytes().await?)
-        })
-        .map_err(|e| {
+    let archive_file = version_cache_dir(&cache_dir, &version).join("wordpress.zip");
+    let archive = if archive_file.is_file() {
+        std::fs::read(&archive_file).map_err(|e| {
             CoreError::failed_fix(
-                "WordPress core files could not be downloaded.",
-                format!("The WordPress.org release request failed: {e}"),
-                "Connect to the internet and try again. The repair uses the site's installed WordPress version.",
+                "The cached WordPress archive could not be read.",
+                format!("{}: {e}", archive_file.display()),
+                "Delete the cached archive and connect to the internet to download it again.",
             )
-        })?;
+        })?
+    } else {
+        let downloaded = rt
+            .block_on(async {
+                let url = format!("https://downloads.wordpress.org/release/wordpress-{version}.zip");
+                let client = reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(120))
+                    .build()?;
+                Ok::<_, reqwest::Error>(client.get(url).send().await?.error_for_status()?.bytes().await?)
+            })
+            .map_err(|e| {
+                CoreError::failed_fix(
+                    "WordPress core files could not be downloaded.",
+                    format!("The WordPress.org release request failed: {e}"),
+                    "Connect to the internet for the first repair, or place this version's wordpress.zip and checksums.json in the WordPress core cache.",
+                )
+            })?;
+        if let Some(parent) = archive_file.parent() {
+            if std::fs::create_dir_all(parent).is_ok() {
+                let tmp = parent.join("wordpress.zip.part");
+                if std::fs::write(&tmp, &downloaded).is_ok() {
+                    let _ = std::fs::rename(tmp, &archive_file);
+                }
+            }
+        }
+        downloaded.to_vec()
+    };
 
     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(archive)).map_err(|e| {
         CoreError::failed_fix(
@@ -306,6 +340,7 @@ pub fn repair_missing_core(dir: &Path) -> Result<WpCoreRepair, CoreError> {
         })?;
         let actual = format!("{:x}", md5::Md5::digest(&bytes));
         if !actual.eq_ignore_ascii_case(expected) {
+            let _ = std::fs::remove_file(&archive_file);
             return Err(CoreError::failed_fix("A WordPress core file failed its checksum check.", format!("{relative} did not match the checksum published by WordPress.org. No file was restored."), "Try the repair again. If the error repeats, wait for WordPress.org to restore the release archive."));
         }
         pending.push((destination, bytes));
@@ -389,6 +424,98 @@ fn score_core_sample(
                 .is_some_and(|expected| expected.eq_ignore_ascii_case(actual))
         })
         .count()
+}
+
+fn version_cache_dir(root: &Path, version: &str) -> PathBuf {
+    root.join(version)
+}
+
+fn load_cached_checksums(
+    root: &Path,
+    version: &str,
+) -> Option<serde_json::Map<String, serde_json::Value>> {
+    let text =
+        std::fs::read_to_string(version_cache_dir(root, version).join("checksums.json")).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    value
+        .get("checksums")
+        .and_then(serde_json::Value::as_object)
+        .or_else(|| value.as_object())
+        .cloned()
+}
+
+fn store_cached_checksums(
+    root: &Path,
+    version: &str,
+    checksums: &serde_json::Map<String, serde_json::Value>,
+) {
+    let dir = version_cache_dir(root, version);
+    if std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    let Ok(body) = serde_json::to_vec(checksums) else {
+        return;
+    };
+    let tmp = dir.join("checksums.json.part");
+    if std::fs::write(&tmp, body).is_ok() {
+        let _ = std::fs::rename(tmp, dir.join("checksums.json"));
+    }
+}
+
+fn load_cached_releases(root: &Path) -> Vec<(String, serde_json::Map<String, serde_json::Value>)> {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let version = entry.file_name().into_string().ok()?;
+            if !valid_wp_version(&version) || !entry.file_type().ok()?.is_dir() {
+                return None;
+            }
+            if !entry.path().join("wordpress.zip").is_file() {
+                return None;
+            }
+            Some((version.clone(), load_cached_checksums(root, &version)?))
+        })
+        .collect()
+}
+
+fn best_cached_release(
+    dir: &Path,
+    releases: &[(String, serde_json::Map<String, serde_json::Value>)],
+) -> Option<(String, serde_json::Map<String, serde_json::Value>)> {
+    use md5::Digest as _;
+
+    let (_, first) = releases.first()?;
+    let mut sample = Vec::new();
+    for relative in first.keys() {
+        let path = Path::new(relative);
+        if path
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)))
+        {
+            let local = dir.join(path);
+            if let Ok(metadata) = std::fs::metadata(&local) {
+                if metadata.is_file() && metadata.len() <= 2 * 1024 * 1024 {
+                    if let Ok(bytes) = std::fs::read(&local) {
+                        sample.push((relative.clone(), format!("{:x}", md5::Md5::digest(bytes))));
+                        if sample.len() == 64 {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if sample.len() < 8 {
+        return None;
+    }
+    let best = releases
+        .iter()
+        .max_by_key(|(_, checksums)| score_core_sample(checksums, &sample))?;
+    (score_core_sample(&best.1, &sample) * 100 >= sample.len() * 70)
+        .then(|| (best.0.clone(), best.1.clone()))
 }
 
 fn mu_plugins_dir(dir: &Path) -> Result<PathBuf, CoreError> {
