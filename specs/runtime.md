@@ -76,6 +76,7 @@ ui/src/lib/cache.ts added 2026-11-01; Files Processed is now 261, matching Files
 ui/src/lib/notify.ts, ui/src/components/NotificationHost.tsx, ui/src/components/NotificationsPopover.tsx added 2026-11-01; Files Processed is now 264, matching Files to Process.
 
 ## Log
+- [2026-11-03] fix(services): Added timed success notifications after service restarts complete from both the Services page and Dashboard; notifications follow waitForService confirmation. Updated full_documentation.md, catalog.txt, and relationships.txt. Files Processed remains 282, matching Files to Process.
 - [2026-11-03] fix(web): Replaced the persistent web apply report card on Sites and Web Server with a standard timed success notification containing per-server actions and changed files. The notification appears only when config files, server state, or the hosts file changed; unchanged applies stay quiet, and drift still opens its confirmation dialog. Updated full_documentation.md, catalog.txt, and relationships.txt. Files Processed remains 282, matching Files to Process.
 
 - [2026-11-03] docs(release): Add a concise v2.7.0 note for the shared Save/Discard bar and synchronize the changelog and both user manuals. Files Processed remains 280, matching Files to Process.
