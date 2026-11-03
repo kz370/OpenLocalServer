@@ -3,7 +3,7 @@ UI Pages (Dashboard, Sites, Tunnels, WebServer, Databases, Services, Runtimes, C
 UI Pages & Dialogs | uses | NotificationSystem (ui/src/lib/notify.ts) for toasts, Undo actions, and batch summaries
 Titlebar | mounts | NotificationsPopover (ui/src/components/NotificationsPopover.tsx) for recent notification history
 App | mounts | NotificationHost (ui/src/components/NotificationHost.tsx) for global toast rendering
-App | lazy-loads | the selected page module with `React.lazy`/`Suspense`, splitting page bundles from the initial UI bundle
+App | lazy-loads | the selected page module with `React.lazy`/`Suspense`, splitting page bundles from the initial UI bundle and showing a page-specific accessible loading skeleton across the content area while the chunk loads
 App | mounts | TooltipProvider (ui/src/components/ui/tooltip.tsx) for modern themed tooltips and global title/data-tooltip interception
 UI (core/client.ts) | calls | Tauri invoke('run_command')
 olsc (crates/ols-cli) | uses | ols-core control channel (calls CoreCommand over local IPC or background daemon)

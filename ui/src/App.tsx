@@ -81,6 +81,57 @@ function getInitialPage(): Page {
   return parseHashPage() || getStoredPage() || 'dashboard'
 }
 
+const PAGE_LABELS: Record<Page, string> = {
+  dashboard: 'Dashboard',
+  projects: 'Projects',
+  sites: 'Sites',
+  quickapps: 'Quick Apps',
+  commands: 'Commands',
+  webserver: 'Web server',
+  config: 'Web server settings',
+  tunnels: 'Tunnels',
+  profiles: 'Profiles',
+  plugins: 'Plugins',
+  databases: 'Databases',
+  services: 'Services',
+  runtimes: 'Runtimes',
+  logs: 'Logs',
+  processes: 'Processes',
+  tasks: 'Background tasks',
+  settings: 'Settings',
+}
+
+function PageLoadingState({ page }: { page: Page }) {
+  return (
+    <section
+      className="flex min-h-[min(62vh,36rem)] flex-col"
+      aria-busy="true"
+      aria-live="polite"
+      aria-label={`Loading ${PAGE_LABELS[page]}`}
+    >
+      <div className="mb-7 flex items-center gap-3">
+        <span className="grid size-10 place-items-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
+          <span className="size-5 animate-spin rounded-full border-2 border-current/25 border-t-current motion-reduce:animate-none" />
+        </span>
+        <div>
+          <h1 className="text-xl font-semibold text-foreground">Loading {PAGE_LABELS[page]}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Getting this page ready…</p>
+        </div>
+      </div>
+      <div className="grid flex-1 content-start gap-4 sm:grid-cols-2 xl:grid-cols-3" aria-hidden="true">
+        {[0, 1, 2].map((item) => (
+          <div key={item} className="min-h-36 rounded-xl border border-border/70 bg-card/55 p-5">
+            <div className="h-3 w-28 animate-pulse rounded bg-muted-foreground/15 motion-reduce:animate-none" />
+            <div className="mt-5 h-7 w-2/3 animate-pulse rounded bg-muted-foreground/15 motion-reduce:animate-none" />
+            <div className="mt-3 h-3 w-full animate-pulse rounded bg-muted-foreground/10 motion-reduce:animate-none" />
+            <div className="mt-2 h-3 w-4/5 animate-pulse rounded bg-muted-foreground/10 motion-reduce:animate-none" />
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 export default function App() {
   const { isWindowed } = useWindowState()
   useEffect(() => installDirtyFormGuards(), [])
@@ -325,7 +376,7 @@ export default function App() {
           <CommandPalette onNavigate={navigate} onDoctor={openDoctor} />
           <DoctorDialog open={doctor} onClose={() => setDoctor(false)} />
           <main className={cn('min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-6', dirtyFormCount > 0 && 'pb-44')}>
-            <Suspense fallback={<div className="text-sm text-muted-foreground" role="status">Loading page…</div>}>
+            <Suspense fallback={<PageLoadingState page={page} />}>
               {page === 'dashboard' && <DashboardPage onNavigate={navigate} onOpenLogs={openLogs} />}
               {page === 'projects' && <ProjectsPage onNavigate={navigate} />}
               {page === 'sites' && <SitesPage onNavigate={navigate} />}
