@@ -125,7 +125,85 @@ impl Core {
 
     /// Dispatches a `CoreCommand` and converts any error into a user diagnostic.
     pub fn dispatch(&self, command: CoreCommand) -> Result<CoreResponse, Diagnostic> {
-        self.dispatch_inner(command)
-            .map_err(|e| Diagnostic::from(&e))
+        use crate::service::ServiceState;
+
+        let services = self.services();
+        let transitions = match &command {
+            CoreCommand::StartService { id } => {
+                if services.is_running_and_ready(id) {
+                    Vec::new()
+                } else {
+                    let ids = vec![id.clone()];
+                    services.begin_transitions(&ids, ServiceState::Starting);
+                    ids
+                }
+            }
+            CoreCommand::StopService { id } => {
+                let ids = vec![id.clone()];
+                services.begin_transitions(&ids, ServiceState::Stopping);
+                ids
+            }
+            CoreCommand::RestartService { id } => {
+                let ids = vec![id.clone()];
+                services.begin_transitions(&ids, ServiceState::Restarting);
+                ids
+            }
+            CoreCommand::StopAll => {
+                let ids = services
+                    .list()
+                    .into_iter()
+                    .filter(|service| {
+                        matches!(
+                            service.state,
+                            ServiceState::Starting
+                                | ServiceState::Stopping
+                                | ServiceState::Restarting
+                                | ServiceState::Running
+                        )
+                    })
+                    .map(|service| service.id)
+                    .collect::<Vec<_>>();
+                services.begin_transitions(&ids, ServiceState::Stopping);
+                ids
+            }
+            CoreCommand::StopWeb => {
+                let ids = services
+                    .list()
+                    .into_iter()
+                    .filter(|service| {
+                        service.kind == "web"
+                            && matches!(
+                                service.state,
+                                ServiceState::Starting
+                                    | ServiceState::Stopping
+                                    | ServiceState::Restarting
+                                    | ServiceState::Running
+                            )
+                    })
+                    .map(|service| service.id)
+                    .collect::<Vec<_>>();
+                services.begin_transitions(&ids, ServiceState::Stopping);
+                ids
+            }
+            CoreCommand::ApplyWeb { .. } => {
+                let default_server = self.inner().web_config().default_server;
+                let ids = services
+                    .list()
+                    .into_iter()
+                    .filter(|service| {
+                        service.kind == "web" && (service.running || service.id == default_server)
+                    })
+                    .map(|service| service.id)
+                    .collect::<Vec<_>>();
+                services.begin_transitions(&ids, ServiceState::Restarting);
+                ids
+            }
+            _ => Vec::new(),
+        };
+        let result = self
+            .dispatch_inner(command)
+            .map_err(|e| Diagnostic::from(&e));
+        services.finish_transitions(&transitions);
+        result
     }
 }

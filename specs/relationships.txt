@@ -77,6 +77,8 @@ ui SettingsExtras AutoBackupCard | owns | the app-wide plan only; with the site 
 ServiceManager | uses | PortChecker
 ServiceManager | uses | WebManager (proxied web rows: list/status/start/stop/is_running delegate, no duplicated state)
 ServiceManager | uses | CustomServiceStore
+ServiceManager | broadcasts | service-status-event with batched Starting/Stopping/Restarting and terminal service states
+TauriApp | forwards | ServiceManager service-status-event to the webview and refreshes the tray menu
 SetupPlanner | uses | Detector
 SetupPlanner | uses | Manifest
 SetupPlanner | uses | Resolver
@@ -122,7 +124,7 @@ Inner.reload_external_changes | reads | db.changed_externally (the `db.last_writ
 CoreCommand::ListDomains / ListProjects | calls | Inner.reload_external_changes (one single-row read per list, which is what makes it affordable on the 4s UI poll)
 RuntimesPage | uses | TechIcon (runtime ID resolves to brand or generic glyph; Memcached uses its symbol-only logo, Redis keeps its brand mark, pgAdmin/HeidiSQL/Tiny RDM/Mailpit are drawn marks so no GUI tool falls through to the generic glyph)
 ServicesWidget | uses | DashboardPage.useAction (so a failed service action reaches the page ErrorCard)
-ServicesPage | uses | ServiceIconAction (shared with ServicesWidget, so both offer the same five service actions)
+DashboardPage / ServicesPage / DatabasesPage | use | serviceStatus (shared core lifecycle state drives the existing transition animation; snapshot fetch is race-safe against service-status-event)
 ServicesPage | uses | TechIcon.ServiceMark (the service row's mark wears its state, so the icon alone says running/unhealthy/stopped/missing; shared with ServicesWidget and the Databases ServiceBanner so a service looks the same in all three)
 ServicesWidget | uses | TechIcon.ServiceMark (the row's logo is the state mark rather than a bare brand glyph; `WidgetState` is an alias of the shared `ServiceState`, so the widget's four states and the mark's four states cannot drift)
 DatabasesPage ServiceBanner | uses | TechIcon.ServiceMark (a service banner now carries the same state mark as the Services rows instead of naming the engine in text alone)
@@ -150,7 +152,7 @@ TauriApp | depends_on | ols-helper (install/service)
 TauriApp | uses | ServiceManager.list (running/stopped half of the status mark, includes the web servers)
 TauriApp | uses | ProcessSupervisor.stop_all_and_wait (inside CoreCommand::StopAll: the sweep that guarantees "Stop all" leaves nothing running, so the mark can actually reach red)
 DashboardPage | dispatches | CoreCommand::StopAll (same command as the tray menu's Stop all; it used to iterate only the autostart set, so Mailpit and any worker survived and kept the mark green)
-Tray menu and Dashboard | dispatch | CoreCommand::StopService / CoreCommand::StopAll; tray Start all dispatches StartService only for startup.autostart_services, while Stop all covers every running service/process; tray stop intent events let diagnostics resolve open service errors before exits
+Tray menu and Dashboard | dispatch | CoreCommand::StopService / CoreCommand::StopAll; one dynamic tray toggle uses StartService only for startup.autostart_services when stopped and StopAll when active, which covers every running service/process; tray stop intent events let diagnostics resolve open service errors before exits
 TauriApp | uses | ProcessSupervisor.is_alive (the status mark's rule for a supervised process, the same one any_running/prune_finished use)
 TauriApp | listens_on | UI ThemeProvider `ols:theme` (resolved light/dark, the other half of the mark's colourway; the tray and taskbar cannot read localStorage, so the UI reports it)
 TauriApp | repaints_on | both halves independently — the mark cache keys on (red, dark), so a theme flip does not disturb the running/stopped state and vice versa
@@ -236,4 +238,5 @@ CoreClient (ui/src/core/client.ts) | notifies | diagnosticsNotify via setCommand
 diagnosticsNotify | drives | notify condition resolution (registerNotificationCondition, evaluateNotificationConditions, resolveNotificationByKey, resolveNotificationsForService)
 TechIcon | renders | Simple Icons with their official brand hex color; TechTile adds a matching background tint and ServiceMark layers independent service state on top.
 LogsPage | offers | an `Auto-scroll` toggle independent of Live/Paused log fetching.
-Tray Start all / Stop all | dispatch | CoreCommand::StartService / CoreCommand::StopAll asynchronously; manual Stop all intent suppresses unexpected-exit reporting, busy state disables both items, and completion restores the real state via `ols:status-icon` and the tray tooltip.
+Tray Start all / Stop all | dispatch | A single dynamic toggle dispatches CoreCommand::StartService / CoreCommand::StopAll asynchronously; manual Stop all intent suppresses unexpected-exit reporting, busy state disables the item, and completion restores the real state via `ols:status-icon` and the tray tooltip.
+Tray Web server | toggles | CoreCommand::ApplyWeb / CoreCommand::StopWeb through the same Core::dispatch path; Reload remains a separate ApplyWeb action.

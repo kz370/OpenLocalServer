@@ -43,7 +43,7 @@ Entities:
 - Profile {id, name, environment, builtin} + EnvironmentManifest {runtime, web, domain, database, services, workers, scheduler, tunnel}
 - Worker {id, project_id, command, count[1..16], timeout, memory} + WorkerStatus {pid, state}
 - ScheduledTask {id, project_id|global, cron|every_*, command, last_run, next_run}
-- ServiceStatus {id: mailpit|mariadb|postgres|mongodb|redis|nginx|apache|caddy, state, port, pid, kind: mail|sql|document|cache|custom|web, category: web|database|cache|mail|other, healthy, log_source}
+- ServiceStatus {id: mailpit|mariadb|postgres|mongodb|redis|nginx|apache|caddy, state: Starting|Stopping|Restarting|Running|Stopped|Error, running, port, pid, kind: mail|sql|document|cache|custom|web, category: web|database|cache|mail|other, healthy, log_source}. `service-status-event` publishes batched `{id, state}` changes from ServiceManager.
 - CustomService {id, name, executable, args[], cwd, env[], port, health: Tcp|Http{path}, restart_on_crash, category: Option<String>} (§67 user-registered process service).
   Web servers are proxied entries: WebManager owns the process, ServiceManager only lists and probes them (kind web, port = that server's effective HTTP port, healthy = TCP probe). + ConnectionInfo {host, port, user, password_ref}
   `log_source` names the log source holding that service's own output: `service:<id>` for a process-backed service (its stdout/stderr buffer, empty while stopped), `web:<id>:error` for a web server. It is what the UI opens Logs on, so "View logs" shows the service that was clicked instead of the app log.

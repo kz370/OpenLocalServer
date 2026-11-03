@@ -126,10 +126,15 @@ pub fn service(ctx: &Ctx, cmd: ServiceCmd) -> R<()> {
                     rows.extend(services.into_iter().map(|s| {
                         let state = if !s.installed {
                             "not installed"
-                        } else if s.running {
-                            "running"
                         } else {
-                            "stopped"
+                            match s.state {
+                                ols_core::service::ServiceState::Starting => "starting",
+                                ols_core::service::ServiceState::Stopping => "stopping",
+                                ols_core::service::ServiceState::Restarting => "restarting",
+                                ols_core::service::ServiceState::Running => "running",
+                                ols_core::service::ServiceState::Stopped => "stopped",
+                                ols_core::service::ServiceState::Error => "error",
+                            }
                         };
                         vec![
                             s.id,

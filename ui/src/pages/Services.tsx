@@ -9,13 +9,19 @@ import { ServiceMark } from '@/components/TechIcon'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { type Diagnostic, type PortStatus, type ServiceStatus, runCommand } from '@/core'
+import {
+  type Diagnostic,
+  type PortStatus,
+  type ServiceLifecycleState,
+  type ServiceStatus,
+  runCommand,
+} from '@/core'
 import { createPersistentCache } from '@/lib/cache'
 import {
   notifyManualStartFailure,
   runSerializedServiceOp,
-  useStartingServices,
 } from '@/lib/diagnosticsNotify'
+import { getServiceLifecycleState, useServiceStatuses } from '@/lib/serviceStatus'
 import { waitForService } from '@/lib/wait'
 
 type ServiceAction = 'start' | 'stop' | 'restart' | 'reload'
@@ -25,8 +31,7 @@ const servicesListCache = createPersistentCache<ServiceStatus[]>('services_list'
 export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => void }) {
   const [services, setServices] = useState<ServiceStatus[]>(servicesListCache.get)
   const [error, setError] = useState<Diagnostic | null>(null)
-  const [busy, setBusy] = useState<string | null>(null)
-  const startingServices = useStartingServices()
+  const serviceStatuses = useServiceStatuses()
 
   async function refresh() {
     try {
@@ -53,7 +58,6 @@ export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => v
    * pressed and the other four stay usable, rather than the whole row going dead. */
   async function act(service: ServiceStatus, action: ServiceAction) {
     setError(null)
-    setBusy(`svc:${service.id}:${action}`)
     try {
       await runSerializedServiceOp(service.id, action, async () => {
         if (action === 'reload') {
@@ -75,8 +79,6 @@ export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => v
         notifyManualStartFailure(service.id, service.name, diag)
       }
       await refresh().catch(() => undefined)
-    } finally {
-      setBusy(null)
     }
   }
 
@@ -105,8 +107,7 @@ export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => v
         <CardContent className="p-0">
           <ServiceTable
             services={webServers}
-            busy={busy}
-            startingServices={startingServices}
+            serviceStatuses={serviceStatuses}
             onAct={act}
             onOpenLogs={onOpenLogs}
             onError={setError}
@@ -122,8 +123,7 @@ export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => v
         <CardContent className="p-0">
           <ServiceTable
             services={otherServices}
-            busy={busy}
-            startingServices={startingServices}
+            serviceStatuses={serviceStatuses}
             onAct={act}
             onOpenLogs={onOpenLogs}
             onError={setError}
@@ -139,16 +139,14 @@ export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => v
 /** One action table. Shared by the web servers and the other services. */
 function ServiceTable({
   services,
-  busy,
-  startingServices,
+  serviceStatuses,
   onAct,
   onOpenLogs,
   onError,
   portLabel,
 }: {
   services: ServiceStatus[]
-  busy: string | null
-  startingServices: Set<string>
+  serviceStatuses: ReadonlyMap<string, ServiceLifecycleState>
   onAct: (s: ServiceStatus, action: ServiceAction) => void
   onOpenLogs: (source: string) => void
   onError: (e: Diagnostic) => void
@@ -166,7 +164,11 @@ function ServiceTable({
       </TableHeader>
       <TableBody>
         {services.map((s) => {
-          const isStarting = s.installed && !s.running && startingServices.has(s.id)
+          const state = getServiceLifecycleState(s, serviceStatuses)
+          const isStarting = state === 'starting' || state === 'restarting'
+          const isStopping = state === 'stopping'
+          const isPending = isStarting || isStopping
+          const isRunning = state === 'running' || (isStopping && s.running)
           return (
           <TableRow key={s.id}>
             <TableCell>
@@ -176,13 +178,17 @@ function ServiceTable({
                   state={
                     !s.installed
                       ? 'missing'
-                      : s.running
-                        ? s.healthy === false
-                          ? 'unhealthy'
-                          : 'running'
-                        : isStarting
-                          ? 'starting'
-                          : 'stopped'
+                      : isStarting
+                        ? 'starting'
+                        : isStopping
+                          ? 'stopping'
+                          : state === 'error'
+                            ? 'unhealthy'
+                            : isRunning
+                              ? s.healthy === false
+                                ? 'unhealthy'
+                                : 'running'
+                              : 'stopped'
                   }
                 />
                 <span className="font-medium">{s.name}</span>
@@ -194,15 +200,19 @@ function ServiceTable({
             <TableCell>
               {!s.installed ? (
                 <Badge variant="outline">not installed</Badge>
-              ) : s.running ? (
+              ) : isStarting ? (
+                <Badge variant="secondary">{state === 'restarting' ? 'Restarting…' : 'Starting…'}</Badge>
+              ) : isStopping ? (
+                <Badge variant="secondary">Stopping…</Badge>
+              ) : isRunning ? (
                 <span className="flex flex-wrap items-center gap-1.5">
                   <Badge variant="success">● Running</Badge>
                   {s.healthy === false && <Badge variant="warning">not answering</Badge>}
                   {s.port_status === 'in_use' && <Badge variant="warning">port in use</Badge>}
                   {s.kind === 'web' && (s.sites ?? 0) === 0 && <Badge variant="outline">no sites</Badge>}
                 </span>
-              ) : isStarting ? (
-                <Badge variant="secondary">Starting…</Badge>
+              ) : state === 'error' ? (
+                <Badge variant="destructive">Error</Badge>
               ) : (
                 <span className="flex flex-col items-start gap-1">
                   <span className="flex flex-wrap items-center gap-1.5">
@@ -228,29 +238,20 @@ function ServiceTable({
                 {s.installed && (
                   <span className="flex items-center justify-end gap-0.5">
                     <ServiceIconAction
-                      title={`Start ${s.name}`}
-                      disabled={s.running}
-                      spinning={busy === `svc:${s.id}:start`}
-                      iconColor="text-emerald-400"
-                      onClick={() => onAct(s, 'start')}
+                      title={`${isRunning ? 'Stop' : 'Start'} ${s.name}`}
+                      disabled={isPending}
+                      spinning={isPending}
+                      iconColor={isRunning ? 'text-destructive/70' : 'text-emerald-400'}
+                      onClick={() => onAct(s, isRunning ? 'stop' : 'start')}
                     >
-                      <Play className="size-3.5" />
-                    </ServiceIconAction>
-                    <ServiceIconAction
-                      title={`Stop ${s.name}`}
-                      disabled={!s.running}
-                      spinning={busy === `svc:${s.id}:stop`}
-                      iconColor="text-destructive/70"
-                      onClick={() => onAct(s, 'stop')}
-                    >
-                      <StopIcon />
+                      {isRunning ? <StopIcon /> : <Play className="size-3.5" />}
                     </ServiceIconAction>
                     <ServiceIconAction
                       title={`Restart ${s.name}`}
                       // Restart is a stop followed by a start, so it is available whether or
                       // not the service is up right now — the same rule the Dashboard uses.
-                      disabled={false}
-                      spinning={busy === `svc:${s.id}:restart`}
+                      disabled={isPending}
+                      spinning={state === 'restarting'}
                       iconColor="text-amber-400"
                       onClick={() => onAct(s, 'restart')}
                     >
@@ -258,8 +259,8 @@ function ServiceTable({
                     </ServiceIconAction>
                     <ServiceIconAction
                       title={`Reload ${s.name} config`}
-                      disabled={s.kind !== 'web'}
-                      spinning={busy === `svc:${s.id}:reload`}
+                      disabled={s.kind !== 'web' || isPending}
+                      spinning={state === 'restarting'}
                       iconColor="text-sky-400"
                       onClick={() => onAct(s, 'reload')}
                     >

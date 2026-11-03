@@ -387,6 +387,18 @@ fn status_mark(core: Option<&Core>) -> bool {
     red
 }
 
+fn tray_bulk_should_stop(core: &Core, services: &[ols_core::service::ServiceStatus]) -> bool {
+    status_mark(Some(core))
+        || services.iter().any(|service| {
+            matches!(
+                service.state,
+                ols_core::service::ServiceState::Starting
+                    | ols_core::service::ServiceState::Stopping
+                    | ols_core::service::ServiceState::Restarting
+            )
+        })
+}
+
 fn sync_status_icon(app: &AppHandle, core: &Core) {
     apply_status_icon(app, status_mark(Some(core)), false);
 }
@@ -718,7 +730,16 @@ fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
     // One list read feeds the marks, the submenu titles and the tooltip below, so the
     // three can never disagree about how many services are up.
     let service_rows = core.services().list();
-    let web_up = service_rows.iter().any(|s| s.kind == "web" && s.running);
+    let web_up = service_rows.iter().any(|service| {
+        service.kind == "web"
+            && (service.running
+                || matches!(
+                    service.state,
+                    ols_core::service::ServiceState::Starting
+                        | ols_core::service::ServiceState::Stopping
+                        | ols_core::service::ServiceState::Restarting
+                ))
+    });
     let sql_up = service_rows
         .iter()
         .filter(|s| s.kind == "sql" || s.kind == "document")
@@ -732,17 +753,15 @@ fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
 
     let open = MenuItem::with_id(app, "open", "Open OpenLocalServer", true, None::<&str>)?;
     let bulk_actions_enabled = !TRAY_OPERATION_IN_PROGRESS.load(Ordering::Relaxed);
-    let start_all = MenuItem::with_id(
+    let start_all_label = if tray_bulk_should_stop(core, &service_rows) {
+        "■ Stop all"
+    } else {
+        "▶ Start all"
+    };
+    let toggle_all = MenuItem::with_id(
         app,
-        "start_all",
-        "▶ Start all",
-        bulk_actions_enabled,
-        None::<&str>,
-    )?;
-    let stop_all = MenuItem::with_id(
-        app,
-        "stop_all",
-        "■ Stop all",
+        "toggle_all",
+        start_all_label,
         bulk_actions_enabled,
         None::<&str>,
     )?;
@@ -853,14 +872,23 @@ fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
         project_items.iter().map(|item| item.as_ref()).collect();
     let projects = Submenu::with_items(app, "Projects", true, &project_refs)?;
 
-    let web_start = MenuItem::with_id(
+    let web_toggle = MenuItem::with_id(
         app,
-        "web_start",
-        if web_up { "↻ Reload" } else { "▶ Start" },
+        "web_toggle",
+        if web_up { "■ Stop" } else { "▶ Start" },
         true,
         None::<&str>,
     )?;
-    let web_stop = MenuItem::with_id(app, "web_stop", "■ Stop", true, None::<&str>)?;
+    let mut web_items: Vec<Box<dyn tauri::menu::IsMenuItem<Wry>>> = vec![Box::new(web_toggle)];
+    if web_up {
+        web_items.push(Box::new(MenuItem::with_id(
+            app,
+            "web_reload",
+            "↻ Reload",
+            true,
+            None::<&str>,
+        )?));
+    }
     let active_server = core.inner().web_config().default_server;
     let mut server_items = Vec::new();
     for server in ["nginx", "apache", "caddy"] {
@@ -880,6 +908,10 @@ fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
     let server_switch = Submenu::with_items(app, "Server", true, &server_refs)?;
     let web_config =
         MenuItem::with_id(app, "web_config", "Open config folder", true, None::<&str>)?;
+    web_items.push(Box::new(server_switch));
+    web_items.push(Box::new(web_config));
+    let web_item_refs: Vec<&dyn tauri::menu::IsMenuItem<Wry>> =
+        web_items.iter().map(|item| item.as_ref()).collect();
     let web = Submenu::with_items(
         app,
         &if web_up {
@@ -888,7 +920,7 @@ fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
             "○ Web server"
         },
         true,
-        &[&web_start, &web_stop, &server_switch, &web_config],
+        &web_item_refs,
     )?;
 
     let php_versions = core.inner().runtimes.installed_versions("php");
@@ -977,8 +1009,7 @@ fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
         app,
         &[
             &open,
-            &start_all,
-            &stop_all,
+            &toggle_all,
             &separator,
             &sites,
             &projects,
@@ -1027,6 +1058,7 @@ fn tray_fingerprint(core: &Core) -> u64 {
     for s in core.services().list() {
         s.id.hash(&mut hasher);
         s.running.hash(&mut hasher);
+        s.state.hash(&mut hasher);
     }
 
     // 2. Web server default & PHP versions
@@ -1184,27 +1216,78 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
             let core = core.clone();
             match event.id.as_ref() {
                 "open" => show_main_window(app),
-                "start_all" => {
-                    start_tray_bulk_action(app, &core, TrayBulkAction::Start);
+                "toggle_all" => {
+                    let services = core.services().list();
+                    let action = if tray_bulk_should_stop(&core, &services) {
+                        TrayBulkAction::Stop
+                    } else {
+                        TrayBulkAction::Start
+                    };
+                    start_tray_bulk_action(app, &core, action);
                 }
-                "web_start" => {
+                "web_toggle" => {
                     let handle = app.clone();
                     std::thread::spawn(move || {
-                        match core.inner().apply_web(&[]) {
-                            Ok(_) => notify(&core, "Web server", "Sites are up to date."),
-                            Err(e) => notify(&core, "Web server failed", &e.to_string()),
+                        if core.services().list().iter().any(|service| {
+                            service.kind == "web"
+                                && (service.running
+                                    || matches!(
+                                        service.state,
+                                        ols_core::service::ServiceState::Starting
+                                            | ols_core::service::ServiceState::Stopping
+                                            | ols_core::service::ServiceState::Restarting
+                                    ))
+                        }) {
+                            if let Err(error) = core.dispatch(CoreCommand::StopWeb) {
+                                notify(
+                                    &core,
+                                    &error.problem,
+                                    &format!(
+                                        "{}\nFix: {}",
+                                        error.cause,
+                                        error.fix.as_deref().unwrap_or(
+                                            "Review the web server diagnostics and try again."
+                                        )
+                                    ),
+                                );
+                            }
+                        } else {
+                            match core.dispatch(CoreCommand::ApplyWeb { overwrite: vec![] }) {
+                                Ok(_) => notify(&core, "Web server", "Sites are up to date."),
+                                Err(error) => notify(
+                                    &core,
+                                    &error.problem,
+                                    &format!(
+                                        "{}\nFix: {}",
+                                        error.cause,
+                                        error.fix.as_deref().unwrap_or(
+                                            "Review the web server diagnostics and try again."
+                                        )
+                                    ),
+                                ),
+                            }
                         }
                         refresh_tray(&handle, &core);
                     });
                 }
-                "stop_all" => {
-                    start_tray_bulk_action(app, &core, TrayBulkAction::Stop);
-                }
-                "web_stop" => {
-                    // Off the main thread: stopping waits on the child processes.
+                "web_reload" => {
                     let handle = app.clone();
                     std::thread::spawn(move || {
-                        core.inner().web.stop();
+                        match core.dispatch(CoreCommand::ApplyWeb { overwrite: vec![] }) {
+                            Ok(_) => notify(&core, "Web server", "Sites are up to date."),
+                            Err(error) => notify(
+                                &core,
+                                &error.problem,
+                                &format!(
+                                    "{}\nFix: {}",
+                                    error.cause,
+                                    error
+                                        .fix
+                                        .as_deref()
+                                        .unwrap_or("Try stopping the web servers again.")
+                                ),
+                            ),
+                        }
                         refresh_tray(&handle, &core);
                     });
                 }
@@ -1305,7 +1388,21 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
                                 );
                             }
                         } else {
-                            let _ = core.services().start(&service_id);
+                            if let Err(e) = core.dispatch(CoreCommand::StartService {
+                                id: service_id.clone(),
+                            }) {
+                                notify(
+                                    &core,
+                                    &e.problem,
+                                    &format!(
+                                        "{}\nFix: {}",
+                                        e.cause,
+                                        e.fix
+                                            .as_deref()
+                                            .unwrap_or("Try starting the service again.")
+                                    ),
+                                );
+                            }
                         }
                         refresh_tray(&handle, &core);
                     });
@@ -1492,6 +1589,15 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 while let Ok(event) = process_events.recv().await {
                     let _ = process_handle.emit("process-event", &event);
+                    if let ProcessEvent::StateChanged { id, .. } = &event {
+                        if let Some(service_id) =
+                            process_core.services().service_id_for_process(*id)
+                        {
+                            process_core
+                                .services()
+                                .publish_current_state(&service_id);
+                        }
+                    }
                     // A service that dies on its own changes what the tray and
                     // taskbar mark should say.
                     sync_status_icon(&process_handle, &process_core);
@@ -1526,6 +1632,18 @@ pub fn run() {
                             );
                         }
                     }
+                }
+            });
+
+            let service_status_handle = app.handle().clone();
+            let service_status_core = core.clone();
+            let mut service_status_events = core.services().subscribe_status_events();
+            tauri::async_runtime::spawn(async move {
+                while let Some(event) =
+                    ols_core::service::next_service_state_event(&mut service_status_events).await
+                {
+                    let _ = service_status_handle.emit("service-status-event", &event);
+                    refresh_tray(&service_status_handle, &service_status_core);
                 }
             });
 

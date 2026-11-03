@@ -270,11 +270,12 @@ export function TechTile({ id, className }: { id: string; className?: string }) 
  * What a service row is doing, as one word. The service's own mark says which
  * service; this says whether it is up, so a row is readable from the icon alone.
  */
-export type ServiceState = 'running' | 'starting' | 'unhealthy' | 'stopped' | 'missing'
+export type ServiceState = 'running' | 'starting' | 'stopping' | 'unhealthy' | 'stopped' | 'missing'
 
 const STATE_DOT: Record<ServiceState, string> = {
   running: 'bg-emerald-500',
   starting: 'bg-amber-500',
+  stopping: 'bg-amber-500',
   unhealthy: 'bg-amber-500',
   stopped: 'bg-muted-foreground/50',
   missing: 'bg-muted-foreground/25',
@@ -283,6 +284,7 @@ const STATE_DOT: Record<ServiceState, string> = {
 const STATE_RING: Record<ServiceState, string> = {
   running: 'ring-emerald-500/30',
   starting: 'ring-amber-500/30',
+  stopping: 'ring-amber-500/30',
   unhealthy: 'ring-amber-500/30',
   stopped: 'ring-transparent',
   missing: 'ring-muted-foreground/25',

@@ -36,6 +36,7 @@ classDiagram
     +start(id)
     +stop(id)
     +status(id) ServiceStatus
+    +subscribe_status_events() Broadcast<ServiceStateEvent>
   }
   class SetupPlanner {
     +plan() PlanStep[]

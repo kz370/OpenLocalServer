@@ -49,6 +49,7 @@ import {
 } from '@/core'
 import { formatBytes, useAction, usePoll } from '@/lib/hooks'
 import { createPersistentCache } from '@/lib/cache'
+import { getServiceLifecycleState, useServiceStatuses } from '@/lib/serviceStatus'
 import { waitForService } from '@/lib/wait'
 import { confirmAction, confirmThen } from '@/lib/confirm'
 import { notify } from '@/lib/notify'
@@ -191,9 +192,14 @@ export function DatabasesPage() {
 }
 
 function ServiceBanner({ service, name }: { service?: ServiceStatus; name: string }) {
-  const [busy, setBusy] = useState(false)
   const { error, setError, run } = useAction()
+  const serviceStatuses = useServiceStatuses()
   if (!service) return null
+  const state = getServiceLifecycleState(service, serviceStatuses)
+  const isStarting = state === 'starting' || state === 'restarting'
+  const isStopping = state === 'stopping'
+  const isPending = isStarting || isStopping
+  const isRunning = state === 'running' || (isStopping && service.running)
   return (
     <>
       <ErrorCard error={error} onDismiss={() => setError(null)} />
@@ -206,13 +212,33 @@ function ServiceBanner({ service, name }: { service?: ServiceStatus; name: strin
             <div className="flex flex-wrap items-center gap-2">
               <ServiceMark
                 id={service.id}
-                state={!service.installed ? 'missing' : service.running ? (service.healthy === false ? 'unhealthy' : 'running') : 'stopped'}
+                state={
+                  !service.installed
+                    ? 'missing'
+                    : isStarting
+                      ? 'starting'
+                      : isStopping
+                        ? 'stopping'
+                        : state === 'error'
+                          ? 'unhealthy'
+                          : isRunning
+                            ? service.healthy === false
+                              ? 'unhealthy'
+                              : 'running'
+                            : 'stopped'
+                }
               />
               <span className="font-medium">{name}</span>
               {!service.installed ? (
                 <Badge variant="outline" className="shrink-0 whitespace-nowrap">not installed (Runtimes page)</Badge>
-              ) : service.running ? (
+              ) : isStarting ? (
+                <Badge variant="secondary" className="shrink-0 whitespace-nowrap">{state === 'restarting' ? 'Restarting…' : 'Starting…'}</Badge>
+              ) : isStopping ? (
+                <Badge variant="secondary" className="shrink-0 whitespace-nowrap">Stopping…</Badge>
+              ) : isRunning ? (
                 <Badge variant="success" className="shrink-0 whitespace-nowrap">● Running on port {service.port}</Badge>
+              ) : state === 'error' ? (
+                <Badge variant="destructive" className="shrink-0 whitespace-nowrap">Error</Badge>
               ) : (
                 <Badge variant="secondary" className="shrink-0 whitespace-nowrap">Stopped</Badge>
               )}
@@ -223,18 +249,17 @@ function ServiceBanner({ service, name }: { service?: ServiceStatus; name: strin
             <Button
               size="sm"
               className="shrink-0"
-              disabled={busy}
+              disabled={isPending}
               onClick={async () => {
-                if (service.running && !(await confirmAction(`Stop ${service.name}? Anything connected to it will be disconnected.`))) return
-                setBusy(true)
-                void run('svc', async () => {
-                  await runCommand({ type: service.running ? 'stop_service' : 'start_service', id: service.id })
-                  await waitForService(service.id, service.running ? 'stopped' : 'running')
-                }).finally(() => setBusy(false))
+                if (isRunning && !(await confirmAction(`Stop ${service.name}? Anything connected to it will be disconnected.`))) return
+                await run('svc', async () => {
+                  await runCommand({ type: isRunning ? 'stop_service' : 'start_service', id: service.id })
+                  await waitForService(service.id, isRunning ? 'stopped' : 'running')
+                })
               }}
             >
-              {busy && <Spinner />}
-              {busy ? (service.running ? 'Stopping…' : 'Starting…') : service.running ? 'Stop' : 'Start'}
+              {isPending && <Spinner />}
+              {isPending ? (isStarting ? 'Starting…' : 'Stopping…') : isRunning ? 'Stop' : 'Start'}
             </Button>
           )}
         </CardContent>

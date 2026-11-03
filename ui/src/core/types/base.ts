@@ -225,11 +225,14 @@ export interface DbBackup {
 
 export type PortStatusLite = 'free' | 'in_use'
 
+export type ServiceLifecycleState = 'starting' | 'stopping' | 'restarting' | 'running' | 'stopped' | 'error'
+
 export interface ServiceStatus {
   id: string
   name: string
   installed: boolean
   running: boolean
+  state: ServiceLifecycleState
   port: number | null
   port_status: PortStatusLite | null
   kind: string

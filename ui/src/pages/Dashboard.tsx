@@ -13,6 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import {
   type DashboardData,
   type Diagnostic,
+  type ServiceLifecycleState,
   type ServerAvailability,
   type ServiceStatus,
   type StartupSettings,
@@ -24,8 +25,8 @@ import { createPersistentCache } from '@/lib/cache'
 import {
   notifyManualStartFailure,
   runSerializedServiceOp,
-  useStartingServices,
 } from '@/lib/diagnosticsNotify'
+import { getServiceLifecycleState, useServiceStatuses } from '@/lib/serviceStatus'
 import { notify, resolveNotificationsForService } from '@/lib/notify'
 import { cn } from '@/lib/utils'
 import { waitForService } from '@/lib/wait'
@@ -58,8 +59,7 @@ export function DashboardPage({
   const [stats, setStats] = useState<SystemStats | null>(dashboardStatsCache.get)
   const [accessLines, setAccessLines] = useState<string[]>(accessLinesCache.get)
   const [startup, setStartup] = useState<StartupSettings | null>(null)
-  const [pendingServices, setPendingServices] = useState<Map<string, WidgetAction>>(new Map())
-  const startingServices = useStartingServices()
+  const serviceStatuses = useServiceStatuses()
 
   const action = useAction()
   const { busy, error, setError, run } = action
@@ -115,11 +115,6 @@ export function DashboardPage({
 
   const onServiceAction = useCallback(
     async (s: ServiceStatus, action: WidgetAction) => {
-      setPendingServices((prev) => {
-        const next = new Map(prev)
-        next.set(s.id, action)
-        return next
-      })
       try {
         await runSerializedServiceOp(s.id, action, async () => {
           if (action === 'reload') {
@@ -143,18 +138,16 @@ export function DashboardPage({
             details: diag.cause,
           })
         }
-      } finally {
-        setPendingServices((prev) => {
-          const next = new Map(prev)
-          next.delete(s.id)
-          return next
-        })
       }
     },
     [],
   )
 
   const web = data?.web
+  const webStatus = web
+    ? serviceStatuses.get(web.default_server) ??
+      data?.services.find((service) => service.id === web.default_server)?.state
+    : undefined
   const autostartIds = startup?.autostart_services ?? []
   const isWebInAutostart =
     autostartIds.some((id) => ['nginx', 'apache', 'caddy'].includes(id)) || autostartIds.includes('web')
@@ -335,13 +328,21 @@ export function DashboardPage({
         {/* Left: Title + Status pill */}
         <div className="flex items-center gap-2.5 shrink-0">
           <span className="text-sm font-semibold text-foreground">Web server</span>
-          {web?.running ? (
+          {webStatus === 'starting' || webStatus === 'restarting' ? (
+            <Badge variant="warning" className="shrink-0 whitespace-nowrap text-xs py-0.5">
+              {webStatus === 'restarting' ? 'Restarting…' : 'Starting…'}
+            </Badge>
+          ) : webStatus === 'stopping' ? (
+            <Badge variant="warning" className="shrink-0 whitespace-nowrap text-xs py-0.5">
+              Stopping…
+            </Badge>
+          ) : web?.running || webStatus === 'running' ? (
             <Badge variant="success" className="shrink-0 whitespace-nowrap text-xs py-0.5">
               ● Running
             </Badge>
-          ) : startingServices.has('web') ? (
-            <Badge variant="warning" className="shrink-0 whitespace-nowrap text-xs py-0.5">
-              Starting…
+          ) : webStatus === 'error' ? (
+            <Badge variant="destructive" className="shrink-0 whitespace-nowrap text-xs py-0.5">
+              Error
             </Badge>
           ) : (
             <Badge variant="secondary" className="shrink-0 whitespace-nowrap text-xs py-0.5">
@@ -513,8 +514,7 @@ export function DashboardPage({
           <ServicesWidget
             services={data?.services ?? null}
             webServers={data?.web?.servers ?? null}
-            pendingServices={pendingServices}
-            startingServices={startingServices}
+            serviceStatuses={serviceStatuses}
             onAction={onServiceAction}
             onNavigate={onNavigate}
             onOpenLogs={onOpenLogs}
@@ -552,16 +552,14 @@ function getInitialCollapsed(): Record<string, boolean> {
 function ServicesWidget({
   services,
   webServers,
-  pendingServices,
-  startingServices,
+  serviceStatuses,
   onAction,
   onNavigate,
   onOpenLogs,
 }: {
   services: ServiceStatus[] | null
   webServers: ServerAvailability[] | null
-  pendingServices: Map<string, WidgetAction>
-  startingServices: Set<string>
+  serviceStatuses: ReadonlyMap<string, ServiceLifecycleState>
   onAction: (s: ServiceStatus, action: WidgetAction) => Promise<void>
   onNavigate: (p: Page) => void
   onOpenLogs: (source: string) => void
@@ -623,10 +621,11 @@ function ServicesWidget({
       <CardContent className="p-0">
         {groups.map((group, groupIndex) => {
           const runningInGroup = group.services.filter((s) => s.running).length
-          const activeOrStartingInGroup = group.services.filter(
-            (s) => s.running || startingServices.has(s.id),
-          ).length
-          // Collapsed by default when all services in group are stopped (and none starting)
+          const activeOrStartingInGroup = group.services.filter((s) => {
+            const status = getServiceLifecycleState(s, serviceStatuses)
+            return s.running || status === 'starting' || status === 'stopping' || status === 'restarting'
+          }).length
+          // Collapsed by default when all services in group are stopped (and none transitioning)
           const isCollapsed =
             collapsed[group.id] !== undefined ? !!collapsed[group.id] : activeOrStartingInGroup === 0
 
@@ -668,19 +667,21 @@ function ServicesWidget({
               {!isCollapsed && (
                 <div>
                   {group.services.map((s) => {
-                    const pendingAction = pendingServices.get(s.id)
+                    const serviceStatus = getServiceLifecycleState(s, serviceStatuses)
                     const isStarting =
-                      pendingAction === 'start' ||
-                      pendingAction === 'restart' ||
-                      (!s.running && startingServices.has(s.id))
-                    const isPending = pendingAction !== undefined
+                      serviceStatus === 'starting' || serviceStatus === 'restarting'
+                    const isStopping = serviceStatus === 'stopping'
+                    const isPending = isStarting || isStopping
+                    const isRunning = serviceStatus === 'running' || (isStopping && s.running)
                     const state = !s.installed
                       ? 'missing'
                       : isStarting
                         ? 'starting'
-                        : isPending
-                          ? 'unhealthy'
-                          : s.running
+                        : isStopping
+                          ? 'stopping'
+                          : serviceStatus === 'error'
+                            ? 'unhealthy'
+                            : isRunning
                             ? s.healthy === false
                               ? 'unhealthy'
                               : 'running'
@@ -722,15 +723,15 @@ function ServicesWidget({
                             type="button"
                             title={
                               isPending
-                                ? `${pendingAction === 'start' ? 'Starting' : pendingAction === 'stop' ? 'Stopping' : pendingAction} ${s.name}…`
-                                : s.running
+                                  ? `${isStarting ? serviceStatus === 'restarting' ? 'Restarting' : 'Starting' : 'Stopping'} ${s.name}…`
+                                  : isRunning
                                   ? `Stop ${s.name}`
                                   : `Start ${s.name}`
                             }
                             aria-label={
                               isPending
-                                ? `${pendingAction}ing ${s.name}`
-                                : s.running
+                                  ? `${isStarting ? serviceStatus === 'restarting' ? 'Restart' : 'Start' : 'Stop'}ing ${s.name}`
+                                  : isRunning
                                   ? `Stop ${s.name}`
                                   : `Start ${s.name}`
                             }
@@ -740,14 +741,14 @@ function ServicesWidget({
                               'action-slot-btn',
                               isPending
                                 ? 'action-slot-pending'
-                                : s.running
+                                : isRunning
                                   ? 'action-slot-stop'
                                   : 'action-slot-start'
                             )}
                           >
                             {isPending ? (
                               <Spinner className="size-3.5 shrink-0" />
-                            ) : s.running ? (
+                            ) : isRunning ? (
                               <StopIcon />
                             ) : (
                               <Play />
@@ -759,7 +760,7 @@ function ServicesWidget({
                             type="button"
                             title="Restart"
                             aria-label="Restart"
-                            disabled={isPending || !s.installed || !s.running}
+                            disabled={isPending || !s.installed || !isRunning}
                             onClick={() => void handleAction(s, 'restart')}
                             className="action-slot-btn action-slot-restart"
                           >
@@ -771,7 +772,7 @@ function ServicesWidget({
                             type="button"
                             title="Reload config"
                             aria-label="Reload config"
-                            disabled={isPending || !s.installed || !s.running || s.kind !== 'web'}
+                            disabled={isPending || !s.installed || !isRunning || s.kind !== 'web'}
                             onClick={() => void handleAction(s, 'reload')}
                             className="action-slot-btn action-slot-reload"
                           >

@@ -15,6 +15,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
+use tokio::sync::broadcast;
 
 use crate::custom_service::{self, CustomService, CustomServiceStore};
 use crate::exec::{run_capture, Captured};
@@ -57,12 +58,54 @@ pub enum PortStatusLite {
     InUse,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ServiceState {
+    Starting,
+    Stopping,
+    Restarting,
+    Running,
+    Stopped,
+    Error,
+}
+
+impl Default for ServiceState {
+    fn default() -> Self {
+        Self::Stopped
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceStateChange {
+    pub id: String,
+    pub state: ServiceState,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceStateEvent {
+    pub services: Vec<ServiceStateChange>,
+}
+
+pub async fn next_service_state_event(
+    receiver: &mut broadcast::Receiver<ServiceStateEvent>,
+) -> Option<ServiceStateEvent> {
+    loop {
+        match receiver.recv().await {
+            Ok(event) => return Some(event),
+            Err(broadcast::error::RecvError::Lagged(_)) => continue,
+            Err(broadcast::error::RecvError::Closed) => return None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceStatus {
     pub id: String,
     pub name: String,
     pub installed: bool,
     pub running: bool,
+    #[serde(default)]
+    pub state: ServiceState,
     pub port: Option<u16>,
     pub port_status: Option<PortStatusLite>,
     /// "mail" | "sql" | "document" — what kind of thing this is.
@@ -124,6 +167,8 @@ pub struct ServiceManager {
     /// row left in `running`, so without this its only trace was a log line nobody
     /// opens — the Logs page for that service showed nothing at all.
     start_failures: Mutex<HashMap<String, String>>,
+    transitions: Mutex<HashMap<String, (ServiceState, usize)>>,
+    status_events: broadcast::Sender<ServiceStateEvent>,
     custom: Mutex<CustomServiceStore>,
     /// Memory limits from Settings → Resources (§129), applied at start.
     limits: Mutex<crate::resources::ResourceLimits>,
@@ -189,6 +234,7 @@ impl ServiceManager {
         supervisor: Arc<ProcessSupervisor>,
     ) -> Self {
         let custom = Mutex::new(CustomServiceStore::load(&paths));
+        let (status_events, _) = broadcast::channel(128);
         Self {
             paths,
             runtimes,
@@ -196,12 +242,106 @@ impl ServiceManager {
             running: Mutex::new(HashMap::new()),
             last_process: Mutex::new(HashMap::new()),
             start_failures: Mutex::new(HashMap::new()),
+            transitions: Mutex::new(HashMap::new()),
+            status_events,
             custom,
             limits: Mutex::new(Default::default()),
             web: Mutex::new(None),
             op_locks: Mutex::new(HashMap::new()),
             in_flight_starts: Mutex::new(HashMap::new()),
         }
+    }
+
+    pub fn subscribe_status_events(&self) -> broadcast::Receiver<ServiceStateEvent> {
+        self.status_events.subscribe()
+    }
+
+    fn lifecycle_state(&self, id: &str, running: bool) -> ServiceState {
+        if let Some((state, _)) = self.transitions.lock().unwrap().get(id) {
+            return *state;
+        }
+        if running {
+            ServiceState::Running
+        } else if self.start_failures.lock().unwrap().contains_key(id) {
+            ServiceState::Error
+        } else {
+            ServiceState::Stopped
+        }
+    }
+
+    fn emit_states(&self, changes: Vec<ServiceStateChange>) {
+        if !changes.is_empty() {
+            let _ = self
+                .status_events
+                .send(ServiceStateEvent { services: changes });
+        }
+    }
+
+    pub fn begin_transitions(&self, ids: &[String], state: ServiceState) {
+        let mut changes = Vec::new();
+        let mut transitions = self.transitions.lock().unwrap();
+        for id in ids {
+            if let Some((_, depth)) = transitions.get_mut(id) {
+                *depth += 1;
+            } else {
+                transitions.insert(id.clone(), (state, 1));
+                changes.push(ServiceStateChange {
+                    id: id.clone(),
+                    state,
+                });
+            }
+        }
+        drop(transitions);
+        self.emit_states(changes);
+    }
+
+    pub fn finish_transitions(&self, ids: &[String]) {
+        let mut finished = Vec::new();
+        let mut transitions = self.transitions.lock().unwrap();
+        for id in ids {
+            let Some((_, depth)) = transitions.get_mut(id) else {
+                continue;
+            };
+            *depth -= 1;
+            if *depth == 0 {
+                transitions.remove(id);
+                finished.push(id.clone());
+            }
+        }
+        drop(transitions);
+        let changes = finished
+            .into_iter()
+            .map(|id| {
+                let running = self.is_running(&id);
+                let state = self.lifecycle_state(&id, running);
+                ServiceStateChange { id, state }
+            })
+            .collect();
+        self.emit_states(changes);
+    }
+
+    pub fn publish_current_state(&self, id: &str) {
+        let running = self.is_running(id);
+        let state = self.lifecycle_state(id, running);
+        self.emit_states(vec![ServiceStateChange {
+            id: id.to_string(),
+            state,
+        }]);
+    }
+
+    pub fn service_id_for_process(&self, process_id: ProcessId) -> Option<String> {
+        self.running
+            .lock()
+            .unwrap()
+            .iter()
+            .find_map(|(id, id_process)| (*id_process == process_id).then(|| id.clone()))
+            .or_else(|| {
+                self.last_process
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .find_map(|(id, id_process)| (*id_process == process_id).then(|| id.clone()))
+            })
     }
 
     fn service_lock(&self, id: &str) -> Arc<Mutex<()>> {
@@ -250,6 +390,7 @@ impl ServiceManager {
             .servers
             .into_iter()
             .map(|s| {
+                let id = s.id;
                 // A running server with no sites of its own opens no listener, so probing
                 // its port would report a perfectly healthy server as not answering.
                 let healthy = s.running.then(|| {
@@ -265,12 +406,13 @@ impl ServiceManager {
                 } else {
                     PortStatusLite::InUse
                 };
-                let log_source = format!("web:{}:error", s.id);
+                let log_source = format!("web:{id}:error");
                 ServiceStatus {
-                    id: s.id,
+                    id: id.clone(),
                     name: s.name,
                     installed: s.installed,
                     running: s.running,
+                    state: self.lifecycle_state(&id, s.running),
                     port: Some(s.http_port),
                     port_status: Some(port_status),
                     kind: "web".into(),
@@ -370,6 +512,7 @@ impl ServiceManager {
         ServiceStatus {
             installed: std::path::Path::new(&def.executable).is_file(),
             running,
+            state: self.lifecycle_state(&def.id, running),
             port: def.port,
             port_status: def.port.map(|p| {
                 if port_is_free(p) {
@@ -545,6 +688,7 @@ impl ServiceManager {
                     name: id.to_string(),
                     installed: false,
                     running: false,
+                    state: self.lifecycle_state(id, false),
                     port: None,
                     port_status: None,
                     kind: "custom".into(),
@@ -569,6 +713,7 @@ impl ServiceManager {
                 .unwrap_or_else(|| id.to_string()),
             installed,
             running,
+            state: self.lifecycle_state(id, running),
             port,
             // Only free/in-use matters here, so skip the netstat/tasklist owner lookup.
             port_status: port.map(|p| {
@@ -605,6 +750,28 @@ impl ServiceManager {
     /// process that never starts or exits early is an `Err` with the OS/log reason
     /// rather than a success the UI then shows as a status that silently reverted.
     pub fn start(&self, id: &str) -> Result<ProcessId, String> {
+        if let Some(handle) = self.web_handle() {
+            if crate::web::SERVER_IDS.contains(&id) {
+                let cfg = (handle.config)();
+                let domains = (handle.domains)();
+                if handle.web.is_ready(id, &cfg, &domains) {
+                    self.clear_start_failure(id);
+                    return Ok(handle.web.running_pid(id).unwrap_or(ProcessId(0)));
+                }
+            }
+        }
+        if self.is_running_and_ready(id) {
+            self.clear_start_failure(id);
+            return Ok(self.process_id(id).unwrap_or(ProcessId(0)));
+        }
+        let ids = [id.to_string()];
+        self.begin_transitions(&ids, ServiceState::Starting);
+        let result = self.start_inner_operation(id);
+        self.finish_transitions(&ids);
+        result
+    }
+
+    fn start_inner_operation(&self, id: &str) -> Result<ProcessId, String> {
         let inflight = {
             let mut map = self.in_flight_starts.lock().unwrap();
             if let Some(existing) = map.get(id).cloned() {
@@ -889,6 +1056,14 @@ impl ServiceManager {
     /// Stops a service and waits for the process to actually be gone and its port released.
     /// Serialized per service ID so a subsequent `start` waits for the stop to finish.
     pub fn stop(&self, id: &str) -> Result<(), String> {
+        let ids = [id.to_string()];
+        self.begin_transitions(&ids, ServiceState::Stopping);
+        let result = self.stop_inner(id);
+        self.finish_transitions(&ids);
+        result
+    }
+
+    fn stop_inner(&self, id: &str) -> Result<(), String> {
         let op_lock = self.service_lock(id);
         let _op_guard = op_lock.lock().unwrap();
         if let Some(handle) = self.web_handle() {
@@ -1993,6 +2168,55 @@ pub fn mailpit_smtp_port() -> u16 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn service_transition_is_available_in_snapshot_and_broadcast() {
+        let home = crate::test_support::isolated_home();
+        let settings = crate::settings::SettingsService::load(&home.paths).unwrap();
+        let core = crate::Core::new(settings, home.paths.clone());
+        let services = core.services();
+        let mut events = services.subscribe_status_events();
+        let ids = vec!["mariadb".to_string()];
+
+        services.begin_transitions(&ids, ServiceState::Starting);
+        assert_eq!(services.status("mariadb").state, ServiceState::Starting);
+        assert_eq!(
+            events.try_recv().unwrap().services[0].state,
+            ServiceState::Starting
+        );
+
+        services.finish_transitions(&ids);
+        assert_eq!(services.status("mariadb").state, ServiceState::Stopped);
+        assert_eq!(
+            events.try_recv().unwrap().services[0].state,
+            ServiceState::Stopped
+        );
+    }
+
+    #[test]
+    fn failed_service_start_finishes_in_error_state() {
+        use crate::command::CoreCommand;
+
+        let home = crate::test_support::isolated_home();
+        let settings = crate::settings::SettingsService::load(&home.paths).unwrap();
+        let core = crate::Core::new(settings, home.paths.clone());
+        let mut events = core.services().subscribe_status_events();
+
+        assert!(core
+            .dispatch(CoreCommand::StartService {
+                id: "mariadb".into(),
+            })
+            .is_err());
+        assert_eq!(core.services().status("mariadb").state, ServiceState::Error);
+        assert_eq!(
+            events.try_recv().unwrap().services[0].state,
+            ServiceState::Starting
+        );
+        assert_eq!(
+            events.try_recv().unwrap().services[0].state,
+            ServiceState::Error
+        );
+    }
 
     #[cfg(windows)]
     #[test]
