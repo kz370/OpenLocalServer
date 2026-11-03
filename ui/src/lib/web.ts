@@ -75,6 +75,16 @@ export function useWeb() {
     }
   }
 
+  async function reconcileSites() {
+    setApplying(true)
+    try {
+      await runCommand({ type: 'sync_hosts' })
+      await Promise.all([refresh(), refreshProjects()])
+    } finally {
+      setApplying(false)
+    }
+  }
+
   async function refresh(updateConfig = false) {
     const [s, c, d, k, a] = await Promise.all([
       runCommand({ type: 'get_web_status' }),
@@ -362,6 +372,7 @@ export function useWeb() {
     relocateProject,
     hideSite,
     hideSites,
+    reconcileSites,
     hideProjectFromList,
     removeProjectFromList,
     setDomainsEnabled,

@@ -90,7 +90,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   // The WordPress sign-in screen lives outside this window, so it is told which colourway
   // the app is showing rather than left to guess from the browser.
   const { resolvedTheme } = useTheme()
-  const { projects, domains, status, busy, error, setError, run, apply, refresh, refreshProjects, installedPhp, removing, applying } = web
+  const { projects, domains, status, busy, error, setError, run, apply, refresh, refreshProjects, reconcileSites, installedPhp, removing, applying } = web
   const defaultServer = status?.default_server
 
   const [target, setTarget] = useState<SiteTarget | null>(null)
@@ -772,7 +772,11 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
             'Remove from list',
           )
           if (!ok) return
-          await run(`remove:${key}`, () => runCommand({ type: 'remove_site_from_list', hostname: key }))
+          await run(`remove:${key}`, async () => {
+            await runCommand({ type: 'remove_site_from_list', hostname: key })
+            await Promise.all([refresh(), refreshProjects()])
+            await reconcileSites()
+          })
         },
       })
       items.push({
@@ -868,9 +872,14 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       </div>
 
       <ErrorCard error={error} onDismiss={() => setError(null)} />
+      {removing.size > 0 && !applying && (
+        <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
+          <Spinner /> Updating the site list…
+        </p>
+      )}
       {applying && (
         <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
-          <Spinner /> Updating the web-server configuration…
+          <Spinner /> Updating site configuration and hosts file…
         </p>
       )}
       <ApplyReportCard web={web} />

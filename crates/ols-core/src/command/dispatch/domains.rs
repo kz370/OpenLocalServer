@@ -30,7 +30,8 @@ impl Core {
                     if i.reload_external_changes() {
                         tracing::info!("re-read the stores after an outside change");
                     }
-                    let _ = i.reconcile();
+                    // This is polled every few seconds; reconciliation can run hosts-file
+                    // elevation and web-server reloads, so keep this path read-only.
                     let records = i.domains.lock().unwrap().list();
                     let active: std::collections::HashSet<_> = records.into_iter()
                         .filter(|domain| i.site_is_active(domain))

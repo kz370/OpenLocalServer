@@ -398,7 +398,6 @@ impl Core {
                     // Same outside-change re-read as `ListDomains`: a folder registered from
                     // the right-click menu is written by another process.
                     i.reload_external_changes();
-                    let _ = i.reconcile();
                     let records = i.domains.lock().unwrap().list();
                     let hidden_hosts: std::collections::HashSet<_> = records.into_iter()
                         .filter(|d| !i.site_is_active(d))
@@ -433,7 +432,6 @@ impl Core {
                 }
                 C::RemoveSiteFromList { hostname } => {
                     i.remove_site_from_list(&hostname)?;
-                    i.reconcile()?;
                     Ok(R::Ok)
                 }
                 C::RelocateProject { id, path } => {
