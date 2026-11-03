@@ -12,7 +12,6 @@ use ols_core::{
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Listener, Manager, WindowEvent, Wry};
-use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 mod notify;
 
@@ -1290,24 +1289,10 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
                 "open" => show_main_window(app),
                 "toggle_all" => {
                     if core.service_aggregate().running > 0 {
-                        let confirmed_app = app.clone();
-                        let confirmed_core = core.clone();
-                        app.dialog()
-                            .message(
-                                "Stop all running services, web servers, workers, and tunnels?",
-                            )
-                            .title("Stop all?")
-                            .kind(MessageDialogKind::Warning)
-                            .buttons(MessageDialogButtons::YesNo)
-                            .show(move |confirmed| {
-                                if confirmed {
-                                    start_tray_bulk_action(
-                                        &confirmed_app,
-                                        &confirmed_core,
-                                        TrayBulkAction::Stop,
-                                    );
-                                }
-                            });
+                        show_main_window(app);
+                        if let Err(error) = app.emit("ols:tray-confirmation-request", "stop-all") {
+                            tracing::warn!(error = %error, "the themed Stop all confirmation could not be requested");
+                        }
                     } else {
                         start_tray_bulk_action(app, &core, TrayBulkAction::Start);
                     }
@@ -1511,7 +1496,12 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
                         refresh_tray(&handle, &core);
                     });
                 }
-                "quit" => begin_shutdown(app, core.clone()),
+                "quit" => {
+                    show_main_window(app);
+                    if let Err(error) = app.emit("ols:tray-confirmation-request", "quit") {
+                        tracing::warn!(error = %error, "the themed exit confirmation could not be requested");
+                    }
+                }
                 _ => {}
             }
         })
@@ -1635,6 +1625,23 @@ pub fn run() {
         .manage(core)
         .setup(move |app| {
             let core = setup_core;
+            let confirmation_app = app.handle().clone();
+            let confirmation_core = core.clone();
+            app.listen("ols:tray-confirmation-confirmed", move |event| {
+                match serde_json::from_str::<String>(event.payload()).as_deref() {
+                    Ok("stop-all") => start_tray_bulk_action(
+                        &confirmation_app,
+                        &confirmation_core,
+                        TrayBulkAction::Stop,
+                    ),
+                    Ok("quit") => begin_shutdown(&confirmation_app, confirmation_core.clone()),
+                    Ok(_) => tracing::warn!("the tray confirmation returned an unknown action"),
+                    Err(error) => tracing::warn!(
+                        error = %error,
+                        "the tray confirmation response could not be parsed"
+                    ),
+                }
+            });
 
             // The theme lives in the UI (localStorage, no core counterpart), so the
             // UI reports the resolved theme and the native marks follow it. Seeded

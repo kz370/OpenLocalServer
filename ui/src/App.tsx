@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
-import { listen } from '@tauri-apps/api/event'
+import { emit, listen } from '@tauri-apps/api/event'
 
 import { runCommand } from '@/core'
 
@@ -16,6 +16,7 @@ import { useWindowState } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 import { initDiagnosticsNotificationMonitor } from '@/lib/diagnosticsNotify'
 import { initializeServiceStatusTracking } from '@/lib/serviceStatus'
+import { confirmAction } from '@/lib/confirm'
 const CommandsPage = lazy(() => import('@/pages/Commands').then((module) => ({ default: module.CommandsPage })))
 const DashboardPage = lazy(() => import('@/pages/Dashboard').then((module) => ({ default: module.DashboardPage })))
 const DatabasesPage = lazy(() => import('@/pages/Databases').then((module) => ({ default: module.DatabasesPage })))
@@ -109,6 +110,43 @@ export default function App() {
   useEffect(() => {
     initDiagnosticsNotificationMonitor()
     initializeServiceStatusTracking()
+  }, [])
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined
+    void listen<string>('ols:tray-confirmation-request', (event) => {
+      const request =
+        event.payload === 'stop-all'
+          ? {
+              action: 'stop-all',
+              message: 'Stop all running services, web servers, workers, and tunnels?',
+              title: 'Stop all?',
+              confirmLabel: 'Stop all',
+            }
+          : event.payload === 'quit'
+            ? {
+                action: 'quit',
+                message: 'Exit OpenLocalServer and stop all running services, web servers, workers, and tunnels?',
+                title: 'Exit OpenLocalServer?',
+                confirmLabel: 'Exit',
+              }
+            : null
+      if (!request) {
+        console.error('Unknown tray confirmation request:', event.payload)
+        return
+      }
+
+      void confirmAction(request.message, request.title, request.confirmLabel).then((confirmed) => {
+        if (confirmed) {
+          void emit('ols:tray-confirmation-confirmed', request.action).catch((error: unknown) => {
+            console.error('Could not send the tray confirmation response:', error)
+          })
+        }
+      })
+    }).then((cleanup) => {
+      unlisten = cleanup
+    })
+    return () => unlisten?.()
   }, [])
 
   const changePage = useCallback((target: Page) => {
