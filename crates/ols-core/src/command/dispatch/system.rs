@@ -250,7 +250,12 @@ impl Core {
 
                 C::RegisterProject { path } => {
                     tracing::info!(command = "register_project", path = %path);
-                    let project = i.projects.lock().unwrap().register(&path)?;
+                    let project = {
+                        let mut projects = i.projects.lock().unwrap();
+                        let project = projects.register(&path)?;
+                        projects.set_standalone(&project.id, false)?;
+                        projects.get(&project.id).unwrap_or(project)
+                    };
                     let _ = i.clear_project_skip(&project.path);
                     if let Err(e) = i.sync_auto_domains() {
                         tracing::warn!(error = %e, "automatic domains could not be synced");
@@ -275,11 +280,19 @@ impl Core {
                         }
                         Some(t) => Some(t.to_string()),
                     };
-                    let project =
-                        i.projects
-                            .lock()
-                            .unwrap()
-                            .add_new(&path, name, effective_type, !auto_site)?;
+                    let project = {
+                        let mut projects = i.projects.lock().unwrap();
+                        let existing = projects
+                            .list()
+                            .into_iter()
+                            .find(|project| crate::project::same_path(&project.path, &path));
+                        if let Some(existing) = existing {
+                            projects.set_standalone(&existing.id, !auto_site)?;
+                            projects.get(&existing.id).unwrap_or(existing)
+                        } else {
+                            projects.add_new(&path, name, effective_type, !auto_site)?
+                        }
+                    };
                     let _ = i.clear_project_skip(&project.path);
                     if auto_site {
                         match i.create_site_for_project(&project.id) {
@@ -391,7 +404,9 @@ impl Core {
                             if crate::app::skip_matches(&skipped, s) {
                                 continue;
                             }
-                            registered.push(projects.register(s)?);
+                            let project = projects.register(s)?;
+                            projects.set_standalone(&project.id, false)?;
+                            registered.push(projects.get(&project.id).unwrap_or(project));
                         }
                     }
                     drop(projects);

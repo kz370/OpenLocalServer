@@ -86,7 +86,7 @@ export function AddProjectDialog({
             setError({
               problem: 'This folder is already a project.',
               cause: `"${inspection.path}" is already registered as "${inspection.duplicate_of.name}".`,
-              fix: 'Open it from the Projects list, or choose a different folder.',
+              fix: 'Use the button below to keep the existing project without an automatic site, or turn the site option on to request one. Any existing site will remain.',
             })
           } else {
             if (inspection.suggested_name && !currentItem.suggestedName) {
@@ -138,7 +138,15 @@ export function AddProjectDialog({
       })
 
       if (res.type === 'project') {
-        notify.success(`Added project "${res.project.name}"`)
+        if (error?.problem === 'This folder is already a project.') {
+          notify.success(
+            autoSite
+              ? `Updated "${res.project.name}" and requested a site`
+              : `Kept "${res.project.name}" without an automatic site`,
+          )
+        } else {
+          notify.success(`Added project "${res.project.name}"`)
+        }
         await onAdded()
 
         // Check if there are more items in queue
@@ -193,9 +201,19 @@ export function AddProjectDialog({
             </Button>
             <Button
               onClick={() => void handleAdd()}
-              disabled={loading || inspecting || isDuplicate || Boolean(error && !error.fix?.includes('Projects list'))}
+              disabled={loading || inspecting || Boolean(error && !isDuplicate)}
             >
-              {loading ? (autoSite ? 'Adding project and site…' : 'Adding…') : isQueue && currentIndex + 1 < items.length ? 'Add & Next' : 'Add Project'}
+              {loading
+                ? autoSite
+                  ? 'Adding project and site…'
+                  : 'Adding…'
+                : isDuplicate
+                  ? autoSite
+                    ? 'Create Site'
+                    : 'Keep Project'
+                  : isQueue && currentIndex + 1 < items.length
+                    ? 'Add & Next'
+                    : 'Add Project'}
             </Button>
           </div>
         </div>

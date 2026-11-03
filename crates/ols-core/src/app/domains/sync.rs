@@ -80,7 +80,9 @@ impl Inner {
                     && !skip_matches(&skipped, &dir.display().to_string())
                     && (crate::detection::looks_like_a_project(&dir) || has_index(&dir))
                 {
-                    let _ = projects.register(&dir.display().to_string());
+                    // Discovering a project folder is not an instruction to publish it
+                    // as a local site. Explicit add/scan actions decide that separately.
+                    let _ = projects.register_with_standalone(&dir.display().to_string(), true);
                 }
             }
         }
