@@ -5,6 +5,8 @@ olsc is a Windows-local development environment manager. It downloads and runs P
 
 Scope: runtimes (PHP/Node/Python/Composer), databases (MariaDB/Postgres/Mongo/Redis/SQLite), web (Nginx/Apache/Caddy), projects (detect/setup/env/git/workers/scheduler/snapshots), domains + TLS + DNS, tunnels, diagnostics/doctor, plugins, quick-apps/commands, AI assist, local API, CLI, updater.
 
+The app database retains its existing `docs` and `settings` tables. Before stores load, additive `PRAGMA user_version` migrations back up app.db and present WAL/SHM sidecars; version 1 adds six JSON read views and expression indexes, and version 2 prunes/collapses only operation records. Each migration is transactional. A failure rolls back, logs a `Diagnostic{problem,cause,fix}`, and lets startup continue with the old records. `list_projects` optionally returns view-derived unconnected project IDs for Add Site and the Projects create-site guard; clients keep the legacy matching path if the view is unavailable.
+
 Version: 1.1.0 (workspace `Cargo.toml` and `src-tauri/tauri.conf.json`; release notes in `release-notes/v1.1.0.md`, change summary in `CHANGELOG.md`). `ui/package.json` stays at 0.0.0 — it is a private workspace root and never shipped.
 
 ## 2. Architecture

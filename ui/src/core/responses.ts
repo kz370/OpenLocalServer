@@ -19,7 +19,7 @@ export type CoreResponse =
   | { type: 'port'; port: number; status: PortStatus }
   | { type: 'runtime_catalog'; entries: CatalogEntry[] }
   | { type: 'project'; project: Project }
-  | { type: 'projects'; projects: Project[] }
+  | { type: 'projects'; projects: Project[]; unconnected_project_ids?: string[] | null }
   | { type: 'project_detail'; detail: ProjectDetail }
   | { type: 'create_site_for_project'; domain: Domain | null; needs_setup: boolean; suggested_hostname: string }
   | { type: 'project_types'; types: ProjectTypePreset[] }

@@ -141,6 +141,7 @@ export function DomainDialog({
   installedPhp,
   defaultParent,
   existingDomains,
+  unconnectedProjectIds,
 }: {
   projects: Project[]
   onQuickApp: (id: string) => void
@@ -148,6 +149,7 @@ export function DomainDialog({
   installedPhp: string[]
   defaultParent?: string
   existingDomains?: DomainSummary[]
+  unconnectedProjectIds?: string[] | null
   onClose: () => void
   onSave: (d: Domain) => void
   busy: boolean
@@ -161,6 +163,7 @@ export function DomainDialog({
       defaultParent={defaultParent}
       installedPhp={installedPhp}
       existingDomains={existingDomains}
+      unconnectedProjectIds={unconnectedProjectIds}
       onClose={onClose}
       onSave={onSave}
       busy={busy}
@@ -175,6 +178,7 @@ function AddSiteDialogBody({
   defaultParent,
   installedPhp,
   existingDomains,
+  unconnectedProjectIds,
   onSave,
   busy,
   onClose,
@@ -185,6 +189,7 @@ function AddSiteDialogBody({
   defaultParent?: string
   installedPhp: string[]
   existingDomains?: DomainSummary[]
+  unconnectedProjectIds?: string[] | null
   onSave: (d: Domain) => void
   busy: boolean
   onClose: () => void
@@ -216,6 +221,7 @@ function AddSiteDialogBody({
         defaultParent={defaultParent}
         installedPhp={installedPhp}
         existingDomains={existingDomains}
+        unconnectedProjectIds={unconnectedProjectIds}
         onSave={onSave}
         busy={busy}
         submitRef={submitRef}
@@ -233,6 +239,7 @@ export function DomainSettings({
   defaultParent,
   installedPhp,
   existingDomains,
+  unconnectedProjectIds,
   onSave,
   busy,
   saveBarScope,
@@ -246,6 +253,7 @@ export function DomainSettings({
   defaultParent?: string
   installedPhp: string[]
   existingDomains?: DomainSummary[]
+  unconnectedProjectIds?: string[] | null
   onSave: (d: Domain) => void | Promise<void | boolean>
   busy: boolean
   saveBarScope?: DirtyFormScope
@@ -279,12 +287,13 @@ export function DomainSettings({
   const skipProjectTriggerFocusOpen = useRef(false)
   const [projectPopoverPosition, setProjectPopoverPosition] = useState<{ top: number; left: number; width: number } | null>(null)
   const availableExistingProjects = useMemo(() => projects.filter((project) => {
+    if (unconnectedProjectIds != null) return unconnectedProjectIds.includes(project.id)
     const projectPath = project.path.replace(/[\\/]+$/, '').replace(/\\/g, '/').toLowerCase()
     return !allDomains.some((site) =>
       site.project_id === project.id ||
       (site.folder && site.folder.replace(/[\\/]+$/, '').replace(/\\/g, '/').toLowerCase() === projectPath),
     )
-  }), [projects, allDomains])
+  }), [projects, allDomains, unconnectedProjectIds])
   const filteredExistingProjects = useMemo(() => {
     const query = projectSearch.trim().toLowerCase()
     if (!query) return availableExistingProjects

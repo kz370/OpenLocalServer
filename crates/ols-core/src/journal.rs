@@ -33,6 +33,9 @@ pub struct Operation {
     pub status: OpStatus,
     /// The error, when it failed.
     pub detail: Option<String>,
+    /// Number of consecutive identical failures represented by this entry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repeat_count: Option<u64>,
     /// How to undo it, in words, when there is a way.
     pub undo: Option<String>,
     /// Running this again is the safe way to finish the job.
@@ -57,7 +60,7 @@ impl Journal {
     pub fn load(paths: &AppPaths) -> Self {
         let mut entries: Vec<Operation> =
             crate::db::load_docs(paths, "operations").unwrap_or_default();
-        let mut changed = false;
+        let mut changed = prune_entries(&mut entries);
         for e in entries.iter_mut().filter(|e| e.status == OpStatus::Running) {
             e.status = OpStatus::Interrupted;
             changed = true;
@@ -106,27 +109,17 @@ impl Journal {
             finished_ms: None,
             status: OpStatus::Running,
             detail: None,
+            repeat_count: None,
             undo: undo.map(str::to_string),
             retry,
         });
-        while self.entries.len() > KEEP {
-            match self
-                .entries
-                .iter()
-                .position(|e| matches!(e.status, OpStatus::Done | OpStatus::Failed))
-            {
-                Some(i) => {
-                    self.entries.remove(i);
-                }
-                None => break,
-            }
-        }
+        prune_entries(&mut self.entries);
         self.persist();
         id
     }
 
     pub fn finish(&mut self, id: u64, result: &Result<(), String>) {
-        if let Some(e) = self.entries.iter_mut().find(|e| e.id == id) {
+        let failed = if let Some(e) = self.entries.iter_mut().find(|e| e.id == id) {
             e.finished_ms = Some(now_ms());
             match result {
                 Ok(()) => e.status = OpStatus::Done,
@@ -135,8 +128,15 @@ impl Journal {
                     e.detail = Some(msg.clone());
                 }
             }
-            self.persist();
+            e.status == OpStatus::Failed
+        } else {
+            false
+        };
+        if failed {
+            collapse_latest_failure(&mut self.entries);
         }
+        prune_entries(&mut self.entries);
+        self.persist();
     }
 
     /// Forgets an interrupted operation the user has dealt with.
@@ -150,6 +150,45 @@ impl Journal {
         let refs: Vec<(String, &Operation)> =
             self.entries.iter().map(|e| (e.id.to_string(), e)).collect();
         let _ = crate::db::save_docs(&self.paths, "operations", &refs);
+    }
+}
+
+fn prune_entries(entries: &mut Vec<Operation>) -> bool {
+    let before = entries.len();
+    let cutoff = now_ms().saturating_sub(30 * 24 * 60 * 60 * 1000);
+    entries.retain(|entry| entry.status == OpStatus::Running || entry.started_ms >= cutoff);
+    while entries.len() > KEEP {
+        let Some(index) = entries
+            .iter()
+            .position(|entry| entry.status != OpStatus::Running)
+        else {
+            break;
+        };
+        entries.remove(index);
+    }
+    entries.len() != before
+}
+
+fn collapse_latest_failure(entries: &mut Vec<Operation>) {
+    let Some(latest_index) = entries.len().checked_sub(1) else {
+        return;
+    };
+    if latest_index == 0 || entries[latest_index].status != OpStatus::Failed {
+        return;
+    }
+    let previous_index = latest_index - 1;
+    let same = {
+        let previous = &entries[previous_index];
+        let latest = &entries[latest_index];
+        previous.status == OpStatus::Failed
+            && previous.kind == latest.kind
+            && previous.detail == latest.detail
+    };
+    if same {
+        let previous_count = entries[previous_index].repeat_count.unwrap_or(1);
+        let latest = &mut entries[latest_index];
+        latest.repeat_count = Some(previous_count.saturating_add(1));
+        entries.remove(previous_index);
     }
 }
 
@@ -250,5 +289,21 @@ mod tests {
         }
         assert!(j.list().len() <= KEEP + 1);
         assert!(j.list().iter().any(|e| e.id == running));
+    }
+
+    #[test]
+    fn consecutive_identical_failures_collapse_into_the_latest_entry() {
+        let home = crate::test_support::isolated_home();
+        let mut journal = Journal::load(&home.paths);
+        let first = journal.begin("apply_web", "Apply web", None, None);
+        journal.finish(first, &Err("same failure".into()));
+        let second = journal.begin("apply_web", "Apply web", None, None);
+        journal.finish(second, &Err("same failure".into()));
+        let list = journal.list();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].id, second);
+        assert_eq!(list[0].repeat_count, Some(2));
+        let loaded = Journal::load(&home.paths).list();
+        assert_eq!(loaded[0].repeat_count, Some(2));
     }
 }

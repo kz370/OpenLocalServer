@@ -82,6 +82,9 @@ pub enum CoreResponse {
     },
     Projects {
         projects: Vec<Project>,
+        /// Project ids without a connected site from projects_view; None enables legacy UI logic.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        unconnected_project_ids: Option<Vec<String>>,
     },
     ProjectDetail {
         detail: Box<ProjectDetail>,

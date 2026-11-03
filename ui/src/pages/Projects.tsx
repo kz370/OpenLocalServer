@@ -79,6 +79,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
   const [projects, setProjects] = useState<Project[]>(projectsCache.get)
   // Read storage directly because Sites can update this cache while ProjectsPage is unmounted.
   const [domains, setDomains] = useState<DomainSummary[]>(() => getCached('projects_page_domains', []))
+  const [unconnectedProjectIds, setUnconnectedProjectIds] = useState<string[] | null>(null)
   const [editors, setEditors] = useState<EditorInfo[]>(editorsCache.get)
   const [presets, setPresets] = useState<ProjectTypePreset[]>(presetsCache.get)
   const [customTypes, setCustomTypes] = useState<CustomProjectType[]>(customTypesCache.get)
@@ -126,6 +127,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
       const res = await runCommand({ type: 'list_projects' })
       if (res.type === 'projects') {
         setProjects(res.projects)
+        setUnconnectedProjectIds(res.unconnected_project_ids ?? null)
         projectsCache.set(res.projects)
         const hasMissingProjects = res.projects.some(
           (project) => project.health && project.health.status !== 'healthy',
@@ -435,7 +437,9 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
   const menuFor = (p: Project): MenuItem[] => {
     const isHealthy = p.health?.status === 'healthy' || !p.health
     const linked = getProjectDomains(p)
-    const hasSite = linked.length > 0
+    const hasSite = unconnectedProjectIds != null
+      ? !unconnectedProjectIds.includes(p.id)
+      : linked.length > 0
 
     const visibleEditors = editors.filter((ed) => ed.path && !ed.hidden)
 

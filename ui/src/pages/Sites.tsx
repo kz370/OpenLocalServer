@@ -117,6 +117,13 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   // get a "WP Admin" action. Re-read when the project list changes, so a folder added or
   // deleted elsewhere gains or loses the action without a reload.
   const [wpProjects, setWpProjects] = useState<WpProject[]>(cachedWpProjects)
+  const [unconnectedProjectIds, setUnconnectedProjectIds] = useState<string[] | null>(null)
+
+  useEffect(() => {
+    void runCommand({ type: 'list_projects' }).then((result) => {
+      if (result.type === 'projects') setUnconnectedProjectIds(result.unconnected_project_ids ?? null)
+    }).catch(() => setUnconnectedProjectIds(null))
+  }, [projects])
 
   const refreshWpProjects = async () => {
     const r = await runCommand({ type: 'list_wp_projects' })
@@ -1390,6 +1397,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         projects={projects}
         domain={adding}
         existingDomains={web.domains}
+        unconnectedProjectIds={unconnectedProjectIds}
         defaultParent={effectiveParent}
         installedPhp={installedPhp}
         onQuickApp={(id) => {

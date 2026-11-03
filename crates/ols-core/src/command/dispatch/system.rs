@@ -428,6 +428,7 @@ impl Core {
                     }
                     Ok(R::Projects {
                         projects: registered,
+                        unconnected_project_ids: None,
                     })
                 }
                 C::SyncAutoDomains => Ok(R::Count {
@@ -466,7 +467,14 @@ impl Core {
                         }));
                         p.icon_image = crate::app::read_site_icon_image(&p.path);
                     }
-                    Ok(R::Projects { projects })
+                    let unconnected_project_ids = crate::db::unconnected_project_ids(&i.paths)
+                        .ok()
+                        .flatten()
+                        .map(|ids| ids.into_iter().collect());
+                    Ok(R::Projects {
+                        projects,
+                        unconnected_project_ids,
+                    })
                 }
                 C::RemoveProject { id } => {
                     i.remove_project(&id)?;
