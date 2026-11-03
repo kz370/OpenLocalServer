@@ -26,7 +26,7 @@ export function DirtySaveBar({ scope }: { scope: DirtyFormScope }) {
         'pointer-events-auto w-full max-w-3xl rounded-xl border border-border p-3 shadow-xl',
         scope === 'dialog'
           ? 'bg-[var(--dialog-surface,#ffffff)] dark:bg-[var(--dialog-surface,#0b1426)]'
-          : 'bg-card/95 backdrop-blur-md',
+          : 'bg-card',
       )}>
         {error && <ErrorCard error={error} />}
         <div className="flex flex-wrap items-center justify-between gap-3">
