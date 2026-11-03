@@ -15,6 +15,7 @@ import {
 } from '@/core'
 import { createPersistentCache } from '@/lib/cache'
 import { useAction, usePoll } from '@/lib/hooks'
+import { notify } from '@/lib/notify'
 
 /** What a bulk site edit did: how many sites changed, and one line per site it refused. */
 export interface BulkOutcome {
@@ -187,6 +188,22 @@ export function useWeb() {
     if (res.type === 'applied') {
       setReports(res.reports)
       reportsCache.set(res.reports)
+      const changed = res.reports.some((report) =>
+        report.written.length > 0 || report.started || report.reloaded || report.hosts_updated,
+      )
+      if (changed) {
+        const details = res.reports.flatMap((report) => {
+          const actions = [report.started ? 'started' : report.reloaded ? 'reloaded' : null].filter(Boolean)
+          const config = report.written.length > 0 ? `Updated: ${report.written.join(', ')}.` : 'Config already up to date.'
+          const warnings = report.warnings.map((warning) => `${report.server}: ${warning}`)
+          return [`${report.server}${actions.length > 0 ? ` — ${actions.join(', ')}` : ''}. ${config}`, ...warnings]
+        })
+        if (res.reports.some((report) => report.hosts_updated)) details.push('Hosts file updated.')
+        notify.success(
+          res.reports.length === 1 ? `Applied changes to ${res.reports[0].server}.` : `Applied changes to ${res.reports.length} web servers.`,
+          { title: 'Web server changes applied', details: details.join('\n') },
+        )
+      }
       if (res.reports.some((r) => r.drifted.length > 0)) setDriftOpen(true)
     }
     await refresh(true)

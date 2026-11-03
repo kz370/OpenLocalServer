@@ -265,4 +265,5 @@ SitesPage focus/visibility | refreshes | read-only list_domains + list_projects 
 RemoveSiteFromList | returns after | removing the domain and preserving/registering its project as standalone; SitesPage refreshes rows immediately, then invokes SyncHosts asynchronously with an updating status
 scan_and_register_projects + sync_auto_domains | skip | .ols_ignore_me paths and hidden-site paths
 SitesPage | removes a site from the list via | remove_site_from_list; removes only the site record, retains/registers the project, then reconciles hosts and web config
+useWeb.apply | notifies via | notify.success when config files, server state, or hosts file changed; unchanged apply is silent, while drifted config opens DriftDialog
 ListProjects | annotates | Project.auto_discovered from configured roots for the Sites row label

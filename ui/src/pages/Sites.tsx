@@ -11,7 +11,7 @@ import { SiteDialog, type SiteTarget } from '@/components/site/SiteDialog'
 import { SiteLogoDialog, type SiteLogoTarget } from '@/components/site/SiteLogoDialog'
 import { SiteLogo } from '@/components/SiteLogo'
 import { SaveButton } from '@/components/SaveButton'
-import { ApplyReportCard, DriftDialog } from '@/components/site/WebApply'
+import { DriftDialog } from '@/components/site/WebApply'
 import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
 import { TechIcon } from '@/components/TechIcon'
@@ -882,7 +882,6 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
           <Spinner /> Updating site configuration and hosts file…
         </p>
       )}
-      <ApplyReportCard web={web} />
 
       <Card>
         <CardContent className="p-0">

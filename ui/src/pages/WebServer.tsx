@@ -5,7 +5,7 @@ import { ErrorCard } from '@/components/ErrorCard'
 import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
 import { TechTile } from '@/components/TechIcon'
-import { ApplyReportCard, DriftDialog } from '@/components/site/WebApply'
+import { DriftDialog } from '@/components/site/WebApply'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -387,7 +387,6 @@ export function WebServerPage({
         </Card>
       )}
 
-      <ApplyReportCard web={web} />
 
       <Tabs
         tabs={[
