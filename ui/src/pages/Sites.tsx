@@ -825,17 +825,19 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         },
       })
       items.push({
-        label: 'Move to excluded folder',
-        icon: <FolderArchive />,
+        label: 'Safe delete',
+        description: 'Moves its folder to the excluded folder',
+        icon: <Trash2 />,
         tone: 'amber',
-        hint: `Moves the folder to ${excludedFolder}. Restore it from Projects.`,
+        hint: 'Moves its folder to the excluded folder',
+        separatorAbove: true,
         disabled: allHosts.some((h) => removing.has(h)) || busy === `delete:${key}`,
         onSelect: async () => {
           const hostLabel = allHosts.length > 1 ? `${d.hostname} (+${r.extraDomains.length} extra domains)` : d.hostname
           const ok = await confirmAction(
-            `${p?.name ?? d.hostname}\nFolder: ${folder ?? 'Unknown'}\nDestination: ${folder ? `${folder.replace(/[\\/][^\\/]+$/, '')}\\${excludedFolder}` : excludedFolder}\nMove the folder and remove the site from OpenLocalServer. Restore it by moving it back from the excluded folder, then add it again from Projects.`,
-            `Move ${hostLabel} to excluded?`,
-            'Move to excluded',
+            `${p?.name ?? d.hostname}\nFolder: ${folder ?? 'Unknown'}\nDestination: ${folder ? `${folder.replace(/[\\/][^\\/]+$/, '')}\\${excludedFolder}\\${folder.split(/[\\/]/).pop()}` : excludedFolder} (adds -1, -2, etc. if that folder name already exists)\nMove the folder and remove the site from OpenLocalServer. Restore it by moving it back from the excluded folder, then add it again from Projects.`,
+            `Safe delete ${hostLabel}?`,
+            'Safe delete',
             'amber',
           )
           if (!ok) return

@@ -27,6 +27,7 @@ export type MenuItem =
       disabled?: boolean
       hint?: string
       description?: string
+      separatorAbove?: boolean
       submenu?: MenuItem[]
     }
   | 'separator'
@@ -217,6 +218,7 @@ function MenuItemRow({
 
   return (
     <>
+      {item.separatorAbove && <div role="separator" className="my-1 h-px scale-y-50 bg-border" />}
       <button
         ref={buttonRef}
         role="menuitem"
