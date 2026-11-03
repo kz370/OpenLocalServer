@@ -102,9 +102,9 @@ export default function App() {
     return null
   })
   const [doctor, setDoctor] = useState(false)
-  const [trayQuickAppId, setTrayQuickAppId] = useState<string | null>(null)
+  const [trayQuickApp, setTrayQuickApp] = useState<{ id: string; name: string } | null>(null)
   const openDoctor = useCallback(() => setDoctor(true), [])
-  const clearTrayQuickAppId = useCallback(() => setTrayQuickAppId(null), [])
+  const clearTrayQuickApp = useCallback(() => setTrayQuickApp(null), [])
 
   useEffect(() => {
     initDiagnosticsNotificationMonitor()
@@ -226,9 +226,12 @@ export default function App() {
   useEffect(() => {
     let unlisten: (() => void) | undefined
     void listen<string>('ols:navigate', (event) => {
-      const quickAppId = event.payload.startsWith('quick-app:') ? event.payload.slice('quick-app:'.length) : ''
+      const quickApp = event.payload.startsWith('quick-app:') ? event.payload.slice('quick-app:'.length) : ''
+      const separator = quickApp.indexOf(':')
+      const quickAppId = separator < 0 ? quickApp : quickApp.slice(0, separator)
+      const quickAppName = separator < 0 ? '' : quickApp.slice(separator + 1)
       if (quickAppId) {
-        setTrayQuickAppId(quickAppId)
+        setTrayQuickApp({ id: quickAppId, name: quickAppName })
         navigate('quickapps')
         return
       }
@@ -296,8 +299,9 @@ export default function App() {
               {page === 'quickapps' && (
                 <QuickAppsPage
                   onNavigate={navigate}
-                  openAppId={trayQuickAppId}
-                  onOpenAppHandled={clearTrayQuickAppId}
+                  openAppId={trayQuickApp?.id}
+                  openAppName={trayQuickApp?.name}
+                  onOpenAppHandled={clearTrayQuickApp}
                 />
               )}
               {page === 'commands' && <CommandsPage />}

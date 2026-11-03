@@ -115,10 +115,12 @@ const quickAppsCache = createPersistentCache<QuickEntryView[]>('quick_apps', [])
 export function QuickAppsPage({
   onNavigate,
   openAppId,
+  openAppName,
   onOpenAppHandled,
 }: {
   onNavigate: (p: Page) => void
   openAppId?: string | null
+  openAppName?: string | null
   onOpenAppHandled?: () => void
 }) {
   const [apps, setApps] = useState<QuickEntryView[]>(quickAppsCache.get)
@@ -126,6 +128,7 @@ export function QuickAppsPage({
   const [category, setCategory] = useState('all')
   const [favOnly, setFavOnly] = useState(false)
   const [wizardId, setWizardId] = useState<string | null>(null)
+  const [wizardName, setWizardName] = useState<string | null>(null)
   const [editor, setEditor] = useState<{ yaml: string; isNew: boolean } | null>(null)
   const [importOpen, setImportOpen] = useState(false)
   const [dup, setDup] = useState<QuickEntryView | null>(null)
@@ -146,8 +149,9 @@ export function QuickAppsPage({
   useEffect(() => {
     if (!openAppId) return
     setWizardId(openAppId)
+    setWizardName(openAppName || apps.find((app) => app.id === openAppId)?.name || null)
     onOpenAppHandled?.()
-  }, [openAppId, onOpenAppHandled])
+  }, [openAppId, openAppName, apps, onOpenAppHandled])
 
   usePoll(() => refresh().catch(() => undefined), 5000)
 
@@ -306,7 +310,10 @@ export function QuickAppsPage({
               <Button
                 size="sm"
                 className="h-7 px-2.5 text-xs font-medium gap-1.5 [&_svg]:size-3.5"
-                onClick={() => setWizardId(a.id)}
+                onClick={() => {
+                  setWizardId(a.id)
+                  setWizardName(a.name)
+                }}
                 disabled={busy !== null}
               >
                 <Rocket className="size-3.5" /> Create
@@ -317,7 +324,7 @@ export function QuickAppsPage({
         {shown.length === 0 && <p className="col-span-full py-8 text-center text-sm text-muted-foreground">Nothing matches.</p>}
       </div>
 
-      {wizardId && <Wizard key={wizardId} id={wizardId} onClose={() => { setWizardId(null); void refresh() }} onNavigate={onNavigate} />}
+      {wizardId && <Wizard key={wizardId} id={wizardId} initialName={wizardName} onClose={() => { setWizardId(null); setWizardName(null); void refresh() }} onNavigate={onNavigate} />}
 
       <YamlEditorDialog
         state={editor}
@@ -432,7 +439,7 @@ function ImportDialog({ open: isOpen, onClose, onDone }: { open: boolean; onClos
 
 type Phase = 'form' | 'review' | 'run'
 
-export function Wizard({ id, onClose, onNavigate }: { id: string; onClose: () => void; onNavigate: (p: Page) => void }) {
+export function Wizard({ id, initialName, onClose, onNavigate }: { id: string; initialName?: string | null; onClose: () => void; onNavigate: (p: Page) => void }) {
   const [detail, setDetail] = useState<QuickEntryDetail | null>(null)
   const [provided, setProvided] = useState<Record<string, string>>({})
   const [plan, setPlan] = useState<QuickPlanResult | null>(null)
@@ -581,13 +588,13 @@ export function Wizard({ id, onClose, onNavigate }: { id: string; onClose: () =>
       open
       onClose={phase === 'run' ? onClose : onClose}
       icon={app ? <TechTile id={app.id in BRANDED_APPS ? app.id : app.category} className="size-10 rounded-lg [&_svg]:size-5" /> : undefined}
-      title={app ? `Create ${app.name}` : 'Loading…'}
+      title={app ? `Create ${app.name}` : initialName ? `Create ${initialName}` : 'Loading Quick App…'}
       description={phase === 'form' ? app?.description : phase === 'review' ? 'Review exactly what will happen before anything runs.' : 'Creating your project…'}
       footer={
         phase === 'form' ? (
           <>
             <Button variant="ghost" onClick={onClose}>Cancel</Button>
-            <Button disabled={!plan?.ok} onClick={() => setPhase('review')}>Review</Button>
+            {app && <Button disabled={!plan?.ok} onClick={() => setPhase('review')}>Review</Button>}
           </>
         ) : phase === 'review' ? (
           <>
@@ -601,6 +608,13 @@ export function Wizard({ id, onClose, onNavigate }: { id: string; onClose: () =>
     >
       <div className="flex flex-col gap-5">
         <ErrorCard error={error} onDismiss={() => setError(null)} />
+
+        {phase === 'form' && !app && !error && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
+            <Loader2 className="size-4 animate-spin" />
+            Loading {initialName ? `${initialName} recipe` : 'recipe details'}…
+          </div>
+        )}
 
         {phase === 'form' && app && (
           <FormSection title="Details">

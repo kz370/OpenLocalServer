@@ -477,9 +477,9 @@ fn navigate(app: &AppHandle, route: &str) {
     let _ = app.emit("ols:navigate", route);
 }
 
-fn navigate_quick_app(app: &AppHandle, id: &str) {
+fn navigate_quick_app(app: &AppHandle, id: &str, name: &str) {
     show_main_window(app);
-    let _ = app.emit("ols:navigate", format!("quick-app:{id}"));
+    let _ = app.emit("ols:navigate", format!("quick-app:{id}:{name}"));
 }
 
 /// The mark a tray menu item wears for the state it is in: filled while it is up,
@@ -979,7 +979,7 @@ fn tray_menu(
         for recipe in recipes {
             quick_app_items.push(Box::new(MenuItem::with_id(
                 app,
-                &format!("quick_app:{}", recipe.id),
+                &format!("quick_app:{}:{}", recipe.id, recipe.name),
                 &format!("Create {}", recipe.name),
                 true,
                 None::<&str>,
@@ -1390,7 +1390,9 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
                 "php_page" => navigate(app, "runtimes"),
                 "quick_apps" => navigate(app, "quick-apps"),
                 id if id.starts_with("quick_app:") => {
-                    navigate_quick_app(app, &id["quick_app:".len()..]);
+                    let recipe = &id["quick_app:".len()..];
+                    let (recipe_id, name) = recipe.split_once(':').unwrap_or((recipe, ""));
+                    navigate_quick_app(app, recipe_id, name);
                 }
                 "terminal" => navigate(app, "terminal"),
                 "doctor" => navigate(app, "diagnostics"),
