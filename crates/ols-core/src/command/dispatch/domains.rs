@@ -33,12 +33,17 @@ impl Core {
                     // This is polled every few seconds; reconciliation can run hosts-file
                     // elevation and web-server reloads, so keep this path read-only.
                     let records = i.domains.lock().unwrap().list();
-                    let active: std::collections::HashSet<_> = records.into_iter()
+                    let active: std::collections::HashSet<_> = records
+                        .into_iter()
                         .filter(|domain| i.site_is_active(domain))
                         .map(|domain| domain.hostname)
                         .collect();
                     Ok(R::Domains {
-                        domains: i.domain_summaries().into_iter().filter(|d| active.contains(&d.hostname)).collect(),
+                        domains: i
+                            .domain_summaries()
+                            .into_iter()
+                            .filter(|d| active.contains(&d.hostname))
+                            .collect(),
                     })
                 }
                 C::GetDomain { hostname } => {

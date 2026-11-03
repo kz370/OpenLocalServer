@@ -24,7 +24,10 @@ impl Inner {
             overwrite,
         };
         let all = self.domains.lock().unwrap().list();
-        let snapshot: Vec<_> = all.into_iter().filter(|domain| self.site_is_active(domain)).collect();
+        let snapshot: Vec<_> = all
+            .into_iter()
+            .filter(|domain| self.site_is_active(domain))
+            .collect();
         let mut hashes = Vec::new();
         let reports = self.web.apply(&ctx, &snapshot, &mut hashes)?;
         self.record_generated_hashes(&hashes)?;
@@ -178,7 +181,10 @@ impl Inner {
             overwrite,
         };
         let all = self.domains.lock().unwrap().list();
-        let snapshot: Vec<_> = all.into_iter().filter(|domain| self.site_is_active(domain)).collect();
+        let snapshot: Vec<_> = all
+            .into_iter()
+            .filter(|domain| self.site_is_active(domain))
+            .collect();
         let mut hashes = Vec::new();
         let report = self
             .web
@@ -209,7 +215,10 @@ impl Inner {
             overwrite: &[],
         };
         let all = self.domains.lock().unwrap().list();
-        let snapshot: Vec<_> = all.into_iter().filter(|domain| self.site_is_active(domain)).collect();
+        let snapshot: Vec<_> = all
+            .into_iter()
+            .filter(|domain| self.site_is_active(domain))
+            .collect();
         let mut hashes = Vec::new();
         let report = self
             .web

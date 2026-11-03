@@ -1166,7 +1166,12 @@ fn sync_tray_tooltip(app: &AppHandle, core: &Core) {
         if at.elapsed() < Duration::from_secs(1) {
             return;
         }
-        if TOOLTIP_SHOWS.lock().unwrap_or_else(|e| e.into_inner()).as_deref() == Some(tip) {
+        if TOOLTIP_SHOWS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_deref()
+            == Some(tip)
+        {
             return;
         }
     }

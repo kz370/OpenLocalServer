@@ -231,7 +231,12 @@ impl Inner {
             })
             .collect::<Vec<_>>()
             .into_iter()
-            .filter(|s| s.folder.is_empty() || !std::path::Path::new(&s.folder).join(".ols_ignore_me").exists())
+            .filter(|s| {
+                s.folder.is_empty()
+                    || !std::path::Path::new(&s.folder)
+                        .join(".ols_ignore_me")
+                        .exists()
+            })
             .collect()
     }
 
@@ -360,7 +365,9 @@ impl Inner {
             ));
         }
         if self.domains.lock().unwrap().get(hostname).is_none() {
-            return Err(CoreError::DomainError(format!("{hostname} is not a known domain")));
+            return Err(CoreError::DomainError(format!(
+                "{hostname} is not a known domain"
+            )));
         }
         self.push_skip(AUTO_SKIP, hostname)?;
         self.web.restart_app(hostname);
@@ -369,9 +376,10 @@ impl Inner {
 
     /// Removes only the site from OLS, keeping its project registration and files.
     pub fn remove_site_from_list(&self, hostname: &str) -> Result<(), CoreError> {
-        let domain = self.domains.lock().unwrap().get(hostname).ok_or_else(|| {
-            CoreError::DomainError(format!("{hostname} is not a known domain"))
-        })?;
+        let domain =
+            self.domains.lock().unwrap().get(hostname).ok_or_else(|| {
+                CoreError::DomainError(format!("{hostname} is not a known domain"))
+            })?;
         let projects = self.projects.lock().unwrap().list();
         let folder = site_folder(&domain, &projects);
         let project_id = domain.project_id.clone().or_else(|| {

@@ -266,5 +266,5 @@ RemoveSiteFromList | returns after | removing the domain and preserving/register
 scan_and_register_projects + sync_auto_domains | skip | .ols_ignore_me paths and hidden-site paths
 SitesPage | removes a site from the list via | remove_site_from_list; removes only the site record, retains/registers the project, then reconciles hosts and web config
 useWeb.apply | notifies via | notify.success when config files, server state, or hosts file changed; unchanged apply is silent, while drifted config opens DriftDialog
-service-status-event | notifies via | notify.success for services transitioning from Restarting to Running, covering explicit restarts and apply_web config reloads
+SyncHosts | returns | Applied reports from reconciliation so useWeb.reconcileSites can notify about web servers that actually reloaded after a site change
 ListProjects | annotates | Project.auto_discovered from configured roots for the Sites row label

@@ -8,7 +8,10 @@ impl Inner {
     pub(crate) fn site_is_active(&self, domain: &Domain) -> bool {
         let projects = self.projects.lock().unwrap().list();
         let folder = site_folder(domain, &projects);
-        !self.skip_entries(AUTO_SKIP).iter().any(|entry| entry.value.eq_ignore_ascii_case(&domain.hostname))
+        !self
+            .skip_entries(AUTO_SKIP)
+            .iter()
+            .any(|entry| entry.value.eq_ignore_ascii_case(&domain.hostname))
             && (folder.is_empty() || !Path::new(&folder).join(".ols_ignore_me").exists())
     }
 
@@ -20,8 +23,13 @@ impl Inner {
         &self,
     ) -> Result<(usize, Vec<crate::web::manager::ApplyReport>), CoreError> {
         let records = self.domains.lock().unwrap().list();
-        let active: Vec<_> = records.iter().filter(|domain| self.site_is_active(domain)).cloned().collect();
-        let hosts: Vec<_> = active.iter()
+        let active: Vec<_> = records
+            .iter()
+            .filter(|domain| self.site_is_active(domain))
+            .cloned()
+            .collect();
+        let hosts: Vec<_> = active
+            .iter()
             .filter(|domain| domain.enabled && !self.web.dns_covers(&domain.hostname))
             .map(|domain| domain.hostname.clone())
             .collect();
@@ -62,12 +70,25 @@ impl Inner {
         let ignored = self.ignored_folders();
         let hidden = self.skip_entries(AUTO_SKIP);
         let current_projects = self.projects.lock().unwrap().list();
-        let hidden_paths: Vec<String> = self.domains.lock().unwrap().list().into_iter()
-            .filter(|domain| hidden.iter().any(|entry| entry.value.eq_ignore_ascii_case(&domain.hostname)))
+        let hidden_paths: Vec<String> = self
+            .domains
+            .lock()
+            .unwrap()
+            .list()
+            .into_iter()
+            .filter(|domain| {
+                hidden
+                    .iter()
+                    .any(|entry| entry.value.eq_ignore_ascii_case(&domain.hostname))
+            })
             .map(|domain| site_folder(&domain, &current_projects))
             .filter(|path| !path.is_empty())
             .collect();
-        for root in self.string_list(PROJECT_ROOTS).into_iter().filter(|_| auto_domains) {
+        for root in self
+            .string_list(PROJECT_ROOTS)
+            .into_iter()
+            .filter(|_| auto_domains)
+        {
             let Ok(entries) = std::fs::read_dir(&root) else {
                 continue;
             };
@@ -84,7 +105,9 @@ impl Inner {
                     && !hidden
                     && !is_ignored
                     && !dir.join(".ols_ignore_me").exists()
-                    && !hidden_paths.iter().any(|path| crate::project::same_path(path, &dir.display().to_string()))
+                    && !hidden_paths
+                        .iter()
+                        .any(|path| crate::project::same_path(path, &dir.display().to_string()))
                     && !skip_matches(&skipped, &dir.display().to_string())
                     && (crate::detection::looks_like_a_project(&dir) || has_index(&dir))
                 {

@@ -360,7 +360,13 @@ fn delete_site_moves_folder_to_ols_excluded_sites() {
 
     // Project folder was moved into ols_excluded_sites in the same directory
     assert!(!project_dir.exists());
-    assert!(core.inner().domains.lock().unwrap().get(&hostname).is_none());
+    assert!(core
+        .inner()
+        .domains
+        .lock()
+        .unwrap()
+        .get(&hostname)
+        .is_none());
     let excluded_dir = tmp.path().join("ols_excluded_sites").join("my-site");
     assert!(excluded_dir.exists());
     assert!(excluded_dir.join("index.html").exists());
@@ -369,9 +375,7 @@ fn delete_site_moves_folder_to_ols_excluded_sites() {
         crate::settings::SettingsService::load(&home.paths).unwrap(),
         home.paths.clone(),
     );
-    let CoreResponse::Domains { domains } = reopened
-        .dispatch(CoreCommand::ListDomains)
-        .unwrap()
+    let CoreResponse::Domains { domains } = reopened.dispatch(CoreCommand::ListDomains).unwrap()
     else {
         panic!("expected domains after reopening the core");
     };

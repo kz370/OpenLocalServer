@@ -413,9 +413,10 @@ impl Inner {
                     .map(|d| d.hostname)
                     .collect()
             };
-            let is_discover_path = self.string_list(PROJECT_ROOTS).iter().any(|root| {
-                Path::new(&path).starts_with(Path::new(root))
-            });
+            let is_discover_path = self
+                .string_list(PROJECT_ROOTS)
+                .iter()
+                .any(|root| Path::new(&path).starts_with(Path::new(root)));
             if !is_discover_path {
                 for h in hostnames {
                     self.domains.lock().unwrap().remove(&h)?;

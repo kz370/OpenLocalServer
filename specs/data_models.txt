@@ -97,6 +97,7 @@ QuickApp recipe YAML:
 
 Schemas/interfaces (TypeScript core.ts mirrors Rust):
 - CoreCommand (tagged union, ~200 variants), CoreResponse, Diagnostic{problem,cause,fix}, DashboardData, DomainSummary, HealthItem, WebStatus, CertInfo, ServiceStatus, ProjectDetail.
+- ApplyReport: per-web-server apply outcome (`server`, written/unchanged/drifted paths, started/reloaded flags, hosts_updated, validator output, warnings). Returned by ApplyWeb and SyncHosts when reconciliation applies web configuration.
 - `DetectedVenv {name: string, path: string, python_exe: string, version: string | null}`: Detected Python virtual environment details.
 - `SiteFolderInspection {framework: string, package_scripts: DiscoveredCommand[], detected_package_manager: string | null, detected_venv: string | null, available_venvs: DetectedVenv[], requirements_files: string[], suggested_command: string | null, suggested_port: number, entry_files: string[]}`: Rich directory inspection for Node/Python/PHP dev server creation and editing.
 - `UpdateInfo {current, latest, status: UpdateStatus, notes, date, url, sha256, size, downloaded}` — `UpdateStatus` is `development_version` (installed > online), `up_to_date` (equal), or `update_available` (online newer). Replaces the old `available` boolean so the three SemVer comparison outcomes stay synchronized with the status badge and the update button's enabled state; no download or install is offered unless `update_available`.

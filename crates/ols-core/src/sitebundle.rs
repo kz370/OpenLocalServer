@@ -1335,12 +1335,7 @@ mod tests {
 
         // The site is taken away again, so the import finds its own name free — the case that
         // produced two sites: the real one and `wordpress-test.wordpress-test`.
-        core.inner()
-            .domains
-            .lock()
-            .unwrap()
-            .remove(host)
-            .unwrap();
+        core.inner().domains.lock().unwrap().remove(host).unwrap();
         core.inner().projects.lock().unwrap().remove(&id).unwrap();
         std::fs::remove_dir_all(&dir).unwrap();
 

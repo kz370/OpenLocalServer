@@ -186,7 +186,11 @@ pub fn sync(hostnames: &[String]) -> Result<bool, String> {
     if is_in_sync(&existing, &entries) {
         return Ok(false);
     }
-    let updated = if entries.is_empty() { remove_hosts_block(&existing) } else { apply_hosts_block(&existing, &entries) };
+    let updated = if entries.is_empty() {
+        remove_hosts_block(&existing)
+    } else {
+        apply_hosts_block(&existing, &entries)
+    };
     if std::env::var("OLS_HOSTS_FILE").is_ok() {
         std::fs::write(path, updated).map_err(|e| e.to_string())?;
     } else {

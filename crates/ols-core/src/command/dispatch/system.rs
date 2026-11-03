@@ -386,8 +386,17 @@ impl Core {
                     let skipped = i.project_skips();
                     let hidden_domains = i.skip_entries(crate::app::AUTO_SKIP);
                     let existing_projects = i.projects.lock().unwrap().list();
-                    let hidden_paths: Vec<_> = i.domains.lock().unwrap().list().into_iter()
-                        .filter(|d| hidden_domains.iter().any(|entry| entry.value.eq_ignore_ascii_case(&d.hostname)))
+                    let hidden_paths: Vec<_> = i
+                        .domains
+                        .lock()
+                        .unwrap()
+                        .list()
+                        .into_iter()
+                        .filter(|d| {
+                            hidden_domains
+                                .iter()
+                                .any(|entry| entry.value.eq_ignore_ascii_case(&d.hostname))
+                        })
                         .map(|d| crate::app::site_folder(&d, &existing_projects))
                         .collect();
                     let mut projects = i.projects.lock().unwrap();
@@ -397,7 +406,10 @@ impl Core {
                             if candidate.join(".ols_ignore_me").exists() {
                                 continue;
                             }
-                            if hidden_paths.iter().any(|path| crate::project::same_path(path, s)) {
+                            if hidden_paths
+                                .iter()
+                                .any(|path| crate::project::same_path(path, s))
+                            {
                                 continue;
                             }
                             // Bulk scans don't resurrect folders removed from the list.
@@ -426,19 +438,27 @@ impl Core {
                     // the right-click menu is written by another process.
                     i.reload_external_changes();
                     let records = i.domains.lock().unwrap().list();
-                    let hidden_hosts: std::collections::HashSet<_> = records.into_iter()
+                    let hidden_hosts: std::collections::HashSet<_> = records
+                        .into_iter()
                         .filter(|d| !i.site_is_active(d))
                         .map(|d| d.hostname)
                         .collect();
                     let records = i.domains.lock().unwrap().list();
                     let project_snapshot = i.projects.lock().unwrap().list();
-                    let hidden_paths: Vec<_> = records.iter()
+                    let hidden_paths: Vec<_> = records
+                        .iter()
                         .filter(|d| hidden_hosts.contains(&d.hostname))
                         .map(|d| crate::app::site_folder(d, &project_snapshot))
                         .collect();
                     let mut projects = i.projects.lock().unwrap().list();
-                    projects.retain(|p| !std::path::Path::new(&p.path).join(".ols_ignore_me").exists()
-                        && !hidden_paths.iter().any(|path| crate::project::same_path(path, &p.path)));
+                    projects.retain(|p| {
+                        !std::path::Path::new(&p.path)
+                            .join(".ols_ignore_me")
+                            .exists()
+                            && !hidden_paths
+                                .iter()
+                                .any(|path| crate::project::same_path(path, &p.path))
+                    });
                     let roots = i.string_list(crate::app::PROJECT_ROOTS);
                     for p in &mut projects {
                         p.auto_discovered = Some(roots.iter().any(|root| {

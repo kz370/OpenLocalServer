@@ -44,24 +44,35 @@ fn hide_keeps_the_database_record_and_settings_restore_it() {
     add_site(&inner, &folder, "kept-site.test");
 
     inner.remove_domain("kept-site.test").unwrap();
-    assert_eq!(inner.reconcile().unwrap(), 1, "only the built-in site stays active");
-    assert!(inner.domains.lock().unwrap().get("kept-site.test").is_some());
-    assert!(!inner.site_is_active(
-        &inner.domains.lock().unwrap().get("kept-site.test").unwrap()
-    ));
+    assert_eq!(
+        inner.reconcile().unwrap(),
+        1,
+        "only the built-in site stays active"
+    );
+    assert!(inner
+        .domains
+        .lock()
+        .unwrap()
+        .get("kept-site.test")
+        .is_some());
+    assert!(!inner.site_is_active(&inner.domains.lock().unwrap().get("kept-site.test").unwrap()));
 
     drop(inner);
     let inner = reopen(&home);
     inner.reconcile().unwrap();
     let domain = inner.domains.lock().unwrap().get("kept-site.test").unwrap();
-    assert!(!inner.site_is_active(&domain), "Hide must survive reopening the core");
+    assert!(
+        !inner.site_is_active(&domain),
+        "Hide must survive reopening the core"
+    );
 
     assert!(inner.forget_deleted_item("kept-site.test").unwrap());
     assert_eq!(inner.reconcile().unwrap(), 2);
-    assert!(inner.site_is_active(
-        &inner.domains.lock().unwrap().get("kept-site.test").unwrap()
-    ));
-    assert!(folder.exists(), "restoring a hidden site must preserve its files");
+    assert!(inner.site_is_active(&inner.domains.lock().unwrap().get("kept-site.test").unwrap()));
+    assert!(
+        folder.exists(),
+        "restoring a hidden site must preserve its files"
+    );
 }
 
 #[test]
@@ -69,18 +80,36 @@ fn marker_makes_a_manual_site_inactive_without_deleting_its_record_and_removal_r
     let (inner, home) = inner();
     let folder = home.paths.data_dir().join("www").join("marked-site");
     add_site(&inner, &folder, "marked-site.test");
-    let domain = inner.domains.lock().unwrap().get("marked-site.test").unwrap();
+    let domain = inner
+        .domains
+        .lock()
+        .unwrap()
+        .get("marked-site.test")
+        .unwrap();
 
     std::fs::write(folder.join(".ols_ignore_me"), "").unwrap();
     assert_eq!(inner.reconcile().unwrap(), 1);
-    assert!(inner.domains.lock().unwrap().get("marked-site.test").is_some());
+    assert!(inner
+        .domains
+        .lock()
+        .unwrap()
+        .get("marked-site.test")
+        .is_some());
     assert!(!inner.site_is_active(&domain));
 
     drop(inner);
     let inner = reopen(&home);
     inner.reconcile().unwrap();
-    let domain = inner.domains.lock().unwrap().get("marked-site.test").unwrap();
-    assert!(!inner.site_is_active(&domain), "the marker remains effective after reopening the core");
+    let domain = inner
+        .domains
+        .lock()
+        .unwrap()
+        .get("marked-site.test")
+        .unwrap();
+    assert!(
+        !inner.site_is_active(&domain),
+        "the marker remains effective after reopening the core"
+    );
 
     std::fs::remove_file(folder.join(".ols_ignore_me")).unwrap();
     assert_eq!(inner.reconcile().unwrap(), 2);
@@ -94,25 +123,50 @@ fn remove_from_list_deletes_manual_records_but_marks_discovered_sites() {
     let manual_id = add_site(&inner, &manual, "manual-site.test");
     inner.remove_site_from_list("manual-site.test").unwrap();
     assert!(inner.projects.lock().unwrap().get(&manual_id).is_none());
-    assert!(inner.domains.lock().unwrap().get("manual-site.test").is_none());
-    assert!(manual.exists(), "Remove from list must preserve project files");
+    assert!(inner
+        .domains
+        .lock()
+        .unwrap()
+        .get("manual-site.test")
+        .is_none());
+    assert!(
+        manual.exists(),
+        "Remove from list must preserve project files"
+    );
 
     drop(inner);
     let inner = reopen(&home);
     inner.reconcile().unwrap();
-    assert!(inner.domains.lock().unwrap().get("manual-site.test").is_none());
+    assert!(inner
+        .domains
+        .lock()
+        .unwrap()
+        .get("manual-site.test")
+        .is_none());
     assert!(inner.projects.lock().unwrap().get(&manual_id).is_none());
 
     let root = home.paths.data_dir().join("discover");
     let discovered = root.join("discovered-site");
     let discovered_id = add_site(&inner, &discovered, "discovered-site.test");
-    inner.remember_projects_root(&root.display().to_string()).unwrap();
+    inner
+        .remember_projects_root(&root.display().to_string())
+        .unwrap();
     inner.remove_site_from_list("discovered-site.test").unwrap();
     assert!(inner.projects.lock().unwrap().get(&discovered_id).is_some());
-    assert!(inner.domains.lock().unwrap().get("discovered-site.test").is_some());
+    assert!(inner
+        .domains
+        .lock()
+        .unwrap()
+        .get("discovered-site.test")
+        .is_some());
     assert!(discovered.join(".ols_ignore_me").is_file());
     assert!(!inner.site_is_active(
-        &inner.domains.lock().unwrap().get("discovered-site.test").unwrap()
+        &inner
+            .domains
+            .lock()
+            .unwrap()
+            .get("discovered-site.test")
+            .unwrap()
     ));
 
     drop(inner);
@@ -124,12 +178,20 @@ fn remove_from_list_deletes_manual_records_but_marks_discovered_sites() {
         .unwrap()
         .get("discovered-site.test")
         .unwrap();
-    assert!(!inner.site_is_active(&domain), "the ignored discovered site stays inactive after reopening");
+    assert!(
+        !inner.site_is_active(&domain),
+        "the ignored discovered site stays inactive after reopening"
+    );
 
     std::fs::remove_file(discovered.join(".ols_ignore_me")).unwrap();
     inner.reconcile().unwrap();
     assert!(inner.site_is_active(
-        &inner.domains.lock().unwrap().get("discovered-site.test").unwrap()
+        &inner
+            .domains
+            .lock()
+            .unwrap()
+            .get("discovered-site.test")
+            .unwrap()
     ));
 }
 
