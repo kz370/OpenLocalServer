@@ -15,6 +15,7 @@ import {
 } from '@/core'
 import { createPersistentCache } from '@/lib/cache'
 import { useAction, usePoll } from '@/lib/hooks'
+import { notify } from '@/lib/notify'
 
 /** What a bulk site edit did: how many sites changed, and one line per site it refused. */
 export interface BulkOutcome {
@@ -35,6 +36,25 @@ const projectsCache = createPersistentCache<Project[]>('web_projects', [])
 const catalogCache = createPersistentCache<CatalogEntry[]>('web_catalog', [])
 const customPhpCache = createPersistentCache<string[]>('web_custom_php', [])
 const reportsCache = createPersistentCache<ApplyReport[]>('web_reports', [])
+
+function notifyAppliedChanges(reports: ApplyReport[]) {
+  const changed = reports.some((report) =>
+    report.written.length > 0 || report.started || report.reloaded || report.hosts_updated,
+  )
+  if (!changed) return
+
+  const details = reports.flatMap((report) => {
+    const actions = [report.started ? 'started' : report.reloaded ? 'reloaded' : null].filter(Boolean)
+    const config = report.written.length > 0 ? `Updated: ${report.written.join(', ')}.` : 'Config already up to date.'
+    const warnings = report.warnings.map((warning) => `${report.server}: ${warning}`)
+    return [`${report.server}${actions.length > 0 ? ` — ${actions.join(', ')}` : ''}. ${config}`, ...warnings]
+  })
+  if (reports.some((report) => report.hosts_updated)) details.push('Hosts file updated.')
+  notify.success(
+    reports.length === 1 ? `Applied changes to ${reports[0].server}.` : `Applied changes to ${reports.length} web servers.`,
+    { title: 'Web server changes applied', details: details.join('\n') },
+  )
+}
 
 /** Prevent a restored project/site list from reopening with the pre-restore snapshot. */
 export function invalidateWebSitesCache() {
@@ -70,6 +90,17 @@ export function useWeb() {
     setApplying(true)
     try {
       await apply()
+    } finally {
+      setApplying(false)
+    }
+  }
+
+  async function reconcileSites() {
+    setApplying(true)
+    try {
+      const result = await runCommand({ type: 'sync_hosts' })
+      if (result.type === 'applied') notifyAppliedChanges(result.reports)
+      await Promise.all([refresh(), refreshProjects()])
     } finally {
       setApplying(false)
     }
@@ -122,6 +153,12 @@ export function useWeb() {
   useEffect(() => {
     let alive = true
     let unlisten: (() => void) | undefined
+    const reconcileOnFocus = () => {
+      if (!alive || document.visibilityState !== 'visible') return
+      void Promise.all([refresh(), refreshProjects()]).catch(() => undefined)
+    }
+    window.addEventListener('focus', reconcileOnFocus)
+    document.addEventListener('visibilitychange', reconcileOnFocus)
     void listen('projects-changed', () => {
       if (!alive) return
       void refreshProjects().catch(() => undefined)
@@ -160,6 +197,8 @@ export function useWeb() {
       .catch(() => undefined)
     return () => {
       alive = false
+      window.removeEventListener('focus', reconcileOnFocus)
+      document.removeEventListener('visibilitychange', reconcileOnFocus)
       unlisten?.()
     }
   }, [])
@@ -169,6 +208,7 @@ export function useWeb() {
     if (res.type === 'applied') {
       setReports(res.reports)
       reportsCache.set(res.reports)
+      notifyAppliedChanges(res.reports)
       if (res.reports.some((r) => r.drifted.length > 0)) setDriftOpen(true)
     }
     await refresh(true)
@@ -189,9 +229,10 @@ export function useWeb() {
     markRemoving(hostname)
     setDomains((list) => { const next = list.filter((d) => d.hostname !== hostname); domainsCache.set(next); return next; })
     try {
-      await runCommand({ type: 'delete_site', hostname })
+      const result = await runCommand({ type: 'delete_site', hostname })
       await refreshProjects()
       await applyTracked()
+      return result
     } catch (e) {
       await refresh().catch(() => undefined)
       await refreshProjects().catch(() => undefined)
@@ -199,6 +240,12 @@ export function useWeb() {
     } finally {
       markRemoving(hostname, false)
     }
+  }
+
+  async function restoreDeletedSite(hostname: string) {
+    await runCommand({ type: 'restore_excluded_site', hostname })
+    await Promise.all([refresh(), refreshProjects()])
+    await applyTracked()
   }
 
   /**
@@ -349,11 +396,13 @@ export function useWeb() {
     removing,
     applying,
     deleteSite,
+    restoreDeletedSite,
     deleteSites,
     deleteProject,
     relocateProject,
     hideSite,
     hideSites,
+    reconcileSites,
     hideProjectFromList,
     removeProjectFromList,
     setDomainsEnabled,

@@ -55,7 +55,7 @@ Key patterns:
 - TunnelManager (cloudflare/ngrok/localtunnel) + Inspector proxy (500 req cap, redacted).
 - Scheduler (1-min tick, cron/every_*, no overlap), Workers (max 16 copies), TerminalManager (portable-pty, max 8).
 - Control channel (named pipe + token in control.json), HTTP API (127.0.0.1:7420, bearer SHA256, read_only/operate).
-- TaskManager (§164): in-memory background tasks, one record plus one thread each, published whole over `task-event`; the Processes page lists them with per-task steps and progress. The heavy commands (`export_sites`, `import_sites`) answer with a task id rather than a result, because an export of twenty sites and a database restore are not what a click should wait for.
+- TaskManager (§164): in-memory live progress jobs, one record plus one thread each, deduplicated by running task kind and target and published whole over `task-event`. The Background Tasks page combines these jobs with persistent UI command history, marks stale running rows interrupted on startup, and groups consecutive finished repeats. The heavy commands (`export_sites`, `import_sites`) answer with a task id rather than a result.
 - SiteBundler (§165): one zip per export holding any mix of settings, `.env` files, database dumps and project files for any number of sites, grouped by project; `.env` and dumps are optionally sealed under an export password (Argon2id + ChaCha20-Poly1305), an import onto an existing site takes a snapshot first, and the whole feature is local-only (absent from the HTTP `operate` and AI allow-lists).
 
 ## Service Relationships

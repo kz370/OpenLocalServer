@@ -1,4 +1,4 @@
-import { ChevronDown, ExternalLink } from 'lucide-react'
+import { ChevronDown, Code2, ExternalLink } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -45,8 +45,7 @@ export function OpenWithMenu({ path, isDir, onError }: { path: string; isDir: bo
   }
 
   const items: { app: string; label: string }[] = [
-    { app: 'editor', label: 'Code editor (your default)' },
-    ...editors.filter((e) => e.path).map((e) => ({ app: e.id, label: e.name })),
+    ...editors.filter((e) => e.path && !e.hidden).map((e) => ({ app: e.id, label: e.name })),
     { app: 'explorer', label: isDir ? 'File Explorer' : 'Show in File Explorer' },
     { app: 'terminal', label: 'Terminal here' },
     ...(isDir ? [] : [{ app: 'default', label: 'Default app' }]),
@@ -60,7 +59,8 @@ export function OpenWithMenu({ path, isDir, onError }: { path: string; isDir: bo
       {open && (
         <div role="menu" className="absolute right-0 top-full z-40 mt-1 min-w-52 rounded-lg border border-border dark:border-white/15 bg-popover/95 backdrop-blur-md p-1 text-sm text-popover-foreground shadow-xl">
           {items.map((i) => (
-            <button key={i.app} role="menuitem" className="block w-full rounded-md px-3 py-1.5 text-left transition-colors hover:bg-accent/80 hover:text-accent-foreground cursor-pointer" onClick={() => go(i.app)}>
+            <button key={i.app} role="menuitem" className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left transition-colors hover:bg-accent/80 hover:text-accent-foreground cursor-pointer" onClick={() => go(i.app)}>
+              {editors.some((editor) => editor.id === i.app) && <Code2 className="size-3.5 shrink-0" />}
               {i.label}
             </button>
           ))}

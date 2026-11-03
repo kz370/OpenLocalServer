@@ -41,6 +41,9 @@ pub struct Project {
     pub health: ProjectHealth,
     #[serde(default)]
     pub standalone: bool,
+    /// Computed by ListProjects from configured discovery roots; not persisted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_discovered: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -319,6 +322,7 @@ impl ProjectStore {
             icon_image: None,
             health: ProjectHealth::Healthy,
             standalone,
+            auto_discovered: None,
             icon: None,
             project_type: None,
         };
@@ -381,6 +385,7 @@ impl ProjectStore {
             icon_image: None,
             health: ProjectHealth::Healthy,
             standalone,
+            auto_discovered: None,
             icon: None,
             project_type: pt,
         };
@@ -448,6 +453,20 @@ impl ProjectStore {
         Ok(out)
     }
 
+    /// Prevents folder synchronization from recreating an automatic site for this project.
+    pub fn set_standalone(&mut self, id: &str, standalone: bool) -> Result<(), CoreError> {
+        let p = self
+            .projects
+            .iter_mut()
+            .find(|p| p.id == id)
+            .ok_or_else(|| CoreError::InvalidProjectPath(id.to_string()))?;
+        if p.standalone == standalone {
+            return Ok(());
+        }
+        p.standalone = standalone;
+        self.persist()
+    }
+
     /// Relocates a registered project to a new directory path on disk.
     pub fn relocate(&mut self, id: &str, new_path: &str) -> Result<Project, CoreError> {
         let p = self
@@ -464,6 +483,15 @@ impl ProjectStore {
 
     pub fn remove(&mut self, id: &str) -> Result<(), CoreError> {
         self.projects.retain(|p| p.id != id);
+        self.persist()
+    }
+
+    /// Restores a project record preserved by the session's excluded-folder undo action.
+    pub fn restore(&mut self, project: Project) -> Result<(), CoreError> {
+        if self.projects.iter().any(|p| p.id == project.id) {
+            return Ok(());
+        }
+        self.projects.push(project);
         self.persist()
     }
 

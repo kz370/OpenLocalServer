@@ -1,5 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Activity, Check, CircleOff, Code2, Copy, Download, ExternalLink, EyeOff, FolderOpen, FolderPlus, FolderSearch, FolderX, Globe, HardDrive, Image as ImageIcon, KeyRound, List, MoreHorizontal, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2, X, Zap } from 'lucide-react'
+import { Activity, Check, CircleOff, Code2, Copy, Download, ExternalLink, EyeOff, FolderOpen, FolderPlus, FolderSearch, FolderX, Globe, HardDrive, KeyRound, List, ListX, MoreHorizontal, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2, Wrench, X, Zap } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
@@ -11,7 +11,7 @@ import { SiteDialog, type SiteTarget } from '@/components/site/SiteDialog'
 import { SiteLogoDialog, type SiteLogoTarget } from '@/components/site/SiteLogoDialog'
 import { SiteLogo } from '@/components/SiteLogo'
 import { SaveButton } from '@/components/SaveButton'
-import { ApplyReportCard, DriftDialog } from '@/components/site/WebApply'
+import { DriftDialog } from '@/components/site/WebApply'
 import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
 import { TechIcon } from '@/components/TechIcon'
@@ -24,10 +24,11 @@ import { Input } from '@/components/ui/input'
 import { FloatingMenu, type MenuAnchor, type MenuItem } from '@/components/ui/menu'
 import { Pagination } from '@/components/ui/pagination'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { type Domain, type DomainSummary, type HealthReport, type Project, type WpProject, runCommand } from '@/core'
+import { type Domain, type DomainSummary, type EditorInfo, type HealthProgress, type HealthReport, type HealthStep, type Project, type WpProject, runCommand } from '@/core'
+import { getCached, setCached } from '@/lib/cache'
 import { confirmAction } from '@/lib/confirm'
 import { notify } from '@/lib/notify'
-import { onOpenProject, onOpenSitesFilter, takePendingProject, takePendingSitesFilter } from '@/lib/nav'
+import { onOpenAddSiteForProject, onOpenProject, onOpenSitesFilter, openSettingsSection, takePendingAddSiteProject, takePendingProject, takePendingSitesFilter } from '@/lib/nav'
 import { useTheme } from '@/lib/theme'
 import { useWeb } from '@/lib/web'
 import { Wizard } from '@/pages/QuickApps'
@@ -59,6 +60,9 @@ const GROUPS: { id: Group; label: string; icon: string }[] = [
   { id: 'none', label: 'No domain', icon: 'none' },
 ]
 
+const HEALTH_CHECK_STEPS = ['DNS', 'TCP', 'TLS', 'Certificate', 'Trust', 'HTTP']
+type HealthStepState = 'running' | HealthStep
+
 const groupOf = (r: Row): Group => r.site?.group ?? 'none'
 
 /** Compact status: coloured dot + short label; full meaning shows on hover. */
@@ -83,6 +87,36 @@ function StatusDot({ site, running }: { site: DomainSummary | null; running: boo
   )
 }
 
+function HealthProgressRow({ name, state }: { name: string; state: HealthStepState | undefined }) {
+  if (!state) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <span className="size-4 shrink-0 text-center" aria-hidden="true">·</span>
+        <span className="font-medium text-foreground">{name}</span>
+        <span>Waiting…</span>
+      </div>
+    )
+  }
+  if (state === 'running') {
+    return (
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Spinner className="size-4 shrink-0 text-primary" />
+        <span className="font-medium text-foreground">{name}</span>
+        <span>Checking…</span>
+      </div>
+    )
+  }
+  return (
+    <div className="flex items-start gap-2 text-sm">
+      <span className={state.skipped ? 'text-muted-foreground' : state.ok ? 'text-success' : 'text-destructive'}>{state.skipped ? '–' : state.ok ? '✓' : '✗'}</span>
+      <div>
+        <span className="font-medium">{state.name}</span>
+        <div className="text-xs text-muted-foreground">{state.detail}</div>
+      </div>
+    </div>
+  )
+}
+
 let cachedWpProjects: WpProject[] = []
 
 export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
@@ -90,7 +124,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   // The WordPress sign-in screen lives outside this window, so it is told which colourway
   // the app is showing rather than left to guess from the browser.
   const { resolvedTheme } = useTheme()
-  const { projects, domains, status, busy, error, setError, run, apply, refresh, refreshProjects, installedPhp, removing, applying } = web
+  const { projects, domains, status, busy, error, setError, run, apply, refresh, refreshProjects, reconcileSites, installedPhp, removing, applying } = web
   const defaultServer = status?.default_server
 
   const [target, setTarget] = useState<SiteTarget | null>(null)
@@ -98,6 +132,10 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   const [adding, setAdding] = useState<Domain | null>(null)
   const [wizardId, setWizardId] = useState<string | null>(null)
   const [health, setHealth] = useState<HealthReport | null>(null)
+  const [healthOpen, setHealthOpen] = useState(false)
+  const [healthChecking, setHealthChecking] = useState(false)
+  const [healthHostname, setHealthHostname] = useState('')
+  const [healthStepStates, setHealthStepStates] = useState<Record<string, HealthStepState>>({})
   const [dupOf, setDupOf] = useState<string | null>(null)
   const [dupName, setDupName] = useState('')
   const [query, setQuery] = useState('')
@@ -116,6 +154,29 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   // get a "WP Admin" action. Re-read when the project list changes, so a folder added or
   // deleted elsewhere gains or loses the action without a reload.
   const [wpProjects, setWpProjects] = useState<WpProject[]>(cachedWpProjects)
+  const [unconnectedProjectIds, setUnconnectedProjectIds] = useState<string[] | null>(null)
+  const [editors, setEditors] = useState<EditorInfo[]>([])
+  const [excludedFolder, setExcludedFolder] = useState('ols_excluded_sites')
+
+  useEffect(() => {
+    void runCommand({ type: 'list_editors' }).then((r) => {
+      if (r.type === 'editors') setEditors(r.editors)
+    }).catch(() => setEditors([]))
+  }, [])
+
+  useEffect(() => {
+    void runCommand({ type: 'get_setting', key: 'projects.ignored_folders' }).then((r) => {
+      if (r.type !== 'setting' || !Array.isArray(r.value)) return
+      const reserved = r.value.find((value): value is string => typeof value === 'string' && /excluded_sites/i.test(value))
+      if (reserved) setExcludedFolder(reserved)
+    }).catch(() => undefined)
+  }, [])
+
+  useEffect(() => {
+    void runCommand({ type: 'list_projects' }).then((result) => {
+      if (result.type === 'projects') setUnconnectedProjectIds(result.unconnected_project_ids ?? null)
+    }).catch(() => setUnconnectedProjectIds(null))
+  }, [projects])
 
   const refreshWpProjects = async () => {
     const r = await runCommand({ type: 'list_wp_projects' })
@@ -139,6 +200,15 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
 
   useEffect(() => {
     return onOpenSitesFilter((f) => setFilter(f as SiteFilter))
+  }, [])
+
+  useEffect(() => {
+    const openAddSite = (projectId: string) => {
+      setAdding({ ...newDomain(), project_id: projectId })
+    }
+    const pending = takePendingAddSiteProject()
+    if (pending) openAddSite(pending)
+    return onOpenAddSiteForProject(openAddSite)
   }, [])
 
   // A project opened by id shows its first site when it has one.
@@ -625,13 +695,45 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     }
 
     if (folder) items.push({ label: 'Open project folder', icon: <FolderOpen />, hint: isHealthy ? folder : 'Project folder is not accessible', disabled: !isHealthy, onSelect: () => void run('open', () => runCommand({ type: 'open_path', path: folder })) })
-    if (folder) items.push({ label: 'Open folder in code editor', icon: <Code2 />, hint: isHealthy ? folder : 'Project folder is not accessible', disabled: !isHealthy, onSelect: () => void run('code', () => runCommand({ type: 'open_in_editor', path: folder })) })
+    if (folder) {
+      const visibleEditors = editors.filter((e) => e.path && !e.hidden)
+      const openEditor = (id: string) => void run('code', () => runCommand({ type: 'open_with', app: id, path: folder }))
+      const addEditor = () => { openSettingsSection('editors'); onNavigate('settings') }
+      items.push({
+        label: 'Open with editor', icon: <Code2 />, hint: isHealthy ? folder : 'Project folder is not accessible', disabled: !isHealthy,
+        ...(visibleEditors.length > 1 ? { submenu: visibleEditors.map((ed) => ({ label: ed.name, icon: <Code2 />, onSelect: () => openEditor(ed.id) })) } : {}),
+        onSelect: visibleEditors.length === 1 ? () => openEditor(visibleEditors[0].id) : visibleEditors.length === 0 ? addEditor : undefined,
+      })
+    }
     if (p) items.push({ label: 'Terminal', icon: <SquareTerminal />, disabled: !isHealthy, onSelect: () => setTarget({ hostname: d?.hostname ?? null, projectId: p.id, tab: 'terminal' }) })
     // WordPress gets a passwordless admin entry. The backend answers with a link that works
     // once, from this machine, for a few minutes; no password is read, asked for or stored.
     const wp = p ? wpProjects.find((w) => w.project_id === p.id) : undefined
     if (wp && p) {
       const projectId = p.id
+      items.push({
+        label: 'Repair WordPress core files',
+        icon: <Wrench />,
+        hint: 'Restore missing core files; can identify the release without version.php. The first download needs internet; cached versions work offline.',
+        disabled: busy === `wp-core:${projectId}`,
+        onSelect: () => void run(`wp-core:${projectId}`, async () => {
+          const progress = notify.progress('Repairing WordPress core', 'Checking installed files against WordPress.org…')
+          try {
+            const result = await runCommand({ type: 'wp_core_repair', project_id: projectId })
+            if (result.type !== 'wp_core_repair') {
+              progress.dismiss()
+              return
+            }
+            await Promise.all([refresh(), refreshWpProjects()])
+            progress.success(result.result.restored > 0
+              ? `Restored ${result.result.restored} missing WordPress core file${result.result.restored === 1 ? '' : 's'} (version ${result.result.version}).`
+              : `WordPress ${result.result.version} core files are present.`)
+          } catch (error) {
+            progress.error('WordPress core repair failed.', { details: error instanceof Error ? error.message : String(error) })
+            throw error
+          }
+        }),
+      })
       items.push({
         label: 'WP Admin',
         icon: <KeyRound />,
@@ -663,25 +765,21 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         label: 'Health check',
         icon: <Activity />,
         hint: 'DNS → TCP → TLS → certificate → trust → HTTP',
-        onSelect: () =>
+        onSelect: () => {
+          setHealth(null)
+          setHealthHostname(d.hostname)
+          setHealthStepStates({ DNS: 'running' })
+          setHealthChecking(true)
+          setHealthOpen(true)
           void run('health', async () => {
-            const r = await runCommand({ type: 'health_check', hostname: d.hostname })
+            const r = await runCommand({ type: 'health_check', hostname: d.hostname }, (progress: HealthProgress) => {
+              setHealthStepStates((current) => ({ ...current, [progress.name]: progress.step ?? 'running' }))
+            })
             if (r.type === 'health') setHealth(r.report)
-          }),
+          }).finally(() => setHealthChecking(false))
+        },
       })
       if (d.has_app) items.push({ label: 'Restart app process', icon: <RefreshCw />, onSelect: () => void run('restart', () => runCommand({ type: 'restart_site_app', hostname: d.hostname })) })
-      items.push({
-        label: 'Domains & DNS…',
-        icon: <Globe />,
-        hint: 'Domain aliases, Dynamic DNS (Cloudflare/DuckDNS), SSL certificates',
-        onSelect: () => setTarget({ hostname: d.hostname, projectId: p?.id ?? null, tab: 'domains' }),
-      })
-      items.push({
-        label: 'Site logo / icon…',
-        icon: <ImageIcon />,
-        hint: 'Custom ols_site_icon.webp or offline Font Awesome icon',
-        onSelect: () => setTarget({ hostname: d.hostname, projectId: p?.id ?? null, tab: 'icon' }),
-      })
       items.push({
         label: 'Export to bundle…',
         icon: <Download />,
@@ -726,12 +824,6 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     } else if (p) {
       items.push(
         {
-          label: 'Site logo / icon…',
-          icon: <ImageIcon />,
-          hint: 'Custom ols_site_icon.webp in project folder',
-          onSelect: () => setTarget({ hostname: null, projectId: p.id, tab: 'icon' }),
-        },
-        {
           label: 'Add auto domain',
           icon: <Globe />,
           hint: 'The same <folder>.<tld> the folder watcher would create',
@@ -746,50 +838,102 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       const allHosts = [d.hostname, ...r.extraDomains.map((e) => e.hostname)]
       const key = d.hostname
       items.push({
-        label: 'Hide/Exclude',
-        icon: <EyeOff />,
-        disabled: allHosts.some((h) => removing.has(h)) || busy === `hide:${key}`,
+          label: 'Hide',
+          icon: <EyeOff />,
+          disabled: allHosts.some((h) => removing.has(h)) || busy === `hide:${key}`,
+          onSelect: async () => {
+            const last = p ? ` ${p.name} leaves the list with it.` : ''
+            const hostLabel = allHosts.length > 1 ? `${d.hostname} (+${r.extraDomains.length} extra domains)` : d.hostname
+            const ok = await confirmAction(
+            `Stops serving the site and keeps its folder and database record. Restore it from Settings > Hidden sites.${last}`,
+              `Hide ${hostLabel}?`,
+              'Hide',
+            )
+            if (!ok) return
+            await run(`hide:${key}`, () => web.hideSites(allHosts))
+          },
+        })
+      items.push({
+        label: 'Remove from list',
+        icon: <ListX />,
+        hint: 'Removes the site entry but keeps its project. Add it again from Projects.',
+        disabled: removing.has(key) || busy === `remove:${key}`,
         onSelect: async () => {
-          const last = p ? ` ${p.name} leaves the list with it.` : ''
-          const hostLabel = allHosts.length > 1 ? `${d.hostname} (+${r.extraDomains.length} extra domains)` : d.hostname
           const ok = await confirmAction(
-            `Its certificate is revoked and its config file is removed.${last} The project folder on disk is not touched. It stays hidden until cleared in Settings > Hide/Exclude.`,
-            `Hide/Exclude ${hostLabel}?`,
-            'Hide/Exclude',
+            `This site will stop being served and removed from OLS. Its project stays in the Projects list and its folder stays on disk.`,
+            `Remove the site for ${p?.name ?? d.hostname}?`,
+            'Remove from list',
           )
           if (!ok) return
-          await run(`hide:${key}`, () => web.hideSites(allHosts))
+          await run(`remove:${key}`, async () => {
+            await runCommand({ type: 'remove_site_from_list', hostname: key })
+            const cachedDomains = getCached<DomainSummary[]>('projects_page_domains', [])
+            setCached('projects_page_domains', cachedDomains.filter((domain) => domain.hostname !== key))
+            await Promise.all([refresh(), refreshProjects()])
+            await reconcileSites()
+          })
         },
       })
       items.push({
-        label: 'Delete site',
+        label: 'Safe delete',
+        description: 'Moves its folder to the excluded folder',
         icon: <Trash2 />,
-        danger: true,
+        tone: 'amber',
+        hint: 'Moves its folder to the excluded folder',
+        separatorAbove: true,
         disabled: allHosts.some((h) => removing.has(h)) || busy === `delete:${key}`,
         onSelect: async () => {
           const hostLabel = allHosts.length > 1 ? `${d.hostname} (+${r.extraDomains.length} extra domains)` : d.hostname
           const ok = await confirmAction(
-            `Moves the project into an "ols_excluded_sites" folder in the same directory instead of permanently deleting it. Certificate is revoked and server configuration is removed.`,
-            `Delete ${hostLabel}?`,
-            'Delete site',
+            `${p?.name ?? d.hostname}\nFolder: ${folder ?? 'Unknown'}\nDestination: ${folder ? `${folder.replace(/[\\/][^\\/]+$/, '')}\\${excludedFolder}\\${folder.split(/[\\/]/).pop()}` : excludedFolder} (adds -1, -2, etc. if that folder name already exists)\nMove the folder and remove the site from OpenLocalServer. Restore it by moving it back from the excluded folder, then add it again from Projects.`,
+            `Safe delete ${hostLabel}?`,
+            'Safe delete',
+            'amber',
           )
           if (!ok) return
-          await run(`delete:${key}`, () => web.deleteSites(allHosts))
+          await run(`delete:${key}`, async () => {
+            const result = await web.deleteSites(allHosts)
+            if (result.changed > 0) notify.success(`${d.hostname} moved to excluded. Undo`, {
+              action: {
+                label: 'Undo',
+                isUndo: true,
+                onClick: async () => {
+                  await web.restoreDeletedSite(d.hostname)
+                  notify.success(`${d.hostname} restored`)
+                },
+              },
+            })
+          })
         },
       })
     } else if (p) {
       items.push({
-        label: 'Hide/Exclude',
+        label: 'Hide',
         icon: <EyeOff />,
+        hint: 'Stops serving this site. Restore it from Settings > Hidden sites.',
         disabled: removing.has(p.id) || busy === `hide:${p.id}`,
         onSelect: async () => {
           const ok = await confirmAction(
             `"${p.name}" leaves the list, but its folder on disk is not touched. It stays hidden until cleared in Settings > Hide/Exclude.`,
             `Hide/Exclude ${p.name}?`,
-            'Hide/Exclude',
+            'Hide',
           )
           if (!ok) return
           await run(`hide:${p.id}`, () => web.hideProjectFromList(p.id))
+        },
+      })
+      items.push({
+        label: 'Remove project only',
+        icon: <X />,
+        disabled: removing.has(p.id) || busy === `remove:${p.id}`,
+        onSelect: async () => {
+          const ok = await confirmAction(
+            `Remove "${p.name}" from OpenLocalServer? Its project entry leaves the list, but its folder and files stay on disk.`,
+            `Remove project ${p.name}?`,
+            'Remove project only',
+          )
+          if (!ok) return
+          await run(`remove:${p.id}`, () => web.hideProjectFromList(p.id))
         },
       })
       items.push({
@@ -840,12 +984,16 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       </div>
 
       <ErrorCard error={error} onDismiss={() => setError(null)} />
-      {applying && (
+      {removing.size > 0 && !applying && (
         <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
-          <Spinner /> Updating the web-server configuration…
+          <Spinner /> Updating the site list…
         </p>
       )}
-      <ApplyReportCard web={web} />
+      {applying && (
+        <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
+          <Spinner /> Updating site configuration and hosts file…
+        </p>
+      )}
 
       <Card>
         <CardContent className="p-0">
@@ -1115,6 +1263,9 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                               </>
                             )}
                           </div>
+                          {d && p?.auto_discovered === true && (
+                            <div className="mt-0.5 text-[10px] text-muted-foreground">Auto-discovered</div>
+                          )}
                         </div>
                         {d && (
                           <>
@@ -1338,6 +1489,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         projects={projects}
         domain={adding}
         existingDomains={web.domains}
+        unconnectedProjectIds={unconnectedProjectIds}
         defaultParent={effectiveParent}
         installedPhp={installedPhp}
         onQuickApp={(id) => {
@@ -1376,22 +1528,31 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       />
 
       <Dialog
-        open={!!health}
-        onClose={() => setHealth(null)}
-        title={`Health: ${health?.hostname ?? ''}`}
-        description={health?.ok ? 'Every link in the chain works.' : 'Something in the chain is broken. The first failing step is the one to fix.'}
+        open={healthOpen}
+        onClose={() => setHealthOpen(false)}
+        title={`Health: ${health?.hostname ?? healthHostname}`}
+        description={healthChecking ? 'Checking DNS, TCP, TLS, certificate trust, and HTTP…' : health?.ok ? 'Every link in the chain works.' : health ? 'Something in the chain is broken. The first failing step is the one to fix.' : 'The health check did not return a report. See the page error for details.'}
       >
-        <div className="flex flex-col gap-2">
-          {health?.steps.map((s) => (
-            <div key={s.name} className="flex items-start gap-2 text-sm">
-              <span className={s.skipped ? 'text-muted-foreground' : s.ok ? 'text-success' : 'text-destructive'}>{s.skipped ? '–' : s.ok ? '✓' : '✗'}</span>
-              <div>
-                <span className="font-medium">{s.name}</span>
-                <div className="text-xs text-muted-foreground">{s.detail}</div>
+        {healthChecking ? (
+          <div className="flex flex-col gap-3" aria-live="polite">
+            {HEALTH_CHECK_STEPS.map((step) => (
+              <HealthProgressRow key={step} name={step} state={healthStepStates[step]} />
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {health?.steps.map((s) => (
+              <div key={s.name} className="flex items-start gap-2 text-sm">
+                <span className={s.skipped ? 'text-muted-foreground' : s.ok ? 'text-success' : 'text-destructive'}>{s.skipped ? '–' : s.ok ? '✓' : '✗'}</span>
+                <div>
+                  <span className="font-medium">{s.name}</span>
+                  <div className="text-xs text-muted-foreground">{s.detail}</div>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+            {!health && <p className="text-sm text-muted-foreground">No health check result is available.</p>}
+          </div>
+        )}
       </Dialog>
 
       <Dialog

@@ -19,7 +19,7 @@ export type CoreResponse =
   | { type: 'port'; port: number; status: PortStatus }
   | { type: 'runtime_catalog'; entries: CatalogEntry[] }
   | { type: 'project'; project: Project }
-  | { type: 'projects'; projects: Project[] }
+  | { type: 'projects'; projects: Project[]; unconnected_project_ids?: string[] | null }
   | { type: 'project_detail'; detail: ProjectDetail }
   | { type: 'create_site_for_project'; domain: Domain | null; needs_setup: boolean; suggested_hostname: string }
   | { type: 'project_types'; types: ProjectTypePreset[] }
@@ -29,6 +29,7 @@ export type CoreResponse =
   | { type: 'site_folder_inspection'; inspection: SiteFolderInspection }
   | { type: 'wp_projects'; projects: WpProject[] }
   | { type: 'wp_sign_in'; url: string; expires_at: number }
+  | { type: 'wp_core_repair'; result: { version: string; restored: number } }
   | { type: 'deleted_items'; items: DeletedItem[] }
   | { type: 'services'; services: ServiceStatus[] }
   | { type: 'service_aggregate'; aggregate: ServiceAggregate }
@@ -81,6 +82,7 @@ export type CoreResponse =
   | { type: 'log_lines'; source: string; lines: string[] }
   | { type: 'startup'; settings: StartupSettings }
   | { type: 'editors'; editors: EditorInfo[] }
+  | { type: 'excluded_site_moved'; hostname: string; source: string; destination: string }
   | { type: 'count'; count: number }
   /** What a bulk site edit did. `skipped` names every site the batch refused and why, so
    *  a partly applied edit is reported rather than looking like it fully worked. */

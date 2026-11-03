@@ -23,8 +23,11 @@ export type MenuItem =
       icon?: ReactNode
       onSelect?: () => void
       danger?: boolean
+      tone?: 'amber'
       disabled?: boolean
       hint?: string
+      description?: string
+      separatorAbove?: boolean
       submenu?: MenuItem[]
     }
   | 'separator'
@@ -215,6 +218,7 @@ function MenuItemRow({
 
   return (
     <>
+      {item.separatorAbove && <div role="separator" className="my-1 h-px scale-y-50 bg-border" />}
       <button
         ref={buttonRef}
         role="menuitem"
@@ -232,11 +236,17 @@ function MenuItemRow({
         className={cn(
           'flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-left transition-colors hover:bg-accent/80 hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-3.5 [&_svg]:shrink-0',
           item.danger ? 'text-destructive hover:bg-destructive/10 hover:text-destructive' : '',
+          item.tone === 'amber' ? 'text-amber-600 dark:text-amber-400 [&_svg]:text-amber-500' : '',
           isSubmenuOpen ? 'bg-accent/80 text-accent-foreground' : '',
         )}
       >
         {item.icon}
-        <span className="flex-1 truncate">{item.label}</span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate">{item.label}</span>
+          {item.description && (
+            <span className="block truncate text-[11px] leading-4 text-muted-foreground">{item.description}</span>
+          )}
+        </span>
         {item.submenu && item.submenu.length > 0 && (
           <ChevronRight className="ml-auto size-3 opacity-60 shrink-0" />
         )}

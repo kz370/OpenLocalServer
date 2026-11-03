@@ -250,7 +250,12 @@ impl Core {
 
                 C::RegisterProject { path } => {
                     tracing::info!(command = "register_project", path = %path);
-                    let project = i.projects.lock().unwrap().register(&path)?;
+                    let project = {
+                        let mut projects = i.projects.lock().unwrap();
+                        let project = projects.register(&path)?;
+                        projects.set_standalone(&project.id, false)?;
+                        projects.get(&project.id).unwrap_or(project)
+                    };
                     let _ = i.clear_project_skip(&project.path);
                     if let Err(e) = i.sync_auto_domains() {
                         tracing::warn!(error = %e, "automatic domains could not be synced");
@@ -261,6 +266,7 @@ impl Core {
                     path,
                     name,
                     project_type,
+                    auto_site,
                 } => {
                     tracing::info!(command = "add_project", path = %path);
                     let effective_type = match project_type.as_deref() {
@@ -274,12 +280,31 @@ impl Core {
                         }
                         Some(t) => Some(t.to_string()),
                     };
-                    let project =
-                        i.projects
-                            .lock()
-                            .unwrap()
-                            .add_new(&path, name, effective_type, true)?;
+                    let project = {
+                        let mut projects = i.projects.lock().unwrap();
+                        let existing = projects
+                            .list()
+                            .into_iter()
+                            .find(|project| crate::project::same_path(&project.path, &path));
+                        if let Some(existing) = existing {
+                            projects.set_standalone(&existing.id, !auto_site)?;
+                            projects.get(&existing.id).unwrap_or(existing)
+                        } else {
+                            projects.add_new(&path, name, effective_type, !auto_site)?
+                        }
+                    };
                     let _ = i.clear_project_skip(&project.path);
+                    if auto_site {
+                        match i.create_site_for_project(&project.id) {
+                            Ok(result) if result.needs_setup => {
+                                tracing::info!(project = %project.name, "automatic site creation needs project setup");
+                            }
+                            Ok(_) => {}
+                            Err(error) => {
+                                tracing::warn!(project = %project.name, %error, "automatic site creation failed after project registration");
+                            }
+                        }
+                    }
                     i.notify_project_events();
                     Ok(R::Project { project })
                 }
@@ -359,15 +384,41 @@ impl Core {
                     // the same way the watcher does: a folder the user deleted stays deleted
                     // whichever path spelling this scan happened to walk.
                     let skipped = i.project_skips();
+                    let hidden_domains = i.skip_entries(crate::app::AUTO_SKIP);
+                    let existing_projects = i.projects.lock().unwrap().list();
+                    let hidden_paths: Vec<_> = i
+                        .domains
+                        .lock()
+                        .unwrap()
+                        .list()
+                        .into_iter()
+                        .filter(|d| {
+                            hidden_domains
+                                .iter()
+                                .any(|entry| entry.value.eq_ignore_ascii_case(&d.hostname))
+                        })
+                        .map(|d| crate::app::site_folder(&d, &existing_projects))
+                        .collect();
                     let mut projects = i.projects.lock().unwrap();
                     let mut registered = Vec::with_capacity(candidates.len());
                     for candidate in candidates {
                         if let Some(s) = candidate.to_str() {
+                            if candidate.join(".ols_ignore_me").exists() {
+                                continue;
+                            }
+                            if hidden_paths
+                                .iter()
+                                .any(|path| crate::project::same_path(path, s))
+                            {
+                                continue;
+                            }
                             // Bulk scans don't resurrect folders removed from the list.
                             if crate::app::skip_matches(&skipped, s) {
                                 continue;
                             }
-                            registered.push(projects.register(s)?);
+                            let project = projects.register(s)?;
+                            projects.set_standalone(&project.id, false)?;
+                            registered.push(projects.get(&project.id).unwrap_or(project));
                         }
                     }
                     drop(projects);
@@ -377,6 +428,7 @@ impl Core {
                     }
                     Ok(R::Projects {
                         projects: registered,
+                        unconnected_project_ids: None,
                     })
                 }
                 C::SyncAutoDomains => Ok(R::Count {
@@ -386,14 +438,55 @@ impl Core {
                     // Same outside-change re-read as `ListDomains`: a folder registered from
                     // the right-click menu is written by another process.
                     i.reload_external_changes();
+                    let records = i.domains.lock().unwrap().list();
+                    let hidden_hosts: std::collections::HashSet<_> = records
+                        .into_iter()
+                        .filter(|d| !i.site_is_active(d))
+                        .map(|d| d.hostname)
+                        .collect();
+                    let records = i.domains.lock().unwrap().list();
+                    let project_snapshot = i.projects.lock().unwrap().list();
+                    let hidden_paths: Vec<_> = records
+                        .iter()
+                        .filter(|d| hidden_hosts.contains(&d.hostname))
+                        .map(|d| crate::app::site_folder(d, &project_snapshot))
+                        .collect();
                     let mut projects = i.projects.lock().unwrap().list();
+                    projects.retain(|p| {
+                        !std::path::Path::new(&p.path)
+                            .join(".ols_ignore_me")
+                            .exists()
+                            && !hidden_paths
+                                .iter()
+                                .any(|path| crate::project::same_path(path, &p.path))
+                    });
+                    let roots = i.string_list(crate::app::PROJECT_ROOTS);
                     for p in &mut projects {
+                        p.auto_discovered = Some(roots.iter().any(|root| {
+                            std::path::Path::new(&p.path).starts_with(std::path::Path::new(root))
+                        }));
                         p.icon_image = crate::app::read_site_icon_image(&p.path);
                     }
-                    Ok(R::Projects { projects })
+                    let unconnected_project_ids = crate::db::unconnected_project_ids(&i.paths)
+                        .ok()
+                        .flatten()
+                        .map(|ids| ids.into_iter().collect());
+                    Ok(R::Projects {
+                        projects,
+                        unconnected_project_ids,
+                    })
                 }
                 C::RemoveProject { id } => {
                     i.remove_project(&id)?;
+                    Ok(R::Ok)
+                }
+                C::IgnoreProject { id } => {
+                    i.ignore_project(&id)?;
+                    i.reconcile()?;
+                    Ok(R::Ok)
+                }
+                C::RemoveSiteFromList { hostname } => {
+                    i.remove_site_from_list(&hostname)?;
                     Ok(R::Ok)
                 }
                 C::RelocateProject { id, path } => {
@@ -422,12 +515,14 @@ impl Core {
                         ));
                     }
                     i.forget_deleted_item(value)?;
+                    i.reconcile()?;
                     Ok(R::DeletedItems {
                         items: i.list_deleted_items(),
                     })
                 }
                 C::ClearDeletedItems => {
                     i.clear_deleted_items()?;
+                    i.reconcile()?;
                     Ok(R::DeletedItems {
                         items: i.list_deleted_items(),
                     })
@@ -471,6 +566,9 @@ impl Core {
                     i.wp_signin_revoke(&project_id)?;
                     Ok(R::Ok)
                 }
+                C::WpCoreRepair { project_id } => Ok(R::WpCoreRepair {
+                    result: i.wp_core_repair(&project_id)?,
+                }),
                 other => {
                     unhandled = Some(other);
                     return Ok(R::Ok);

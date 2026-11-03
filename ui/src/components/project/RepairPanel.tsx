@@ -10,15 +10,41 @@ import { type RepairPlan, type RepairReport, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
 import { useAction } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
+import { notify } from '@/lib/notify'
 
 const ICON = { error: X, warning: AlertTriangle, info: Info }
 
 /** §112–115: diagnose the project, explain each issue, then apply the chosen fixes and check again. */
-export function RepairPanel({ projectId }: { projectId: string }) {
+export function RepairPanel({ projectId, wordpress = false }: { projectId: string; wordpress?: boolean }) {
   const [plan, setPlan] = useState<RepairPlan | null>(null)
   const [chosen, setChosen] = useState<Set<string>>(new Set())
   const [report, setReport] = useState<RepairReport | null>(null)
   const { busy, error, setError, run } = useAction()
+
+  async function repairWordPressCore() {
+    await run('wp-core', async () => {
+      const progress = notify.progress('Repairing WordPress core', 'Checking installed files against WordPress.org…')
+      try {
+        const r = await runCommand({ type: 'wp_core_repair', project_id: projectId })
+        if (r.type !== 'wp_core_repair') {
+          progress.dismiss()
+          return
+        }
+        const refreshed = await runCommand({ type: 'plan_repair', project_id: projectId })
+        if (refreshed.type === 'repair_plan') {
+          setPlan(refreshed.plan)
+          setChosen(new Set(refreshed.plan.actions.filter((a) => !a.destructive).map((a) => a.finding_id)))
+        }
+        const count = r.result.restored
+        progress.success(count > 0
+          ? `Restored ${count} missing WordPress core file${count === 1 ? '' : 's'} (version ${r.result.version}).`
+          : `WordPress ${r.result.version} core files are present.`)
+      } catch (error) {
+        progress.error('WordPress core repair failed.', { details: error instanceof Error ? error.message : String(error) })
+        throw error
+      }
+    })
+  }
 
   const diagnose = useCallback(
     () =>
@@ -68,6 +94,17 @@ export function RepairPanel({ projectId }: { projectId: string }) {
           </Button>
         </div>
       </div>
+      {wordpress && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-3">
+          <div className="min-w-0">
+            <p className="text-sm font-medium">WordPress core files</p>
+            <p className="text-xs text-muted-foreground">Restore missing files. If version.php is missing, OLS identifies the release from surviving files. The first download needs internet; cached versions work offline.</p>
+          </div>
+          <Button size="sm" variant="secondary" onClick={() => void repairWordPressCore()} disabled={busy !== null}>
+            {busy === 'wp-core' ? <Spinner /> : <Wrench />} Repair core files
+          </Button>
+        </div>
+      )}
       <ErrorCard error={error} onDismiss={() => setError(null)} />
 
       {report && (

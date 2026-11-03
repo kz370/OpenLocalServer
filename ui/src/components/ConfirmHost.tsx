@@ -45,7 +45,7 @@ export function ConfirmHost() {
           <Button variant="ghost" onClick={() => answer(false)}>
             Cancel
           </Button>
-          <Button ref={yes} variant="destructive" onClick={() => answer(true)}>
+          <Button ref={yes} variant={req?.confirmTone === 'amber' ? 'outline' : 'destructive'} className={req?.confirmTone === 'amber' ? 'border-amber-500/50 text-amber-600 hover:bg-amber-500/10 dark:text-amber-400' : undefined} onClick={() => answer(true)}>
             {req?.confirmLabel ?? 'Confirm'}
           </Button>
         </>

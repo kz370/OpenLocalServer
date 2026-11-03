@@ -214,6 +214,7 @@ export interface Operation {
   status: 'running' | 'done' | 'failed' | 'interrupted'
   detail: string | null
   undo: string | null
+  repeat_count?: number
 }
 
 export interface MailChange {

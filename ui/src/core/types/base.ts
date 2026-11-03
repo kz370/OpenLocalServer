@@ -135,6 +135,7 @@ export interface Project {
   icon_image?: string | null
   health?: ProjectHealth
   standalone?: boolean
+  auto_discovered?: boolean
   icon?: string | null
   project_type?: string | null
 }

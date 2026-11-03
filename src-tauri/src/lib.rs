@@ -2,6 +2,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use ols_core::health::HealthProgress;
 use ols_core::process::{ProcessEvent, ProcessState};
 use ols_core::quickapp::EntryView;
 use ols_core::runtime::RuntimeEvent;
@@ -44,6 +45,35 @@ async fn run_command(
     // that synchronously here added about a second to every read (site reads
     // included) before the response ever reached the UI. The 2-second tray
     // heartbeat keeps the tray fresh regardless.
+    let state = state.inner().clone();
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        sync_status_icon(&app_handle, &state);
+        sync_tray_tooltip(&app_handle, &state);
+    });
+    dispatched
+}
+
+/// Health-check variant of `run_command` that streams completed stages to the UI.
+#[tauri::command]
+async fn run_health_check(
+    hostname: String,
+    on_progress: tauri::ipc::Channel<HealthProgress>,
+    state: tauri::State<'_, Core>,
+    app: AppHandle,
+) -> Result<CoreResponse, Diagnostic> {
+    let core = state.inner().clone();
+    let dispatched = tauri::async_runtime::spawn_blocking(move || {
+        core.health_check_with_progress(&hostname, |progress| {
+            let _ = on_progress.send(progress);
+        })
+    })
+    .await
+    .map_err(|e| Diagnostic {
+        problem: "The command crashed.".into(),
+        cause: e.to_string(),
+        fix: None,
+    })?;
     let state = state.inner().clone();
     let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -932,9 +962,9 @@ fn tray_menu(
             if editors.is_empty() {
                 editor_items.push(Box::new(MenuItem::with_id(
                     app,
-                    &format!("no_editors:{}", project.id),
-                    "No editors found",
-                    false,
+                    &format!("editors_settings:{}", project.id),
+                    "Add an editor…",
+                    true,
                     None::<&str>,
                 )?));
             } else {
@@ -950,7 +980,7 @@ fn tray_menu(
             }
             let editor_refs: Vec<&dyn tauri::menu::IsMenuItem<Wry>> =
                 editor_items.iter().map(|item| item.as_ref()).collect();
-            let open_with = Submenu::with_items(app, "Open with", true, &editor_refs)?;
+            let open_with = Submenu::with_items(app, "Open with editor", true, &editor_refs)?;
 
             let project_submenu =
                 Submenu::with_items(app, &project.name, true, &[&open_dir, &open_with])?;
@@ -1166,7 +1196,12 @@ fn sync_tray_tooltip(app: &AppHandle, core: &Core) {
         if at.elapsed() < Duration::from_secs(1) {
             return;
         }
-        if TOOLTIP_SHOWS.lock().unwrap_or_else(|e| e.into_inner()).as_deref() == Some(tip) {
+        if TOOLTIP_SHOWS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_deref()
+            == Some(tip)
+        {
             return;
         }
     }
@@ -1536,6 +1571,7 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
                 "doctor" => navigate(app, "diagnostics"),
                 "site_add" => navigate(app, "sites"),
                 "projects_page" => navigate(app, "projects"),
+                id if id.starts_with("editors_settings:") => navigate(app, "settings:editors"),
                 id if id.starts_with("project_dir:") => {
                     let project_id = &id["project_dir:".len()..];
                     if let Some(project) = core.inner().projects.lock().unwrap().get(project_id) {
@@ -2153,7 +2189,7 @@ pub fn run() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![run_command, request_exit])
+        .invoke_handler(tauri::generate_handler![run_command, run_health_check, request_exit])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -14,12 +14,14 @@ import {
   Terminal,
 } from 'lucide-react'
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 import { TechIcon, TechTile } from '@/components/TechIcon'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
 import { Field, FormSection, Select, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { Tooltip } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { buildSitePath, domainToFolderName, getDefaultSitesDir, getDefaultTld, slugify } from '@/lib/sites'
 import { useDirtyForm, type DirtyFormScope } from '@/lib/dirtyForms'
@@ -58,6 +60,26 @@ function parseUpstreamTarget(target?: string | null): { host: string; port: numb
 }
 
 export type SiteServeMode = 'php' | 'node' | 'python' | 'proxy' | 'static'
+
+function serveModeForProject(project: Project): SiteServeMode {
+  const type = (project.project_type ?? '').replace(/^custom:/i, '').toLowerCase()
+  if (['php', 'laravel', 'symfony', 'wordpress', 'word_press'].includes(type)) return 'php'
+  if (['node', 'nodejs', 'nextjs', 'react', 'vue'].includes(type)) return 'node'
+  if (['python', 'django', 'flask', 'fastapi', 'fast_api'].includes(type)) return 'python'
+  return 'static'
+}
+
+function projectTypeLabel(project: Project): string {
+  const type = project.project_type?.replace(/^custom:/i, '')
+  if (!type || type.toLowerCase() === 'auto') return 'Auto'
+  return type.replace(/[_-]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function middleTruncate(value: string, maxLength = 54): string {
+  if (value.length <= maxLength) return value
+  const sideLength = Math.floor((maxLength - 1) / 2)
+  return `${value.slice(0, sideLength)}…${value.slice(-sideLength)}`
+}
 
 export function getInitialServeMode(domain: Domain): SiteServeMode {
   if (domain.kind.type === 'php') return 'php'
@@ -119,6 +141,7 @@ export function DomainDialog({
   installedPhp,
   defaultParent,
   existingDomains,
+  unconnectedProjectIds,
 }: {
   projects: Project[]
   onQuickApp: (id: string) => void
@@ -126,6 +149,7 @@ export function DomainDialog({
   installedPhp: string[]
   defaultParent?: string
   existingDomains?: DomainSummary[]
+  unconnectedProjectIds?: string[] | null
   onClose: () => void
   onSave: (d: Domain) => void
   busy: boolean
@@ -139,6 +163,7 @@ export function DomainDialog({
       defaultParent={defaultParent}
       installedPhp={installedPhp}
       existingDomains={existingDomains}
+      unconnectedProjectIds={unconnectedProjectIds}
       onClose={onClose}
       onSave={onSave}
       busy={busy}
@@ -153,6 +178,7 @@ function AddSiteDialogBody({
   defaultParent,
   installedPhp,
   existingDomains,
+  unconnectedProjectIds,
   onSave,
   busy,
   onClose,
@@ -163,6 +189,7 @@ function AddSiteDialogBody({
   defaultParent?: string
   installedPhp: string[]
   existingDomains?: DomainSummary[]
+  unconnectedProjectIds?: string[] | null
   onSave: (d: Domain) => void
   busy: boolean
   onClose: () => void
@@ -194,6 +221,7 @@ function AddSiteDialogBody({
         defaultParent={defaultParent}
         installedPhp={installedPhp}
         existingDomains={existingDomains}
+        unconnectedProjectIds={unconnectedProjectIds}
         onSave={onSave}
         busy={busy}
         submitRef={submitRef}
@@ -211,6 +239,7 @@ export function DomainSettings({
   defaultParent,
   installedPhp,
   existingDomains,
+  unconnectedProjectIds,
   onSave,
   busy,
   saveBarScope,
@@ -224,6 +253,7 @@ export function DomainSettings({
   defaultParent?: string
   installedPhp: string[]
   existingDomains?: DomainSummary[]
+  unconnectedProjectIds?: string[] | null
   onSave: (d: Domain) => void | Promise<void | boolean>
   busy: boolean
   saveBarScope?: DirtyFormScope
@@ -249,6 +279,52 @@ export function DomainSettings({
     }
     return ''
   })
+  const [projectMode, setProjectMode] = useState<'new' | 'existing'>(() => domain.project_id ? 'existing' : 'new')
+  const [projectSearch, setProjectSearch] = useState('')
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false)
+  const projectTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const projectPopoverRef = useRef<HTMLDivElement | null>(null)
+  const skipProjectTriggerFocusOpen = useRef(false)
+  const [projectPopoverPosition, setProjectPopoverPosition] = useState<{ top: number; left: number; width: number } | null>(null)
+  const availableExistingProjects = useMemo(() => projects.filter((project) => {
+    if (unconnectedProjectIds != null) return unconnectedProjectIds.includes(project.id)
+    const projectPath = project.path.replace(/[\\/]+$/, '').replace(/\\/g, '/').toLowerCase()
+    return !allDomains.some((site) =>
+      site.project_id === project.id ||
+      (site.folder && site.folder.replace(/[\\/]+$/, '').replace(/\\/g, '/').toLowerCase() === projectPath),
+    )
+  }), [projects, allDomains, unconnectedProjectIds])
+  const filteredExistingProjects = useMemo(() => {
+    const query = projectSearch.trim().toLowerCase()
+    if (!query) return availableExistingProjects
+    return availableExistingProjects.filter((project) =>
+      project.name.toLowerCase().includes(query) || project.path.toLowerCase().includes(query),
+    )
+  }, [availableExistingProjects, projectSearch])
+
+  useEffect(() => {
+    if (!projectPickerOpen) return
+    const updatePosition = () => {
+      const rect = projectTriggerRef.current?.getBoundingClientRect()
+      if (rect) setProjectPopoverPosition({ top: rect.bottom + 4, left: rect.left, width: rect.width })
+    }
+    const closeOutside = (event: PointerEvent) => {
+      const target = event.target as Node
+      if (!projectTriggerRef.current?.contains(target) && !projectPopoverRef.current?.contains(target)) {
+        setProjectPickerOpen(false)
+      }
+    }
+    updatePosition()
+    window.addEventListener('resize', updatePosition)
+    window.addEventListener('scroll', updatePosition, true)
+    document.addEventListener('pointerdown', closeOutside)
+    return () => {
+      window.removeEventListener('resize', updatePosition)
+      window.removeEventListener('scroll', updatePosition, true)
+      document.removeEventListener('pointerdown', closeOutside)
+    }
+  }, [projectPickerOpen])
+
   const [rootTouched, setRootTouched] = useState(false)
   const [domainTouched, setDomainTouched] = useState(false)
   /** Set once the user types a localhost prefix, so a later project-name change leaves it alone. */
@@ -338,7 +414,27 @@ export function DomainSettings({
   const [defaultTld, setDefaultTld] = useState('local')
   const [template, setTemplate] = useState(`{project}.local`)
   const [showApps, setShowApps] = useState(false)
+  const [quickAppSearch, setQuickAppSearch] = useState('')
+  const [activeQuickAppIndex, setActiveQuickAppIndex] = useState(0)
+  const [selectedQuickAppId, setSelectedQuickAppId] = useState<string | null>(null)
   const [quickApps, setQuickApps] = useState<QuickEntryView[]>([])
+  const quickAppTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const quickAppPopoverRef = useRef<HTMLDivElement | null>(null)
+  const [quickAppPopoverPosition, setQuickAppPopoverPosition] = useState<{ top: number; left: number; width: number } | null>(null)
+  const orderedQuickApps = useMemo(() => [...quickApps].sort((a, b) => {
+    const aCustom = a.name.trim().toLowerCase() === 'custom app' || a.id.toLowerCase().includes('custom')
+    const bCustom = b.name.trim().toLowerCase() === 'custom app' || b.id.toLowerCase().includes('custom')
+    if (aCustom !== bCustom) return aCustom ? -1 : 1
+    return a.name.localeCompare(b.name)
+  }), [quickApps])
+  const filteredQuickApps = useMemo(() => {
+    const query = quickAppSearch.trim().toLowerCase()
+    if (!query) return orderedQuickApps
+    return orderedQuickApps.filter((app) =>
+      [app.name, app.description, app.category, app.id, app.origin ?? '', app.source]
+        .some((value) => value.toLowerCase().includes(query)),
+    )
+  }, [orderedQuickApps, quickAppSearch])
   const [webServers, setWebServers] = useState<{ id: string; name: string; http: number; https: number; default: boolean }[]>([])
   const [err, setErr] = useState<string | null>(null)
   const siteSettingsDraft = useMemo(() => buildDomainFromForm(), [d, inspection?.detected_venv, nodeAppLine, nodeVersion, pythonAppLine, pythonInterpreter, serveMode])
@@ -365,6 +461,9 @@ export function DomainSettings({
   // Re-seed the form only when the domain being edited actually changes.
   useEffect(() => {
     setD(domain)
+    setProjectMode(domain.project_id ? 'existing' : 'new')
+    setProjectPickerOpen(false)
+    setProjectSearch('')
     setErr(null)
     setShowApps(false)
     setRootTouched(false)
@@ -575,6 +674,35 @@ export function DomainSettings({
   }, [showApps])
 
   useEffect(() => {
+    if (!showApps) return
+    const updatePosition = () => {
+      const rect = quickAppTriggerRef.current?.getBoundingClientRect()
+      if (rect) setQuickAppPopoverPosition({ top: rect.bottom + 4, left: rect.left, width: rect.width })
+    }
+    const closeOutside = (event: PointerEvent) => {
+      const target = event.target as Node
+      if (!quickAppTriggerRef.current?.contains(target) && !quickAppPopoverRef.current?.contains(target)) {
+        setShowApps(false)
+      }
+    }
+    updatePosition()
+    window.addEventListener('resize', updatePosition)
+    window.addEventListener('scroll', updatePosition, true)
+    document.addEventListener('pointerdown', closeOutside)
+    return () => {
+      window.removeEventListener('resize', updatePosition)
+      window.removeEventListener('scroll', updatePosition, true)
+      document.removeEventListener('pointerdown', closeOutside)
+    }
+  }, [showApps])
+
+  useEffect(() => {
+    if (!showApps) return
+    const activeId = filteredQuickApps[activeQuickAppIndex]?.id
+    if (activeId) document.getElementById(`add-site-quick-app-${activeId}`)?.scrollIntoView({ block: 'nearest' })
+  }, [activeQuickAppIndex, filteredQuickApps, showApps])
+
+  useEffect(() => {
     void runCommand({ type: 'get_web_status' }).then((r) => {
       if (r.type !== 'web_status') return
       setWebServers(
@@ -665,11 +793,40 @@ export function DomainSettings({
     }
   }
 
+  const onExistingProjectSelect = (project: Project) => {
+    const slug = slugify(project.name)
+    const mode = serveModeForProject(project)
+    projectNameTouched.current = true
+    modeTouched.current = true
+    setProjectName(project.name)
+    setProjectMode('existing')
+    setProjectPickerOpen(false)
+    setProjectSearch('')
+    setRootTouched(true)
+    setDomainTouched(false)
+    setPrefixTouched(false)
+    setServeMode(mode)
+    setD((current) => ({
+      ...current,
+      project_id: project.id,
+      root: project.path,
+      hostname: slug ? template.replace('{project}', slug) : '',
+      path_prefix: slug && slug.length <= 40 ? slug : null,
+      kind: mode === 'php'
+        ? { type: 'php', version: current.kind.type === 'php' ? current.kind.version : null }
+        : mode === 'node'
+          ? { type: 'proxy', upstream_port: 3000, upstream_host: null, upstream_https: false }
+          : mode === 'python'
+            ? { type: 'proxy', upstream_port: 8000, upstream_host: null, upstream_https: false }
+            : { type: 'static' },
+    }))
+  }
+
   // "Add site" from a project arrives with the project chosen: fill in its folder, type and name.
   useEffect(() => {
     if (isNew && domain.project_id && !domain.root) {
       const p = projects.find((x) => x.id === domain.project_id)
-      if (p) onProjectNameChange(p.name)
+      if (p) onExistingProjectSelect(p)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [domain])
@@ -918,15 +1075,99 @@ export function DomainSettings({
       )}
 
       {isNew && (
-        <FormSection title="Source" hint="Enter a project name to automatically fill the domain and folder, or create a new app.">
+        <FormSection title="Source" hint="Create a new site folder or connect one of your existing projects.">
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Project (optional)" hint="Folder, domain and localhost path fill automatically">
-              <Input
-                value={projectName}
-                onChange={(e) => onProjectNameChange(e.target.value)}
-                placeholder="e.g. my-app, blog, shop"
-              />
-            </Field>
+            <div className="flex min-w-0 flex-col gap-1.5">
+              <div className="flex min-h-8 items-center justify-between gap-2">
+                <label className="text-xs font-medium text-muted-foreground">Project</label>
+                <div className="inline-flex h-8 shrink-0 rounded-md border border-border bg-muted/50 p-0.5" role="tablist" aria-label="Project source">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={projectMode === 'new'}
+                  onClick={() => {
+                    if (projectMode === 'new') return
+                    setProjectMode('new')
+                    setProjectPickerOpen(false)
+                    setRootTouched(false)
+                    setDomainTouched(false)
+                    setPrefixTouched(false)
+                    const slug = slugify(projectName.trim())
+                    setD((current) => ({
+                      ...current,
+                      project_id: null,
+                      root: slug && parentDir ? buildSitePath(parentDir, slug) : '',
+                      hostname: slug ? template.replace('{project}', slug) : '',
+                      path_prefix: slug && slug.length <= 40 ? slug : null,
+                    }))
+                  }}
+                  className={cn('h-full rounded px-2 text-xs font-medium transition-colors', projectMode === 'new' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}
+                >
+                  New project
+                </button>
+                <Tooltip content="No projects without a connected site are available." disabled={availableExistingProjects.length > 0}>
+                  <span className="flex min-w-0">
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={projectMode === 'existing'}
+                      aria-disabled={availableExistingProjects.length === 0}
+                      disabled={availableExistingProjects.length === 0}
+                      onClick={() => {
+                        setProjectMode('existing')
+                        setProjectPickerOpen(false)
+                      }}
+                      className={cn('h-full rounded px-2 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-45', projectMode === 'existing' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}
+                    >
+                      Existing project
+                    </button>
+                  </span>
+                </Tooltip>
+                </div>
+              </div>
+              {projectMode === 'new' ? (
+                <Input
+                  value={projectName}
+                  onChange={(e) => onProjectNameChange(e.target.value)}
+                  placeholder="e.g. my-app, blog, shop"
+                  aria-label="New project name"
+                />
+              ) : (
+                <div>
+                  <button
+                    ref={projectTriggerRef}
+                    type="button"
+                    aria-haspopup="listbox"
+                    aria-expanded={projectPickerOpen}
+                    onFocus={() => {
+                      if (skipProjectTriggerFocusOpen.current) {
+                        skipProjectTriggerFocusOpen.current = false
+                        return
+                      }
+                      setProjectPickerOpen(true)
+                    }}
+                    onClick={() => setProjectPickerOpen(true)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === 'ArrowDown') {
+                        event.preventDefault()
+                        setProjectPickerOpen(true)
+                      } else if (event.key === 'Escape') {
+                        setProjectPickerOpen(false)
+                      }
+                    }}
+                    className="flex h-9 w-full items-center gap-2 rounded-lg border border-border/80 bg-input/60 px-3 text-left text-sm hover:border-muted-foreground/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                  >
+                    <span className="min-w-0 flex-1 truncate">{projects.find((project) => project.id === d.project_id)?.name ?? 'Choose a project...'}</span>
+                    {d.project_id && projects.find((project) => project.id === d.project_id) && (
+                      <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">
+                        {projectTypeLabel(projects.find((project) => project.id === d.project_id)!)}
+                      </span>
+                    )}
+                    <span aria-hidden="true" className="text-muted-foreground">⌄</span>
+                  </button>
+                </div>
+              )}
+            </div>
             <Field label="Name template (§48)">
               <Select value={template} onChange={(e) => onTemplateChange(e.target.value)}>
                 <option>{`{project}.${defaultTld}`}</option>
@@ -935,30 +1176,164 @@ export function DomainSettings({
               </Select>
             </Field>
           </div>
-          {onQuickApp && (
-            <div className="flex flex-col gap-2">
-              <Button variant="secondary" size="sm" className="self-start" onClick={() => setShowApps((v) => !v)}>
-                <Rocket /> {showApps ? 'Hide Quick Apps' : 'Create from a Quick App'}
-              </Button>
-              {showApps && (
-                <div className="grid max-h-60 gap-2 overflow-y-auto rounded-lg border border-border p-2 sm:grid-cols-2">
-                  {quickApps.length === 0 && <p className="p-2 text-sm text-muted-foreground">No Quick Apps available.</p>}
-                  {quickApps.map((a) => (
+          {projectPickerOpen && projectPopoverPosition && createPortal(
+            <div
+              ref={projectPopoverRef}
+              style={{ position: 'fixed', top: projectPopoverPosition.top, left: projectPopoverPosition.left, width: projectPopoverPosition.width }}
+              className="z-[120] overflow-hidden rounded-lg border border-border bg-popover shadow-xl"
+            >
+              <div className="border-b border-border/70 p-1.5">
+                <Input
+                  autoFocus
+                  value={projectSearch}
+                  onChange={(event) => setProjectSearch(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') {
+                      event.stopPropagation()
+                      setProjectPickerOpen(false)
+                      skipProjectTriggerFocusOpen.current = true
+                      projectTriggerRef.current?.focus()
+                    }
+                  }}
+                  placeholder="Search name or folder…"
+                  aria-label="Search existing projects"
+                  className="h-8 min-h-8 rounded-md border-border/60 px-2.5 text-xs focus-visible:border-ring/60 focus-visible:ring-1 focus-visible:ring-ring/20"
+                />
+              </div>
+              <div role="listbox" aria-label="Projects without a connected site" className="max-h-40 overflow-y-auto p-0.5">
+                {filteredExistingProjects.length === 0 ? (
+                  <p className="px-2.5 py-2 text-xs text-muted-foreground">No matching projects.</p>
+                ) : filteredExistingProjects.map((project) => {
+                  const missing = project.health?.status === 'missing' || project.health?.status === 'offline'
+                  return (
                     <button
-                      key={a.id}
-                      onClick={() => onQuickApp(a.id)}
-                      className="flex min-h-14 items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm transition-colors hover:bg-accent"
+                      key={project.id}
+                      type="button"
+                      role="option"
+                      aria-selected={d.project_id === project.id}
+                      disabled={missing}
+                      title={missing ? `Folder unavailable: ${project.path}` : project.path}
+                      onClick={() => onExistingProjectSelect(project)}
+                      className={cn('flex h-8 w-full items-center gap-2 rounded px-2 text-left hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-40', d.project_id === project.id && 'bg-accent/70')}
                     >
-                      <TechTile id={a.category} className="size-8 rounded-md [&_svg]:size-4" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13px] font-medium">{a.name}</span>
-                        <span className="block truncate text-xs text-muted-foreground">{a.description}</span>
+                      <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                        <span className="truncate text-xs font-medium">{project.name}</span>
+                        <span className="shrink-0 rounded-full border border-border px-1.5 py-px text-[9px] leading-3 text-muted-foreground">{projectTypeLabel(project)}</span>
+                        {missing && <span className="shrink-0 text-[9px] text-muted-foreground">Missing</span>}
                       </span>
+                      <span className="max-w-[48%] shrink-0 truncate text-right font-mono text-[10px] text-muted-foreground" title={project.path}>{middleTruncate(project.path, 42)}</span>
                     </button>
-                  ))}
-                </div>
-              )}
+                  )
+                })}
+              </div>
+            </div>,
+            document.body,
+          )}
+          {projectMode === 'new' && onQuickApp && (
+            <div className="max-w-sm">
+              <button
+                ref={quickAppTriggerRef}
+                type="button"
+                role="combobox"
+                aria-haspopup="listbox"
+                aria-expanded={showApps}
+                aria-label="Create from a Quick App"
+                onClick={() => {
+                  setQuickAppSearch('')
+                  setActiveQuickAppIndex(0)
+                  setShowApps(true)
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === 'ArrowDown') {
+                    event.preventDefault()
+                    setQuickAppSearch('')
+                    setActiveQuickAppIndex(0)
+                    setShowApps(true)
+                  } else if (event.key === 'Escape') {
+                    setShowApps(false)
+                  }
+                }}
+                className="flex h-9 w-full items-center gap-2 rounded-lg border border-border/80 bg-input/60 px-3 text-left text-sm hover:border-muted-foreground/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+              >
+                {selectedQuickAppId ? (() => {
+                  const selected = quickApps.find((app) => app.id === selectedQuickAppId)
+                  return selected ? <><TechTile id={selected.category} className="size-7 rounded-md [&_svg]:size-3.5" /><span className="truncate">{selected.name}</span></> : <><Rocket className="size-4" /><span>Create from a Quick App</span></>
+                })() : <><Rocket className="size-4" /><span>Create from a Quick App</span></>}
+                <span aria-hidden="true" className="ml-auto text-muted-foreground">⌄</span>
+              </button>
             </div>
+          )}
+          {showApps && quickAppPopoverPosition && createPortal(
+            <div
+              ref={quickAppPopoverRef}
+              style={{ position: 'fixed', top: quickAppPopoverPosition.top, left: quickAppPopoverPosition.left, width: quickAppPopoverPosition.width }}
+              className="z-[120] overflow-hidden rounded-lg border border-border bg-popover shadow-xl"
+            >
+              <div className="border-b border-border/70 p-1.5">
+                <Input
+                  autoFocus
+                  value={quickAppSearch}
+                  onChange={(event) => {
+                    setQuickAppSearch(event.target.value)
+                    setActiveQuickAppIndex(0)
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'ArrowDown') {
+                      event.preventDefault()
+                      setActiveQuickAppIndex((index) => Math.min(index + 1, Math.max(filteredQuickApps.length - 1, 0)))
+                    } else if (event.key === 'ArrowUp') {
+                      event.preventDefault()
+                      setActiveQuickAppIndex((index) => Math.max(index - 1, 0))
+                    } else if (event.key === 'Enter') {
+                      event.preventDefault()
+                      const app = filteredQuickApps[activeQuickAppIndex]
+                      if (app) {
+                        setSelectedQuickAppId(app.id)
+                        setShowApps(false)
+                        onQuickApp?.(app.id)
+                      }
+                    } else if (event.key === 'Escape') {
+                      event.stopPropagation()
+                      setShowApps(false)
+                      quickAppTriggerRef.current?.focus()
+                    }
+                  }}
+                  placeholder="Search Quick Apps…"
+                  aria-label="Search Quick Apps by name, framework, or runtime"
+                  aria-controls="add-site-quick-app-options"
+                  aria-activedescendant={filteredQuickApps[activeQuickAppIndex] ? `add-site-quick-app-${filteredQuickApps[activeQuickAppIndex].id}` : undefined}
+                  className="h-8 min-h-8 rounded-md border-border/60 px-2.5 text-xs focus-visible:border-ring/60 focus-visible:ring-1 focus-visible:ring-ring/20"
+                />
+              </div>
+              <div id="add-site-quick-app-options" role="listbox" aria-label="Quick Apps" className="max-h-60 overflow-y-auto p-0.5">
+                {filteredQuickApps.length === 0 ? (
+                  <p className="px-2.5 py-2 text-xs text-muted-foreground">No quick apps match</p>
+                ) : filteredQuickApps.map((app, index) => (
+                  <button
+                    key={app.id}
+                    id={`add-site-quick-app-${app.id}`}
+                    type="button"
+                    role="option"
+                    aria-selected={activeQuickAppIndex === index}
+                    title={app.description}
+                    onMouseEnter={() => setActiveQuickAppIndex(index)}
+                    onClick={() => {
+                      setSelectedQuickAppId(app.id)
+                      setShowApps(false)
+                      onQuickApp?.(app.id)
+                    }}
+                    className={cn('flex h-12 w-full items-center gap-2.5 rounded px-2.5 py-1.5 text-left hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/40', activeQuickAppIndex === index && 'bg-accent/70')}
+                  >
+                    <TechTile id={app.category} className="size-8 rounded-md [&_svg]:size-4" />
+                    <span className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
+                      <span className="truncate text-xs font-medium">{app.name}</span>
+                      <span className="truncate text-left text-[11px] text-muted-foreground" title={app.description}>{app.description}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>,
+            document.body,
           )}
         </FormSection>
       )}
@@ -979,7 +1354,9 @@ export function DomainSettings({
         <Field
           label="Site folder"
           hint={
-            d.root
+            isNew && projectMode === 'existing' && d.project_id
+              ? 'Using the selected project folder. Browse to choose a different location.'
+              : d.root
               ? isNew && d.kind.type !== 'proxy'
                 ? `Will serve files from ${d.root}. The folder and welcome page will be created automatically if they don't exist.`
                 : `Will serve files from ${d.root}. Edit folder name or Browse different location.`
@@ -992,6 +1369,7 @@ export function DomainSettings({
             <Input
               value={d.root}
               onChange={(e) => onRootChange(e.target.value)}
+              readOnly={isNew && projectMode === 'existing' && !!d.project_id}
               placeholder={(() => {
                 // The placeholder is the path this dialog would actually write: the
                 // default sites directory (or the parent the caller chose) plus a sample

@@ -82,6 +82,9 @@ pub enum CoreResponse {
     },
     Projects {
         projects: Vec<Project>,
+        /// Project ids without a connected site from projects_view; None enables legacy UI logic.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        unconnected_project_ids: Option<Vec<String>>,
     },
     ProjectDetail {
         detail: Box<ProjectDetail>,
@@ -113,6 +116,9 @@ pub enum CoreResponse {
     WpSignIn {
         url: String,
         expires_at: u64,
+    },
+    WpCoreRepair {
+        result: crate::wordpress::WpCoreRepair,
     },
     DeletedItems {
         items: Vec<crate::app::DeletedItem>,
@@ -302,6 +308,11 @@ pub enum CoreResponse {
     },
     Editors {
         editors: Vec<crate::editors::EditorInfo>,
+    },
+    ExcludedSiteMoved {
+        hostname: String,
+        source: String,
+        destination: String,
     },
     Xdebug {
         report: XdebugReport,

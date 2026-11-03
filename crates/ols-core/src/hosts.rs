@@ -175,6 +175,37 @@ pub fn ensure(hostnames: &[String]) -> Result<bool, String> {
     Ok(true)
 }
 
+/// Makes the managed block match the active hosts, removing stale OLS entries.
+pub fn sync(hostnames: &[String]) -> Result<bool, String> {
+    let path = hosts_path();
+    let existing = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut wanted = hostnames.to_vec();
+    wanted.sort();
+    wanted.dedup();
+    let entries = loopback_entries(&wanted);
+    if is_in_sync(&existing, &entries) {
+        return Ok(false);
+    }
+    let updated = if entries.is_empty() {
+        remove_hosts_block(&existing)
+    } else {
+        apply_hosts_block(&existing, &entries)
+    };
+    if std::env::var("OLS_HOSTS_FILE").is_ok() {
+        std::fs::write(path, updated).map_err(|e| e.to_string())?;
+    } else {
+        let args: Vec<String> = if entries.is_empty() {
+            vec!["hosts-remove".to_string()]
+        } else {
+            std::iter::once("hosts-apply".to_string())
+                .chain(entries.iter().map(|(ip, h)| format!("{ip}={h}")))
+                .collect()
+        };
+        crate::elevate::run_helper(&args)?;
+    }
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -7,7 +7,7 @@ import type { Page } from '@/components/layout/Sidebar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { asDiagnostic } from '@/components/ErrorCard'
-import { type Finding, type HealthItem, runCommand } from '@/core'
+import { type Diagnostic, type Finding, type HealthItem, runCommand, runCommandWithin } from '@/core'
 import {
   DIAGNOSTICS_POLL_INTERVAL_MS,
   buildDiagnosticsBarFindings,
@@ -19,6 +19,8 @@ import { useAction, usePoll } from '@/lib/hooks'
 import { openSitesFilter } from '@/lib/nav'
 import { notify } from '@/lib/notify'
 import { cn } from '@/lib/utils'
+
+const DIAGNOSTICS_TIMEOUT_MS = 20_000
 
 function formatCheckedRelative(timestamp: number | null, currentTime: number): string {
   if (!timestamp) return 'just now'
@@ -49,6 +51,7 @@ export function DiagnosticsCard({
   healthProblems?: HealthItem[]
 }) {
   const [findings, setFindings] = useState<Finding[] | null>(null)
+  const [scanError, setScanError] = useState<Diagnostic | null>(null)
   const [lastChecked, setLastChecked] = useState<number | null>(null)
   const [now, setNow] = useState<number>(Date.now())
   const { busy, run } = useAction()
@@ -75,13 +78,15 @@ export function DiagnosticsCard({
 
   const scan = useCallback(async () => {
     try {
-      const res = await runCommand({ type: 'run_diagnostics' })
+      const res = await runCommandWithin({ type: 'run_diagnostics' }, DIAGNOSTICS_TIMEOUT_MS)
       if (res.type === 'diagnostics') {
         setFindings(res.findings)
+        setScanError(null)
         evaluateDiagnostics(res.findings, healthProblemsRef.current)
       }
-    } catch {
-      // background scan silently catches
+    } catch (error) {
+      setScanError(asDiagnostic(error))
+      throw error
     }
   }, [evaluateDiagnostics])
 
@@ -89,7 +94,7 @@ export function DiagnosticsCard({
   useEffect(() => {
     if (lastRefreshTokenRef.current !== refreshToken) {
       lastRefreshTokenRef.current = refreshToken
-      scan().catch(() => setFindings([]))
+      scan().catch(() => undefined)
     }
   }, [scan, refreshToken])
 
@@ -100,7 +105,10 @@ export function DiagnosticsCard({
   }, [scan])
 
   // Poll diagnostics periodically to stay in sync with service operations
-  usePoll(() => scan().catch(() => undefined), DIAGNOSTICS_POLL_INTERVAL_MS)
+  usePoll(
+    () => (scanError ? Promise.resolve() : scan().catch(() => undefined)),
+    DIAGNOSTICS_POLL_INTERVAL_MS,
+  )
 
   const handleManualCheck = useCallback(async () => {
     await run('scan', async () => {
@@ -109,18 +117,18 @@ export function DiagnosticsCard({
       let refreshedHealth: HealthItem[] | undefined
 
       try {
-        const [res, refResult] = await Promise.all([
-          runCommand({ type: 'run_diagnostics' }),
-          onRefresh ? onRefresh() : Promise.resolve(null),
-        ])
+        const res = await runCommandWithin({ type: 'run_diagnostics' }, DIAGNOSTICS_TIMEOUT_MS)
         if (res.type === 'diagnostics') {
           resFindings = res.findings
           setFindings(res.findings)
+          setScanError(null)
         }
+        const refResult = onRefresh ? await onRefresh() : null
         if (refResult && typeof refResult === 'object' && 'health' in refResult) {
           refreshedHealth = (refResult as { health: HealthItem[] }).health
         }
       } catch (e) {
+        setScanError(asDiagnostic(e))
         // Rule 4: Check fails to run (exception, timeout): error toast that stays until dismissed,
         // with "Copy details", plus a history entry.
         const diag = asDiagnostic(e)
@@ -191,6 +199,32 @@ export function DiagnosticsCard({
     if (onRefresh) {
       await onRefresh().catch(() => undefined)
     }
+  }
+
+  // A failed or stalled first read must leave the checking state and offer recovery.
+  if (findings === null && scanError) {
+    const errorDetails = [scanError.cause, scanError.fix].filter(Boolean).join('\nFix: ')
+    return (
+      <div className="h-10 min-h-[40px] max-h-[44px] flex items-center justify-between gap-3 rounded-lg border border-destructive/40 bg-destructive/10 px-3.5 shadow-xs w-full min-w-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <XCircle className="size-4 shrink-0 text-destructive" />
+          <span className="text-xs font-medium text-destructive truncate" title={errorDetails}>
+            {scanError.problem || 'Diagnostics could not be checked.'}
+          </span>
+        </div>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 px-2 text-xs text-muted-foreground shrink-0"
+          disabled={busy !== null}
+          onClick={handleManualCheck}
+          title={errorDetails || 'Retry diagnostics'}
+        >
+          {busy === 'scan' ? <Spinner className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}
+          <span className="ml-1 hidden sm:inline">{busy === 'scan' ? 'Checking…' : 'Retry'}</span>
+        </Button>
+      </div>
+    )
   }
 
   // 1. Checking state: reserved 40px height, spinner + checking text

@@ -19,3 +19,10 @@ sequenceDiagram
   U->>T: run_command HealthCheck
   T->>C: dispatch HealthCheck
   C-->>U: DNS TCP TLS HTTP steps
+  U->>T: run_command BulkDeleteSites
+  T->>C: dispatch DeleteSite per hostname
+  C->>C: preserve site/project records in session undo state
+  C-->>U: Bulk outcome
+  U->>T: run_command RestoreExcludedSite on Undo
+  T->>C: move folder back + restore records
+  C-->>U: Ok, reconcile and refresh lists

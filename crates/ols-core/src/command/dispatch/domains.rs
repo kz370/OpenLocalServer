@@ -30,8 +30,20 @@ impl Core {
                     if i.reload_external_changes() {
                         tracing::info!("re-read the stores after an outside change");
                     }
+                    // This is polled every few seconds; reconciliation can run hosts-file
+                    // elevation and web-server reloads, so keep this path read-only.
+                    let records = i.domains.lock().unwrap().list();
+                    let active: std::collections::HashSet<_> = records
+                        .into_iter()
+                        .filter(|domain| i.site_is_active(domain))
+                        .map(|domain| domain.hostname)
+                        .collect();
                     Ok(R::Domains {
-                        domains: i.domain_summaries(),
+                        domains: i
+                            .domain_summaries()
+                            .into_iter()
+                            .filter(|d| active.contains(&d.hostname))
+                            .collect(),
                     })
                 }
                 C::GetDomain { hostname } => {
@@ -53,10 +65,26 @@ impl Core {
                 }),
                 C::RemoveDomain { hostname } => {
                     i.remove_domain(&hostname)?;
+                    i.reconcile()?;
                     Ok(R::Ok)
                 }
                 C::DeleteSite { hostname } => {
                     i.delete_site(&hostname)?;
+                    i.reconcile()?;
+                    let moved = i.pending_site_undo.lock().unwrap().get(&hostname).cloned();
+                    if let Some(moved) = moved {
+                        Ok(R::ExcludedSiteMoved {
+                            hostname,
+                            source: moved.source.display().to_string(),
+                            destination: moved.destination.display().to_string(),
+                        })
+                    } else {
+                        Ok(R::Ok)
+                    }
+                }
+                C::RestoreExcludedSite { hostname } => {
+                    i.restore_excluded_site(&hostname)?;
+                    i.reconcile()?;
                     Ok(R::Ok)
                 }
                 C::SetDomainEnabled { hostname, enabled } => {
@@ -78,6 +106,7 @@ impl Core {
                 C::BulkRemoveDomains { hostnames } => {
                     tracing::info!(command = "bulk_remove_domains", sites = hostnames.len());
                     let out = i.remove_domains(&hostnames)?;
+                    i.reconcile()?;
                     Ok(R::Bulk {
                         changed: out.changed,
                         skipped: out.skipped,
@@ -86,6 +115,7 @@ impl Core {
                 C::BulkDeleteSites { hostnames } => {
                     tracing::info!(command = "bulk_delete_sites", sites = hostnames.len());
                     let out = i.delete_sites(&hostnames)?;
+                    i.reconcile()?;
                     Ok(R::Bulk {
                         changed: out.changed,
                         skipped: out.skipped,
@@ -314,24 +344,10 @@ impl Core {
                     Ok(R::Ok)
                 }
                 C::SyncHosts => {
-                    // Names our local DNS already answers for don't need a hosts entry.
-                    let hostnames: Vec<String> = i
-                        .domains
-                        .lock()
-                        .unwrap()
-                        .list()
-                        .into_iter()
-                        .filter(|d| d.enabled && !i.web.dns_covers(&d.hostname))
-                        .map(|d| d.hostname)
-                        .collect();
-                    let changed = crate::hosts::ensure(&hostnames).map_err(CoreError::WebError)?;
-                    Ok(R::Text {
-                        text: if changed {
-                            "The hosts file was updated.".into()
-                        } else {
-                            "The hosts file was already up to date.".into()
-                        },
-                    })
+                    // Reconciliation is the only source for managed hosts entries,
+                    // so hidden and marker-file sites cannot be reintroduced here.
+                    let (_, reports) = i.reconcile_with_reports()?;
+                    Ok(R::Applied { reports })
                 }
                 other => {
                     unhandled = Some(other);

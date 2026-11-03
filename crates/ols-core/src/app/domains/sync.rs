@@ -5,10 +5,50 @@ use crate::error::CoreError;
 use std::path::{Path, PathBuf};
 
 impl Inner {
-    pub fn sync_auto_domains(&self) -> Result<usize, CoreError> {
-        if !self.setting_bool("domains.auto", true) {
-            return Ok(0);
+    pub(crate) fn site_is_active(&self, domain: &Domain) -> bool {
+        let projects = self.projects.lock().unwrap().list();
+        let folder = site_folder(domain, &projects);
+        !self
+            .skip_entries(AUTO_SKIP)
+            .iter()
+            .any(|entry| entry.value.eq_ignore_ascii_case(&domain.hostname))
+            && (folder.is_empty() || !Path::new(&folder).join(".ols_ignore_me").exists())
+    }
+
+    pub fn reconcile(&self) -> Result<usize, CoreError> {
+        self.reconcile_with_reports().map(|(active, _)| active)
+    }
+
+    pub fn reconcile_with_reports(
+        &self,
+    ) -> Result<(usize, Vec<crate::web::manager::ApplyReport>), CoreError> {
+        let records = self.domains.lock().unwrap().list();
+        let active: Vec<_> = records
+            .iter()
+            .filter(|domain| self.site_is_active(domain))
+            .cloned()
+            .collect();
+        let hosts: Vec<_> = active
+            .iter()
+            .filter(|domain| domain.enabled && !self.web.dns_covers(&domain.hostname))
+            .map(|domain| domain.hostname.clone())
+            .collect();
+        if let Err(error) = crate::hosts::sync(&hosts) {
+            tracing::warn!(%error, "hosts file could not be reconciled");
         }
+        // Applying configs is useful for a running server: it removes inactive
+        // vhosts and reloads the server. A stopped/uninstalled server has nothing
+        // to reload, and reconciliation must still update the stores and hosts file.
+        let reports = if self.web.is_running() {
+            self.apply_web(&[])?
+        } else {
+            Vec::new()
+        };
+        Ok((active.len(), reports))
+    }
+
+    pub fn sync_auto_domains(&self) -> Result<usize, CoreError> {
+        let auto_domains = self.setting_bool("domains.auto", true);
         // Folders scanned before roots were remembered: adopt any parent holding 2+ projects.
         if self.settings.lock().unwrap().get(PROJECT_ROOTS).is_none() {
             let mut parents: std::collections::HashMap<String, usize> = Default::default();
@@ -28,7 +68,27 @@ impl Inner {
                 .set(PROJECT_ROOTS, serde_json::json!(roots))?;
         }
         let ignored = self.ignored_folders();
-        for root in self.string_list(PROJECT_ROOTS) {
+        let hidden = self.skip_entries(AUTO_SKIP);
+        let current_projects = self.projects.lock().unwrap().list();
+        let hidden_paths: Vec<String> = self
+            .domains
+            .lock()
+            .unwrap()
+            .list()
+            .into_iter()
+            .filter(|domain| {
+                hidden
+                    .iter()
+                    .any(|entry| entry.value.eq_ignore_ascii_case(&domain.hostname))
+            })
+            .map(|domain| site_folder(&domain, &current_projects))
+            .filter(|path| !path.is_empty())
+            .collect();
+        for root in self
+            .string_list(PROJECT_ROOTS)
+            .into_iter()
+            .filter(|_| auto_domains)
+        {
             let Ok(entries) = std::fs::read_dir(&root) else {
                 continue;
             };
@@ -44,10 +104,16 @@ impl Inner {
                 if dir.is_dir()
                     && !hidden
                     && !is_ignored
+                    && !dir.join(".ols_ignore_me").exists()
+                    && !hidden_paths
+                        .iter()
+                        .any(|path| crate::project::same_path(path, &dir.display().to_string()))
                     && !skip_matches(&skipped, &dir.display().to_string())
                     && (crate::detection::looks_like_a_project(&dir) || has_index(&dir))
                 {
-                    let _ = projects.register(&dir.display().to_string());
+                    // Discovering a project folder is not an instruction to publish it
+                    // as a local site. Explicit add/scan actions decide that separately.
+                    let _ = projects.register_with_standalone(&dir.display().to_string(), true);
                 }
             }
         }
@@ -69,10 +135,9 @@ impl Inner {
         let auto_template = format!("{{project}}.{default_tld}");
         let projects = self.projects.lock().unwrap().list();
         let mut created = 0;
-        let mut created_hosts: Vec<String> = Vec::new();
-        for p in &projects {
+        for p in projects.iter().filter(|_| auto_domains) {
             let path = Path::new(&p.path);
-            if !path.is_dir() {
+            if !path.is_dir() || path.join(".ols_ignore_me").exists() {
                 continue;
             }
 
@@ -153,39 +218,11 @@ impl Inner {
                 Ok(d) => {
                     tracing::info!(hostname = %d.hostname, project = %p.name, "created an automatic domain");
                     created += 1;
-                    created_hosts.push(d.hostname);
                 }
                 Err(e) => tracing::warn!(project = %p.name, error = %e, "automatic domain skipped"),
             }
         }
-        if created > 0 {
-            // A site whose name does not resolve is not a working site, so the new names
-            // go into the hosts file here too. Names the built-in DNS already answers for
-            // are left out, and `hosts::ensure` returns early when everything is already
-            // listed — so a folder dropped into a projects folder costs a read in the
-            // common case, and at most one elevation prompt across the whole install.
-            let wanted: Vec<String> = {
-                let domains = self.domains.lock().unwrap();
-                created_hosts
-                    .iter()
-                    .filter(|h| {
-                        domains.get(h).is_some_and(|d| d.enabled) && !self.web.dns_covers(h)
-                    })
-                    .cloned()
-                    .collect()
-            };
-            if !wanted.is_empty() {
-                if let Err(e) = crate::hosts::ensure(&wanted) {
-                    // Not fatal: the site exists and the web server will render it. The
-                    // name simply will not resolve until someone runs Sync hosts, so the
-                    // reason is logged rather than raised at a folder watcher.
-                    tracing::warn!(%e, "the hosts file could not be updated for the new sites");
-                }
-            }
-            if self.web.is_running() {
-                self.apply_web(&[])?;
-            }
-        }
+        self.reconcile()?;
         Ok(created)
     }
 }

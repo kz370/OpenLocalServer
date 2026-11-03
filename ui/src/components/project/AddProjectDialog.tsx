@@ -5,6 +5,7 @@ import { ProjectTypePicker } from '@/components/project/ProjectTypePicker'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import {
   type CustomProjectType,
   type ProjectTypePreset,
@@ -42,6 +43,7 @@ export function AddProjectDialog({
 
   const [name, setName] = useState('')
   const [projectType, setProjectType] = useState<string | null>(null)
+  const [autoSite, setAutoSite] = useState(false)
   const [loading, setLoading] = useState(false)
   const [inspecting, setInspecting] = useState(false)
   const [error, setError] = useState<{ problem: string; cause: string; fix?: string | null } | null>(null)
@@ -51,6 +53,7 @@ export function AddProjectDialog({
       setCurrentIndex(0)
       setName('')
       setProjectType(null)
+      setAutoSite(false)
       setError(null)
       return
     }
@@ -58,6 +61,7 @@ export function AddProjectDialog({
     const defaultName = currentItem.suggestedName || currentItem.path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || 'Project'
     setName(defaultName)
     setProjectType(currentItem.detectedType ?? null)
+    setAutoSite(false)
     setError(null)
     setInspecting(true)
 
@@ -82,7 +86,7 @@ export function AddProjectDialog({
             setError({
               problem: 'This folder is already a project.',
               cause: `"${inspection.path}" is already registered as "${inspection.duplicate_of.name}".`,
-              fix: 'Open it from the Projects list, or choose a different folder.',
+              fix: 'Use the button below to keep the existing project without an automatic site, or turn the site option on to request one. Any existing site will remain.',
             })
           } else {
             if (inspection.suggested_name && !currentItem.suggestedName) {
@@ -130,10 +134,19 @@ export function AddProjectDialog({
         path: currentItem.path,
         name: trimmedName,
         project_type: projectType,
+        auto_site: autoSite,
       })
 
       if (res.type === 'project') {
-        notify.success(`Added project "${res.project.name}"`)
+        if (error?.problem === 'This folder is already a project.') {
+          notify.success(
+            autoSite
+              ? `Updated "${res.project.name}" and requested a site`
+              : `Kept "${res.project.name}" without an automatic site`,
+          )
+        } else {
+          notify.success(`Added project "${res.project.name}"`)
+        }
         await onAdded()
 
         // Check if there are more items in queue
@@ -188,9 +201,19 @@ export function AddProjectDialog({
             </Button>
             <Button
               onClick={() => void handleAdd()}
-              disabled={loading || inspecting || isDuplicate || Boolean(error && !error.fix?.includes('Projects list'))}
+              disabled={loading || inspecting || Boolean(error && !isDuplicate)}
             >
-              {loading ? 'Adding…' : isQueue && currentIndex + 1 < items.length ? 'Add & Next' : 'Add Project'}
+              {loading
+                ? autoSite
+                  ? 'Adding project and site…'
+                  : 'Adding…'
+                : isDuplicate
+                  ? autoSite
+                    ? 'Create Site'
+                    : 'Keep Project'
+                  : isQueue && currentIndex + 1 < items.length
+                    ? 'Add & Next'
+                    : 'Add Project'}
             </Button>
           </div>
         </div>
@@ -252,6 +275,21 @@ export function AddProjectDialog({
           <span className="text-[11px] text-muted-foreground">
             Determines the badge and tech icon shown in the Projects tab.
           </span>
+        </div>
+
+        <div className="flex items-center justify-between gap-4 rounded-lg border border-border px-3 py-2.5">
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-semibold text-foreground">Create a site automatically</span>
+            <span className="text-[11px] text-muted-foreground">
+              Off by default. Creates a local site when this project can be served directly.
+            </span>
+          </div>
+          <Switch
+            checked={autoSite}
+            onChange={setAutoSite}
+            disabled={loading}
+            label="Create a site automatically"
+          />
         </div>
       </div>
     </Dialog>

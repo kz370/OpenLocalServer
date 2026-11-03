@@ -478,6 +478,18 @@ impl TaskManager {
     where
         F: FnOnce(TaskHandle) + Send + 'static,
     {
+        // A repeated request for the same active operation watches the existing task.
+        // Hold the registry lock through insertion so simultaneous callers cannot both
+        // pass the check and create duplicate workers.
+        let mut tasks = self.lock();
+        if let Some(existing) = tasks.iter().find_map(|task| {
+            let view = task.lock();
+            (view.state.is_running() && view.kind == kind && view.target == target)
+                .then(|| view.id.clone())
+        }) {
+            return existing;
+        }
+
         let id = format!("task-{}", self.next.fetch_add(1, Ordering::SeqCst));
         let task = Arc::new(Task {
             view: Mutex::new(TaskView {
@@ -507,7 +519,8 @@ impl TaskManager {
             ),
             events: self.events.clone(),
         });
-        self.lock().push(Arc::clone(&task));
+        tasks.push(Arc::clone(&task));
+        drop(tasks);
         self.trim();
 
         let handle = TaskHandle {

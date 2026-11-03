@@ -3,7 +3,7 @@ UI Pages (Dashboard, Sites, Tunnels, WebServer, Databases, Services, Runtimes, C
 UI Pages & Dialogs | uses | NotificationSystem (ui/src/lib/notify.ts) for toasts, Undo actions, and batch summaries
 Titlebar | mounts | NotificationsPopover (ui/src/components/NotificationsPopover.tsx) for recent notification history
 App | mounts | NotificationHost (ui/src/components/NotificationHost.tsx) for global toast rendering
-App | lazy-loads | the selected page module with `React.lazy`/`Suspense`, splitting page bundles from the initial UI bundle
+App | imports | all page modules with static imports so every page is ready at shell startup and navigation does not wait for a page chunk to load
 App | mounts | TooltipProvider (ui/src/components/ui/tooltip.tsx) for modern themed tooltips and global title/data-tooltip interception
 UI (core/client.ts) | calls | Tauri invoke('run_command')
 olsc (crates/ols-cli) | uses | ols-core control channel (calls CoreCommand over local IPC or background daemon)
@@ -42,10 +42,13 @@ Inner | uses | WebManager
 Inner | uses | DomainStore
 Inner | uses | CertificateManager
 Inner | uses | ProjectStore
+Inner::start_projects_watcher | compares | immediate project-root directory snapshots before invoking sync_auto_domains; unrelated filesystem events still notify project subscribers without a full scan
 Inner::wp_projects | decides_from | wordpress::describe (folder on disk: wp-config.php / wp-admin/index.php / wp-includes+wp-content), then fills hostname+url from the project's first enabled Domain and pending_until from wordpress::sweep (which deletes expired and unparseable bridges as it goes)
 Inner::wp_signin | requires | WebManager::is_running + one of the project's enabled Domains (a project with no domain has no URL to hand a browser), then wordpress::issue writes the single bridge; the token URL is returned and never traced
 Inner::wp_signin_revoke | calls | wordpress::revoke — the pending bridge file IS the capability, so deleting it is the whole cancellation
-SitesPage | reads | list_wp_projects (which rows show "WP Admin"), wp_sign_in + open_url (click), wp_sign_in_revoke ("Cancel pending WP sign-in"); re-reads on every projects change
+Inner::wp_core_repair | calls | wordpress::repair_missing_core for an available registered project; only absent core files from the installed version are restored after WordPress.org checksum verification
+SitesPage | reads | list_wp_projects (which rows show WordPress actions), wp_sign_in + open_url (click), wp_sign_in_revoke ("Cancel pending WP sign-in"), wp_core_repair ("Repair WordPress core files")
+ProjectTools | renders | the WordPress-only core repair control on the project's Repair page; the same repair command is available from the Sites action menu
 WebManager | uses | DomainStore (snapshot only: apply renders, validates and restarts outside the store lock, and returns generated-config hashes for Inner to commit)
 WebManager | returns | HashUpdate (server id, hostname, sha-256) to Inner::record_generated_hashes
 WebManager | renders | one `localhost/<prefix>` routes file per server (all those requests share one Host, so they cannot be per-site files), each route proxying to its own site's vhost
@@ -111,6 +114,7 @@ UpdatesCard | renders | UpdateInfo.notes as Markdown
 PluginManager | uses | Catalog
 WebConfig | resolves | Domain.server -> resolved_server(domain, cfg)
 SitesPage | uses | UseWeb hook
+SitesPage Health Check | streams | run_health_check channel progress from the shared core check, updating one stage at a time before rendering the final report
 SitesPage | uses | ConfirmAction (the dialog title names the site or project; the destructive button repeats the action)
 SitesPage | filters rows by | Enabled (default), Disabled, website type, or All (last); status filters include sites only, and search falls back to All when the current filter has no match
 SitesPage | groups rows by | project / folder path into a single row with primary domain and extra-domain badge pills
@@ -173,7 +177,7 @@ TauriApp | reads | ols-core `app::should_start_hidden` (startup.minimized prefer
 TauriApp | raises | desktop alerts itself, under its own AppUserModelID `dev.openlocalserver.app` and with no inline toast image — the header mark is read from the registered identity, and an identity with no Start Menu shortcut makes the shell draw the alert as a notification group
 TauriApp notify | reads | `notifications.enabled` (Settings > Startup, default on; every alert path checks it before showing)
 TauriApp notify | writes | `HKCU\Software\Classes\AppUserModelId\dev.openlocalserver.app` (DisplayName, IconUri), `%APPDATA%\Microsoft\Windows\Start Menu\Programs\OLS.lnk` (the AUMID shortcut an installer would create) and `<data>/notification-icon.png`; the latter is rewritten on `ols:theme` so an alert carries the colourway the tray is painting
-Inner.tasks (TaskManager) | hosts | every background task the Processes page lists (§164). One record plus one thread per task, in memory only; work that was running when the app stopped is reported by the Journal instead, which is the record that survives a restart
+Inner.tasks (TaskManager) | hosts | live progress jobs (§164), one record plus one thread per task, in memory only; completed operation history is persisted by the UI task-history cache across restarts
 TauriApp setup | forwards | ols-core `TaskManager::subscribe` as the `task-event` Tauri event, and raises a desktop alert on a `Finished` task that reported no problems (a task that stopped on request says "Task stopped", not "Task finished")
 TaskHandle::advance / set_bytes | throttled_by | 200ms, for the same reason RuntimeManager's ProgressThrottle exists — a dump reports bytes, and an event per chunk froze the Runtimes page before
 sitebundle::export | uses | snapshots::snapshot_content (as the configuration document, with the .env contents and dump names stripped so the manifest holds no secret), dbbackup::backup (per database, server started first when installed but stopped, skipped for mongodb), snapshots::project_files
@@ -191,7 +195,7 @@ CoreCommand::ImportSites | excluded_from | the HTTP `operate` allow-list, the AI
 sitebundle | absent_from | api::NEVER and api::OPERATE (not reachable over HTTP in operate mode), ai::allowed (not offered to the assistant)
 SitesPage | renders | SiteExportDialog once (opened from a row's "Export to bundle…" and from the bulk bar's Export) and SiteImportButton; both hand the started task off to the Processes page by navigating there
 ProcessesPage | shows | TasksPanel (the §164 list) beside the process supervisor, under two tabs each badged with what is running, so work started elsewhere is still counted
-ui/src/components/TasksPanel.tsx | reads | `task-event` (whole task every time — there is no delta to reconcile) patched over one `list_tasks` read, with a 1s poll so a reloaded webview catches up rather than sitting on a stale row
+ui/src/components/TasksPanel.tsx | reads | `task-event` (whole task every time) and `list_tasks`, merged with persistent UI command history for operation names, site targets, status and timestamps; start/restart/reload for runtimes and services are excluded
 ui/src/components/site/SiteBundle.tsx | reads | `paths.backups_dir` for the export destination default, and `preview_site_bundle` before anything is created so the update/rename choice is made on which hostnames actually clash
 SitesPage | uses | SiteLogo (renders site custom photo icon, font-awesome offline vector, or cyan globe fallback next to vertical divider and site name)
 SitesPage | opens | SiteDialog (with active tab 'icon' when user clicks the row's SiteLogo button or selects Site logo / icon…)
@@ -216,11 +220,20 @@ ExitingOverlay | listens | ols:exiting (renders full-screen animated shutdown lo
 Tauri request_exit | calls | begin_shutdown
 CommandPalette & SettingsPage | invoke | requestExit
 SitesPage | uses | FloatingMenu (shared context menu on table row onContextMenu and Actions button click; portaled via @floating-ui/react FloatingPortal with flip, shift, size, offset, autoUpdate, and useDismiss below the 36px titlebar at z-[95])
+SitesPage move-to-excluded action | displays | `Move to excluded folder` with a neutral tooltip, amber icon/title, source/destination confirmation and an Undo toast that restores folder plus site records
 SitesPage | filters | 'missing' tab (isolates sites whose project folder is missing or offline from 'enabled' / 'disabled' tabs)
 ProjectsPage | uses | ProjectTypeFilterBar, ProjectSettingsDialog, AddProjectDialog, ManageProjectTypesDialog, ProjectTypePicker, projectTypes, FloatingMenu, Pagination, SiteLogo, TechIcon, GitCloneButton
 ProjectTypeFilterBar | uses | TechIcon, Badge, Button, Input, FloatingPortal, useFloating, useDismiss, useInteractions
+Project root watcher | registers | discovered folders as standalone; explicit RegisterProject/ScanAndRegisterProjects paths mark projects site-eligible
 ProjectsPage | reads | list_projects, list_domains, list_editors, list_project_types, list_custom_project_types, take_pending_add_project
-ProjectsPage | calls | add_project, inspect_project_folder, add_custom_project_type, rename_custom_project_type, remove_custom_project_type, update_project, relocate_project, remove_project, create_site_for_project, open_project_terminal, open_with, set_editor_hidden
+CoreResponse::Projects | includes | unconnected_project_ids from projects_view when the view exists; null preserves UI legacy site matching
+ProjectsPage Create site guard | uses | unconnected_project_ids when present; otherwise the existing project-domain matching fallback
+SitesPage Add Site dropdown | uses | unconnected_project_ids when present; otherwise the existing project-domain/path matching fallback
+Inner startup | runs | db::migrate before loading project/domain/worker/schedule/journal stores; migration failures roll back, log Diagnostic details, and continue with the old records
+db::migrate | creates | sites_view, projects_view, operations_view, workers_view, schedules_view, command_history_view, and expression indexes under user_version migrations 1 and 2
+Journal | prunes | operations at startup and after begin/finish; collapse consecutive same-kind identical failures into latest repeat_count; never touches other docs collections
+ProjectsPage | calls | add_project (auto_site defaults false; reuses existing path and applies standalone preference), ignore_project (shows immediate notification and persistent progress status until backend update and list refresh complete), inspect_project_folder, add_custom_project_type, rename_custom_project_type, remove_custom_project_type, update_project, relocate_project, remove_project, create_site_for_project, open_project_terminal, open_with, set_editor_hidden
+ProjectsPage | refreshes project health on | window focus, Locate completion, and project settings updates; the missing-folder filter is effective only while missingCount > 0, clears when the count reaches zero, and resets pagination when filter or type tab changes
 TauriApp (refresh_tray & sync_tray_tooltip) | updates_on | run_command IPC (site start/stop/add/remove/apply), process_events, project_events, autostart, and periodic 2-second heartbeat — carried out in a spawned task AFTER the command response is sent to the UI (the aggregate probes are never paid by a waiting read), with `sync_tray_tooltip` caching its aggregate for 1 s against command bursts
 DashboardPage (ServicesWidget) | uses | serviceGrouping::groupServices (categorizes services into Web servers, Databases, Cache & queues, Mail, Other)
 DashboardPage (ServicesWidget) | persists_collapsed_via | dashboard.services.collapsed_groups CoreCommand::SetSetting and localStorage
@@ -233,6 +246,7 @@ CodeEditor & Terminal & SystemMonitor & TrafficGraph | derive_from | active them
 elevate | uses | Win32 ShellExecuteExW (runas verb) directly for UAC elevation without invoking powershell
 exec | resolves | Windows system binaries via GetSystemDirectoryW (%SystemRoot%\System32) independently of PATH
 SettingsPage (Documentation & Release Notes) | uses | ReleaseNotesView (renders structured changelogs with release metadata headers, feature cards, and expandable details)
+SettingsPage (Release Notes) | loads | current release markdown; guide lookup uses the same release version
 SettingsPage (About) | renders | AboutCard and UpdatesCard (application metadata and signed update checks)
 SettingsPage (General) | renders | Diagnostics card (autoFixDiagnostics setting toggle)
 SettingsPage, ResourcesCard, ConfigPage, and SiteDialog forms | register_with | the shared dirtyForms registry; deferred values compare against saved snapshots, while instant-apply toggles and service actions stay outside it
@@ -242,6 +256,7 @@ ReleaseNotesView | uses | releaseNotes::parseReleaseNotes & filterReleaseNotes (
 PluginsPage | renders | PluginConsentDialog (when turning on a plugin)
 PluginConsentDialog | uses | pluginConsent (buildPluginConsentSummary, formatDownloadSource, extractHostname, formatSize)
 DiagnosticsCard & DashboardPage & ServicesPage | uses | diagnosticsNotify (startup grace period, silent baseline, 2-check persistence, per-service operation serialization, live readiness re-check, condition-keyed auto-resolving notifications, per-service expected-state intent tracking, and unexpected exit notifications)
+DiagnosticsCard | bounds | initial and manual run_diagnostics IPC to 20 seconds; a failed initial read shows its Diagnostic cause/fix and a retry action instead of leaving the dashboard spinner forever
 CoreClient (ui/src/core/client.ts) | notifies | diagnosticsNotify via setCommandLifecycleHook (onBeforeCommand, onCommandSuccess, onCommandError, onBeforeExit)
 diagnosticsNotify | drives | notify condition resolution (registerNotificationCondition, evaluateNotificationConditions, resolveNotificationByKey, resolveNotificationsForService)
 TechIcon | renders | Simple Icons with their official brand hex color; TechTile adds a matching background tint and ServiceMark layers independent service state on top.
@@ -255,6 +270,22 @@ Dashboard / Tray / CLI | read | CoreCommand::GetServiceAggregate / Core::service
 CLI stop | dispatches | CoreCommand::StopAll, identical to Dashboard and tray; tunnels, workers, web servers, services and supervisor strays follow one stop path
 TrayMenuItems | retains | managed bulk-toggle MenuItem handle; service-state events update its label and rebuild submenu marks/counts from one ServiceAggregate snapshot
 Tray Quick App menu | lists | QuickCatalog entries as direct Create actions; selecting one emits `ols:navigate` with the recipe id and name
-App | routes | the selected Quick App id and name to QuickAppsPage and holds them until its lazy page mounts
+App | routes | the selected Quick App id and name to QuickAppsPage and holds them until its page mounts
 QuickAppsPage | opens | the existing Wizard for the selected tray recipe, preserving planning, review and trust approval
 Tray Web server | toggles | CoreCommand::ApplyWeb / CoreCommand::StopWeb through the same Core::dispatch path; Reload remains a separate ApplyWeb action.
+
+Inner::reconcile | filters | DomainStore records using domains.auto_skip and .ols_ignore_me; active records feed vhost rendering and managed hosts synchronization; runs config apply/reload only for a running web server
+SitesPage focus/visibility | refreshes | read-only list_domains + list_projects (with external-change reload); mutation paths reconcile outside the list reads
+RemoveSiteFromList | returns after | removing the domain and preserving/registering its project as standalone; SitesPage refreshes rows immediately, then invokes SyncHosts asynchronously with an updating status
+scan_and_register_projects + sync_auto_domains | skip | .ols_ignore_me paths and hidden-site paths
+SitesPage | removes a site from the list via | remove_site_from_list; removes only the site record, retains/registers the project, then reconciles hosts and web config
+Editor settings migration | reads legacy `editor` and `editor.command` once, migrates any custom command into `editors.custom`, leaves legacy values intact, and never reads them again
+SitesPage Remove site only | updates | projects_page_domains persistent cache immediately after remove_site_from_list succeeds; ProjectsPage reads that cache for its initial Connected Site state
+useWeb.apply | notifies via | notify.success when config files, server state, or hosts file changed; unchanged apply is silent, while drifted config opens DriftDialog
+SyncHosts | returns | Applied reports from reconciliation so useWeb.reconcileSites can notify about web servers that actually reloaded after a site change
+ListProjects | annotates | Project.auto_discovered from configured roots for the Sites row label
+
+ProjectsPage Create site action | opens | SitesPage Add Site dialog with the project preselected through the pending add-site navigation event
+DomainSettings Existing project picker | filters | visible projects without a connected domain by project name and folder path; selection fills site folder, hostname, localhost prefix and Serves mode
+
+Add Site Quick App combobox | opens | filtered single-column recipe options; selecting an option calls the existing Quick App Wizard callback

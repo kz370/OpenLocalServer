@@ -5,6 +5,19 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.8.0] — 2026-11-03
+
+Feature release. Full notes: [`release-notes/v2.8.0.md`](./release-notes/v2.8.0.md).
+
+### Highlights
+- Projects stay standalone by default and can be connected to a site later; Quick App selection is searchable.
+- Read-only SQLite views and indexes, with versioned, backed-up migrations.
+- WordPress core repair restores missing files with checksum validation and offline cache support.
+- Automatic operation-history retention and repeated-failure cleanup.
+- Sites offer Hide, Remove from list, and Safe delete with Undo; editor menus use configured editors and migrate existing editor settings once.
+- Background Tasks retains recent site-operation history across restarts and groups repeats.
+- Site Health Check shows each DNS, TCP, TLS, certificate, trust, and HTTP stage as it completes.
+
 ## [2.7.0] — 2026-11-02
 
 Feature release. Full notes: [`release-notes/v2.7.0.md`](./release-notes/v2.7.0.md).

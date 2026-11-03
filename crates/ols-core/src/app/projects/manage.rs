@@ -12,6 +12,22 @@ use crate::project::{build_detail, Project, ProjectDetail};
 
 pub const CUSTOM_PROJECT_TYPES_SETTING: &str = "projects.custom_types";
 
+fn project_root_directories(core: &Inner) -> std::collections::HashSet<PathBuf> {
+    let mut directories = std::collections::HashSet::new();
+    for root in core.string_list(PROJECT_ROOTS) {
+        let Ok(entries) = std::fs::read_dir(root) else {
+            continue;
+        };
+        directories.extend(
+            entries
+                .flatten()
+                .map(|entry| entry.path())
+                .filter(|path| path.is_dir()),
+        );
+    }
+    directories
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectFolderInspection {
     pub exists: bool,
@@ -64,13 +80,22 @@ impl Inner {
                     }
                 }
             }
+            // The watcher is non-recursive, so its useful signal for automatic
+            // discovery is a change to the set of immediate project folders. File
+            // events in a root (for example, editor temp files) should not trigger
+            // a full scan of every project and domain.
+            let mut root_directories = project_root_directories(&core);
             let mut tick_count: u32 = 0;
             loop {
                 match events_rx.recv_timeout(Duration::from_millis(500)) {
                     Ok(_) => {
                         let _ = lock(&core.projects).sweep_health();
-                        if let Err(error) = core.sync_auto_domains() {
-                            tracing::warn!(%error, "automatic domains could not be synced after a project change");
+                        let current_directories = project_root_directories(&core);
+                        if current_directories != root_directories {
+                            root_directories = current_directories;
+                            if let Err(error) = core.sync_auto_domains() {
+                                tracing::warn!(%error, "automatic domains could not be synced after a project folder change");
+                            }
                         }
                         let _ = core.project_events.send(());
                     }
@@ -97,10 +122,12 @@ impl Inner {
                     .into_iter()
                     .map(PathBuf::from)
                     .collect();
+                let mut watches_changed = false;
                 for path in watched.clone() {
                     if !desired.contains(&path) {
                         let _ = debouncer.watcher().unwatch(&path);
                         watched.remove(&path);
+                        watches_changed = true;
                     }
                 }
                 for path in desired {
@@ -112,7 +139,14 @@ impl Inner {
                             .is_ok()
                     {
                         watched.insert(path);
+                        watches_changed = true;
                     }
+                }
+                // Root settings can change while this watcher is running. Refresh
+                // the baseline after attaching/detaching watches so the first event
+                // from a newly configured root is compared against its current state.
+                if watches_changed {
+                    root_directories = project_root_directories(&core);
                 }
             }
         });
@@ -394,6 +428,44 @@ impl Inner {
         Ok(())
     }
 
+    pub fn ignore_project(&self, id: &str) -> Result<(), CoreError> {
+        let path = {
+            let projects = self.projects.lock().unwrap();
+            projects.get(id).map(|pr| pr.path.clone())
+        };
+        if let Some(path) = path {
+            // Disable any sites tied to this project so it stops working.
+            let hostnames: Vec<String> = {
+                let domains = self.domains.lock().unwrap();
+                domains
+                    .list()
+                    .into_iter()
+                    .filter(|d| {
+                        d.project_id.as_deref() == Some(id)
+                            || (!d.root.is_empty() && crate::project::same_path(&d.root, &path))
+                    })
+                    .map(|d| d.hostname)
+                    .collect()
+            };
+            let is_discover_path = self
+                .string_list(PROJECT_ROOTS)
+                .iter()
+                .any(|root| Path::new(&path).starts_with(Path::new(root)));
+            if !is_discover_path {
+                for h in hostnames {
+                    self.domains.lock().unwrap().remove(&h)?;
+                    self.web.restart_app(&h);
+                }
+                self.projects.lock().unwrap().remove(id)?;
+            } else {
+                let ignore_file = std::path::Path::new(&path).join(".ols_ignore_me");
+                let _ = std::fs::write(&ignore_file, "");
+            }
+        }
+        let _ = self.project_events.send(());
+        Ok(())
+    }
+
     /// Deletes a project without a domain by moving its folder into an `ols_excluded_sites` folder
     /// in the same directory instead of permanently deleting it.
     pub fn delete_project(&self, id: &str) -> Result<(), CoreError> {
@@ -600,12 +672,7 @@ impl Inner {
         };
 
         let created = self.add_domain(domain)?;
-        if created.enabled && !self.web.dns_covers(&created.hostname) {
-            let _ = crate::hosts::ensure(&[created.hostname.clone()]);
-        }
-        if self.web.is_running() {
-            let _ = self.apply_web(&[]);
-        }
+        self.reconcile()?;
 
         Ok(crate::command::CreateSiteResult {
             domain: Some(Box::new(created)),

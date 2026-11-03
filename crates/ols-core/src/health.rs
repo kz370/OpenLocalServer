@@ -28,6 +28,14 @@ pub struct HealthReport {
     pub steps: Vec<HealthStep>,
 }
 
+/// Progress from a site health check. `step: None` means that `name` has started;
+/// `Some(step)` means its result is ready.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HealthProgress {
+    pub name: String,
+    pub step: Option<HealthStep>,
+}
+
 fn step(name: &str, ok: bool, detail: impl Into<String>) -> HealthStep {
     HealthStep {
         name: name.to_string(),
@@ -57,6 +65,13 @@ pub struct HealthTarget<'a> {
 }
 
 pub fn check_site(target: &HealthTarget) -> HealthReport {
+    check_site_with_progress(target, |_| {})
+}
+
+pub fn check_site_with_progress(
+    target: &HealthTarget,
+    mut progress: impl FnMut(HealthProgress),
+) -> HealthReport {
     let port = if target.https {
         target.https_port
     } else {
@@ -64,22 +79,33 @@ pub fn check_site(target: &HealthTarget) -> HealthReport {
     };
     let mut steps = Vec::new();
 
-    steps.push(check_dns(target.hostname, port));
+    steps.push(run_step("DNS", &mut progress, || {
+        check_dns(target.hostname, port)
+    }));
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    let tcp = TcpStream::connect_timeout(&addr, Duration::from_secs(3));
-    steps.push(match &tcp {
-        Ok(_) => step("TCP", true, format!("connected to {addr}")),
-        Err(e) => step(
-            "TCP",
-            false,
-            format!("nothing is listening on {addr}: {e}. Start the web server."),
-        ),
-    });
+    let mut tcp = None;
+    steps.push(run_step("TCP", &mut progress, || {
+        let result = TcpStream::connect_timeout(&addr, Duration::from_secs(3));
+        let result_step = match &result {
+            Ok(_) => step("TCP", true, format!("connected to {addr}")),
+            Err(e) => step(
+                "TCP",
+                false,
+                format!("nothing is listening on {addr}: {e}. Start the web server."),
+            ),
+        };
+        tcp = Some(result);
+        result_step
+    }));
     drop(tcp);
     let tcp_ok = steps.last().is_some_and(|s| s.ok);
 
     if target.https {
+        progress(HealthProgress {
+            name: "TLS".into(),
+            step: None,
+        });
         let (tls_step, http_step) = if tcp_ok {
             match tls_get(target.hostname, addr, target.ca_pem) {
                 Ok(status_line) => (
@@ -91,37 +117,53 @@ pub fn check_site(target: &HealthTarget) -> HealthReport {
         } else {
             (skipped("TLS", "no TCP connection"), None)
         };
-        steps.push(tls_step);
-        steps.push(check_cert(target.cert));
-        steps.push(if target.ca_trusted {
-            step(
-                "Trust",
-                true,
-                "the CA is trusted by Windows (Edge and Chrome will accept it)",
-            )
-        } else {
-            step(
-                "Trust",
-                false,
-                "the CA is not trusted yet. Trust it from the Certificates page.",
-            )
+        progress(HealthProgress {
+            name: "TLS".into(),
+            step: Some(tls_step.clone()),
         });
-        steps.push(match http_step {
+        steps.push(tls_step);
+        steps.push(run_step("Certificate", &mut progress, || {
+            check_cert(target.cert)
+        }));
+        steps.push(run_step("Trust", &mut progress, || {
+            if target.ca_trusted {
+                step(
+                    "Trust",
+                    true,
+                    "the CA is trusted by Windows (Edge and Chrome will accept it)",
+                )
+            } else {
+                step(
+                    "Trust",
+                    false,
+                    "the CA is not trusted yet. Trust it from the Certificates page.",
+                )
+            }
+        }));
+        steps.push(run_step("HTTP", &mut progress, || match http_step {
             Some(line) => http_result(&line),
             None => skipped("HTTP", "TLS did not complete"),
-        });
+        }));
     } else {
-        steps.push(skipped("TLS", "site is HTTP only"));
-        steps.push(skipped("Certificate", "site is HTTP only"));
-        steps.push(skipped("Trust", "site is HTTP only"));
-        steps.push(if tcp_ok {
-            match plain_get(target.hostname, addr) {
-                Ok(line) => http_result(&line),
-                Err(e) => step("HTTP", false, e),
+        steps.push(run_step("TLS", &mut progress, || {
+            skipped("TLS", "site is HTTP only")
+        }));
+        steps.push(run_step("Certificate", &mut progress, || {
+            skipped("Certificate", "site is HTTP only")
+        }));
+        steps.push(run_step("Trust", &mut progress, || {
+            skipped("Trust", "site is HTTP only")
+        }));
+        steps.push(run_step("HTTP", &mut progress, || {
+            if tcp_ok {
+                match plain_get(target.hostname, addr) {
+                    Ok(line) => http_result(&line),
+                    Err(e) => step("HTTP", false, e),
+                }
+            } else {
+                skipped("HTTP", "no TCP connection")
             }
-        } else {
-            skipped("HTTP", "no TCP connection")
-        });
+        }));
     }
 
     let ok = steps.iter().all(|s| s.ok);
@@ -130,6 +172,23 @@ pub fn check_site(target: &HealthTarget) -> HealthReport {
         ok,
         steps,
     }
+}
+
+fn run_step(
+    name: &str,
+    progress: &mut impl FnMut(HealthProgress),
+    check: impl FnOnce() -> HealthStep,
+) -> HealthStep {
+    progress(HealthProgress {
+        name: name.into(),
+        step: None,
+    });
+    let result = check();
+    progress(HealthProgress {
+        name: name.into(),
+        step: Some(result.clone()),
+    });
+    result
 }
 
 fn check_dns(hostname: &str, port: u16) -> HealthStep {

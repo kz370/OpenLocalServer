@@ -71,6 +71,8 @@ pub enum CoreCommand {
         name: Option<String>,
         #[serde(default)]
         project_type: Option<String>,
+        #[serde(default)]
+        auto_site: bool,
     },
     UpdateProject {
         id: String,
@@ -131,6 +133,12 @@ pub enum CoreCommand {
     RemoveProject {
         id: String,
     },
+    IgnoreProject {
+        id: String,
+    },
+    RemoveSiteFromList {
+        hostname: String,
+    },
     RelocateProject {
         id: String,
         path: String,
@@ -165,6 +173,9 @@ pub enum CoreCommand {
         theme: Option<String>,
     },
     WpSignInRevoke {
+        project_id: String,
+    },
+    WpCoreRepair {
         project_id: String,
     },
     ListServices,
@@ -239,6 +250,9 @@ pub enum CoreCommand {
         hostname: String,
     },
     DeleteSite {
+        hostname: String,
+    },
+    RestoreExcludedSite {
         hostname: String,
     },
     SetDomainEnabled {

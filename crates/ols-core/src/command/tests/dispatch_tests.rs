@@ -311,7 +311,7 @@ fn plan_quick_app_reports_field_errors_instead_of_failing() {
 
 #[test]
 fn delete_site_moves_folder_to_ols_excluded_sites() {
-    let (core, _home) = test_core();
+    let (core, home) = test_core();
     let tmp = tempfile::tempdir().unwrap();
     let project_dir = tmp.path().join("my-site");
     std::fs::create_dir_all(&project_dir).unwrap();
@@ -360,7 +360,24 @@ fn delete_site_moves_folder_to_ols_excluded_sites() {
 
     // Project folder was moved into ols_excluded_sites in the same directory
     assert!(!project_dir.exists());
+    assert!(core
+        .inner()
+        .domains
+        .lock()
+        .unwrap()
+        .get(&hostname)
+        .is_none());
     let excluded_dir = tmp.path().join("ols_excluded_sites").join("my-site");
     assert!(excluded_dir.exists());
     assert!(excluded_dir.join("index.html").exists());
+
+    let reopened = Core::new(
+        crate::settings::SettingsService::load(&home.paths).unwrap(),
+        home.paths.clone(),
+    );
+    let CoreResponse::Domains { domains } = reopened.dispatch(CoreCommand::ListDomains).unwrap()
+    else {
+        panic!("expected domains after reopening the core");
+    };
+    assert!(!domains.iter().any(|domain| domain.hostname == hostname));
 }

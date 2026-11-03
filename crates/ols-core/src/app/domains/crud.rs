@@ -229,6 +229,14 @@ impl Inner {
                     proxy_target: d.kind.upstream_url(),
                 }
             })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .filter(|s| {
+                s.folder.is_empty()
+                    || !std::path::Path::new(&s.folder)
+                        .join(".ols_ignore_me")
+                        .exists()
+            })
             .collect()
     }
 
@@ -347,46 +355,55 @@ impl Inner {
         self.domains.lock().unwrap().update(domain)
     }
 
-    /// Deletes a site and takes it off the list for good. When it was the last site of
-    /// its project, the project leaves the list too, so the row the user clicked really
-    /// does disappear. Their files are never touched. The folder joins the skip list
-    /// (§`PROJECT_SKIP`) so folder rescans don't bring the project back.
+    /// Hides a site while retaining its database record and project settings.
     pub fn remove_domain(&self, hostname: &str) -> Result<(), CoreError> {
-        let mut domains = self.domains.lock().unwrap();
-        let was_auto = domains
-            .get(hostname)
-            .is_some_and(|d| d.project_id.is_some());
-        // The project goes too when this was its last site; another site of the same
-        // project keeps it on the list.
-        let orphan_project = domains
-            .get(hostname)
-            .and_then(|d| d.project_id.clone())
-            .filter(|project_id| {
-                !domains
-                    .list()
-                    .iter()
-                    .any(|d| d.hostname != hostname && d.project_id.as_ref() == Some(project_id))
-            });
-        domains.remove(hostname)?;
-        // Released before anything else locks the project store: a summary read takes
-        // projects first and domains second, and holding both ways round deadlocks.
-        drop(domains);
-        if was_auto {
-            // Deleted on purpose: automatic domains must not bring it back.
-            self.push_skip(AUTO_SKIP, hostname)?;
+        if hostname == crate::domain::HOME_HOSTNAME {
+            return Err(CoreError::failed_fix(
+                "The built-in home site cannot be hidden.",
+                "openlocalserver.test is required by OpenLocalServer.",
+                "Hide or remove another site instead.",
+            ));
         }
-        let _ = self.certs.revoke(hostname);
+        if self.domains.lock().unwrap().get(hostname).is_none() {
+            return Err(CoreError::DomainError(format!(
+                "{hostname} is not a known domain"
+            )));
+        }
+        self.push_skip(AUTO_SKIP, hostname)?;
         self.web.restart_app(hostname);
-        let proxy_icon = self
-            .paths
-            .proxy_site_images_dir()
-            .join(proxy_icon_filename(hostname));
-        if proxy_icon.exists() {
-            let _ = std::fs::remove_file(proxy_icon);
+        Ok(())
+    }
+
+    /// Removes only the site from OLS, keeping its project registration and files.
+    pub fn remove_site_from_list(&self, hostname: &str) -> Result<(), CoreError> {
+        let domain =
+            self.domains.lock().unwrap().get(hostname).ok_or_else(|| {
+                CoreError::DomainError(format!("{hostname} is not a known domain"))
+            })?;
+        let projects = self.projects.lock().unwrap().list();
+        let folder = site_folder(&domain, &projects);
+        let project_id = domain.project_id.clone().or_else(|| {
+            projects
+                .iter()
+                .find(|project| crate::project::same_path(&project.path, &folder))
+                .map(|project| project.id.clone())
+        });
+
+        {
+            let mut projects = lock(&self.projects);
+            let project_id = match project_id {
+                Some(id) if projects.get(&id).is_some() => Some(id),
+                _ if Path::new(&folder).is_dir() => {
+                    Some(projects.register_with_standalone(&folder, true)?.id)
+                }
+                _ => None,
+            };
+            if let Some(project_id) = project_id {
+                projects.set_standalone(&project_id, true)?;
+            }
         }
-        if let Some(id) = orphan_project {
-            let _ = self.remove_project(&id);
-        }
+        self.domains.lock().unwrap().remove(hostname)?;
+        self.web.restart_app(hostname);
         Ok(())
     }
 
@@ -401,36 +418,115 @@ impl Inner {
                 "Delete other custom sites instead.",
             ));
         }
-        let (orphan_project, folder_to_move) = {
-            let mut domains = self.domains.lock().unwrap();
+        let (orphan_project, undo_project, undo_domains, folder_to_move) = {
+            let domains = self.domains.lock().unwrap();
             let domain = domains.get(hostname).ok_or_else(|| {
                 CoreError::DomainError(format!("{hostname} is not a known domain"))
             })?;
             let projects = self.projects.lock().unwrap().list();
             let folder = site_folder(&domain, &projects);
-            let orphan_project = domain.project_id.clone().filter(|project_id| {
+            let project_id = domain.project_id.clone().or_else(|| {
+                projects
+                    .iter()
+                    .find(|project| crate::project::same_path(&project.path, &folder))
+                    .map(|project| project.id.clone())
+            });
+            let orphan_project = project_id.clone().filter(|project_id| {
                 !domains
                     .list()
                     .iter()
                     .any(|d| d.hostname != hostname && d.project_id.as_ref() == Some(project_id))
             });
-            domains.remove(hostname)?;
-            (orphan_project, folder)
+            let undo_project = project_id
+                .as_deref()
+                .and_then(|id| projects.iter().find(|project| project.id == id).cloned());
+            let undo_domains = domains
+                .list()
+                .into_iter()
+                .filter(|candidate| site_folder(candidate, &projects) == folder)
+                .collect();
+            (orphan_project, undo_project, undo_domains, folder)
         };
 
-        let _ = self.certs.revoke(hostname);
-        self.web.restart_app(hostname);
+        let folder_path = PathBuf::from(&folder_to_move);
+        let mut destination = None;
+        if folder_path.is_dir() {
+            let excluded_folder = self.primary_excluded_folder();
+            destination = Some(move_to_excluded_dir(&folder_path, &excluded_folder)?);
+        }
 
+        self.domains.lock().unwrap().remove(hostname)?;
         if let Some(ref id) = orphan_project {
             let _ = self.projects.lock().unwrap().remove(id);
         }
-
-        let folder_path = PathBuf::from(&folder_to_move);
-        if folder_path.is_dir() {
-            let excluded_folder = self.primary_excluded_folder();
-            let _ = move_to_excluded_dir(&folder_path, &excluded_folder)?;
+        if let Some(destination) = destination {
+            self.pending_site_undo.lock().unwrap().insert(
+                hostname.to_string(),
+                super::super::PendingSiteUndo {
+                    source: folder_path,
+                    destination,
+                    domains: undo_domains,
+                    project: undo_project,
+                },
+            );
         }
+        let _ = self.certs.revoke(hostname);
+        self.web.restart_app(hostname);
 
+        Ok(())
+    }
+
+    /// Reverses a site folder move made during this app session and restores its saved records.
+    pub fn restore_excluded_site(&self, hostname: &str) -> Result<(), CoreError> {
+        let pending = self.pending_site_undo.lock().unwrap().get(hostname).cloned().ok_or_else(|| {
+            CoreError::failed_fix(
+                "Undo is no longer available.",
+                format!("No excluded-folder move for {hostname} is pending in this app session."),
+                "Restore the folder from its excluded directory and add the project again from Projects.",
+            )
+        })?;
+        if pending.source.exists() {
+            return Err(CoreError::failed_fix(
+                "The original folder location is occupied.",
+                pending.source.display().to_string(),
+                "Move or rename the existing folder, then try Undo again.",
+            ));
+        }
+        std::fs::rename(&pending.destination, &pending.source).map_err(|e| {
+            CoreError::failed_fix(
+                "Could not restore the excluded project folder.",
+                format!(
+                    "{} → {}: {e}",
+                    pending.destination.display(),
+                    pending.source.display()
+                ),
+                "Check folder permissions and ensure the excluded folder is still available.",
+            )
+        })?;
+        if let Some(project) = pending.project.clone() {
+            if let Err(error) = self.projects.lock().unwrap().restore(project) {
+                let _ = std::fs::rename(&pending.source, &pending.destination);
+                return Err(error);
+            }
+        }
+        let mut restored_domains = Vec::new();
+        for domain in pending.domains.iter().cloned() {
+            match self.domains.lock().unwrap().add(domain.clone()) {
+                Ok(_) => restored_domains.push(domain),
+                Err(error) => {
+                    for restored in restored_domains {
+                        let _ = self.domains.lock().unwrap().remove(&restored.hostname);
+                    }
+                    if let Some(project) = pending.project {
+                        let _ = self.projects.lock().unwrap().remove(&project.id);
+                    }
+                    let _ = std::fs::rename(&pending.source, &pending.destination);
+                    return Err(error);
+                }
+            }
+        }
+        self.pending_site_undo.lock().unwrap().remove(hostname);
+        let _ = self.project_events.send(());
         Ok(())
     }
 

@@ -35,6 +35,30 @@ export function onOpenProject(fn: (p: OpenProject) => void): () => void {
   return () => window.removeEventListener(EVENT, handler)
 }
 
+const ADD_SITE_PROJECT_EVENT = 'ols:add-site-project'
+let pendingAddSiteProject: string | null = null
+
+/** Opens the Add Site dialog with an existing project selected, including before Sites mounts. */
+export function openAddSiteForProject(projectId: string) {
+  pendingAddSiteProject = projectId
+  window.dispatchEvent(new CustomEvent<string>(ADD_SITE_PROJECT_EVENT, { detail: projectId }))
+}
+
+export function takePendingAddSiteProject(): string | null {
+  const projectId = pendingAddSiteProject
+  pendingAddSiteProject = null
+  return projectId
+}
+
+export function onOpenAddSiteForProject(fn: (projectId: string) => void): () => void {
+  const handler = (e: Event) => {
+    pendingAddSiteProject = null
+    fn((e as CustomEvent<string>).detail)
+  }
+  window.addEventListener(ADD_SITE_PROJECT_EVENT, handler)
+  return () => window.removeEventListener(ADD_SITE_PROJECT_EVENT, handler)
+}
+
 const SITES_FILTER_EVENT = 'ols:open-sites-filter'
 let pendingSitesFilter: string | null = null
 

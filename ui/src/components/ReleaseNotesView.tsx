@@ -1,8 +1,6 @@
 import {
   Calendar,
-  Check,
   ChevronDown,
-  Copy,
   MonitorDown,
   Search,
   Shield,
@@ -31,8 +29,6 @@ interface ReleaseNotesViewProps {
   searchQuery?: string
   onClearSearch?: () => void
   currentVersion?: string
-  onCopyMarkdown?: () => void
-  isCopied?: boolean
   className?: string
 }
 
@@ -44,8 +40,6 @@ export function ReleaseNotesView({
   searchQuery = '',
   onClearSearch,
   currentVersion = '2.5.0',
-  onCopyMarkdown,
-  isCopied = false,
   className = '',
 }: ReleaseNotesViewProps) {
   const [expandedFeatures, setExpandedFeatures] = useState<Set<string>>(new Set())
@@ -76,8 +70,6 @@ export function ReleaseNotesView({
       <ReleaseHeader
         metadata={parsed.metadata}
         currentVersion={currentVersion}
-        onCopyMarkdown={onCopyMarkdown}
-        isCopied={isCopied}
       />
 
       {/* 2. Search Status Banner (if active) */}
@@ -146,13 +138,9 @@ export function ReleaseNotesView({
 function ReleaseHeader({
   metadata,
   currentVersion,
-  onCopyMarkdown,
-  isCopied,
 }: {
   metadata: ReleaseMetadata
   currentVersion: string
-  onCopyMarkdown?: () => void
-  isCopied: boolean
 }) {
   const versionString = metadata.version || `v${currentVersion}`
 
@@ -182,27 +170,6 @@ function ReleaseHeader({
             )}
           </div>
 
-          {onCopyMarkdown && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onCopyMarkdown}
-              className="h-7 text-xs px-2.5 cursor-pointer text-muted-foreground hover:text-foreground shrink-0"
-              title="Copy original Markdown source"
-            >
-              {isCopied ? (
-                <>
-                  <Check className="size-3 text-emerald-500 mr-1.5" />
-                  Copied
-                </>
-              ) : (
-                <>
-                  <Copy className="size-3 mr-1.5" />
-                  Copy Markdown
-                </>
-              )}
-            </Button>
-          )}
         </div>
 
         {/* Prominent Version Heading */}

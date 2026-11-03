@@ -25,6 +25,7 @@ import { GitCloneButton } from '@/components/project/ProjectImports'
 import { ProjectSettingsDialog } from '@/components/project/ProjectSettingsDialog'
 import { ProjectTypeFilterBar } from '@/components/project/ProjectTypeFilterBar'
 import { SiteLogo } from '@/components/SiteLogo'
+import { Spinner } from '@/components/Spinner'
 import { TechIcon } from '@/components/TechIcon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -48,10 +49,10 @@ import {
   type ProjectTypePreset,
   runCommand,
 } from '@/core'
-import { createPersistentCache } from '@/lib/cache'
+import { createPersistentCache, getCached } from '@/lib/cache'
 import { confirmAction } from '@/lib/confirm'
 import { usePoll } from '@/lib/hooks'
-import { openProject, openSettingsSection } from '@/lib/nav'
+import { openAddSiteForProject, openProject, openSettingsSection } from '@/lib/nav'
 import { notify } from '@/lib/notify'
 import {
   getProjectDisplayType,
@@ -76,7 +77,9 @@ function normPath(p: string | null | undefined): string {
 
 export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void }) {
   const [projects, setProjects] = useState<Project[]>(projectsCache.get)
-  const [domains, setDomains] = useState<DomainSummary[]>(domainsCache.get)
+  // Read storage directly because Sites can update this cache while ProjectsPage is unmounted.
+  const [domains, setDomains] = useState<DomainSummary[]>(() => getCached('projects_page_domains', []))
+  const [unconnectedProjectIds, setUnconnectedProjectIds] = useState<string[] | null>(null)
   const [editors, setEditors] = useState<EditorInfo[]>(editorsCache.get)
   const [presets, setPresets] = useState<ProjectTypePreset[]>(presetsCache.get)
   const [customTypes, setCustomTypes] = useState<CustomProjectType[]>(customTypesCache.get)
@@ -111,6 +114,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
 
   const [activeMenu, setActiveMenu] = useState<{ id: string; anchor: MenuAnchor } | null>(null)
   const [editingProject, setEditingProject] = useState<Project | null>(null)
+  const [removingProject, setRemovingProject] = useState<Project | null>(null)
 
   // Drag and drop state
   const [isDragOver, setIsDragOver] = useState(false)
@@ -123,12 +127,20 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
       const res = await runCommand({ type: 'list_projects' })
       if (res.type === 'projects') {
         setProjects(res.projects)
+        setUnconnectedProjectIds(res.unconnected_project_ids ?? null)
         projectsCache.set(res.projects)
+        const hasMissingProjects = res.projects.some(
+          (project) => project.health && project.health.status !== 'healthy',
+        )
+        if (!hasMissingProjects && missingOnly) {
+          setMissingOnly(false)
+          setPage(1)
+        }
       }
     } catch {
       // quiet poll
     }
-  }, [])
+  }, [missingOnly])
 
   const refreshDomains = useCallback(async () => {
     try {
@@ -194,6 +206,12 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
   }, [refreshAll])
 
   usePoll(refreshAll, 3000)
+
+  useEffect(() => {
+    const handleFocus = () => void refreshAll()
+    window.addEventListener('focus', handleFocus)
+    return () => window.removeEventListener('focus', handleFocus)
+  }, [refreshAll])
 
   // Listen for Tauri drag & drop events
   useEffect(() => {
@@ -282,12 +300,15 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
     return groupProjectsByType(allProjects, presets, customTypes, preferences)
   }, [allProjects, presets, customTypes, preferences])
 
+  const effectiveMissingOnly = missingOnly && typeGroups.missingCount > 0
+
   // Reset typeTab if active tab no longer exists in available tabs or becomes empty (count < 1)
   useEffect(() => {
     if (typeTab !== 'all') {
       const tabExists = typeGroups.tabs.some((t) => t.id === typeTab && t.count >= 1)
       if (!tabExists) {
         setTypeTab('all')
+        setPage(1)
         try {
           localStorage.setItem(PROJECTS_TAB_KEY, 'all')
           sessionStorage.setItem('ols:projects-tab', 'all')
@@ -299,7 +320,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
   const filteredProjects = useMemo(() => {
     const term = query.trim()
     return allProjects.filter((p) => {
-      if (missingOnly && !isProjectMissing(p)) return false
+      if (effectiveMissingOnly && !isProjectMissing(p)) return false
       if (typeTab !== 'all') {
         const typeId = getProjectTypeId(p)
         if (typeTab === 'auto') {
@@ -312,7 +333,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
       }
       return matchesQuery(p, term)
     })
-  }, [allProjects, missingOnly, typeTab, query, domains])
+  }, [allProjects, effectiveMissingOnly, typeTab, query, domains])
 
   // Pagination slice
   const total = filteredProjects.length
@@ -360,25 +381,6 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
     }
   }
 
-  const handleCreateSite = async (p: Project) => {
-    try {
-      const res = await runCommand({ type: 'create_site_for_project', project_id: p.id })
-      if (res.type === 'create_site_for_project') {
-        if (res.domain) {
-          notify.success(`Created site ${res.domain.hostname}`)
-          await refreshAll()
-        } else if (res.needs_setup) {
-          notify.info(
-            `Could not auto-detect a web server configuration for "${p.name}". You can configure a site manually in Sites.`,
-          )
-          onNavigate('sites')
-        }
-      }
-    } catch (e) {
-      notify.error(`Failed to create site: ${e instanceof Error ? e.message : String(e)}`)
-    }
-  }
-
   const handleOpenTerminal = async (p: Project) => {
     try {
       await runCommand({ type: 'open_project_terminal', project_id: p.id })
@@ -412,29 +414,50 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
     }
   }
 
+  const handleRemoveFromList = async (p: Project) => {
+    const ok = await confirmAction(
+      `Remove "${p.name}" from the list? Its folder and database entry are removed from OpenLocalServer but files on disk are not touched.`,
+      `Remove ${p.name} from list?`,
+      'Remove from list',
+    )
+    if (!ok) return
+    setRemovingProject(p)
+    notify.info(`Removing "${p.name}" from the list…`)
+    try {
+      await runCommand({ type: 'ignore_project', id: p.id })
+      notify.success(`Removed "${p.name}" from list`)
+      await refreshAll()
+    } catch (e) {
+      notify.error(`Failed to remove project: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setRemovingProject(null)
+    }
+  }
+
   const menuFor = (p: Project): MenuItem[] => {
     const isHealthy = p.health?.status === 'healthy' || !p.health
     const linked = getProjectDomains(p)
-    const hasSite = linked.length > 0
+    const hasSite = unconnectedProjectIds != null
+      ? !unconnectedProjectIds.includes(p.id)
+      : linked.length > 0
 
     const visibleEditors = editors.filter((ed) => ed.path && !ed.hidden)
 
     const editorSubmenu: MenuItem[] = [
-      ...(visibleEditors.length > 0
-        ? visibleEditors.map((ed) => ({
+      ...visibleEditors.map((ed) => ({
             label: ed.name,
             icon: <Code2 className="size-3.5" />,
             onSelect: () => {
               void runCommand({ type: 'open_with', app: ed.id, path: p.path })
             },
-          }))
-        : [{ label: 'No editors configured', disabled: true }]),
+          })),
+      ...(visibleEditors.length === 0 ? [{ label: 'No editors configured', disabled: true } as MenuItem] : []),
       'separator',
       {
         label: 'Edit editors...',
         icon: <Settings className="size-3.5" />,
         onSelect: () => {
-          openSettingsSection('general')
+        openSettingsSection('editors')
           onNavigate('settings')
         },
       },
@@ -446,7 +469,10 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
         icon: <Globe className="size-4" />,
         disabled: hasSite || !isHealthy,
         hint: hasSite ? 'Site already exists' : !isHealthy ? 'Folder missing' : undefined,
-        onSelect: () => void handleCreateSite(p),
+        onSelect: () => {
+          openAddSiteForProject(p.id)
+          onNavigate('sites')
+        },
       },
       'separator',
       {
@@ -461,7 +487,12 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
         label: 'Open with editor',
         icon: <Code2 className="size-4" />,
         disabled: !isHealthy,
-        submenu: editorSubmenu,
+        ...(visibleEditors.length > 1 ? { submenu: editorSubmenu } : {}),
+        onSelect: visibleEditors.length === 1
+          ? () => void runCommand({ type: 'open_with', app: visibleEditors[0].id, path: p.path })
+          : visibleEditors.length === 0
+            ? () => { openSettingsSection('editors'); onNavigate('settings') }
+            : undefined,
       },
       {
         label: 'Open terminal',
@@ -483,6 +514,12 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
         disabled: linked.length > 0,
         hint: linked.length > 0 ? 'Connected to site' : undefined,
         onSelect: () => void handleHideProject(p),
+      },
+      {
+        label: 'Remove from list',
+        icon: <X className="size-4" />,
+        danger: true,
+        onSelect: () => void handleRemoveFromList(p),
       },
     ]
   }
@@ -506,6 +543,20 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
         </Button>
         <GitCloneButton defaultParent={effectiveParent} onDone={() => void refreshAll()} standalone={true} />
       </div>
+
+      {removingProject && (
+        <div
+          className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground"
+          role="status"
+          aria-live="polite"
+        >
+          <Spinner className="size-4 shrink-0" />
+          <span>
+            Removing <span className="font-medium text-foreground">{removingProject.name}</span> from
+            the list and updating site configuration…
+          </span>
+        </div>
+      )}
 
       {/* Main card */}
       <Card
@@ -542,7 +593,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
               selectedTab={typeTab}
               onSelectTab={handleSelectTypeTab}
               missingCount={typeGroups.missingCount}
-              missingOnly={missingOnly}
+              missingOnly={effectiveMissingOnly}
               onToggleMissingOnly={() => {
                 setMissingOnly((prev) => !prev)
                 setPage(1)
@@ -596,7 +647,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
                       ? 'No projects added yet. Click "Add project folder", drag and drop a folder, or use the Windows Explorer context menu to add one.'
                       : query.trim()
                         ? `No projects matching "${query.trim()}".`
-                        : missingOnly
+                        : effectiveMissingOnly
                           ? 'No projects with missing or offline directories.'
                           : typeTab !== 'all'
                             ? `No projects under the "${typeGroups.tabs.find((t) => t.id === typeTab)?.label ?? typeTab}" type.`

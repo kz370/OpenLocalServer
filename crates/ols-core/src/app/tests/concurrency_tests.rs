@@ -36,11 +36,10 @@ mod apply_concurrency_tests {
         domains.add(site).unwrap();
     }
 
-    /// Deleting a site takes it off the list, and the project behind it goes with it once
-    /// it has no sites left — otherwise the row the user just deleted reappears as
-    /// "project only". Nothing on disk is touched.
+    /// Hiding a site takes it off the served list while retaining its domain record,
+    /// project settings, and files so it can be restored from Settings.
     #[test]
-    fn deleting_a_site_takes_its_last_project_off_the_list() {
+    fn hiding_a_site_keeps_its_domain_and_project_records() {
         let (inner, home) = inner();
         let dir = home.paths.data_dir().join("www").join("app");
         std::fs::create_dir_all(&dir).unwrap();
@@ -77,15 +76,16 @@ mod apply_concurrency_tests {
             domains.add(site("two.test")).unwrap();
         }
 
-        // One of two sites left: the project stays.
+        // Hiding one site leaves both the project and the site record intact.
         inner.remove_domain("one.test").unwrap();
         assert!(inner.projects.lock().unwrap().get(&project.id).is_some());
         assert!(inner.domains.lock().unwrap().get("two.test").is_some());
+        assert!(inner.domains.lock().unwrap().get("one.test").is_some());
 
-        // The last one: both the site and the project leave the list.
+        // Hiding the last site still retains both records for restoration.
         inner.remove_domain("two.test").unwrap();
-        assert!(inner.projects.lock().unwrap().get(&project.id).is_none());
-        assert!(inner.domains.lock().unwrap().get("two.test").is_none());
+        assert!(inner.projects.lock().unwrap().get(&project.id).is_some());
+        assert!(inner.domains.lock().unwrap().get("two.test").is_some());
         assert!(
             dir.exists(),
             "deleting a site must not touch the project folder"
