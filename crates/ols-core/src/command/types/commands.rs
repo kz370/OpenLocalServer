@@ -71,6 +71,8 @@ pub enum CoreCommand {
         name: Option<String>,
         #[serde(default)]
         project_type: Option<String>,
+        #[serde(default)]
+        auto_site: bool,
     },
     UpdateProject {
         id: String,

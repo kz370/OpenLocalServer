@@ -261,6 +261,7 @@ impl Core {
                     path,
                     name,
                     project_type,
+                    auto_site,
                 } => {
                     tracing::info!(command = "add_project", path = %path);
                     let effective_type = match project_type.as_deref() {
@@ -278,8 +279,19 @@ impl Core {
                         i.projects
                             .lock()
                             .unwrap()
-                            .add_new(&path, name, effective_type, true)?;
+                            .add_new(&path, name, effective_type, !auto_site)?;
                     let _ = i.clear_project_skip(&project.path);
+                    if auto_site {
+                        match i.create_site_for_project(&project.id) {
+                            Ok(result) if result.needs_setup => {
+                                tracing::info!(project = %project.name, "automatic site creation needs project setup");
+                            }
+                            Ok(_) => {}
+                            Err(error) => {
+                                tracing::warn!(project = %project.name, %error, "automatic site creation failed after project registration");
+                            }
+                        }
+                    }
                     i.notify_project_events();
                     Ok(R::Project { project })
                 }

@@ -385,11 +385,9 @@ impl Inner {
             let mut projects = lock(&self.projects);
             let project_id = match project_id {
                 Some(id) if projects.get(&id).is_some() => Some(id),
-                _ if Path::new(&folder).is_dir() => Some(
-                    projects
-                        .register_with_standalone(&folder, true)?
-                        .id,
-                ),
+                _ if Path::new(&folder).is_dir() => {
+                    Some(projects.register_with_standalone(&folder, true)?.id)
+                }
                 _ => None,
             };
             if let Some(project_id) = project_id {

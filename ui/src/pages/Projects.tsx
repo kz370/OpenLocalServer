@@ -25,6 +25,7 @@ import { GitCloneButton } from '@/components/project/ProjectImports'
 import { ProjectSettingsDialog } from '@/components/project/ProjectSettingsDialog'
 import { ProjectTypeFilterBar } from '@/components/project/ProjectTypeFilterBar'
 import { SiteLogo } from '@/components/SiteLogo'
+import { Spinner } from '@/components/Spinner'
 import { TechIcon } from '@/components/TechIcon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -111,6 +112,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
 
   const [activeMenu, setActiveMenu] = useState<{ id: string; anchor: MenuAnchor } | null>(null)
   const [editingProject, setEditingProject] = useState<Project | null>(null)
+  const [removingProject, setRemovingProject] = useState<Project | null>(null)
 
   // Drag and drop state
   const [isDragOver, setIsDragOver] = useState(false)
@@ -419,12 +421,16 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
       'Remove from list',
     )
     if (!ok) return
+    setRemovingProject(p)
+    notify.info(`Removing "${p.name}" from the list…`)
     try {
       await runCommand({ type: 'ignore_project', id: p.id })
       notify.success(`Removed "${p.name}" from list`)
       await refreshAll()
     } catch (e) {
       notify.error(`Failed to remove project: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setRemovingProject(null)
     }
   }
 
@@ -528,6 +534,20 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
         </Button>
         <GitCloneButton defaultParent={effectiveParent} onDone={() => void refreshAll()} standalone={true} />
       </div>
+
+      {removingProject && (
+        <div
+          className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground"
+          role="status"
+          aria-live="polite"
+        >
+          <Spinner className="size-4 shrink-0" />
+          <span>
+            Removing <span className="font-medium text-foreground">{removingProject.name}</span> from
+            the list and updating site configuration…
+          </span>
+        </div>
+      )}
 
       {/* Main card */}
       <Card

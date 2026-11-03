@@ -5,6 +5,7 @@ import { ProjectTypePicker } from '@/components/project/ProjectTypePicker'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import {
   type CustomProjectType,
   type ProjectTypePreset,
@@ -42,6 +43,7 @@ export function AddProjectDialog({
 
   const [name, setName] = useState('')
   const [projectType, setProjectType] = useState<string | null>(null)
+  const [autoSite, setAutoSite] = useState(false)
   const [loading, setLoading] = useState(false)
   const [inspecting, setInspecting] = useState(false)
   const [error, setError] = useState<{ problem: string; cause: string; fix?: string | null } | null>(null)
@@ -51,6 +53,7 @@ export function AddProjectDialog({
       setCurrentIndex(0)
       setName('')
       setProjectType(null)
+      setAutoSite(false)
       setError(null)
       return
     }
@@ -58,6 +61,7 @@ export function AddProjectDialog({
     const defaultName = currentItem.suggestedName || currentItem.path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || 'Project'
     setName(defaultName)
     setProjectType(currentItem.detectedType ?? null)
+    setAutoSite(false)
     setError(null)
     setInspecting(true)
 
@@ -130,6 +134,7 @@ export function AddProjectDialog({
         path: currentItem.path,
         name: trimmedName,
         project_type: projectType,
+        auto_site: autoSite,
       })
 
       if (res.type === 'project') {
@@ -190,7 +195,7 @@ export function AddProjectDialog({
               onClick={() => void handleAdd()}
               disabled={loading || inspecting || isDuplicate || Boolean(error && !error.fix?.includes('Projects list'))}
             >
-              {loading ? 'Adding…' : isQueue && currentIndex + 1 < items.length ? 'Add & Next' : 'Add Project'}
+              {loading ? (autoSite ? 'Adding project and site…' : 'Adding…') : isQueue && currentIndex + 1 < items.length ? 'Add & Next' : 'Add Project'}
             </Button>
           </div>
         </div>
@@ -252,6 +257,21 @@ export function AddProjectDialog({
           <span className="text-[11px] text-muted-foreground">
             Determines the badge and tech icon shown in the Projects tab.
           </span>
+        </div>
+
+        <div className="flex items-center justify-between gap-4 rounded-lg border border-border px-3 py-2.5">
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-semibold text-foreground">Create a site automatically</span>
+            <span className="text-[11px] text-muted-foreground">
+              Off by default. Creates a local site when this project can be served directly.
+            </span>
+          </div>
+          <Switch
+            checked={autoSite}
+            onChange={setAutoSite}
+            disabled={loading}
+            label="Create a site automatically"
+          />
         </div>
       </div>
     </Dialog>

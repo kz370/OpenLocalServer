@@ -458,7 +458,7 @@ fn mcp_tools() -> Vec<McpTool> {
         },
         McpTool {
             name: "ols_add_project".into(),
-            description: Some("Register/add a folder as a project in OpenLocalServer. Validates path uniqueness, auto-detects framework/project type (e.g. Tauri, Laravel, React, etc.) if omitted or set to 'auto', and ensures it is tracked.".to_string()),
+            description: Some("Register a folder as a project in OpenLocalServer. Validates path uniqueness and auto-detects its project type when omitted or set to 'auto'. Set auto_site=true to also create a local site; this is false by default.".to_string()),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -473,6 +473,10 @@ fn mcp_tools() -> Vec<McpTool> {
                     "project_type": {
                         "type": "string",
                         "description": "Optional project type or framework preset (e.g. 'laravel', 'react', 'nextjs', 'custom:Tauri', 'custom:Rust') or 'auto'."
+                    },
+                    "auto_site": {
+                        "type": "boolean",
+                        "description": "Optional. Also create a local site when this project can be served directly. Defaults to false."
                     }
                 },
                 "required": ["path"]
@@ -1007,6 +1011,7 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
                 path: resolved_path.to_string_lossy().to_string(),
                 name: opt_str!("name"),
                 project_type: opt_str!("project_type"),
+                auto_site: opt_bool!("auto_site").unwrap_or(false),
             }
         }
         "ols_update_project" => C::UpdateProject {

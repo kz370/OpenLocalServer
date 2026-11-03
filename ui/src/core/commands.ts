@@ -26,7 +26,7 @@ export type CoreCommand =
   | { type: 'cancel_runtime'; id: string; version: string }
   | { type: 'remove_runtime'; id: string; version: string }
   | { type: 'register_project'; path: string }
-  | { type: 'add_project'; path: string; name?: string; project_type?: string | null }
+  | { type: 'add_project'; path: string; name?: string; project_type?: string | null; auto_site?: boolean }
   | {
       type: 'update_project'
       id: string

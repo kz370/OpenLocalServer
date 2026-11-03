@@ -410,6 +410,7 @@ fn standalone_projects_do_not_get_auto_domains_and_can_create_site() {
             path: p_dir.display().to_string(),
             name: None,
             project_type: None,
+            auto_site: false,
         })
         .unwrap()
     {
@@ -483,6 +484,7 @@ fn project_metadata_update_persists_icon_and_type() {
             path: p_dir.display().to_string(),
             name: None,
             project_type: None,
+            auto_site: false,
         })
         .unwrap()
     {
@@ -612,6 +614,7 @@ fn custom_project_types_crud_and_project_updates() {
             path: dir.to_str().unwrap().to_string(),
             name: Some("Rust App".into()),
             project_type: Some("custom:Rust".into()),
+            auto_site: false,
         })
         .unwrap()
     {
@@ -703,6 +706,7 @@ fn inspect_project_folder_detects_tauri_and_auto_adds_project() {
             path: dir.display().to_string(),
             name: None,
             project_type: None,
+            auto_site: false,
         })
         .unwrap()
     {
@@ -723,6 +727,7 @@ fn cannot_remove_or_delete_project_connected_to_a_site() {
             path: dir.display().to_string(),
             name: Some("Connected App".into()),
             project_type: None,
+            auto_site: false,
         })
         .unwrap()
     {
