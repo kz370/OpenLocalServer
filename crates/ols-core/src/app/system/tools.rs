@@ -229,19 +229,19 @@ impl Inner {
         cmd.spawn().map(|_| ()).map_err(|e| svc(e.to_string()))
     }
 
-    /// §94–99: the user's editor (setting `editor.command`), else VS Code if present, else Notepad.
+    /// Opens with the first visible configured editor for command-line compatibility.
     pub fn open_in_editor(&self, path: &str) -> Result<(), CoreError> {
-        let (chosen, custom) = {
-            let s = self.settings.lock().unwrap();
-            let text = |k: &str| s.get(k).and_then(|v| v.as_str()).map(str::to_string);
-            (text("editor"), text("editor.command"))
-        };
-        let exe: PathBuf = match crate::editors::resolve(chosen.as_deref(), custom.as_deref()) {
-            Some(exe) => exe,
-            // No code editor at all: a folder opens in Explorer, a file in Notepad.
-            None if Path::new(path).is_dir() => PathBuf::from("explorer.exe"),
-            None => PathBuf::from("notepad.exe"),
-        };
+        let settings = self.settings.lock().unwrap();
+        let editor = crate::editors::list_all(&settings)
+            .into_iter()
+            .find(|e| !e.hidden && e.path.is_some())
+            .ok_or_else(|| CoreError::failed_fix(
+                "No editor is configured.",
+                "Open with editor needs at least one editor in the editor list.",
+                "Add an editor in Settings > General, then try again.",
+            ))?;
+        let exe = PathBuf::from(editor.path.unwrap());
+        drop(settings);
         self.launch_editor(&exe, path)
     }
 

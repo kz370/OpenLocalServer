@@ -29,6 +29,32 @@ pub struct CustomEditor {
 
 pub const CUSTOM_EDITORS_SETTING: &str = "editors.custom";
 pub const HIDDEN_EDITORS_SETTING: &str = "editors.hidden";
+const LEGACY_EDITOR_MIGRATED_SETTING: &str = "editors.legacy_migrated";
+
+/// Migrate the removed default-editor pair exactly once, retaining the legacy values.
+pub fn migrate_legacy_settings(settings: &mut crate::settings::SettingsService) {
+    if settings.get(LEGACY_EDITOR_MIGRATED_SETTING).and_then(|v| v.as_bool()) == Some(true) {
+        return;
+    }
+    let old_id = settings.get("editor").and_then(|v| v.as_str()).unwrap_or("");
+    let old_command = settings.get("editor.command").and_then(|v| v.as_str()).unwrap_or("").trim();
+    let mut list = settings.get(CUSTOM_EDITORS_SETTING)
+        .and_then(|v| serde_json::from_value::<Vec<CustomEditor>>(v.clone()).ok())
+        .unwrap_or_default();
+    if old_id == "vscode" {
+        if let Some(path) = detect().into_iter().find(|e| e.id == "vscode").and_then(|e| e.path) {
+            if !list.iter().any(|e| e.id == "legacy:vscode") {
+                list.push(CustomEditor { id: "legacy:vscode".into(), name: "VS Code".into(), path, args: None });
+            }
+        }
+    }
+    if !old_command.is_empty() && !list.iter().any(|e| e.id == "legacy:custom") {
+        let name = Path::new(old_command).file_stem().and_then(|s| s.to_str()).unwrap_or("Custom Editor").to_string();
+        list.push(CustomEditor { id: "legacy:custom".into(), name, path: old_command.to_string(), args: None });
+    }
+    let _ = save_custom(settings, &list);
+    let _ = settings.set(LEGACY_EDITOR_MIGRATED_SETTING, serde_json::Value::Bool(true));
+}
 
 /// Reads user-configured hidden editor IDs from settings.
 pub fn list_hidden(settings: &crate::settings::SettingsService) -> Vec<String> {
@@ -56,25 +82,6 @@ pub fn list_custom(settings: &crate::settings::SettingsService) -> Vec<CustomEdi
         if let Ok(list) = serde_json::from_value::<Vec<CustomEditor>>(val.clone()) {
             return list;
         }
-    }
-    // Backward compatibility: if no custom editors yet, but `editor.command` exists:
-    if let Some(cmd) = settings
-        .get("editor.command")
-        .and_then(|v| v.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        let name = Path::new(cmd)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("Custom Editor")
-            .to_string();
-        return vec![CustomEditor {
-            id: "custom:default".to_string(),
-            name,
-            path: cmd.to_string(),
-            args: None,
-        }];
     }
     Vec::new()
 }

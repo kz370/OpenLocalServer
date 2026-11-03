@@ -222,11 +222,12 @@ impl Inner {
     }
 
     pub fn with_parts(
-        settings: SettingsService,
+        mut settings: SettingsService,
         paths: AppPaths,
         supervisor: Arc<ProcessSupervisor>,
         runtimes: Arc<RuntimeManager>,
     ) -> Result<Arc<Self>, CoreError> {
+        crate::editors::migrate_legacy_settings(&mut settings);
         if let Err(error) = crate::db::migrate(&paths) {
             let diagnostic = crate::error::Diagnostic::from(&error);
             tracing::error!(problem = %diagnostic.problem, cause = %diagnostic.cause, fix = ?diagnostic.fix, "database migration rolled back; continuing with existing data");

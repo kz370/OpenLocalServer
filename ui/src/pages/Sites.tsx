@@ -1,5 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Activity, Check, CircleOff, Code2, Copy, Download, ExternalLink, EyeOff, FolderOpen, FolderPlus, FolderSearch, FolderX, Globe, HardDrive, Image as ImageIcon, KeyRound, List, MoreHorizontal, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2, X, Zap } from 'lucide-react'
+import { Activity, Check, CircleOff, Code2, Copy, Download, ExternalLink, EyeOff, FolderArchive, FolderOpen, FolderPlus, FolderSearch, FolderX, Globe, HardDrive, Image as ImageIcon, KeyRound, List, ListX, MoreHorizontal, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, X, Zap } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
@@ -24,11 +24,11 @@ import { Input } from '@/components/ui/input'
 import { FloatingMenu, type MenuAnchor, type MenuItem } from '@/components/ui/menu'
 import { Pagination } from '@/components/ui/pagination'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { type Domain, type DomainSummary, type HealthReport, type Project, type WpProject, runCommand } from '@/core'
+import { type Domain, type DomainSummary, type EditorInfo, type HealthReport, type Project, type WpProject, runCommand } from '@/core'
 import { getCached, setCached } from '@/lib/cache'
 import { confirmAction } from '@/lib/confirm'
 import { notify } from '@/lib/notify'
-import { onOpenAddSiteForProject, onOpenProject, onOpenSitesFilter, takePendingAddSiteProject, takePendingProject, takePendingSitesFilter } from '@/lib/nav'
+import { onOpenAddSiteForProject, onOpenProject, onOpenSitesFilter, openSettingsSection, takePendingAddSiteProject, takePendingProject, takePendingSitesFilter } from '@/lib/nav'
 import { useTheme } from '@/lib/theme'
 import { useWeb } from '@/lib/web'
 import { Wizard } from '@/pages/QuickApps'
@@ -118,6 +118,13 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   // deleted elsewhere gains or loses the action without a reload.
   const [wpProjects, setWpProjects] = useState<WpProject[]>(cachedWpProjects)
   const [unconnectedProjectIds, setUnconnectedProjectIds] = useState<string[] | null>(null)
+  const [editors, setEditors] = useState<EditorInfo[]>([])
+
+  useEffect(() => {
+    void runCommand({ type: 'list_editors' }).then((r) => {
+      if (r.type === 'editors') setEditors(r.editors)
+    }).catch(() => setEditors([]))
+  }, [])
 
   useEffect(() => {
     void runCommand({ type: 'list_projects' }).then((result) => {
@@ -642,7 +649,16 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     }
 
     if (folder) items.push({ label: 'Open project folder', icon: <FolderOpen />, hint: isHealthy ? folder : 'Project folder is not accessible', disabled: !isHealthy, onSelect: () => void run('open', () => runCommand({ type: 'open_path', path: folder })) })
-    if (folder) items.push({ label: 'Open folder in code editor', icon: <Code2 />, hint: isHealthy ? folder : 'Project folder is not accessible', disabled: !isHealthy, onSelect: () => void run('code', () => runCommand({ type: 'open_in_editor', path: folder })) })
+    if (folder) {
+      const visibleEditors = editors.filter((e) => e.path && !e.hidden)
+      const openEditor = (id: string) => void run('code', () => runCommand({ type: 'open_with', app: id, path: folder }))
+      const addEditor = () => { openSettingsSection('general'); onNavigate('settings') }
+      items.push({
+        label: 'Open with editor', icon: <Code2 />, hint: isHealthy ? folder : 'Project folder is not accessible', disabled: !isHealthy,
+        ...(visibleEditors.length > 1 ? { submenu: visibleEditors.map((ed) => ({ label: ed.name, icon: <Code2 />, onSelect: () => openEditor(ed.id) })) } : {}),
+        onSelect: visibleEditors.length === 1 ? () => openEditor(visibleEditors[0].id) : visibleEditors.length === 0 ? addEditor : undefined,
+      })
+    }
     if (p) items.push({ label: 'Terminal', icon: <SquareTerminal />, disabled: !isHealthy, onSelect: () => setTarget({ hostname: d?.hostname ?? null, projectId: p.id, tab: 'terminal' }) })
     // WordPress gets a passwordless admin entry. The backend answers with a link that works
     // once, from this machine, for a few minutes; no password is read, asked for or stored.
@@ -770,7 +786,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
             const last = p ? ` ${p.name} leaves the list with it.` : ''
             const hostLabel = allHosts.length > 1 ? `${d.hostname} (+${r.extraDomains.length} extra domains)` : d.hostname
             const ok = await confirmAction(
-              `This site will stop being served. Its vhost and hosts entry will be removed, then the web server will reload. The database record and project files stay. Restore it from Settings > Hidden sites.${last}`,
+            `Stops serving the site and keeps its folder and database record. Restore it from Settings > Hidden sites.${last}`,
               `Hide ${hostLabel}?`,
               'Hide',
             )
@@ -779,14 +795,14 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
           },
         })
       items.push({
-        label: 'Remove site only',
-        icon: <X />,
+        label: 'Remove from list',
+        icon: <ListX />,
         disabled: removing.has(key) || busy === `remove:${key}`,
         onSelect: async () => {
           const ok = await confirmAction(
             `This site will stop being served and removed from OLS. Its project stays in the Projects list and its folder stays on disk.`,
             `Remove the site for ${p?.name ?? d.hostname}?`,
-            'Remove site only',
+            'Remove from list',
           )
           if (!ok) return
           await run(`remove:${key}`, async () => {
@@ -799,17 +815,16 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         },
       })
       items.push({
-        label: 'Safe delete',
-        description: 'Moves folder to excluded, restorable',
-        icon: <Trash2 />,
-        danger: true,
+        label: 'Move to excluded folder',
+        icon: <FolderArchive className="text-amber-500" />,
+        hint: 'Moves the folder to ols_excluded_sites. Restore it from Projects.',
         disabled: allHosts.some((h) => removing.has(h)) || busy === `delete:${key}`,
         onSelect: async () => {
           const hostLabel = allHosts.length > 1 ? `${d.hostname} (+${r.extraDomains.length} extra domains)` : d.hostname
           const ok = await confirmAction(
-            `This site will stop being served. Its project folder will move into an "ols_excluded_sites" folder in the same directory, and the site and project records will be removed from OLS.`,
+            `${p?.name ?? d.hostname}\nFolder: ${folder ?? 'Unknown'}\nDestination: ${folder ? `${folder.replace(/[\\/][^\\/]+$/, '')}\\ols_excluded_sites` : 'ols_excluded_sites'}\nMove the folder and remove the site from OpenLocalServer. Restore it by moving it back from the excluded folder, then add it again from Projects.`,
             `Remove ${hostLabel} and its project folder?`,
-            'Safe delete',
+            'Move to excluded',
           )
           if (!ok) return
           await run(`delete:${key}`, () => web.deleteSites(allHosts))

@@ -22,7 +22,6 @@ import { confirmThen } from '@/lib/confirm'
 import { getDirtyForms, useDirtyForm, warnBeforeLeavingUnsavedChanges } from '@/lib/dirtyForms'
 import { useAction } from '@/lib/hooks'
 import { onOpenSettingsSection, takePendingSettingsSection } from '@/lib/nav'
-import { generalSettingWrites } from '@/lib/settingsWrite'
 import { invalidateDefaultTldCache } from '@/lib/sites'
 import { cn } from '@/lib/utils'
 import {
@@ -43,7 +42,7 @@ import { AppearanceSettings } from '@/components/settings/AppearanceSettings'
 
 type Section = 'general' | 'appearance' | 'sites' | 'roots' | 'deleted' | 'startup' | 'manual' | 'resources' | 'backups' | 'about' | 'mcp'
 type SettingsDraft =
-  | { section: 'general'; editor: string; editorId: string; confirmExit: boolean; confirmStopAll: boolean; autoFixDiagnostics: boolean }
+  | { section: 'general'; confirmExit: boolean; confirmStopAll: boolean; autoFixDiagnostics: boolean }
   | { section: 'sites'; projectsDir: string; autoDomains: boolean; watchSites: boolean; defaultTld: string; customTld: string }
   | { section: 'startup'; startup: StartupSettings | null }
   | { section: 'mcp'; enabled: boolean; token: string; expiryMode: 'none' | 'hours' | 'at'; ttlHours: number; expiresAt: string }
@@ -74,8 +73,6 @@ async function getStringList(key: string): Promise<string[]> {
 const startupCache = createPersistentCache<StartupSettings | null>('settings_startup', null)
 const servicesCache = createPersistentCache<ServiceStatus[]>('settings_services', [])
 const editorsCache = createPersistentCache<EditorInfo[]>('settings_editors', [])
-const editorCache = createPersistentCache<string>('settings_editor', '')
-const editorIdCache = createPersistentCache<string>('settings_editor_id', 'vscode')
 const helperCache = createPersistentCache<HelperService | null>('settings_helper', null)
 const versionCache = createPersistentCache<string>('settings_version', '')
 const projectsDirCache = createPersistentCache<string>('settings_projects_dir', '')
@@ -100,8 +97,6 @@ const manualCache = createPersistentCache<string | null>('settings_manual', null
 export function SettingsPage() {
   const [startup, setStartup] = useState<StartupSettings | null>(startupCache.get)
   const [services, setServices] = useState<ServiceStatus[]>(servicesCache.get)
-  const [editor, setEditor] = useState(editorCache.get)
-  const [editorId, setEditorId] = useState(editorIdCache.get)
   const [editors, setEditors] = useState<EditorInfo[]>(editorsCache.get)
   const [showAddEditor, setShowAddEditor] = useState(false)
   const [newEditorName, setNewEditorName] = useState('')
@@ -204,8 +199,8 @@ export function SettingsPage() {
     if (section === 'sites') return { section, projectsDir, autoDomains, watchSites, defaultTld, customTld }
     if (section === 'startup') return { section, startup }
     if (section === 'mcp') return { section, enabled: mcpEnabled, token: mcpToken, expiryMode: mcpExpiryMode, ttlHours: mcpTtlHours, expiresAt: mcpExpiresAt }
-    return { section: 'general', editor, editorId, confirmExit, confirmStopAll, autoFixDiagnostics }
-  }, [autoDomains, autoFixDiagnostics, confirmExit, confirmStopAll, customTld, defaultTld, editor, editorId, mcpEnabled, mcpExpiresAt, mcpExpiryMode, mcpTtlHours, mcpToken, projectsDir, section, startup, watchSites])
+    return { section: 'general', confirmExit, confirmStopAll, autoFixDiagnostics }
+  }, [autoDomains, autoFixDiagnostics, confirmExit, confirmStopAll, customTld, defaultTld, mcpEnabled, mcpExpiresAt, mcpExpiryMode, mcpTtlHours, mcpToken, projectsDir, section, startup, watchSites])
   const settingsForm = useDirtyForm<SettingsDraft>({
     formKey: section,
     value: settingsDraft,
@@ -214,8 +209,6 @@ export function SettingsPage() {
     error,
     onRestore: (draft) => {
       if (draft.section === 'general') {
-        setEditor(draft.editor)
-        setEditorId(draft.editorId)
         setConfirmExit(draft.confirmExit)
         setConfirmStopAll(draft.confirmStopAll)
         setAutoFixDiagnostics(draft.autoFixDiagnostics)
@@ -267,15 +260,12 @@ export function SettingsPage() {
         helperCache.set(r)
       }
     })
-    // One load for the whole General draft: the editor pair and the three switches
-    // must reach the saved baseline together, or the Save bar opens already dirty.
+    // Load the deferred General switches as one saved baseline.
     void Promise.all([
       runCommand({ type: 'get_setting', key: 'exit.confirmation.enabled' }),
       runCommand({ type: 'get_setting', key: 'tray.stop_all.confirmation.enabled' }),
       runCommand({ type: 'get_setting', key: 'diagnostics.auto_fix' }),
-      getString('editor'),
-      getString('editor.command'),
-    ]).then(([exit, stopAll, autoFix, id, cmd]) => {
+    ]).then(([exit, stopAll, autoFix]) => {
       if (getDirtyForms('app').length > 0) return
       const exitVal = exit.type === 'setting' ? exit.value !== false : true
       const stopVal = stopAll.type === 'setting' ? stopAll.value !== false : true
@@ -286,12 +276,7 @@ export function SettingsPage() {
       confirmStopAllCache.set(stopVal)
       setAutoFixDiagnostics(fixVal)
       autoFixDiagnosticsCache.set(fixVal)
-      setEditor(cmd)
-      editorCache.set(cmd)
-      const resolvedId = cmd ? 'custom' : id || 'vscode'
-      setEditorId(resolvedId)
-      editorIdCache.set(resolvedId)
-      settingsForm.syncSaved({ section: 'general', editor: cmd, editorId: resolvedId, confirmExit: exitVal, confirmStopAll: stopVal, autoFixDiagnostics: fixVal }, 'general')
+      settingsForm.syncSaved({ section: 'general', confirmExit: exitVal, confirmStopAll: stopVal, autoFixDiagnostics: fixVal }, 'general')
     })
   }, [section, settingsForm.syncSaved])
 
@@ -427,11 +412,13 @@ export function SettingsPage() {
         startupCache.set(r.settings)
       }
     }
-    for (const { key, value } of generalSettingWrites({ editor, editorId, confirmExit, confirmStopAll, autoFixDiagnostics })) {
+    for (const { key, value } of [
+      { key: 'exit.confirmation.enabled', value: confirmExit },
+      { key: 'tray.stop_all.confirmation.enabled', value: confirmStopAll },
+      { key: 'diagnostics.auto_fix', value: autoFixDiagnostics },
+    ]) {
       await runCommand({ type: 'set_setting', key, value })
     }
-    editorCache.set(editorId === 'custom' ? editor : '')
-    editorIdCache.set(editorId)
     autoFixDiagnosticsCache.set(autoFixDiagnostics)
     confirmExitCache.set(confirmExit)
     confirmStopAllCache.set(confirmStopAll)
@@ -588,39 +575,9 @@ export function SettingsPage() {
 
   const editorField = (
     <div className="flex w-full flex-col gap-3">
-      <div className="flex flex-col gap-2 w-full max-w-md">
-        <Select value={editorId} onChange={(e) => setEditorId(e.target.value)} className="w-full">
-          {editors
-            .filter((e) => e.path && !e.hidden)
-            .map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.name}
-                {e.id === 'vscode' ? ' (default)' : ''}
-                {e.custom ? ' (custom)' : ''}
-              </option>
-            ))}
-          {editorId !== 'custom' && !editors.some((e) => e.id === editorId && e.path && !e.hidden) && (
-            <option value={editorId}>
-              {editors.find((e) => e.id === editorId)?.name ?? editorId}
-              {editors.find((e) => e.id === editorId)?.hidden ? ' (hidden)' : ' (not found)'}
-            </option>
-          )}
-          <option value="custom">Another program…</option>
-        </Select>
-        {editorId === 'custom' && (
-          <div className="flex gap-2">
-            <Input value={editor} onChange={(e) => setEditor(e.target.value)} placeholder="C:\Program Files\JetBrains\PhpStorm\bin\phpstorm64.exe" className="flex-1" />
-            <Button variant="secondary" onClick={async () => { const p = await open({ filters: [{ name: 'Program', extensions: ['exe', 'cmd', 'bat'] }] }); if (p && !Array.isArray(p)) setEditor(p) }}>
-              <FolderSearch /> Browse
-            </Button>
-          </div>
-        )}
-      </div>
-
-      {/* Configured Editors (Auto-detected & Custom) */}
       <div className="mt-2 flex w-full flex-col gap-2.5 pt-3 border-t border-border/60">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Configured Editors</span>
+          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Editors</span>
           {!showAddEditor && (
             <Button
               size="sm"
@@ -811,10 +768,10 @@ export function SettingsPage() {
             <>
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm">Defaults</CardTitle>
+              <CardTitle className="text-sm">Editors</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <SettingRow stacked title="Code editor" hint="Sites, projects and config files open here. Only editors installed on this PC are listed.">
+                  <SettingRow stacked title="Available editors" hint="Add and manage editors shown in Open with editor menus.">
                     {editorField}
                   </SettingRow>
                   {/* Stacked: the badge plus two buttons are wider than the side-by-side
@@ -1038,33 +995,33 @@ export function SettingsPage() {
                       <Sparkles className="size-4 shrink-0 text-primary" /> {`Release Notes (v${version || '2.8.0'})`}
                     </button>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => void copyManualContent()}
-                      className="h-8 text-xs shrink-0 cursor-pointer"
-                      title="Copy current document text"
-                    >
-                      {manualCopied ? (
-                        <>
-                          <Check className="size-3.5 text-emerald-500 mr-1" /> Copied
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="size-3.5 mr-1" /> Copy Markdown
-                        </>
-                      )}
-                    </Button>
-                  </div>
+                  {manualTab === 'manual' && (
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void copyManualContent()}
+                        className="h-8 text-xs shrink-0 cursor-pointer"
+                        title="Copy current document text"
+                      >
+                        {manualCopied ? (
+                          <>
+                            <Check className="size-3.5 text-emerald-500 mr-1" /> Copied
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="size-3.5 mr-1" /> Copy Markdown
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  )}
                 </div>
 
                 {manualTab === 'notes' ? (
                   <ReleaseNotesView
                     markdown={activeManualMarkdown}
                     currentVersion={version || '2.8.0'}
-                    onCopyMarkdown={() => void copyManualContent()}
-                    isCopied={manualCopied}
                   />
                 ) : (
                   <div className="flex-1 rounded-xl border border-border/70 bg-card/40 p-5 text-sm leading-relaxed overflow-y-auto min-h-[350px] max-h-[calc(100vh-280px)]">
