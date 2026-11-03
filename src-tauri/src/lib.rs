@@ -12,6 +12,7 @@ use ols_core::{
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Listener, Manager, WindowEvent, Wry};
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 mod notify;
 
@@ -1288,12 +1289,28 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
             match event.id.as_ref() {
                 "open" => show_main_window(app),
                 "toggle_all" => {
-                    let action = if core.service_aggregate().running > 0 {
-                        TrayBulkAction::Stop
+                    if core.service_aggregate().running > 0 {
+                        let confirmed_app = app.clone();
+                        let confirmed_core = core.clone();
+                        app.dialog()
+                            .message(
+                                "Stop all running services, web servers, workers, and tunnels?",
+                            )
+                            .title("Stop all?")
+                            .kind(MessageDialogKind::Warning)
+                            .buttons(MessageDialogButtons::YesNo)
+                            .show(move |confirmed| {
+                                if confirmed {
+                                    start_tray_bulk_action(
+                                        &confirmed_app,
+                                        &confirmed_core,
+                                        TrayBulkAction::Stop,
+                                    );
+                                }
+                            });
                     } else {
-                        TrayBulkAction::Start
-                    };
-                    start_tray_bulk_action(app, &core, action);
+                        start_tray_bulk_action(app, &core, TrayBulkAction::Start);
+                    }
                 }
                 "web_toggle" => {
                     let handle = app.clone();
