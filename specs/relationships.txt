@@ -256,6 +256,7 @@ ReleaseNotesView | uses | releaseNotes::parseReleaseNotes & filterReleaseNotes (
 PluginsPage | renders | PluginConsentDialog (when turning on a plugin)
 PluginConsentDialog | uses | pluginConsent (buildPluginConsentSummary, formatDownloadSource, extractHostname, formatSize)
 DiagnosticsCard & DashboardPage & ServicesPage | uses | diagnosticsNotify (startup grace period, silent baseline, 2-check persistence, per-service operation serialization, live readiness re-check, condition-keyed auto-resolving notifications, per-service expected-state intent tracking, and unexpected exit notifications)
+DiagnosticsCard | bounds | initial and manual run_diagnostics IPC to 20 seconds; a failed initial read shows its Diagnostic cause/fix and a retry action instead of leaving the dashboard spinner forever
 CoreClient (ui/src/core/client.ts) | notifies | diagnosticsNotify via setCommandLifecycleHook (onBeforeCommand, onCommandSuccess, onCommandError, onBeforeExit)
 diagnosticsNotify | drives | notify condition resolution (registerNotificationCondition, evaluateNotificationConditions, resolveNotificationByKey, resolveNotificationsForService)
 TechIcon | renders | Simple Icons with their official brand hex color; TechTile adds a matching background tint and ServiceMark layers independent service state on top.
