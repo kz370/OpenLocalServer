@@ -1,5 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Activity, Check, CircleOff, Code2, Copy, Download, ExternalLink, EyeOff, FolderArchive, FolderOpen, FolderPlus, FolderSearch, FolderX, Globe, HardDrive, Image as ImageIcon, KeyRound, List, ListX, MoreHorizontal, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2, X, Zap } from 'lucide-react'
+import { Activity, Check, CircleOff, Code2, Copy, Download, ExternalLink, EyeOff, FolderOpen, FolderPlus, FolderSearch, FolderX, Globe, HardDrive, Image as ImageIcon, KeyRound, List, ListX, MoreHorizontal, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2, Wrench, X, Zap } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
@@ -674,6 +674,20 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     const wp = p ? wpProjects.find((w) => w.project_id === p.id) : undefined
     if (wp && p) {
       const projectId = p.id
+      items.push({
+        label: 'Repair WordPress core files',
+        icon: <Wrench />,
+        hint: 'Restore missing core files for the installed WordPress version; internet required',
+        disabled: busy === `wp-core:${projectId}`,
+        onSelect: () => void run(`wp-core:${projectId}`, async () => {
+          const result = await runCommand({ type: 'wp_core_repair', project_id: projectId })
+          if (result.type !== 'wp_core_repair') return
+          notify.info(result.result.restored > 0
+            ? `Restored ${result.result.restored} missing WordPress core file${result.result.restored === 1 ? '' : 's'} (version ${result.result.version}).`
+            : `WordPress ${result.result.version} core files are present.`)
+          await Promise.all([refresh(), refreshWpProjects()])
+        }),
+      })
       items.push({
         label: 'WP Admin',
         icon: <KeyRound />,

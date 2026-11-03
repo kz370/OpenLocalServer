@@ -63,6 +63,7 @@ export type CoreCommand =
   | { type: 'list_wp_projects' }
   | { type: 'wp_sign_in'; project_id: string; hostname?: string; theme?: 'light' | 'dark' }
   | { type: 'wp_sign_in_revoke'; project_id: string }
+  | { type: 'wp_core_repair'; project_id: string }
   | { type: 'list_services' }
   | { type: 'get_service_aggregate' }
   | { type: 'start_service'; id: string }

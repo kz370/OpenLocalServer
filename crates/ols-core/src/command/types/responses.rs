@@ -117,6 +117,9 @@ pub enum CoreResponse {
         url: String,
         expires_at: u64,
     },
+    WpCoreRepair {
+        result: crate::wordpress::WpCoreRepair,
+    },
     DeletedItems {
         items: Vec<crate::app::DeletedItem>,
     },

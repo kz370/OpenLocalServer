@@ -566,6 +566,9 @@ impl Core {
                     i.wp_signin_revoke(&project_id)?;
                     Ok(R::Ok)
                 }
+                C::WpCoreRepair { project_id } => Ok(R::WpCoreRepair {
+                    result: i.wp_core_repair(&project_id)?,
+                }),
                 other => {
                     unhandled = Some(other);
                     return Ok(R::Ok);

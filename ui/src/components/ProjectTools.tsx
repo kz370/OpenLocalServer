@@ -86,7 +86,7 @@ export function ProjectTools({ detail, start, refreshKey, tab }: { detail: Proje
       {tab === 'git' && <GitPanel projectId={id} />}
       {tab === 'workers' && <WorkersPanel projectId={id} />}
       {tab === 'backups' && <BackupsPanel project={detail.project} />}
-      {tab === 'repair' && <RepairPanel projectId={id} />}
+      {tab === 'repair' && <RepairPanel projectId={id} wordpress={detail.detection.framework === 'word_press'} />}
       {tab === 'env' && <EnvEditor projectId={id} />}
       {tab === 'mail' && <MailPanel projectId={id} />}
       {tab === 'composer' && <ComposerPanel projectId={id} info={composer} busy={busy} go={go} />}

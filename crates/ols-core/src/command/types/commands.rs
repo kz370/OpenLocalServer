@@ -175,6 +175,9 @@ pub enum CoreCommand {
     WpSignInRevoke {
         project_id: String,
     },
+    WpCoreRepair {
+        project_id: String,
+    },
     ListServices,
     GetServiceAggregate,
     ListCustomServices,

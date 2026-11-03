@@ -29,6 +29,7 @@ export type CoreResponse =
   | { type: 'site_folder_inspection'; inspection: SiteFolderInspection }
   | { type: 'wp_projects'; projects: WpProject[] }
   | { type: 'wp_sign_in'; url: string; expires_at: number }
+  | { type: 'wp_core_repair'; result: { version: string; restored: number } }
   | { type: 'deleted_items'; items: DeletedItem[] }
   | { type: 'services'; services: ServiceStatus[] }
   | { type: 'service_aggregate'; aggregate: ServiceAggregate }

@@ -5,6 +5,15 @@ use crate::domain::Domain;
 use crate::error::CoreError;
 
 impl Inner {
+    /// Restores missing files from the installed WordPress core version.
+    pub fn wp_core_repair(
+        &self,
+        project_id: &str,
+    ) -> Result<crate::wordpress::WpCoreRepair, CoreError> {
+        let project = self.ensure_project_available(project_id)?;
+        crate::wordpress::repair_missing_core(Path::new(&project.path))
+    }
+
     pub fn wp_projects(&self) -> Vec<crate::wordpress::WpProject> {
         let projects = self.projects.lock().unwrap().list();
         let cfg = self.web_config();
