@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { emit } from '@tauri-apps/api/event'
+import { emit, listen } from '@tauri-apps/api/event'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 
 import { runCommand } from '@/core'
 import { applyThemeToDom, computeEffectiveOptions, computeEffectiveTokens } from './apply'
@@ -90,6 +91,26 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     void emit('ols:theme', resolvedTheme).catch(() => undefined)
   }, [resolvedTheme])
+
+  useEffect(() => {
+    if (getCurrentWindow().label !== 'main') return
+    void emit('ols:tray-confirmation-theme', settings).catch((error: unknown) => {
+      console.error('Could not sync the tray confirmation theme:', error)
+    })
+  }, [settings])
+
+  useEffect(() => {
+    if (getCurrentWindow().label !== 'tray-confirmation') return
+    let unlisten: (() => void) | undefined
+    void listen<unknown>('ols:tray-confirmation-theme', (event) => {
+      setSettings(validateThemeSettings(event.payload))
+    }).then((cleanup) => {
+      unlisten = cleanup
+    }).catch((error: unknown) => {
+      console.error('Could not listen for tray confirmation theme changes:', error)
+    })
+    return () => unlisten?.()
+  }, [])
 
   // Follow OS system preference live when in 'system' mode
   useEffect(() => {

@@ -2,6 +2,32 @@
 
 @custom-variant dark (&:is(.dark *));
 
+.tray-confirmation-enter {
+  animation: tray-confirmation-enter 340ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.tray-confirmation-pending {
+  opacity: 0;
+  transform: scale(0.92) translateY(6px);
+}
+
+@keyframes tray-confirmation-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.92) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tray-confirmation-enter {
+    animation: none;
+  }
+}
+
 :root {
   color-scheme: light;
   /* Brand hue: radiant emerald/teal paired with cyber aurora lighting */
@@ -172,6 +198,11 @@ select optgroup {
   body,
   #root {
     background: transparent !important;
+  }
+  html.tray-confirmation-window,
+  html.tray-confirmation-window body,
+  html.tray-confirmation-window #root {
+    background: var(--app-background, var(--background)) !important;
   }
   /* Boot frame, before React has painted anything: the app background, not nothing.
      The class is added by the pre-paint script in index.html and removed by main.tsx

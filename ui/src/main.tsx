@@ -3,42 +3,33 @@ import { createRoot } from 'react-dom/client'
 import { emit } from '@tauri-apps/api/event'
 import './index.css'
 import App from './App.tsx'
-import { TrayConfirmationWindow, type TrayConfirmationAction } from './components/TrayConfirmationWindow'
+import { TrayConfirmationWindow } from './components/TrayConfirmationWindow'
 import { ThemeProvider } from './lib/theme'
 
-function getTrayConfirmationAction(): TrayConfirmationAction | null {
-  const match = /^#tray-confirmation=(stop-all|quit)$/.exec(window.location.hash)
-  return match?.[1] === 'stop-all' || match?.[1] === 'quit' ? match[1] : null
+const isTrayConfirmationWindow = window.location.hash === '#tray-confirmation'
+if (isTrayConfirmationWindow) {
+  document.documentElement.classList.add('tray-confirmation-window')
 }
-
-const trayConfirmationAction = getTrayConfirmationAction()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ThemeProvider>
-      {trayConfirmationAction ? <TrayConfirmationWindow action={trayConfirmationAction} /> : <App />}
+      {isTrayConfirmationWindow ? <TrayConfirmationWindow /> : <App />}
     </ThemeProvider>
   </StrictMode>,
 )
 
-// The native window is created hidden and revealed by `reveal_window_on_ui_ready`
-// once the UI is on screen, so the user never sees the empty transparent frame.
-// Two frames: the first commits the React tree, the second guarantees the browser
-// has actually presented it before the window is shown.
+// The main window is created hidden and revealed by `reveal_window_on_ui_ready`
+// once the UI is on screen. The preloaded confirmation window signals readiness
+// after its request listener is installed.
 requestAnimationFrame(() => {
   requestAnimationFrame(() => {
-    // The boot background stays until here, so any earlier reveal — the Rust fallback
-    // timer, or a slow first paint — still shows the app's background rather than a
-    // see-through frame. Removed in the same frame the reveal is requested.
     document.documentElement.classList.remove('booting')
-    const readyEvent = trayConfirmationAction
-      ? 'ols:tray-confirmation-ui-ready'
-      : 'ols:ui-ready'
-    void emit(readyEvent).catch((error: unknown) => {
-      if (trayConfirmationAction) {
-        console.error('Could not show the tray confirmation window:', error)
-      }
-    })
+    if (!isTrayConfirmationWindow) {
+      void emit('ols:ui-ready').catch((error: unknown) => {
+        console.error('Could not report that the main window is ready:', error)
+      })
+    }
   })
 })
 

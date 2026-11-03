@@ -71,34 +71,41 @@ fn show_main_window(app: &AppHandle) {
     }
 }
 
-fn show_tray_confirmation(app: &AppHandle, action: &str) {
-    if let Some(window) = app.get_webview_window("tray-confirmation") {
-        if let Err(error) = window.set_focus() {
-            tracing::warn!(error = %error, "the tray confirmation window could not be focused");
-        }
-        return;
-    }
+#[derive(Default)]
+struct TrayConfirmationWindowState {
+    ui_ready: bool,
+    pending_action: Option<String>,
+}
 
-    let initialization_script = format!("window.location.hash = '#tray-confirmation={action}';");
-    match WebviewWindowBuilder::new(
-        app,
-        "tray-confirmation",
-        WebviewUrl::App("index.html".into()),
-    )
-    .title("OpenLocalServer")
-    .inner_size(480.0, 240.0)
-    .resizable(false)
-    .decorations(false)
-    .transparent(true)
-    .always_on_top(true)
-    .visible(false)
-    .center()
-    .initialization_script(initialization_script)
-    .build()
-    {
-        Ok(_) => {}
+static TRAY_CONFIRMATION_WINDOW_STATE: Mutex<TrayConfirmationWindowState> =
+    Mutex::new(TrayConfirmationWindowState {
+        ui_ready: false,
+        pending_action: None,
+    });
+
+fn send_tray_confirmation_action(app: &AppHandle, action: &str) {
+    let Some(window) = app.get_webview_window("tray-confirmation") else {
+        tracing::error!("the preloaded tray confirmation window is unavailable");
+        return;
+    };
+
+    let ui_ready = match TRAY_CONFIRMATION_WINDOW_STATE.lock() {
+        Ok(mut state) => {
+            if state.ui_ready {
+                true
+            } else {
+                state.pending_action = Some(action.to_owned());
+                false
+            }
+        }
         Err(error) => {
-            tracing::error!(error = %error, "the themed tray confirmation window could not be created")
+            tracing::error!(error = %error, "the tray confirmation window state is unavailable");
+            return;
+        }
+    };
+    if ui_ready {
+        if let Err(error) = window.emit("ols:tray-confirmation-request", action) {
+            tracing::error!(error = %error, "the tray confirmation request could not be sent");
         }
     }
 }
@@ -1329,7 +1336,7 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
                 "open" => show_main_window(app),
                 "toggle_all" => {
                     if core.service_aggregate().running > 0 {
-                        show_tray_confirmation(app, "stop-all");
+                        send_tray_confirmation_action(app, "stop-all");
                     } else {
                         start_tray_bulk_action(app, &core, TrayBulkAction::Start);
                     }
@@ -1534,7 +1541,7 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
                     });
                 }
                 "quit" => {
-                    show_tray_confirmation(app, "quit");
+                    send_tray_confirmation_action(app, "quit");
                 }
                 _ => {}
             }
@@ -1663,7 +1670,24 @@ pub fn run() {
             let confirmation_core = core.clone();
             let confirmation_ready_app = app.handle().clone();
             app.listen("ols:tray-confirmation-ui-ready", move |_| {
-                if let Some(window) = confirmation_ready_app.get_webview_window("tray-confirmation")
+                let pending_action = match TRAY_CONFIRMATION_WINDOW_STATE.lock() {
+                    Ok(mut state) => {
+                        state.ui_ready = true;
+                        state.pending_action.take()
+                    }
+                    Err(error) => {
+                        tracing::error!(error = %error, "the tray confirmation window state is unavailable");
+                        return;
+                    }
+                };
+                if let Some(action) = pending_action {
+                    send_tray_confirmation_action(&confirmation_ready_app, &action);
+                }
+            });
+
+            let confirmation_show_app = app.handle().clone();
+            app.listen("ols:tray-confirmation-show-ready", move |_| {
+                if let Some(window) = confirmation_show_app.get_webview_window("tray-confirmation")
                 {
                     if let Err(error) = window.show() {
                         tracing::warn!(error = %error, "the themed tray confirmation window could not be shown");
@@ -1671,9 +1695,15 @@ pub fn run() {
                     if let Err(error) = window.set_focus() {
                         tracing::warn!(error = %error, "the themed tray confirmation window could not be focused");
                     }
+                    if let Err(error) = window.emit("ols:tray-confirmation-animate", ()) {
+                        tracing::warn!(error = %error, "the tray confirmation entrance animation could not be started");
+                    }
+                } else {
+                    tracing::error!("the preloaded tray confirmation window is unavailable");
                 }
             });
 
+            let confirmation_response_app = app.handle().clone();
             app.listen("ols:tray-confirmation-response", move |event| {
                 let response = match serde_json::from_str::<TrayConfirmationResponse>(event.payload())
                 {
@@ -1683,9 +1713,11 @@ pub fn run() {
                         return;
                     }
                 };
-                if let Some(window) = confirmation_app.get_webview_window("tray-confirmation") {
-                    if let Err(error) = window.close() {
-                        tracing::warn!(error = %error, "the tray confirmation window could not be closed");
+                if let Some(window) =
+                    confirmation_response_app.get_webview_window("tray-confirmation")
+                {
+                    if let Err(error) = window.hide() {
+                        tracing::warn!(error = %error, "the tray confirmation window could not be hidden");
                     }
                 }
                 if !response.confirmed {
@@ -1795,6 +1827,25 @@ pub fn run() {
                     }
                 }
             });
+
+            let confirmation_window = WebviewWindowBuilder::new(
+                app,
+                "tray-confirmation",
+                WebviewUrl::App("index.html".into()),
+            )
+            .title("OpenLocalServer")
+            .inner_size(430.0, 226.0)
+            .resizable(false)
+            .decorations(false)
+            .transparent(false)
+            .always_on_top(true)
+            .visible(false)
+            .center()
+            .initialization_script("window.location.hash = '#tray-confirmation';")
+            .build()?;
+            if let Some(icon) = app.default_window_icon() {
+                confirmation_window.set_icon(icon.clone())?;
+            }
 
             let service_status_handle = app.handle().clone();
             let service_status_core = core.clone();
@@ -1974,19 +2025,29 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(move |window, event| {
-            // §120: closing the window keeps the servers running in the tray.
-            if window.label() == "main" {
+            if window.label() == "tray-confirmation" {
                 if let WindowEvent::CloseRequested { api, .. } = event {
-                if window_core
-                    .inner()
-                    .setting_bool("startup.close_to_tray", true)
-                {
-                    api.prevent_close();
-                    let _ = window.hide();
-                } else {
-                    api.prevent_close();
-                    begin_shutdown(&window.app_handle(), window_core.clone());
+                api.prevent_close();
+                if let Err(error) = window.hide() {
+                    tracing::warn!(error = %error, "the tray confirmation window could not be hidden");
                 }
+                }
+                return;
+            }
+            // §120: closing the window keeps the servers running in the tray.
+            if window.label() != "main" {
+                return;
+            }
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                if window_core
+                .inner()
+                .setting_bool("startup.close_to_tray", true)
+                {
+                api.prevent_close();
+                let _ = window.hide();
+                } else {
+                api.prevent_close();
+                begin_shutdown(&window.app_handle(), window_core.clone());
                 }
             }
         })
