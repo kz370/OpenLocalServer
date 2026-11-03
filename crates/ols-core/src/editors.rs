@@ -98,6 +98,9 @@ pub fn list_all(settings: &crate::settings::SettingsService) -> Vec<EditorInfo> 
     let mut all = detect();
     let custom = list_custom(settings);
     for c in custom {
+        if all.iter().any(|e| e.id == c.id) {
+            continue;
+        }
         all.push(EditorInfo {
             id: c.id,
             name: c.name,

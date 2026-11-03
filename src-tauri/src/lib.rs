@@ -950,7 +950,7 @@ fn tray_menu(
             }
             let editor_refs: Vec<&dyn tauri::menu::IsMenuItem<Wry>> =
                 editor_items.iter().map(|item| item.as_ref()).collect();
-            let open_with = Submenu::with_items(app, "Open with", true, &editor_refs)?;
+            let open_with = Submenu::with_items(app, "Open with editor", true, &editor_refs)?;
 
             let project_submenu =
                 Submenu::with_items(app, &project.name, true, &[&open_dir, &open_with])?;

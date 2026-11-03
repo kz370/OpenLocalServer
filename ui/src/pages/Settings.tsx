@@ -40,7 +40,7 @@ import {
 } from '@/components/layout/SidebarIcons'
 import { AppearanceSettings } from '@/components/settings/AppearanceSettings'
 
-type Section = 'general' | 'appearance' | 'sites' | 'roots' | 'deleted' | 'startup' | 'manual' | 'resources' | 'backups' | 'about' | 'mcp'
+type Section = 'general' | 'editors' | 'appearance' | 'sites' | 'roots' | 'deleted' | 'startup' | 'manual' | 'resources' | 'backups' | 'about' | 'mcp'
 type SettingsDraft =
   | { section: 'general'; confirmExit: boolean; confirmStopAll: boolean; autoFixDiagnostics: boolean }
   | { section: 'sites'; projectsDir: string; autoDomains: boolean; watchSites: boolean; defaultTld: string; customTld: string }
@@ -48,6 +48,7 @@ type SettingsDraft =
   | { section: 'mcp'; enabled: boolean; token: string; expiryMode: 'none' | 'hours' | 'at'; ttlHours: number; expiresAt: string }
 const SECTIONS: { id: Section; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'general', label: 'General', icon: SettingsGeneralIcon },
+  { id: 'editors', label: 'Editors', icon: SettingsGeneralIcon },
   { id: 'appearance', label: 'Appearance', icon: SettingsAppearanceIcon },
   { id: 'mcp', label: 'MCP / AI tools', icon: SettingsMcpIcon },
   { id: 'sites', label: 'Sites & domains', icon: SettingsSitesIcon },
@@ -247,7 +248,7 @@ export function SettingsPage() {
   }, [])
 
   useEffect(() => {
-    if (section !== 'general') return
+    if (section !== 'general' && section !== 'editors') return
     void runCommand({ type: 'list_editors' }).then((r) => {
       if (r.type === 'editors') {
         setEditors(r.editors)
@@ -768,12 +769,9 @@ export function SettingsPage() {
             <>
               <Card>
                 <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Editors</CardTitle>
+              <CardTitle className="text-sm">General</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <SettingRow stacked title="Available editors" hint="Add and manage editors shown in Open with editor menus.">
-                    {editorField}
-                  </SettingRow>
                   {/* Stacked: the badge plus two buttons are wider than the side-by-side
                       control column, and a control that wide squeezed the title into a
                       one-character-wide column. */}
@@ -817,6 +815,18 @@ export function SettingsPage() {
               <ApiCard />
               <SystemCard />
             </>
+          )}
+
+          {section === 'editors' && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Editors</CardTitle>
+                <CardDescription>Add and manage editors shown in Open with editor menus.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {editorField}
+              </CardContent>
+            </Card>
           )}
 
           {section === 'sites' && (

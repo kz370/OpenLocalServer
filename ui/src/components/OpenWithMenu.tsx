@@ -45,8 +45,7 @@ export function OpenWithMenu({ path, isDir, onError }: { path: string; isDir: bo
   }
 
   const items: { app: string; label: string }[] = [
-    { app: 'editor', label: 'Code editor (your default)' },
-    ...editors.filter((e) => e.path).map((e) => ({ app: e.id, label: e.name })),
+    ...editors.filter((e) => e.path && !e.hidden).map((e) => ({ app: e.id, label: e.name })),
     { app: 'explorer', label: isDir ? 'File Explorer' : 'Show in File Explorer' },
     { app: 'terminal', label: 'Terminal here' },
     ...(isDir ? [] : [{ app: 'default', label: 'Default app' }]),

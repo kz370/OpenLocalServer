@@ -457,7 +457,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
         label: 'Edit editors...',
         icon: <Settings className="size-3.5" />,
         onSelect: () => {
-          openSettingsSection('general')
+        openSettingsSection('editors')
           onNavigate('settings')
         },
       },
@@ -491,7 +491,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
         onSelect: visibleEditors.length === 1
           ? () => void runCommand({ type: 'open_with', app: visibleEditors[0].id, path: p.path })
           : visibleEditors.length === 0
-            ? () => { openSettingsSection('general'); onNavigate('settings') }
+            ? () => { openSettingsSection('editors'); onNavigate('settings') }
             : undefined,
       },
       {

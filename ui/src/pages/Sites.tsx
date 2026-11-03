@@ -652,7 +652,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     if (folder) {
       const visibleEditors = editors.filter((e) => e.path && !e.hidden)
       const openEditor = (id: string) => void run('code', () => runCommand({ type: 'open_with', app: id, path: folder }))
-      const addEditor = () => { openSettingsSection('general'); onNavigate('settings') }
+      const addEditor = () => { openSettingsSection('editors'); onNavigate('settings') }
       items.push({
         label: 'Open with editor', icon: <Code2 />, hint: isHealthy ? folder : 'Project folder is not accessible', disabled: !isHealthy,
         ...(visibleEditors.length > 1 ? { submenu: visibleEditors.map((ed) => ({ label: ed.name, icon: <Code2 />, onSelect: () => openEditor(ed.id) })) } : {}),
