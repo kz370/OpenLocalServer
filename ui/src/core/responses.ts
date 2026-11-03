@@ -1,6 +1,6 @@
 import type { AiDetected, AiJobView, AiModel, AiPrompt, AiState, AiTestResult } from './types/ai'
 import type { DashboardData, HealthItem, HistoryEntry, LogSource, QuickCommand, QuickEntryDetail, QuickEntryView, QuickPlanResult, RunView, StartupSettings } from './types/apps'
-import type { CatalogEntry, CommandHistoryEntry, CustomInstall, CustomServiceDef, DbBackup, DbTool, DeletedItem, EnvironmentManifest, PortStatus, ProcessId, ProcessInfo, Project, ProjectDetail, ProjectTypePreset, CustomProjectType, ProjectFolderInspection, ServiceStatus, Shortcut, WpProject } from './types/base'
+import type { CatalogEntry, CommandHistoryEntry, CustomInstall, CustomServiceDef, DbBackup, DbTool, DeletedItem, EnvironmentManifest, PortStatus, ProcessId, ProcessInfo, Project, ProjectDetail, ProjectTypePreset, CustomProjectType, ProjectFolderInspection, ServiceAggregate, ServiceStatus, Shortcut, WpProject } from './types/base'
 import type { CommandSource, ComposerInfo, EditorInfo, EnvDiffRow, EnvFileInfo, EnvFileView, EnvironmentPlan, Finding, MailCheck, MailEnvPlan, ManifestInfo, MigratedDb, MigrationProgress, MigrationSource, Operation, PackageManagerInfo, PhpExtensions, SetupReport, SiteFolderInspection, SystemStats, VenvInfo, XdebugReport } from './types/environment'
 import type { ApiStatus, CatalogView, DoctorReport, GitBranch, GitCommit, GitStatus, LoadOverview, LoadProfile, LoadRun, NetworkStatus, PluginDetection, PluginInfo, RecordedRequest, RepairPlan, RepairReport, SearchHit, ShellMenuStatus, UpdateInfo, UpdaterStatus } from './types/system'
 import type { AutoBackupRun, AutoBackupStatus, BundleImportResult, BundlePreview, CloneResult, CpuCapStatus, ImportPreview, ModeResult, ModesView, Profile, ResourceLimits, RestoreResult, SettingsBackup, SnapshotInfo, TaskRun, TaskStatus, TaskView, TunnelProvider, TunnelStatus, WorkerPreset, WorkerStatus } from './types/tasks'
@@ -31,6 +31,7 @@ export type CoreResponse =
   | { type: 'wp_sign_in'; url: string; expires_at: number }
   | { type: 'deleted_items'; items: DeletedItem[] }
   | { type: 'services'; services: ServiceStatus[] }
+  | { type: 'service_aggregate'; aggregate: ServiceAggregate }
   | { type: 'db_backups'; backups: DbBackup[] }
   | { type: 'shortcuts'; shortcuts: Shortcut[] }
   | { type: 'terminal'; id: number }
@@ -167,4 +168,3 @@ export type CoreResponse =
   | { type: 'site_bundle_imported'; result: BundleImportResult }
   | { type: 'app_guide'; markdown: string; version: string }
 // @@ts-responses-end
-

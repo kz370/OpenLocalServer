@@ -89,6 +89,9 @@ impl Core {
                 C::ListServices => Ok(R::Services {
                     services: i.services.list(),
                 }),
+                C::GetServiceAggregate => Ok(R::ServiceAggregate {
+                    aggregate: self.service_aggregate(),
+                }),
                 C::ListCustomServices => Ok(R::CustomServices {
                     services: i.services.list_custom(),
                 }),

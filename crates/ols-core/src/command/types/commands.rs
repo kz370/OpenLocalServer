@@ -168,6 +168,7 @@ pub enum CoreCommand {
         project_id: String,
     },
     ListServices,
+    GetServiceAggregate,
     ListCustomServices,
     SaveCustomService {
         service: crate::custom_service::CustomService,

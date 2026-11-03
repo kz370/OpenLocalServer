@@ -62,6 +62,7 @@ export type CoreCommand =
   | { type: 'wp_sign_in'; project_id: string; hostname?: string; theme?: 'light' | 'dark' }
   | { type: 'wp_sign_in_revoke'; project_id: string }
   | { type: 'list_services' }
+  | { type: 'get_service_aggregate' }
   | { type: 'start_service'; id: string }
   | { type: 'stop_service'; id: string }
   /**
@@ -395,4 +396,3 @@ export type CoreCommand =
   | { type: 'clear_finished_tasks' }
   | { type: 'get_app_guide'; version?: string | null }
 // @@ts-commands-end
-

@@ -6,18 +6,20 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 pub fn start(ctx: &Ctx) -> R<()> {
-    let r = ctx.call(CoreCommand::ApplyWeb { overwrite: vec![] })?;
-    if !ctx.print_json(&r) {
-        println!("Web server started.");
-    }
-    if let CoreResponse::Startup { settings } = ctx.call(CoreCommand::GetStartupSettings)? {
-        for id in settings.autostart_services {
-            match ctx.call(CoreCommand::StartService { id: id.clone() }) {
-                Ok(_) => println!("Started {id}."),
-                Err(e) if e.contains("already running") => {}
-                Err(e) => eprintln!("{id}: {e}"),
-            }
+    let CoreResponse::ServiceAggregate { aggregate } =
+        ctx.call(CoreCommand::GetServiceAggregate)?
+    else {
+        return Err("unexpected reply while reading the service start plan".into());
+    };
+    for id in aggregate.start_service_ids {
+        match ctx.call(CoreCommand::StartService { id: id.clone() }) {
+            Ok(_) => println!("Started {id}."),
+            Err(e) if e.contains("already running") => {}
+            Err(e) => eprintln!("{id}: {e}"),
         }
+    }
+    if aggregate.enabled_total == 0 {
+        println!("No installed services are available to start.");
     }
     Ok(())
 }

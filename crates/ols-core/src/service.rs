@@ -86,6 +86,69 @@ pub struct ServiceStateEvent {
     pub services: Vec<ServiceStateChange>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceAggregate {
+    pub running: usize,
+    pub enabled_total: usize,
+    pub start_service_ids: Vec<String>,
+    pub services: Vec<ServiceStatus>,
+}
+
+impl ServiceAggregate {
+    pub fn from_services(
+        services: Vec<ServiceStatus>,
+        autostart_service_ids: &[String],
+        default_web: &str,
+    ) -> Self {
+        let running = services.iter().filter(|service| service.running).count();
+        let mut enabled_ids = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+
+        if autostart_service_ids.is_empty() {
+            enabled_ids.extend(
+                services
+                    .iter()
+                    .filter(|service| service.installed)
+                    .map(|service| service.id.clone()),
+            );
+        } else {
+            for id in autostart_service_ids {
+                let id = if id == "web" { default_web } else { id };
+                if seen.insert(id.to_string())
+                    && services
+                        .iter()
+                        .any(|service| service.id == id && service.installed)
+                {
+                    enabled_ids.push(id.to_string());
+                }
+            }
+        }
+
+        let enabled_total = enabled_ids.len();
+        let start_service_ids = enabled_ids
+            .into_iter()
+            .filter(|id| {
+                services.iter().any(|service| {
+                    service.id == *id
+                        && !service.running
+                        && !matches!(
+                            service.state,
+                            ServiceState::Starting
+                                | ServiceState::Stopping
+                                | ServiceState::Restarting
+                        )
+                })
+            })
+            .collect();
+        Self {
+            running,
+            enabled_total,
+            start_service_ids,
+            services,
+        }
+    }
+}
+
 pub async fn next_service_state_event(
     receiver: &mut broadcast::Receiver<ServiceStateEvent>,
 ) -> Option<ServiceStateEvent> {
@@ -2168,6 +2231,71 @@ pub fn mailpit_smtp_port() -> u16 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn aggregate_service(id: &str, installed: bool, running: bool, kind: &str) -> ServiceStatus {
+        ServiceStatus {
+            id: id.into(),
+            name: id.into(),
+            installed,
+            running,
+            state: if running {
+                ServiceState::Running
+            } else {
+                ServiceState::Stopped
+            },
+            port: None,
+            port_status: None,
+            kind: kind.into(),
+            category: None,
+            connection: None,
+            healthy: None,
+            version: None,
+            sites: None,
+            log_source: None,
+        }
+    }
+
+    #[test]
+    fn service_aggregate_counts_none_some_all_and_ignores_disabled_for_start() {
+        let services = vec![
+            aggregate_service("nginx", true, false, "web"),
+            aggregate_service("mariadb", true, false, "sql"),
+            aggregate_service("redis", true, false, "cache"),
+            aggregate_service("disabled", false, false, "custom"),
+        ];
+        let autostart = vec![
+            "web".to_string(),
+            "mariadb".to_string(),
+            "redis".to_string(),
+            "disabled".to_string(),
+        ];
+
+        let none_running = ServiceAggregate::from_services(services.clone(), &autostart, "nginx");
+        assert_eq!(none_running.running, 0);
+        assert_eq!(none_running.enabled_total, 3);
+        assert_eq!(
+            none_running.start_service_ids,
+            ["nginx", "mariadb", "redis"]
+        );
+
+        let mut some_running = services.clone();
+        some_running[1].running = true;
+        some_running[1].state = ServiceState::Running;
+        let some_running = ServiceAggregate::from_services(some_running, &autostart, "nginx");
+        assert_eq!(some_running.running, 1);
+        assert_eq!(some_running.enabled_total, 3);
+        assert_eq!(some_running.start_service_ids, ["nginx", "redis"]);
+
+        let mut all_running = services;
+        for service in &mut all_running[..3] {
+            service.running = true;
+            service.state = ServiceState::Running;
+        }
+        let all_running = ServiceAggregate::from_services(all_running, &autostart, "nginx");
+        assert_eq!(all_running.running, 3);
+        assert_eq!(all_running.enabled_total, 3);
+        assert!(all_running.start_service_ids.is_empty());
+    }
 
     #[test]
     fn service_transition_is_available_in_snapshot_and_broadcast() {

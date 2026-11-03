@@ -9,7 +9,7 @@ use crate::error::{CoreError, Diagnostic};
 use crate::paths::AppPaths;
 use crate::process::ProcessSupervisor;
 use crate::runtime::RuntimeManager;
-use crate::service::ServiceManager;
+use crate::service::{ServiceAggregate, ServiceManager, ServiceStatus};
 use crate::settings::SettingsService;
 
 pub mod dispatch;
@@ -105,6 +105,17 @@ impl Core {
     pub fn inner(&self) -> &Arc<Inner> {
         &self.inner
     }
+
+    pub fn service_aggregate(&self) -> ServiceAggregate {
+        self.service_aggregate_from(self.services().list())
+    }
+
+    pub fn service_aggregate_from(&self, services: Vec<ServiceStatus>) -> ServiceAggregate {
+        let autostart_ids = self.inner.startup_settings().autostart_services;
+        let default_web = self.inner.web_config().default_server;
+        ServiceAggregate::from_services(services, &autostart_ids, &default_web)
+    }
+
     pub fn supervisor(&self) -> Arc<ProcessSupervisor> {
         self.inner.supervisor.clone()
     }

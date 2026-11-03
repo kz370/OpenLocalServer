@@ -246,6 +246,13 @@ export interface ServiceStatus {
   log_source?: string
 }
 
+export interface ServiceAggregate {
+  running: number
+  enabled_total: number
+  start_service_ids: string[]
+  services: ServiceStatus[]
+}
+
 export interface DbTool {
   id: string
   name: string

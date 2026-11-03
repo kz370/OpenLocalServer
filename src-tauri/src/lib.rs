@@ -45,21 +45,6 @@ fn notifications_enabled(core: &Core) -> bool {
     core.inner().setting_bool("notifications.enabled", true)
 }
 
-fn autostart_service_ids(configured_ids: Vec<String>, default_web: &str) -> Vec<String> {
-    let mut seen = std::collections::HashSet::new();
-    configured_ids
-        .into_iter()
-        .map(|id| {
-            if id == "web" {
-                default_web.to_string()
-            } else {
-                id
-            }
-        })
-        .filter(|id| seen.insert(id.clone()))
-        .collect()
-}
-
 /// §119: a desktop alert of our own, unless the user turned them off.
 fn notify(core: &Core, title: &str, body: &str) {
     if !notifications_enabled(core) {
@@ -387,18 +372,6 @@ fn status_mark(core: Option<&Core>) -> bool {
     red
 }
 
-fn tray_bulk_should_stop(core: &Core, services: &[ols_core::service::ServiceStatus]) -> bool {
-    status_mark(Some(core))
-        || services.iter().any(|service| {
-            matches!(
-                service.state,
-                ols_core::service::ServiceState::Starting
-                    | ols_core::service::ServiceState::Stopping
-                    | ols_core::service::ServiceState::Restarting
-            )
-        })
-}
-
 fn sync_status_icon(app: &AppHandle, core: &Core) {
     apply_status_icon(app, status_mark(Some(core)), false);
 }
@@ -431,18 +404,7 @@ fn shutdown(core: &Core) -> bool {
 
 #[cfg(test)]
 mod tray_tests {
-    use super::{autostart_service_ids, busy_tray_icon, tray_start_failure_summary};
-
-    #[test]
-    fn tray_start_all_includes_only_configured_autostart_services() {
-        let selected = autostart_service_ids(
-            vec!["mariadb".into(), "web".into(), "mariadb".into()],
-            "nginx",
-        );
-
-        assert_eq!(selected, ["mariadb", "nginx"]);
-        assert!(!selected.iter().any(|id| id == "mailpit"));
-    }
+    use super::{busy_tray_icon, tray_start_failure_summary};
 
     #[test]
     fn tray_start_failure_summary_names_partial_failures_once() {
@@ -554,9 +516,17 @@ fn submenu_title(label: &str, running: usize) -> String {
 /// The tooltip, which is the one place in the tray that can say more than a word
 /// per service: how many are up, and how many could be.
 fn tray_tooltip(core: &Core) -> String {
-    let services = core.services().list();
-    let running = services.iter().filter(|s| s.running).count();
-    format!("OpenLocalServer — {running} of {} running", services.len())
+    let aggregate = core.service_aggregate();
+    format!(
+        "OpenLocalServer — {} of {} services running",
+        aggregate.running,
+        aggregate.services.len()
+    )
+}
+
+#[derive(Default)]
+struct TrayMenuItems {
+    bulk_toggle: Mutex<Option<MenuItem<Wry>>>,
 }
 
 #[derive(Clone, Copy)]
@@ -595,35 +565,17 @@ fn tray_start_failure_summary(started: usize, total: usize, failed: &[String]) -
 }
 
 fn run_tray_start_all(core: &Core) {
-    let settings = match core.dispatch(CoreCommand::GetStartupSettings) {
-        Ok(CoreResponse::Startup { settings }) => settings,
-        Ok(_) => {
-            notify(
-                core,
-                "Could not start startup services",
-                "The startup settings response was invalid.",
-            );
-            return;
-        }
-        Err(e) => {
-            notify(core, &e.problem, &e.cause);
-            return;
-        }
-    };
-
-    let default_web = core.inner().web_config().default_server;
-    let service_ids: std::collections::HashSet<_> =
-        autostart_service_ids(settings.autostart_services, &default_web)
-            .into_iter()
-            .collect();
-    let targets: Vec<_> = core
-        .services()
-        .list()
-        .into_iter()
-        .filter(|service| {
-            service_ids.contains(&service.id) && service.installed && !service.running
+    let aggregate = core.service_aggregate();
+    let targets: Vec<_> = aggregate
+        .start_service_ids
+        .iter()
+        .filter_map(|id| {
+            aggregate
+                .services
+                .iter()
+                .find(|service| service.id == *id)
+                .map(|service| (id.clone(), service.name.clone()))
         })
-        .map(|service| (service.id, service.name))
         .collect();
 
     let total = targets.len();
@@ -726,10 +678,14 @@ fn start_tray_bulk_action(app: &AppHandle, core: &Core, action: TrayBulkAction) 
     }
 }
 
-fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
+fn tray_menu(
+    app: &AppHandle,
+    core: &Core,
+    aggregate: &ols_core::service::ServiceAggregate,
+) -> tauri::Result<(Menu<Wry>, MenuItem<Wry>)> {
     // One list read feeds the marks, the submenu titles and the tooltip below, so the
     // three can never disagree about how many services are up.
-    let service_rows = core.services().list();
+    let service_rows = &aggregate.services;
     let web_up = service_rows.iter().any(|service| {
         service.kind == "web"
             && (service.running
@@ -747,13 +703,13 @@ fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
         .count();
     let other_up = service_rows
         .iter()
-        .filter(|s| s.kind == "mail" || s.kind == "cache")
+        .filter(|s| s.kind != "sql" && s.kind != "document" && s.kind != "web")
         .filter(|s| s.running)
         .count();
 
     let open = MenuItem::with_id(app, "open", "Open OpenLocalServer", true, None::<&str>)?;
     let bulk_actions_enabled = !TRAY_OPERATION_IN_PROGRESS.load(Ordering::Relaxed);
-    let start_all_label = if tray_bulk_should_stop(core, &service_rows) {
+    let start_all_label = if aggregate.running > 0 {
         "■ Stop all"
     } else {
         "▶ Start all"
@@ -967,10 +923,9 @@ fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
     )?;
 
     let mut service_items: Vec<Box<dyn tauri::menu::IsMenuItem<Wry>>> = Vec::new();
-    for service in service_rows
-        .iter()
-        .filter(|service| service.kind == "mail" || service.kind == "cache")
-    {
+    for service in service_rows.iter().filter(|service| {
+        service.kind != "sql" && service.kind != "document" && service.kind != "web"
+    }) {
         let label = service_label(&service.name, service.running);
         service_items.push(Box::new(MenuItem::with_id(
             app,
@@ -991,7 +946,7 @@ fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
         service_items.iter().map(|item| item.as_ref()).collect();
     let services = Submenu::with_items(
         app,
-        &submenu_title("Services", other_up),
+        &submenu_title("Other services", other_up),
         true,
         &service_refs,
     )?;
@@ -1005,7 +960,7 @@ fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
     let preferences = MenuItem::with_id(app, "preferences", "Preferences...", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
-    Menu::with_items(
+    let menu = Menu::with_items(
         app,
         &[
             &open,
@@ -1023,7 +978,8 @@ fn tray_menu(app: &AppHandle, core: &Core) -> tauri::Result<Menu<Wry>> {
             &separator_end,
             &quit,
         ],
-    )
+    )?;
+    Ok((menu, toggle_all))
 }
 
 fn sync_tray_tooltip(app: &AppHandle, core: &Core) {
@@ -1044,7 +1000,7 @@ fn sync_tray_tooltip(app: &AppHandle, core: &Core) {
     }
 }
 
-fn tray_fingerprint(core: &Core) -> u64 {
+fn tray_fingerprint(core: &Core, aggregate: &ols_core::service::ServiceAggregate) -> u64 {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
@@ -1055,7 +1011,10 @@ fn tray_fingerprint(core: &Core) -> u64 {
         .hash(&mut hasher);
 
     // 1. Services state & kind
-    for s in core.services().list() {
+    aggregate.running.hash(&mut hasher);
+    aggregate.enabled_total.hash(&mut hasher);
+    aggregate.start_service_ids.hash(&mut hasher);
+    for s in &aggregate.services {
         s.id.hash(&mut hasher);
         s.running.hash(&mut hasher);
         s.state.hash(&mut hasher);
@@ -1162,9 +1121,31 @@ fn refresh_tray(app: &AppHandle, core: &Core) {
         return;
     }
 
+    let aggregate = core.service_aggregate();
+    let action_label = if aggregate.running > 0 {
+        "■ Stop all"
+    } else {
+        "▶ Start all"
+    };
+    if let Some(state) = app.try_state::<TrayMenuItems>() {
+        if let Some(item) = state
+            .bulk_toggle
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .cloned()
+        {
+            let _ = app.run_on_main_thread(move || {
+                if let Err(error) = item.set_text(action_label) {
+                    tracing::warn!(error = %error, "the tray bulk action label could not be updated");
+                }
+            });
+        }
+    }
+
     {
         let _serial = TRAY_REFRESH.lock().unwrap_or_else(|e| e.into_inner());
-        let fp = tray_fingerprint(core);
+        let fp = tray_fingerprint(core, &aggregate);
         let mut last_fp = TRAY_MENU_FINGERPRINT
             .lock()
             .unwrap_or_else(|e| e.into_inner());
@@ -1175,8 +1156,8 @@ fn refresh_tray(app: &AppHandle, core: &Core) {
         drop(last_fp);
 
         if TRAY_MENU_DIRTY.swap(false, Ordering::SeqCst) {
-            match tray_menu(app, core) {
-                Ok(menu) => {
+            match tray_menu(app, core, &aggregate) {
+                Ok((menu, bulk_toggle)) => {
                     let handle = app.clone();
                     let _ = app.run_on_main_thread(move || {
                         // Never swap the menu under an open popup; the next tick retries.
@@ -1187,6 +1168,9 @@ fn refresh_tray(app: &AppHandle, core: &Core) {
                         if let Some(tray) = handle.tray_by_id("main") {
                             if let Err(e) = tray.set_menu(Some(menu)) {
                                 tracing::warn!(error = %e, "the tray menu could not be replaced");
+                            } else if let Some(state) = handle.try_state::<TrayMenuItems>() {
+                                *state.bulk_toggle.lock().unwrap_or_else(|e| e.into_inner()) =
+                                    Some(bulk_toggle);
                             }
                         }
                     });
@@ -1203,10 +1187,15 @@ fn refresh_tray(app: &AppHandle, core: &Core) {
 }
 
 fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
-    let menu = tray_menu(app, &core)?;
+    app.manage(TrayMenuItems::default());
+    let aggregate = core.service_aggregate();
+    let (menu, bulk_toggle) = tray_menu(app, &core, &aggregate)?;
+    if let Some(state) = app.try_state::<TrayMenuItems>() {
+        *state.bulk_toggle.lock().unwrap_or_else(|e| e.into_inner()) = Some(bulk_toggle);
+    }
     *TRAY_MENU_FINGERPRINT
         .lock()
-        .unwrap_or_else(|e| e.into_inner()) = Some(tray_fingerprint(&core));
+        .unwrap_or_else(|e| e.into_inner()) = Some(tray_fingerprint(&core, &aggregate));
     let menu_core = core.clone();
     let mut builder = TrayIconBuilder::with_id("main")
         .tooltip(tray_tooltip(&core))
@@ -1217,8 +1206,7 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
             match event.id.as_ref() {
                 "open" => show_main_window(app),
                 "toggle_all" => {
-                    let services = core.services().list();
-                    let action = if tray_bulk_should_stop(&core, &services) {
+                    let action = if core.service_aggregate().running > 0 {
                         TrayBulkAction::Stop
                     } else {
                         TrayBulkAction::Start

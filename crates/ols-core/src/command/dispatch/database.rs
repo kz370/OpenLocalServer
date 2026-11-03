@@ -413,12 +413,14 @@ impl Core {
                     // One service list feeds both the Services card and the health chain, so
                     // the port probes and runtime scans behind it happen once per poll.
                     let services = i.services.list();
+                    let service_aggregate = self.service_aggregate_from(services.clone());
                     let domains = i.domain_summaries();
                     let project_count = i.projects.lock().unwrap().list().len();
                     let health = i.environment_health_with(&web, &services);
                     Ok(R::Dashboard {
                         data: Box::new(DashboardData {
                             services,
+                            service_aggregate,
                             web,
                             domains,
                             project_count,

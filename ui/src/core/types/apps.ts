@@ -1,4 +1,4 @@
-import type { ServiceStatus } from './base'
+import type { ServiceAggregate, ServiceStatus } from './base'
 import type { DomainSummary, WebStatus } from './web'
 
 export type Scalar = string | number | boolean
@@ -126,6 +126,7 @@ export interface HealthItem {
 }
 export interface DashboardData {
   services: ServiceStatus[]
+  service_aggregate: ServiceAggregate
   web: WebStatus
   domains: DomainSummary[]
   project_count: number
@@ -158,4 +159,3 @@ export interface HelperService {
   version: string | null
   status: 'development_version' | 'up_to_date' | 'update_available' | null
 }
-

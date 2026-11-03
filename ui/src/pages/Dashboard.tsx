@@ -16,7 +16,6 @@ import {
   type ServiceLifecycleState,
   type ServerAvailability,
   type ServiceStatus,
-  type StartupSettings,
   type SystemStats,
   runCommand,
 } from '@/core'
@@ -33,7 +32,7 @@ import { waitForService } from '@/lib/wait'
 import { confirmAction } from '@/lib/confirm'
 import { groupServices } from '@/lib/serviceGrouping'
 
-const dashboardCache = createPersistentCache<DashboardData | null>('dashboard_data', null)
+const dashboardCache = createPersistentCache<DashboardData | null>('dashboard_data_v2', null)
 const dashboardStatsCache = createPersistentCache<SystemStats | null>('dashboard_stats', null)
 const accessLinesCache = createPersistentCache<string[]>('dashboard_access_lines', [])
 
@@ -58,7 +57,6 @@ export function DashboardPage({
   const [diagToken, setDiagToken] = useState(0)
   const [stats, setStats] = useState<SystemStats | null>(dashboardStatsCache.get)
   const [accessLines, setAccessLines] = useState<string[]>(accessLinesCache.get)
-  const [startup, setStartup] = useState<StartupSettings | null>(null)
   const serviceStatuses = useServiceStatuses()
 
   const action = useAction()
@@ -92,14 +90,6 @@ export function DashboardPage({
     if (r?.type === 'log_lines') {
       setAccessLines(r.lines)
       accessLinesCache.set(r.lines)
-    }
-  }, 5000)
-
-  // Autostart settings: Stop all / Start all specifically targets autostart services
-  usePoll(async () => {
-    const r = await runCommand({ type: 'get_startup_settings' }).catch(() => null)
-    if (r?.type === 'startup') {
-      setStartup(r.settings)
     }
   }, 5000)
 
@@ -148,25 +138,11 @@ export function DashboardPage({
     ? serviceStatuses.get(web.default_server) ??
       data?.services.find((service) => service.id === web.default_server)?.state
     : undefined
-  const autostartIds = startup?.autostart_services ?? []
-  const isWebInAutostart =
-    autostartIds.some((id) => ['nginx', 'apache', 'caddy'].includes(id)) || autostartIds.includes('web')
-
-  // Stop all targets EVERYTHING running (services + web stack + workers + tunnels)
-  const runningServices = (data?.services ?? []).filter((s) => s.running)
-  const hasRunning = runningServices.length > 0 || web?.running === true
-  const totalRunningCount = runningServices.length + (web?.running ? 1 : 0)
-
-  // Start all specifically targets AUTOSTART apps/services only
-  const autostartServices = (data?.services ?? []).filter((s) => autostartIds.includes(s.id))
-  const targetsToStart =
-    autostartIds.length > 0
-      ? autostartServices.filter((s) => s.installed && !s.running)
-      : (data?.services ?? []).filter((s) => s.installed && !s.running)
-  const shouldStartWeb = autostartIds.length > 0 ? (isWebInAutostart && !web?.running) : (web && !web.running)
-
-  const canStart = targetsToStart.length > 0 || shouldStartWeb
-  const autostartStartCount = targetsToStart.length + (shouldStartWeb ? 1 : 0)
+  const serviceAggregate = data?.service_aggregate
+  const hasRunning = (serviceAggregate?.running ?? 0) > 0
+  const totalRunningCount = serviceAggregate?.running ?? 0
+  const targetsToStart = serviceAggregate?.start_service_ids ?? []
+  const canStart = targetsToStart.length > 0
 
   const phpDisplay = useMemo(() => {
     if (!web?.php_pools || web.php_pools.length === 0) return 'None'
@@ -202,8 +178,8 @@ export function DashboardPage({
               hasRunning
                 ? `Stop all ${totalRunningCount} running service${totalRunningCount === 1 ? '' : 's'}, workers, tunnels, and the web stack`
                 : canStart
-                  ? `Start ${autostartStartCount} autostart service${autostartStartCount === 1 ? '' : 's'}`
-                  : 'All autostart services are already running'
+                  ? `Start ${targetsToStart.length} service${targetsToStart.length === 1 ? '' : 's'}`
+                  : 'No installed services are available to start'
             }
             onClick={() =>
               hasRunning
@@ -240,20 +216,9 @@ export function DashboardPage({
                   })()
                 : void (async () => {
                     await run('start-all', async () => {
-                      // Build deduplicated start targets so we never dispatch both start_service(apache)
-                      // and apply_web for the same web server simultaneously.
-                      const effectiveTargets = [...targetsToStart]
-                      const hasWebTarget = effectiveTargets.some((s) =>
-                        ['nginx', 'apache', 'caddy'].includes(s.id),
-                      )
-                      if (shouldStartWeb && !hasWebTarget && web?.default_server) {
-                        const defaultWebSvc = (data?.services ?? []).find(
-                          (s) => s.id === web.default_server && s.installed && !s.running,
-                        )
-                        if (defaultWebSvc) {
-                          effectiveTargets.push(defaultWebSvc)
-                        }
-                      }
+                      const effectiveTargets = targetsToStart
+                        .map((id) => data?.services.find((service) => service.id === id))
+                        .filter((service): service is ServiceStatus => service !== undefined)
 
                       const promises: Promise<unknown>[] = effectiveTargets.map((service) =>
                         runSerializedServiceOp(service.id, 'start', async () => {
@@ -304,7 +269,7 @@ export function DashboardPage({
             {busy === 'stop-all'
               ? 'Stopping all…'
               : busy === 'start-all'
-                ? 'Starting autostart…'
+              ? 'Starting services…'
                 : hasRunning
                   ? 'Stop all'
                   : 'Start all'}

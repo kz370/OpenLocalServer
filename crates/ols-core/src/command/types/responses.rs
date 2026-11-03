@@ -13,7 +13,7 @@ use crate::project::{Project, ProjectDetail};
 use crate::quickapp::commands::{HistoryEntry, QuickCommand};
 use crate::quickapp::{EntryDetail, EntryView, RunView};
 use crate::runtime::CatalogEntry;
-use crate::service::{ConnectionInfo, DbUser, ServiceStatus};
+use crate::service::{ConnectionInfo, DbUser, ServiceAggregate, ServiceStatus};
 use crate::sqlite::{IntegrityResult, SqliteInfo};
 use crate::web::manager::{ApplyReport, ConfigFile, ConfigVersion, WebStatus};
 use crate::web::WebConfig;
@@ -29,6 +29,7 @@ pub struct CreateSiteResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DashboardData {
     pub services: Vec<ServiceStatus>,
+    pub service_aggregate: ServiceAggregate,
     pub web: WebStatus,
     pub domains: Vec<DomainSummary>,
     pub project_count: usize,
@@ -118,6 +119,9 @@ pub enum CoreResponse {
     },
     Services {
         services: Vec<ServiceStatus>,
+    },
+    ServiceAggregate {
+        aggregate: ServiceAggregate,
     },
     CustomServices {
         services: Vec<crate::custom_service::CustomService>,

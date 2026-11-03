@@ -13,7 +13,7 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Cmd {
-    /// Start the web server and the services set to start with the app.
+    /// Start the enabled services (or all installed services if none are configured).
     Start,
     /// Stop the web server, every service, worker and tunnel.
     Stop,
