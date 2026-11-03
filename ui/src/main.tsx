@@ -3,12 +3,20 @@ import { createRoot } from 'react-dom/client'
 import { emit } from '@tauri-apps/api/event'
 import './index.css'
 import App from './App.tsx'
+import { TrayConfirmationWindow, type TrayConfirmationAction } from './components/TrayConfirmationWindow'
 import { ThemeProvider } from './lib/theme'
+
+function getTrayConfirmationAction(): TrayConfirmationAction | null {
+  const match = /^#tray-confirmation=(stop-all|quit)$/.exec(window.location.hash)
+  return match?.[1] === 'stop-all' || match?.[1] === 'quit' ? match[1] : null
+}
+
+const trayConfirmationAction = getTrayConfirmationAction()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ThemeProvider>
-      <App />
+      {trayConfirmationAction ? <TrayConfirmationWindow action={trayConfirmationAction} /> : <App />}
     </ThemeProvider>
   </StrictMode>,
 )
@@ -23,7 +31,14 @@ requestAnimationFrame(() => {
     // timer, or a slow first paint — still shows the app's background rather than a
     // see-through frame. Removed in the same frame the reveal is requested.
     document.documentElement.classList.remove('booting')
-    void emit('ols:ui-ready').catch(() => undefined)
+    const readyEvent = trayConfirmationAction
+      ? 'ols:tray-confirmation-ui-ready'
+      : 'ols:ui-ready'
+    void emit(readyEvent).catch((error: unknown) => {
+      if (trayConfirmationAction) {
+        console.error('Could not show the tray confirmation window:', error)
+      }
+    })
   })
 })
 

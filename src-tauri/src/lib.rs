@@ -11,7 +11,9 @@ use ols_core::{
 };
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Listener, Manager, WindowEvent, Wry};
+use tauri::{
+    AppHandle, Emitter, Listener, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent, Wry,
+};
 
 mod notify;
 
@@ -67,6 +69,44 @@ fn show_main_window(app: &AppHandle) {
     if let Some(core) = app.try_state::<Core>() {
         let _ = app.emit("ols:status-icon", status_mark(Some(core.inner())));
     }
+}
+
+fn show_tray_confirmation(app: &AppHandle, action: &str) {
+    if let Some(window) = app.get_webview_window("tray-confirmation") {
+        if let Err(error) = window.set_focus() {
+            tracing::warn!(error = %error, "the tray confirmation window could not be focused");
+        }
+        return;
+    }
+
+    let initialization_script = format!("window.location.hash = '#tray-confirmation={action}';");
+    match WebviewWindowBuilder::new(
+        app,
+        "tray-confirmation",
+        WebviewUrl::App("index.html".into()),
+    )
+    .title("OpenLocalServer")
+    .inner_size(480.0, 240.0)
+    .resizable(false)
+    .decorations(false)
+    .transparent(true)
+    .always_on_top(true)
+    .visible(false)
+    .center()
+    .initialization_script(initialization_script)
+    .build()
+    {
+        Ok(_) => {}
+        Err(error) => {
+            tracing::error!(error = %error, "the themed tray confirmation window could not be created")
+        }
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct TrayConfirmationResponse {
+    action: String,
+    confirmed: bool,
 }
 
 static SHUTDOWN_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
@@ -1289,10 +1329,7 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
                 "open" => show_main_window(app),
                 "toggle_all" => {
                     if core.service_aggregate().running > 0 {
-                        show_main_window(app);
-                        if let Err(error) = app.emit("ols:tray-confirmation-request", "stop-all") {
-                            tracing::warn!(error = %error, "the themed Stop all confirmation could not be requested");
-                        }
+                        show_tray_confirmation(app, "stop-all");
                     } else {
                         start_tray_bulk_action(app, &core, TrayBulkAction::Start);
                     }
@@ -1497,10 +1534,7 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
                     });
                 }
                 "quit" => {
-                    show_main_window(app);
-                    if let Err(error) = app.emit("ols:tray-confirmation-request", "quit") {
-                        tracing::warn!(error = %error, "the themed exit confirmation could not be requested");
-                    }
+                    show_tray_confirmation(app, "quit");
                 }
                 _ => {}
             }
@@ -1627,18 +1661,46 @@ pub fn run() {
             let core = setup_core;
             let confirmation_app = app.handle().clone();
             let confirmation_core = core.clone();
-            app.listen("ols:tray-confirmation-confirmed", move |event| {
-                match serde_json::from_str::<String>(event.payload()).as_deref() {
-                    Ok("stop-all") => start_tray_bulk_action(
+            let confirmation_ready_app = app.handle().clone();
+            app.listen("ols:tray-confirmation-ui-ready", move |_| {
+                if let Some(window) = confirmation_ready_app.get_webview_window("tray-confirmation")
+                {
+                    if let Err(error) = window.show() {
+                        tracing::warn!(error = %error, "the themed tray confirmation window could not be shown");
+                    }
+                    if let Err(error) = window.set_focus() {
+                        tracing::warn!(error = %error, "the themed tray confirmation window could not be focused");
+                    }
+                }
+            });
+
+            app.listen("ols:tray-confirmation-response", move |event| {
+                let response = match serde_json::from_str::<TrayConfirmationResponse>(event.payload())
+                {
+                    Ok(response) => response,
+                    Err(error) => {
+                        tracing::warn!(error = %error, "the tray confirmation response could not be parsed");
+                        return;
+                    }
+                };
+                if let Some(window) = confirmation_app.get_webview_window("tray-confirmation") {
+                    if let Err(error) = window.close() {
+                        tracing::warn!(error = %error, "the tray confirmation window could not be closed");
+                    }
+                }
+                if !response.confirmed {
+                    return;
+                }
+                match response.action.as_str() {
+                    "stop-all" => start_tray_bulk_action(
                         &confirmation_app,
                         &confirmation_core,
                         TrayBulkAction::Stop,
                     ),
-                    Ok("quit") => begin_shutdown(&confirmation_app, confirmation_core.clone()),
-                    Ok(_) => tracing::warn!("the tray confirmation returned an unknown action"),
-                    Err(error) => tracing::warn!(
-                        error = %error,
-                        "the tray confirmation response could not be parsed"
+                    "quit" => begin_shutdown(&confirmation_app, confirmation_core.clone()),
+                    _ => tracing::warn!(
+                        action = %response.action,
+                        "the tray confirmation returned an unknown action"
                     ),
                 }
             });
@@ -1913,7 +1975,8 @@ pub fn run() {
         })
         .on_window_event(move |window, event| {
             // §120: closing the window keeps the servers running in the tray.
-            if let WindowEvent::CloseRequested { api, .. } = event {
+            if window.label() == "main" {
+                if let WindowEvent::CloseRequested { api, .. } = event {
                 if window_core
                     .inner()
                     .setting_bool("startup.close_to_tray", true)
@@ -1923,6 +1986,7 @@ pub fn run() {
                 } else {
                     api.prevent_close();
                     begin_shutdown(&window.app_handle(), window_core.clone());
+                }
                 }
             }
         })
