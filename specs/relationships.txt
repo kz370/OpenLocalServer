@@ -242,4 +242,7 @@ Tray Start all / Stop all | dispatch | A single dynamic toggle uses the shared S
 Dashboard / Tray / CLI | read | CoreCommand::GetServiceAggregate / Core::service_aggregate; shared running count and start plan (configured autostart IDs, or all installed services when unset)
 CLI stop | dispatches | CoreCommand::StopAll, identical to Dashboard and tray; tunnels, workers, web servers, services and supervisor strays follow one stop path
 TrayMenuItems | retains | managed bulk-toggle MenuItem handle; service-state events update its label and rebuild submenu marks/counts from one ServiceAggregate snapshot
+Tray Quick App menu | lists | QuickCatalog entries as direct Create actions; selecting one emits `ols:navigate` with `quick-app:<id>`
+App | routes | `ols:navigate` `quick-app:<id>` to QuickAppsPage and holds the recipe id until its lazy page mounts
+QuickAppsPage | opens | the existing Wizard for the selected tray recipe, preserving planning, review and trust approval
 Tray Web server | toggles | CoreCommand::ApplyWeb / CoreCommand::StopWeb through the same Core::dispatch path; Reload remains a separate ApplyWeb action.

@@ -101,7 +101,9 @@ export default function App() {
     return null
   })
   const [doctor, setDoctor] = useState(false)
+  const [trayQuickAppId, setTrayQuickAppId] = useState<string | null>(null)
   const openDoctor = useCallback(() => setDoctor(true), [])
+  const clearTrayQuickAppId = useCallback(() => setTrayQuickAppId(null), [])
 
   useEffect(() => {
     initDiagnosticsNotificationMonitor()
@@ -222,6 +224,12 @@ export default function App() {
   useEffect(() => {
     let unlisten: (() => void) | undefined
     void listen<string>('ols:navigate', (event) => {
+      const quickAppId = event.payload.startsWith('quick-app:') ? event.payload.slice('quick-app:'.length) : ''
+      if (quickAppId) {
+        setTrayQuickAppId(quickAppId)
+        navigate('quickapps')
+        return
+      }
       if (event.payload === 'diagnostics') {
         setDoctor(true)
         return
@@ -283,7 +291,13 @@ export default function App() {
               {page === 'dashboard' && <DashboardPage onNavigate={navigate} onOpenLogs={openLogs} />}
               {page === 'projects' && <ProjectsPage onNavigate={navigate} />}
               {page === 'sites' && <SitesPage onNavigate={navigate} />}
-              {page === 'quickapps' && <QuickAppsPage onNavigate={navigate} />}
+              {page === 'quickapps' && (
+                <QuickAppsPage
+                  onNavigate={navigate}
+                  openAppId={trayQuickAppId}
+                  onOpenAppHandled={clearTrayQuickAppId}
+                />
+              )}
               {page === 'commands' && <CommandsPage />}
               {page === 'webserver' && (
                 <WebServerPage

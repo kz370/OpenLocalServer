@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use ols_core::process::{ProcessEvent, ProcessState};
+use ols_core::quickapp::EntryView;
 use ols_core::runtime::RuntimeEvent;
 use ols_core::{
     AppPaths, Core, CoreCommand, CoreResponse, Diagnostic, ProcessSupervisor, RuntimeManager,
@@ -476,6 +477,11 @@ fn navigate(app: &AppHandle, route: &str) {
     let _ = app.emit("ols:navigate", route);
 }
 
+fn navigate_quick_app(app: &AppHandle, id: &str) {
+    show_main_window(app);
+    let _ = app.emit("ols:navigate", format!("quick-app:{id}"));
+}
+
 /// The mark a tray menu item wears for the state it is in: filled while it is up,
 /// hollow while it is down. A glyph rather than a picture, and not for lack of
 /// trying: `muda` puts an `IconMenuItem`'s image on the item with `MIIM_BITMAP`,
@@ -678,10 +684,24 @@ fn start_tray_bulk_action(app: &AppHandle, core: &Core, action: TrayBulkAction) 
     }
 }
 
+fn tray_quick_apps(core: &Core) -> Result<Vec<EntryView>, Diagnostic> {
+    match core.dispatch(CoreCommand::ListQuickApps)? {
+        CoreResponse::QuickApps { apps } => {
+            Ok(apps.into_iter().filter(|app| app.favorite).collect())
+        }
+        _ => Err(Diagnostic {
+            problem: "Could not load Quick Apps for the tray.".into(),
+            cause: "The core returned an unexpected response to ListQuickApps.".into(),
+            fix: Some("Open the Quick Apps page and try again.".into()),
+        }),
+    }
+}
+
 fn tray_menu(
     app: &AppHandle,
     core: &Core,
     aggregate: &ols_core::service::ServiceAggregate,
+    quick_apps: &[EntryView],
 ) -> tauri::Result<(Menu<Wry>, MenuItem<Wry>)> {
     // One list read feeds the marks, the submenu titles and the tooltip below, so the
     // three can never disagree about how many services are up.
@@ -879,18 +899,7 @@ fn tray_menu(
         &web_item_refs,
     )?;
 
-    let php_versions = core.inner().runtimes.installed_versions("php");
-    let php = MenuItem::with_id(
-        app,
-        "php_page",
-        if php_versions.is_empty() {
-            "PHP (none installed)"
-        } else {
-            "PHP"
-        },
-        true,
-        None::<&str>,
-    )?;
+    let php = MenuItem::with_id(app, "php_page", "Open runtimes", true, None::<&str>)?;
 
     let mut database_items: Vec<Box<dyn tauri::menu::IsMenuItem<Wry>>> = Vec::new();
     for service in service_rows
@@ -951,8 +960,43 @@ fn tray_menu(
         &service_refs,
     )?;
 
-    let quick_apps = MenuItem::with_id(app, "quick_apps", "Recipes", true, None::<&str>)?;
-    let quick = Submenu::with_items(app, "Quick App", true, &[&quick_apps])?;
+    let mut quick_app_items: Vec<Box<dyn tauri::menu::IsMenuItem<Wry>>> = Vec::new();
+    if quick_apps.is_empty() {
+        quick_app_items.push(Box::new(MenuItem::with_id(
+            app,
+            "quick_apps_empty",
+            "No favorite Quick Apps",
+            false,
+            None::<&str>,
+        )?));
+    } else {
+        let mut recipes = quick_apps.to_vec();
+        recipes.sort_by(|a, b| {
+            b.favorite
+                .cmp(&a.favorite)
+                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+        });
+        for recipe in recipes {
+            quick_app_items.push(Box::new(MenuItem::with_id(
+                app,
+                &format!("quick_app:{}", recipe.id),
+                &format!("Create {}", recipe.name),
+                true,
+                None::<&str>,
+            )?));
+        }
+    }
+    quick_app_items.push(Box::new(PredefinedMenuItem::separator(app)?));
+    quick_app_items.push(Box::new(MenuItem::with_id(
+        app,
+        "quick_apps",
+        "Browse all Quick Apps...",
+        true,
+        None::<&str>,
+    )?));
+    let quick_app_refs: Vec<&dyn tauri::menu::IsMenuItem<Wry>> =
+        quick_app_items.iter().map(|item| item.as_ref()).collect();
+    let quick = Submenu::with_items(app, "Create Quick App", true, &quick_app_refs)?;
     let terminal = MenuItem::with_id(app, "terminal", "Terminal", true, None::<&str>)?;
     let doctor = MenuItem::with_id(app, "doctor", "Run doctor", true, None::<&str>)?;
     let data = MenuItem::with_id(app, "data_folder", "Data folder", true, None::<&str>)?;
@@ -1000,7 +1044,11 @@ fn sync_tray_tooltip(app: &AppHandle, core: &Core) {
     }
 }
 
-fn tray_fingerprint(core: &Core, aggregate: &ols_core::service::ServiceAggregate) -> u64 {
+fn tray_fingerprint(
+    core: &Core,
+    aggregate: &ols_core::service::ServiceAggregate,
+    quick_apps: &[EntryView],
+) -> u64 {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
@@ -1018,6 +1066,11 @@ fn tray_fingerprint(core: &Core, aggregate: &ols_core::service::ServiceAggregate
         s.id.hash(&mut hasher);
         s.running.hash(&mut hasher);
         s.state.hash(&mut hasher);
+    }
+    for recipe in quick_apps {
+        recipe.id.hash(&mut hasher);
+        recipe.name.hash(&mut hasher);
+        recipe.favorite.hash(&mut hasher);
     }
 
     // 2. Web server default & PHP versions
@@ -1122,6 +1175,17 @@ fn refresh_tray(app: &AppHandle, core: &Core) {
     }
 
     let aggregate = core.service_aggregate();
+    let quick_apps = match tray_quick_apps(core) {
+        Ok(apps) => Some(apps),
+        Err(error) => {
+            tracing::warn!(
+                problem = %error.problem,
+                cause = %error.cause,
+                "quick apps could not be loaded for the tray menu"
+            );
+            None
+        }
+    };
     let action_label = if aggregate.running > 0 {
         "■ Stop all"
     } else {
@@ -1145,40 +1209,46 @@ fn refresh_tray(app: &AppHandle, core: &Core) {
 
     {
         let _serial = TRAY_REFRESH.lock().unwrap_or_else(|e| e.into_inner());
-        let fp = tray_fingerprint(core, &aggregate);
-        let mut last_fp = TRAY_MENU_FINGERPRINT
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        if *last_fp != Some(fp) {
-            *last_fp = Some(fp);
-            TRAY_MENU_DIRTY.store(true, Ordering::SeqCst);
+        if let Some(quick_apps) = quick_apps.as_deref() {
+            let fp = tray_fingerprint(core, &aggregate, quick_apps);
+            let mut last_fp = TRAY_MENU_FINGERPRINT
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            if *last_fp != Some(fp) {
+                *last_fp = Some(fp);
+                TRAY_MENU_DIRTY.store(true, Ordering::SeqCst);
+            }
+            drop(last_fp);
         }
-        drop(last_fp);
 
         if TRAY_MENU_DIRTY.swap(false, Ordering::SeqCst) {
-            match tray_menu(app, core, &aggregate) {
-                Ok((menu, bulk_toggle)) => {
-                    let handle = app.clone();
-                    let _ = app.run_on_main_thread(move || {
-                        // Never swap the menu under an open popup; the next tick retries.
-                        if tray_menu_is_open() {
-                            TRAY_MENU_DIRTY.store(true, Ordering::SeqCst);
-                            return;
-                        }
-                        if let Some(tray) = handle.tray_by_id("main") {
-                            if let Err(e) = tray.set_menu(Some(menu)) {
-                                tracing::warn!(error = %e, "the tray menu could not be replaced");
-                            } else if let Some(state) = handle.try_state::<TrayMenuItems>() {
-                                *state.bulk_toggle.lock().unwrap_or_else(|e| e.into_inner()) =
-                                    Some(bulk_toggle);
+            if let Some(quick_apps) = quick_apps.as_deref() {
+                match tray_menu(app, core, &aggregate, quick_apps) {
+                    Ok((menu, bulk_toggle)) => {
+                        let handle = app.clone();
+                        let _ = app.run_on_main_thread(move || {
+                            // Never swap the menu under an open popup; the next tick retries.
+                            if tray_menu_is_open() {
+                                TRAY_MENU_DIRTY.store(true, Ordering::SeqCst);
+                                return;
                             }
-                        }
-                    });
+                            if let Some(tray) = handle.tray_by_id("main") {
+                                if let Err(e) = tray.set_menu(Some(menu)) {
+                                    tracing::warn!(error = %e, "the tray menu could not be replaced");
+                                } else if let Some(state) = handle.try_state::<TrayMenuItems>() {
+                                    *state.bulk_toggle.lock().unwrap_or_else(|e| e.into_inner()) =
+                                        Some(bulk_toggle);
+                                }
+                            }
+                        });
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "the tray menu could not be rebuilt");
+                        TRAY_MENU_DIRTY.store(true, Ordering::SeqCst);
+                    }
                 }
-                Err(e) => {
-                    tracing::warn!(error = %e, "the tray menu could not be rebuilt");
-                    TRAY_MENU_DIRTY.store(true, Ordering::SeqCst);
-                }
+            } else {
+                TRAY_MENU_DIRTY.store(true, Ordering::SeqCst);
             }
         }
     }
@@ -1189,13 +1259,25 @@ fn refresh_tray(app: &AppHandle, core: &Core) {
 fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
     app.manage(TrayMenuItems::default());
     let aggregate = core.service_aggregate();
-    let (menu, bulk_toggle) = tray_menu(app, &core, &aggregate)?;
+    let quick_apps = match tray_quick_apps(&core) {
+        Ok(apps) => apps,
+        Err(error) => {
+            tracing::warn!(
+                problem = %error.problem,
+                cause = %error.cause,
+                "quick apps could not be loaded for the initial tray menu"
+            );
+            Vec::new()
+        }
+    };
+    let (menu, bulk_toggle) = tray_menu(app, &core, &aggregate, &quick_apps)?;
     if let Some(state) = app.try_state::<TrayMenuItems>() {
         *state.bulk_toggle.lock().unwrap_or_else(|e| e.into_inner()) = Some(bulk_toggle);
     }
     *TRAY_MENU_FINGERPRINT
         .lock()
-        .unwrap_or_else(|e| e.into_inner()) = Some(tray_fingerprint(&core, &aggregate));
+        .unwrap_or_else(|e| e.into_inner()) =
+        Some(tray_fingerprint(&core, &aggregate, &quick_apps));
     let menu_core = core.clone();
     let mut builder = TrayIconBuilder::with_id("main")
         .tooltip(tray_tooltip(&core))
@@ -1307,6 +1389,9 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
                 "databases_page" => navigate(app, "databases"),
                 "php_page" => navigate(app, "runtimes"),
                 "quick_apps" => navigate(app, "quick-apps"),
+                id if id.starts_with("quick_app:") => {
+                    navigate_quick_app(app, &id["quick_app:".len()..]);
+                }
                 "terminal" => navigate(app, "terminal"),
                 "doctor" => navigate(app, "diagnostics"),
                 "site_add" => navigate(app, "sites"),

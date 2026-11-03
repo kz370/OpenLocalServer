@@ -112,7 +112,15 @@ function evalCondition(expr: string, values: Record<string, string>): boolean {
 
 const quickAppsCache = createPersistentCache<QuickEntryView[]>('quick_apps', [])
 
-export function QuickAppsPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
+export function QuickAppsPage({
+  onNavigate,
+  openAppId,
+  onOpenAppHandled,
+}: {
+  onNavigate: (p: Page) => void
+  openAppId?: string | null
+  onOpenAppHandled?: () => void
+}) {
   const [apps, setApps] = useState<QuickEntryView[]>(quickAppsCache.get)
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('all')
@@ -134,6 +142,12 @@ export function QuickAppsPage({ onNavigate }: { onNavigate: (p: Page) => void })
     refresh().catch((e) => setError(asDiagnostic(e)))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    if (!openAppId) return
+    setWizardId(openAppId)
+    onOpenAppHandled?.()
+  }, [openAppId, onOpenAppHandled])
 
   usePoll(() => refresh().catch(() => undefined), 5000)
 
