@@ -21,6 +21,7 @@ Feature release. Full notes: [`release-notes/v2.7.0.md`](./release-notes/v2.7.0.
 - **Theme Contrast & Icons**: High-contrast `--on-accent` styling for active chips and buttons, currentColor icons, and dual contrast warnings in theme settings.
 - **MCP Server Tools**: 9 new Model Context Protocol tools for AI assistants to inspect, add, update, and manage projects and editors.
 - **Safe Project Removal**: Guards projects connected to active sites against accidental deletion while keeping scanned project skips in history.
+- **Shared Save Bar**: One fixed Save/Discard bar for unsaved settings and site changes, with Ctrl+S support.
 
 ## [2.6.0] — 2026-11-02
 

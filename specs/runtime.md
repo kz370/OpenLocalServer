@@ -77,6 +77,7 @@ ui/src/lib/notify.ts, ui/src/components/NotificationHost.tsx, ui/src/components/
 
 ## Log
 
+- [2026-11-03] docs(release): Add a concise v2.7.0 note for the shared Save/Discard bar and synchronize the changelog and both user manuals. Files Processed remains 280, matching Files to Process.
 - [2026-11-03] feat(ui): Complete the shared fixed Save/Discard bar for dirty Settings, Resources, Web config, and site-settings forms. It appears only on changes, reserves content space, avoids sidebars, supports Ctrl+S, reports save errors, restores drafts on discard, and guards navigation/unload; instant-apply controls remain unchanged. Converted Site Domains & Aliases and guarded config-file/tab switches. Updated catalog.txt, relationships.txt, and full_documentation.md. Verified `npm run lint` and `npm run build`; Files Processed remains 280, matching Files to Process.
 - [2026-11-03] fix(tray): Ask for confirmation before tray Stop all dispatches the command that stops services, web servers, workers, and tunnels. Updated catalog.txt, relationships.txt, and full_documentation.md. Files Processed remains 276, matching Files to Process.
 - [2026-11-03] fix(tray): Replaced native Stop all confirmation with the app-themed ConfirmHost and added the same themed confirmation before tray Quit. Both actions proceed only after approval. Updated catalog.txt, relationships.txt, and full_documentation.md. Files Processed remains 276, matching Files to Process.
