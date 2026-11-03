@@ -1313,11 +1313,13 @@ export function DomainSettings({
                       setShowApps(false)
                       onQuickApp?.(app.id)
                     }}
-                    className={cn('flex h-10 w-full items-center gap-2 rounded px-2 text-left hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/40', activeQuickAppIndex === index && 'bg-accent/70')}
+                    className={cn('flex h-12 w-full items-center gap-2.5 rounded px-2.5 py-1.5 text-left hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/40', activeQuickAppIndex === index && 'bg-accent/70')}
                   >
-                    <TechTile id={app.category} className="size-7 rounded-md [&_svg]:size-3.5" />
-                    <span className="shrink-0 text-xs font-medium">{app.name}</span>
-                    <span className="min-w-0 flex-1 truncate text-left text-[11px] text-muted-foreground" title={app.description}>{app.description}</span>
+                    <TechTile id={app.category} className="size-8 rounded-md [&_svg]:size-4" />
+                    <span className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
+                      <span className="truncate text-xs font-medium">{app.name}</span>
+                      <span className="truncate text-left text-[11px] text-muted-foreground" title={app.description}>{app.description}</span>
+                    </span>
                   </button>
                 ))}
               </div>

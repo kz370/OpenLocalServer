@@ -274,3 +274,5 @@ ListProjects | annotates | Project.auto_discovered from configured roots for the
 
 ProjectsPage Create site action | opens | SitesPage Add Site dialog with the project preselected through the pending add-site navigation event
 DomainSettings Existing project picker | filters | visible projects without a connected domain by project name and folder path; selection fills site folder, hostname, localhost prefix and Serves mode
+
+Add Site Quick App combobox | opens | filtered single-column recipe options; selecting an option calls the existing Quick App Wizard callback
