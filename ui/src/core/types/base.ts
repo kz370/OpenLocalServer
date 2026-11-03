@@ -36,6 +36,7 @@ export interface ProcessInfo {
 export type OutputStream = 'stdout' | 'stderr'
 
 export type ProcessEvent =
+  | { kind: 'stop_requested'; id: ProcessId; name: string }
   | { kind: 'state_changed'; id: ProcessId; state: ProcessState }
   | { kind: 'output'; id: ProcessId; stream: OutputStream; line: string }
 
@@ -311,4 +312,3 @@ export interface SiteBlocks {
   includes: string[]
 }
 export type SslProvider = 'local_ca' | 'lets_encrypt' | 'custom'
-

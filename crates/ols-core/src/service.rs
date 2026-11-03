@@ -1994,6 +1994,88 @@ pub fn mailpit_smtp_port() -> u16 {
 mod tests {
     use super::*;
 
+    #[cfg(windows)]
+    #[test]
+    fn tray_and_dashboard_service_stop_command_emit_identical_non_error_events() {
+        fn dispatch_user_stop() -> Vec<String> {
+            use crate::command::{CoreCommand, CoreResponse};
+            use crate::process::{ProcessEvent, ProcessSpec, ProcessState};
+            use std::time::{Duration, Instant};
+
+            let home = crate::test_support::isolated_home();
+            let settings = crate::settings::SettingsService::load(&home.paths).unwrap();
+            let core = crate::Core::new(settings, home.paths.clone());
+            let process_id = core.supervisor().start(ProcessSpec {
+                name: "MariaDB".into(),
+                executable: "ping".into(),
+                args: vec!["127.0.0.1".into(), "-n".into(), "6".into()],
+                cwd: None,
+                env: vec![],
+                restart: None,
+            });
+            let deadline = Instant::now() + Duration::from_secs(3);
+            while !core
+                .supervisor()
+                .snapshot()
+                .iter()
+                .any(|process| process.id == process_id && process.state == ProcessState::Running)
+                && Instant::now() < deadline
+            {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            assert!(core
+                .supervisor()
+                .snapshot()
+                .iter()
+                .any(|process| process.id == process_id && process.state == ProcessState::Running));
+
+            core.services()
+                .running
+                .lock()
+                .unwrap()
+                .insert("mariadb".into(), process_id);
+            core.services()
+                .last_process
+                .lock()
+                .unwrap()
+                .insert("mariadb".into(), process_id);
+            let mut events = core.supervisor().subscribe();
+            assert!(matches!(
+                core.dispatch(CoreCommand::StopService {
+                    id: "mariadb".into()
+                })
+                .unwrap(),
+                CoreResponse::Ok
+            ));
+
+            let mut observed = Vec::new();
+            while let Ok(event) = events.try_recv() {
+                match event {
+                    ProcessEvent::StopRequested { name, .. } => {
+                        observed.push(format!("stop_requested:{name}"));
+                    }
+                    ProcessEvent::StateChanged { state, .. } => {
+                        assert!(
+                            !matches!(state, ProcessState::Crashed | ProcessState::Failed),
+                            "an expected stop must not produce an error-notifying exit event"
+                        );
+                        observed.push(format!("state:{state:?}"));
+                    }
+                    ProcessEvent::Output { .. } => {}
+                }
+            }
+            observed
+        }
+
+        let dashboard_events = dispatch_user_stop();
+        let tray_events = dispatch_user_stop();
+        assert_eq!(tray_events, dashboard_events);
+        assert!(
+            dashboard_events.contains(&"stop_requested:MariaDB".to_string()),
+            "expected-stop intent must be observable before process exit"
+        );
+    }
+
     #[test]
     fn identifiers_reject_anything_that_could_break_out_of_sql() {
         assert!(is_safe_identifier("shop_db1"));

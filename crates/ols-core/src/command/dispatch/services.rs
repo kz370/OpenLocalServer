@@ -146,6 +146,7 @@ impl Core {
 
                 C::StopAll => {
                     tracing::info!(command = "stop_all");
+                    i.supervisor.mark_all_expected_stops();
                     // Order matters: the specific owners go first so the sweep below only
                     // has to catch strays (a scheduled job re-spawned mid-loop, a project
                     // command with no owner left to stop it).

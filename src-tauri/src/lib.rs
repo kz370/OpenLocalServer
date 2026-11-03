@@ -1039,11 +1039,17 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
                             .map(|service| service.running)
                             .unwrap_or(false);
                         if running {
-                            if let Err(e) = core.services().stop(&service_id) {
+                            if let Err(e) = core.dispatch(CoreCommand::StopService {
+                                id: service_id.clone(),
+                            }) {
                                 notify(
                                     &core,
-                                    "A service did not stop",
-                                    &format!("{service_id}: {e}"),
+                                    &e.problem,
+                                    &format!(
+                                        "{}\nFix: {}",
+                                        e.cause,
+                                        e.fix.as_deref().unwrap_or("Try stopping the service again.")
+                                    ),
                                 );
                             }
                         } else {

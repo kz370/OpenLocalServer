@@ -75,6 +75,10 @@ pub struct ProcessInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ProcessEvent {
+    StopRequested {
+        id: ProcessId,
+        name: String,
+    },
     StateChanged {
         id: ProcessId,
         state: ProcessState,
@@ -101,9 +105,8 @@ struct ProcessRecord {
     /// `tracing::warn!` line, so a process that never started reported success to its
     /// caller and had no reachable reason anywhere.
     spawn_error: Option<String>,
-    /// Set once the caller explicitly asked to stop — tells the exit-watcher not to
-    /// treat this exit as a crash and not to apply the restart policy.
-    stop_requested: bool,
+    /// Set before a user-requested kill and consumed by the exit watcher.
+    expected_stop: bool,
 }
 
 /// §90: a finished one-shot command, kept for the Recent Commands view (§93).
@@ -161,7 +164,7 @@ impl ProcessSupervisor {
             spec: spec.clone(),
             output: VecDeque::with_capacity(OUTPUT_BUFFER_LINES),
             spawn_error: None,
-            stop_requested: false,
+            expected_stop: false,
         };
         self.processes.lock().unwrap().insert(id.0, record);
         let _ = self.events_tx.send(ProcessEvent::StateChanged {
@@ -181,24 +184,52 @@ impl ProcessSupervisor {
     /// §101 one-click "Stop". Marks the process so its exit isn't treated as a crash,
     /// then asks the OS to end it (tree-kill so child processes don't leak, §107).
     pub fn stop(&self, id: ProcessId) {
-        let pid = {
-            let mut guard = self.processes.lock().unwrap();
-            let Some(rec) = guard.get_mut(&id.0) else {
-                return;
-            };
-            rec.stop_requested = true;
-            rec.info.state = ProcessState::Stopping;
-            rec.info.pid
+        let Some(pid) = self.mark_expected_stop(id) else {
+            return;
         };
-        let _ = self.events_tx.send(ProcessEvent::StateChanged {
-            id,
-            state: ProcessState::Stopping,
-        });
-
-        let Some(pid) = pid else { return };
         self.runtime.spawn(async move {
             kill_tree(pid).await;
         });
+    }
+
+    /// Marks a process as intentionally stopping without killing it yet. Stop all uses
+    /// this first for every process so exits cannot race ahead of another stop request.
+    pub fn mark_expected_stop(&self, id: ProcessId) -> Option<u32> {
+        let (pid, name, changed) = {
+            let mut guard = self.processes.lock().unwrap();
+            let Some(rec) = guard.get_mut(&id.0) else {
+                return None;
+            };
+            let changed = !rec.expected_stop;
+            rec.expected_stop = true;
+            rec.info.state = ProcessState::Stopping;
+            (rec.info.pid, rec.info.name.clone(), changed)
+        };
+        if changed {
+            let _ = self
+                .events_tx
+                .send(ProcessEvent::StopRequested { id, name });
+            let _ = self.events_tx.send(ProcessEvent::StateChanged {
+                id,
+                state: ProcessState::Stopping,
+            });
+        }
+        pid
+    }
+
+    /// Marks every active process as expected to stop, without killing any of them.
+    pub fn mark_all_expected_stops(&self) {
+        for process in self.snapshot().into_iter().filter(|process| {
+            matches!(
+                process.state,
+                ProcessState::Starting
+                    | ProcessState::Running
+                    | ProcessState::Stopping
+                    | ProcessState::Restarting
+            )
+        }) {
+            self.mark_expected_stop(process.id);
+        }
     }
 
     /// Requests every active process to stop and waits for the supervisor to observe exit.
@@ -224,14 +255,21 @@ impl ProcessSupervisor {
             if active.is_empty() {
                 return true;
             }
+            let mut to_kill = Vec::new();
             for process in &active {
                 if let Some(pid) = process.pid {
                     if killed.insert((process.id, pid)) {
-                        self.stop(process.id);
+                        self.mark_expected_stop(process.id);
+                        to_kill.push(pid);
                     }
                 } else if requested_without_pid.insert(process.id) {
-                    self.stop(process.id);
+                    self.mark_expected_stop(process.id);
                 }
+            }
+            for pid in to_kill {
+                self.runtime.spawn(async move {
+                    kill_tree(pid).await;
+                });
             }
             if Instant::now() >= deadline {
                 tracing::warn!(processes = ?active.iter().map(|p| &p.name).collect::<Vec<_>>(), "processes did not stop before shutdown timeout; force terminating");
@@ -454,7 +492,8 @@ fn run_process_attempt(
             Err(e) => {
                 tracing::warn!(process = %spec.name, error = %e, "failed to spawn process");
                 let line = format!("failed to start {}: {e}", spec.executable);
-                if let Some(rec) = processes.lock().unwrap().get_mut(&id.0) {
+                let expected_stop = if let Some(rec) = processes.lock().unwrap().get_mut(&id.0) {
+                    let expected_stop = std::mem::take(&mut rec.expected_stop);
                     rec.spawn_error = Some(line.clone());
                     // Also into the output ring: the Logs page reads that, and this is
                     // the only output a process that never existed can ever have.
@@ -462,17 +501,27 @@ fn run_process_attempt(
                         rec.output.pop_front();
                     }
                     rec.output.push_back(line.clone());
-                }
-                set_state(&processes, id, ProcessState::Failed, None);
+                    expected_stop
+                } else {
+                    true
+                };
+                let state = if expected_stop {
+                    ProcessState::Stopped
+                } else {
+                    ProcessState::Failed
+                };
+                set_state(&processes, id, state, None);
                 let _ = events_tx.send(ProcessEvent::StateChanged {
                     id,
-                    state: ProcessState::Failed,
+                    state,
                 });
-                let _ = events_tx.send(ProcessEvent::Output {
-                    id,
-                    stream: OutputStream::Stderr,
-                    line,
-                });
+                if !expected_stop {
+                    let _ = events_tx.send(ProcessEvent::Output {
+                        id,
+                        stream: OutputStream::Stderr,
+                        line,
+                    });
+                }
                 return;
             }
         };
@@ -482,7 +531,7 @@ fn run_process_attempt(
             let mut guard = processes.lock().unwrap();
             if let Some(rec) = guard.get_mut(&id.0) {
                 rec.info.pid = pid;
-                if rec.stop_requested {
+                if rec.expected_stop {
                     rec.info.state = ProcessState::Stopping;
                     true
                 } else {
@@ -528,16 +577,15 @@ fn run_process_attempt(
 
         let exit = child.wait().await;
 
-        let (stop_requested, restart_policy) = {
-            let guard = processes.lock().unwrap();
-            let rec = guard.get(&id.0);
-            (
-                rec.map(|r| r.stop_requested).unwrap_or(true),
-                rec.and_then(|r| r.spec.restart),
-            )
+        let (expected_stop, restart_policy) = {
+            let mut guard = processes.lock().unwrap();
+            match guard.get_mut(&id.0) {
+                Some(rec) => (std::mem::take(&mut rec.expected_stop), rec.spec.restart),
+                None => (true, None),
+            }
         };
         let exit_code = exit.ok().and_then(|s| s.code());
-        let crashed = !stop_requested && exit_code != Some(0);
+        let crashed = !expected_stop && exit_code != Some(0);
         let final_state = if crashed {
             ProcessState::Crashed
         } else {
@@ -905,6 +953,79 @@ mod tests {
             ProcessState::Stopped,
             Duration::from_millis(100)
         ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn expected_stops_are_marked_before_kills_and_emit_no_error_exit() {
+        let sup = ProcessSupervisor::new();
+        let mut events = sup.subscribe();
+        let mut ids = Vec::new();
+        for name in ["dashboard-stop-test", "tray-stop-test"] {
+            let id = sup.start(ProcessSpec {
+                name: name.into(),
+                executable: "ping".into(),
+                args: vec!["127.0.0.1".into(), "-n".into(), "6".into()],
+                cwd: None,
+                env: vec![],
+                restart: None,
+            });
+            assert!(wait_for_state(
+                &sup,
+                id,
+                ProcessState::Running,
+                Duration::from_secs(3)
+            ));
+            ids.push(id);
+        }
+
+        while events.try_recv().is_ok() {}
+        assert!(sup.stop_all_and_wait(Duration::from_secs(5)));
+
+        let mut received = Vec::new();
+        while let Ok(event) = events.try_recv() {
+            received.push(event);
+        }
+        let stop_requested: Vec<_> = received
+            .iter()
+            .filter_map(|event| match event {
+                ProcessEvent::StopRequested { id, .. } => Some(*id),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(stop_requested.len(), ids.len());
+        assert!(ids.iter().all(|id| stop_requested.contains(id)));
+
+        let last_stop_marker = received
+            .iter()
+            .rposition(|event| matches!(event, ProcessEvent::StopRequested { .. }))
+            .unwrap();
+        let first_exit = received
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    ProcessEvent::StateChanged {
+                        state: ProcessState::Stopped
+                            | ProcessState::Crashed
+                            | ProcessState::Failed,
+                        ..
+                    }
+                )
+            })
+            .unwrap();
+        assert!(last_stop_marker < first_exit);
+        assert!(!received.iter().any(|event| matches!(
+            event,
+            ProcessEvent::StateChanged {
+                state: ProcessState::Crashed | ProcessState::Failed,
+                ..
+            }
+        )));
+        for id in ids {
+            let guard = sup.processes.lock().unwrap();
+            assert!(!guard.get(&id.0).unwrap().expected_stop);
+        }
     }
 
     #[cfg(windows)]

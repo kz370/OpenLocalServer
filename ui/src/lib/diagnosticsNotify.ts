@@ -33,6 +33,11 @@ export {
   getServiceReadyTimeoutMs,
 }
 
+export function handleExpectedServiceStop(serviceId: string) {
+  setServiceIntent(serviceId, 'stopped')
+  emitStateChange()
+}
+
 // ---------------------------------------------------------------------------
 // Configuration constants (Rules 2 & 3 + Intent & Crash Grouping)
 // ---------------------------------------------------------------------------
@@ -283,8 +288,12 @@ export function setServiceIntent(
     currentlyRunningServices.delete(serviceId)
     currentlyHealthyRunningServices.delete(serviceId)
     pendingUnexpectedExits.delete(serviceId)
+    activeCrashNotifiedServices.delete(serviceId)
+    startFailureNotifiedServices.delete(serviceId)
+    autostartFailedServices.delete(serviceId)
     explicitlyStoppedThisSession.add(serviceId)
     saveSessionSet(SESSION_STOPPED_KEY, explicitlyStoppedThisSession)
+    resolveNotificationsForService(serviceId)
   } else if (expected === 'restarting') {
     rec.holdUntilMs = now + holdMs
     rec.exitObserved = false
@@ -403,6 +412,11 @@ export function getServiceDisplayName(id: string): string {
 function resolveServiceIdFromProcessName(name: string): string | null {
   const lower = name.trim().toLowerCase()
   if (NAME_TO_SERVICE_ID[lower]) return NAME_TO_SERVICE_ID[lower]
+  for (const [id, displayName] of Object.entries(BUILTIN_SERVICE_NAMES)) {
+    if (id.toLowerCase() === lower || displayName.toLowerCase() === lower) {
+      return id
+    }
+  }
   for (const [id, disp] of serviceDisplayNames.entries()) {
     if (disp.toLowerCase() === lower || id.toLowerCase() === lower) {
       return id
@@ -2070,10 +2084,14 @@ export function initDiagnosticsNotificationMonitor() {
         })
     })
 
-    void listen<{ kind: string; id: number; state?: string }>(
+    void listen<{ kind: string; id: number; state?: string; name?: string }>(
       'process-event',
       (event) => {
         const p = event.payload
+        if (p.kind === 'stop_requested' && p.name) {
+          const serviceId = resolveServiceIdFromProcessName(p.name)
+          if (serviceId) handleExpectedServiceStop(serviceId)
+        }
         if (
           p.kind === 'state_changed' &&
           (p.state === 'crashed' || p.state === 'failed' || p.state === 'stopped')
