@@ -437,18 +437,33 @@ impl Inner {
         }
         // One store at a time, each released before the next is taken: the lock order at
         // the top of this module forbids holding settings and projects together.
+        let mut project_store_loaded = false;
+        let mut domain_store_loaded = false;
         match ProjectStore::load(&self.paths) {
-            Ok(store) => *lock(&self.projects) = store,
+            Ok(store) => {
+                *lock(&self.projects) = store;
+                project_store_loaded = true;
+            }
             Err(e) => tracing::warn!(%e, "projects could not be re-read after an outside change"),
         }
         match DomainStore::load(&self.paths) {
-            Ok(store) => *lock(&self.domains) = store,
+            Ok(store) => {
+                *lock(&self.domains) = store;
+                domain_store_loaded = true;
+            }
             // A store that will not load must not replace one that does: the list the user
             // is looking at stays as it was.
             Err(e) => tracing::warn!(%e, "domains could not be re-read after an outside change"),
         }
         if let Ok(store) = SettingsService::load(&self.paths) {
             *lock(&self.settings) = store;
+        }
+        // Both stores re-read cleanly, so the foreign write has been consumed and this
+        // process is the writer from here on. Adopting the marker here is what keeps the
+        // next list command cheap — without it the stale marker of a CLI run that has
+        // since exited reloaded the stores and re-scanned the project roots on every list.
+        if project_store_loaded && domain_store_loaded {
+            crate::db::adopt_ownership(&self.paths);
         }
         // Every lock is released by now, so this may take them again in its own order.
         if let Err(e) = self.sync_auto_domains() {

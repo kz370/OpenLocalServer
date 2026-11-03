@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use ols_core::process::{ProcessEvent, ProcessState};
 use ols_core::quickapp::EntryView;
@@ -38,9 +38,18 @@ async fn run_command(
             fix: None,
         })?;
     // Any command can start or stop things, so the tray, taskbar, in-app mark
-    // and live tray tooltip are refreshed after every command.
-    sync_status_icon(&app, &state.inner().clone());
-    sync_tray_tooltip(&app, &state.inner().clone());
+    // and live tray tooltip are refreshed after every command — but in the
+    // background. `sync_tray_tooltip` asks the ServiceManager for its aggregate,
+    // which probes per-service runtime versions, ports and TCP health; doing
+    // that synchronously here added about a second to every read (site reads
+    // included) before the response ever reached the UI. The 2-second tray
+    // heartbeat keeps the tray fresh regardless.
+    let state = state.inner().clone();
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        sync_status_icon(&app_handle, &state);
+        sync_tray_tooltip(&app_handle, &state);
+    });
     dispatched
 }
 
@@ -1149,6 +1158,18 @@ fn sync_tray_tooltip(app: &AppHandle, core: &Core) {
     {
         return;
     }
+    // The aggregate probes every service (runtime dirs, ports, TCP health). Commands
+    // arrive in bursts from the UI, so share the computed tip across one second
+    // instead of recomputing it per command; the heartbeat keeps it moving after that.
+    static TIP_CACHE: Mutex<Option<(Instant, String)>> = Mutex::new(None);
+    if let Some((at, tip)) = TIP_CACHE.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+        if at.elapsed() < Duration::from_secs(1) {
+            return;
+        }
+        if TOOLTIP_SHOWS.lock().unwrap_or_else(|e| e.into_inner()).as_deref() == Some(tip) {
+            return;
+        }
+    }
     let tip = tray_tooltip(core);
     let mut last = TOOLTIP_SHOWS.lock().unwrap_or_else(|e| e.into_inner());
     if last.as_deref() == Some(&tip) {
@@ -1156,9 +1177,10 @@ fn sync_tray_tooltip(app: &AppHandle, core: &Core) {
     }
     if let Some(tray) = app.tray_by_id("main") {
         if tray.set_tooltip(Some(tip.as_str())).is_ok() {
-            *last = Some(tip);
+            *last = Some(tip.clone());
         }
     }
+    *TIP_CACHE.lock().unwrap_or_else(|e| e.into_inner()) = Some((Instant::now(), tip));
 }
 
 fn tray_fingerprint(

@@ -36,7 +36,8 @@ const LAST_WRITER_KEY: &str = "db.last_writer";
 ///
 /// One single-row read, which is cheap enough to sit in front of every list of sites and
 /// projects. Returns true only when a write came from elsewhere; the caller is expected
-/// to re-read its stores and stop asking until the next write.
+/// to re-read its stores and then adopt the ownership below, so the same foreign write is
+/// not reported again on every subsequent list.
 pub fn changed_externally(paths: &AppPaths) -> bool {
     let Ok(Some(writer)) = read_setting(paths, LAST_WRITER_KEY) else {
         // No marker yet: nothing has ever recorded a writer, so nothing changed.
@@ -76,6 +77,15 @@ fn note_write(paths: &AppPaths) {
     ) {
         tracing::warn!(%e, "could not record which process wrote the database");
     }
+}
+
+/// Adopts the writer marker after an outside change has been consumed, so
+/// [`changed_externally`] stops reporting the same foreign write on every list command.
+/// Without this, one stale marker (written by a CLI or Explorer run that has since exited)
+/// made every `list_domains`/`list_projects` re-read all stores and re-scan the project
+/// roots, which was the multi-second cost on every site read.
+pub fn adopt_ownership(paths: &AppPaths) {
+    note_write(paths);
 }
 
 /// Open (creating dirs + file) and init schema. Sets WAL, FK, busy timeout.
