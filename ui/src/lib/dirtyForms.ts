@@ -24,6 +24,8 @@ type DirtyFormOptions<T> = {
   error: Diagnostic | null
   onSave: (value: T) => Promise<boolean>
   onRestore: (value: T) => void
+  /** Optional normalizer applied before comparing draft to saved (trim, null-collapse, etc.). */
+  normalize?: (value: T) => unknown
 }
 
 type SavedSnapshot<T> = {
@@ -75,10 +77,16 @@ export function useDirtyForm<T>({
   error,
   onSave,
   onRestore,
+  normalize,
 }: DirtyFormOptions<T>) {
   const generatedId = useId()
   const id = `dirty-form-${generatedId}`
-  const serialized = JSON.stringify(value)
+  const normalizeRef = useRef(normalize ?? normalizeValue as (value: T) => unknown)
+  useEffect(() => {
+    normalizeRef.current = normalize ?? (normalizeValue as (value: T) => unknown)
+  }, [normalize])
+  const serialize = useCallback((v: T) => JSON.stringify(normalizeRef.current(v)), [])
+  const serialized = serialize(value)
   const [baseline, setBaseline] = useStateSnapshot(formKey, value, serialized)
   const baselineRef = useRef(baseline)
   useEffect(() => {
@@ -93,10 +101,10 @@ export function useDirtyForm<T>({
   const dirtyRef = useLatest(currentDirty)
 
   const updateBaseline = useCallback((key: string, next: T) => {
-    const snapshot = { key, value: next, serialized: JSON.stringify(next) }
+    const snapshot = { key, value: next, serialized: serialize(next) }
     baselineRef.current = snapshot
     setBaseline(snapshot)
-  }, [setBaseline])
+  }, [serialize, setBaseline])
 
   const syncSaved = useCallback((next: T | ((saved: T) => T), forKey = keyRef.current, force = false) => {
     if (forKey === keyRef.current && (force || !dirtyRef.current)) {
@@ -211,6 +219,24 @@ export function warnBeforeLeavingUnsavedChanges(scope?: DirtyFormScope) {
   return confirmed
 }
 
+export function normalizeValue(value: unknown): unknown {
+  if (value === undefined || value === null) return null
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (trimmed === '') return null
+    if (/^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed)
+    return trimmed
+  }
+  if (Array.isArray(value)) return value.map(normalizeValue)
+  if (typeof value === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+      out[key] = normalizeValue((value as Record<string, unknown>)[key])
+    }
+    return out
+  }
+  return value
+}
 export function installDirtyFormGuards() {
   const beforeUnload = (event: BeforeUnloadEvent) => {
     if (getDirtyForms().length === 0) return
