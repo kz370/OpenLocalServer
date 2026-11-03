@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { listen } from '@tauri-apps/api/event'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 
 import { asDiagnostic } from '@/components/ErrorCard'
 import type { Diagnostic } from '@/core'
@@ -120,7 +121,6 @@ export function useWindowState() {
     let unlisten: (() => void) | undefined
 
     void (async () => {
-      const { getCurrentWindow } = await import('@tauri-apps/api/window')
       const win = getCurrentWindow()
 
       const check = async () => {

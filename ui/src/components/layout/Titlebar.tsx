@@ -1,4 +1,5 @@
 import { Copy, Minus, Square, X } from 'lucide-react'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 
 import { NotificationsPopover } from '@/components/NotificationsPopover'
 import { useAppMarkPath, useWindowState } from '@/lib/hooks'
@@ -16,9 +17,8 @@ export function Titlebar({ onNavigateLogs }: { onNavigateLogs?: (source?: string
   // Same four colourways (light/dark × running/stopped) the tray and taskbar use.
   const mark = useAppMarkPath()
 
-  const action = (fn: (win: Awaited<ReturnType<typeof import('@tauri-apps/api/window').getCurrentWindow>>) => void) => async () => {
+  const action = (fn: (win: ReturnType<typeof getCurrentWindow>) => void) => () => {
     if (!isTauri()) return
-    const { getCurrentWindow } = await import('@tauri-apps/api/window')
     fn(getCurrentWindow())
   }
 

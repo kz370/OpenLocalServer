@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { listen } from '@tauri-apps/api/event'
 import {
   type CoreCommand,
   type CoreResponse,
@@ -2078,7 +2079,7 @@ export function initDiagnosticsNotificationMonitor() {
     void checkAutostartAndProcessHealth()
   }, 3000)
 
-  void import('@tauri-apps/api/event').then(({ listen }) => {
+  {
     void listen('ols:exiting', () => {
       markAppShuttingDown()
     })
@@ -2122,5 +2123,5 @@ export function initDiagnosticsNotificationMonitor() {
         }
       },
     )
-  })
+  }
 }

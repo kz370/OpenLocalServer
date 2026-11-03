@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
 
 import { runCommand } from '@/core'
@@ -14,22 +14,23 @@ import { Titlebar } from '@/components/layout/Titlebar'
 import { ExitingOverlay } from '@/components/layout/ExitingOverlay'
 import { useWindowState } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
-import { CommandsPage } from '@/pages/Commands'
-import { DashboardPage } from '@/pages/Dashboard'
-import { DatabasesPage } from '@/pages/Databases'
-import { WebServerPage } from '@/pages/WebServer'
-import { LogsPage } from '@/pages/Logs'
-import { ProcessesPage } from '@/pages/Processes'
-import { TasksPage } from '@/pages/Tasks'
-import { PluginsPage } from '@/pages/Plugins'
-import { ProfilesPage } from '@/pages/Profiles'
-import { ProjectsPage } from '@/pages/Projects'
-import { SitesPage } from '@/pages/Sites'
-import { QuickAppsPage } from '@/pages/QuickApps'
-import { RuntimesPage } from '@/pages/Runtimes'
-import { ServicesPage } from '@/pages/Services'
-import { SettingsPage } from '@/pages/Settings'
-import { TunnelsPage } from '@/pages/Tunnels'
+import { initDiagnosticsNotificationMonitor } from '@/lib/diagnosticsNotify'
+const CommandsPage = lazy(() => import('@/pages/Commands').then((module) => ({ default: module.CommandsPage })))
+const DashboardPage = lazy(() => import('@/pages/Dashboard').then((module) => ({ default: module.DashboardPage })))
+const DatabasesPage = lazy(() => import('@/pages/Databases').then((module) => ({ default: module.DatabasesPage })))
+const WebServerPage = lazy(() => import('@/pages/WebServer').then((module) => ({ default: module.WebServerPage })))
+const LogsPage = lazy(() => import('@/pages/Logs').then((module) => ({ default: module.LogsPage })))
+const ProcessesPage = lazy(() => import('@/pages/Processes').then((module) => ({ default: module.ProcessesPage })))
+const TasksPage = lazy(() => import('@/pages/Tasks').then((module) => ({ default: module.TasksPage })))
+const PluginsPage = lazy(() => import('@/pages/Plugins').then((module) => ({ default: module.PluginsPage })))
+const ProfilesPage = lazy(() => import('@/pages/Profiles').then((module) => ({ default: module.ProfilesPage })))
+const ProjectsPage = lazy(() => import('@/pages/Projects').then((module) => ({ default: module.ProjectsPage })))
+const SitesPage = lazy(() => import('@/pages/Sites').then((module) => ({ default: module.SitesPage })))
+const QuickAppsPage = lazy(() => import('@/pages/QuickApps').then((module) => ({ default: module.QuickAppsPage })))
+const RuntimesPage = lazy(() => import('@/pages/Runtimes').then((module) => ({ default: module.RuntimesPage })))
+const ServicesPage = lazy(() => import('@/pages/Services').then((module) => ({ default: module.ServicesPage })))
+const SettingsPage = lazy(() => import('@/pages/Settings').then((module) => ({ default: module.SettingsPage })))
+const TunnelsPage = lazy(() => import('@/pages/Tunnels').then((module) => ({ default: module.TunnelsPage })))
 
 const VALID_PAGES: readonly Page[] = [
   'dashboard',
@@ -101,6 +102,10 @@ export default function App() {
   })
   const [doctor, setDoctor] = useState(false)
   const openDoctor = useCallback(() => setDoctor(true), [])
+
+  useEffect(() => {
+    initDiagnosticsNotificationMonitor()
+  }, [])
 
   const changePage = useCallback((target: Page) => {
     setPage(target)
@@ -274,46 +279,48 @@ export default function App() {
           <CommandPalette onNavigate={navigate} onDoctor={openDoctor} />
           <DoctorDialog open={doctor} onClose={() => setDoctor(false)} />
           <main className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-6">
-            {page === 'dashboard' && <DashboardPage onNavigate={navigate} onOpenLogs={openLogs} />}
-            {page === 'projects' && <ProjectsPage onNavigate={navigate} />}
-            {page === 'sites' && <SitesPage onNavigate={navigate} />}
-            {page === 'quickapps' && <QuickAppsPage onNavigate={navigate} />}
-            {page === 'commands' && <CommandsPage />}
-            {page === 'webserver' && (
-              <WebServerPage
-                initialTab={webServerTab}
-                onTabChange={(tab) => {
-                  setWebServerTab(tab)
-                  try {
-                    sessionStorage.setItem('ols:webserver-tab', tab)
-                  } catch {
-                    // ignore
-                  }
-                }}
-              />
-            )}
-            {page === 'tunnels' && <TunnelsPage />}
-            {page === 'databases' && <DatabasesPage />}
-            {page === 'services' && <ServicesPage onOpenLogs={openLogs} />}
-            {page === 'runtimes' && <RuntimesPage />}
-            {page === 'profiles' && <ProfilesPage />}
-            {page === 'plugins' && <PluginsPage />}
-            {page === 'logs' && (
-              <LogsPage
-                initialSource={logSource}
-                onSourceChange={(src) => {
-                  setLogSource(src)
-                  try {
-                    sessionStorage.setItem('ols:log-source', src)
-                  } catch {
-                    // ignore
-                  }
-                }}
-              />
-            )}
-            {page === 'processes' && <ProcessesPage />}
-            {page === 'tasks' && <TasksPage />}
-            {page === 'settings' && <SettingsPage />}
+            <Suspense fallback={<div className="text-sm text-muted-foreground" role="status">Loading page…</div>}>
+              {page === 'dashboard' && <DashboardPage onNavigate={navigate} onOpenLogs={openLogs} />}
+              {page === 'projects' && <ProjectsPage onNavigate={navigate} />}
+              {page === 'sites' && <SitesPage onNavigate={navigate} />}
+              {page === 'quickapps' && <QuickAppsPage onNavigate={navigate} />}
+              {page === 'commands' && <CommandsPage />}
+              {page === 'webserver' && (
+                <WebServerPage
+                  initialTab={webServerTab}
+                  onTabChange={(tab) => {
+                    setWebServerTab(tab)
+                    try {
+                      sessionStorage.setItem('ols:webserver-tab', tab)
+                    } catch {
+                      // ignore
+                    }
+                  }}
+                />
+              )}
+              {page === 'tunnels' && <TunnelsPage />}
+              {page === 'databases' && <DatabasesPage />}
+              {page === 'services' && <ServicesPage onOpenLogs={openLogs} />}
+              {page === 'runtimes' && <RuntimesPage />}
+              {page === 'profiles' && <ProfilesPage />}
+              {page === 'plugins' && <PluginsPage />}
+              {page === 'logs' && (
+                <LogsPage
+                  initialSource={logSource}
+                  onSourceChange={(src) => {
+                    setLogSource(src)
+                    try {
+                      sessionStorage.setItem('ols:log-source', src)
+                    } catch {
+                      // ignore
+                    }
+                  }}
+                />
+              )}
+              {page === 'processes' && <ProcessesPage />}
+              {page === 'tasks' && <TasksPage />}
+              {page === 'settings' && <SettingsPage />}
+            </Suspense>
           </main>
         </div>
       </TooltipProvider>

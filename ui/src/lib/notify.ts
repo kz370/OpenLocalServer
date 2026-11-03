@@ -1,3 +1,5 @@
+import { listen } from '@tauri-apps/api/event'
+
 export type NotificationType = 'success' | 'info' | 'warning' | 'error' | 'progress'
 
 export interface NotificationAction {
@@ -741,11 +743,7 @@ export function initGlobalNotificationListeners() {
   if (backgroundListenersInitialized || typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return
   backgroundListenersInitialized = true
 
-  void import('@/lib/diagnosticsNotify').then(({ initDiagnosticsNotificationMonitor }) => {
-    initDiagnosticsNotificationMonitor()
-  })
-
-  void import('@tauri-apps/api/event').then(({ listen }) => {
+  {
     // Listen to background tasks (§164)
     void listen<{ task: { id: string; title: string; step?: string | null; state: string; total: number; done: number; problems: string[] } }>(
       'task-event',
@@ -838,5 +836,5 @@ export function initGlobalNotificationListeners() {
         }
       },
     )
-  })
+  }
 }
