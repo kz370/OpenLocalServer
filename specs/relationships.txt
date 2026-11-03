@@ -216,12 +216,14 @@ ExitingOverlay | listens | ols:exiting (renders full-screen animated shutdown lo
 Tauri request_exit | calls | begin_shutdown
 CommandPalette & SettingsPage | invoke | requestExit
 SitesPage | uses | FloatingMenu (shared context menu on table row onContextMenu and Actions button click; portaled via @floating-ui/react FloatingPortal with flip, shift, size, offset, autoUpdate, and useDismiss below the 36px titlebar at z-[95])
+SitesPage safe delete action | displays | `Safe delete` with the visible description `Moves folder to excluded, restorable`; confirmation button repeats the action label
 SitesPage | filters | 'missing' tab (isolates sites whose project folder is missing or offline from 'enabled' / 'disabled' tabs)
 ProjectsPage | uses | ProjectTypeFilterBar, ProjectSettingsDialog, AddProjectDialog, ManageProjectTypesDialog, ProjectTypePicker, projectTypes, FloatingMenu, Pagination, SiteLogo, TechIcon, GitCloneButton
 ProjectTypeFilterBar | uses | TechIcon, Badge, Button, Input, FloatingPortal, useFloating, useDismiss, useInteractions
 Project root watcher | registers | discovered folders as standalone; explicit RegisterProject/ScanAndRegisterProjects paths mark projects site-eligible
 ProjectsPage | reads | list_projects, list_domains, list_editors, list_project_types, list_custom_project_types, take_pending_add_project
 ProjectsPage | calls | add_project (auto_site defaults false; reuses existing path and applies standalone preference), ignore_project (shows immediate notification and persistent progress status until backend update and list refresh complete), inspect_project_folder, add_custom_project_type, rename_custom_project_type, remove_custom_project_type, update_project, relocate_project, remove_project, create_site_for_project, open_project_terminal, open_with, set_editor_hidden
+ProjectsPage | refreshes project health on | window focus, Locate completion, and project settings updates; the missing-folder filter is effective only while missingCount > 0, clears when the count reaches zero, and resets pagination when filter or type tab changes
 TauriApp (refresh_tray & sync_tray_tooltip) | updates_on | run_command IPC (site start/stop/add/remove/apply), process_events, project_events, autostart, and periodic 2-second heartbeat — carried out in a spawned task AFTER the command response is sent to the UI (the aggregate probes are never paid by a waiting read), with `sync_tray_tooltip` caching its aggregate for 1 s against command bursts
 DashboardPage (ServicesWidget) | uses | serviceGrouping::groupServices (categorizes services into Web servers, Databases, Cache & queues, Mail, Other)
 DashboardPage (ServicesWidget) | persists_collapsed_via | dashboard.services.collapsed_groups CoreCommand::SetSetting and localStorage
@@ -265,6 +267,7 @@ SitesPage focus/visibility | refreshes | read-only list_domains + list_projects 
 RemoveSiteFromList | returns after | removing the domain and preserving/registering its project as standalone; SitesPage refreshes rows immediately, then invokes SyncHosts asynchronously with an updating status
 scan_and_register_projects + sync_auto_domains | skip | .ols_ignore_me paths and hidden-site paths
 SitesPage | removes a site from the list via | remove_site_from_list; removes only the site record, retains/registers the project, then reconciles hosts and web config
+SitesPage Remove site only | updates | projects_page_domains persistent cache immediately after remove_site_from_list succeeds; ProjectsPage reads that cache for its initial Connected Site state
 useWeb.apply | notifies via | notify.success when config files, server state, or hosts file changed; unchanged apply is silent, while drifted config opens DriftDialog
 SyncHosts | returns | Applied reports from reconciliation so useWeb.reconcileSites can notify about web servers that actually reloaded after a site change
 ListProjects | annotates | Project.auto_discovered from configured roots for the Sites row label

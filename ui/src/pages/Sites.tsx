@@ -25,6 +25,7 @@ import { FloatingMenu, type MenuAnchor, type MenuItem } from '@/components/ui/me
 import { Pagination } from '@/components/ui/pagination'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { type Domain, type DomainSummary, type HealthReport, type Project, type WpProject, runCommand } from '@/core'
+import { getCached, setCached } from '@/lib/cache'
 import { confirmAction } from '@/lib/confirm'
 import { notify } from '@/lib/notify'
 import { onOpenProject, onOpenSitesFilter, takePendingProject, takePendingSitesFilter } from '@/lib/nav'
@@ -774,13 +775,16 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
           if (!ok) return
           await run(`remove:${key}`, async () => {
             await runCommand({ type: 'remove_site_from_list', hostname: key })
+            const cachedDomains = getCached<DomainSummary[]>('projects_page_domains', [])
+            setCached('projects_page_domains', cachedDomains.filter((domain) => domain.hostname !== key))
             await Promise.all([refresh(), refreshProjects()])
             await reconcileSites()
           })
         },
       })
       items.push({
-        label: 'Remove site and move project folder',
+        label: 'Safe delete',
+        description: 'Moves folder to excluded, restorable',
         icon: <Trash2 />,
         danger: true,
         disabled: allHosts.some((h) => removing.has(h)) || busy === `delete:${key}`,
@@ -789,7 +793,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
           const ok = await confirmAction(
             `This site will stop being served. Its project folder will move into an "ols_excluded_sites" folder in the same directory, and the site and project records will be removed from OLS.`,
             `Remove ${hostLabel} and its project folder?`,
-            'Move to excluded folder',
+            'Safe delete',
           )
           if (!ok) return
           await run(`delete:${key}`, () => web.deleteSites(allHosts))

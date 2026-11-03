@@ -25,6 +25,7 @@ export type MenuItem =
       danger?: boolean
       disabled?: boolean
       hint?: string
+      description?: string
       submenu?: MenuItem[]
     }
   | 'separator'
@@ -236,7 +237,12 @@ function MenuItemRow({
         )}
       >
         {item.icon}
-        <span className="flex-1 truncate">{item.label}</span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate">{item.label}</span>
+          {item.description && (
+            <span className="block truncate text-[11px] leading-4 text-muted-foreground">{item.description}</span>
+          )}
+        </span>
         {item.submenu && item.submenu.length > 0 && (
           <ChevronRight className="ml-auto size-3 opacity-60 shrink-0" />
         )}

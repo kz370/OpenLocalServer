@@ -49,7 +49,7 @@ import {
   type ProjectTypePreset,
   runCommand,
 } from '@/core'
-import { createPersistentCache } from '@/lib/cache'
+import { createPersistentCache, getCached } from '@/lib/cache'
 import { confirmAction } from '@/lib/confirm'
 import { usePoll } from '@/lib/hooks'
 import { openProject, openSettingsSection } from '@/lib/nav'
@@ -77,7 +77,8 @@ function normPath(p: string | null | undefined): string {
 
 export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void }) {
   const [projects, setProjects] = useState<Project[]>(projectsCache.get)
-  const [domains, setDomains] = useState<DomainSummary[]>(domainsCache.get)
+  // Read storage directly because Sites can update this cache while ProjectsPage is unmounted.
+  const [domains, setDomains] = useState<DomainSummary[]>(() => getCached('projects_page_domains', []))
   const [editors, setEditors] = useState<EditorInfo[]>(editorsCache.get)
   const [presets, setPresets] = useState<ProjectTypePreset[]>(presetsCache.get)
   const [customTypes, setCustomTypes] = useState<CustomProjectType[]>(customTypesCache.get)
@@ -126,11 +127,18 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
       if (res.type === 'projects') {
         setProjects(res.projects)
         projectsCache.set(res.projects)
+        const hasMissingProjects = res.projects.some(
+          (project) => project.health && project.health.status !== 'healthy',
+        )
+        if (!hasMissingProjects && missingOnly) {
+          setMissingOnly(false)
+          setPage(1)
+        }
       }
     } catch {
       // quiet poll
     }
-  }, [])
+  }, [missingOnly])
 
   const refreshDomains = useCallback(async () => {
     try {
@@ -196,6 +204,12 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
   }, [refreshAll])
 
   usePoll(refreshAll, 3000)
+
+  useEffect(() => {
+    const handleFocus = () => void refreshAll()
+    window.addEventListener('focus', handleFocus)
+    return () => window.removeEventListener('focus', handleFocus)
+  }, [refreshAll])
 
   // Listen for Tauri drag & drop events
   useEffect(() => {
@@ -284,12 +298,15 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
     return groupProjectsByType(allProjects, presets, customTypes, preferences)
   }, [allProjects, presets, customTypes, preferences])
 
+  const effectiveMissingOnly = missingOnly && typeGroups.missingCount > 0
+
   // Reset typeTab if active tab no longer exists in available tabs or becomes empty (count < 1)
   useEffect(() => {
     if (typeTab !== 'all') {
       const tabExists = typeGroups.tabs.some((t) => t.id === typeTab && t.count >= 1)
       if (!tabExists) {
         setTypeTab('all')
+        setPage(1)
         try {
           localStorage.setItem(PROJECTS_TAB_KEY, 'all')
           sessionStorage.setItem('ols:projects-tab', 'all')
@@ -301,7 +318,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
   const filteredProjects = useMemo(() => {
     const term = query.trim()
     return allProjects.filter((p) => {
-      if (missingOnly && !isProjectMissing(p)) return false
+      if (effectiveMissingOnly && !isProjectMissing(p)) return false
       if (typeTab !== 'all') {
         const typeId = getProjectTypeId(p)
         if (typeTab === 'auto') {
@@ -314,7 +331,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
       }
       return matchesQuery(p, term)
     })
-  }, [allProjects, missingOnly, typeTab, query, domains])
+  }, [allProjects, effectiveMissingOnly, typeTab, query, domains])
 
   // Pagination slice
   const total = filteredProjects.length
@@ -584,7 +601,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
               selectedTab={typeTab}
               onSelectTab={handleSelectTypeTab}
               missingCount={typeGroups.missingCount}
-              missingOnly={missingOnly}
+              missingOnly={effectiveMissingOnly}
               onToggleMissingOnly={() => {
                 setMissingOnly((prev) => !prev)
                 setPage(1)
@@ -638,7 +655,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
                       ? 'No projects added yet. Click "Add project folder", drag and drop a folder, or use the Windows Explorer context menu to add one.'
                       : query.trim()
                         ? `No projects matching "${query.trim()}".`
-                        : missingOnly
+                        : effectiveMissingOnly
                           ? 'No projects with missing or offline directories.'
                           : typeTab !== 'all'
                             ? `No projects under the "${typeGroups.tabs.find((t) => t.id === typeTab)?.label ?? typeTab}" type.`
