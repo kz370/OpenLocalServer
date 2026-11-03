@@ -14,6 +14,7 @@ import { type AutoBackupSettings, type AutoBackupStatus, type CpuCapStatus, type
 import { confirmAction } from '@/lib/confirm'
 import { notify } from '@/lib/notify'
 import { formatBytes, timeAgo, useAction, useAppMarkPath } from '@/lib/hooks'
+import { useDirtyForm } from '@/lib/dirtyForms'
 import { cn } from '@/lib/utils'
 
 /** Only the numeric limits render as fields; `cpu_limiter_path` is a string and is not one. */
@@ -197,13 +198,45 @@ export function ResourcesCard() {
   const [saved, setSaved] = useState(false)
   const action = useAction()
   const { busy, error, setError, run } = action
+  const resourceForm = useDirtyForm({
+    formKey: 'resource-limits',
+    value: limits,
+    enabled: limits !== null,
+    busy: busy !== null,
+    error,
+    onRestore: (savedLimits) => {
+      if (savedLimits) {
+        setLimits(savedLimits)
+        setSaved(false)
+      }
+    },
+    onSave: async (draft) => {
+      if (!draft) return false
+      const result = await run('limits', async () => {
+        const r = await runCommand({ type: 'set_resource_limits', limits: draft })
+        if (r.type !== 'resources') {
+          throw {
+            problem: 'Could not save resource limits',
+            cause: `The core returned an unexpected response: ${r.type}.`,
+            fix: 'Try saving again.',
+          }
+        }
+        setLimits(r.limits)
+        setCpu(r.cpu)
+        setSaved(true)
+        return true
+      })
+      return result === true
+    },
+  })
   const load = useCallback(async () => {
     const r = await runCommand({ type: 'get_resource_limits' })
     if (r.type === 'resources') {
       setLimits(r.limits)
       setCpu(r.cpu)
+      resourceForm.syncSaved(r.limits)
     }
-  }, [])
+  }, [resourceForm.syncSaved])
   useEffect(() => {
     void load()
   }, [load])
@@ -290,37 +323,6 @@ export function ResourcesCard() {
             <Info className="size-4 shrink-0 text-sky-400" aria-hidden="true" />
             Changes are applied the next time the service starts.
           </p>
-          <div className="flex items-center gap-2.5">
-            <Button
-              variant="secondary"
-              disabled={busy !== null}
-              onClick={() => {
-                setSaved(false)
-                void load()
-              }}
-            >
-              Cancel
-            </Button>
-<SaveButton
-              action={action}
-              name="limits"
-              className="bg-emerald-500 text-zinc-950 hover:bg-emerald-400"
-              busyLabel="Saving…"
-              savedLabel="Saved"
-              onClick={() =>
-                void run('limits', async () => {
-                  const r = await runCommand({ type: 'set_resource_limits', limits })
-                  if (r.type === 'resources') {
-                    setLimits(r.limits)
-                    setCpu(r.cpu)
-                  }
-                  setSaved(true)
-                })
-              }
-            >
-              Save limits
-            </SaveButton>
-          </div>
         </div>
         {saved && <span className="text-sm text-success">Saved. Restart a service to apply its limit.</span>}
       </CardContent>

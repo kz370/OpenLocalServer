@@ -16,6 +16,8 @@ import { useWindowState } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 import { initDiagnosticsNotificationMonitor } from '@/lib/diagnosticsNotify'
 import { initializeServiceStatusTracking } from '@/lib/serviceStatus'
+import { DirtySaveBar } from '@/components/DirtySaveBar'
+import { installDirtyFormGuards, useDirtyFormCount, warnBeforeLeavingUnsavedChanges } from '@/lib/dirtyForms'
 const CommandsPage = lazy(() => import('@/pages/Commands').then((module) => ({ default: module.CommandsPage })))
 const DashboardPage = lazy(() => import('@/pages/Dashboard').then((module) => ({ default: module.DashboardPage })))
 const DatabasesPage = lazy(() => import('@/pages/Databases').then((module) => ({ default: module.DatabasesPage })))
@@ -81,6 +83,8 @@ function getInitialPage(): Page {
 
 export default function App() {
   const { isWindowed } = useWindowState()
+  useEffect(() => installDirtyFormGuards(), [])
+  const dirtyFormCount = useDirtyFormCount('app')
   const initialPage = getInitialPage()
   const [page, setPage] = useState<Page>(initialPage === 'config' ? 'webserver' : initialPage)
   const [webServerTab, setWebServerTab] = useState<'server' | 'config' | 'certs'>(() => {
@@ -123,6 +127,7 @@ export default function App() {
 
   const navigate = useCallback(
     (target: Page) => {
+      if (!warnBeforeLeavingUnsavedChanges()) return
       if (target === 'config') {
         setWebServerTab('config')
         try {
@@ -149,6 +154,7 @@ export default function App() {
   /** Logs opened for one service: switch page and preselect that service's source. */
   const openLogs = useCallback(
     (source?: string | null) => {
+      if (!warnBeforeLeavingUnsavedChanges()) return
       if (source) {
         setLogSource(source)
         try {
@@ -291,7 +297,7 @@ export default function App() {
           <NotificationHost onNavigateLogs={openLogs} />
           <CommandPalette onNavigate={navigate} onDoctor={openDoctor} />
           <DoctorDialog open={doctor} onClose={() => setDoctor(false)} />
-          <main className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-6">
+          <main className={cn('min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-6', dirtyFormCount > 0 && 'pb-44')}>
             <Suspense fallback={<div className="text-sm text-muted-foreground" role="status">Loading page…</div>}>
               {page === 'dashboard' && <DashboardPage onNavigate={navigate} onOpenLogs={openLogs} />}
               {page === 'projects' && <ProjectsPage onNavigate={navigate} />}
@@ -342,6 +348,7 @@ export default function App() {
               {page === 'settings' && <SettingsPage />}
             </Suspense>
           </main>
+          <DirtySaveBar scope="app" />
         </div>
       </TooltipProvider>
     </div>

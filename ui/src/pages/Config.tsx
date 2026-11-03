@@ -1,10 +1,9 @@
 import { save } from '@tauri-apps/plugin-dialog'
-import { AlertTriangle, Download, FolderOpen, History, Plus, RefreshCw, RotateCcw, Save, ShieldCheck, Trash2 } from 'lucide-react'
+import { AlertTriangle, Download, FolderOpen, History, Plus, RefreshCw, RotateCcw, ShieldCheck, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import { CodeEditor, DiffView, type EditorLanguage } from '@/components/CodeEditor'
 import { ErrorCard } from '@/components/ErrorCard'
-import { SaveButton } from '@/components/SaveButton'
 import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -15,6 +14,7 @@ import { Input } from '@/components/ui/input'
 import { TechTile } from '@/components/TechIcon'
 import { type ConfigFile, type ConfigVersion, type Domain, type Ownership, type SiteBlocks, type WebConfig, runCommand } from '@/core'
 import { useAction } from '@/lib/hooks'
+import { useDirtyForm, type DirtyFormScope, warnBeforeLeavingUnsavedChanges } from '@/lib/dirtyForms'
 import { confirmThen } from '@/lib/confirm'
 
 const OWNERSHIP_INFO: Record<Ownership, { label: string; blurb: string }> = {
@@ -129,14 +129,18 @@ export function ConfigPage() {
                       <FileRow
                         f={f}
                         active={selected === fileKey(f)}
-                        onClick={() => setSelected(fileKey(f))}
+                        onClick={() => {
+                          if (selected !== fileKey(f) && warnBeforeLeavingUnsavedChanges()) setSelected(fileKey(f))
+                        }}
                         label={f.hostname ?? 'Main config'}
                       />
                       {custom && (
                         <FileRow
                           f={custom}
                           active={selected === fileKey(custom)}
-                          onClick={() => setSelected(fileKey(custom))}
+                          onClick={() => {
+                            if (selected !== fileKey(custom) && warnBeforeLeavingUnsavedChanges()) setSelected(fileKey(custom))
+                          }}
                           label="↳ your snippet"
                           indent
                         />
@@ -207,6 +211,7 @@ export function ConfigFilePane({
   onChanged,
   history,
   openHistoryTick,
+  scope = 'app',
 }: {
   file: ConfigFile
   server: string
@@ -214,10 +219,11 @@ export function ConfigFilePane({
   /** Version history owned by the page (shown as its Timeline). Without it the History tab lists versions itself. */
   history?: ConfigHistory
   openHistoryTick?: number
+  scope?: DirtyFormScope
 }) {
   const [tab, setTab] = useState<'editor' | 'structured' | 'history'>('editor')
   const [text, setText] = useState('')
-  const [saved, setSaved] = useState('')
+  const [loaded, setLoaded] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [pendingOwnership, setPendingOwnership] = useState<Ownership | null>(null)
   const action = useAction()
@@ -233,31 +239,53 @@ export function ConfigFilePane({
     if (openHistoryTick) setTab('history')
   }, [openHistoryTick])
 
-  const dirty = text !== saved
   const editable = !!file.editable
+  const configForm = useDirtyForm({
+    scope,
+    formKey: `web-config:${fileKey(file)}`,
+    value: text,
+    enabled: editable && loaded,
+    busy: busy !== null,
+    error,
+    onRestore: setText,
+    onSave: async (content) => {
+      const result = await run('save', async () => {
+        await saveFile(content)
+        return true
+      })
+      return result === true
+    },
+  })
 
   async function load() {
     const res = await runCommand({ type: 'read_web_config', hostname: file.hostname, part: file.part, server: file.server })
     if (res.type === 'text') {
       setText(res.text)
-      setSaved(res.text)
+      configForm.syncSaved(res.text)
     } else {
       // Never leave a silent blank editor: anything unexpected explains itself.
-      setText(`(could not load this file: unexpected response '${res.type}')`)
-      setSaved('')
+      const message = `(could not load this file: unexpected response '${res.type}')`
+      setText(message)
+      configForm.syncSaved(message)
     }
+    setLoaded(true)
   }
 
   useEffect(() => {
-    load().catch(() => setText('(the file does not exist yet: apply the web config first)'))
+    setLoaded(false)
+    load().catch(() => {
+      const message = '(the file does not exist yet: apply the web config first)'
+      setText(message)
+      configForm.syncSaved(message)
+      setLoaded(true)
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [file.hostname, file.part])
+  }, [file.hostname, file.part, file.server])
 
-  async function saveFile() {
+  async function saveFile(content: string) {
     if (!file.hostname) return
-    const res = await runCommand({ type: 'write_web_config', hostname: file.hostname, part: file.part, content: text })
+    const res = await runCommand({ type: 'write_web_config', hostname: file.hostname, part: file.part, content })
     if (res.type === 'text') setNotice(`Saved. The server accepted it and was reloaded.\n${res.text}`)
-    setSaved(text)
     await onChanged()
   }
 
@@ -320,11 +348,6 @@ export function ConfigFilePane({
             >
               <ShieldCheck /> Validate
             </Button>
-            {editable && (
-              <SaveButton action={action} name="save" size="sm" disabled={!dirty} busyLabel="Saving…" onClick={() => void run('save', saveFile)}>
-                <Save /> Save and reload
-              </SaveButton>
-            )}
           </div>
         </CardContent>
       </Card>
@@ -345,13 +368,16 @@ export function ConfigFilePane({
           ...(file.hostname ? [{ id: 'history' as const, label: 'History' }] : []),
         ]}
         value={tab}
-        onChange={setTab}
+        onChange={(next) => {
+          if (next !== tab && warnBeforeLeavingUnsavedChanges()) setTab(next)
+        }}
       />
 
       {tab === 'editor' && <CodeEditor value={text} onChange={setText} readOnly={!editable} language={languageFor(fileServer)} height="480px" />}
       {tab === 'structured' && file.hostname && (
         <StructuredEditor
           hostname={file.hostname}
+          scope={scope}
           onApplied={() => {
             void onChanged()
             void load()
@@ -442,10 +468,12 @@ export function SiteConfigTab({ hostname }: { hostname: string }) {
             { id: 'custom', label: 'Your snippet' },
           ]}
           value={part}
-          onChange={setPart}
+          onChange={(next) => {
+            if (next !== part && warnBeforeLeavingUnsavedChanges()) setPart(next)
+          }}
         />
       )}
-      <ConfigFilePane key={`${file.server}|${file.hostname}|${file.part}`} file={file} server={server} onChanged={refresh} />
+      <ConfigFilePane key={`${file.server}|${file.hostname}|${file.part}`} file={file} server={server} onChanged={refresh} scope="dialog" />
     </div>
   )
 }
@@ -645,15 +673,47 @@ function formatSize(bytes: number): string {
 }
 
 /** §23: the common blocks as forms; raw editing stays in the Editor tab. */
-function StructuredEditor({ hostname, onApplied }: { hostname: string; onApplied: () => void }) {
+function StructuredEditor({ hostname, onApplied, scope }: { hostname: string; onApplied: () => void; scope: DirtyFormScope }) {
   const [domain, setDomain] = useState<Domain | null>(null)
   const action = useAction()
   const { error, setError, run } = action
   const [done, setDone] = useState<string | null>(null)
+  const structuredForm = useDirtyForm({
+    scope,
+    formKey: `structured-config:${hostname}`,
+    value: domain?.blocks ?? null,
+    enabled: domain !== null,
+    busy: action.busy !== null,
+    error,
+    onRestore: (savedBlocks) => {
+      if (domain && savedBlocks) setDomain({ ...domain, blocks: savedBlocks })
+      setDone(null)
+    },
+    onSave: async (blocks) => {
+      if (!domain || !blocks) return false
+      const result = await run('save-blocks', async () => {
+        setDone(null)
+        const nextDomain = { ...domain, blocks }
+        await runCommand({ type: 'update_domain', domain: nextDomain })
+        const r = await runCommand({ type: 'apply_web', overwrite: [] })
+        if (r.type === 'applied') {
+          setDone(r.reports.some((x) => x.drifted.length) ? 'Saved, but the file was edited by hand and was left alone.' : 'Saved and applied. The server accepted the config.')
+        }
+        onApplied()
+        return true
+      })
+      return result === true
+    },
+  })
 
   useEffect(() => {
-    runCommand({ type: 'get_domain', hostname }).then((r) => r.type === 'domain' && setDomain(r.domain))
-  }, [hostname])
+    runCommand({ type: 'get_domain', hostname }).then((r) => {
+      if (r.type === 'domain') {
+        setDomain(r.domain)
+        structuredForm.syncSaved(r.domain.blocks)
+      }
+    })
+  }, [hostname, structuredForm.syncSaved])
   if (!domain) return null
   const b = domain.blocks
   const setBlocks = (patch: Partial<SiteBlocks>) => setDomain({ ...domain, blocks: { ...b, ...patch } })
@@ -717,26 +777,7 @@ function StructuredEditor({ hostname, onApplied }: { hostname: string; onApplied
         ))}
       </Section>
 
-      <div className="flex items-center gap-3">
-        <SaveButton
-          action={action}
-          name="save-blocks"
-          busyLabel="Saving…"
-          savedLabel="Saved and applied"
-          onClick={() =>
-            void run('save-blocks', async () => {
-              setDone(null)
-              await runCommand({ type: 'update_domain', domain })
-              const r = await runCommand({ type: 'apply_web', overwrite: [] })
-              if (r.type === 'applied') setDone(r.reports.some((x) => x.drifted.length) ? 'Saved, but the file was edited by hand and was left alone.' : 'Saved and applied. The server accepted the config.')
-              onApplied()
-            })
-          }
-        >
-          Save and apply
-        </SaveButton>
-        {done && <span className="text-sm text-muted-foreground">{done}</span>}
-      </div>
+      {done && <span className="text-sm text-muted-foreground">{done}</span>}
       <Field label="Field values">
         <CardDescription>Values can't contain quotes, semicolons, braces or line breaks, so they can't break out of the config syntax.</CardDescription>
       </Field>

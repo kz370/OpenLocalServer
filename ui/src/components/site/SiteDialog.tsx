@@ -26,19 +26,20 @@ import {
   X,
   Zap,
 } from 'lucide-react'
-import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 
 import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
+import { DirtySaveBar } from '@/components/DirtySaveBar'
 import { confirmAction } from '@/lib/confirm'
 import { ProjectShortcuts } from '@/components/OpenWithMenu'
 import { ProjectTools, TOOL_TABS, type ToolTab } from '@/components/ProjectTools'
-import { SaveButton } from '@/components/SaveButton'
 import { TechIcon } from '@/components/TechIcon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DialogDepthContext } from '@/components/ui/dialog'
 import { type CoreCommand, type Diagnostic, type Domain, type ProcessEvent, type ProjectDetail, runCommand, runCommandWithin } from '@/core'
 import { useAnimatedClose } from '@/lib/hooks'
+import { useDirtyFormCount, warnBeforeLeavingUnsavedChanges } from '@/lib/dirtyForms'
 import { cn } from '@/lib/utils'
 import type { Web } from '@/lib/web'
 import { ProjectCommands } from '@/components/project/ProjectCommands'
@@ -95,7 +96,11 @@ const READ_TIMEOUT_MS = 20_000
  * web server config come first, then everything the project behind it offers.
  */
 export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target: SiteTarget; web: Web; onClose: () => void; onSaved: (hostname: string) => void }) {
-  const { state, close: onClose } = useAnimatedClose(closeNow)
+  const { state, close: closeAnimated } = useAnimatedClose(closeNow)
+  const onClose = useCallback(() => {
+    if (warnBeforeLeavingUnsavedChanges()) closeAnimated()
+  }, [closeAnimated])
+  const dirtyDialogCount = useDirtyFormCount('dialog')
   const { projects, installedPhp, run, apply, busy, error, setError } = web
   const [tab, setTab] = useState<SiteTab>(target.tab ?? (target.hostname ? 'settings' : 'overview'))
   const [domain, setDomain] = useState<Domain | null>(null)
@@ -114,6 +119,10 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
   const [siteProjectId, setSiteProjectId] = useState<string | null>(target.projectId)
   const projectId = domain?.project_id ?? siteProjectId
   const project = projects.find((p) => p.id === projectId) ?? null
+  const changeTab = (next: SiteTab) => {
+    if (next !== tab && !warnBeforeLeavingUnsavedChanges()) return
+    setTab(next)
+  }
 
   // Re-read the site whenever its settings are shown: the config tab can change ownership and blocks.
   // Two rules keep this from wiping unsaved edits in the settings form, which is seeded from
@@ -278,7 +287,7 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
             <NavHeading>Site</NavHeading>
             <div className="flex flex-col gap-[3px]">
               {siteItems.map((i) => (
-                <NavItem key={i.id} active={tab === i.id} onClick={() => setTab(i.id)}>
+                <NavItem key={i.id} active={tab === i.id} onClick={() => changeTab(i.id)}>
                   {i.icon}
                   {i.label}
                 </NavItem>
@@ -291,7 +300,7 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
                 </NavHeading>
                 <div className="flex flex-col gap-[3px]">
                   {projectItems.map((i) => (
-                    <NavItem key={i.id} active={tab === i.id} onClick={() => setTab(i.id)}>
+                    <NavItem key={i.id} active={tab === i.id} onClick={() => changeTab(i.id)}>
                       {TAB_ICON[i.id as keyof typeof TAB_ICON]}
                       {i.label}
                     </NavItem>
@@ -304,7 +313,7 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
                 <NavHeading>Tools</NavHeading>
                 <div className="flex flex-col gap-[3px]">
                   {devItems.map((i) => (
-                    <NavItem key={i.id} active={tab === i.id} onClick={() => setTab(i.id)}>
+                    <NavItem key={i.id} active={tab === i.id} onClick={() => changeTab(i.id)}>
                       {TAB_ICON[i.id as keyof typeof TAB_ICON]}
                       {i.label}
                     </NavItem>
@@ -314,7 +323,7 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
             )}
           </nav>
 
-          <div className="flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-5">
+          <div className={cn('flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-5', dirtyDialogCount > 0 && 'pb-36')}>
             {project?.health && project.health.status !== 'healthy' && (
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-destructive/40 bg-destructive/10 p-4">
                 <div className="flex items-start sm:items-center gap-3">
@@ -394,14 +403,16 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
                   existingDomains={web.domains}
                   isNew={!target.hostname}
                   installedPhp={installedPhp}
-                  onSave={(d) => run('save', () => save(d))}
+                  onSave={async (d) => {
+                    const result = await run('save', async () => {
+                      await save(d)
+                      return true
+                    })
+                    return result === true
+                  }}
                   busy={busy !== null}
-                  onOpenDomainsTab={target.hostname ? () => setTab('domains') : undefined}
-                  actions={(submit) => (
-                    <SaveButton action={web} name="save" busyLabel="Saving…" savedLabel="Saved and applied" onClick={submit}>
-                      {target.hostname ? 'Save and apply' : 'Add and apply'}
-                    </SaveButton>
-                  )}
+                  onOpenDomainsTab={target.hostname ? () => changeTab('domains') : undefined}
+                  saveBarScope="dialog"
                 />
               ) : domainError ? null : (
                 <p className="text-sm text-muted-foreground">Reading the site…</p>
@@ -451,7 +462,7 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
 
             {isProjectTab && !detail && !detailError && <p className="text-sm text-muted-foreground">Reading the project…</p>}
             {tab === 'overview' && detail && <ProjectOverview detail={detail} onRun={startProcess} />}
-            {tab === 'commands' && detail && <ProjectCommands key={detail.project.id} projectId={detail.project.id} framework={detail.detection.framework} onShowIssues={() => setTab('logs')} />}
+            {tab === 'commands' && detail && <ProjectCommands key={detail.project.id} projectId={detail.project.id} framework={detail.detection.framework} onShowIssues={() => changeTab('logs')} />}
             {isProjectTab && tab !== 'overview' && tab !== 'commands' && detail && (
               <ProjectTools key={`${detail.project.id}:${tab}`} detail={detail} start={startProcess} refreshKey={toolsTick} tab={tab as ToolTab} />
             )}
@@ -463,6 +474,7 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
             )}
           </div>
         </div>
+        <DirtySaveBar scope="dialog" />
       </div>
     </div>
     </DialogDepthContext.Provider>

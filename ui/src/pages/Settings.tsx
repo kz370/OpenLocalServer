@@ -1,6 +1,6 @@
 import { open } from '@tauri-apps/plugin-dialog'
 import { Book, Check, Copy, ExternalLink, Eye, EyeOff, FolderPlus, FolderSearch, RefreshCw, ShieldCheck, Sparkles, Trash2 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
 import { ExcludedSitesCard } from '@/components/ExcludedSitesCard'
@@ -9,7 +9,6 @@ import { Markdown } from '@/components/ui/Markdown'
 import { ReleaseNotesView } from '@/components/ReleaseNotesView'
 import { ApiCard, SystemCard, UpdatesCard } from '@/components/ReleaseCards'
 import { AboutCard, AutoBackupCard, ResourcesCard, SettingsBackupsCard } from '@/components/SettingsExtras'
-import { SaveButton } from '@/components/SaveButton'
 import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -20,6 +19,7 @@ import { Input } from '@/components/ui/input'
 import { type EditorInfo, type HelperService, type ServiceStatus, type StartupSettings, runCommand, requestExit } from '@/core'
 import { createPersistentCache } from '@/lib/cache'
 import { confirmThen } from '@/lib/confirm'
+import { useDirtyForm, warnBeforeLeavingUnsavedChanges } from '@/lib/dirtyForms'
 import { useAction } from '@/lib/hooks'
 import { onOpenSettingsSection, takePendingSettingsSection } from '@/lib/nav'
 import { invalidateDefaultTldCache } from '@/lib/sites'
@@ -41,6 +41,11 @@ import {
 import { AppearanceSettings } from '@/components/settings/AppearanceSettings'
 
 type Section = 'general' | 'appearance' | 'sites' | 'roots' | 'deleted' | 'startup' | 'manual' | 'resources' | 'backups' | 'about' | 'mcp'
+type SettingsDraft =
+  | { section: 'general'; editor: string; editorId: string }
+  | { section: 'sites'; projectsDir: string; autoDomains: boolean; watchSites: boolean; defaultTld: string; customTld: string }
+  | { section: 'startup'; startup: StartupSettings | null }
+  | { section: 'mcp'; enabled: boolean; token: string; expiryMode: 'none' | 'hours' | 'at'; ttlHours: number; expiresAt: string }
 const SECTIONS: { id: Section; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'general', label: 'General', icon: SettingsGeneralIcon },
   { id: 'appearance', label: 'Appearance', icon: SettingsAppearanceIcon },
@@ -110,7 +115,6 @@ export function SettingsPage() {
   const [customTld, setCustomTld] = useState(customTldCache.get)
   const [helper, setHelper] = useState<HelperService | null>(helperCache.get)
   const [version, setVersion] = useState(versionCache.get)
-  const [saved, setSaved] = useState<string | null>(null)
   const [section, setSection] = useState<Section>(() => {
     try {
       if (typeof window !== 'undefined' && window.location.hash.toLowerCase().includes('appearance')) {
@@ -125,18 +129,27 @@ export function SettingsPage() {
     }
     return 'general'
   })
+  const changeSection = useCallback((next: Section) => {
+    if (next !== section && !warnBeforeLeavingUnsavedChanges()) return
+    setSection(next)
+    try {
+      sessionStorage.setItem('ols:settings-section', next)
+    } catch {
+      // ignore
+    }
+  }, [section])
 
   useEffect(() => {
     const pending = takePendingSettingsSection()
     if (pending && SECTIONS.some((s) => s.id === pending)) {
-      setSection(pending as Section)
+      changeSection(pending as Section)
     }
     return onOpenSettingsSection((s) => {
       if (SECTIONS.some((sec) => sec.id === s)) {
-        setSection(s as Section)
+        changeSection(s as Section)
       }
     })
-  }, [])
+  }, [changeSection])
   const [manual, setManual] = useState<string | null>(manualCache.get)
   const [manualTab, setManualTab] = useState<'manual' | 'notes'>('manual')
   const [manualCopied, setManualCopied] = useState(false)
@@ -183,6 +196,47 @@ export function SettingsPage() {
 
   const action = useAction()
   const { busy, error, setError, run } = action
+  const showSave = section === 'general' || section === 'sites' || section === 'startup' || section === 'mcp'
+  const settingsDraft = useMemo<SettingsDraft>(() => {
+    if (section === 'sites') return { section, projectsDir, autoDomains, watchSites, defaultTld, customTld }
+    if (section === 'startup') return { section, startup }
+    if (section === 'mcp') return { section, enabled: mcpEnabled, token: mcpToken, expiryMode: mcpExpiryMode, ttlHours: mcpTtlHours, expiresAt: mcpExpiresAt }
+    return { section: 'general', editor, editorId }
+  }, [autoDomains, customTld, defaultTld, editor, editorId, mcpEnabled, mcpExpiresAt, mcpExpiryMode, mcpTtlHours, mcpToken, projectsDir, section, startup, watchSites])
+  const settingsForm = useDirtyForm<SettingsDraft>({
+    formKey: section,
+    value: settingsDraft,
+    enabled: showSave,
+    busy: busy !== null,
+    error,
+    onRestore: (draft) => {
+      if (draft.section === 'general') {
+        setEditor(draft.editor)
+        setEditorId(draft.editorId)
+      } else if (draft.section === 'sites') {
+        setProjectsDir(draft.projectsDir)
+        setAutoDomains(draft.autoDomains)
+        setWatchSites(draft.watchSites)
+        setDefaultTld(draft.defaultTld)
+        setCustomTld(draft.customTld)
+      } else if (draft.section === 'startup') {
+        setStartup(draft.startup)
+      } else {
+        setMcpEnabled(draft.enabled)
+        setMcpToken(draft.token)
+        setMcpExpiryMode(draft.expiryMode)
+        setMcpTtlHours(draft.ttlHours)
+        setMcpExpiresAt(draft.expiresAt)
+      }
+    },
+    onSave: async () => {
+      const result = await run('save', async () => {
+        await (section === 'mcp' ? saveMcp() : saveAll())
+        return true
+      })
+      return result === true
+    },
+  })
 
   useEffect(() => {
     void runCommand({ type: 'ping' }).then((r) => {
@@ -223,8 +277,9 @@ export function SettingsPage() {
       const resolvedId = cmd ? 'custom' : id || 'vscode'
       setEditorId(resolvedId)
       editorIdCache.set(resolvedId)
+      settingsForm.syncSaved({ section: 'general', editor: cmd, editorId: resolvedId }, 'general')
     })
-  }, [section])
+  }, [section, settingsForm.syncSaved])
 
   useEffect(() => {
     if (section !== 'general' && section !== 'startup') return
@@ -232,6 +287,7 @@ export function SettingsPage() {
       if (r.type === 'startup') {
         setStartup(r.settings)
         startupCache.set(r.settings)
+        settingsForm.syncSaved({ section: 'startup', startup: r.settings }, 'startup')
       }
     })
     if (section === 'startup') {
@@ -242,13 +298,14 @@ export function SettingsPage() {
         }
       })
     }
-  }, [section])
+  }, [section, settingsForm.syncSaved])
 
   useEffect(() => {
     if (section !== 'sites' && section !== 'roots') return
     void getString('quickapps.projects_dir').then((v) => {
       setProjectsDir(v)
       projectsDirCache.set(v)
+      settingsForm.syncSaved((savedDraft) => savedDraft.section === 'sites' ? { ...savedDraft, projectsDir: v } : savedDraft, 'sites')
     })
     void getString('paths.sites_dir').then((v) => {
       setSitesDir(v)
@@ -263,6 +320,7 @@ export function SettingsPage() {
         const val = r.value !== false
         setWatchSites(val)
         watchSitesCache.set(val)
+        settingsForm.syncSaved((savedDraft) => savedDraft.section === 'sites' ? { ...savedDraft, watchSites: val } : savedDraft, 'sites')
       }
     })
     void runCommand({ type: 'get_setting', key: 'domains.auto' }).then((r) => {
@@ -270,6 +328,7 @@ export function SettingsPage() {
         const val = r.value !== false
         setAutoDomains(val)
         autoDomainsCache.set(val)
+        settingsForm.syncSaved((savedDraft) => savedDraft.section === 'sites' ? { ...savedDraft, autoDomains: val } : savedDraft, 'sites')
       }
     })
     void getString('domains.default_tld').then((val) => {
@@ -286,8 +345,9 @@ export function SettingsPage() {
         defaultTldCache.set('custom')
         customTldCache.set(tld)
       }
+      settingsForm.syncSaved((savedDraft) => savedDraft.section === 'sites' ? { ...savedDraft, defaultTld: presets.includes(tld) ? tld : 'custom', customTld: presets.includes(tld) ? '' : tld } : savedDraft, 'sites')
     })
-  }, [section])
+  }, [section, settingsForm.syncSaved])
 
   useEffect(() => {
     if (section !== 'general') return
@@ -306,6 +366,7 @@ export function SettingsPage() {
       if (r.type === 'setting' && typeof r.value === 'boolean') {
         setMcpEnabled(r.value)
         mcpEnabledCache.set(r.value)
+        settingsForm.syncSaved((savedDraft) => savedDraft.section === 'mcp' ? { ...savedDraft, enabled: r.value as boolean } : savedDraft, 'mcp')
       }
     })
     void runCommand({ type: 'get_secret', key: 'mcp.auth.token' }).then((r) => {
@@ -314,6 +375,7 @@ export function SettingsPage() {
         setMcpToken(r.value ?? '')
         mcpConfiguredCache.set(!!r.value)
         mcpTokenCache.set(r.value ?? '')
+        settingsForm.syncSaved((savedDraft) => savedDraft.section === 'mcp' ? { ...savedDraft, token: r.value ?? '' } : savedDraft, 'mcp')
       }
     })
     void runCommand({ type: 'get_secret', key: 'mcp.auth.token.expires_at' }).then((r) => {
@@ -325,6 +387,7 @@ export function SettingsPage() {
           setMcpExpiryMode('at')
           mcpExpiresAtCache.set(val)
           mcpExpiryModeCache.set('at')
+          settingsForm.syncSaved((savedDraft) => savedDraft.section === 'mcp' ? { ...savedDraft, expiresAt: val, expiryMode: 'at' } : savedDraft, 'mcp')
         }
       }
     })
@@ -337,10 +400,11 @@ export function SettingsPage() {
           setMcpExpiryMode('hours')
           mcpTtlHoursCache.set(hours)
           mcpExpiryModeCache.set('hours')
+          settingsForm.syncSaved((savedDraft) => savedDraft.section === 'mcp' ? { ...savedDraft, ttlHours: hours, expiryMode: 'hours' } : savedDraft, 'mcp')
         }
       }
     })
-  }, [section])
+  }, [section, settingsForm.syncSaved])
 
   useEffect(() => {
     if (section !== 'manual') return
@@ -383,8 +447,6 @@ export function SettingsPage() {
 
     invalidateDefaultTldCache()
     if (autoDomains) await runCommand({ type: 'sync_auto_domains' })
-    setSaved('Saved.')
-    setTimeout(() => setSaved(null), 2500)
   }
 
   async function saveMcp() {
@@ -414,8 +476,6 @@ export function SettingsPage() {
         mcpExpiryModeCache.set('none')
       }
     }
-    setSaved('MCP settings saved.')
-    setTimeout(() => setSaved(null), 2500)
   }
 
   function generateMcpToken() {
@@ -705,21 +765,11 @@ export function SettingsPage() {
     </div>
   )
 
-  const showSave = section === 'general' || section === 'sites' || section === 'startup' || section === 'mcp'
-
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-          <p className="text-sm text-muted-foreground">OLS {version && `v${version}`}</p>
-        </div>
-        {showSave && (
-          <div className="flex flex-wrap items-center justify-end gap-3">
-            {saved && <span className="text-sm text-success" role="status">{saved}</span>}
-            <SaveButton action={action} name="save" busyLabel="Saving…" onClick={() => void run('save', section === 'mcp' ? saveMcp : saveAll)}>Save settings</SaveButton>
-          </div>
-        )}
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+        <p className="text-sm text-muted-foreground">OLS {version && `v${version}`}</p>
       </div>
 
       <ErrorCard error={error} onDismiss={() => setError(null)} />
@@ -731,14 +781,7 @@ export function SettingsPage() {
             return (
               <button
                 key={s.id}
-                onClick={() => {
-                  setSection(s.id)
-                  try {
-                    sessionStorage.setItem('ols:settings-section', s.id)
-                  } catch {
-                    // ignore
-                  }
-                }}
+                onClick={() => changeSection(s.id)}
                 className={cn(
                   'group relative flex items-center gap-3 whitespace-nowrap rounded-xl px-3.5 py-2.5 text-left text-sm font-medium transition-all duration-150',
                   isActive

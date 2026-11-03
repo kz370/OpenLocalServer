@@ -22,6 +22,7 @@ import { Field, FormSection, Select, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { buildSitePath, domainToFolderName, getDefaultSitesDir, getDefaultTld, slugify } from '@/lib/sites'
+import { useDirtyForm, type DirtyFormScope } from '@/lib/dirtyForms'
 import { type Domain, type DomainSummary, type Project, type QuickEntryView, type SiteFolderInspection, type SystemInstall, runCommand } from '@/core'
 
 export const RESERVED_APP_PORTS: Record<number, string> = {
@@ -212,7 +213,7 @@ export function DomainSettings({
   existingDomains,
   onSave,
   busy,
-  actions,
+  saveBarScope,
   submitRef,
   onOpenDomainsTab,
 }: {
@@ -223,9 +224,9 @@ export function DomainSettings({
   defaultParent?: string
   installedPhp: string[]
   existingDomains?: DomainSummary[]
-  onSave: (d: Domain) => void
+  onSave: (d: Domain) => void | Promise<void | boolean>
   busy: boolean
-  actions?: (submit: () => void, busy: boolean) => ReactNode
+  saveBarScope?: DirtyFormScope
   submitRef?: { current: (() => void) | null }
   onOpenDomainsTab?: () => void
 }) {
@@ -340,6 +341,26 @@ export function DomainSettings({
   const [quickApps, setQuickApps] = useState<QuickEntryView[]>([])
   const [webServers, setWebServers] = useState<{ id: string; name: string; http: number; https: number; default: boolean }[]>([])
   const [err, setErr] = useState<string | null>(null)
+  const siteSettingsDraft = useMemo(() => buildDomainFromForm(), [d, inspection?.detected_venv, nodeAppLine, nodeVersion, pythonAppLine, pythonInterpreter, serveMode])
+  useDirtyForm({
+    scope: saveBarScope,
+    formKey: `site:${domain.hostname}`,
+    value: siteSettingsDraft,
+    enabled: saveBarScope !== undefined,
+    busy,
+    error: err ? { problem: 'Could not save site settings', cause: err, fix: 'Correct the indicated value and try again.' } : null,
+    onRestore: (savedDraft) => {
+      setD(savedDraft)
+      setServeMode(getInitialServeMode(savedDraft))
+      const line = savedDraft.app ? [savedDraft.app.executable, ...savedDraft.app.args].join(' ') : ''
+      if (savedDraft.app?.runtime?.startsWith('python')) setPythonAppLine(line || 'python main.py')
+      else setNodeAppLine(line || 'npm run dev')
+      setNodeVersion(savedDraft.app?.runtime?.startsWith('node:') ? savedDraft.app.runtime.slice(5) : '')
+      setPythonInterpreter(savedDraft.app?.runtime?.startsWith('python:') ? `version:${savedDraft.app.runtime.slice(7)}` : 'system')
+      setErr(null)
+    },
+    onSave: async () => submit(),
+  })
 
   // Re-seed the form only when the domain being edited actually changes.
   useEffect(() => {
@@ -765,8 +786,33 @@ export function DomainSettings({
     }
   }
 
-  function submit() {
-    const out = { ...d, hostname: d.hostname.trim().toLowerCase() }
+  async function submit(): Promise<boolean> {
+    const out = buildDomainFromForm()
+    if (!out.hostname) {
+      setErr('Enter a domain like shop.test or mydomain.com')
+      return false
+    }
+    if (pathPrefixError) {
+      setErr(pathPrefixError)
+      return false
+    }
+    if (portConflict) {
+      setErr(portConflict)
+      return false
+    }
+    if (!out.root) {
+      setErr('Choose the site folder')
+      return false
+    }
+    if (out.public_domain && !out.tunnel_id) {
+      setErr('Choose a saved named Cloudflare tunnel for the public domain')
+      return false
+    }
+    return (await onSave(out)) !== false
+  }
+
+  function buildDomainFromForm(): Domain {
+    const out: Domain = { ...d, hostname: d.hostname.trim().toLowerCase() }
     if (serveMode === 'php') {
       out.kind = d.kind.type === 'php' ? d.kind : { type: 'php', version: null }
       out.app = null
@@ -832,12 +878,7 @@ export function DomainSettings({
     }
 
     if (!out.https) out.redirect_https = false
-    if (!out.hostname) return setErr('Enter a domain like shop.test or mydomain.com')
-    if (pathPrefixError) return setErr(pathPrefixError)
-    if (portConflict) return setErr(portConflict)
-    if (!out.root) return setErr('Choose the site folder')
-    if (out.public_domain && !out.tunnel_id) return setErr('Choose a saved named Cloudflare tunnel for the public domain')
-    onSave(out)
+    return out
   }
   useEffect(() => {
     if (submitRef) submitRef.current = submit
@@ -1501,7 +1542,6 @@ export function DomainSettings({
           <FileCode2 className="size-3.5" /> Config ownership: <b>{d.ownership}</b>. Change it on the Web server config tab.
         </p>
       )}
-      {actions && <div className="flex justify-end gap-2 border-t border-border pt-3">{actions(submit, busy)}</div>}
     </div>
   )
 }

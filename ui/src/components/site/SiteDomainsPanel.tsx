@@ -22,7 +22,6 @@ import {
   Network,
   Plus,
   RefreshCw,
-  Save,
   Search,
   ShieldCheck,
   Trash2,
@@ -38,6 +37,7 @@ import { FormSection, Select, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { type Domain, type SslProvider, type TunnelStatus, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
+import { useDirtyForm } from '@/lib/dirtyForms'
 import { usePoll } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 
@@ -281,6 +281,20 @@ export function SiteDomainsPanel({ domain: initialDomain, onSave, busy }: SiteDo
   const [showSecret, setShowSecret] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
+  const domainForm = useDirtyForm({
+    scope: 'dialog',
+    formKey: `site-domains:${initialDomain.hostname}`,
+    value: domain,
+    enabled: true,
+    busy: saving || !!busy,
+    error: aliasError ? { problem: 'Could not save domain settings', cause: aliasError, fix: 'Correct the indicated value and try again.' } : null,
+    onRestore: (savedDomain) => {
+      setDomain(savedDomain)
+      setSaveSuccess(false)
+      setAliasError(null)
+    },
+    onSave: (draft) => handleSave(draft),
+  })
 
   // Load existing domains on mount to validate alias uniqueness across all sites
   useEffect(() => {
@@ -558,6 +572,7 @@ export function SiteDomainsPanel({ domain: initialDomain, onSave, busy }: SiteDo
     setDdnsResult(null)
     try {
       await onSave(domain)
+      domainForm.syncSaved(domain)
       const res = await runCommand({
         type: 'sync_ddns',
         hostname: domain.hostname,
@@ -568,11 +583,13 @@ export function SiteDomainsPanel({ domain: initialDomain, onSave, busy }: SiteDo
           updated: res.result.updated,
           message: res.result.message,
         })
-        setDomain((prev) => ({
-          ...prev,
+        const syncedDomain = {
+          ...domain,
           ddns_last_ip: res.result.ip,
           ddns_last_synced_at: Math.floor(Date.now() / 1000),
-        }))
+        }
+        setDomain(syncedDomain)
+        domainForm.syncSaved(syncedDomain)
       }
     } catch (e: any) {
       const detail = e?.cause ? `${e?.problem ?? 'Sync failed'}: ${e.cause}` : (e?.problem ?? e?.message ?? e)
@@ -590,6 +607,7 @@ export function SiteDomainsPanel({ domain: initialDomain, onSave, busy }: SiteDo
     setSslStatus('Requesting ACME HTTP-01 challenge from Let\'s Encrypt…')
     try {
       await onSave(domain)
+      domainForm.syncSaved(domain)
       const res = await runCommand({
         type: 'issue_lets_encrypt',
         hostname: domain.hostname,
@@ -625,20 +643,21 @@ export function SiteDomainsPanel({ domain: initialDomain, onSave, busy }: SiteDo
     }
   }
 
-  async function handleSave() {
+  async function handleSave(nextDomain = domain): Promise<boolean> {
     setSaving(true)
     setSaveSuccess(false)
     setAliasError(null)
     try {
-      await onSave(domain)
+      await onSave(nextDomain)
+      domainForm.syncSaved(nextDomain)
       setSaveSuccess(true)
       setTimeout(() => setSaveSuccess(false), 3000)
 
       // Automatically trigger background DDNS sync if configured
-      if (domain.ddns_provider && domain.ddns_provider !== 'disabled' && domain.ddns_token?.trim()) {
+      if (nextDomain.ddns_provider && nextDomain.ddns_provider !== 'disabled' && nextDomain.ddns_token?.trim()) {
         runCommand({
           type: 'sync_ddns',
-          hostname: domain.hostname,
+          hostname: nextDomain.hostname,
           force: true,
         })
           .then((res) => {
@@ -648,11 +667,13 @@ export function SiteDomainsPanel({ domain: initialDomain, onSave, busy }: SiteDo
                 message: res.result.message,
               })
               if (res.result.ip) {
-                setDomain((prev) => ({
-                  ...prev,
+                const syncedDomain = {
+                  ...nextDomain,
                   ddns_last_ip: res.result.ip,
                   ddns_last_synced_at: Math.floor(Date.now() / 1000),
-                }))
+                }
+                setDomain(syncedDomain)
+                domainForm.syncSaved(syncedDomain)
               }
             }
           })
@@ -664,9 +685,11 @@ export function SiteDomainsPanel({ domain: initialDomain, onSave, busy }: SiteDo
             })
           })
       }
+      return true
     } catch (e: any) {
       const msg = e?.cause ? `${e?.problem ?? 'Save failed'}: ${e.cause}` : (e?.problem ?? e?.message ?? e)
       setAliasError(msg)
+      return false
     } finally {
       setSaving(false)
     }
@@ -1829,8 +1852,7 @@ export function SiteDomainsPanel({ domain: initialDomain, onSave, busy }: SiteDo
         </div>
       </FormSection>
 
-      {/* Action Footer */}
-      <div className="flex items-center justify-between border-t border-border pt-4">
+      <div className="flex items-center border-t border-border pt-4">
         <div className="flex items-center gap-2">
           {saveSuccess && (
             <span className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
@@ -1838,22 +1860,6 @@ export function SiteDomainsPanel({ domain: initialDomain, onSave, busy }: SiteDo
             </span>
           )}
         </div>
-        <Button
-          type="button"
-          onClick={handleSave}
-          disabled={saving || busy}
-          className="gap-2 px-5"
-        >
-          {saving ? (
-            <>
-              <RefreshCw className="size-3.5 animate-spin" /> Saving…
-            </>
-          ) : (
-            <>
-              <Save className="size-3.5" /> Save & Apply
-            </>
-          )}
-        </Button>
       </div>
     </div>
   )

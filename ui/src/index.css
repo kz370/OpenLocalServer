@@ -28,6 +28,27 @@
   }
 }
 
+.dirty-save-bar {
+  animation: dirty-save-bar-enter 180ms ease-out both;
+}
+
+@keyframes dirty-save-bar-enter {
+  from {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dirty-save-bar {
+    animation: none;
+  }
+}
+
 :root {
   color-scheme: light;
   /* Brand hue: radiant emerald/teal paired with cyber aurora lighting */
