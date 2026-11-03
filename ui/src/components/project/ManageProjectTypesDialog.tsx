@@ -2,6 +2,7 @@ import { Check, Edit2, GripVertical, Pin, Plus, Sliders, Trash2, X } from 'lucid
 import { useEffect, useMemo, useState } from 'react'
 
 import { TechIcon } from '@/components/TechIcon'
+import { FA_ICONS, FontAwesomeIcon } from '@/components/SiteLogo'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
@@ -50,6 +51,8 @@ export function ManageProjectTypesDialog({
   const [newTypeName, setNewTypeName] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
+  const [iconPickerFor, setIconPickerFor] = useState<string | null>(null)
+  const [iconSearch, setIconSearch] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -392,7 +395,7 @@ export function ManageProjectTypesDialog({
               No project types available.
             </div>
           ) : (
-            <div className="flex flex-col divide-y divide-border border border-border rounded-lg overflow-hidden bg-card max-h-[340px] overflow-y-auto">
+            <div className="flex flex-col border border-border rounded-lg overflow-hidden bg-card max-h-[340px] overflow-y-auto">
               {items.map((item, index) => {
                 const isEditing = editingId === item.id
                 const isPinned = pinnedSet.has(item.id.toLowerCase())
@@ -402,6 +405,12 @@ export function ManageProjectTypesDialog({
                 return (
                   <div
                     key={item.id}
+                    className={cn(
+                      'transition-colors select-none',
+                      index < items.length - 1 && 'border-b border-border',
+                    )}
+                  >
+                  <div
                     draggable={!isEditing && !busy}
                     onDragStart={(e) => handleDragStart(e, index)}
                     onDragOver={(e) => handleDragOver(e, index)}
@@ -411,7 +420,7 @@ export function ManageProjectTypesDialog({
                       setDragOverIndex(null)
                     }}
                     className={cn(
-                      'flex items-center justify-between p-2.5 gap-2 transition-colors select-none',
+                      'flex items-center justify-between p-2.5 gap-2 transition-colors',
                       isDragging && 'opacity-40 bg-muted/40',
                       isDragOver && !isDragging && 'bg-primary/10 border-t-2 border-primary',
                       !isDragging && !isDragOver && 'hover:bg-muted/20',
@@ -442,8 +451,23 @@ export function ManageProjectTypesDialog({
                         <Pin className={cn('size-3.5', isPinned && 'fill-primary')} />
                       </Button>
 
-                      {/* Tech icon */}
-                      <TechIcon id={item.icon} className="size-4 text-muted-foreground shrink-0" />
+                      {/* Icon (clickable to change for custom types) */}
+                      <button
+                        type="button"
+                        disabled={!item.isCustom || busy}
+                        onClick={() => {
+                          setIconPickerFor(iconPickerFor === item.id ? null : item.id)
+                          setIconSearch('')
+                        }}
+                        className="shrink-0 cursor-pointer rounded p-0.5 hover:bg-muted/60 disabled:cursor-default"
+                        title={item.isCustom ? 'Change icon' : 'Icon'}
+                      >
+                        {preferences.typeIcons?.[item.id] ? (
+                          <FontAwesomeIcon name={preferences.typeIcons[item.id]} className="size-4 text-muted-foreground" />
+                        ) : (
+                          <TechIcon id={item.icon} className="size-4 text-muted-foreground" />
+                        )}
+                      </button>
 
                       {/* Name or inline edit */}
                       {isEditing ? (
@@ -526,6 +550,54 @@ export function ManageProjectTypesDialog({
                         >
                           <Trash2 className="size-3.5" />
                         </Button>
+                      </div>
+                    )}
+                  </div>
+                  {iconPickerFor === item.id && (
+                      <div className="mt-2 w-full rounded-lg border border-border bg-card p-3 space-y-2 shadow-sm">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-medium text-foreground">Choose an icon</span>
+                          <Button type="button" size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={() => setIconPickerFor(null)}>
+                            Close
+                          </Button>
+                        </div>
+                        <Input
+                          value={iconSearch}
+                          onChange={(e) => setIconSearch(e.target.value)}
+                          placeholder="Search icons…"
+                          className="h-8 text-xs"
+                        />
+                        <div className="grid grid-cols-6 gap-1.5 max-h-48 overflow-y-auto pr-1">
+                          {FA_ICONS.filter((ic) =>
+                            iconSearch.trim() === '' ||
+                            ic.name.toLowerCase().includes(iconSearch.toLowerCase()) ||
+                            ic.id.toLowerCase().includes(iconSearch.toLowerCase()),
+                          )
+                            .slice(0, 180)
+                            .map((ic) => (
+                              <button
+                                key={ic.id}
+                                type="button"
+                                title={ic.name}
+                                onClick={() => {
+                                  const nextPrefs = {
+                                    ...preferences,
+                                    typeIcons: { ...(preferences.typeIcons ?? {}), [item.id]: ic.id },
+                                  }
+                                  saveProjectFilterPreferences(nextPrefs)
+                                  setPreferences(nextPrefs)
+                                  setIconPickerFor(null)
+                                  void onUpdated()
+                                }}
+                                className="flex flex-col items-center justify-center gap-1 p-2 rounded-md border border-transparent hover:border-primary/40 hover:bg-primary/5 cursor-pointer transition-colors"
+                              >
+                                <FontAwesomeIcon name={ic.id} className="size-5 text-muted-foreground" />
+                                <span className="text-[9px] text-muted-foreground truncate w-full text-center leading-tight">
+                                  {ic.name}
+                                </span>
+                              </button>
+                            ))}
+                        </div>
                       </div>
                     )}
                   </div>

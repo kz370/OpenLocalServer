@@ -11,6 +11,7 @@ export interface ProjectTypeTab {
 export interface ProjectFilterPreferences {
   pinnedIds: string[]
   orderIds: string[]
+  typeIcons?: Record<string, string>
 }
 
 export const PROJECT_FILTER_PREFS_KEY = 'ols:project-filter-preferences'
@@ -19,11 +20,12 @@ export const PROJECTS_TAB_KEY = 'ols:projects-selected-tab'
 export function getProjectFilterPreferences(): ProjectFilterPreferences {
   try {
     const raw = localStorage.getItem(PROJECT_FILTER_PREFS_KEY)
-    if (!raw) return { pinnedIds: [], orderIds: [] }
+    if (!raw) return { pinnedIds: [], orderIds: [], typeIcons: {} }
     const parsed = JSON.parse(raw) as Partial<ProjectFilterPreferences>
     return {
       pinnedIds: Array.isArray(parsed?.pinnedIds) ? parsed.pinnedIds : [],
       orderIds: Array.isArray(parsed?.orderIds) ? parsed.orderIds : [],
+      typeIcons: parsed?.typeIcons && typeof parsed.typeIcons === 'object' ? parsed.typeIcons : {},
     }
   } catch {
     return { pinnedIds: [], orderIds: [] }
@@ -206,7 +208,7 @@ export function groupProjectsByType(
     const count = counts.get(customId) ?? 0
     if (count > 0) {
       const lower = ct.name.toLowerCase()
-      const icon = lower === 'tauri' ? 'tauri' : lower === 'rust' ? 'rust' : 'custom'
+      const icon = preferences?.typeIcons?.[customId] ?? preferences?.typeIcons?.[customId.toLowerCase()] ?? (lower === 'tauri' ? 'tauri' : lower === 'rust' ? 'rust' : 'custom')
       rawTabs.push({
         id: customId,
         label: ct.name,
@@ -223,7 +225,7 @@ export function groupProjectsByType(
     if (key.startsWith('custom:') && !encounteredCustom.has(key.toLowerCase()) && count > 0) {
       const name = key.replace(/^custom:/, '')
       const lower = name.toLowerCase()
-      const icon = lower === 'tauri' ? 'tauri' : lower === 'rust' ? 'rust' : 'custom'
+      const icon = preferences?.typeIcons?.[key] ?? preferences?.typeIcons?.[key.toLowerCase()] ?? (lower === 'tauri' ? 'tauri' : lower === 'rust' ? 'rust' : 'custom')
       rawTabs.push({
         id: key,
         label: name,
