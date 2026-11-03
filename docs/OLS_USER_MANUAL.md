@@ -368,6 +368,9 @@ olsc guide
 - **Readable Database Views**: Query sites, projects, operations, workers, schedules, and command history through read-only SQLite views and indexes.
 - **Safe Database Maintenance**: Versioned migrations create timestamped backups, while operation history is retained and repeated failures are collapsed.
 - **Site Actions and Editors**: Hide, remove from the list, or safely move a site folder with Undo. Editor menus use configured editors, and existing editor settings migrate once.
+- **WordPress Core Repair**: Restore missing core files with checksum validation and offline cache support.
+- **Background Task History**: Recent site operations persist across restarts, and repeated operations are grouped.
+- **Live Site Health Check**: Shows DNS, TCP, TLS, certificate, trust, and HTTP checks one at a time as they complete.
 ### Previous Version Notes (v2.6.0)
 1. **Installed Software UI Overhaul:**
    - **Accurate Status Display**: Separated installation status from update availability. Accurately communicates "Up to date" (green indicator), "Update available" (sky indicator with non-link neutral text), and "Not installed".
