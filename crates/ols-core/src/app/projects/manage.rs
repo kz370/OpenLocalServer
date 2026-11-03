@@ -395,13 +395,9 @@ impl Inner {
     }
 
     pub fn ignore_project(&self, id: &str) -> Result<(), CoreError> {
-        let (path, standalone) = {
+        let path = {
             let projects = self.projects.lock().unwrap();
-            let p = projects.get(id);
-            (
-                p.as_ref().map(|pr| pr.path.clone()),
-                p.as_ref().map(|pr| pr.standalone).unwrap_or(false),
-            )
+            projects.get(id).map(|pr| pr.path.clone())
         };
         if let Some(path) = path {
             // Disable any sites tied to this project so it stops working.
@@ -417,15 +413,18 @@ impl Inner {
                     .map(|d| d.hostname)
                     .collect()
             };
-            for h in hostnames {
-                let _ = self.remove_domain(&h);
-            }
-            if standalone {
+            let is_discover_path = self.string_list(PROJECT_ROOTS).iter().any(|root| {
+                Path::new(&path).starts_with(Path::new(root))
+            });
+            if !is_discover_path {
+                for h in hostnames {
+                    self.domains.lock().unwrap().remove(&h)?;
+                    self.web.restart_app(&h);
+                }
                 self.projects.lock().unwrap().remove(id)?;
             } else {
                 let ignore_file = std::path::Path::new(&path).join(".ols_ignore_me");
                 let _ = std::fs::write(&ignore_file, "");
-                let _ = self.projects.lock().unwrap().remove(id);
             }
         }
         let _ = self.project_events.send(());

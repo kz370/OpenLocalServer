@@ -215,3 +215,7 @@ See `data_models.txt` for full entity list. Core: Project, Domain, Runtime, Data
 - `diagrams/dataflow.mmd`
 - `diagrams/classes.mmd`
 - `diagrams/sequence.mmd`
+
+## Site reconciliation
+
+Inner::reconcile computes whether a stored site is active from its domain record, the hidden-sites list (domains.auto_skip), and .ols_ignore_me in its site folder. Hidden or marked sites remain in storage but are omitted from Sites and Projects and excluded from vhost rendering. Reconciliation synchronizes the OLS-managed hosts block to active enabled domains. Site and project list reads, startup synchronization, folder scans, and window focus trigger reconciliation; discovery skips marked and hidden paths.

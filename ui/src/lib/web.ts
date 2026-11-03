@@ -122,6 +122,12 @@ export function useWeb() {
   useEffect(() => {
     let alive = true
     let unlisten: (() => void) | undefined
+    const reconcileOnFocus = () => {
+      if (!alive || document.visibilityState !== 'visible') return
+      void Promise.all([refresh(), refreshProjects()]).catch(() => undefined)
+    }
+    window.addEventListener('focus', reconcileOnFocus)
+    document.addEventListener('visibilitychange', reconcileOnFocus)
     void listen('projects-changed', () => {
       if (!alive) return
       void refreshProjects().catch(() => undefined)
@@ -160,6 +166,8 @@ export function useWeb() {
       .catch(() => undefined)
     return () => {
       alive = false
+      window.removeEventListener('focus', reconcileOnFocus)
+      document.removeEventListener('visibilitychange', reconcileOnFocus)
       unlisten?.()
     }
   }, [])

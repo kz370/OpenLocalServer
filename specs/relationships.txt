@@ -258,3 +258,7 @@ Tray Quick App menu | lists | QuickCatalog entries as direct Create actions; sel
 App | routes | the selected Quick App id and name to QuickAppsPage and holds them until its lazy page mounts
 QuickAppsPage | opens | the existing Wizard for the selected tray recipe, preserving planning, review and trust approval
 Tray Web server | toggles | CoreCommand::ApplyWeb / CoreCommand::StopWeb through the same Core::dispatch path; Reload remains a separate ApplyWeb action.
+
+Inner::reconcile | filters | DomainStore records using domains.auto_skip and .ols_ignore_me; active records feed vhost rendering and managed hosts synchronization
+SitesPage focus/visibility | refreshes | list_domains + list_projects → Inner::reconcile
+scan_and_register_projects + sync_auto_domains | skip | .ols_ignore_me paths and hidden-site paths

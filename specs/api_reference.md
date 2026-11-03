@@ -103,3 +103,7 @@ olsc project add C:\\Sites\\shop
 olsc setup --path C:\\Sites\\shop --dry-run
 olsc service start mariadb
 ```
+
+## Reconciliation
+
+remove_domain adds the hostname to domains.auto_skip and retains its record. .ols_ignore_me deactivates a site without deleting its database row. Inner::reconcile filters inactive rows from list results and vhost generation, synchronizes the managed hosts block, and runs on list reads, startup sync, scans, and window focus. forget_deleted_item clears a hidden-site entry; the next reconciliation restores the retained site unless a marker remains.

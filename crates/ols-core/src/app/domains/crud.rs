@@ -350,41 +350,13 @@ impl Inner {
         self.domains.lock().unwrap().update(domain)
     }
 
-    /// Deletes a site and takes it off the list for good. When it was the last site of
-    /// its project, the project leaves the list too, so the row the user clicked really
-    /// does disappear. Their files are never touched. The folder joins the skip list
-    /// (§`PROJECT_SKIP`) so folder rescans don't bring the project back.
+    /// Hides a site while retaining its database record and project settings.
     pub fn remove_domain(&self, hostname: &str) -> Result<(), CoreError> {
-        let mut domains = self.domains.lock().unwrap();
-        // The project goes too when this was its last site; another site of the same
-        // project keeps it on the list.
-        let orphan_project = domains
-            .get(hostname)
-            .and_then(|d| d.project_id.clone())
-            .filter(|project_id| {
-                !domains
-                    .list()
-                    .iter()
-                    .any(|d| d.hostname != hostname && d.project_id.as_ref() == Some(project_id))
-            });
-        domains.remove(hostname)?;
-        // Released before anything else locks the project store: a summary read takes
-        // projects first and domains second, and holding both ways round deadlocks.
-        drop(domains);
-        // Deleted on purpose: hidden list must reflect it, even for proxy/manual sites.
+        if self.domains.lock().unwrap().get(hostname).is_none() {
+            return Err(CoreError::DomainError(format!("{hostname} is not a known domain")));
+        }
         self.push_skip(AUTO_SKIP, hostname)?;
-        let _ = self.certs.revoke(hostname);
         self.web.restart_app(hostname);
-        let proxy_icon = self
-            .paths
-            .proxy_site_images_dir()
-            .join(proxy_icon_filename(hostname));
-        if proxy_icon.exists() {
-            let _ = std::fs::remove_file(proxy_icon);
-        }
-        if let Some(id) = orphan_project {
-            let _ = self.remove_project(&id);
-        }
         Ok(())
     }
 

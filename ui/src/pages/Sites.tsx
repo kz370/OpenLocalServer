@@ -745,8 +745,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     if (d) {
       const allHosts = [d.hostname, ...r.extraDomains.map((e) => e.hostname)]
       const key = d.hostname
-      if (!isProxy) {
-        items.push({
+      items.push({
           label: 'Hide',
           icon: <EyeOff />,
           disabled: allHosts.some((h) => removing.has(h)) || busy === `hide:${key}`,
@@ -754,15 +753,14 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
             const last = p ? ` ${p.name} leaves the list with it.` : ''
             const hostLabel = allHosts.length > 1 ? `${d.hostname} (+${r.extraDomains.length} extra domains)` : d.hostname
             const ok = await confirmAction(
-              `Its certificate is revoked and its config file is removed.${last} The project folder on disk is not touched. It stays hidden until cleared in Settings > Hide/Exclude.`,
-              `Hide/Exclude ${hostLabel}?`,
+              `This site will stop being served. Its vhost and hosts entry will be removed, then the web server will reload. The database record and project files stay. Restore it from Settings > Hidden sites.${last}`,
+              `Hide ${hostLabel}?`,
               'Hide',
             )
             if (!ok) return
             await run(`hide:${key}`, () => web.hideSites(allHosts))
           },
         })
-      }
       if (p) {
         items.push({
           label: 'Remove from list',
@@ -770,7 +768,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
           disabled: removing.has(p.id) || busy === `remove:${p.id}`,
           onSelect: async () => {
             const ok = await confirmAction(
-              `Remove \"${p.name}\" from the list?`,
+              `This site will stop being served. If its folder is under a discover folder, a .ols_ignore_me marker will be written and its database record kept; removing the marker restores it. Otherwise its database record will be removed. Project files stay on disk.`,
               `Remove ${p.name} from list?`,
               'Remove from list',
             )
@@ -787,10 +785,8 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         onSelect: async () => {
           const hostLabel = allHosts.length > 1 ? `${d.hostname} (+${r.extraDomains.length} extra domains)` : d.hostname
           const ok = await confirmAction(
-            isProxy
-              ? `Removes the reverse-proxy site configuration and revokes its certificate.`
-              : `Moves the project into an "ols_excluded_sites" folder in the same directory instead of permanently deleting it. Certificate is revoked and server configuration is removed.`,
-            `Delete ${hostLabel}?`,
+            `This site will stop being served. Its project folder will move into an "ols_excluded_sites" folder in the same directory. The database record, vhost and hosts entry will be removed.`,
+            `Move ${hostLabel} to excluded folder?`,
             'Move to excluded folder',
           )
           if (!ok) return

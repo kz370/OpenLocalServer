@@ -30,27 +30,14 @@ impl Core {
                     if i.reload_external_changes() {
                         tracing::info!("re-read the stores after an outside change");
                     }
-                    // Folders marked with .ols_ignore_me must not keep serving.
-                    let ignored_hosts: Vec<String> = i
-                        .domains
-                        .lock()
-                        .unwrap()
-                        .list()
-                        .into_iter()
-                        .filter(|d| {
-                            let folder = if d.root.is_empty() { String::new() } else { d.root.clone() };
-                            !folder.is_empty() && std::path::Path::new(&folder).join(".ols_ignore_me").exists()
-                        })
-                        .map(|d| d.hostname)
+                    let _ = i.reconcile();
+                    let records = i.domains.lock().unwrap().list();
+                    let active: std::collections::HashSet<_> = records.into_iter()
+                        .filter(|domain| i.site_is_active(domain))
+                        .map(|domain| domain.hostname)
                         .collect();
-                    for h in &ignored_hosts {
-                        let _ = i.remove_domain(&h);
-                    }
-                    if !ignored_hosts.is_empty() {
-                        let _ = i.apply_web(&ignored_hosts);
-                    }
                     Ok(R::Domains {
-                        domains: i.domain_summaries(),
+                        domains: i.domain_summaries().into_iter().filter(|d| active.contains(&d.hostname)).collect(),
                     })
                 }
                 C::GetDomain { hostname } => {
@@ -72,10 +59,12 @@ impl Core {
                 }),
                 C::RemoveDomain { hostname } => {
                     i.remove_domain(&hostname)?;
+                    i.reconcile()?;
                     Ok(R::Ok)
                 }
                 C::DeleteSite { hostname } => {
                     i.delete_site(&hostname)?;
+                    i.reconcile()?;
                     Ok(R::Ok)
                 }
                 C::SetDomainEnabled { hostname, enabled } => {
@@ -97,6 +86,7 @@ impl Core {
                 C::BulkRemoveDomains { hostnames } => {
                     tracing::info!(command = "bulk_remove_domains", sites = hostnames.len());
                     let out = i.remove_domains(&hostnames)?;
+                    i.reconcile()?;
                     Ok(R::Bulk {
                         changed: out.changed,
                         skipped: out.skipped,
@@ -105,6 +95,7 @@ impl Core {
                 C::BulkDeleteSites { hostnames } => {
                     tracing::info!(command = "bulk_delete_sites", sites = hostnames.len());
                     let out = i.delete_sites(&hostnames)?;
+                    i.reconcile()?;
                     Ok(R::Bulk {
                         changed: out.changed,
                         skipped: out.skipped,

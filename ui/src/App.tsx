@@ -115,6 +115,22 @@ export default function App() {
     initializeServiceStatusTracking()
   }, [])
 
+  useEffect(() => {
+    const reconcileSites = () => {
+      if (document.visibilityState !== 'visible') return
+      void Promise.all([
+        runCommand({ type: 'list_domains' }),
+        runCommand({ type: 'list_projects' }),
+      ]).catch(() => undefined)
+    }
+    window.addEventListener('focus', reconcileSites)
+    document.addEventListener('visibilitychange', reconcileSites)
+    return () => {
+      window.removeEventListener('focus', reconcileSites)
+      document.removeEventListener('visibilitychange', reconcileSites)
+    }
+  }, [])
+
   const changePage = useCallback((target: Page) => {
     setPage(target)
     try {
