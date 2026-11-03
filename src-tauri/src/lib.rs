@@ -594,7 +594,7 @@ fn run_tray_start_all(core: &Core) {
             return;
         }
         Err(e) => {
-            notify(core, &e.problem, &format!("{}", e.cause));
+            notify(core, &e.problem, &e.cause);
             return;
         }
     };
