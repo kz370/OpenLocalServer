@@ -1,5 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Activity, Check, CircleOff, Code2, Copy, Download, ExternalLink, EyeOff, FolderArchive, FolderOpen, FolderPlus, FolderSearch, FolderX, Globe, HardDrive, Image as ImageIcon, KeyRound, List, ListX, MoreHorizontal, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, X, Zap } from 'lucide-react'
+import { Activity, Check, CircleOff, Code2, Copy, Download, ExternalLink, EyeOff, FolderArchive, FolderOpen, FolderPlus, FolderSearch, FolderX, Globe, HardDrive, Image as ImageIcon, KeyRound, List, ListX, MoreHorizontal, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2, X, Zap } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
