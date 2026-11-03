@@ -79,7 +79,9 @@ pub fn check_site_with_progress(
     };
     let mut steps = Vec::new();
 
-    steps.push(run_step("DNS", &mut progress, || check_dns(target.hostname, port)));
+    steps.push(run_step("DNS", &mut progress, || {
+        check_dns(target.hostname, port)
+    }));
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let mut tcp = None;
@@ -100,7 +102,10 @@ pub fn check_site_with_progress(
     let tcp_ok = steps.last().is_some_and(|s| s.ok);
 
     if target.https {
-        progress(HealthProgress { name: "TLS".into(), step: None });
+        progress(HealthProgress {
+            name: "TLS".into(),
+            step: None,
+        });
         let (tls_step, http_step) = if tcp_ok {
             match tls_get(target.hostname, addr, target.ca_pem) {
                 Ok(status_line) => (
@@ -112,37 +117,52 @@ pub fn check_site_with_progress(
         } else {
             (skipped("TLS", "no TCP connection"), None)
         };
-        progress(HealthProgress { name: "TLS".into(), step: Some(tls_step.clone()) });
+        progress(HealthProgress {
+            name: "TLS".into(),
+            step: Some(tls_step.clone()),
+        });
         steps.push(tls_step);
-        steps.push(run_step("Certificate", &mut progress, || check_cert(target.cert)));
-        steps.push(run_step("Trust", &mut progress, || if target.ca_trusted {
-            step(
-                "Trust",
-                true,
-                "the CA is trusted by Windows (Edge and Chrome will accept it)",
-            )
-        } else {
-            step(
-                "Trust",
-                false,
-                "the CA is not trusted yet. Trust it from the Certificates page.",
-            )
+        steps.push(run_step("Certificate", &mut progress, || {
+            check_cert(target.cert)
+        }));
+        steps.push(run_step("Trust", &mut progress, || {
+            if target.ca_trusted {
+                step(
+                    "Trust",
+                    true,
+                    "the CA is trusted by Windows (Edge and Chrome will accept it)",
+                )
+            } else {
+                step(
+                    "Trust",
+                    false,
+                    "the CA is not trusted yet. Trust it from the Certificates page.",
+                )
+            }
         }));
         steps.push(run_step("HTTP", &mut progress, || match http_step {
             Some(line) => http_result(&line),
             None => skipped("HTTP", "TLS did not complete"),
         }));
     } else {
-        steps.push(run_step("TLS", &mut progress, || skipped("TLS", "site is HTTP only")));
-        steps.push(run_step("Certificate", &mut progress, || skipped("Certificate", "site is HTTP only")));
-        steps.push(run_step("Trust", &mut progress, || skipped("Trust", "site is HTTP only")));
-        steps.push(run_step("HTTP", &mut progress, || if tcp_ok {
-            match plain_get(target.hostname, addr) {
-                Ok(line) => http_result(&line),
-                Err(e) => step("HTTP", false, e),
+        steps.push(run_step("TLS", &mut progress, || {
+            skipped("TLS", "site is HTTP only")
+        }));
+        steps.push(run_step("Certificate", &mut progress, || {
+            skipped("Certificate", "site is HTTP only")
+        }));
+        steps.push(run_step("Trust", &mut progress, || {
+            skipped("Trust", "site is HTTP only")
+        }));
+        steps.push(run_step("HTTP", &mut progress, || {
+            if tcp_ok {
+                match plain_get(target.hostname, addr) {
+                    Ok(line) => http_result(&line),
+                    Err(e) => step("HTTP", false, e),
+                }
+            } else {
+                skipped("HTTP", "no TCP connection")
             }
-        } else {
-            skipped("HTTP", "no TCP connection")
         }));
     }
 
@@ -159,9 +179,15 @@ fn run_step(
     progress: &mut impl FnMut(HealthProgress),
     check: impl FnOnce() -> HealthStep,
 ) -> HealthStep {
-    progress(HealthProgress { name: name.into(), step: None });
+    progress(HealthProgress {
+        name: name.into(),
+        step: None,
+    });
     let result = check();
-    progress(HealthProgress { name: name.into(), step: Some(result.clone()) });
+    progress(HealthProgress {
+        name: name.into(),
+        step: Some(result.clone()),
+    });
     result
 }
 

@@ -187,6 +187,11 @@ export interface HealthReport {
   ok: boolean
   steps: HealthStep[]
 }
+export interface HealthProgress {
+  name: string
+  /** null marks the stage start; a HealthStep marks its completed result. */
+  step: HealthStep | null
+}
 
 export type ConfigPart = 'main' | 'site' | 'custom'
 export interface ConfigFile {

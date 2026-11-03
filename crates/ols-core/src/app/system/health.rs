@@ -23,15 +23,18 @@ impl Inner {
         let cert = self.certs.info(hostname);
         let ca_info = self.certs.ca_info();
         let ca_path = PathBuf::from(&ca_info.cert_path);
-        Ok(crate::health::check_site_with_progress(&HealthTarget {
-            hostname,
-            https: d.https,
-            http_port: cfg.http_port(),
-            https_port: cfg.https_port(),
-            ca_pem: &ca_path,
-            ca_trusted: ca_info.trusted,
-            cert: cert.as_ref(),
-        }, progress))
+        Ok(crate::health::check_site_with_progress(
+            &HealthTarget {
+                hostname,
+                https: d.https,
+                http_port: cfg.http_port(),
+                https_port: cfg.https_port(),
+                ca_pem: &ca_path,
+                ca_trusted: ca_info.trusted,
+                cert: cert.as_ref(),
+            },
+            progress,
+        ))
     }
 
     // ------------------------------------------------------------------ databases

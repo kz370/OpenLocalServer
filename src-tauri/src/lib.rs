@@ -2,10 +2,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use ols_core::health::HealthProgress;
 use ols_core::process::{ProcessEvent, ProcessState};
 use ols_core::quickapp::EntryView;
 use ols_core::runtime::RuntimeEvent;
-use ols_core::health::HealthProgress;
 use ols_core::{
     AppPaths, Core, CoreCommand, CoreResponse, Diagnostic, ProcessSupervisor, RuntimeManager,
     SettingsService,
