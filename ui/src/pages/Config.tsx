@@ -130,7 +130,7 @@ export function ConfigPage() {
                         f={f}
                         active={selected === fileKey(f)}
                         onClick={() => {
-                          if (selected !== fileKey(f) && warnBeforeLeavingUnsavedChanges()) setSelected(fileKey(f))
+                          if (selected !== fileKey(f) && warnBeforeLeavingUnsavedChanges('app')) setSelected(fileKey(f))
                         }}
                         label={f.hostname ?? 'Main config'}
                       />
@@ -139,7 +139,7 @@ export function ConfigPage() {
                           f={custom}
                           active={selected === fileKey(custom)}
                           onClick={() => {
-                            if (selected !== fileKey(custom) && warnBeforeLeavingUnsavedChanges()) setSelected(fileKey(custom))
+                            if (selected !== fileKey(custom) && warnBeforeLeavingUnsavedChanges('app')) setSelected(fileKey(custom))
                           }}
                           label="↳ your snippet"
                           indent
@@ -222,6 +222,7 @@ export function ConfigFilePane({
   scope?: DirtyFormScope
 }) {
   const [tab, setTab] = useState<'editor' | 'structured' | 'history'>('editor')
+  const dirtyScope = scope ?? 'app'
   const [text, setText] = useState('')
   const [loaded, setLoaded] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
@@ -369,7 +370,7 @@ export function ConfigFilePane({
         ]}
         value={tab}
         onChange={(next) => {
-          if (next !== tab && warnBeforeLeavingUnsavedChanges()) setTab(next)
+          if (next !== tab && warnBeforeLeavingUnsavedChanges(dirtyScope)) setTab(next)
         }}
       />
 
@@ -469,7 +470,7 @@ export function SiteConfigTab({ hostname }: { hostname: string }) {
           ]}
           value={part}
           onChange={(next) => {
-            if (next !== part && warnBeforeLeavingUnsavedChanges()) setPart(next)
+            if (next !== part && warnBeforeLeavingUnsavedChanges('dialog')) setPart(next)
           }}
         />
       )}

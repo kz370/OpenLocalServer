@@ -130,7 +130,7 @@ export function SettingsPage() {
     return 'general'
   })
   const changeSection = useCallback((next: Section) => {
-    if (next !== section && !warnBeforeLeavingUnsavedChanges()) return
+    if (next !== section && !warnBeforeLeavingUnsavedChanges('app')) return
     setSection(next)
     try {
       sessionStorage.setItem('ols:settings-section', next)

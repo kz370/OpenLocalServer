@@ -231,6 +231,9 @@ exec | resolves | Windows system binaries via GetSystemDirectoryW (%SystemRoot%\
 SettingsPage (Documentation & Release Notes) | uses | ReleaseNotesView (renders structured changelogs with release metadata headers, feature cards, and expandable details)
 SettingsPage (About) | renders | AboutCard and UpdatesCard (application metadata and signed update checks)
 SettingsPage (General) | renders | Diagnostics card (autoFixDiagnostics setting toggle)
+SettingsPage, ResourcesCard, ConfigPage, and SiteDialog forms | register_with | the shared dirtyForms registry; deferred values compare against saved snapshots, while instant-apply toggles and service actions stay outside it
+DirtySaveBar | renders_for | dirty app/dialog forms only; Save runs registered callbacks, Discard restores snapshots, Ctrl+S saves, and navigation/unload guards protect unsaved changes
+SiteDialog | scopes | its DomainSettings, Domains & Aliases, web-config, and .htaccess drafts to the dialog Save bar, using the dialog surface token and leaving the site sidebar unobscured
 ReleaseNotesView | uses | releaseNotes::parseReleaseNotes & filterReleaseNotes (tokenizes raw Markdown with marked.lexer and maps topic icons)
 PluginsPage | renders | PluginConsentDialog (when turning on a plugin)
 PluginConsentDialog | uses | pluginConsent (buildPluginConsentSummary, formatDownloadSource, extractHostname, formatSize)

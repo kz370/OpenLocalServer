@@ -259,6 +259,7 @@ interface SiteDomainsPanelProps {
 }
 
 export function SiteDomainsPanel({ domain: initialDomain, onSave, busy }: SiteDomainsPanelProps) {
+  const domainFormKey = `site-domains:${initialDomain.hostname}`
   const [domain, setDomain] = useState<Domain>({
     ...initialDomain,
     aliases: initialDomain.aliases ?? [],
@@ -283,7 +284,7 @@ export function SiteDomainsPanel({ domain: initialDomain, onSave, busy }: SiteDo
   const [saveSuccess, setSaveSuccess] = useState(false)
   const domainForm = useDirtyForm({
     scope: 'dialog',
-    formKey: `site-domains:${initialDomain.hostname}`,
+    formKey: domainFormKey,
     value: domain,
     enabled: true,
     busy: saving || !!busy,
@@ -295,6 +296,16 @@ export function SiteDomainsPanel({ domain: initialDomain, onSave, busy }: SiteDo
     },
     onSave: (draft) => handleSave(draft),
   })
+
+  function recordDdnsSync(ip: string | null) {
+    const syncedAt = Math.floor(Date.now() / 1000)
+    setDomain((current) => ({ ...current, ddns_last_ip: ip, ddns_last_synced_at: syncedAt }))
+    domainForm.syncSaved(
+      (savedDomain) => ({ ...savedDomain, ddns_last_ip: ip, ddns_last_synced_at: syncedAt }),
+      domainFormKey,
+      true,
+    )
+  }
 
   // Load existing domains on mount to validate alias uniqueness across all sites
   useEffect(() => {
@@ -572,7 +583,7 @@ export function SiteDomainsPanel({ domain: initialDomain, onSave, busy }: SiteDo
     setDdnsResult(null)
     try {
       await onSave(domain)
-      domainForm.syncSaved(domain)
+      domainForm.syncSaved(domain, domainFormKey, true)
       const res = await runCommand({
         type: 'sync_ddns',
         hostname: domain.hostname,
@@ -583,13 +594,7 @@ export function SiteDomainsPanel({ domain: initialDomain, onSave, busy }: SiteDo
           updated: res.result.updated,
           message: res.result.message,
         })
-        const syncedDomain = {
-          ...domain,
-          ddns_last_ip: res.result.ip,
-          ddns_last_synced_at: Math.floor(Date.now() / 1000),
-        }
-        setDomain(syncedDomain)
-        domainForm.syncSaved(syncedDomain)
+        recordDdnsSync(res.result.ip)
       }
     } catch (e: any) {
       const detail = e?.cause ? `${e?.problem ?? 'Sync failed'}: ${e.cause}` : (e?.problem ?? e?.message ?? e)
@@ -607,7 +612,7 @@ export function SiteDomainsPanel({ domain: initialDomain, onSave, busy }: SiteDo
     setSslStatus('Requesting ACME HTTP-01 challenge from Let\'s Encrypt…')
     try {
       await onSave(domain)
-      domainForm.syncSaved(domain)
+      domainForm.syncSaved(domain, domainFormKey, true)
       const res = await runCommand({
         type: 'issue_lets_encrypt',
         hostname: domain.hostname,
@@ -667,13 +672,7 @@ export function SiteDomainsPanel({ domain: initialDomain, onSave, busy }: SiteDo
                 message: res.result.message,
               })
               if (res.result.ip) {
-                const syncedDomain = {
-                  ...nextDomain,
-                  ddns_last_ip: res.result.ip,
-                  ddns_last_synced_at: Math.floor(Date.now() / 1000),
-                }
-                setDomain(syncedDomain)
-                domainForm.syncSaved(syncedDomain)
+                recordDdnsSync(res.result.ip)
               }
             }
           })

@@ -98,8 +98,8 @@ export function useDirtyForm<T>({
     setBaseline(snapshot)
   }, [setBaseline])
 
-  const syncSaved = useCallback((next: T | ((saved: T) => T), forKey = keyRef.current) => {
-    if (forKey === keyRef.current && !dirtyRef.current) {
+  const syncSaved = useCallback((next: T | ((saved: T) => T), forKey = keyRef.current, force = false) => {
+    if (forKey === keyRef.current && (force || !dirtyRef.current)) {
       const currentBaseline = baselineRef.current
       const saved = currentBaseline.key === forKey ? currentBaseline.value : valueRef.current
       updateBaseline(forKey, typeof next === 'function' ? (next as (saved: T) => T)(saved) : next)
@@ -204,10 +204,10 @@ export function discardDirtyForms(scope?: DirtyFormScope) {
   for (const form of getDirtyForms(scope)) form.discard()
 }
 
-export function warnBeforeLeavingUnsavedChanges() {
-  if (getDirtyForms().length === 0) return true
+export function warnBeforeLeavingUnsavedChanges(scope?: DirtyFormScope) {
+  if (getDirtyForms(scope).length === 0) return true
   const confirmed = window.confirm('You have unsaved changes. Discard them and leave?')
-  if (confirmed) discardDirtyForms()
+  if (confirmed) discardDirtyForms(scope)
   return confirmed
 }
 
