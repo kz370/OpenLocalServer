@@ -52,7 +52,7 @@ import {
 import { createPersistentCache, getCached } from '@/lib/cache'
 import { confirmAction } from '@/lib/confirm'
 import { usePoll } from '@/lib/hooks'
-import { openProject, openSettingsSection } from '@/lib/nav'
+import { openAddSiteForProject, openProject, openSettingsSection } from '@/lib/nav'
 import { notify } from '@/lib/notify'
 import {
   getProjectDisplayType,
@@ -379,25 +379,6 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
     }
   }
 
-  const handleCreateSite = async (p: Project) => {
-    try {
-      const res = await runCommand({ type: 'create_site_for_project', project_id: p.id })
-      if (res.type === 'create_site_for_project') {
-        if (res.domain) {
-          notify.success(`Created site ${res.domain.hostname}`)
-          await refreshAll()
-        } else if (res.needs_setup) {
-          notify.info(
-            `Could not auto-detect a web server configuration for "${p.name}". You can configure a site manually in Sites.`,
-          )
-          onNavigate('sites')
-        }
-      }
-    } catch (e) {
-      notify.error(`Failed to create site: ${e instanceof Error ? e.message : String(e)}`)
-    }
-  }
-
   const handleOpenTerminal = async (p: Project) => {
     try {
       await runCommand({ type: 'open_project_terminal', project_id: p.id })
@@ -485,7 +466,10 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
         icon: <Globe className="size-4" />,
         disabled: hasSite || !isHealthy,
         hint: hasSite ? 'Site already exists' : !isHealthy ? 'Folder missing' : undefined,
-        onSelect: () => void handleCreateSite(p),
+        onSelect: () => {
+          openAddSiteForProject(p.id)
+          onNavigate('sites')
+        },
       },
       'separator',
       {

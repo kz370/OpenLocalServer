@@ -28,7 +28,7 @@ import { type Domain, type DomainSummary, type HealthReport, type Project, type 
 import { getCached, setCached } from '@/lib/cache'
 import { confirmAction } from '@/lib/confirm'
 import { notify } from '@/lib/notify'
-import { onOpenProject, onOpenSitesFilter, takePendingProject, takePendingSitesFilter } from '@/lib/nav'
+import { onOpenAddSiteForProject, onOpenProject, onOpenSitesFilter, takePendingAddSiteProject, takePendingProject, takePendingSitesFilter } from '@/lib/nav'
 import { useTheme } from '@/lib/theme'
 import { useWeb } from '@/lib/web'
 import { Wizard } from '@/pages/QuickApps'
@@ -140,6 +140,15 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
 
   useEffect(() => {
     return onOpenSitesFilter((f) => setFilter(f as SiteFilter))
+  }, [])
+
+  useEffect(() => {
+    const openAddSite = (projectId: string) => {
+      setAdding({ ...newDomain(), project_id: projectId })
+    }
+    const pending = takePendingAddSiteProject()
+    if (pending) openAddSite(pending)
+    return onOpenAddSiteForProject(openAddSite)
   }, [])
 
   // A project opened by id shows its first site when it has one.

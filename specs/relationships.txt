@@ -271,3 +271,6 @@ SitesPage Remove site only | updates | projects_page_domains persistent cache im
 useWeb.apply | notifies via | notify.success when config files, server state, or hosts file changed; unchanged apply is silent, while drifted config opens DriftDialog
 SyncHosts | returns | Applied reports from reconciliation so useWeb.reconcileSites can notify about web servers that actually reloaded after a site change
 ListProjects | annotates | Project.auto_discovered from configured roots for the Sites row label
+
+ProjectsPage Create site action | opens | SitesPage Add Site dialog with the project preselected through the pending add-site navigation event
+DomainSettings Existing project picker | filters | visible projects without a connected domain by project name and folder path; selection fills site folder, hostname, localhost prefix and Serves mode
