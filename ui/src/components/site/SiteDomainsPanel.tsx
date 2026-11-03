@@ -281,13 +281,15 @@ export function SiteDomainsPanel({ domain: initialDomain, onSave, busy }: SiteDo
   const [showToken, setShowToken] = useState(false)
   const [showSecret, setShowSecret] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [syncingDdns, setSyncingDdns] = useState(false)
+  const [issuingSsl, setIssuingSsl] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
   const domainForm = useDirtyForm({
     scope: 'dialog',
     formKey: domainFormKey,
     value: domain,
     enabled: true,
-    busy: saving || !!busy,
+    busy: saving || syncingDdns || issuingSsl || !!busy,
     error: aliasError ? { problem: 'Could not save domain settings', cause: aliasError, fix: 'Correct the indicated value and try again.' } : null,
     onRestore: (savedDomain) => {
       setDomain(savedDomain)
@@ -323,11 +325,9 @@ export function SiteDomainsPanel({ domain: initialDomain, onSave, busy }: SiteDo
   const [detectedIp, setDetectedIp] = useState<string | null>(null)
 
   // DDNS manual sync state
-  const [syncingDdns, setSyncingDdns] = useState(false)
   const [ddnsResult, setDdnsResult] = useState<{ updated: boolean; message: string } | null>(null)
 
   // Let's Encrypt / Custom SSL issuance & verification state
-  const [issuingSsl, setIssuingSsl] = useState(false)
   const [sslStatus, setSslStatus] = useState<string | null>(null)
   const [verifyingSsl, setVerifyingSsl] = useState(false)
   const [sslVerifyResult, setSslVerifyResult] = useState<{ valid: boolean; error: string | null } | null>(null)
