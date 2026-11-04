@@ -2,7 +2,8 @@ import { Check, Edit2, GripVertical, Pin, Plus, Sliders, Trash2, X } from 'lucid
 import { useDeferredValue, useEffect, useMemo, useState } from 'react'
 
 import { TechIcon } from '@/components/TechIcon'
-import { FA_ICON_CATEGORIES, FontAwesomeIcon, filterFaIcons } from '@/components/SiteLogo'
+import { IconCategoryFilter } from '@/components/IconCategoryFilter'
+import { FontAwesomeIcon, filterFaIcons } from '@/components/SiteLogo'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
@@ -422,23 +423,12 @@ export function ManageProjectTypesDialog({
                 const visible = pickerIcons
                 return (
                   <>
-                    <div className="flex flex-wrap gap-1 border-b border-border pb-2">
-                      {FA_ICON_CATEGORIES.map((c) => (
-                        <button
-                          key={c.id}
-                          type="button"
-                          onClick={() => setIconCategory(c.id)}
-                          className={cn(
-                            'px-2 py-0.5 rounded text-[10px] font-medium capitalize cursor-pointer transition-colors',
-                            iconCategory === c.id
-                              ? 'bg-primary text-primary-foreground'
-                              : 'bg-muted/40 text-muted-foreground hover:bg-muted',
-                          )}
-                        >
-                          {c.label}
-                        </button>
-                      ))}
-                    </div>
+                    <IconCategoryFilter
+                      value={iconCategory}
+                      onChange={setIconCategory}
+                      search={deferredIconSearch}
+                      className="border-b border-border pb-2"
+                    />
                     <div className="grid grid-cols-6 gap-1.5 max-h-44 overflow-y-auto pr-1 pt-1">
                       {visible.map((ic) => (
                         <button
@@ -659,23 +649,12 @@ export function ManageProjectTypesDialog({
                           const visible = pickerIcons
                           return (
                             <>
-                              <div className="flex flex-wrap gap-1 border-b border-border pb-2">
-                                {FA_ICON_CATEGORIES.map((c) => (
-                                  <button
-                                    key={c.id}
-                                    type="button"
-                                    onClick={() => setIconCategory(c.id)}
-                                    className={cn(
-                                      'px-2 py-0.5 rounded text-[10px] font-medium capitalize cursor-pointer transition-colors',
-                                      iconCategory === c.id
-                                        ? 'bg-primary text-primary-foreground'
-                                        : 'bg-muted/40 text-muted-foreground hover:bg-muted',
-                                    )}
-                                  >
-                                    {c.label}
-                                  </button>
-                                ))}
-                              </div>
+                              <IconCategoryFilter
+                                value={iconCategory}
+                                onChange={setIconCategory}
+                                search={deferredIconSearch}
+                                className="border-b border-border pb-2"
+                              />
                               <div className="grid grid-cols-6 gap-1.5 max-h-44 overflow-y-auto pr-1 pt-1">
                                 {visible.map((ic) => (
                                   <button

@@ -64,25 +64,24 @@ import faIconsData from './faIconsData.json'
 export interface FaIconDef {
   id: string
   name: string
-  category: 'brands' | 'web' | 'tech' | 'commerce' | 'media' | 'lifestyle' | 'general'
+  /** One of the ids in FA_ICON_CATEGORIES (cms, frameworks, devtools, cloud, …). */
+  category: string
   svgPath: string
   viewBox?: string
   color?: string
 }
 
-export const FA_ICONS: FaIconDef[] = faIconsData as FaIconDef[]
+export interface FaIconCategory {
+  id: string
+  label: string
+}
 
-/** Picker filter chips, in display order. `all` is first; every FaIconDef category is listed. */
-export const FA_ICON_CATEGORIES: { id: 'all' | FaIconDef['category']; label: string }[] = [
-  { id: 'all', label: 'All' },
-  { id: 'brands', label: 'Brands & CMS' },
-  { id: 'web', label: 'Web' },
-  { id: 'tech', label: 'Tech & Dev' },
-  { id: 'commerce', label: 'Commerce' },
-  { id: 'media', label: 'Media' },
-  { id: 'lifestyle', label: 'Life & Places' },
-  { id: 'general', label: 'General' },
-]
+const faData = faIconsData as { categories: FaIconCategory[]; icons: FaIconDef[] }
+
+export const FA_ICONS: FaIconDef[] = faData.icons
+
+/** Picker filter options in display order: `all` first, then the generated categories. */
+export const FA_ICON_CATEGORIES: FaIconCategory[] = [{ id: 'all', label: 'All' }, ...faData.categories]
 
 // Lookup by id and by lower-cased name. Every rendered icon resolves through here,
 // so a Map keeps a grid of hundreds of icons from doing hundreds of linear scans.

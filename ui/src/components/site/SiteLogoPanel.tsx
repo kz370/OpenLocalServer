@@ -13,8 +13,8 @@ import { Check, ChevronDown, Image as ImageIcon, Search, Trash2, Upload, X } fro
 import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
+import { IconCategoryFilter } from '@/components/IconCategoryFilter'
 import {
-  FA_ICON_CATEGORIES,
   SiteLogo,
   filterFaIcons,
   buildIconSpec,
@@ -688,23 +688,8 @@ export function SiteLogoPanel({
             )}
           </div>
 
-          {/* Category Filter Chips */}
-          <div className="flex flex-wrap gap-1.5 text-xs">
-            {FA_ICON_CATEGORIES.map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                className={`cursor-pointer rounded-full px-2.5 py-0.5 text-[11px] font-medium transition ${
-                  category === c.id
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'
-                }`}
-                onClick={() => setCategory(c.id)}
-              >
-                {c.label}
-              </button>
-            ))}
-          </div>
+          {/* Category filter: chips when wide, dropdown when narrow */}
+          <IconCategoryFilter value={category} onChange={setCategory} search={deferredSearch} />
 
           {/* Icons Grid with zero layout jumping */}
           <div className="grid max-h-60 grid-cols-3 gap-2 overflow-y-auto rounded-md border border-border p-2 sm:grid-cols-4 md:grid-cols-6">

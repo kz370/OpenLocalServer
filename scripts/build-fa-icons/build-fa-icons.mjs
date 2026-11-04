@@ -6,9 +6,14 @@
 // The app itself never imports those packages and never goes online for icons:
 // it only reads the generated JSON, which Vite bundles into the app.
 //
-// To add an icon: add { "id", "name", "category", "color"? } to icons.json, where
-// "id" is the Font Awesome icon name (for example "drupal" or "graduation-cap"),
-// then run scripts\build-fa-icons.bat (or `npm run icons:fa` inside ui/).
+// icons.json holds { "categories": [{ "id", "label" }], "icons": [...] }. The category
+// order there is the order of the picker's filter chips and dropdown.
+//
+// To add an icon: add { "id", "name", "category", "color"? } to "icons", where "id" is
+// the Font Awesome icon name (for example "drupal" or "graduation-cap") and "category"
+// is one of the listed category ids, then run scripts\build-fa-icons.bat (or
+// `npm run icons:fa` inside ui/). The pack (brands or solid) is found automatically;
+// an id that exists in both packs needs "pack": "brands" or "pack": "solid".
 //
 // Font Awesome Free icons are licensed CC BY 4.0 (https://fontawesome.com/license/free).
 
@@ -22,9 +27,6 @@ const root = resolve(here, '..', '..')
 const uiDir = join(root, 'ui')
 const listPath = join(here, 'icons.json')
 const outPath = join(uiDir, 'src', 'components', 'faIconsData.json')
-
-/** Keep in sync with FaIconDef['category'] in ui/src/components/SiteLogo.tsx. */
-const CATEGORIES = new Set(['brands', 'web', 'tech', 'commerce', 'media', 'lifestyle', 'general'])
 
 function fail(problem, cause, fix) {
   console.error(`[x] Problem: ${problem}`)
@@ -63,11 +65,27 @@ try {
   fail('scripts/build-fa-icons/icons.json could not be read.', String(err.message ?? err), 'fix the JSON syntax and run this again.')
 }
 
-const seen = new Set()
 const problems = []
+const categories = Array.isArray(list?.categories) ? list.categories : []
+const CATEGORIES = new Set()
+for (const cat of categories) {
+  if (!cat?.id || !cat?.label) problems.push(`category ${JSON.stringify(cat)}: needs "id" and "label"`)
+  else if (cat.id === 'all') problems.push('category "all" is reserved for the picker\'s show-everything option')
+  else if (CATEGORIES.has(cat.id)) problems.push(`category ${cat.id}: listed twice`)
+  else CATEGORIES.add(cat.id)
+}
+if (!CATEGORIES.size || !Array.isArray(list?.icons)) {
+  fail(
+    'scripts/build-fa-icons/icons.json has the wrong shape.',
+    'it must be { "categories": [{ "id", "label" }], "icons": [{ "id", "name", "category" }] } with at least one category.',
+    'restore the file from git or fix its structure, then run this again.',
+  )
+}
+
+const seen = new Set()
 const out = []
-for (const entry of list) {
-  const { id, name, category, color } = entry
+for (const entry of list.icons) {
+  const { id, name, category, color, pack } = entry
   if (!id || !name || !category) {
     problems.push(`${JSON.stringify(entry)}: needs "id", "name" and "category"`)
     continue
@@ -81,16 +99,27 @@ for (const entry of list) {
     problems.push(`${id}: unknown category "${category}" (use one of ${[...CATEGORIES].join(', ')})`)
     continue
   }
-  // Brand logos live only in the brands pack; everything else comes from solid.
-  const def = category === 'brands' ? brandIndex.get(id) : solidIndex.get(id)
-  if (!def) {
-    const other = category === 'brands' ? solidIndex.has(id) : brandIndex.has(id)
-    problems.push(
-      other
-        ? `${id}: exists in the ${category === 'brands' ? 'solid' : 'brands'} pack, so its category is wrong`
-        : `${id}: not in Font Awesome Free ${category === 'brands' ? 'brands' : 'solid'}`,
-    )
+  const inBrands = brandIndex.has(id)
+  const inSolid = solidIndex.has(id)
+  let def
+  if (pack === 'brands' || pack === 'solid') {
+    def = (pack === 'brands' ? brandIndex : solidIndex).get(id)
+    if (!def) {
+      problems.push(`${id}: not in the Font Awesome Free ${pack} pack`)
+      continue
+    }
+  } else if (pack !== undefined) {
+    problems.push(`${id}: "pack" must be "brands" or "solid"`)
     continue
+  } else if (inBrands && inSolid) {
+    problems.push(`${id}: exists in both the brands and solid packs; add "pack": "brands" or "pack": "solid"`)
+    continue
+  } else {
+    def = brandIndex.get(id) ?? solidIndex.get(id)
+    if (!def) {
+      problems.push(`${id}: not in Font Awesome Free (brands or solid)`)
+      continue
+    }
   }
   const [width, height, , , path] = def.icon
   if (typeof path !== 'string') {
@@ -111,8 +140,16 @@ if (problems.length) {
   )
 }
 
-writeFileSync(outPath, JSON.stringify(out, null, 2) + '\n')
-const counts = {}
-for (const icon of out) counts[icon.category] = (counts[icon.category] ?? 0) + 1
-console.log(`[ok] Wrote ${out.length} icons to ui/src/components/faIconsData.json`)
-console.log(`     ${Object.entries(counts).map(([c, n]) => `${c} ${n}`).join(', ')}`)
+const empty = [...CATEGORIES].filter((c) => !out.some((icon) => icon.category === c))
+if (empty.length) {
+  fail(
+    `category ${empty.join(', ')} has no icons.`,
+    'an empty category would show as a filter chip that always lists nothing.',
+    'add icons to it or remove it from "categories" in icons.json, then run this again.',
+  )
+}
+
+const data = { categories: categories.map(({ id, label }) => ({ id, label })), icons: out }
+writeFileSync(outPath, JSON.stringify(data, null, 2) + '\n')
+console.log(`[ok] Wrote ${out.length} icons in ${CATEGORIES.size} categories to ui/src/components/faIconsData.json`)
+console.log(`     ${categories.map(({ id }) => `${id} ${out.filter((icon) => icon.category === id).length}`).join(', ')}`)
