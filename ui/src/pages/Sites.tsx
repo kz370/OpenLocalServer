@@ -10,7 +10,6 @@ import { SiteExportDialog, SiteImportButton } from '@/components/site/SiteBundle
 import { SiteDialog, type SiteTarget } from '@/components/site/SiteDialog'
 import { SiteLogoDialog, type SiteLogoTarget } from '@/components/site/SiteLogoDialog'
 import { SiteLogo } from '@/components/SiteLogo'
-import { SaveButton } from '@/components/SaveButton'
 import { DriftDialog } from '@/components/site/WebApply'
 import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
@@ -31,6 +30,7 @@ import { notify } from '@/lib/notify'
 import { onOpenAddSiteForProject, onOpenProject, onOpenSitesFilter, openSettingsSection, takePendingAddSiteProject, takePendingProject, takePendingSitesFilter } from '@/lib/nav'
 import { useTheme } from '@/lib/theme'
 import { useWeb } from '@/lib/web'
+import { waitForWebStopped } from '@/lib/wait'
 import { Wizard } from '@/pages/QuickApps'
 
 /** One row of the table: a site, or a registered project that has no site yet. */
@@ -126,6 +126,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   const { resolvedTheme } = useTheme()
   const { projects, domains, status, busy, error, setError, run, apply, refresh, refreshProjects, reconcileSites, installedPhp, removing, applying } = web
   const defaultServer = status?.default_server
+  const serverIsRunning = busy === 'stop' || (busy !== 'apply' && !!status?.running)
 
   const [target, setTarget] = useState<SiteTarget | null>(null)
   const [logoTarget, setLogoTarget] = useState<SiteLogoTarget | null>(null)
@@ -957,17 +958,47 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
+      <div>
+        <div className="flex items-center justify-between gap-3">
           <h1 className="text-2xl font-semibold tracking-tight">Sites</h1>
-          <p className="text-sm text-muted-foreground">Every site and the project behind it. Open a site's settings for its domain, web config, environment, terminal, Git and more.</p>
+          <div className="flex h-8 w-[232px] shrink-0 items-stretch rounded-md border border-border bg-transparent">
+            <div className="flex min-w-0 flex-1 items-center gap-2 px-2.5 text-xs">
+              {busy === 'apply' || busy === 'stop' ? (
+                <Spinner className="size-3.5 shrink-0" />
+              ) : (
+                <span className={`size-2 shrink-0 rounded-full ${status?.running ? 'bg-success' : 'bg-muted-foreground/50'}`} />
+              )}
+              <span className="truncate text-muted-foreground">
+                {busy === 'apply' ? 'Starting…' : busy === 'stop' ? 'Stopping…' : status?.running ? 'Web server running' : 'Web server stopped'}
+              </span>
+            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              className={`h-full w-[78px] shrink-0 rounded-l-none border-l border-border px-2 ${serverIsRunning ? 'text-destructive hover:bg-accent hover:text-destructive' : 'text-success hover:bg-accent hover:text-success'}`}
+              disabled={status === null || busy !== null}
+              onClick={() => {
+                if (busy !== null || status === null) return
+                if (status.running) {
+                  void run('stop', async () => {
+                    await runCommand({ type: 'stop_web' })
+                    await waitForWebStopped()
+                    await refresh()
+                  })
+                } else {
+                  void run('apply', () => apply())
+                }
+              }}
+            >
+              {serverIsRunning ? <StopIcon /> : <Play />}
+              {serverIsRunning ? 'Stop' : 'Start'}
+            </Button>
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {status && !status.running && domains.length > 0 && (
-            <SaveButton action={web} name="apply" size="sm" variant="outline" busyLabel="Starting…" savedLabel="Started" onClick={() => void run('apply', () => apply())} title="Sites can't be opened while the web server is stopped">
-              <Play /> Start web server
-            </SaveButton>
-          )}
+        <p className="text-sm text-muted-foreground">Every site and the project behind it. Open a site's settings for its domain, web config, environment, terminal, Git and more.</p>
+      </div>
+      <div className="flex min-h-8 flex-wrap items-center gap-x-[18px] gap-y-2">
+        <div className="flex shrink-0 flex-nowrap items-center gap-2">
           <Button size="sm" onClick={() => setAdding(newDomain())}>
             <Plus /> Add site
           </Button>
@@ -978,6 +1009,8 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
             <FolderSearch /> Scan a folder
           </Button>
           <GitCloneButton defaultParent={effectiveParent} onDone={adopt} />
+        </div>
+        <div className="flex shrink-0 flex-nowrap items-center gap-2">
           <ImportEnvironmentButton defaultParent={effectiveParent} onDone={adopt} />
           <SiteImportButton onWatch={() => onNavigate('tasks')} />
         </div>
