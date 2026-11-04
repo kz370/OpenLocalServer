@@ -53,7 +53,7 @@
         <div class="nav__cta">
           <a
             class="btn btn--primary btn--sm"
-            href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-2.7.0-setup.exe"
+            href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-2.8.0-setup.exe"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" />
@@ -95,7 +95,7 @@
             <div class="hero__actions">
               <a
                 class="btn btn--primary"
-                href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-2.7.0-setup.exe"
+                href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-2.8.0-setup.exe"
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" />
@@ -110,16 +110,16 @@
               </a>
             </div>
             <p class="hero__note">
-              Windows 10 / 11, 64-bit. <code>OLS-2.7.0-setup.exe</code>, a
-              <a href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-2.7.0-portable-win-x64.zip">portable zip</a>,
-              and <a href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-2.7.0-SHA256SUMS.txt">SHA-256 sums</a>
+              Windows 10 / 11, 64-bit. <code>OLS-2.8.0-setup.exe</code>, a
+              <a href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-2.8.0-portable-win-x64.zip">portable zip</a>,
+              and <a href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-2.8.0-SHA256SUMS.txt">SHA-256 sums</a>
               to check either against. Source on
               <a href="https://github.com/kz370/OpenLocalServer">GitHub</a>.
             </p>
             <ul class="facts">
               <li>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
-                v2.7.0
+                v2.8.0
               </li>
               <li>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
@@ -151,6 +151,39 @@
               />
             </div>
           </figure>
+        </div>
+      </section>
+
+      <!-- ── 2.8.0 release highlights ─────────────────────────── -->
+      <section class="section" id="release-2-8">
+        <div class="wrap">
+          <div class="section__head reveal">
+            <div class="eyebrow">What's new · v2.8.0</div>
+            <h2>Project setup and site maintenance, made safer</h2>
+            <p>Search Quick Apps, connect an existing project, and recover or inspect sites with clearer progress and safer defaults.</p>
+          </div>
+          <div class="features">
+            <article class="card reveal">
+              <h3>Find and connect projects</h3>
+              <p>Search the Quick App catalog and choose whether a new project should also create a site. Add Site can attach an existing unconnected project.</p>
+            </article>
+            <article class="card reveal">
+              <h3>Repair WordPress core files</h3>
+              <p>Restore missing WordPress core files from Sites or Project Repair. OLS checks files against published checksums and can use its offline cache.</p>
+            </article>
+            <article class="card reveal">
+              <h3>Safer site and database actions</h3>
+              <p>Hide or remove a site from the list, or safe-delete it with Undo. Versioned database migrations back up the database before changes.</p>
+            </article>
+            <article class="card reveal">
+              <h3>See operation progress and history</h3>
+              <p>Site health checks show DNS, TCP, TLS, certificate, trust and HTTP stages as they run. Background Tasks keeps recent site-operation history across restarts and groups repeats.</p>
+            </article>
+            <article class="card reveal">
+              <h3>Inspect SQLite data safely</h3>
+              <p>Read-only SQLite views and indexes make it easier to query application data without changing it.</p>
+            </article>
+          </div>
         </div>
       </section>
 
@@ -402,6 +435,9 @@
               <button class="tab" role="tab" id="tab-sites" aria-controls="panel-sites" aria-selected="false" data-target="sites">
                 <span class="tab__dot"></span>Sites
               </button>
+              <button class="tab" role="tab" id="tab-projects" aria-controls="panel-projects" aria-selected="false" data-target="projects">
+                <span class="tab__dot"></span>Projects
+              </button>
               <button class="tab" role="tab" id="tab-runtimes" aria-controls="panel-runtimes" aria-selected="false" data-target="runtimes">
                 <span class="tab__dot"></span>Runtimes
               </button>
@@ -449,6 +485,22 @@
                 <p class="panel__caption">
                   <b>Sites</b>
                   <span>One table for sites and projects. Tick rows and the bulk bar appears — enable, disable, add auto domains, move them to another web server, or delete — and a batch reports what changed and what it skipped. Each row's own settings open its web config, servers, terminal, <code>.env</code>, Git, workers, snapshots, repair and load testing.</span>
+                </p>
+              </div>
+
+              <div class="panel" role="tabpanel" id="panel-projects" aria-labelledby="tab-projects">
+                <figure class="shot">
+                  <div class="shot__bar" aria-hidden="true">
+                    <span class="shot__dot"></span><span class="shot__dot"></span><span class="shot__dot"></span>
+                    <span class="shot__title">Projects</span>
+                  </div>
+                  <div class="shot__img">
+                    <img src="website/assets/img/projects.webp" width="1920" height="1032" loading="lazy" alt="The Projects page showing project folders, project types, connected sites, search, and actions to add or clone a project." />
+                  </div>
+                </figure>
+                <p class="panel__caption">
+                  <b>Projects</b>
+                  <span>Keep project folders organized independently from sites. Search by name, path or site, filter by project type, connect a project to a local site, or add a folder and clone from Git.</span>
                 </p>
               </div>
 
@@ -553,7 +605,7 @@
             <div class="step">
               <h3>Install the app</h3>
               <p>
-                Run the downloaded <code>OLS-2.7.0-setup.exe</code> and open OLS.
+                Run the downloaded <code>OLS-2.8.0-setup.exe</code> and open OLS.
                 Windows 10 or 11, 64-bit.
               </p>
             </div>
@@ -833,11 +885,11 @@
                   <small>Installer, portable zip, checksums</small>
                 </span>
               </a>
-              <a href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-2.7.0-SHA256SUMS.txt">
+              <a href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-2.8.0-SHA256SUMS.txt">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 12l2 2 4-4" /><rect x="3" y="4" width="18" height="16" rx="2" /></svg>
                 <span>
                   <b>Verify a download</b>
-                  <small>OLS-2.7.0-SHA256SUMS.txt</small>
+                  <small>OLS-2.8.0-SHA256SUMS.txt</small>
                 </span>
               </a>
               <a href="https://github.com/kz370/OpenLocalServer/blob/main/CONTRIBUTING.md">
@@ -869,7 +921,7 @@
           <div class="cta__actions">
             <a
               class="btn btn--primary"
-              href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-2.7.0-setup.exe"
+              href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-2.8.0-setup.exe"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" />
@@ -945,7 +997,7 @@
           </div>
         </div>
         <div class="footer__base">
-          <span>OLS 2.7.0 · Windows 10 / 11 64-bit</span>
+          <span>OLS 2.8.0 · Windows 10 / 11 64-bit</span>
           <span class="spacer"></span>
           <span>GPL-3.0-only</span>
           <span>Built with Rust · Tauri 2 · React 19</span>
