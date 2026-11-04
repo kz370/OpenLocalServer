@@ -364,7 +364,7 @@ export function SiteLogoPanel({
 
   return (
     <div className="flex flex-col gap-4">
-      {error && <ErrorCard error={asDiagnostic(error)} onDismiss={() => setError(null)} />}
+      {error && <ErrorCard error={asDiagnostic(error)} onDismiss={() => setError(null)} overlay />}
 
       {/* Live Preview Box with zero layout shifting */}
       <div className="flex flex-col gap-2 rounded-lg border bg-muted/20 p-3">

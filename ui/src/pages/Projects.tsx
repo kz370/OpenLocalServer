@@ -25,7 +25,6 @@ import { GitCloneButton } from '@/components/project/ProjectImports'
 import { ProjectSettingsDialog } from '@/components/project/ProjectSettingsDialog'
 import { ProjectTypeFilterBar } from '@/components/project/ProjectTypeFilterBar'
 import { SiteLogo } from '@/components/SiteLogo'
-import { Spinner } from '@/components/Spinner'
 import { TechIcon } from '@/components/TechIcon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -73,6 +72,17 @@ const customTypesCache = createPersistentCache<CustomProjectType[]>('projects_pa
 function normPath(p: string | null | undefined): string {
   if (!p) return ''
   return p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+}
+
+function ProjectsProgress({ label }: { label: string }) {
+  return (
+    <div className="absolute inset-x-0 top-0 z-10" role="status" aria-label={label}>
+      <div className="h-0.5 overflow-hidden rounded-t-xl bg-muted">
+        <div className="h-full w-1/3 animate-[ols-indeterminate_1.4s_ease-in-out_infinite] bg-primary" />
+      </div>
+      <span className="absolute left-3 top-1 rounded-b bg-card px-2 py-1 text-xs text-muted-foreground shadow-sm">{label}</span>
+    </div>
+  )
 }
 
 export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void }) {
@@ -544,20 +554,6 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
         <GitCloneButton defaultParent={effectiveParent} onDone={() => void refreshAll()} standalone={true} />
       </div>
 
-      {removingProject && (
-        <div
-          className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground"
-          role="status"
-          aria-live="polite"
-        >
-          <Spinner className="size-4 shrink-0" />
-          <span>
-            Removing <span className="font-medium text-foreground">{removingProject.name}</span> from
-            the list and updating site configuration…
-          </span>
-        </div>
-      )}
-
       {/* Main card */}
       <Card
         className="relative overflow-hidden"
@@ -585,6 +581,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
         )}
 
         <CardContent className="p-0">
+          {removingProject && <ProjectsProgress label={`Removing ${removingProject.name} from the list and updating site configuration…`} />}
           {/* Top toolbar: Type tabs, missing filter, manage types, and search */}
           <div className="flex flex-col gap-3 p-4 border-b border-border/80">
             {/* Type filter row: All first, chips, +N more popover, Manage types pinned right */}
@@ -630,7 +627,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
           </div>
 
           {/* Table */}
-          <Table wrapperClassName="border-0 rounded-none shadow-none">
+          <Table wrapperClassName={cn('border-0 rounded-none shadow-none transition-opacity', removingProject && 'opacity-90')}>
             <TableHeader>
               <TableRow>
                 <TableHead>Project</TableHead>
@@ -668,7 +665,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
                       key={p.id}
                       data-state={isMenuOpen ? 'selected' : undefined}
                       className={cn(
-                        'group cursor-default',
+                        'group h-[88px] cursor-default',
                         isMenuOpen && 'bg-primary/10 hover:bg-primary/15 shadow-[inset_3px_0_0_0_var(--primary)]',
                       )}
                       onContextMenu={(e) => {
@@ -680,7 +677,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
                       }}
                     >
                       {/* Project Col */}
-                      <TableCell className="min-w-0 py-2.5 first:pl-4">
+                      <TableCell className="h-[88px] min-w-0 py-1.5 first:pl-4">
                         <div className="flex min-w-0 items-center">
                           <button
                             type="button"
@@ -746,12 +743,15 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
                                 <Copy className="size-3" />
                               </button>
                             </div>
+                            <div className="mt-0.5 h-4 truncate text-[10px] leading-4 text-muted-foreground">
+                              {p.auto_discovered ? 'Auto-discovered' : 'Added manually'}
+                            </div>
                           </div>
                         </div>
                       </TableCell>
 
                       {/* Type Col */}
-                      <TableCell className="w-36 whitespace-nowrap py-2.5 px-3">
+                      <TableCell className="h-[88px] w-36 whitespace-nowrap py-1.5 px-3">
                         <div className="flex items-center gap-1.5">
                           <TechIcon id={typeId} className="size-4 shrink-0 text-muted-foreground" />
                           <span className="text-xs font-medium text-foreground">{typeLabel}</span>
@@ -759,7 +759,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
                       </TableCell>
 
                       {/* Connected Site Col */}
-                      <TableCell className="w-56 whitespace-nowrap py-2.5 px-3">
+                      <TableCell className="h-[88px] w-56 whitespace-nowrap py-1.5 px-3">
                         {primaryDomain ? (
                           <div className="flex items-center gap-1.5">
                             <button
@@ -789,7 +789,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
                       </TableCell>
 
                       {/* Actions Col */}
-                      <TableCell className="w-24 whitespace-nowrap py-2.5 pr-4 pl-3 text-right">
+                      <TableCell className="h-[88px] w-24 whitespace-nowrap py-1.5 pr-4 pl-3 text-right">
                         <div className="flex items-center justify-end gap-1">
                           {!isHealthy && (
                             <Button

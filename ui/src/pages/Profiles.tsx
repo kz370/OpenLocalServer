@@ -103,7 +103,7 @@ export function ProfilesPage() {
         </div>
       </div>
 
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {profiles.map((p) => (
@@ -255,7 +255,7 @@ function ProfileEditor({ title, initial, onClose, onSaved }: { title: string; in
       }
     >
       <div className="flex flex-col gap-3">
-        <ErrorCard error={error} onDismiss={() => setError(null)} />
+        <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
         <div className="overflow-hidden rounded-lg border border-border">
           <CodeEditor value={yaml} onChange={setYaml} language="yaml" height="420px" />
         </div>

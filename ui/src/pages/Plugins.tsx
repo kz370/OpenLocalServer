@@ -84,7 +84,7 @@ export function PluginsPage() {
         </div>
       </div>
 
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {plugins.map((p) => (

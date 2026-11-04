@@ -27,6 +27,7 @@ import { type Domain, type DomainSummary, type EditorInfo, type HealthProgress, 
 import { getCached, setCached } from '@/lib/cache'
 import { confirmAction } from '@/lib/confirm'
 import { notify } from '@/lib/notify'
+import { cn } from '@/lib/utils'
 import { onOpenAddSiteForProject, onOpenProject, onOpenSitesFilter, openSettingsSection, takePendingAddSiteProject, takePendingProject, takePendingSitesFilter } from '@/lib/nav'
 import { useTheme } from '@/lib/theme'
 import { useWeb } from '@/lib/web'
@@ -84,6 +85,17 @@ function StatusDot({ site, running }: { site: DomainSummary | null; running: boo
       <span className={`size-2.5 shrink-0 rounded-full ${color}`} />
       {text}
     </span>
+  )
+}
+
+function PageProgress({ label }: { label: string }) {
+  return (
+    <div className="absolute inset-x-0 top-0 z-10" role="status" aria-label={label}>
+      <div className="h-0.5 overflow-hidden rounded-t-xl bg-muted">
+        <div className="h-full w-1/3 animate-[ols-indeterminate_1.4s_ease-in-out_infinite] bg-primary" />
+      </div>
+      <span className="absolute left-3 top-1 rounded-b bg-card px-2 py-1 text-xs text-muted-foreground shadow-sm">{label}</span>
+    </div>
   )
 }
 
@@ -1016,19 +1028,10 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         </div>
       </div>
 
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
-      {removing.size > 0 && !applying && (
-        <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
-          <Spinner /> Updating the site list…
-        </p>
-      )}
-      {applying && (
-        <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
-          <Spinner /> Updating site configuration and hosts file…
-        </p>
-      )}
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
-      <Card>
+      <Card className="relative">
+        {(removing.size > 0 || applying) && <PageProgress label={applying ? 'Updating site configuration and hosts file…' : 'Updating the site list…'} />}
         <CardContent className="p-0">
           <div className="flex flex-col gap-2 border-b border-border px-4 pb-2 pt-3">
             <div className="flex flex-wrap items-center gap-2">
@@ -1120,7 +1123,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
               onChange={setFilter}
             />
           </div>
-          <Table wrapperClassName="rounded-none border-x-0 border-b-0 bg-transparent">
+          <Table wrapperClassName={cn('rounded-none border-x-0 border-b-0 bg-transparent transition-opacity', (removing.size > 0 || applying) && 'opacity-90')}>
             <TableHeader>
               <TableRow>
                 <TableHead className="w-10">
@@ -1153,6 +1156,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                     aria-busy={pending}
                     data-state={isMenuOpen ? 'selected' : undefined}
                     className={[
+                      'h-[88px]',
                       pending ? 'opacity-50 transition-opacity' : '',
                       isMenuOpen ? 'bg-primary/10 hover:bg-primary/15 shadow-[inset_3px_0_0_0_var(--primary)]' : '',
                     ]
@@ -1297,9 +1301,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                               </>
                             )}
                           </div>
-                          {d && p?.auto_discovered === true && (
-                            <div className="mt-0.5 text-[10px] text-muted-foreground">Auto-discovered</div>
-                          )}
+                          <div className="mt-0.5 h-4 truncate text-[10px] leading-4 text-muted-foreground">{p?.auto_discovered === true ? 'Auto-discovered' : 'Added manually'}</div>
                         </div>
                         {d && (
                           <>
@@ -1355,7 +1357,8 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                         )}
                       </div>
                     </TableCell>
-                    <TableCell className="whitespace-nowrap">
+                    <TableCell className="h-[88px] whitespace-nowrap py-1.5">
+                      <div className="max-h-[72px] overflow-y-auto">
                       <StatusDot site={d} running={!!status?.running} />
                       {d?.ssl_provider === 'lets_encrypt' && (
                         <div className="mt-0.5 text-[11px] font-medium text-emerald-500" title="Secured with Let's Encrypt">
@@ -1413,6 +1416,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                           /{d.path_prefix}
                         </div>
                       )}
+                      </div>
                     </TableCell>
                     <TableCell className="whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1">

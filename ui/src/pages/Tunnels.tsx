@@ -174,7 +174,7 @@ export function TunnelsPage() {
         </div>
       )}
 
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
       {tunnels.length === 0 ? (
         <Card>
@@ -475,7 +475,7 @@ function Inspector({ tunnel }: { tunnel: TunnelStatus }) {
           value={tab}
           onChange={setTab}
         />
-        <ErrorCard error={error} onDismiss={() => setError(null)} />
+        <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
         {tab === 'traffic' && (
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
@@ -609,7 +609,7 @@ function WebhookTester({ tunnel, onSent }: { tunnel: TunnelStatus; onSent: (id: 
           </Button>
         </div>
       )}
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
       <div className="flex flex-wrap gap-2">
         <Select value={method} onChange={(e) => setMethod(e.target.value)} className="w-28" aria-label="Method">
           {['POST', 'GET', 'PUT', 'PATCH', 'DELETE'].map((m) => (
@@ -737,7 +737,7 @@ function TunnelEditor({
       }
     >
       <div className="flex flex-col gap-4">
-        <ErrorCard error={error} onDismiss={() => setError(null)} />
+        <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
         {isDuplicateProvider && (
           <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-500">
             <AlertTriangle className="size-4 shrink-0 mt-0.5" />
@@ -851,7 +851,7 @@ function Providers({ providers, onChanged }: { providers: TunnelProvider[]; onCh
         <CardDescription>Tokens are kept in Windows Credential Manager and passed to the provider privately.</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
-        <ErrorCard error={error} onDismiss={() => setError(null)} />
+        <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
         {providers.map((p) => (
           <div key={p.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5">
             <div className="min-w-0">

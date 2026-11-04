@@ -193,7 +193,7 @@ export function QuickAppsPage({
         </div>
       </div>
 
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
       <div className="flex flex-wrap items-center gap-3">
         <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search…" className="w-64" />
@@ -361,7 +361,7 @@ function DuplicateDialog({ app, onClose, onDone }: { app: QuickEntryView | null;
       }
     >
       <div className="flex flex-col gap-3">
-        <ErrorCard error={error} onDismiss={() => setError(null)} />
+        <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
         <Field label="Id" hint="Lowercase letters, digits and dashes">
           <Input value={id} onChange={(e) => setId(e.target.value)} />
         </Field>
@@ -394,7 +394,7 @@ function YamlEditorDialog({ state, onClose, onSaved }: { state: { yaml: string; 
       }
     >
       <div className="flex flex-col gap-3">
-        <ErrorCard error={error} onDismiss={() => setError(null)} />
+        <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
         <CodeEditor value={yaml} onChange={setYaml} language="yaml" height="55vh" />
       </div>
     </Dialog>
@@ -418,7 +418,7 @@ function ImportDialog({ open: isOpen, onClose, onDone }: { open: boolean; onClos
       }
     >
       <div className="flex flex-col gap-3">
-        <ErrorCard error={error} onDismiss={() => setError(null)} />
+        <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
         <Field label="File, folder or Git URL">
           <Input value={source} onChange={(e) => setSource(e.target.value)} placeholder="C:\recipes\my-app.yaml  or  https://github.com/team/quick-apps.git" />
         </Field>
@@ -607,7 +607,7 @@ export function Wizard({ id, initialName, onClose, onNavigate }: { id: string; i
       }
     >
       <div className="flex flex-col gap-5">
-        <ErrorCard error={error} onDismiss={() => setError(null)} />
+        <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
         {phase === 'form' && !app && !error && (
           <div className="flex items-center gap-2 text-sm text-muted-foreground" role="status">

@@ -200,7 +200,7 @@ export function IgnoredFoldersCard() {
 
   return (
     <>
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
       <Card>
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between gap-3">
@@ -345,7 +345,7 @@ export function IgnoredFoldersCard() {
             </Button>
           </div>
 
-          {saved && <span className="text-xs text-success">{saved}</span>}
+          <span className="block min-h-4 text-xs text-success">{saved ?? '\u00a0'}</span>
         </CardContent>
       </Card>
     </>

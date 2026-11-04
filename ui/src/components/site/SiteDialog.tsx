@@ -384,9 +384,9 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
                 </div>
               </div>
             )}
-            <ErrorCard error={error} onDismiss={() => setError(null)} />
-            <ErrorCard error={domainError} onDismiss={() => setDomainError(null)} />
-            <ErrorCard error={detailError} onDismiss={() => setDetailError(null)} />
+            <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
+            <ErrorCard error={domainError} onDismiss={() => setDomainError(null)} overlay overlayOffset={1} />
+            <ErrorCard error={detailError} onDismiss={() => setDetailError(null)} overlay overlayOffset={2} />
             {detailError && (
               <div>
                 <Button variant="secondary" size="sm" onClick={() => setDetailTick((n) => n + 1)}>

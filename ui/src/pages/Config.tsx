@@ -106,7 +106,7 @@ export function ConfigPage() {
         </Button>
       </div>
 
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
       <div className="grid gap-4 lg:grid-cols-[16rem_1fr]">
         <div className="flex min-w-0 flex-col gap-4">
@@ -308,7 +308,7 @@ export function ConfigFilePane({
 
   return (
     <>
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
       <Card>
         <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-4">
           <div className="min-w-0">
@@ -597,7 +597,7 @@ function HistoryPanel({
 
   return (
     <div className="flex flex-col gap-3">
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
       <div className={listed ? 'grid gap-3 md:grid-cols-[15rem_minmax(0,1fr)]' : ''}>
         {listed && (
           <Card className="h-fit">
@@ -722,7 +722,7 @@ function StructuredEditor({ hostname, onApplied, scope }: { hostname: string; on
 
   return (
     <div className="flex flex-col gap-4">
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
       {manual && (
         <p className="rounded-lg border border-warning/40 bg-warning/5 p-3 text-xs">
           This site is Manual, so these settings are stored but not written to its file. Switch it to Managed or Advanced to use them.

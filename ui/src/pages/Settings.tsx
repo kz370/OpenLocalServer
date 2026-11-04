@@ -736,7 +736,7 @@ export function SettingsPage() {
         <p className="text-sm text-muted-foreground">OLS {version && `v${version}`}</p>
       </div>
 
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
       <div className="flex flex-col gap-6 md:flex-row md:items-start">
         <nav className="flex shrink-0 gap-1 overflow-x-auto md:sticky md:top-0 md:w-56 md:flex-col" aria-label="Settings sections">
