@@ -29,13 +29,13 @@ rem   update-version.bat (interactive mode)
 rem ============================================================================
 
 set "ROOT=%~dp0..\"
-set "SCRIPT=%~dp0update-version.ps1"
+set "SCRIPT=%~dp0update-version\update-version.ps1"
 
 if not exist "%SCRIPT%" (
   echo.
-  echo [x] Problem: scripts\update-version.ps1 is missing.
+  echo [x] Problem: scripts\update-version\update-version.ps1 is missing.
   echo     Cause: incomplete checkout, or the script was moved or renamed.
-  echo     Fix: restore scripts\update-version.ps1 and run this again.
+  echo     Fix: restore scripts\update-version\update-version.ps1 and run this again.
   echo.
   exit /b 1
 )

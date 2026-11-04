@@ -47,10 +47,10 @@ Do not generate a draft release-notes/v<version>.md template.
 
 .EXAMPLE
 scripts\update-version.bat 2.3.0
-.\scripts\update-version.ps1 -Version 2.3.0
-.\scripts\update-version.ps1 -Version 2.3.0 -DryRun
-.\scripts\update-version.ps1 -Version 2.3.0 -HelperVersion 2.3.0
-.\scripts\update-version.ps1 -HelperVersion 2.3.0
+.\scripts\update-version\update-version.ps1 -Version 2.3.0
+.\scripts\update-version\update-version.ps1 -Version 2.3.0 -DryRun
+.\scripts\update-version\update-version.ps1 -Version 2.3.0 -HelperVersion 2.3.0
+.\scripts\update-version\update-version.ps1 -HelperVersion 2.3.0
 #>
 
 [CmdletBinding()]
@@ -96,7 +96,7 @@ if ($Help) {
 }
 
 # Resolve repository root
-$repoRoot = (Resolve-Path "$PSScriptRoot\..").Path
+$repoRoot = (Resolve-Path "$PSScriptRoot\..\..").Path
 
 function Write-Diagnostic {
     param(

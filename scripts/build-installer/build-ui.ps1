@@ -39,7 +39,7 @@ Set-StrictMode -Version Latest
 # once instead of reusing a dist built under different rules.
 $CACHE_VERSION = '1'
 
-$script:RepoRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
+$script:RepoRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSCommandPath))
 if (-not $UiDir) { $UiDir = Join-Path $script:RepoRoot 'ui' }
 
 $DistDir = Join-Path $UiDir 'dist'

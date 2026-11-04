@@ -214,12 +214,11 @@ DomainSummary | carries | document_root and project_type for document-folder pic
 read_site_icon_image | prefers | `ols_site_icon.webp`, then favicon files in the project root and bounded conventional static folders
 list_site_icon_library | reads | `<data>/icons` and one category-folder level, returning supported image data URLs within size/count limits
 read_project_fallback_icon | resolves | `<data>/icons/<type>_fallback.<ext>` or the same filename in a category folder, below manual images, detected favicons and explicit icons
-scripts/update-version.bat | delegates_to | scripts/update-version.ps1 via pwsh or powershell (UTF-8 console code page 65001)
-update-version.bat | delegates_to | scripts/update-version.bat %*
-scripts/update-version.ps1 | synchronizes | Cargo.toml, src-tauri/tauri.conf.json, ui/package.json, ui/package-lock.json, Cargo.lock, README.md, CHANGELOG.md, release-notes/v<version>.md
-scripts/update-version.ps1 | validates_via | cargo metadata --format-version 1 --no-deps
-scripts/update-version.ps1 (-HelperVersion) | updates | ADMIN_HELPER_VERSION in crates/ols-core/src/elevate.rs (never changed by an app-only bump; helper-only mode when no app version is given)
-scripts/update-version.ps1 | checks_via | git log -G on the ADMIN_HELPER_VERSION line + git diff of crates/ols-helper/src, crates/ols-helper/Cargo.toml, hosts.rs, exec.rs, domain/store.rs since that commit (warns, and prompts in interactive mode, when helper code changed without a helper bump)
+scripts/update-version.bat | delegates_to | scripts/update-version/update-version.ps1 via pwsh or powershell (UTF-8 console code page 65001)
+scripts/update-version/update-version.ps1 | synchronizes | Cargo.toml, src-tauri/tauri.conf.json, ui/package.json, ui/package-lock.json, Cargo.lock, README.md, CHANGELOG.md, release-notes/v<version>.md
+scripts/update-version/update-version.ps1 | validates_via | cargo metadata --format-version 1 --no-deps
+scripts/update-version/update-version.ps1 (-HelperVersion) | updates | ADMIN_HELPER_VERSION in crates/ols-core/src/elevate.rs (never changed by an app-only bump; helper-only mode when no app version is given)
+scripts/update-version/update-version.ps1 | checks_via | git log -G on the ADMIN_HELPER_VERSION line + git diff of crates/ols-helper/src, crates/ols-helper/Cargo.toml, hosts.rs, exec.rs, domain/store.rs since that commit (warns, and prompts in interactive mode, when helper code changed without a helper bump)
 ols-mcp | exposes | CoreCommand variants as MCP JSON-RPC 2.0 tools (ols_list_domains, ols_add_domain, ols_list_tables, ols_execute_sql, ols_get_sites_dir, ols_start_service, ols_apply_web, etc.) and `ols://sites-dir` resource over stdio; `ols_run_command` is an escape hatch for arbitrary `CoreCommand` variants.
 ols-mcp (ols_add_domain) | triggers | CoreCommand::RestartService for the target web server so local TLS certificates are generated and loaded into the server immediately.
 ols-mcp (ols_list_databases) | queries | MariaDB, PostgreSQL, and SQLite databases when engine is omitted; normalizes mysql to mariadb.
