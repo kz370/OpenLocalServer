@@ -328,4 +328,6 @@ scripts/build-fa-icons/build-fa-icons.mjs | reads | scripts/build-fa-icons/icons
 scripts/build-fa-icons/build-fa-icons.mjs | generates | ui/src/components/faIconsData.json (bundled by Vite; read by SiteLogo FA_ICONS)
 SiteLogoPanel | uses | SiteLogo filterFaIcons + IconCategoryFilter (memoized, deferred search; tiles use content-visibility:auto)
 ManageProjectTypesDialog | uses | SiteLogo filterFaIcons + IconCategoryFilter (one memoized list shared by the new-type and per-type icon pickers; no 180-icon cap)
-IconCategoryFilter | uses | SiteLogo FA_ICONS + FA_ICON_CATEGORIES (counts per category for the search) and ui/select Select (narrow-width dropdown)
+IconCategoryFilter | uses | SiteLogo FA_ICONS + FA_ICON_CATEGORIES + FontAwesomeIcon (category icons, counts per category for the search) and ui/select Select (searchable narrow-width dropdown)
+SiteLogoPanel | wraps | its icon grid in IconCategoryFilter (heightClassName h-72; grid uses auto-fill minmax(5.5rem,1fr) columns)
+ManageProjectTypesDialog | wraps | both icon grids in IconCategoryFilter (heightClassName h-56; auto-fill minmax(4.5rem,1fr) columns)

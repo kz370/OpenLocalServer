@@ -373,7 +373,7 @@ olsc guide
 - **Settings:** Editor settings now have their own Settings sidebar section, separate from General.
 - **UI stability:** Sites web-server chip beside the heading, paginated Background Tasks table with confirmations, fixed-height rows, loading skeletons, and overlay error messages.
 - **More site and project icons:** The icon pickers offer 410 built-in Font Awesome Free icons (up from 97) in 17 categories: more CMS, framework, hosting, Linux, social, and payment brands, plus Food & Drink, Travel & Places, Health & Sports, Education, and Games. Icons are bundled with the app and never downloaded.
-- **Smoother icon pickers:** Search filters without lag, off-screen icons are not drawn, and the project-type picker shows every icon instead of the first 180. Each category shows how many icons match your search; in a narrow picker the categories become a dropdown.
+- **Smoother icon pickers:** Search filters without lag, off-screen icons are not drawn, and the project-type picker shows every icon instead of the first 180. Categories sit in a list beside the icons, each with an icon and the number of matches for your search; type in **Search categories** to find one. In a narrow picker the list becomes a searchable dropdown.
 - **Fixes:** Add Site uses the detected document root, stale tray service counts, long-path tooltip overflow, and Explorer menu install/repair reliability.
 
 ### Previous Version Notes (v2.8.0)
