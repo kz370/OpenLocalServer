@@ -1,4 +1,5 @@
 import type React from 'react'
+import { TechIcon, projectTypeTechIcon } from '@/components/TechIcon'
 import { cn } from '@/lib/utils'
 
 /**
@@ -186,10 +187,13 @@ export function SiteLogo({
     )
   }
 
-  const isWordPress = projectType?.split(':').at(-1)?.toLowerCase() === 'wordpress'
-  const effectiveIcon = icon ?? (isWordPress ? 'wordpress' : null)
+  const effectiveIcon = icon ?? projectTypeTechIcon(projectType)
   if (effectiveIcon) {
-    return <FontAwesomeIcon name={effectiveIcon} className={cn('size-6', className)} fallback={fallback} />
+    return icon ? (
+      <FontAwesomeIcon name={icon} className={cn('size-6', className)} fallback={fallback} />
+    ) : (
+      <TechIcon id={effectiveIcon} className={cn('size-6', className)} />
+    )
   }
 
   if (fallback === 'folder') {

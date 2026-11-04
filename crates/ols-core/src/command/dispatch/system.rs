@@ -466,6 +466,15 @@ impl Core {
                             std::path::Path::new(&p.path).starts_with(std::path::Path::new(root))
                         }));
                         p.icon_image = crate::app::read_site_icon_image(&p.path);
+                        if p.project_type.is_none() {
+                            p.project_type = crate::app::project_type_for_icon(&p.path, None);
+                        }
+                        if p.icon.is_none()
+                            && crate::app::is_wordpress_project(&p.path, p.project_type.as_deref())
+                        {
+                            // This is a read-model fallback; the user's stored icon remains untouched.
+                            p.icon = Some("wordpress".into());
+                        }
                     }
                     let unconnected_project_ids = crate::db::unconnected_project_ids(&i.paths)
                         .ok()

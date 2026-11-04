@@ -189,6 +189,14 @@ impl Inner {
                     .project_id
                     .as_ref()
                     .and_then(|id| projects.iter().find(|p| &p.id == id));
+                let icon_type_folder = project.map(|p| p.path.as_str()).unwrap_or(&folder);
+                let project_type = crate::app::project_type_for_icon(
+                    icon_type_folder,
+                    project.and_then(|p| p.project_type.as_deref()),
+                );
+                let wordpress_project =
+                    crate::app::is_wordpress_project(&folder, project_type.as_deref())
+                        || crate::app::is_wordpress_project(&d.root, None);
                 let icon_image = if matches!(d.kind, SiteKind::Proxy { .. }) {
                     read_proxy_site_icon_image(&proxy_dir, &d.hostname)
                 } else {
@@ -223,20 +231,13 @@ impl Inner {
                     http_port: cfg
                         .effective_ports(&crate::domain::resolved_server(&d, &cfg))
                         .http,
-                    icon: d.icon.clone().or_else(|| {
-                        project.and_then(|p| {
-                            p.icon.clone().or_else(|| {
-                                p.project_type.as_deref().and_then(|kind| {
-                                    kind.rsplit(':')
-                                        .next()
-                                        .is_some_and(|name| name.eq_ignore_ascii_case("wordpress"))
-                                        .then(|| "wordpress".to_string())
-                                })
-                            })
-                        })
-                    }),
+                    icon: d
+                        .icon
+                        .clone()
+                        .or_else(|| project.and_then(|p| p.icon.clone()))
+                        .or_else(|| wordpress_project.then(|| "wordpress".to_string())),
                     icon_image,
-                    project_type: project.and_then(|p| p.project_type.clone()),
+                    project_type,
                     ssl_provider: Some(d.ssl_provider.to_string()),
                     auto_broadcast: d.auto_broadcast,
                     broadcast_url,

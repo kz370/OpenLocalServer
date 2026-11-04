@@ -443,7 +443,7 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
                   pickerFolder={domain?.root ?? project?.path ?? ''}
                   displayName={title}
                   projectType={project?.project_type}
-                  initialIcon={domain?.icon ?? null}
+                  initialIcon={domain?.icon ?? project?.icon ?? null}
                   initialImage={web.domains.find((s) => s.hostname === target.hostname)?.icon_image ?? project?.icon_image ?? null}
                   isProxy={domain?.kind.type === 'proxy'}
                   onUpdated={async () => {

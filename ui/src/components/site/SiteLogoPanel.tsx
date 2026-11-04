@@ -10,6 +10,7 @@ import {
   buildIconSpec,
   parseIconSpec,
 } from '@/components/SiteLogo'
+import { projectTypeTechIcon } from '@/components/TechIcon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -326,9 +327,9 @@ export function SiteLogoPanel({
               <Badge variant="outline" className="border-sky-500/40 bg-sky-500/10 text-sky-500 text-[10px]">
                 Font Awesome ({parseIconSpec(currentIcon).name})
               </Badge>
-            ) : projectType?.split(':').at(-1)?.toLowerCase() === 'wordpress' ? (
+            ) : projectTypeTechIcon(projectType) ? (
               <Badge variant="outline" className="border-sky-500/40 bg-sky-500/10 text-sky-500 text-[10px]">
-                WordPress Project Icon
+                {projectType?.split(':').at(-1)} Project Icon
               </Badge>
             ) : fallback === 'folder' ? (
               <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-500 dark:text-amber-400 text-[10px]">

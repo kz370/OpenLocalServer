@@ -373,6 +373,51 @@ pub fn read_domain_icon_image(document_root: &str, project_folder: &str) -> Opti
         .or_else(|| discovered_site_icon_image(project_folder))
 }
 
+/// Recognizes WordPress from its selected type or its conventional core files. This is a
+/// presentation fallback only; it does not change or persist the project's type.
+pub fn is_wordpress_project(folder: &str, project_type: Option<&str>) -> bool {
+    if project_type
+        .and_then(|kind| kind.rsplit(':').next())
+        .is_some_and(|kind| kind.eq_ignore_ascii_case("wordpress"))
+    {
+        return true;
+    }
+    let folder = Path::new(folder);
+    [
+        folder.to_path_buf(),
+        folder.join("public"),
+        folder.join("web"),
+    ]
+    .iter()
+    .any(|root| {
+        root.join("wp-config.php").is_file()
+            || root.join("wp-includes/version.php").is_file()
+            || root.join("wp-admin").is_dir()
+    })
+}
+
+/// Resolves an icon type from the stored project type or the framework detector. The
+/// result is a transient read-model value; it never changes the user's project settings.
+pub fn project_type_for_icon(folder: &str, stored_type: Option<&str>) -> Option<String> {
+    if let Some(kind) = stored_type.filter(|kind| !kind.eq_ignore_ascii_case("auto")) {
+        return Some(kind.to_string());
+    }
+    let detection = crate::detection::detect(Path::new(folder));
+    match detection.framework {
+        crate::detection::Framework::Laravel => Some("laravel"),
+        crate::detection::Framework::Symfony => Some("symfony"),
+        crate::detection::Framework::WordPress => Some("wordpress"),
+        crate::detection::Framework::GenericPhp => Some("php"),
+        crate::detection::Framework::Node => Some("node"),
+        crate::detection::Framework::Django => Some("django"),
+        crate::detection::Framework::Flask => Some("flask"),
+        crate::detection::Framework::FastApi => Some("fastapi"),
+        crate::detection::Framework::GenericPython => Some("python"),
+        crate::detection::Framework::Unknown => None,
+    }
+    .map(str::to_string)
+}
+
 /// Lists image files in `data/icons` and one level of category folders.
 pub fn list_site_icon_library(icons_dir: &Path) -> Vec<SiteIconLibraryEntry> {
     fn image_entries(dir: &Path, category: &str, output: &mut Vec<SiteIconLibraryEntry>) {
