@@ -51,15 +51,34 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
     })
   }, [open])
 
-  const importState = (id: string): SourceImport => sourceImports[id] ?? {
+  const emptyImportState = (): SourceImport => ({
     password: '', databases: null, picked: [], results: null, error: null,
-  }
+  })
+
+  const importState = (id: string): SourceImport => sourceImports[id] ?? emptyImportState()
 
   const updateImport = (id: string, patch: Partial<SourceImport>) =>
     setSourceImports((previous) => ({
       ...previous,
-      [id]: { ...importState(id), ...patch },
+      [id]: { ...(previous[id] ?? emptyImportState()), ...patch },
     }))
+
+  const toggleDatabase = (id: string, database: string, checked: boolean) =>
+    setSourceImports((previous) => {
+      const current = previous[id] ?? emptyImportState()
+      const picked = checked
+        ? current.picked.includes(database) ? current.picked : [...current.picked, database]
+        : current.picked.filter((name) => name !== database)
+      return { ...previous, [id]: { ...current, picked } }
+    })
+
+  const toggleAllDatabases = (id: string) =>
+    setSourceImports((previous) => {
+      const current = previous[id] ?? emptyImportState()
+      const databases = current.databases ?? []
+      const picked = current.picked.length === databases.length ? [] : databases
+      return { ...previous, [id]: { ...current, picked } }
+    })
 
   const browse = async () => {
     try {
@@ -262,7 +281,7 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
                 <div className="flex flex-col gap-2 border-t border-border pt-3">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">Databases · {state.picked.length}/{state.databases.length} selected</span>
-                    <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => updateImport(source.id, { picked: state.picked.length === state.databases?.length ? [] : state.databases ?? [] })}>
+                    <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => toggleAllDatabases(source.id)}>
                       {state.picked.length === state.databases.length ? 'Select none' : 'Select all'}
                     </Button>
                   </div>
@@ -273,7 +292,7 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
                         const isPicked = state.picked.includes(db)
                         return (
                           <div key={db} className="flex items-center gap-1.5" title={result?.detail}>
-                            <Toggle checked={isPicked} disabled={busy !== null} onChange={(checked) => updateImport(source.id, { picked: checked ? [...state.picked, db] : state.picked.filter((name) => name !== db) })} label={db} />
+                            <Toggle checked={isPicked} disabled={busy !== null} onChange={(checked) => toggleDatabase(source.id, db, checked)} label={db} />
                             {result && (result.ok
                               ? <CheckCircle2 className="size-3.5 text-success" />
                               : result.detail.startsWith('Skipped')

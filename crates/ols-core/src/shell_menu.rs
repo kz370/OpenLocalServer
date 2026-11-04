@@ -188,6 +188,7 @@ fn reg_value(out: &str) -> Option<String> {
         .find(|l| l.contains("(Default)") && l.contains("REG_SZ"))
         .and_then(|l| l.split_once("REG_SZ"))
         .map(|(_, v)| v.trim().to_string())
+        .filter(|value| !value.is_empty() && !value.eq_ignore_ascii_case("(value not set)"))
 }
 
 #[cfg(windows)]
@@ -201,6 +202,23 @@ fn reg(args: &[&str]) -> Result<String, String> {
     } else {
         Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
     }
+}
+
+#[cfg(windows)]
+fn remove_legacy_menu_keys() -> Result<(), String> {
+    for root in ROOTS {
+        let menu = format!("{root}\\{MENU}");
+        if reg(&["query", &menu]).is_ok() {
+            reg(&["delete", &menu, "/f"])?;
+        }
+        for key in LEGACY_ROOT_ACTIONS {
+            let base = format!("{root}\\{key}");
+            if reg(&["query", &base]).is_ok() {
+                reg(&["delete", &base, "/f"])?;
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(windows)]
@@ -220,27 +238,26 @@ impl Inner {
     pub fn shell_menu_status(&self) -> ShellMenuStatus {
         let installed = ROOTS.iter().all(|root| {
             let menu = format!("{root}\\{MENU}");
+            // A cascade is a parent with an empty `SubCommands` value and no command of
+            // its own; Explorer renders a parent that has a command as a plain action.
+            let cascade = reg(&["query", &menu, "/v", "SubCommands"]).is_ok();
             let direct_command = reg(&["query", &format!("{menu}\\command")]).is_ok()
                 || reg(&["query", &menu, "/ve"])
                     .ok()
                     .and_then(|out| reg_value(&out))
-                    .is_some_and(|value| !value.is_empty());
+                    .is_some();
             let legacy_flat_items = LEGACY_ROOT_ACTIONS
                 .iter()
                 .any(|action| reg(&["query", &format!("{root}\\{action}")]).is_ok());
-            reg(&["query", &menu]).is_ok()
+            cascade
                 && !direct_command
                 && !legacy_flat_items
                 && ACTIONS.iter().all(|action| {
-                    reg(&[
-                        "query",
-                        &format!("{menu}\\ExtendedSubCommandsKey\\Shell\\{action}\\command"),
-                        "/ve",
-                    ])
-                    .ok()
-                    .as_deref()
-                    .and_then(reg_value)
-                    .is_some_and(|command| action != &ADD || command_is_add_project(&command))
+                    reg(&["query", &format!("{menu}\\shell\\{action}\\command"), "/ve"])
+                        .ok()
+                        .as_deref()
+                        .and_then(reg_value)
+                        .is_some_and(|command| action != &ADD || command_is_add_project(&command))
                 })
         });
         ShellMenuStatus {
@@ -264,17 +281,12 @@ impl Inner {
         let cli_str = cli.display().to_string();
         let icon = menu_icon(&app);
         let result = (|| -> Result<(), String> {
+            // Start clean: the old parent (with a stray command or the misplaced
+            // `ExtendedSubCommandsKey` subkey) and every former flat verb go first, so
+            // nothing renders beside or instead of the cascade.
+            remove_legacy_menu_keys()?;
             for root in ROOTS {
                 let menu = format!("{root}\\{MENU}");
-                // Remove the former standalone verb and its default command. A
-                // parent command value makes Explorer render this as an action
-                // instead of a cascade, and old flat verbs otherwise remain beside it.
-                let _ = reg(&["delete", &format!("{menu}\\command"), "/f"]);
-                let _ = reg(&["delete", &menu, "/ve", "/f"]);
-                let _ = reg(&["delete", &format!("{menu}\\ExtendedSubCommandsKey"), "/f"]);
-                for legacy in LEGACY_ROOT_ACTIONS {
-                    let _ = reg(&["delete", &format!("{root}\\{legacy}"), "/f"]);
-                }
                 reg(&[
                     "add",
                     &menu,
@@ -285,12 +297,12 @@ impl Inner {
                     "/f",
                 ])?;
                 reg(&["add", &menu, "/v", "Icon", "/d", &icon, "/f"])?;
+                // Empty `SubCommands` tells Explorer the children live in `<menu>\shell`.
+                reg(&["add", &menu, "/v", "SubCommands", "/d", "", "/f"])?;
                 for (key, label, command) in commands(&app_str, &cli_str) {
-                    let item = format!("{menu}\\ExtendedSubCommandsKey\\Shell\\{key}");
+                    let item = format!("{menu}\\shell\\{key}");
                     reg(&["add", &item, "/v", "MUIVerb", "/d", label, "/f"])?;
-                    if key == ADD {
-                        reg(&["add", &item, "/v", "Icon", "/d", &icon, "/f"])?;
-                    }
+                    reg(&["add", &item, "/v", "Icon", "/d", &icon, "/f"])?;
                     reg(&[
                         "add",
                         &format!("{item}\\command"),
@@ -304,28 +316,25 @@ impl Inner {
             Ok(())
         })();
         if let Err(e) = result {
-            let _ = self.remove_shell_menu();
-            return Err(CoreError::failed("The Explorer menu wasn't added.", e));
+            let _ = remove_legacy_menu_keys();
+            return Err(CoreError::failed_fix(
+                "The Explorer menu wasn't added.",
+                e,
+                "Check that OLS can write to HKCU\\Software\\Classes, then click Add to Explorer again.",
+            ));
         }
         notify_shell_menu_changed();
         Ok(self.shell_menu_status())
     }
 
     pub fn remove_shell_menu(&self) -> Result<ShellMenuStatus, CoreError> {
-        for root in ROOTS {
-            let base = format!("{root}\\{MENU}");
-            if reg(&["query", &base]).is_ok() {
-                reg(&["delete", &base, "/f"])
-                    .map_err(|e| CoreError::failed("The Explorer menu wasn't removed.", e))?;
-            }
-            for key in LEGACY_ROOT_ACTIONS {
-                let base = format!("{root}\\{key}");
-                if reg(&["query", &base]).is_ok() {
-                    reg(&["delete", &base, "/f"])
-                        .map_err(|e| CoreError::failed("The Explorer menu wasn't removed.", e))?;
-                }
-            }
-        }
+        remove_legacy_menu_keys().map_err(|error| {
+            CoreError::failed_fix(
+                "The Explorer menu wasn't removed.",
+                error,
+                "Check that OLS can write to HKCU\\Software\\Classes, then click Remove again.",
+            )
+        })?;
         notify_shell_menu_changed();
         Ok(self.shell_menu_status())
     }

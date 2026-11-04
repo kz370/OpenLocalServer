@@ -13,6 +13,7 @@ import { Markdown } from '@/components/ui/Markdown'
 import { type ApiStatus, type NetworkStatus, type ShellMenuStatus, type UpdateInfo, type UpdaterStatus, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
 import { useAction } from '@/lib/hooks'
+import { notify } from '@/lib/notify'
 import { compareVersionsDesc } from '@/lib/runtimeStatus'
 
 /** Where the prose lives. The card states what the API is and how to switch it on; the
@@ -461,6 +462,28 @@ export function SystemCard() {
   const [menu, setMenu] = useState<ShellMenuStatus | null>(cachedShellMenu)
   const [bundle, setBundle] = useState<string | null>(null)
   const { busy, error, setError, run } = useAction()
+  const changeShellMenu = (action: 'install_shell_menu' | 'remove_shell_menu') => run('menu', async () => {
+    const r = await runCommand({ type: action })
+    if (r.type !== 'shell_menu') {
+      throw {
+        problem: 'Explorer integration could not be confirmed.',
+        cause: 'OLS received an unexpected response while updating the Explorer menu.',
+        fix: 'Restart OLS and try again. If this keeps happening, repair or reinstall OLS.',
+      }
+    }
+    setMenu(r.status)
+    cachedShellMenu = r.status
+    if (action === 'install_shell_menu' && !r.status.installed) {
+      throw {
+        problem: 'Explorer menu update could not be verified.',
+        cause: 'Windows did not confirm all four menu actions after the registry update.',
+        fix: 'Restart File Explorer, then try Repair again.',
+      }
+    }
+    notify.success(action === 'install_shell_menu'
+      ? 'Explorer submenu added. Find it under “Show more options”.'
+      : 'Explorer menu removed.')
+  })
   useEffect(() => {
     runCommand({ type: 'get_shell_menu' }).then((r) => {
       if (r.type === 'shell_menu') {
@@ -478,21 +501,21 @@ export function SystemCard() {
         <CardDescription>OLS sends nothing anywhere: there is no telemetry and no analytics code in this build.</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
+        <ErrorCard error={error} onDismiss={() => setError(null)} />
         {menu?.supported && (
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="text-sm">
               <div className="flex items-center gap-2 font-medium">
                 <TerminalSquare className="size-4" /> Explorer right-click menu {menu.installed ? <Badge variant="success">installed</Badge> : <Badge variant="outline">off</Badge>}
               </div>
-              <p className="text-muted-foreground">Adds a submenu to Explorer’s classic “Show more options” menu with Add, Set up, Ignore project, and Ignore site. The compact Windows 11 menu needs a packaged shell extension.</p>
+              <p className="text-muted-foreground">Adds an Open Local Server submenu with Add, Set up, Ignore project, and Ignore site to Explorer’s classic “Show more options” menu. The compact Windows 11 menu needs a packaged shell extension.</p>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="secondary" disabled={busy !== null || !menu.cli_path} onClick={() => run('menu', async () => { const r = await runCommand({ type: 'install_shell_menu' }); if (r.type === 'shell_menu') setMenu(r.status) })}>
+              <Button variant="secondary" disabled={busy !== null || !menu.cli_path} onClick={() => { void changeShellMenu('install_shell_menu') }}>
                 {busy === 'menu' ? <Spinner /> : null} {menu.installed ? 'Repair' : 'Add to Explorer'}
               </Button>
               {menu.installed && (
-                <Button variant="ghost" disabled={busy !== null} onClick={() => run('menu', async () => { const r = await runCommand({ type: 'remove_shell_menu' }); if (r.type === 'shell_menu') setMenu(r.status) })}>
+                <Button variant="ghost" disabled={busy !== null} onClick={() => { void changeShellMenu('remove_shell_menu') }}>
                   Remove
                 </Button>
               )}
