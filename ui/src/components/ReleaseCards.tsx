@@ -485,11 +485,18 @@ export function SystemCard() {
               <div className="flex items-center gap-2 font-medium">
                 <TerminalSquare className="size-4" /> Explorer right-click menu {menu.installed ? <Badge variant="success">installed</Badge> : <Badge variant="outline">off</Badge>}
               </div>
-              <p className="text-muted-foreground">Adds an Open Local Server submenu with project add/setup, ignore, and unignore actions. Only for your user; no administrator prompt.</p>
+              <p className="text-muted-foreground">Adds a submenu to Explorer’s classic “Show more options” menu with Add, Set up, Ignore project, and Ignore site. The compact Windows 11 menu needs a packaged shell extension.</p>
             </div>
-            <Button variant="secondary" disabled={busy !== null || (!menu.installed && !menu.cli_path)} onClick={() => run('menu', async () => { const r = await runCommand({ type: menu.installed ? 'remove_shell_menu' : 'install_shell_menu' }); if (r.type === 'shell_menu') setMenu(r.status) })}>
-              {menu.installed ? 'Remove' : 'Add to Explorer'}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="secondary" disabled={busy !== null || !menu.cli_path} onClick={() => run('menu', async () => { const r = await runCommand({ type: 'install_shell_menu' }); if (r.type === 'shell_menu') setMenu(r.status) })}>
+                {busy === 'menu' ? <Spinner /> : null} {menu.installed ? 'Repair' : 'Add to Explorer'}
+              </Button>
+              {menu.installed && (
+                <Button variant="ghost" disabled={busy !== null} onClick={() => run('menu', async () => { const r = await runCommand({ type: 'remove_shell_menu' }); if (r.type === 'shell_menu') setMenu(r.status) })}>
+                  Remove
+                </Button>
+              )}
+            </div>
           </div>
         )}
         <div className="flex flex-wrap items-center justify-between gap-3">

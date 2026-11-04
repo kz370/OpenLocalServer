@@ -153,7 +153,7 @@ fn main() -> ExitCode {
             Some("install-service") => Some(service::install()),
             Some("uninstall-service") => Some(service::uninstall()),
             Some("version") => {
-                println!("{}", env!("CARGO_PKG_VERSION"));
+                println!("{}", ols_core::elevate::ADMIN_HELPER_VERSION);
                 Some(Ok(()))
             }
             _ => None,

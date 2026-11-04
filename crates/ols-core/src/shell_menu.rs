@@ -204,6 +204,18 @@ fn reg(args: &[&str]) -> Result<String, String> {
 }
 
 #[cfg(windows)]
+fn notify_shell_menu_changed() {
+    unsafe {
+        windows_sys::Win32::UI::Shell::SHChangeNotify(
+            windows_sys::Win32::UI::Shell::SHCNE_ASSOCCHANGED as i32,
+            windows_sys::Win32::UI::Shell::SHCNF_IDLIST,
+            std::ptr::null(),
+            std::ptr::null(),
+        );
+    }
+}
+
+#[cfg(windows)]
 impl Inner {
     pub fn shell_menu_status(&self) -> ShellMenuStatus {
         let installed = ROOTS.iter().all(|root| {
@@ -295,6 +307,7 @@ impl Inner {
             let _ = self.remove_shell_menu();
             return Err(CoreError::failed("The Explorer menu wasn't added.", e));
         }
+        notify_shell_menu_changed();
         Ok(self.shell_menu_status())
     }
 
@@ -313,6 +326,7 @@ impl Inner {
                 }
             }
         }
+        notify_shell_menu_changed();
         Ok(self.shell_menu_status())
     }
 }

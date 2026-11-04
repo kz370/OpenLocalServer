@@ -52,8 +52,15 @@ pub enum ConflictResolution {
     Rename(String),
 }
 
-pub fn resolve_conflict(name: &str, used_names: &[String], policy: ConflictPolicy) -> ConflictResolution {
-    if !used_names.iter().any(|used| used.eq_ignore_ascii_case(name)) {
+pub fn resolve_conflict(
+    name: &str,
+    used_names: &[String],
+    policy: ConflictPolicy,
+) -> ConflictResolution {
+    if !used_names
+        .iter()
+        .any(|used| used.eq_ignore_ascii_case(name))
+    {
         return ConflictResolution::UseIncomingName;
     }
     match policy {
@@ -71,14 +78,20 @@ fn unique_database_name(name: &str, used_names: &[String]) -> String {
     let suffix = "_imported";
     let stem = &stem[..stem.len().min(64 - suffix.len())];
     let base = format!("{stem}{suffix}");
-    if !used_names.iter().any(|used| used.eq_ignore_ascii_case(&base)) {
+    if !used_names
+        .iter()
+        .any(|used| used.eq_ignore_ascii_case(&base))
+    {
         return base;
     }
     for index in 2u32.. {
         let numbered = format!("_{index}");
         let limit = 64 - suffix.len() - numbered.len();
         let candidate = format!("{}{suffix}{numbered}", &stem[..stem.len().min(limit)]);
-        if !used_names.iter().any(|used| used.eq_ignore_ascii_case(&candidate)) {
+        if !used_names
+            .iter()
+            .any(|used| used.eq_ignore_ascii_case(&candidate))
+        {
             return candidate;
         }
     }
@@ -93,7 +106,8 @@ pub fn rename_dump_database(file: &Path, target: &str) -> Result<(), String> {
     let output = std::fs::File::create(&replacement)
         .map_err(|e| format!("could not write renamed SQL dump: {e}"))?;
     {
-        let input = std::fs::File::open(file).map_err(|e| format!("could not read SQL dump: {e}"))?;
+        let input =
+            std::fs::File::open(file).map_err(|e| format!("could not read SQL dump: {e}"))?;
         let mut writer = BufWriter::new(output);
         for line in BufReader::new(input).lines() {
             let line = line.map_err(|e| format!("could not read SQL dump: {e}"))?;
@@ -118,9 +132,12 @@ pub fn rename_dump_database(file: &Path, target: &str) -> Result<(), String> {
         .map_err(|e| format!("could not stage original SQL dump safely: {e}"))?;
     if let Err(error) = std::fs::rename(&replacement, file) {
         let _ = std::fs::rename(&original, file);
-        return Err(format!("could not replace SQL dump after renaming: {error}"));
+        return Err(format!(
+            "could not replace SQL dump after renaming: {error}"
+        ));
     }
-    std::fs::remove_file(original).map_err(|e| format!("renamed SQL dump, but could not clean its temporary original: {e}"))
+    std::fs::remove_file(original)
+        .map_err(|e| format!("renamed SQL dump, but could not clean its temporary original: {e}"))
 }
 
 fn mysql_identifier(name: &str) -> String {

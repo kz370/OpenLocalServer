@@ -179,11 +179,14 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
           <Button variant="ghost" disabled={busy !== null} onClick={onClose}>
             Close
           </Button>
-          {dbs && (
-            <Button disabled={busy !== null || picked.length === 0} onClick={migrate}>
-              {busy === 'import' ? <Spinner /> : <Database />} Import {picked.length} database{picked.length === 1 ? '' : 's'} into MariaDB
-            </Button>
+          {!readyToImport && (
+            <span className="mr-auto text-xs text-muted-foreground">
+              Scan every selected folder and select at least one database to enable import.
+            </span>
           )}
+          <Button disabled={busy !== null || !readyToImport} onClick={migrate}>
+            {busy === 'import' ? <Spinner /> : <Database />} Import {selectedCount} database{selectedCount === 1 ? '' : 's'} into MariaDB
+          </Button>
         </>
       }
     >
@@ -198,23 +201,24 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
         {!!sources?.length && (
           <div className="grid gap-2 sm:grid-cols-2">
             {sources.map((s) => (
-              <button
-                key={s.id}
-                disabled={busy !== null}
-                onClick={() => choose(s.id)}
-                className={`flex items-center gap-3 rounded-lg border p-3 text-left transition-colors ${
-                  s.id === sourceId ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border hover:bg-accent/50'
-                }`}
-              >
-                <TechTile id={s.engine} className="size-9" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">{s.label}</span>
-                  <span className="block truncate text-xs text-muted-foreground" title={s.data_dir}>
-                    {formatBytes(s.size_bytes)} · {s.data_dir}
-                  </span>
-                </span>
-                {s.running_port && <Badge variant="success">running :{s.running_port}</Badge>}
-              </button>
+              <div key={s.id} className={`rounded-lg border p-3 ${selectedSourceIds.includes(s.id) ? 'border-primary bg-primary/5' : 'border-border'}`}>
+                <div className="flex items-center gap-3">
+                  <TechTile id={s.engine} className="size-9" />
+                  <div className="min-w-0 flex-1">
+                    <Toggle
+                      checked={selectedSourceIds.includes(s.id)}
+                      disabled={busy !== null}
+                      onChange={(checked) => toggleSource(s.id, checked)}
+                      label={s.label}
+                    />
+                    <span className="mt-1 block truncate text-xs text-muted-foreground" title={s.data_dir}>
+                      {formatBytes(s.size_bytes)} · {s.data_dir}
+                    </span>
+                  </div>
+                  {selectedSourceIds.includes(s.id) && <Badge variant="secondary">Order {selectedSourceIds.indexOf(s.id) + 1}</Badge>}
+                  {s.running_port && <Badge variant="success">running :{s.running_port}</Badge>}
+                </div>
+              </div>
             ))}
           </div>
         )}
@@ -223,79 +227,112 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
           <Button variant="secondary" disabled={sources === null || busy !== null} onClick={() => void browse()}>
             <FolderOpen /> Browse for data folder
           </Button>
-          <span className="text-xs text-muted-foreground">Choose the folder containing the `mysql` system database.</span>
+          <span className="text-xs text-muted-foreground">Choose the folder containing the MySQL system database. Detected sources remain available above.</span>
         </div>
 
-        {source && (
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="migrate-password" className="text-xs font-medium text-muted-foreground">
-              {source.label} root password
-            </label>
-            <div className="flex flex-wrap items-center gap-2">
-              <Input
-                id="migrate-password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && busy === null && scan()}
-                placeholder="Leave blank if none"
-                className="min-w-0 flex-1 sm:max-w-72"
-                autoComplete="off"
-              />
-              <Button variant="secondary" disabled={busy !== null} onClick={scan}>
-                {busy === 'scan' ? <Spinner /> : <Search />} {busy === 'scan' ? (source.running_port ? 'Reading…' : 'Starting a copy…') : 'Find databases'}
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">OLS-managed MariaDB uses a blank root password. Laragon and XAMPP commonly do too.</p>
-          </div>
-        )}
+        {selectedSources.length === 0 && <p className="text-sm text-muted-foreground">Select one or more detected sources, or browse for a data folder.</p>}
 
-        {busy !== null && <ProgressPanel progress={progress} />}
+        {selectedSources.map((source, index) => {
+          const state = importState(source.id)
+          return (
+            <div key={source.id} className="flex flex-col gap-3 rounded-lg border border-border p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-sm font-medium">{index + 1}. {source.label}</span>
+                <Badge variant="secondary">Import order {index + 1}</Badge>
+              </div>
+              <div className="flex flex-wrap items-end gap-2">
+                <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-xs font-medium text-muted-foreground">
+                  Root password
+                  <Input
+                    type="password"
+                    value={state.password}
+                    disabled={busy !== null}
+                    onChange={(e) => updateImport(source.id, { password: e.target.value })}
+                    placeholder="Leave blank if none"
+                    className="min-w-0 sm:max-w-72"
+                    autoComplete="off"
+                  />
+                </label>
+                <Button variant="secondary" disabled={busy !== null} onClick={() => scan(source.id)}>
+                  {busy === 'scan' && activeSourceId === source.id ? <Spinner /> : <Search />}
+                  {busy === 'scan' && activeSourceId === source.id ? (source.running_port ? 'Reading…' : 'Starting a copy…') : 'Find databases'}
+                </Button>
+              </div>
+              {state.databases && (
+                <div className="flex flex-col gap-2 border-t border-border pt-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">Databases · {state.picked.length}/{state.databases.length} selected</span>
+                    <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => updateImport(source.id, { picked: state.picked.length === state.databases?.length ? [] : state.databases ?? [] })}>
+                      {state.picked.length === state.databases.length ? 'Select none' : 'Select all'}
+                    </Button>
+                  </div>
+                  {state.databases.length === 0 ? <p className="text-xs text-muted-foreground">No user databases found.</p> : (
+                    <div className="grid max-h-44 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3">
+                      {state.databases.map((db) => {
+                        const result = state.results?.find((r) => r.name === db) ?? (activeSourceId === source.id ? progress?.done.find((r) => r.name === db) : undefined)
+                        const isPicked = state.picked.includes(db)
+                        return (
+                          <div key={db} className="flex items-center gap-1.5" title={result?.detail}>
+                            <Toggle checked={isPicked} disabled={busy !== null} onChange={(checked) => updateImport(source.id, { picked: checked ? [...state.picked, db] : state.picked.filter((name) => name !== db) })} label={db} />
+                            {result && (result.ok
+                              ? <CheckCircle2 className="size-3.5 text-success" />
+                              : result.detail.startsWith('Skipped')
+                                ? <Badge variant="secondary">Skipped</Badge>
+                                : <XCircle className="size-3.5 text-destructive" />)}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                  {state.error && <p className="text-xs text-destructive">{state.error}</p>}
+                  {state.results?.filter((result) => !result.ok).map((result) => (
+                    <p key={`${source.id}:${result.name}`} className={`text-xs ${result.detail.startsWith('Skipped') ? 'text-muted-foreground' : 'text-destructive'}`}>{result.name}: {result.detail}</p>
+                  ))}
+                  {state.results?.filter((result) => result.ok && result.detail !== 'copied').map((result) => (
+                    <p key={`${source.id}:${result.name}`} className="text-xs text-muted-foreground">{result.name}: {result.detail}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })}
+
+        {busy !== null && <ProgressPanel progress={progress} label={sources?.find((s) => s.id === activeSourceId)?.label} />}
+
+        <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
+          <label htmlFor="migration-conflict-policy" className="text-sm font-medium">Database Conflict Resolution</label>
+          <select
+            id="migration-conflict-policy"
+            className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+            value={conflictPolicy}
+            disabled={busy !== null}
+            onChange={(e) => setConflictPolicy(e.target.value as typeof conflictPolicy)}
+          >
+            <option value="skip">Skip Existing (Default)</option>
+            <option value="replace_with_backup">Replace Existing (Backup First)</option>
+            <option value="rename_incoming">Rename Incoming</option>
+          </select>
+          <p className="text-xs text-muted-foreground">
+            {conflictPolicy === 'skip' && 'Keeps the database already in OLS and skips incoming databases with the same name.'}
+            {conflictPolicy === 'replace_with_backup' && 'Creates a safety backup first. OLS stops if the backup fails and attempts to restore it if import fails.'}
+            {conflictPolicy === 'rename_incoming' && 'Gives each conflicting incoming database a unique _imported name; existing data stays unchanged.'}
+          </p>
+          {duplicateNames.size > 0 && (
+            <p className="flex items-center gap-2 text-xs text-warning">
+              <AlertTriangle className="size-3.5" /> Same-name databases appear in multiple selected folders: {[...duplicateNames].join(', ')}. They will be resolved in the displayed folder order.
+            </p>
+          )}
+          {selectedSourceIds.length > 0 && !allScanned && <p className="text-xs text-muted-foreground">Scan every selected folder before importing.</p>}
+          {allScanned && selectedCount === 0 && <p className="text-xs text-muted-foreground">Select at least one database to enable import.</p>}
+          {allResults.length > 0 && (
+            <p className="text-xs font-medium">
+              {allResults.filter((result) => result.ok).length} imported · {allResults.filter((result) => !result.ok && result.detail.startsWith('Skipped')).length} skipped · {allResults.filter((result) => !result.ok && !result.detail.startsWith('Skipped')).length} failed
+            </p>
+          )}
+        </div>
 
         {error && <p className="text-sm text-destructive">{error}</p>}
         {notice && <p className="text-sm text-muted-foreground">{notice}</p>}
-
-        {dbs && dbs.length === 0 && <p className="text-sm text-muted-foreground">That server has no databases of its own.</p>}
-        {dbs && dbs.length > 0 && (
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">
-                Databases · {picked.length}/{dbs.length} selected
-              </span>
-              <Button size="sm" variant="ghost" onClick={() => setPicked(picked.length === dbs.length ? [] : dbs)}>
-                {picked.length === dbs.length ? 'Select none' : 'Select all'}
-              </Button>
-            </div>
-            <div className="grid max-h-56 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3">
-              {dbs.map((db) => {
-                const result = results?.find((r) => r.name === db) ?? progress?.done.find((r) => r.name === db)
-                return (
-                  <div key={db} className="flex items-center gap-1.5" title={result?.detail}>
-                    <Toggle checked={picked.includes(db)} disabled={busy !== null} onChange={(v) => setPicked(v ? [...picked, db] : picked.filter((x) => x !== db))} label={db} />
-                    {result && (result.ok ? <CheckCircle2 className="size-3.5 text-success" /> : <XCircle className="size-3.5 text-destructive" />)}
-                    {!result && busy === 'import' && progress?.current_db === db && <Spinner className="size-3.5 text-primary" />}
-                  </div>
-                )
-              })}
-            </div>
-            <p className="text-xs text-muted-foreground">Imported into MariaDB. If a database with the same name already exists there, tables with the same names are replaced.</p>
-          </div>
-        )}
-
-        {results && (
-          <div className="rounded-lg border border-border p-3 text-sm">
-            <p className="font-medium">
-              {results.filter((r) => r.ok).length} of {results.length} imported.
-            </p>
-            {results
-              .filter((r) => !r.ok)
-              .map((r) => (
-                <p key={r.name} className="mt-1 text-xs text-destructive">
-                  {r.name}: {r.detail}
-                </p>
-              ))}
-          </div>
-        )}
       </div>
     </Dialog>
   )
@@ -306,7 +343,7 @@ function normalizePath(path: string) {
 }
 
 /** Live step, per-database count and a byte bar for the running scan or import. */
-function ProgressPanel({ progress }: { progress: MigrationProgress | null }) {
+function ProgressPanel({ progress, label }: { progress: MigrationProgress | null; label?: string }) {
   const [now, setNow] = useState(Date.now())
   usePoll(() => setNow(Date.now()), 1000)
   if (!progress) {
@@ -328,7 +365,7 @@ function ProgressPanel({ progress }: { progress: MigrationProgress | null }) {
       <div className="flex items-center justify-between gap-3 text-sm">
         <span className="flex min-w-0 items-center gap-2 font-medium">
           <Spinner className="shrink-0" />
-          <span className="truncate">{progress.step || 'Working…'}</span>
+          <span className="truncate">{label ? `${label} · ` : ''}{progress.step || 'Working…'}</span>
         </span>
         <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
           {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}

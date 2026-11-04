@@ -42,7 +42,7 @@ Inner | uses | WebManager
 Inner | uses | DomainStore
 Inner | uses | CertificateManager
 Inner | uses | ProjectStore
-ShellMenu | installs | per-user Explorer cascading submenu for folders and folder backgrounds, with Add folder, Set up, Ignore project, and Ignore site actions
+ShellMenu | installs | per-user legacy Explorer cascade for folders and folder backgrounds, with Add folder, Set up, Ignore project, and Ignore site actions; compact Windows 11 context menus require the packaged IExplorerCommand path
 ShellMenu ignore actions | invoke | `olsc project ignore|ignore-site <path>` to create the watched folder marker
 Inner::start_projects_watcher | watches | immediate project-root directory changes for discovery and project folders non-recursively for `.ols_ignore_me` / `.ols_ignore_site` changes; `.ols_ignore_me` hides project and site, `.ols_ignore_site` hides only the site, and marker changes sync discovery/config then notify subscribers
 Inner::wp_projects | decides_from | wordpress::describe (folder on disk: wp-config.php / wp-admin/index.php / wp-includes+wp-content), then fills hostname+url from the project's first enabled Domain and pending_until from wordpress::sweep (which deletes expired and unparseable bridges as it goes)
@@ -157,7 +157,7 @@ App | uses | useWindowState (applies rounded-xl border border-border only in win
 LoadTestRunner | uses | ProcessSupervisor
 DaemonRunner | uses | ScheduleStore ticker
 HelperService | uses | HelperMain execute
-TauriApp | asks | HelperService for its `version` over the pipe, so an updated or moved app can see that the elevated half it is about to call is an older copy (the copy is only refreshed by a reinstall)
+TauriApp | asks | HelperService for its helper-specific `ADMIN_HELPER_VERSION` over the pipe; only a helper version bump marks the protected service copy stale, while app-only releases remain up to date
 Inner | rewrites | the Windows startup entry when its executable no longer exists, pointing it at the running copy; a missing entry is never created
 TauriApp | depends_on | ols-helper (install/service)
 TauriApp | uses | ServiceManager.list (running/stopped half of the status mark, includes the web servers)
@@ -306,3 +306,8 @@ App main scroll container | reserves | stable scrollbar gutter to prevent conten
 ListMigrationSources | includes | external MySQL/MariaDB installs and each installed OLS MariaDB series data folder once
 InspectMigrationSource | validates | selected data folder has MariaDB/MySQL system files and matching server/client/dump binaries nearby; duplicate source folders use canonical path identity
 MigrateDialog | imports | discovered or browsed MySQL/MariaDB sources; stopped sources are copied to a temporary folder, then selected databases are dumped and imported without modifying source data
+MigrateDialog | submits | scanned source batches sequentially in folder-selection order; each batch sees target schemas created by prior batches, with one selected conflict policy for destination and source duplicates
+MigrateDialog | enables import | only after every selected source has been scanned and at least one database is selected; action remains visible while disabled
+MigrationRecovery | repairs after restart | restores the safety backup for interrupted replacements or removes a partial new destination; failed recovery remains queued for retry
+ReplaceWithBackup | preserves | existing target database via SQL backup before drop; failed import attempts to restore it
+RenameIncoming | rewrites | dumped CREATE/USE database statements to a unique generated target name, leaving the existing schema untouched

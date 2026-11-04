@@ -192,7 +192,23 @@ pub fn backup(
     database: &str,
 ) -> Result<PathBuf, String> {
     let dest = new_backup_path(paths, engine, &file_stem(database)?)?;
-    dump_to(services, engine, database, &dest)?;
+    // Keep an interrupted dump out of the visible backup list. The final .sql name appears
+    // only after the dump process exits successfully and its bytes have been flushed.
+    let part = dest.with_extension("sql.part");
+    if let Err(error) = dump_to(services, engine, database, &part) {
+        let _ = std::fs::remove_file(&part);
+        return Err(error);
+    }
+    if let Err(error) = std::fs::File::open(&part).and_then(|file| file.sync_all()) {
+        let _ = std::fs::remove_file(&part);
+        return Err(format!(
+            "could not flush the completed safety backup: {error}"
+        ));
+    }
+    if let Err(error) = std::fs::rename(&part, &dest) {
+        let _ = std::fs::remove_file(&part);
+        return Err(format!("could not finalize the safety backup: {error}"));
+    }
     Ok(dest)
 }
 

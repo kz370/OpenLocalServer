@@ -700,18 +700,16 @@ export function SettingsPage() {
       {helper === null ? (
         <Badge variant="secondary">Checking…</Badge>
       ) : helper.status === 'development_version' ? (
-        <Badge variant="destructive">Development version · service {helper.version}, app {version}</Badge>
+        <Badge variant="destructive">Newer helper installed · {helper.version}</Badge>
       ) : helper.status === 'update_available' ? (
-        <Badge variant="warning">Installed · version {helper.version} (app is {version})</Badge>
+        <Badge variant="warning">Helper update available · installed {helper.version}</Badge>
       ) : helper.installed ? (
-        <Badge variant="success">Installed · no more prompts</Badge>
+        <Badge variant="success">Installed · helper {helper.version}</Badge>
       ) : (
         <Badge variant="outline">Not installed</Badge>
       )}
-      {/* The service runs a *copy* of the helper, and nothing refreshes that copy on an
-          update or a move, so an out-of-date one is offered the same reinstall as a
-          missing one — it is the same fix and the same single prompt. A service newer
-          than the app (dev build) is a development version, not something to update. */}
+      {/* The administrator copy has its own version. An OLS app-only release must not
+          offer another elevated reinstall when the helper protocol has not changed. */}
       {helper !== null && (!helper.installed || helper.status === 'update_available') && (
         <Button size="sm" disabled={busy !== null} onClick={() => run('helper', async () => { const r = await runCommand({ type: 'install_helper_service' }); if (r.type === 'helper_service') setHelper(r) })}>
           {busy === 'helper' ? <Spinner /> : <ShieldCheck />} {helper.status === 'update_available' ? 'Update (asks once)' : 'Install (asks once)'}

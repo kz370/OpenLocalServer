@@ -345,6 +345,7 @@ impl Inner {
                 }),
             );
         }
+        core.recover_pending_migrations();
         core.apply_plugins();
         Ok(core)
     }

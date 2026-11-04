@@ -37,8 +37,8 @@ pub const PIPE_NAME: &str = r"\\.\pipe\OpenLocalServerHelper";
 /// the elevated half is a separate copy in a folder only an administrator can write.
 ///
 /// Because it is a copy, nothing re-copies it when the app is updated or moved, so the two
-/// can drift apart; the app asks the service which version it is over the pipe
-/// (`elevate::service_version`) and offers a reinstall when they differ.
+/// can drift apart; the app asks the service which helper version it is over the pipe
+/// (`elevate::service_version`) and offers a reinstall only when the helper version changes.
 ///
 /// The location is resolved rather than spelled out. `C:\Program Files` is only the last
 /// resort: on a 64-bit Windows a 32-bit process sees `ProgramFiles` redirected to
@@ -189,7 +189,7 @@ fn service_main(_args: Vec<OsString>) {
 fn handle_request(raw: &[u8]) -> Vec<u8> {
     let (code, message) = match serde_json::from_slice::<Vec<String>>(raw) {
         Ok(args) if args.first().map(String::as_str) == Some("version") => {
-            (0, env!("CARGO_PKG_VERSION").to_string())
+            (0, ols_core::elevate::ADMIN_HELPER_VERSION.to_string())
         }
         Ok(args) => match crate::execute(&args, &crate::hosts_file_path()) {
             Ok(()) => (0, String::new()),
@@ -421,7 +421,7 @@ mod tests {
         };
         let v = ask(r#"["version"]"#);
         assert_eq!(v["code"], 0);
-        assert_eq!(v["message"], env!("CARGO_PKG_VERSION"));
+        assert_eq!(v["message"], ols_core::elevate::ADMIN_HELPER_VERSION);
         let v = ask(r#"["hosts-apply","6.6.6.6=bank.test"]"#);
         assert_eq!(
             v["code"], 2,

@@ -54,6 +54,8 @@ Selected CoreCommands (type strings mirror Rust variants):
 
 `list_migration_sources` returns detected MySQL/MariaDB sources; `inspect_migration_source{path}` validates a selected data folder and locates matching binaries nearby. The Databases import dialog compares canonical folder paths and selects an existing source instead of adding a duplicate. These commands are local Tauri IPC operations.
 
+`migrate_databases_resolved{source_id,password,databases,target,conflict_policy}` imports one scanned source batch. The UI submits selected sources one at a time in folder-selection order, after every selected source has been scanned. `conflict_policy` is `skip` (default, leaves the destination intact), `replace_with_backup` (creates a SQL backup before dropping/replacing; on import failure OLS attempts restore), or `rename_incoming` (rewrites the dump's database selection and creates a unique `<name>_imported[_N]` database). Each batch sees current destination schemas, including prior batches in the same UI operation, so source-name collisions use the same policy as destination conflicts. Legacy `migrate_databases` keeps its command shape and uses `skip`.
+
 ## CLI (`ols`)
 Global `--json` for raw pretty JSON. Auto-starts `olsc daemon` when app closed (detached process, 30s pipe wait).
 - `olsc start|stop|restart|status`
