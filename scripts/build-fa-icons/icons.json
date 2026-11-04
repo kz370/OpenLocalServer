@@ -1,0 +1,1929 @@
+[
+  {
+    "id": "wordpress",
+    "name": "WordPress",
+    "category": "brands",
+    "color": "#21759b"
+  },
+  {
+    "id": "shopify",
+    "name": "Shopify",
+    "category": "brands",
+    "color": "#95bf47"
+  },
+  {
+    "id": "github",
+    "name": "GitHub",
+    "category": "brands"
+  },
+  {
+    "id": "gitlab",
+    "name": "GitLab",
+    "category": "brands",
+    "color": "#fc6d26"
+  },
+  {
+    "id": "git-alt",
+    "name": "Git",
+    "category": "brands",
+    "color": "#f05032"
+  },
+  {
+    "id": "laravel",
+    "name": "Laravel",
+    "category": "brands",
+    "color": "#ff2d20"
+  },
+  {
+    "id": "node-js",
+    "name": "Node.js",
+    "category": "brands",
+    "color": "#68a063"
+  },
+  {
+    "id": "php",
+    "name": "PHP",
+    "category": "brands",
+    "color": "#777bb4"
+  },
+  {
+    "id": "python",
+    "name": "Python",
+    "category": "brands",
+    "color": "#3776ab"
+  },
+  {
+    "id": "react",
+    "name": "React",
+    "category": "brands",
+    "color": "#61dafb"
+  },
+  {
+    "id": "vuejs",
+    "name": "Vue.js",
+    "category": "brands",
+    "color": "#42b883"
+  },
+  {
+    "id": "angular",
+    "name": "Angular",
+    "category": "brands",
+    "color": "#dd0031"
+  },
+  {
+    "id": "js",
+    "name": "JavaScript",
+    "category": "brands",
+    "color": "#f7df1e"
+  },
+  {
+    "id": "html5",
+    "name": "HTML5",
+    "category": "brands",
+    "color": "#e34f26"
+  },
+  {
+    "id": "css3-alt",
+    "name": "CSS3",
+    "category": "brands",
+    "color": "#1572b6"
+  },
+  {
+    "id": "docker",
+    "name": "Docker",
+    "category": "brands",
+    "color": "#2496ed"
+  },
+  {
+    "id": "rust",
+    "name": "Rust",
+    "category": "brands",
+    "color": "#dea584"
+  },
+  {
+    "id": "npm",
+    "name": "npm",
+    "category": "brands",
+    "color": "#cb3837"
+  },
+  {
+    "id": "linux",
+    "name": "Linux",
+    "category": "brands"
+  },
+  {
+    "id": "ubuntu",
+    "name": "Ubuntu",
+    "category": "brands",
+    "color": "#e95420"
+  },
+  {
+    "id": "windows",
+    "name": "Windows",
+    "category": "brands",
+    "color": "#0078d6"
+  },
+  {
+    "id": "apple",
+    "name": "Apple",
+    "category": "brands"
+  },
+  {
+    "id": "android",
+    "name": "Android",
+    "category": "brands",
+    "color": "#3ddc84"
+  },
+  {
+    "id": "aws",
+    "name": "AWS",
+    "category": "brands",
+    "color": "#ff9900"
+  },
+  {
+    "id": "google",
+    "name": "Google",
+    "category": "brands",
+    "color": "#4285f4"
+  },
+  {
+    "id": "discord",
+    "name": "Discord",
+    "category": "brands",
+    "color": "#5865f2"
+  },
+  {
+    "id": "telegram",
+    "name": "Telegram",
+    "category": "brands",
+    "color": "#24a1de"
+  },
+  {
+    "id": "slack",
+    "name": "Slack",
+    "category": "brands",
+    "color": "#4a154b"
+  },
+  {
+    "id": "stripe",
+    "name": "Stripe",
+    "category": "brands",
+    "color": "#635bff"
+  },
+  {
+    "id": "paypal",
+    "name": "PayPal",
+    "category": "brands",
+    "color": "#00457c"
+  },
+  {
+    "id": "x-twitter",
+    "name": "X / Twitter",
+    "category": "brands"
+  },
+  {
+    "id": "linkedin",
+    "name": "LinkedIn",
+    "category": "brands",
+    "color": "#0a66c2"
+  },
+  {
+    "id": "youtube",
+    "name": "YouTube",
+    "category": "brands",
+    "color": "#ff0000"
+  },
+  {
+    "id": "globe",
+    "name": "Globe / Web",
+    "category": "web",
+    "color": "#00b4d8"
+  },
+  {
+    "id": "network-wired",
+    "name": "Network Wired",
+    "category": "web"
+  },
+  {
+    "id": "wifi",
+    "name": "Wi-Fi",
+    "category": "web"
+  },
+  {
+    "id": "link",
+    "name": "Link / URL",
+    "category": "web"
+  },
+  {
+    "id": "sitemap",
+    "name": "Sitemap",
+    "category": "web"
+  },
+  {
+    "id": "cloud",
+    "name": "Cloud",
+    "category": "web"
+  },
+  {
+    "id": "cloud-arrow-up",
+    "name": "Cloud Upload",
+    "category": "web"
+  },
+  {
+    "id": "cloud-arrow-down",
+    "name": "Cloud Download",
+    "category": "web"
+  },
+  {
+    "id": "server",
+    "name": "Server",
+    "category": "tech"
+  },
+  {
+    "id": "database",
+    "name": "Database",
+    "category": "tech"
+  },
+  {
+    "id": "code",
+    "name": "Code",
+    "category": "tech"
+  },
+  {
+    "id": "terminal",
+    "name": "Terminal",
+    "category": "tech"
+  },
+  {
+    "id": "cube",
+    "name": "Cube",
+    "category": "tech"
+  },
+  {
+    "id": "cubes",
+    "name": "Cubes / Microservices",
+    "category": "tech"
+  },
+  {
+    "id": "microchip",
+    "name": "Microchip / CPU",
+    "category": "tech"
+  },
+  {
+    "id": "hard-drive",
+    "name": "Hard Drive",
+    "category": "tech"
+  },
+  {
+    "id": "memory",
+    "name": "RAM / Memory",
+    "category": "tech"
+  },
+  {
+    "id": "desktop",
+    "name": "Desktop",
+    "category": "tech"
+  },
+  {
+    "id": "laptop-code",
+    "name": "Laptop Code",
+    "category": "tech"
+  },
+  {
+    "id": "mobile-screen",
+    "name": "Mobile Screen",
+    "category": "tech"
+  },
+  {
+    "id": "shield-halved",
+    "name": "Shield / Security",
+    "category": "tech"
+  },
+  {
+    "id": "lock",
+    "name": "Lock / SSL",
+    "category": "tech"
+  },
+  {
+    "id": "key",
+    "name": "Key / Auth",
+    "category": "tech"
+  },
+  {
+    "id": "bug",
+    "name": "Bug / Debug",
+    "category": "tech",
+    "color": "#ef4444"
+  },
+  {
+    "id": "wrench",
+    "name": "Wrench / Tool",
+    "category": "tech"
+  },
+  {
+    "id": "sliders",
+    "name": "Sliders / Config",
+    "category": "tech"
+  },
+  {
+    "id": "robot",
+    "name": "Robot / AI",
+    "category": "tech"
+  },
+  {
+    "id": "cart-shopping",
+    "name": "Shopping Cart",
+    "category": "commerce"
+  },
+  {
+    "id": "store",
+    "name": "Store / Shop",
+    "category": "commerce"
+  },
+  {
+    "id": "bag-shopping",
+    "name": "Shopping Bag",
+    "category": "commerce"
+  },
+  {
+    "id": "building",
+    "name": "Building / Corporate",
+    "category": "commerce"
+  },
+  {
+    "id": "briefcase",
+    "name": "Briefcase / Business",
+    "category": "commerce"
+  },
+  {
+    "id": "credit-card",
+    "name": "Credit Card / Payment",
+    "category": "commerce"
+  },
+  {
+    "id": "money-bill-wave",
+    "name": "Cash / Billing",
+    "category": "commerce",
+    "color": "#10b981"
+  },
+  {
+    "id": "receipt",
+    "name": "Receipt / Invoice",
+    "category": "commerce"
+  },
+  {
+    "id": "tags",
+    "name": "Tags / Pricing",
+    "category": "commerce"
+  },
+  {
+    "id": "camera",
+    "name": "Camera / Photo",
+    "category": "media"
+  },
+  {
+    "id": "film",
+    "name": "Film / Video",
+    "category": "media"
+  },
+  {
+    "id": "music",
+    "name": "Music / Audio",
+    "category": "media"
+  },
+  {
+    "id": "image",
+    "name": "Image",
+    "category": "media"
+  },
+  {
+    "id": "palette",
+    "name": "Palette / Design",
+    "category": "media"
+  },
+  {
+    "id": "newspaper",
+    "name": "Newspaper / Blog",
+    "category": "media"
+  },
+  {
+    "id": "book",
+    "name": "Book / Docs",
+    "category": "media"
+  },
+  {
+    "id": "file-code",
+    "name": "Code File",
+    "category": "media"
+  },
+  {
+    "id": "box-archive",
+    "name": "Archive / Storage",
+    "category": "media"
+  },
+  {
+    "id": "rocket",
+    "name": "Rocket",
+    "category": "general"
+  },
+  {
+    "id": "bolt",
+    "name": "Lightning / Fast",
+    "category": "general",
+    "color": "#f59e0b"
+  },
+  {
+    "id": "fire",
+    "name": "Fire / Hot",
+    "category": "general",
+    "color": "#ef4444"
+  },
+  {
+    "id": "star",
+    "name": "Star / Featured",
+    "category": "general",
+    "color": "#eab308"
+  },
+  {
+    "id": "heart",
+    "name": "Heart / Favorite",
+    "category": "general",
+    "color": "#f43f5e"
+  },
+  {
+    "id": "folder",
+    "name": "Folder",
+    "category": "general"
+  },
+  {
+    "id": "gear",
+    "name": "Gear / Settings",
+    "category": "general"
+  },
+  {
+    "id": "user",
+    "name": "User / Account",
+    "category": "general"
+  },
+  {
+    "id": "users",
+    "name": "Users / Community",
+    "category": "general"
+  },
+  {
+    "id": "chart-simple",
+    "name": "Chart / Analytics",
+    "category": "general"
+  },
+  {
+    "id": "gauge-high",
+    "name": "Speed / Gauge",
+    "category": "general"
+  },
+  {
+    "id": "clock",
+    "name": "Clock / Schedule",
+    "category": "general"
+  },
+  {
+    "id": "bell",
+    "name": "Bell / Alerts",
+    "category": "general"
+  },
+  {
+    "id": "message",
+    "name": "Message / Chat",
+    "category": "general"
+  },
+  {
+    "id": "comments",
+    "name": "Comments / Forum",
+    "category": "general"
+  },
+  {
+    "id": "envelope",
+    "name": "Mail / Newsletter",
+    "category": "general"
+  },
+  {
+    "id": "headset",
+    "name": "Headset / Support",
+    "category": "general"
+  },
+  {
+    "id": "compass",
+    "name": "Compass / Navigation",
+    "category": "general"
+  },
+  {
+    "id": "wand-magic-sparkles",
+    "name": "Magic / AI",
+    "category": "general",
+    "color": "#a855f7"
+  },
+  {
+    "id": "drupal",
+    "name": "Drupal",
+    "category": "brands",
+    "color": "#0678be"
+  },
+  {
+    "id": "joomla",
+    "name": "Joomla",
+    "category": "brands",
+    "color": "#f44321"
+  },
+  {
+    "id": "magento",
+    "name": "Magento",
+    "category": "brands",
+    "color": "#ee672f"
+  },
+  {
+    "id": "symfony",
+    "name": "Symfony",
+    "category": "brands"
+  },
+  {
+    "id": "wix",
+    "name": "Wix",
+    "category": "brands"
+  },
+  {
+    "id": "squarespace",
+    "name": "Squarespace",
+    "category": "brands"
+  },
+  {
+    "id": "typo3",
+    "name": "TYPO3",
+    "category": "brands",
+    "color": "#ff8700"
+  },
+  {
+    "id": "elementor",
+    "name": "Elementor",
+    "category": "brands",
+    "color": "#92003b"
+  },
+  {
+    "id": "opencart",
+    "name": "OpenCart",
+    "category": "brands",
+    "color": "#23a8e0"
+  },
+  {
+    "id": "shopware",
+    "name": "Shopware",
+    "category": "brands",
+    "color": "#189eff"
+  },
+  {
+    "id": "weebly",
+    "name": "Weebly",
+    "category": "brands",
+    "color": "#2990ea"
+  },
+  {
+    "id": "hubspot",
+    "name": "HubSpot",
+    "category": "brands",
+    "color": "#ff7a59"
+  },
+  {
+    "id": "mailchimp",
+    "name": "Mailchimp",
+    "category": "brands",
+    "color": "#ffe01b"
+  },
+  {
+    "id": "java",
+    "name": "Java",
+    "category": "brands",
+    "color": "#ea2d2e"
+  },
+  {
+    "id": "golang",
+    "name": "Go",
+    "category": "brands",
+    "color": "#00add8"
+  },
+  {
+    "id": "swift",
+    "name": "Swift",
+    "category": "brands",
+    "color": "#f05138"
+  },
+  {
+    "id": "r-project",
+    "name": "R",
+    "category": "brands",
+    "color": "#276dc3"
+  },
+  {
+    "id": "erlang",
+    "name": "Erlang",
+    "category": "brands",
+    "color": "#a90533"
+  },
+  {
+    "id": "phoenix-framework",
+    "name": "Phoenix",
+    "category": "brands",
+    "color": "#fd4f00"
+  },
+  {
+    "id": "bootstrap",
+    "name": "Bootstrap",
+    "category": "brands",
+    "color": "#7952b3"
+  },
+  {
+    "id": "sass",
+    "name": "Sass",
+    "category": "brands",
+    "color": "#cc6699"
+  },
+  {
+    "id": "less",
+    "name": "Less",
+    "category": "brands",
+    "color": "#1d365d"
+  },
+  {
+    "id": "yarn",
+    "name": "Yarn",
+    "category": "brands",
+    "color": "#2c8ebf"
+  },
+  {
+    "id": "gulp",
+    "name": "Gulp",
+    "category": "brands",
+    "color": "#cf4647"
+  },
+  {
+    "id": "grunt",
+    "name": "Grunt",
+    "category": "brands",
+    "color": "#fba919"
+  },
+  {
+    "id": "ember",
+    "name": "Ember",
+    "category": "brands",
+    "color": "#e04e39"
+  },
+  {
+    "id": "figma",
+    "name": "Figma",
+    "category": "brands",
+    "color": "#f24e1e"
+  },
+  {
+    "id": "sketch",
+    "name": "Sketch",
+    "category": "brands",
+    "color": "#f7b500"
+  },
+  {
+    "id": "unity",
+    "name": "Unity",
+    "category": "brands"
+  },
+  {
+    "id": "markdown",
+    "name": "Markdown",
+    "category": "brands"
+  },
+  {
+    "id": "github-alt",
+    "name": "GitHub Octocat",
+    "category": "brands"
+  },
+  {
+    "id": "bitbucket",
+    "name": "Bitbucket",
+    "category": "brands",
+    "color": "#0052cc"
+  },
+  {
+    "id": "jira",
+    "name": "Jira",
+    "category": "brands",
+    "color": "#0052cc"
+  },
+  {
+    "id": "confluence",
+    "name": "Confluence",
+    "category": "brands",
+    "color": "#1868db"
+  },
+  {
+    "id": "trello",
+    "name": "Trello",
+    "category": "brands",
+    "color": "#0079bf"
+  },
+  {
+    "id": "atlassian",
+    "name": "Atlassian",
+    "category": "brands",
+    "color": "#0052cc"
+  },
+  {
+    "id": "jenkins",
+    "name": "Jenkins",
+    "category": "brands",
+    "color": "#d33833"
+  },
+  {
+    "id": "stack-overflow",
+    "name": "Stack Overflow",
+    "category": "brands",
+    "color": "#f48024"
+  },
+  {
+    "id": "digital-ocean",
+    "name": "DigitalOcean",
+    "category": "brands",
+    "color": "#0080ff"
+  },
+  {
+    "id": "cloudflare",
+    "name": "Cloudflare",
+    "category": "brands",
+    "color": "#f38020"
+  },
+  {
+    "id": "microsoft",
+    "name": "Microsoft",
+    "category": "brands",
+    "color": "#00a4ef"
+  },
+  {
+    "id": "google-drive",
+    "name": "Google Drive",
+    "category": "brands",
+    "color": "#1fa463"
+  },
+  {
+    "id": "dropbox",
+    "name": "Dropbox",
+    "category": "brands",
+    "color": "#0061ff"
+  },
+  {
+    "id": "cpanel",
+    "name": "cPanel",
+    "category": "brands",
+    "color": "#ff6c2c"
+  },
+  {
+    "id": "chrome",
+    "name": "Chrome",
+    "category": "brands",
+    "color": "#4285f4"
+  },
+  {
+    "id": "firefox-browser",
+    "name": "Firefox",
+    "category": "brands",
+    "color": "#ff7139"
+  },
+  {
+    "id": "edge",
+    "name": "Edge",
+    "category": "brands",
+    "color": "#0078d7"
+  },
+  {
+    "id": "safari",
+    "name": "Safari",
+    "category": "brands",
+    "color": "#006cff"
+  },
+  {
+    "id": "debian",
+    "name": "Debian",
+    "category": "brands",
+    "color": "#a81d33"
+  },
+  {
+    "id": "centos",
+    "name": "CentOS",
+    "category": "brands",
+    "color": "#932279"
+  },
+  {
+    "id": "fedora",
+    "name": "Fedora",
+    "category": "brands",
+    "color": "#51a2da"
+  },
+  {
+    "id": "redhat",
+    "name": "Red Hat",
+    "category": "brands",
+    "color": "#ee0000"
+  },
+  {
+    "id": "suse",
+    "name": "SUSE",
+    "category": "brands",
+    "color": "#73ba25"
+  },
+  {
+    "id": "freebsd",
+    "name": "FreeBSD",
+    "category": "brands",
+    "color": "#ab2b28"
+  },
+  {
+    "id": "raspberry-pi",
+    "name": "Raspberry Pi",
+    "category": "brands",
+    "color": "#c51a4a"
+  },
+  {
+    "id": "google-play",
+    "name": "Google Play",
+    "category": "brands",
+    "color": "#34a853"
+  },
+  {
+    "id": "app-store-ios",
+    "name": "App Store",
+    "category": "brands",
+    "color": "#0d96f6"
+  },
+  {
+    "id": "facebook",
+    "name": "Facebook",
+    "category": "brands",
+    "color": "#1877f2"
+  },
+  {
+    "id": "instagram",
+    "name": "Instagram",
+    "category": "brands",
+    "color": "#e4405f"
+  },
+  {
+    "id": "tiktok",
+    "name": "TikTok",
+    "category": "brands"
+  },
+  {
+    "id": "whatsapp",
+    "name": "WhatsApp",
+    "category": "brands",
+    "color": "#25d366"
+  },
+  {
+    "id": "reddit",
+    "name": "Reddit",
+    "category": "brands",
+    "color": "#ff4500"
+  },
+  {
+    "id": "pinterest",
+    "name": "Pinterest",
+    "category": "brands",
+    "color": "#e60023"
+  },
+  {
+    "id": "twitch",
+    "name": "Twitch",
+    "category": "brands",
+    "color": "#9146ff"
+  },
+  {
+    "id": "spotify",
+    "name": "Spotify",
+    "category": "brands",
+    "color": "#1db954"
+  },
+  {
+    "id": "mastodon",
+    "name": "Mastodon",
+    "category": "brands",
+    "color": "#6364ff"
+  },
+  {
+    "id": "medium",
+    "name": "Medium",
+    "category": "brands"
+  },
+  {
+    "id": "dribbble",
+    "name": "Dribbble",
+    "category": "brands",
+    "color": "#ea4c89"
+  },
+  {
+    "id": "behance",
+    "name": "Behance",
+    "category": "brands",
+    "color": "#1769ff"
+  },
+  {
+    "id": "meta",
+    "name": "Meta",
+    "category": "brands",
+    "color": "#0866ff"
+  },
+  {
+    "id": "patreon",
+    "name": "Patreon",
+    "category": "brands",
+    "color": "#ff424d"
+  },
+  {
+    "id": "amazon",
+    "name": "Amazon",
+    "category": "brands",
+    "color": "#ff9900"
+  },
+  {
+    "id": "ebay",
+    "name": "eBay",
+    "category": "brands",
+    "color": "#e53238"
+  },
+  {
+    "id": "etsy",
+    "name": "Etsy",
+    "category": "brands",
+    "color": "#f56400"
+  },
+  {
+    "id": "airbnb",
+    "name": "Airbnb",
+    "category": "brands",
+    "color": "#ff5a5f"
+  },
+  {
+    "id": "cc-visa",
+    "name": "Visa",
+    "category": "brands",
+    "color": "#1a1f71"
+  },
+  {
+    "id": "cc-mastercard",
+    "name": "Mastercard",
+    "category": "brands",
+    "color": "#eb001b"
+  },
+  {
+    "id": "bitcoin",
+    "name": "Bitcoin",
+    "category": "brands",
+    "color": "#f7931a"
+  },
+  {
+    "id": "ethereum",
+    "name": "Ethereum",
+    "category": "brands",
+    "color": "#627eea"
+  },
+  {
+    "id": "google-pay",
+    "name": "Google Pay",
+    "category": "brands"
+  },
+  {
+    "id": "apple-pay",
+    "name": "Apple Pay",
+    "category": "brands"
+  },
+  {
+    "id": "playstation",
+    "name": "PlayStation",
+    "category": "brands",
+    "color": "#003791"
+  },
+  {
+    "id": "xbox",
+    "name": "Xbox",
+    "category": "brands",
+    "color": "#107c10"
+  },
+  {
+    "id": "steam",
+    "name": "Steam",
+    "category": "brands"
+  },
+  {
+    "id": "itch-io",
+    "name": "itch.io",
+    "category": "brands",
+    "color": "#fa5c5c"
+  },
+  {
+    "id": "openai",
+    "name": "OpenAI",
+    "category": "brands"
+  },
+  {
+    "id": "earth-americas",
+    "name": "Earth",
+    "category": "web"
+  },
+  {
+    "id": "signal",
+    "name": "Signal",
+    "category": "web"
+  },
+  {
+    "id": "tower-broadcast",
+    "name": "Tower Broadcast",
+    "category": "web"
+  },
+  {
+    "id": "satellite-dish",
+    "name": "Satellite Dish",
+    "category": "web"
+  },
+  {
+    "id": "rss",
+    "name": "RSS",
+    "category": "web",
+    "color": "#f97316"
+  },
+  {
+    "id": "at",
+    "name": "At Sign",
+    "category": "web"
+  },
+  {
+    "id": "route",
+    "name": "Route",
+    "category": "web"
+  },
+  {
+    "id": "diagram-project",
+    "name": "Diagram",
+    "category": "web"
+  },
+  {
+    "id": "ethernet",
+    "name": "Ethernet",
+    "category": "web"
+  },
+  {
+    "id": "plug",
+    "name": "Plug",
+    "category": "web"
+  },
+  {
+    "id": "window-maximize",
+    "name": "Window",
+    "category": "web"
+  },
+  {
+    "id": "code-branch",
+    "name": "Branch",
+    "category": "web"
+  },
+  {
+    "id": "code-merge",
+    "name": "Merge",
+    "category": "web"
+  },
+  {
+    "id": "code-pull-request",
+    "name": "Pull Request",
+    "category": "web"
+  },
+  {
+    "id": "code-compare",
+    "name": "Compare",
+    "category": "web"
+  },
+  {
+    "id": "laptop",
+    "name": "Laptop",
+    "category": "web"
+  },
+  {
+    "id": "tablet-screen-button",
+    "name": "Tablet",
+    "category": "web"
+  },
+  {
+    "id": "house-signal",
+    "name": "Smart Home",
+    "category": "web"
+  },
+  {
+    "id": "gears",
+    "name": "Gears",
+    "category": "tech"
+  },
+  {
+    "id": "screwdriver-wrench",
+    "name": "Screwdriver Wrench",
+    "category": "tech"
+  },
+  {
+    "id": "toolbox",
+    "name": "Toolbox",
+    "category": "tech"
+  },
+  {
+    "id": "flask",
+    "name": "Flask",
+    "category": "tech"
+  },
+  {
+    "id": "vial",
+    "name": "Vial",
+    "category": "tech"
+  },
+  {
+    "id": "atom",
+    "name": "Atom",
+    "category": "tech"
+  },
+  {
+    "id": "brain",
+    "name": "Brain",
+    "category": "tech"
+  },
+  {
+    "id": "fingerprint",
+    "name": "Fingerprint",
+    "category": "tech"
+  },
+  {
+    "id": "user-shield",
+    "name": "User Shield",
+    "category": "tech"
+  },
+  {
+    "id": "user-secret",
+    "name": "User Secret",
+    "category": "tech"
+  },
+  {
+    "id": "shield",
+    "name": "Shield",
+    "category": "tech"
+  },
+  {
+    "id": "bug-slash",
+    "name": "Bug Slash",
+    "category": "tech"
+  },
+  {
+    "id": "keyboard",
+    "name": "Keyboard",
+    "category": "tech"
+  },
+  {
+    "id": "power-off",
+    "name": "Power Off",
+    "category": "tech"
+  },
+  {
+    "id": "sd-card",
+    "name": "SD Card",
+    "category": "tech"
+  },
+  {
+    "id": "floppy-disk",
+    "name": "Floppy Disk",
+    "category": "tech"
+  },
+  {
+    "id": "print",
+    "name": "Print",
+    "category": "tech"
+  },
+  {
+    "id": "qrcode",
+    "name": "QR Code",
+    "category": "tech"
+  },
+  {
+    "id": "barcode",
+    "name": "Barcode",
+    "category": "tech"
+  },
+  {
+    "id": "list-check",
+    "name": "List Check",
+    "category": "tech"
+  },
+  {
+    "id": "table",
+    "name": "Table",
+    "category": "tech"
+  },
+  {
+    "id": "table-cells",
+    "name": "Table Cells",
+    "category": "tech"
+  },
+  {
+    "id": "layer-group",
+    "name": "Layer Group",
+    "category": "tech"
+  },
+  {
+    "id": "file-lines",
+    "name": "File Lines",
+    "category": "tech"
+  },
+  {
+    "id": "file-zipper",
+    "name": "File Zipper",
+    "category": "tech"
+  },
+  {
+    "id": "folder-open",
+    "name": "Folder Open",
+    "category": "tech"
+  },
+  {
+    "id": "folder-tree",
+    "name": "Folder Tree",
+    "category": "tech"
+  },
+  {
+    "id": "microscope",
+    "name": "Microscope",
+    "category": "tech"
+  },
+  {
+    "id": "shop",
+    "name": "Shop",
+    "category": "commerce"
+  },
+  {
+    "id": "cash-register",
+    "name": "Cash Register",
+    "category": "commerce"
+  },
+  {
+    "id": "money-bill",
+    "name": "Money Bill",
+    "category": "commerce"
+  },
+  {
+    "id": "coins",
+    "name": "Coins",
+    "category": "commerce"
+  },
+  {
+    "id": "wallet",
+    "name": "Wallet",
+    "category": "commerce"
+  },
+  {
+    "id": "piggy-bank",
+    "name": "Piggy Bank",
+    "category": "commerce"
+  },
+  {
+    "id": "sack-dollar",
+    "name": "Sack Dollar",
+    "category": "commerce"
+  },
+  {
+    "id": "dollar-sign",
+    "name": "Dollar Sign",
+    "category": "commerce"
+  },
+  {
+    "id": "euro-sign",
+    "name": "Euro Sign",
+    "category": "commerce"
+  },
+  {
+    "id": "sterling-sign",
+    "name": "Sterling Sign",
+    "category": "commerce"
+  },
+  {
+    "id": "percent",
+    "name": "Percent",
+    "category": "commerce"
+  },
+  {
+    "id": "tag",
+    "name": "Tag",
+    "category": "commerce"
+  },
+  {
+    "id": "truck",
+    "name": "Truck",
+    "category": "commerce"
+  },
+  {
+    "id": "truck-fast",
+    "name": "Truck Fast",
+    "category": "commerce"
+  },
+  {
+    "id": "box",
+    "name": "Box",
+    "category": "commerce"
+  },
+  {
+    "id": "boxes-stacked",
+    "name": "Boxes Stacked",
+    "category": "commerce"
+  },
+  {
+    "id": "warehouse",
+    "name": "Warehouse",
+    "category": "commerce"
+  },
+  {
+    "id": "handshake",
+    "name": "Handshake",
+    "category": "commerce"
+  },
+  {
+    "id": "basket-shopping",
+    "name": "Basket Shopping",
+    "category": "commerce"
+  },
+  {
+    "id": "gift",
+    "name": "Gift",
+    "category": "commerce"
+  },
+  {
+    "id": "ticket",
+    "name": "Ticket",
+    "category": "commerce"
+  },
+  {
+    "id": "chart-line",
+    "name": "Chart Line",
+    "category": "commerce"
+  },
+  {
+    "id": "chart-pie",
+    "name": "Chart Pie",
+    "category": "commerce"
+  },
+  {
+    "id": "chart-column",
+    "name": "Chart Column",
+    "category": "commerce"
+  },
+  {
+    "id": "building-columns",
+    "name": "Building Columns",
+    "category": "commerce"
+  },
+  {
+    "id": "landmark",
+    "name": "Landmark",
+    "category": "commerce"
+  },
+  {
+    "id": "scale-balanced",
+    "name": "Scale Balanced",
+    "category": "commerce"
+  },
+  {
+    "id": "file-invoice-dollar",
+    "name": "File Invoice Dollar",
+    "category": "commerce"
+  },
+  {
+    "id": "file-contract",
+    "name": "File Contract",
+    "category": "commerce"
+  },
+  {
+    "id": "video",
+    "name": "Video",
+    "category": "media"
+  },
+  {
+    "id": "photo-film",
+    "name": "Photo Film",
+    "category": "media"
+  },
+  {
+    "id": "images",
+    "name": "Images",
+    "category": "media"
+  },
+  {
+    "id": "microphone",
+    "name": "Microphone",
+    "category": "media"
+  },
+  {
+    "id": "headphones",
+    "name": "Headphones",
+    "category": "media"
+  },
+  {
+    "id": "podcast",
+    "name": "Podcast",
+    "category": "media"
+  },
+  {
+    "id": "radio",
+    "name": "Radio",
+    "category": "media"
+  },
+  {
+    "id": "tv",
+    "name": "TV",
+    "category": "media"
+  },
+  {
+    "id": "guitar",
+    "name": "Guitar",
+    "category": "media"
+  },
+  {
+    "id": "drum",
+    "name": "Drum",
+    "category": "media"
+  },
+  {
+    "id": "play",
+    "name": "Play",
+    "category": "media"
+  },
+  {
+    "id": "camera-retro",
+    "name": "Camera Retro",
+    "category": "media"
+  },
+  {
+    "id": "pen-nib",
+    "name": "Pen Nib",
+    "category": "media"
+  },
+  {
+    "id": "paintbrush",
+    "name": "Paintbrush",
+    "category": "media"
+  },
+  {
+    "id": "brush",
+    "name": "Brush",
+    "category": "media"
+  },
+  {
+    "id": "pen",
+    "name": "Pen",
+    "category": "media"
+  },
+  {
+    "id": "pencil",
+    "name": "Pencil",
+    "category": "media"
+  },
+  {
+    "id": "feather",
+    "name": "Feather",
+    "category": "media"
+  },
+  {
+    "id": "book-open",
+    "name": "Book Open",
+    "category": "media"
+  },
+  {
+    "id": "bookmark",
+    "name": "Bookmark",
+    "category": "media"
+  },
+  {
+    "id": "quote-left",
+    "name": "Quote Left",
+    "category": "media"
+  },
+  {
+    "id": "blog",
+    "name": "Blog",
+    "category": "media"
+  },
+  {
+    "id": "gamepad",
+    "name": "Gamepad",
+    "category": "media"
+  },
+  {
+    "id": "dice",
+    "name": "Dice",
+    "category": "media"
+  },
+  {
+    "id": "puzzle-piece",
+    "name": "Puzzle Piece",
+    "category": "media"
+  },
+  {
+    "id": "chess",
+    "name": "Chess",
+    "category": "media"
+  },
+  {
+    "id": "masks-theater",
+    "name": "Masks Theater",
+    "category": "media"
+  },
+  {
+    "id": "clapperboard",
+    "name": "Clapperboard",
+    "category": "media"
+  },
+  {
+    "id": "icons",
+    "name": "Icons",
+    "category": "media"
+  },
+  {
+    "id": "house",
+    "name": "House",
+    "category": "lifestyle"
+  },
+  {
+    "id": "hotel",
+    "name": "Hotel",
+    "category": "lifestyle"
+  },
+  {
+    "id": "hospital",
+    "name": "Hospital",
+    "category": "lifestyle"
+  },
+  {
+    "id": "house-medical",
+    "name": "Clinic",
+    "category": "lifestyle"
+  },
+  {
+    "id": "stethoscope",
+    "name": "Stethoscope",
+    "category": "lifestyle"
+  },
+  {
+    "id": "heart-pulse",
+    "name": "Heart Pulse",
+    "category": "lifestyle"
+  },
+  {
+    "id": "pills",
+    "name": "Pills",
+    "category": "lifestyle"
+  },
+  {
+    "id": "graduation-cap",
+    "name": "Graduation Cap",
+    "category": "lifestyle"
+  },
+  {
+    "id": "school",
+    "name": "School",
+    "category": "lifestyle"
+  },
+  {
+    "id": "chalkboard-user",
+    "name": "Chalkboard User",
+    "category": "lifestyle"
+  },
+  {
+    "id": "book-open-reader",
+    "name": "Book Open Reader",
+    "category": "lifestyle"
+  },
+  {
+    "id": "utensils",
+    "name": "Utensils",
+    "category": "lifestyle"
+  },
+  {
+    "id": "mug-hot",
+    "name": "Mug Hot",
+    "category": "lifestyle"
+  },
+  {
+    "id": "pizza-slice",
+    "name": "Pizza Slice",
+    "category": "lifestyle"
+  },
+  {
+    "id": "burger",
+    "name": "Burger",
+    "category": "lifestyle"
+  },
+  {
+    "id": "wine-glass",
+    "name": "Wine Glass",
+    "category": "lifestyle"
+  },
+  {
+    "id": "cake-candles",
+    "name": "Cake Candles",
+    "category": "lifestyle"
+  },
+  {
+    "id": "plane",
+    "name": "Plane",
+    "category": "lifestyle"
+  },
+  {
+    "id": "car",
+    "name": "Car",
+    "category": "lifestyle"
+  },
+  {
+    "id": "bus",
+    "name": "Bus",
+    "category": "lifestyle"
+  },
+  {
+    "id": "bicycle",
+    "name": "Bicycle",
+    "category": "lifestyle"
+  },
+  {
+    "id": "ship",
+    "name": "Ship",
+    "category": "lifestyle"
+  },
+  {
+    "id": "train",
+    "name": "Train",
+    "category": "lifestyle"
+  },
+  {
+    "id": "map",
+    "name": "Map",
+    "category": "lifestyle"
+  },
+  {
+    "id": "map-location-dot",
+    "name": "Map Location Dot",
+    "category": "lifestyle"
+  },
+  {
+    "id": "location-dot",
+    "name": "Location Dot",
+    "category": "lifestyle"
+  },
+  {
+    "id": "mountain-sun",
+    "name": "Mountain Sun",
+    "category": "lifestyle"
+  },
+  {
+    "id": "tree",
+    "name": "Tree",
+    "category": "lifestyle"
+  },
+  {
+    "id": "leaf",
+    "name": "Leaf",
+    "category": "lifestyle"
+  },
+  {
+    "id": "seedling",
+    "name": "Seedling",
+    "category": "lifestyle"
+  },
+  {
+    "id": "paw",
+    "name": "Paw",
+    "category": "lifestyle"
+  },
+  {
+    "id": "dog",
+    "name": "Dog",
+    "category": "lifestyle"
+  },
+  {
+    "id": "cat",
+    "name": "Cat",
+    "category": "lifestyle"
+  },
+  {
+    "id": "dumbbell",
+    "name": "Dumbbell",
+    "category": "lifestyle"
+  },
+  {
+    "id": "futbol",
+    "name": "Futbol",
+    "category": "lifestyle"
+  },
+  {
+    "id": "basketball",
+    "name": "Basketball",
+    "category": "lifestyle"
+  },
+  {
+    "id": "trophy",
+    "name": "Trophy",
+    "category": "lifestyle"
+  },
+  {
+    "id": "medal",
+    "name": "Medal",
+    "category": "lifestyle"
+  },
+  {
+    "id": "flag",
+    "name": "Flag",
+    "category": "lifestyle"
+  },
+  {
+    "id": "calendar",
+    "name": "Calendar",
+    "category": "lifestyle"
+  },
+  {
+    "id": "calendar-days",
+    "name": "Calendar Days",
+    "category": "lifestyle"
+  },
+  {
+    "id": "clipboard",
+    "name": "Clipboard",
+    "category": "lifestyle"
+  },
+  {
+    "id": "clipboard-list",
+    "name": "Clipboard List",
+    "category": "lifestyle"
+  },
+  {
+    "id": "lightbulb",
+    "name": "Lightbulb",
+    "category": "lifestyle"
+  },
+  {
+    "id": "magnifying-glass",
+    "name": "Magnifying Glass",
+    "category": "lifestyle"
+  },
+  {
+    "id": "bullhorn",
+    "name": "Bullhorn",
+    "category": "lifestyle"
+  },
+  {
+    "id": "bullseye",
+    "name": "Bullseye",
+    "category": "lifestyle"
+  },
+  {
+    "id": "people-group",
+    "name": "People Group",
+    "category": "lifestyle"
+  },
+  {
+    "id": "user-tie",
+    "name": "User Tie",
+    "category": "lifestyle"
+  },
+  {
+    "id": "user-graduate",
+    "name": "User Graduate",
+    "category": "lifestyle"
+  },
+  {
+    "id": "child",
+    "name": "Child",
+    "category": "lifestyle"
+  },
+  {
+    "id": "baby",
+    "name": "Baby",
+    "category": "lifestyle"
+  },
+  {
+    "id": "church",
+    "name": "Church",
+    "category": "lifestyle"
+  },
+  {
+    "id": "mosque",
+    "name": "Mosque",
+    "category": "lifestyle"
+  },
+  {
+    "id": "gavel",
+    "name": "Gavel",
+    "category": "lifestyle"
+  },
+  {
+    "id": "shirt",
+    "name": "Shirt",
+    "category": "lifestyle"
+  },
+  {
+    "id": "gem",
+    "name": "Gem",
+    "category": "lifestyle"
+  },
+  {
+    "id": "crown",
+    "name": "Crown",
+    "category": "lifestyle"
+  },
+  {
+    "id": "sun",
+    "name": "Sun",
+    "category": "lifestyle"
+  },
+  {
+    "id": "moon",
+    "name": "Moon",
+    "category": "lifestyle"
+  },
+  {
+    "id": "cloud-sun",
+    "name": "Cloud Sun",
+    "category": "lifestyle"
+  },
+  {
+    "id": "snowflake",
+    "name": "Snowflake",
+    "category": "lifestyle"
+  },
+  {
+    "id": "umbrella",
+    "name": "Umbrella",
+    "category": "lifestyle"
+  },
+  {
+    "id": "language",
+    "name": "Language",
+    "category": "lifestyle"
+  },
+  {
+    "id": "phone",
+    "name": "Phone",
+    "category": "lifestyle"
+  },
+  {
+    "id": "hourglass",
+    "name": "Hourglass",
+    "category": "lifestyle"
+  },
+  {
+    "id": "award",
+    "name": "Award",
+    "category": "lifestyle"
+  },
+  {
+    "id": "thumbs-up",
+    "name": "Thumbs Up",
+    "category": "lifestyle"
+  },
+  {
+    "id": "face-smile",
+    "name": "Face Smile",
+    "category": "lifestyle"
+  },
+  {
+    "id": "ghost",
+    "name": "Ghost",
+    "category": "lifestyle"
+  },
+  {
+    "id": "dragon",
+    "name": "Dragon",
+    "category": "lifestyle"
+  },
+  {
+    "id": "hat-wizard",
+    "name": "Hat Wizard",
+    "category": "lifestyle"
+  },
+  {
+    "id": "shuttle-space",
+    "name": "Space Shuttle",
+    "category": "lifestyle"
+  },
+  {
+    "id": "satellite",
+    "name": "Satellite",
+    "category": "lifestyle"
+  },
+  {
+    "id": "user-astronaut",
+    "name": "User Astronaut",
+    "category": "lifestyle"
+  },
+  {
+    "id": "meteor",
+    "name": "Meteor",
+    "category": "lifestyle"
+  }
+]

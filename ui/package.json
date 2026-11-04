@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "test": "node --experimental-strip-types --test src/**/*.test.ts",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "icons:fa": "node ../scripts/build-fa-icons/build-fa-icons.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",

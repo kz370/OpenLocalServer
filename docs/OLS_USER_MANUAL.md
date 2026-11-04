@@ -372,6 +372,8 @@ olsc guide
 - **Per-mode background:** Light and dark mode each keep their own background; a gradient set in one mode is adapted for the other until you set it.
 - **Settings:** Editor settings now have their own Settings sidebar section, separate from General.
 - **UI stability:** Sites web-server chip beside the heading, paginated Background Tasks table with confirmations, fixed-height rows, loading skeletons, and overlay error messages.
+- **More site and project icons:** The icon pickers offer 363 built-in Font Awesome Free icons (up from 97): more CMS, framework, hosting, Linux, social, and payment brands, plus a new Life & Places category. Icons are bundled with the app and never downloaded.
+- **Smoother icon pickers:** Search filters without lag, off-screen icons are not drawn, and the project-type picker shows every icon instead of the first 180.
 - **Fixes:** Add Site uses the detected document root, stale tray service counts, long-path tooltip overflow, and Explorer menu install/repair reliability.
 
 ### Previous Version Notes (v2.8.0)

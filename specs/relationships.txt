@@ -323,3 +323,8 @@ MigrateDialog | counts selected databases | uses functional state updates so rap
 MigrationRecovery | repairs after restart | restores the safety backup for interrupted replacements or removes a partial new destination; failed recovery remains queued for retry
 ReplaceWithBackup | preserves | existing target database via SQL backup before drop; failed import attempts to restore it
 RenameIncoming | rewrites | dumped CREATE/USE database statements to a unique generated target name, leaving the existing schema untouched
+scripts/build-fa-icons.bat | runs | scripts/build-fa-icons/build-fa-icons.mjs
+scripts/build-fa-icons/build-fa-icons.mjs | reads | scripts/build-fa-icons/icons.json and the @fortawesome free-solid / free-brands packages (build time only)
+scripts/build-fa-icons/build-fa-icons.mjs | generates | ui/src/components/faIconsData.json (bundled by Vite; read by SiteLogo FA_ICONS)
+SiteLogoPanel | uses | SiteLogo filterFaIcons + FA_ICON_CATEGORIES (memoized, deferred search; tiles use content-visibility:auto)
+ManageProjectTypesDialog | uses | SiteLogo filterFaIcons + FA_ICON_CATEGORIES (one memoized list shared by the new-type and per-type icon pickers; no 180-icon cap)
