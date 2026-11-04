@@ -6,7 +6,7 @@
 // The app itself never imports those packages and never goes online for icons:
 // it only reads the generated JSON, which Vite bundles into the app.
 //
-// icons.json holds { "categories": [{ "id", "label" }], "icons": [...] }. The category
+// icons.json holds { "categories": [{ "id", "label", "icon" }], "icons": [...] }. The category
 // order there is the order of the picker's filter chips and dropdown.
 //
 // To add an icon: add { "id", "name", "category", "color"? } to "icons", where "id" is
@@ -77,7 +77,7 @@ for (const cat of categories) {
 if (!CATEGORIES.size || !Array.isArray(list?.icons)) {
   fail(
     'scripts/build-fa-icons/icons.json has the wrong shape.',
-    'it must be { "categories": [{ "id", "label" }], "icons": [{ "id", "name", "category" }] } with at least one category.',
+    'it must be { "categories": [{ "id", "label", "icon" }], "icons": [{ "id", "name", "category" }] } with at least one category.',
     'restore the file from git or fix its structure, then run this again.',
   )
 }
@@ -140,6 +140,18 @@ if (problems.length) {
   )
 }
 
+// Each category's "icon" is shown beside its name in the picker's category list,
+// so it must be one of the generated icons.
+const outIds = new Set(out.map((icon) => icon.id))
+const badCategoryIcons = categories.filter((c) => !c.icon || !outIds.has(c.icon))
+if (badCategoryIcons.length) {
+  fail(
+    `category ${badCategoryIcons.map((c) => `${c.id} ("${c.icon ?? ''}")`).join(', ')} has a missing or unknown "icon".`,
+    'the category list shows each category with one of the catalog icons, and this one is not in "icons".',
+    'set "icon" to the id of an icon listed in "icons", then run this again.',
+  )
+}
+
 const empty = [...CATEGORIES].filter((c) => !out.some((icon) => icon.category === c))
 if (empty.length) {
   fail(
@@ -149,7 +161,7 @@ if (empty.length) {
   )
 }
 
-const data = { categories: categories.map(({ id, label }) => ({ id, label })), icons: out }
+const data = { categories: categories.map(({ id, label, icon }) => ({ id, label, icon })), icons: out }
 writeFileSync(outPath, JSON.stringify(data, null, 2) + '\n')
 console.log(`[ok] Wrote ${out.length} icons in ${CATEGORIES.size} categories to ui/src/components/faIconsData.json`)
 console.log(`     ${categories.map(({ id }) => `${id} ${out.filter((icon) => icon.category === id).length}`).join(', ')}`)

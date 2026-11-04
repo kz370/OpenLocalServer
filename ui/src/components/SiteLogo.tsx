@@ -74,6 +74,8 @@ export interface FaIconDef {
 export interface FaIconCategory {
   id: string
   label: string
+  /** Catalog icon id shown beside the label in the picker's category list (absent for `all`). */
+  icon?: string
 }
 
 const faData = faIconsData as { categories: FaIconCategory[]; icons: FaIconDef[] }

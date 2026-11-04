@@ -2,71 +2,88 @@
   "categories": [
     {
       "id": "cms",
-      "label": "CMS & Shops"
+      "label": "CMS & Shops",
+      "icon": "store"
     },
     {
       "id": "frameworks",
-      "label": "Languages & Frameworks"
+      "label": "Languages & Frameworks",
+      "icon": "file-code"
     },
     {
       "id": "devtools",
-      "label": "Dev Tools"
+      "label": "Dev Tools",
+      "icon": "code-branch"
     },
     {
       "id": "cloud",
-      "label": "Cloud & Hosting"
+      "label": "Cloud & Hosting",
+      "icon": "cloud"
     },
     {
       "id": "os",
-      "label": "OS & Browsers"
+      "label": "OS & Browsers",
+      "icon": "desktop"
     },
     {
       "id": "web",
-      "label": "Web & Network"
+      "label": "Web & Network",
+      "icon": "globe"
     },
     {
       "id": "tech",
-      "label": "System & Security"
+      "label": "System & Security",
+      "icon": "shield-halved"
     },
     {
       "id": "social",
-      "label": "Social & Chat"
+      "label": "Social & Chat",
+      "icon": "comments"
     },
     {
       "id": "business",
-      "label": "Business & Finance"
+      "label": "Business & Finance",
+      "icon": "briefcase"
     },
     {
       "id": "media",
-      "label": "Media & Creative"
+      "label": "Media & Creative",
+      "icon": "camera"
     },
     {
       "id": "games",
-      "label": "Games"
+      "label": "Games",
+      "icon": "gamepad"
     },
     {
       "id": "food",
-      "label": "Food & Drink"
+      "label": "Food & Drink",
+      "icon": "utensils"
     },
     {
       "id": "travel",
-      "label": "Travel & Places"
+      "label": "Travel & Places",
+      "icon": "plane"
     },
     {
       "id": "health",
-      "label": "Health & Sports"
+      "label": "Health & Sports",
+      "icon": "heart-pulse"
     },
     {
       "id": "education",
-      "label": "Education"
+      "label": "Education",
+      "icon": "graduation-cap"
     },
     {
       "id": "people",
-      "label": "People"
+      "label": "People",
+      "icon": "users"
     },
     {
       "id": "general",
-      "label": "General"
+      "label": "General",
+      "icon": "star"
     }
   ],
   "icons": [

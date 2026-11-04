@@ -688,42 +688,42 @@ export function SiteLogoPanel({
             )}
           </div>
 
-          {/* Category filter: chips when wide, dropdown when narrow */}
-          <IconCategoryFilter value={category} onChange={setCategory} search={deferredSearch} />
-
-          {/* Icons Grid with zero layout jumping */}
-          <div className="grid max-h-60 grid-cols-3 gap-2 overflow-y-auto rounded-md border border-border p-2 sm:grid-cols-4 md:grid-cols-6">
-            {filteredIcons.map((item) => {
-              const isSelected = activeFaName === item.id
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => void handleSelectFaIcon(item.id)}
-                  disabled={busy}
-                  // content-visibility lets the browser skip layout and paint for tiles
-                  // scrolled out of view, so a long grid scrolls as smoothly as a short one.
-                  className={`group flex cursor-pointer flex-col items-center gap-1.5 rounded-md border p-2 text-center transition-all [content-visibility:auto] [contain-intrinsic-size:auto_64px] ${
-                    isSelected
-                      ? 'border-primary bg-primary/10 text-primary shadow-xs'
-                      : 'border-border/60 bg-muted/20 hover:border-border hover:bg-muted/60 text-foreground'
-                  }`}
-                  title={item.name}
-                >
-                  <SiteLogo
-                    icon={isSelected ? currentIcon : item.id}
-                    className="size-6 transition-transform group-hover:scale-110"
-                  />
-                  <span className="w-full truncate text-[11px] leading-tight">{item.name}</span>
-                </button>
-              )
-            })}
-            {filteredIcons.length === 0 && (
-              <div className="col-span-full py-6 text-center text-xs text-muted-foreground">
-                No offline icons found matching &ldquo;{deferredSearch}&rdquo;.
-              </div>
-            )}
-          </div>
+          {/* Category list (wide) or dropdown (narrow) beside a scrolling icon grid */}
+          <IconCategoryFilter value={category} onChange={setCategory} search={deferredSearch} heightClassName="h-72">
+            {/* Auto-fill columns follow the grid pane's own width, not the window's. */}
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(5.5rem,1fr))] gap-2">
+              {filteredIcons.map((item) => {
+                const isSelected = activeFaName === item.id
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => void handleSelectFaIcon(item.id)}
+                    disabled={busy}
+                    // content-visibility lets the browser skip layout and paint for tiles
+                    // scrolled out of view, so a long grid scrolls as smoothly as a short one.
+                    className={`group flex cursor-pointer flex-col items-center gap-1.5 rounded-md border p-2 text-center transition-all [content-visibility:auto] [contain-intrinsic-size:auto_64px] ${
+                      isSelected
+                        ? 'border-primary bg-primary/10 text-primary shadow-xs'
+                        : 'border-border/60 bg-muted/20 hover:border-border hover:bg-muted/60 text-foreground'
+                    }`}
+                    title={item.name}
+                  >
+                    <SiteLogo
+                      icon={isSelected ? currentIcon : item.id}
+                      className="size-6 transition-transform group-hover:scale-110"
+                    />
+                    <span className="w-full truncate text-[11px] leading-tight">{item.name}</span>
+                  </button>
+                )
+              })}
+              {filteredIcons.length === 0 && (
+                <div className="col-span-full py-6 text-center text-xs text-muted-foreground">
+                  No offline icons found matching &ldquo;{deferredSearch}&rdquo;.
+                </div>
+              )}
+            </div>
+          </IconCategoryFilter>
         </div>
       )}
     </div>

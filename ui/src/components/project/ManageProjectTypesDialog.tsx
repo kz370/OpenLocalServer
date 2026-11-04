@@ -427,27 +427,28 @@ export function ManageProjectTypesDialog({
                       value={iconCategory}
                       onChange={setIconCategory}
                       search={deferredIconSearch}
-                      className="border-b border-border pb-2"
-                    />
-                    <div className="grid grid-cols-6 gap-1.5 max-h-44 overflow-y-auto pr-1 pt-1">
-                      {visible.map((ic) => (
-                        <button
-                          key={ic.id}
-                          type="button"
-                          title={ic.name}
-                          onClick={() => {
-                            setNewTypeIcon(ic.id)
-                            setIconPickerFor(null)
-                          }}
-                          className="flex flex-col items-center justify-center gap-1 p-2 rounded-md border border-transparent hover:border-primary/40 hover:bg-primary/5 cursor-pointer transition-colors [content-visibility:auto] [contain-intrinsic-size:auto_52px]"
-                        >
-                          <FontAwesomeIcon name={ic.id} className="size-5 text-muted-foreground" />
-                          <span className="text-[9px] text-muted-foreground truncate w-full text-center leading-tight">
-                            {ic.name}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
+                      heightClassName="h-56"
+                    >
+                      <div className="grid grid-cols-[repeat(auto-fill,minmax(4.5rem,1fr))] gap-1.5">
+                        {visible.map((ic) => (
+                          <button
+                            key={ic.id}
+                            type="button"
+                            title={ic.name}
+                            onClick={() => {
+                              setNewTypeIcon(ic.id)
+                              setIconPickerFor(null)
+                            }}
+                            className="flex flex-col items-center justify-center gap-1 p-2 rounded-md border border-transparent hover:border-primary/40 hover:bg-primary/5 cursor-pointer transition-colors [content-visibility:auto] [contain-intrinsic-size:auto_52px]"
+                          >
+                            <FontAwesomeIcon name={ic.id} className="size-5 text-muted-foreground" />
+                            <span className="text-[9px] text-muted-foreground truncate w-full text-center leading-tight">
+                              {ic.name}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </IconCategoryFilter>
                   </>
                 )
               })()}
@@ -653,33 +654,34 @@ export function ManageProjectTypesDialog({
                                 value={iconCategory}
                                 onChange={setIconCategory}
                                 search={deferredIconSearch}
-                                className="border-b border-border pb-2"
-                              />
-                              <div className="grid grid-cols-6 gap-1.5 max-h-44 overflow-y-auto pr-1 pt-1">
-                                {visible.map((ic) => (
-                                  <button
-                                    key={ic.id}
-                                    type="button"
-                                    title={ic.name}
-                                    onClick={() => {
-                                      const nextPrefs = {
-                                        ...preferences,
-                                        typeIcons: { ...(preferences.typeIcons ?? {}), [item.id]: ic.id },
-                                      }
-                                      saveProjectFilterPreferences(nextPrefs)
-                                      setPreferences(nextPrefs)
-                                      setIconPickerFor(null)
-                                      void onUpdated()
-                                    }}
-                                    className="flex flex-col items-center justify-center gap-1 p-2 rounded-md border border-transparent hover:border-primary/40 hover:bg-primary/5 cursor-pointer transition-colors [content-visibility:auto] [contain-intrinsic-size:auto_52px]"
-                                  >
-                                    <FontAwesomeIcon name={ic.id} className="size-5 text-muted-foreground" />
-                                    <span className="text-[9px] text-muted-foreground truncate w-full text-center leading-tight">
-                                      {ic.name}
-                                    </span>
-                                  </button>
-                                ))}
-                              </div>
+                                heightClassName="h-56"
+                              >
+                                <div className="grid grid-cols-[repeat(auto-fill,minmax(4.5rem,1fr))] gap-1.5">
+                                  {visible.map((ic) => (
+                                    <button
+                                      key={ic.id}
+                                      type="button"
+                                      title={ic.name}
+                                      onClick={() => {
+                                        const nextPrefs = {
+                                          ...preferences,
+                                          typeIcons: { ...(preferences.typeIcons ?? {}), [item.id]: ic.id },
+                                        }
+                                        saveProjectFilterPreferences(nextPrefs)
+                                        setPreferences(nextPrefs)
+                                        setIconPickerFor(null)
+                                        void onUpdated()
+                                      }}
+                                      className="flex flex-col items-center justify-center gap-1 p-2 rounded-md border border-transparent hover:border-primary/40 hover:bg-primary/5 cursor-pointer transition-colors [content-visibility:auto] [contain-intrinsic-size:auto_52px]"
+                                    >
+                                      <FontAwesomeIcon name={ic.id} className="size-5 text-muted-foreground" />
+                                      <span className="text-[9px] text-muted-foreground truncate w-full text-center leading-tight">
+                                        {ic.name}
+                                      </span>
+                                    </button>
+                                  ))}
+                                </div>
+                              </IconCategoryFilter>
                             </>
                           )
                         })()}
