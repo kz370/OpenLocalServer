@@ -297,6 +297,9 @@ impl Core {
                     let data_url = format!("data:{mime};base64,{}", crate::app::to_base64(&bytes));
                     Ok(R::ImageFile { data_url })
                 }
+                C::ListSiteIconLibrary => Ok(R::SiteIconLibrary {
+                    icons: crate::app::list_site_icon_library(&i.paths.site_icons_dir()),
+                }),
                 C::DuplicateDomain {
                     hostname,
                     new_hostname,

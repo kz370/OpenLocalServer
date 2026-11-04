@@ -297,6 +297,7 @@ pub enum CoreCommand {
     ReadImageFile {
         path: String,
     },
+    ListSiteIconLibrary,
     SuggestDomain {
         project_id: String,
         template: String,

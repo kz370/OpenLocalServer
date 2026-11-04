@@ -178,6 +178,7 @@ impl Inner {
         let projects = self.projects.lock().unwrap().list();
         let tunnels = self.list_tunnels();
         let proxy_dir = self.paths.proxy_site_images_dir();
+        let icons_dir = self.paths.site_icons_dir();
         self.domains
             .lock()
             .unwrap()
@@ -185,12 +186,33 @@ impl Inner {
             .into_iter()
             .map(|d| {
                 let folder = site_folder(&d, &projects);
-                let icon_image = if matches!(d.kind, SiteKind::Proxy { .. }) {
+                let project = d
+                    .project_id
+                    .as_ref()
+                    .and_then(|id| projects.iter().find(|p| &p.id == id));
+                let icon_type_folder = project.map(|p| p.path.as_str()).unwrap_or(&folder);
+                let project_type = crate::app::project_type_for_icon(
+                    icon_type_folder,
+                    project.and_then(|p| p.project_type.as_deref()),
+                );
+                let wordpress_project =
+                    crate::app::is_wordpress_project(&folder, project_type.as_deref())
+                        || crate::app::is_wordpress_project(&d.root, None);
+                let detected_icon_image = if matches!(d.kind, SiteKind::Proxy { .. }) {
                     read_proxy_site_icon_image(&proxy_dir, &d.hostname)
                 } else {
-                    read_site_icon_image(&folder)
+                    read_domain_icon_image(&d.root, &folder)
                         .or_else(|| read_proxy_site_icon_image(&proxy_dir, &d.hostname))
                 };
+                let explicit_icon = d
+                    .icon
+                    .as_ref()
+                    .or_else(|| project.and_then(|p| p.icon.as_ref()));
+                let icon_image = detected_icon_image.or_else(|| {
+                    explicit_icon.is_none().then(|| {
+                        crate::app::read_project_fallback_icon(&icons_dir, project_type.as_deref())
+                    })?
+                });
                 let broadcast_tunnel = tunnels.iter().find(|t| {
                     (d.tunnel_id.as_deref() == Some(&t.config.id)
                         || (d.project_id.is_some() && d.project_id == t.config.project_id))
@@ -212,14 +234,20 @@ impl Inner {
                     has_app: d.app.is_some(),
                     group: site_group(&d, &projects).into(),
                     folder,
+                    document_root: d.root.clone(),
                     public_domain: d.public_domain.clone(),
                     server: crate::domain::resolved_server(&d, &cfg),
                     path_prefix: d.path_prefix.clone(),
                     http_port: cfg
                         .effective_ports(&crate::domain::resolved_server(&d, &cfg))
                         .http,
-                    icon: d.icon.clone(),
+                    icon: d
+                        .icon
+                        .clone()
+                        .or_else(|| project.and_then(|p| p.icon.clone()))
+                        .or_else(|| wordpress_project.then(|| "wordpress".to_string())),
                     icon_image,
+                    project_type,
                     ssl_provider: Some(d.ssl_provider.to_string()),
                     auto_broadcast: d.auto_broadcast,
                     broadcast_url,

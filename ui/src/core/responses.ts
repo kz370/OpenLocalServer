@@ -48,6 +48,7 @@ export type CoreResponse =
   | { type: 'domains'; domains: DomainSummary[] }
   | { type: 'domain'; domain: Domain }
   | { type: 'image_file'; data_url: string }
+  | { type: 'site_icon_library'; icons: { name: string; category: string; data_url: string }[] }
   | { type: 'text'; text: string }
   | { type: 'applied'; reports: ApplyReport[] }
   | { type: 'ca_info'; info: CaInfo }

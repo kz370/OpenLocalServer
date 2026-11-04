@@ -1164,6 +1164,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                             icon={d?.icon}
                             iconImage={d?.icon_image ?? p?.icon_image}
                             hostname={d?.hostname ?? p?.name}
+                            projectType={d?.project_type ?? p?.project_type}
                             className={d?.icon_image ?? p?.icon_image ? 'size-8' : 'size-6'}
                           />
                         </button>
@@ -1450,6 +1451,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                         icon={row.site?.icon}
                         iconImage={row.site?.icon_image ?? row.project?.icon_image}
                         hostname={title}
+                        projectType={row.site?.project_type ?? row.project?.project_type}
                         className="size-3.5 shrink-0"
                       />
                       <span className="truncate" title={title}>

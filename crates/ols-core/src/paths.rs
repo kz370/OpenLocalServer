@@ -166,6 +166,11 @@ impl AppPaths {
         self.root.join("proxy-site-images")
     }
 
+    /// User supplied, reusable site icons, with optional category subfolders.
+    pub fn site_icons_dir(&self) -> PathBuf {
+        self.root.join("icons")
+    }
+
     pub fn sites_dir(&self) -> PathBuf {
         if std::env::var(HOME_ENV_VAR).is_ok() {
             return self.root.join("sites");

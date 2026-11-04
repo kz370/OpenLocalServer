@@ -142,6 +142,8 @@ pub struct DomainSummary {
     /// The folder to open in an editor: the linked project, else the site root without a
     /// trailing `public`/`web` docroot.
     pub folder: String,
+    /// The configured web document root, used by the icon picker and favicon discovery.
+    pub document_root: String,
     /// Website type it is listed under: "php", "nodejs", "python", "static" or "proxy".
     pub group: String,
     pub public_domain: Option<String>,
@@ -155,9 +157,12 @@ pub struct DomainSummary {
     /// Optional Font Awesome icon identifier or class (e.g. "fa-wordpress" or "globe").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
-    /// Data URL (`data:image/webp;base64,...`) when `ols_site_icon.webp` exists in `folder`.
+    /// Data URL for a manually selected image or a discovered favicon.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon_image: Option<String>,
+    /// Project type, used for a matching icon when no explicit icon is configured.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_type: Option<String>,
     /// SSL certificate provider: "local_ca", "lets_encrypt", "custom".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ssl_provider: Option<String>,

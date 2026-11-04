@@ -1,4 +1,5 @@
 import type React from 'react'
+import { TechIcon, projectTypeTechIcon } from '@/components/TechIcon'
 import { cn } from '@/lib/utils'
 
 /**
@@ -149,21 +150,23 @@ export function FontAwesomeIcon({
 /**
  * Main SiteLogo component.
  * Priority:
- * 1. iconImage: local `ols_site_icon.webp` file in project directory (data URL)
+ * 1. iconImage: local custom image or discovered favicon (data URL)
  *    Rendered square with border radius, subtle shadow, and object-cover.
  * 2. icon: Font Awesome icon name (offline version)
- * 3. Default: Clean, colorful modern internet globe icon (or folder icon for standalone projects)
+ * 3. Default: project-type icon (WordPress when detected), then globe/folder fallback
  */
 export function SiteLogo({
   icon,
   iconImage,
   hostname,
+  projectType,
   fallback = 'globe',
   className,
 }: {
   icon?: string | null
   iconImage?: string | null
   hostname?: string
+  projectType?: string | null
   fallback?: 'globe' | 'folder'
   className?: string
 }) {
@@ -184,8 +187,13 @@ export function SiteLogo({
     )
   }
 
-  if (icon) {
-    return <FontAwesomeIcon name={icon} className={cn('size-6', className)} fallback={fallback} />
+  const effectiveIcon = icon ?? projectTypeTechIcon(projectType)
+  if (effectiveIcon) {
+    return icon ? (
+      <FontAwesomeIcon name={icon} className={cn('size-6', className)} fallback={fallback} />
+    ) : (
+      <TechIcon id={effectiveIcon} className={cn('size-6', className)} />
+    )
   }
 
   if (fallback === 'folder') {

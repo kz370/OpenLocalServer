@@ -82,6 +82,26 @@ const BRANDS: Record<string, SimpleIcon> = {
   rust: siRust,
 }
 
+const PROJECT_TYPE_ICON_ALIASES: Record<string, string> = {
+  'static html': 'static',
+  'static-html': 'static',
+  'node.js': 'node',
+  nestjs: 'node',
+  flask: 'python',
+  express: 'express-api',
+  'next.js': 'nextjs',
+  'fast api': 'fastapi',
+  '.net': 'dotnet',
+}
+
+/** Returns a bundled brand icon for a recognized project type, otherwise null. */
+export function projectTypeTechIcon(projectType?: string | null): string | null {
+  if (!projectType) return null
+  const name = projectType.split(':').at(-1)?.trim().toLowerCase() ?? ''
+  const id = PROJECT_TYPE_ICON_ALIASES[name] ?? name
+  return Object.prototype.hasOwnProperty.call(BRANDS, id) ? id : null
+}
+
 /**
  * Mailpit's mark: an envelope, drawn here because simple-icons has no mail-trap brand.
  * The earlier isometric outline read as an empty shape at 16px, so this is a filled body
