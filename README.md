@@ -136,22 +136,27 @@ Grab the latest installer (`OLS-2.9.0-setup.exe`) from the [Releases page](https
   - **Python:** embedded packages installable from the catalog, plus automated detection of system Python (3.7–3.15) and local virtual environments (`.venv`, `venv`). Supervised background dev server processes (`uvicorn`, `flask`, `django`, `waitress`, `streamlit`).
   - **Tooling:** Composer 2.10, portable Git 2.55, and k6 2.3 load testing.
 - **Online catalogs** per runtime with vendor-published sources, 24-hour caching, background refresh, and **SHA-256 verification** on all downloads with atomic extraction. In-flight downloads can be **paused, resumed, or cancelled**.
+- **Safe updates:** Pre-releases are hidden unless you switch the channel in Manage, Node.js follows LTS, a major-version jump asks for confirmation first, and **Update all** updates every runtime with a newer version in one go.
 - **Bring your own:** Scan folders for existing PHP installations (e.g. Laragon, XAMPP), or register custom executables (PHP, Node, Python) by locating the file.
 - **Manual runtime drop-in & offline installation:** Drop any runtime into `<install dir>/data/runtimes/<id>/<version>/` or cache archive into `<install dir>/data/cache/`. See the [Troubleshooting & Manual Runtime Guide](./docs/TROUBLESHOOTING.md).
 - **Resolution order:** Project manifest pin > auto-detected from project files > global default. Changing a global default never touches existing project configurations.
 
 ### 🌐 Sites, Web Servers & HTTPS
 
-- **Multiple ways to add a site:** Pick an existing directory, add a **project root folder** to automatically detect and register all subfolders as sites, clone directly from a **Git repository**, or scaffold with **Quick Apps**.
-- **Explorer right-click integration:** Add any folder to OLS straight from the Windows Explorer context menu.
+- **Multiple ways to add a site:** Start from a new folder or an **existing unconnected project**, add a **project root folder** to detect its subfolders, clone directly from a **Git repository**, or scaffold with searchable **Quick Apps**. The project's detected document root (e.g. `public/`) is used automatically.
+- **Explorer right-click submenu:** Right-click a folder → **Show more options** → **Open Local Server** → **Add folder**, **Set up**, **Ignore project**, or **Ignore site**. Turn it on in Settings with **Add to Explorer** (Repair and Remove are there too).
 - **Automatic document root & welcome page:** When creating a new site, OLS automatically creates the document root folder and generates a default welcome file (`index.html` or `index.php`) if none exists.
 - **Site status tabs & filtering:** Dedicated **Enabled**, **Disabled**, **Folder not found**, and **All** tabs with quick counts and distinct colored status indicators. The **Folder not found** tab isolates missing directories and offline drives, providing a 1-click **Locate** button to re-point moved folders.
 - **Multi-domain project rows & context menu:** Multiple domains sharing a project folder group into a single project row with primary domain focus and interactive extra-domain pills. Right-clicking any site row opens a cursor-positioned actions menu with smart viewport clamping and smooth internal scrolling.
-- **Safe deletion & folder exclusion:** Deleting or hiding a site moves its folder into an `ols_excluded_sites` subfolder (with automatic name collision resolution) instead of permanent disk deletion. Configurable ignored folders (`projects.ignored_folders`) in Settings.
+- **Hide, remove, or safely delete:** Each site row offers **Hide** (with Undo), **Remove from list**, and **Safe delete**, which moves the folder into an `ols_excluded_sites` subfolder (with automatic name collision resolution) instead of deleting it from disk. Configurable ignored folders (`projects.ignored_folders`) in Settings.
+- **Ignore markers:** Drop `.ols_ignore_me` in a folder to hide both the project and its site, or `.ols_ignore_site` to hide and deactivate only the site while the project stays listed. OLS watches for these files and updates right away; Projects offers **Unignore site**.
+- **Live Site Health Check:** Runs DNS, TCP, TLS, certificate, trust, and HTTP checks and shows each stage as it completes.
+- **WordPress core repair:** Restores missing WordPress core files, checked against WordPress.org checksums, with an offline cache.
 - **Site branding & icons:** Custom site logos in table rows via local image upload with automatic WebP optimization, or a bundled offline Font Awesome icon catalog with swatch and custom color pickers.
 - **Unlimited sites & domains:** Any domain name plus wildcard subdomains; automatic `<folder>.<tld>` naming with a configurable top-level domain (local, test, localhost, or custom); static sites; reverse proxies to any `host:port`. Run on a domain, on `localhost/<prefix>`, or both simultaneously.
 - **Multi-interface web binding (`0.0.0.0` & `127.0.0.1`):** Web servers bind across all local network interfaces, supporting LAN access and router port forwarding.
 - **Trusted local HTTPS:** Built-in on-device Certificate Authority (CA), 397-day leaf certificates, automated renewal under 30 days, and SAN-aware reuse.
+- **Public HTTPS options:** Per domain, use the local CA, your own certificate and key, or a free **Let's Encrypt** certificate (ACME HTTP-01) for public hostnames reachable on port 80.
 - **Per-site PHP version & per-site web server:** Each site can run on its own PHP version and web server (Nginx, Apache, or Caddy); unpinned sites cleanly follow global defaults.
 - **Web server lineup:**
   - **Nginx 1.28 & 1.30**, **Apache 2.4 (2.4.69)**, and **Caddy 2.11 (2.11.4)** with generated configurations.
@@ -165,6 +170,11 @@ Grab the latest installer (`OLS-2.9.0-setup.exe`) from the [Releases page](https
 
 ### 🧩 Projects & Reproducible Environments
 
+- **Projects page:** Browse, search, and manage local project folders with or without a site. Projects stay standalone by default and can be connected to a site later. Missing and offline folders are flagged with a **Locate** action.
+- **Project types:** 17 built-in presets (Laravel, Symfony, WordPress, PHP, Python, Django, Flask, FastAPI, Node.js, Next.js, React, Vue, Go, .NET, Java, Static HTML, Other) plus Tauri auto-detection. Create, rename, delete, reorder, and pin your own custom types; a one-line filter bar collapses extras into a searchable "+N more" popover.
+- **Add folders your way:** Drag folders onto the Projects page, use the Explorer submenu, or let OLS discover new folders in your project roots.
+- **Open in your editor:** Auto-detects VS Code, VSCodium, Cursor, Windsurf, Trae, Zed, Sublime Text, Notepad++, and JetBrains IDEs (PhpStorm, WebStorm, IntelliJ IDEA, PyCharm, Rider, GoLand). Add custom editor paths and choose which ones appear under **Settings → Editors**.
+- **Tray shortcuts:** The tray menu has a Projects submenu (open folder or editor in one click) and creates Quick Apps from your favorites.
 - **Auto-detection:** Framework and version detection from `composer.json`, `package.json`, `manage.py`, and project markers.
 - **Manifests (`.openlocalserver/*.yaml`):** Declarative environment specifications, services, custom commands, and lock files.
 - **14-step setup pipeline:** Resolve → plan → conflict report → dry-run → apply, fully journaled with automatic **rollback** on failure and file locking.
@@ -181,9 +191,11 @@ Grab the latest installer (`OLS-2.9.0-setup.exe`) from the [Releases page](https
 - **Engines:** MariaDB (11.4 & 11.8), PostgreSQL (17.6), MongoDB (8.3), Redis (`redis-windows` 8.10), Memcached (1.6), Mailpit (1.31), SQLite (3.53).
 - **Database inspection & SQL execution:** Table listing and direct SQL command execution (`SELECT`, `INSERT`, `UPDATE`, `CREATE TABLE`, etc.) across MariaDB/MySQL, PostgreSQL, and SQLite with client binary fallback (`mariadb.exe`, `mysql.exe`, `psql.exe`, `sqlite3.exe`).
 - **Database & user management:** Create databases and users, view connection strings, perform point-in-time backups and restores (safety copy created first), SQLite `.backup` and integrity checks.
-- **1-click external GUIs:** HeidiSQL, pgAdmin 4, NoSQLBooster, and Tiny RDM (auto-detected with connection URI copying).
-- **Live-dump importers:** Direct migration from Laragon, XAMPP, and WampServer databases without requiring manual SQL dump exports.
+- **External tools gallery (`Databases → External tools`):** Auto-detects HeidiSQL, DBeaver, pgAdmin 4, DB Browser for SQLite, Letos DB Browser, NoSQLBooster for MongoDB, and Tiny RDM, or add your own tool. A visual arguments editor supports per-engine arguments, placeholder chips (`{host}`, `{port}`, `{database}`, `{path}`, `{uri}`), and a live command preview. Export and import tool setups as JSON without machine paths.
+- **Import databases from several sources:** Import from installed OLS MariaDB versions, Laragon, XAMPP, WampServer, other detected MySQL/MariaDB installs, or any data folder you browse to, in the order you choose. No manual SQL dump needed, and the source data folder is never changed.
+- **Conflict handling:** When a database already exists, choose **Skip existing** (default), **Replace existing** (SQL safety backup first, restored if the import fails), or **Rename incoming**. Interrupted imports are recovered or rolled back on next start.
 - **Service lifecycle & mail capture:** Background service supervision with TCP health checks, Mailpit outgoing mail capture per framework with `.env` configuration diffs.
+- **Custom services:** Start, stop, and watch any program like a built-in service, with its own arguments, port, and health check (never run through a shell).
 - **Resource limits:** Per-service limits on memory, CPU allocation, and process counts.
 
 ### 📊 Dashboard & Monitoring
@@ -196,9 +208,11 @@ Grab the latest installer (`OLS-2.9.0-setup.exe`) from the [Releases page](https
 - **Overview:** Active sites and projects counts, resource usage donuts (CPU, RAM, disk), and a 30-bucket web traffic graph with hover inspector.
 - **Diagnostics & Doctor:** Detailed findings formatted as **Problem / Cause / Fix**, safe 1-click **auto-repair**, ignore rules, and redacted support bundle generation.
 - **Live System Tray Synchronization:** Real-time tray icon tooltip (`OpenLocalServer — X of Y running`) updating dynamically as sites and services change state, with dynamic green/red status marks across tray and taskbar.
-- **Appearance & Aurora Themes:** Flowing Dark Aurora and Light Aurora ambient backgrounds, multi-color SVG gradient icons across sidebar and settings navigation, and token-based appearance customization (presets, WCAG 2.1 contrast math, custom accent colors).
+- **Appearance & Aurora Themes:** Flowing Dark Aurora and Light Aurora ambient backgrounds, multi-color SVG gradient icons across sidebar and settings navigation, and token-based appearance customization (presets, WCAG 2.1 contrast math, custom accent colors). Light and dark mode each keep their own background; a gradient set in one mode is adapted for the other until you set it.
+- **Notifications:** Grouped toasts that pause on hover, live progress for background work, condition banners that clear themselves, and a notification history. Reversible actions use Undo instead of confirmation dialogs.
+- **Shared Save bar:** One fixed Save/Discard bar for unsaved settings and site changes, with `Ctrl+S`.
 - **Unified logs viewer:** Multi-source severity-aware log viewer with real-time tailing, search, level filtering, clipboard copy, and export.
-- **Processes & Background Tasks:** Process supervisor with CPU/RAM metrics, per-site usage rollups, and a background task registry with live step and progress tracking.
+- **Processes & Background Tasks:** Process supervisor with CPU/RAM metrics and per-site usage rollups. Background Tasks is a paginated table with live steps and progress, keeps recent site-operation history across restarts, groups repeats, and asks before clearing history.
 - **In-App User Manual & Release Notes:** Full documentation and release notes viewer embedded under `Settings → User Manual`.
 - **Command palette (`Ctrl+Shift+P`) & Global search (`Ctrl+K`)**.
 
@@ -213,18 +227,20 @@ Grab the latest installer (`OLS-2.9.0-setup.exe`) from the [Releases page](https
 ### 🤖 MCP Server, CLI & API
 
 - **Model Context Protocol (MCP) Server (`ols-mcp`):** Native stdio MCP server shipping directly with OLS (`ols-mcp.exe`). Allows LLM hosts (Claude Desktop, Cursor, VS Code, LM Studio) to inspect and control OLS through JSON-RPC 2.0 tools:
-  - **Domains & Sites:** `ols_list_domains`, `ols_get_domain`, `ols_add_domain`, `ols_update_domain`, `ols_remove_domain`, `ols_set_domain_enabled`, `ols_restart_site_app`.
-  - **Project Inspection:** `ols_inspect_site_folder` (detects frameworks, virtualenvs, entry scripts, and start commands).
+  - **Domains & Sites:** `ols_list_domains`, `ols_get_domain`, `ols_add_domain`, `ols_update_domain`, `ols_remove_domain`, `ols_set_domain_enabled`, `ols_restart_site_app`, `ols_get_sites_dir`.
+  - **Projects & Editors:** `ols_list_projects`, `ols_add_project`, `ols_update_project`, `ols_inspect_project_folder`, `ols_inspect_site_folder` (detects frameworks, virtualenvs, entry scripts, and start commands), `ols_list_project_types`, `ols_add_custom_project_type`, `ols_rename_custom_project_type`, `ols_remove_custom_project_type`, `ols_list_editors`.
   - **Runtimes:** `ols_list_runtimes`, `ols_install_runtime`, `ols_refresh_runtimes`.
   - **Services & Tunnels:** `ols_list_services`, `ols_start_service`, `ols_stop_service`, `ols_restart_service`, `ols_list_tunnels`, `ols_start_tunnel`, `ols_stop_tunnel`.
-  - **Databases & Tables:** `ols_list_databases`, `ols_create_database`, `ols_list_tables`, `ols_execute_sql`.
-  - **Web Server:** `ols_apply_web`, `ols_validate_web`.
+  - **Databases & Tables:** `ols_list_databases`, `ols_create_database`, `ols_list_tables`, `ols_execute_sql` (also callable as `ols_query_database`).
+  - **Web Server, Commands & Tasks:** `ols_apply_web`, `ols_validate_web`, `ols_run_command`, `ols_list_tasks`.
+  - **Optional token auth:** Set a bearer token with an expiry in Settings (kept in the OS keyring) and pass it to `ols-mcp` as `--token` or `OLS_MCP_TOKEN`.
   - See [docs/MCP.md](./docs/MCP.md) for full configuration examples and tool schemas.
 
   > **Heads-up:** MCP tools can create, change, and remove sites and run SQL against your local databases. Only connect AI hosts you trust.
 - **Command Line (`olsc`):**
   - Drive OLS from any shell: `olsc setup`, `olsc doctor`, `olsc repair`, `olsc status`, `olsc start`, `olsc stop`, `olsc restart`.
-  - Full subcommands: `project`, `runtime`, `php`, `service`, `tunnel`, `worker`, `snapshot`, `quick-app`, `quick-command`, `search`, `guide`.
+  - Full subcommands: `project` (incl. `ignore`, `unignore`, `ignore-site`, `unignore-site`), `runtime`, `php`, `service`, `domain`, `certificate`, `tunnel`, `worker`, `snapshot`, `quick-app`, `quick-command`, `plugin`, `catalog`, `api`, `update`, `shell-menu`, `support-bundle`, `network`, `test load` (k6), `search`, `guide`.
+  - Optional log assistant: `olsc ai` (off until you turn it on; bring your own model via LM Studio, Ollama, Hugging Face, OpenRouter, or any OpenAI-compatible server).
   - Background daemon: Automatically runs in the background (`olsc daemon`) when the GUI is closed.
 - **Local HTTP API (`127.0.0.1:7420`):** Bearer token authenticated JSON API mirroring `CoreCommand` operations with read-only and operate scopes. See [docs/API.md](./docs/API.md).
 - **Automation tools:** Background queue workers (max 16, Procfile.dev import), scheduled cron tasks (1-minute tick, overlap protection, built-in cron editor), portable-pty terminal shells, and Git repository management.
@@ -387,7 +403,7 @@ OpenLocalServer/
 │   └── ols-mcp/         # Stdio Model Context Protocol server (`ols-mcp.exe`) for AI hosts
 ├── src-tauri/           # Tauri 2 desktop shell (`OLS.exe`) — windowing, tray, single IPC dispatcher
 ├── ui/src/              # React 19 + Vite 8 + Tailwind CSS 4 + shadcn/ui frontend
-│   ├── pages/           # Dashboard, Sites, QuickApps, Commands, WebServer, Databases,
+│   ├── pages/           # Dashboard, Sites, Projects, QuickApps, Commands, WebServer, Databases,
 │   │                    # Services, Runtimes, Tunnels, Profiles, Plugins, Logs,
 │   │                    # Processes, Tasks, Settings, Config
 │   └── components/      # UI primitives, dialogs, form fields, and code editors
@@ -479,6 +495,8 @@ OLS is licensed under **GPL-3.0-only** (see [LICENSE](./LICENSE)).
 | Mailpit (1.31) | MIT | [github.com/axllent/mailpit](https://github.com/axllent/mailpit) |
 | SQLite (3.53) | Public Domain | [sqlite.org](https://sqlite.org) |
 | HeidiSQL | GPL-2.0 | [heidisql.com](https://heidisql.com) |
+| DBeaver Community | Apache-2.0 | [dbeaver.io](https://dbeaver.io) |
+| DB Browser for SQLite | MPL-2.0 / GPL-3.0 | [sqlitebrowser.org](https://sqlitebrowser.org) |
 | pgAdmin 4 | PostgreSQL License | [pgadmin.org](https://pgadmin.org) |
 | NoSQLBooster | Proprietary / Free Tier | [nosqlbooster.com](https://nosqlbooster.com) |
 | Tiny RDM | MIT | [github.com/tiny-craft/tiny-rdm](https://github.com/tiny-craft/tiny-rdm) |

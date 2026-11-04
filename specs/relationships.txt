@@ -41,6 +41,10 @@ Inner | uses | ServiceManager
 Inner | uses | WebManager
 Inner | uses | DomainStore
 Inner | uses | CertificateManager
+CertificateManager (LetsEncrypt provider) | uses | AcmeClient (acme.rs) to issue/renew public certificates via HTTP-01 in the site document root
+CoreCommand::IssueLetsEncrypt | calls | CertificateManager::issue_lets_encrypt for the named domain (UI: DomainDialog / SiteDomainsPanel)
+ols-mcp auth (crates/ols-mcp/src/auth.rs) | reads | McpAuthConfig::load (mcp_auth.rs) from the OS keyring to validate the host's bearer token
+SettingsPage (MCP token) | writes | keyring secrets mcp.auth.token / .ttl_ms / .expires_at / .created_at read by McpAuthConfig
 Inner | uses | ProjectStore
 ShellMenu | installs | per-user Explorer cascade (`SubCommands` parent with `shell` child verbs) for folders and folder backgrounds, with Add folder, Set up, Ignore project, and Ignore site actions; compact Windows 11 context menus require the packaged IExplorerCommand path
 AppLib (src-tauri run) | delegates | `--ignore-project` / `--ignore-site` launches to ShellMenu::run_menu_action before any startup work, exiting with its code
