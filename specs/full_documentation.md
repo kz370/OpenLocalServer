@@ -248,7 +248,7 @@ Web apply feedback: `useWeb.apply` and `useWeb.reconcileSites` publish a timed s
 
 The Sites row actions are Hide, Remove from list, and Move to excluded folder. The move action uses a neutral tooltip, amber icon/title, and a confirmation naming the project, source path, excluded destination and Undo notification. On success, an Undo notification restores the moved folder and captured site/project records for the current app session.
 
-Settings has a separate Editors section; the default editor selector is removed. On first launch, the core migrates legacy `editor` and `editor.command` values once into the editor list, leaves both legacy values in app.db, and never reads them again. Open with editor menus show configured editors; a single editor launches directly, and the editor list deduplicates migrated entries against auto-detected editors.
+Settings has a separate Editors section, identified by code brackets (</>) in the Settings sidebar. The icon uses a cyan/blue/violet/teal gradient in colorful mode and currentColor gray in monochrome mode; the default editor selector is removed. On first launch, the core migrates legacy `editor` and `editor.command` values once into the editor list, leaves both legacy values in app.db, and never reads them again. Open with editor menus show configured editors; a single editor launches directly, and the editor list deduplicates migrated entries against auto-detected editors.
 
 The Remove from list action removes its hostname from the Projects page's cached domain list immediately after the backend mutation succeeds. ProjectsPage initializes its Connected Site column from that cache, so the stale link disappears on the next page render instead of waiting for the 3-second poll.
 

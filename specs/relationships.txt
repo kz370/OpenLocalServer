@@ -243,6 +243,7 @@ DashboardPage (ServicesWidget) | uses | serviceGrouping::groupServices (categori
 DashboardPage (ServicesWidget) | persists_collapsed_via | dashboard.services.collapsed_groups CoreCommand::SetSetting and localStorage
 SettingsPage (Appearance) | uses | AppearanceSettings (theme modes, presets, curated accents + picker, monochrome/colorful icon toggle, solid/gradient app backgrounds, live preview strip, reset button)
 AppearanceSettings | uses | useTheme (reads/writes active theme settings, preset id, overrides)
+SettingsPage Editors entry | uses | SettingsEditorsIcon, which renders code brackets (</>) in gradient colors or currentColor gray according to the sidebar icon style
 ThemeProvider (ui/src/lib/theme) | persists_via | CoreCommand::GetSetting/SetSetting ('appearance') and localStorage ('ols-appearance', fallback 'ols-theme')
 ThemeProvider (ui/src/lib/theme) | applies_to | document.documentElement CSS variables (--background, --foreground, --card, --popover, --primary, --ring, --app-background, etc.) and emits Tauri 'ols:theme'
 ui/index.html | pre_paints_theme | reads 'ols-appearance' / 'ols-theme' from localStorage before first paint, injecting root variables to prevent flash of wrong theme

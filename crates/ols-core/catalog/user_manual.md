@@ -365,6 +365,7 @@ olsc guide
 
 ### What's New in v2.8.1
 - **UI Stability**: Clearer Sites controls, reduced layout shifts across Sites, Projects, and Runtimes, and a paginated Background Tasks table.
+- **Settings**: Editor settings are now in their own sidebar section, separate from General.
 
 ### Previous Version Notes (v2.8.0)
 - Improved project and site selection and Quick App search; added WordPress core repair, safer database maintenance, retained task history, and staged site health checks.

@@ -11,6 +11,7 @@ Feature and UI release. Full notes: [`release-notes/v2.8.1.md`](./release-notes/
 
 ### Highlights
 - UI refinements: clearer Sites controls, stable layouts on Sites, Projects, and Runtimes, and a paginated Background Tasks table.
+- Moved editor settings out of General into their own Settings sidebar section.
 
 ## [2.8.0] — 2026-11-03
 

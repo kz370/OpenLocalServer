@@ -30,6 +30,7 @@ import {
   SettingsBackupsIcon,
   SettingsDeletedIcon,
   SettingsDiagnosticsIcon,
+  SettingsEditorsIcon,
   SettingsGeneralIcon,
   SettingsManualIcon,
   SettingsMcpIcon,
@@ -48,7 +49,7 @@ type SettingsDraft =
   | { section: 'mcp'; enabled: boolean; token: string; expiryMode: 'none' | 'hours' | 'at'; ttlHours: number; expiresAt: string }
 const SECTIONS: { id: Section; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'general', label: 'General', icon: SettingsGeneralIcon },
-  { id: 'editors', label: 'Editors', icon: SettingsGeneralIcon },
+  { id: 'editors', label: 'Editors', icon: SettingsEditorsIcon },
   { id: 'appearance', label: 'Appearance', icon: SettingsAppearanceIcon },
   { id: 'mcp', label: 'MCP / AI tools', icon: SettingsMcpIcon },
   { id: 'sites', label: 'Sites & domains', icon: SettingsSitesIcon },
