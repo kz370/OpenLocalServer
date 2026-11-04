@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Pagination } from '@/components/ui/pagination'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { type TaskEvent, type TaskView, runCommand } from '@/core'
+import { confirmAction } from '@/lib/confirm'
 import { formatBytes, timeAgo, usePoll } from '@/lib/hooks'
 import { getTaskHistory, mergeTaskHistory, saveTaskHistory, type HistoryTask } from '@/lib/taskHistory'
 import { cn } from '@/lib/utils'
@@ -22,7 +23,7 @@ import { cn } from '@/lib/utils'
  * rather than sitting on a stale row.
  */
 export function TasksPanel() {
-  const [tasks, setTasks] = useState<TaskView[]>(getTaskHistory)
+  const [tasks, setTasks] = useState<HistoryTask[]>(getTaskHistory)
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(10)
 
@@ -66,6 +67,24 @@ export function TasksPanel() {
     return tasks.slice(start, start + perPage)
   }, [currentPage, perPage, tasks])
 
+  const clearFinished = async () => {
+    const count = finished.reduce((total, task) => total + (task.repeat_count ?? 1), 0)
+    if (!(await confirmAction(
+      `Clear ${count} finished ${count === 1 ? 'task' : 'tasks'} from background task history? Running tasks will continue.`,
+      'Clear finished tasks',
+      'Clear finished',
+    ))) return
+
+    await runCommand({ type: 'clear_finished_tasks' })
+    setTasks((current) => {
+      const next = current.filter((task) => task.state === 'running')
+      saveTaskHistory(next)
+      return next
+    })
+    setPage(1)
+    await refresh()
+  }
+
   return (
     <Card>
         <CardHeader className="flex-row items-start justify-between gap-4">
@@ -82,17 +101,7 @@ export function TasksPanel() {
               size="sm"
               variant="ghost"
               className="h-7 shrink-0 text-xs"
-              onClick={() =>
-                void runCommand({ type: 'clear_finished_tasks' }).then(() => {
-                  setTasks((current) => {
-                    const next = current.filter((task) => task.state === 'running')
-                    saveTaskHistory(next)
-                    return next
-                  })
-                  setPage(1)
-                  return refresh()
-                })
-              }
+              onClick={() => void clearFinished()}
             >
               Clear finished
             </Button>
@@ -157,6 +166,17 @@ function TaskRow({ task }: { task: HistoryTask }) {
   const cancellable = live && task.id.startsWith('task-')
   const { done, total, bytes, bytes_total } = task.progress
   const fraction = total > 0 ? Math.min(1, done / total) : null
+
+  const dismiss = async () => {
+    const count = task.repeat_count ?? 1
+    const taskLabel = count === 1 ? `“${task.title}”` : `“${task.title}” and its ${count - 1} ${count === 2 ? 'repeat' : 'repeats'}`
+    if (!(await confirmAction(
+      `Remove ${taskLabel} from background task history?`,
+      'Remove finished task',
+      'Remove',
+    ))) return
+    await act('dismiss_task')
+  }
 
   const act = async (command: 'cancel_task' | 'dismiss_task') => {
     setBusy(true)
@@ -267,7 +287,7 @@ function TaskRow({ task }: { task: HistoryTask }) {
             aria-label={`Remove ${task.title} from the list`}
             title="Remove from the list"
             disabled={busy}
-            onClick={() => void act('dismiss_task')}
+            onClick={() => void dismiss()}
           >
             <X className="size-3.5" />
           </Button>
