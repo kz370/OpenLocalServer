@@ -180,7 +180,14 @@ impl Inner {
         {
             return Ok(source);
         }
-        crate::migrate::inspect_data_dir(std::path::Path::new(id)).map_err(svc)
+        let source = crate::migrate::inspect_data_dir(std::path::Path::new(id)).map_err(svc)?;
+        crate::migrate::reject_import_target(
+            &self.paths,
+            &self.runtimes,
+            std::path::Path::new(&source.data_dir),
+        )
+        .map_err(svc)?;
+        Ok(source)
     }
 
     /// Databases in an old Laragon/XAMPP/Wamp server (started on a copy if it isn't running).

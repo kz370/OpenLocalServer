@@ -471,6 +471,12 @@ impl Core {
                 C::InspectMigrationSource { path } => {
                     let inspected = crate::migrate::inspect_data_dir(std::path::Path::new(&path))
                         .map_err(CoreError::ServiceError)?;
+                    crate::migrate::reject_import_target(
+                        &i.paths,
+                        &i.runtimes,
+                        std::path::Path::new(&inspected.data_dir),
+                    )
+                    .map_err(CoreError::ServiceError)?;
                     let existing = crate::migrate::detect_managed(&i.paths, &i.runtimes)
                         .into_iter()
                         .find(|source| {

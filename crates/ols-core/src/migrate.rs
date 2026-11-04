@@ -256,14 +256,62 @@ pub fn detect() -> Vec<MigrationSource> {
     out
 }
 
+/// Data folder an OLS MariaDB version runs on. Mirrors `ServiceManager::start_mariadb`:
+/// 11.4.x keeps the legacy shared `mariadb/data` folder when it exists, every other
+/// series uses `mariadb/<major.minor>/data`.
+fn managed_mariadb_data_dir(root: &Path, version: &str) -> PathBuf {
+    let series = version.split('.').take(2).collect::<Vec<_>>().join(".");
+    if version.starts_with("11.4.") && root.join("data").is_dir() {
+        root.join("data")
+    } else {
+        root.join(series).join("data")
+    }
+}
+
+/// Data folder of the MariaDB that imports go into: the first installed version, which is
+/// the one `ServiceManager::start("mariadb")` runs. `None` when MariaDB is not installed.
+pub fn import_target_data_dir(
+    paths: &crate::paths::AppPaths,
+    runtimes: &crate::runtime::RuntimeManager,
+) -> Option<PathBuf> {
+    let version = runtimes.installed_versions("mariadb").into_iter().next()?;
+    Some(managed_mariadb_data_dir(
+        &paths.services_dir().join("mariadb"),
+        &version,
+    ))
+}
+
+/// Problem text when `data_dir` is the import target itself, so it cannot be its own source.
+pub fn reject_import_target(
+    paths: &crate::paths::AppPaths,
+    runtimes: &crate::runtime::RuntimeManager,
+    data_dir: &Path,
+) -> Result<(), String> {
+    match import_target_data_dir(paths, runtimes) {
+        Some(target) if same_source_folder(&target, data_dir) => Err(
+            "This is the data folder of the MariaDB that OpenLocalServer imports into, so it cannot also be a source. Choose a data folder from another installation or an older OLS MariaDB series.".into(),
+        ),
+        _ => Ok(()),
+    }
+}
+
 /// Adds databases belonging to installed OLS MariaDB series to the sources shown in the
 /// import dialog. Each series has its own data folder, so the existing copy-and-dump path
 /// can move it into a newer default without ever opening the original files for writing.
+/// The current import target is never listed: importing a server into itself is a no-op
+/// at best and conflicts with every database at worst.
 pub fn detect_managed(
     paths: &crate::paths::AppPaths,
     runtimes: &crate::runtime::RuntimeManager,
 ) -> Vec<MigrationSource> {
+    let target = import_target_data_dir(paths, runtimes);
+    let is_target = |data: &Path| {
+        target
+            .as_deref()
+            .is_some_and(|target| same_source_folder(target, data))
+    };
     let mut out = detect();
+    out.retain(|source| !is_target(Path::new(&source.data_dir)));
     let running = running_servers();
     let root = paths.services_dir().join("mariadb");
     for version in runtimes.installed_versions("mariadb") {
@@ -272,13 +320,8 @@ pub fn detect_managed(
         if !bin.join("mysqld.exe").is_file() || !bin.join("mysql.exe").is_file() {
             continue;
         }
-        let series = version.split('.').take(2).collect::<Vec<_>>().join(".");
-        let data = if version.starts_with("11.4.") && root.join("data").is_dir() {
-            root.join("data")
-        } else {
-            root.join(series).join("data")
-        };
-        if !data.is_dir() {
+        let data = managed_mariadb_data_dir(&root, &version);
+        if !data.is_dir() || is_target(&data) {
             continue;
         }
         let exe = bin.join("mysqld.exe");
@@ -977,6 +1020,30 @@ pub fn import(client: &Path, port: u16, file: &Path, progress: &Progress) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn managed_data_dir_matches_service_start_layout() {
+        let root = tempfile::tempdir().unwrap();
+        // Without the legacy folder every series uses mariadb/<major.minor>/data.
+        assert_eq!(
+            managed_mariadb_data_dir(root.path(), "11.4.9"),
+            root.path().join("11.4").join("data")
+        );
+        assert_eq!(
+            managed_mariadb_data_dir(root.path(), "13.1.1"),
+            root.path().join("13.1").join("data")
+        );
+        // 11.4.x keeps the legacy shared folder once it exists; other series never do.
+        std::fs::create_dir_all(root.path().join("data")).unwrap();
+        assert_eq!(
+            managed_mariadb_data_dir(root.path(), "11.4.9"),
+            root.path().join("data")
+        );
+        assert_eq!(
+            managed_mariadb_data_dir(root.path(), "11.8.5"),
+            root.path().join("11.8").join("data")
+        );
+    }
 
     #[test]
     fn conflict_policies_handle_destination_and_source_duplicates() {

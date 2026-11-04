@@ -304,11 +304,13 @@ SitesPage / ProjectsPage | render | permanent source label with distinct FolderS
 SitesPage / ProjectsPage / RuntimesPage | show transient loading | overlay progress feedback without moving the table; Runtimes keeps cached rows and uses height-matched first-load skeletons
 ErrorCard | displays | dismissible fixed overlay across pages and panels so diagnostics do not alter document flow
 App main scroll container | reserves | stable scrollbar gutter to prevent content-width shift
-ListMigrationSources | includes | external MySQL/MariaDB installs and each installed OLS MariaDB series data folder once
+ListMigrationSources | includes | external MySQL/MariaDB installs and each installed OLS MariaDB series data folder once, excluding the import target (data folder of the first installed MariaDB version, the one ServiceManager starts)
+InspectMigrationSource + migration_source | reject | the import target data folder with a problem/cause/fix message, so a browsed folder or stale id cannot import MariaDB into itself
 InspectMigrationSource | validates | selected data folder has MariaDB/MySQL system files and matching server/client/dump binaries nearby; duplicate source folders use canonical path identity
 MigrateDialog | imports | discovered or browsed MySQL/MariaDB sources; stopped sources are copied to a temporary folder, then selected databases are dumped and imported without modifying source data
 MigrateDialog | submits | scanned source batches sequentially in folder-selection order; each batch sees target schemas created by prior batches, with one selected conflict policy for destination and source duplicates
 MigrateDialog | enables import | only after every selected source has been scanned and at least one database is selected; action remains visible while disabled
+MigrateDialog | collapses | scanned source rows via local `collapsed` ids; a successful scan or rescan re-expands that source
 MigrateDialog | renders | DatabasePicker per scanned source; filter text lives in SourceImport.filter (view only, reset on rescan) and never changes picks outside the visible rows
 MigrateDialog | counts selected databases | uses functional state updates so rapid checkbox changes are not lost from the count or import request
 MigrationRecovery | repairs after restart | restores the safety backup for interrupted replacements or removes a partial new destination; failed recovery remains queued for retry
