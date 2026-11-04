@@ -1265,7 +1265,7 @@ fn format_response(response: &CoreResponse) -> String {
                 out
             }
         }
-        CoreResponse::Projects { projects } => {
+        CoreResponse::Projects { projects, .. } => {
             if projects.is_empty() {
                 "No projects registered.".into()
             } else {
