@@ -77,7 +77,7 @@ ui/src/lib/notify.ts, ui/src/components/NotificationHost.tsx, ui/src/components/
 
 ## Log
 
-- [2026-11-04] fix(ui): Highlight the My Icons tile selected in the current panel session with the same primary border/background used by the Font Awesome picker, and expose pressed state to assistive technology. Updated catalog and File Analysis specs; Files Processed remains 282, matching Files to Process.
+- [2026-11-04] fix(ui): Persist the My Icons selected tile per site/project across dialog reopenings, clear stale photo/library/Font Awesome selections when another icon is chosen, and add an immediate shared Clear selected icon action. Updated catalog and File Analysis specs; Files Processed remains 282, matching Files to Process.
 
 - [2026-11-04] feat(sites): Added framework-agnostic favicon discovery from the configured document root and common shallow static folders, retaining manually selected WebP icons as the first choice. When no favicon or explicit icon exists, `<type>_fallback.<ext>` in `data/icons` (or one category folder) supplies a user-defined fallback; otherwise stored/detected project types use a bundled brand icon, and WordPress can also be detected from core files. The image picker opens at the document root. The My Icons library has All, a Root icons tab, and one tab per immediate category folder; overflow folders go into a searchable `+N more` popover. It exposes up to 100 supported images (256 KiB each) for per-site WebP selection. Updated API, data model, catalog, relationships and File Analysis specs; no architecture-layer or diagram change. Files Processed remains 282, matching Files to Process.
 

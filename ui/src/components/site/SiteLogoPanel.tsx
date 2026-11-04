@@ -189,7 +189,6 @@ export function SiteLogoPanel({
     setCurrentImage(webpDataUrl)
     setIsCustomImage(true)
     flashSaved()
-    void onUpdated?.()
   }
 
   const handlePickPhoto = async () => {
@@ -221,7 +220,16 @@ export function SiteLogoPanel({
       }
 
       await saveImageDataUrl(res.data_url)
-      setSelectedLibraryIcon(null)
+      setCurrentIcon(null)
+      setActiveFaName('')
+      setCustomColor('')
+      rememberLibraryIcon(null)
+      if (hostname) {
+        await runCommand({ type: 'set_domain_icon', hostname, icon: null })
+      } else if (projectId) {
+        await runCommand({ type: 'update_project', id: projectId, clear_icon: true })
+      }
+      void onUpdated?.()
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -234,7 +242,16 @@ export function SiteLogoPanel({
     setBusy(true)
     try {
       await saveImageDataUrl(item.data_url)
-      setSelectedLibraryIcon(`${item.category}/${item.name}`)
+      setCurrentIcon(null)
+      setActiveFaName('')
+      setCustomColor('')
+      rememberLibraryIcon(`${item.category}/${item.name}`)
+      if (hostname) {
+        await runCommand({ type: 'set_domain_icon', hostname, icon: null })
+      } else if (projectId) {
+        await runCommand({ type: 'update_project', id: projectId, clear_icon: true })
+      }
+      void onUpdated?.()
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -242,19 +259,29 @@ export function SiteLogoPanel({
     }
   }
 
-  const handleRemovePhoto = async () => {
+  const handleClearCurrentIcon = async () => {
     setError(null)
+    setCurrentImage(null)
+    setIsCustomImage(false)
+    setCurrentIcon(null)
+    setActiveFaName('')
+    setCustomColor('')
+    rememberLibraryIcon(null)
+    flashSaved()
     setBusy(true)
     try {
-      await runCommand({
-        type: 'remove_site_icon_image',
-        hostname: hostname ?? undefined,
-        folder: folder || undefined,
-      })
-      setCurrentImage(null)
-      setIsCustomImage(false)
-      setSelectedLibraryIcon(null)
-      flashSaved()
+      if (isCustomImage) {
+        await runCommand({
+          type: 'remove_site_icon_image',
+          hostname: hostname ?? undefined,
+          folder: folder || undefined,
+        })
+      }
+      if (hostname) {
+        await runCommand({ type: 'set_domain_icon', hostname, icon: null })
+      } else if (projectId) {
+        await runCommand({ type: 'update_project', id: projectId, clear_icon: true })
+      }
       void onUpdated?.()
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e))
@@ -274,9 +301,19 @@ export function SiteLogoPanel({
     // Immediate optimistic update (zero glitch/layout shift)
     setCurrentIcon(iconSpec)
     setActiveFaName(iconId)
+    setCurrentImage(null)
+    setIsCustomImage(false)
+    rememberLibraryIcon(null)
     flashSaved()
 
     try {
+      if (isCustomImage) {
+        await runCommand({
+          type: 'remove_site_icon_image',
+          hostname: hostname ?? undefined,
+          folder: folder || undefined,
+        })
+      }
       if (hostname) {
         await runCommand({
           type: 'set_domain_icon',
@@ -304,33 +341,7 @@ export function SiteLogoPanel({
   }
 
   const handleClearFaIcon = async () => {
-    if (!hostname && !projectId) return
-    setError(null)
-
-    // Optimistic update
-    setCurrentIcon(null)
-    setActiveFaName('')
-    setCustomColor('')
-    flashSaved()
-
-    try {
-      if (hostname) {
-        await runCommand({
-          type: 'set_domain_icon',
-          hostname,
-          icon: null,
-        })
-      } else if (projectId) {
-        await runCommand({
-          type: 'update_project',
-          id: projectId,
-          clear_icon: true,
-        })
-      }
-      void onUpdated?.()
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e))
-    }
+    await handleClearCurrentIcon()
   }
 
   const filteredIcons = FA_ICONS.filter((item: FaIconDef) => {
@@ -448,6 +459,21 @@ export function SiteLogoPanel({
         </button>
       </div>
 
+      {(currentImage || currentIcon) && (
+        <div className="flex justify-end">
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-destructive hover:bg-destructive/10"
+            onClick={() => void handleClearCurrentIcon()}
+            disabled={busy}
+          >
+            <Trash2 className="size-3.5" />
+            Clear selected icon
+          </Button>
+        </div>
+      )}
+
       {/* Tab 1: Photo from PC */}
       {activeTab === 'photo' && (
         <div className="flex flex-col gap-4 py-2">
@@ -478,18 +504,6 @@ export function SiteLogoPanel({
                 <Upload className="size-3.5" />
                 {busy ? 'Processing…' : 'Choose photo from PC…'}
               </Button>
-              {currentImage && isCustomImage && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="text-destructive hover:bg-destructive/10"
-                  onClick={() => void handleRemovePhoto()}
-                  disabled={busy}
-                >
-                  <Trash2 className="size-3.5" />
-                  Remove photo file
-                </Button>
-              )}
             </div>
           </div>
 
