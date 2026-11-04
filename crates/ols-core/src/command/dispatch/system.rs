@@ -465,10 +465,16 @@ impl Core {
                         p.auto_discovered = Some(roots.iter().any(|root| {
                             std::path::Path::new(&p.path).starts_with(std::path::Path::new(root))
                         }));
-                        p.icon_image = crate::app::read_site_icon_image(&p.path);
-                        if p.project_type.is_none() {
-                            p.project_type = crate::app::project_type_for_icon(&p.path, None);
-                        }
+                        p.project_type =
+                            crate::app::project_type_for_icon(&p.path, p.project_type.as_deref());
+                        p.icon_image = crate::app::read_site_icon_image(&p.path).or_else(|| {
+                            p.icon.is_none().then(|| {
+                                crate::app::read_project_fallback_icon(
+                                    &i.paths.site_icons_dir(),
+                                    p.project_type.as_deref(),
+                                )
+                            })?
+                        });
                         if p.icon.is_none()
                             && crate::app::is_wordpress_project(&p.path, p.project_type.as_deref())
                         {

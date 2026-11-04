@@ -418,6 +418,53 @@ pub fn project_type_for_icon(folder: &str, stored_type: Option<&str>) -> Option<
     .map(str::to_string)
 }
 
+/// Reads a per-project-type fallback named `<type>_fallback.<ext>` from `data/icons`
+/// or one category folder. Examples: `laravel_fallback.webp` and `Web/nestjs_fallback.ico`.
+pub fn read_project_fallback_icon(icons_dir: &Path, project_type: Option<&str>) -> Option<String> {
+    let project_type = project_type?
+        .rsplit(':')
+        .next()?
+        .trim()
+        .to_ascii_lowercase();
+    let slug = project_type
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' })
+        .collect::<String>();
+    if slug.is_empty() {
+        return None;
+    }
+
+    const FORMATS: &[(&str, &str)] = &[
+        ("webp", "image/webp"),
+        ("png", "image/png"),
+        ("svg", "image/svg+xml"),
+        ("ico", "image/x-icon"),
+        ("jpg", "image/jpeg"),
+        ("jpeg", "image/jpeg"),
+        ("gif", "image/gif"),
+        ("bmp", "image/bmp"),
+    ];
+    let mut folders = vec![icons_dir.to_path_buf()];
+    if let Ok(entries) = std::fs::read_dir(icons_dir) {
+        folders.extend(entries.flatten().filter_map(|entry| {
+            entry
+                .file_type()
+                .ok()
+                .filter(|kind| kind.is_dir())
+                .map(|_| entry.path())
+        }));
+    }
+    for folder in folders {
+        for (extension, mime) in FORMATS {
+            let path = folder.join(format!("{slug}_fallback.{extension}"));
+            if let Some(data_url) = image_data_url(&path, mime) {
+                return Some(data_url);
+            }
+        }
+    }
+    None
+}
+
 /// Lists image files in `data/icons` and one level of category folders.
 pub fn list_site_icon_library(icons_dir: &Path) -> Vec<SiteIconLibraryEntry> {
     fn image_entries(dir: &Path, category: &str, output: &mut Vec<SiteIconLibraryEntry>) {
@@ -475,7 +522,7 @@ pub fn list_site_icon_library(icons_dir: &Path) -> Vec<SiteIconLibraryEntry> {
     }
 
     let mut output = Vec::new();
-    image_entries(icons_dir, "General", &mut output);
+    image_entries(icons_dir, "", &mut output);
     let Ok(categories) = std::fs::read_dir(icons_dir) else {
         return output;
     };

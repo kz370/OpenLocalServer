@@ -206,6 +206,7 @@ SiteLogoPanel | dispatches | CoreCommand::SetDomainIcon, CoreCommand::SetSiteIco
 DomainSummary | carries | document_root and project_type for document-folder picker and project-type icon fallback
 read_site_icon_image | prefers | `ols_site_icon.webp`, then favicon files in the project root and bounded conventional static folders
 list_site_icon_library | reads | `<data>/icons` and one category-folder level, returning supported image data URLs within size/count limits
+read_project_fallback_icon | resolves | `<data>/icons/<type>_fallback.<ext>` or the same filename in a category folder, below manual images, detected favicons and explicit icons
 scripts/update-version.bat | delegates_to | scripts/update-version.ps1 via pwsh or powershell (UTF-8 console code page 65001)
 update-version.bat | delegates_to | scripts/update-version.bat %*
 scripts/update-version.ps1 | synchronizes | Cargo.toml, src-tauri/tauri.conf.json, ui/package.json, ui/package-lock.json, Cargo.lock, README.md, CHANGELOG.md, release-notes/v<version>.md

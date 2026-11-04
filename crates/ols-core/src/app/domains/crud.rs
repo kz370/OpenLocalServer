@@ -178,6 +178,7 @@ impl Inner {
         let projects = self.projects.lock().unwrap().list();
         let tunnels = self.list_tunnels();
         let proxy_dir = self.paths.proxy_site_images_dir();
+        let icons_dir = self.paths.site_icons_dir();
         self.domains
             .lock()
             .unwrap()
@@ -197,12 +198,21 @@ impl Inner {
                 let wordpress_project =
                     crate::app::is_wordpress_project(&folder, project_type.as_deref())
                         || crate::app::is_wordpress_project(&d.root, None);
-                let icon_image = if matches!(d.kind, SiteKind::Proxy { .. }) {
+                let detected_icon_image = if matches!(d.kind, SiteKind::Proxy { .. }) {
                     read_proxy_site_icon_image(&proxy_dir, &d.hostname)
                 } else {
                     read_domain_icon_image(&d.root, &folder)
                         .or_else(|| read_proxy_site_icon_image(&proxy_dir, &d.hostname))
                 };
+                let explicit_icon = d
+                    .icon
+                    .as_ref()
+                    .or_else(|| project.and_then(|p| p.icon.as_ref()));
+                let icon_image = detected_icon_image.or_else(|| {
+                    explicit_icon.is_none().then(|| {
+                        crate::app::read_project_fallback_icon(&icons_dir, project_type.as_deref())
+                    })?
+                });
                 let broadcast_tunnel = tunnels.iter().find(|t| {
                     (d.tunnel_id.as_deref() == Some(&t.config.id)
                         || (d.project_id.is_some() && d.project_id == t.config.project_id))

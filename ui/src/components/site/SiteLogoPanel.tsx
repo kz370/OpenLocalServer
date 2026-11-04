@@ -59,6 +59,8 @@ export function SiteLogoPanel({
   const [customColor, setCustomColor] = useState<string>(initialParsed.color ?? '')
 
   const [search, setSearch] = useState('')
+  const [librarySearch, setLibrarySearch] = useState('')
+  const [selectedLibraryCategory, setSelectedLibraryCategory] = useState('')
   const [libraryIcons, setLibraryIcons] = useState<{ name: string; category: string; data_url: string }[]>([])
   const [category, setCategory] = useState<string>('all')
   const [busy, setBusy] = useState(false)
@@ -83,7 +85,10 @@ export function SiteLogoPanel({
   useEffect(() => {
     runCommand({ type: 'list_site_icon_library' })
       .then((res) => {
-        if (res.type === 'site_icon_library') setLibraryIcons(res.icons)
+        if (res.type === 'site_icon_library') {
+          setLibraryIcons(res.icons)
+          setSelectedLibraryCategory(res.icons[0]?.category ?? '')
+        }
       })
       .catch(() => setLibraryIcons([]))
   }, [])
@@ -295,10 +300,14 @@ export function SiteLogoPanel({
     const term = search.toLowerCase()
     return item.id.includes(term) || item.name.toLowerCase().includes(term)
   })
+  const libraryCategories = [...new Set(libraryIcons.map((item) => item.category))].sort((a, b) => {
+    if (a === '') return -1
+    if (b === '') return 1
+    return a.localeCompare(b)
+  })
   const filteredLibraryIcons = libraryIcons.filter((item) => {
-    if (!search) return true
-    const term = search.toLowerCase()
-    return item.name.toLowerCase().includes(term) || item.category.toLowerCase().includes(term)
+    if (item.category !== selectedLibraryCategory) return false
+    return !librarySearch || item.name.toLowerCase().includes(librarySearch.toLowerCase())
   })
 
   return (
@@ -463,26 +472,55 @@ export function SiteLogoPanel({
 
       {activeTab === 'library' && (
         <div className="flex flex-col gap-3 py-2">
+          <p className="text-xs text-muted-foreground">
+            Add icons under <code>data/icons</code> or a category folder. Name an icon <code>laravel_fallback.ico</code> to use it automatically for Laravel sites when no site icon is available.
+          </p>
           <div className="flex items-center gap-2">
             <Search className="size-4 text-muted-foreground" />
-            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search custom icons…" />
+            <Input value={librarySearch} onChange={(e) => setLibrarySearch(e.target.value)} placeholder="Search this folder…" />
           </div>
+          {libraryCategories.length > 0 && (
+            <div className="flex gap-1 overflow-x-auto border-b border-border" aria-label="Icon folders">
+              {libraryCategories.map((folder) => (
+                <button
+                  key={folder}
+                  type="button"
+                  aria-pressed={selectedLibraryCategory === folder}
+                  className={`shrink-0 border-b-2 px-3 py-2 text-xs font-medium ${
+                    selectedLibraryCategory === folder
+                      ? 'border-primary text-primary'
+                      : 'border-transparent text-muted-foreground hover:text-foreground'
+                  }`}
+                  onClick={() => setSelectedLibraryCategory(folder)}
+                >
+                  {folder === '' ? 'Root icons' : folder}
+                  <span className="ml-1 text-[10px] opacity-70">
+                    {libraryIcons.filter((item) => item.category === folder).length}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
           {filteredLibraryIcons.length ? (
-            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+            <div className="grid max-h-64 grid-cols-4 gap-1.5 overflow-y-auto sm:grid-cols-5 md:grid-cols-6">
               {filteredLibraryIcons.map((item) => (
                 <button
                   key={`${item.category}/${item.name}`}
                   type="button"
                   disabled={busy}
                   onClick={() => void handleSelectLibraryIcon(item.data_url)}
-                  className="flex min-w-0 flex-col items-center gap-1.5 rounded-md border bg-background p-2 text-center hover:border-primary hover:bg-accent disabled:opacity-50"
+                  className="flex min-w-0 flex-col items-center gap-1 rounded-md border bg-background p-1.5 text-center hover:border-primary hover:bg-accent disabled:opacity-50"
                   title={`Use ${item.name} from ${item.category}`}
                 >
-                  <img src={item.data_url} alt="" className="size-9 rounded object-contain" />
+                  <img src={item.data_url} alt="" className="size-7 rounded object-contain" />
                   <span className="w-full truncate text-xs">{item.name}</span>
                   <span className="w-full truncate text-[10px] text-muted-foreground">{item.category}</span>
                 </button>
               ))}
+            </div>
+          ) : libraryIcons.length ? (
+            <div className="rounded-md border border-dashed p-5 text-center text-xs text-muted-foreground">
+              No icons in this folder match the search.
             </div>
           ) : (
             <div className="rounded-md border border-dashed p-5 text-center text-xs text-muted-foreground">
