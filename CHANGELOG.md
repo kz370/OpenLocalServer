@@ -5,22 +5,26 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [2.9.0] — 2026-11-04
+## [2.9.0] — 2026-11-05
 
-Feature and UI release.
+Feature release. Full notes: [`release-notes/v2.9.0.md`](./release-notes/v2.9.0.md).
 
-- UI refinements: clearer Sites controls, stable layouts on Sites, Projects, and Runtimes, and a paginated Background Tasks table.
-- Moved editor settings out of General into their own Settings sidebar section.
+### Added
+- Import databases from several sources at once (installed OLS MariaDB versions, auto-detected MySQL/MariaDB, or a browsed data folder), in a chosen order.
+- Database conflict handling: Skip existing (default), Replace existing (with SQL safety backup and restore on failure), or Rename incoming; interrupted imports recover on next start.
+- Explorer "Open Local Server" submenu (Show more options) with Add folder, Set up, Ignore project, and Ignore site; Add to Explorer, Repair, and Remove in Settings.
+- `.ols_ignore_site` marker hides a project's site but keeps the project; Projects offers Unignore site.
 
-Full notes: [`release-notes/v2.9.0.md`](./release-notes/v2.9.0.md).
+### Changed & Improved
+- Import databases dialog redesigned into three steps with collapsible source rows and inline progress; the current MariaDB data folder is no longer a source.
+- App background stored per light/dark mode; gradients adapt to the other mode until set.
+- Editor settings moved out of General into their own Settings sidebar section.
+- Sites web-server chip beside the heading; paginated Background Tasks table with confirmations; steadier layouts with fixed rows, skeletons, and overlay errors.
+- Clearer Auto-discovered / Added manually labels; event-driven project refresh instead of 3-second polling.
+- App upgrades no longer force an administrator helper reinstall unless the helper changed.
 
-## [2.8.1] — 2026-11-04
-
-Feature and UI release. Full notes: [`release-notes/v2.8.1.md`](./release-notes/v2.8.1.md).
-
-### Highlights
-- UI refinements: clearer Sites controls, stable layouts on Sites, Projects, and Runtimes, and a paginated Background Tasks table.
-- Moved editor settings out of General into their own Settings sidebar section.
+### Fixed
+- Add Site uses the detected document root; Project Settings keeps the Icon & Logo tab; stale tray service counts; tooltip overflow on long paths; zero import counts after quick checkbox changes; Explorer menu cascade, icons, console flash, and `olsc` version mismatch.
 
 ## [2.8.0] — 2026-11-03
 

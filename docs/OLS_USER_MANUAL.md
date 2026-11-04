@@ -364,12 +364,15 @@ olsc guide
 ## 17. Version 2.9.0 Specific Notes & What's New
 
 ### What's New in v2.9.0
-- **UI refinements:** Clearer Sites controls, stable layouts on Sites, Projects, and Runtimes, and a paginated Background Tasks table.
+- **Multi-source database import:** Import from installed OLS MariaDB versions, auto-detected MySQL/MariaDB installs, or a browsed data folder, in the order you choose. All selected sources must be scanned before Import is enabled.
+- **Database conflict handling:** Skip existing (default), Replace existing (SQL safety backup first, restored on failure), or Rename incoming. Interrupted imports are recovered or rolled back on next start.
+- **Explorer submenu:** Right-click a folder → Show more options → Open Local Server → Add folder, Set up, Ignore project, or Ignore site. Enable it in Settings with Add to Explorer; Repair and Remove are there too.
+- **`.ols_ignore_site` marker:** Hides and deactivates a project's site while the project stays visible. Projects shows Unignore site. `.ols_ignore_me` still hides both.
+- **Import databases dialog:** Three numbered steps, collapsible source rows with inline password/Scan/progress, filterable database tiles. The current MariaDB data folder is not offered as a source.
+- **Per-mode background:** Light and dark mode each keep their own background; a gradient set in one mode is adapted for the other until you set it.
 - **Settings:** Editor settings now have their own Settings sidebar section, separate from General.
-
-### Previous Version Notes (v2.8.1)
-- **UI Stability:** Clearer Sites controls, reduced layout shifts across Sites, Projects, and Runtimes, and a paginated Background Tasks table.
-- **Settings:** Editor settings are now in their own sidebar section, separate from General.
+- **UI stability:** Sites web-server chip beside the heading, paginated Background Tasks table with confirmations, fixed-height rows, loading skeletons, and overlay error messages.
+- **Fixes:** Add Site uses the detected document root, stale tray service counts, long-path tooltip overflow, and Explorer menu install/repair reliability.
 
 ### Previous Version Notes (v2.8.0)
 - Improved project and site selection and Quick App search; added WordPress core repair, safer database maintenance, retained task history, and staged site health checks.
