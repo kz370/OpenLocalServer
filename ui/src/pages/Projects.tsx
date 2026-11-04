@@ -14,6 +14,7 @@ import {
   Search,
   Settings,
   SquareTerminal,
+  UserRound,
   X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -743,8 +744,16 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
                                 <Copy className="size-3" />
                               </button>
                             </div>
-                            <div className="mt-0.5 h-4 truncate text-[10px] leading-4 text-muted-foreground">
-                              {p.auto_discovered ? 'Auto-discovered' : 'Added manually'}
+                            <div className="mt-1.5 flex h-4 items-center">
+                              <span className={cn(
+                                'inline-flex h-4 items-center gap-1 rounded px-1.5 text-[10px] leading-none',
+                                p.auto_discovered
+                                  ? 'bg-sky-500/10 text-sky-700 dark:text-sky-300'
+                                  : 'bg-violet-500/10 text-violet-700 dark:text-violet-300',
+                              )}>
+                                {p.auto_discovered ? <FolderSearch className="size-2.5" /> : <UserRound className="size-2.5" />}
+                                {p.auto_discovered ? 'Auto-discovered' : 'Added manually'}
+                              </span>
                             </div>
                           </div>
                         </div>

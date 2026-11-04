@@ -1,5 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Activity, Check, CircleOff, Code2, Copy, Download, ExternalLink, EyeOff, FolderOpen, FolderPlus, FolderSearch, FolderX, Globe, HardDrive, KeyRound, List, ListX, MoreHorizontal, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2, Wrench, X, Zap } from 'lucide-react'
+import { Activity, Check, CircleOff, Code2, Copy, Download, ExternalLink, EyeOff, FolderOpen, FolderPlus, FolderSearch, FolderX, Globe, HardDrive, KeyRound, List, ListX, MoreHorizontal, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2, UserRound, Wrench, X, Zap } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
@@ -1301,7 +1301,17 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                               </>
                             )}
                           </div>
-                          <div className="mt-0.5 h-4 truncate text-[10px] leading-4 text-muted-foreground">{p?.auto_discovered === true ? 'Auto-discovered' : 'Added manually'}</div>
+                          <div className="mt-1.5 flex h-4 items-center">
+                            <span className={cn(
+                              'inline-flex h-4 items-center gap-1 rounded px-1.5 text-[10px] leading-none',
+                              p?.auto_discovered === true
+                                ? 'bg-sky-500/10 text-sky-700 dark:text-sky-300'
+                                : 'bg-violet-500/10 text-violet-700 dark:text-violet-300',
+                            )}>
+                              {p?.auto_discovered === true ? <FolderSearch className="size-2.5" /> : <UserRound className="size-2.5" />}
+                              {p?.auto_discovered === true ? 'Auto-discovered' : 'Added manually'}
+                            </span>
+                          </div>
                         </div>
                         {d && (
                           <>
