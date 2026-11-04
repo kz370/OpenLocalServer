@@ -13,43 +13,47 @@ mod project_skip_tests {
         (Inner::new(settings, home.paths.clone()).unwrap(), home)
     }
 
-    /// A site added from the Explorer right-click menu is written by another process, so
-    /// the running app has to notice the database moved under it. Without the re-read the
-    /// new site stayed invisible until a restart, which is what made the menu look broken.
+    /// A project added as standalone by another process is reloaded by the running app
+    /// without creating a site for it.
     #[test]
-    fn a_site_added_by_another_process_shows_up_without_a_restart() {
+    fn a_project_added_by_another_process_shows_up_without_a_restart() {
         let (inner, home) = inner();
         let root = home.paths.data_dir().join("www");
         let app1 = project_dir(&root, "app1");
         inner
             .remember_projects_root(&root.display().to_string())
             .unwrap();
-        inner.sync_auto_domains().unwrap();
         let before: Vec<String> = inner
             .domain_summaries()
             .into_iter()
             .map(|d| d.hostname)
             .collect();
-        assert!(before.iter().any(|h| h.starts_with("app1")));
+        assert!(!before.iter().any(|h| h.starts_with("app1")));
 
-        // Stand in for the `ols project add` the right-click menu runs: a second process
-        // writing straight to the database, with this app still holding the old rows.
+        // Stand in for a second process adding the project without requesting a site,
+        // while this app still holds its old rows.
         {
             let mut projects = ProjectStore::load(&home.paths).unwrap();
-            projects.register(&app1.display().to_string()).unwrap();
+            projects
+                .add_new(&app1.display().to_string(), None, None, true)
+                .unwrap();
         }
-        project_dir(&root, "app2");
         crate::db::simulate_foreign_write(&home.paths);
 
         assert!(inner.reload_external_changes());
-        let hosts: Vec<String> = inner
-            .domain_summaries()
+        let project = inner
+            .projects
+            .lock()
+            .unwrap()
+            .list()
             .into_iter()
-            .map(|d| d.hostname)
-            .collect();
+            .find(|project| crate::project::same_path(&project.path, &app1.display().to_string()))
+            .unwrap();
+        assert!(project.standalone);
+        let hosts = inner.domain_summaries();
         assert!(
-            hosts.iter().any(|h| h.starts_with("app2")),
-            "the outside project's site is missing: {hosts:?}"
+            !hosts.iter().any(|d| d.hostname.starts_with("app1")),
+            "adding a project without a site must not create one: {hosts:?}"
         );
     }
 
@@ -69,11 +73,10 @@ mod project_skip_tests {
         }
     }
 
-    /// A site whose name is not in the hosts file does not resolve, so the folder the
-    /// user just dropped in is a row in the table and nothing else. The new names go into
-    /// the hosts file as they are created, which is what makes the domain actually work.
+    /// Automatic root discovery registers folders as standalone projects; it does not
+    /// publish sites or add hostnames until the user explicitly adds or scans a project.
     #[test]
-    fn a_new_automatic_domain_is_added_to_the_hosts_file() {
+    fn a_discovered_standalone_project_is_not_added_to_the_hosts_file() {
         let home = crate::test_support::isolated_home();
         let hosts = home.paths.data_dir().join("hosts");
         std::fs::write(&hosts, "127.0.0.1 localhost\n").unwrap();
@@ -88,12 +91,12 @@ mod project_skip_tests {
         inner
             .remember_projects_root(&root.display().to_string())
             .unwrap();
-        assert_eq!(inner.sync_auto_domains().unwrap(), 1);
+        assert_eq!(inner.sync_auto_domains().unwrap(), 0);
 
         let written = std::fs::read_to_string(&hosts).unwrap();
         assert!(
-            written.contains("app1.local"),
-            "the new domain never reached the hosts file: {written}"
+            !written.contains("app1.local"),
+            "a standalone project must not add a hostname: {written}"
         );
         // The user's own entries are never touched (§75).
         assert!(written.contains("127.0.0.1 localhost"));
@@ -161,9 +164,30 @@ mod project_skip_tests {
             .unwrap();
         inner.sync_auto_domains().unwrap();
 
-        let id = inner.projects.lock().unwrap().list()[0].id.clone();
+        let id = inner
+            .projects
+            .lock()
+            .unwrap()
+            .list()
+            .into_iter()
+            .find(|project| {
+                crate::project::same_path(&project.path, &root.join("app1").display().to_string())
+            })
+            .unwrap()
+            .id;
         inner.remove_project(&id).unwrap();
-        let hostname = inner.domains.lock().unwrap().list()[0].hostname.clone();
+        let site_root = home.paths.data_dir().join("history-site");
+        std::fs::create_dir_all(&site_root).unwrap();
+        inner
+            .add_domain(Domain {
+                hostname: "history-site.local".into(),
+                root: site_root.display().to_string(),
+                kind: SiteKind::Static,
+                enabled: true,
+                ..Default::default()
+            })
+            .unwrap();
+        let hostname = "history-site.local";
         inner.remove_domain(&hostname).unwrap();
 
         let items = inner.list_deleted_items();
@@ -218,9 +242,30 @@ mod project_skip_tests {
             .remember_projects_root(&root.display().to_string())
             .unwrap();
         inner.sync_auto_domains().unwrap();
-        let id = inner.projects.lock().unwrap().list()[0].id.clone();
+        let id = inner
+            .projects
+            .lock()
+            .unwrap()
+            .list()
+            .into_iter()
+            .find(|project| {
+                crate::project::same_path(&project.path, &root.join("app1").display().to_string())
+            })
+            .unwrap()
+            .id;
         inner.remove_project(&id).unwrap();
-        let hostname = inner.domains.lock().unwrap().list()[0].hostname.clone();
+        let site_root = home.paths.data_dir().join("history-site");
+        std::fs::create_dir_all(&site_root).unwrap();
+        inner
+            .add_domain(Domain {
+                hostname: "history-site.local".into(),
+                root: site_root.display().to_string(),
+                kind: SiteKind::Static,
+                enabled: true,
+                ..Default::default()
+            })
+            .unwrap();
+        let hostname = "history-site.local";
         inner.remove_domain(&hostname).unwrap();
         assert!(!inner.list_deleted_items().is_empty());
 

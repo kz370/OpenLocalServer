@@ -117,12 +117,13 @@ fn marker_makes_a_manual_site_inactive_without_deleting_its_record_and_removal_r
 }
 
 #[test]
-fn remove_from_list_deletes_manual_records_but_marks_discovered_sites() {
+fn remove_from_list_keeps_projects_and_removes_sites() {
     let (inner, home) = inner();
     let manual = home.paths.data_dir().join("manual-site");
     let manual_id = add_site(&inner, &manual, "manual-site.test");
     inner.remove_site_from_list("manual-site.test").unwrap();
-    assert!(inner.projects.lock().unwrap().get(&manual_id).is_none());
+    let manual_project = inner.projects.lock().unwrap().get(&manual_id).unwrap();
+    assert!(manual_project.standalone);
     assert!(inner
         .domains
         .lock()
@@ -143,7 +144,8 @@ fn remove_from_list_deletes_manual_records_but_marks_discovered_sites() {
         .unwrap()
         .get("manual-site.test")
         .is_none());
-    assert!(inner.projects.lock().unwrap().get(&manual_id).is_none());
+    let manual_project = inner.projects.lock().unwrap().get(&manual_id).unwrap();
+    assert!(manual_project.standalone);
 
     let root = home.paths.data_dir().join("discover");
     let discovered = root.join("discovered-site");
@@ -153,46 +155,27 @@ fn remove_from_list_deletes_manual_records_but_marks_discovered_sites() {
         .unwrap();
     inner.remove_site_from_list("discovered-site.test").unwrap();
     assert!(inner.projects.lock().unwrap().get(&discovered_id).is_some());
+    let discovered_project = inner.projects.lock().unwrap().get(&discovered_id).unwrap();
+    assert!(discovered_project.standalone);
     assert!(inner
         .domains
         .lock()
         .unwrap()
         .get("discovered-site.test")
-        .is_some());
-    assert!(discovered.join(".ols_ignore_me").is_file());
-    assert!(!inner.site_is_active(
-        &inner
-            .domains
-            .lock()
-            .unwrap()
-            .get("discovered-site.test")
-            .unwrap()
-    ));
+        .is_none());
+    assert!(!discovered.join(".ols_ignore_me").exists());
 
     drop(inner);
     let inner = reopen(&home);
     inner.reconcile().unwrap();
-    let domain = inner
+    assert!(inner
         .domains
         .lock()
         .unwrap()
         .get("discovered-site.test")
-        .unwrap();
-    assert!(
-        !inner.site_is_active(&domain),
-        "the ignored discovered site stays inactive after reopening"
-    );
-
-    std::fs::remove_file(discovered.join(".ols_ignore_me")).unwrap();
-    inner.reconcile().unwrap();
-    assert!(inner.site_is_active(
-        &inner
-            .domains
-            .lock()
-            .unwrap()
-            .get("discovered-site.test")
-            .unwrap()
-    ));
+        .is_none());
+    let discovered_project = inner.projects.lock().unwrap().get(&discovered_id).unwrap();
+    assert!(discovered_project.standalone);
 }
 
 #[test]

@@ -229,10 +229,10 @@ fn renaming_a_domain_keeps_its_settings_and_refuses_taken_names() {
     );
 }
 
-/// Laragon-style: scanning a folder gives each servable project `<name>.test`, a
-/// deleted automatic domain stays deleted, and new folders are picked up on the next sync.
+/// Scanning finds project folders, while automatic root discovery does not publish them
+/// as sites without an explicit add or site setup.
 #[test]
-fn scanned_projects_get_automatic_domains() {
+fn scanning_projects_does_not_publish_automatic_sites() {
     let (core, home) = test_core();
     let www = home.paths.root().join("www");
     for (dir, file) in [
@@ -260,30 +260,15 @@ fn scanned_projects_get_automatic_domains() {
     found.sort();
     assert_eq!(
         found,
-        vec![
-            ("openlocalserver.test".to_string(), "static".to_string()),
-            ("shop.local".to_string(), "php".to_string()),
-            ("site.local".to_string(), "static".to_string())
-        ],
-        "a Node project needs a dev server, so no automatic domain"
+        vec![("openlocalserver.test".to_string(), "static".to_string())],
+        "project discovery must not create domains"
     );
 
-    core.dispatch(CoreCommand::RemoveDomain {
-        hostname: "shop.local".into(),
-    })
-    .unwrap();
     std::fs::create_dir_all(www.join("blog")).unwrap();
     std::fs::write(www.join("blog").join("index.php"), "x").unwrap();
     core.dispatch(CoreCommand::SyncAutoDomains).unwrap();
     let hosts: Vec<String> = kinds(&core).into_iter().map(|(h, _)| h).collect();
-    assert!(
-        hosts.contains(&"blog.local".to_string()),
-        "a new folder is picked up"
-    );
-    assert!(
-        !hosts.contains(&"shop.local".to_string()),
-        "a deleted automatic domain is not recreated"
-    );
+    assert!(!hosts.contains(&"blog.local".to_string()));
 }
 
 /// The round trip the Settings history exists for: delete a project, see it listed,

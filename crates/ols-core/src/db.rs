@@ -525,6 +525,20 @@ mod tests {
     fn attached_old_database_migrates_twice_without_changing_legacy_reads() {
         let home = crate::test_support::isolated_home();
         std::fs::write(home.paths.db_file(), include_bytes!("../../../data/app.db")).unwrap();
+        // The checked-in database advances with the app. Rewind only its migration marker
+        // and views so this test always exercises both migrations against the current data.
+        let conn = Connection::open(home.paths.db_file()).unwrap();
+        conn.execute_batch(
+            "DROP VIEW IF EXISTS sites_view;
+             DROP VIEW IF EXISTS projects_view;
+             DROP VIEW IF EXISTS operations_view;
+             DROP VIEW IF EXISTS workers_view;
+             DROP VIEW IF EXISTS schedules_view;
+             DROP VIEW IF EXISTS command_history_view;
+             PRAGMA user_version=0;",
+        )
+        .unwrap();
+        drop(conn);
         let domains_before: Vec<crate::domain::Domain> = load_docs(&home.paths, "domains").unwrap();
         let projects_before: Vec<crate::project::Project> =
             load_docs(&home.paths, "projects").unwrap();
