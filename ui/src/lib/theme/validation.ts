@@ -1,6 +1,14 @@
 import { BUILTIN_PRESETS, DEFAULT_THEME_ID } from './presets.ts'
-import type { ThemeMode, ThemeOverrides, ThemeSettings, SidebarIconStyle } from './types.ts'
+import type {
+  ThemeBackground,
+  ThemeBackgroundOverrides,
+  ThemeMode,
+  ThemeOverrides,
+  ThemeSettings,
+  SidebarIconStyle,
+} from './types.ts'
 import { parseColor } from './color.ts'
+import { backgroundSuitsMode } from './background.ts'
 
 export const DEFAULT_THEME_SETTINGS: ThemeSettings = {
   mode: 'system',
@@ -54,18 +62,47 @@ export function validateThemeSettings(raw: unknown): ThemeSettings {
     }
 
     // Background override
-    if (rawOverrides.background && typeof rawOverrides.background === 'object') {
-      const bg = rawOverrides.background as Record<string, unknown>
-      if (bg.type === 'solid') {
-        overrides.background = { type: 'solid' }
-      } else if (bg.type === 'gradient') {
-        const from = typeof bg.from === 'string' && parseColor(bg.from) ? bg.from : '#050B16'
-        const to = typeof bg.to === 'string' && parseColor(bg.to) ? bg.to : '#0B1428'
-        const angle = typeof bg.angle === 'number' && Number.isFinite(bg.angle) ? bg.angle : 135
-        overrides.background = { type: 'gradient', from, to, angle }
-      }
-    }
+    const background = parseBackgroundOverrides(rawOverrides.background)
+    if (background) overrides.background = background
   }
 
   return { mode, presetId, overrides }
+}
+
+function parseBackground(raw: unknown): ThemeBackground | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const bg = raw as Record<string, unknown>
+  if (bg.type === 'solid') return { type: 'solid' }
+  if (bg.type === 'gradient') {
+    const from = typeof bg.from === 'string' && parseColor(bg.from) ? bg.from : '#050B16'
+    const to = typeof bg.to === 'string' && parseColor(bg.to) ? bg.to : '#0B1428'
+    const angle = typeof bg.angle === 'number' && Number.isFinite(bg.angle) ? bg.angle : 135
+    return { type: 'gradient', from, to, angle }
+  }
+  return undefined
+}
+
+/**
+ * Accepts the per-mode shape `{ light?, dark? }` and migrates the legacy single
+ * background (one value shared by both modes): a solid applies to both modes, a
+ * gradient is kept for the mode it was designed for (by luminance) and the other
+ * mode inherits an adapted copy.
+ */
+function parseBackgroundOverrides(raw: unknown): ThemeBackgroundOverrides | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const candidate = raw as Record<string, unknown>
+
+  if ('type' in candidate) {
+    const legacy = parseBackground(candidate)
+    if (!legacy) return undefined
+    if (legacy.type === 'solid') return { light: legacy, dark: legacy }
+    return backgroundSuitsMode(legacy, 'light') ? { light: legacy } : { dark: legacy }
+  }
+
+  const result: ThemeBackgroundOverrides = {}
+  const light = parseBackground(candidate.light)
+  const dark = parseBackground(candidate.dark)
+  if (light) result.light = light
+  if (dark) result.dark = dark
+  return light || dark ? result : undefined
 }

@@ -247,12 +247,14 @@ useWeb | refreshes | domains and projects on mount, `projects-changed`, focus, a
 TauriApp (refresh_tray & sync_tray_tooltip) | updates_on | run_command IPC (site start/stop/add/remove/apply), process_events, project_events, autostart, and periodic 2-second heartbeat — carried out in a spawned task AFTER the command response is sent to the UI (the aggregate probes are never paid by a waiting read), with `sync_tray_tooltip` caching its aggregate for 1 s against command bursts
 DashboardPage (ServicesWidget) | uses | serviceGrouping::groupServices (categorizes services into Web servers, Databases, Cache & queues, Mail, Other)
 DashboardPage (ServicesWidget) | persists_collapsed_via | dashboard.services.collapsed_groups CoreCommand::SetSetting and localStorage
-SettingsPage (Appearance) | uses | AppearanceSettings (theme modes, presets, curated accents + picker, monochrome/colorful icon toggle, solid/gradient app backgrounds, live preview strip, reset button)
+SettingsPage (Appearance) | uses | AppearanceSettings (theme modes, presets, curated accents + picker, monochrome/colorful icon toggle, per-mode solid/gradient app backgrounds, live preview strip, reset button)
+ThemeProvider computeEffectiveOptions | uses | background.ts resolveBackgroundForMode (per-mode background with adapted inheritance); applyThemeToDom uses glassAlphaFor for --card opacity
+Sidebar / Titlebar | use | backgroundSuitsMode to keep translucent acrylic only over a gradient that suits the active mode
 AppearanceSettings | uses | useTheme (reads/writes active theme settings, preset id, overrides)
 SettingsPage Editors entry | uses | SettingsEditorsIcon, which renders code brackets (</>) in gradient colors or currentColor gray according to the sidebar icon style
 ThemeProvider (ui/src/lib/theme) | persists_via | CoreCommand::GetSetting/SetSetting ('appearance') and localStorage ('ols-appearance', fallback 'ols-theme')
 ThemeProvider (ui/src/lib/theme) | applies_to | document.documentElement CSS variables (--background, --foreground, --card, --popover, --primary, --ring, --app-background, etc.) and emits Tauri 'ols:theme'
-ui/index.html | pre_paints_theme | reads 'ols-appearance' / 'ols-theme' from localStorage before first paint, injecting root variables to prevent flash of wrong theme
+ui/index.html | pre_paints_theme | reads 'ols-appearance' / 'ols-theme' from localStorage before first paint, injecting root variables to prevent flash of wrong theme; pre-paints only the active mode's own gradient (`overrides.background[light|dark]`), never an inherited or legacy single-value one
 CodeEditor & Terminal & SystemMonitor & TrafficGraph | derive_from | active theme tokens (CodeMirror surface/cursor/selection/activeLine, xterm background/foreground/cursor/selection, donut chart strokes, traffic graph UP_COLOR/DOWN_COLOR)
 elevate | uses | Win32 ShellExecuteExW (runas verb) directly for UAC elevation without invoking powershell
 exec | resolves | Windows system binaries via GetSystemDirectoryW (%SystemRoot%\System32) independently of PATH
