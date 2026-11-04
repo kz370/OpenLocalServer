@@ -110,7 +110,7 @@ export function EnvironmentPanel({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col gap-5">
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
       {/* Manifest */}
       <section className="flex flex-col gap-3">

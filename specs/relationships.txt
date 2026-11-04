@@ -295,5 +295,5 @@ DomainSettings Existing project picker | filters | visible projects without a co
 Add Site Quick App combobox | opens | filtered single-column recipe options; selecting an option calls the existing Quick App Wizard callback
 SitesPage / ProjectsPage | render | permanent source label and fixed-height site/project rows; source transitions do not mount or remove the label line
 SitesPage / ProjectsPage / RuntimesPage | show transient loading | overlay progress feedback without moving the table; Runtimes keeps cached rows and uses height-matched first-load skeletons
-Page-level ErrorCard | displays | dismissible fixed overlay so diagnostics do not alter document flow
+ErrorCard | displays | dismissible fixed overlay across pages and panels so diagnostics do not alter document flow
 App main scroll container | reserves | stable scrollbar gutter to prevent content-width shift

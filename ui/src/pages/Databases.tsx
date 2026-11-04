@@ -396,10 +396,20 @@ function ConnectionDetails({ engine, database, path = null }: { engine: string; 
   }, [engine, database, path])
 
   if (error) {
-    return <p className="px-3 py-2 text-xs text-destructive">{error.problem}{error.cause ? ` — ${error.cause}` : ''}{error.fix ? ` ${error.fix}` : ''}</p>
+    return <p className="min-h-36 px-3 py-2 text-xs text-destructive">{error.problem}{error.cause ? ` — ${error.cause}` : ''}{error.fix ? ` ${error.fix}` : ''}</p>
   }
   if (!info) {
-    return <p className="px-3 py-2 text-xs text-muted-foreground">Reading connection details…</p>
+    return (
+      <div className="min-h-36 space-y-2 bg-muted/40 px-3 py-2" role="status" aria-label="Reading connection details…">
+        <p className="text-xs text-muted-foreground">Reading connection details…</p>
+        {Array.from({ length: 6 }, (_, index) => (
+          <div key={index} className="flex items-center gap-2">
+            <span className="h-3 w-16 animate-pulse rounded bg-muted" />
+            <span className="h-3 w-2/3 animate-pulse rounded bg-muted" />
+          </div>
+        ))}
+      </div>
+    )
   }
   const fields = [
     ['Engine', info.engine],
@@ -410,7 +420,7 @@ function ConnectionDetails({ engine, database, path = null }: { engine: string; 
     ['File', info.path],
   ].filter(([, value]) => value !== null && value !== '') as [string, string][]
   return (
-    <div className="space-y-1.5 bg-muted/40 px-3 py-2 text-xs">
+    <div className="min-h-36 space-y-1.5 bg-muted/40 px-3 py-2 text-xs">
       <p className="font-medium text-foreground">Connection details</p>
       <dl className="grid grid-cols-[4.5rem_1fr] gap-x-2 gap-y-0.5">
         {fields.map(([label, value]) => (
@@ -1711,7 +1721,7 @@ function Tools({ dbTools, externalTools, onToolsUpdated }: ToolsProps) {
         }
       >
         <div className="flex flex-col gap-4 text-xs">
-          <ErrorCard error={importError} onDismiss={() => setImportError(null)} />
+          <ErrorCard error={importError} onDismiss={() => setImportError(null)} overlay />
 
           {/* File Dropzone */}
           <div

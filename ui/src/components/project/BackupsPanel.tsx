@@ -36,7 +36,7 @@ export function BackupsPanel({ project }: { project: Project }) {
 
   return (
     <div className="flex flex-col gap-5">
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
       <AutoBackupSection project={project} onChanged={load} />
 
@@ -216,7 +216,7 @@ function AutoBackupSection({ project, onChanged }: { project: Project; onChanged
       <h3 className="flex items-center gap-2 text-sm font-medium">
         <Timer className="size-4" /> Automatic backups
       </h3>
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
       <p className="text-xs text-muted-foreground">
         {!plan
           ? 'Reading the plan…'
@@ -437,7 +437,7 @@ function RestoreDialog({ project, snapshot, onClose, onDone }: { project: Projec
       }
     >
       <div className="flex flex-col gap-3">
-        <ErrorCard error={error} onDismiss={() => setError(null)} />
+        <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
         {!result ? (
           <>
             <Toggle checked={opts.config} onChange={(v) => setOpts({ ...opts, config: v })} label="Configuration" hint="Manifest, sites, web configs, workers, tasks, tunnels. Sites added since are removed." />
@@ -501,7 +501,7 @@ export function CloneDialog({ project, onClose }: { project: Project; onClose: (
       }
     >
       <div className="flex flex-col gap-4">
-        <ErrorCard error={error} onDismiss={() => setError(null)} />
+        <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
         {!result ? (
           <>
             <Field label="What to copy">

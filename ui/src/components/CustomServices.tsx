@@ -109,7 +109,7 @@ export function CustomServices({ onChanged }: { onChanged: () => void }) {
         </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-2">
-        {!draft && <ErrorCard error={error} onDismiss={() => setError(null)} />}
+        {!draft && <ErrorCard error={error} onDismiss={() => setError(null)} overlay />}
         {services.map((s) => (
           <div key={s.id} className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-1.5 text-sm">
             <div className="flex min-w-0 items-center gap-2">
@@ -167,7 +167,7 @@ export function CustomServices({ onChanged }: { onChanged: () => void }) {
           }
         >
           <div className="flex flex-col gap-3">
-            <ErrorCard error={error} onDismiss={() => setError(null)} />
+            <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
             <Field label="Name">
               <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="My API" />
             </Field>

@@ -69,7 +69,7 @@ export function EnvEditor({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
       {files.length === 0 ? (
         <div className="flex flex-col gap-2 text-sm">

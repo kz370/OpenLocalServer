@@ -63,7 +63,7 @@ export function WorkersPanel({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col gap-5">
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
       <section className="flex flex-col gap-2">
         {procfile && (
@@ -244,7 +244,7 @@ function WorkerEditor({ initial, presets, onClose, onSaved }: { initial: Worker;
       }
     >
       <div className="flex flex-col gap-4">
-        <ErrorCard error={error} onDismiss={() => setError(null)} />
+        <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
         {!initial.id && (
           <Field label="Kind">
             <Select onChange={(e) => set({ command: presets.find((p) => p.id === e.target.value)?.command ?? w.command })} defaultValue={presets[0]?.id}>
@@ -326,7 +326,7 @@ function TaskEditor({ initial, onClose, onSaved }: { initial: ScheduledTask; onC
       }
     >
       <div className="flex flex-col gap-4">
-        <ErrorCard error={error} onDismiss={() => setError(null)} />
+        <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
         <Field label="Name">
           <Input value={t.name} onChange={(e) => set({ name: e.target.value })} disabled={!!initial.id} placeholder="Laravel scheduler" />
         </Field>

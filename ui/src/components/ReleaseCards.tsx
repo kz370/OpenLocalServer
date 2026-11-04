@@ -60,7 +60,7 @@ export function ApiCard() {
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <ErrorCard error={error} onDismiss={() => setError(null)} />
+        <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
         {status.error && <p className="text-sm text-warning">{status.error}</p>}
         <div className="grid gap-4 sm:grid-cols-3">
           <Field label="Port" hint="Loopback only. Changing it needs Apply port.">
@@ -289,7 +289,7 @@ export function UpdatesCard() {
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <ErrorCard error={displayError} onDismiss={() => setError(null)} />
+        <ErrorCard error={displayError} onDismiss={() => setError(null)} overlay />
 
         {/* When downloaded and verified: show ONE unified ready banner */}
         {isDownloaded && info && (
@@ -478,7 +478,7 @@ export function SystemCard() {
         <CardDescription>OLS sends nothing anywhere: there is no telemetry and no analytics code in this build.</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <ErrorCard error={error} onDismiss={() => setError(null)} />
+        <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
         {menu?.supported && (
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="text-sm">

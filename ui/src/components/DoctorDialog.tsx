@@ -80,7 +80,7 @@ export function DoctorDialog({ open, onClose }: { open: boolean; onClose: () => 
       }
     >
       <div className="flex flex-col gap-4">
-        <ErrorCard error={error} onDismiss={() => setError(null)} />
+        <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
         {!report && <Spinner />}
         {report && (
           <>
