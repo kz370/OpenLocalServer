@@ -1191,21 +1191,14 @@ fn sync_tray_tooltip(app: &AppHandle, core: &Core) {
     // The aggregate probes every service (runtime dirs, ports, TCP health). Commands
     // arrive in bursts from the UI, so share the computed tip across one second
     // instead of recomputing it per command; the heartbeat keeps it moving after that.
-    static TIP_CACHE: Mutex<Option<(Instant, String)>> = Mutex::new(None);
-    if let Some((at, tip)) = TIP_CACHE.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+    static TIP_CACHE: Mutex<Option<Instant>> = Mutex::new(None);
+    if let Some(at) = TIP_CACHE.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
         if at.elapsed() < Duration::from_secs(1) {
-            return;
-        }
-        if TOOLTIP_SHOWS
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .as_deref()
-            == Some(tip)
-        {
             return;
         }
     }
     let tip = tray_tooltip(core);
+    *TIP_CACHE.lock().unwrap_or_else(|e| e.into_inner()) = Some(Instant::now());
     let mut last = TOOLTIP_SHOWS.lock().unwrap_or_else(|e| e.into_inner());
     if last.as_deref() == Some(&tip) {
         return;
@@ -1215,7 +1208,6 @@ fn sync_tray_tooltip(app: &AppHandle, core: &Core) {
             *last = Some(tip.clone());
         }
     }
-    *TIP_CACHE.lock().unwrap_or_else(|e| e.into_inner()) = Some((Instant::now(), tip));
 }
 
 fn tray_fingerprint(

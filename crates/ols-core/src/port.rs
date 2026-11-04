@@ -262,16 +262,21 @@ mod tests {
 
     #[test]
     fn reports_free_on_an_unused_high_port() {
-        // 127.0.0.1:0 asks the OS for any free port so this test can't collide with a
-        // real service; we then release it and check *that exact* port back as Free.
-        let probe = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        let port = probe.local_addr().unwrap().port();
-        drop(probe);
+        // Another parallel test can claim the port after the probe is released, so try a
+        // fresh OS-assigned port when that race occurs.
+        let mut last_status = None;
+        for _ in 0..8 {
+            let probe = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+            let port = probe.local_addr().unwrap().port();
+            drop(probe);
 
-        match check_port(port) {
-            PortStatus::Free => {}
-            other => panic!("expected Free, got {other:?}"),
+            let status = check_port(port);
+            if matches!(status, PortStatus::Free) {
+                return;
+            }
+            last_status = Some(status);
         }
+        panic!("expected a free OS-assigned port after 8 attempts, last status: {last_status:?}");
     }
 
     #[test]
