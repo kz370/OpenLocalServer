@@ -182,7 +182,7 @@ pub fn project(ctx: &Ctx, cmd: ProjectCmd) -> R<()> {
         ProjectCmd::List => {
             let r = ctx.call(CoreCommand::ListProjects)?;
             if !ctx.print_json(&r) {
-                if let CoreResponse::Projects { projects } = r {
+                if let CoreResponse::Projects { projects, .. } = r {
                     table(projects.into_iter().map(|p| vec![p.name, p.path]).collect());
                 }
             }
@@ -198,7 +198,8 @@ pub fn project(ctx: &Ctx, cmd: ProjectCmd) -> R<()> {
         }
         ProjectCmd::Start { name } => {
             let id = ctx.project_id(&name)?;
-            let CoreResponse::Projects { projects } = ctx.call(CoreCommand::ListProjects)? else {
+            let CoreResponse::Projects { projects, .. } = ctx.call(CoreCommand::ListProjects)?
+            else {
                 return Ok(());
             };
             let path = projects

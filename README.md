@@ -75,43 +75,49 @@ Grab the latest installer (`OLS-2.5.0-setup.exe`) from the [Releases page](https
 > Screenshots captured directly from the running app, showing **Dark** and **Light** themes side by side.
 
 <p align="center">
-  <img width="49%" src="./assets/dashboard-dark.webp" alt="Dashboard — Dark Theme">
+  <img width="49%" src="./assets/dashboard.webp" alt="Dashboard — Dark Theme">
   <img width="49%" src="./assets/dashboard-light.webp" alt="Dashboard — Light Theme">
   <br><em>Dashboard — health, services, diagnostics, and traffic graph at a glance (Dark & Light)</em>
 </p>
 
 <p align="center">
-  <img width="49%" src="./assets/sites-dark.webp" alt="Sites & Projects — Dark Theme">
+  <img width="49%" src="./assets/sites.webp" alt="Sites & Projects — Dark Theme">
   <img width="49%" src="./assets/sites-light.webp" alt="Sites & Projects — Light Theme">
   <br><em>Sites — domains, per-site PHP/Node/Python, HTTPS, status tabs, and site branding (Dark & Light)</em>
 </p>
 
 <p align="center">
-  <img width="49%" src="./assets/runtimes-dark.webp" alt="Runtimes — Dark Theme">
+  <img width="49%" src="./assets/projects.webp" alt="Sites & Projects — Dark Theme">
+  <img width="49%" src="./assets/projects-light.webp" alt="Sites & Projects — Light Theme">
+  <br><em>Projects — project directories, project types, connected local sites, project paths, and project management (Dark & Light)</em>
+</p>
+
+<p align="center">
+  <img width="49%" src="./assets/runtimes.webp" alt="Runtimes — Dark Theme">
   <img width="49%" src="./assets/runtimes-light.webp" alt="Runtimes — Light Theme">
   <br><em>Runtimes — side-by-side versions, extensions, and global defaults (Dark & Light)</em>
 </p>
 
 <p align="center">
-  <img width="49%" src="./assets/version-manager-dark.webp" alt="Version Manager — Dark Theme">
+  <img width="49%" src="./assets/version-manager.webp" alt="Version Manager — Dark Theme">
   <img width="49%" src="./assets/version-manager-light.webp" alt="Version Manager — Light Theme">
   <br><em>Version Manager — search, install, and manage runtime versions (Dark & Light)</em>
 </p>
 
 <p align="center">
-  <img width="49%" src="./assets/databases-dark.webp" alt="Databases — Dark Theme">
+  <img width="49%" src="./assets/databases.webp" alt="Databases — Dark Theme">
   <img width="49%" src="./assets/databases-light.webp" alt="Databases — Light Theme">
   <br><em>Databases — engines, users, backups, table inspection, and SQL tools (Dark & Light)</em>
 </p>
 
 <p align="center">
-  <img width="49%" src="./assets/webserver-dark.webp" alt="Web Server — Dark Theme">
+  <img width="49%" src="./assets/webserver.webp" alt="Web Server — Dark Theme">
   <img width="49%" src="./assets/webserver-light.webp" alt="Web Server — Light Theme">
   <br><em>Web Server — live switching (Nginx / Apache / Caddy), syntax validation, and config history (Dark & Light)</em>
 </p>
 
 <p align="center">
-  <img width="49%" src="./assets/tunnels-dark.webp" alt="Tunnels — Dark Theme">
+  <img width="49%" src="./assets/tunnels.webp" alt="Tunnels — Dark Theme">
   <img width="49%" src="./assets/tunnels-light.webp" alt="Tunnels — Light Theme">
   <br><em>Tunnels — share a local site publicly, inspect traffic, and replay requests (Dark & Light)</em>
 </p>

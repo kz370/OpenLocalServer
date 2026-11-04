@@ -80,7 +80,7 @@ impl Ctx {
     }
 
     pub fn project_id(&self, name: &str) -> R<String> {
-        let CoreResponse::Projects { projects } = self.call(CoreCommand::ListProjects)? else {
+        let CoreResponse::Projects { projects, .. } = self.call(CoreCommand::ListProjects)? else {
             return Err("unexpected reply".into());
         };
         // Exact ID match takes highest precedence
@@ -125,7 +125,7 @@ impl Ctx {
             Some(unc) => format!(r"\\{unc}"),
             None => full.strip_prefix(r"\\?\").unwrap_or(&full).to_string(),
         };
-        let CoreResponse::Projects { projects } = self.call(CoreCommand::ListProjects)? else {
+        let CoreResponse::Projects { projects, .. } = self.call(CoreCommand::ListProjects)? else {
             return Err("unexpected reply".into());
         };
         if let Some(p) = projects.iter().find(|p| p.path.eq_ignore_ascii_case(&full)) {
