@@ -1684,6 +1684,11 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Explorer "Ignore this project/site": write the marker and exit before anything
+    // else starts (no window, no core, no daemon hand-over, no single-instance hop).
+    if let Some(code) = ols_core::shell_menu::run_menu_action(std::env::args()) {
+        std::process::exit(code);
+    }
     let paths = AppPaths::resolve();
     paths
         .ensure_dirs()

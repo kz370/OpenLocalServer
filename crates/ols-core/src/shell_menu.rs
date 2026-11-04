@@ -148,19 +148,104 @@ fn commands(app: &str, cli: &str) -> [(&'static str, &'static str, String); 4] {
             "Set up with OLS",
             format!("cmd.exe /k \"\"{cli}\" setup --path \"%V\"\""),
         ),
-        // Wrapped in `cmd /c ... || pause` so a failure stays on screen. Run bare, the
-        // console closed the instant olsc exited and its error was never seen.
+        // The ignore actions run the windowed app, not the console CLI: a console
+        // program always flashes a window, and no registry setting can hide it. The
+        // app handles these flags before it starts anything (`run_menu_action`).
         (
             IGNORE_PROJECT,
             "Ignore this project",
-            format!("cmd.exe /c \"\"{cli}\" project ignore \"%V\" || pause\""),
+            format!("\"{app}\" {IGNORE_PROJECT_FLAG} \"%V\""),
         ),
         (
             IGNORE_SITE,
             "Ignore this site",
-            format!("cmd.exe /c \"\"{cli}\" project ignore-site \"%V\" || pause\""),
+            format!("\"{app}\" {IGNORE_SITE_FLAG} \"%V\""),
         ),
     ]
+}
+
+/// App flags the Explorer ignore actions pass.
+pub const IGNORE_PROJECT_FLAG: &str = "--ignore-project";
+pub const IGNORE_SITE_FLAG: &str = "--ignore-site";
+
+/// The marker an ignore flag writes, if `flag` is one.
+fn marker_for_flag(flag: &str) -> Option<&'static str> {
+    match flag {
+        IGNORE_PROJECT_FLAG => Some(crate::app::OLS_IGNORE_PROJECT_MARKER),
+        IGNORE_SITE_FLAG => Some(crate::app::OLS_IGNORE_SITE_MARKER),
+        _ => None,
+    }
+}
+
+/// Create `marker` inside `folder`. An existing marker is success: the folder is
+/// already ignored, which is what was asked for.
+fn write_ignore_marker(folder: &Path, marker: &str) -> Result<(), String> {
+    if !folder.is_dir() {
+        return Err(format!(
+            "'{}' is not an accessible folder.\n\nChoose an existing project folder and try again.",
+            folder.display()
+        ));
+    }
+    let marker_path = folder.join(marker);
+    match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&marker_path)
+    {
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+        Err(error) => Err(format!(
+            "Could not create '{}': {error}.\n\nCheck that you can write to the project folder, then try again.",
+            marker_path.display()
+        )),
+    }
+}
+
+/// Handle an Explorer ignore action passed to the app (`--ignore-project <folder>` or
+/// `--ignore-site <folder>`). Returns the exit code when the arguments were one, so the
+/// caller exits at once — before logging, the core, the daemon hand-over, or the
+/// single-instance check, none of which a one-file write should touch. A running app
+/// picks the marker up through its project-folder watch. Success is silent; a failure
+/// is shown in a message box, since there is no console to print to.
+pub fn run_menu_action(args: impl IntoIterator<Item = String>) -> Option<i32> {
+    let mut args = args.into_iter().skip(1);
+    let (marker, folder) = loop {
+        let arg = args.next()?;
+        if let Some(marker) = marker_for_flag(&arg) {
+            break (marker, args.next());
+        }
+    };
+    let result = match folder {
+        Some(folder) => write_ignore_marker(Path::new(&folder), marker),
+        None => Err("No folder was given.\n\nUse the Explorer menu on a folder.".into()),
+    };
+    match result {
+        Ok(()) => Some(0),
+        Err(message) => {
+            show_error("Open Local Server could not ignore this folder", &message);
+            Some(1)
+        }
+    }
+}
+
+#[cfg(windows)]
+fn show_error(title: &str, message: &str) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
+    let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+    let (title, message) = (wide(title), wide(message));
+    unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            message.as_ptr(),
+            title.as_ptr(),
+            MB_OK | MB_ICONERROR,
+        );
+    }
+}
+
+#[cfg(not(windows))]
+fn show_error(title: &str, message: &str) {
+    eprintln!("{title}: {message}");
 }
 
 /// The version out of `olsc --version` output (`olsc 2.9.0`).
@@ -192,9 +277,9 @@ fn command_program(command: &str) -> Option<&str> {
     }
 }
 
-/// Whether a stored command line runs the app with --add-project.
+/// Whether a stored command line runs the app with `flag`.
 #[cfg(any(windows, test))]
-fn command_is_add_project(command: &str) -> bool {
+fn command_runs_app_with(command: &str, flag: &str) -> bool {
     let Some(program) = command_program(command) else {
         return false;
     };
@@ -202,7 +287,25 @@ fn command_is_add_project(command: &str) -> bool {
         .file_stem()
         .and_then(|n| n.to_str())
         .is_some_and(is_app_stem);
-    is_app && command.contains("--add-project")
+    is_app && command.contains(flag)
+}
+
+/// Whether a stored command line runs the app with --add-project.
+#[cfg(any(windows, test))]
+fn command_is_add_project(command: &str) -> bool {
+    command_runs_app_with(command, "--add-project")
+}
+
+/// Whether the stored command for `action` is the one this build writes. The setup
+/// action runs the CLI in a kept-open console on purpose, so only its presence counts.
+#[cfg(any(windows, test))]
+fn action_command_is_current(action: &str, command: &str) -> bool {
+    match action {
+        ADD => command_is_add_project(command),
+        IGNORE_PROJECT => command_runs_app_with(command, IGNORE_PROJECT_FLAG),
+        IGNORE_SITE => command_runs_app_with(command, IGNORE_SITE_FLAG),
+        _ => true,
+    }
 }
 
 /// The `(Default)` value out of `reg query ... /ve` output.
@@ -287,7 +390,7 @@ impl Inner {
                         .ok()
                         .as_deref()
                         .and_then(reg_value)
-                        .is_some_and(|command| action != &ADD || command_is_add_project(&command))
+                        .is_some_and(|command| action_command_is_current(action, &command))
                 })
         });
         ShellMenuStatus {
@@ -426,13 +529,46 @@ mod tests {
         );
         assert_eq!(c[0].1, "Add folder to OLS projects");
         assert!(c[1].2.contains("setup --path \"%V\""));
-        // Ignore actions keep their console open on failure so the error is readable.
+        // Ignore actions run the windowed app, so no console flashes.
         assert_eq!(
             c[2].2,
-            r#"cmd.exe /c ""C:\Program Files\OLS\olsc.exe" project ignore "%V" || pause""#
+            r#""C:\Program Files\OLS\OLS.exe" --ignore-project "%V""#
         );
-        assert!(c[3].2.contains("project ignore-site \"%V\" || pause"));
+        assert_eq!(
+            c[3].2,
+            r#""C:\Program Files\OLS\OLS.exe" --ignore-site "%V""#
+        );
+        assert!(action_command_is_current(IGNORE_PROJECT, &c[2].2));
+        assert!(action_command_is_current(IGNORE_SITE, &c[3].2));
+        // The former console form must read as stale so the card offers Repair.
+        assert!(!action_command_is_current(
+            IGNORE_PROJECT,
+            r#"cmd.exe /c ""C:\OLS\olsc.exe" project ignore "%V" || pause""#
+        ));
         assert!(c.iter().all(|(k, _, _)| k.starts_with("OpenLocalServer.")));
+    }
+
+    #[test]
+    fn menu_action_writes_the_marker_and_ignores_other_launches() {
+        let home = crate::test_support::isolated_home();
+        let folder = home.paths.root().join("site");
+        std::fs::create_dir_all(&folder).unwrap();
+        let args = |flag: &str| {
+            vec![
+                "OLS.exe".to_string(),
+                flag.to_string(),
+                folder.display().to_string(),
+            ]
+        };
+        assert_eq!(run_menu_action(args(IGNORE_PROJECT_FLAG)), Some(0));
+        assert!(folder.join(crate::app::OLS_IGNORE_PROJECT_MARKER).is_file());
+        // Already ignored is still success.
+        assert_eq!(run_menu_action(args(IGNORE_PROJECT_FLAG)), Some(0));
+        assert_eq!(run_menu_action(args(IGNORE_SITE_FLAG)), Some(0));
+        assert!(folder.join(crate::app::OLS_IGNORE_SITE_MARKER).is_file());
+        // Normal launches are not menu actions.
+        assert_eq!(run_menu_action(vec!["OLS.exe".to_string()]), None);
+        assert_eq!(run_menu_action(args("--add-project")), None);
     }
 
     #[test]
