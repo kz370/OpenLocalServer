@@ -7,7 +7,10 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [2.8.1] — 2026-11-04
 
-Feature release. Full notes: [elease-notes/v2.8.1.md](./release-notes/v2.8.1.md).
+Feature and UI release. Full notes: [`release-notes/v2.8.1.md`](./release-notes/v2.8.1.md).
+
+### Highlights
+- UI refinements: clearer Sites controls, stable layouts on Sites, Projects, and Runtimes, and a paginated Background Tasks table.
 
 ## [2.8.0] — 2026-11-03
 

@@ -1,6 +1,6 @@
 # OpenLocalServer (OLS) — Comprehensive User Manual & Operations Guide
 
-> **Version:** 2.8.0
+> **Version:** 2.8.1
 > **Platform:** Windows 10 / Windows 11 (64-bit)  
 > **License:** GPL-3.0-only  
 > **CLI Binary:** `olsc`  
@@ -26,7 +26,7 @@
 14. [AI Assistant & Model Context Protocol (MCP)](#14-ai-assistant--model-context-protocol-mcp)
 15. [Command Line Interface (CLI — `olsc`)](#15-command-line-interface-cli--olsc)
 16. [Keyboard Shortcuts, Settings, Themes & Documentation](#16-keyboard-shortcuts-settings-themes--documentation)
-17. [Version 2.8.0 Specific Notes & What's New](#17-version-280-specific-notes--whats-new)
+17. [Version 2.8.1 Specific Notes & What's New](#17-version-281-specific-notes--whats-new)
 
 ---
 
@@ -361,16 +361,14 @@ olsc guide
 
 ---
 
-## 17. Version 2.8.0 Specific Notes & What's New
+## 17. Version 2.8.1 Specific Notes & What's New
 
-### New Features in v2.8.0
-- **Project and Site Selection**: Keep discovered projects standalone unless creating a site is requested, then attach an existing unconnected project from site selection; Quick Apps are searchable.
-- **Internal Database Improvement**: Read-only SQLite query views make project, site, and activity records easier for the app to query; indexes speed up common lookups. This is an under-the-hood improvement, not a new app feature.
-- **Safe Database Maintenance**: Versioned migrations create timestamped backups, while operation history is retained and repeated failures are collapsed.
-- **Site Actions and Editors**: Hide is the only site action with Undo; Remove from list and Safe delete are separate actions. Editor menus use configured editors, and existing editor settings migrate once.
-- **WordPress Core Repair**: Restore missing core files with checksum validation and offline cache support.
-- **Background Task History**: Recent site operations persist across restarts, and repeated operations are grouped.
-- **Live Site Health Check**: Shows DNS, TCP, TLS, certificate, trust, and HTTP checks one at a time as they complete.
+### What's New in v2.8.1
+- **UI Stability**: Clearer Sites controls, reduced layout shifts across Sites, Projects, and Runtimes, and a paginated Background Tasks table.
+
+### Previous Version Notes (v2.8.0)
+- Improved project and site selection and Quick App search; added WordPress core repair, safer database maintenance, retained task history, and staged site health checks.
+
 ### Previous Version Notes (v2.6.0)
 1. **Installed Software UI Overhaul:**
    - **Accurate Status Display**: Separated installation status from update availability. Accurately communicates "Up to date" (green indicator), "Update available" (sky indicator with non-link neutral text), and "Not installed".
