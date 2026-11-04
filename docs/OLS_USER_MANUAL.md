@@ -365,9 +365,9 @@ olsc guide
 
 ### New Features in v2.8.0
 - **Project and Site Selection**: Keep discovered projects standalone unless creating a site is requested, then attach an existing unconnected project from site selection; Quick Apps are searchable.
-- **Readable Database Views**: Query sites, projects, operations, workers, schedules, and command history through read-only SQLite views and indexes.
+- **Internal Database Improvement**: Read-only SQLite query views make project, site, and activity records easier for the app to query; indexes speed up common lookups. This is an under-the-hood improvement, not a new app feature.
 - **Safe Database Maintenance**: Versioned migrations create timestamped backups, while operation history is retained and repeated failures are collapsed.
-- **Site Actions and Editors**: Hide, remove from the list, or safely move a site folder with Undo. Editor menus use configured editors, and existing editor settings migrate once.
+- **Site Actions and Editors**: Hide is the only site action with Undo; Remove from list and Safe delete are separate actions. Editor menus use configured editors, and existing editor settings migrate once.
 - **WordPress Core Repair**: Restore missing core files with checksum validation and offline cache support.
 - **Background Task History**: Recent site operations persist across restarts, and repeated operations are grouped.
 - **Live Site Health Check**: Shows DNS, TCP, TLS, certificate, trust, and HTTP checks one at a time as they complete.
