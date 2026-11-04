@@ -1,4 +1,4 @@
-import { CheckCircle2, Database, FolderOpen, Search, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Database, FolderOpen, Search, XCircle } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { open as openFolder } from '@tauri-apps/plugin-dialog'
 
@@ -11,6 +11,15 @@ import { Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { type Diagnostic, type MigratedDb, type MigrationProgress, type MigrationSource, runCommand } from '@/core'
 import { formatBytes, usePoll } from '@/lib/hooks'
+import { confirmAction } from '@/lib/confirm'
+
+interface SourceImport {
+  password: string
+  databases: string[] | null
+  picked: string[]
+  results: MigratedDb[] | null
+  error: string | null
+}
 
 /**
  * Import databases from Laragon, XAMPP, WampServer or an older OLS MariaDB series:
@@ -18,14 +27,13 @@ import { formatBytes, usePoll } from '@/lib/hooks'
  */
 export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [sources, setSources] = useState<MigrationSource[] | null>(null)
-  const [sourceId, setSourceId] = useState('')
-  const [password, setPassword] = useState('')
-  const [dbs, setDbs] = useState<string[] | null>(null)
-  const [picked, setPicked] = useState<string[]>([])
+  const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([])
+  const [sourceImports, setSourceImports] = useState<Record<string, SourceImport>>({})
+  const [conflictPolicy, setConflictPolicy] = useState<'skip' | 'replace_with_backup' | 'rename_incoming'>('skip')
   const [busy, setBusy] = useState<'scan' | 'import' | null>(null)
+  const [activeSourceId, setActiveSourceId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [results, setResults] = useState<MigratedDb[] | null>(null)
   const [progress, setProgress] = useState<MigrationProgress | null>(null)
 
   // The scan / import command blocks until it is done, so ask where it is up to meanwhile.
@@ -40,39 +48,36 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
     void runCommand({ type: 'list_migration_sources' }).then((r) => {
       if (r.type !== 'migration_sources') return
       setSources(r.sources)
-      const first = r.sources[0]
-      if (first) {
-        setSourceId(first.id)
-      }
     })
   }, [open])
 
-  const source = sources?.find((s) => s.id === sourceId)
+  const importState = (id: string): SourceImport => sourceImports[id] ?? {
+    password: '', databases: null, picked: [], results: null, error: null,
+  }
+
+  const updateImport = (id: string, patch: Partial<SourceImport>) =>
+    setSourceImports((previous) => ({
+      ...previous,
+      [id]: { ...importState(id), ...patch },
+    }))
 
   const browse = async () => {
-    const selected = await openFolder({ directory: true, multiple: false, title: 'Select MySQL/MariaDB data folder' })
-    if (typeof selected !== 'string') return
-    setError(null)
-    setNotice(null)
     try {
+      const selected = await openFolder({ directory: true, multiple: false, title: 'Select MySQL/MariaDB data folder' })
+      if (typeof selected !== 'string') return
+      setError(null)
+      setNotice(null)
       const r = await runCommand({ type: 'inspect_migration_source', path: selected })
       if (r.type !== 'migration_source') return
       const key = normalizePath(r.source.data_dir)
       const existing = (sources ?? []).find((candidate) => normalizePath(candidate.data_dir) === key)
       if (existing) {
-        setSourceId(existing.id)
-        setPassword('')
-        setDbs(null)
-        setResults(null)
+        setSelectedSourceIds((previous) => previous.includes(existing.id) ? previous : [...previous, existing.id])
         setNotice('That data folder is already listed; its existing source is selected.')
         return
       }
       setSources((previous) => [...(previous ?? []), r.source])
-      setSourceId(r.source.id)
-      setPassword('')
-      setDbs(null)
-      setPicked([])
-      setResults(null)
+      setSelectedSourceIds((previous) => [...previous, r.source.id])
       setNotice('Added the selected data folder to this import session.')
     } catch (e) {
       const d = e as Diagnostic
@@ -95,27 +100,71 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
     }
   }
 
-  const scan = () =>
+  const scan = (sourceId: string) =>
     attempt('scan', async () => {
-      setResults(null)
-      const r = await runCommand({ type: 'list_foreign_databases', source_id: sourceId, password })
+      setActiveSourceId(sourceId)
+      updateImport(sourceId, { databases: null, results: null, error: null })
+      const r = await runCommand({ type: 'list_foreign_databases', source_id: sourceId, password: importState(sourceId).password })
       if (r.type === 'names') {
-        setDbs(r.names)
-        setPicked(r.names)
+        updateImport(sourceId, { databases: r.names, picked: r.names })
       }
     })
 
+  const selectedCount = selectedSourceIds.reduce((sum, id) => sum + importState(id).picked.length, 0)
+  const importableSourceIds = selectedSourceIds.filter((id) => importState(id).databases && importState(id).picked.length > 0)
+  const allScanned = selectedSourceIds.length > 0 && selectedSourceIds.every((id) => importState(id).databases !== null)
+  const readyToImport = allScanned && importableSourceIds.length > 0
+  const seenNames = new Set<string>()
+  const duplicateNames = new Set<string>()
+  for (const id of selectedSourceIds) {
+    for (const name of importState(id).picked) {
+      const key = name.toLocaleLowerCase()
+      if (seenNames.has(key)) duplicateNames.add(name)
+      seenNames.add(key)
+    }
+  }
+
   const migrate = () =>
     attempt('import', async () => {
-      const r = await runCommand({ type: 'migrate_databases', source_id: sourceId, password, databases: picked, target: 'mariadb' })
-      if (r.type === 'migrated') setResults(r.results)
+      if (conflictPolicy === 'replace_with_backup') {
+        const ok = await confirmAction(
+          'For every name conflict, OLS first saves the existing database as a SQL backup. It replaces the database only after that backup succeeds. If import fails, OLS attempts to restore the backup.',
+          'Replace conflicting databases',
+          'Replace with backup',
+        )
+        if (!ok) return
+      }
+      for (const sourceId of importableSourceIds) {
+        setActiveSourceId(sourceId)
+        updateImport(sourceId, { results: null, error: null })
+        try {
+          const state = importState(sourceId)
+          const r = await runCommand({
+            type: 'migrate_databases_resolved',
+            source_id: sourceId,
+            password: state.password,
+            databases: state.picked,
+            target: 'mariadb',
+            conflict_policy: conflictPolicy,
+          })
+          if (r.type === 'migrated') updateImport(sourceId, { results: r.results })
+        } catch (e) {
+          const d = e as Diagnostic
+          updateImport(sourceId, { error: d.cause || d.problem })
+        }
+      }
     })
 
-  const choose = (id: string) => {
-    setSourceId(id)
-    setPassword('')
-    setDbs(null)
-    setResults(null)
+  const selectedSources = selectedSourceIds.flatMap((id) => {
+    const source = sources?.find((item) => item.id === id)
+    return source ? [source] : []
+  })
+  const allResults = selectedSourceIds.flatMap((id) => importState(id).results ?? [])
+  const toggleSource = (id: string, selected: boolean) => {
+    setSelectedSourceIds((previous) => selected
+      ? previous.includes(id) ? previous : [...previous, id]
+      : previous.filter((existing) => existing !== id))
+    setNotice(null)
   }
 
   return (

@@ -215,6 +215,7 @@ export type CoreCommand =
   | { type: 'inspect_migration_source'; path: string }
   | { type: 'list_foreign_databases'; source_id: string; password: string }
   | { type: 'migrate_databases'; source_id: string; password: string; databases: string[]; target: string }
+  | { type: 'migrate_databases_resolved'; source_id: string; password: string; databases: string[]; target: string; conflict_policy: 'skip' | 'replace_with_backup' | 'rename_incoming' }
   | { type: 'get_migration_progress' }
   | { type: 'get_helper_service' }
   | { type: 'install_helper_service' }

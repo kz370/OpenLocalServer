@@ -17,18 +17,18 @@ const MENU: &str = "OpenLocalServer";
 const ADD: &str = "OpenLocalServer.01.Add";
 const SETUP: &str = "OpenLocalServer.02.Setup";
 const IGNORE_PROJECT: &str = "OpenLocalServer.03.IgnoreProject";
-const UNIGNORE_PROJECT: &str = "OpenLocalServer.04.UnignoreProject";
-const IGNORE_SITE: &str = "OpenLocalServer.05.IgnoreSite";
-const UNIGNORE_SITE: &str = "OpenLocalServer.06.UnignoreSite";
-const ACTIONS: [&str; 6] = [
-    ADD,
-    SETUP,
-    IGNORE_PROJECT,
-    UNIGNORE_PROJECT,
-    IGNORE_SITE,
-    UNIGNORE_SITE,
+const IGNORE_SITE: &str = "OpenLocalServer.04.IgnoreSite";
+const ACTIONS: [&str; 4] = [ADD, SETUP, IGNORE_PROJECT, IGNORE_SITE];
+const LEGACY_ROOT_ACTIONS: [&str; 8] = [
+    "OpenLocalServer.Add",
+    "OpenLocalServer.Setup",
+    "OpenLocalServer.01.Add",
+    "OpenLocalServer.02.Setup",
+    "OpenLocalServer.03.IgnoreProject",
+    "OpenLocalServer.04.UnignoreProject",
+    "OpenLocalServer.05.IgnoreSite",
+    "OpenLocalServer.06.UnignoreSite",
 ];
-const LEGACY_ACTIONS: [&str; 2] = [ADD, SETUP];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShellMenuStatus {
@@ -125,7 +125,7 @@ fn menu_icon(cli: &Path) -> String {
 }
 
 /// The command each submenu entry runs; `%V` is the folder Explorer passes.
-fn commands(app: &str, cli: &str) -> [(&'static str, &'static str, String); 6] {
+fn commands(app: &str, cli: &str) -> [(&'static str, &'static str, String); 4] {
     [
         (
             ADD,
@@ -143,19 +143,9 @@ fn commands(app: &str, cli: &str) -> [(&'static str, &'static str, String); 6] {
             format!("\"{cli}\" project ignore \"%V\""),
         ),
         (
-            UNIGNORE_PROJECT,
-            "Unignore this project",
-            format!("\"{cli}\" project unignore \"%V\""),
-        ),
-        (
             IGNORE_SITE,
             "Ignore this site",
             format!("\"{cli}\" project ignore-site \"%V\""),
-        ),
-        (
-            UNIGNORE_SITE,
-            "Unignore this site",
-            format!("\"{cli}\" project unignore-site \"%V\""),
         ),
     ]
 }
@@ -218,7 +208,17 @@ impl Inner {
     pub fn shell_menu_status(&self) -> ShellMenuStatus {
         let installed = ROOTS.iter().all(|root| {
             let menu = format!("{root}\\{MENU}");
+            let direct_command = reg(&["query", &format!("{menu}\\command")]).is_ok()
+                || reg(&["query", &menu, "/ve"])
+                    .ok()
+                    .and_then(|out| reg_value(&out))
+                    .is_some_and(|value| !value.is_empty());
+            let legacy_flat_items = LEGACY_ROOT_ACTIONS
+                .iter()
+                .any(|action| reg(&["query", &format!("{root}\\{action}")]).is_ok());
             reg(&["query", &menu]).is_ok()
+                && !direct_command
+                && !legacy_flat_items
                 && ACTIONS.iter().all(|action| {
                     reg(&[
                         "query",
@@ -254,6 +254,15 @@ impl Inner {
         let result = (|| -> Result<(), String> {
             for root in ROOTS {
                 let menu = format!("{root}\\{MENU}");
+                // Remove the former standalone verb and its default command. A
+                // parent command value makes Explorer render this as an action
+                // instead of a cascade, and old flat verbs otherwise remain beside it.
+                let _ = reg(&["delete", &format!("{menu}\\command"), "/f"]);
+                let _ = reg(&["delete", &menu, "/ve", "/f"]);
+                let _ = reg(&["delete", &format!("{menu}\\ExtendedSubCommandsKey"), "/f"]);
+                for legacy in LEGACY_ROOT_ACTIONS {
+                    let _ = reg(&["delete", &format!("{root}\\{legacy}"), "/f"]);
+                }
                 reg(&[
                     "add",
                     &menu,
@@ -279,10 +288,6 @@ impl Inner {
                         "/f",
                     ])?;
                 }
-                // Replace the old flat entries so reinstalling upgrades existing users.
-                for legacy in LEGACY_ACTIONS {
-                    let _ = reg(&["delete", &format!("{root}\\{legacy}"), "/f"]);
-                }
             }
             Ok(())
         })();
@@ -295,7 +300,12 @@ impl Inner {
 
     pub fn remove_shell_menu(&self) -> Result<ShellMenuStatus, CoreError> {
         for root in ROOTS {
-            for key in [MENU, ADD, SETUP] {
+            let base = format!("{root}\\{MENU}");
+            if reg(&["query", &base]).is_ok() {
+                reg(&["delete", &base, "/f"])
+                    .map_err(|e| CoreError::failed("The Explorer menu wasn't removed.", e))?;
+            }
+            for key in LEGACY_ROOT_ACTIONS {
                 let base = format!("{root}\\{key}");
                 if reg(&["query", &base]).is_ok() {
                     reg(&["delete", &base, "/f"])

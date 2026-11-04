@@ -603,6 +603,13 @@ pub enum CoreCommand {
         databases: Vec<String>,
         target: String,
     },
+    MigrateDatabasesResolved {
+        source_id: String,
+        password: String,
+        databases: Vec<String>,
+        target: String,
+        conflict_policy: crate::migrate::ConflictPolicy,
+    },
     GetMigrationProgress,
     GetHelperService,
     InstallHelperService,

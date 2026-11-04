@@ -36,6 +36,97 @@ pub struct MigratedDb {
     pub detail: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConflictPolicy {
+    Skip,
+    ReplaceWithBackup,
+    RenameIncoming,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConflictResolution {
+    UseIncomingName,
+    Skip,
+    Replace,
+    Rename(String),
+}
+
+pub fn resolve_conflict(name: &str, used_names: &[String], policy: ConflictPolicy) -> ConflictResolution {
+    if !used_names.iter().any(|used| used.eq_ignore_ascii_case(name)) {
+        return ConflictResolution::UseIncomingName;
+    }
+    match policy {
+        ConflictPolicy::Skip => ConflictResolution::Skip,
+        ConflictPolicy::ReplaceWithBackup => ConflictResolution::Replace,
+        ConflictPolicy::RenameIncoming => {
+            ConflictResolution::Rename(unique_database_name(name, used_names))
+        }
+    }
+}
+
+fn unique_database_name(name: &str, used_names: &[String]) -> String {
+    let slug = crate::domain::slugify(name);
+    let stem = if slug.is_empty() { "database" } else { &slug };
+    let suffix = "_imported";
+    let stem = &stem[..stem.len().min(64 - suffix.len())];
+    let base = format!("{stem}{suffix}");
+    if !used_names.iter().any(|used| used.eq_ignore_ascii_case(&base)) {
+        return base;
+    }
+    for index in 2u32.. {
+        let numbered = format!("_{index}");
+        let limit = 64 - suffix.len() - numbered.len();
+        let candidate = format!("{}{suffix}{numbered}", &stem[..stem.len().min(limit)]);
+        if !used_names.iter().any(|used| used.eq_ignore_ascii_case(&candidate)) {
+            return candidate;
+        }
+    }
+    unreachable!()
+}
+
+/// Removes the source database's CREATE DATABASE statement and rewrites its USE statement
+/// so a dump can be imported under a generated conflict-free name.
+pub fn rename_dump_database(file: &Path, target: &str) -> Result<(), String> {
+    use std::io::{BufRead, BufReader, BufWriter, Write};
+    let replacement = file.with_extension("rename.sql");
+    let output = std::fs::File::create(&replacement)
+        .map_err(|e| format!("could not write renamed SQL dump: {e}"))?;
+    {
+        let input = std::fs::File::open(file).map_err(|e| format!("could not read SQL dump: {e}"))?;
+        let mut writer = BufWriter::new(output);
+        for line in BufReader::new(input).lines() {
+            let line = line.map_err(|e| format!("could not read SQL dump: {e}"))?;
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("CREATE DATABASE") {
+                continue;
+            }
+            if trimmed.starts_with("USE `") || trimmed.starts_with("USE ") {
+                writeln!(writer, "USE {};", mysql_identifier(target))
+                    .map_err(|e| format!("could not write renamed SQL dump: {e}"))?;
+            } else {
+                writeln!(writer, "{line}")
+                    .map_err(|e| format!("could not write renamed SQL dump: {e}"))?;
+            }
+        }
+        writer
+            .flush()
+            .map_err(|e| format!("could not write renamed SQL dump: {e}"))?;
+    }
+    let original = file.with_extension("original.sql");
+    std::fs::rename(file, &original)
+        .map_err(|e| format!("could not stage original SQL dump safely: {e}"))?;
+    if let Err(error) = std::fs::rename(&replacement, file) {
+        let _ = std::fs::rename(&original, file);
+        return Err(format!("could not replace SQL dump after renaming: {error}"));
+    }
+    std::fs::remove_file(original).map_err(|e| format!("renamed SQL dump, but could not clean its temporary original: {e}"))
+}
+
+fn mysql_identifier(name: &str) -> String {
+    format!("`{}`", name.replace('`', "``"))
+}
+
 const SYSTEM_DBS: &[&str] = &["information_schema", "mysql", "performance_schema", "sys"];
 
 // ------------------------------------------------------------------------- progress
@@ -869,6 +960,43 @@ pub fn import(client: &Path, port: u16, file: &Path, progress: &Progress) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn conflict_policies_handle_destination_and_source_duplicates() {
+        let used = vec!["shop".to_string(), "shop_imported".to_string()];
+        assert_eq!(
+            resolve_conflict("shop", &used, ConflictPolicy::Skip),
+            ConflictResolution::Skip
+        );
+        assert_eq!(
+            resolve_conflict("shop", &used, ConflictPolicy::ReplaceWithBackup),
+            ConflictResolution::Replace
+        );
+        assert_eq!(
+            resolve_conflict("shop", &used, ConflictPolicy::RenameIncoming),
+            ConflictResolution::Rename("shop_imported_2".into())
+        );
+        assert_eq!(
+            resolve_conflict("new", &used, ConflictPolicy::RenameIncoming),
+            ConflictResolution::UseIncomingName
+        );
+    }
+
+    #[test]
+    fn renamed_dump_uses_new_database_name_without_creating_the_source_name() {
+        let root = tempfile::tempdir().unwrap();
+        let dump = root.path().join("incoming.sql");
+        std::fs::write(
+            &dump,
+            "CREATE DATABASE /*!32312 IF NOT EXISTS*/ `shop`;\nUSE `shop`;\nCREATE TABLE `users` (`id` int);\n",
+        )
+        .unwrap();
+        rename_dump_database(&dump, "shop_imported").unwrap();
+        let sql = std::fs::read_to_string(dump).unwrap();
+        assert!(!sql.contains("CREATE DATABASE"));
+        assert!(sql.contains("USE `shop_imported`;"));
+        assert!(sql.contains("CREATE TABLE `users`"));
+    }
 
     #[test]
     fn laragon_data_folders_pair_with_the_right_binaries() {
