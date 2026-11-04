@@ -1,4 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
+import { listen } from '@tauri-apps/api/event'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 import {
   Code2,
@@ -51,7 +52,6 @@ import {
 } from '@/core'
 import { createPersistentCache, getCached } from '@/lib/cache'
 import { confirmAction } from '@/lib/confirm'
-import { usePoll } from '@/lib/hooks'
 import { openAddSiteForProject, openProject, openSettingsSection } from '@/lib/nav'
 import { notify } from '@/lib/notify'
 import {
@@ -216,12 +216,25 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
     void refreshAll()
   }, [refreshAll])
 
-  usePoll(refreshAll, 3000)
-
   useEffect(() => {
     const handleFocus = () => void refreshAll()
     window.addEventListener('focus', handleFocus)
     return () => window.removeEventListener('focus', handleFocus)
+  }, [refreshAll])
+
+  useEffect(() => {
+    let alive = true
+    let unlisten: (() => void) | undefined
+    void listen('projects-changed', () => {
+      if (alive) void refreshAll()
+    }).then((dispose) => {
+      if (alive) unlisten = dispose
+      else dispose()
+    })
+    return () => {
+      alive = false
+      unlisten?.()
+    }
   }, [refreshAll])
 
   // Listen for Tauri drag & drop events

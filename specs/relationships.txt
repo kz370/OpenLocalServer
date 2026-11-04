@@ -42,7 +42,7 @@ Inner | uses | WebManager
 Inner | uses | DomainStore
 Inner | uses | CertificateManager
 Inner | uses | ProjectStore
-Inner::start_projects_watcher | compares | immediate project-root directory snapshots before invoking sync_auto_domains; unrelated filesystem events still notify project subscribers without a full scan
+Inner::start_projects_watcher | watches | immediate project-root directory changes for discovery and registered project folders non-recursively for `.ols_ignore_me` changes; marker changes reconcile active sites and notify project subscribers, while other project-file edits are ignored
 Inner::wp_projects | decides_from | wordpress::describe (folder on disk: wp-config.php / wp-admin/index.php / wp-includes+wp-content), then fills hostname+url from the project's first enabled Domain and pending_until from wordpress::sweep (which deletes expired and unparseable bridges as it goes)
 Inner::wp_signin | requires | WebManager::is_running + one of the project's enabled Domains (a project with no domain has no URL to hand a browser), then wordpress::issue writes the single bridge; the token URL is returned and never traced
 Inner::wp_signin_revoke | calls | wordpress::revoke — the pending bridge file IS the capability, so deleting it is the whole cancellation
@@ -238,7 +238,8 @@ Inner startup | runs | db::migrate before loading project/domain/worker/schedule
 db::migrate | creates | sites_view, projects_view, operations_view, workers_view, schedules_view, command_history_view, and expression indexes under user_version migrations 1 and 2
 Journal | prunes | operations at startup and after begin/finish; collapse consecutive same-kind identical failures into latest repeat_count; never touches other docs collections
 ProjectsPage | calls | add_project (auto_site defaults false; reuses existing path and applies standalone preference), ignore_project (shows immediate notification and persistent progress status until backend update and list refresh complete), inspect_project_folder, add_custom_project_type, rename_custom_project_type, remove_custom_project_type, update_project, relocate_project, remove_project, create_site_for_project, open_project_terminal, open_with, set_editor_hidden
-ProjectsPage | refreshes project health on | window focus, Locate completion, and project settings updates; the missing-folder filter is effective only while missingCount > 0, clears when the count reaches zero, and resets pagination when filter or type tab changes
+ProjectsPage | refreshes data on | initial mount, `projects-changed` event, and window focus (no periodic list poll); refreshes project health after Locate completion and project settings updates; the missing-folder filter is effective only while missingCount > 0, clears when the count reaches zero, and resets pagination when filter or type tab changes
+useWeb | refreshes | domains and projects on mount, `projects-changed`, focus, and explicit actions; its 3-second poll checks only live web-server status
 TauriApp (refresh_tray & sync_tray_tooltip) | updates_on | run_command IPC (site start/stop/add/remove/apply), process_events, project_events, autostart, and periodic 2-second heartbeat — carried out in a spawned task AFTER the command response is sent to the UI (the aggregate probes are never paid by a waiting read), with `sync_tray_tooltip` caching its aggregate for 1 s against command bursts
 DashboardPage (ServicesWidget) | uses | serviceGrouping::groupServices (categorizes services into Web servers, Databases, Cache & queues, Mail, Other)
 DashboardPage (ServicesWidget) | persists_collapsed_via | dashboard.services.collapsed_groups CoreCommand::SetSetting and localStorage

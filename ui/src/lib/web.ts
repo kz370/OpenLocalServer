@@ -147,8 +147,16 @@ export function useWeb() {
     }
   }
 
+  async function refreshLiveStatus() {
+    const result = await runCommand({ type: 'get_web_status' })
+    if (result.type === 'web_status') {
+      setStatus(result.status)
+      statusCache.set(result.status)
+    }
+  }
+
   usePoll(() => {
-    void Promise.all([refresh(), refreshProjects()]).catch(() => undefined)
+    void refreshLiveStatus().catch(() => undefined)
   }, 3000)
   useEffect(() => {
     let alive = true
@@ -167,6 +175,7 @@ export function useWeb() {
       if (alive) unlisten = dispose
       else dispose()
     })
+    void refresh().catch(() => undefined)
     void refreshProjects().catch(() => undefined)
     // Laragon-style: new folders in your projects folder show up as <name>.<default tld>.
     // Existing sites are protected by the backend's has-any-domain guard, so this never
