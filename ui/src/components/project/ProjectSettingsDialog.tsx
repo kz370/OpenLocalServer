@@ -40,6 +40,9 @@ export function ProjectSettingsDialog({
   const [customTypes, setCustomTypes] = useState<CustomProjectType[]>(initialCustomTypes ?? [])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const projectId = project?.id ?? null
+  const projectName = project?.name ?? ''
+  const initialProjectType = project?.project_type ?? null
 
   useEffect(() => {
     if (initialPresets) setPresets(initialPresets)
@@ -50,11 +53,15 @@ export function ProjectSettingsDialog({
   }, [initialCustomTypes])
 
   useEffect(() => {
-    if (!open || !project) return
-    setName(project.name)
-    setProjectType(project.project_type ?? null)
+    if (!open || !projectId) return
+    setName(projectName)
+    setProjectType(initialProjectType)
     setActiveTab('general')
     setError(null)
+  }, [open, projectId, projectName, initialProjectType])
+
+  useEffect(() => {
+    if (!open || !projectId) return
 
     // Load presets if not provided
     if (!initialPresets) {
@@ -77,7 +84,7 @@ export function ProjectSettingsDialog({
         })
         .catch(() => undefined)
     }
-  }, [open, project, initialPresets, initialCustomTypes])
+  }, [open, projectId, initialPresets, initialCustomTypes])
 
   if (!project) return null
 

@@ -227,6 +227,7 @@ SitesPage | uses | FloatingMenu (shared context menu on table row onContextMenu 
 SitesPage move-to-excluded action | displays | `Move to excluded folder` with a neutral tooltip, amber icon/title, source/destination confirmation and an Undo toast that restores folder plus site records
 SitesPage | filters | 'missing' tab (isolates sites whose project folder is missing or offline from 'enabled' / 'disabled' tabs)
 ProjectsPage | uses | ProjectTypeFilterBar, ProjectSettingsDialog, AddProjectDialog, ManageProjectTypesDialog, ProjectTypePicker, projectTypes, FloatingMenu, Pagination, SiteLogo, TechIcon, GitCloneButton
+ProjectSettingsDialog | preserves | active General/Icon & Logo tab during project-type list refreshes; resets to General on open or project change
 ProjectTypeFilterBar | uses | TechIcon, Badge, Button, Input, FloatingPortal, useFloating, useDismiss, useInteractions
 Project root watcher | registers | discovered folders as standalone; explicit RegisterProject/ScanAndRegisterProjects paths mark projects site-eligible
 ProjectsPage | reads | list_projects, list_domains, list_editors, list_project_types, list_custom_project_types, take_pending_add_project
