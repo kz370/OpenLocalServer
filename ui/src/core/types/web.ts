@@ -73,6 +73,7 @@ export interface DomainSummary {
   project_id: string | null
   has_app: boolean
   folder: string
+  document_root: string
   /** Website type the site is listed under. */
   group: 'php' | 'nodejs' | 'python' | 'static' | 'proxy'
   public_domain?: string | null
@@ -84,8 +85,10 @@ export interface DomainSummary {
   http_port?: number
   /** Optional Font Awesome icon identifier or class (e.g. "fa-wordpress" or "globe"). */
   icon?: string | null
-  /** Data URL (`data:image/webp;base64,...`) when `ols_site_icon.webp` exists in `folder`. */
+  /** Data URL for a manually selected image or discovered favicon. */
   icon_image?: string | null
+  /** Linked project type, if any. */
+  project_type?: string | null
   /** SSL certificate provider: local_ca, lets_encrypt, or custom. */
   ssl_provider?: SslProvider
   /** Whether the domain automatically broadcasts online. */

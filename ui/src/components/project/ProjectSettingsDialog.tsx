@@ -234,6 +234,7 @@ export function ProjectSettingsDialog({
               projectId={project.id}
               folder={project.path}
               displayName={project.name}
+              projectType={project.project_type}
               initialIcon={project.icon}
               initialImage={project.icon_image}
               fallback="folder"

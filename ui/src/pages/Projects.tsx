@@ -693,6 +693,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
                               icon={p.icon}
                               iconImage={p.icon_image}
                               hostname={p.name}
+                              projectType={p.project_type}
                               fallback="folder"
                               className={p.icon_image ? 'size-8' : 'size-6'}
                             />
@@ -870,6 +871,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
                           icon={p.icon}
                           iconImage={p.icon_image}
                           hostname={p.name}
+                          projectType={p.project_type}
                           fallback="folder"
                           className="size-3.5 shrink-0"
                         />

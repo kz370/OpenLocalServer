@@ -45,7 +45,9 @@ export function SiteLogoDialog({
       <SiteLogoPanel
         hostname={hostname}
         folder={folder}
+        pickerFolder={d?.document_root ?? folder}
         displayName={displayName}
+        projectType={d?.project_type ?? p?.project_type}
         initialIcon={currentIcon}
         initialImage={currentImage}
         isProxy={isProxy}

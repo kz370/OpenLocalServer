@@ -299,19 +299,164 @@ pub fn from_base64(input: &str) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
-/// Reads `<folder>/ols_site_icon.webp` if present and returns a data URL.
-pub fn read_site_icon_image(folder: &str) -> Option<String> {
-    let path = Path::new(folder).join("ols_site_icon.webp");
-    if path.is_file() {
-        match std::fs::read(&path) {
-            Ok(bytes) if !bytes.is_empty() && bytes.len() <= 2 * 1024 * 1024 => {
-                Some(format!("data:image/webp;base64,{}", to_base64(&bytes)))
-            }
-            _ => None,
-        }
-    } else {
-        None
+const SITE_ICON_LIMIT: u64 = 2 * 1024 * 1024;
+const FAVICON_NAMES: &[(&str, &str)] = &[
+    ("favicon.svg", "image/svg+xml"),
+    ("favicon.ico", "image/x-icon"),
+    ("favicon.png", "image/png"),
+    ("favicon-32x32.png", "image/png"),
+    ("favicon-16x16.png", "image/png"),
+    ("favicon.webp", "image/webp"),
+    ("favicon.jpg", "image/jpeg"),
+    ("favicon.jpeg", "image/jpeg"),
+    ("apple-touch-icon.png", "image/png"),
+    ("apple-touch-icon-precomposed.png", "image/png"),
+    ("site-icon.svg", "image/svg+xml"),
+    ("site-icon.png", "image/png"),
+];
+
+fn image_data_url(path: &Path, mime: &str) -> Option<String> {
+    let metadata = std::fs::metadata(path).ok()?;
+    if !metadata.is_file() || metadata.len() == 0 || metadata.len() > SITE_ICON_LIMIT {
+        return None;
     }
+    let bytes = std::fs::read(path).ok()?;
+    Some(format!("data:{mime};base64,{}", to_base64(&bytes)))
+}
+
+fn custom_site_icon_image(folder: &Path) -> Option<String> {
+    image_data_url(&folder.join("ols_site_icon.webp"), "image/webp")
+}
+
+fn discovered_site_icon_image(folder: &Path) -> Option<String> {
+    let mut roots = vec![folder.to_path_buf()];
+    for child in ["public", "web", "public_html"] {
+        roots.push(folder.join(child));
+    }
+    // Common NestJS/static front-end layouts. Only inspect these shallow, conventional
+    // locations; do not recursively walk a potentially large node_modules tree.
+    roots.extend(["client/public", "client", "static", "assets"].map(|path| folder.join(path)));
+    if let Ok(apps) = std::fs::read_dir(folder.join("apps")) {
+        roots.extend(apps.flatten().filter_map(|entry| {
+            entry
+                .file_type()
+                .ok()
+                .filter(|kind| kind.is_dir())
+                .map(|_| entry.path().join("public"))
+        }));
+    }
+    for root in roots {
+        for (name, mime) in FAVICON_NAMES {
+            if let Some(data_url) = image_data_url(&root.join(name), mime) {
+                return Some(data_url);
+            }
+        }
+    }
+    None
+}
+
+/// Reads a manually selected site icon first, then a favicon from the project root or
+/// common document-root folders. Files are bounded to 2 MiB before being returned.
+pub fn read_site_icon_image(folder: &str) -> Option<String> {
+    let folder = Path::new(folder);
+    custom_site_icon_image(folder).or_else(|| discovered_site_icon_image(folder))
+}
+
+/// Domain document roots can differ from their linked project folder. Keep uploaded
+/// images ahead of discovered favicons across both locations.
+pub fn read_domain_icon_image(document_root: &str, project_folder: &str) -> Option<String> {
+    let document_root = Path::new(document_root);
+    let project_folder = Path::new(project_folder);
+    custom_site_icon_image(project_folder)
+        .or_else(|| custom_site_icon_image(document_root))
+        .or_else(|| discovered_site_icon_image(document_root))
+        .or_else(|| discovered_site_icon_image(project_folder))
+}
+
+/// Lists image files in `data/icons` and one level of category folders.
+pub fn list_site_icon_library(icons_dir: &Path) -> Vec<SiteIconLibraryEntry> {
+    fn image_entries(dir: &Path, category: &str, output: &mut Vec<SiteIconLibraryEntry>) {
+        const MAX_ICON_LIBRARY_ENTRIES: usize = 100;
+        const MAX_ICON_LIBRARY_FILE_BYTES: u64 = 256 * 1024;
+        if output.len() >= MAX_ICON_LIBRARY_ENTRIES {
+            return;
+        }
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        let mut paths = entries
+            .flatten()
+            .filter_map(|entry| {
+                let file_type = entry.file_type().ok()?;
+                if !file_type.is_file() {
+                    return None;
+                }
+                let path = entry.path();
+                let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+                let mime = match ext.as_str() {
+                    "webp" => "image/webp",
+                    "png" => "image/png",
+                    "jpg" | "jpeg" => "image/jpeg",
+                    "svg" => "image/svg+xml",
+                    "gif" => "image/gif",
+                    "bmp" => "image/bmp",
+                    "ico" => "image/x-icon",
+                    _ => return None,
+                };
+                Some((path, mime.to_string()))
+            })
+            .collect::<Vec<_>>();
+        paths.sort_by(|a, b| a.0.file_name().cmp(&b.0.file_name()));
+        for (path, mime) in paths {
+            if output.len() >= MAX_ICON_LIBRARY_ENTRIES
+                || std::fs::metadata(&path)
+                    .map(|metadata| metadata.len() > MAX_ICON_LIBRARY_FILE_BYTES)
+                    .unwrap_or(true)
+            {
+                continue;
+            }
+            let Some(data_url) = image_data_url(&path, &mime) else {
+                continue;
+            };
+            let Some(name) = path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            output.push(SiteIconLibraryEntry {
+                name: name.to_string(),
+                category: category.to_string(),
+                data_url,
+            });
+        }
+    }
+
+    let mut output = Vec::new();
+    image_entries(icons_dir, "General", &mut output);
+    let Ok(categories) = std::fs::read_dir(icons_dir) else {
+        return output;
+    };
+    let mut categories = categories
+        .flatten()
+        .filter_map(|entry| {
+            let file_type = entry.file_type().ok()?;
+            file_type.is_dir().then(|| entry.path())
+        })
+        .collect::<Vec<_>>();
+    categories.sort();
+    for category_dir in categories {
+        let category = category_dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("Other");
+        image_entries(&category_dir, category, &mut output);
+    }
+    output
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SiteIconLibraryEntry {
+    pub name: String,
+    pub category: String,
+    pub data_url: String,
 }
 
 /// Generates a safe filename for a proxy site icon (e.g. "test.local" -> "test_local.webp").

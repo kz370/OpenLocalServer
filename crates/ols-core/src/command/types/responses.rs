@@ -50,6 +50,9 @@ pub enum CoreResponse {
     ImageFile {
         data_url: String,
     },
+    SiteIconLibrary {
+        icons: Vec<crate::app::SiteIconLibraryEntry>,
+    },
     /// What `StopAll` could not stop: the names of processes still alive after the.
     StoppedEverything {
         still_running: Vec<String>,

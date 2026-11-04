@@ -34,7 +34,7 @@ pub struct Project {
     pub id: String,
     pub name: String,
     pub path: String,
-    /// Data URL (`data:image/webp;base64,...`) when `ols_site_icon.webp` exists in `path`.
+    /// Data URL for a manually selected project image or a discovered favicon.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon_image: Option<String>,
     #[serde(default)]

@@ -440,7 +440,9 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
                 <SiteLogoPanel
                   hostname={target.hostname}
                   folder={project?.path ?? domain?.root ?? ''}
+                  pickerFolder={domain?.root ?? project?.path ?? ''}
                   displayName={title}
+                  projectType={project?.project_type}
                   initialIcon={domain?.icon ?? null}
                   initialImage={web.domains.find((s) => s.hostname === target.hostname)?.icon_image ?? project?.icon_image ?? null}
                   isProxy={domain?.kind.type === 'proxy'}

@@ -104,6 +104,7 @@ export type CoreCommand =
   | { type: 'set_site_icon_image'; hostname?: string | null; folder?: string | null; webp_base64: string }
   | { type: 'remove_site_icon_image'; hostname?: string | null; folder?: string | null }
   | { type: 'read_image_file'; path: string }
+  | { type: 'list_site_icon_library' }
   | { type: 'suggest_domain'; project_id: string; template: string }
   | { type: 'apply_web'; overwrite: string[] }
   | { type: 'stop_web' }

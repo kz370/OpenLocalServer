@@ -185,10 +185,14 @@ impl Inner {
             .into_iter()
             .map(|d| {
                 let folder = site_folder(&d, &projects);
+                let project = d
+                    .project_id
+                    .as_ref()
+                    .and_then(|id| projects.iter().find(|p| &p.id == id));
                 let icon_image = if matches!(d.kind, SiteKind::Proxy { .. }) {
                     read_proxy_site_icon_image(&proxy_dir, &d.hostname)
                 } else {
-                    read_site_icon_image(&folder)
+                    read_domain_icon_image(&d.root, &folder)
                         .or_else(|| read_proxy_site_icon_image(&proxy_dir, &d.hostname))
                 };
                 let broadcast_tunnel = tunnels.iter().find(|t| {
@@ -212,14 +216,27 @@ impl Inner {
                     has_app: d.app.is_some(),
                     group: site_group(&d, &projects).into(),
                     folder,
+                    document_root: d.root.clone(),
                     public_domain: d.public_domain.clone(),
                     server: crate::domain::resolved_server(&d, &cfg),
                     path_prefix: d.path_prefix.clone(),
                     http_port: cfg
                         .effective_ports(&crate::domain::resolved_server(&d, &cfg))
                         .http,
-                    icon: d.icon.clone(),
+                    icon: d.icon.clone().or_else(|| {
+                        project.and_then(|p| {
+                            p.icon.clone().or_else(|| {
+                                p.project_type.as_deref().and_then(|kind| {
+                                    kind.rsplit(':')
+                                        .next()
+                                        .is_some_and(|name| name.eq_ignore_ascii_case("wordpress"))
+                                        .then(|| "wordpress".to_string())
+                                })
+                            })
+                        })
+                    }),
                     icon_image,
+                    project_type: project.and_then(|p| p.project_type.clone()),
                     ssl_provider: Some(d.ssl_provider.to_string()),
                     auto_broadcast: d.auto_broadcast,
                     broadcast_url,

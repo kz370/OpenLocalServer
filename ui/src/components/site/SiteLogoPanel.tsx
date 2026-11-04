@@ -19,7 +19,9 @@ export interface SiteLogoPanelProps {
   hostname: string | null
   projectId?: string | null
   folder: string
+  pickerFolder?: string
   displayName: string
+  projectType?: string | null
   initialIcon?: string | null
   initialImage?: string | null
   isProxy?: boolean
@@ -36,16 +38,19 @@ export function SiteLogoPanel({
   hostname,
   projectId = null,
   folder,
+  pickerFolder,
   displayName,
+  projectType = null,
   initialIcon = null,
   initialImage = null,
   isProxy = false,
   fallback = 'globe',
   onUpdated,
 }: SiteLogoPanelProps) {
-  const [activeTab, setActiveTab] = useState<'photo' | 'fa'>('photo')
+  const [activeTab, setActiveTab] = useState<'photo' | 'library' | 'fa'>('photo')
   const [currentIcon, setCurrentIcon] = useState<string | null>(initialIcon)
   const [currentImage, setCurrentImage] = useState<string | null>(initialImage)
+  const [isCustomImage, setIsCustomImage] = useState(Boolean(isProxy && initialImage))
 
   // Parsed Font Awesome state
   const initialParsed = parseIconSpec(initialIcon)
@@ -53,6 +58,7 @@ export function SiteLogoPanel({
   const [customColor, setCustomColor] = useState<string>(initialParsed.color ?? '')
 
   const [search, setSearch] = useState('')
+  const [libraryIcons, setLibraryIcons] = useState<{ name: string; category: string; data_url: string }[]>([])
   const [category, setCategory] = useState<string>('all')
   const [busy, setBusy] = useState(false)
   const [savedNotice, setSavedNotice] = useState(false)
@@ -70,21 +76,32 @@ export function SiteLogoPanel({
 
   useEffect(() => {
     setCurrentImage(initialImage)
-  }, [initialImage])
+    setIsCustomImage(Boolean(isProxy && initialImage))
+  }, [initialImage, isProxy])
 
-  // If no initial image is passed and this is NOT a proxy site, check for existing ols_site_icon.webp in folder
   useEffect(() => {
-    if (!currentImage && folder && !isProxy) {
+    runCommand({ type: 'list_site_icon_library' })
+      .then((res) => {
+        if (res.type === 'site_icon_library') setLibraryIcons(res.icons)
+      })
+      .catch(() => setLibraryIcons([]))
+  }, [])
+
+  // Distinguish an uploaded image from a detected favicon so the remove action only
+  // targets a file OLS owns. Proxy icons are always manually uploaded.
+  useEffect(() => {
+    if (folder && !isProxy) {
       const sep = folder.includes('/') ? '/' : '\\'
       const iconPath = folder.endsWith(sep) ? `${folder}ols_site_icon.webp` : `${folder}${sep}ols_site_icon.webp`
       runCommand({ type: 'read_image_file', path: iconPath })
         .then((res) => {
           if (res.type === 'image_file' && res.data_url) {
             setCurrentImage(res.data_url)
+            setIsCustomImage(true)
           }
         })
         .catch(() => {
-          // File does not exist or cannot be read yet
+          setIsCustomImage(false)
         })
     }
   }, [folder, isProxy])
@@ -94,11 +111,51 @@ export function SiteLogoPanel({
     setTimeout(() => setSavedNotice(false), 2200)
   }
 
+  const saveImageDataUrl = async (sourceDataUrl: string) => {
+    const img = new Image()
+    img.src = sourceDataUrl
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve()
+      img.onerror = () => reject(new Error('Could not decode this icon. Choose a valid image file.'))
+    })
+
+    const maxDim = 512
+    let w = img.naturalWidth || img.width
+    let h = img.naturalHeight || img.height
+    if (w > maxDim || h > maxDim) {
+      if (w > h) {
+        h = Math.round((h * maxDim) / w)
+        w = maxDim
+      } else {
+        w = Math.round((w * maxDim) / h)
+        h = maxDim
+      }
+    }
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(w, 16)
+    canvas.height = Math.max(h, 16)
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('Could not create canvas context.')
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+    const webpDataUrl = canvas.toDataURL('image/webp', 0.92)
+    await runCommand({
+      type: 'set_site_icon_image',
+      hostname: hostname ?? undefined,
+      folder: folder || undefined,
+      webp_base64: webpDataUrl,
+    })
+    setCurrentImage(webpDataUrl)
+    setIsCustomImage(true)
+    flashSaved()
+    void onUpdated?.()
+  }
+
   const handlePickPhoto = async () => {
     setError(null)
     try {
       const selected = await open({
         multiple: false,
+        defaultPath: pickerFolder || folder || undefined,
         filters: [
           {
             name: 'Image Files',
@@ -121,49 +178,19 @@ export function SiteLogoPanel({
         throw new Error('Could not read image file.')
       }
 
-      // Load image into an offscreen canvas and convert to standard WebP
-      const img = new Image()
-      img.crossOrigin = 'anonymous'
-      img.src = res.data_url
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve()
-        img.onerror = () => reject(new Error('Failed to decode image data.'))
-      })
+      await saveImageDataUrl(res.data_url)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
 
-      // Resize if larger than 512px while maintaining aspect ratio
-      const maxDim = 512
-      let w = img.naturalWidth || img.width
-      let h = img.naturalHeight || img.height
-      if (w > maxDim || h > maxDim) {
-        if (w > h) {
-          h = Math.round((h * maxDim) / w)
-          w = maxDim
-        } else {
-          w = Math.round((w * maxDim) / h)
-          h = maxDim
-        }
-      }
-
-      const canvas = document.createElement('canvas')
-      canvas.width = Math.max(w, 16)
-      canvas.height = Math.max(h, 16)
-      const ctx = canvas.getContext('2d')
-      if (!ctx) throw new Error('Could not create canvas context.')
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-
-      const webpDataUrl = canvas.toDataURL('image/webp', 0.92)
-
-      // Send to backend to save into `<folder>/ols_site_icon.webp`
-      await runCommand({
-        type: 'set_site_icon_image',
-        hostname: hostname ?? undefined,
-        folder: folder || undefined,
-        webp_base64: webpDataUrl,
-      })
-
-      setCurrentImage(webpDataUrl)
-      flashSaved()
-      void onUpdated?.()
+  const handleSelectLibraryIcon = async (dataUrl: string) => {
+    setError(null)
+    setBusy(true)
+    try {
+      await saveImageDataUrl(dataUrl)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -181,6 +208,7 @@ export function SiteLogoPanel({
         folder: folder || undefined,
       })
       setCurrentImage(null)
+      setIsCustomImage(false)
       flashSaved()
       void onUpdated?.()
     } catch (e: unknown) {
@@ -266,6 +294,11 @@ export function SiteLogoPanel({
     const term = search.toLowerCase()
     return item.id.includes(term) || item.name.toLowerCase().includes(term)
   })
+  const filteredLibraryIcons = libraryIcons.filter((item) => {
+    if (!search) return true
+    const term = search.toLowerCase()
+    return item.name.toLowerCase().includes(term) || item.category.toLowerCase().includes(term)
+  })
 
   return (
     <div className="flex flex-col gap-4">
@@ -281,13 +314,21 @@ export function SiteLogoPanel({
                 <Check className="size-3" /> Saved
               </span>
             )}
-            {currentImage ? (
+            {currentImage && isCustomImage ? (
               <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-500 text-[10px]">
                 {isProxy ? 'Proxy Site Icon (proxy-site-images)' : 'Custom Photo (ols_site_icon.webp)'}
+              </Badge>
+            ) : currentImage ? (
+              <Badge variant="outline" className="border-sky-500/40 bg-sky-500/10 text-sky-500 text-[10px]">
+                Detected Site Favicon
               </Badge>
             ) : currentIcon ? (
               <Badge variant="outline" className="border-sky-500/40 bg-sky-500/10 text-sky-500 text-[10px]">
                 Font Awesome ({parseIconSpec(currentIcon).name})
+              </Badge>
+            ) : projectType?.split(':').at(-1)?.toLowerCase() === 'wordpress' ? (
+              <Badge variant="outline" className="border-sky-500/40 bg-sky-500/10 text-sky-500 text-[10px]">
+                WordPress Project Icon
               </Badge>
             ) : fallback === 'folder' ? (
               <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-500 dark:text-amber-400 text-[10px]">
@@ -306,6 +347,7 @@ export function SiteLogoPanel({
               icon={currentIcon}
               iconImage={currentImage}
               hostname={displayName}
+              projectType={projectType}
               fallback={fallback}
               className={currentImage ? 'size-8' : 'size-6'}
             />
@@ -318,7 +360,7 @@ export function SiteLogoPanel({
         </div>
       </div>
 
-      {/* Tabs: Photo from PC vs Font Awesome */}
+      {/* Tabs: upload, user library, and Font Awesome */}
       <div className="flex border-b border-border">
         <button
           type="button"
@@ -330,6 +372,17 @@ export function SiteLogoPanel({
           onClick={() => setActiveTab('photo')}
         >
           {isProxy ? 'Site Icon Image (proxy-site-images)' : 'Photo from PC (ols_site_icon.webp)'}
+        </button>
+        <button
+          type="button"
+          className={`cursor-pointer px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
+            activeTab === 'library'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+          onClick={() => setActiveTab('library')}
+        >
+          My Icons ({libraryIcons.length})
         </button>
         <button
           type="button"
@@ -374,7 +427,7 @@ export function SiteLogoPanel({
                 <Upload className="size-3.5" />
                 {busy ? 'Processing…' : 'Choose photo from PC…'}
               </Button>
-              {currentImage && (
+              {currentImage && isCustomImage && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -404,6 +457,38 @@ export function SiteLogoPanel({
               If the file is deleted or not provided, the site automatically falls back to the configured Font Awesome icon or the default internet globe icon.
             </p>
           </div>
+        </div>
+      )}
+
+      {activeTab === 'library' && (
+        <div className="flex flex-col gap-3 py-2">
+          <div className="flex items-center gap-2">
+            <Search className="size-4 text-muted-foreground" />
+            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search custom icons…" />
+          </div>
+          {filteredLibraryIcons.length ? (
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+              {filteredLibraryIcons.map((item) => (
+                <button
+                  key={`${item.category}/${item.name}`}
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void handleSelectLibraryIcon(item.data_url)}
+                  className="flex min-w-0 flex-col items-center gap-1.5 rounded-md border bg-background p-2 text-center hover:border-primary hover:bg-accent disabled:opacity-50"
+                  title={`Use ${item.name} from ${item.category}`}
+                >
+                  <img src={item.data_url} alt="" className="size-9 rounded object-contain" />
+                  <span className="w-full truncate text-xs">{item.name}</span>
+                  <span className="w-full truncate text-[10px] text-muted-foreground">{item.category}</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-md border border-dashed p-5 text-center text-xs text-muted-foreground">
+              <p>No custom icons found.</p>
+              <p className="mt-1">Add image files to <code>data/icons</code> or a category folder such as <code>data/icons/Web</code>.</p>
+            </div>
+          )}
         </div>
       )}
 
