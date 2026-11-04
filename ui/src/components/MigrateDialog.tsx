@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, Database, FolderOpen, Search, XCircle } from 'lucide-react'
+import { AlertTriangle, Check, CheckCircle2, CheckSquare, Database, FolderOpen, Search, Square, XCircle } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { open as openFolder } from '@tauri-apps/plugin-dialog'
 
@@ -12,11 +12,14 @@ import { Input } from '@/components/ui/input'
 import { type Diagnostic, type MigratedDb, type MigrationProgress, type MigrationSource, runCommand } from '@/core'
 import { formatBytes, usePoll } from '@/lib/hooks'
 import { confirmAction } from '@/lib/confirm'
+import { cn } from '@/lib/utils'
 
 interface SourceImport {
   password: string
   databases: string[] | null
   picked: string[]
+  /** Search text narrowing the database list (view only; never changes what is picked). */
+  filter: string
   results: MigratedDb[] | null
   error: string | null
 }
@@ -52,7 +55,7 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
   }, [open])
 
   const emptyImportState = (): SourceImport => ({
-    password: '', databases: null, picked: [], results: null, error: null,
+    password: '', databases: null, picked: [], filter: '', results: null, error: null,
   })
 
   const importState = (id: string): SourceImport => sourceImports[id] ?? emptyImportState()
@@ -69,14 +72,6 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
       const picked = checked
         ? current.picked.includes(database) ? current.picked : [...current.picked, database]
         : current.picked.filter((name) => name !== database)
-      return { ...previous, [id]: { ...current, picked } }
-    })
-
-  const toggleAllDatabases = (id: string) =>
-    setSourceImports((previous) => {
-      const current = previous[id] ?? emptyImportState()
-      const databases = current.databases ?? []
-      const picked = current.picked.length === databases.length ? [] : databases
       return { ...previous, [id]: { ...current, picked } }
     })
 
@@ -125,7 +120,7 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
       updateImport(sourceId, { databases: null, results: null, error: null })
       const r = await runCommand({ type: 'list_foreign_databases', source_id: sourceId, password: importState(sourceId).password })
       if (r.type === 'names') {
-        updateImport(sourceId, { databases: r.names, picked: r.names })
+        updateImport(sourceId, { databases: r.names, picked: r.names, filter: '' })
       }
     })
 
@@ -278,31 +273,18 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
                 </Button>
               </div>
               {state.databases && (
-                <div className="flex flex-col gap-2 border-t border-border pt-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">Databases · {state.picked.length}/{state.databases.length} selected</span>
-                    <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => toggleAllDatabases(source.id)}>
-                      {state.picked.length === state.databases.length ? 'Select none' : 'Select all'}
-                    </Button>
-                  </div>
-                  {state.databases.length === 0 ? <p className="text-xs text-muted-foreground">No user databases found.</p> : (
-                    <div className="grid max-h-44 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3">
-                      {state.databases.map((db) => {
-                        const result = state.results?.find((r) => r.name === db) ?? (activeSourceId === source.id ? progress?.done.find((r) => r.name === db) : undefined)
-                        const isPicked = state.picked.includes(db)
-                        return (
-                          <div key={db} className="flex items-center gap-1.5" title={result?.detail}>
-                            <Toggle checked={isPicked} disabled={busy !== null} onChange={(checked) => toggleDatabase(source.id, db, checked)} label={db} />
-                            {result && (result.ok
-                              ? <CheckCircle2 className="size-3.5 text-success" />
-                              : result.detail.startsWith('Skipped')
-                                ? <Badge variant="secondary">Skipped</Badge>
-                                : <XCircle className="size-3.5 text-destructive" />)}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
+                <div className="flex flex-col gap-2.5 border-t border-border pt-3">
+                  <DatabasePicker
+                    databases={state.databases}
+                    picked={state.picked}
+                    filter={state.filter}
+                    disabled={busy !== null}
+                    duplicateNames={duplicateNames}
+                    resultFor={(db) => state.results?.find((r) => r.name === db) ?? (activeSourceId === source.id ? progress?.done.find((r) => r.name === db) : undefined)}
+                    onFilter={(filter) => updateImport(source.id, { filter })}
+                    onToggle={(db, checked) => toggleDatabase(source.id, db, checked)}
+                    onSetPicked={(picked) => updateImport(source.id, { picked })}
+                  />
                   {state.error && <p className="text-xs text-destructive">{state.error}</p>}
                   {state.results?.filter((result) => !result.ok).map((result) => (
                     <p key={`${source.id}:${result.name}`} className={`text-xs ${result.detail.startsWith('Skipped') ? 'text-muted-foreground' : 'text-destructive'}`}>{result.name}: {result.detail}</p>
@@ -354,6 +336,132 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
         {notice && <p className="text-sm text-muted-foreground">{notice}</p>}
       </div>
     </Dialog>
+  )
+}
+
+/**
+ * Selectable database tiles: aligned checkbox + name, per-database import status,
+ * a warning mark for names also picked in another source, plus search and bulk select.
+ */
+function DatabasePicker({
+  databases,
+  picked,
+  filter,
+  disabled,
+  duplicateNames,
+  resultFor,
+  onFilter,
+  onToggle,
+  onSetPicked,
+}: {
+  databases: string[]
+  picked: string[]
+  filter: string
+  disabled: boolean
+  duplicateNames: Set<string>
+  resultFor: (db: string) => MigratedDb | undefined
+  onFilter: (filter: string) => void
+  onToggle: (db: string, checked: boolean) => void
+  onSetPicked: (picked: string[]) => void
+}) {
+  const query = filter.trim().toLocaleLowerCase()
+  const visible = query ? databases.filter((db) => db.toLocaleLowerCase().includes(query)) : databases
+  const pickedSet = new Set(picked)
+  const duplicateKeys = new Set([...duplicateNames].map((name) => name.toLocaleLowerCase()))
+  const allVisiblePicked = visible.length > 0 && visible.every((db) => pickedSet.has(db))
+  const noneVisiblePicked = visible.every((db) => !pickedSet.has(db))
+  // Bulk actions only touch what the search shows, so hidden picks are kept.
+  const selectVisible = () => onSetPicked([...new Set([...picked, ...visible])])
+  const clearVisible = () => {
+    const shown = new Set(visible)
+    onSetPicked(picked.filter((db) => !shown.has(db)))
+  }
+
+  if (databases.length === 0) return <p className="text-xs text-muted-foreground">No user databases found.</p>
+
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="flex items-center gap-2 text-sm font-medium">
+          Databases
+          <Badge variant={picked.length ? 'default' : 'secondary'} className="tabular-nums">
+            {picked.length} of {databases.length}
+          </Badge>
+        </span>
+        <div className="ml-auto flex items-center gap-1.5">
+          {databases.length > 6 && (
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={filter}
+                onChange={(e) => onFilter(e.target.value)}
+                placeholder="Filter databases"
+                aria-label="Filter databases"
+                className="h-8 w-44 pl-8 text-xs"
+                autoComplete="off"
+              />
+            </div>
+          )}
+          <Button size="sm" variant="ghost" disabled={disabled || allVisiblePicked} onClick={selectVisible}>
+            <CheckSquare /> All
+          </Button>
+          <Button size="sm" variant="ghost" disabled={disabled || noneVisiblePicked} onClick={clearVisible}>
+            <Square /> None
+          </Button>
+        </div>
+      </div>
+
+      {visible.length === 0 ? (
+        <p className="rounded-md border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
+          No databases match “{filter.trim()}”.
+        </p>
+      ) : (
+        <div className="grid max-h-64 grid-cols-1 gap-1.5 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3">
+          {visible.map((db) => {
+            const isPicked = pickedSet.has(db)
+            const result = resultFor(db)
+            const isDuplicate = isPicked && duplicateKeys.has(db.toLocaleLowerCase())
+            const skipped = result && !result.ok && result.detail.startsWith('Skipped')
+            return (
+              <button
+                key={db}
+                type="button"
+                role="checkbox"
+                aria-checked={isPicked}
+                disabled={disabled}
+                title={result?.detail ?? (isDuplicate ? 'Also selected in another source; resolved in folder order.' : db)}
+                onClick={() => onToggle(db, !isPicked)}
+                className={cn(
+                  'group flex min-w-0 cursor-pointer items-center gap-2.5 rounded-md border px-2.5 py-2 text-left text-sm transition-colors',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60',
+                  isPicked
+                    ? 'border-primary/50 bg-primary/10 text-foreground hover:bg-primary/15'
+                    : 'border-border bg-transparent text-muted-foreground hover:border-muted-foreground/40 hover:text-foreground',
+                )}
+              >
+                <span
+                  aria-hidden
+                  className={cn(
+                    'inline-flex size-4 shrink-0 items-center justify-center rounded border transition-colors',
+                    isPicked ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40 bg-input/60 group-hover:border-muted-foreground',
+                  )}
+                >
+                  {isPicked && <Check className="size-3" strokeWidth={3} />}
+                </span>
+                <Database className={cn('size-3.5 shrink-0', isPicked ? 'text-primary' : 'text-muted-foreground/60')} />
+                <span className="min-w-0 flex-1 truncate font-mono text-[13px]">{db}</span>
+                {isDuplicate && !result && <AlertTriangle className="size-3.5 shrink-0 text-warning" />}
+                {result && (result.ok
+                  ? <CheckCircle2 className="size-3.5 shrink-0 text-success" />
+                  : skipped
+                    ? <Badge variant="secondary" className="shrink-0">Skipped</Badge>
+                    : <XCircle className="size-3.5 shrink-0 text-destructive" />)}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </>
   )
 }
 

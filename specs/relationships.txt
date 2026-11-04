@@ -308,6 +308,7 @@ InspectMigrationSource | validates | selected data folder has MariaDB/MySQL syst
 MigrateDialog | imports | discovered or browsed MySQL/MariaDB sources; stopped sources are copied to a temporary folder, then selected databases are dumped and imported without modifying source data
 MigrateDialog | submits | scanned source batches sequentially in folder-selection order; each batch sees target schemas created by prior batches, with one selected conflict policy for destination and source duplicates
 MigrateDialog | enables import | only after every selected source has been scanned and at least one database is selected; action remains visible while disabled
+MigrateDialog | renders | DatabasePicker per scanned source; filter text lives in SourceImport.filter (view only, reset on rescan) and never changes picks outside the visible rows
 MigrateDialog | counts selected databases | uses functional state updates so rapid checkbox changes are not lost from the count or import request
 MigrationRecovery | repairs after restart | restores the safety backup for interrupted replacements or removes a partial new destination; failed recovery remains queued for retry
 ReplaceWithBackup | preserves | existing target database via SQL backup before drop; failed import attempts to restore it

@@ -73,14 +73,25 @@ fn find_cli() -> Option<std::path::PathBuf> {
     })
 }
 
+/// Whether an executable name (without extension) is the desktop app: `OLS` when
+/// shipped, `openlocalserver` when run by `cargo tauri dev`. Install and status must
+/// agree on this, or a correct dev menu is reported as not installed.
+fn is_app_stem(stem: &str) -> bool {
+    stem.eq_ignore_ascii_case("OLS") || stem.eq_ignore_ascii_case("openlocalserver")
+}
+
 /// Where the main OLS desktop app is: the running exe, beside the CLI, or beside current exe.
+///
+/// The running exe counts as the app under its shipped name (`OLS`) and under its
+/// Cargo name (`openlocalserver`, what `cargo tauri dev` runs). Without the second, a
+/// dev build fell through to an installed `OLS.exe` of a different version.
 fn find_app() -> Option<std::path::PathBuf> {
     let name = if cfg!(windows) { "OLS.exe" } else { "OLS" };
     if let Ok(exe) = std::env::current_exe() {
         if exe
-            .file_name()
+            .file_stem()
             .and_then(|n| n.to_str())
-            .is_some_and(|n| n.eq_ignore_ascii_case(name))
+            .is_some_and(is_app_stem)
         {
             return Some(exe);
         }
@@ -137,17 +148,36 @@ fn commands(app: &str, cli: &str) -> [(&'static str, &'static str, String); 4] {
             "Set up with OLS",
             format!("cmd.exe /k \"\"{cli}\" setup --path \"%V\"\""),
         ),
+        // Wrapped in `cmd /c ... || pause` so a failure stays on screen. Run bare, the
+        // console closed the instant olsc exited and its error was never seen.
         (
             IGNORE_PROJECT,
             "Ignore this project",
-            format!("\"{cli}\" project ignore \"%V\""),
+            format!("cmd.exe /c \"\"{cli}\" project ignore \"%V\" || pause\""),
         ),
         (
             IGNORE_SITE,
             "Ignore this site",
-            format!("\"{cli}\" project ignore-site \"%V\""),
+            format!("cmd.exe /c \"\"{cli}\" project ignore-site \"%V\" || pause\""),
         ),
     ]
+}
+
+/// The version out of `olsc --version` output (`olsc 2.9.0`).
+#[cfg(any(windows, test))]
+fn cli_version_from(out: &str) -> Option<&str> {
+    out.split_whitespace().nth(1)
+}
+
+/// The CLI's version, if it runs and reports one.
+#[cfg(windows)]
+fn cli_version(cli: &Path) -> Option<String> {
+    let mut cmd = std::process::Command::new(cli);
+    cmd.arg("--version");
+    crate::exec::hide_window(&mut cmd);
+    let out = cmd.output().ok()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    cli_version_from(&text).map(str::to_string)
 }
 
 /// The program out of a stored command line, i.e. `C:\OLS\olsc.exe` out of
@@ -169,9 +199,9 @@ fn command_is_add_project(command: &str) -> bool {
         return false;
     };
     let is_app = std::path::Path::new(program)
-        .file_name()
+        .file_stem()
         .and_then(|n| n.to_str())
-        .is_some_and(|n| n.eq_ignore_ascii_case("OLS.exe") || n.eq_ignore_ascii_case("OLS"));
+        .is_some_and(is_app_stem);
     is_app && command.contains("--add-project")
 }
 
@@ -275,6 +305,26 @@ impl Inner {
                 "Reinstall OLS, or add the folder holding olsc.exe to PATH.",
             )
         })?;
+        // An older olsc (e.g. an installed release found on PATH by a dev build) lacks
+        // the `project ignore` / `ignore-site` subcommands, and every action then fails
+        // inside a console that closes at once. Refuse instead of writing a dead menu.
+        let expected = env!("CARGO_PKG_VERSION");
+        match cli_version(&cli) {
+            Some(found) if found == expected => {}
+            found => {
+                return Err(CoreError::failed_fix(
+                    "The Explorer menu wasn't added.",
+                    format!(
+                        "{} is version {}, but this OLS is {expected}. Its menu commands would not match.",
+                        cli.display(),
+                        found.as_deref().unwrap_or("unknown"),
+                    ),
+                    format!(
+                        "Install OLS {expected}, or build the CLI (`cargo build -p ols-cli`) so olsc.exe sits beside the running app, then click Add to Explorer again."
+                    ),
+                ));
+            }
+        }
         let app = find_app()
             .unwrap_or_else(|| cli.with_file_name(if cfg!(windows) { "OLS.exe" } else { "OLS" }));
         let app_str = app.display().to_string();
@@ -376,7 +426,19 @@ mod tests {
         );
         assert_eq!(c[0].1, "Add folder to OLS projects");
         assert!(c[1].2.contains("setup --path \"%V\""));
+        // Ignore actions keep their console open on failure so the error is readable.
+        assert_eq!(
+            c[2].2,
+            r#"cmd.exe /c ""C:\Program Files\OLS\olsc.exe" project ignore "%V" || pause""#
+        );
+        assert!(c[3].2.contains("project ignore-site \"%V\" || pause"));
         assert!(c.iter().all(|(k, _, _)| k.starts_with("OpenLocalServer.")));
+    }
+
+    #[test]
+    fn the_cli_version_is_read_out_of_version_output() {
+        assert_eq!(cli_version_from("olsc 2.9.0\r\n"), Some("2.9.0"));
+        assert_eq!(cli_version_from(""), None);
     }
 
     /// The entries run the CLI, so the icon cannot come from it.
@@ -438,6 +500,10 @@ mod tests {
             r#"cmd.exe /k ""C:\OLS\olsc.exe" setup --path "%V"""#
         ));
         assert!(!command_is_add_project(""));
+        // A dev build registers its Cargo-named exe; status must accept it.
+        assert!(command_is_add_project(
+            r#""I:\repo\target\debug\openlocalserver.exe" --add-project "%V""#
+        ));
     }
 
     #[test]
