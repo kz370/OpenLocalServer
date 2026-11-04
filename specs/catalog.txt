@@ -197,6 +197,7 @@ CustomServices | Custom service CRUD table.
 PhpExtensionsDialog/XdebugDialog | PHP extension toggles + xdebug form.
 MigrateDialog | Selects multiple MySQL/MariaDB sources in click order, scans every selected folder before import, selects databases per source, and applies Skip Existing (default), Replace Existing (Backup First), or Rename Incoming to both destination and cross-source conflicts.
 MigrateDialog | Keeps Import visible but disabled until every selected folder is scanned and at least one database is selected.
+MigrateDialog | Source cards | each detected/browsed source is one pointer-cursor checkbox card (engine tile, label, running badge, size and path) with a fixed-size circle on the right that fills with the import order number when selected, so layout never shifts on click
 MigrateDialog | DatabasePicker | renders scanned databases as pointer-cursor checkbox tiles (aligned check, name, import status, cross-source duplicate warning) with a filter box above 6 databases and All/None buttons that only affect the filtered rows
 MigrateDialog | Counts database selections | applies checkbox changes to the latest source state, preserving rapid consecutive selections in the Import count and request
 MigrationRecovery | Atomically records replacement backup or new destination intent; startup restores interrupted replacements or drops incomplete imports, retaining failed recovery records for retry.

@@ -7,7 +7,6 @@ import { TechTile } from '@/components/TechIcon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
-import { Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { type Diagnostic, type MigratedDb, type MigrationProgress, type MigrationSource, runCommand } from '@/core'
 import { formatBytes, usePoll } from '@/lib/hooks'
@@ -213,27 +212,56 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
         {sources?.length === 0 && <p className="text-sm text-muted-foreground">No compatible MySQL or MariaDB data folders were found on this PC.</p>}
 
         {!!sources?.length && (
+          <p className="-mb-2 text-xs text-muted-foreground">Click sources in the order to import them; the number shows each one's import order.</p>
+        )}
+        {!!sources?.length && (
           <div className="grid gap-2 sm:grid-cols-2">
-            {sources.map((s) => (
-              <div key={s.id} className={`rounded-lg border p-3 ${selectedSourceIds.includes(s.id) ? 'border-primary bg-primary/5' : 'border-border'}`}>
-                <div className="flex items-center gap-3">
-                  <TechTile id={s.engine} className="size-9" />
+            {sources.map((s) => {
+              const order = selectedSourceIds.indexOf(s.id) + 1
+              const isSelected = order > 0
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  role="checkbox"
+                  aria-checked={isSelected}
+                  aria-label={isSelected ? `${s.label}, import order ${order}` : s.label}
+                  disabled={busy !== null}
+                  onClick={() => toggleSource(s.id, !isSelected)}
+                  className={cn(
+                    'group flex min-w-0 cursor-pointer items-center gap-3 rounded-lg border p-3 text-left transition-colors',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60',
+                    isSelected
+                      ? 'border-primary/60 bg-primary/10 hover:bg-primary/15'
+                      : 'border-border hover:border-muted-foreground/40 hover:bg-muted/30',
+                  )}
+                >
+                  <TechTile id={s.engine} className="size-9 shrink-0" />
                   <div className="min-w-0 flex-1">
-                    <Toggle
-                      checked={selectedSourceIds.includes(s.id)}
-                      disabled={busy !== null}
-                      onChange={(checked) => toggleSource(s.id, checked)}
-                      label={s.label}
-                    />
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="truncate text-sm font-medium">{s.label}</span>
+                      {s.running_port && <Badge variant="success" className="shrink-0">running :{s.running_port}</Badge>}
+                    </div>
                     <span className="mt-1 block truncate text-xs text-muted-foreground" title={s.data_dir}>
                       {formatBytes(s.size_bytes)} · {s.data_dir}
                     </span>
                   </div>
-                  {selectedSourceIds.includes(s.id) && <Badge variant="secondary">Order {selectedSourceIds.indexOf(s.id) + 1}</Badge>}
-                  {s.running_port && <Badge variant="success">running :{s.running_port}</Badge>}
-                </div>
-              </div>
-            ))}
+                  {/* Fixed-size indicator: empty when off, import order number when on, so nothing shifts on click. */}
+                  <span
+                    aria-hidden
+                    title={isSelected ? `Import order ${order}` : undefined}
+                    className={cn(
+                      'inline-flex size-6 shrink-0 items-center justify-center rounded-full border-2 text-xs font-semibold tabular-nums transition-colors',
+                      isSelected
+                        ? 'border-primary bg-primary text-primary-foreground'
+                        : 'border-muted-foreground/40 group-hover:border-muted-foreground',
+                    )}
+                  >
+                    {isSelected ? order : ''}
+                  </span>
+                </button>
+              )
+            })}
           </div>
         )}
 
