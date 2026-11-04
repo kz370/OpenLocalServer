@@ -88,6 +88,9 @@ pub enum CoreResponse {
         /// Project ids without a connected site from projects_view; None enables legacy UI logic.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         unconnected_project_ids: Option<Vec<String>>,
+        /// Project ids whose site is hidden by `.ols_ignore_site`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        site_ignored_project_ids: Option<Vec<String>>,
     },
     ProjectDetail {
         detail: Box<ProjectDetail>,
@@ -302,6 +305,9 @@ pub enum CoreResponse {
     },
     MigrationSources {
         sources: Vec<crate::migrate::MigrationSource>,
+    },
+    MigrationSource {
+        source: crate::migrate::MigrationSource,
     },
     Migrated {
         results: Vec<crate::migrate::MigratedDb>,

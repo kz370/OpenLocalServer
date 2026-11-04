@@ -1,5 +1,6 @@
-import { CheckCircle2, Database, Search, XCircle } from 'lucide-react'
+import { CheckCircle2, Database, FolderOpen, Search, XCircle } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { open as openFolder } from '@tauri-apps/plugin-dialog'
 
 import { Spinner } from '@/components/Spinner'
 import { TechTile } from '@/components/TechIcon'
@@ -12,7 +13,7 @@ import { type Diagnostic, type MigratedDb, type MigrationProgress, type Migratio
 import { formatBytes, usePoll } from '@/lib/hooks'
 
 /**
- * Import databases from Laragon, XAMPP or WampServer, straight from their data folders:
+ * Import databases from Laragon, XAMPP, WampServer or an older OLS MariaDB series:
  * no .sql export needed, and the original files are only ever read.
  */
 export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -23,6 +24,7 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
   const [picked, setPicked] = useState<string[]>([])
   const [busy, setBusy] = useState<'scan' | 'import' | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [results, setResults] = useState<MigratedDb[] | null>(null)
   const [progress, setProgress] = useState<MigrationProgress | null>(null)
 
@@ -46,6 +48,37 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
   }, [open])
 
   const source = sources?.find((s) => s.id === sourceId)
+
+  const browse = async () => {
+    const selected = await openFolder({ directory: true, multiple: false, title: 'Select MySQL/MariaDB data folder' })
+    if (typeof selected !== 'string') return
+    setError(null)
+    setNotice(null)
+    try {
+      const r = await runCommand({ type: 'inspect_migration_source', path: selected })
+      if (r.type !== 'migration_source') return
+      const key = normalizePath(r.source.data_dir)
+      const existing = (sources ?? []).find((candidate) => normalizePath(candidate.data_dir) === key)
+      if (existing) {
+        setSourceId(existing.id)
+        setPassword('')
+        setDbs(null)
+        setResults(null)
+        setNotice('That data folder is already listed; its existing source is selected.')
+        return
+      }
+      setSources((previous) => [...(previous ?? []), r.source])
+      setSourceId(r.source.id)
+      setPassword('')
+      setDbs(null)
+      setPicked([])
+      setResults(null)
+      setNotice('Added the selected data folder to this import session.')
+    } catch (e) {
+      const d = e as Diagnostic
+      setError(d.cause || d.problem)
+    }
+  }
 
   async function attempt(kind: 'scan' | 'import', fn: () => Promise<void>) {
     setBusy(kind)
@@ -80,6 +113,7 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
 
   const choose = (id: string) => {
     setSourceId(id)
+    setPassword('')
     setDbs(null)
     setResults(null)
   }
@@ -88,8 +122,8 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
     <Dialog
       open={open}
       onClose={() => busy === null && onClose()}
-      title="Import from Laragon, XAMPP or Wamp"
-      description="Copies databases straight from the other app's data folder. No .sql export needed, and its files are never changed."
+      title="Import databases"
+      description="Copies databases from another local MySQL/MariaDB data folder. Stopped sources are read from a temporary copy; source files are never changed."
       wide
       footer={
         <>
@@ -107,10 +141,10 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
       <div className="flex flex-col gap-4">
         {sources === null && (
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Spinner /> Looking for Laragon, XAMPP and WampServer…
+            <Spinner /> Looking for MySQL and MariaDB data folders…
           </p>
         )}
-        {sources?.length === 0 && <p className="text-sm text-muted-foreground">No Laragon, XAMPP or WampServer databases were found on this PC.</p>}
+        {sources?.length === 0 && <p className="text-sm text-muted-foreground">No compatible MySQL or MariaDB data folders were found on this PC.</p>}
 
         {!!sources?.length && (
           <div className="grid gap-2 sm:grid-cols-2">
@@ -136,6 +170,13 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
           </div>
         )}
 
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="secondary" disabled={sources === null || busy !== null} onClick={() => void browse()}>
+            <FolderOpen /> Browse for data folder
+          </Button>
+          <span className="text-xs text-muted-foreground">Choose the folder containing the `mysql` system database.</span>
+        </div>
+
         {source && (
           <div className="flex flex-col gap-1.5">
             <label htmlFor="migrate-password" className="text-xs font-medium text-muted-foreground">
@@ -156,13 +197,14 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
                 {busy === 'scan' ? <Spinner /> : <Search />} {busy === 'scan' ? (source.running_port ? 'Reading…' : 'Starting a copy…') : 'Find databases'}
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground">Laragon and XAMPP use a blank root password by default.</p>
+            <p className="text-xs text-muted-foreground">OLS-managed MariaDB uses a blank root password. Laragon and XAMPP commonly do too.</p>
           </div>
         )}
 
         {busy !== null && <ProgressPanel progress={progress} />}
 
         {error && <p className="text-sm text-destructive">{error}</p>}
+        {notice && <p className="text-sm text-muted-foreground">{notice}</p>}
 
         {dbs && dbs.length === 0 && <p className="text-sm text-muted-foreground">That server has no databases of its own.</p>}
         {dbs && dbs.length > 0 && (
@@ -208,6 +250,10 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
       </div>
     </Dialog>
   )
+}
+
+function normalizePath(path: string) {
+  return path.replaceAll('\\', '/').replace(/\/+$/, '').toLocaleLowerCase()
 }
 
 /** Live step, per-database count and a byte bar for the running scan or import. */

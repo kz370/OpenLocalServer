@@ -5,6 +5,15 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.9.0] — 2026-11-04
+
+Feature and UI release.
+
+- UI refinements: clearer Sites controls, stable layouts on Sites, Projects, and Runtimes, and a paginated Background Tasks table.
+- Moved editor settings out of General into their own Settings sidebar section.
+
+Full notes: [`release-notes/v2.9.0.md`](./release-notes/v2.9.0.md).
+
 ## [2.8.1] — 2026-11-04
 
 Feature and UI release. Full notes: [`release-notes/v2.8.1.md`](./release-notes/v2.8.1.md).

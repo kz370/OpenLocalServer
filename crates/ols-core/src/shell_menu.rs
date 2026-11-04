@@ -1,7 +1,6 @@
-//! Explorer context menu (§124, Stage 17). Adds "Add to OLS" and "Set up with OLS"
-//! to the right-click menu of a folder (and of its background). Per user (`HKCU\Software\Classes`), so no
-//! administrator prompt; it only ever runs the `ols` command line, which does the work through the core.
-//! Removing it deletes exactly the keys added here.
+//! Explorer context menu (§124, Stage 17). Groups project actions under an Open Local
+//! Server submenu for folders and folder backgrounds. Per user (`HKCU\Software\Classes`),
+//! so no administrator prompt; removing it deletes the group and legacy keys added here.
 
 use serde::{Deserialize, Serialize};
 
@@ -14,8 +13,22 @@ const ROOTS: [&str; 2] = [
     r"HKCU\Software\Classes\Directory\shell",
     r"HKCU\Software\Classes\Directory\Background\shell",
 ];
-const ADD: &str = "OpenLocalServer.Add";
-const SETUP: &str = "OpenLocalServer.Setup";
+const MENU: &str = "OpenLocalServer";
+const ADD: &str = "OpenLocalServer.01.Add";
+const SETUP: &str = "OpenLocalServer.02.Setup";
+const IGNORE_PROJECT: &str = "OpenLocalServer.03.IgnoreProject";
+const UNIGNORE_PROJECT: &str = "OpenLocalServer.04.UnignoreProject";
+const IGNORE_SITE: &str = "OpenLocalServer.05.IgnoreSite";
+const UNIGNORE_SITE: &str = "OpenLocalServer.06.UnignoreSite";
+const ACTIONS: [&str; 6] = [
+    ADD,
+    SETUP,
+    IGNORE_PROJECT,
+    UNIGNORE_PROJECT,
+    IGNORE_SITE,
+    UNIGNORE_SITE,
+];
+const LEGACY_ACTIONS: [&str; 2] = [ADD, SETUP];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShellMenuStatus {
@@ -111,8 +124,8 @@ fn menu_icon(cli: &Path) -> String {
     }
 }
 
-/// The command each entry runs; `%V` is the folder Explorer passes.
-fn commands(app: &str, cli: &str) -> [(&'static str, &'static str, String); 2] {
+/// The command each submenu entry runs; `%V` is the folder Explorer passes.
+fn commands(app: &str, cli: &str) -> [(&'static str, &'static str, String); 6] {
     [
         (
             ADD,
@@ -123,6 +136,26 @@ fn commands(app: &str, cli: &str) -> [(&'static str, &'static str, String); 2] {
             SETUP,
             "Set up with OLS",
             format!("cmd.exe /k \"\"{cli}\" setup --path \"%V\"\""),
+        ),
+        (
+            IGNORE_PROJECT,
+            "Ignore this project",
+            format!("\"{cli}\" project ignore \"%V\""),
+        ),
+        (
+            UNIGNORE_PROJECT,
+            "Unignore this project",
+            format!("\"{cli}\" project unignore \"%V\""),
+        ),
+        (
+            IGNORE_SITE,
+            "Ignore this site",
+            format!("\"{cli}\" project ignore-site \"%V\""),
+        ),
+        (
+            UNIGNORE_SITE,
+            "Unignore this site",
+            format!("\"{cli}\" project unignore-site \"%V\""),
         ),
     ]
 }
@@ -183,19 +216,21 @@ fn reg(args: &[&str]) -> Result<String, String> {
 #[cfg(windows)]
 impl Inner {
     pub fn shell_menu_status(&self) -> ShellMenuStatus {
-        let keys = ROOTS
-            .iter()
-            .all(|r| reg(&["query", &format!("{r}\\{ADD}")]).is_ok());
-        // A menu whose entry does not launch the app's --add-project command is not correctly
-        // installed for the project manager modal, so the card offers Install again.
-        let installed = keys
-            && ROOTS.iter().all(|r| {
-                reg(&["query", &format!("{r}\\{ADD}\\command"), "/ve"])
+        let installed = ROOTS.iter().all(|root| {
+            let menu = format!("{root}\\{MENU}");
+            reg(&["query", &menu]).is_ok()
+                && ACTIONS.iter().all(|action| {
+                    reg(&[
+                        "query",
+                        &format!("{menu}\\ExtendedSubCommandsKey\\Shell\\{action}\\command"),
+                        "/ve",
+                    ])
                     .ok()
                     .as_deref()
                     .and_then(reg_value)
-                    .is_some_and(|v| command_is_add_project(&v))
-            });
+                    .is_some_and(|command| action != &ADD || command_is_add_project(&command))
+                })
+        });
         ShellMenuStatus {
             installed,
             cli_path: find_cli().map(|p| p.display().to_string()),
@@ -218,18 +253,35 @@ impl Inner {
         let icon = menu_icon(&app);
         let result = (|| -> Result<(), String> {
             for root in ROOTS {
+                let menu = format!("{root}\\{MENU}");
+                reg(&[
+                    "add",
+                    &menu,
+                    "/v",
+                    "MUIVerb",
+                    "/d",
+                    "Open Local Server",
+                    "/f",
+                ])?;
+                reg(&["add", &menu, "/v", "Icon", "/d", &icon, "/f"])?;
                 for (key, label, command) in commands(&app_str, &cli_str) {
-                    let base = format!("{root}\\{key}");
-                    reg(&["add", &base, "/ve", "/d", label, "/f"])?;
-                    reg(&["add", &base, "/v", "Icon", "/d", &icon, "/f"])?;
+                    let item = format!("{menu}\\ExtendedSubCommandsKey\\Shell\\{key}");
+                    reg(&["add", &item, "/v", "MUIVerb", "/d", label, "/f"])?;
+                    if key == ADD {
+                        reg(&["add", &item, "/v", "Icon", "/d", &icon, "/f"])?;
+                    }
                     reg(&[
                         "add",
-                        &format!("{base}\\command"),
+                        &format!("{item}\\command"),
                         "/ve",
                         "/d",
                         &command,
                         "/f",
                     ])?;
+                }
+                // Replace the old flat entries so reinstalling upgrades existing users.
+                for legacy in LEGACY_ACTIONS {
+                    let _ = reg(&["delete", &format!("{root}\\{legacy}"), "/f"]);
                 }
             }
             Ok(())
@@ -243,7 +295,7 @@ impl Inner {
 
     pub fn remove_shell_menu(&self) -> Result<ShellMenuStatus, CoreError> {
         for root in ROOTS {
-            for key in [ADD, SETUP] {
+            for key in [MENU, ADD, SETUP] {
                 let base = format!("{root}\\{key}");
                 if reg(&["query", &base]).is_ok() {
                     reg(&["delete", &base, "/f"])

@@ -102,7 +102,10 @@ impl Inner {
                                 .path
                                 .file_name()
                                 .and_then(|name| name.to_str())
-                                .is_some_and(|name| name.eq_ignore_ascii_case(".ols_ignore_me"))
+                                .is_some_and(|name| {
+                                    name.eq_ignore_ascii_case(OLS_IGNORE_PROJECT_MARKER)
+                                        || name.eq_ignore_ascii_case(OLS_IGNORE_SITE_MARKER)
+                                })
                         });
 
                         if root_changed {
@@ -512,6 +515,30 @@ impl Inner {
             } else {
                 let ignore_file = std::path::Path::new(&path).join(".ols_ignore_me");
                 let _ = std::fs::write(&ignore_file, "");
+            }
+        }
+        let _ = self.project_events.send(());
+        Ok(())
+    }
+
+    /// Removes the site-only ignore marker for a project so its retained site can be restored.
+    pub fn unignore_site(&self, project_id: &str) -> Result<(), CoreError> {
+        let path = self
+            .projects
+            .lock()
+            .unwrap()
+            .get(project_id)
+            .map(|project| project.path.clone())
+            .ok_or_else(|| svc("Project was not found. Refresh Projects and try again."))?;
+        let marker = Path::new(&path).join(OLS_IGNORE_SITE_MARKER);
+        match std::fs::remove_file(&marker) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(svc(format!(
+                    "Could not remove {}: {error}. Check that the project folder is writable, then try again.",
+                    marker.display()
+                )));
             }
         }
         let _ = self.project_events.send(());

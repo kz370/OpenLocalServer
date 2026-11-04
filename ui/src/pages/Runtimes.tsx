@@ -365,7 +365,7 @@ export function RuntimesPage() {
       await runCommand({ type: 'set_setting', key: `runtime.${entry.id}.global`, value: entry.version })
       await refresh()
       const msg = entry.id === 'mariadb'
-        ? `MariaDB ${entry.version} is now the default. Each MariaDB series uses a separate data folder, so its databases are separate.`
+        ? `MariaDB ${entry.version} is now the default. Older series keep their own data; use Databases → Import databases to migrate it.`
         : ['nginx', 'apache', 'caddy'].includes(entry.id)
           ? `${entry.name} ${entry.version} will be used when you next start the web server.`
           : entry.id === 'php'
@@ -378,7 +378,10 @@ export function RuntimesPage() {
 
   const removeRuntime = (entry: CatalogEntry) =>
     guarded(async () => {
-      if (!(await confirmAction(`Remove the managed ${entry.name} ${entry.version} files? Projects or sites pinned to this version will need another version selected or this version reinstalled. Project files and MariaDB data stay in place.`, 'Remove version', 'Remove version'))) return
+      const migrationNote = entry.id === 'mariadb'
+        ? ' If you plan to migrate its databases to another MariaDB series, do that first; removing this runtime also removes the binaries needed to read its data.'
+        : ''
+      if (!(await confirmAction(`Remove the managed ${entry.name} ${entry.version} files? Projects or sites pinned to this version will need another version selected or this version reinstalled. Project files and MariaDB data stay in place.${migrationNote}`, 'Remove version', 'Remove version'))) return
       await runCommand({ type: 'remove_runtime', id: entry.id, version: entry.version })
       setCatalog((prev) => {
         const next = prev.map((e) =>

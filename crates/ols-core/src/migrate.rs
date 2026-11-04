@@ -148,6 +148,167 @@ pub fn detect() -> Vec<MigrationSource> {
     out
 }
 
+/// Adds databases belonging to installed OLS MariaDB series to the sources shown in the
+/// import dialog. Each series has its own data folder, so the existing copy-and-dump path
+/// can move it into a newer default without ever opening the original files for writing.
+pub fn detect_managed(
+    paths: &crate::paths::AppPaths,
+    runtimes: &crate::runtime::RuntimeManager,
+) -> Vec<MigrationSource> {
+    let mut out = detect();
+    let running = running_servers();
+    let root = paths.services_dir().join("mariadb");
+    for version in runtimes.installed_versions("mariadb") {
+        let install = runtimes.install_dir("mariadb", &version);
+        let bin = install.join("bin");
+        if !bin.join("mysqld.exe").is_file() || !bin.join("mysql.exe").is_file() {
+            continue;
+        }
+        let series = version.split('.').take(2).collect::<Vec<_>>().join(".");
+        let data = if version.starts_with("11.4.") && root.join("data").is_dir() {
+            root.join("data")
+        } else {
+            root.join(series).join("data")
+        };
+        if !data.is_dir() {
+            continue;
+        }
+        let exe = bin.join("mysqld.exe");
+        let running_port = running
+            .iter()
+            .find(|(path, _)| same_file(path, &exe))
+            .map(|(_, port)| *port);
+        if let Some(existing) = out
+            .iter_mut()
+            .find(|source| same_file(Path::new(&source.data_dir), &data))
+        {
+            // Several installed patches can share the legacy 11.4 data folder. Prefer the
+            // binary that owns a live server so we dump that server directly instead of
+            // trying to copy files that are currently open.
+            if running_port.is_some() {
+                existing.bin_dir = bin.display().to_string();
+                existing.label = format!("OpenLocalServer · MariaDB {version}");
+                existing.running_port = running_port;
+            }
+            continue;
+        }
+        out.push(MigrationSource {
+            id: data.display().to_string(),
+            label: format!("OpenLocalServer · MariaDB {version}"),
+            engine: "mariadb".into(),
+            bin_dir: bin.display().to_string(),
+            data_dir: data.display().to_string(),
+            size_bytes: dir_size(&data),
+            running_port,
+        });
+    }
+    out
+}
+
+/// Validates a user-selected MySQL/MariaDB data folder and finds its matching tools.
+/// The folder picker is deliberately strict: callers must select the directory containing
+/// the `mysql` system database, rather than an ambiguous drive or application root.
+pub fn inspect_data_dir(path: &Path) -> Result<MigrationSource, String> {
+    let data = path.canonicalize().map_err(|e| {
+        format!("Could not open this folder: {e}. Choose an existing MySQL/MariaDB data folder.")
+    })?;
+    if !data.is_dir() || !data.join("mysql").is_dir() {
+        return Err("This folder does not look like a MySQL/MariaDB data folder. Choose the folder that contains the `mysql` system database (often named `data`).".into());
+    }
+    let has_engine_files = ["ibdata1", "aria_log_control", "ib_logfile0"]
+        .iter()
+        .any(|name| data.join(name).is_file());
+    if !has_engine_files {
+        return Err("This folder is missing the database engine files (such as ibdata1 or aria_log_control), so it cannot be imported.".into());
+    }
+
+    let bin = find_source_bin(&data).ok_or_else(|| {
+        "Could not find matching MySQL/MariaDB server, client, and dump tools near this data folder. Browse for the data folder from the original database installation.".to_string()
+    })?;
+    let engine = if bin.join("mariadbd.exe").is_file() || bin.join("mariadb-dump.exe").is_file() {
+        "mariadb"
+    } else {
+        "mysql"
+    };
+    let label = format!(
+        "{} · {}",
+        if engine == "mariadb" {
+            "MariaDB"
+        } else {
+            "MySQL"
+        },
+        data.display()
+    );
+    let running = running_servers();
+    let running_port = running
+        .iter()
+        .find(|(path, _)| server_tool(&bin).is_some_and(|name| same_file(path, &bin.join(name))))
+        .map(|(_, port)| *port);
+    Ok(MigrationSource {
+        id: data.display().to_string(),
+        label,
+        engine: engine.into(),
+        bin_dir: bin.display().to_string(),
+        data_dir: data.display().to_string(),
+        size_bytes: dir_size(&data),
+        running_port,
+    })
+}
+
+/// Stable folder identity for duplicate validation across drive-letter casing and path
+/// separator differences. Canonicalization also resolves aliases when the folder exists.
+pub fn same_source_folder(left: &Path, right: &Path) -> bool {
+    let key = |path: &Path| {
+        path.canonicalize()
+            .unwrap_or_else(|_| path.to_path_buf())
+            .display()
+            .to_string()
+            .replace('\\', "/")
+            .trim_end_matches('/')
+            .to_ascii_lowercase()
+    };
+    key(left) == key(right)
+}
+
+fn find_source_bin(data: &Path) -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+    for ancestor in data.ancestors().take(5) {
+        candidates.push(ancestor.join("bin"));
+        candidates.push(ancestor.join("mysql").join("bin"));
+        candidates.push(ancestor.join("mariadb").join("bin"));
+        for family in ["mysql", "mariadb"] {
+            let root = ancestor.join("bin").join(family);
+            if let Ok(entries) = std::fs::read_dir(root) {
+                for entry in entries.flatten() {
+                    candidates.push(entry.path().join("bin"));
+                    candidates.push(entry.path());
+                }
+            }
+        }
+    }
+    candidates.into_iter().find(|bin| {
+        server_tool(bin).is_some() && client_tool(bin).is_some() && dump_tool(bin).is_some()
+    })
+}
+
+fn server_tool(bin: &Path) -> Option<&'static str> {
+    ["mariadbd.exe", "mysqld.exe"]
+        .into_iter()
+        .find(|name| bin.join(name).is_file())
+}
+
+fn client_tool(bin: &Path) -> Option<&'static str> {
+    ["mariadb.exe", "mysql.exe"]
+        .into_iter()
+        .find(|name| bin.join(name).is_file())
+}
+
+fn dump_tool(bin: &Path) -> Option<&'static str> {
+    ["mariadb-dump.exe", "mysqldump.exe"]
+        .into_iter()
+        .find(|name| bin.join(name).is_file())
+}
+
 fn engine_of(dir_name: &str) -> &'static str {
     if dir_name.to_ascii_lowercase().contains("mariadb") {
         "mariadb"
@@ -394,7 +555,9 @@ impl Session {
         );
         let port = free_port().ok_or("no free port for the temporary server")?;
         let bin = PathBuf::from(&source.bin_dir);
-        let mut cmd = Command::new(bin.join("mysqld.exe"));
+        let server =
+            server_tool(&bin).ok_or("the selected install is missing its database server")?;
+        let mut cmd = Command::new(bin.join(server));
         cmd.args([
             "--no-defaults".to_string(),
             format!("--basedir={}", bin.parent().unwrap_or(&bin).display()),
@@ -413,7 +576,7 @@ impl Session {
         crate::exec::hide_window(&mut cmd);
         let mut child = cmd
             .spawn()
-            .map_err(|e| format!("could not start {}: {e}", bin.join("mysqld.exe").display()))?;
+            .map_err(|e| format!("could not start {}: {e}", bin.join(server).display()))?;
         let started = Instant::now();
         loop {
             if TcpStream::connect_timeout(
@@ -471,8 +634,11 @@ impl Session {
             "-e".into(),
             "SHOW DATABASES".into(),
         ]);
+        let bin = PathBuf::from(&self.source.bin_dir);
+        let client =
+            client_tool(&bin).ok_or("the old install is missing its MySQL/MariaDB client")?;
         let out = run_capture(
-            &PathBuf::from(&self.source.bin_dir).join("mysql.exe"),
+            &bin.join(client),
             &args,
             None,
             &self.env(),
@@ -538,8 +704,11 @@ impl Session {
             // GTID statements would fail on a server that isn't set up for replication.
             args.push("--set-gtid-purged=OFF".into());
         }
+        let bin = PathBuf::from(&self.source.bin_dir);
+        let dump =
+            dump_tool(&bin).ok_or("the old install is missing its MySQL/MariaDB dump tool")?;
         let out = run_capture(
-            &PathBuf::from(&self.source.bin_dir).join("mysqldump.exe"),
+            &bin.join(dump),
             &args,
             None,
             &self.env(),

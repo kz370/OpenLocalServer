@@ -4,7 +4,7 @@ UI Pages & Dialogs | uses | NotificationSystem (ui/src/lib/notify.ts) for toasts
 Titlebar | mounts | NotificationsPopover (ui/src/components/NotificationsPopover.tsx) for recent notification history
 App | mounts | NotificationHost (ui/src/components/NotificationHost.tsx) for global toast rendering
 App | imports | all page modules with static imports so every page is ready at shell startup and navigation does not wait for a page chunk to load
-App | mounts | TooltipProvider (ui/src/components/ui/tooltip.tsx) for modern themed tooltips and global title/data-tooltip interception
+App | mounts | TooltipProvider (ui/src/components/ui/tooltip.tsx) for modern themed tooltips and global title/data-tooltip interception; tooltip labels wrap long paths/URLs and stay within viewport width
 UI (core/client.ts) | calls | Tauri invoke('run_command')
 olsc (crates/ols-cli) | uses | ols-core control channel (calls CoreCommand over local IPC or background daemon)
 Tauri run_command | uses | Core::dispatch
@@ -42,7 +42,9 @@ Inner | uses | WebManager
 Inner | uses | DomainStore
 Inner | uses | CertificateManager
 Inner | uses | ProjectStore
-Inner::start_projects_watcher | watches | immediate project-root directory changes for discovery and registered project folders non-recursively for `.ols_ignore_me` changes; marker changes reconcile active sites and notify project subscribers, while other project-file edits are ignored
+ShellMenu | installs | per-user Explorer cascading submenu for folders and folder backgrounds, grouping Add, Setup, Ignore/Unignore project, and Ignore/Unignore site commands
+ShellMenu ignore actions | invoke | `olsc project ignore|unignore|ignore-site|unignore-site <path>` to create/remove the watched folder marker
+Inner::start_projects_watcher | watches | immediate project-root directory changes for discovery and project folders non-recursively for `.ols_ignore_me` / `.ols_ignore_site` changes; `.ols_ignore_me` hides project and site, `.ols_ignore_site` hides only the site, and marker changes sync discovery/config then notify subscribers
 Inner::wp_projects | decides_from | wordpress::describe (folder on disk: wp-config.php / wp-admin/index.php / wp-includes+wp-content), then fills hostname+url from the project's first enabled Domain and pending_until from wordpress::sweep (which deletes expired and unparseable bridges as it goes)
 Inner::wp_signin | requires | WebManager::is_running + one of the project's enabled Domains (a project with no domain has no URL to hand a browser), then wordpress::issue writes the single bridge; the token URL is returned and never traced
 Inner::wp_signin_revoke | calls | wordpress::revoke — the pending bridge file IS the capability, so deleting it is the whole cancellation
@@ -281,10 +283,10 @@ App | routes | the selected Quick App id and name to QuickAppsPage and holds the
 QuickAppsPage | opens | the existing Wizard for the selected tray recipe, preserving planning, review and trust approval
 Tray Web server | toggles | CoreCommand::ApplyWeb / CoreCommand::StopWeb through the same Core::dispatch path; Reload remains a separate ApplyWeb action.
 
-Inner::reconcile | filters | DomainStore records using domains.auto_skip and .ols_ignore_me; active records feed vhost rendering and managed hosts synchronization; runs config apply/reload only for a running web server
+Inner::reconcile | filters | DomainStore records using domains.auto_skip, .ols_ignore_me, and .ols_ignore_site; active records feed vhost rendering and managed hosts synchronization; runs config apply/reload only for a running web server
 SitesPage focus/visibility | refreshes | read-only list_domains + list_projects (with external-change reload); mutation paths reconcile outside the list reads
 RemoveSiteFromList | returns after | removing the domain and preserving/registering its project as standalone; SitesPage refreshes rows immediately, then invokes SyncHosts asynchronously with an updating status
-scan_and_register_projects + sync_auto_domains | skip | .ols_ignore_me paths and hidden-site paths
+scan_and_register_projects + sync_auto_domains | skip | `.ols_ignore_me` paths for project/site discovery and `.ols_ignore_site` paths for site discovery only; hidden-site paths remain skipped
 SitesPage | removes a site from the list via | remove_site_from_list; removes only the site record, retains/registers the project, then reconciles hosts and web config
 Editor settings migration | reads legacy `editor` and `editor.command` once, migrates any custom command into `editors.custom`, leaves legacy values intact, and never reads them again
 SitesPage Remove site only | updates | projects_page_domains persistent cache immediately after remove_site_from_list succeeds; ProjectsPage reads that cache for its initial Connected Site state
@@ -300,3 +302,6 @@ SitesPage / ProjectsPage | render | permanent source label with distinct FolderS
 SitesPage / ProjectsPage / RuntimesPage | show transient loading | overlay progress feedback without moving the table; Runtimes keeps cached rows and uses height-matched first-load skeletons
 ErrorCard | displays | dismissible fixed overlay across pages and panels so diagnostics do not alter document flow
 App main scroll container | reserves | stable scrollbar gutter to prevent content-width shift
+ListMigrationSources | includes | external MySQL/MariaDB installs and each installed OLS MariaDB series data folder once
+InspectMigrationSource | validates | selected data folder has MariaDB/MySQL system files and matching server/client/dump binaries nearby; duplicate source folders use canonical path identity
+MigrateDialog | imports | discovered or browsed MySQL/MariaDB sources; stopped sources are copied to a temporary folder, then selected databases are dumped and imported without modifying source data

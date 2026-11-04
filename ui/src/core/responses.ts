@@ -19,7 +19,7 @@ export type CoreResponse =
   | { type: 'port'; port: number; status: PortStatus }
   | { type: 'runtime_catalog'; entries: CatalogEntry[] }
   | { type: 'project'; project: Project }
-  | { type: 'projects'; projects: Project[]; unconnected_project_ids?: string[] | null }
+  | { type: 'projects'; projects: Project[]; unconnected_project_ids?: string[] | null; site_ignored_project_ids?: string[] | null }
   | { type: 'project_detail'; detail: ProjectDetail }
   | { type: 'create_site_for_project'; domain: Domain | null; needs_setup: boolean; suggested_hostname: string }
   | { type: 'project_types'; types: ProjectTypePreset[] }
@@ -91,6 +91,7 @@ export type CoreResponse =
   | { type: 'helper_service'; installed: boolean; version: string | null; status: 'development_version' | 'up_to_date' | 'update_available' | null }
   | { type: 'system_stats'; stats: SystemStats }
   | { type: 'migration_sources'; sources: MigrationSource[] }
+  | { type: 'migration_source'; source: MigrationSource }
   | { type: 'migrated'; results: MigratedDb[] }
   | { type: 'migration_progress'; progress: MigrationProgress }
   | { type: 'xdebug'; report: XdebugReport }

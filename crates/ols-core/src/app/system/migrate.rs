@@ -3,10 +3,13 @@ use crate::error::CoreError;
 
 impl Inner {
     fn migration_source(&self, id: &str) -> Result<crate::migrate::MigrationSource, CoreError> {
-        crate::migrate::detect()
+        if let Some(source) = crate::migrate::detect_managed(&self.paths, &self.runtimes)
             .into_iter()
             .find(|s| s.id == id)
-            .ok_or_else(|| svc(format!("{id} is no longer there")))
+        {
+            return Ok(source);
+        }
+        crate::migrate::inspect_data_dir(std::path::Path::new(id)).map_err(svc)
     }
 
     /// Databases in an old Laragon/XAMPP/Wamp server (started on a copy if it isn't running).

@@ -466,8 +466,23 @@ impl Core {
                     stats: Box::new(i.system_stats()),
                 }),
                 C::ListMigrationSources => Ok(R::MigrationSources {
-                    sources: crate::migrate::detect(),
+                    sources: crate::migrate::detect_managed(&i.paths, &i.runtimes),
                 }),
+                C::InspectMigrationSource { path } => {
+                    let inspected = crate::migrate::inspect_data_dir(std::path::Path::new(&path))
+                        .map_err(CoreError::ServiceError)?;
+                    let existing = crate::migrate::detect_managed(&i.paths, &i.runtimes)
+                        .into_iter()
+                        .find(|source| {
+                            crate::migrate::same_source_folder(
+                                std::path::Path::new(&source.data_dir),
+                                std::path::Path::new(&inspected.data_dir),
+                            )
+                        });
+                    Ok(R::MigrationSource {
+                        source: existing.unwrap_or(inspected),
+                    })
+                }
                 other => {
                     unhandled = Some(other);
                     return Ok(R::Ok);

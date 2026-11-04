@@ -2,7 +2,7 @@
 
 > A free, open-source local development environment manager for Windows — runtimes, sites, databases, and trusted HTTPS, without touching your system by hand.
 
-[![Version](https://img.shields.io/badge/version-2.8.1-blue)](./CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.9.0-blue)](./CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-0078D6)](./docs/STATUS.md)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue)](./LICENSE)
 [![Shell](https://img.shields.io/badge/shell-Tauri_2-orange)](./src-tauri/tauri.conf.json)
@@ -62,7 +62,7 @@ It is actively developed, so feedback, suggestions, and bug reports are very wel
 
 ## 📥 Download
 
-Grab the latest installer (`OLS-2.5.0-setup.exe`) from the [Releases page](https://github.com/kz370/OpenLocalServer/releases).
+Grab the latest installer (`OLS-2.9.0-setup.exe`) from the [Releases page](https://github.com/kz370/OpenLocalServer/releases).
 
 - **What ships in the installer:** The desktop app (`OLS.exe`), the CLI (`olsc.exe`), the elevated helper service (`ols-helper.exe`), the MCP server (`ols-mcp.exe`), and the CPU limiter (`cpulimit.exe`).
 - **Runtimes are downloaded on demand:** The app itself does not bundle third-party runtimes or databases. You download only the runtimes (PHP, Node.js, Python), web servers (Nginx, Apache, Caddy), and databases (MariaDB, PostgreSQL, MongoDB, Redis) you need with SHA-256 verification, or point OLS to existing installations already on your computer. If an automatic download fails or you are offline, see [Troubleshooting & Manual Runtimes](./docs/TROUBLESHOOTING.md).

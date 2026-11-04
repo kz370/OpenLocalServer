@@ -91,6 +91,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
   // Read storage directly because Sites can update this cache while ProjectsPage is unmounted.
   const [domains, setDomains] = useState<DomainSummary[]>(() => getCached('projects_page_domains', []))
   const [unconnectedProjectIds, setUnconnectedProjectIds] = useState<string[] | null>(null)
+  const [siteIgnoredProjectIds, setSiteIgnoredProjectIds] = useState<string[]>([])
   const [editors, setEditors] = useState<EditorInfo[]>(editorsCache.get)
   const [presets, setPresets] = useState<ProjectTypePreset[]>(presetsCache.get)
   const [customTypes, setCustomTypes] = useState<CustomProjectType[]>(customTypesCache.get)
@@ -139,6 +140,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
       if (res.type === 'projects') {
         setProjects(res.projects)
         setUnconnectedProjectIds(res.unconnected_project_ids ?? null)
+        setSiteIgnoredProjectIds(res.site_ignored_project_ids ?? [])
         projectsCache.set(res.projects)
         const hasMissingProjects = res.projects.some(
           (project) => project.health && project.health.status !== 'healthy',
@@ -464,6 +466,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
     const hasSite = unconnectedProjectIds != null
       ? !unconnectedProjectIds.includes(p.id)
       : linked.length > 0
+    const siteIgnored = siteIgnoredProjectIds.includes(p.id)
 
     const visibleEditors = editors.filter((ed) => ed.path && !ed.hidden)
 
@@ -489,11 +492,22 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
 
     return [
       {
-        label: 'Create site from project',
+        label: siteIgnored ? 'Unignore site' : 'Create site from project',
         icon: <Globe className="size-4" />,
-        disabled: hasSite || !isHealthy,
-        hint: hasSite ? 'Site already exists' : !isHealthy ? 'Folder missing' : undefined,
+        disabled: (!siteIgnored && hasSite) || !isHealthy,
+        hint: siteIgnored ? 'Remove .ols_ignore_site and restore this site' : hasSite ? 'Site already exists' : !isHealthy ? 'Folder missing' : undefined,
         onSelect: () => {
+          if (siteIgnored) {
+            void runCommand({ type: 'unignore_site', project_id: p.id }).then(async (result) => {
+              if (result.type === 'ok') {
+                await Promise.all([refreshProjects(), refreshDomains()])
+                notify.success(`Restored the site for ${p.name}.`)
+              }
+            }).catch((error: unknown) => {
+              notify.error(`Could not restore the site for ${p.name}.`, { details: String(error) })
+            })
+            return
+          }
           openAddSiteForProject(p.id)
           onNavigate('sites')
         },

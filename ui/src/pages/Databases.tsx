@@ -154,7 +154,7 @@ export function DatabasesPage() {
           <p className="text-sm text-muted-foreground">Create databases and users, see connection details, and open them in your own tool.</p>
         </div>
         <Button variant="secondary" onClick={() => setMigrating(true)}>
-          <Import /> Import from Laragon / XAMPP / Wamp
+          <Import /> Import databases
         </Button>
       </div>
       <MigrateDialog open={migrating} onClose={() => setMigrating(false)} />
