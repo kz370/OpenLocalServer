@@ -970,7 +970,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
+      <div className="mb-1">
         <div className="flex items-center justify-between gap-3">
           <h1 className="text-2xl font-semibold tracking-tight">Sites</h1>
           <div className="flex h-8 w-[232px] shrink-0 items-stretch rounded-md border border-border bg-transparent">
@@ -1007,7 +1007,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
             </Button>
           </div>
         </div>
-        <p className="text-sm text-muted-foreground">Every site and the project behind it. Open a site's settings for its domain, web config, environment, terminal, Git and more.</p>
+        <p className="mt-3 text-sm text-muted-foreground">Every site and the project behind it. Open a site's settings for its domain, web config, environment, terminal, Git and more.</p>
       </div>
       <div className="flex min-h-8 flex-wrap items-center gap-x-[18px] gap-y-2">
         <div className="flex shrink-0 flex-nowrap items-center gap-2">
