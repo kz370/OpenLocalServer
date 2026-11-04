@@ -1,6 +1,16 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Check, Image as ImageIcon, Search, Trash2, Upload } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import {
+  autoUpdate,
+  flip,
+  FloatingPortal,
+  offset,
+  shift,
+  useDismiss,
+  useFloating,
+  useInteractions,
+} from '@floating-ui/react'
+import { Check, ChevronDown, Image as ImageIcon, Search, Trash2, Upload, X } from 'lucide-react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
 import {
@@ -48,6 +58,7 @@ export function SiteLogoPanel({
   fallback = 'globe',
   onUpdated,
 }: SiteLogoPanelProps) {
+  const librarySelectionStorageKey = `ols:site-icon-library:${projectId ? `project:${projectId}` : hostname ? `site:${hostname}` : `folder:${folder}`}`
   const [activeTab, setActiveTab] = useState<'photo' | 'library' | 'fa'>('photo')
   const [currentIcon, setCurrentIcon] = useState<string | null>(initialIcon)
   const [currentImage, setCurrentImage] = useState<string | null>(initialImage)
@@ -60,7 +71,14 @@ export function SiteLogoPanel({
 
   const [search, setSearch] = useState('')
   const [librarySearch, setLibrarySearch] = useState('')
-  const [selectedLibraryCategory, setSelectedLibraryCategory] = useState('')
+  const [selectedLibraryCategory, setSelectedLibraryCategory] = useState('__all__')
+  const [selectedLibraryIcon, setSelectedLibraryIcon] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(librarySelectionStorageKey)
+    } catch {
+      return null
+    }
+  })
   const [libraryIcons, setLibraryIcons] = useState<{ name: string; category: string; data_url: string }[]>([])
   const [category, setCategory] = useState<string>('all')
   const [busy, setBusy] = useState(false)
@@ -83,11 +101,29 @@ export function SiteLogoPanel({
   }, [initialImage, isProxy])
 
   useEffect(() => {
+    try {
+      setSelectedLibraryIcon(localStorage.getItem(librarySelectionStorageKey))
+    } catch {
+      setSelectedLibraryIcon(null)
+    }
+  }, [librarySelectionStorageKey])
+
+  const rememberLibraryIcon = (key: string | null) => {
+    setSelectedLibraryIcon(key)
+    try {
+      if (key) localStorage.setItem(librarySelectionStorageKey, key)
+      else localStorage.removeItem(librarySelectionStorageKey)
+    } catch {
+      // Selection still works for this panel session when storage is unavailable.
+    }
+  }
+
+  useEffect(() => {
     runCommand({ type: 'list_site_icon_library' })
       .then((res) => {
         if (res.type === 'site_icon_library') {
           setLibraryIcons(res.icons)
-          setSelectedLibraryCategory(res.icons[0]?.category ?? '')
+          setSelectedLibraryCategory('__all__')
         }
       })
       .catch(() => setLibraryIcons([]))
@@ -185,6 +221,7 @@ export function SiteLogoPanel({
       }
 
       await saveImageDataUrl(res.data_url)
+      setSelectedLibraryIcon(null)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -192,11 +229,12 @@ export function SiteLogoPanel({
     }
   }
 
-  const handleSelectLibraryIcon = async (dataUrl: string) => {
+  const handleSelectLibraryIcon = async (item: { name: string; category: string; data_url: string }) => {
     setError(null)
     setBusy(true)
     try {
-      await saveImageDataUrl(dataUrl)
+      await saveImageDataUrl(item.data_url)
+      setSelectedLibraryIcon(`${item.category}/${item.name}`)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -215,6 +253,7 @@ export function SiteLogoPanel({
       })
       setCurrentImage(null)
       setIsCustomImage(false)
+      setSelectedLibraryIcon(null)
       flashSaved()
       void onUpdated?.()
     } catch (e: unknown) {
@@ -300,14 +339,16 @@ export function SiteLogoPanel({
     const term = search.toLowerCase()
     return item.id.includes(term) || item.name.toLowerCase().includes(term)
   })
-  const libraryCategories = [...new Set(libraryIcons.map((item) => item.category))].sort((a, b) => {
+  const libraryCategories = useMemo(() => [...new Set(libraryIcons.map((item) => item.category))].sort((a, b) => {
     if (a === '') return -1
     if (b === '') return 1
     return a.localeCompare(b)
-  })
+  }), [libraryIcons])
   const filteredLibraryIcons = libraryIcons.filter((item) => {
-    if (item.category !== selectedLibraryCategory) return false
-    return !librarySearch || item.name.toLowerCase().includes(librarySearch.toLowerCase())
+    if (selectedLibraryCategory !== '__all__' && item.category !== selectedLibraryCategory) return false
+    if (!librarySearch) return true
+    const term = librarySearch.toLowerCase()
+    return item.name.toLowerCase().includes(term) || (item.category || 'root icons').toLowerCase().includes(term)
   })
 
   return (
@@ -479,44 +520,36 @@ export function SiteLogoPanel({
             <Search className="size-4 text-muted-foreground" />
             <Input value={librarySearch} onChange={(e) => setLibrarySearch(e.target.value)} placeholder="Search this folder…" />
           </div>
-          {libraryCategories.length > 0 && (
-            <div className="flex gap-1 overflow-x-auto border-b border-border" aria-label="Icon folders">
-              {libraryCategories.map((folder) => (
-                <button
-                  key={folder}
-                  type="button"
-                  aria-pressed={selectedLibraryCategory === folder}
-                  className={`shrink-0 border-b-2 px-3 py-2 text-xs font-medium ${
-                    selectedLibraryCategory === folder
-                      ? 'border-primary text-primary'
-                      : 'border-transparent text-muted-foreground hover:text-foreground'
-                  }`}
-                  onClick={() => setSelectedLibraryCategory(folder)}
-                >
-                  {folder === '' ? 'Root icons' : folder}
-                  <span className="ml-1 text-[10px] opacity-70">
-                    {libraryIcons.filter((item) => item.category === folder).length}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
+          <IconFolderTabs
+            categories={libraryCategories}
+            icons={libraryIcons}
+            selected={selectedLibraryCategory === '__all__' ? '__all__' : `folder:${selectedLibraryCategory}`}
+            onSelect={(id) => setSelectedLibraryCategory(id === '__all__' ? '__all__' : id.slice('folder:'.length))}
+          />
           {filteredLibraryIcons.length ? (
             <div className="grid max-h-64 grid-cols-4 gap-1.5 overflow-y-auto sm:grid-cols-5 md:grid-cols-6">
-              {filteredLibraryIcons.map((item) => (
-                <button
-                  key={`${item.category}/${item.name}`}
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void handleSelectLibraryIcon(item.data_url)}
-                  className="flex min-w-0 flex-col items-center gap-1 rounded-md border bg-background p-1.5 text-center hover:border-primary hover:bg-accent disabled:opacity-50"
-                  title={`Use ${item.name} from ${item.category}`}
-                >
-                  <img src={item.data_url} alt="" className="size-7 rounded object-contain" />
-                  <span className="w-full truncate text-xs">{item.name}</span>
-                  <span className="w-full truncate text-[10px] text-muted-foreground">{item.category}</span>
-                </button>
-              ))}
+              {filteredLibraryIcons.map((item) => {
+                const isSelected = selectedLibraryIcon === `${item.category}/${item.name}`
+                return (
+                  <button
+                    key={`${item.category}/${item.name}`}
+                    type="button"
+                    disabled={busy}
+                    aria-pressed={isSelected}
+                    onClick={() => void handleSelectLibraryIcon(item)}
+                    className={`flex min-w-0 flex-col items-center gap-1.5 rounded-md border p-2 text-center transition-all disabled:opacity-50 ${
+                      isSelected
+                        ? 'border-primary bg-primary/10 text-primary shadow-xs'
+                        : 'border-border/60 bg-muted/20 text-foreground hover:border-border hover:bg-muted/60'
+                    }`}
+                    title={`Use ${item.name} from ${item.category}`}
+                  >
+                    <img src={item.data_url} alt="" className="size-7 rounded object-contain" />
+                    <span className="w-full truncate text-xs">{item.name}</span>
+                    <span className={`w-full truncate text-[10px] ${isSelected ? 'text-primary/80' : 'text-muted-foreground'}`}>{item.category}</span>
+                  </button>
+                )
+              })}
             </div>
           ) : libraryIcons.length ? (
             <div className="rounded-md border border-dashed p-5 text-center text-xs text-muted-foreground">
@@ -704,5 +737,217 @@ export function SiteLogoPanel({
         </div>
       )}
     </div>
+  )
+}
+
+interface IconFolderTab {
+  id: string
+  label: string
+  count: number
+}
+
+function IconFolderTabs({
+  categories,
+  icons,
+  selected,
+  onSelect,
+}: {
+  categories: string[]
+  icons: { category: string }[]
+  selected: string
+  onSelect: (id: string) => void
+}) {
+  const tabs = useMemo<IconFolderTab[]>(() => [
+    { id: '__all__', label: 'All', count: icons.length },
+    ...categories.map((category) => ({
+      id: `folder:${category}`,
+      label: category === '' ? 'Root icons' : category,
+      count: icons.filter((icon) => icon.category === category).length,
+    })),
+  ], [categories, icons])
+  const measureRef = useRef<HTMLDivElement>(null)
+  const chipsRef = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
+  const [availableWidth, setAvailableWidth] = useState(0)
+  const [measuredWidths, setMeasuredWidths] = useState<Record<string, number>>({})
+  const [moreWidth, setMoreWidth] = useState(84)
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+
+  useLayoutEffect(() => {
+    if (!measureRef.current) return
+    const widths: Record<string, number> = {}
+    measureRef.current.querySelectorAll<HTMLElement>('[data-folder-tab]').forEach((element) => {
+      const id = element.dataset.folderTab
+      const width = element.getBoundingClientRect().width
+      if (id === '__more__') setMoreWidth(width)
+      else if (id) widths[id] = width
+    })
+    setMeasuredWidths(widths)
+  }, [tabs])
+
+  useEffect(() => {
+    const element = chipsRef.current
+    if (!element || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry.contentRect.width > 0) setAvailableWidth(entry.contentRect.width)
+    })
+    observer.observe(element)
+    setAvailableWidth(element.clientWidth)
+    return () => observer.disconnect()
+  }, [])
+
+  const { visibleTabs, overflowTabs } = useMemo(() => {
+    const allTab = tabs[0]
+    const otherTabs = tabs.slice(1)
+    const totalWidth = tabs.reduce((total, tab) => total + (measuredWidths[tab.id] ?? 80) + 6, -6)
+    if (!availableWidth || totalWidth <= availableWidth) {
+      return { visibleTabs: tabs, overflowTabs: [] as IconFolderTab[] }
+    }
+    const maxWidth = Math.max(availableWidth - moreWidth - 6, 76)
+    const visible = [allTab]
+    const overflow: IconFolderTab[] = []
+    let usedWidth = measuredWidths[allTab.id] ?? 50
+    for (const tab of otherTabs) {
+      const width = measuredWidths[tab.id] ?? 80
+      if (usedWidth + 6 + width <= maxWidth) {
+        visible.push(tab)
+        usedWidth += 6 + width
+      } else {
+        overflow.push(tab)
+      }
+    }
+    if (selected !== '__all__') {
+      const selectedIndex = overflow.findIndex((tab) => tab.id === selected)
+      if (selectedIndex >= 0) {
+        const selectedTab = overflow[selectedIndex]
+        if (visible.length > 1) {
+          const displacedIndex = visible.length - 1
+          overflow[selectedIndex] = visible[displacedIndex]
+          visible[displacedIndex] = selectedTab
+        } else {
+          visible.push(selectedTab)
+          overflow.splice(selectedIndex, 1)
+        }
+      }
+    }
+    return { visibleTabs: visible, overflowTabs: overflow }
+  }, [tabs, measuredWidths, availableWidth, moreWidth, selected])
+
+  const { refs, floatingStyles, context } = useFloating({
+    open,
+    onOpenChange: (nextOpen) => {
+      setOpen(nextOpen)
+      if (!nextOpen) setQuery('')
+    },
+    placement: 'bottom-start',
+    middleware: [offset(4), flip(), shift({ padding: 8 })],
+    whileElementsMounted: autoUpdate,
+  })
+  const dismiss = useDismiss(context)
+  const { getReferenceProps, getFloatingProps } = useInteractions([dismiss])
+
+  useEffect(() => {
+    if (open) requestAnimationFrame(() => searchRef.current?.focus())
+  }, [open])
+
+  const filteredOverflow = overflowTabs.filter((tab) => tab.label.toLowerCase().includes(query.trim().toLowerCase()))
+
+  return (
+    <>
+      <div
+        ref={measureRef}
+        aria-hidden="true"
+        className="pointer-events-none absolute left-[-9999px] top-[-9999px] flex items-center gap-1.5 whitespace-nowrap opacity-0"
+      >
+        {tabs.map((tab) => (
+          <button key={tab.id} type="button" data-folder-tab={tab.id} className="flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium">
+            <span>{tab.label}</span><span className="text-[10px]">{tab.count}</span>
+          </button>
+        ))}
+        <button type="button" data-folder-tab="__more__" className="flex shrink-0 items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium">
+          <span>+99 more</span><ChevronDown className="size-3.5" />
+        </button>
+      </div>
+      <div ref={chipsRef} className="flex min-w-0 items-center gap-1.5 overflow-hidden" aria-label="Icon folders">
+        {visibleTabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            aria-pressed={selected === tab.id}
+            onClick={() => onSelect(tab.id)}
+            className={`flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
+              selected === tab.id
+                ? 'bg-primary font-semibold text-[var(--on-accent,var(--primary-foreground))] shadow-xs'
+                : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
+            }`}
+            title={`${tab.label} (${tab.count})`}
+          >
+            <span>{tab.label}</span>
+            <span className="text-[10px] opacity-80">{tab.count}</span>
+          </button>
+        ))}
+        {overflowTabs.length > 0 && (
+          <button
+            ref={refs.setReference}
+            {...getReferenceProps()}
+            type="button"
+            onClick={() => setOpen((wasOpen) => !wasOpen)}
+            aria-expanded={open}
+            aria-haspopup="dialog"
+            className={`flex shrink-0 cursor-pointer items-center gap-1 rounded-md border border-border/80 bg-background px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted/70 ${open ? 'border-primary/50 bg-muted' : ''}`}
+            title={`${overflowTabs.length} more icon folders`}
+          >
+            <span>+{overflowTabs.length} more</span>
+            <ChevronDown className={`size-3.5 transition-transform duration-150 ${open ? 'rotate-180' : ''}`} />
+          </button>
+        )}
+      </div>
+      {open && (
+        <FloatingPortal>
+          <div
+            ref={refs.setFloating}
+            style={floatingStyles}
+            {...getFloatingProps()}
+            className="z-50 w-64 rounded-lg border border-border bg-popover p-1.5 text-popover-foreground shadow-lg outline-none animate-in fade-in-0 zoom-in-95"
+            aria-label="More icon folders"
+          >
+            <div className="relative mb-1.5 px-0.5 pt-0.5">
+              <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                ref={searchRef}
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search folders..."
+                className="h-8 pl-8 pr-7 text-xs"
+                aria-label="Search icon folders"
+              />
+              {query && (
+                <button type="button" onClick={() => setQuery('')} className="absolute right-2 top-1/2 flex size-4 -translate-y-1/2 cursor-pointer items-center justify-center text-muted-foreground hover:text-foreground" aria-label="Clear folder search">
+                  <X className="size-3" />
+                </button>
+              )}
+            </div>
+            <div className="flex max-h-56 flex-col gap-0.5 overflow-y-auto pr-0.5">
+              {filteredOverflow.length ? filteredOverflow.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => { onSelect(tab.id); setOpen(false) }}
+                  className={`flex w-full cursor-pointer items-center justify-between rounded-md px-2 py-1.5 text-left text-xs font-medium transition-colors ${
+                    selected === tab.id ? 'bg-primary/10 font-semibold text-primary' : 'text-foreground hover:bg-muted/70'
+                  }`}
+                >
+                  <span className="truncate">{tab.label}</span>
+                  <span className="ml-2 shrink-0 text-[10px] text-muted-foreground">{tab.count}</span>
+                </button>
+              )) : (
+                <div className="py-4 text-center text-xs text-muted-foreground">No matching folders</div>
+              )}
+            </div>
+          </div>
+        </FloatingPortal>
+      )}
+    </>
   )
 }
