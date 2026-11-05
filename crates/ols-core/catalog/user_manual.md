@@ -364,18 +364,14 @@ olsc guide
 ## 17. Version 2.9.0 Specific Notes & What's New
 
 ### What's New in v2.9.0
-- **Multi-source database import:** Import from installed OLS MariaDB versions, auto-detected MySQL/MariaDB installs, or a browsed data folder, in the order you choose. All selected sources must be scanned before Import is enabled.
-- **Database conflict handling:** Skip existing (default), Replace existing (SQL safety backup first, restored on failure), or Rename incoming. Interrupted imports are recovered or rolled back on next start.
-- **Explorer submenu:** Right-click a folder → Show more options → Open Local Server → Add folder, Set up, Ignore project, or Ignore site. Enable it in Settings with Add to Explorer; Repair and Remove are there too.
-- **`.ols_ignore_site` marker:** Hides and deactivates a project's site while the project stays visible. Projects shows Unignore site. `.ols_ignore_me` still hides both.
-- **Import databases dialog:** Three numbered steps, collapsible source rows with inline password/Scan/progress, filterable database tiles. The current MariaDB data folder is not offered as a source.
-- **Per-mode background:** Light and dark mode each keep their own background; a gradient set in one mode is adapted for the other until you set it.
-- **Settings:** Editor settings now have their own Settings sidebar section, separate from General.
-- **UI stability:** Sites web-server chip beside the heading, paginated Background Tasks table with confirmations, fixed-height rows, loading skeletons, and overlay error messages.
-- **More site and project icons:** The icon pickers offer 410 built-in Font Awesome Free icons (up from 97) in 17 categories: more CMS, framework, hosting, Linux, social, and payment brands, plus Food & Drink, Travel & Places, Health & Sports, Education, and Games. Icons are bundled with the app and never downloaded.
-- **Smoother icon pickers:** Search filters without lag, off-screen icons are not drawn, and the project-type picker shows every icon instead of the first 180. Categories sit in a list beside the icons, each with an icon and the number of matches for your search; type in **Search categories** to find one. In a narrow picker the list becomes a searchable dropdown.
-- **Faster auto-fix:** Safe problems are fixed right away when something changes, and Diagnose on the Repair page fixes what it safely can.
-- **Fixes:** Project commands use the right PHP version, a site's Repair page shows only its own problems, faster saving in Settings and on sites, Add Site uses the detected document root, stale tray service counts, long-path tooltip overflow, and Explorer menu install/repair reliability.
+- **Import databases from several places at once:** your installed OLS MariaDB versions, other MySQL/MariaDB installs, or any data folder, in the order you choose.
+- **Duplicate databases:** choose skip, replace (backed up first), or import under a new name. Interrupted imports are recovered on the next start.
+- **Explorer menu:** right-click a folder → Show more options → Open Local Server to add, set up, or ignore a project. Turn it on in Settings.
+- **Hide only a site:** an `.ols_ignore_site` file hides a project's site but keeps the project. Use **Unignore site** on Projects to bring it back.
+- **More icons:** over 400 icons for sites and projects, in clear categories.
+- **Easier to use:** a simpler Import databases window, per-mode backgrounds, Editor settings in their own section, and pages that no longer jump while loading.
+- **Faster auto-fix:** safe problems are fixed right away when something changes, and Diagnose on the Repair page fixes what it safely can.
+- **Fixes:** project commands use the right PHP version, a site's Repair page shows only its own problems, faster saving, Add Site picks the right folder, correct tray service count, and a more reliable Explorer menu.
 
 ### Previous Version Notes (v2.8.0)
 - Improved project and site selection and Quick App search; added WordPress core repair, safer database maintenance, retained task history, and staged site health checks.
