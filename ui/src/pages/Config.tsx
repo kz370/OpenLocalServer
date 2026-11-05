@@ -85,7 +85,7 @@ export function ConfigPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Web config</h1>
           <p className="text-sm text-muted-foreground">
-            Every site's generated config for the web server that renders it. Read it, customise it safely, and roll back any change (§23–29).
+            Every site's generated config for the web server that renders it. Read it, customise it safely, and roll back any change.
           </p>
         </div>
         <Button
@@ -752,7 +752,7 @@ function StructuredEditor({ hostname, onApplied, scope }: { hostname: string; on
         ))}
       </Section>
 
-      <Section title="Reverse-proxy mappings" hint="Send a path on this site to another server, e.g. /api → http://127.0.0.1:8000 (§30)" onAdd={() => setBlocks({ mappings: [...b.mappings, { path: '/api/', upstream: 'http://127.0.0.1:8000' }] })}>
+      <Section title="Reverse-proxy mappings" hint="Send a path on this site to another server, e.g. /api → http://127.0.0.1:8000" onAdd={() => setBlocks({ mappings: [...b.mappings, { path: '/api/', upstream: 'http://127.0.0.1:8000' }] })}>
         {b.mappings.map((m, i) => (
           <Row key={i} onRemove={() => setBlocks({ mappings: b.mappings.filter((_, j) => j !== i) })}>
             <Input placeholder="/api/" value={m.path} onChange={(e) => setBlocks({ mappings: b.mappings.map((x, j) => (j === i ? { ...x, path: e.target.value } : x)) })} />

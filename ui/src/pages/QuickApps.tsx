@@ -180,7 +180,7 @@ export function QuickAppsPage({
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Quick Apps</h1>
           <p className="text-sm text-muted-foreground">
-            Editable recipes that create a project and its whole environment: runtimes, database, domain, HTTPS (§79–88).
+            Editable recipes that create a project and its whole environment: runtimes, database, domain, HTTPS.
           </p>
         </div>
         <div className="flex gap-2">
@@ -409,7 +409,7 @@ function ImportDialog({ open: isOpen, onClose, onDone }: { open: boolean; onClos
       open={isOpen}
       onClose={onClose}
       title="Import Quick Apps"
-      description="From a file, a folder, or a Git repository. Imported recipes are untrusted until you approve them (§88)."
+      description="From a file, a folder, or a Git repository. Imported recipes are untrusted until you approve them."
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>

@@ -3409,6 +3409,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-fs",
  "tauri-plugin-single-instance",
+ "tokio",
  "tracing",
  "windows 0.61.3",
 ]

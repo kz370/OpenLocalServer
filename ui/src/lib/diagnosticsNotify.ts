@@ -2099,6 +2099,14 @@ export function initDiagnosticsNotificationMonitor() {
         })
     })
 
+    // Safe problems fixed automatically (the desktop toast may be silenced by Windows).
+    void listen<{ ok: boolean; problem: string; detail: string }>('ols:auto-fix-result', (event) => {
+      const r = event.payload
+      if (r.ok) notify.success(`Fixed: ${r.problem}`)
+      else notify.error(`Automatic fix failed: ${r.problem}`, { details: r.detail })
+      requestDiagnosticsRescan()
+    })
+
     void listen('ols:stop-all-requested', () => {
       handleExpectedStopAll()
     })

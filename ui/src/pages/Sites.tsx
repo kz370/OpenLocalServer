@@ -136,7 +136,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   // The WordPress sign-in screen lives outside this window, so it is told which colourway
   // the app is showing rather than left to guess from the browser.
   const { resolvedTheme } = useTheme()
-  const { projects, domains, status, busy, error, setError, run, apply, refresh, refreshProjects, reconcileSites, installedPhp, removing, applying } = web
+  const { projects, domains, status, busy, error, setError, run, apply, applyTracked, refresh, refreshProjects, reconcileSites, installedPhp, removing, applying } = web
   const defaultServer = status?.default_server
   const serverIsRunning = busy === 'stop' || (busy !== 'apply' && !!status?.running)
 
@@ -519,11 +519,8 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     await runCommand({ type: 'add_domain', domain: d })
     setAdding(null)
     await Promise.all([refresh(), refreshProjects()])
-    try {
-      await apply()
-    } catch {
-      // apply error handled by ApplyReportCard
-    }
+    // Applied in the background (see SiteDialog `save`); the report notification follows.
+    void applyTracked().catch(() => undefined)
   }
 
   /**
@@ -1620,7 +1617,8 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                 run('dup', async () => {
                   await runCommand({ type: 'duplicate_domain', hostname: dupOf!, new_hostname: dupName })
                   setDupOf(null)
-                  await apply()
+                  await refresh()
+                  void applyTracked().catch(() => undefined)
                 })
               }
             >
