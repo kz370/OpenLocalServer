@@ -10,7 +10,7 @@ import type { Diagnostic } from '@/core'
 import { setHiddenSidebarItems, useHiddenSidebarItems } from '@/lib/sidebarVisibility'
 
 /**
- * Appearance → Sidebar items: choose which pages the sidebar lists. Locked items
+ * Settings → Sidebar: choose which pages the sidebar lists. Locked items
  * (`LOCKED_NAV_ITEMS`) always show. Changes apply at once; there is no Save button.
  */
 export function SidebarItemsSettings() {

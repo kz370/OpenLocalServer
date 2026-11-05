@@ -35,13 +35,15 @@ import {
   SettingsManualIcon,
   SettingsMcpIcon,
   SettingsResourcesIcon,
+  SettingsSidebarIcon,
   SettingsRootsIcon,
   SettingsSitesIcon,
   SettingsStartupIcon,
 } from '@/components/layout/SidebarIcons'
 import { AppearanceSettings } from '@/components/settings/AppearanceSettings'
+import { SidebarItemsSettings } from '@/components/settings/SidebarItemsSettings'
 
-type Section = 'general' | 'editors' | 'appearance' | 'sites' | 'roots' | 'deleted' | 'startup' | 'manual' | 'resources' | 'backups' | 'about' | 'mcp'
+type Section = 'general' | 'editors' | 'appearance' | 'sidebar' | 'sites' | 'roots' | 'deleted' | 'startup' | 'manual' | 'resources' | 'backups' | 'about' | 'mcp'
 type SettingsDraft =
   | { section: 'general'; confirmExit: boolean; confirmStopAll: boolean; autoFixDiagnostics: boolean }
   | { section: 'sites'; projectsDir: string; autoDomains: boolean; watchSites: boolean; defaultTld: string; customTld: string }
@@ -51,6 +53,7 @@ const SECTIONS: { id: Section; label: string; icon: React.ComponentType<{ classN
   { id: 'general', label: 'General', icon: SettingsGeneralIcon },
   { id: 'editors', label: 'Editors', icon: SettingsEditorsIcon },
   { id: 'appearance', label: 'Appearance', icon: SettingsAppearanceIcon },
+  { id: 'sidebar', label: 'Sidebar', icon: SettingsSidebarIcon },
   { id: 'mcp', label: 'MCP / AI tools', icon: SettingsMcpIcon },
   { id: 'sites', label: 'Sites & domains', icon: SettingsSitesIcon },
   { id: 'roots', label: 'Root folders', icon: SettingsRootsIcon },
@@ -786,6 +789,7 @@ export function SettingsPage() {
 
         <div className="flex min-w-0 max-w-3xl flex-1 flex-col gap-5">
           {section === 'appearance' && <AppearanceSettings />}
+          {section === 'sidebar' && <SidebarItemsSettings />}
 
           {section === 'general' && (
             <>

@@ -13,7 +13,7 @@ Feature release (in development). Full notes: [`release-notes/v2.10.0.md`](./rel
 - Docker page under Sites: Docker status, one-click Start Docker, and a container list grouped by Compose project.
 - Start, stop, restart, pause and resume containers; click a port to open it.
 - MCP tools for Docker (status, start, list containers, container actions) and `ols_unignore_site`.
-- Settings → Appearance → Sidebar items: hide sidebar pages you don't use; core pages always stay.
+- Settings → Sidebar: hide sidebar pages you don't use; core pages always stay.
 
 ### Changed & Improved
 - Docker never slows OLS down: no Docker work at startup, no background checking.

@@ -747,6 +747,33 @@ export function SettingsGeneralIcon({ className, monochrome }: { className?: str
   )
 }
 
+/** Settings → Sidebar: a panel with a narrow left rail and list lines. */
+export function SettingsSidebarIcon({ className, monochrome }: { className?: string; monochrome?: boolean }) {
+  if (useIsMonochrome(monochrome)) {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={cn('size-5 shrink-0', className)}>
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <path d="M9 4v16" />
+        <path d="M5.5 8h1M5.5 11h1M5.5 14h1" />
+      </svg>
+    )
+  }
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={cn('size-5 shrink-0', className)}>
+      <defs>
+        <linearGradient id="sb-set-sidebar" x1="3" y1="4" x2="21" y2="20" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#14b8a6" />
+          <stop offset="1" stopColor="#0284c7" />
+        </linearGradient>
+      </defs>
+      <rect x="3" y="4" width="18" height="16" rx="2.2" fill="#0ea5e9" fillOpacity="0.08" stroke="url(#sb-set-sidebar)" strokeWidth="1.7" />
+      <path d="M3 6.2A2.2 2.2 0 0 1 5.2 4H9v16H5.2A2.2 2.2 0 0 1 3 17.8Z" fill="#14b8a6" fillOpacity="0.28" />
+      <path d="M9 4v16" stroke="url(#sb-set-sidebar)" strokeWidth="1.5" />
+      <path d="M5.3 8h1.4M5.3 11h1.4M5.3 14h1.4" stroke="#0d9488" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 export function SettingsEditorsIcon({ className, monochrome }: { className?: string; monochrome?: boolean }) {
   if (useIsMonochrome(monochrome)) {
     return (

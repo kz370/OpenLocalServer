@@ -367,7 +367,7 @@ olsc guide
 - **Docker page:** a new **Docker** item under **Sites** in the sidebar shows whether Docker is running and has a **Start Docker** button. Docker is optional: OLS does not install it, and nothing changes if you don't use it.
 - **Containers:** see your containers grouped by Compose project, filter them, and start, stop, restart, pause or resume each one. Click a port to open it in your browser.
 - **AI assistant (MCP):** new tools to check Docker, list containers and control them, plus one to bring back a hidden site.
-- **Shorter sidebar:** Settings → Appearance → **Sidebar items** hides pages you don't use. Dashboard, Projects, Sites, Web server, Databases, Services, Runtimes and Settings can't be hidden. Hidden pages still open from search (Ctrl K) and from links.
+- **Shorter sidebar:** Settings → **Sidebar** hides pages you don't use. Dashboard, Projects, Sites, Web server, Databases, Services, Runtimes and Settings can't be hidden. Hidden pages still open from search (Ctrl K) and from links.
 - **No slowdown:** nothing Docker-related runs when OLS starts; the Docker page only talks to Docker while it is open.
 - **Coming before 2.10.0 ships:** turn a container into a `.test` site with HTTPS, ready-made Docker apps, container logs and a container shell.
 

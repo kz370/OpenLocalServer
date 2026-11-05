@@ -19,7 +19,6 @@ import {
 } from '@/lib/theme'
 import { cn } from '@/lib/utils'
 import { DashboardIcon, QuickAppsIcon, SitesIcon } from '@/components/layout/SidebarIcons'
-import { SidebarItemsSettings } from '@/components/settings/SidebarItemsSettings'
 
 const HEX_RE = /^#[0-9a-fA-F]{6}$/
 
@@ -429,9 +428,6 @@ export function AppearanceSettings() {
           </div>
         </CardContent>
       </Card>
-
-      {/* ── 4b. Sidebar Items (which pages the sidebar lists) ──────────── */}
-      <SidebarItemsSettings />
 
       {/* ── 5. App Background ──────────────────────────────────────────── */}
       <Card>
