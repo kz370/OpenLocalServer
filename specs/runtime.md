@@ -1,7 +1,7 @@
 # RUNTIME
 
 ## Files to Process
-Total meaningful source files: 323 (excluding target/, node_modules/, .git/, dist/, data/services/postgres runtime data, icon bulk).
+Total meaningful source files: 324 (excluding target/, node_modules/, .git/, dist/, data/services/postgres runtime data, icon bulk).
 
 ### Rust core (crates/ols-core/src, 91 files)
 - src/lib.rs, app/ (mod.rs, domains.rs, projects.rs, quickapp.rs, system.rs, web.rs, tests.rs), command/ (mod.rs, types.rs, dispatch.rs, tests.rs), control.rs, api.rs, paths.rs, settings.rs, secrets.rs, db.rs
