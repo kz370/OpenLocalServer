@@ -41,9 +41,10 @@ async fn run_command(
     // The Repair page's Diagnose button fixes safe problems first (when auto-fix is on),
     // so the list it shows is what is still wrong.
     let fix_before_diagnosing = matches!(&command, CoreCommand::PlanRepair { .. });
+    let fix_app = app.clone();
     let dispatched = tauri::async_runtime::spawn_blocking(move || {
         if fix_before_diagnosing {
-            run_auto_fix(&core);
+            run_auto_fix(&core, &fix_app);
         }
         core.dispatch(command)
     })
@@ -83,8 +84,18 @@ const AUTO_FIX_FALLBACK: Duration = Duration::from_secs(30 * 60);
 const AUTO_FIX_DEBOUNCE: Duration = Duration::from_secs(2);
 
 /// Runs the safe automatic fixes and reports each result as a notification.
-fn run_auto_fix(core: &Core) {
+fn run_auto_fix(core: &Core, app: &AppHandle) {
     for result in core.auto_fix_diagnostics() {
+        // The desktop toast can be silenced by Windows (Focus Assist) or the Desktop
+        // notifications setting, so the open window is told too.
+        let _ = app.emit(
+            "ols:auto-fix-result",
+            serde_json::json!({
+                "ok": result.ok,
+                "problem": result.problem,
+                "detail": result.detail,
+            }),
+        );
         if result.ok {
             notify(core, "Diagnostics", &format!("Fixed: {}", result.problem));
         } else {
@@ -2192,6 +2203,7 @@ pub fn run() {
             });
             // Event-driven auto-fix worker: wakes on a trigger or the slow fallback timer.
             let worker_core = core.clone();
+            let worker_app = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 loop {
                     tokio::select! {
@@ -2202,8 +2214,9 @@ pub fn run() {
                     tokio::time::sleep(AUTO_FIX_DEBOUNCE).await;
                     let _ = tokio::time::timeout(Duration::ZERO, auto_fix_trigger.notified()).await;
                     let core = worker_core.clone();
+                    let app = worker_app.clone();
                     // Fixes can wait on child processes for minutes, so stay off the async threads.
-                    let results = tauri::async_runtime::spawn_blocking(move || run_auto_fix(&core))
+                    let results = tauri::async_runtime::spawn_blocking(move || run_auto_fix(&core, &app))
                     .await;
                     if let Err(error) = results {
                         tracing::warn!(error = %error, "the diagnostics auto-fix worker crashed");
