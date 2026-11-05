@@ -25,9 +25,11 @@ Feature release. Full notes: [`release-notes/v2.9.0.md`](./release-notes/v2.9.0.
 - App upgrades no longer force an administrator helper reinstall unless the helper changed.
 - Icon pickers: O(1) icon lookup, deferred search, off-screen tiles skipped with `content-visibility`, and no 180-icon cap in the project-type picker.
 - Icon pickers use a two-pane layout (shared `IconCategoryFilter`): a searchable vertical category list with icons and per-category match counts beside the scrolling grid, and a searchable dropdown below the `@xl` container width.
+- Diagnostics auto-fix is event-driven (startup, project changes, runtime installs, setting enabled) with a 30-minute fallback instead of a fixed five-minute loop; the Settings hint is corrected.
 - Build: vendor libraries split into separate chunks (main chunk 2.28 MB to 1.33 MB), Vite 8.3.5 security update, CI on `upload-artifact@v7` / `download-artifact@v8` (Node 24).
 
 ### Fixed
+- Project PHP detection honors `vendor/composer/platform_check.php`; a site's Repair page no longer shows other projects' findings.
 - Add Site uses the detected document root; Project Settings keeps the Icon & Logo tab; stale tray service counts; tooltip overflow on long paths; zero import counts after quick checkbox changes; Explorer menu cascade, icons, console flash, and `olsc` version mismatch.
 
 ## [2.8.0] — 2026-11-03
