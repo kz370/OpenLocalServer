@@ -238,3 +238,16 @@ fn app_startup_makes_no_docker_requests() {
     assert!(status.running);
     assert_eq!(fake.hits(), 1);
 }
+
+#[test]
+fn framed_and_plain_logs_become_lines() {
+    let mut framed = vec![1, 0, 0, 0, 0, 0, 0, 6];
+    framed.extend_from_slice(b"hello\n");
+    framed.extend_from_slice(&[2, 0, 0, 0, 0, 0, 0, 12]);
+    framed.extend_from_slice(b"oops\r\nworld\n");
+    assert_eq!(split_log_stream(&framed), vec!["hello", "oops", "world"]);
+    assert_eq!(
+        split_log_stream(b"plain one\nplain two\n"),
+        vec!["plain one", "plain two"]
+    );
+}

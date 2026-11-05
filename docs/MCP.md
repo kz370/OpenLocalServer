@@ -15,7 +15,8 @@ Each MCP tool maps one-to-one to an OLS `CoreCommand`, so an LLM can discover an
 - **Web server**: `ols_apply_web`, `ols_validate_web`
 - **Tasks**: `ols_list_tasks`
 - **Projects**: `ols_unignore_site` (bring back a site hidden with `.ols_ignore_site`)
-- **Docker**: `ols_docker_status`, `ols_docker_start`, `ols_docker_list_containers`, `ols_docker_container_action` (start / stop / restart / pause / unpause; never removes containers or volumes)
+- **Docker**: `ols_docker_status`, `ols_docker_start`, `ols_docker_list_containers`, `ols_docker_container_action` (start / stop / restart / pause / unpause; never removes containers or volumes), `ols_docker_container_logs`, `ols_docker_create_site`
+- **Docker Compose**: `ols_docker_compose_list`, `ols_docker_compose_check`, `ols_docker_compose_action` (up / down / stop / start / restart / pull / build; `down` keeps volumes), `ols_docker_compose_presets`, `ols_docker_compose_create` (never replaces an existing file; `dry_run` previews)
 - **Escape hatch**: `ols_run_command` runs any `CoreCommand` variant by name with JSON args.
 
 ## How to use it
@@ -241,6 +242,10 @@ The token is stored in the OS credential manager (Windows Credential Manager), n
 - `ols_docker_start` launches Docker Desktop and returns a background task id; it waits up to 2 minutes for the engine.
 - `ols_docker_list_containers` takes optional `{"all": true}` to include stopped containers. Results are cached for 2 seconds.
 - `ols_docker_container_action` takes `{"id": "shop-web-1", "action": "restart"}`.
+- `ols_docker_container_logs` takes `{"id": "shop-db-1", "tail": 200}` (max 2000; secrets redacted).
+- `ols_docker_compose_create` takes `{"dir": "C:\\Sites\\shop", "services": [{"preset": "mariadb", "name": "db"}, {"preset": "redis", "name": "cache"}]}`. Free ports are picked on 127.0.0.1; passwords go to the credential store and the file only holds `${OLS_SECRET_*}` variables. Add `"dry_run": true` to see the file first.
+- `ols_docker_compose_action` takes `{"path": "C:\\Sites\\shop\\compose.yaml", "action": "up"}` and returns a task id; follow it with `ols_list_tasks`.
+- `ols_docker_create_site` takes `{"container": "shop-web-1", "container_port": 80, "hostname": "shop.test"}`, creates the proxy site and applies the web config.
 - `https` (boolean) enables SSL for the site. `redirect_https` (boolean) redirects HTTP to HTTPS.
 - `enabled` (boolean) toggles the site on/off.
 

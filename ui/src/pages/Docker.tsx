@@ -1,7 +1,13 @@
 import { listen } from '@tauri-apps/api/event'
-import { Box, ExternalLink, Pause, Play, RefreshCw, RotateCw } from 'lucide-react'
+import { Box, ExternalLink, FileText, Globe, Pause, Play, RefreshCw, RotateCw } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
+import { ComposeBuilderDialog } from '@/components/docker/ComposeBuilderDialog'
+import { ComposeEditorDialog } from '@/components/docker/ComposeEditorDialog'
+import { ComposeTab } from '@/components/docker/ComposeTab'
+import { CreateSiteDialog } from '@/components/docker/CreateSiteDialog'
+import { LogsDialog } from '@/components/docker/LogsDialog'
+import { TaskOutputDialog } from '@/components/docker/TaskOutputDialog'
 import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
 import { ServiceIconAction } from '@/components/ServiceIconAction'
 import { Spinner } from '@/components/Spinner'
@@ -24,8 +30,11 @@ import { cn } from '@/lib/utils'
  * §166 Docker page (under Sites). Performance rules from the Docker plan §2.5:
  * - Loaded lazily by App, so it adds nothing to the startup bundle.
  * - No timers: data loads when the page opens, after each action, and on Refresh.
- * - The only live listener is `task-event`, and only while "Start Docker" runs.
+ * - The only live listeners are `task-event` while "Start Docker" or a compose action is
+ *   being followed.
  */
+
+type Tab = 'containers' | 'compose'
 
 type Filter = 'all' | 'running' | 'sites' | 'managed'
 
@@ -53,6 +62,14 @@ export default function DockerPage() {
   const [filter, setFilter] = useState<Filter>('all')
   const [busy, setBusy] = useState<string | null>(null)
   const [startTask, setStartTask] = useState<string | null>(null)
+  const [tab, setTab] = useState<Tab>('containers')
+  // Dialogs shared by both tabs.
+  const [logsFor, setLogsFor] = useState<string | null>(null)
+  const [siteFor, setSiteFor] = useState<DockerContainer | null>(null)
+  const [editPath, setEditPath] = useState<string | null>(null)
+  const [builderOpen, setBuilderOpen] = useState(false)
+  const [taskId, setTaskId] = useState<string | null>(null)
+  const [composeReload, setComposeReload] = useState(0)
 
   // Callers that refresh on demand show the spinner first; the first load starts with it on.
   const refresh = useCallback(async () => {
@@ -122,6 +139,29 @@ export default function DockerPage() {
     }
   }
 
+  /** A compose service names its container; the site dialog needs the full container. */
+  async function createSiteFor(name: string) {
+    try {
+      const r = await runCommand({ type: 'list_docker_containers', all: true })
+      const c = r.type === 'docker_containers' ? r.containers.find((x) => x.name === name) : undefined
+      if (c) setSiteFor(c)
+    } catch (err) {
+      setError(asDiagnostic(err))
+    }
+  }
+
+  async function composeCreated(file: string, start: boolean) {
+    setComposeReload((n) => n + 1)
+    setTab('compose')
+    if (!start) return
+    try {
+      const r = await runCommand({ type: 'docker_compose_action', path: file, action: 'up' })
+      if (r.type === 'task_started') setTaskId(r.id)
+    } catch (err) {
+      setError(asDiagnostic(err))
+    }
+  }
+
   const visible = useMemo(
     () =>
       containers.filter((c) =>
@@ -147,7 +187,7 @@ export default function DockerPage() {
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Docker</h1>
-        <p className="text-sm text-muted-foreground">Your Docker containers: start, stop and open them. Docker is optional; OLS never installs it.</p>
+        <p className="text-sm text-muted-foreground">Run containers and Compose stacks, edit compose files, and give any container a local site with HTTPS. Docker is optional; OLS never installs it.</p>
       </div>
 
       <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
@@ -166,7 +206,44 @@ export default function DockerPage() {
         onStart={() => void startDocker()}
       />
 
-      {status?.running && (
+      {status && (status.running || status.installed) && (
+        <div className="flex gap-1 border-b" role="tablist" aria-label="Docker sections">
+          {(
+            [
+              ['containers', 'Containers'],
+              ['compose', 'Compose'],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={tab === id}
+              onClick={() => setTab(id)}
+              className={cn(
+                '-mb-px cursor-pointer border-b-2 px-3 py-2 text-sm font-medium transition-colors',
+                tab === id ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {tab === 'compose' && status && (status.running || status.installed) && (
+        <ComposeTab
+          dockerRunning={status.running}
+          reloadKey={composeReload}
+          onRunTask={setTaskId}
+          onEdit={setEditPath}
+          onNew={() => setBuilderOpen(true)}
+          onLogs={setLogsFor}
+          onCreateSite={(name) => void createSiteFor(name)}
+        />
+      )}
+
+      {tab === 'containers' && status?.running && (
         <Card>
           <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 pb-2">
             <div>
@@ -214,7 +291,15 @@ export default function DockerPage() {
                       </TableRow>
                     ),
                     ...rows.map((c) => (
-                      <ContainerRow key={c.id} c={c} busy={busy} onAct={act} onError={setError} />
+                      <ContainerRow
+                        key={c.id}
+                        c={c}
+                        busy={busy}
+                        onAct={act}
+                        onError={setError}
+                        onLogs={() => setLogsFor(c.name)}
+                        onCreateSite={() => setSiteFor(c)}
+                      />
                     )),
                   ])}
                 </TableBody>
@@ -223,6 +308,26 @@ export default function DockerPage() {
           </CardContent>
         </Card>
       )}
+
+      <LogsDialog container={logsFor} onClose={() => setLogsFor(null)} />
+      <CreateSiteDialog container={siteFor} onClose={() => setSiteFor(null)} onCreated={() => void refresh()} />
+      {editPath && (
+        <ComposeEditorDialog
+          key={editPath}
+          path={editPath}
+          onClose={() => setEditPath(null)}
+          onSaved={() => setComposeReload((n) => n + 1)}
+        />
+      )}
+      <ComposeBuilderDialog open={builderOpen} onClose={() => setBuilderOpen(false)} onCreated={(f, start) => void composeCreated(f, start)} />
+      <TaskOutputDialog
+        taskId={taskId}
+        onClose={() => setTaskId(null)}
+        onFinished={() => {
+          setComposeReload((n) => n + 1)
+          void refresh()
+        }}
+      />
     </div>
   )
 }
@@ -306,11 +411,15 @@ function ContainerRow({
   busy,
   onAct,
   onError,
+  onLogs,
+  onCreateSite,
 }: {
   c: DockerContainer
   busy: string | null
   onAct: (c: DockerContainer, action: DockerContainerAction) => void
   onError: (d: Diagnostic) => void
+  onLogs: () => void
+  onCreateSite: () => void
 }) {
   const running = c.state === 'running'
   const paused = c.state === 'paused'
@@ -387,6 +496,17 @@ function ContainerRow({
             onClick={() => onAct(c, paused ? 'unpause' : 'pause')}
           >
             {paused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
+          </ServiceIconAction>
+          <ServiceIconAction title={`Logs of ${c.name}`} disabled={false} iconColor="text-violet-400" onClick={onLogs}>
+            <FileText className="size-3.5" />
+          </ServiceIconAction>
+          <ServiceIconAction
+            title={c.ols_site ? `Already serves ${c.ols_site}` : published.length ? `Create a site for ${c.name}` : 'Publish a port first'}
+            disabled={!running || published.length === 0 || !!c.ols_site}
+            iconColor="text-sky-400"
+            onClick={onCreateSite}
+          >
+            <Globe className="size-3.5" />
           </ServiceIconAction>
         </span>
       </TableCell>

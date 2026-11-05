@@ -28,3 +28,5 @@ graph TB
   INNER --> DOCKER[DockerManager]
   DOCKER --> ENGINE[Docker Engine API pipe/socket/tcp]
   DOCKER --> TASKS
+  DOCKER --> COMPOSECLI[docker compose CLI]
+  DOCKER --> DOM

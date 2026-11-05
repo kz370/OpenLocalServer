@@ -121,6 +121,8 @@ const OPERATE: &[&str] = &[
     "run_diagnostics",
     "docker_container_action",
     "start_docker_desktop",
+    "docker_compose_action",
+    "docker_create_site",
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

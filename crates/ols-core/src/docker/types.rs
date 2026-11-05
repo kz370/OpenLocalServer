@@ -10,6 +10,7 @@ pub const LABEL_MANAGED: &str = "dev.ols.managed";
 pub const LABEL_SITE: &str = "dev.ols.site";
 const LABEL_COMPOSE_PROJECT: &str = "com.docker.compose.project";
 const LABEL_COMPOSE_SERVICE: &str = "com.docker.compose.service";
+const LABEL_COMPOSE_FILES: &str = "com.docker.compose.project.config_files";
 
 /// Whether Docker is available, as the Docker page's status bar shows it.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -56,7 +57,10 @@ pub struct ContainerSummary {
     pub ports: Vec<PortBinding>,
     pub compose_project: Option<String>,
     pub compose_service: Option<String>,
-    /// The OLS site this container serves (`dev.ols.site` label).
+    /// The compose file that created it (first of `config_files`), when Compose made it.
+    #[serde(default)]
+    pub compose_file: Option<String>,
+    /// The OLS site this container serves (`dev.ols.site` label, or a site linked to it).
     pub ols_site: Option<String>,
     /// Created by OLS (`dev.ols.managed=true`).
     pub managed: bool,
@@ -177,6 +181,11 @@ impl From<EngineContainer> for ContainerSummary {
             ports,
             compose_project: labels.get(LABEL_COMPOSE_PROJECT).cloned(),
             compose_service: labels.get(LABEL_COMPOSE_SERVICE).cloned(),
+            compose_file: labels
+                .get(LABEL_COMPOSE_FILES)
+                .and_then(|f| f.split(',').next())
+                .map(|f| f.trim().to_string())
+                .filter(|f| !f.is_empty()),
             ols_site: labels.get(LABEL_SITE).cloned(),
             managed: labels.get(LABEL_MANAGED).is_some_and(|v| v == "true"),
         }

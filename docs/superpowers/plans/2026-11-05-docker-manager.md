@@ -3,7 +3,7 @@
 > **For agentic workers:** Work task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 > Each task ends with the quality gates and a Conventional Commit.
 
-**Status:** in progress on `release/2.10.0` — Phase 1 core done (client, status, containers list/actions, Docker page, MCP tools); events stream (Task 1.3) next. Date: 2026-11-05.
+**Status:** in progress on `release/2.10.0`. Done: Phase 1 core (client, status, containers, Docker page, MCP), and — reprioritised by the maintainer to give the page real value — Compose management (Phase 5 Task 5.2), a **compose builder** (replaces Phase 4's fixed templates: users pick services instead), container logs, and **Create site from a container** (Phase 3, Tasks 3.1, 3.2 and 3.5; port drift (3.4) is re-synced when the Docker page lists containers, not yet from an events stream; 3.3 site on/off driving the container is still to do). Next: events stream (1.3), container shell (2.3), connect containers to OLS (CA trust, OLS databases), Dockerize a project. Date: 2026-11-05.
 
 **Target release:** **2.10.0**. The version was bumped to 2.10.0 early, at the maintainer's request, when `release/2.10.0` was created; Task 6.3 now only finalises release notes and the website.
 
@@ -333,7 +333,7 @@ olsc docker prune --dry-run
 ### Phase 2 — Manager UI (containers, images, volumes, networks)
 
 - [ ] **Task 2.1:** (containers ✅ done in Phase 1) image/volume/network list + action commands (`command/types/commands.rs`, `command/dispatch/docker.rs`).
-- [ ] **Task 2.2:** logs as a log source `docker:<name>` in `app/system/logs.rs`.
+- [x] **Task 2.2:** (as built: a Logs dialog on the Docker page reading `/containers/{id}/logs`, not a Logs-page source) logs as a log source `docker:<name>` in `app/system/logs.rs`.
 - [ ] **Task 2.3:** `docker_open_shell` via `TerminalManager` (`docker exec -it`), shell fallback bash → sh.
 - [ ] **Task 2.4:** (partly done: status bar, empty states, Containers tab with filters, Compose groups, port chips and start/stop/restart/pause; still to do: side panel, Templates and Storage tabs, virtualization) UI page per §2.0: `ui/src/pages/Docker.tsx` (loaded with `React.lazy`) with status bar +
   tabs *Containers · Templates · Storage & Cleanup*; components under `ui/src/components/docker/`
@@ -347,11 +347,11 @@ olsc docker prune --dry-run
 
 ### Phase 3 — Create site from a running container (entry point A)
 
-- [ ] **Task 3.1:** `DockerLink` on `Domain` (serde default, migration-free) + validation.
-- [ ] **Task 3.2:** `docker_create_site`: resolve host port → build `SiteKind::Proxy` → existing domain add + web apply; set label only if OLS created the container.
+- [x] **Task 3.1:** `DockerLink` on `Domain` (serde default, migration-free) + validation.
+- [x] **Task 3.2:** `docker_create_site`: resolve host port → build `SiteKind::Proxy` → existing domain add + web apply; set label only if OLS created the container.
 - [ ] **Task 3.3:** site lifecycle hooks: enable/disable/delete drive the container; health step "container running".
 - [ ] **Task 3.4:** host-port re-resolve on `docker-event` (`start` / `die`) → re-apply web for that site only.
-- [ ] **Task 3.5:** UI: "Pick a container" in `DomainDialog.tsx` proxy mode; "Create site" button on each container row; Docker badge + container status on site cards.
+- [x] **Task 3.5:** UI: "Pick a container" in `DomainDialog.tsx` proxy mode; "Create site" button on each container row; Docker badge + container status on site cards.
 
 ### Phase 4 — Docker templates (entry point B)
 
@@ -363,7 +363,7 @@ olsc docker prune --dry-run
 ### Phase 5 — Project Compose / Dockerfile (entry point C)
 
 - [ ] **Task 5.1:** detection markers `compose.yaml`, `docker-compose.yml`, `Dockerfile` in `detection.rs` (read-only).
-- [ ] **Task 5.2:** compose list/actions + "Run with Docker" on the project page; Dockerfile build task.
+- [x] **Task 5.2:** (done as the Compose tab: stacks, Up/Down/Stop/Start/Restart/Pull/Build with live output, editor with Check/Save) compose list/actions + "Run with Docker" on the project page; Dockerfile build task.
 - [ ] **Task 5.3:** site bundle export/import of compose + optional volume tarballs.
 
 ### Phase 6 — Front doors, docs, release

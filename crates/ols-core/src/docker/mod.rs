@@ -7,7 +7,10 @@
 //! - Results are cached briefly so repeated UI calls do not repeat engine requests.
 //! - No background polling, timers or open connections.
 
+pub mod builder;
 pub mod client;
+pub mod compose;
+pub mod sites;
 pub mod types;
 
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -27,6 +30,7 @@ const LIST_TIMEOUT: Duration = Duration::from_secs(3);
 const ACTION_TIMEOUT: Duration = Duration::from_secs(20);
 /// How long a container list is reused before asking the engine again.
 const LIST_CACHE: Duration = Duration::from_secs(2);
+const LOGS_TIMEOUT: Duration = Duration::from_secs(5);
 /// How long "Start Docker" waits for the engine to answer.
 const START_WAIT: Duration = Duration::from_secs(120);
 
@@ -218,6 +222,32 @@ impl DockerManager {
         }
     }
 
+    /// The last `tail` log lines of a container (stdout and stderr, oldest first), with
+    /// secrets redacted. At most 2,000 lines.
+    pub fn container_logs(
+        &self,
+        endpoint: &Endpoint,
+        id: &str,
+        tail: u32,
+    ) -> Result<Vec<String>, CoreError> {
+        if !types::valid_container_ref(id) {
+            return Err(CoreError::failed_fix(
+                "That is not a valid container name.",
+                format!("\"{id}\" contains characters Docker never uses in a name or id."),
+                "Pick the container from the list on the Docker page.",
+            ));
+        }
+        let tail = tail.clamp(1, 2000);
+        let path = format!("/containers/{id}/logs?stdout=1&stderr=1&timestamps=1&tail={tail}");
+        let r = self
+            .call(endpoint, "GET", &path, LOGS_TIMEOUT)
+            .map_err(|e| to_core_error(e, "read the container's logs"))?;
+        Ok(split_log_stream(&r.body)
+            .iter()
+            .map(|l| crate::redact::redact_text(l))
+            .collect())
+    }
+
     fn lock_cache(&self) -> std::sync::MutexGuard<'_, Option<CachedList>> {
         self.containers.lock().unwrap_or_else(|p| p.into_inner())
     }
@@ -265,6 +295,30 @@ pub fn find_cli() -> Option<std::path::PathBuf> {
             .map(|dir| dir.join(name))
             .find(|p| p.is_file())
     })
+}
+
+/// Docker sends logs of a container without a terminal as frames:
+/// `[stream, 0, 0, 0, len (4 bytes, big-endian)] + payload`. A container with a terminal
+/// sends plain text. Both become lines.
+pub(crate) fn split_log_stream(body: &[u8]) -> Vec<String> {
+    let framed = body.len() >= 8 && matches!(body[0], 0..=2) && body[1..4] == [0, 0, 0];
+    let mut text = Vec::with_capacity(body.len());
+    if framed {
+        let mut rest = body;
+        while rest.len() >= 8 {
+            let len = u32::from_be_bytes([rest[4], rest[5], rest[6], rest[7]]) as usize;
+            let end = (8 + len).min(rest.len());
+            text.extend_from_slice(&rest[8..end]);
+            rest = &rest[end..];
+        }
+    } else {
+        text.extend_from_slice(body);
+    }
+    String::from_utf8_lossy(&text)
+        .lines()
+        .map(|l| l.trim_end_matches('\r').to_string())
+        .filter(|l| !l.is_empty())
+        .collect()
 }
 
 fn diagnostic_cause(e: &ClientError) -> String {

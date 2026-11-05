@@ -225,6 +225,22 @@ pub struct Domain {
     /// Unix timestamp (seconds) of the last successful DDNS update.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ddns_last_synced_at: Option<u64>,
+    /// §166: the Docker container this proxy site points at. OLS keeps `kind`'s
+    /// `upstream_port` in step with the container's published port.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub docker: Option<DockerLink>,
+}
+
+/// §166: which container (and which of its ports) a site serves.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DockerLink {
+    /// Container name (stable across Compose recreates).
+    pub container: String,
+    pub container_port: u16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compose_project: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compose_service: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -279,6 +295,7 @@ impl Default for Domain {
             ddns_proxied: false,
             ddns_last_ip: None,
             ddns_last_synced_at: None,
+            docker: None,
         }
     }
 }

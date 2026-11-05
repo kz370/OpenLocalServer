@@ -347,3 +347,12 @@ Settings page | mounts | SidebarItemsSettings as its own "Sidebar" section (afte
 SidebarItemsSettings | calls | setHiddenSidebarItems -> set_setting ui.sidebar.hidden
 sidebarVisibility | calls | get_setting ui.sidebar.hidden (once per session)
 CommandPalette | links | every page including hidden ones (hidden pages stay reachable)
+dispatch_docker | uses | docker::compose (discover with ProjectStore + DockerManager containers; read/validate/save; run_action in TaskManager `docker-compose`), docker::builder (plan/create with port::port_is_free and secrets::set_secret), Inner::docker_create_site
+list_docker_containers | triggers | Inner::sync_docker_sites; when a site moved, TaskManager `docker-site-sync` runs Inner::apply_web
+docker::compose::run_action | uses | exec::run_streaming (docker compose), secrets::get_secret (OLS_SECRET_* env), redact::redact_text, TaskHandle (results, cancel)
+docker::builder::create | uses | crypto::random_password, secrets::set_secret, compose::save_file (when replacing)
+Inner::docker_create_site | uses | DockerManager::list_containers, Inner::add_domain (proxy site with DockerLink)
+DockerPage | mounts | ComposeTab, ComposeEditorDialog, ComposeBuilderDialog, TaskOutputDialog, LogsDialog, CreateSiteDialog
+CreateSiteDialog | calls | docker_create_site then apply_web (background) and open_url
+TaskOutputDialog | listens | task-event for one task id; calls cancel_task
+ols-mcp ols_docker_create_site | calls | docker_create_site then apply_web

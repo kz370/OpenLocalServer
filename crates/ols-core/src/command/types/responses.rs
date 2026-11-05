@@ -428,6 +428,28 @@ pub enum CoreResponse {
     DockerContainers {
         containers: Vec<crate::docker::ContainerSummary>,
     },
+    DockerLogs {
+        lines: Vec<String>,
+    },
+    DockerComposeStacks {
+        stacks: Vec<crate::docker::compose::ComposeStack>,
+    },
+    DockerComposeFile {
+        path: String,
+        content: String,
+    },
+    DockerComposeCheck {
+        check: crate::docker::compose::ComposeCheck,
+    },
+    DockerComposePresets {
+        presets: Vec<crate::docker::builder::ServicePreset>,
+    },
+    DockerComposePlan {
+        plan: crate::docker::builder::BuildPlan,
+    },
+    DockerComposeSecrets {
+        secrets: Vec<(String, String)>,
+    },
     /// A background task was started; watch it on the Processes page.
     TaskStarted {
         id: String,

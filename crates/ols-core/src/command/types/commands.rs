@@ -184,6 +184,55 @@ pub enum CoreCommand {
         id: String,
         action: crate::docker::ContainerAction,
     },
+    /// §166: last log lines of a container (secrets redacted).
+    GetDockerContainerLogs {
+        id: String,
+        #[serde(default)]
+        tail: Option<u32>,
+    },
+    /// §166: compose files in project folders plus running Compose stacks.
+    ListDockerComposeStacks,
+    /// §166: a compose file's text for the editor (UI only; not over the HTTP API).
+    ReadDockerComposeFile {
+        path: String,
+    },
+    /// §166: checks unsaved compose text (YAML, services, ports, then `docker compose config`).
+    ValidateDockerCompose {
+        path: String,
+        content: String,
+    },
+    /// §166: saves compose text after the same checks; the old file is backed up.
+    SaveDockerComposeFile {
+        path: String,
+        content: String,
+    },
+    /// §166: up / down / stop / start / restart / pull / build, as a background task.
+    DockerComposeAction {
+        path: String,
+        action: crate::docker::compose::ComposeAction,
+        #[serde(default)]
+        service: Option<String>,
+    },
+    /// §166: the compose builder's service catalog.
+    ListDockerComposePresets,
+    /// §166: the compose file the builder would write (nothing is written).
+    PlanDockerCompose {
+        spec: crate::docker::builder::BuildSpec,
+    },
+    /// §166: writes the builder's compose file and stores generated passwords.
+    CreateDockerCompose {
+        spec: crate::docker::builder::BuildSpec,
+        #[serde(default)]
+        overwrite: bool,
+    },
+    /// §166: the generated passwords of a stack, for connection details (UI only).
+    RevealDockerComposeSecrets {
+        path: String,
+    },
+    /// §166: a `.test` site (proxy) for a container's published port.
+    DockerCreateSite {
+        request: crate::docker::sites::DockerSiteRequest,
+    },
     WpSignIn {
         project_id: String,
         hostname: Option<String>,

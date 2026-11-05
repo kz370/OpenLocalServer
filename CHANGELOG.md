@@ -11,8 +11,12 @@ Feature release (in development). Full notes: [`release-notes/v2.10.0.md`](./rel
 
 ### Added
 - Docker page under Sites: Docker status, one-click Start Docker, and a container list grouped by Compose project.
-- Start, stop, restart, pause and resume containers; click a port to open it.
-- MCP tools for Docker (status, start, list containers, container actions) and `ols_unignore_site`.
+- Start, stop, restart, pause and resume containers; click a port to open it; container logs.
+- Compose tab: stacks from your projects and Docker, with Up / Stop / Restart / Down / Pull / Build and live output.
+- Compose file editor with Check (OLS rules and Docker's own check) and Save with backup.
+- Compose builder: pick services, free ports picked for you, passwords kept in the Windows credential store.
+- Create site: a local HTTPS domain for any container that follows the container's port.
+- MCP tools for Docker (status, start, containers, logs, Compose stacks, compose builder, create site) and `ols_unignore_site`.
 - Settings → Sidebar: hide sidebar pages you don't use; core pages always stay.
 
 ### Changed & Improved

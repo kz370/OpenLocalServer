@@ -431,6 +431,82 @@ fn mcp_tools() -> Vec<McpTool> {
             }),
         },
         McpTool {
+            name: "ols_docker_container_logs".into(),
+            description: Some("Last log lines of a Docker container (default 200, max 2000). Passwords and tokens are redacted.".to_string()),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "Container name or id." },
+                    "tail": { "type": "integer", "description": "How many lines (1-2000). Default 200." }
+                },
+                "required": ["id"]
+            }),
+        },
+        McpTool {
+            name: "ols_docker_compose_list".into(),
+            description: Some("List Docker Compose stacks: compose files in registered projects plus stacks Docker is running, with each service's image, ports and state.".to_string()),
+            input_schema: json!({ "type": "object", "properties": {} }),
+        },
+        McpTool {
+            name: "ols_docker_compose_check".into(),
+            description: Some("Check a compose file on disk: YAML syntax, services, duplicate host ports, unpinned images, passwords written in the file, then Docker's own `docker compose config`.".to_string()),
+            input_schema: json!({
+                "type": "object",
+                "properties": { "path": { "type": "string", "description": "Full path to compose.yaml / docker-compose.yml (from ols_docker_compose_list)." } },
+                "required": ["path"]
+            }),
+        },
+        McpTool {
+            name: "ols_docker_compose_action".into(),
+            description: Some("Run `docker compose up|down|stop|start|restart|pull|build` for a stack (optionally one service) as a background task; returns the task id (follow it with ols_list_tasks). `down` keeps volumes. OLS passes the stack's stored passwords.".to_string()),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string", "description": "Full path to the compose file." },
+                    "action": { "type": "string", "enum": ["up", "down", "stop", "start", "restart", "pull", "build"] },
+                    "service": { "type": "string", "description": "Optional: only this service." }
+                },
+                "required": ["path", "action"]
+            }),
+        },
+        McpTool {
+            name: "ols_docker_compose_presets".into(),
+            description: Some("Services the compose builder offers (MariaDB, MySQL, PostgreSQL, MongoDB, Redis, Memcached, RabbitMQ, Meilisearch, Mailpit, Adminer, phpMyAdmin, PHP+Apache, Node app, Nginx static) with their versions and ports.".to_string()),
+            input_schema: json!({ "type": "object", "properties": {} }),
+        },
+        McpTool {
+            name: "ols_docker_compose_create".into(),
+            description: Some("Create a compose.yaml in a folder from builder services. OLS picks free ports (127.0.0.1 only), generates passwords into the OS credential store (the file only has ${OLS_SECRET_*} variables), and never replaces an existing compose file from here. Set dry_run to only preview the file.".to_string()),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "dir": { "type": "string", "description": "Full path of the folder (usually a project folder)." },
+                    "name": { "type": "string", "description": "Optional stack name." },
+                    "services": {
+                        "type": "array",
+                        "description": "Services: {preset, name, tag?, host_ports?, image? (custom), container_port? (custom), env?}. preset is an id from ols_docker_compose_presets or 'custom'.",
+                        "items": { "type": "object" }
+                    },
+                    "dry_run": { "type": "boolean", "description": "Only return the planned file. Default false." }
+                },
+                "required": ["dir", "services"]
+            }),
+        },
+        McpTool {
+            name: "ols_docker_create_site".into(),
+            description: Some("Give a running container a local site (e.g. shop.test) with HTTPS: a reverse proxy to the container's published port that follows the container if its port changes. Re-applies the web server config afterwards.".to_string()),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "container": { "type": "string", "description": "Container name or id." },
+                    "container_port": { "type": "integer", "description": "The container's own port (it must be published)." },
+                    "hostname": { "type": "string", "description": "Site domain, e.g. shop.test." },
+                    "https": { "type": "boolean", "description": "Default true." }
+                },
+                "required": ["container", "container_port", "hostname"]
+            }),
+        },
+        McpTool {
             name: "ols_restart_site_app".into(),
             description: Some("Restart the supervised background application process (Node.js dev server, Python app/uvicorn, etc.) for a site.".to_string()),
             input_schema: json!({
@@ -1002,6 +1078,62 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
         "ols_apply_web" => C::ApplyWeb { overwrite: vec![] },
         "ols_validate_web" => C::ValidateWeb,
         "ols_list_tasks" => C::ListTasks,
+        "ols_docker_container_logs" => C::GetDockerContainerLogs {
+            id: req_str!("id"),
+            tail: Some(
+                args.get("tail")
+                    .and_then(|v| v.as_u64())
+                    .map(|t| t.clamp(1, 2000) as u32)
+                    .unwrap_or(200),
+            ),
+        },
+        "ols_docker_compose_list" => C::ListDockerComposeStacks,
+        "ols_docker_compose_check" => {
+            let path = req_str!("path");
+            let content = std::fs::read_to_string(&path)
+                .map_err(|e| format!("could not read {path}: {e}"))?;
+            C::ValidateDockerCompose { path, content }
+        }
+        "ols_docker_compose_action" => {
+            let action = req_str!("action");
+            C::DockerComposeAction {
+                path: req_str!("path"),
+                action: serde_json::from_value(json!(action)).map_err(|_| {
+                    format!("unknown action '{action}': use up, down, stop, start, restart, pull or build")
+                })?,
+                service: opt_str!("service"),
+            }
+        }
+        "ols_docker_compose_presets" => C::ListDockerComposePresets,
+        "ols_docker_compose_create" => {
+            let spec: ols_core::docker::builder::BuildSpec = serde_json::from_value(json!({
+                "dir": req_str!("dir"),
+                "name": opt_str!("name"),
+                "services": args.get("services").cloned().unwrap_or(json!([])),
+            }))
+            .map_err(|e| format!("invalid services: {e}"))?;
+            if opt_bool!("dry_run").unwrap_or(false) {
+                C::PlanDockerCompose { spec }
+            } else {
+                // Never replaces an existing file from an AI tool; the app asks first.
+                C::CreateDockerCompose {
+                    spec,
+                    overwrite: false,
+                }
+            }
+        }
+        "ols_docker_create_site" => C::DockerCreateSite {
+            request: ols_core::docker::sites::DockerSiteRequest {
+                container: req_str!("container"),
+                container_port: args
+                    .get("container_port")
+                    .and_then(|v| v.as_u64())
+                    .and_then(|p| u16::try_from(p).ok())
+                    .ok_or("missing or invalid argument: container_port")?,
+                hostname: req_str!("hostname"),
+                https: opt_bool!("https").unwrap_or(true),
+            },
+        },
         "ols_unignore_site" => C::UnignoreSite {
             project_id: req_str!("project_id"),
         },
@@ -1539,6 +1671,31 @@ async fn handle_request(req: JsonRpcRequest, override_token: Option<&str>) -> Js
                         );
                     }
                 }
+            }
+            if name == "ols_docker_create_site" {
+                let cmd = match build_command(name, &args) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        return JsonRpcResponse::err(
+                            req.id,
+                            json!({ "code": -32602, "message": e }),
+                        );
+                    }
+                };
+                return match send_command(cmd).await {
+                    Ok(resp) => {
+                        // Same as a site added in the app: apply the web config so it answers.
+                        let note = match send_command(CoreCommand::ApplyWeb { overwrite: vec![] }).await {
+                            Ok(_) => "\n\nWeb server config applied; the site is live.".to_string(),
+                            Err(e) => format!("\n\nNote: the site was created, but applying the web config failed: {e}"),
+                        };
+                        JsonRpcResponse::ok(
+                            req.id,
+                            json!({ "content": [{ "type": "text", "text": format!("{}{note}", format_response(&resp)) }] }),
+                        )
+                    }
+                    Err(e) => JsonRpcResponse::err(req.id, json!({ "code": -32603, "message": e })),
+                };
             }
             if name == "ols_list_tables" {
                 let db_name = args.get("database").and_then(|v| v.as_str()).unwrap_or("");
@@ -2092,6 +2249,62 @@ mod tests {
         assert!(matches!(
             build_command("ols_unignore_site", &json!({ "project_id": "p1" })).unwrap(),
             CoreCommand::UnignoreSite { project_id } if project_id == "p1"
+        ));
+        assert!(matches!(
+            build_command("ols_docker_compose_action", &json!({ "path": "C:/s/compose.yaml", "action": "up", "service": "web" })).unwrap(),
+            CoreCommand::DockerComposeAction { service: Some(s), .. } if s == "web"
+        ));
+        assert!(build_command(
+            "ols_docker_compose_action",
+            &json!({ "path": "x", "action": "rm" })
+        )
+        .is_err());
+        match build_command(
+            "ols_docker_compose_create",
+            &json!({ "dir": "C:/s", "services": [{ "preset": "redis", "name": "cache" }] }),
+        )
+        .unwrap()
+        {
+            CoreCommand::CreateDockerCompose { spec, overwrite } => {
+                assert!(!overwrite, "MCP never replaces an existing compose file");
+                assert_eq!(spec.services[0].name, "cache");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        assert!(matches!(
+            build_command(
+                "ols_docker_compose_create",
+                &json!({ "dir": "C:/s", "services": [], "dry_run": true })
+            )
+            .unwrap(),
+            CoreCommand::PlanDockerCompose { .. }
+        ));
+        match build_command(
+            "ols_docker_create_site",
+            &json!({ "container": "shop-web-1", "container_port": 80, "hostname": "shop.test" }),
+        )
+        .unwrap()
+        {
+            CoreCommand::DockerCreateSite { request } => {
+                assert_eq!((request.container_port, request.https), (80, true));
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        assert!(build_command(
+            "ols_docker_create_site",
+            &json!({ "container": "x", "container_port": 70000, "hostname": "a.test" })
+        )
+        .is_err());
+        assert!(matches!(
+            build_command(
+                "ols_docker_container_logs",
+                &json!({ "id": "x", "tail": 99999 })
+            )
+            .unwrap(),
+            CoreCommand::GetDockerContainerLogs {
+                tail: Some(2000),
+                ..
+            }
         ));
         let err = build_command(
             "ols_docker_container_action",

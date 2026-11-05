@@ -48,6 +48,8 @@ export interface Domain {
   ddns_last_ip?: string | null
   /** Timestamp of last successful DDNS sync. */
   ddns_last_synced_at?: number | null
+  /** §166: the Docker container this proxy site points at. */
+  docker?: DockerLink | null
 }
 
 export interface DdnsSyncResult {
@@ -250,3 +252,11 @@ export interface ExternalTool {
 }
 /** One argument list for every engine, or a map of engine id (or `default`) to its own list. */
 export type ToolArgs = string[] | Record<string, string[]>
+
+/** §166: which container (and port) a site serves. */
+export interface DockerLink {
+  container: string
+  container_port: number
+  compose_project?: string | null
+  compose_service?: string | null
+}

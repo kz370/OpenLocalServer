@@ -1,7 +1,7 @@
 import type { AiProvider, AiRequest } from './types/ai'
 import type { QuickCommand, StartupSettings } from './types/apps'
 import type { CustomServiceDef, EnvironmentManifest, Ownership, ProcessId, ProcessSpec } from './types/base'
-import type { DockerContainerAction } from './types/docker'
+import type { BuildSpec, ComposeAction, DockerContainerAction, DockerSiteRequest } from './types/docker'
 import type { XdebugSettings } from './types/environment'
 import type { LoadProfile } from './types/system'
 import type { AutoBackupSettings, AutoBackupSiteSettings, BundleOptions, OnConflict, Profile, ResourceLimits, RestoreOptions, ScheduledTask, SnapshotOptions, TunnelConfig, Worker } from './types/tasks'
@@ -67,6 +67,17 @@ export type CoreCommand =
   | { type: 'start_docker_desktop' }
   | { type: 'list_docker_containers'; all?: boolean }
   | { type: 'docker_container_action'; id: string; action: DockerContainerAction }
+  | { type: 'get_docker_container_logs'; id: string; tail?: number }
+  | { type: 'list_docker_compose_stacks' }
+  | { type: 'read_docker_compose_file'; path: string }
+  | { type: 'validate_docker_compose'; path: string; content: string }
+  | { type: 'save_docker_compose_file'; path: string; content: string }
+  | { type: 'docker_compose_action'; path: string; action: ComposeAction; service?: string | null }
+  | { type: 'list_docker_compose_presets' }
+  | { type: 'plan_docker_compose'; spec: BuildSpec }
+  | { type: 'create_docker_compose'; spec: BuildSpec; overwrite?: boolean }
+  | { type: 'reveal_docker_compose_secrets'; path: string }
+  | { type: 'docker_create_site'; request: DockerSiteRequest }
   | { type: 'wp_sign_in'; project_id: string; hostname?: string; theme?: 'light' | 'dark' }
   | { type: 'wp_sign_in_revoke'; project_id: string }
   | { type: 'wp_core_repair'; project_id: string }
