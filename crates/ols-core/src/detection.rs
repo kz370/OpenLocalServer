@@ -115,6 +115,31 @@ fn strip_constraint_prefix(raw: &str) -> String {
         .to_string()
 }
 
+/// `(major, minor)` of a version text such as `"8.3"` or `"8.4.1"`.
+fn major_minor(version: &str) -> Option<(u32, u32)> {
+    let mut parts = version.split('.');
+    let major = parts.next()?.trim().parse().ok()?;
+    let minor = parts.next()?.trim().parse().ok()?;
+    Some((major, minor))
+}
+
+/// The PHP version Composer's installed dependencies need, read from the
+/// `PHP_VERSION_ID >= 80401` check in `vendor/composer/platform_check.php`. A dependency can
+/// need a newer PHP than the project's own `composer.json` says, and running `php artisan`
+/// with the lower one dies in that very check. Returned as `"8.4"` (major.minor) so it
+/// matches installed versions by prefix like the other requirements.
+fn platform_check_php(project_path: &Path) -> Option<String> {
+    let text = read_text(project_path, "vendor/composer/platform_check.php")?;
+    let marker = "PHP_VERSION_ID >= ";
+    let start = text.find(marker)? + marker.len();
+    let digits: String = text[start..]
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    let id: u32 = digits.parse().ok()?;
+    Some(format!("{}.{}", id / 10000, (id / 100) % 100))
+}
+
 pub fn detect(project_path: &Path) -> DetectionResult {
     let mut markers = Vec::new();
     let mut requirements = RuntimeRequirement::default();
@@ -135,6 +160,16 @@ pub fn detect(project_path: &Path) -> DetectionResult {
     if let Some(json) = &composer {
         if let Some(php_constraint) = json.pointer("/require/php").and_then(Value::as_str) {
             requirements.php = Some(strip_constraint_prefix(php_constraint));
+        }
+    }
+    // Dependencies can need a newer PHP than composer.json declares: take the higher one.
+    if let Some(needed) = platform_check_php(project_path) {
+        let higher = match requirements.php.as_deref().and_then(major_minor) {
+            Some(declared) => major_minor(&needed).is_some_and(|n| n > declared),
+            None => true,
+        };
+        if higher {
+            requirements.php = Some(needed);
         }
     }
     if let Some(pkg) = &package_json {
@@ -558,6 +593,33 @@ mod tests {
         assert_eq!(result.framework, Framework::GenericPhp);
         assert_eq!(result.requirements.php.as_deref(), Some("8.4"));
         assert_eq!(result.requirements.node.as_deref(), Some("24"));
+    }
+
+    #[test]
+    fn vendor_platform_check_raises_the_php_requirement() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("composer.json"),
+            r#"{"require":{"php":"^8.3"}}"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(tmp.path().join("vendor/composer")).unwrap();
+        std::fs::write(
+            tmp.path().join("vendor/composer/platform_check.php"),
+            "<?php\nif (!(PHP_VERSION_ID >= 80401)) {\n    $issues[] = 'x';\n}\n",
+        )
+        .unwrap();
+        let result = detect(tmp.path());
+        assert_eq!(result.requirements.php.as_deref(), Some("8.4"));
+
+        // A lower platform check never lowers the declared requirement.
+        std::fs::write(
+            tmp.path().join("composer.json"),
+            r#"{"require":{"php":"^8.5"}}"#,
+        )
+        .unwrap();
+        let result = detect(tmp.path());
+        assert_eq!(result.requirements.php.as_deref(), Some("8.5"));
     }
 
     #[test]
