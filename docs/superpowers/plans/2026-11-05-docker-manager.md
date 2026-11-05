@@ -5,6 +5,8 @@
 
 **Status:** proposed (not implemented). Date: 2026-11-05.
 
+**Target release:** **2.10.0** (current app version is 2.9.0). The version bump happens in Task 6.3, when the feature ships — not before.
+
 **Goal:** Give OLS a first-class Docker area: see and control containers, images, volumes,
 networks and Compose stacks, and turn any container (or a Docker template) into a normal OLS
 site with its own `*.test` domain, trusted HTTPS, logs and health check.
@@ -364,7 +366,17 @@ olsc docker prune --dry-run
 
 - [ ] **Task 6.1:** CLI `olsc docker ...` (`crates/ols-cli`), HTTP API gating list in `api.rs`, MCP tools in `crates/ols-mcp`.
 - [ ] **Task 6.2:** User manual section "Docker" (`crates/ols-core/catalog/user_manual.md` + `docs/OLS_USER_MANUAL.md`), troubleshooting entries (Docker not running, WSL2 off, port excluded).
-- [ ] **Task 6.3:** Release notes + version-sync per AGENTS.md §5 when this ships.
+- [ ] **Task 6.3: Release 2.10.0** — version bump + release-notes sync per AGENTS.md §5, all in one commit:
+  - Version `2.9.0` → `2.10.0` in root `Cargo.toml` (`[workspace.package]`), `src-tauri/tauri.conf.json`,
+    `ui/package.json`, `ui/package-lock.json` (preferably via `scripts/update-version.bat`).
+  - New `release-notes/v2.10.0.md` (headline: Docker page + create sites from Docker), and a matching
+    `## [2.10.0] — YYYY-MM-DD` section in `CHANGELOG.md`.
+  - `crates/ols-core/catalog/user_manual.md` and `docs/OLS_USER_MANUAL.md`: header `> **Version:** 2.10.0`,
+    Table of Contents, Section 17 "Version 2.10.0 Specific Notes & What's New" (identical in both files).
+  - `ui/src/pages/Settings.tsx`: `releaseNotes` import → `../../../release-notes/v2.10.0.md?raw`,
+    version badge fallback and `get_app_guide` version → `2.10.0`.
+  - `index.html`, `website/`: version badges, `OLS-2.10.0-setup.exe` / portable zip links, SHA-256 checksums, footer.
+  - `README.md`: badge `version-2.10.0-blue`.
 
 ---
 
