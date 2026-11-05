@@ -230,9 +230,9 @@ export function SettingsPage() {
         setMcpExpiresAt(draft.expiresAt)
       }
     },
-    onSave: async () => {
+    onSave: async (_draft, saved) => {
       const result = await run('save', async () => {
-        await (section === 'mcp' ? saveMcp() : saveAll())
+        await (section === 'mcp' ? saveMcp() : saveAll(saved))
         return true
       })
       return result === true
@@ -409,7 +409,7 @@ export function SettingsPage() {
 
   // Saves only the section being edited. Saving every section on each click also rewrote the
   // Windows startup entry and re-scanned every project folder after a one-switch change.
-  async function saveAll() {
+  async function saveAll(saved: SettingsDraft) {
     if (section === 'startup') {
       if (!startup) return
       const r = await runCommand({ type: 'set_startup_settings', settings: startup })
@@ -420,30 +420,46 @@ export function SettingsPage() {
       return
     }
     if (section === 'sites') {
-      await runCommand({ type: 'set_setting', key: 'quickapps.projects_dir', value: projectsDir })
+      // Only what changed is written. The domain sync rescans every project folder, rewrites
+      // the hosts file and reloads the web server, so it runs only when automatic domains were
+      // just turned on or the default TLD changed — the two settings that affect it.
+      const before = saved.section === 'sites' ? saved : null
+      if (!before || before.projectsDir !== projectsDir) {
+        await runCommand({ type: 'set_setting', key: 'quickapps.projects_dir', value: projectsDir })
+      }
       projectsDirCache.set(projectsDir)
 
-      await runCommand({ type: 'set_setting', key: 'domains.auto', value: autoDomains })
+      if (!before || before.autoDomains !== autoDomains) {
+        await runCommand({ type: 'set_setting', key: 'domains.auto', value: autoDomains })
+      }
       autoDomainsCache.set(autoDomains)
 
-      await runCommand({ type: 'set_setting', key: 'projects.watch', value: watchSites })
+      if (!before || before.watchSites !== watchSites) {
+        await runCommand({ type: 'set_setting', key: 'projects.watch', value: watchSites })
+      }
       watchSitesCache.set(watchSites)
 
-      const tldValue = defaultTld === 'custom' ? customTld.trim().replace(/^\./, '') : defaultTld
-      await runCommand({ type: 'set_setting', key: 'domains.default_tld', value: tldValue || 'local' })
+      const tldOf = (tld: string, custom: string) => (tld === 'custom' ? custom.trim().replace(/^\./, '') : tld) || 'local'
+      const tldValue = tldOf(defaultTld, customTld)
+      const tldChanged = !before || tldOf(before.defaultTld, before.customTld) !== tldValue
+      if (tldChanged) {
+        await runCommand({ type: 'set_setting', key: 'domains.default_tld', value: tldValue })
+        invalidateDefaultTldCache()
+      }
       defaultTldCache.set(defaultTld)
       customTldCache.set(customTld)
 
-      invalidateDefaultTldCache()
-      if (autoDomains) await runCommand({ type: 'sync_auto_domains' })
+      const autoDomainsTurnedOn = autoDomains && (!before || !before.autoDomains)
+      if (autoDomains && (autoDomainsTurnedOn || tldChanged)) await runCommand({ type: 'sync_auto_domains' })
       return
     }
-    for (const { key, value } of [
-      { key: 'exit.confirmation.enabled', value: confirmExit },
-      { key: 'tray.stop_all.confirmation.enabled', value: confirmStopAll },
-      { key: 'diagnostics.auto_fix', value: autoFixDiagnostics },
+    const before = saved.section === 'general' ? saved : null
+    for (const { key, value, was } of [
+      { key: 'exit.confirmation.enabled', value: confirmExit, was: before?.confirmExit },
+      { key: 'tray.stop_all.confirmation.enabled', value: confirmStopAll, was: before?.confirmStopAll },
+      { key: 'diagnostics.auto_fix', value: autoFixDiagnostics, was: before?.autoFixDiagnostics },
     ]) {
-      await runCommand({ type: 'set_setting', key, value })
+      if (value !== was) await runCommand({ type: 'set_setting', key, value })
     }
     autoFixDiagnosticsCache.set(autoFixDiagnostics)
     confirmExitCache.set(confirmExit)

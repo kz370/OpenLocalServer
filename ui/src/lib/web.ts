@@ -404,6 +404,7 @@ export function useWeb() {
     setDriftOpen,
     removing,
     applying,
+    applyTracked,
     deleteSite,
     restoreDeletedSite,
     deleteSites,
