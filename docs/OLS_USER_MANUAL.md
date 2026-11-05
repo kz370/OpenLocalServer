@@ -1,6 +1,6 @@
 # OpenLocalServer (OLS) — Comprehensive User Manual & Operations Guide
 
-> **Version:** 2.9.0
+> **Version:** 2.10.0
 > **Platform:** Windows 10 / Windows 11 (64-bit)  
 > **License:** GPL-3.0-only  
 > **CLI Binary:** `olsc`  
@@ -26,7 +26,7 @@
 14. [AI Assistant & Model Context Protocol (MCP)](#14-ai-assistant--model-context-protocol-mcp)
 15. [Command Line Interface (CLI — `olsc`)](#15-command-line-interface-cli--olsc)
 16. [Keyboard Shortcuts, Settings, Themes & Documentation](#16-keyboard-shortcuts-settings-themes--documentation)
-17. [Version 2.9.0 Specific Notes & What's New](#17-version-290-specific-notes--whats-new)
+17. [Version 2.10.0 Specific Notes & What's New](#17-version-2100-specific-notes--whats-new)
 
 ---
 
@@ -361,9 +361,12 @@ olsc guide
 
 ---
 
-## 17. Version 2.9.0 Specific Notes & What's New
+## 17. Version 2.10.0 Specific Notes & What's New
 
-### What's New in v2.9.0
+### What's New in v2.10.0
+- **Docker page (in development):** a new **Docker** item under **Sites** in the sidebar. You will be able to see and control your Docker containers and turn a container into a site with its own `.test` domain and HTTPS. Docker is optional: OLS does not install it, and nothing changes if you don't use it.
+
+### Previous Version Notes (v2.9.0)
 - **Import databases from several places at once:** your installed OLS MariaDB versions, other MySQL/MariaDB installs, or any data folder, in the order you choose.
 - **Duplicate databases:** choose skip, replace (backed up first), or import under a new name. Interrupted imports are recovered on the next start.
 - **Explorer menu:** right-click a folder → Show more options → Open Local Server to add, set up, or ignore a project. Turn it on in Settings.

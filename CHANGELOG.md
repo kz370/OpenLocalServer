@@ -5,6 +5,13 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.10.0] — Unreleased
+
+Feature release (in development). Full notes: [`release-notes/v2.10.0.md`](./release-notes/v2.10.0.md).
+
+### Added
+- Docker page under Sites (in development): see and control Docker containers and create sites from them.
+
 ## [2.9.0] — 2026-11-05
 
 Feature release. Full notes: [`release-notes/v2.9.0.md`](./release-notes/v2.9.0.md).
