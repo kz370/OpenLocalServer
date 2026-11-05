@@ -25,11 +25,11 @@ Feature release. Full notes: [`release-notes/v2.9.0.md`](./release-notes/v2.9.0.
 - App upgrades no longer force an administrator helper reinstall unless the helper changed.
 - Icon pickers: O(1) icon lookup, deferred search, off-screen tiles skipped with `content-visibility`, and no 180-icon cap in the project-type picker.
 - Icon pickers use a two-pane layout (shared `IconCategoryFilter`): a searchable vertical category list with icons and per-category match counts beside the scrolling grid, and a searchable dropdown below the `@xl` container width.
-- Diagnostics auto-fix is event-driven (startup, project changes, runtime installs, setting enabled) with a 30-minute fallback instead of a fixed five-minute loop; the Settings hint is corrected.
+- Diagnostics auto-fix runs when something changes instead of every five minutes; Diagnose on the Repair page fixes safe problems first.
 - Build: vendor libraries split into separate chunks (main chunk 2.28 MB to 1.33 MB), Vite 8.3.5 security update, CI on `upload-artifact@v7` / `download-artifact@v8` (Node 24).
 
 ### Fixed
-- Project PHP detection honors `vendor/composer/platform_check.php`; a site's Repair page no longer shows other projects' findings; stray `§` marks removed from visible UI text; Settings Save writes only changed values of the edited section and syncs domains only when automatic domains or the TLD change; site add/edit/duplicate apply the web config in the background; the Unsaved changes bar is opaque.
+- Project commands use the PHP version installed packages need; a site's Repair page shows only its own problems; faster saving in Settings and the site editor; solid Unsaved changes bar; stray `§` marks removed.
 - Add Site uses the detected document root; Project Settings keeps the Icon & Logo tab; stale tray service counts; tooltip overflow on long paths; zero import counts after quick checkbox changes; Explorer menu cascade, icons, console flash, and `olsc` version mismatch.
 
 ## [2.8.0] — 2026-11-03
