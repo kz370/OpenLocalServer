@@ -135,3 +135,4 @@ Schemas/interfaces (TypeScript core.ts mirrors Rust):
 - `ComposeService.container_id?` (full id of the service's container, for copying).
 - Container settings (§166): `ContainerDetails {id, name, image, created, state, started_at?, health?, restart_count, command[], entrypoint[], working_dir?, env: EnvVar[{key, value, masked}], ports: PortBinding[], mounts[{kind, source, target, read_only}], networks[{name, ip?, aliases[]}], labels{}, restart_policy, max_retries, memory_mb, cpus, compose_project?}`; `ContainerUpdate {restart_policy?, max_retries?, memory_mb?, cpus?}`.
 - Custom builder presets (§166): setting `docker.compose.custom_presets` = array of `ServicePreset` with `custom: true` (new field, default false) and id `custom-<slug>`.
+- Environment edit (§166): `EnvEdit {key, value?}` — `value: null` keeps the current value (hidden passwords); keys left out are removed. `RecreatePlan {create_body, extra_networks[(name, aliases)], env[]}` (core only).

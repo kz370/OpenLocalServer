@@ -154,3 +154,6 @@ export type ContainerUpdate = {
   memory_mb?: number | null
   cpus?: number | null
 }
+
+/** `value: null` keeps the container's current value (hidden passwords); a key left out is removed. */
+export type EnvEdit = { key: string; value: string | null }

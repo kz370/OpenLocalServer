@@ -303,6 +303,8 @@ export default function DockerPage() {
           key={settingsFor}
           id={settingsFor}
           onClose={() => setSettingsFor(null)}
+          onRunTask={setTaskId}
+          onEditCompose={setEditPath}
           onChanged={() => {
             setComposeReload((n) => n + 1)
             void refresh()

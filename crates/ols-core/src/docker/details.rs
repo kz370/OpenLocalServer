@@ -377,3 +377,260 @@ mod tests {
         );
     }
 }
+
+/// One environment variable in an edit. `value: None` keeps the container's current value
+/// (how a hidden password stays unchanged); a key left out of the list is removed.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EnvEdit {
+    pub key: String,
+    #[serde(default)]
+    pub value: Option<String>,
+}
+
+/// What a recreate sends to Docker: the create body and the extra networks to join after.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RecreatePlan {
+    pub create_body: Value,
+    pub extra_networks: Vec<(String, Vec<String>)>,
+    pub env: Vec<String>,
+}
+
+fn valid_env_key(k: &str) -> bool {
+    let mut c = k.chars();
+    c.next()
+        .is_some_and(|f| f.is_ascii_alphabetic() || f == '_')
+        && c.all(|x| x.is_ascii_alphanumeric() || x == '_')
+        && k.len() <= 256
+}
+
+/// Builds the new container from the old one's `docker inspect`, with `edits` as its
+/// environment. Pure: tested without Docker.
+///
+/// Data is never left behind: every volume the old container uses, including unnamed
+/// ("anonymous") volumes Docker made for the image, is attached to the new one by name.
+pub fn recreate_plan(inspect: &Value, edits: &[EnvEdit]) -> Result<RecreatePlan, String> {
+    if inspect["Config"]["Labels"]["com.docker.compose.project"].is_string() {
+        return Err("This container belongs to a Compose stack; change its environment in the compose file and press Up.".into());
+    }
+    let current: BTreeMap<String, String> = strings(&inspect["Config"]["Env"])
+        .into_iter()
+        .map(|kv| match kv.split_once('=') {
+            Some((k, v)) => (k.to_string(), v.to_string()),
+            None => (kv, String::new()),
+        })
+        .collect();
+    let mut seen = std::collections::BTreeSet::new();
+    let mut env = Vec::new();
+    for e in edits {
+        let key = e.key.trim();
+        if !valid_env_key(key) {
+            return Err(format!("\"{key}\" is not a variable name (letters, digits and _, not starting with a digit)."));
+        }
+        if !seen.insert(key.to_string()) {
+            return Err(format!("{key} is listed twice."));
+        }
+        let value = match &e.value {
+            Some(v) => {
+                if v.contains('\n') || v.contains('\r') || v.contains('\0') {
+                    return Err(format!("The value of {key} has a line break."));
+                }
+                v.clone()
+            }
+            None => current
+                .get(key)
+                .cloned()
+                .ok_or_else(|| format!("{key} is new, so it needs a value."))?,
+        };
+        env.push(format!("{key}={value}"));
+    }
+
+    let mut config = inspect["Config"].clone();
+    let obj = config
+        .as_object_mut()
+        .ok_or("Docker's answer has no container config.")?;
+    obj.insert("Env".into(), Value::from(env.clone()));
+    // Docker fills these in for the new container.
+    obj.remove("Hostname");
+    let mut host = inspect["HostConfig"].clone();
+    let host_obj = host
+        .as_object_mut()
+        .ok_or("Docker's answer has no host config.")?;
+    // Keep every volume: named and anonymous ones the image created.
+    let mut binds: Vec<String> = strings(&host_obj.get("Binds").cloned().unwrap_or(Value::Null));
+    let bound_targets: std::collections::BTreeSet<String> = binds
+        .iter()
+        .filter_map(|b| b.split(':').nth(1).map(str::to_string))
+        .chain(
+            host_obj
+                .get("Mounts")
+                .and_then(|m| m.as_array())
+                .into_iter()
+                .flatten()
+                .filter_map(|m| m["Target"].as_str().map(str::to_string)),
+        )
+        .collect();
+    for m in inspect["Mounts"].as_array().into_iter().flatten() {
+        let (Some(name), Some(dest)) = (m["Name"].as_str(), m["Destination"].as_str()) else {
+            continue;
+        };
+        if m["Type"] == "volume" && !bound_targets.contains(dest) {
+            let ro = if m["RW"].as_bool() == Some(false) {
+                ":ro"
+            } else {
+                ""
+            };
+            binds.push(format!("{name}:{dest}{ro}"));
+        }
+    }
+    host_obj.insert("Binds".into(), Value::from(binds));
+
+    // The main network goes in the create call; the others are joined afterwards.
+    let mode = inspect["HostConfig"]["NetworkMode"]
+        .as_str()
+        .unwrap_or("default")
+        .to_string();
+    let mut endpoints = serde_json::Map::new();
+    let mut extra_networks = Vec::new();
+    let short_id: String = inspect["Id"]
+        .as_str()
+        .unwrap_or_default()
+        .chars()
+        .take(12)
+        .collect();
+    for (name, n) in inspect["NetworkSettings"]["Networks"]
+        .as_object()
+        .into_iter()
+        .flatten()
+    {
+        // Docker adds the old container's short id as an alias; it would be wrong now.
+        let aliases: Vec<String> = strings(&n["Aliases"])
+            .into_iter()
+            .filter(|a| *a != short_id)
+            .collect();
+        if *name == mode
+            || (endpoints.is_empty()
+                && matches!(mode.as_str(), "default" | "bridge")
+                && name == "bridge")
+        {
+            endpoints.insert(name.clone(), serde_json::json!({ "Aliases": aliases }));
+        } else {
+            extra_networks.push((name.clone(), aliases));
+        }
+    }
+    let mut body = config;
+    let b = body.as_object_mut().expect("object");
+    b.insert("HostConfig".into(), host);
+    b.insert(
+        "NetworkingConfig".into(),
+        serde_json::json!({ "EndpointsConfig": Value::Object(endpoints) }),
+    );
+    Ok(RecreatePlan {
+        create_body: body,
+        extra_networks,
+        env,
+    })
+}
+
+#[cfg(test)]
+mod recreate_tests {
+    use super::*;
+
+    fn inspect() -> Value {
+        serde_json::from_str(r#"{
+            "Id": "0123456789abcdef", "Name": "/uptime",
+            "Config": {"Hostname": "0123456789ab", "Image": "louislam/uptime-kuma:1",
+                "Env": ["TZ=UTC", "ADMIN_PASSWORD=s3cret", "PATH=/usr/bin"], "Labels": {}},
+            "HostConfig": {"NetworkMode": "mynet", "Binds": ["C:\\data:/app/data"],
+                "PortBindings": {"3001/tcp": [{"HostPort": "3001"}]}, "RestartPolicy": {"Name": "always"}},
+            "Mounts": [
+                {"Type": "bind", "Source": "C:\\data", "Destination": "/app/data", "RW": true},
+                {"Type": "volume", "Name": "a1b2c3anon", "Destination": "/var/lib/cache", "RW": true}],
+            "NetworkSettings": {"Networks": {
+                "mynet": {"Aliases": ["uptime", "0123456789ab"]},
+                "other": {"Aliases": []}}}
+        }"#).unwrap()
+    }
+
+    #[test]
+    fn plan_keeps_hidden_values_volumes_and_networks() {
+        let edits = vec![
+            EnvEdit {
+                key: "TZ".into(),
+                value: Some("Africa/Cairo".into()),
+            },
+            EnvEdit {
+                key: "ADMIN_PASSWORD".into(),
+                value: None,
+            },
+            EnvEdit {
+                key: "NEW_FLAG".into(),
+                value: Some("1".into()),
+            },
+        ];
+        let p = recreate_plan(&inspect(), &edits).unwrap();
+        assert_eq!(
+            p.env,
+            vec!["TZ=Africa/Cairo", "ADMIN_PASSWORD=s3cret", "NEW_FLAG=1"],
+            "PATH removed, password kept"
+        );
+        let b = &p.create_body;
+        assert_eq!(b["Image"], "louislam/uptime-kuma:1");
+        assert!(b.get("Hostname").is_none());
+        assert_eq!(b["HostConfig"]["RestartPolicy"]["Name"], "always");
+        assert_eq!(
+            b["HostConfig"]["PortBindings"]["3001/tcp"][0]["HostPort"],
+            "3001"
+        );
+        let binds: Vec<&str> = b["HostConfig"]["Binds"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        assert_eq!(
+            binds,
+            vec!["C:\\data:/app/data", "a1b2c3anon:/var/lib/cache"],
+            "anonymous volume kept by name"
+        );
+        assert_eq!(
+            b["NetworkingConfig"]["EndpointsConfig"]["mynet"]["Aliases"],
+            serde_json::json!(["uptime"])
+        );
+        assert_eq!(p.extra_networks, vec![("other".to_string(), vec![])]);
+    }
+
+    #[test]
+    fn plan_refuses_bad_edits_and_compose_containers() {
+        let bad = |edits: Vec<EnvEdit>| recreate_plan(&inspect(), &edits).is_err();
+        assert!(bad(vec![EnvEdit {
+            key: "1X".into(),
+            value: Some("a".into())
+        }]));
+        assert!(bad(vec![
+            EnvEdit {
+                key: "A".into(),
+                value: Some("x".into())
+            },
+            EnvEdit {
+                key: "A".into(),
+                value: Some("y".into())
+            }
+        ]));
+        assert!(bad(vec![EnvEdit {
+            key: "A".into(),
+            value: Some("x\ny".into())
+        }]));
+        assert!(
+            bad(vec![EnvEdit {
+                key: "NEW".into(),
+                value: None
+            }]),
+            "a new key needs a value"
+        );
+        let mut compose = inspect();
+        compose["Config"]["Labels"]["com.docker.compose.project"] = "shop".into();
+        assert!(recreate_plan(&compose, &[])
+            .unwrap_err()
+            .contains("compose file"));
+    }
+}

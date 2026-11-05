@@ -65,6 +65,20 @@ impl Core {
                 i.docker_relink_sites(&old, &name);
                 Ok(R::Ok)
             })(),
+            C::RecreateDockerContainer { id, env } => {
+                tracing::info!(command = "recreate_docker_container", id = %id, vars = env.len());
+                let inner = i.clone();
+                let title = format!("Update environment · {id}");
+                let target = id.clone();
+                let tid = i
+                    .tasks
+                    .start("docker-recreate", &title, &target, 5, move |h| {
+                        let ep = inner.docker_endpoint();
+                        let r = inner.docker.recreate_with_env(&ep, &id, &env, &h);
+                        crate::command::report(&h, r);
+                    });
+                Ok(R::TaskStarted { id: tid })
+            }
             C::RemoveDockerContainer { id, force, volumes } => {
                 tracing::info!(command = "remove_docker_container", id = %id, force, volumes);
                 i.docker

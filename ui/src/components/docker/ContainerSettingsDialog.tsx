@@ -1,4 +1,4 @@
-import { Copy, Lock, Settings2, Trash2 } from 'lucide-react'
+import { Copy, FileCode2, Lock, Pencil, Plus, Settings2, Trash2 } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 
 import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
@@ -14,6 +14,9 @@ import { notify } from '@/lib/notify'
 import { cn } from '@/lib/utils'
 
 type Tab = 'overview' | 'env' | 'storage' | 'settings'
+
+/** One row while editing the environment. A hidden value stays as it is unless replaced. */
+type EnvRow = { key: string; value: string; masked: boolean; replaced: boolean }
 
 const POLICIES: { id: string; label: string }[] = [
   { id: 'no', label: "Don't restart" },
@@ -44,10 +47,16 @@ export function ContainerSettingsDialog({
   id,
   onClose,
   onChanged,
+  onRunTask,
+  onEditCompose,
 }: {
   id: string
   onClose: () => void
   onChanged: () => void
+  /** Show a background task's live output (the recreate). */
+  onRunTask: (taskId: string) => void
+  /** Open a compose file in the editor. */
+  onEditCompose: (path: string) => void
 }) {
   const [d, setD] = useState<ContainerDetails | null>(null)
   const [tab, setTab] = useState<Tab>('overview')
@@ -59,6 +68,7 @@ export function ContainerSettingsDialog({
   const [retries, setRetries] = useState<number | null>(0)
   const [memory, setMemory] = useState<number | null>(0)
   const [cpus, setCpus] = useState<number | null>(0)
+  const [envRows, setEnvRows] = useState<EnvRow[] | null>(null)
 
   function take(details: ContainerDetails) {
     setD(details)
@@ -109,6 +119,48 @@ export function ContainerSettingsDialog({
       }
       notify.success('Applied without restarting the container.', { title: 'Container settings saved' })
       onChanged()
+    } catch (err) {
+      setError(asDiagnostic(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const composeFile = d?.labels['com.docker.compose.project.config_files']?.split(',')[0]?.trim() || null
+
+  function startEnvEdit() {
+    if (!d) return
+    setEnvRows(d.env.map((e) => ({ key: e.key, value: e.masked ? '' : e.value, masked: e.masked, replaced: false })))
+  }
+
+  async function saveEnv() {
+    if (!d || !envRows) return
+    const keys = envRows.map((r) => r.key.trim()).filter(Boolean)
+    if (new Set(keys).size !== keys.length) {
+      setError({ problem: 'A variable is listed twice.', cause: 'Each name can appear once.', fix: 'Remove or rename the duplicate.' })
+      return
+    }
+    const ok = await confirmAction(
+      `OLS recreates "${d.name}" with the new variables: it creates a copy, stops the old container and starts the copy under the same name. Its volumes and folders are kept. If anything fails, the old container is put back and started again. The container is down for a few seconds.`,
+      'Save and recreate the container?',
+      'Recreate',
+      'amber',
+    )
+    if (!ok) return
+    setBusy(true)
+    setError(null)
+    try {
+      const r = await runCommand({
+        type: 'recreate_docker_container',
+        id: d.id,
+        env: envRows
+          .filter((r) => r.key.trim())
+          .map((r) => ({ key: r.key.trim(), value: r.masked && !r.replaced ? null : r.value })),
+      })
+      if (r.type === 'task_started') {
+        onRunTask(r.id)
+        onClose()
+      }
     } catch (err) {
       setError(asDiagnostic(err))
     } finally {
@@ -229,18 +281,100 @@ export function ContainerSettingsDialog({
           </div>
         ) : tab === 'env' ? (
           <div className="flex flex-col gap-2">
-            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Lock className="size-3.5" /> Values of password-like variables are hidden and never leave OLS&apos;s core.
-            </p>
-            <div className="divide-y rounded-md border">
-              {d.env.length === 0 && <p className="p-3 text-sm text-muted-foreground">No environment variables.</p>}
-              {d.env.map((e) => (
-                <div key={e.key} className="grid grid-cols-1 gap-1 px-3 py-1.5 text-sm @lg:grid-cols-[minmax(0,14rem)_minmax(0,1fr)] @lg:gap-3">
-                  <span className="font-mono text-xs break-all">{e.key}</span>
-                  <span className="font-mono text-xs break-all text-muted-foreground">{e.masked ? '••••••••' : e.value || '""'}</span>
+            {d.compose_project ? (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-xs">
+                <span className="text-muted-foreground">
+                  This container belongs to the &quot;{d.compose_project}&quot; Compose stack. Change its variables in the compose file and
+                  press Up: a change made only to the container would be undone by the next Up.
+                </span>
+                {composeFile && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 shrink-0 cursor-pointer text-xs"
+                    onClick={() => {
+                      onEditCompose(composeFile)
+                      onClose()
+                    }}
+                  >
+                    <FileCode2 className="size-3.5" /> Edit compose file
+                  </Button>
+                )}
+              </div>
+            ) : (
+              !envRows && (
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Lock className="size-3.5" /> Values of password-like variables are hidden and never leave OLS&apos;s core.
+                  </p>
+                  <Button size="sm" variant="outline" className="h-7 cursor-pointer text-xs" onClick={startEnvEdit}>
+                    <Pencil className="size-3.5" /> Edit
+                  </Button>
                 </div>
-              ))}
-            </div>
+              )
+            )}
+            {envRows ? (
+              <div className="flex flex-col gap-2">
+                <p className="text-xs text-muted-foreground">
+                  Hidden values stay as they are unless you type a new one. Saving recreates the container (a few seconds of
+                  downtime); its volumes and folders are kept.
+                </p>
+                {envRows.map((r, i) => (
+                  <div key={i} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 @lg:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_auto]">
+                    <Input
+                      value={r.key}
+                      onChange={(e) => setEnvRows(envRows.map((x, j) => (j === i ? { ...x, key: e.target.value } : x)))}
+                      placeholder="NAME"
+                      className="h-8 font-mono text-xs"
+                    />
+                    <Input
+                      value={r.value}
+                      onChange={(e) => setEnvRows(envRows.map((x, j) => (j === i ? { ...x, value: e.target.value, replaced: true } : x)))}
+                      placeholder={r.masked ? 'hidden: leave empty to keep it' : 'value'}
+                      type={r.masked ? 'password' : 'text'}
+                      className="order-3 col-span-2 h-8 font-mono text-xs @lg:order-none @lg:col-span-1"
+                    />
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="size-8 cursor-pointer justify-self-end p-0"
+                      title={`Remove ${r.key || 'variable'}`}
+                      onClick={() => setEnvRows(envRows.filter((_, j) => j !== i))}
+                    >
+                      <Trash2 className="size-4 text-destructive/80" />
+                    </Button>
+                  </div>
+                ))}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 cursor-pointer text-xs"
+                    onClick={() => setEnvRows([...envRows, { key: '', value: '', masked: false, replaced: true }])}
+                  >
+                    <Plus className="size-3.5" /> Add variable
+                  </Button>
+                  <span className="flex gap-2">
+                    <Button size="sm" variant="ghost" className="cursor-pointer" disabled={busy} onClick={() => setEnvRows(null)}>
+                      Cancel
+                    </Button>
+                    <Button size="sm" className="cursor-pointer" disabled={busy} onClick={() => void saveEnv()}>
+                      {busy && <Spinner className="size-3.5" />} Save &amp; recreate
+                    </Button>
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="divide-y rounded-md border">
+                {d.env.length === 0 && <p className="p-3 text-sm text-muted-foreground">No environment variables.</p>}
+                {d.env.map((e) => (
+                  <div key={e.key} className="grid grid-cols-1 gap-1 px-3 py-1.5 text-sm @lg:grid-cols-[minmax(0,14rem)_minmax(0,1fr)] @lg:gap-3">
+                    <span className="font-mono text-xs break-all">{e.key}</span>
+                    <span className="font-mono text-xs break-all text-muted-foreground">{e.masked ? '••••••••' : e.value || '""'}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ) : tab === 'storage' ? (
           <div className="flex flex-col gap-4 text-sm">
@@ -293,8 +427,8 @@ export function ContainerSettingsDialog({
         ) : (
           <div className="flex flex-col gap-4 text-sm">
             <p className="text-xs text-muted-foreground">
-              These apply right away, without restarting the container. Ports, environment and volumes need the container to be
-              recreated: change them in its compose file and press Up.
+              These apply right away, without restarting the container. Environment variables are edited on the Environment tab.
+              Ports and volumes need the container to be recreated: change them in its compose file and press Up.
             </p>
             <label className="flex flex-col gap-1.5">
               <span className="font-medium">Name</span>

@@ -350,3 +350,104 @@ fn container_settings_round_trip() {
         ]
     );
 }
+
+const RECREATE_INSPECT: &str = r#"{"Id":"u1","Name":"/uptime","State":{"Running":true},
+    "Config":{"Image":"louislam/uptime-kuma:1","Env":["TZ=UTC","ADMIN_PASSWORD=s3cret"],"Labels":{}},
+    "HostConfig":{"NetworkMode":"bridge","Binds":[]},
+    "Mounts":[{"Type":"volume","Name":"anonvol","Destination":"/app/data","RW":true}],
+    "NetworkSettings":{"Networks":{"bridge":{"Aliases":null}}}}"#;
+
+fn recreate_engine(method: &str, path: &str) -> (u16, String) {
+    match (method, path) {
+        ("GET", "/containers/u1/json") => (200, RECREATE_INSPECT.into()),
+        ("POST", p) if p.starts_with("/containers/u1/rename?name=") => (204, String::new()),
+        ("POST", "/containers/create?name=uptime") => (201, r#"{"Id":"n1","Warnings":[]}"#.into()),
+        ("POST", "/containers/u1/stop") | ("POST", "/containers/n1/start") => (204, String::new()),
+        ("DELETE", "/containers/u1?v=false") => (204, String::new()),
+        _ => (500, r#"{"message":"unexpected"}"#.into()),
+    }
+}
+
+fn recreate_engine_start_fails(method: &str, path: &str) -> (u16, String) {
+    match (method, path) {
+        ("POST", "/containers/n1/start") => {
+            (500, r#"{"message":"port is already allocated"}"#.into())
+        }
+        ("DELETE", "/containers/n1?force=true&v=false") => (204, String::new()),
+        ("POST", "/containers/u1/start") => (204, String::new()),
+        _ => recreate_engine(method, path),
+    }
+}
+
+fn run_recreate(fake: &FakeEngine, edits: Vec<details::EnvEdit>) -> crate::tasks::TaskView {
+    let tasks = crate::tasks::TaskManager::new();
+    let m = std::sync::Arc::new(DockerManager::new());
+    let ep = fake.endpoint.clone();
+    let id = tasks.start("t", "t", "recreate", 5, move |h| {
+        let r = m.recreate_with_env(&ep, "u1", &edits, &h);
+        crate::command::report(&h, r);
+    });
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while tasks.is_running(&id) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    tasks.get(&id).unwrap()
+}
+
+#[test]
+fn recreate_swaps_containers_and_keeps_data() {
+    let fake = FakeEngine::start(recreate_engine);
+    let t = run_recreate(
+        &fake,
+        vec![
+            details::EnvEdit {
+                key: "TZ".into(),
+                value: Some("Africa/Cairo".into()),
+            },
+            details::EnvEdit {
+                key: "ADMIN_PASSWORD".into(),
+                value: None,
+            },
+        ],
+    );
+    assert!(t.error.is_none(), "{:?}", t.error);
+    let seen = fake.seen.lock().unwrap().clone();
+    let order: Vec<&str> = seen.iter().map(|s| s.split('?').next().unwrap()).collect();
+    assert_eq!(
+        order,
+        vec![
+            "GET /containers/u1/json",
+            "POST /containers/u1/rename",
+            "POST /containers/create",
+            "POST /containers/u1/stop",
+            "POST /containers/n1/start",
+            "DELETE /containers/u1",
+        ]
+    );
+    assert!(seen[1].contains("name=uptime-ols-old-"), "{}", seen[1]);
+}
+
+#[test]
+fn recreate_restores_the_old_container_when_the_new_one_fails() {
+    let fake = FakeEngine::start(recreate_engine_start_fails);
+    let t = run_recreate(
+        &fake,
+        vec![details::EnvEdit {
+            key: "TZ".into(),
+            value: Some("UTC".into()),
+        }],
+    );
+    let err = t.error.expect("fails");
+    assert!(err.cause.contains("port is already allocated"), "{err:?}");
+    assert!(err.problem.contains("old one was restarted"), "{err:?}");
+    let seen = fake.seen.lock().unwrap().clone();
+    assert_eq!(
+        &seen[seen.len() - 3..],
+        &[
+            "DELETE /containers/n1?force=true&v=false".to_string(),
+            "POST /containers/u1/rename?name=uptime".to_string(),
+            "POST /containers/u1/start".to_string(),
+        ],
+        "new removed, old renamed back and started"
+    );
+}

@@ -365,3 +365,4 @@ rename_docker_container | triggers | Inner::docker_relink_sites (DockerLink.cont
 ols-mcp | maps | ols_docker_container_details, ols_docker_container_update (no rename/remove tools)
 ComposeBuilderDialog | mounts | PresetEditorDialog (save/delete_docker_compose_preset); lists list_docker_compose_presets (built-in + custom)
 plan/create_docker_compose | use | presets::catalog(Inner::docker_custom_presets)
+ContainerSettingsDialog | calls | recreate_docker_container (TaskOutputDialog follows the docker-recreate task) and opens ComposeEditorDialog for Compose containers

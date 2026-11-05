@@ -254,6 +254,12 @@ pub enum CoreCommand {
         id: String,
         name: String,
     },
+    /// §166: change a (non-Compose) container's environment by recreating it, as a
+    /// background task that restores the old container on any failure (UI only).
+    RecreateDockerContainer {
+        id: String,
+        env: Vec<crate::docker::details::EnvEdit>,
+    },
     /// §166: remove a container (UI only). `force` stops it first; `volumes` also removes
     /// its anonymous volumes.
     RemoveDockerContainer {

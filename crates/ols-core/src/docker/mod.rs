@@ -355,6 +355,186 @@ impl DockerManager {
             .map_err(|e| to_core_error(e, "remove the container"))
     }
 
+    /// Recreates a (non-Compose) container with a new environment, the way Portainer does:
+    /// set the old one aside under a temporary name, create the new one under the real
+    /// name, stop the old one and start the new one, then remove the old one. Any failure
+    /// after the old container was touched puts it back exactly as it was.
+    /// Runs on a task thread; returns the new container's id.
+    pub fn recreate_with_env(
+        &self,
+        endpoint: &Endpoint,
+        id: &str,
+        edits: &[details::EnvEdit],
+        task: &crate::tasks::TaskHandle,
+    ) -> Result<String, CoreError> {
+        check_ref(id)?;
+        let fail = |what: &str, e: ClientError| to_core_error(e, what);
+        task.begin_step("Read the container's settings");
+        let v: serde_json::Value = self
+            .call(
+                endpoint,
+                "GET",
+                &format!("/containers/{id}/json"),
+                LIST_TIMEOUT,
+            )
+            .and_then(|r| r.json())
+            .map_err(|e| fail("read the container's settings", e))?;
+        let plan = details::recreate_plan(&v, edits).map_err(|cause| {
+            CoreError::failed_fix(
+                "The environment was not changed.",
+                cause,
+                "Correct the variables, or edit the compose file for a Compose container.",
+            )
+        })?;
+        let name = v["Name"]
+            .as_str()
+            .unwrap_or_default()
+            .trim_start_matches('/')
+            .to_string();
+        let old_id = v["Id"].as_str().unwrap_or_default().to_string();
+        let was_running = v["State"]["Running"].as_bool().unwrap_or(false);
+        if !types::valid_container_ref(&name) || !types::valid_container_ref(&old_id) {
+            return Err(CoreError::failed(
+                "The container could not be recreated.",
+                "Docker reported an unexpected name or id.",
+            ));
+        }
+        task.end_step(None);
+
+        let backup = format!("{name}-ols-old-{}", chrono::Utc::now().timestamp());
+        task.begin_step("Set the old container aside");
+        self.call(
+            endpoint,
+            "POST",
+            &format!("/containers/{old_id}/rename?name={backup}"),
+            ACTION_TIMEOUT,
+        )
+        .map_err(|e| fail("set the old container aside", e))?;
+        task.end_step(Some(backup.clone()));
+
+        // From here on, failures restore the old container.
+        let restore = |new_id: Option<&str>, start_old: bool| {
+            if let Some(n) = new_id {
+                let _ = self.call(
+                    endpoint,
+                    "DELETE",
+                    &format!("/containers/{n}?force=true&v=false"),
+                    ACTION_TIMEOUT,
+                );
+            }
+            let _ = self.call(
+                endpoint,
+                "POST",
+                &format!("/containers/{old_id}/rename?name={name}"),
+                ACTION_TIMEOUT,
+            );
+            if start_old {
+                let _ = self.call(
+                    endpoint,
+                    "POST",
+                    &format!("/containers/{old_id}/start"),
+                    ACTION_TIMEOUT,
+                );
+            }
+            *self.lock_cache() = None;
+        };
+
+        task.begin_step("Create the new container");
+        let created = self
+            .call_body(
+                endpoint,
+                "POST",
+                &format!("/containers/create?name={name}"),
+                Some(serde_json::to_vec(&plan.create_body).unwrap_or_default()),
+                ACTION_TIMEOUT,
+            )
+            .and_then(|r| r.json::<serde_json::Value>());
+        let new_id = match created {
+            Ok(r) => r["Id"].as_str().unwrap_or_default().to_string(),
+            Err(e) => {
+                restore(None, false);
+                return Err(fail("create the new container (the old one was kept)", e));
+            }
+        };
+        if !types::valid_container_ref(&new_id) {
+            restore(None, false);
+            return Err(CoreError::failed(
+                "The container could not be recreated.",
+                "Docker did not return the new container's id; the old one was kept.",
+            ));
+        }
+        for (net, aliases) in &plan.extra_networks {
+            if !types::valid_container_ref(net) {
+                task.problem(format!(
+                    "Network \"{net}\" was not joined: its name has unusual characters."
+                ));
+                continue;
+            }
+            let body = serde_json::json!({ "Container": new_id, "EndpointConfig": { "Aliases": aliases } });
+            if let Err(e) = self.call_body(
+                endpoint,
+                "POST",
+                &format!("/networks/{net}/connect"),
+                Some(serde_json::to_vec(&body).unwrap_or_default()),
+                ACTION_TIMEOUT,
+            ) {
+                restore(Some(&new_id), false);
+                return Err(fail(
+                    &format!("join network {net} (the old container was kept)"),
+                    e,
+                ));
+            }
+        }
+        task.end_step(None);
+
+        if was_running {
+            task.begin_step("Stop the old container and start the new one");
+            if let Err(e) = self.call(
+                endpoint,
+                "POST",
+                &format!("/containers/{old_id}/stop"),
+                ACTION_TIMEOUT,
+            ) {
+                restore(Some(&new_id), false);
+                return Err(fail("stop the old container (nothing was changed)", e));
+            }
+            if let Err(e) = self.call(
+                endpoint,
+                "POST",
+                &format!("/containers/{new_id}/start"),
+                ACTION_TIMEOUT,
+            ) {
+                restore(Some(&new_id), true);
+                return Err(fail(
+                    "start the new container (the old one was restarted)",
+                    e,
+                ));
+            }
+            task.end_step(None);
+        }
+
+        task.begin_step("Remove the old container");
+        // v=false: its volumes stay; the new container already uses them.
+        if let Err(e) = self.call(
+            endpoint,
+            "DELETE",
+            &format!("/containers/{old_id}?v=false"),
+            ACTION_TIMEOUT,
+        ) {
+            task.problem(format!(
+                "The old container \"{backup}\" could not be removed ({}); remove it from the Docker page.",
+                diagnostic_cause(&e)
+            ));
+        }
+        task.end_step(None);
+        task.result(format!(
+            "{name} now runs with {} environment variables.",
+            plan.env.len()
+        ));
+        *self.lock_cache() = None;
+        Ok(new_id)
+    }
+
     fn lock_cache(&self) -> std::sync::MutexGuard<'_, Option<CachedList>> {
         self.containers.lock().unwrap_or_else(|p| p.into_inner())
     }
