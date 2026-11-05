@@ -244,6 +244,41 @@ pub enum CoreCommand {
     GetDockerContainer {
         id: String,
     },
+    /// §166 Images tab.
+    ListDockerImages,
+    /// §166 Volumes tab (sizes when disk usage was read in the last minute).
+    ListDockerVolumes,
+    /// §166 disk usage (`/system/df`, cached 60 s unless `fresh`).
+    GetDockerDiskUsage {
+        #[serde(default)]
+        fresh: bool,
+    },
+    /// §166: remove an image (UI only). `force` also untags it from stopped containers.
+    RemoveDockerImage {
+        id: String,
+        #[serde(default)]
+        force: bool,
+    },
+    /// §166: remove a volume and its data (UI only).
+    RemoveDockerVolume {
+        name: String,
+    },
+    /// §166: what Reclaim space would remove (nothing is removed).
+    PlanDockerPrune {
+        targets: crate::docker::storage::PruneTargets,
+    },
+    /// §166: Reclaim space, as a background task (UI only).
+    PruneDocker {
+        targets: crate::docker::storage::PruneTargets,
+    },
+    /// §166: `docker pull`, as a background task with live output.
+    PullDockerImage {
+        reference: String,
+    },
+    /// §166: create and start a container from an image (ports on 127.0.0.1 only).
+    RunDockerImage {
+        spec: crate::docker::storage::RunSpec,
+    },
     /// §166: a terminal running a shell inside a container (`docker exec -it`). UI only.
     OpenDockerShell {
         id: String,

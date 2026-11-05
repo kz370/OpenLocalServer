@@ -14,6 +14,7 @@ pub mod connect;
 pub mod details;
 pub mod presets;
 pub mod sites;
+pub mod storage;
 pub mod types;
 
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -45,9 +46,16 @@ struct CachedList {
 }
 
 /// Shared Docker state. Cheap to create; holds only a short-lived response cache.
+/// `/system/df` is slow on a big engine; reused for a minute.
+const DF_CACHE: Duration = Duration::from_secs(60);
+const DF_TIMEOUT: Duration = Duration::from_secs(60);
+const PRUNE_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+const PULL_TIMEOUT: Duration = Duration::from_secs(60 * 60);
+
 #[derive(Default)]
 pub struct DockerManager {
     containers: Mutex<Option<CachedList>>,
+    disk: Mutex<Option<(Instant, Endpoint, serde_json::Value)>>,
     /// Engine requests made in this session (tests assert none happen at startup).
     requests: AtomicU64,
 }
@@ -533,6 +541,304 @@ impl DockerManager {
         ));
         *self.lock_cache() = None;
         Ok(new_id)
+    }
+
+    /// `/system/df`, reused for a minute unless `fresh`.
+    fn system_df(&self, endpoint: &Endpoint, fresh: bool) -> Result<serde_json::Value, CoreError> {
+        if !fresh {
+            if let Some((at, ep, v)) = self.disk.lock().unwrap_or_else(|p| p.into_inner()).as_ref()
+            {
+                if ep == endpoint && at.elapsed() < DF_CACHE {
+                    return Ok(v.clone());
+                }
+            }
+        }
+        let v: serde_json::Value = self
+            .call(endpoint, "GET", "/system/df", DF_TIMEOUT)
+            .and_then(|r| r.json())
+            .map_err(|e| to_core_error(e, "read Docker's disk usage"))?;
+        *self.disk.lock().unwrap_or_else(|p| p.into_inner()) =
+            Some((Instant::now(), endpoint.clone(), v.clone()));
+        Ok(v)
+    }
+
+    fn forget_storage(&self) {
+        *self.lock_cache() = None;
+        *self.disk.lock().unwrap_or_else(|p| p.into_inner()) = None;
+    }
+
+    pub fn disk_usage(
+        &self,
+        endpoint: &Endpoint,
+        fresh: bool,
+    ) -> Result<storage::DiskUsage, CoreError> {
+        Ok(storage::parse_disk_usage(&self.system_df(endpoint, fresh)?))
+    }
+
+    pub fn list_images(
+        &self,
+        endpoint: &Endpoint,
+    ) -> Result<Vec<storage::ImageSummary>, CoreError> {
+        let containers = self.list_containers(endpoint, true)?;
+        let v: serde_json::Value = self
+            .call(endpoint, "GET", "/images/json", LIST_TIMEOUT)
+            .and_then(|r| r.json())
+            .map_err(|e| to_core_error(e, "list images"))?;
+        Ok(storage::parse_images(&v, &containers))
+    }
+
+    /// Volumes; sizes are filled in only when disk usage was read in the last minute.
+    pub fn list_volumes(
+        &self,
+        endpoint: &Endpoint,
+    ) -> Result<Vec<storage::VolumeSummary>, CoreError> {
+        let containers = self.list_containers(endpoint, true)?;
+        let v: serde_json::Value = self
+            .call(endpoint, "GET", "/volumes", LIST_TIMEOUT)
+            .and_then(|r| r.json())
+            .map_err(|e| to_core_error(e, "list volumes"))?;
+        let sizes = self
+            .disk
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .as_ref()
+            .filter(|(at, ep, _)| ep == endpoint && at.elapsed() < DF_CACHE)
+            .map(|(_, _, df)| storage::parse_disk_usage(df).volume_sizes)
+            .unwrap_or_default();
+        Ok(storage::parse_volumes(&v, &containers, &sizes))
+    }
+
+    pub fn remove_image(
+        &self,
+        endpoint: &Endpoint,
+        id: &str,
+        force: bool,
+    ) -> Result<(), CoreError> {
+        if !storage::valid_image_ref(id) {
+            return Err(CoreError::failed_fix(
+                "That is not an image name.",
+                format!("\"{id}\" has characters Docker never uses in an image name."),
+                "Pick the image from the Images tab.",
+            ));
+        }
+        let r = self.call(
+            endpoint,
+            "DELETE",
+            &format!("/images/{id}?force={force}"),
+            ACTION_TIMEOUT,
+        );
+        self.forget_storage();
+        r.map(|_| ())
+            .map_err(|e| to_core_error(e, "remove the image"))
+    }
+
+    pub fn remove_volume(&self, endpoint: &Endpoint, name: &str) -> Result<(), CoreError> {
+        if !storage::valid_volume_name(name) {
+            return Err(CoreError::failed_fix(
+                "That is not a volume name.",
+                format!("\"{name}\" has characters Docker never uses in a volume name."),
+                "Pick the volume from the Volumes tab.",
+            ));
+        }
+        let r = self.call(
+            endpoint,
+            "DELETE",
+            &format!("/volumes/{name}"),
+            ACTION_TIMEOUT,
+        );
+        self.forget_storage();
+        r.map(|_| ())
+            .map_err(|e| to_core_error(e, "remove the volume"))
+    }
+
+    /// The dry run for Reclaim space, from fresh disk usage.
+    pub fn prune_plan(
+        &self,
+        endpoint: &Endpoint,
+        targets: &storage::PruneTargets,
+    ) -> Result<storage::PrunePlan, CoreError> {
+        Ok(storage::prune_plan(
+            &self.system_df(endpoint, true)?,
+            targets,
+        ))
+    }
+
+    /// Runs the cleanup the user confirmed; reports what each step freed.
+    pub fn prune(
+        &self,
+        endpoint: &Endpoint,
+        targets: &storage::PruneTargets,
+        task: &crate::tasks::TaskHandle,
+    ) -> Result<u64, CoreError> {
+        // `{"dangling":["false"]}` and `{"all":["true"]}`, URL-encoded.
+        const ALL_IMAGES: &str = "?filters=%7B%22dangling%22%3A%5B%22false%22%5D%7D";
+        const ALL_VOLUMES: &str = "?filters=%7B%22all%22%3A%5B%22true%22%5D%7D";
+        let mut steps: Vec<(&str, String)> = Vec::new();
+        if targets.stopped_containers {
+            steps.push(("Remove stopped containers", "/containers/prune".into()));
+        }
+        if targets.unused_images {
+            steps.push(("Remove unused images", format!("/images/prune{ALL_IMAGES}")));
+        } else if targets.dangling_images {
+            steps.push(("Remove untagged images", "/images/prune".into()));
+        }
+        if targets.unused_volumes {
+            steps.push((
+                "Remove unused volumes",
+                format!("/volumes/prune{ALL_VOLUMES}"),
+            ));
+        }
+        if targets.build_cache {
+            steps.push(("Remove unused build cache", "/build/prune".into()));
+        }
+        if steps.is_empty() {
+            return Err(CoreError::failed_fix(
+                "Nothing was cleaned.",
+                "No kind of item was chosen.",
+                "Tick what to clean, then try again.",
+            ));
+        }
+        let mut freed = 0u64;
+        for (label, path) in steps {
+            if task.cancel_requested() {
+                break;
+            }
+            task.begin_step(label);
+            let r = self
+                .call(endpoint, "POST", &path, PRUNE_TIMEOUT)
+                .and_then(|r| r.json::<serde_json::Value>());
+            match r {
+                Ok(v) => {
+                    let space = v["SpaceReclaimed"].as_u64().unwrap_or(0);
+                    freed += space;
+                    task.end_step(Some(format!("{} MB freed", space / (1024 * 1024))));
+                }
+                Err(e) => {
+                    task.fail_step(diagnostic_cause(&e));
+                    task.problem(format!("{label}: {}", diagnostic_cause(&e)));
+                }
+            }
+        }
+        self.forget_storage();
+        task.result(format!("Freed about {} MB.", freed / (1024 * 1024)));
+        Ok(freed)
+    }
+
+    /// Creates and starts a container from an image. Returns its id.
+    pub fn run_image(
+        &self,
+        endpoint: &Endpoint,
+        spec: &storage::RunSpec,
+    ) -> Result<String, CoreError> {
+        let body = storage::run_body(spec).map_err(|cause| {
+            CoreError::failed_fix(
+                "The container was not created.",
+                cause,
+                "Correct the value and try again.",
+            )
+        })?;
+        let path = match spec
+            .name
+            .as_deref()
+            .map(str::trim)
+            .filter(|n| !n.is_empty())
+        {
+            Some(n) => format!("/containers/create?name={n}"),
+            None => "/containers/create".into(),
+        };
+        let created: serde_json::Value = self
+            .call_body(
+                endpoint,
+                "POST",
+                &path,
+                Some(serde_json::to_vec(&body).unwrap_or_default()),
+                ACTION_TIMEOUT,
+            )
+            .and_then(|r| r.json())
+            .map_err(|e| to_core_error(e, "create the container"))?;
+        let id = created["Id"].as_str().unwrap_or_default().to_string();
+        check_ref(&id)?;
+        let started = self.call(
+            endpoint,
+            "POST",
+            &format!("/containers/{id}/start"),
+            ACTION_TIMEOUT,
+        );
+        self.forget_storage();
+        started.map_err(|e| {
+            to_core_error(
+                e,
+                "start the new container (it was created; start it from the Containers tab)",
+            )
+        })?;
+        Ok(id)
+    }
+
+    /// `docker pull <reference>` with its progress as task output.
+    pub fn pull_image(
+        &self,
+        reference: &str,
+        task: &crate::tasks::TaskHandle,
+    ) -> Result<(), CoreError> {
+        if !storage::valid_image_ref(reference) {
+            return Err(CoreError::failed_fix(
+                "That is not an image name.",
+                format!("\"{reference}\" is not like nginx:1.28 or ghcr.io/org/app:1.0."),
+                "Type the image name with its tag.",
+            ));
+        }
+        let exe = find_cli().ok_or_else(|| {
+            CoreError::failed_fix(
+                "The docker command was not found.",
+                "Pulling uses the `docker` command, and it is not on PATH.",
+                "Install Docker Desktop (it adds `docker` to PATH), then restart OLS.",
+            )
+        })?;
+        task.begin_step(&format!("docker pull {reference}"));
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        let mut last = String::new();
+        let out = std::thread::scope(|scope| {
+            let watcher = scope.spawn(|| {
+                while !cancel.load(Ordering::Relaxed) {
+                    if task.cancel_requested() {
+                        cancel.store(true, Ordering::Relaxed);
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(200));
+                }
+            });
+            let out = crate::exec::run_streaming(
+                &exe,
+                &["pull".into(), reference.into()],
+                None,
+                &[],
+                PULL_TIMEOUT,
+                &cancel,
+                |line| {
+                    // Layer progress lines repeat; show each distinct line once.
+                    if !line.trim().is_empty() && line != last {
+                        task.result(line.to_string());
+                        last = line.to_string();
+                    }
+                },
+            );
+            cancel.store(true, Ordering::Relaxed);
+            let _ = watcher.join();
+            out
+        });
+        self.forget_storage();
+        if out.exit_code == Some(0) {
+            task.end_step(None);
+            Ok(())
+        } else if task.cancel_requested() {
+            Err(CoreError::failed("Stopped", "Stopped by the user."))
+        } else {
+            Err(CoreError::failed_fix(
+                format!("Pulling {reference} failed."),
+                out.combined().lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("docker pull failed").to_string(),
+                "Check the name and tag, your internet connection, and that you are signed in to a private registry.",
+            ))
+        }
     }
 
     fn lock_cache(&self) -> std::sync::MutexGuard<'_, Option<CachedList>> {

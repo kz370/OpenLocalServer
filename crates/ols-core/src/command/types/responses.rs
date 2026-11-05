@@ -450,6 +450,22 @@ pub enum CoreResponse {
     DockerContainerDetails {
         details: crate::docker::details::ContainerDetails,
     },
+    DockerImages {
+        images: Vec<crate::docker::storage::ImageSummary>,
+    },
+    DockerVolumes {
+        volumes: Vec<crate::docker::storage::VolumeSummary>,
+    },
+    DockerDiskUsage {
+        usage: crate::docker::storage::DiskUsage,
+    },
+    DockerPrunePlan {
+        plan: crate::docker::storage::PrunePlan,
+    },
+    /// A container was created and started.
+    DockerRun {
+        id: String,
+    },
     DockerComposeConnect {
         info: crate::docker::connect::ConnectInfo,
     },

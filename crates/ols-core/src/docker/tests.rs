@@ -463,3 +463,101 @@ fn container_shell_refuses_unsafe_names() {
         );
     }
 }
+
+fn storage_engine(method: &str, path: &str) -> (u16, String) {
+    match (method, path) {
+        ("GET", "/containers/json?all=1") => (
+            200,
+            r#"[{"Id":"c1","Names":["/web"],"Image":"nginx:1.28","ImageID":"sha256:aaa","State":"running","Status":"Up","Created":1,"Ports":[],"Labels":{},"Mounts":[{"Type":"volume","Name":"webdata"}]}]"#.into(),
+        ),
+        ("GET", "/images/json") => (200, r#"[{"Id":"sha256:aaa","RepoTags":["nginx:1.28"],"Size":10,"Created":5}]"#.into()),
+        ("GET", "/volumes") => (200, r#"{"Volumes":[{"Name":"webdata","Driver":"local","Labels":{}}]}"#.into()),
+        ("GET", "/system/df") => (
+            200,
+            r#"{"Images":[],"Containers":[],"Volumes":[{"Name":"webdata","UsageData":{"Size":2048,"RefCount":1}}],"BuildCache":[]}"#.into(),
+        ),
+        ("DELETE", "/images/nginx:1.28?force=false") | ("DELETE", "/volumes/webdata") => (204, String::new()),
+        ("POST", "/images/prune") => (200, r#"{"SpaceReclaimed":1048576}"#.into()),
+        ("POST", "/containers/create?name=my-web") => (201, r#"{"Id":"newc1"}"#.into()),
+        ("POST", "/containers/newc1/start") => (204, String::new()),
+        _ => (500, r#"{"message":"unexpected"}"#.into()),
+    }
+}
+
+#[test]
+fn images_volumes_and_disk_usage_through_the_engine() {
+    let fake = FakeEngine::start(storage_engine);
+    let m = DockerManager::new();
+    let images = m.list_images(&fake.endpoint).unwrap();
+    assert_eq!(images[0].used_by, vec!["web"]);
+    let before = m.list_volumes(&fake.endpoint).unwrap();
+    assert_eq!(
+        (before[0].used_by.clone(), before[0].size),
+        (vec!["web".to_string()], None),
+        "no size until disk usage is read"
+    );
+    let du = m.disk_usage(&fake.endpoint, false).unwrap();
+    assert_eq!(du.volumes, 2048);
+    let df_calls = || {
+        fake.seen
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|s| *s == "GET /system/df")
+            .count()
+    };
+    m.disk_usage(&fake.endpoint, false).unwrap();
+    assert_eq!(df_calls(), 1, "disk usage is cached");
+    assert_eq!(m.list_volumes(&fake.endpoint).unwrap()[0].size, Some(2048));
+    m.remove_image(&fake.endpoint, "nginx:1.28", false).unwrap();
+    m.disk_usage(&fake.endpoint, false).unwrap();
+    assert_eq!(df_calls(), 2, "a removal forgets the cached usage");
+    m.remove_volume(&fake.endpoint, "webdata").unwrap();
+    assert!(m.remove_volume(&fake.endpoint, "../etc").is_err());
+    let id = m
+        .run_image(
+            &fake.endpoint,
+            &storage::RunSpec {
+                image: "nginx:1.28".into(),
+                name: Some("my-web".into()),
+                ports: vec![(8080, 80)],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(id, "newc1");
+}
+
+#[test]
+fn prune_runs_only_the_chosen_steps() {
+    let fake = FakeEngine::start(storage_engine);
+    let tasks = crate::tasks::TaskManager::new();
+    let m = std::sync::Arc::new(DockerManager::new());
+    let ep = fake.endpoint.clone();
+    let id = tasks.start("t", "t", "prune", 1, move |h| {
+        let r = m.prune(
+            &ep,
+            &storage::PruneTargets {
+                dangling_images: true,
+                ..Default::default()
+            },
+            &h,
+        );
+        crate::command::report(&h, r);
+    });
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while tasks.is_running(&id) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let t = tasks.get(&id).unwrap();
+    assert!(t.error.is_none(), "{:?}", t.error);
+    assert_eq!(
+        fake.seen.lock().unwrap().clone(),
+        vec!["POST /images/prune"]
+    );
+    assert!(
+        t.results.iter().any(|r| r.contains("Freed about 1 MB")),
+        "{:?}",
+        t.results
+    );
+}

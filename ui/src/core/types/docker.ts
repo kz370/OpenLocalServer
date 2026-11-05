@@ -157,3 +157,52 @@ export type ContainerUpdate = {
 
 /** `value: null` keeps the container's current value (hidden passwords); a key left out is removed. */
 export type EnvEdit = { key: string; value: string | null }
+
+export type DockerImage = {
+  id: string
+  tags: string[]
+  digest: string | null
+  size: number
+  created: number
+  used_by: string[]
+  dangling: boolean
+}
+
+export type DockerVolume = {
+  name: string
+  driver: string
+  created: string | null
+  anonymous: boolean
+  compose_project: string | null
+  used_by: string[]
+  size: number | null
+}
+
+export type DockerDiskUsage = {
+  images: number
+  images_reclaimable: number
+  containers: number
+  containers_reclaimable: number
+  volumes: number
+  volumes_reclaimable: number
+  build_cache: number
+  build_cache_reclaimable: number
+}
+
+export type PruneTargets = {
+  stopped_containers?: boolean
+  dangling_images?: boolean
+  unused_images?: boolean
+  unused_volumes?: boolean
+  build_cache?: boolean
+}
+
+export type PrunePlan = { items: { kind: string; name: string; size: number }[]; total: number }
+
+export type RunSpec = {
+  image: string
+  name?: string | null
+  ports?: [number, number][]
+  env?: [string, string][]
+  restart_policy?: string | null
+}

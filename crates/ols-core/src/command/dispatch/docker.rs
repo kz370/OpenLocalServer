@@ -45,6 +45,67 @@ impl Core {
                     .container_action(&i.docker_endpoint(), &id, action)
                     .map(|_| R::Ok)
             }
+            C::ListDockerImages => i
+                .docker
+                .list_images(&i.docker_endpoint())
+                .map(|images| R::DockerImages { images }),
+            C::ListDockerVolumes => i
+                .docker
+                .list_volumes(&i.docker_endpoint())
+                .map(|volumes| R::DockerVolumes { volumes }),
+            C::GetDockerDiskUsage { fresh } => i
+                .docker
+                .disk_usage(&i.docker_endpoint(), fresh)
+                .map(|usage| R::DockerDiskUsage { usage }),
+            C::RemoveDockerImage { id, force } => {
+                tracing::info!(command = "remove_docker_image", id = %id, force);
+                i.docker
+                    .remove_image(&i.docker_endpoint(), &id, force)
+                    .map(|_| R::Ok)
+            }
+            C::RemoveDockerVolume { name } => {
+                tracing::info!(command = "remove_docker_volume", name = %name);
+                i.docker
+                    .remove_volume(&i.docker_endpoint(), &name)
+                    .map(|_| R::Ok)
+            }
+            C::PlanDockerPrune { targets } => i
+                .docker
+                .prune_plan(&i.docker_endpoint(), &targets)
+                .map(|plan| R::DockerPrunePlan { plan }),
+            C::PruneDocker { targets } => {
+                tracing::info!(command = "prune_docker", ?targets);
+                let inner = i.clone();
+                let id = i.tasks.start(
+                    "docker-prune",
+                    "Reclaim Docker disk space",
+                    "docker",
+                    4,
+                    move |h| {
+                        let ep = inner.docker_endpoint();
+                        let r = inner.docker.prune(&ep, &targets, &h);
+                        crate::command::report(&h, r);
+                    },
+                );
+                Ok(R::TaskStarted { id })
+            }
+            C::PullDockerImage { reference } => {
+                tracing::info!(command = "pull_docker_image", reference = %reference);
+                let inner = i.clone();
+                let title = format!("Pull {reference}");
+                let target = reference.clone();
+                let id = i.tasks.start("docker-pull", &title, &target, 1, move |h| {
+                    let r = inner.docker.pull_image(&reference, &h);
+                    crate::command::report(&h, r);
+                });
+                Ok(R::TaskStarted { id })
+            }
+            C::RunDockerImage { spec } => {
+                tracing::info!(command = "run_docker_image", image = %spec.image);
+                i.docker
+                    .run_image(&i.docker_endpoint(), &spec)
+                    .map(|id| R::DockerRun { id })
+            }
             C::OpenDockerShell { id, rows, cols } => (|| {
                 tracing::info!(command = "open_docker_shell", id = %id);
                 let program = crate::docker::shell_program(&id)?;

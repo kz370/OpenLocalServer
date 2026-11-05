@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 pub const LABEL_MANAGED: &str = "dev.ols.managed";
 /// Label naming the OLS site a container serves.
 pub const LABEL_SITE: &str = "dev.ols.site";
-const LABEL_COMPOSE_PROJECT: &str = "com.docker.compose.project";
+pub(crate) const LABEL_COMPOSE_PROJECT: &str = "com.docker.compose.project";
 const LABEL_COMPOSE_SERVICE: &str = "com.docker.compose.service";
 const LABEL_COMPOSE_FILES: &str = "com.docker.compose.project.config_files";
 
@@ -64,6 +64,12 @@ pub struct ContainerSummary {
     pub ols_site: Option<String>,
     /// Created by OLS (`dev.ols.managed=true`).
     pub managed: bool,
+    /// The image's id (`sha256:...`), to tell which images are in use.
+    #[serde(default)]
+    pub image_id: String,
+    /// Names of the volumes it uses.
+    #[serde(default)]
+    pub volumes: Vec<String>,
 }
 
 /// What the Containers tab can do to one container.
@@ -131,6 +137,18 @@ pub(crate) struct EngineContainer {
     ports: Vec<EnginePort>,
     #[serde(rename = "Labels", default)]
     labels: Option<BTreeMap<String, String>>,
+    #[serde(rename = "ImageID", default)]
+    image_id: String,
+    #[serde(rename = "Mounts", default)]
+    mounts: Vec<EngineMount>,
+}
+
+#[derive(Debug, Deserialize)]
+struct EngineMount {
+    #[serde(rename = "Type", default)]
+    kind: String,
+    #[serde(rename = "Name", default)]
+    name: Option<String>,
 }
 
 impl From<EngineContainer> for ContainerSummary {
@@ -188,6 +206,13 @@ impl From<EngineContainer> for ContainerSummary {
                 .filter(|f| !f.is_empty()),
             ols_site: labels.get(LABEL_SITE).cloned(),
             managed: labels.get(LABEL_MANAGED).is_some_and(|v| v == "true"),
+            image_id: c.image_id,
+            volumes: c
+                .mounts
+                .into_iter()
+                .filter(|m| m.kind == "volume")
+                .filter_map(|m| m.name)
+                .collect(),
         }
     }
 }

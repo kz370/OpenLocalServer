@@ -1,7 +1,7 @@
 import type { AiProvider, AiRequest } from './types/ai'
 import type { QuickCommand, StartupSettings } from './types/apps'
 import type { CustomServiceDef, EnvironmentManifest, Ownership, ProcessId, ProcessSpec } from './types/base'
-import type { BuildSpec, ComposeAction, ContainerUpdate, DockerContainerAction, DockerSiteRequest, EnvEdit, ServicePreset } from './types/docker'
+import type { BuildSpec, ComposeAction, ContainerUpdate, DockerContainerAction, DockerSiteRequest, EnvEdit, PruneTargets, RunSpec, ServicePreset } from './types/docker'
 import type { XdebugSettings } from './types/environment'
 import type { LoadProfile } from './types/system'
 import type { AutoBackupSettings, AutoBackupSiteSettings, BundleOptions, OnConflict, Profile, ResourceLimits, RestoreOptions, ScheduledTask, SnapshotOptions, TunnelConfig, Worker } from './types/tasks'
@@ -69,6 +69,15 @@ export type CoreCommand =
   | { type: 'docker_container_action'; id: string; action: DockerContainerAction }
   | { type: 'get_docker_container_logs'; id: string; tail?: number }
   | { type: 'get_docker_container'; id: string }
+  | { type: 'list_docker_images' }
+  | { type: 'list_docker_volumes' }
+  | { type: 'get_docker_disk_usage'; fresh?: boolean }
+  | { type: 'remove_docker_image'; id: string; force?: boolean }
+  | { type: 'remove_docker_volume'; name: string }
+  | { type: 'plan_docker_prune'; targets: PruneTargets }
+  | { type: 'prune_docker'; targets: PruneTargets }
+  | { type: 'pull_docker_image'; reference: string }
+  | { type: 'run_docker_image'; spec: RunSpec }
   | { type: 'open_docker_shell'; id: string; rows: number; cols: number }
   | { type: 'update_docker_container'; id: string; update: ContainerUpdate }
   | { type: 'rename_docker_container'; id: string; name: string }

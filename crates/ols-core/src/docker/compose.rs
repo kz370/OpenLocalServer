@@ -1007,6 +1007,8 @@ mod tests {
             compose_file: None,
             ols_site: None,
             managed: false,
+            image_id: String::new(),
+            volumes: vec![],
         };
         let other = ContainerSummary {
             id: "c2".into(),

@@ -6,6 +6,9 @@ import { ComposeBuilderDialog } from '@/components/docker/ComposeBuilderDialog'
 import { ComposeEditorDialog } from '@/components/docker/ComposeEditorDialog'
 import { ComposeTab } from '@/components/docker/ComposeTab'
 import { ContainerSettingsDialog } from '@/components/docker/ContainerSettingsDialog'
+import { ImagesTab } from '@/components/docker/ImagesTab'
+import { VolumesTab } from '@/components/docker/VolumesTab'
+import { Pagination } from '@/components/ui/pagination'
 import { CreateSiteDialog } from '@/components/docker/CreateSiteDialog'
 import { CopyId, GroupHeading, Row, RowList } from '@/components/docker/DockerRows'
 import { LogsDialog } from '@/components/docker/LogsDialog'
@@ -37,7 +40,7 @@ import { cn } from '@/lib/utils'
  *   being followed.
  */
 
-type Tab = 'containers' | 'compose'
+type Tab = 'containers' | 'images' | 'volumes' | 'compose'
 
 type Filter = 'all' | 'running' | 'sites' | 'managed'
 
@@ -74,6 +77,8 @@ export default function DockerPage() {
   const [taskId, setTaskId] = useState<string | null>(null)
   const [settingsFor, setSettingsFor] = useState<string | null>(null)
   const [shellFor, setShellFor] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+  const [perPage, setPerPage] = useState(25)
   const [composeReload, setComposeReload] = useState(0)
 
   // Callers that refresh on demand show the spinner first; the first load starts with it on.
@@ -176,14 +181,18 @@ export default function DockerPage() {
   )
 
   // Compose stacks first (the engine order already puts them first), loose containers last.
+  // One page of containers, still grouped by Compose project.
+  const pageCount = Math.max(1, Math.ceil(visible.length / perPage))
+  const currentPage = Math.min(page, pageCount)
+  const pageRows = useMemo(() => visible.slice((currentPage - 1) * perPage, currentPage * perPage), [visible, currentPage, perPage])
   const groups = useMemo(() => {
     const map = new Map<string, DockerContainer[]>()
-    for (const c of visible) {
+    for (const c of pageRows) {
       const key = c.compose_project ?? ''
       map.set(key, [...(map.get(key) ?? []), c])
     }
     return [...map.entries()]
-  }, [visible])
+  }, [pageRows])
 
   const runningCount = containers.filter((c) => c.state === 'running').length
   const siteCount = containers.filter((c) => c.ols_site).length
@@ -216,6 +225,8 @@ export default function DockerPage() {
           {(
             [
               ['containers', 'Containers'],
+              ['images', 'Images'],
+              ['volumes', 'Volumes'],
               ['compose', 'Compose'],
             ] as const
           ).map(([id, label]) => (
@@ -234,6 +245,13 @@ export default function DockerPage() {
             </button>
           ))}
         </div>
+      )}
+
+      {tab === 'images' && status?.running && (
+        <ImagesTab reloadKey={composeReload} onRunTask={setTaskId} onChanged={() => void refresh()} />
+      )}
+      {tab === 'volumes' && status?.running && (
+        <VolumesTab reloadKey={composeReload} onRunTask={setTaskId} onChanged={() => void refresh()} />
       )}
 
       {tab === 'compose' && status && (status.running || status.installed) && (
@@ -266,7 +284,10 @@ export default function DockerPage() {
                   aria-selected={filter === f.id}
                   variant={filter === f.id ? 'secondary' : 'ghost'}
                   className="h-7 cursor-pointer text-xs"
-                  onClick={() => setFilter(f.id)}
+                  onClick={() => {
+                    setFilter(f.id)
+                    setPage(1)
+                  }}
                 >
                   {f.label}
                 </Button>
@@ -297,6 +318,20 @@ export default function DockerPage() {
                   )),
                 ])}
               </RowList>
+            )}
+            {visible.length > 0 && (
+              <Pagination
+                label="containers"
+                total={visible.length}
+                page={currentPage}
+                perPage={perPage}
+                onPage={setPage}
+                onPerPage={(n) => {
+                  setPerPage(n)
+                  setPage(1)
+                }}
+                className="border-t border-border"
+              />
             )}
           </CardContent>
         </Card>

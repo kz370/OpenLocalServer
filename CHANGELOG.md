@@ -13,6 +13,7 @@ Feature release (in development). Full notes: [`release-notes/v2.10.0.md`](./rel
 - Docker page under Sites: Docker status, one-click Start Docker, and a container list grouped by Compose project.
 - Start, stop, restart, pause and resume containers; click a port to open it; container logs; a shell inside a running container.
 - Container settings: details with copy ID (passwords hidden); rename, restart policy, memory and CPU limits without restarting; remove with confirmation; edit environment variables (recreates the container, keeps its data, rolls back on failure).
+- Images and Volumes tabs with disk usage, Reclaim space (preview first), pull, run and remove; pagination on Containers, Images and Volumes.
 - Compose tab: stacks from your projects and Docker, with Up / Stop / Restart / Down / Pull / Build and live output.
 - Compose file editor with Check (OLS rules and Docker's own check) and Save with backup.
 - Compose builder: pick services, free ports picked for you, passwords kept in the Windows credential store.

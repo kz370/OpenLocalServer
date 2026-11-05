@@ -467,6 +467,30 @@ fn mcp_tools() -> Vec<McpTool> {
             }),
         },
         McpTool {
+            name: "ols_docker_list_images".into(),
+            description: Some("List Docker images with tags, size, age, and the containers that use each one.".to_string()),
+            input_schema: json!({ "type": "object", "properties": {} }),
+        },
+        McpTool {
+            name: "ols_docker_list_volumes".into(),
+            description: Some("List Docker volumes with their Compose project, whether they are unnamed, the containers using them, and size (when disk usage was read in the last minute).".to_string()),
+            input_schema: json!({ "type": "object", "properties": {} }),
+        },
+        McpTool {
+            name: "ols_docker_disk_usage".into(),
+            description: Some("How much disk Docker uses for images, containers, volumes and build cache, and how much of each is unused. Cached for a minute.".to_string()),
+            input_schema: json!({ "type": "object", "properties": {} }),
+        },
+        McpTool {
+            name: "ols_docker_pull_image".into(),
+            description: Some("Pull an image (e.g. nginx:1.28) as a background task; returns the task id (follow it with ols_list_tasks).".to_string()),
+            input_schema: json!({
+                "type": "object",
+                "properties": { "reference": { "type": "string" } },
+                "required": ["reference"]
+            }),
+        },
+        McpTool {
             name: "ols_docker_compose_list".into(),
             description: Some("List Docker Compose stacks: compose files in registered projects plus stacks Docker is running, with each service's image, ports and state.".to_string()),
             input_schema: json!({ "type": "object", "properties": {} }),
@@ -1132,6 +1156,12 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
                 memory_mb: args.get("memory_mb").and_then(|v| v.as_u64()),
                 cpus: args.get("cpus").and_then(|v| v.as_f64()),
             },
+        },
+        "ols_docker_list_images" => C::ListDockerImages,
+        "ols_docker_list_volumes" => C::ListDockerVolumes,
+        "ols_docker_disk_usage" => C::GetDockerDiskUsage { fresh: false },
+        "ols_docker_pull_image" => C::PullDockerImage {
+            reference: req_str!("reference"),
         },
         "ols_docker_compose_list" => C::ListDockerComposeStacks,
         "ols_docker_compose_check" => {
@@ -2272,6 +2302,14 @@ mod tests {
 
     #[test]
     fn docker_tools_build_commands() {
+        assert!(matches!(
+            build_command("ols_docker_pull_image", &json!({ "reference": "nginx:1.28" })).unwrap(),
+            CoreCommand::PullDockerImage { reference } if reference == "nginx:1.28"
+        ));
+        assert!(matches!(
+            build_command("ols_docker_disk_usage", &json!({})).unwrap(),
+            CoreCommand::GetDockerDiskUsage { fresh: false }
+        ));
         match build_command(
             "ols_docker_container_update",
             &json!({ "id": "db", "memory_mb": 512, "cpus": 1.5 }),
