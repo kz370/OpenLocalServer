@@ -368,3 +368,6 @@ plan/create_docker_compose | use | presets::catalog(Inner::docker_custom_presets
 ContainerSettingsDialog | calls | recreate_docker_container (TaskOutputDialog follows the docker-recreate task) and opens ComposeEditorDialog for Compose containers
 open_docker_shell | uses | TerminalManager::open with TerminalSpec.program = docker exec
 DockerPage / ComposeTab | mount | ProjectTerminal (container mode) in a Shell dialog
+ImagesTab / VolumesTab | mount | DiskUsageBar -> ReclaimDialog (plan_docker_prune, prune_docker); Pagination
+prune_docker / pull_docker_image | run_in | TaskManager (docker-prune / docker-pull), followed in TaskOutputDialog
+ols-mcp | maps | ols_docker_list_images, ols_docker_list_volumes, ols_docker_disk_usage, ols_docker_pull_image
