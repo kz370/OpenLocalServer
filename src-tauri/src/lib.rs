@@ -38,13 +38,21 @@ async fn run_command(
         CoreCommand::SetSetting { key, value }
             if key == "diagnostics.auto_fix" && value.as_bool() == Some(true)
     );
-    let dispatched = tauri::async_runtime::spawn_blocking(move || core.dispatch(command))
-        .await
-        .map_err(|e| Diagnostic {
-            problem: "The command crashed.".into(),
-            cause: e.to_string(),
-            fix: None,
-        })?;
+    // The Repair page's Diagnose button fixes safe problems first (when auto-fix is on),
+    // so the list it shows is what is still wrong.
+    let fix_before_diagnosing = matches!(&command, CoreCommand::PlanRepair { .. });
+    let dispatched = tauri::async_runtime::spawn_blocking(move || {
+        if fix_before_diagnosing {
+            run_auto_fix(&core);
+        }
+        core.dispatch(command)
+    })
+    .await
+    .map_err(|e| Diagnostic {
+        problem: "The command crashed.".into(),
+        cause: e.to_string(),
+        fix: None,
+    })?;
     // Any command can start or stop things, so the tray, taskbar, in-app mark
     // and live tray tooltip are refreshed after every command — but in the
     // background. `sync_tray_tooltip` asks the ServiceManager for its aggregate,
@@ -73,6 +81,21 @@ struct AutoFixTrigger(std::sync::Arc<tokio::sync::Notify>);
 const AUTO_FIX_FALLBACK: Duration = Duration::from_secs(30 * 60);
 /// Lets a burst of events settle before one scan.
 const AUTO_FIX_DEBOUNCE: Duration = Duration::from_secs(2);
+
+/// Runs the safe automatic fixes and reports each result as a notification.
+fn run_auto_fix(core: &Core) {
+    for result in core.auto_fix_diagnostics() {
+        if result.ok {
+            notify(core, "Diagnostics", &format!("Fixed: {}", result.problem));
+        } else {
+            notify(
+                core,
+                "Automatic fix failed",
+                &format!("{}: {}", result.problem, result.detail),
+            );
+        }
+    }
+}
 
 /// Health-check variant of `run_command` that streams completed stages to the UI.
 #[tauri::command]
@@ -2180,20 +2203,7 @@ pub fn run() {
                     let _ = tokio::time::timeout(Duration::ZERO, auto_fix_trigger.notified()).await;
                     let core = worker_core.clone();
                     // Fixes can wait on child processes for minutes, so stay off the async threads.
-                    let results = tauri::async_runtime::spawn_blocking(move || {
-                        let results = core.auto_fix_diagnostics();
-                        for result in &results {
-                            if result.ok {
-                                notify(&core, "Diagnostics", &format!("Fixed: {}", result.problem));
-                            } else {
-                                notify(
-                                    &core,
-                                    "Automatic fix failed",
-                                    &format!("{}: {}", result.problem, result.detail),
-                                );
-                            }
-                        }
-                    })
+                    let results = tauri::async_runtime::spawn_blocking(move || run_auto_fix(&core))
                     .await;
                     if let Err(error) = results {
                         tracing::warn!(error = %error, "the diagnostics auto-fix worker crashed");
