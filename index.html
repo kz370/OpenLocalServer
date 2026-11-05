@@ -146,7 +146,7 @@
               <img
                 src="website/assets/img/dashboard.webp"
                 width="1920"
-                height="1158"
+                height="1032"
                 alt="The OLS dashboard: environment overview with CPU, RAM and disk donuts and a traffic graph, the web server card, and a services list with per-service ports, state and start, stop, restart, reload and log controls."
               />
             </div>
@@ -154,30 +154,38 @@
         </div>
       </section>
 
-      <!-- ── 2.9.0 release highlights ─────────────────────────── -->
-      <section class="section" id="release-2-9">
+      <!-- ── 2.10.0 release highlights ────────────────────────── -->
+      <section class="section" id="release-2-10">
         <div class="wrap">
           <div class="section__head reveal">
-            <div class="eyebrow">What's new · v2.9.0</div>
-            <h2>Clearer controls and steadier workflows</h2>
-            <p>OLS 2.9.0 sharpens the Sites controls, steadies page layouts, adds paginated task history, and gives editor settings their own home.</p>
+            <div class="eyebrow">What's new · v2.10.0</div>
+            <h2>Docker, managed like the rest of your sites</h2>
+            <p>OLS 2.10.0 adds a Docker page: run containers and Compose stacks, build and edit compose files, connect containers to your OLS sites and services, and give any container a local domain with HTTPS. Docker stays optional, and nothing Docker-related runs until you open the page.</p>
           </div>
           <div class="features">
             <article class="card reveal">
-              <h3>Clearer Sites controls</h3>
-              <p>Common site actions are easier to find and use.</p>
+              <h3>Containers and Compose stacks</h3>
+              <p>Start, stop, restart and pause containers, read their logs, and run Up, Down, Pull and Build on the stacks in your projects with live output.</p>
             </article>
             <article class="card reveal">
-              <h3>Steadier page layouts</h3>
-              <p>Sites, Projects, and Runtimes keep their layout stable while content refreshes.</p>
+              <h3>Compose builder and editor</h3>
+              <p>Pick services such as MariaDB, PostgreSQL, Redis or Mailpit, or your own presets. OLS picks free ports and keeps passwords in the Windows credential store, never in the file. Check a file before you run it.</p>
             </article>
             <article class="card reveal">
-              <h3>Paginated Background Tasks</h3>
-              <p>Task history is easier to scan and navigate.</p>
+              <h3>A site for any container</h3>
+              <p>Give a container a local domain with trusted HTTPS in one click. If it comes back on another port, the site follows it.</p>
             </article>
             <article class="card reveal">
-              <h3>Dedicated Editors settings</h3>
-              <p>Editor settings now have their own sidebar section, separate from General.</p>
+              <h3>Connect to OLS</h3>
+              <p>One switch lets a stack's containers reach your OLS sites by name, trust OLS's local certificate and use its databases and Mailpit, without changing your compose file.</p>
+            </article>
+            <article class="card reveal">
+              <h3>Container settings</h3>
+              <p>Copy a container's ID, see its ports, volumes and networks, and change its restart policy and memory or CPU limits without restarting it.</p>
+            </article>
+            <article class="card reveal">
+              <h3>A sidebar you choose</h3>
+              <p>Settings → Sidebar hides the pages you don't use. The core pages always stay, and hidden pages still open from search.</p>
             </article>
           </div>
         </div>
@@ -449,6 +457,12 @@
               <button class="tab" role="tab" id="tab-tunnels" aria-controls="panel-tunnels" aria-selected="false" data-target="tunnels">
                 <span class="tab__dot"></span>Tunnels
               </button>
+              <button class="tab" role="tab" id="tab-docker" aria-controls="panel-docker" aria-selected="false" data-target="docker">
+                <span class="tab__dot"></span>Docker
+              </button>
+              <button class="tab" role="tab" id="tab-compose" aria-controls="panel-compose" aria-selected="false" data-target="docker-compose">
+                <span class="tab__dot"></span>Compose
+              </button>
             </div>
 
             <div class="panels">
@@ -459,7 +473,7 @@
                     <span class="shot__title">Dashboard</span>
                   </div>
                   <div class="shot__img">
-                    <img src="website/assets/img/dashboard.webp" width="1920" height="1158" loading="lazy" alt="Dashboard with an overview of sites and projects, CPU, RAM and disk rings, a traffic graph, the web server status card, the services list, diagnostics and environment health." />
+                    <img src="website/assets/img/dashboard.webp" width="1920" height="1032" loading="lazy" alt="Dashboard with an overview of sites and projects, CPU, RAM and disk rings, a traffic graph, the web server status card, the services list, diagnostics and environment health." />
                   </div>
                 </figure>
                 <p class="panel__caption">
@@ -475,7 +489,7 @@
                     <span class="shot__title">Sites</span>
                   </div>
                   <div class="shot__img">
-                    <img src="website/assets/img/sites.webp" width="1920" height="1032" loading="lazy" alt="The Sites page: one table of sites and projects with a checkbox on every row, one row selected and a bulk bar offering Enable, Add auto domain, Disable, a web server dropdown with Move sites, Delete and Clear. Filters for all, PHP and static HTML, and rows-per-page and page controls at the foot of the table." />
+                    <img src="website/assets/img/sites.webp" width="1710" height="920" loading="lazy" alt="The Sites page: one table of sites and projects with a checkbox on every row, one row selected and a bulk bar offering Enable, Add auto domain, Disable, a web server dropdown with Move sites, Delete and Clear. Filters for all, PHP and static HTML, and rows-per-page and page controls at the foot of the table." />
                   </div>
                 </figure>
                 <p class="panel__caption">
@@ -491,7 +505,7 @@
                     <span class="shot__title">Projects</span>
                   </div>
                   <div class="shot__img">
-                    <img src="website/assets/img/projects.webp" width="1920" height="1032" loading="lazy" alt="The Projects page showing project folders, project types, connected sites, search, and actions to add or clone a project." />
+                    <img src="website/assets/img/projects.webp" width="1710" height="920" loading="lazy" alt="The Projects page showing project folders, project types, connected sites, search, and actions to add or clone a project." />
                   </div>
                 </figure>
                 <p class="panel__caption">
@@ -507,7 +521,7 @@
                     <span class="shot__title">Runtimes</span>
                   </div>
                   <div class="shot__img">
-                    <img src="website/assets/img/runtimes.webp" width="1920" height="1158" loading="lazy" alt="The Runtimes page listing Apache, Caddy, Composer, HeidiSQL, k6, Mailpit, MariaDB, Memcached, MongoDB, Nginx, Node.js, pgAdmin, PHP, PostgreSQL and Redis with installed versions, default badges and manage actions." />
+                    <img src="website/assets/img/runtimes.webp" width="1920" height="1032" loading="lazy" alt="The Runtimes page listing Apache, Caddy, Composer, HeidiSQL, k6, Mailpit, MariaDB, Memcached, MongoDB, Nginx, Node.js, pgAdmin, PHP, PostgreSQL and Redis with installed versions, default badges and manage actions." />
                   </div>
                 </figure>
                 <p class="panel__caption">
@@ -523,7 +537,7 @@
                     <span class="shot__title">Runtimes — PHP versions</span>
                   </div>
                   <div class="shot__img">
-                    <img src="website/assets/img/version-manager.webp" width="1920" height="1158" loading="lazy" alt="The PHP versions dialog: search and install a version, then the installed versions list with the default badge, per-version extensions, Xdebug, set default and remove." />
+                    <img src="website/assets/img/version-manager.webp" width="1920" height="1032" loading="lazy" alt="The PHP versions dialog: search and install a version, then the installed versions list with the default badge, per-version extensions, Xdebug, set default and remove." />
                   </div>
                 </figure>
                 <p class="panel__caption">
@@ -539,7 +553,7 @@
                     <span class="shot__title">Web server</span>
                   </div>
                   <div class="shot__img">
-                    <img src="website/assets/img/webserver.webp" width="1920" height="1158" loading="lazy" alt="The Web server page showing the active engine, HTTP and HTTPS ports, one aligned row per server with site counts, and the generated configuration with validate and apply controls." />
+                    <img src="website/assets/img/webserver.webp" width="1920" height="1032" loading="lazy" alt="The Web server page showing the active engine, HTTP and HTTPS ports, one aligned row per server with site counts, and the generated configuration with validate and apply controls." />
                   </div>
                 </figure>
                 <p class="panel__caption">
@@ -555,7 +569,7 @@
                     <span class="shot__title">Databases</span>
                   </div>
                   <div class="shot__img">
-                    <img src="website/assets/img/databases.webp" width="1920" height="1158" loading="lazy" alt="The Databases page showing engines with their data folders, database and user management, connection details, backup and restore, and links to external database tools." />
+                    <img src="website/assets/img/databases.webp" width="1920" height="1032" loading="lazy" alt="The Databases page showing engines with their data folders, database and user management, connection details, backup and restore, and links to external database tools." />
                   </div>
                 </figure>
                 <p class="panel__caption">
@@ -571,12 +585,44 @@
                     <span class="shot__title">Tunnels</span>
                   </div>
                   <div class="shot__img">
-                    <img src="website/assets/img/tunnels.webp" width="1920" height="1158" loading="lazy" alt="The Tunnels page: an empty state explaining that a tunnel gives a site a temporary public address, and a providers list showing Cloudflare, ngrok and LocalTunnel with the binary locations OLS found them at." />
+                    <img src="website/assets/img/tunnels.webp" width="1920" height="1032" loading="lazy" alt="The Tunnels page: an empty state explaining that a tunnel gives a site a temporary public address, and a providers list showing Cloudflare, ngrok and LocalTunnel with the binary locations OLS found them at." />
                   </div>
                 </figure>
                 <p class="panel__caption">
                   <b>Tunnels</b>
                   <span>Nothing is made public without starting it and confirming the exposure. Provider binaries are found on <code>PATH</code> or in a known location rather than installed for you; tokens stay in Windows Credential Manager.</span>
+                </p>
+              </div>
+
+              <div class="panel" role="tabpanel" id="panel-docker" aria-labelledby="tab-docker">
+                <figure class="shot">
+                  <div class="shot__bar" aria-hidden="true">
+                    <span class="shot__dot"></span><span class="shot__dot"></span><span class="shot__dot"></span>
+                    <span class="shot__title">Docker</span>
+                  </div>
+                  <div class="shot__img">
+                    <img src="website/assets/img/docker.webp" width="1920" height="1032" loading="lazy" alt="The Docker page: Docker's status and version, Containers and Compose tabs, and containers grouped by Compose project with their image, short ID, linked site, published ports, state and actions for start or stop, restart, pause, logs, create site and settings." />
+                  </div>
+                </figure>
+                <p class="panel__caption">
+                  <b>Docker</b>
+                  <span>Containers grouped by Compose project, with ports that open in the browser, the site each one serves, logs, a settings panel and Create site. OLS talks to Docker only while the page is open, and never installs it.</span>
+                </p>
+              </div>
+
+              <div class="panel" role="tabpanel" id="panel-compose" aria-labelledby="tab-compose">
+                <figure class="shot">
+                  <div class="shot__bar" aria-hidden="true">
+                    <span class="shot__dot"></span><span class="shot__dot"></span><span class="shot__dot"></span>
+                    <span class="shot__title">Compose builder</span>
+                  </div>
+                  <div class="shot__img">
+                    <img src="website/assets/img/docker-builder.webp" width="1920" height="1032" loading="lazy" alt="The New compose file dialog: a project folder, a list of services grouped as My presets, App, Database, Cache and Tools, the picked PHP + Apache and MariaDB services with their versions and automatic ports, a note that two passwords go to the Windows credential store, and a preview of the compose.yaml that will be written." />
+                  </div>
+                </figure>
+                <p class="panel__caption">
+                  <b>Compose builder</b>
+                  <span>Pick services or your own presets; OLS chooses free ports on 127.0.0.1, generates passwords into the Windows credential store, and shows the exact file before writing it. Stacks run from the Compose tab with live output.</span>
                 </p>
               </div>
             </div>

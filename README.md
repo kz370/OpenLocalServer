@@ -38,6 +38,7 @@ It is actively developed, so feedback, suggestions, and bug reports are very wel
   - [Sites, Web Servers & HTTPS](#-sites-web-servers--https)
   - [Projects & Reproducible Environments](#-projects--reproducible-environments)
   - [Databases & Services](#-databases--services)
+  - [Docker](#-docker)
   - [Dashboard & Monitoring](#-dashboard--monitoring)
   - [Sharing & Tunnels](#-sharing--tunnels)
   - [MCP Server, CLI & API](#-mcp-server-cli--api)
@@ -114,6 +115,24 @@ Grab the latest installer (`OLS-2.10.0-setup.exe`) from the [Releases page](http
   <img width="49%" src="./assets/webserver.webp" alt="Web Server — Dark Theme">
   <img width="49%" src="./assets/webserver-light.webp" alt="Web Server — Light Theme">
   <br><em>Web Server — live switching (Nginx / Apache / Caddy), syntax validation, and config history (Dark & Light)</em>
+</p>
+
+<p align="center">
+  <img width="49%" src="./assets/docker.webp" alt="Docker — Dark Theme">
+  <img width="49%" src="./assets/docker-light.webp" alt="Docker — Light Theme">
+  <br><em>Docker — containers grouped by Compose project, ports, linked sites, logs, settings, and Create site (Dark & Light)</em>
+</p>
+
+<p align="center">
+  <img width="49%" src="./assets/docker-compose.webp" alt="Docker Compose — Dark Theme">
+  <img width="49%" src="./assets/docker-compose-light.webp" alt="Docker Compose — Light Theme">
+  <br><em>Compose — stacks from your projects with Up / Stop / Restart / Down / Pull, Edit file, Connect to OLS, and Passwords (Dark & Light)</em>
+</p>
+
+<p align="center">
+  <img width="49%" src="./assets/docker-builder.webp" alt="Compose builder — Dark Theme">
+  <img width="49%" src="./assets/docker-builder-light.webp" alt="Compose builder — Light Theme">
+  <br><em>Compose builder — pick services or your own presets; free ports and stored passwords are handled for you, with a preview of the file (Dark & Light)</em>
 </p>
 
 <p align="center">
@@ -198,6 +217,19 @@ Grab the latest installer (`OLS-2.10.0-setup.exe`) from the [Releases page](http
 - **Custom services:** Start, stop, and watch any program like a built-in service, with its own arguments, port, and health check (never run through a shell).
 - **Resource limits:** Per-service limits on memory, CPU allocation, and process counts.
 
+### 🐳 Docker
+
+Docker is optional: OLS never installs it, and nothing Docker-related runs until you open the **Docker** page (under **Sites**).
+
+- **Status & containers:** Docker's status and version, one-click **Start Docker** (Docker Desktop), and every container grouped by Compose project with filters (running, linked to sites, created by OLS). Start, stop, restart, pause and resume; click a port to open it; read the last 500 log lines (secrets redacted); copy a container's ID.
+- **Container settings:** Image, command, ports, mounts, networks, labels and health, with password-like environment values hidden. Rename, change the restart policy, and set memory and CPU limits without restarting; remove a container (named volumes are kept).
+- **Compose stacks:** Compose files found in your project folders plus stacks Docker is running. **Up**, **Stop**, **Restart**, **Down** (volumes kept), **Pull** and **Build** run as background tasks with live output and a Stop button.
+- **Compose editor:** Edit a compose file in the built-in YAML editor. **Check** runs OLS's own rules (YAML, missing images, two services on one port, unpinned versions, passwords written in the file) and then Docker's `docker compose config`; **Save** keeps a backup of the previous file.
+- **Compose builder:** Create a `compose.yaml` by picking services — MariaDB, MySQL, PostgreSQL, MongoDB, Redis, Memcached, RabbitMQ, Meilisearch, Mailpit, Adminer, phpMyAdmin, PHP + Apache, Node.js, Nginx — or any image. Free ports are picked on `127.0.0.1`, passwords are generated into Windows Credential Manager and written to the file only as `${OLS_SECRET_*}` variables, and the exact file is shown before it is written.
+- **Your own presets:** Save your own services (image, versions, ports, environment with secret values, volumes, command) under **My presets**, or turn any image into a preset with **Save as preset**.
+- **Connect to OLS:** One switch per stack lets its containers open your OLS sites by name, trust OLS's local HTTPS certificate (the certificate only, mounted read-only), and reach OLS's MariaDB, Redis and Mailpit through `host.docker.internal`. OLS adds a generated override when it runs the stack; your compose file is not changed.
+- **A site for any container:** **Create site** gives a container a local domain with trusted HTTPS (a reverse proxy to its published port). If the container comes back on another port, the site follows it.
+
 ### 📊 Dashboard & Monitoring
 
 - **Consolidated Missing Folder Alerts:** Collapses missing directories and offline external drives into a single summary card on the Dashboard with batch actions (1-click **Manage in Sites**, **Ignore all** / **Unignore all**).
@@ -208,6 +240,7 @@ Grab the latest installer (`OLS-2.10.0-setup.exe`) from the [Releases page](http
 - **Overview:** Active sites and projects counts, resource usage donuts (CPU, RAM, disk), and a 30-bucket web traffic graph with hover inspector.
 - **Diagnostics & Doctor:** Detailed findings formatted as **Problem / Cause / Fix**, safe 1-click **auto-repair**, ignore rules, and redacted support bundle generation.
 - **Live System Tray Synchronization:** Real-time tray icon tooltip (`OpenLocalServer — X of Y running`) updating dynamically as sites and services change state, with dynamic green/red status marks across tray and taskbar.
+- **Sidebar you choose:** `Settings → Sidebar` hides pages you don't use. Dashboard, Projects, Sites, Web server, Databases, Services, Runtimes and Settings always stay, and hidden pages still open from search.
 - **Appearance & Aurora Themes:** Flowing Dark Aurora and Light Aurora ambient backgrounds, multi-color SVG gradient icons across sidebar and settings navigation, and token-based appearance customization (presets, WCAG 2.1 contrast math, custom accent colors). Light and dark mode each keep their own background; a gradient set in one mode is adapted for the other until you set it.
 - **Notifications:** Grouped toasts that pause on hover, live progress for background work, condition banners that clear themselves, and a notification history. Reversible actions use Undo instead of confirmation dialogs.
 - **Shared Save bar:** One fixed Save/Discard bar for unsaved settings and site changes, with `Ctrl+S`.
@@ -233,6 +266,8 @@ Grab the latest installer (`OLS-2.10.0-setup.exe`) from the [Releases page](http
   - **Services & Tunnels:** `ols_list_services`, `ols_start_service`, `ols_stop_service`, `ols_restart_service`, `ols_list_tunnels`, `ols_start_tunnel`, `ols_stop_tunnel`.
   - **Databases & Tables:** `ols_list_databases`, `ols_create_database`, `ols_list_tables`, `ols_execute_sql` (also callable as `ols_query_database`).
   - **Web Server, Commands & Tasks:** `ols_apply_web`, `ols_validate_web`, `ols_run_command`, `ols_list_tasks`.
+  - **Docker:** `ols_docker_status`, `ols_docker_start`, `ols_docker_list_containers`, `ols_docker_container_action`, `ols_docker_container_logs`, `ols_docker_container_details`, `ols_docker_container_update`, `ols_docker_create_site`, `ols_docker_compose_list`, `ols_docker_compose_check`, `ols_docker_compose_action`, `ols_docker_compose_connect`, `ols_docker_compose_presets`, `ols_docker_compose_create`. No tool removes or renames containers, and `ols_docker_compose_create` never replaces an existing file.
+  - **Hidden sites:** `ols_unignore_site` brings back a site hidden with `.ols_ignore_site`.
   - **Optional token auth:** Set a bearer token with an expiry in Settings (kept in the OS keyring) and pass it to `ols-mcp` as `--token` or `OLS_MCP_TOKEN`.
   - See [docs/MCP.md](./docs/MCP.md) for full configuration examples and tool schemas.
 
@@ -396,14 +431,14 @@ OpenLocalServer/
 │   ├── ols-core/        # Application core — CoreCommand dispatcher, state management,
 │   │                    # managers: Runtime, Service, Web, Domain, Certs, Project,
 │   │                    # ProcessSupervisor, Workers, Scheduler, Tunnel, Mail,
-│   │                    # Diagnostics, QuickApp, Plugin, Database Tools
+│   │                    # Diagnostics, QuickApp, Plugin, Database Tools, Docker
 │   ├── ols-helper/      # Elevated helper executable — manages hosts file and NRPT rules
 │   │                    # via UAC or a LocalSystem named pipe (strictly validated API)
 │   ├── ols-cli/         # CLI client (`olsc.exe`) — drives the app or background daemon
 │   └── ols-mcp/         # Stdio Model Context Protocol server (`ols-mcp.exe`) for AI hosts
 ├── src-tauri/           # Tauri 2 desktop shell (`OLS.exe`) — windowing, tray, single IPC dispatcher
 ├── ui/src/              # React 19 + Vite 8 + Tailwind CSS 4 + shadcn/ui frontend
-│   ├── pages/           # Dashboard, Sites, Projects, QuickApps, Commands, WebServer, Databases,
+│   ├── pages/           # Dashboard, Sites, Projects, Docker, QuickApps, Commands, WebServer, Databases,
 │   │                    # Services, Runtimes, Tunnels, Profiles, Plugins, Logs,
 │   │                    # Processes, Tasks, Settings, Config
 │   └── components/      # UI primitives, dialogs, form fields, and code editors
@@ -431,7 +466,7 @@ HTTP API (127.0.0.1) ─┘                                         ▼
                                                       Runtime, Service, Web, Domain,
                                                       Certs, Project, ProcessSupervisor,
                                                       Workers, Scheduler, Tunnel, Mail,
-                                                      Diagnostics, QuickApp, Plugin
+                                                      Diagnostics, QuickApp, Plugin, Docker
 ```
 
 ---
