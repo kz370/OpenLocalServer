@@ -71,16 +71,24 @@ impl Core {
                     .docker
                     .list_containers(&i.docker_endpoint(), true)
                     .unwrap_or_default();
-                Ok(R::DockerComposeStacks {
-                    stacks: compose::discover(&projects, &containers),
-                })
+                let connected = i.docker_connected();
+                let mut stacks = compose::discover(&projects, &containers);
+                for s in &mut stacks {
+                    s.connected = s.file.as_deref().is_some_and(|f| {
+                        connected.contains(&compose::path_hash(std::path::Path::new(f)))
+                    });
+                }
+                Ok(R::DockerComposeStacks { stacks })
             }
             C::ReadDockerComposeFile { path } => {
                 compose::read_file(&path).map(|content| R::DockerComposeFile { path, content })
             }
-            C::ValidateDockerCompose { path, content } => {
-                compose::validate(&path, &content).map(|check| R::DockerComposeCheck { check })
-            }
+            C::ValidateDockerCompose { path, content } => (|| {
+                let file = compose::check_compose_path(&path)?;
+                let connect = i.docker_connect_for(&file);
+                compose::validate(&path, &content, connect.as_ref())
+                    .map(|check| R::DockerComposeCheck { check })
+            })(),
             C::SaveDockerComposeFile { path, content } => {
                 tracing::info!(command = "save_docker_compose_file", path = %path);
                 compose::save_file(&path, &content, &backups()).map(|_| R::Ok)
@@ -102,10 +110,19 @@ impl Core {
                     None => format!("{} · {stack}", action.label()),
                 };
                 let target = format!("{path}#{}", service.clone().unwrap_or_default());
+                let inner = i.clone();
                 let id = i
                     .tasks
                     .start("docker-compose", &title, &target, 1, move |h| {
-                        let r = compose::run_action(&path, action, service.as_deref(), &h);
+                        // Site names and the CA are read now, so a run always has the current ones.
+                        let connect = inner.docker_connect_for(&file);
+                        let r = compose::run_action(
+                            &path,
+                            action,
+                            service.as_deref(),
+                            &h,
+                            connect.as_ref(),
+                        );
                         crate::command::report(&h, r);
                     });
                 Ok(R::TaskStarted { id })
@@ -115,17 +132,43 @@ impl Core {
             }),
             C::PlanDockerCompose { spec } => builder::plan(&spec, &crate::port::port_is_free)
                 .map(|plan| R::DockerComposePlan { plan }),
-            C::CreateDockerCompose { spec, overwrite } => {
+            C::CreateDockerCompose { spec, overwrite } => (|| {
                 tracing::info!(command = "create_docker_compose", dir = %spec.dir, overwrite);
-                builder::create(
+                let plan = builder::create(
                     &spec,
                     overwrite,
                     &backups(),
                     &crate::port::port_is_free,
                     &crate::secrets::set_secret,
-                )
-                .map(|plan| R::DockerComposePlan { plan })
-            }
+                )?;
+                // Stacks made by OLS start connected to OLS.
+                i.set_docker_connected(std::path::Path::new(&plan.file), true)?;
+                Ok(R::DockerComposePlan { plan })
+            })(),
+            C::GetDockerComposeConnect { path } => (|| {
+                let file = compose::check_compose_path(&path)?;
+                Ok(R::DockerComposeConnect {
+                    info: crate::docker::connect::info(
+                        &path,
+                        i.docker_is_connected(&file),
+                        &i.docker_connect_inputs(),
+                        i.docker_ols_endpoints(),
+                    )?,
+                })
+            })(),
+            C::SetDockerComposeConnect { path, enabled } => (|| {
+                let file = compose::check_compose_path(&path)?;
+                tracing::info!(command = "set_docker_compose_connect", path = %path, enabled);
+                i.set_docker_connected(&file, enabled)?;
+                Ok(R::DockerComposeConnect {
+                    info: crate::docker::connect::info(
+                        &path,
+                        enabled,
+                        &i.docker_connect_inputs(),
+                        i.docker_ols_endpoints(),
+                    )?,
+                })
+            })(),
             C::RevealDockerComposeSecrets { path } => (|| {
                 let text = compose::read_file(&path)?;
                 let file = compose::check_compose_path(&path)?;

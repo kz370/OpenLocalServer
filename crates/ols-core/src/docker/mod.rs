@@ -10,6 +10,7 @@
 pub mod builder;
 pub mod client;
 pub mod compose;
+pub mod connect;
 pub mod sites;
 pub mod types;
 

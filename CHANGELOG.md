@@ -16,6 +16,7 @@ Feature release (in development). Full notes: [`release-notes/v2.10.0.md`](./rel
 - Compose file editor with Check (OLS rules and Docker's own check) and Save with backup.
 - Compose builder: pick services, free ports picked for you, passwords kept in the Windows credential store.
 - Create site: a local HTTPS domain for any container that follows the container's port.
+- Connect to OLS: containers reach OLS sites by name, trust OLS's HTTPS certificate and use OLS services; the compose file is not changed.
 - MCP tools for Docker (status, start, containers, logs, Compose stacks, compose builder, create site) and `ols_unignore_site`.
 - Settings → Sidebar: hide sidebar pages you don't use; core pages always stay.
 

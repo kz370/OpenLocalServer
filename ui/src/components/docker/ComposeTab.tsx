@@ -8,6 +8,7 @@ import {
   Hammer,
   KeyRound,
   Layers,
+  Link2,
   Play,
   Power,
   RotateCw,
@@ -16,6 +17,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
+import { ConnectDialog } from '@/components/docker/ConnectDialog'
 import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
 import { ServiceIconAction } from '@/components/ServiceIconAction'
 import { Spinner } from '@/components/Spinner'
@@ -61,6 +63,7 @@ export function ComposeTab({
   const [stacks, setStacks] = useState<ComposeStack[] | null>(null)
   const [error, setError] = useState<Diagnostic | null>(null)
   const [secretsFor, setSecretsFor] = useState<{ file: string; secrets: [string, string][] } | null>(null)
+  const [connectFor, setConnectFor] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -151,6 +154,11 @@ export function ComposeTab({
                       <Badge variant={stack.running > 0 ? 'success' : 'secondary'}>
                         {stack.running}/{stack.services.length} running
                       </Badge>
+                      {stack.connected && (
+                        <Badge variant="outline" className="gap-1" title="Containers can reach your OLS sites and trust OLS's HTTPS certificate">
+                          <Link2 className="size-3" /> Connected to OLS
+                        </Badge>
+                      )}
                     </CardTitle>
                     <p className="mt-1 truncate font-mono text-xs text-muted-foreground" title={stack.file ?? undefined}>
                       {stack.file ?? 'Started outside OLS; its compose file is not on this computer.'}
@@ -160,6 +168,11 @@ export function ComposeTab({
                     {stack.file && (
                       <Button size="sm" variant="outline" className="h-7 cursor-pointer text-xs" onClick={() => onEdit(stack.file!)}>
                         <FileCode2 className="size-3.5" /> Edit file
+                      </Button>
+                    )}
+                    {stack.file && (
+                      <Button size="sm" variant="outline" className="h-7 cursor-pointer text-xs" onClick={() => setConnectFor(stack.file!)}>
+                        <Link2 className="size-3.5" /> {stack.connected ? 'Connection' : 'Connect to OLS'}
                       </Button>
                     )}
                     {stack.uses_secrets && stack.file && (
@@ -276,6 +289,10 @@ export function ComposeTab({
             </Card>
           )
         })
+      )}
+
+      {connectFor && (
+        <ConnectDialog key={connectFor} path={connectFor} onClose={() => setConnectFor(null)} onChanged={() => void load()} />
       )}
 
       <Dialog

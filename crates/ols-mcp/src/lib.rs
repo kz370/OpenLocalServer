@@ -470,6 +470,18 @@ fn mcp_tools() -> Vec<McpTool> {
             }),
         },
         McpTool {
+            name: "ols_docker_compose_connect".into(),
+            description: Some("Connect a Compose stack to OLS (or show its connection): when on, OLS adds a generated override on every run so containers reach OLS sites by name via host.docker.internal and trust OLS's local HTTPS certificate (public cert only, read-only). The compose file is not changed. Omit 'enabled' to only read the state, OLS service addresses and the override.".to_string()),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string", "description": "Full path to the compose file." },
+                    "enabled": { "type": "boolean", "description": "Turn the connection on or off. Omit to just read." }
+                },
+                "required": ["path"]
+            }),
+        },
+        McpTool {
             name: "ols_docker_compose_presets".into(),
             description: Some("Services the compose builder offers (MariaDB, MySQL, PostgreSQL, MongoDB, Redis, Memcached, RabbitMQ, Meilisearch, Mailpit, Adminer, phpMyAdmin, PHP+Apache, Node app, Nginx static) with their versions and ports.".to_string()),
             input_schema: json!({ "type": "object", "properties": {} }),
@@ -1104,6 +1116,15 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
                 service: opt_str!("service"),
             }
         }
+        "ols_docker_compose_connect" => match opt_bool!("enabled") {
+            Some(enabled) => C::SetDockerComposeConnect {
+                path: req_str!("path"),
+                enabled,
+            },
+            None => C::GetDockerComposeConnect {
+                path: req_str!("path"),
+            },
+        },
         "ols_docker_compose_presets" => C::ListDockerComposePresets,
         "ols_docker_compose_create" => {
             let spec: ols_core::docker::builder::BuildSpec = serde_json::from_value(json!({
@@ -2259,6 +2280,22 @@ mod tests {
             &json!({ "path": "x", "action": "rm" })
         )
         .is_err());
+        assert!(matches!(
+            build_command(
+                "ols_docker_compose_connect",
+                &json!({ "path": "C:/s/compose.yaml" })
+            )
+            .unwrap(),
+            CoreCommand::GetDockerComposeConnect { .. }
+        ));
+        assert!(matches!(
+            build_command(
+                "ols_docker_compose_connect",
+                &json!({ "path": "C:/s/compose.yaml", "enabled": true })
+            )
+            .unwrap(),
+            CoreCommand::SetDockerComposeConnect { enabled: true, .. }
+        ));
         match build_command(
             "ols_docker_compose_create",
             &json!({ "dir": "C:/s", "services": [{ "preset": "redis", "name": "cache" }] }),

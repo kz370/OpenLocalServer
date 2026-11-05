@@ -251,3 +251,55 @@ fn framed_and_plain_logs_become_lines() {
         vec!["plain one", "plain two"]
     );
 }
+
+/// "Connect to OLS" is stored per file and shows what it adds before it is used.
+#[test]
+fn connect_to_ols_round_trips_through_commands() {
+    use crate::command::{CoreCommand, CoreResponse};
+    let home = crate::test_support::isolated_home();
+    let settings = crate::settings::SettingsService::load(&home.paths).unwrap();
+    let core = crate::Core::new(settings, home.paths.clone());
+    let dir = home.paths.data_dir().join("proj");
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("compose.yaml");
+    std::fs::write(
+        &file,
+        "services:\n  web:\n    image: nginx:1.28\n  db:\n    image: mariadb:11.4\n",
+    )
+    .unwrap();
+    let path = file.display().to_string();
+
+    let get = |cmd| match core.dispatch(cmd).unwrap() {
+        CoreResponse::DockerComposeConnect { info } => info,
+        other => panic!("unexpected {other:?}"),
+    };
+    let before = get(CoreCommand::GetDockerComposeConnect { path: path.clone() });
+    assert!(!before.enabled);
+    assert!(before.override_yaml.contains("\"web\":") && before.override_yaml.contains("\"db\":"));
+    assert!(before.services.iter().all(|s| s
+        .address
+        .as_deref()
+        .is_none_or(|a| a.starts_with("host.docker.internal:"))));
+
+    let on = get(CoreCommand::SetDockerComposeConnect {
+        path: path.clone(),
+        enabled: true,
+    });
+    assert!(on.enabled);
+    assert!(
+        get(CoreCommand::GetDockerComposeConnect { path: path.clone() }).enabled,
+        "stored"
+    );
+    let off = get(CoreCommand::SetDockerComposeConnect {
+        path: path.clone(),
+        enabled: false,
+    });
+    assert!(!off.enabled);
+    // Only compose files are accepted.
+    assert!(core
+        .dispatch(CoreCommand::SetDockerComposeConnect {
+            path: dir.join("notes.txt").display().to_string(),
+            enabled: true
+        })
+        .is_err());
+}

@@ -70,6 +70,9 @@ pub struct ComposeStack {
     pub file_error: Option<String>,
     /// The file uses `${OLS_SECRET_*}` values that OLS supplies from the keyring.
     pub uses_secrets: bool,
+    /// "Connect to OLS" is on: runs add OLS site names and OLS's CA certificate.
+    #[serde(default)]
+    pub connected: bool,
 }
 
 /// What `validate` found. `ok` is false only for errors; warnings never block a save.
@@ -238,7 +241,7 @@ pub fn secret_key(file: &Path, var: &str) -> String {
     format!("docker-compose:{}:{var}", path_hash(file))
 }
 
-fn path_hash(file: &Path) -> String {
+pub(crate) fn path_hash(file: &Path) -> String {
     let normalized = file.to_string_lossy().replace('\\', "/").to_lowercase();
     let digest = Sha256::digest(normalized.as_bytes());
     digest.iter().take(8).map(|b| format!("{b:02x}")).collect()
@@ -485,6 +488,7 @@ pub fn discover(
                 running: 0,
                 file_error: None,
                 uses_secrets: false,
+                connected: false,
             },
         });
     }
@@ -548,6 +552,7 @@ fn stack_from_file(file: &Path, project: Option<&crate::project::Project>) -> Co
         running: 0,
         file_error,
         uses_secrets,
+        connected: false,
     }
 }
 
@@ -591,28 +596,56 @@ fn cli() -> Result<PathBuf, CoreError> {
     })
 }
 
-fn base_args(file: &Path) -> Vec<String> {
+/// "Connect to OLS" for one run: where to write the generated override, and what goes in it.
+#[derive(Debug, Clone)]
+pub struct Connect {
+    pub data_dir: PathBuf,
+    pub inputs: super::connect::ConnectInputs,
+}
+
+/// `compose -f <file> [-f <override>] --project-directory <dir>`. The project directory is
+/// always the file's own folder, so the override (kept in OLS's data folder) never changes
+/// how relative paths in the user's file resolve.
+fn base_args(file: &Path, extra: Option<&Path>) -> Vec<String> {
     let dir = file.parent().unwrap_or(Path::new("."));
-    vec![
-        "compose".into(),
-        "-f".into(),
-        file.display().to_string(),
-        "--project-directory".into(),
-        dir.display().to_string(),
-    ]
+    let mut args = vec!["compose".into(), "-f".into(), file.display().to_string()];
+    if let Some(extra) = extra {
+        args.extend(["-f".into(), extra.display().to_string()]);
+    }
+    args.extend(["--project-directory".into(), dir.display().to_string()]);
+    args
+}
+
+/// Writes this run's override from `text` (the services being run or checked).
+fn override_for(
+    file: &Path,
+    text: &str,
+    connect: Option<&Connect>,
+) -> Result<Option<PathBuf>, CoreError> {
+    connect
+        .map(|c| super::connect::write_override(&c.data_dir, file, text, &c.inputs))
+        .transpose()
 }
 
 /// `docker compose config --quiet` on `text` (unsaved editor content is checked through
 /// a temporary copy in the same folder, so relative paths resolve the same way).
-pub fn docker_config_check(file: &Path, text: &str) -> Option<Result<(), String>> {
+pub fn docker_config_check(
+    file: &Path,
+    text: &str,
+    connect: Option<&Connect>,
+) -> Option<Result<(), String>> {
     let exe = super::find_cli()?;
+    let extra = match override_for(file, text, connect) {
+        Ok(e) => e,
+        Err(e) => return Some(Err(crate::error::Diagnostic::from(&e).cause)),
+    };
     let env = secret_env(file, text).unwrap_or_default();
     let dir = file.parent().unwrap_or(Path::new("."));
     let tmp = dir.join(format!(".ols-check-{}.yaml", std::process::id()));
     if let Err(e) = std::fs::write(&tmp, text) {
         return Some(Err(format!("could not write a temporary copy: {e}")));
     }
-    let mut args = base_args(file);
+    let mut args = base_args(file, extra.as_deref());
     args[2] = tmp.display().to_string();
     args.extend(["config".into(), "--quiet".into()]);
     let cancel = std::sync::atomic::AtomicBool::new(false);
@@ -640,11 +673,15 @@ pub fn docker_config_check(file: &Path, text: &str) -> Option<Result<(), String>
 }
 
 /// Full check: local rules, then Docker's own parser when the CLI is present.
-pub fn validate(path: &str, text: &str) -> Result<ComposeCheck, CoreError> {
+pub fn validate(
+    path: &str,
+    text: &str,
+    connect: Option<&Connect>,
+) -> Result<ComposeCheck, CoreError> {
     let file = check_compose_path(path)?;
     let mut check = check_text(text);
     if check.ok {
-        if let Some(result) = docker_config_check(&file, text) {
+        if let Some(result) = docker_config_check(&file, text, connect) {
             check.docker_checked = true;
             if let Err(msg) = result {
                 check.errors.push(format!("Docker says: {msg}"));
@@ -670,6 +707,7 @@ pub fn run_action(
     action: ComposeAction,
     service: Option<&str>,
     task: &crate::tasks::TaskHandle,
+    connect: Option<&Connect>,
 ) -> Result<(), CoreError> {
     let file = check_compose_path(path)?;
     if let Some(s) = service {
@@ -684,7 +722,8 @@ pub fn run_action(
     let exe = cli()?;
     let text = read_file(path)?;
     let env = secret_env(&file, &text)?;
-    let mut args = base_args(&file);
+    let extra = override_for(&file, &text, connect)?;
+    let mut args = base_args(&file, extra.as_deref());
     args.extend(action.args().iter().map(|a| a.to_string()));
     if let Some(s) = service {
         args.push(s.to_string());
@@ -982,7 +1021,7 @@ mod action_tests {
         let run = |action, service: Option<&str>| {
             let (p, s) = (path.clone(), service.map(str::to_string));
             let id = tasks.start("t", "t", &format!("{p}{s:?}{action:?}"), 1, move |h| {
-                let r = run_action(&p, action, s.as_deref(), &h);
+                let r = run_action(&p, action, s.as_deref(), &h, None);
                 crate::command::report(&h, r);
             });
             let deadline = std::time::Instant::now() + Duration::from_secs(20);
@@ -993,6 +1032,25 @@ mod action_tests {
         };
 
         let up = run(ComposeAction::Up, Some("web"));
+        let connect = Connect {
+            data_dir: tmp.path().join("data"),
+            inputs: super::super::connect::ConnectInputs {
+                hostnames: vec!["shop.test".into()],
+                ca_file: None,
+            },
+        };
+        let connected = {
+            let (p, c) = (path.clone(), connect.clone());
+            let id = tasks.start("t", "t", "connected", 1, move |h| {
+                let r = run_action(&p, ComposeAction::Restart, None, &h, Some(&c));
+                crate::command::report(&h, r);
+            });
+            let deadline = std::time::Instant::now() + Duration::from_secs(20);
+            while tasks.is_running(&id) && std::time::Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            tasks.get(&id).unwrap()
+        };
         std::env::set_var("PATH", &old_path);
         assert!(up.error.is_none(), "{:?}", up.error);
         let first = &up.results[0];
@@ -1008,6 +1066,20 @@ mod action_tests {
             up.results.len()
         );
         assert_eq!(up.results.last().map(String::as_str), Some("line 400"));
+        // Connected: the generated override is a second -f, before --project-directory.
+        let args = &connected.results[0];
+        let override_file = super::super::connect::override_path(&connect.data_dir, &file);
+        assert!(
+            args.contains(&format!(
+                "-f {} -f {} --project-directory",
+                file.display(),
+                override_file.display()
+            )),
+            "{args}"
+        );
+        assert!(std::fs::read_to_string(&override_file)
+            .unwrap()
+            .contains("shop.test:host-gateway"));
 
         std::env::set_var(
             "PATH",

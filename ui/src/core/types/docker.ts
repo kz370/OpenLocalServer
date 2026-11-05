@@ -56,6 +56,7 @@ export type ComposeStack = {
   running: number
   file_error: string | null
   uses_secrets: boolean
+  connected?: boolean
 }
 
 export type ComposeCheck = { ok: boolean; errors: string[]; warnings: string[]; docker_checked: boolean }
@@ -102,3 +103,21 @@ export type BuildPlan = {
 }
 
 export type DockerSiteRequest = { container: string; container_port: number; hostname: string; https: boolean }
+
+export type OlsEndpoint = {
+  id: string
+  name: string
+  running: boolean
+  port: number | null
+  address: string | null
+  connection: string | null
+}
+
+export type ConnectInfo = {
+  enabled: boolean
+  hostnames: string[]
+  ca: boolean
+  ca_path_in_container: string
+  services: OlsEndpoint[]
+  override_yaml: string
+}

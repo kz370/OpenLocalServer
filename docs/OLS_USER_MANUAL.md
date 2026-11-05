@@ -369,11 +369,12 @@ olsc guide
 - **Compose:** the **Compose** tab lists compose files in your projects and stacks Docker runs. Use Up, Stop, Restart, Down (keeps data), Pull and Build, and watch the output live.
 - **Edit and check compose files:** **Edit file** opens the built-in editor. **Check** points out mistakes and asks Docker too; **Save** backs up the old file first.
 - **New compose file:** pick services (databases, caches, Mailpit, Adminer, PHP, Node and more). OLS picks free ports and keeps passwords in the Windows credential store; **Passwords** on the stack shows them.
+- **Connect to OLS:** on a stack, **Connect to OLS** lets its containers open your OLS sites by name, trust OLS's HTTPS certificate, and use OLS's databases and Mailpit (the dialog shows each address). It applies the next time you press Up or Restart, and your compose file is not changed.
 - **Create site:** give any container a local domain with HTTPS. The site follows the container if its port changes.
 - **AI assistant (MCP):** new tools for Docker containers, logs, Compose stacks, the compose builder and creating sites, plus one to bring back a hidden site.
 - **Shorter sidebar:** Settings → **Sidebar** hides pages you don't use. Dashboard, Projects, Sites, Web server, Databases, Services, Runtimes and Settings can't be hidden. Hidden pages still open from search (Ctrl K) and from links.
 - **No slowdown:** nothing Docker-related runs when OLS starts; the Docker page only talks to Docker while it is open.
-- **Coming before 2.10.0 ships:** a shell inside a container, and connecting containers to OLS's databases and certificates.
+- **Coming before 2.10.0 ships:** a shell inside a container.
 
 ### Previous Version Notes (v2.9.0)
 - **Import databases from several places at once:** your installed OLS MariaDB versions, other MySQL/MariaDB installs, or any data folder, in the order you choose.

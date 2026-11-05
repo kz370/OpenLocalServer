@@ -123,6 +123,7 @@ const OPERATE: &[&str] = &[
     "start_docker_desktop",
     "docker_compose_action",
     "docker_create_site",
+    "set_docker_compose_connect",
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

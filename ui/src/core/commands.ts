@@ -77,6 +77,8 @@ export type CoreCommand =
   | { type: 'plan_docker_compose'; spec: BuildSpec }
   | { type: 'create_docker_compose'; spec: BuildSpec; overwrite?: boolean }
   | { type: 'reveal_docker_compose_secrets'; path: string }
+  | { type: 'get_docker_compose_connect'; path: string }
+  | { type: 'set_docker_compose_connect'; path: string; enabled: boolean }
   | { type: 'docker_create_site'; request: DockerSiteRequest }
   | { type: 'wp_sign_in'; project_id: string; hostname?: string; theme?: 'light' | 'dark' }
   | { type: 'wp_sign_in_revoke'; project_id: string }

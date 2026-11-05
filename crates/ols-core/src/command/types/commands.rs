@@ -229,6 +229,15 @@ pub enum CoreCommand {
     RevealDockerComposeSecrets {
         path: String,
     },
+    /// §166: what "Connect to OLS" does for a stack (site names, CA, OLS services).
+    GetDockerComposeConnect {
+        path: String,
+    },
+    /// §166: turn "Connect to OLS" on or off for a stack; answers the new state.
+    SetDockerComposeConnect {
+        path: String,
+        enabled: bool,
+    },
     /// §166: a `.test` site (proxy) for a container's published port.
     DockerCreateSite {
         request: crate::docker::sites::DockerSiteRequest,
