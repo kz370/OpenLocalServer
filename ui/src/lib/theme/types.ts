@@ -52,10 +52,13 @@ export interface ThemeDefinition {
   options: ThemeOptions
 }
 
+/** Background chosen per resolved mode. A missing mode inherits the other mode's gradient, adapted. */
+export type ThemeBackgroundOverrides = Partial<Record<'light' | 'dark', ThemeBackground>>
+
 export interface ThemeOverrides {
   accent?: string
   sidebarIcons?: SidebarIconStyle
-  background?: ThemeBackground
+  background?: ThemeBackgroundOverrides
 }
 
 export interface ThemeSettings {

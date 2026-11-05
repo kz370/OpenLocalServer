@@ -53,3 +53,9 @@ projects_page_plan.md
 plans/*
 
 ignored/*
+
+# MSVC build intermediates (e.g. Explorer extension)
+*.obj
+*.pdb
+*.ilk
+target-ci/*

@@ -44,7 +44,7 @@ export function TooltipContentBody({
 
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
-      <span>{parsed.label}</span>
+      <span className="min-w-0 [overflow-wrap:anywhere]">{parsed.label}</span>
       {parsed.shortcut && (
         <kbd className="inline-flex items-center rounded border border-white/20 bg-white/10 px-1 py-0.5 text-[10px] font-mono font-medium text-slate-200 dark:border-white/15 dark:bg-white/10">
           {parsed.shortcut}
@@ -146,7 +146,7 @@ export function Tooltip({
             style={floatingStyles}
             role="tooltip"
             className={cn(
-              'pointer-events-none z-[9999] max-w-xs select-none rounded-md px-2.5 py-1 text-[11.5px] font-medium leading-tight tracking-normal shadow-lg transition-opacity duration-150',
+              'pointer-events-none z-[9999] max-w-[min(20rem,calc(100vw-1rem))] select-none rounded-md px-2.5 py-1 text-[11.5px] font-medium leading-tight tracking-normal shadow-lg transition-opacity duration-150',
               'bg-slate-900/95 text-slate-100 border border-slate-800 shadow-slate-950/30 backdrop-blur-md',
               'dark:bg-[#0a1224]/95 dark:text-slate-100 dark:border-white/15 dark:shadow-black/50',
               className,
@@ -307,7 +307,7 @@ export function GlobalTooltipHost() {
         style={floatingStyles}
         role="tooltip"
         className={cn(
-          'pointer-events-none z-[9999] max-w-xs select-none rounded-md px-2.5 py-1 text-[11.5px] font-medium leading-tight tracking-normal shadow-lg transition-opacity duration-150',
+          'pointer-events-none z-[9999] max-w-[min(20rem,calc(100vw-1rem))] select-none rounded-md px-2.5 py-1 text-[11.5px] font-medium leading-tight tracking-normal shadow-lg transition-opacity duration-150',
           'bg-slate-900/95 text-slate-100 border border-slate-800 shadow-slate-950/30 backdrop-blur-md',
           'dark:bg-[#0a1224]/95 dark:text-slate-100 dark:border-white/15 dark:shadow-black/50',
         )}

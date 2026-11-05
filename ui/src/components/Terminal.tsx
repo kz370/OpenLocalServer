@@ -121,7 +121,7 @@ export function ProjectTerminal({ projectId }: { projectId: string | null }) {
 
   return (
     <div className="flex flex-col gap-2">
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
       <div className="flex items-center justify-between gap-2">
         <Select className="w-40" value={shell} onChange={(e) => setShell(e.target.value)}>
           <option value="powershell">PowerShell</option>

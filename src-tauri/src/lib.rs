@@ -28,16 +28,32 @@ mod notify;
 async fn run_command(
     command: CoreCommand,
     state: tauri::State<'_, Core>,
+    auto_fix: tauri::State<'_, AutoFixTrigger>,
     app: AppHandle,
 ) -> Result<CoreResponse, Diagnostic> {
     let core = state.inner().clone();
-    let dispatched = tauri::async_runtime::spawn_blocking(move || core.dispatch(command))
-        .await
-        .map_err(|e| Diagnostic {
-            problem: "The command crashed.".into(),
-            cause: e.to_string(),
-            fix: None,
-        })?;
+    // Turning "auto-fix diagnostics" on should fix safe problems right away.
+    let enables_auto_fix = matches!(
+        &command,
+        CoreCommand::SetSetting { key, value }
+            if key == "diagnostics.auto_fix" && value.as_bool() == Some(true)
+    );
+    // The Repair page's Diagnose button fixes safe problems first (when auto-fix is on),
+    // so the list it shows is what is still wrong.
+    let fix_before_diagnosing = matches!(&command, CoreCommand::PlanRepair { .. });
+    let fix_app = app.clone();
+    let dispatched = tauri::async_runtime::spawn_blocking(move || {
+        if fix_before_diagnosing {
+            run_auto_fix(&core, &fix_app);
+        }
+        core.dispatch(command)
+    })
+    .await
+    .map_err(|e| Diagnostic {
+        problem: "The command crashed.".into(),
+        cause: e.to_string(),
+        fix: None,
+    })?;
     // Any command can start or stop things, so the tray, taskbar, in-app mark
     // and live tray tooltip are refreshed after every command — but in the
     // background. `sync_tray_tooltip` asks the ServiceManager for its aggregate,
@@ -45,6 +61,9 @@ async fn run_command(
     // that synchronously here added about a second to every read (site reads
     // included) before the response ever reached the UI. The 2-second tray
     // heartbeat keeps the tray fresh regardless.
+    if enables_auto_fix && dispatched.is_ok() {
+        auto_fix.0.notify_one();
+    }
     let state = state.inner().clone();
     let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -52,6 +71,41 @@ async fn run_command(
         sync_tray_tooltip(&app_handle, &state);
     });
     dispatched
+}
+
+/// Wakes the background diagnostics auto-fix worker (startup, project/runtime changes,
+/// the setting being enabled). Notifications coalesce, so bursts cost one run.
+#[derive(Clone)]
+struct AutoFixTrigger(std::sync::Arc<tokio::sync::Notify>);
+
+/// Safety net for out-of-band changes (for example a folder deleted on disk).
+const AUTO_FIX_FALLBACK: Duration = Duration::from_secs(30 * 60);
+/// Lets a burst of events settle before one scan.
+const AUTO_FIX_DEBOUNCE: Duration = Duration::from_secs(2);
+
+/// Runs the safe automatic fixes and reports each result as a notification.
+fn run_auto_fix(core: &Core, app: &AppHandle) {
+    for result in core.auto_fix_diagnostics() {
+        // The desktop toast can be silenced by Windows (Focus Assist) or the Desktop
+        // notifications setting, so the open window is told too.
+        let _ = app.emit(
+            "ols:auto-fix-result",
+            serde_json::json!({
+                "ok": result.ok,
+                "problem": result.problem,
+                "detail": result.detail,
+            }),
+        );
+        if result.ok {
+            notify(core, "Diagnostics", &format!("Fixed: {}", result.problem));
+        } else {
+            notify(
+                core,
+                "Automatic fix failed",
+                &format!("{}: {}", result.problem, result.detail),
+            );
+        }
+    }
 }
 
 /// Health-check variant of `run_command` that streams completed stages to the UI.
@@ -1684,6 +1738,11 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Explorer "Ignore this project/site": write the marker and exit before anything
+    // else starts (no window, no core, no daemon hand-over, no single-instance hop).
+    if let Some(code) = ols_core::shell_menu::run_menu_action(std::env::args()) {
+        std::process::exit(code);
+    }
     let paths = AppPaths::resolve();
     paths
         .ensure_dirs()
@@ -1782,6 +1841,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .manage(core)
+        .manage(AutoFixTrigger(std::sync::Arc::new(tokio::sync::Notify::new())))
         .setup(move |app| {
             let core = setup_core;
             let confirmation_app = app.handle().clone();
@@ -1995,18 +2055,24 @@ pub fn run() {
                 }
             });
 
+            let auto_fix_trigger = app.state::<AutoFixTrigger>().0.clone();
+
             let runtime_handle = app.handle().clone();
             let runtime_core = core.clone();
+            let runtime_trigger = auto_fix_trigger.clone();
             let mut runtime_events = runtimes.subscribe();
             tauri::async_runtime::spawn(async move {
                 while let Ok(event) = runtime_events.recv().await {
                     let _ = runtime_handle.emit("runtime-event", &event);
                     match &event {
-                        RuntimeEvent::Installed { id, version, .. } => notify(
-                            &runtime_core,
-                            "Installed",
-                            &format!("{id} {version} is ready"),
-                        ),
+                        RuntimeEvent::Installed { id, version, .. } => {
+                            notify(
+                                &runtime_core,
+                                "Installed",
+                                &format!("{id} {version} is ready"),
+                            );
+                            runtime_trigger.notify_one();
+                        }
                         RuntimeEvent::Failed {
                             id,
                             version,
@@ -2029,10 +2095,12 @@ pub fn run() {
 
             let projects_handle = app.handle().clone();
             let projects_core = core.clone();
+            let projects_trigger = auto_fix_trigger.clone();
             let mut project_events = core.inner().subscribe_project_events();
             tauri::async_runtime::spawn(async move {
                 while project_events.recv().await.is_ok() {
                     let _ = projects_handle.emit("projects-changed", ());
+                    projects_trigger.notify_one();
                     refresh_tray(&projects_handle, &projects_core);
                 }
             });
@@ -2125,28 +2193,34 @@ pub fn run() {
             // §121: start what the user asked to have started with the app.
             let autostart_core = core.clone();
             let auto_fix_app = app.handle().clone();
+            let startup_trigger = auto_fix_trigger.clone();
             std::thread::spawn(move || {
                 autostart_core.inner().run_autostart();
                 let _ = auto_fix_app.emit("ols:autostart-complete", ());
                 sync_status_icon(&auto_fix_app, &autostart_core);
                 sync_tray_tooltip(&auto_fix_app, &autostart_core);
+                startup_trigger.notify_one();
+            });
+            // Event-driven auto-fix worker: wakes on a trigger or the slow fallback timer.
+            let worker_core = core.clone();
+            let worker_app = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
                 loop {
-                    for result in autostart_core.auto_fix_diagnostics() {
-                        if result.ok {
-                            notify(
-                                &autostart_core,
-                                "Diagnostics",
-                                &format!("Fixed: {}", result.problem),
-                            );
-                        } else {
-                            notify(
-                                &autostart_core,
-                                "Automatic fix failed",
-                                &format!("{}: {}", result.problem, result.detail),
-                            );
-                        }
+                    tokio::select! {
+                        _ = auto_fix_trigger.notified() => {}
+                        _ = tokio::time::sleep(AUTO_FIX_FALLBACK) => {}
                     }
-                    std::thread::sleep(Duration::from_secs(300));
+                    // Debounce, then drain notifications that arrived meanwhile.
+                    tokio::time::sleep(AUTO_FIX_DEBOUNCE).await;
+                    let _ = tokio::time::timeout(Duration::ZERO, auto_fix_trigger.notified()).await;
+                    let core = worker_core.clone();
+                    let app = worker_app.clone();
+                    // Fixes can wait on child processes for minutes, so stay off the async threads.
+                    let results = tauri::async_runtime::spawn_blocking(move || run_auto_fix(&core, &app))
+                    .await;
+                    if let Err(error) = results {
+                        tracing::warn!(error = %error, "the diagnostics auto-fix worker crashed");
+                    }
                 }
             });
             Ok(())

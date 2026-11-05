@@ -104,7 +104,7 @@ export function ProjectTools({ detail, start, refreshKey, tab }: { detail: Proje
 
   return (
     <div className="flex flex-col gap-4">
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
       {body}
     </div>
   )
@@ -137,7 +137,7 @@ function MailPanel({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-medium">Checklist</h3>

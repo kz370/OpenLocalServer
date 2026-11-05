@@ -1,7 +1,7 @@
 //! The application core's shared state (`Inner`) and managers.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -64,6 +64,21 @@ pub const DEFAULT_IGNORED_FOLDERS: &[&str] = &[OLS_EXCLUDED_FOLDER];
 pub const PROJECT_ROOTS: &str = "projects.roots";
 pub const AUTO_SKIP: &str = "domains.auto_skip";
 pub const PROJECT_SKIP: &str = "projects.removed";
+pub const OLS_IGNORE_PROJECT_MARKER: &str = ".ols_ignore_me";
+pub const OLS_IGNORE_SITE_MARKER: &str = ".ols_ignore_site";
+
+pub(crate) fn project_is_ignored(path: &Path) -> bool {
+    path.join(OLS_IGNORE_PROJECT_MARKER).exists()
+}
+
+pub(crate) fn site_is_ignored(path: &Path) -> bool {
+    project_is_ignored(path) || path.join(OLS_IGNORE_SITE_MARKER).exists()
+}
+
+pub(crate) fn site_only_is_ignored(path: &Path) -> bool {
+    path.join(OLS_IGNORE_SITE_MARKER).exists() && !project_is_ignored(path)
+}
+
 pub const REG_RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
 pub const REG_VALUE: &str = "OpenLocalServer";
 
@@ -330,6 +345,7 @@ impl Inner {
                 }),
             );
         }
+        core.recover_pending_migrations();
         core.apply_plugins();
         Ok(core)
     }

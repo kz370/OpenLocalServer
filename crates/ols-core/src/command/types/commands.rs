@@ -136,6 +136,9 @@ pub enum CoreCommand {
     IgnoreProject {
         id: String,
     },
+    UnignoreSite {
+        project_id: String,
+    },
     RemoveSiteFromList {
         hostname: String,
     },
@@ -587,6 +590,9 @@ pub enum CoreCommand {
     ListEditors,
     GetSystemStats,
     ListMigrationSources,
+    InspectMigrationSource {
+        path: String,
+    },
     ListForeignDatabases {
         source_id: String,
         password: String,
@@ -596,6 +602,13 @@ pub enum CoreCommand {
         password: String,
         databases: Vec<String>,
         target: String,
+    },
+    MigrateDatabasesResolved {
+        source_id: String,
+        password: String,
+        databases: Vec<String>,
+        target: String,
+        conflict_policy: crate::migrate::ConflictPolicy,
     },
     GetMigrationProgress,
     GetHelperService,

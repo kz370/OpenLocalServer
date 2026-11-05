@@ -1,4 +1,5 @@
 import { adjustAccentForMode, hexToRgba, parseColor, pickReadableForeground } from './color.ts'
+import { glassAlphaFor, resolveBackgroundForMode } from './background.ts'
 import type { ThemeDefinition, ThemeOptions, ThemeOverrides, ThemeTokens } from './types.ts'
 
 /**
@@ -23,15 +24,17 @@ export function computeEffectiveTokens(
 }
 
 /**
- * Combines preset options with user overrides.
+ * Combines preset options with user overrides for the given mode.
+ * The background is resolved per mode (see resolveBackgroundForMode).
  */
 export function computeEffectiveOptions(
   preset: ThemeDefinition,
   overrides: ThemeOverrides,
+  resolvedMode: 'light' | 'dark',
 ): ThemeOptions {
   return {
     sidebarIcons: overrides.sidebarIcons ?? preset.options.sidebarIcons,
-    background: overrides.background ?? preset.options.background,
+    background: resolveBackgroundForMode(preset.options.background, overrides.background, resolvedMode),
     radius: preset.options.radius,
   }
 }
@@ -113,10 +116,11 @@ export function applyThemeToDom(
     root.style.setProperty('--app-background', `linear-gradient(${angle}deg, ${from}, ${to})`)
     root.dataset.bgType = 'gradient'
 
-    // Subtle frosted acrylic card surface when gradient mode is active
+    // Frosted acrylic card surface when gradient mode is active. Thicker glass only when
+    // the gradient does not suit the mode, so text stays readable and blur is kept.
     const cardColor = parseColor(tokens.card)
     if (cardColor && tokens.card !== '#000000') {
-      const glassAlpha = resolvedMode === 'dark' ? 0.45 : 0.6
+      const glassAlpha = glassAlphaFor(options.background, resolvedMode)
       root.style.setProperty('--card', `rgba(${cardColor.r}, ${cardColor.g}, ${cardColor.b}, ${glassAlpha})`)
     }
   } else {

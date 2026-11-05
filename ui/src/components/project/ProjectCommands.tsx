@@ -228,7 +228,7 @@ export function ProjectCommands({ projectId, framework, onShowIssues }: { projec
 
   return (
     <div className="flex flex-col gap-4">
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
       <div className="flex items-end justify-between gap-2">
         <Tabs tabs={modes} value={active} onChange={switchMode} />

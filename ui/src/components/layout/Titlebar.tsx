@@ -3,7 +3,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 
 import { NotificationsPopover } from '@/components/NotificationsPopover'
 import { useAppMarkPath, useWindowState } from '@/lib/hooks'
-import { useThemeSafe } from '@/lib/theme'
+import { backgroundSuitsMode, useThemeSafe } from '@/lib/theme'
 import { cn } from '@/lib/utils'
 
 function isTauri(): boolean {
@@ -13,7 +13,10 @@ function isTauri(): boolean {
 export function Titlebar({ onNavigateLogs }: { onNavigateLogs?: (source?: string | null) => void }) {
   const { maximized } = useWindowState()
   const theme = useThemeSafe()
-  const isGradient = theme?.options?.background?.type === 'gradient'
+  // Translucent acrylic only over a gradient that suits the mode; a mismatched one keeps the solid surface.
+  const isGradient =
+    theme?.options?.background?.type === 'gradient' &&
+    backgroundSuitsMode(theme.options.background, theme.resolvedTheme)
   // Same four colourways (light/dark × running/stopped) the tray and taskbar use.
   const mark = useAppMarkPath()
 

@@ -92,6 +92,17 @@ let cachedCatalogStatus: Record<string, CatalogStatus> = {}
 let cachedVerifiedKeys: Set<string> = new Set()
 let cachedHasLoaded = false
 
+function RuntimeProgress() {
+  return (
+    <div className="absolute inset-x-0 top-0 z-10" role="status" aria-label="Looking for runtimes on this computer…">
+      <div className="h-0.5 overflow-hidden rounded-t-xl bg-muted">
+        <div className="h-full w-1/3 animate-[ols-indeterminate_1.4s_ease-in-out_infinite] bg-primary" />
+      </div>
+      <span className="absolute left-3 top-1 rounded-b bg-card px-2 py-1 text-xs text-muted-foreground shadow-sm">Looking for runtimes on this computer…</span>
+    </div>
+  )
+}
+
 export function RuntimesPage() {
   const [catalog, setCatalog] = useState<CatalogEntry[]>(runtimeCatalogCache.get)
   const [progress, setProgress] = useState<Record<string, RuntimeEvent | undefined>>({})
@@ -354,7 +365,7 @@ export function RuntimesPage() {
       await runCommand({ type: 'set_setting', key: `runtime.${entry.id}.global`, value: entry.version })
       await refresh()
       const msg = entry.id === 'mariadb'
-        ? `MariaDB ${entry.version} is now the default. Each MariaDB series uses a separate data folder, so its databases are separate.`
+        ? `MariaDB ${entry.version} is now the default. Older series keep their own data; use Databases → Import databases to migrate it.`
         : ['nginx', 'apache', 'caddy'].includes(entry.id)
           ? `${entry.name} ${entry.version} will be used when you next start the web server.`
           : entry.id === 'php'
@@ -367,7 +378,10 @@ export function RuntimesPage() {
 
   const removeRuntime = (entry: CatalogEntry) =>
     guarded(async () => {
-      if (!(await confirmAction(`Remove the managed ${entry.name} ${entry.version} files? Projects or sites pinned to this version will need another version selected or this version reinstalled. Project files and MariaDB data stay in place.`, 'Remove version', 'Remove version'))) return
+      const migrationNote = entry.id === 'mariadb'
+        ? ' If you plan to migrate its databases to another MariaDB series, do that first; removing this runtime also removes the binaries needed to read its data.'
+        : ''
+      if (!(await confirmAction(`Remove the managed ${entry.name} ${entry.version} files? Projects or sites pinned to this version will need another version selected or this version reinstalled. Project files and MariaDB data stay in place.${migrationNote}`, 'Remove version', 'Remove version'))) return
       await runCommand({ type: 'remove_runtime', id: entry.id, version: entry.version })
       setCatalog((prev) => {
         const next = prev.map((e) =>
@@ -599,6 +613,7 @@ export function RuntimesPage() {
             fix: null,
           }}
           onDismiss={() => setInstallError(null)}
+          overlay
         />
       )}
 
@@ -705,7 +720,9 @@ export function RuntimesPage() {
         )}
       </div>
 
-      <Table wrapperClassName="rounded-xl border-border/60 overflow-hidden">
+      <div className="relative">
+      {loading && <RuntimeProgress />}
+      <Table wrapperClassName={cn('rounded-xl border-border/60 overflow-hidden transition-opacity', loading && 'opacity-90')}>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             <TableHead className="h-9 w-[190px] text-[11px] font-medium uppercase tracking-wider">Runtime</TableHead>
@@ -715,24 +732,17 @@ export function RuntimesPage() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {loading &&
+          {loading && catalog.length === 0 &&
             Array.from({ length: 6 }, (_, i) => (
-              <TableRow key={i} className="hover:bg-transparent">
+              <TableRow key={i} className="h-14 hover:bg-transparent">
                 {[0, 1, 2, 3].map((c) => (
                   <TableCell key={c}>
-                    <div className="h-4 animate-pulse rounded bg-muted" style={{ width: '60%' }} />
+                    <div className="h-4 animate-pulse rounded bg-muted" style={{ width: c === 3 ? '72%' : '60%' }} />
                   </TableCell>
                 ))}
               </TableRow>
             ))}
-          {loading && (
-            <TableRow className="hover:bg-transparent">
-              <TableCell colSpan={4} className="text-center text-xs text-muted-foreground">
-                <Spinner className="mr-1.5 inline size-3.5 align-text-bottom" /> Looking for runtimes on this computer…
-              </TableCell>
-            </TableRow>
-          )}
-          {!loading && filteredGroups.map((g) => {
+          {(!loading || catalog.length > 0) && filteredGroups.map((g) => {
             const isChecking = ONLINE_CATALOGS.has(g.id) && catalogStatus[g.id] === 'checking'
             const status = groupStatuses.get(g.id) ?? getRuntimeStatus({
               rows: g.rows.map((r) => ({
@@ -901,7 +911,7 @@ export function RuntimesPage() {
               </TableRow>
             )
           })}
-          {!loading && filteredGroups.length === 0 && (
+          {(!loading || catalog.length > 0) && filteredGroups.length === 0 && (
             <TableRow className="hover:bg-transparent">
               <TableCell colSpan={4} className="py-6 text-center text-xs text-muted-foreground">
                 {filter === 'updates'
@@ -914,6 +924,7 @@ export function RuntimesPage() {
           )}
         </TableBody>
       </Table>
+      </div>
 
       <Dialog
         open={!!managedGroup}

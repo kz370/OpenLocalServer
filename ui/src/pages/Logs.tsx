@@ -113,7 +113,7 @@ export function LogsPage({
         <p className="text-sm text-muted-foreground">Application, web server, processes and Quick App runs. Secrets are redacted before they are written.</p>
       </div>
 
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
       <Card>
         <CardContent className="flex flex-wrap items-center gap-3 pt-4">

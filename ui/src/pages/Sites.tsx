@@ -1,5 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Activity, Check, CircleOff, Code2, Copy, Download, ExternalLink, EyeOff, FolderOpen, FolderPlus, FolderSearch, FolderX, Globe, HardDrive, KeyRound, List, ListX, MoreHorizontal, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2, Wrench, X, Zap } from 'lucide-react'
+import { Activity, Check, CircleOff, Code2, Copy, Download, ExternalLink, EyeOff, FolderOpen, FolderPlus, FolderSearch, FolderX, Globe, HardDrive, KeyRound, List, ListX, MoreHorizontal, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2, UserRound, Wrench, X, Zap } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
@@ -10,7 +10,6 @@ import { SiteExportDialog, SiteImportButton } from '@/components/site/SiteBundle
 import { SiteDialog, type SiteTarget } from '@/components/site/SiteDialog'
 import { SiteLogoDialog, type SiteLogoTarget } from '@/components/site/SiteLogoDialog'
 import { SiteLogo } from '@/components/SiteLogo'
-import { SaveButton } from '@/components/SaveButton'
 import { DriftDialog } from '@/components/site/WebApply'
 import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
@@ -28,9 +27,11 @@ import { type Domain, type DomainSummary, type EditorInfo, type HealthProgress, 
 import { getCached, setCached } from '@/lib/cache'
 import { confirmAction } from '@/lib/confirm'
 import { notify } from '@/lib/notify'
+import { cn } from '@/lib/utils'
 import { onOpenAddSiteForProject, onOpenProject, onOpenSitesFilter, openSettingsSection, takePendingAddSiteProject, takePendingProject, takePendingSitesFilter } from '@/lib/nav'
 import { useTheme } from '@/lib/theme'
 import { useWeb } from '@/lib/web'
+import { waitForWebStopped } from '@/lib/wait'
 import { Wizard } from '@/pages/QuickApps'
 
 /** One row of the table: a site, or a registered project that has no site yet. */
@@ -87,6 +88,17 @@ function StatusDot({ site, running }: { site: DomainSummary | null; running: boo
   )
 }
 
+function PageProgress({ label }: { label: string }) {
+  return (
+    <div className="absolute inset-x-0 top-0 z-10" role="status" aria-label={label}>
+      <div className="h-0.5 overflow-hidden rounded-t-xl bg-muted">
+        <div className="h-full w-1/3 animate-[ols-indeterminate_1.4s_ease-in-out_infinite] bg-primary" />
+      </div>
+      <span className="absolute left-3 top-1 rounded-b bg-card px-2 py-1 text-xs text-muted-foreground shadow-sm">{label}</span>
+    </div>
+  )
+}
+
 function HealthProgressRow({ name, state }: { name: string; state: HealthStepState | undefined }) {
   if (!state) {
     return (
@@ -124,8 +136,9 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   // The WordPress sign-in screen lives outside this window, so it is told which colourway
   // the app is showing rather than left to guess from the browser.
   const { resolvedTheme } = useTheme()
-  const { projects, domains, status, busy, error, setError, run, apply, refresh, refreshProjects, reconcileSites, installedPhp, removing, applying } = web
+  const { projects, domains, status, busy, error, setError, run, apply, applyTracked, refresh, refreshProjects, reconcileSites, installedPhp, removing, applying } = web
   const defaultServer = status?.default_server
+  const serverIsRunning = busy === 'stop' || (busy !== 'apply' && !!status?.running)
 
   const [target, setTarget] = useState<SiteTarget | null>(null)
   const [logoTarget, setLogoTarget] = useState<SiteLogoTarget | null>(null)
@@ -506,11 +519,8 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     await runCommand({ type: 'add_domain', domain: d })
     setAdding(null)
     await Promise.all([refresh(), refreshProjects()])
-    try {
-      await apply()
-    } catch {
-      // apply error handled by ApplyReportCard
-    }
+    // Applied in the background (see SiteDialog `save`); the report notification follows.
+    void applyTracked().catch(() => undefined)
   }
 
   /**
@@ -957,17 +967,47 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
+      <div className="mb-1">
+        <div className="flex items-center justify-between gap-3">
           <h1 className="text-2xl font-semibold tracking-tight">Sites</h1>
-          <p className="text-sm text-muted-foreground">Every site and the project behind it. Open a site's settings for its domain, web config, environment, terminal, Git and more.</p>
+          <div className="flex h-8 w-[232px] shrink-0 items-stretch rounded-md border border-border bg-transparent">
+            <div className="flex min-w-0 flex-1 items-center gap-2 px-2.5 text-xs">
+              {busy === 'apply' || busy === 'stop' ? (
+                <Spinner className="size-3.5 shrink-0" />
+              ) : (
+                <span className={`size-2 shrink-0 rounded-full ${status?.running ? 'bg-success' : 'bg-muted-foreground/50'}`} />
+              )}
+              <span className="truncate text-muted-foreground">
+                {busy === 'apply' ? 'Starting…' : busy === 'stop' ? 'Stopping…' : status?.running ? 'Web server running' : 'Web server stopped'}
+              </span>
+            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              className={`h-full w-[78px] shrink-0 rounded-l-none border-l border-border px-2 ${serverIsRunning ? 'text-destructive hover:bg-accent hover:text-destructive' : 'text-success hover:bg-accent hover:text-success'}`}
+              disabled={status === null || busy !== null}
+              onClick={() => {
+                if (busy !== null || status === null) return
+                if (status.running) {
+                  void run('stop', async () => {
+                    await runCommand({ type: 'stop_web' })
+                    await waitForWebStopped()
+                    await refresh()
+                  })
+                } else {
+                  void run('apply', () => apply())
+                }
+              }}
+            >
+              {serverIsRunning ? <StopIcon /> : <Play />}
+              {serverIsRunning ? 'Stop' : 'Start'}
+            </Button>
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {status && !status.running && domains.length > 0 && (
-            <SaveButton action={web} name="apply" size="sm" variant="outline" busyLabel="Starting…" savedLabel="Started" onClick={() => void run('apply', () => apply())} title="Sites can't be opened while the web server is stopped">
-              <Play /> Start web server
-            </SaveButton>
-          )}
+        <p className="mt-3 text-sm text-muted-foreground">Every site and the project behind it. Open a site's settings for its domain, web config, environment, terminal, Git and more.</p>
+      </div>
+      <div className="flex min-h-8 flex-wrap items-center gap-x-[18px] gap-y-2">
+        <div className="flex shrink-0 flex-nowrap items-center gap-2">
           <Button size="sm" onClick={() => setAdding(newDomain())}>
             <Plus /> Add site
           </Button>
@@ -978,24 +1018,17 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
             <FolderSearch /> Scan a folder
           </Button>
           <GitCloneButton defaultParent={effectiveParent} onDone={adopt} />
+        </div>
+        <div className="flex shrink-0 flex-nowrap items-center gap-2">
           <ImportEnvironmentButton defaultParent={effectiveParent} onDone={adopt} />
           <SiteImportButton onWatch={() => onNavigate('tasks')} />
         </div>
       </div>
 
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
-      {removing.size > 0 && !applying && (
-        <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
-          <Spinner /> Updating the site list…
-        </p>
-      )}
-      {applying && (
-        <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
-          <Spinner /> Updating site configuration and hosts file…
-        </p>
-      )}
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
-      <Card>
+      <Card className="relative">
+        {(removing.size > 0 || applying) && <PageProgress label={applying ? 'Updating site configuration and hosts file…' : 'Updating the site list…'} />}
         <CardContent className="p-0">
           <div className="flex flex-col gap-2 border-b border-border px-4 pb-2 pt-3">
             <div className="flex flex-wrap items-center gap-2">
@@ -1087,7 +1120,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
               onChange={setFilter}
             />
           </div>
-          <Table wrapperClassName="rounded-none border-x-0 border-b-0 bg-transparent">
+          <Table wrapperClassName={cn('rounded-none border-x-0 border-b-0 bg-transparent transition-opacity', (removing.size > 0 || applying) && 'opacity-90')}>
             <TableHeader>
               <TableRow>
                 <TableHead className="w-10">
@@ -1120,6 +1153,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                     aria-busy={pending}
                     data-state={isMenuOpen ? 'selected' : undefined}
                     className={[
+                      'h-[88px]',
                       pending ? 'opacity-50 transition-opacity' : '',
                       isMenuOpen ? 'bg-primary/10 hover:bg-primary/15 shadow-[inset_3px_0_0_0_var(--primary)]' : '',
                     ]
@@ -1264,9 +1298,17 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                               </>
                             )}
                           </div>
-                          {d && p?.auto_discovered === true && (
-                            <div className="mt-0.5 text-[10px] text-muted-foreground">Auto-discovered</div>
-                          )}
+                          <div className="mt-1.5 flex h-4 items-center">
+                            <span className={cn(
+                              'inline-flex h-4 items-center gap-1 rounded px-1.5 text-[10px] leading-none',
+                              p?.auto_discovered === true
+                                ? 'bg-sky-500/10 text-sky-700 dark:text-sky-300'
+                                : 'bg-violet-500/10 text-violet-700 dark:text-violet-300',
+                            )}>
+                              {p?.auto_discovered === true ? <FolderSearch className="size-2.5" /> : <UserRound className="size-2.5" />}
+                              {p?.auto_discovered === true ? 'Auto-discovered' : 'Added manually'}
+                            </span>
+                          </div>
                         </div>
                         {d && (
                           <>
@@ -1322,7 +1364,8 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                         )}
                       </div>
                     </TableCell>
-                    <TableCell className="whitespace-nowrap">
+                    <TableCell className="h-[88px] whitespace-nowrap py-1.5">
+                      <div className="max-h-[72px] overflow-y-auto">
                       <StatusDot site={d} running={!!status?.running} />
                       {d?.ssl_provider === 'lets_encrypt' && (
                         <div className="mt-0.5 text-[11px] font-medium text-emerald-500" title="Secured with Let's Encrypt">
@@ -1380,6 +1423,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                           /{d.path_prefix}
                         </div>
                       )}
+                      </div>
                     </TableCell>
                     <TableCell className="whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1">
@@ -1573,7 +1617,8 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                 run('dup', async () => {
                   await runCommand({ type: 'duplicate_domain', hostname: dupOf!, new_hostname: dupName })
                   setDupOf(null)
-                  await apply()
+                  await refresh()
+                  void applyTracked().catch(() => undefined)
                 })
               }
             >

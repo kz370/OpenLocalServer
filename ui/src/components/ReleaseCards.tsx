@@ -13,6 +13,7 @@ import { Markdown } from '@/components/ui/Markdown'
 import { type ApiStatus, type NetworkStatus, type ShellMenuStatus, type UpdateInfo, type UpdaterStatus, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
 import { useAction } from '@/lib/hooks'
+import { notify } from '@/lib/notify'
 import { compareVersionsDesc } from '@/lib/runtimeStatus'
 
 /** Where the prose lives. The card states what the API is and how to switch it on; the
@@ -60,7 +61,7 @@ export function ApiCard() {
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <ErrorCard error={error} onDismiss={() => setError(null)} />
+        <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
         {status.error && <p className="text-sm text-warning">{status.error}</p>}
         <div className="grid gap-4 sm:grid-cols-3">
           <Field label="Port" hint="Loopback only. Changing it needs Apply port.">
@@ -289,7 +290,7 @@ export function UpdatesCard() {
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <ErrorCard error={displayError} onDismiss={() => setError(null)} />
+        <ErrorCard error={displayError} onDismiss={() => setError(null)} overlay />
 
         {/* When downloaded and verified: show ONE unified ready banner */}
         {isDownloaded && info && (
@@ -461,6 +462,28 @@ export function SystemCard() {
   const [menu, setMenu] = useState<ShellMenuStatus | null>(cachedShellMenu)
   const [bundle, setBundle] = useState<string | null>(null)
   const { busy, error, setError, run } = useAction()
+  const changeShellMenu = (action: 'install_shell_menu' | 'remove_shell_menu') => run('menu', async () => {
+    const r = await runCommand({ type: action })
+    if (r.type !== 'shell_menu') {
+      throw {
+        problem: 'Explorer integration could not be confirmed.',
+        cause: 'OLS received an unexpected response while updating the Explorer menu.',
+        fix: 'Restart OLS and try again. If this keeps happening, repair or reinstall OLS.',
+      }
+    }
+    setMenu(r.status)
+    cachedShellMenu = r.status
+    if (action === 'install_shell_menu' && !r.status.installed) {
+      throw {
+        problem: 'Explorer menu update could not be verified.',
+        cause: 'Windows did not confirm all four menu actions after the registry update.',
+        fix: 'Restart File Explorer, then try Repair again.',
+      }
+    }
+    notify.success(action === 'install_shell_menu'
+      ? 'Explorer submenu added. Find it under “Show more options”.'
+      : 'Explorer menu removed.')
+  })
   useEffect(() => {
     runCommand({ type: 'get_shell_menu' }).then((r) => {
       if (r.type === 'shell_menu') {
@@ -485,11 +508,18 @@ export function SystemCard() {
               <div className="flex items-center gap-2 font-medium">
                 <TerminalSquare className="size-4" /> Explorer right-click menu {menu.installed ? <Badge variant="success">installed</Badge> : <Badge variant="outline">off</Badge>}
               </div>
-              <p className="text-muted-foreground">Adds "Add folder to OLS projects" and "Set up with OLS" to a folder's menu. Only for your user; no administrator prompt.</p>
+              <p className="text-muted-foreground">Adds an Open Local Server submenu with Add, Set up, Ignore project, and Ignore site to Explorer’s classic “Show more options” menu. The compact Windows 11 menu needs a packaged shell extension.</p>
             </div>
-            <Button variant="secondary" disabled={busy !== null || (!menu.installed && !menu.cli_path)} onClick={() => run('menu', async () => { const r = await runCommand({ type: menu.installed ? 'remove_shell_menu' : 'install_shell_menu' }); if (r.type === 'shell_menu') setMenu(r.status) })}>
-              {menu.installed ? 'Remove' : 'Add to Explorer'}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="secondary" disabled={busy !== null || !menu.cli_path} onClick={() => { void changeShellMenu('install_shell_menu') }}>
+                {busy === 'menu' ? <Spinner /> : null} {menu.installed ? 'Repair' : 'Add to Explorer'}
+              </Button>
+              {menu.installed && (
+                <Button variant="ghost" disabled={busy !== null} onClick={() => { void changeShellMenu('remove_shell_menu') }}>
+                  Remove
+                </Button>
+              )}
+            </div>
           </div>
         )}
         <div className="flex flex-wrap items-center justify-between gap-3">

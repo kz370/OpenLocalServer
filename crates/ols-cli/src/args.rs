@@ -120,6 +120,22 @@ pub enum ProjectCmd {
     Add {
         path: PathBuf,
     },
+    /// Hide a project and its site until this marker is removed.
+    Ignore {
+        path: PathBuf,
+    },
+    /// Remove the project-ignore marker from a folder.
+    Unignore {
+        path: PathBuf,
+    },
+    /// Hide only the site while keeping its project visible.
+    IgnoreSite {
+        path: PathBuf,
+    },
+    /// Restore a site hidden by the site-ignore marker.
+    UnignoreSite {
+        path: PathBuf,
+    },
     /// Forget a project (its files are not touched).
     Remove {
         name: String,

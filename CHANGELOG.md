@@ -5,6 +5,28 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.9.0] — 2026-11-05
+
+Feature release. Full notes: [`release-notes/v2.9.0.md`](./release-notes/v2.9.0.md).
+
+### Added
+- Import databases from several places at once, in the order you choose.
+- Choose what happens with duplicate databases: skip, replace (backed up first), or import under a new name.
+- Explorer menu to add, set up, or ignore a project from a right-click.
+- `.ols_ignore_site` hides only a project's site; Projects offers Unignore site.
+- Over 400 icons for sites and projects, in clear categories.
+
+### Changed & Improved
+- Simpler Import databases window; per-mode backgrounds; Editor settings in their own section.
+- Steadier Sites, Projects, Runtimes and Databases pages; paged Background Tasks.
+- Projects update right away; no needless administrator helper reinstall on upgrade.
+- Faster, easier-to-browse icon pickers.
+- Automatic fixes happen right away when something changes; Diagnose on the Repair page fixes what it safely can.
+
+### Fixed
+- Add Site picks the right folder; correct tray service count; long tooltip paths; import counts; Explorer menu reliability.
+- Project commands use the right PHP version; a site's Repair page shows only its own problems; faster saving in Settings and on sites.
+
 ## [2.8.0] — 2026-11-03
 
 Feature release. Full notes: [`release-notes/v2.8.0.md`](./release-notes/v2.8.0.md).

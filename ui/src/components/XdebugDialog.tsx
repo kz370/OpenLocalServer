@@ -85,7 +85,7 @@ export function XdebugDialog({ version, onClose }: { version: string | null; onC
       }
     >
       <div className="flex flex-col gap-4">
-        <ErrorCard error={error} onDismiss={() => setError(null)} />
+        <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
         {notice && <p className="text-sm text-success">{notice}</p>}
 
         {report && !report.installed && (

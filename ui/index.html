@@ -11,24 +11,12 @@
       ;(function () {
         try {
           var mode = 'system'
+          var parsed = null
           var raw = localStorage.getItem('ols-appearance')
           if (raw) {
             try {
-              var parsed = JSON.parse(raw)
+              parsed = JSON.parse(raw)
               if (parsed && parsed.mode) mode = parsed.mode
-              if (parsed && parsed.overrides) {
-                if (parsed.overrides.accent) {
-                  document.documentElement.style.setProperty('--primary', parsed.overrides.accent)
-                  document.documentElement.style.setProperty('--ring', parsed.overrides.accent)
-                }
-                if (parsed.overrides.background && parsed.overrides.background.type === 'gradient') {
-                  var bg = parsed.overrides.background
-                  document.documentElement.style.setProperty(
-                    '--app-background',
-                    'linear-gradient(' + (bg.angle || 135) + 'deg, ' + bg.from + ', ' + bg.to + ')'
-                  )
-                }
-              }
             } catch (err) {}
           } else {
             mode = localStorage.getItem('ols-theme') || 'system'
@@ -37,6 +25,22 @@
             mode === 'dark' ||
             (mode === 'system' &&
               window.matchMedia('(prefers-color-scheme: dark)').matches)
+          if (parsed && parsed.overrides) {
+            if (parsed.overrides.accent) {
+              document.documentElement.style.setProperty('--primary', parsed.overrides.accent)
+              document.documentElement.style.setProperty('--ring', parsed.overrides.accent)
+            }
+            // Background is stored per mode ({ light, dark }). Only the active mode's own
+            // gradient is pre-painted; an inherited (adapted) one is computed by the app.
+            var bgs = parsed.overrides.background
+            var bg = bgs && !bgs.type ? bgs[dark ? 'dark' : 'light'] : null
+            if (bg && bg.type === 'gradient') {
+              document.documentElement.style.setProperty(
+                '--app-background',
+                'linear-gradient(' + (bg.angle || 135) + 'deg, ' + bg.from + ', ' + bg.to + ')'
+              )
+            }
+          }
           document.documentElement.classList.toggle('dark', dark)
           document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
         } catch (e) {

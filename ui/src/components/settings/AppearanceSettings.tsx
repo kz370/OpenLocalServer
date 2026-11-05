@@ -9,9 +9,12 @@ import {
   BUILTIN_PRESETS,
   CURATED_ACCENTS,
   CURATED_GRADIENTS,
+  adaptGradientForMode,
   getContrastWarning,
+  isBackgroundInherited,
   useTheme,
   type SidebarIconStyle,
+  type ThemeBackground,
   type ThemeMode,
 } from '@/lib/theme'
 import { cn } from '@/lib/utils'
@@ -104,14 +107,25 @@ export function AppearanceSettings() {
   const activeAccent = settings.overrides.accent ?? preset[resolvedTheme].primary
   const contrastInfo = getContrastWarning(activeAccent, resolvedTheme === 'dark')
 
-  // Background state
+  // Background state (stored per mode; edits here apply to the active mode only)
+  const defaultGradient = adaptGradientForMode(
+    { type: 'gradient', from: '#050B16', to: '#0B1428', angle: 135 },
+    resolvedTheme,
+  )
   const isGradient = options.background.type === 'gradient'
-  const gradFrom =
-    options.background.type === 'gradient' ? options.background.from : '#050B16'
-  const gradTo =
-    options.background.type === 'gradient' ? options.background.to : '#0B1428'
-  const gradAngle =
-    options.background.type === 'gradient' ? options.background.angle : 135
+  const activeGradient = options.background.type === 'gradient' ? options.background : defaultGradient
+  const gradFrom = activeGradient.from
+  const gradTo = activeGradient.to
+  const gradAngle = activeGradient.angle
+  const bgInherited = isBackgroundInherited(settings.overrides.background, resolvedTheme)
+  const modeLabel = resolvedTheme === 'dark' ? 'Dark' : 'Light'
+  const otherModeLabel = resolvedTheme === 'dark' ? 'Light' : 'Dark'
+  const curatedGradients = CURATED_GRADIENTS.map((cg) => ({
+    name: cg.name,
+    ...adaptGradientForMode({ type: 'gradient', from: cg.from, to: cg.to, angle: cg.angle }, resolvedTheme),
+  }))
+  const setBackground = (background: ThemeBackground) =>
+    setOverrides({ background: { ...settings.overrides.background, [resolvedTheme]: background } })
 
   const handleReset = () => {
     resetToDefault()
@@ -422,7 +436,8 @@ export function AppearanceSettings() {
             <div>
               <CardTitle className="text-base font-semibold">App Background</CardTitle>
               <CardDescription>
-                Choose a clean solid theme background or an ambient linear gradient.
+                Choose a clean solid theme background or an ambient linear gradient. Saved
+                separately for {modeLabel} mode; switch modes to edit the other one.
               </CardDescription>
             </div>
             {isGradient && (
@@ -430,7 +445,7 @@ export function AppearanceSettings() {
                 variant="ghost"
                 size="sm"
                 className="h-7 text-xs text-muted-foreground"
-                onClick={() => setOverrides({ background: { type: 'solid' } })}
+                onClick={() => setBackground({ type: 'solid' })}
               >
                 Reset to solid
               </Button>
@@ -438,30 +453,26 @@ export function AppearanceSettings() {
           </div>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               variant={!isGradient ? 'default' : 'outline'}
               size="sm"
-              onClick={() => setOverrides({ background: { type: 'solid' } })}
+              onClick={() => setBackground({ type: 'solid' })}
             >
               Solid
             </Button>
             <Button
               variant={isGradient ? 'default' : 'outline'}
               size="sm"
-              onClick={() =>
-                setOverrides({
-                  background: {
-                    type: 'gradient',
-                    from: gradFrom,
-                    to: gradTo,
-                    angle: gradAngle,
-                  },
-                })
-              }
+              onClick={() => setBackground(activeGradient)}
             >
               Gradient
             </Button>
+            {bgInherited && (
+              <Badge variant="secondary" className="text-[11px] font-medium">
+                Matched from {otherModeLabel} mode
+              </Badge>
+            )}
           </div>
 
           {/* Gradient controls */}
@@ -472,18 +483,11 @@ export function AppearanceSettings() {
                   Curated Gradients
                 </span>
                 <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  {CURATED_GRADIENTS.map((cg) => (
+                  {curatedGradients.map((cg) => (
                     <button
                       key={cg.name}
                       onClick={() =>
-                        setOverrides({
-                          background: {
-                            type: 'gradient',
-                            from: cg.from,
-                            to: cg.to,
-                            angle: cg.angle,
-                          },
-                        })
+                        setBackground({ type: 'gradient', from: cg.from, to: cg.to, angle: cg.angle })
                       }
                       className="flex items-center gap-2 rounded-lg border border-border p-2 text-left hover:border-primary/50"
                     >
@@ -507,9 +511,7 @@ export function AppearanceSettings() {
                     value={gradFrom}
                     fallback="#050B16"
                     onCommit={(hex) =>
-                      setOverrides({
-                        background: { type: 'gradient', from: hex, to: gradTo, angle: gradAngle },
-                      })
+                      setBackground({ type: 'gradient', from: hex, to: gradTo, angle: gradAngle })
                     }
                   />
                 </div>
@@ -521,9 +523,7 @@ export function AppearanceSettings() {
                     value={gradTo}
                     fallback="#0B1428"
                     onCommit={(hex) =>
-                      setOverrides({
-                        background: { type: 'gradient', from: gradFrom, to: hex, angle: gradAngle },
-                      })
+                      setBackground({ type: 'gradient', from: gradFrom, to: hex, angle: gradAngle })
                     }
                   />
                 </div>
@@ -540,13 +540,11 @@ export function AppearanceSettings() {
                     step="5"
                     value={gradAngle}
                     onChange={(e) =>
-                      setOverrides({
-                        background: {
-                          type: 'gradient',
-                          from: gradFrom,
-                          to: gradTo,
-                          angle: parseInt(e.target.value, 10),
-                        },
+                      setBackground({
+                        type: 'gradient',
+                        from: gradFrom,
+                        to: gradTo,
+                        angle: parseInt(e.target.value, 10),
                       })
                     }
                     className="h-8 cursor-pointer accent-primary"

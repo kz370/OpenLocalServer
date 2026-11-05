@@ -1,29 +1,42 @@
-import { CheckCircle2, Database, Search, XCircle } from 'lucide-react'
+import { AlertTriangle, Check, CheckCircle2, ChevronRight, Database, FolderOpen, RotateCw, Search, XCircle } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { open as openFolder } from '@tauri-apps/plugin-dialog'
 
 import { Spinner } from '@/components/Spinner'
 import { TechTile } from '@/components/TechIcon'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
-import { Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { type Diagnostic, type MigratedDb, type MigrationProgress, type MigrationSource, runCommand } from '@/core'
 import { formatBytes, usePoll } from '@/lib/hooks'
+import { confirmAction } from '@/lib/confirm'
+import { cn } from '@/lib/utils'
+
+interface SourceImport {
+  password: string
+  databases: string[] | null
+  picked: string[]
+  /** Search text narrowing the database list (view only; never changes what is picked). */
+  filter: string
+  results: MigratedDb[] | null
+  error: string | null
+}
 
 /**
- * Import databases from Laragon, XAMPP or WampServer, straight from their data folders:
+ * Import databases from Laragon, XAMPP, WampServer or an older OLS MariaDB series:
  * no .sql export needed, and the original files are only ever read.
  */
 export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [sources, setSources] = useState<MigrationSource[] | null>(null)
-  const [sourceId, setSourceId] = useState('')
-  const [password, setPassword] = useState('')
-  const [dbs, setDbs] = useState<string[] | null>(null)
-  const [picked, setPicked] = useState<string[]>([])
+  const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([])
+  const [sourceImports, setSourceImports] = useState<Record<string, SourceImport>>({})
+  const [conflictPolicy, setConflictPolicy] = useState<ConflictPolicy>('skip')
+  /** Scanned sources whose database list the user folded away. */
+  const [collapsed, setCollapsed] = useState<string[]>([])
   const [busy, setBusy] = useState<'scan' | 'import' | null>(null)
+  const [activeSourceId, setActiveSourceId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [results, setResults] = useState<MigratedDb[] | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [progress, setProgress] = useState<MigrationProgress | null>(null)
 
   // The scan / import command blocks until it is done, so ask where it is up to meanwhile.
@@ -38,14 +51,53 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
     void runCommand({ type: 'list_migration_sources' }).then((r) => {
       if (r.type !== 'migration_sources') return
       setSources(r.sources)
-      const first = r.sources[0]
-      if (first) {
-        setSourceId(first.id)
-      }
     })
   }, [open])
 
-  const source = sources?.find((s) => s.id === sourceId)
+  const emptyImportState = (): SourceImport => ({
+    password: '', databases: null, picked: [], filter: '', results: null, error: null,
+  })
+
+  const importState = (id: string): SourceImport => sourceImports[id] ?? emptyImportState()
+
+  const updateImport = (id: string, patch: Partial<SourceImport>) =>
+    setSourceImports((previous) => ({
+      ...previous,
+      [id]: { ...(previous[id] ?? emptyImportState()), ...patch },
+    }))
+
+  const toggleDatabase = (id: string, database: string, checked: boolean) =>
+    setSourceImports((previous) => {
+      const current = previous[id] ?? emptyImportState()
+      const picked = checked
+        ? current.picked.includes(database) ? current.picked : [...current.picked, database]
+        : current.picked.filter((name) => name !== database)
+      return { ...previous, [id]: { ...current, picked } }
+    })
+
+  const browse = async () => {
+    try {
+      const selected = await openFolder({ directory: true, multiple: false, title: 'Select MySQL/MariaDB data folder' })
+      if (typeof selected !== 'string') return
+      setError(null)
+      setNotice(null)
+      const r = await runCommand({ type: 'inspect_migration_source', path: selected })
+      if (r.type !== 'migration_source') return
+      const key = normalizePath(r.source.data_dir)
+      const existing = (sources ?? []).find((candidate) => normalizePath(candidate.data_dir) === key)
+      if (existing) {
+        setSelectedSourceIds((previous) => previous.includes(existing.id) ? previous : [...previous, existing.id])
+        setNotice('That data folder is already listed; its existing source is selected.')
+        return
+      }
+      setSources((previous) => [...(previous ?? []), r.source])
+      setSelectedSourceIds((previous) => [...previous, r.source.id])
+      setNotice('Added the selected data folder to this import session.')
+    } catch (e) {
+      const d = e as Diagnostic
+      setError(d.cause || d.problem)
+    }
+  }
 
   async function attempt(kind: 'scan' | 'import', fn: () => Promise<void>) {
     setBusy(kind)
@@ -62,200 +114,540 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
     }
   }
 
-  const scan = () =>
+  const scan = (sourceId: string) =>
     attempt('scan', async () => {
-      setResults(null)
-      const r = await runCommand({ type: 'list_foreign_databases', source_id: sourceId, password })
+      setActiveSourceId(sourceId)
+      updateImport(sourceId, { databases: null, results: null, error: null })
+      const r = await runCommand({ type: 'list_foreign_databases', source_id: sourceId, password: importState(sourceId).password })
       if (r.type === 'names') {
-        setDbs(r.names)
-        setPicked(r.names)
+        updateImport(sourceId, { databases: r.names, picked: r.names, filter: '' })
+        setCollapsed((previous) => previous.filter((id) => id !== sourceId))
       }
     })
 
+  const selectedCount = selectedSourceIds.reduce((sum, id) => sum + importState(id).picked.length, 0)
+  const importableSourceIds = selectedSourceIds.filter((id) => importState(id).databases && importState(id).picked.length > 0)
+  const allScanned = selectedSourceIds.length > 0 && selectedSourceIds.every((id) => importState(id).databases !== null)
+  const readyToImport = allScanned && importableSourceIds.length > 0
+  const seenNames = new Set<string>()
+  const duplicateNames = new Set<string>()
+  for (const id of selectedSourceIds) {
+    for (const name of importState(id).picked) {
+      const key = name.toLocaleLowerCase()
+      if (seenNames.has(key)) duplicateNames.add(name)
+      seenNames.add(key)
+    }
+  }
+
   const migrate = () =>
     attempt('import', async () => {
-      const r = await runCommand({ type: 'migrate_databases', source_id: sourceId, password, databases: picked, target: 'mariadb' })
-      if (r.type === 'migrated') setResults(r.results)
+      if (conflictPolicy === 'replace_with_backup') {
+        const ok = await confirmAction(
+          'For every name conflict, OLS first saves the existing database as a SQL backup. It replaces the database only after that backup succeeds. If import fails, OLS attempts to restore the backup.',
+          'Replace conflicting databases',
+          'Replace with backup',
+        )
+        if (!ok) return
+      }
+      for (const sourceId of importableSourceIds) {
+        setActiveSourceId(sourceId)
+        updateImport(sourceId, { results: null, error: null })
+        try {
+          const state = importState(sourceId)
+          const r = await runCommand({
+            type: 'migrate_databases_resolved',
+            source_id: sourceId,
+            password: state.password,
+            databases: state.picked,
+            target: 'mariadb',
+            conflict_policy: conflictPolicy,
+          })
+          if (r.type === 'migrated') updateImport(sourceId, { results: r.results })
+        } catch (e) {
+          const d = e as Diagnostic
+          updateImport(sourceId, { error: d.cause || d.problem })
+        }
+      }
     })
 
-  const choose = (id: string) => {
-    setSourceId(id)
-    setDbs(null)
-    setResults(null)
+  const selectedSources = selectedSourceIds.flatMap((id) => {
+    const source = sources?.find((item) => item.id === id)
+    return source ? [source] : []
+  })
+  const allResults = selectedSourceIds.flatMap((id) => importState(id).results ?? [])
+  const toggleSource = (id: string, selected: boolean) => {
+    setSelectedSourceIds((previous) => selected
+      ? previous.includes(id) ? previous : [...previous, id]
+      : previous.filter((existing) => existing !== id))
+    setNotice(null)
   }
+
+  const toggleCollapsed = (id: string) =>
+    setCollapsed((previous) => previous.includes(id) ? previous.filter((existing) => existing !== id) : [...previous, id])
+
+  const unscannedCount = selectedSourceIds.filter((id) => importState(id).databases === null).length
+  const tally = (results: MigratedDb[]) => ({
+    imported: results.filter((result) => result.ok).length,
+    skipped: results.filter((result) => !result.ok && result.detail.startsWith('Skipped')).length,
+    failed: results.filter((result) => !result.ok && !result.detail.startsWith('Skipped')).length,
+  })
+  const totals = tally(allResults)
+  const footerStatus = allResults.length > 0 && busy === null
+    ? `${totals.imported} imported · ${totals.skipped} skipped · ${totals.failed} failed`
+    : selectedSourceIds.length === 0
+      ? 'Select a source to start.'
+      : unscannedCount > 0
+        ? `Scan ${unscannedCount} more source${unscannedCount === 1 ? '' : 's'} to continue.`
+        : selectedCount === 0
+          ? 'Select at least one database.'
+          : `${selectedCount} database${selectedCount === 1 ? '' : 's'} from ${importableSourceIds.length} source${importableSourceIds.length === 1 ? '' : 's'}`
 
   return (
     <Dialog
       open={open}
       onClose={() => busy === null && onClose()}
-      title="Import from Laragon, XAMPP or Wamp"
-      description="Copies databases straight from the other app's data folder. No .sql export needed, and its files are never changed."
-      wide
+      title="Import databases"
+      description="Copy databases from another local MySQL/MariaDB data folder. Source files are never changed."
+      size="wide"
       footer={
         <>
+          <span className="mr-auto truncate text-xs text-muted-foreground">{footerStatus}</span>
           <Button variant="ghost" disabled={busy !== null} onClick={onClose}>
             Close
           </Button>
-          {dbs && (
-            <Button disabled={busy !== null || picked.length === 0} onClick={migrate}>
-              {busy === 'import' ? <Spinner /> : <Database />} Import {picked.length} database{picked.length === 1 ? '' : 's'} into MariaDB
-            </Button>
-          )}
+          <Button disabled={busy !== null || !readyToImport} onClick={migrate}>
+            {busy === 'import' ? <Spinner /> : <Database />} Import {selectedCount || ''} into MariaDB
+          </Button>
         </>
       }
     >
       <div className="flex flex-col gap-4">
-        {sources === null && (
-          <p className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Spinner /> Looking for Laragon, XAMPP and WampServer…
-          </p>
-        )}
-        {sources?.length === 0 && <p className="text-sm text-muted-foreground">No Laragon, XAMPP or WampServer databases were found on this PC.</p>}
-
-        {!!sources?.length && (
-          <div className="grid gap-2 sm:grid-cols-2">
-            {sources.map((s) => (
-              <button
-                key={s.id}
-                disabled={busy !== null}
-                onClick={() => choose(s.id)}
-                className={`flex items-center gap-3 rounded-lg border p-3 text-left transition-colors ${
-                  s.id === sourceId ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border hover:bg-accent/50'
-                }`}
+        {/* Step 1: pick sources (click order = import order). */}
+        <section className="flex flex-col gap-2">
+          <StepHeader
+            step={1}
+            title="Sources"
+            hint="Click in the order to import"
+            action={
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={sources === null || busy !== null}
+                onClick={() => void browse()}
+                title="Choose the folder that contains the MySQL system database"
               >
-                <TechTile id={s.engine} className="size-9" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">{s.label}</span>
-                  <span className="block truncate text-xs text-muted-foreground" title={s.data_dir}>
-                    {formatBytes(s.size_bytes)} · {s.data_dir}
-                  </span>
-                </span>
-                {s.running_port && <Badge variant="success">running :{s.running_port}</Badge>}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {source && (
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="migrate-password" className="text-xs font-medium text-muted-foreground">
-              {source.label} root password
-            </label>
-            <div className="flex flex-wrap items-center gap-2">
-              <Input
-                id="migrate-password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && busy === null && scan()}
-                placeholder="Leave blank if none"
-                className="min-w-0 flex-1 sm:max-w-72"
-                autoComplete="off"
-              />
-              <Button variant="secondary" disabled={busy !== null} onClick={scan}>
-                {busy === 'scan' ? <Spinner /> : <Search />} {busy === 'scan' ? (source.running_port ? 'Reading…' : 'Starting a copy…') : 'Find databases'}
+                <FolderOpen /> Browse…
               </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">Laragon and XAMPP use a blank root password by default.</p>
-          </div>
-        )}
-
-        {busy !== null && <ProgressPanel progress={progress} />}
-
-        {error && <p className="text-sm text-destructive">{error}</p>}
-
-        {dbs && dbs.length === 0 && <p className="text-sm text-muted-foreground">That server has no databases of its own.</p>}
-        {dbs && dbs.length > 0 && (
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">
-                Databases · {picked.length}/{dbs.length} selected
-              </span>
-              <Button size="sm" variant="ghost" onClick={() => setPicked(picked.length === dbs.length ? [] : dbs)}>
-                {picked.length === dbs.length ? 'Select none' : 'Select all'}
-              </Button>
-            </div>
-            <div className="grid max-h-56 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3">
-              {dbs.map((db) => {
-                const result = results?.find((r) => r.name === db) ?? progress?.done.find((r) => r.name === db)
+            }
+          />
+          {sources === null && (
+            <p className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Spinner /> Looking for MySQL and MariaDB data folders…
+            </p>
+          )}
+          {sources?.length === 0 && <p className="text-xs text-muted-foreground">No MySQL or MariaDB data folders found. Use Browse to pick one.</p>}
+          {!!sources?.length && (
+            <div className="grid gap-1.5 sm:grid-cols-2">
+              {sources.map((s) => {
+                const order = selectedSourceIds.indexOf(s.id) + 1
+                const isSelected = order > 0
                 return (
-                  <div key={db} className="flex items-center gap-1.5" title={result?.detail}>
-                    <Toggle checked={picked.includes(db)} disabled={busy !== null} onChange={(v) => setPicked(v ? [...picked, db] : picked.filter((x) => x !== db))} label={db} />
-                    {result && (result.ok ? <CheckCircle2 className="size-3.5 text-success" /> : <XCircle className="size-3.5 text-destructive" />)}
-                    {!result && busy === 'import' && progress?.current_db === db && <Spinner className="size-3.5 text-primary" />}
+                  <button
+                    key={s.id}
+                    type="button"
+                    role="checkbox"
+                    aria-checked={isSelected}
+                    aria-label={isSelected ? `${s.label}, import order ${order}` : s.label}
+                    disabled={busy !== null}
+                    onClick={() => toggleSource(s.id, !isSelected)}
+                    title={s.data_dir}
+                    className={cn(
+                      'group flex min-w-0 cursor-pointer items-center gap-2.5 rounded-md border px-2.5 py-2 text-left transition-colors',
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60',
+                      isSelected
+                        ? 'border-primary/60 bg-primary/10 hover:bg-primary/15'
+                        : 'border-border hover:border-muted-foreground/40 hover:bg-muted/30',
+                    )}
+                  >
+                    <OrderDot order={isSelected ? order : null} />
+                    <TechTile id={s.engine} className="size-7 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <span className="truncate text-sm font-medium">{s.label}</span>
+                        {s.running_port && (
+                          <span className="flex shrink-0 items-center gap-1 text-[11px] text-success">
+                            <span className="size-1.5 rounded-full bg-success" /> :{s.running_port}
+                          </span>
+                        )}
+                      </div>
+                      <div className="truncate text-[11px] text-muted-foreground">{s.data_dir}</div>
+                    </div>
+                    <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{formatBytes(s.size_bytes)}</span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* Step 2: scan each selected source and pick its databases. */}
+        <section className="flex flex-col gap-2">
+          <StepHeader step={2} title="Databases" hint={selectedSources.length ? `${selectedCount} selected` : undefined} />
+          {selectedSources.length === 0 ? (
+            <p className="rounded-md border border-dashed border-border px-3 py-3 text-center text-xs text-muted-foreground">
+              Select a source above to scan its databases.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              {selectedSources.map((source, index) => {
+                const state = importState(source.id)
+                const scanning = busy === 'scan' && activeSourceId === source.id
+                const working = busy !== null && activeSourceId === source.id
+                const expanded = state.databases !== null && !collapsed.includes(source.id)
+                const sourceTally = state.results ? tally(state.results) : null
+                const notes = (state.results ?? []).filter((result) => !result.ok || result.detail !== 'copied')
+                return (
+                  <div key={source.id} className="rounded-md border border-border">
+                    <div className="flex flex-wrap items-center gap-2 px-2.5 py-1.5">
+                      <button
+                        type="button"
+                        disabled={state.databases === null}
+                        onClick={() => toggleCollapsed(source.id)}
+                        aria-expanded={expanded}
+                        className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left disabled:cursor-default"
+                      >
+                        <ChevronRight className={cn('size-4 shrink-0 text-muted-foreground transition-transform', expanded && 'rotate-90', state.databases === null && 'opacity-30')} />
+                        <OrderDot order={index + 1} />
+                        <span className="truncate text-sm font-medium">{source.label}</span>
+                        <span
+                          className={cn(
+                            'shrink-0 rounded-full px-2 py-0.5 text-[11px] tabular-nums',
+                            working ? 'bg-primary/10 text-primary' : state.databases ? 'bg-muted/60 text-muted-foreground' : 'text-muted-foreground/70',
+                          )}
+                        >
+                          {working
+                            ? scanning ? 'Scanning…' : 'Importing…'
+                            : sourceTally
+                              ? <><span className="text-success">{sourceTally.imported} imported</span> · {sourceTally.skipped} skipped{sourceTally.failed > 0 && <span className="text-destructive"> · {sourceTally.failed} failed</span>}</>
+                              : state.databases
+                                ? `${state.picked.length} of ${state.databases.length} selected`
+                                : 'Not scanned'}
+                        </span>
+                      </button>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <Input
+                          type="password"
+                          value={state.password}
+                          disabled={busy !== null}
+                          onChange={(e) => updateImport(source.id, { password: e.target.value })}
+                          placeholder="Root password"
+                          aria-label={`Root password for ${source.label} (leave blank if none)`}
+                          title="Leave blank if root has no password"
+                          className="h-8 w-36 text-xs"
+                          autoComplete="off"
+                        />
+                        <Button size="sm" variant={state.databases ? 'ghost' : 'secondary'} disabled={busy !== null} onClick={() => scan(source.id)}>
+                          {scanning ? <Spinner /> : state.databases ? <RotateCw /> : <Search />}
+                          {state.databases ? 'Rescan' : 'Scan'}
+                        </Button>
+                      </div>
+                    </div>
+                    {working && <ProgressPanel progress={progress} />}
+                    {state.error && <p className="border-t border-border px-3 py-1.5 text-xs text-destructive">{state.error}</p>}
+                    {expanded && state.databases && (
+                      <div className="flex flex-col gap-2 border-t border-border px-2.5 py-2">
+                        <DatabasePicker
+                          databases={state.databases}
+                          picked={state.picked}
+                          filter={state.filter}
+                          disabled={busy !== null}
+                          duplicateNames={duplicateNames}
+                          resultFor={(db) => state.results?.find((r) => r.name === db) ?? (activeSourceId === source.id ? progress?.done.find((r) => r.name === db) : undefined)}
+                          onFilter={(filter) => updateImport(source.id, { filter })}
+                          onToggle={(db, checked) => toggleDatabase(source.id, db, checked)}
+                          onSetPicked={(picked) => updateImport(source.id, { picked })}
+                        />
+                        {notes.length > 0 && (
+                          <ul className="flex max-h-24 flex-col gap-0.5 overflow-y-auto text-[11px]">
+                            {notes.map((result) => (
+                              <li
+                                key={`${source.id}:${result.name}`}
+                                className={result.ok || result.detail.startsWith('Skipped') ? 'text-muted-foreground' : 'text-destructive'}
+                              >
+                                <span className="font-mono">{result.name}</span>: {result.detail}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )
               })}
             </div>
-            <p className="text-xs text-muted-foreground">Imported into MariaDB. If a database with the same name already exists there, tables with the same names are replaced.</p>
+          )}
+          {duplicateNames.size > 0 && (
+            <p className="flex items-start gap-1.5 text-xs text-warning">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+              <span>Picked in more than one source: {[...duplicateNames].join(', ')}. Resolved in source order.</span>
+            </p>
+          )}
+        </section>
+
+        {/* Step 3: what to do when a name already exists. */}
+        <section className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            <StepHeader step={3} title="If a database already exists" />
+            <div role="radiogroup" aria-label="If a database already exists" className="inline-flex flex-wrap rounded-md border border-border bg-muted/30 p-0.5">
+              {CONFLICT_POLICIES.map((policy) => {
+                const active = conflictPolicy === policy.id
+                return (
+                  <button
+                    key={policy.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    disabled={busy !== null}
+                    onClick={() => setConflictPolicy(policy.id)}
+                    className={cn(
+                      'cursor-pointer rounded px-3 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60',
+                      active ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
+                    )}
+                  >
+                    {policy.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+          <p className="-mt-1 text-[11px] text-muted-foreground">{CONFLICT_POLICIES.find((policy) => policy.id === conflictPolicy)?.hint}</p>
+        </section>
+
+        {busy !== null && !selectedSourceIds.includes(activeSourceId ?? '') && (
+          <div className="rounded-md border border-border">
+            <ProgressPanel progress={progress} />
           </div>
         )}
 
-        {results && (
-          <div className="rounded-lg border border-border p-3 text-sm">
-            <p className="font-medium">
-              {results.filter((r) => r.ok).length} of {results.length} imported.
-            </p>
-            {results
-              .filter((r) => !r.ok)
-              .map((r) => (
-                <p key={r.name} className="mt-1 text-xs text-destructive">
-                  {r.name}: {r.detail}
-                </p>
-              ))}
-          </div>
-        )}
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        {notice && <p className="text-xs text-muted-foreground">{notice}</p>}
       </div>
     </Dialog>
   )
 }
 
-/** Live step, per-database count and a byte bar for the running scan or import. */
+type ConflictPolicy = 'skip' | 'replace_with_backup' | 'rename_incoming'
+
+const CONFLICT_POLICIES: { id: ConflictPolicy; label: string; hint: string }[] = [
+  { id: 'skip', label: 'Skip (default)', hint: 'Keeps the database already in OLS and skips the incoming one.' },
+  { id: 'replace_with_backup', label: 'Replace (backup first)', hint: 'Saves a SQL backup first; stops if the backup fails and restores it if the import fails.' },
+  { id: 'rename_incoming', label: 'Rename incoming', hint: 'Imports the incoming database under a unique _imported name; existing data stays unchanged.' },
+]
+
+/** Small numbered step title with an optional hint and right-aligned action. */
+function StepHeader({ step, title, hint, action }: { step: number; title: string; hint?: string; action?: React.ReactNode }) {
+  return (
+    <div className="flex min-h-8 items-center gap-2">
+      <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {step} · {title}
+      </span>
+      {hint && <span className="text-[11px] text-muted-foreground/70">{hint}</span>}
+      {action && <div className="ml-auto">{action}</div>}
+    </div>
+  )
+}
+
+/** Fixed-size circle: empty when not selected, the import order number when selected. Never changes size. */
+function OrderDot({ order }: { order: number | null }) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        'inline-flex size-5 shrink-0 items-center justify-center rounded-full border-2 text-[11px] font-semibold tabular-nums transition-colors',
+        order !== null ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40 group-hover:border-muted-foreground',
+      )}
+    >
+      {order ?? ''}
+    </span>
+  )
+}
+
+/**
+ * Selectable database tiles: aligned checkbox + name, per-database import status,
+ * a warning mark for names also picked in another source, plus search and bulk select.
+ */
+function DatabasePicker({
+  databases,
+  picked,
+  filter,
+  disabled,
+  duplicateNames,
+  resultFor,
+  onFilter,
+  onToggle,
+  onSetPicked,
+}: {
+  databases: string[]
+  picked: string[]
+  filter: string
+  disabled: boolean
+  duplicateNames: Set<string>
+  resultFor: (db: string) => MigratedDb | undefined
+  onFilter: (filter: string) => void
+  onToggle: (db: string, checked: boolean) => void
+  onSetPicked: (picked: string[]) => void
+}) {
+  const query = filter.trim().toLocaleLowerCase()
+  const visible = query ? databases.filter((db) => db.toLocaleLowerCase().includes(query)) : databases
+  const pickedSet = new Set(picked)
+  const duplicateKeys = new Set([...duplicateNames].map((name) => name.toLocaleLowerCase()))
+  const allVisiblePicked = visible.length > 0 && visible.every((db) => pickedSet.has(db))
+  const noneVisiblePicked = visible.every((db) => !pickedSet.has(db))
+  // Bulk actions only touch what the search shows, so hidden picks are kept.
+  const selectVisible = () => onSetPicked([...new Set([...picked, ...visible])])
+  const clearVisible = () => {
+    const shown = new Set(visible)
+    onSetPicked(picked.filter((db) => !shown.has(db)))
+  }
+
+  if (databases.length === 0) return <p className="text-xs text-muted-foreground">No user databases found.</p>
+
+  return (
+    <>
+      {databases.length > 1 && <div className="flex items-center gap-1">
+        {databases.length > 6 && (
+          <div className="relative min-w-0 flex-1 sm:max-w-56">
+            <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={filter}
+              onChange={(e) => onFilter(e.target.value)}
+              placeholder="Filter"
+              aria-label="Filter databases"
+              className="h-7 w-full pl-7 text-xs"
+              autoComplete="off"
+            />
+          </div>
+        )}
+        <div className="ml-auto flex items-center text-xs">
+          <button
+            type="button"
+            disabled={disabled || allVisiblePicked}
+            onClick={selectVisible}
+            className="cursor-pointer rounded px-2 py-1 font-medium text-primary hover:bg-primary/10 disabled:cursor-default disabled:text-muted-foreground/50 disabled:hover:bg-transparent"
+          >
+            All
+          </button>
+          <span className="text-muted-foreground/40">|</span>
+          <button
+            type="button"
+            disabled={disabled || noneVisiblePicked}
+            onClick={clearVisible}
+            className="cursor-pointer rounded px-2 py-1 font-medium text-primary hover:bg-primary/10 disabled:cursor-default disabled:text-muted-foreground/50 disabled:hover:bg-transparent"
+          >
+            None
+          </button>
+        </div>
+      </div>}
+
+      {visible.length === 0 ? (
+        <p className="py-2 text-center text-xs text-muted-foreground">No databases match “{filter.trim()}”.</p>
+      ) : (
+        <div className="grid max-h-48 grid-cols-2 gap-1 overflow-y-auto pr-1 sm:grid-cols-3 lg:grid-cols-4">
+          {visible.map((db) => {
+            const isPicked = pickedSet.has(db)
+            const result = resultFor(db)
+            const isDuplicate = isPicked && duplicateKeys.has(db.toLocaleLowerCase())
+            const skipped = result && !result.ok && result.detail.startsWith('Skipped')
+            return (
+              <button
+                key={db}
+                type="button"
+                role="checkbox"
+                aria-checked={isPicked}
+                disabled={disabled}
+                title={result?.detail ?? (isDuplicate ? 'Also selected in another source; resolved in source order.' : db)}
+                onClick={() => onToggle(db, !isPicked)}
+                className={cn(
+                  'group flex min-w-0 cursor-pointer items-center gap-2 rounded border px-2 py-1 text-left text-xs transition-colors',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60',
+                  isPicked
+                    ? 'border-primary/50 bg-primary/10 text-foreground hover:bg-primary/15'
+                    : 'border-border bg-transparent text-muted-foreground hover:border-muted-foreground/40 hover:text-foreground',
+                )}
+              >
+                <span
+                  aria-hidden
+                  className={cn(
+                    'inline-flex size-3.5 shrink-0 items-center justify-center rounded-sm border transition-colors',
+                    isPicked ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40 bg-input/60 group-hover:border-muted-foreground',
+                  )}
+                >
+                  {isPicked && <Check className="size-2.5" strokeWidth={3.5} />}
+                </span>
+                <span className="min-w-0 flex-1 truncate font-mono">{db}</span>
+                {isDuplicate && !result && <AlertTriangle className="size-3.5 shrink-0 text-warning" />}
+                {result && (result.ok
+                  ? <CheckCircle2 className="size-3.5 shrink-0 text-success" />
+                  : skipped
+                    ? <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">skip</span>
+                    : <XCircle className="size-3.5 shrink-0 text-destructive" />)}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </>
+  )
+}
+
+function normalizePath(path: string) {
+  return path.replaceAll('\\', '/').replace(/\/+$/, '').toLocaleLowerCase()
+}
+
+/** Slim live strip for the running scan or import, shown inside the source row it belongs to. */
 function ProgressPanel({ progress }: { progress: MigrationProgress | null }) {
-  const [now, setNow] = useState(Date.now())
+  const [now, setNow] = useState(() => Date.now())
   usePoll(() => setNow(Date.now()), 1000)
   if (!progress) {
     return (
-      <div className="flex items-center gap-2 rounded-lg border border-border p-3 text-sm text-muted-foreground">
-        <Spinner /> Getting started…
+      <div className="flex items-center gap-2 border-t border-border px-2.5 py-2 text-xs text-muted-foreground">
+        <Spinner className="size-3.5" /> Getting started…
       </div>
     )
   }
   const { bytes, bytes_total: total } = progress
   // Export sizes are an estimate, so the bar never claims to be done before the step is.
   const pct = total ? Math.min(99, Math.round((bytes / total) * 100)) : null
-  const overall = progress.db_total ? Math.round(((progress.db_index - 1 + (pct ?? 0) / 100) / progress.db_total) * 100) : null
   const elapsed = Math.max(0, Math.round((now - progress.started_ms) / 1000))
   const failed = progress.done.filter((d) => !d.ok).length
+  const size = bytes > 0
+    ? total ? `${formatBytes(bytes)} / ${progress.step.startsWith('Exporting') ? '~' : ''}${formatBytes(total)}` : `${formatBytes(bytes)} written`
+    : null
 
   return (
-    <div className="flex flex-col gap-2.5 rounded-lg border border-border bg-muted/30 p-3" aria-live="polite">
-      <div className="flex items-center justify-between gap-3 text-sm">
-        <span className="flex min-w-0 items-center gap-2 font-medium">
-          <Spinner className="shrink-0" />
-          <span className="truncate">{progress.step || 'Working…'}</span>
+    <div className="flex flex-col gap-1.5 border-t border-border bg-muted/20 px-2.5 py-2" aria-live="polite">
+      <div className="flex min-w-0 items-center gap-2 text-xs">
+        <Spinner className="size-3.5 shrink-0 text-primary" />
+        <span className="min-w-0 flex-1 truncate">
+          {progress.current_db && progress.db_total > 0 && <span className="font-mono">{progress.current_db} · </span>}
+          {progress.step || 'Working…'}
         </span>
-        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-          {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}
+        <span className="flex shrink-0 items-center gap-2 tabular-nums text-muted-foreground">
+          {size && <span>{size}</span>}
+          {progress.db_total > 0 && (
+            <span>
+              {progress.db_index}/{progress.db_total}
+              {failed > 0 && <span className="text-destructive"> · {failed} failed</span>}
+            </span>
+          )}
+          <span>{Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}</span>
         </span>
       </div>
-
-      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+      <div className="h-1 overflow-hidden rounded-full bg-muted">
         {pct === null ? (
           <div className="h-full w-1/3 animate-[indeterminate_1.2s_ease-in-out_infinite] rounded-full bg-primary" />
         ) : (
           <div className="h-full rounded-full bg-primary transition-[width] duration-500" style={{ width: `${pct}%` }} />
-        )}
-      </div>
-
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs tabular-nums text-muted-foreground">
-        <span>{bytes > 0 && (total ? `${formatBytes(bytes)} of ${progress.step.startsWith('Exporting') ? '~' : ''}${formatBytes(total)}` : `${formatBytes(bytes)} written`)}</span>
-        {progress.db_total > 0 && (
-          <span>
-            Database {progress.db_index} of {progress.db_total}
-            {overall !== null && ` · ${overall}% overall`}
-            {failed > 0 && <span className="text-destructive"> · {failed} failed</span>}
-          </span>
         )}
       </div>
     </div>

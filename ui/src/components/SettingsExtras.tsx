@@ -273,7 +273,7 @@ export function ResourcesCard() {
           </Button>
         </div>
 
-        <ErrorCard error={error} onDismiss={() => setError(null)} />
+        <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
         <section className="flex flex-col gap-4 border-t border-border/60 pt-6">
           <div className="flex items-start gap-3">
@@ -324,7 +324,7 @@ export function ResourcesCard() {
             Changes are applied the next time the service starts.
           </p>
         </div>
-        {saved && <span className="text-sm text-success">Saved. Restart a service to apply its limit.</span>}
+        <span className="block min-h-5 text-sm text-success">{saved ? 'Saved. Restart a service to apply its limit.' : '\u00a0'}</span>
       </CardContent>
     </Card>
   )
@@ -397,7 +397,7 @@ export function SettingsBackupsCard() {
         <CardDescription>Projects, sites, services, Quick Apps and Commands, profiles, workers, schedules, tunnels and certificate details. A project's own snapshots and automatic backups are on its Backups tab.</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
-        <ErrorCard error={error} onDismiss={() => setError(null)} />
+        <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
         <div className="flex items-center gap-3">
           <Button
             variant="secondary"
@@ -504,7 +504,7 @@ export function AutoBackupCard() {
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
-        <ErrorCard error={error} onDismiss={() => setError(null)} />
+        <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
         <Toggle
           checked={s.enabled}
@@ -657,7 +657,7 @@ export function AutoBackupCard() {
             <Archive /> Back up now
           </SaveButton>
           {status.running && <span className="text-sm text-muted-foreground">A backup is already running.</span>}
-          {saved && <span className="text-sm text-success">{saved}</span>}
+          <span className="min-h-5 text-sm text-success">{saved ?? '\u00a0'}</span>
         </div>
 
         {last && (

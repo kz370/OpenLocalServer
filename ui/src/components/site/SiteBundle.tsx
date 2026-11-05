@@ -122,7 +122,7 @@ export function SiteExportDialog({
       }
     >
       <div className="flex flex-col gap-4">
-          <ErrorCard error={error} onDismiss={() => setError(null)} />
+          <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
           <div className="rounded-lg border border-border p-3 text-xs">
             <p className="font-medium">Sites</p>
@@ -327,7 +327,7 @@ export function SiteImportButton({ onWatch }: { onWatch?: () => void }) {
       >
         {busy === 'preview' ? <Spinner /> : <Upload />} Import bundle
       </Button>
-      {error && !preview && <ErrorCard error={error} onDismiss={() => setError(null)} />}
+      {error && !preview && <ErrorCard error={error} onDismiss={() => setError(null)} overlay />}
       <Dialog
         open={preview !== null}
         onClose={() => busy === null && setPreview(null)}
@@ -347,7 +347,7 @@ export function SiteImportButton({ onWatch }: { onWatch?: () => void }) {
       >
         {preview && (
           <div className="flex flex-col gap-4 text-sm">
-            <ErrorCard error={error} onDismiss={() => setError(null)} />
+            <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
             <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               <Badge variant="outline">{preview.label}</Badge>

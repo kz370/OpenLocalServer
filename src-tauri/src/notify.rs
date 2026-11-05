@@ -48,7 +48,7 @@ const ICON_FILE: &str = "notification-icon.png";
 ///
 /// It has to be a real `.ico`: `IShellLink::SetIconLocation` takes an icon *resource*
 /// path, and a bare PNG is not one, so pointing it at a `.png` leaves the taskbar button
-/// blank. Regenerated from the dark running master by `scripts/build-app-icons.ps1`.
+/// blank. Regenerated from the dark running master by `scripts/build-app-icons/build-app-icons.ps1`.
 const SHORTCUT_ICON: &[u8] = include_bytes!("../icons/dark/icon.ico");
 
 const SHORTCUT_ICON_FILE: &str = "shortcut-icon.ico";

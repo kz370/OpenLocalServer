@@ -456,6 +456,11 @@ impl Inner {
         let mut findings: Vec<Finding> =
             self.diagnose().into_iter().filter(|f| !f.ignored).collect();
         if let Some(p) = project_id {
+            // The app-wide check also reports every other project's problems; this page is
+            // about one project, so those stay out of its list and out of its Repair button.
+            let domains = self.domains.lock().unwrap().list();
+            let projects = self.projects.lock().unwrap().list();
+            findings.retain(|f| !finding_is_for_other_project(f, p, &projects, &domains));
             let own = self.diagnose_project(p)?;
             // A project's own check replaces the app-wide one about the same thing.
             findings.retain(|f| !own.iter().any(|o| o.id == f.id));
@@ -483,6 +488,30 @@ impl Inner {
     }
 }
 
+/// Whether an app-wide finding is about a different project than `project_id`. Finding ids are
+/// `kind:subject`, where the subject is a project id or a site hostname; a project-scoped fix
+/// command also names its project.
+fn finding_is_for_other_project(
+    f: &Finding,
+    project_id: &str,
+    projects: &[crate::project::Project],
+    domains: &[crate::domain::Domain],
+) -> bool {
+    let subject = f.id.split_once(':').map(|(_, rest)| rest).unwrap_or("");
+    let subject = subject.split(':').next().unwrap_or("");
+    if subject.is_empty() {
+        return false;
+    }
+    if projects.iter().any(|p| p.id == subject) {
+        return subject != project_id;
+    }
+    domains
+        .iter()
+        .find(|d| d.hostname == subject)
+        .and_then(|d| d.project_id.as_deref())
+        .is_some_and(|owner| owner != project_id)
+}
+
 /// Service lifecycle commands (starting/restarting stopped or unhealthy services) must not
 /// be executed silently by background diagnostic auto-fix: starting services is controlled
 /// by the user and by `run_autostart`, never behind the user's back on a timer.
@@ -503,6 +532,17 @@ impl Core {
             return Vec::new();
         }
         let findings = auto_fix_findings(self.inner());
+        // A problem that has gone away is forgotten, so it is fixed again if it comes back
+        // (a deleted .env restored once, deleted again). One that is still there after an
+        // attempt stays marked, so a fix that cannot work is not retried in a loop.
+        let forget_resolved = |current: &[Finding]| {
+            self.inner()
+                .auto_fix_attempted
+                .lock()
+                .unwrap()
+                .retain(|id| current.iter().any(|f| &f.id == id));
+        };
+        forget_resolved(&findings);
         let mut results = Vec::new();
         for f in findings
             .into_iter()
@@ -544,6 +584,9 @@ impl Core {
                     });
                 }
             }
+        }
+        if !results.is_empty() {
+            forget_resolved(&auto_fix_findings(self.inner()));
         }
         results
     }
@@ -718,6 +761,40 @@ mod tests {
     }
 
     #[test]
+    fn a_projects_repair_plan_leaves_out_other_projects_findings() {
+        let (core, home) = core();
+        let mut ids = Vec::new();
+        for name in ["alpha", "beta"] {
+            let dir = home.paths.root().join(name);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(
+                dir.join("composer.json"),
+                r#"{"require":{"vendor/pkg":"^1.0"}}"#,
+            )
+            .unwrap();
+            let CoreResponse::Project { project } = core
+                .dispatch(CoreCommand::RegisterProject {
+                    path: dir.display().to_string(),
+                })
+                .unwrap()
+            else {
+                panic!()
+            };
+            ids.push(project.id);
+        }
+        let own = format!("composer_not_installed:{}", ids[0]);
+        let other = format!("composer_not_installed:{}", ids[1]);
+
+        let everything = core.inner().plan_repair(None).unwrap();
+        assert!(everything.findings.iter().any(|f| f.id == other));
+
+        let plan = core.inner().plan_repair(Some(&ids[0])).unwrap();
+        assert!(plan.findings.iter().any(|f| f.id == own));
+        assert!(!plan.findings.iter().any(|f| f.id == other));
+        assert!(!plan.actions.iter().any(|a| a.finding_id == other));
+    }
+
+    #[test]
     fn destructive_fixes_are_recognised() {
         assert!(is_destructive(&CoreCommand::CreateVenv {
             project_id: "p".into(),
@@ -803,6 +880,34 @@ mod tests {
             .find(|f| f.id == format!("env_missing:{}", project.id))
             .expect("project .env finding is scanned");
         assert!(missing_env.auto_fixable);
+    }
+
+    #[test]
+    fn a_fixed_problem_is_fixed_again_when_it_comes_back() {
+        let (core, home) = core();
+        let dir = home.paths.root().join("shop");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(".env.example"), "APP_NAME=shop\n").unwrap();
+        core.dispatch(CoreCommand::RegisterProject {
+            path: dir.display().to_string(),
+        })
+        .unwrap();
+
+        for _ in 0..2 {
+            let results: Vec<_> = core
+                .auto_fix_diagnostics()
+                .into_iter()
+                .filter(|r| r.id.starts_with("env_missing:"))
+                .collect();
+            assert_eq!(
+                results.len(),
+                1,
+                "the missing .env is fixed each time it appears"
+            );
+            assert!(results[0].ok);
+            assert!(dir.join(".env").is_file());
+            std::fs::remove_file(dir.join(".env")).unwrap();
+        }
     }
 
     #[test]

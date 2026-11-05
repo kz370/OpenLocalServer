@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { runCommand } from '@/core'
 import { useAppMarkPath, usePoll } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
-import { useTheme } from '@/lib/theme'
+import { backgroundSuitsMode, useTheme } from '@/lib/theme'
 import {
   CommandsIcon,
   DashboardIcon,
@@ -108,7 +108,9 @@ const SOON_ITEMS: string[] = []
 
 export function Sidebar({ page, onNavigate }: { page: Page; onNavigate: (p: Page) => void }) {
   const { theme, resolvedTheme, setTheme, options } = useTheme()
-  const isGradient = options?.background?.type === 'gradient'
+  // Translucent acrylic only over a gradient that suits the mode; a mismatched one keeps the solid surface.
+  const isGradient =
+    options?.background?.type === 'gradient' && backgroundSuitsMode(options.background, resolvedTheme)
   // §59: always visible when something is public.
   const [publicCount, setPublicCount] = useState(0)
   const network = useOnline()

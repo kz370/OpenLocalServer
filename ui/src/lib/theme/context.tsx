@@ -79,8 +79,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, [preset, resolvedTheme, settings.overrides])
 
   const options: ThemeOptions = useMemo(() => {
-    return computeEffectiveOptions(preset, settings.overrides)
-  }, [preset, settings.overrides])
+    return computeEffectiveOptions(preset, settings.overrides, resolvedTheme)
+  }, [preset, settings.overrides, resolvedTheme])
 
   // Apply to DOM whenever tokens or options change
   useEffect(() => {

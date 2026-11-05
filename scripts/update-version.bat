@@ -9,26 +9,33 @@ rem   - Cargo.toml ([workspace.package] version)
 rem   - src-tauri/tauri.conf.json (version)
 rem   - ui/package.json (version)
 rem   - ui/package-lock.json (version in root and packages[""])
-rem   - Cargo.lock (ols-cli, ols-core, ols-helper, openlocalserver)
+rem   - Cargo.lock (ols-cli, ols-core, ols-helper, ols-mcp, openlocalserver)
 rem   - README.md (version badge)
 rem   - CHANGELOG.md (adds [version] section if missing)
 rem   - release-notes/v<version>.md (draft template if missing)
+rem   - crates/ols-core/src/elevate.rs ADMIN_HELPER_VERSION (only with -HelperVersion)
+rem
+rem The administrator helper version is separate from the app version. An app
+rem bump never changes it; the script warns when helper code changed since it
+rem was last bumped.
 rem
 rem Usage:
 rem   scripts\update-version.bat [version] [options]
 rem   update-version.bat 2.3.0
-rem   update-version.bat --dry-run 2.3.0
+rem   update-version.bat 2.3.0 -DryRun
+rem   update-version.bat 2.3.0 -HelperVersion 2.3.0   (app + helper)
+rem   update-version.bat -HelperVersion 2.3.0         (helper only)
 rem   update-version.bat (interactive mode)
 rem ============================================================================
 
 set "ROOT=%~dp0..\"
-set "SCRIPT=%~dp0update-version.ps1"
+set "SCRIPT=%~dp0update-version\update-version.ps1"
 
 if not exist "%SCRIPT%" (
   echo.
-  echo [x] Problem: scripts\update-version.ps1 is missing.
+  echo [x] Problem: scripts\update-version\update-version.ps1 is missing.
   echo     Cause: incomplete checkout, or the script was moved or renamed.
-  echo     Fix: restore scripts\update-version.ps1 and run this again.
+  echo     Fix: restore scripts\update-version\update-version.ps1 and run this again.
   echo.
   exit /b 1
 )

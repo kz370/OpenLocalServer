@@ -197,7 +197,7 @@ if not exist "%CLI_EXE%" (
 echo       Embedding icons into executables...
 pushd "%ROOT%"
 if not exist "node_modules\rcedit" call npm.cmd install
-node "scripts\embed-icons-release.js"
+node "scripts\build-installer\embed-icons-release.js"
 set "EMBED_ERR=%ERRORLEVEL%"
 popd
 if not "%EMBED_ERR%"=="0" (
@@ -308,7 +308,7 @@ rem In inno_only mode ensure icons are embedded in target\release exes before pa
 echo       Embedding icons into executables...
 pushd "%ROOT%"
 if not exist "node_modules\rcedit" call npm.cmd install
-node "scripts\embed-icons-release.js"
+node "scripts\build-installer\embed-icons-release.js"
 set "EMBED_ERR=%ERRORLEVEL%"
 popd
 if not "%EMBED_ERR%"=="0" (

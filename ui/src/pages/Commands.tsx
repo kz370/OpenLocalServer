@@ -407,7 +407,7 @@ export function CommandsPage() {
         </div>
       </div>
 
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
       <Card>
         <CardContent className="flex items-center gap-2 pt-4">

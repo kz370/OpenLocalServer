@@ -2,7 +2,7 @@
 # crop the black matte, resize, and knock the rounded-square corners out to alpha 0
 # so the taskbar, tray and window icons have no black frame.
 #
-#   pwsh -File scripts/prepare-icon-source.ps1 -SourcePath assets/new-icon.png -TargetPath src-tauri/icons/source/icon-green.png
+#   pwsh -File scripts/build-app-icons/prepare-icon-source.ps1 -SourcePath assets/new-icon.png -TargetPath src-tauri/icons/source/icon-green.png
 param(
   [Parameter(Mandatory = $true)][string]$SourcePath,
   [Parameter(Mandatory = $true)][string]$TargetPath,

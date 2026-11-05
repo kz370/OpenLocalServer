@@ -85,19 +85,47 @@ impl Inner {
             // events in a root (for example, editor temp files) should not trigger
             // a full scan of every project and domain.
             let mut root_directories = project_root_directories(&core);
+            let mut watched_project_folders: std::collections::HashSet<PathBuf> =
+                std::collections::HashSet::new();
             let mut tick_count: u32 = 0;
             loop {
                 match events_rx.recv_timeout(Duration::from_millis(500)) {
-                    Ok(_) => {
-                        let _ = lock(&core.projects).sweep_health();
-                        let current_directories = project_root_directories(&core);
-                        if current_directories != root_directories {
-                            root_directories = current_directories;
-                            if let Err(error) = core.sync_auto_domains() {
-                                tracing::warn!(%error, "automatic domains could not be synced after a project folder change");
+                    Ok(events) => {
+                        let root_changed = events.iter().flatten().any(|event| {
+                            event
+                                .path
+                                .parent()
+                                .is_some_and(|parent| watched.contains(parent))
+                        });
+                        let marker_changed = events.iter().flatten().any(|event| {
+                            event
+                                .path
+                                .file_name()
+                                .and_then(|name| name.to_str())
+                                .is_some_and(|name| {
+                                    name.eq_ignore_ascii_case(OLS_IGNORE_PROJECT_MARKER)
+                                        || name.eq_ignore_ascii_case(OLS_IGNORE_SITE_MARKER)
+                                })
+                        });
+
+                        if root_changed {
+                            let current_directories = project_root_directories(&core);
+                            if current_directories != root_directories {
+                                let _ = lock(&core.projects).sweep_health();
+                                root_directories = current_directories;
+                                if let Err(error) = core.sync_auto_domains() {
+                                    tracing::warn!(%error, "automatic domains could not be synced after a project folder change");
+                                }
+                                let _ = core.project_events.send(());
                             }
                         }
-                        let _ = core.project_events.send(());
+
+                        if marker_changed {
+                            if let Err(error) = core.sync_auto_domains() {
+                                tracing::warn!(%error, "sites could not be synced after a project ignore marker change");
+                            }
+                            let _ = core.project_events.send(());
+                        }
                     }
                     Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
@@ -147,6 +175,33 @@ impl Inner {
                 // from a newly configured root is compared against its current state.
                 if watches_changed {
                     root_directories = project_root_directories(&core);
+                }
+
+                // Watch project folders non-recursively only to detect their ignore
+                // marker. Other file changes inside a project do not refresh the lists.
+                let mut desired_project_folders = root_directories.clone();
+                desired_project_folders.extend(
+                    lock(&core.projects)
+                        .list()
+                        .into_iter()
+                        .map(|project| PathBuf::from(project.path)),
+                );
+                desired_project_folders.retain(|path| path.is_dir());
+                for path in watched_project_folders.clone() {
+                    if !desired_project_folders.contains(&path) {
+                        let _ = debouncer.watcher().unwatch(&path);
+                        watched_project_folders.remove(&path);
+                    }
+                }
+                for path in desired_project_folders {
+                    if !watched_project_folders.contains(&path)
+                        && debouncer
+                            .watcher()
+                            .watch(&path, RecursiveMode::NonRecursive)
+                            .is_ok()
+                    {
+                        watched_project_folders.insert(path);
+                    }
                 }
             }
         });
@@ -460,6 +515,30 @@ impl Inner {
             } else {
                 let ignore_file = std::path::Path::new(&path).join(".ols_ignore_me");
                 let _ = std::fs::write(&ignore_file, "");
+            }
+        }
+        let _ = self.project_events.send(());
+        Ok(())
+    }
+
+    /// Removes the site-only ignore marker for a project so its retained site can be restored.
+    pub fn unignore_site(&self, project_id: &str) -> Result<(), CoreError> {
+        let path = self
+            .projects
+            .lock()
+            .unwrap()
+            .get(project_id)
+            .map(|project| project.path.clone())
+            .ok_or_else(|| svc("Project was not found. Refresh Projects and try again."))?;
+        let marker = Path::new(&path).join(OLS_IGNORE_SITE_MARKER);
+        match std::fs::remove_file(&marker) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(svc(format!(
+                    "Could not remove {}: {error}. Check that the project folder is writable, then try again.",
+                    marker.display()
+                )));
             }
         }
         let _ = self.project_events.send(());

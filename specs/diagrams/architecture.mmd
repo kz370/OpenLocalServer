@@ -11,6 +11,7 @@ graph TB
   INNER --> WEB[WebManager]
   INNER --> PROJ[ProjectStore]
   INNER --> CERT[CertificateManager]
+  CERT --> ACME[AcmeClient Let's Encrypt]
   WEB --> DOM[DomainStore]
   WEB --> PHP[PhpPools]
   WEB --> DNS[DnsServer]

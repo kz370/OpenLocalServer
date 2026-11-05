@@ -101,7 +101,7 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
     if (await warnBeforeLeavingUnsavedChanges('dialog')) closeAnimated()
   }, [closeAnimated])
   const dirtyDialogCount = useDirtyFormCount('dialog')
-  const { projects, installedPhp, run, apply, busy, error, setError } = web
+  const { projects, installedPhp, run, applyTracked, busy, error, setError } = web
   const [tab, setTab] = useState<SiteTab>(target.tab ?? (target.hostname ? 'settings' : 'overview'))
   const [domain, setDomain] = useState<Domain | null>(null)
   const [domainError, setDomainError] = useState<Diagnostic | null>(null)
@@ -217,11 +217,10 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
     }
     await Promise.all([web.refresh(), web.refreshProjects()])
     onSaved(d.hostname)
-    try {
-      await apply()
-    } catch {
-      // apply error
-    }
+    // The change is saved. Re-rendering every site's config and reloading the web server
+    // takes seconds, so it runs behind the page's "Updating site configuration" bar instead
+    // of holding the Save button; its outcome arrives as the apply report notification.
+    void applyTracked().catch(() => undefined)
   }
 
   const siteItems: { id: SiteTab; label: string; icon: ReactNode }[] = [
@@ -384,9 +383,9 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
                 </div>
               </div>
             )}
-            <ErrorCard error={error} onDismiss={() => setError(null)} />
-            <ErrorCard error={domainError} onDismiss={() => setDomainError(null)} />
-            <ErrorCard error={detailError} onDismiss={() => setDetailError(null)} />
+            <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
+            <ErrorCard error={domainError} onDismiss={() => setDomainError(null)} overlay overlayOffset={1} />
+            <ErrorCard error={detailError} onDismiss={() => setDetailError(null)} overlay overlayOffset={2} />
             {detailError && (
               <div>
                 <Button variant="secondary" size="sm" onClick={() => setDetailTick((n) => n + 1)}>

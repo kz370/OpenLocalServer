@@ -176,7 +176,7 @@ export function ExcludedSitesCard() {
 
   return (
     <>
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">Hidden sites</CardTitle>
@@ -301,7 +301,7 @@ export function ExcludedSitesCard() {
               )}
             </>
           )}
-          {saved && <span className="text-sm text-success">{saved}</span>}
+          <span className="block min-h-5 text-sm text-success">{saved ?? '\u00a0'}</span>
         </CardContent>
       </Card>
     </>

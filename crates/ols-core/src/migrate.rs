@@ -36,6 +36,114 @@ pub struct MigratedDb {
     pub detail: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConflictPolicy {
+    Skip,
+    ReplaceWithBackup,
+    RenameIncoming,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConflictResolution {
+    UseIncomingName,
+    Skip,
+    Replace,
+    Rename(String),
+}
+
+pub fn resolve_conflict(
+    name: &str,
+    used_names: &[String],
+    policy: ConflictPolicy,
+) -> ConflictResolution {
+    if !used_names
+        .iter()
+        .any(|used| used.eq_ignore_ascii_case(name))
+    {
+        return ConflictResolution::UseIncomingName;
+    }
+    match policy {
+        ConflictPolicy::Skip => ConflictResolution::Skip,
+        ConflictPolicy::ReplaceWithBackup => ConflictResolution::Replace,
+        ConflictPolicy::RenameIncoming => {
+            ConflictResolution::Rename(unique_database_name(name, used_names))
+        }
+    }
+}
+
+fn unique_database_name(name: &str, used_names: &[String]) -> String {
+    let slug = crate::domain::slugify(name);
+    let stem = if slug.is_empty() { "database" } else { &slug };
+    let suffix = "_imported";
+    let stem = &stem[..stem.len().min(64 - suffix.len())];
+    let base = format!("{stem}{suffix}");
+    if !used_names
+        .iter()
+        .any(|used| used.eq_ignore_ascii_case(&base))
+    {
+        return base;
+    }
+    for index in 2u32.. {
+        let numbered = format!("_{index}");
+        let limit = 64 - suffix.len() - numbered.len();
+        let candidate = format!("{}{suffix}{numbered}", &stem[..stem.len().min(limit)]);
+        if !used_names
+            .iter()
+            .any(|used| used.eq_ignore_ascii_case(&candidate))
+        {
+            return candidate;
+        }
+    }
+    unreachable!()
+}
+
+/// Removes the source database's CREATE DATABASE statement and rewrites its USE statement
+/// so a dump can be imported under a generated conflict-free name.
+pub fn rename_dump_database(file: &Path, target: &str) -> Result<(), String> {
+    use std::io::{BufRead, BufReader, BufWriter, Write};
+    let replacement = file.with_extension("rename.sql");
+    let output = std::fs::File::create(&replacement)
+        .map_err(|e| format!("could not write renamed SQL dump: {e}"))?;
+    {
+        let input =
+            std::fs::File::open(file).map_err(|e| format!("could not read SQL dump: {e}"))?;
+        let mut writer = BufWriter::new(output);
+        for line in BufReader::new(input).lines() {
+            let line = line.map_err(|e| format!("could not read SQL dump: {e}"))?;
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("CREATE DATABASE") {
+                continue;
+            }
+            if trimmed.starts_with("USE `") || trimmed.starts_with("USE ") {
+                writeln!(writer, "USE {};", mysql_identifier(target))
+                    .map_err(|e| format!("could not write renamed SQL dump: {e}"))?;
+            } else {
+                writeln!(writer, "{line}")
+                    .map_err(|e| format!("could not write renamed SQL dump: {e}"))?;
+            }
+        }
+        writer
+            .flush()
+            .map_err(|e| format!("could not write renamed SQL dump: {e}"))?;
+    }
+    let original = file.with_extension("original.sql");
+    std::fs::rename(file, &original)
+        .map_err(|e| format!("could not stage original SQL dump safely: {e}"))?;
+    if let Err(error) = std::fs::rename(&replacement, file) {
+        let _ = std::fs::rename(&original, file);
+        return Err(format!(
+            "could not replace SQL dump after renaming: {error}"
+        ));
+    }
+    std::fs::remove_file(original)
+        .map_err(|e| format!("renamed SQL dump, but could not clean its temporary original: {e}"))
+}
+
+fn mysql_identifier(name: &str) -> String {
+    format!("`{}`", name.replace('`', "``"))
+}
+
 const SYSTEM_DBS: &[&str] = &["information_schema", "mysql", "performance_schema", "sys"];
 
 // ------------------------------------------------------------------------- progress
@@ -146,6 +254,210 @@ pub fn detect() -> Vec<MigrationSource> {
         wamp(&root.join("wamp"), &running, &mut out);
     }
     out
+}
+
+/// Data folder an OLS MariaDB version runs on. Mirrors `ServiceManager::start_mariadb`:
+/// 11.4.x keeps the legacy shared `mariadb/data` folder when it exists, every other
+/// series uses `mariadb/<major.minor>/data`.
+fn managed_mariadb_data_dir(root: &Path, version: &str) -> PathBuf {
+    let series = version.split('.').take(2).collect::<Vec<_>>().join(".");
+    if version.starts_with("11.4.") && root.join("data").is_dir() {
+        root.join("data")
+    } else {
+        root.join(series).join("data")
+    }
+}
+
+/// Data folder of the MariaDB that imports go into: the first installed version, which is
+/// the one `ServiceManager::start("mariadb")` runs. `None` when MariaDB is not installed.
+pub fn import_target_data_dir(
+    paths: &crate::paths::AppPaths,
+    runtimes: &crate::runtime::RuntimeManager,
+) -> Option<PathBuf> {
+    let version = runtimes.installed_versions("mariadb").into_iter().next()?;
+    Some(managed_mariadb_data_dir(
+        &paths.services_dir().join("mariadb"),
+        &version,
+    ))
+}
+
+/// Problem text when `data_dir` is the import target itself, so it cannot be its own source.
+pub fn reject_import_target(
+    paths: &crate::paths::AppPaths,
+    runtimes: &crate::runtime::RuntimeManager,
+    data_dir: &Path,
+) -> Result<(), String> {
+    match import_target_data_dir(paths, runtimes) {
+        Some(target) if same_source_folder(&target, data_dir) => Err(
+            "This is the data folder of the MariaDB that OpenLocalServer imports into, so it cannot also be a source. Choose a data folder from another installation or an older OLS MariaDB series.".into(),
+        ),
+        _ => Ok(()),
+    }
+}
+
+/// Adds databases belonging to installed OLS MariaDB series to the sources shown in the
+/// import dialog. Each series has its own data folder, so the existing copy-and-dump path
+/// can move it into a newer default without ever opening the original files for writing.
+/// The current import target is never listed: importing a server into itself is a no-op
+/// at best and conflicts with every database at worst.
+pub fn detect_managed(
+    paths: &crate::paths::AppPaths,
+    runtimes: &crate::runtime::RuntimeManager,
+) -> Vec<MigrationSource> {
+    let target = import_target_data_dir(paths, runtimes);
+    let is_target = |data: &Path| {
+        target
+            .as_deref()
+            .is_some_and(|target| same_source_folder(target, data))
+    };
+    let mut out = detect();
+    out.retain(|source| !is_target(Path::new(&source.data_dir)));
+    let running = running_servers();
+    let root = paths.services_dir().join("mariadb");
+    for version in runtimes.installed_versions("mariadb") {
+        let install = runtimes.install_dir("mariadb", &version);
+        let bin = install.join("bin");
+        if !bin.join("mysqld.exe").is_file() || !bin.join("mysql.exe").is_file() {
+            continue;
+        }
+        let data = managed_mariadb_data_dir(&root, &version);
+        if !data.is_dir() || is_target(&data) {
+            continue;
+        }
+        let exe = bin.join("mysqld.exe");
+        let running_port = running
+            .iter()
+            .find(|(path, _)| same_file(path, &exe))
+            .map(|(_, port)| *port);
+        if let Some(existing) = out
+            .iter_mut()
+            .find(|source| same_file(Path::new(&source.data_dir), &data))
+        {
+            // Several installed patches can share the legacy 11.4 data folder. Prefer the
+            // binary that owns a live server so we dump that server directly instead of
+            // trying to copy files that are currently open.
+            if running_port.is_some() {
+                existing.bin_dir = bin.display().to_string();
+                existing.label = format!("OpenLocalServer · MariaDB {version}");
+                existing.running_port = running_port;
+            }
+            continue;
+        }
+        out.push(MigrationSource {
+            id: data.display().to_string(),
+            label: format!("OpenLocalServer · MariaDB {version}"),
+            engine: "mariadb".into(),
+            bin_dir: bin.display().to_string(),
+            data_dir: data.display().to_string(),
+            size_bytes: dir_size(&data),
+            running_port,
+        });
+    }
+    out
+}
+
+/// Validates a user-selected MySQL/MariaDB data folder and finds its matching tools.
+/// The folder picker is deliberately strict: callers must select the directory containing
+/// the `mysql` system database, rather than an ambiguous drive or application root.
+pub fn inspect_data_dir(path: &Path) -> Result<MigrationSource, String> {
+    let data = path.canonicalize().map_err(|e| {
+        format!("Could not open this folder: {e}. Choose an existing MySQL/MariaDB data folder.")
+    })?;
+    if !data.is_dir() || !data.join("mysql").is_dir() {
+        return Err("This folder does not look like a MySQL/MariaDB data folder. Choose the folder that contains the `mysql` system database (often named `data`).".into());
+    }
+    let has_engine_files = ["ibdata1", "aria_log_control", "ib_logfile0"]
+        .iter()
+        .any(|name| data.join(name).is_file());
+    if !has_engine_files {
+        return Err("This folder is missing the database engine files (such as ibdata1 or aria_log_control), so it cannot be imported.".into());
+    }
+
+    let bin = find_source_bin(&data).ok_or_else(|| {
+        "Could not find matching MySQL/MariaDB server, client, and dump tools near this data folder. Browse for the data folder from the original database installation.".to_string()
+    })?;
+    let engine = if bin.join("mariadbd.exe").is_file() || bin.join("mariadb-dump.exe").is_file() {
+        "mariadb"
+    } else {
+        "mysql"
+    };
+    let label = format!(
+        "{} · {}",
+        if engine == "mariadb" {
+            "MariaDB"
+        } else {
+            "MySQL"
+        },
+        data.display()
+    );
+    let running = running_servers();
+    let running_port = running
+        .iter()
+        .find(|(path, _)| server_tool(&bin).is_some_and(|name| same_file(path, &bin.join(name))))
+        .map(|(_, port)| *port);
+    Ok(MigrationSource {
+        id: data.display().to_string(),
+        label,
+        engine: engine.into(),
+        bin_dir: bin.display().to_string(),
+        data_dir: data.display().to_string(),
+        size_bytes: dir_size(&data),
+        running_port,
+    })
+}
+
+/// Stable folder identity for duplicate validation across drive-letter casing and path
+/// separator differences. Canonicalization also resolves aliases when the folder exists.
+pub fn same_source_folder(left: &Path, right: &Path) -> bool {
+    let key = |path: &Path| {
+        path.canonicalize()
+            .unwrap_or_else(|_| path.to_path_buf())
+            .display()
+            .to_string()
+            .replace('\\', "/")
+            .trim_end_matches('/')
+            .to_ascii_lowercase()
+    };
+    key(left) == key(right)
+}
+
+fn find_source_bin(data: &Path) -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+    for ancestor in data.ancestors().take(5) {
+        candidates.push(ancestor.join("bin"));
+        candidates.push(ancestor.join("mysql").join("bin"));
+        candidates.push(ancestor.join("mariadb").join("bin"));
+        for family in ["mysql", "mariadb"] {
+            let root = ancestor.join("bin").join(family);
+            if let Ok(entries) = std::fs::read_dir(root) {
+                for entry in entries.flatten() {
+                    candidates.push(entry.path().join("bin"));
+                    candidates.push(entry.path());
+                }
+            }
+        }
+    }
+    candidates.into_iter().find(|bin| {
+        server_tool(bin).is_some() && client_tool(bin).is_some() && dump_tool(bin).is_some()
+    })
+}
+
+fn server_tool(bin: &Path) -> Option<&'static str> {
+    ["mariadbd.exe", "mysqld.exe"]
+        .into_iter()
+        .find(|name| bin.join(name).is_file())
+}
+
+fn client_tool(bin: &Path) -> Option<&'static str> {
+    ["mariadb.exe", "mysql.exe"]
+        .into_iter()
+        .find(|name| bin.join(name).is_file())
+}
+
+fn dump_tool(bin: &Path) -> Option<&'static str> {
+    ["mariadb-dump.exe", "mysqldump.exe"]
+        .into_iter()
+        .find(|name| bin.join(name).is_file())
 }
 
 fn engine_of(dir_name: &str) -> &'static str {
@@ -394,7 +706,9 @@ impl Session {
         );
         let port = free_port().ok_or("no free port for the temporary server")?;
         let bin = PathBuf::from(&source.bin_dir);
-        let mut cmd = Command::new(bin.join("mysqld.exe"));
+        let server =
+            server_tool(&bin).ok_or("the selected install is missing its database server")?;
+        let mut cmd = Command::new(bin.join(server));
         cmd.args([
             "--no-defaults".to_string(),
             format!("--basedir={}", bin.parent().unwrap_or(&bin).display()),
@@ -413,7 +727,7 @@ impl Session {
         crate::exec::hide_window(&mut cmd);
         let mut child = cmd
             .spawn()
-            .map_err(|e| format!("could not start {}: {e}", bin.join("mysqld.exe").display()))?;
+            .map_err(|e| format!("could not start {}: {e}", bin.join(server).display()))?;
         let started = Instant::now();
         loop {
             if TcpStream::connect_timeout(
@@ -471,8 +785,11 @@ impl Session {
             "-e".into(),
             "SHOW DATABASES".into(),
         ]);
+        let bin = PathBuf::from(&self.source.bin_dir);
+        let client =
+            client_tool(&bin).ok_or("the old install is missing its MySQL/MariaDB client")?;
         let out = run_capture(
-            &PathBuf::from(&self.source.bin_dir).join("mysql.exe"),
+            &bin.join(client),
             &args,
             None,
             &self.env(),
@@ -538,8 +855,11 @@ impl Session {
             // GTID statements would fail on a server that isn't set up for replication.
             args.push("--set-gtid-purged=OFF".into());
         }
+        let bin = PathBuf::from(&self.source.bin_dir);
+        let dump =
+            dump_tool(&bin).ok_or("the old install is missing its MySQL/MariaDB dump tool")?;
         let out = run_capture(
-            &PathBuf::from(&self.source.bin_dir).join("mysqldump.exe"),
+            &bin.join(dump),
             &args,
             None,
             &self.env(),
@@ -700,6 +1020,67 @@ pub fn import(client: &Path, port: u16, file: &Path, progress: &Progress) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn managed_data_dir_matches_service_start_layout() {
+        let root = tempfile::tempdir().unwrap();
+        // Without the legacy folder every series uses mariadb/<major.minor>/data.
+        assert_eq!(
+            managed_mariadb_data_dir(root.path(), "11.4.9"),
+            root.path().join("11.4").join("data")
+        );
+        assert_eq!(
+            managed_mariadb_data_dir(root.path(), "13.1.1"),
+            root.path().join("13.1").join("data")
+        );
+        // 11.4.x keeps the legacy shared folder once it exists; other series never do.
+        std::fs::create_dir_all(root.path().join("data")).unwrap();
+        assert_eq!(
+            managed_mariadb_data_dir(root.path(), "11.4.9"),
+            root.path().join("data")
+        );
+        assert_eq!(
+            managed_mariadb_data_dir(root.path(), "11.8.5"),
+            root.path().join("11.8").join("data")
+        );
+    }
+
+    #[test]
+    fn conflict_policies_handle_destination_and_source_duplicates() {
+        let used = vec!["shop".to_string(), "shop_imported".to_string()];
+        assert_eq!(
+            resolve_conflict("shop", &used, ConflictPolicy::Skip),
+            ConflictResolution::Skip
+        );
+        assert_eq!(
+            resolve_conflict("shop", &used, ConflictPolicy::ReplaceWithBackup),
+            ConflictResolution::Replace
+        );
+        assert_eq!(
+            resolve_conflict("shop", &used, ConflictPolicy::RenameIncoming),
+            ConflictResolution::Rename("shop_imported_2".into())
+        );
+        assert_eq!(
+            resolve_conflict("new", &used, ConflictPolicy::RenameIncoming),
+            ConflictResolution::UseIncomingName
+        );
+    }
+
+    #[test]
+    fn renamed_dump_uses_new_database_name_without_creating_the_source_name() {
+        let root = tempfile::tempdir().unwrap();
+        let dump = root.path().join("incoming.sql");
+        std::fs::write(
+            &dump,
+            "CREATE DATABASE /*!32312 IF NOT EXISTS*/ `shop`;\nUSE `shop`;\nCREATE TABLE `users` (`id` int);\n",
+        )
+        .unwrap();
+        rename_dump_database(&dump, "shop_imported").unwrap();
+        let sql = std::fs::read_to_string(dump).unwrap();
+        assert!(!sql.contains("CREATE DATABASE"));
+        assert!(sql.contains("USE `shop_imported`;"));
+        assert!(sql.contains("CREATE TABLE `users`"));
+    }
 
     #[test]
     fn laragon_data_folders_pair_with_the_right_binaries() {

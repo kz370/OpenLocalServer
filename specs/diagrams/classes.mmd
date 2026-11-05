@@ -30,7 +30,18 @@ classDiagram
   }
   class CertificateManager {
     +ensure_for(host) CertPaths
+    +ensure_lets_encrypt(domain) CertPaths
+    +issue_lets_encrypt(domain) CertPaths
     +revoke(host)
+  }
+  class AcmeClient {
+    +new(directory_url, account_key_file)
+    +issue_certificate(hostname, doc_root, email) IssuedCert
+  }
+  class McpAuthConfig {
+    +load() McpAuthConfig
+    +is_expired() bool
+    +is_ready() bool
   }
   class ServiceManager {
     +start(id)
@@ -49,4 +60,5 @@ classDiagram
   Inner --> WebManager
   WebManager --> DomainStore
   WebManager --> CertificateManager
+  CertificateManager --> AcmeClient
   Inner --> SetupPlanner
