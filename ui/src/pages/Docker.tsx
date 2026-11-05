@@ -6,6 +6,7 @@ import { ComposeBuilderDialog } from '@/components/docker/ComposeBuilderDialog'
 import { ComposeEditorDialog } from '@/components/docker/ComposeEditorDialog'
 import { ComposeTab } from '@/components/docker/ComposeTab'
 import { CreateSiteDialog } from '@/components/docker/CreateSiteDialog'
+import { CopyId, GroupHeading, Row, RowList } from '@/components/docker/DockerRows'
 import { LogsDialog } from '@/components/docker/LogsDialog'
 import { TaskOutputDialog } from '@/components/docker/TaskOutputDialog'
 import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
@@ -15,7 +16,6 @@ import { StopIcon } from '@/components/StopIcon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import {
   type Diagnostic,
   type DockerContainer,
@@ -272,38 +272,22 @@ export default function DockerPage() {
                 {containers.length === 0 ? 'No containers yet. Containers you create with Docker show up here.' : 'No containers match this filter.'}
               </p>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Ports</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Action</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {groups.map(([project, rows]) => [
-                    project && (
-                      <TableRow key={`group:${project}`} className="bg-muted/30 hover:bg-muted/30">
-                        <TableCell colSpan={4} className="py-1.5 text-xs font-medium text-muted-foreground">
-                          Compose · {project}
-                        </TableCell>
-                      </TableRow>
-                    ),
-                    ...rows.map((c) => (
-                      <ContainerRow
-                        key={c.id}
-                        c={c}
-                        busy={busy}
-                        onAct={act}
-                        onError={setError}
-                        onLogs={() => setLogsFor(c.name)}
-                        onCreateSite={() => setSiteFor(c)}
-                      />
-                    )),
-                  ])}
-                </TableBody>
-              </Table>
+              <RowList>
+                {groups.map(([project, rows]) => [
+                  project && <GroupHeading key={`group:${project}`}>Compose · {project}</GroupHeading>,
+                  ...rows.map((c) => (
+                    <ContainerRow
+                      key={c.id}
+                      c={c}
+                      busy={busy}
+                      onAct={act}
+                      onError={setError}
+                      onLogs={() => setLogsFor(c.name)}
+                      onCreateSite={() => setSiteFor(c)}
+                    />
+                  )),
+                ])}
+              </RowList>
             )}
           </CardContent>
         </Card>
@@ -427,23 +411,18 @@ function ContainerRow({
   const badge = STATE_BADGE[c.state] ?? { label: c.state || 'unknown', variant: 'outline' as const }
   const published = c.ports.filter((p) => p.host_port !== null)
   return (
-    <TableRow>
-      <TableCell>
-        <span className="flex min-w-0 items-center gap-2">
-          <Box className="size-4 shrink-0 text-sky-500" aria-hidden />
-          <span className="min-w-0">
-            <span className="block truncate font-medium" title={c.name}>
-              {c.name}
-            </span>
-            <span className="block truncate text-xs text-muted-foreground" title={c.image}>
-              {c.image}
-            </span>
-          </span>
+    <Row
+      icon={<Box className="size-4 text-sky-500" aria-hidden />}
+      title={c.name}
+      subtitle={c.image}
+      badge={
+        <>
+          <CopyId id={c.id} />
           {c.ols_site && <Badge variant="outline">{c.ols_site}</Badge>}
-        </span>
-      </TableCell>
-      <TableCell>
-        <span className="flex flex-wrap gap-1">
+        </>
+      }
+      ports={
+        <>
           {published.length === 0 && <span className="text-xs text-muted-foreground">—</span>}
           {published.map((p) => (
             <button
@@ -460,15 +439,15 @@ function ContainerRow({
               {running && p.protocol === 'tcp' && <ExternalLink className="size-3" />}
             </button>
           ))}
-        </span>
-      </TableCell>
-      <TableCell>
-        <span className="flex flex-col items-start gap-0.5">
+        </>
+      }
+      status={
+        <>
           <Badge variant={badge.variant}>{badge.label}</Badge>
-          <span className="text-xs text-muted-foreground">{c.status}</span>
-        </span>
-      </TableCell>
-      <TableCell className="text-right">
+          <span className="text-xs break-words text-muted-foreground">{c.status}</span>
+        </>
+      }
+      actions={
         <span className="flex items-center justify-end gap-0.5">
           <ServiceIconAction
             title={`${running || paused ? 'Stop' : 'Start'} ${c.name}`}
@@ -509,7 +488,7 @@ function ContainerRow({
             <Globe className="size-3.5" />
           </ServiceIconAction>
         </span>
-      </TableCell>
-    </TableRow>
+      }
+    />
   )
 }

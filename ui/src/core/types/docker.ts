@@ -44,6 +44,7 @@ export type ComposeService = {
   ports: ComposePort[]
   state: string | null
   container: string | null
+  container_id?: string | null
 }
 
 export type ComposeStack = {

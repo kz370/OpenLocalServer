@@ -52,6 +52,9 @@ pub struct ComposeService {
     /// Container state (`running`, `exited`, ...) when a container exists.
     pub state: Option<String>,
     pub container: Option<String>,
+    /// Full container id, for copying.
+    #[serde(default)]
+    pub container_id: Option<String>,
 }
 
 /// A Compose project: a file on disk, a running stack, or both.
@@ -220,6 +223,7 @@ pub fn parse_services(doc: &serde_yaml_ng::Value) -> Vec<ComposeService> {
                     .unwrap_or_default(),
                 state: None,
                 container: None,
+                container_id: None,
                 name,
             })
         })
@@ -503,6 +507,7 @@ pub fn discover(
                 Some(s) => {
                     s.state = Some(c.state.clone());
                     s.container = Some(c.name.clone());
+                    s.container_id = Some(c.id.clone());
                 }
                 None => stack.services.push(ComposeService {
                     name: service,
@@ -518,6 +523,7 @@ pub fn discover(
                         .collect(),
                     state: Some(c.state.clone()),
                     container: Some(c.name.clone()),
+                    container_id: Some(c.id.clone()),
                 }),
             }
         }

@@ -18,6 +18,7 @@ import {
 import { useCallback, useEffect, useState } from 'react'
 
 import { ConnectDialog } from '@/components/docker/ConnectDialog'
+import { CopyId, Row, RowList } from '@/components/docker/DockerRows'
 import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
 import { ServiceIconAction } from '@/components/ServiceIconAction'
 import { Spinner } from '@/components/Spinner'
@@ -25,7 +26,6 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog } from '@/components/ui/dialog'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { type ComposeAction, type ComposeStack, type Diagnostic, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
 import { notify } from '@/lib/notify'
@@ -148,8 +148,8 @@ export function ComposeTab({
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0">
                     <CardTitle className="flex flex-wrap items-center gap-2 text-sm">
-                      <Layers className="size-4 text-sky-500" />
-                      {stack.name}
+                      <Layers className="size-4 shrink-0 text-sky-500" />
+                      <span className="min-w-0 break-all">{stack.name}</span>
                       {stack.project_name && <Badge variant="outline">{stack.project_name}</Badge>}
                       <Badge variant={stack.running > 0 ? 'success' : 'secondary'}>
                         {stack.running}/{stack.services.length} running
@@ -160,7 +160,7 @@ export function ComposeTab({
                         </Badge>
                       )}
                     </CardTitle>
-                    <p className="mt-1 truncate font-mono text-xs text-muted-foreground" title={stack.file ?? undefined}>
+                    <p className="mt-1 font-mono text-xs break-all text-muted-foreground">
                       {stack.file ?? 'Started outside OLS; its compose file is not on this computer.'}
                     </p>
                   </div>
@@ -211,80 +211,70 @@ export function ComposeTab({
                 </div>
               </CardHeader>
               <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Service</TableHead>
-                      <TableHead>Ports</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Action</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {stack.services.map((s) => {
-                      const st = s.state ? (STATE[s.state] ?? { label: s.state, variant: 'outline' as const }) : null
-                      const running = s.state === 'running'
-                      const published = s.ports.filter((p) => p.host !== null)
-                      return (
-                        <TableRow key={s.name}>
-                          <TableCell>
-                            <span className="block font-medium">{s.name}</span>
-                            <span className="block truncate text-xs text-muted-foreground">{s.image ?? (s.build ? 'built from a Dockerfile' : '')}</span>
-                          </TableCell>
-                          <TableCell>
-                            <span className="flex flex-wrap gap-1">
-                              {published.length === 0 && <span className="text-xs text-muted-foreground">—</span>}
-                              {published.map((p) => (
-                                <button
-                                  key={`${p.host}:${p.container}`}
-                                  type="button"
-                                  disabled={!running}
-                                  title={`Container port ${p.container} → this computer's port ${p.host}`}
-                                  className="inline-flex cursor-pointer items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-xs tabular-nums hover:bg-muted disabled:cursor-default disabled:opacity-60"
-                                  onClick={() =>
-                                    runCommand({ type: 'open_url', url: `http://localhost:${p.host}` }).catch((e) => setError(asDiagnostic(e)))
-                                  }
-                                >
-                                  :{p.host}
-                                  {running && <ExternalLink className="size-3" />}
-                                </button>
-                              ))}
-                            </span>
-                          </TableCell>
-                          <TableCell>{st ? <Badge variant={st.variant}>{st.label}</Badge> : <Badge variant="outline">Not created</Badge>}</TableCell>
-                          <TableCell className="text-right">
-                            <span className="flex items-center justify-end gap-0.5">
-                              <ServiceIconAction
-                                title={running ? `Restart ${s.name}` : `Start ${s.name}`}
-                                disabled={!canRun}
-                                iconColor={running ? 'text-amber-400' : 'text-emerald-400'}
-                                onClick={() => void act(stack, running ? 'restart' : 'up', s.name)}
+                <RowList first="Service">
+                  {stack.services.map((s) => {
+                    const st = s.state ? (STATE[s.state] ?? { label: s.state, variant: 'outline' as const }) : null
+                    const running = s.state === 'running'
+                    const published = s.ports.filter((p) => p.host !== null)
+                    return (
+                      <Row
+                        key={s.name}
+                        title={s.name}
+                        subtitle={s.image ?? (s.build ? 'built from a Dockerfile' : undefined)}
+                        badge={s.container_id ? <CopyId id={s.container_id} /> : undefined}
+                        ports={
+                          <>
+                            {published.length === 0 && <span className="text-xs text-muted-foreground">—</span>}
+                            {published.map((p) => (
+                              <button
+                                key={`${p.host}:${p.container}`}
+                                type="button"
+                                disabled={!running}
+                                title={`Container port ${p.container} → this computer's port ${p.host}`}
+                                className="inline-flex cursor-pointer items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-xs tabular-nums hover:bg-muted disabled:cursor-default disabled:opacity-60"
+                                onClick={() =>
+                                  runCommand({ type: 'open_url', url: `http://localhost:${p.host}` }).catch((e) => setError(asDiagnostic(e)))
+                                }
                               >
-                                {running ? <RotateCw className="size-3.5" /> : <Play className="size-3.5" />}
-                              </ServiceIconAction>
-                              <ServiceIconAction
-                                title={s.container ? `Logs of ${s.name}` : 'No container yet'}
-                                disabled={!s.container}
-                                iconColor="text-violet-400"
-                                onClick={() => s.container && onLogs(s.container)}
-                              >
-                                <FileText className="size-3.5" />
-                              </ServiceIconAction>
-                              <ServiceIconAction
-                                title={s.container && published.length ? `Create a site for ${s.name}` : 'Start the service with a published port first'}
-                                disabled={!s.container || !running || published.length === 0}
-                                iconColor="text-sky-400"
-                                onClick={() => s.container && onCreateSite(s.container)}
-                              >
-                                <Globe className="size-3.5" />
-                              </ServiceIconAction>
-                            </span>
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
+                                :{p.host}
+                                {running && <ExternalLink className="size-3" />}
+                              </button>
+                            ))}
+                          </>
+                        }
+                        status={st ? <Badge variant={st.variant}>{st.label}</Badge> : <Badge variant="outline">Not created</Badge>}
+                        actions={
+                          <span className="flex items-center justify-end gap-0.5">
+                            <ServiceIconAction
+                              title={running ? `Restart ${s.name}` : `Start ${s.name}`}
+                              disabled={!canRun}
+                              iconColor={running ? 'text-amber-400' : 'text-emerald-400'}
+                              onClick={() => void act(stack, running ? 'restart' : 'up', s.name)}
+                            >
+                              {running ? <RotateCw className="size-3.5" /> : <Play className="size-3.5" />}
+                            </ServiceIconAction>
+                            <ServiceIconAction
+                              title={s.container ? `Logs of ${s.name}` : 'No container yet'}
+                              disabled={!s.container}
+                              iconColor="text-violet-400"
+                              onClick={() => s.container && onLogs(s.container)}
+                            >
+                              <FileText className="size-3.5" />
+                            </ServiceIconAction>
+                            <ServiceIconAction
+                              title={s.container && published.length ? `Create a site for ${s.name}` : 'Start the service with a published port first'}
+                              disabled={!s.container || !running || published.length === 0}
+                              iconColor="text-sky-400"
+                              onClick={() => s.container && onCreateSite(s.container)}
+                            >
+                              <Globe className="size-3.5" />
+                            </ServiceIconAction>
+                          </span>
+                        }
+                      />
+                    )
+                  })}
+                </RowList>
               </CardContent>
             </Card>
           )
