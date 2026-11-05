@@ -1,7 +1,7 @@
 import type { AiProvider, AiRequest } from './types/ai'
 import type { QuickCommand, StartupSettings } from './types/apps'
 import type { CustomServiceDef, EnvironmentManifest, Ownership, ProcessId, ProcessSpec } from './types/base'
-import type { BuildSpec, ComposeAction, DockerContainerAction, DockerSiteRequest } from './types/docker'
+import type { BuildSpec, ComposeAction, ContainerUpdate, DockerContainerAction, DockerSiteRequest } from './types/docker'
 import type { XdebugSettings } from './types/environment'
 import type { LoadProfile } from './types/system'
 import type { AutoBackupSettings, AutoBackupSiteSettings, BundleOptions, OnConflict, Profile, ResourceLimits, RestoreOptions, ScheduledTask, SnapshotOptions, TunnelConfig, Worker } from './types/tasks'
@@ -68,6 +68,10 @@ export type CoreCommand =
   | { type: 'list_docker_containers'; all?: boolean }
   | { type: 'docker_container_action'; id: string; action: DockerContainerAction }
   | { type: 'get_docker_container_logs'; id: string; tail?: number }
+  | { type: 'get_docker_container'; id: string }
+  | { type: 'update_docker_container'; id: string; update: ContainerUpdate }
+  | { type: 'rename_docker_container'; id: string; name: string }
+  | { type: 'remove_docker_container'; id: string; force?: boolean; volumes?: boolean }
   | { type: 'list_docker_compose_stacks' }
   | { type: 'read_docker_compose_file'; path: string }
   | { type: 'validate_docker_compose'; path: string; content: string }

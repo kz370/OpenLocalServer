@@ -124,6 +124,8 @@ const OPERATE: &[&str] = &[
     "docker_compose_action",
     "docker_create_site",
     "set_docker_compose_connect",
+    "update_docker_container",
+    "rename_docker_container",
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

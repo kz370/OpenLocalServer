@@ -186,6 +186,24 @@ impl Inner {
         changed
     }
 
+    /// After a rename, sites linked to the old name point at the new one.
+    pub fn docker_relink_sites(&self, old: &str, new: &str) {
+        let domains = self.domains.lock().unwrap().list();
+        for mut d in domains {
+            let Some(link) = d.docker.as_mut() else {
+                continue;
+            };
+            if link.container != old {
+                continue;
+            }
+            link.container = new.to_string();
+            let hostname = d.hostname.clone();
+            if let Err(e) = self.update_domain(d) {
+                tracing::warn!(%hostname, error = %e, "could not follow a renamed container");
+            }
+        }
+    }
+
     /// Fills `ols_site` on containers that a site points at.
     pub fn mark_docker_sites(&self, containers: &mut [ContainerSummary]) {
         let domains = self.domains.lock().unwrap().list();

@@ -75,6 +75,13 @@ fn engine(method: &str, path: &str) -> (u16, String) {
         ),
         ("POST", "/containers/a1/start") => (204, String::new()),
         ("POST", "/containers/a1/stop") => (304, String::new()),
+        ("GET", "/containers/a1/json") => (
+            200,
+            r#"{"Id":"a1","Name":"/shop-web-1","Config":{"Image":"nginx","Env":["SECRET_KEY=x"]},"HostConfig":{"RestartPolicy":{"Name":"no"}},"State":{"Status":"running"}}"#.into(),
+        ),
+        ("POST", "/containers/a1/update") => (200, r#"{"Warnings":[]}"#.into()),
+        ("POST", "/containers/a1/rename?name=shop-web-2") => (204, String::new()),
+        ("DELETE", "/containers/a1?force=true&v=false") => (204, String::new()),
         ("POST", "/containers/gone/start") => (404, r#"{"message":"No such container: gone"}"#.into()),
         _ => (500, r#"{"message":"unexpected"}"#.into()),
     }
@@ -302,4 +309,44 @@ fn connect_to_ols_round_trips_through_commands() {
             enabled: true
         })
         .is_err());
+}
+
+#[test]
+fn container_settings_round_trip() {
+    let fake = FakeEngine::start(engine);
+    let m = DockerManager::new();
+    let d = m.container_details(&fake.endpoint, "a1").unwrap();
+    assert_eq!(
+        (d.name.as_str(), d.restart_policy.as_str()),
+        ("shop-web-1", "no")
+    );
+    assert!(d.env[0].masked && d.env[0].value.is_empty());
+    m.update_container(
+        &fake.endpoint,
+        "a1",
+        &details::ContainerUpdate {
+            restart_policy: Some("unless-stopped".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    m.rename_container(&fake.endpoint, "a1", "shop-web-2")
+        .unwrap();
+    assert!(
+        m.rename_container(&fake.endpoint, "a1", "bad name&x=1")
+            .is_err(),
+        "names are checked before the request"
+    );
+    m.remove_container(&fake.endpoint, "a1", true, false)
+        .unwrap();
+    let seen = fake.seen.lock().unwrap().clone();
+    assert_eq!(
+        seen,
+        vec![
+            "GET /containers/a1/json",
+            "POST /containers/a1/update",
+            "POST /containers/a1/rename?name=shop-web-2",
+            "DELETE /containers/a1?force=true&v=false",
+        ]
+    );
 }

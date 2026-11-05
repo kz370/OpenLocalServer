@@ -122,3 +122,34 @@ export type ConnectInfo = {
   services: OlsEndpoint[]
   override_yaml: string
 }
+
+export type ContainerDetails = {
+  id: string
+  name: string
+  image: string
+  created: string
+  state: string
+  started_at: string | null
+  health: string | null
+  restart_count: number
+  command: string[]
+  entrypoint: string[]
+  working_dir: string | null
+  env: { key: string; value: string; masked: boolean }[]
+  ports: DockerPortBinding[]
+  mounts: { kind: string; source: string; target: string; read_only: boolean }[]
+  networks: { name: string; ip: string | null; aliases: string[] }[]
+  labels: Record<string, string>
+  restart_policy: string
+  max_retries: number
+  memory_mb: number
+  cpus: number
+  compose_project: string | null
+}
+
+export type ContainerUpdate = {
+  restart_policy?: string | null
+  max_retries?: number | null
+  memory_mb?: number | null
+  cpus?: number | null
+}

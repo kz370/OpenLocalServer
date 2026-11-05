@@ -360,3 +360,6 @@ docker::compose::run_action / validate | adds | docker::connect override (-f) wh
 Inner::docker_connect_inputs | reads | DomainStore (enabled sites + aliases) and LocalCa::ca_cert_pem_path (copied by stage_ca)
 ComposeTab | mounts | ConnectDialog (get/set_docker_compose_connect)
 ols-mcp ols_docker_compose_connect | calls | get_docker_compose_connect / set_docker_compose_connect
+DockerPage / ComposeTab | mount | ContainerSettingsDialog (get/update/rename/remove_docker_container)
+rename_docker_container | triggers | Inner::docker_relink_sites (DockerLink.container follows the new name)
+ols-mcp | maps | ols_docker_container_details, ols_docker_container_update (no rename/remove tools)

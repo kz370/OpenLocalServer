@@ -45,6 +45,32 @@ impl Core {
                     .container_action(&i.docker_endpoint(), &id, action)
                     .map(|_| R::Ok)
             }
+            C::GetDockerContainer { id } => i
+                .docker
+                .container_details(&i.docker_endpoint(), &id)
+                .map(|details| R::DockerContainerDetails { details }),
+            C::UpdateDockerContainer { id, update } => (|| {
+                tracing::info!(command = "update_docker_container", id = %id, ?update);
+                let ep = i.docker_endpoint();
+                i.docker.update_container(&ep, &id, &update)?;
+                Ok(R::DockerContainerDetails {
+                    details: i.docker.container_details(&ep, &id)?,
+                })
+            })(),
+            C::RenameDockerContainer { id, name } => (|| {
+                tracing::info!(command = "rename_docker_container", id = %id, name = %name);
+                let ep = i.docker_endpoint();
+                let old = i.docker.container_details(&ep, &id)?.name;
+                i.docker.rename_container(&ep, &id, &name)?;
+                i.docker_relink_sites(&old, &name);
+                Ok(R::Ok)
+            })(),
+            C::RemoveDockerContainer { id, force, volumes } => {
+                tracing::info!(command = "remove_docker_container", id = %id, force, volumes);
+                i.docker
+                    .remove_container(&i.docker_endpoint(), &id, force, volumes)
+                    .map(|_| R::Ok)
+            }
             C::GetDockerContainerLogs { id, tail } => i
                 .docker
                 .container_logs(&i.docker_endpoint(), &id, tail.unwrap_or(500))

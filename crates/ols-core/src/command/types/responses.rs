@@ -447,6 +447,9 @@ pub enum CoreResponse {
     DockerComposePlan {
         plan: crate::docker::builder::BuildPlan,
     },
+    DockerContainerDetails {
+        details: crate::docker::details::ContainerDetails,
+    },
     DockerComposeConnect {
         info: crate::docker::connect::ConnectInfo,
     },

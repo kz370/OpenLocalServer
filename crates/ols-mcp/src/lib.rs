@@ -443,6 +443,30 @@ fn mcp_tools() -> Vec<McpTool> {
             }),
         },
         McpTool {
+            name: "ols_docker_container_details".into(),
+            description: Some("A container's settings (docker inspect): id, image, command, ports, mounts, networks, labels, restart policy, memory/CPU limits, health. Password-like environment values are removed.".to_string()),
+            input_schema: json!({
+                "type": "object",
+                "properties": { "id": { "type": "string", "description": "Container name or id." } },
+                "required": ["id"]
+            }),
+        },
+        McpTool {
+            name: "ols_docker_container_update".into(),
+            description: Some("Change a container's restart policy (no, always, unless-stopped, on-failure + max_retries) and memory (MB) / CPU (cores) limits without recreating it. 0 removes a limit. Omitted fields are unchanged.".to_string()),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string" },
+                    "restart_policy": { "type": "string", "enum": ["no", "always", "unless-stopped", "on-failure"] },
+                    "max_retries": { "type": "integer" },
+                    "memory_mb": { "type": "integer" },
+                    "cpus": { "type": "number" }
+                },
+                "required": ["id"]
+            }),
+        },
+        McpTool {
             name: "ols_docker_compose_list".into(),
             description: Some("List Docker Compose stacks: compose files in registered projects plus stacks Docker is running, with each service's image, ports and state.".to_string()),
             input_schema: json!({ "type": "object", "properties": {} }),
@@ -1098,6 +1122,16 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
                     .map(|t| t.clamp(1, 2000) as u32)
                     .unwrap_or(200),
             ),
+        },
+        "ols_docker_container_details" => C::GetDockerContainer { id: req_str!("id") },
+        "ols_docker_container_update" => C::UpdateDockerContainer {
+            id: req_str!("id"),
+            update: ols_core::docker::details::ContainerUpdate {
+                restart_policy: opt_str!("restart_policy"),
+                max_retries: args.get("max_retries").and_then(|v| v.as_u64()),
+                memory_mb: args.get("memory_mb").and_then(|v| v.as_u64()),
+                cpus: args.get("cpus").and_then(|v| v.as_f64()),
+            },
         },
         "ols_docker_compose_list" => C::ListDockerComposeStacks,
         "ols_docker_compose_check" => {
@@ -2238,6 +2272,26 @@ mod tests {
 
     #[test]
     fn docker_tools_build_commands() {
+        match build_command(
+            "ols_docker_container_update",
+            &json!({ "id": "db", "memory_mb": 512, "cpus": 1.5 }),
+        )
+        .unwrap()
+        {
+            CoreCommand::UpdateDockerContainer { id, update } => {
+                assert_eq!(id, "db");
+                assert_eq!((update.memory_mb, update.cpus), (Some(512), Some(1.5)));
+                assert!(update.restart_policy.is_none());
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        let all: Vec<String> = mcp_tools().into_iter().map(|t| t.name).collect();
+        assert!(
+            !all.iter()
+                .any(|n| n.starts_with("ols_docker")
+                    && (n.contains("remove") || n.contains("rename"))),
+            "no destructive container tools"
+        );
         let names: Vec<String> = mcp_tools().into_iter().map(|t| t.name).collect();
         for n in [
             "ols_docker_status",

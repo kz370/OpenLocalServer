@@ -229,6 +229,29 @@ pub enum CoreCommand {
     RevealDockerComposeSecrets {
         path: String,
     },
+    /// §166: container settings (`docker inspect`; password-like env values removed).
+    GetDockerContainer {
+        id: String,
+    },
+    /// §166: restart policy and memory / CPU limits, applied without recreating.
+    UpdateDockerContainer {
+        id: String,
+        update: crate::docker::details::ContainerUpdate,
+    },
+    /// §166: rename a container; sites linked to it follow the new name.
+    RenameDockerContainer {
+        id: String,
+        name: String,
+    },
+    /// §166: remove a container (UI only). `force` stops it first; `volumes` also removes
+    /// its anonymous volumes.
+    RemoveDockerContainer {
+        id: String,
+        #[serde(default)]
+        force: bool,
+        #[serde(default)]
+        volumes: bool,
+    },
     /// §166: what "Connect to OLS" does for a stack (site names, CA, OLS services).
     GetDockerComposeConnect {
         path: String,

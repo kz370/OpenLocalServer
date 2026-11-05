@@ -11,6 +11,7 @@ pub mod builder;
 pub mod client;
 pub mod compose;
 pub mod connect;
+pub mod details;
 pub mod sites;
 pub mod types;
 
@@ -67,8 +68,19 @@ impl DockerManager {
         path: &str,
         timeout: Duration,
     ) -> Result<client::Response, ClientError> {
+        self.call_body(endpoint, method, path, None, timeout)
+    }
+
+    fn call_body(
+        &self,
+        endpoint: &Endpoint,
+        method: &str,
+        path: &str,
+        body: Option<Vec<u8>>,
+        timeout: Duration,
+    ) -> Result<client::Response, ClientError> {
         self.requests.fetch_add(1, Ordering::Relaxed);
-        client::request(endpoint, method, path, None, timeout)
+        client::request(endpoint, method, path, body, timeout)
     }
 
     /// Asks the engine for its version. Never fails: an unreachable engine is a status,
@@ -249,8 +261,113 @@ impl DockerManager {
             .collect())
     }
 
+    /// Container settings for the dialog (`docker inspect`), with password-like values removed.
+    pub fn container_details(
+        &self,
+        endpoint: &Endpoint,
+        id: &str,
+    ) -> Result<details::ContainerDetails, CoreError> {
+        check_ref(id)?;
+        let v: serde_json::Value = self
+            .call(
+                endpoint,
+                "GET",
+                &format!("/containers/{id}/json"),
+                LIST_TIMEOUT,
+            )
+            .and_then(|r| r.json())
+            .map_err(|e| to_core_error(e, "read the container's settings"))?;
+        Ok(details::parse(&v))
+    }
+
+    /// Changes a running container's restart policy and limits (no recreate needed).
+    pub fn update_container(
+        &self,
+        endpoint: &Endpoint,
+        id: &str,
+        update: &details::ContainerUpdate,
+    ) -> Result<(), CoreError> {
+        check_ref(id)?;
+        let body = details::update_body(update).map_err(|cause| {
+            CoreError::failed_fix(
+                "Those settings cannot be applied.",
+                cause,
+                "Correct the value and save again.",
+            )
+        })?;
+        let r = self.call_body(
+            endpoint,
+            "POST",
+            &format!("/containers/{id}/update"),
+            Some(serde_json::to_vec(&body).unwrap_or_default()),
+            ACTION_TIMEOUT,
+        );
+        *self.lock_cache() = None;
+        r.map(|_| ())
+            .map_err(|e| to_core_error(e, "update the container"))
+    }
+
+    /// Renames a container.
+    pub fn rename_container(
+        &self,
+        endpoint: &Endpoint,
+        id: &str,
+        name: &str,
+    ) -> Result<(), CoreError> {
+        check_ref(id)?;
+        if !types::valid_container_ref(name) || name.len() > 64 {
+            return Err(CoreError::failed_fix(
+                "That name cannot be used.",
+                format!("\"{name}\" must start with a letter or digit and use only letters, digits, `_`, `.` and `-`."),
+                "Type a simple name such as shop-db.",
+            ));
+        }
+        let r = self.call(
+            endpoint,
+            "POST",
+            &format!("/containers/{id}/rename?name={name}"),
+            ACTION_TIMEOUT,
+        );
+        *self.lock_cache() = None;
+        r.map(|_| ())
+            .map_err(|e| to_core_error(e, "rename the container"))
+    }
+
+    /// Removes a container. `force` stops a running one first; `volumes` also removes its
+    /// anonymous volumes (named volumes are never removed here).
+    pub fn remove_container(
+        &self,
+        endpoint: &Endpoint,
+        id: &str,
+        force: bool,
+        volumes: bool,
+    ) -> Result<(), CoreError> {
+        check_ref(id)?;
+        let r = self.call(
+            endpoint,
+            "DELETE",
+            &format!("/containers/{id}?force={force}&v={volumes}"),
+            ACTION_TIMEOUT,
+        );
+        *self.lock_cache() = None;
+        r.map(|_| ())
+            .map_err(|e| to_core_error(e, "remove the container"))
+    }
+
     fn lock_cache(&self) -> std::sync::MutexGuard<'_, Option<CachedList>> {
         self.containers.lock().unwrap_or_else(|p| p.into_inner())
+    }
+}
+
+fn check_ref(id: &str) -> Result<(), CoreError> {
+    if types::valid_container_ref(id) {
+        Ok(())
+    } else {
+        Err(CoreError::failed_fix(
+            "That is not a valid container name.",
+            format!("\"{id}\" contains characters Docker never uses in a name or id."),
+            "Pick the container from the list on the Docker page.",
+        ))
     }
 }
 

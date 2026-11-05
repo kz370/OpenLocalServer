@@ -1,10 +1,11 @@
 import { listen } from '@tauri-apps/api/event'
-import { Box, ExternalLink, FileText, Globe, Pause, Play, RefreshCw, RotateCw } from 'lucide-react'
+import { Box, ExternalLink, FileText, Globe, Pause, Play, RefreshCw, RotateCw, Settings2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { ComposeBuilderDialog } from '@/components/docker/ComposeBuilderDialog'
 import { ComposeEditorDialog } from '@/components/docker/ComposeEditorDialog'
 import { ComposeTab } from '@/components/docker/ComposeTab'
+import { ContainerSettingsDialog } from '@/components/docker/ContainerSettingsDialog'
 import { CreateSiteDialog } from '@/components/docker/CreateSiteDialog'
 import { CopyId, GroupHeading, Row, RowList } from '@/components/docker/DockerRows'
 import { LogsDialog } from '@/components/docker/LogsDialog'
@@ -69,6 +70,7 @@ export default function DockerPage() {
   const [editPath, setEditPath] = useState<string | null>(null)
   const [builderOpen, setBuilderOpen] = useState(false)
   const [taskId, setTaskId] = useState<string | null>(null)
+  const [settingsFor, setSettingsFor] = useState<string | null>(null)
   const [composeReload, setComposeReload] = useState(0)
 
   // Callers that refresh on demand show the spinner first; the first load starts with it on.
@@ -240,6 +242,7 @@ export default function DockerPage() {
           onNew={() => setBuilderOpen(true)}
           onLogs={setLogsFor}
           onCreateSite={(name) => void createSiteFor(name)}
+          onSettings={setSettingsFor}
         />
       )}
 
@@ -284,6 +287,7 @@ export default function DockerPage() {
                       onError={setError}
                       onLogs={() => setLogsFor(c.name)}
                       onCreateSite={() => setSiteFor(c)}
+                      onSettings={() => setSettingsFor(c.id)}
                     />
                   )),
                 ])}
@@ -294,6 +298,17 @@ export default function DockerPage() {
       )}
 
       <LogsDialog container={logsFor} onClose={() => setLogsFor(null)} />
+      {settingsFor && (
+        <ContainerSettingsDialog
+          key={settingsFor}
+          id={settingsFor}
+          onClose={() => setSettingsFor(null)}
+          onChanged={() => {
+            setComposeReload((n) => n + 1)
+            void refresh()
+          }}
+        />
+      )}
       <CreateSiteDialog container={siteFor} onClose={() => setSiteFor(null)} onCreated={() => void refresh()} />
       {editPath && (
         <ComposeEditorDialog
@@ -397,6 +412,7 @@ function ContainerRow({
   onError,
   onLogs,
   onCreateSite,
+  onSettings,
 }: {
   c: DockerContainer
   busy: string | null
@@ -404,6 +420,7 @@ function ContainerRow({
   onError: (d: Diagnostic) => void
   onLogs: () => void
   onCreateSite: () => void
+  onSettings: () => void
 }) {
   const running = c.state === 'running'
   const paused = c.state === 'paused'
@@ -486,6 +503,9 @@ function ContainerRow({
             onClick={onCreateSite}
           >
             <Globe className="size-3.5" />
+          </ServiceIconAction>
+          <ServiceIconAction title={`Settings of ${c.name}`} disabled={false} iconColor="text-slate-400" onClick={onSettings}>
+            <Settings2 className="size-3.5" />
           </ServiceIconAction>
         </span>
       }

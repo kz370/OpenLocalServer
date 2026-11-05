@@ -12,6 +12,7 @@ import {
   Play,
   Power,
   RotateCw,
+  Settings2,
   Square,
   Wand2,
 } from 'lucide-react'
@@ -51,6 +52,7 @@ export function ComposeTab({
   onNew,
   onLogs,
   onCreateSite,
+  onSettings,
 }: {
   dockerRunning: boolean
   reloadKey: number
@@ -59,6 +61,7 @@ export function ComposeTab({
   onNew: () => void
   onLogs: (container: string) => void
   onCreateSite: (container: string) => void
+  onSettings: (containerId: string) => void
 }) {
   const [stacks, setStacks] = useState<ComposeStack[] | null>(null)
   const [error, setError] = useState<Diagnostic | null>(null)
@@ -268,6 +271,14 @@ export function ComposeTab({
                               onClick={() => s.container && onCreateSite(s.container)}
                             >
                               <Globe className="size-3.5" />
+                            </ServiceIconAction>
+                            <ServiceIconAction
+                              title={s.container_id ? `Settings of ${s.name}` : 'No container yet'}
+                              disabled={!s.container_id}
+                              iconColor="text-slate-400"
+                              onClick={() => s.container_id && onSettings(s.container_id)}
+                            >
+                              <Settings2 className="size-3.5" />
                             </ServiceIconAction>
                           </span>
                         }
