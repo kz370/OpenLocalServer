@@ -29,7 +29,7 @@ Feature release. Full notes: [`release-notes/v2.9.0.md`](./release-notes/v2.9.0.
 - Build: vendor libraries split into separate chunks (main chunk 2.28 MB to 1.33 MB), Vite 8.3.5 security update, CI on `upload-artifact@v7` / `download-artifact@v8` (Node 24).
 
 ### Fixed
-- Project PHP detection honors `vendor/composer/platform_check.php`; a site's Repair page no longer shows other projects' findings.
+- Project PHP detection honors `vendor/composer/platform_check.php`; a site's Repair page no longer shows other projects' findings; stray `§` marks removed from visible UI text.
 - Add Site uses the detected document root; Project Settings keeps the Icon & Logo tab; stale tray service counts; tooltip overflow on long paths; zero import counts after quick checkbox changes; Explorer menu cascade, icons, console flash, and `olsc` version mismatch.
 
 ## [2.8.0] — 2026-11-03

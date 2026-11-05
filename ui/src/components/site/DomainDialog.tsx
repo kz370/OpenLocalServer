@@ -1182,7 +1182,7 @@ export function DomainSettings({
                 </div>
               )}
             </div>
-            <Field label="Name template (§48)">
+            <Field label="Name template">
               <Select value={template} onChange={(e) => onTemplateChange(e.target.value)}>
                 <option>{`{project}.${defaultTld}`}</option>
                 <option>{`api.{project}.${defaultTld}`}</option>
