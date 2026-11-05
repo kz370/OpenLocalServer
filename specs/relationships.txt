@@ -3,7 +3,7 @@ UI Pages (Dashboard, Sites, Tunnels, WebServer, Databases, Services, Runtimes, C
 UI Pages & Dialogs | uses | NotificationSystem (ui/src/lib/notify.ts) for toasts, Undo actions, and batch summaries
 Titlebar | mounts | NotificationsPopover (ui/src/components/NotificationsPopover.tsx) for recent notification history
 App | mounts | NotificationHost (ui/src/components/NotificationHost.tsx) for global toast rendering
-App | imports | all page modules with static imports so every page is ready at shell startup and navigation does not wait for a page chunk to load
+App | imports | all page modules with static imports so every page is ready at shell startup and navigation does not wait for a page chunk to load, except DockerPage, which App loads with React.lazy (optional feature, own chunk, kept out of the startup bundle)
 App | mounts | TooltipProvider (ui/src/components/ui/tooltip.tsx) for modern themed tooltips and global title/data-tooltip interception; tooltip labels wrap long paths/URLs and stay within viewport width
 UI (core/client.ts) | calls | Tauri invoke('run_command')
 olsc (crates/ols-cli) | uses | ols-core control channel (calls CoreCommand over local IPC or background daemon)
@@ -332,3 +332,13 @@ ManageProjectTypesDialog | uses | SiteLogo filterFaIcons + IconCategoryFilter (o
 IconCategoryFilter | uses | SiteLogo FA_ICONS + FA_ICON_CATEGORIES + FontAwesomeIcon (category icons, counts per category for the search) and ui/select Select (searchable narrow-width dropdown)
 SiteLogoPanel | wraps | its icon grid in IconCategoryFilter (heightClassName h-72; grid uses auto-fill minmax(5.5rem,1fr) columns)
 ManageProjectTypesDialog | wraps | both icon grids in IconCategoryFilter (heightClassName h-56; auto-fill minmax(4.5rem,1fr) columns)
+Inner | owns | DockerManager (created with no I/O; first engine request happens on the first Docker command)
+dispatch_docker | uses | Inner::docker_endpoint (setting docker.endpoint > DOCKER_HOST > platform default) and DockerManager
+DockerManager | uses | docker::client::request (one connection per request, worker thread, hard timeout)
+DockerManager::start_desktop | runs_in | TaskManager task `docker-start` (reported via command::report)
+DockerPage | calls | get_docker_status, list_docker_containers, docker_container_action, start_docker_desktop, open_url
+DockerPage | listens | task-event (only while a Start Docker task runs)
+Sidebar | links | DockerPage in the Sites group, directly under Sites
+CommandPalette | links | DockerPage (Docker)
+api.rs OPERATE | allows | docker_container_action, start_docker_desktop (reads covered by get_/list_ prefixes)
+ols-mcp | maps | ols_docker_* tools and ols_unignore_site to their CoreCommands

@@ -1,0 +1,395 @@
+import { listen } from '@tauri-apps/api/event'
+import { Box, ExternalLink, Pause, Play, RefreshCw, RotateCw } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+
+import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
+import { ServiceIconAction } from '@/components/ServiceIconAction'
+import { Spinner } from '@/components/Spinner'
+import { StopIcon } from '@/components/StopIcon'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import {
+  type Diagnostic,
+  type DockerContainer,
+  type DockerContainerAction,
+  type DockerStatus,
+  type TaskEvent,
+  runCommand,
+} from '@/core'
+import { cn } from '@/lib/utils'
+
+/**
+ * §166 Docker page (under Sites). Performance rules from the Docker plan §2.5:
+ * - Loaded lazily by App, so it adds nothing to the startup bundle.
+ * - No timers: data loads when the page opens, after each action, and on Refresh.
+ * - The only live listener is `task-event`, and only while "Start Docker" runs.
+ */
+
+type Filter = 'all' | 'running' | 'sites' | 'managed'
+
+const FILTERS: { id: Filter; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'running', label: 'Running' },
+  { id: 'sites', label: 'Linked to sites' },
+  { id: 'managed', label: 'Created by OLS' },
+]
+
+const STATE_BADGE: Record<string, { label: string; variant: 'success' | 'secondary' | 'warning' | 'destructive' | 'outline' }> = {
+  running: { label: '● Running', variant: 'success' },
+  paused: { label: 'Paused', variant: 'warning' },
+  restarting: { label: 'Restarting…', variant: 'secondary' },
+  exited: { label: 'Stopped', variant: 'secondary' },
+  created: { label: 'Created', variant: 'outline' },
+  dead: { label: 'Dead', variant: 'destructive' },
+}
+
+export default function DockerPage() {
+  const [status, setStatus] = useState<DockerStatus | null>(null)
+  const [containers, setContainers] = useState<DockerContainer[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<Diagnostic | null>(null)
+  const [filter, setFilter] = useState<Filter>('all')
+  const [busy, setBusy] = useState<string | null>(null)
+  const [startTask, setStartTask] = useState<string | null>(null)
+
+  // Callers that refresh on demand show the spinner first; the first load starts with it on.
+  const refresh = useCallback(async () => {
+    try {
+      const s = await runCommand({ type: 'get_docker_status' })
+      if (s.type !== 'docker_status') return
+      setStatus(s.status)
+      if (s.status.running) {
+        const r = await runCommand({ type: 'list_docker_containers', all: true })
+        if (r.type === 'docker_containers') setContainers(r.containers)
+      } else {
+        setContainers([])
+      }
+    } catch (err) {
+      setError(asDiagnostic(err))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void refresh()
+  }, [refresh])
+
+  // Follow the "Start Docker" task only while it runs, then drop the listener.
+  useEffect(() => {
+    if (!startTask) return
+    let alive = true
+    let unlisten: (() => void) | undefined
+    void listen<TaskEvent>('task-event', (event) => {
+      const task = event.payload.task
+      if (!alive || task.id !== startTask || event.payload.kind !== 'finished') return
+      setStartTask(null)
+      if (task.error) setError(task.error)
+      void refresh()
+    }).then((dispose) => {
+      if (alive) unlisten = dispose
+      else dispose()
+    })
+    return () => {
+      alive = false
+      unlisten?.()
+    }
+  }, [startTask, refresh])
+
+  async function startDocker() {
+    setError(null)
+    try {
+      const r = await runCommand({ type: 'start_docker_desktop' })
+      if (r.type === 'task_started') setStartTask(r.id)
+      else void refresh()
+    } catch (err) {
+      setError(asDiagnostic(err))
+    }
+  }
+
+  async function act(c: DockerContainer, action: DockerContainerAction) {
+    setError(null)
+    setBusy(`${c.id}:${action}`)
+    try {
+      await runCommand({ type: 'docker_container_action', id: c.id, action })
+    } catch (err) {
+      setError(asDiagnostic(err))
+    } finally {
+      setBusy(null)
+      void refresh()
+    }
+  }
+
+  const visible = useMemo(
+    () =>
+      containers.filter((c) =>
+        filter === 'running' ? c.state === 'running' : filter === 'sites' ? !!c.ols_site : filter === 'managed' ? c.managed : true,
+      ),
+    [containers, filter],
+  )
+
+  // Compose stacks first (the engine order already puts them first), loose containers last.
+  const groups = useMemo(() => {
+    const map = new Map<string, DockerContainer[]>()
+    for (const c of visible) {
+      const key = c.compose_project ?? ''
+      map.set(key, [...(map.get(key) ?? []), c])
+    }
+    return [...map.entries()]
+  }, [visible])
+
+  const runningCount = containers.filter((c) => c.state === 'running').length
+  const siteCount = containers.filter((c) => c.ols_site).length
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Docker</h1>
+        <p className="text-sm text-muted-foreground">Your Docker containers: start, stop and open them. Docker is optional; OLS never installs it.</p>
+      </div>
+
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
+
+      <StatusBar
+        status={status}
+        loading={loading}
+        starting={!!startTask}
+        runningCount={runningCount}
+        total={containers.length}
+        siteCount={siteCount}
+        onRefresh={() => {
+          setLoading(true)
+          void refresh()
+        }}
+        onStart={() => void startDocker()}
+      />
+
+      {status?.running && (
+        <Card>
+          <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 pb-2">
+            <div>
+              <CardTitle className="text-sm">Containers</CardTitle>
+              <CardDescription>Grouped by Compose project. Click a port to open it in your browser.</CardDescription>
+            </div>
+            <div className="flex flex-wrap gap-1" role="tablist" aria-label="Filter containers">
+              {FILTERS.map((f) => (
+                <Button
+                  key={f.id}
+                  size="sm"
+                  role="tab"
+                  aria-selected={filter === f.id}
+                  variant={filter === f.id ? 'secondary' : 'ghost'}
+                  className="h-7 cursor-pointer text-xs"
+                  onClick={() => setFilter(f.id)}
+                >
+                  {f.label}
+                </Button>
+              ))}
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {visible.length === 0 ? (
+              <p className="px-6 py-8 text-center text-sm text-muted-foreground">
+                {containers.length === 0 ? 'No containers yet. Containers you create with Docker show up here.' : 'No containers match this filter.'}
+              </p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Ports</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {groups.map(([project, rows]) => [
+                    project && (
+                      <TableRow key={`group:${project}`} className="bg-muted/30 hover:bg-muted/30">
+                        <TableCell colSpan={4} className="py-1.5 text-xs font-medium text-muted-foreground">
+                          Compose · {project}
+                        </TableCell>
+                      </TableRow>
+                    ),
+                    ...rows.map((c) => (
+                      <ContainerRow key={c.id} c={c} busy={busy} onAct={act} onError={setError} />
+                    )),
+                  ])}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  )
+}
+
+function StatusBar({
+  status,
+  loading,
+  starting,
+  runningCount,
+  total,
+  siteCount,
+  onRefresh,
+  onStart,
+}: {
+  status: DockerStatus | null
+  loading: boolean
+  starting: boolean
+  runningCount: number
+  total: number
+  siteCount: number
+  onRefresh: () => void
+  onStart: () => void
+}) {
+  if (!status) {
+    return (
+      <Card>
+        <CardContent className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+          <Spinner className="size-4" /> Checking Docker…
+        </CardContent>
+      </Card>
+    )
+  }
+  return (
+    <Card>
+      <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
+          <span
+            className={cn('size-2.5 shrink-0 rounded-full', status.running ? 'bg-emerald-500' : 'bg-destructive')}
+            aria-hidden
+          />
+          <div className="min-w-0">
+            <p className="text-sm font-medium">
+              {status.running ? `Docker is running${status.version ? ` · ${status.version}` : ''}` : status.installed ? 'Docker is stopped' : 'Docker is not installed'}
+            </p>
+            <p className="truncate text-xs text-muted-foreground" title={status.endpoint}>
+              {status.running
+                ? `${runningCount} running · ${total} total · ${siteCount} linked to sites${status.os_type ? ` · ${status.os_type} containers` : ''}`
+                : (status.message ?? status.endpoint)}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {!status.running && status.desktop_path && (
+            <Button size="sm" className="cursor-pointer" disabled={starting} onClick={onStart}>
+              {starting ? <Spinner className="size-3.5" /> : <Play className="size-3.5" />}
+              {starting ? 'Starting Docker…' : 'Start Docker'}
+            </Button>
+          )}
+          {!status.installed && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="cursor-pointer"
+              onClick={() => void runCommand({ type: 'open_url', url: 'https://www.docker.com/products/docker-desktop/' })}
+            >
+              Get Docker <ExternalLink className="size-3.5" />
+            </Button>
+          )}
+          <Button size="sm" variant="ghost" className="cursor-pointer" disabled={loading} onClick={onRefresh} title="Refresh">
+            <RefreshCw className={cn('size-3.5', loading && 'animate-spin')} />
+            Refresh
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function ContainerRow({
+  c,
+  busy,
+  onAct,
+  onError,
+}: {
+  c: DockerContainer
+  busy: string | null
+  onAct: (c: DockerContainer, action: DockerContainerAction) => void
+  onError: (d: Diagnostic) => void
+}) {
+  const running = c.state === 'running'
+  const paused = c.state === 'paused'
+  const rowBusy = busy?.startsWith(`${c.id}:`) ?? false
+  const badge = STATE_BADGE[c.state] ?? { label: c.state || 'unknown', variant: 'outline' as const }
+  const published = c.ports.filter((p) => p.host_port !== null)
+  return (
+    <TableRow>
+      <TableCell>
+        <span className="flex min-w-0 items-center gap-2">
+          <Box className="size-4 shrink-0 text-sky-500" aria-hidden />
+          <span className="min-w-0">
+            <span className="block truncate font-medium" title={c.name}>
+              {c.name}
+            </span>
+            <span className="block truncate text-xs text-muted-foreground" title={c.image}>
+              {c.image}
+            </span>
+          </span>
+          {c.ols_site && <Badge variant="outline">{c.ols_site}</Badge>}
+        </span>
+      </TableCell>
+      <TableCell>
+        <span className="flex flex-wrap gap-1">
+          {published.length === 0 && <span className="text-xs text-muted-foreground">—</span>}
+          {published.map((p) => (
+            <button
+              key={`${p.container_port}/${p.protocol}/${p.host_port}`}
+              type="button"
+              disabled={!running || p.protocol !== 'tcp'}
+              title={`Container port ${p.container_port}/${p.protocol} → this computer's port ${p.host_port}`}
+              className="inline-flex cursor-pointer items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-xs tabular-nums hover:bg-muted disabled:cursor-default disabled:opacity-60"
+              onClick={() =>
+                runCommand({ type: 'open_url', url: `http://localhost:${p.host_port}` }).catch((e) => onError(asDiagnostic(e)))
+              }
+            >
+              :{p.host_port}
+              {running && p.protocol === 'tcp' && <ExternalLink className="size-3" />}
+            </button>
+          ))}
+        </span>
+      </TableCell>
+      <TableCell>
+        <span className="flex flex-col items-start gap-0.5">
+          <Badge variant={badge.variant}>{badge.label}</Badge>
+          <span className="text-xs text-muted-foreground">{c.status}</span>
+        </span>
+      </TableCell>
+      <TableCell className="text-right">
+        <span className="flex items-center justify-end gap-0.5">
+          <ServiceIconAction
+            title={`${running || paused ? 'Stop' : 'Start'} ${c.name}`}
+            disabled={rowBusy}
+            spinning={busy === `${c.id}:start` || busy === `${c.id}:stop`}
+            iconColor={running || paused ? 'text-destructive/70' : 'text-emerald-400'}
+            onClick={() => onAct(c, running || paused ? 'stop' : 'start')}
+          >
+            {running || paused ? <StopIcon /> : <Play className="size-3.5" />}
+          </ServiceIconAction>
+          <ServiceIconAction
+            title={`Restart ${c.name}`}
+            disabled={rowBusy}
+            spinning={busy === `${c.id}:restart`}
+            iconColor="text-amber-400"
+            onClick={() => onAct(c, 'restart')}
+          >
+            <RotateCw className="size-3.5" />
+          </ServiceIconAction>
+          <ServiceIconAction
+            title={paused ? `Resume ${c.name}` : `Pause ${c.name}`}
+            disabled={rowBusy || !(running || paused)}
+            spinning={busy === `${c.id}:pause` || busy === `${c.id}:unpause`}
+            iconColor="text-sky-400"
+            onClick={() => onAct(c, paused ? 'unpause' : 'pause')}
+          >
+            {paused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
+          </ServiceIconAction>
+        </span>
+      </TableCell>
+    </TableRow>
+  )
+}

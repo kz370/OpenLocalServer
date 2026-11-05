@@ -25,3 +25,6 @@ graph TB
   INNER --> BUNDLE[SiteBundler]
   BUNDLE --> CRYPTO[BundleCipher]
   BUNDLE --> JOUR
+  INNER --> DOCKER[DockerManager]
+  DOCKER --> ENGINE[Docker Engine API pipe/socket/tcp]
+  DOCKER --> TASKS

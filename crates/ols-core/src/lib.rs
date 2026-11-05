@@ -24,6 +24,7 @@ pub mod ddns;
 pub mod detection;
 pub mod diagnostics;
 pub mod dns;
+pub mod docker;
 pub mod domain;
 pub mod editors;
 pub mod elevate;

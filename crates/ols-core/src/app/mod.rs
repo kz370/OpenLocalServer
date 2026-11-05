@@ -118,6 +118,8 @@ pub struct Inner {
     pub ai: crate::ai::AiJobs,
     /// §164: the background work the Processes page lists, with per-task progress.
     pub tasks: crate::tasks::TaskManager,
+    /// §166: Docker page state. Creating it does no I/O; see `docker` module docs.
+    pub docker: crate::docker::DockerManager,
     /// Finding ids already attempted by automatic diagnostics during this app session.
     pub auto_fix_attempted: Mutex<HashSet<String>>,
     /// Last automatic-fix failures, shown in the corresponding diagnostic's details.
@@ -312,6 +314,7 @@ impl Inner {
             loadtests: Default::default(),
             ai: Default::default(),
             tasks: Default::default(),
+            docker: Default::default(),
             auto_fix_attempted: Mutex::new(HashSet::new()),
             auto_fix_failures: Mutex::new(HashMap::new()),
             pending_add_project: Mutex::new(None),
@@ -389,6 +392,17 @@ impl Inner {
 
     pub fn web_config(&self) -> WebConfig {
         WebConfig::from_settings(&self.settings.lock().unwrap())
+    }
+
+    /// Where the Docker engine is: `docker.endpoint`, then `DOCKER_HOST`, then the default.
+    pub fn docker_endpoint(&self) -> crate::docker::client::Endpoint {
+        let setting = self
+            .settings
+            .lock()
+            .unwrap()
+            .get(crate::docker::SETTING_ENDPOINT)
+            .and_then(|v| v.as_str().map(str::to_string));
+        crate::docker::resolve_endpoint(setting.as_deref())
     }
 
     pub fn setting_bool(&self, key: &str, default: bool) -> bool {

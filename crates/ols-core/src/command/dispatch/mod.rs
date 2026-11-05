@@ -1,4 +1,5 @@
 pub mod database;
+pub mod docker;
 pub mod domains;
 pub mod maintenance;
 pub mod ops;
@@ -37,6 +38,10 @@ impl Core {
             Err(cmd) => cmd,
         };
         command = match self.dispatch_maintenance(command) {
+            Ok(res) => return res,
+            Err(cmd) => cmd,
+        };
+        command = match self.dispatch_docker(command) {
             Ok(res) => return res,
             Err(cmd) => cmd,
         };

@@ -3,9 +3,9 @@
 > **For agentic workers:** Work task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 > Each task ends with the quality gates and a Conventional Commit.
 
-**Status:** proposed (not implemented). Date: 2026-11-05.
+**Status:** in progress on `release/2.10.0` — Phase 1 core done (client, status, containers list/actions, Docker page, MCP tools); events stream (Task 1.3) next. Date: 2026-11-05.
 
-**Target release:** **2.10.0** (current app version is 2.9.0). The version bump happens in Task 6.3, when the feature ships — not before.
+**Target release:** **2.10.0**. The version was bumped to 2.10.0 early, at the maintainer's request, when `release/2.10.0` was created; Task 6.3 now only finalises release notes and the website.
 
 **Goal:** Give OLS a first-class Docker area: see and control containers, images, volumes,
 networks and Compose stacks, and turn any container (or a Docker template) into a normal OLS
@@ -39,9 +39,10 @@ code path. Everything is exposed as `CoreCommand`s, so GUI, CLI, HTTP API and MC
 ## 1. Key decisions (locked unless reviewer objects)
 
 1. **Transport = Engine API, not CLI parsing.**
-   - Windows: `\\.\pipe\docker_engine` via `tokio::net::windows::named_pipe::ClientOptions`.
-   - Linux/macOS (dev only): `/var/run/docker.sock`.
-   - Thin own client on `hyper` 1 (already a dependency; add `client` feature + `hyper-util` client-legacy).
+   - Windows: `\\.\pipe\docker_engine`; Linux/macOS (dev only): `/var/run/docker.sock`; or `tcp://host:port`.
+   - **As built (Phase 1):** a small *blocking* HTTP/1.1 client (`docker/client.rs`), not `hyper`.
+     `Core::dispatch` is synchronous, so a blocking client fits it directly. It needs **no new
+     dependencies**, and each request runs on a short-lived thread with a hard timeout.
    - Why not `bollard`: large dependency, and we only need ~25 endpoints. Revisit if the list grows.
 2. **Compose = CLI.** There is no Engine API for Compose. Run `docker compose -p <name> -f <file> ...`
    through `ProcessSupervisor` so output lands in the 500-line ring + logs.
@@ -187,13 +188,13 @@ Power users can still do all of these with the `docker` CLI.
 ### Startup
 - **No Docker work at app start.** `DockerManager` is created lazily on first Docker command.
   No `/_ping`, no pipe connect, no catalog load during `startup.rs`.
-- **Exception:** if at least one site has a `DockerLink`, a single `/_ping` runs **after** the UI is ready
-  (`ols:ui-ready`), in the background, with a 1 s timeout.
+- **Exception (Phase 3):** if at least one site has a `DockerLink`, a single status check runs **after** the UI is ready
+  (`ols:ui-ready`), in the background, with a 2 s timeout.
 - Docker templates catalog is parsed on first open of the *Templates* tab, then cached.
 
 ### Network calls to the engine
-- Every call is async on the core Tokio runtime — never on the Tauri main thread, never holding a store lock.
-- Hard timeouts: 1 s `/_ping`, 3 s lists, 10 s actions; long work (pull, compose, prune, `/system/df`) runs as a background task.
+- Every call runs on its own short-lived thread with a hard timeout — never on the Tauri main thread, never holding a store lock.
+- Hard timeouts (as built): 2 s status (`/version`), 3 s lists, 20 s actions (stop waits up to 10 s for the container); long work (pull, compose, prune, `/system/df`) runs as a background task.
 - **One** list call per refresh: `/containers/json` already has ports + labels → no per-container `inspect` in the list.
 - `/system/df` is slow (can take seconds): only on *Storage* tab open or the refresh button; cached 60 s.
 - Results cached in memory (containers 2 s, images/volumes 30 s); repeated UI calls inside that window hit the cache.
@@ -228,7 +229,7 @@ Power users can still do all of these with the `docker` CLI.
 | Idle CPU with Docker page closed, no Docker sites | 0 (no timers, no open connections) |
 | Extra memory with Docker page closed | < 1 MB |
 | Docker page first paint, 100 containers | < 300 ms |
-| Initial UI bundle size | +0 KB (lazy chunk) |
+| Initial UI bundle size | ≤ +5 KB (sidebar icon + lazy loader only). Measured in Phase 1: +3.5 KB raw / +1.2 KB gzip; page itself is an 8.5 KB lazy chunk |
 
 ### Performance tests
 - Fake-engine test: start `Core`, run startup, assert the fake engine received **0** requests.
@@ -276,8 +277,8 @@ Settings keys: `docker.enabled` (bool, default auto), `docker.endpoint` (overrid
 
 | Group | Commands |
 |---|---|
-| Status | `docker_status`, `docker_start_desktop`, `docker_disk_usage`, `docker_watch{on}` (page subscribes/unsubscribes to live events) |
-| Containers | `docker_list_containers{all}`, `docker_container_action{id,action}` (start/stop/restart/pause/unpause/kill), `docker_remove_container{id,volumes,force}`, `docker_inspect_container{id}`, `docker_container_stats{id}`, `docker_container_logs{id,tail,since}`, `docker_open_shell{id,shell}` |
+| Status | `get_docker_status` ✅, `start_docker_desktop` ✅, `docker_disk_usage`, `docker_watch{on}` (page subscribes/unsubscribes to live events) |
+| Containers | `list_docker_containers{all}` ✅, `docker_container_action{id,action}` ✅ (start/stop/restart/pause/unpause; no kill), `docker_remove_container{id,volumes,force}`, `docker_inspect_container{id}`, `docker_container_stats{id}`, `docker_container_logs{id,tail,since}`, `docker_open_shell{id,shell}` |
 | Images | `docker_list_images`, `docker_pull_image{reference}` → `TaskStarted`, `docker_remove_image{id,force}` |
 | Volumes / networks | `docker_list_volumes`, `docker_remove_volume{name}`, `docker_backup_volume{name,dest}`, `docker_restore_volume{name,source}`, `docker_list_networks` |
 | Prune | `docker_prune_plan{kinds}` (dry run), `docker_prune{kinds}` → `TaskStarted` |
@@ -285,12 +286,15 @@ Settings keys: `docker.enabled` (bool, default auto), `docker.endpoint` (overrid
 | Templates | `docker_list_templates`, `docker_plan_template{id,answers}`, `docker_run_template{id,answers}` → `TaskStarted` |
 | Sites | `docker_create_site{container,container_port,hostname,https?}`, `docker_link_site{hostname,link}`, `docker_unlink_site{hostname}` |
 
+> **Naming (as built):** read commands use the existing `get_` / `list_` prefixes (`get_docker_status`,
+> `list_docker_containers`) so the HTTP API treats them as read-only automatically. Later read commands follow the same rule.
+
 **HTTP API / MCP gating**
 - Read-only mode: `docker_status`, `docker_list_*`, `docker_inspect_*`, `docker_disk_usage`.
 - Operate mode: start/stop/pull/compose/template/site commands.
 - **Never** over HTTP/MCP: `docker_open_shell`, `docker_remove_volume`, `docker_prune` (destructive / interactive).
-- New MCP tools: `ols_docker_status`, `ols_docker_list_containers`, `ols_docker_container_action`,
-  `ols_docker_create_site`, `ols_docker_list_templates`, `ols_docker_run_template`.
+- MCP tools: `ols_docker_status` ✅, `ols_docker_start` ✅, `ols_docker_list_containers` ✅, `ols_docker_container_action` ✅,
+  later `ols_docker_create_site`, `ols_docker_list_templates`, `ols_docker_run_template`.
 
 **CLI**
 ```bash
@@ -310,28 +314,28 @@ olsc docker prune --dry-run
 
 ### Phase 1 — Engine client + status (foundation)
 
-- [ ] **Task 1.1: Docker client transport**
+- [x] **Task 1.1: Docker client transport** (done: blocking client, see decision 1)
   - Create `crates/ols-core/src/docker/{mod.rs,client.rs,types.rs,error.rs}`.
   - `DockerClient::connect(endpoint)`; `get_json<T>`, `post`, `delete`, streaming `get_lines` (logs/events/pull).
   - Cargo: `hyper` add `client`; `hyper-util` add `client-legacy`, `http1`; tokio `net` already on.
   - Tests: unit-test request building + error mapping with a fake in-process HTTP server (no Docker needed).
-- [ ] **Task 1.2: `DockerManager` + status**
-  - Add to `Inner` as a **lazy** handle (`OnceCell`) — created on first Docker command, never on startup (§2.5).
+- [x] **Task 1.2: `DockerManager` + status**
+  - Add to `Inner` as a plain field whose creation does **no I/O** (as built; no `OnceCell` needed) — first engine request on first Docker command (§2.5).
   - Response cache (containers 2 s, images/volumes 30 s, `/system/df` 60 s) + hard timeouts per call.
   - `docker_status`, `docker_start_desktop` (find `Docker Desktop.exe` via registry/Program Files, launch, poll `/_ping` ≤ 120 s as a task).
   - Diagnostics: map "pipe not found" → `Diagnostic{problem:"Docker is not running", cause, fix:"docker_start_desktop"}`.
 - [ ] **Task 1.3: Events stream** → `docker-event` broadcast; Tauri forwards it (`src-tauri`).
   - Ref-counted: `docker_watch{on}` from the page + "Docker-linked sites exist" → open; both gone → close.
   - Debounce/batch to one UI event per 250 ms.
-- [ ] **Task 1.4: Performance guard tests** (§2.5): zero engine requests during startup; stream closes on last
+- [x] **Task 1.4: Performance guard tests** (done: `app_startup_makes_no_docker_requests`, cache test, hung-engine timeout test; events-stream test lands with Task 1.3) (§2.5): zero engine requests during startup; stream closes on last
   unsubscribe; cache hit inside window. These stay in CI so later phases can't regress them.
 
 ### Phase 2 — Manager UI (containers, images, volumes, networks)
 
-- [ ] **Task 2.1:** container/image/volume/network list + action commands (`command/types/commands.rs`, `command/dispatch/docker.rs`).
+- [ ] **Task 2.1:** (containers ✅ done in Phase 1) image/volume/network list + action commands (`command/types/commands.rs`, `command/dispatch/docker.rs`).
 - [ ] **Task 2.2:** logs as a log source `docker:<name>` in `app/system/logs.rs`.
 - [ ] **Task 2.3:** `docker_open_shell` via `TerminalManager` (`docker exec -it`), shell fallback bash → sh.
-- [ ] **Task 2.4:** UI page per §2.0: `ui/src/pages/Docker.tsx` (loaded with `React.lazy`) with status bar +
+- [ ] **Task 2.4:** (partly done: status bar, empty states, Containers tab with filters, Compose groups, port chips and start/stop/restart/pause; still to do: side panel, Templates and Storage tabs, virtualization) UI page per §2.0: `ui/src/pages/Docker.tsx` (loaded with `React.lazy`) with status bar +
   tabs *Containers · Templates · Storage & Cleanup*; components under `ui/src/components/docker/`
   (`DockerStatusBar`, `ContainerTable` (virtualized > 50 rows, grouped by Compose stack), `ContainerPanel`
   (Overview/Logs/Shell/Stats/Env), `PullImageDialog`, `PruneWizard`).

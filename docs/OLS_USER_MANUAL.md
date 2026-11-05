@@ -364,7 +364,11 @@ olsc guide
 ## 17. Version 2.10.0 Specific Notes & What's New
 
 ### What's New in v2.10.0
-- **Docker page (in development):** a new **Docker** item under **Sites** in the sidebar. You will be able to see and control your Docker containers and turn a container into a site with its own `.test` domain and HTTPS. Docker is optional: OLS does not install it, and nothing changes if you don't use it.
+- **Docker page:** a new **Docker** item under **Sites** in the sidebar shows whether Docker is running and has a **Start Docker** button. Docker is optional: OLS does not install it, and nothing changes if you don't use it.
+- **Containers:** see your containers grouped by Compose project, filter them, and start, stop, restart, pause or resume each one. Click a port to open it in your browser.
+- **AI assistant (MCP):** new tools to check Docker, list containers and control them, plus one to bring back a hidden site.
+- **No slowdown:** nothing Docker-related runs when OLS starts; the Docker page only talks to Docker while it is open.
+- **Coming before 2.10.0 ships:** turn a container into a `.test` site with HTTPS, ready-made Docker apps, container logs and a container shell.
 
 ### Previous Version Notes (v2.9.0)
 - **Import databases from several places at once:** your installed OLS MariaDB versions, other MySQL/MariaDB installs, or any data folder, in the order you choose.

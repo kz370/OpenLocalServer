@@ -1,6 +1,7 @@
 import type { AiProvider, AiRequest } from './types/ai'
 import type { QuickCommand, StartupSettings } from './types/apps'
 import type { CustomServiceDef, EnvironmentManifest, Ownership, ProcessId, ProcessSpec } from './types/base'
+import type { DockerContainerAction } from './types/docker'
 import type { XdebugSettings } from './types/environment'
 import type { LoadProfile } from './types/system'
 import type { AutoBackupSettings, AutoBackupSiteSettings, BundleOptions, OnConflict, Profile, ResourceLimits, RestoreOptions, ScheduledTask, SnapshotOptions, TunnelConfig, Worker } from './types/tasks'
@@ -62,6 +63,10 @@ export type CoreCommand =
   | { type: 'inspect_site_folder'; path: string }
   | { type: 'run_in_project'; project_id: string; runtime_id: string; args: string[] }
   | { type: 'list_wp_projects' }
+  | { type: 'get_docker_status' }
+  | { type: 'start_docker_desktop' }
+  | { type: 'list_docker_containers'; all?: boolean }
+  | { type: 'docker_container_action'; id: string; action: DockerContainerAction }
   | { type: 'wp_sign_in'; project_id: string; hostname?: string; theme?: 'light' | 'dark' }
   | { type: 'wp_sign_in_revoke'; project_id: string }
   | { type: 'wp_core_repair'; project_id: string }

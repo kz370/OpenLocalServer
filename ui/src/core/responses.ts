@@ -1,3 +1,4 @@
+import type { DockerContainer, DockerStatus } from './types/docker'
 import type { AiDetected, AiJobView, AiModel, AiPrompt, AiState, AiTestResult } from './types/ai'
 import type { DashboardData, HealthItem, HistoryEntry, LogSource, QuickCommand, QuickEntryDetail, QuickEntryView, QuickPlanResult, RunView, StartupSettings } from './types/apps'
 import type { CatalogEntry, CommandHistoryEntry, CustomInstall, CustomServiceDef, DbBackup, DbTool, DeletedItem, EnvironmentManifest, PortStatus, ProcessId, ProcessInfo, Project, ProjectDetail, ProjectTypePreset, CustomProjectType, ProjectFolderInspection, ServiceAggregate, ServiceStatus, Shortcut, WpProject } from './types/base'
@@ -28,6 +29,8 @@ export type CoreResponse =
   | { type: 'pending_add_project'; path: string | null }
   | { type: 'site_folder_inspection'; inspection: SiteFolderInspection }
   | { type: 'wp_projects'; projects: WpProject[] }
+  | { type: 'docker_status'; status: DockerStatus }
+  | { type: 'docker_containers'; containers: DockerContainer[] }
   | { type: 'wp_sign_in'; url: string; expires_at: number }
   | { type: 'wp_core_repair'; result: { version: string; restored: number } }
   | { type: 'deleted_items'; items: DeletedItem[] }

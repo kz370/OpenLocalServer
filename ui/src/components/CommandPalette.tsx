@@ -21,6 +21,7 @@ const PAGES: [Page, string][] = [
   ['dashboard', 'Dashboard'],
   ['projects', 'Projects'],
   ['sites', 'Sites'],
+  ['docker', 'Docker'],
   ['quickapps', 'Quick Apps'],
   ['commands', 'Commands'],
   ['webserver', 'Web server'],

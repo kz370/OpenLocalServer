@@ -388,6 +388,49 @@ fn mcp_tools() -> Vec<McpTool> {
             input_schema: json!({ "type": "object", "properties": {} }),
         },
         McpTool {
+            name: "ols_unignore_site".into(),
+            description: Some("Bring back a project's hidden site: removes the project's `.ols_ignore_site` marker so its site shows again. The project id comes from ols_list_projects.".to_string()),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "project_id": { "type": "string", "description": "Project id from ols_list_projects." }
+                },
+                "required": ["project_id"]
+            }),
+        },
+        McpTool {
+            name: "ols_docker_status".into(),
+            description: Some("Docker status: whether Docker is installed and running, engine version, container OS type (linux/windows), and the endpoint OLS uses. Never fails; a stopped engine is reported as running=false with a plain-language message.".to_string()),
+            input_schema: json!({ "type": "object", "properties": {} }),
+        },
+        McpTool {
+            name: "ols_docker_start".into(),
+            description: Some("Start Docker Desktop and wait (up to 2 minutes) until its engine answers. Runs as a background task; returns the task id (follow it with ols_list_tasks).".to_string()),
+            input_schema: json!({ "type": "object", "properties": {} }),
+        },
+        McpTool {
+            name: "ols_docker_list_containers".into(),
+            description: Some("List Docker containers with state, image, published ports (container port -> host port), Compose project/service, and the OLS site they serve. Running containers only unless 'all' is true.".to_string()),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "all": { "type": "boolean", "description": "Include stopped containers. Default false." }
+                }
+            }),
+        },
+        McpTool {
+            name: "ols_docker_container_action".into(),
+            description: Some("Start, stop, restart, pause or unpause one Docker container by name or id. Does not remove containers or volumes.".to_string()),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "Container name or id (from ols_docker_list_containers)." },
+                    "action": { "type": "string", "enum": ["start", "stop", "restart", "pause", "unpause"] }
+                },
+                "required": ["id", "action"]
+            }),
+        },
+        McpTool {
             name: "ols_restart_site_app".into(),
             description: Some("Restart the supervised background application process (Node.js dev server, Python app/uvicorn, etc.) for a site.".to_string()),
             input_schema: json!({
@@ -959,6 +1002,23 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
         "ols_apply_web" => C::ApplyWeb { overwrite: vec![] },
         "ols_validate_web" => C::ValidateWeb,
         "ols_list_tasks" => C::ListTasks,
+        "ols_unignore_site" => C::UnignoreSite {
+            project_id: req_str!("project_id"),
+        },
+        "ols_docker_status" => C::GetDockerStatus,
+        "ols_docker_start" => C::StartDockerDesktop,
+        "ols_docker_list_containers" => C::ListDockerContainers {
+            all: opt_bool!("all").unwrap_or(false),
+        },
+        "ols_docker_container_action" => {
+            let action = req_str!("action");
+            C::DockerContainerAction {
+                id: req_str!("id"),
+                action: serde_json::from_value(json!(action)).map_err(|_| {
+                    format!("unknown action '{action}': use start, stop, restart, pause or unpause")
+                })?,
+            }
+        }
         "ols_restart_site_app" => C::RestartSiteApp {
             hostname: req_str!("hostname"),
         },
@@ -1997,6 +2057,49 @@ pub async fn run_stdio(override_token: Option<String>) -> io::Result<()> {
 mod tests {
     use super::*;
     use ols_core::domain::SiteKind;
+
+    #[test]
+    fn docker_tools_build_commands() {
+        let names: Vec<String> = mcp_tools().into_iter().map(|t| t.name).collect();
+        for n in [
+            "ols_docker_status",
+            "ols_docker_start",
+            "ols_docker_list_containers",
+            "ols_docker_container_action",
+        ] {
+            assert!(names.iter().any(|x| x == n), "{n} missing from tools/list");
+        }
+        assert!(matches!(
+            build_command("ols_docker_list_containers", &json!({ "all": true })).unwrap(),
+            CoreCommand::ListDockerContainers { all: true }
+        ));
+        assert!(matches!(
+            build_command("ols_docker_list_containers", &json!({})).unwrap(),
+            CoreCommand::ListDockerContainers { all: false }
+        ));
+        match build_command(
+            "ols_docker_container_action",
+            &json!({ "id": "shop-web-1", "action": "restart" }),
+        )
+        .unwrap()
+        {
+            CoreCommand::DockerContainerAction { id, action } => {
+                assert_eq!(id, "shop-web-1");
+                assert_eq!(action, ols_core::docker::ContainerAction::Restart);
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        assert!(matches!(
+            build_command("ols_unignore_site", &json!({ "project_id": "p1" })).unwrap(),
+            CoreCommand::UnignoreSite { project_id } if project_id == "p1"
+        ));
+        let err = build_command(
+            "ols_docker_container_action",
+            &json!({ "id": "x", "action": "remove" }),
+        )
+        .unwrap_err();
+        assert!(err.contains("unknown action"), "{err}");
+    }
 
     #[test]
     fn resolve_domain_root_defaults_to_hostname_subfolder() {

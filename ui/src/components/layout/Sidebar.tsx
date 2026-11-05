@@ -10,6 +10,7 @@ import {
   CommandsIcon,
   DashboardIcon,
   DatabasesIcon,
+  DockerIcon,
   LogsIcon,
   MoonThemeIcon,
   PluginsIcon,
@@ -33,6 +34,7 @@ export type Page =
   | 'dashboard'
   | 'projects'
   | 'sites'
+  | 'docker'
   | 'quickapps'
   | 'commands'
   | 'webserver'
@@ -64,6 +66,7 @@ const NAV_GROUPS: { id: string; label: string; items: NavItem[] }[] = [
     items: [
       { id: 'projects', label: 'Projects', icon: ProjectsIcon },
       { id: 'sites', label: 'Sites', icon: SitesIcon },
+      { id: 'docker', label: 'Docker', icon: DockerIcon },
       { id: 'quickapps', label: 'Quick Apps', icon: QuickAppsIcon },
       { id: 'commands', label: 'Commands', icon: CommandsIcon },
       { id: 'tunnels', label: 'Tunnels', icon: TunnelsIcon },

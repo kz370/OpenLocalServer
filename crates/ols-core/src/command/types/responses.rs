@@ -422,6 +422,12 @@ pub enum CoreResponse {
     SettingsBackup {
         backup: crate::snapshots::SettingsBackup,
     },
+    DockerStatus {
+        status: crate::docker::DockerStatus,
+    },
+    DockerContainers {
+        containers: Vec<crate::docker::ContainerSummary>,
+    },
     /// A background task was started; watch it on the Processes page.
     TaskStarted {
         id: String,

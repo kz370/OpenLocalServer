@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
 
 import { runCommand } from '@/core'
@@ -35,10 +35,14 @@ import { ServicesPage } from '@/pages/Services'
 import { SettingsPage } from '@/pages/Settings'
 import { TunnelsPage } from '@/pages/Tunnels'
 
+// §166: loaded only when the Docker page is first opened, so it adds nothing to startup.
+const DockerPage = lazy(() => import('@/pages/Docker'))
+
 const VALID_PAGES: readonly Page[] = [
   'dashboard',
   'projects',
   'sites',
+  'docker',
   'quickapps',
   'commands',
   'webserver',
@@ -328,6 +332,11 @@ export default function App() {
             {page === 'dashboard' && <DashboardPage onNavigate={navigate} onOpenLogs={openLogs} />}
               {page === 'projects' && <ProjectsPage onNavigate={navigate} />}
               {page === 'sites' && <SitesPage onNavigate={navigate} />}
+              {page === 'docker' && (
+                <Suspense fallback={null}>
+                  <DockerPage />
+                </Suspense>
+              )}
               {page === 'quickapps' && (
                 <QuickAppsPage
                   onNavigate={navigate}

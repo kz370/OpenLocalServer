@@ -14,6 +14,8 @@ Each MCP tool maps one-to-one to an OLS `CoreCommand`, so an LLM can discover an
 - **Databases**: `ols_list_databases`, `ols_create_database`, `ols_list_tables` (list tables in MariaDB/MySQL, PostgreSQL, or SQLite), `ols_execute_sql` (view table content, schema, or modify data and tables via SQL)
 - **Web server**: `ols_apply_web`, `ols_validate_web`
 - **Tasks**: `ols_list_tasks`
+- **Projects**: `ols_unignore_site` (bring back a site hidden with `.ols_ignore_site`)
+- **Docker**: `ols_docker_status`, `ols_docker_start`, `ols_docker_list_containers`, `ols_docker_container_action` (start / stop / restart / pause / unpause; never removes containers or volumes)
 - **Escape hatch**: `ols_run_command` runs any `CoreCommand` variant by name with JSON args.
 
 ## How to use it
@@ -234,6 +236,11 @@ The token is stored in the OS credential manager (Windows Credential Manager), n
 - `ols_restart_site_app` takes `{"hostname": "mysite.test"}` to restart the supervised Python or Node dev server / application process.
 - `ols_inspect_site_folder` inspects any project folder to discover frameworks (FastAPI, Flask, Django, Next.js, Express, etc.), package managers, virtual environments, requirements files, scripts, and suggested commands/ports.
 - `ols_list_runtimes`, `ols_install_runtime`, `ols_refresh_runtimes` manage the system and OLS-managed versions for Python, Node, and PHP.
+- `ols_unignore_site` takes `{"project_id": "..."}` (from `ols_list_projects`) and removes that project's `.ols_ignore_site` marker so its site shows again.
+- `ols_docker_status` never fails: a stopped or missing Docker is reported as `running: false` with a plain-language `message`.
+- `ols_docker_start` launches Docker Desktop and returns a background task id; it waits up to 2 minutes for the engine.
+- `ols_docker_list_containers` takes optional `{"all": true}` to include stopped containers. Results are cached for 2 seconds.
+- `ols_docker_container_action` takes `{"id": "shop-web-1", "action": "restart"}`.
 - `https` (boolean) enables SSL for the site. `redirect_https` (boolean) redirects HTTP to HTTPS.
 - `enabled` (boolean) toggles the site on/off.
 

@@ -115,6 +115,33 @@ export function SitesIcon({ className, monochrome }: { className?: string; monoc
   )
 }
 
+/** §166 Docker page: a stack of shipping containers (original art, not Docker's logo). */
+export function DockerIcon({ className, monochrome }: { className?: string; monochrome?: boolean }) {
+  if (useIsMonochrome(monochrome)) {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={cn('size-5 shrink-0', className)}>
+        <rect x="3" y="13" width="8" height="7" rx="1" />
+        <rect x="13" y="13" width="8" height="7" rx="1" />
+        <rect x="8" y="4" width="8" height="7" rx="1" />
+      </svg>
+    )
+  }
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={cn('size-5 shrink-0', className)}>
+      <defs>
+        <linearGradient id="sb-docker-box" x1="3" y1="4" x2="21" y2="20" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#0ea5e9" />
+          <stop offset="100%" stopColor="#2563eb" />
+        </linearGradient>
+      </defs>
+      <rect x="3" y="13" width="8" height="7" rx="1.2" fill="#0ea5e9" fillOpacity="0.18" stroke="url(#sb-docker-box)" strokeWidth="1.6" />
+      <rect x="13" y="13" width="8" height="7" rx="1.2" fill="#2563eb" fillOpacity="0.18" stroke="url(#sb-docker-box)" strokeWidth="1.6" />
+      <rect x="8" y="4" width="8" height="7" rx="1.2" fill="#38bdf8" fillOpacity="0.22" stroke="url(#sb-docker-box)" strokeWidth="1.6" />
+      <path d="M5.7 15v3M8.3 15v3M15.7 15v3M18.3 15v3M10.7 6v3M13.3 6v3" stroke="url(#sb-docker-box)" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 export function QuickAppsIcon({ className, monochrome }: { className?: string; monochrome?: boolean }) {
   if (useIsMonochrome(monochrome)) {
     return (

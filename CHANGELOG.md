@@ -10,7 +10,12 @@ and the project follows [Semantic Versioning](https://semver.org/).
 Feature release (in development). Full notes: [`release-notes/v2.10.0.md`](./release-notes/v2.10.0.md).
 
 ### Added
-- Docker page under Sites (in development): see and control Docker containers and create sites from them.
+- Docker page under Sites: Docker status, one-click Start Docker, and a container list grouped by Compose project.
+- Start, stop, restart, pause and resume containers; click a port to open it.
+- MCP tools for Docker (status, start, list containers, container actions) and `ols_unignore_site`.
+
+### Changed & Improved
+- Docker never slows OLS down: no Docker work at startup, no background checking.
 
 ## [2.9.0] — 2026-11-05
 

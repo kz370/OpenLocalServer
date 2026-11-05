@@ -170,6 +170,20 @@ pub enum CoreCommand {
         args: Vec<String>,
     },
     ListWpProjects,
+    /// §166: Docker engine status for the Docker page (never fails; "stopped" is a status).
+    GetDockerStatus,
+    /// §166: Launch Docker Desktop and wait for the engine, as a background task.
+    StartDockerDesktop,
+    /// §166: Containers, `all` includes stopped ones. Cached for 2 s.
+    ListDockerContainers {
+        #[serde(default)]
+        all: bool,
+    },
+    /// §166: start / stop / restart / pause / unpause one container.
+    DockerContainerAction {
+        id: String,
+        action: crate::docker::ContainerAction,
+    },
     WpSignIn {
         project_id: String,
         hostname: Option<String>,
