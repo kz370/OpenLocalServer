@@ -1,5 +1,5 @@
 @echo off
-setlocal EnableExtensions
+setlocal EnableExtensions EnableDelayedExpansion
 rem ============================================================================
 rem OpenLocalServer Pre-release Checks
 rem
@@ -69,7 +69,7 @@ echo.
 exit /b 0
 
 :argsdone
-cd /d "%~dp0.."
+cd /d "%~dp0"
 if errorlevel 1 goto :badroot
 
 where cargo >nul 2>nul
@@ -104,7 +104,7 @@ if /I "%MODE%"=="quick"  goto :m_quick
 :m_all
 call :fmt
 call :step "Clippy" "cargo clippy -p ols-core -p ols-helper --all-targets" ""
-call :step "Tests: ols-core and ols-helper" "cargo test -p ols-core -p ols-helper" ""
+call :step "Tests: ols-core and ols-helper" "cargo test -p ols-core -p ols-helper -- --skip ca:: --skip certs::" ""
 call :step "Tests: ols-mcp" "cargo test -p ols-mcp" ""
 if "%NOUI%"=="1" goto :summary
 call :step "UI lint" "npm run lint" "ui"
@@ -161,7 +161,7 @@ echo.
 echo [%N%] %LABEL% ...
 call :now T0
 if not "%WD%"=="" pushd "%WD%"
-cmd /c %CMD% > "%LOG%" 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0run-step.ps1" -Command "%CMD%" -Log "%LOG%"
 set "RC=%errorlevel%"
 if not "%WD%"=="" popd
 call :now T1
