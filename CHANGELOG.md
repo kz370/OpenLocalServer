@@ -24,6 +24,7 @@ Feature release (in development). Full notes: [`release-notes/v2.10.0.md`](./rel
 
 ### Changed & Improved
 - Docker never slows OLS down: no Docker work at startup, no background checking.
+- The Docker page fits small windows; long names and paths wrap.
 
 ## [2.9.0] — 2026-11-05
 
