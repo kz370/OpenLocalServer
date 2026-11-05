@@ -446,7 +446,7 @@ OpenLocalServer/
 ├── vendor/              # Vendored companion utilities (cpulimit.exe under MIT license)
 ├── installer/           # Inno Setup packaging script (`open-local-server.iss`)
 ├── scripts/             # Entry points only: dev.bat, build-installer.bat, update-version.bat,
-│                        # upload-release.bat, build-app-icons.bat, build-fa-icons.bat; each .bat keeps its helper
+│                        # upload-release.bat, run-checks.bat (all quality gates), build-app-icons.bat, build-fa-icons.bat; each .bat keeps its helper
 │                        # files in a same-named subfolder (e.g. scripts/update-version/)
 ├── release-notes/       # Version release notes (v2.5.0.md, etc.)
 ├── specs/               # Single source of truth — architecture, catalog, data models,
