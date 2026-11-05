@@ -18,7 +18,7 @@ ExecCapture | Sync run-and-capture with timeout + CREATE_NO_WINDOW.
 Logger | JSON daily rolling log with redaction.
 Redactor | Regex secret scrubber (PEM/Bearer/URL creds/keys/cookies).
 DiagnosticsEngine | Read-only findings with runnable fix_commands.
-RepairPlanner | Doctor report + safe auto-repair planner.
+RepairPlanner | Doctor report + safe auto-repair planner. `plan_repair(Some(project))` drops app-wide findings that belong to other projects (id subject is another project id or a site hostname owned by another project), so a site's Repair page and its Repair button only cover that site plus app-wide issues.
 GlobalSearch | Cross-entity prefix/word/substring search.
 SupportBundle | Redacted zip exporter (summary/doctor/logs).
 NetworkProbe | Parallel TCP 443 online check with cache.

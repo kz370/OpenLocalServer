@@ -456,6 +456,11 @@ impl Inner {
         let mut findings: Vec<Finding> =
             self.diagnose().into_iter().filter(|f| !f.ignored).collect();
         if let Some(p) = project_id {
+            // The app-wide check also reports every other project's problems; this page is
+            // about one project, so those stay out of its list and out of its Repair button.
+            let domains = self.domains.lock().unwrap().list();
+            let projects = self.projects.lock().unwrap().list();
+            findings.retain(|f| !finding_is_for_other_project(f, p, &projects, &domains));
             let own = self.diagnose_project(p)?;
             // A project's own check replaces the app-wide one about the same thing.
             findings.retain(|f| !own.iter().any(|o| o.id == f.id));
@@ -481,6 +486,30 @@ impl Inner {
             manual,
         })
     }
+}
+
+/// Whether an app-wide finding is about a different project than `project_id`. Finding ids are
+/// `kind:subject`, where the subject is a project id or a site hostname; a project-scoped fix
+/// command also names its project.
+fn finding_is_for_other_project(
+    f: &Finding,
+    project_id: &str,
+    projects: &[crate::project::Project],
+    domains: &[crate::domain::Domain],
+) -> bool {
+    let subject = f.id.split_once(':').map(|(_, rest)| rest).unwrap_or("");
+    let subject = subject.split(':').next().unwrap_or("");
+    if subject.is_empty() {
+        return false;
+    }
+    if projects.iter().any(|p| p.id == subject) {
+        return subject != project_id;
+    }
+    domains
+        .iter()
+        .find(|d| d.hostname == subject)
+        .and_then(|d| d.project_id.as_deref())
+        .is_some_and(|owner| owner != project_id)
 }
 
 /// Service lifecycle commands (starting/restarting stopped or unhealthy services) must not
@@ -715,6 +744,40 @@ mod tests {
         let home = crate::test_support::isolated_home();
         let settings = crate::settings::SettingsService::load(&home.paths).unwrap();
         (Core::new(settings, home.paths.clone()), home)
+    }
+
+    #[test]
+    fn a_projects_repair_plan_leaves_out_other_projects_findings() {
+        let (core, home) = core();
+        let mut ids = Vec::new();
+        for name in ["alpha", "beta"] {
+            let dir = home.paths.root().join(name);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(
+                dir.join("composer.json"),
+                r#"{"require":{"vendor/pkg":"^1.0"}}"#,
+            )
+            .unwrap();
+            let CoreResponse::Project { project } = core
+                .dispatch(CoreCommand::RegisterProject {
+                    path: dir.display().to_string(),
+                })
+                .unwrap()
+            else {
+                panic!()
+            };
+            ids.push(project.id);
+        }
+        let own = format!("composer_not_installed:{}", ids[0]);
+        let other = format!("composer_not_installed:{}", ids[1]);
+
+        let everything = core.inner().plan_repair(None).unwrap();
+        assert!(everything.findings.iter().any(|f| f.id == other));
+
+        let plan = core.inner().plan_repair(Some(&ids[0])).unwrap();
+        assert!(plan.findings.iter().any(|f| f.id == own));
+        assert!(!plan.findings.iter().any(|f| f.id == other));
+        assert!(!plan.actions.iter().any(|a| a.finding_id == other));
     }
 
     #[test]
