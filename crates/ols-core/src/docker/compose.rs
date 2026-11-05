@@ -692,6 +692,43 @@ pub fn validate(
     Ok(check)
 }
 
+/// A line that reads like an error (always shown, and preferred in failure summaries).
+fn looks_like_error(line: &str) -> bool {
+    const MARKERS: &[&str] = &[
+        "error",
+        "no such",
+        "denied",
+        "not found",
+        "failed",
+        "invalid",
+        "conflict",
+        "unable",
+        "cannot",
+    ];
+    let l = line.to_lowercase();
+    MARKERS.iter().any(|m| l.contains(m))
+}
+
+/// The lines that explain a failed run. Output and errors arrive on two streams read by
+/// separate threads, so an error line can land anywhere in the captured text (a burst of
+/// buffered output can be read after it). Prefer the last lines that read like errors
+/// anywhere in the output, and fall back to the last 3 lines.
+fn failure_summary(output: &str) -> String {
+    let lines: Vec<&str> = output.lines().filter(|l| !l.trim().is_empty()).collect();
+
+    let errors: Vec<&str> = lines
+        .iter()
+        .copied()
+        .filter(|l| looks_like_error(l))
+        .collect();
+    let picked = if errors.is_empty() {
+        &lines[..]
+    } else {
+        &errors[..]
+    };
+    picked[picked.len().saturating_sub(3)..].join(" ")
+}
+
 /// Valid compose service name.
 pub fn valid_service(name: &str) -> bool {
     !name.is_empty()
@@ -760,6 +797,9 @@ pub fn run_action(
                 if shown < LIVE_LINES {
                     shown += 1;
                     task.result(line);
+                } else if looks_like_error(&line) {
+                    // Never hide an error among the skipped lines.
+                    task.result(line);
                 } else {
                     hidden += 1;
                     tail.push_back(line);
@@ -789,17 +829,7 @@ pub fn run_action(
         task.end_step(None);
         return Ok(());
     }
-    let last = out
-        .combined()
-        .lines()
-        .rev()
-        .filter(|l| !l.trim().is_empty())
-        .take(3)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect::<Vec<_>>()
-        .join(" ");
+    let last = failure_summary(&out.combined());
     Err(CoreError::failed_fix(
         format!("docker compose {} failed.", action.args()[0]),
         if out.timed_out {
@@ -905,6 +935,19 @@ mod tests {
             check_compose_path("compose.yaml").is_err(),
             "relative paths refused"
         );
+    }
+
+    #[test]
+    fn failure_summary_prefers_error_lines() {
+        let mut out: Vec<String> = (1..=50).map(|i| format!("line {i}")).collect();
+        // Anywhere in the output, not only near the end.
+        out.insert(3, "Error response from daemon: no such image".into());
+        assert_eq!(
+            failure_summary(&out.join("\n")),
+            "Error response from daemon: no such image"
+        );
+        assert_eq!(failure_summary("a\nb\nc\nd"), "b c d");
+        assert_eq!(failure_summary(""), "");
     }
 
     #[test]
@@ -1094,7 +1137,15 @@ mod action_tests {
         std::env::set_var("PATH", &old_path);
         let err = pull.error.expect("pull fails");
         assert!(err.problem.contains("pull"), "{err:?}");
-        assert!(err.cause.contains("no such image"), "{err:?}");
+        assert!(
+            err.cause.contains("no such image"),
+            "{err:?}\nlast results: {:?}\nresults with error: {:?}",
+            &pull.results[pull.results.len().saturating_sub(5)..],
+            pull.results
+                .iter()
+                .filter(|l| l.contains("no such"))
+                .collect::<Vec<_>>()
+        );
 
         let bad = run(ComposeAction::Up, Some("web; rm -rf /"));
         assert!(bad.error.is_some());
