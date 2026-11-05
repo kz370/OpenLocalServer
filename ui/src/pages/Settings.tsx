@@ -808,7 +808,7 @@ export function SettingsPage() {
                     checked={autoFixDiagnostics}
                     onChange={setAutoFixDiagnostics}
                     title="Automatically fix safe problems"
-                    hint="Fixes safe problems as soon as they are found: at startup and when projects or runtimes change. Fixes that may replace or remove data always ask first. Each problem is tried once per session. Saved with the Save button below."
+                    hint="Fixes safe problems as soon as they are found: at startup and when projects or runtimes change. Fixes that may replace or remove data always ask first. A fix that did not work is not retried until you restart the app. Saved with the Save button below."
                   />
                 </CardContent>
               </Card>

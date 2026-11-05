@@ -532,6 +532,17 @@ impl Core {
             return Vec::new();
         }
         let findings = auto_fix_findings(self.inner());
+        // A problem that has gone away is forgotten, so it is fixed again if it comes back
+        // (a deleted .env restored once, deleted again). One that is still there after an
+        // attempt stays marked, so a fix that cannot work is not retried in a loop.
+        let forget_resolved = |current: &[Finding]| {
+            self.inner()
+                .auto_fix_attempted
+                .lock()
+                .unwrap()
+                .retain(|id| current.iter().any(|f| &f.id == id));
+        };
+        forget_resolved(&findings);
         let mut results = Vec::new();
         for f in findings
             .into_iter()
@@ -573,6 +584,9 @@ impl Core {
                     });
                 }
             }
+        }
+        if !results.is_empty() {
+            forget_resolved(&auto_fix_findings(self.inner()));
         }
         results
     }
@@ -866,6 +880,34 @@ mod tests {
             .find(|f| f.id == format!("env_missing:{}", project.id))
             .expect("project .env finding is scanned");
         assert!(missing_env.auto_fixable);
+    }
+
+    #[test]
+    fn a_fixed_problem_is_fixed_again_when_it_comes_back() {
+        let (core, home) = core();
+        let dir = home.paths.root().join("shop");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(".env.example"), "APP_NAME=shop\n").unwrap();
+        core.dispatch(CoreCommand::RegisterProject {
+            path: dir.display().to_string(),
+        })
+        .unwrap();
+
+        for _ in 0..2 {
+            let results: Vec<_> = core
+                .auto_fix_diagnostics()
+                .into_iter()
+                .filter(|r| r.id.starts_with("env_missing:"))
+                .collect();
+            assert_eq!(
+                results.len(),
+                1,
+                "the missing .env is fixed each time it appears"
+            );
+            assert!(results[0].ok);
+            assert!(dir.join(".env").is_file());
+            std::fs::remove_file(dir.join(".env")).unwrap();
+        }
     }
 
     #[test]
