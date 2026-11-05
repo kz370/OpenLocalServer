@@ -407,13 +407,36 @@ export function SettingsPage() {
     })
   }, [section, version])
 
+  // Saves only the section being edited. Saving every section on each click also rewrote the
+  // Windows startup entry and re-scanned every project folder after a one-switch change.
   async function saveAll() {
-    if (startup) {
+    if (section === 'startup') {
+      if (!startup) return
       const r = await runCommand({ type: 'set_startup_settings', settings: startup })
       if (r.type === 'startup') {
         setStartup(r.settings)
         startupCache.set(r.settings)
       }
+      return
+    }
+    if (section === 'sites') {
+      await runCommand({ type: 'set_setting', key: 'quickapps.projects_dir', value: projectsDir })
+      projectsDirCache.set(projectsDir)
+
+      await runCommand({ type: 'set_setting', key: 'domains.auto', value: autoDomains })
+      autoDomainsCache.set(autoDomains)
+
+      await runCommand({ type: 'set_setting', key: 'projects.watch', value: watchSites })
+      watchSitesCache.set(watchSites)
+
+      const tldValue = defaultTld === 'custom' ? customTld.trim().replace(/^\./, '') : defaultTld
+      await runCommand({ type: 'set_setting', key: 'domains.default_tld', value: tldValue || 'local' })
+      defaultTldCache.set(defaultTld)
+      customTldCache.set(customTld)
+
+      invalidateDefaultTldCache()
+      if (autoDomains) await runCommand({ type: 'sync_auto_domains' })
+      return
     }
     for (const { key, value } of [
       { key: 'exit.confirmation.enabled', value: confirmExit },
@@ -425,23 +448,6 @@ export function SettingsPage() {
     autoFixDiagnosticsCache.set(autoFixDiagnostics)
     confirmExitCache.set(confirmExit)
     confirmStopAllCache.set(confirmStopAll)
-
-    await runCommand({ type: 'set_setting', key: 'quickapps.projects_dir', value: projectsDir })
-    projectsDirCache.set(projectsDir)
-
-    await runCommand({ type: 'set_setting', key: 'domains.auto', value: autoDomains })
-    autoDomainsCache.set(autoDomains)
-
-    await runCommand({ type: 'set_setting', key: 'projects.watch', value: watchSites })
-    watchSitesCache.set(watchSites)
-
-    const tldValue = defaultTld === 'custom' ? customTld.trim().replace(/^\./, '') : defaultTld
-    await runCommand({ type: 'set_setting', key: 'domains.default_tld', value: tldValue || 'local' })
-    defaultTldCache.set(defaultTld)
-    customTldCache.set(customTld)
-
-    invalidateDefaultTldCache()
-    if (autoDomains) await runCommand({ type: 'sync_auto_domains' })
   }
 
   async function saveMcp() {
