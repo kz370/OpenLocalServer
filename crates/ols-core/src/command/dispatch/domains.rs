@@ -89,6 +89,7 @@ impl Core {
                 }
                 C::SetDomainEnabled { hostname, enabled } => {
                     i.set_domain_enabled(&hostname, enabled)?;
+                    i.docker_follow_enabled(std::slice::from_ref(&hostname), enabled);
                     Ok(R::Ok)
                 }
                 C::BulkSetDomainsEnabled { hostnames, enabled } => {
@@ -98,6 +99,12 @@ impl Core {
                         enabled
                     );
                     let out = i.set_domains_enabled(&hostnames, enabled)?;
+                    let applied: Vec<String> = hostnames
+                        .iter()
+                        .filter(|h| !out.skipped.iter().any(|s| s.starts_with(h.as_str())))
+                        .cloned()
+                        .collect();
+                    i.docker_follow_enabled(&applied, enabled);
                     Ok(R::Bulk {
                         changed: out.changed,
                         skipped: out.skipped,

@@ -4,6 +4,8 @@
 //! port on 127.0.0.1, plus a `DockerLink` naming the container. When the container comes
 //! back on a different port, `sync_links` moves the site with it.
 
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
 
 use super::types::ContainerSummary;
@@ -184,6 +186,62 @@ impl Inner {
             }
         }
         changed
+    }
+
+    /// A Docker site follows its on/off switch: turning it off stops its container, turning it
+    /// on starts it. Runs as a background task so the site change never waits for Docker, and
+    /// does nothing at all (no Docker request) when none of the sites is linked to a container.
+    pub fn docker_follow_enabled(self: &Arc<Self>, hostnames: &[String], enabled: bool) {
+        let links: Vec<(String, DockerLink)> = self
+            .domains
+            .lock()
+            .unwrap()
+            .list()
+            .into_iter()
+            .filter(|d| hostnames.contains(&d.hostname))
+            .filter_map(|d| d.docker.clone().map(|l| (d.hostname, l)))
+            .collect();
+        if links.is_empty() {
+            return;
+        }
+        let inner = Arc::clone(self);
+        let verb = if enabled { "Start" } else { "Stop" };
+        let target = links
+            .iter()
+            .map(|(h, _)| h.as_str())
+            .collect::<Vec<_>>()
+            .join(",");
+        let title = format!("{verb} Docker containers for {target}");
+        self.tasks.start(
+            "docker-site-power",
+            &title,
+            &target,
+            links.len(),
+            move |h| {
+                let ep = inner.docker_endpoint();
+                let r = (|| {
+                    let containers = inner.docker.list_containers(&ep, true)?;
+                    let action = if enabled {
+                        crate::docker::ContainerAction::Start
+                    } else {
+                        crate::docker::ContainerAction::Stop
+                    };
+                    for (hostname, link) in &links {
+                        h.begin_step(&format!("{verb} {} for {hostname}", link.container));
+                        match find_linked(link, &containers) {
+                            Some(c) => inner.docker.container_action(&ep, &c.id, action)?,
+                            None => h.problem(format!(
+                                "{hostname}: container {} no longer exists.",
+                                link.container
+                            )),
+                        }
+                        h.end_step(None);
+                    }
+                    Ok::<(), CoreError>(())
+                })();
+                crate::command::report(&h, r);
+            },
+        );
     }
 
     /// After a rename, sites linked to the old name point at the new one.

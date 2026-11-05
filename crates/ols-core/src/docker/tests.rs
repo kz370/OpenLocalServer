@@ -561,3 +561,100 @@ fn prune_runs_only_the_chosen_steps() {
         t.results
     );
 }
+
+/// Turning a Docker site off stops its container and on starts it, in a background task;
+/// a site without a Docker link makes no Docker request at all.
+#[test]
+fn site_switch_drives_its_container() {
+    use crate::command::CoreCommand;
+    use crate::domain::{DockerLink, Domain, SiteKind};
+    let fake = FakeEngine::start(engine);
+    let home = crate::test_support::isolated_home();
+    let mut settings = crate::settings::SettingsService::load(&home.paths).unwrap();
+    let Endpoint::Tcp(addr) = &fake.endpoint else {
+        unreachable!()
+    };
+    settings
+        .set(
+            SETTING_ENDPOINT,
+            serde_json::Value::String(format!("tcp://{addr}")),
+        )
+        .unwrap();
+    let core = crate::Core::new(settings, home.paths.clone());
+    let root = home.paths.data_dir().join("shop");
+    std::fs::create_dir_all(&root).unwrap();
+    let site = |host: &str, port: u16, link: Option<DockerLink>| Domain {
+        hostname: host.into(),
+        root: root.display().to_string(),
+        kind: SiteKind::Proxy {
+            upstream_port: port,
+            upstream_host: None,
+            upstream_https: false,
+        },
+        docker: link,
+        ..Default::default()
+    };
+    core.inner()
+        .add_domain(site(
+            "shop.test",
+            18080,
+            Some(DockerLink {
+                container: "shop-web-1".into(),
+                container_port: 80,
+                compose_project: None,
+                compose_service: None,
+            }),
+        ))
+        .unwrap();
+    core.inner()
+        .add_domain(site("plain.test", 18081, None))
+        .unwrap();
+    let wait = || {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while core
+            .inner()
+            .tasks
+            .list()
+            .iter()
+            .any(|t| t.kind == "docker-site-power" && t.state.is_running())
+            && Instant::now() < deadline
+        {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    };
+    core.dispatch(CoreCommand::SetDomainEnabled {
+        hostname: "plain.test".into(),
+        enabled: false,
+    })
+    .unwrap();
+    wait();
+    assert_eq!(
+        fake.hits(),
+        0,
+        "a site with no container makes no Docker request"
+    );
+    core.dispatch(CoreCommand::SetDomainEnabled {
+        hostname: "shop.test".into(),
+        enabled: false,
+    })
+    .unwrap();
+    wait();
+    core.dispatch(CoreCommand::SetDomainEnabled {
+        hostname: "shop.test".into(),
+        enabled: true,
+    })
+    .unwrap();
+    wait();
+    let posts: Vec<String> = fake
+        .seen
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|s| s.starts_with("POST"))
+        .cloned()
+        .collect();
+    assert_eq!(
+        posts,
+        vec!["POST /containers/a1/stop", "POST /containers/a1/start"]
+    );
+}

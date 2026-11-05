@@ -371,3 +371,4 @@ DockerPage / ComposeTab | mount | ProjectTerminal (container mode) in a Shell di
 ImagesTab / VolumesTab | mount | DiskUsageBar -> ReclaimDialog (plan_docker_prune, prune_docker); Pagination
 prune_docker / pull_docker_image | run_in | TaskManager (docker-prune / docker-pull), followed in TaskOutputDialog
 ols-mcp | maps | ols_docker_list_images, ols_docker_list_volumes, ols_docker_disk_usage, ols_docker_pull_image
+set_domain_enabled / bulk_set_domains_enabled | triggers | Inner::docker_follow_enabled (TaskManager docker-site-power -> DockerManager::container_action) for sites with a DockerLink
