@@ -62,12 +62,49 @@ code path. Everything is exposed as `CoreCommand`s, so GUI, CLI, HTTP API and MC
 
 ## 2. Feature list
 
+### 2.0 The Docker page (where it lives, what it shows)
+
+**Sidebar:** new item **Docker** in the **Sites** group, directly under *Sites*
+(`ui/src/components/layout/Sidebar.tsx` `NAV_GROUPS` → `sites`):
+
+```
+Sites
+  Projects
+  Sites
+  Docker      ← new
+  Quick Apps
+  Commands
+  Tunnels
+```
+
+**Focus:** containers *as websites*. It is not a full Docker admin console (no Portainer clone).
+
+**Layout, top to bottom**
+
+1. **Status bar** (always visible)
+   - 🟢 Docker running / 🔴 stopped + **Start Docker** button.
+   - Counts: running containers · Docker-linked sites · disk used (disk only after Storage tab loaded it once).
+   - Docker not installed → whole page becomes an empty state with a **Get Docker** link. No polling.
+2. **Tab: Containers** (default)
+   - Grouped by Compose stack. Filter: *All · Running · Linked to sites · Created by OLS*.
+   - Row: status dot · name · image · port chips (`:8080 ↗`) · site badge (`app.test`) **or** **Create site** button ·
+     quick actions (start/stop, restart, logs, shell, ⋯).
+   - Click row → side panel with tabs *Overview · Logs · Shell · Stats · Env (secrets hidden)*.
+3. **Tab: Templates** — "Docker apps" gallery (same look as Quick Apps). One click → name → `name.test` with HTTPS.
+4. **Tab: Storage & Cleanup** — images, volumes, disk usage, **Reclaim space** (preview first), volume backup/restore.
+
+**Links from other pages**
+- *Sites* page: Docker badge + container state on Docker sites; filter "Docker sites".
+- *Add site* dialog (proxy mode): **Pick a container**.
+- *Projects* page: **Run with Docker** when a `Dockerfile` / compose file is detected.
+
 ### 2.1 Docker manager (the "nice features")
 
 **Status & setup**
 - Detect: installed? running? version, OS type (Linux/Windows containers), WSL2 backend, context.
 - One-click **Start Docker Desktop** and wait until the engine answers (task with progress).
-- Status pill in the top bar + tray entry; Dashboard card (running/total containers, disk usage).
+- Status shown on the Docker page + tray entry (cached value, no extra probing); Dashboard card only
+  when Docker is installed (running/total containers; disk usage only if already cached).
 
 **Containers**
 - List with state, image, ports, uptime, CPU/RAM (from `/containers/{id}/stats?stream=false`).
@@ -78,12 +115,11 @@ code path. Everything is exposed as `CoreCommand`s, so GUI, CLI, HTTP API and MC
 - "Open in browser" for each published port; "Copy connection string" for DB containers.
 - Group by Compose project; filter by running / OLS-managed / all.
 
-**Images**
-- List (size, tags, created, in use?), pull with layer progress (TaskManager), remove, prune dangling.
-
-**Volumes & networks**
-- List, size (from `/system/df`), remove unused, prune with **dry-run preview** of what will go.
+**Images & volumes** (Storage & Cleanup tab)
+- Images: list (size, tags, created, in use?), pull with layer progress (TaskManager), remove, prune dangling.
+- Volumes: list, size (from `/system/df`), remove unused, prune with **dry-run preview** of what will go.
 - Volume backup/restore to a `.tar.gz` (via throwaway `alpine` container, pinned digest).
+- Networks: read-only list inside container details (no networks editor in v1).
 
 **Compose**
 - Detect `compose.yaml` / `docker-compose.yml` in registered projects (new detection marker).
@@ -129,6 +165,76 @@ code path. Everything is exposed as `CoreCommand`s, so GUI, CLI, HTTP API and MC
   `extra_hosts: ["host.docker.internal:host-gateway"]` and docs show how to reach OLS MariaDB/Redis/Mailpit.
 - Site bundles (§165): export includes `compose.yaml` + optional volume tarballs; import recreates the stack.
 
+### 2.3 Out of scope for v1
+
+Rarely needed for local sites, and each one makes the page heavier:
+- Networks editor (create/connect/disconnect).
+- Image build UI on the Docker page (Dockerfile projects build from the *Projects* page instead).
+- Registry login / private registries.
+- Editing a container's config (Docker must recreate the container for that).
+- Swarm and Kubernetes.
+
+Power users can still do all of these with the `docker` CLI.
+
+---
+
+## 2.5 Performance rules (binding — Docker must not slow down OLS)
+
+**Goal:** a user who never opens the Docker page pays **zero** cost. A user who does pays only while looking.
+
+### Startup
+- **No Docker work at app start.** `DockerManager` is created lazily on first Docker command.
+  No `/_ping`, no pipe connect, no catalog load during `startup.rs`.
+- **Exception:** if at least one site has a `DockerLink`, a single `/_ping` runs **after** the UI is ready
+  (`ols:ui-ready`), in the background, with a 1 s timeout.
+- Docker templates catalog is parsed on first open of the *Templates* tab, then cached.
+
+### Network calls to the engine
+- Every call is async on the core Tokio runtime — never on the Tauri main thread, never holding a store lock.
+- Hard timeouts: 1 s `/_ping`, 3 s lists, 10 s actions; long work (pull, compose, prune, `/system/df`) runs as a background task.
+- **One** list call per refresh: `/containers/json` already has ports + labels → no per-container `inspect` in the list.
+- `/system/df` is slow (can take seconds): only on *Storage* tab open or the refresh button; cached 60 s.
+- Results cached in memory (containers 2 s, images/volumes 30 s); repeated UI calls inside that window hit the cache.
+
+### Live updates (no polling loops)
+- **Events stream** (`/events`) is the only live feed. It is open **only while** the Docker page is mounted
+  **or** a Docker-linked site exists. Closed when neither is true.
+- Events are debounced: at most one `docker-event` to the UI every 250 ms (batched).
+- **Stats** (CPU/RAM): never for all containers. Only for the container whose *Stats* tab is open,
+  one `stream=false` call every 3 s, stopped when the panel closes.
+- **Logs:** start with the last 500 lines, follow only while the *Logs* tab is visible, capped ring buffer, virtualized list.
+- Everything pauses when the window is hidden / minimized to tray (`document.visibilityState`).
+
+### Docker not running / not installed
+- Not installed → status cached for the session; no retries.
+- Not running → no retry loop. Re-check only on user action (page open, **Start Docker**, refresh)
+  or, for Docker-linked sites, backoff 5 s → 10 s → 30 s → 60 s max.
+- A missing engine never delays site health checks for non-Docker sites.
+
+### UI bundle
+- `Docker.tsx` and `components/docker/*` load with `React.lazy` → zero bytes added to the initial bundle.
+- Container table virtualized above 50 rows. Template icons small `.webp`.
+
+### Dependencies
+- No `bollard`, no new heavy crates — `hyper` / `hyper-util` are already in the tree.
+
+### Budgets (checked in review)
+
+| Metric | Budget |
+|---|---|
+| App startup time | +0 ms (no Docker work on the startup path) |
+| Idle CPU with Docker page closed, no Docker sites | 0 (no timers, no open connections) |
+| Extra memory with Docker page closed | < 1 MB |
+| Docker page first paint, 100 containers | < 300 ms |
+| Initial UI bundle size | +0 KB (lazy chunk) |
+
+### Performance tests
+- Fake-engine test: start `Core`, run startup, assert the fake engine received **0** requests.
+- Test: events stream closes when the last subscriber (page) unsubscribes and no Docker sites exist.
+- Test: stats polling stops when the panel closes.
+- Test: cached list served without a second engine request inside the cache window.
+- `npm run build` check: Docker code is in its own chunk, not in the entry chunk.
+
 ---
 
 ## 3. Data model changes
@@ -168,7 +274,7 @@ Settings keys: `docker.enabled` (bool, default auto), `docker.endpoint` (overrid
 
 | Group | Commands |
 |---|---|
-| Status | `docker_status`, `docker_start_desktop`, `docker_disk_usage` |
+| Status | `docker_status`, `docker_start_desktop`, `docker_disk_usage`, `docker_watch{on}` (page subscribes/unsubscribes to live events) |
 | Containers | `docker_list_containers{all}`, `docker_container_action{id,action}` (start/stop/restart/pause/unpause/kill), `docker_remove_container{id,volumes,force}`, `docker_inspect_container{id}`, `docker_container_stats{id}`, `docker_container_logs{id,tail,since}`, `docker_open_shell{id,shell}` |
 | Images | `docker_list_images`, `docker_pull_image{reference}` → `TaskStarted`, `docker_remove_image{id,force}` |
 | Volumes / networks | `docker_list_volumes`, `docker_remove_volume{name}`, `docker_backup_volume{name,dest}`, `docker_restore_volume{name,source}`, `docker_list_networks` |
@@ -208,19 +314,29 @@ olsc docker prune --dry-run
   - Cargo: `hyper` add `client`; `hyper-util` add `client-legacy`, `http1`; tokio `net` already on.
   - Tests: unit-test request building + error mapping with a fake in-process HTTP server (no Docker needed).
 - [ ] **Task 1.2: `DockerManager` + status**
-  - Add to `Inner`; `docker_status`, `docker_start_desktop` (find `Docker Desktop.exe` via registry/Program Files, launch, poll `/_ping` ≤ 120 s as a task).
+  - Add to `Inner` as a **lazy** handle (`OnceCell`) — created on first Docker command, never on startup (§2.5).
+  - Response cache (containers 2 s, images/volumes 30 s, `/system/df` 60 s) + hard timeouts per call.
+  - `docker_status`, `docker_start_desktop` (find `Docker Desktop.exe` via registry/Program Files, launch, poll `/_ping` ≤ 120 s as a task).
   - Diagnostics: map "pipe not found" → `Diagnostic{problem:"Docker is not running", cause, fix:"docker_start_desktop"}`.
 - [ ] **Task 1.3: Events stream** → `docker-event` broadcast; Tauri forwards it (`src-tauri`).
+  - Ref-counted: `docker_watch{on}` from the page + "Docker-linked sites exist" → open; both gone → close.
+  - Debounce/batch to one UI event per 250 ms.
+- [ ] **Task 1.4: Performance guard tests** (§2.5): zero engine requests during startup; stream closes on last
+  unsubscribe; cache hit inside window. These stay in CI so later phases can't regress them.
 
 ### Phase 2 — Manager UI (containers, images, volumes, networks)
 
 - [ ] **Task 2.1:** container/image/volume/network list + action commands (`command/types/commands.rs`, `command/dispatch/docker.rs`).
 - [ ] **Task 2.2:** logs as a log source `docker:<name>` in `app/system/logs.rs`.
 - [ ] **Task 2.3:** `docker_open_shell` via `TerminalManager` (`docker exec -it`), shell fallback bash → sh.
-- [ ] **Task 2.4:** UI `ui/src/pages/Docker.tsx` with tabs *Containers · Images · Volumes · Networks · Compose · Templates*;
-  components under `ui/src/components/docker/` (`ContainerTable`, `ContainerDetails`, `PullImageDialog`, `PruneWizard`, `DockerStatusPill`).
-  Sidebar entry + command-palette actions; empty state with "Start Docker Desktop" / "Get Docker" buttons.
-- [ ] **Task 2.5:** Dashboard card + tray submenu (Start Docker, running count).
+- [ ] **Task 2.4:** UI page per §2.0: `ui/src/pages/Docker.tsx` (loaded with `React.lazy`) with status bar +
+  tabs *Containers · Templates · Storage & Cleanup*; components under `ui/src/components/docker/`
+  (`DockerStatusBar`, `ContainerTable` (virtualized > 50 rows, grouped by Compose stack), `ContainerPanel`
+  (Overview/Logs/Shell/Stats/Env), `PullImageDialog`, `PruneWizard`).
+  Sidebar item **Docker** in the *Sites* group under *Sites* (`Sidebar.tsx`, new `DockerIcon` in `SidebarIcons.tsx`);
+  command-palette actions; empty state with "Start Docker" / "Get Docker".
+  Stats/logs polling only while their tab is visible; pause when the window is hidden.
+- [ ] **Task 2.5:** Dashboard card (only when Docker is installed, cached values) + tray submenu (Start Docker, running count).
 - [ ] **Task 2.6:** Prune plan/run + disk usage + volume backup/restore (pinned `alpine@sha256:` helper image).
 
 ### Phase 3 — Create site from a running container (entry point A)
@@ -287,6 +403,7 @@ cd ui && npm run lint && npm run build
 | Host port drift after restart | Event-driven re-resolve (Task 3.4) |
 | Secrets in compose files | Env-var interpolation from keyring only; test asserts rendered file has no secret values |
 | Destructive actions via API/MCP | Excluded from HTTP/MCP gating list |
+| Docker slows down the app | §2.5 rules: lazy manager, no startup calls, no polling loops, lazy UI chunk, guard tests in CI (Task 1.4) |
 | Template digests go stale | `refresh_catalogs` can ship updated signed template catalogs (minisign, like other catalogs) |
 
 **Open questions for the maintainer**
