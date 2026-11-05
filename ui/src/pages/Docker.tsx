@@ -1,5 +1,5 @@
 import { listen } from '@tauri-apps/api/event'
-import { Box, ExternalLink, FileText, Globe, Pause, Play, RefreshCw, RotateCw, Settings2 } from 'lucide-react'
+import { Box, ExternalLink, FileText, Globe, Pause, Play, RefreshCw, RotateCw, Settings2, SquareTerminal } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { ComposeBuilderDialog } from '@/components/docker/ComposeBuilderDialog'
@@ -11,6 +11,8 @@ import { CopyId, GroupHeading, Row, RowList } from '@/components/docker/DockerRo
 import { LogsDialog } from '@/components/docker/LogsDialog'
 import { TaskOutputDialog } from '@/components/docker/TaskOutputDialog'
 import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
+import { ProjectTerminal } from '@/components/Terminal'
+import { Dialog } from '@/components/ui/dialog'
 import { ServiceIconAction } from '@/components/ServiceIconAction'
 import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
@@ -71,6 +73,7 @@ export default function DockerPage() {
   const [builderOpen, setBuilderOpen] = useState(false)
   const [taskId, setTaskId] = useState<string | null>(null)
   const [settingsFor, setSettingsFor] = useState<string | null>(null)
+  const [shellFor, setShellFor] = useState<string | null>(null)
   const [composeReload, setComposeReload] = useState(0)
 
   // Callers that refresh on demand show the spinner first; the first load starts with it on.
@@ -243,6 +246,7 @@ export default function DockerPage() {
           onLogs={setLogsFor}
           onCreateSite={(name) => void createSiteFor(name)}
           onSettings={setSettingsFor}
+          onShell={setShellFor}
         />
       )}
 
@@ -288,6 +292,7 @@ export default function DockerPage() {
                       onLogs={() => setLogsFor(c.name)}
                       onCreateSite={() => setSiteFor(c)}
                       onSettings={() => setSettingsFor(c.id)}
+                      onShell={() => setShellFor(c.name)}
                     />
                   )),
                 ])}
@@ -298,6 +303,11 @@ export default function DockerPage() {
       )}
 
       <LogsDialog container={logsFor} onClose={() => setLogsFor(null)} />
+      {shellFor && (
+        <Dialog open onClose={() => setShellFor(null)} size="wide" title={`Shell · ${shellFor}`} description="Runs docker exec inside the container. Closing this window ends the shell.">
+          <ProjectTerminal key={shellFor} projectId={null} container={shellFor} />
+        </Dialog>
+      )}
       {settingsFor && (
         <ContainerSettingsDialog
           key={settingsFor}
@@ -415,6 +425,7 @@ function ContainerRow({
   onLogs,
   onCreateSite,
   onSettings,
+  onShell,
 }: {
   c: DockerContainer
   busy: string | null
@@ -423,6 +434,7 @@ function ContainerRow({
   onLogs: () => void
   onCreateSite: () => void
   onSettings: () => void
+  onShell: () => void
 }) {
   const running = c.state === 'running'
   const paused = c.state === 'paused'
@@ -497,6 +509,9 @@ function ContainerRow({
           </ServiceIconAction>
           <ServiceIconAction title={`Logs of ${c.name}`} disabled={false} iconColor="text-violet-400" onClick={onLogs}>
             <FileText className="size-3.5" />
+          </ServiceIconAction>
+          <ServiceIconAction title={running ? `Shell in ${c.name}` : 'Start the container to open a shell'} disabled={!running} iconColor="text-emerald-400" onClick={onShell}>
+            <SquareTerminal className="size-3.5" />
           </ServiceIconAction>
           <ServiceIconAction
             title={c.ols_site ? `Already serves ${c.ols_site}` : published.length ? `Create a site for ${c.name}` : 'Publish a port first'}

@@ -552,6 +552,29 @@ fn check_ref(id: &str) -> Result<(), CoreError> {
     }
 }
 
+/// `docker exec -it <container> sh -c ...`: bash when the image has it, sh otherwise.
+pub fn shell_program(container: &str) -> Result<(std::path::PathBuf, Vec<String>), CoreError> {
+    check_ref(container)?;
+    let exe = find_cli().ok_or_else(|| {
+        CoreError::failed_fix(
+            "The docker command was not found.",
+            "A container shell runs `docker exec`, and `docker` is not on PATH.",
+            "Install Docker Desktop (it adds `docker` to PATH), then restart OLS.",
+        )
+    })?;
+    Ok((
+        exe,
+        vec![
+            "exec".into(),
+            "-it".into(),
+            container.into(),
+            "sh".into(),
+            "-c".into(),
+            "if command -v bash >/dev/null 2>&1; then exec bash; else exec sh; fi".into(),
+        ],
+    ))
+}
+
 /// The endpoint to use: the `docker.endpoint` setting, then `DOCKER_HOST`, then the
 /// platform default. An unparsable value falls through to the next source.
 pub fn resolve_endpoint(setting: Option<&str>) -> Endpoint {

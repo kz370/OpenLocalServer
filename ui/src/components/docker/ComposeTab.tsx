@@ -13,6 +13,7 @@ import {
   Power,
   RotateCw,
   Settings2,
+  SquareTerminal,
   Square,
   Wand2,
 } from 'lucide-react'
@@ -53,6 +54,7 @@ export function ComposeTab({
   onLogs,
   onCreateSite,
   onSettings,
+  onShell,
 }: {
   dockerRunning: boolean
   reloadKey: number
@@ -62,6 +64,7 @@ export function ComposeTab({
   onLogs: (container: string) => void
   onCreateSite: (container: string) => void
   onSettings: (containerId: string) => void
+  onShell: (container: string) => void
 }) {
   const [stacks, setStacks] = useState<ComposeStack[] | null>(null)
   const [error, setError] = useState<Diagnostic | null>(null)
@@ -263,6 +266,14 @@ export function ComposeTab({
                               onClick={() => s.container && onLogs(s.container)}
                             >
                               <FileText className="size-3.5" />
+                            </ServiceIconAction>
+                            <ServiceIconAction
+                              title={running ? `Shell in ${s.name}` : 'Start the service to open a shell'}
+                              disabled={!running || !s.container}
+                              iconColor="text-emerald-400"
+                              onClick={() => s.container && onShell(s.container)}
+                            >
+                              <SquareTerminal className="size-3.5" />
                             </ServiceIconAction>
                             <ServiceIconAction
                               title={s.container && published.length ? `Create a site for ${s.name}` : 'Start the service with a published port first'}

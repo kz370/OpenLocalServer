@@ -35,6 +35,8 @@ pub enum TerminalEvent {
 #[derive(Debug, Clone)]
 pub struct TerminalSpec {
     pub shell: Option<String>,
+    /// Runs this program instead of a shell (a container shell runs `docker exec -it`).
+    pub program: Option<(PathBuf, Vec<String>)>,
     pub cwd: Option<PathBuf>,
     pub env: Vec<(String, String)>,
     pub rows: u16,
@@ -131,7 +133,13 @@ impl TerminalManager {
                 "{MAX_SESSIONS} terminals are already open. Close one first."
             ));
         }
-        let (program, args) = shell_command(spec.shell.as_deref())?;
+        let (program, args): (PathBuf, Vec<String>) = match &spec.program {
+            Some((p, a)) => (p.clone(), a.clone()),
+            None => {
+                let (p, a) = shell_command(spec.shell.as_deref())?;
+                (p, a.into_iter().map(str::to_string).collect())
+            }
+        };
         let pair = native_pty_system()
             .openpty(PtySize {
                 rows: spec.rows.max(2),
@@ -363,6 +371,7 @@ impl Inner {
         self.terminals
             .open(TerminalSpec {
                 shell,
+                program: None,
                 cwd,
                 env,
                 rows,

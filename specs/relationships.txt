@@ -366,3 +366,5 @@ ols-mcp | maps | ols_docker_container_details, ols_docker_container_update (no r
 ComposeBuilderDialog | mounts | PresetEditorDialog (save/delete_docker_compose_preset); lists list_docker_compose_presets (built-in + custom)
 plan/create_docker_compose | use | presets::catalog(Inner::docker_custom_presets)
 ContainerSettingsDialog | calls | recreate_docker_container (TaskOutputDialog follows the docker-recreate task) and opens ComposeEditorDialog for Compose containers
+open_docker_shell | uses | TerminalManager::open with TerminalSpec.program = docker exec
+DockerPage / ComposeTab | mount | ProjectTerminal (container mode) in a Shell dialog

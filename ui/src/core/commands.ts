@@ -69,6 +69,7 @@ export type CoreCommand =
   | { type: 'docker_container_action'; id: string; action: DockerContainerAction }
   | { type: 'get_docker_container_logs'; id: string; tail?: number }
   | { type: 'get_docker_container'; id: string }
+  | { type: 'open_docker_shell'; id: string; rows: number; cols: number }
   | { type: 'update_docker_container'; id: string; update: ContainerUpdate }
   | { type: 'rename_docker_container'; id: string; name: string }
   | { type: 'recreate_docker_container'; id: string; env: EnvEdit[] }

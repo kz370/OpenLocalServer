@@ -45,6 +45,28 @@ impl Core {
                     .container_action(&i.docker_endpoint(), &id, action)
                     .map(|_| R::Ok)
             }
+            C::OpenDockerShell { id, rows, cols } => (|| {
+                tracing::info!(command = "open_docker_shell", id = %id);
+                let program = crate::docker::shell_program(&id)?;
+                let tid = i
+                    .terminals
+                    .open(crate::terminal::TerminalSpec {
+                        shell: None,
+                        program: Some(program),
+                        cwd: None,
+                        env: Vec::new(),
+                        rows,
+                        cols,
+                    })
+                    .map_err(|e| {
+                        CoreError::failed_fix(
+                            "The container shell could not be opened.",
+                            e,
+                            "Check that the container is running, then try again.",
+                        )
+                    })?;
+                Ok(R::Terminal { id: tid })
+            })(),
             C::GetDockerContainer { id } => i
                 .docker
                 .container_details(&i.docker_endpoint(), &id)

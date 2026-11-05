@@ -15,7 +15,7 @@ import { useThemeSafe } from '@/lib/theme'
  * A real shell for a project (§19): PowerShell or cmd, started in the project's folder with its
  * runtimes first on PATH. The shell runs in the app's core; this only draws it and sends keys.
  */
-export function ProjectTerminal({ projectId }: { projectId: string | null }) {
+export function ProjectTerminal({ projectId, container }: { projectId: string | null; container?: string }) {
   const host = useRef<HTMLDivElement>(null)
   const [shell, setShell] = useState('powershell')
   const [session, setSession] = useState(0)
@@ -88,7 +88,10 @@ export function ProjectTerminal({ projectId }: { projectId: string | null }) {
       })
       if (!alive) return unlisten()
       try {
-        const res = await runCommand({ type: 'open_terminal', project_id: projectId, shell, rows: term.rows, cols: term.cols })
+        // §166: a container shell runs `docker exec -it` in the same kind of terminal.
+        const res = container
+          ? await runCommand({ type: 'open_docker_shell', id: container, rows: term.rows, cols: term.cols })
+          : await runCommand({ type: 'open_terminal', project_id: projectId, shell, rows: term.rows, cols: term.cols })
         if (res.type === 'terminal') {
           id = res.id
           early.filter((e) => e.id === res.id).forEach(show)
@@ -117,18 +120,24 @@ export function ProjectTerminal({ projectId }: { projectId: string | null }) {
       if (id !== null) void send({ type: 'close_terminal', id })
       term.dispose()
     }
-  }, [projectId, shell, session, theme?.tokens])
+  }, [projectId, container, shell, session, theme?.tokens])
 
   return (
     <div className="flex flex-col gap-2">
       <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
       <div className="flex items-center justify-between gap-2">
-        <Select className="w-40" value={shell} onChange={(e) => setShell(e.target.value)}>
-          <option value="powershell">PowerShell</option>
-          <option value="cmd">Command Prompt</option>
-        </Select>
+        {container ? (
+          <span className="text-xs text-muted-foreground">A shell inside the container (bash when it has it, otherwise sh). Type exit to leave.</span>
+        ) : (
+          <Select className="w-40" value={shell} onChange={(e) => setShell(e.target.value)}>
+            <option value="powershell">PowerShell</option>
+            <option value="cmd">Command Prompt</option>
+          </Select>
+        )}
         <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">php, node, composer, python and the database clients are the ones this project uses.</span>
+          {!container && (
+            <span className="text-xs text-muted-foreground">php, node, composer, python and the database clients are the ones this project uses.</span>
+          )}
           <Button size="sm" variant={ended ? 'default' : 'ghost'} onClick={() => setSession((n) => n + 1)}>
             {ended ? 'Start a new shell' : 'Restart'}
           </Button>

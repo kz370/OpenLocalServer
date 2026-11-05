@@ -451,3 +451,15 @@ fn recreate_restores_the_old_container_when_the_new_one_fails() {
         "new removed, old renamed back and started"
     );
 }
+
+#[test]
+fn container_shell_refuses_unsafe_names() {
+    assert!(shell_program("web; rm -rf /").is_err());
+    assert!(shell_program("../x").is_err());
+    if let Ok((_, args)) = shell_program("shop-web-1") {
+        assert_eq!(&args[..3], &["exec", "-it", "shop-web-1"]);
+        assert!(
+            args.last().unwrap().contains("exec bash") && args.last().unwrap().contains("exec sh")
+        );
+    }
+}

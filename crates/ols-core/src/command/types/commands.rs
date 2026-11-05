@@ -244,6 +244,12 @@ pub enum CoreCommand {
     GetDockerContainer {
         id: String,
     },
+    /// §166: a terminal running a shell inside a container (`docker exec -it`). UI only.
+    OpenDockerShell {
+        id: String,
+        rows: u16,
+        cols: u16,
+    },
     /// §166: restart policy and memory / CPU limits, applied without recreating.
     UpdateDockerContainer {
         id: String,
