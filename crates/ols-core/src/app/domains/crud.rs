@@ -259,12 +259,7 @@ impl Inner {
             })
             .collect::<Vec<_>>()
             .into_iter()
-            .filter(|s| {
-                s.folder.is_empty()
-                    || !std::path::Path::new(&s.folder)
-                        .join(".ols_ignore_me")
-                        .exists()
-            })
+            .filter(|s| s.folder.is_empty() || !site_is_ignored(Path::new(&s.folder)))
             .collect()
     }
 

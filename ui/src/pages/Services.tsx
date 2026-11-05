@@ -94,7 +94,7 @@ export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => v
         <p className="text-sm text-muted-foreground">Web servers, mail testing and databases — each one a process you start and stop.</p>
       </div>
 
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
       <Card>
         <CardHeader className="pb-2">

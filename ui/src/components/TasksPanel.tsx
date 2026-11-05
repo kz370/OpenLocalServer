@@ -1,12 +1,15 @@
 import { AlertTriangle, CheckCircle2, CircleSlash, X } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
 
 import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Pagination } from '@/components/ui/pagination'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { type TaskEvent, type TaskView, runCommand } from '@/core'
+import { confirmAction } from '@/lib/confirm'
 import { formatBytes, timeAgo, usePoll } from '@/lib/hooks'
 import { getTaskHistory, mergeTaskHistory, saveTaskHistory, type HistoryTask } from '@/lib/taskHistory'
 import { cn } from '@/lib/utils'
@@ -20,7 +23,9 @@ import { cn } from '@/lib/utils'
  * rather than sitting on a stale row.
  */
 export function TasksPanel() {
-  const [tasks, setTasks] = useState<TaskView[]>(getTaskHistory)
+  const [tasks, setTasks] = useState<HistoryTask[]>(getTaskHistory)
+  const [page, setPage] = useState(1)
+  const [perPage, setPerPage] = useState(10)
 
   const refresh = useCallback(async () => {
     const r = await runCommand({ type: 'list_tasks' })
@@ -55,43 +60,85 @@ export function TasksPanel() {
 
   const running = tasks.filter((t) => t.state === 'running')
   const finished = tasks.filter((t) => t.state !== 'running')
+  const pageCount = Math.max(1, Math.ceil(tasks.length / perPage))
+  const currentPage = Math.min(page, pageCount)
+  const pageTasks = useMemo(() => {
+    const start = (currentPage - 1) * perPage
+    return tasks.slice(start, start + perPage)
+  }, [currentPage, perPage, tasks])
+
+  const clearFinished = async () => {
+    const count = finished.reduce((total, task) => total + (task.repeat_count ?? 1), 0)
+    if (!(await confirmAction(
+      `Clear ${count} finished ${count === 1 ? 'task' : 'tasks'} from background task history? Running tasks will continue.`,
+      'Clear finished tasks',
+      'Clear finished',
+    ))) return
+
+    await runCommand({ type: 'clear_finished_tasks' })
+    setTasks((current) => {
+      const next = current.filter((task) => task.state === 'running')
+      saveTaskHistory(next)
+      return next
+    })
+    setPage(1)
+    await refresh()
+  }
 
   return (
     <Card>
-        <CardHeader>
+        <CardHeader className="flex-row items-start justify-between gap-4">
+          <div className="space-y-1.5">
           <CardTitle className="text-sm">
             Background tasks · {running.length} running, {finished.length} finished
           </CardTitle>
           <CardDescription>
             Site operations and other background work, newest first. Finished tasks stay here after restart until cleared.
           </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          {tasks.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No background work yet.</p>
-          ) : (
-            tasks.map((t) => <TaskRow key={t.id} task={t} />)
-          )}
+          </div>
           {finished.length > 0 && (
-            <div className="flex justify-end">
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 text-xs"
-                onClick={() =>
-                  void runCommand({ type: 'clear_finished_tasks' }).then(() => {
-                    setTasks((current) => {
-                      const next = current.filter((task) => task.state === 'running')
-                      saveTaskHistory(next)
-                      return next
-                    })
-                    return refresh()
-                  })
-                }
-              >
-                Clear finished
-              </Button>
-            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 shrink-0 text-xs"
+              onClick={() => void clearFinished()}
+            >
+              Clear finished
+            </Button>
+          )}
+        </CardHeader>
+        <CardContent className="p-0">
+          {tasks.length === 0 ? (
+            <p className="p-4 text-sm text-muted-foreground">No background work yet.</p>
+          ) : (
+            <>
+              <Table className="min-w-[860px]">
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="w-[22%]">Task</TableHead>
+                    <TableHead className="w-[18%]">Site / target</TableHead>
+                    <TableHead>Status and details</TableHead>
+                    <TableHead className="w-48 whitespace-nowrap">Updated</TableHead>
+                    <TableHead className="w-24 text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pageTasks.map((task) => <TaskRow key={task.id} task={task} />)}
+                </TableBody>
+              </Table>
+              <Pagination
+                label="tasks"
+                total={tasks.length}
+                page={currentPage}
+                perPage={perPage}
+                onPage={setPage}
+                onPerPage={(size) => {
+                  setPerPage(size)
+                  setPage(1)
+                }}
+                className="border-t border-border"
+              />
+            </>
           )}
         </CardContent>
     </Card>
@@ -120,6 +167,17 @@ function TaskRow({ task }: { task: HistoryTask }) {
   const { done, total, bytes, bytes_total } = task.progress
   const fraction = total > 0 ? Math.min(1, done / total) : null
 
+  const dismiss = async () => {
+    const count = task.repeat_count ?? 1
+    const taskLabel = count === 1 ? `“${task.title}”` : `“${task.title}” and its ${count - 1} ${count === 2 ? 'repeat' : 'repeats'}`
+    if (!(await confirmAction(
+      `Remove ${taskLabel} from background task history?`,
+      'Remove finished task',
+      'Remove',
+    ))) return
+    await act('dismiss_task')
+  }
+
   const act = async (command: 'cancel_task' | 'dismiss_task') => {
     setBusy(true)
     try {
@@ -140,19 +198,83 @@ function TaskRow({ task }: { task: HistoryTask }) {
   }
 
   return (
-    <div className="rounded-lg border border-border p-3">
-      <div className="flex flex-wrap items-center gap-2">
-        {live ? <Spinner className="size-3.5" /> : <StateIcon state={task.state} />}
-        <span className="min-w-0 flex-1 truncate text-sm font-medium" title={task.title}>
-          {task.title}{(task.repeat_count ?? 1) > 1 && ` ×${task.repeat_count}`}
+    <TableRow>
+      <TableCell className="align-top">
+        <div className="flex items-start gap-2">
+          {live ? <Spinner className="mt-0.5 size-3.5 shrink-0" /> : <StateIcon state={task.state} />}
+          <span className="min-w-0 truncate text-sm font-medium" title={task.title}>
+            {task.title}{(task.repeat_count ?? 1) > 1 && ` ×${task.repeat_count}`}
+          </span>
+        </div>
+      </TableCell>
+      <TableCell className="align-top">
+        <span className="block truncate font-mono text-xs text-muted-foreground" title={task.target || 'No target'}>
+          {task.target || '—'}
         </span>
-        <Badge variant={STATE_BADGE[task.state].variant}>{STATE_BADGE[task.state].label}</Badge>
-        <span
+      </TableCell>
+      <TableCell className="align-top">
+        <div className="flex flex-col items-start gap-1.5">
+          <Badge variant={STATE_BADGE[task.state].variant}>{STATE_BADGE[task.state].label}</Badge>
+
+          {/* A bar with no total is indeterminate, not full: a task that has not said how much
+              work it has must not look finished. */}
+          {live && (fraction !== null || bytes_total !== null) && (
+            <div className="h-1.5 w-full max-w-64 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={fraction === null ? undefined : Math.round(fraction * 100)}>
+              <div
+                className={cn('h-full rounded-full transition-[width] duration-200', fraction === null ? 'w-1/3 animate-pulse bg-ring' : 'bg-ring')}
+                style={fraction === null ? undefined : { width: `${Math.max(2, fraction * 100)}%` }}
+              />
+            </div>
+          )}
+          {live && (
+            <p className="text-xs text-muted-foreground">
+              {total > 0 ? `${done} of ${total} done` : 'working…'}
+              {bytes > 0 && ` · ${formatBytes(bytes)}${bytes_total ? ` of ${formatBytes(bytes_total)}` : ''}`}
+              {task.cancel_requested && ' · stopping after this item'}
+            </p>
+          )}
+          {task.steps.length > 0 && (
+            <ul className="flex flex-col gap-0.5">
+              {task.steps.map((s, i) => (
+                <li key={`${s.label}-${i}`} className="flex items-start gap-1.5 text-xs">
+                  <span className={cn('mt-[3px] size-1.5 shrink-0 rounded-full bg-current', STEP_MARK[s.state])} />
+                  <span className={cn(s.state === 'running' ? 'text-foreground' : 'text-muted-foreground')}>
+                    {s.label}
+                    {s.detail && <span className="text-muted-foreground"> — {s.detail}</span>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {task.error && (
+            <div className="rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs">
+              <p className="font-medium text-destructive">{task.error.problem}</p>
+              <p className="text-muted-foreground">{task.error.cause}</p>
+              {task.error.fix && <p className="text-success">{task.error.fix}</p>}
+            </div>
+          )}
+          {task.problems.length > 0 && (
+            <ul className="flex flex-col gap-0.5 text-xs text-warning">
+              {task.problems.map((p, i) => <li key={i}>⚠ {p}</li>)}
+            </ul>
+          )}
+          {task.results.length > 0 && (
+            <ul className="flex flex-col gap-0.5 text-xs text-muted-foreground">
+              {task.results.map((r, i) => <li key={i} className="truncate" title={r}>✓ {r}</li>)}
+            </ul>
+          )}
+        </div>
+      </TableCell>
+      <TableCell className="align-top">
+        <time
           className="whitespace-nowrap text-xs text-muted-foreground"
+          dateTime={new Date(task.finished_ms ?? task.started_ms).toISOString()}
           title={timeAgo(task.finished_ms ?? task.started_ms)}
         >
           {new Date(task.finished_ms ?? task.started_ms).toLocaleString()}
-        </span>
+        </time>
+      </TableCell>
+      <TableCell className="align-top text-right">
         {cancellable ? (
           <Button size="sm" variant="outline" className="h-7 text-xs" disabled={busy} onClick={() => void act('cancel_task')}>
             Stop
@@ -165,77 +287,13 @@ function TaskRow({ task }: { task: HistoryTask }) {
             aria-label={`Remove ${task.title} from the list`}
             title="Remove from the list"
             disabled={busy}
-            onClick={() => void act('dismiss_task')}
+            onClick={() => void dismiss()}
           >
             <X className="size-3.5" />
           </Button>
         )}
-      </div>
-
-      {task.target && (
-        <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground" title={task.target}>
-          {task.target}
-        </p>
-      )}
-
-      {/* A bar with no total is indeterminate, not full: a task that has not said how much
-          work it has must not look finished. */}
-      {live && (fraction !== null || bytes_total !== null) && (
-        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={fraction === null ? undefined : Math.round(fraction * 100)}>
-          <div
-            className={cn('h-full rounded-full transition-[width] duration-200', fraction === null ? 'w-1/3 animate-pulse bg-ring' : 'bg-ring')}
-            style={fraction === null ? undefined : { width: `${Math.max(2, fraction * 100)}%` }}
-          />
-        </div>
-      )}
-      {live && (
-        <p className="mt-1 text-xs text-muted-foreground">
-          {total > 0 ? `${done} of ${total} done` : 'working…'}
-          {bytes > 0 && ` · ${formatBytes(bytes)}${bytes_total ? ` of ${formatBytes(bytes_total)}` : ''}`}
-          {task.cancel_requested && ' · stopping after this item'}
-        </p>
-      )}
-
-      {task.steps.length > 0 && (
-        <ul className="mt-2 flex flex-col gap-0.5">
-          {task.steps.map((s, i) => (
-            <li key={`${s.label}-${i}`} className="flex items-start gap-1.5 text-xs">
-              <span className={cn('mt-[3px] size-1.5 shrink-0 rounded-full bg-current', STEP_MARK[s.state])} />
-              <span className={cn(s.state === 'running' ? 'text-foreground' : 'text-muted-foreground')}>
-                {s.label}
-                {s.detail && <span className="text-muted-foreground"> — {s.detail}</span>}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {task.error && (
-        <div className="mt-2 rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs">
-          <p className="font-medium text-destructive">{task.error.problem}</p>
-          <p className="text-muted-foreground">{task.error.cause}</p>
-          {task.error.fix && <p className="text-success">{task.error.fix}</p>}
-        </div>
-      )}
-
-      {task.problems.length > 0 && (
-        <ul className="mt-2 flex flex-col gap-0.5 text-xs text-warning">
-          {task.problems.map((p, i) => (
-            <li key={i}>⚠ {p}</li>
-          ))}
-        </ul>
-      )}
-
-      {task.results.length > 0 && (
-        <ul className="mt-2 flex flex-col gap-0.5 text-xs text-muted-foreground">
-          {task.results.map((r, i) => (
-            <li key={i} className="truncate" title={r}>
-              ✓ {r}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+      </TableCell>
+    </TableRow>
   )
 }
 

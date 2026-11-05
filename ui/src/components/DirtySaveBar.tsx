@@ -28,9 +28,8 @@ export function DirtySaveBar({ scope }: { scope: DirtyFormScope }) {
     >
       <div className={cn(
         'pointer-events-auto w-full max-w-3xl rounded-xl border border-border p-3 shadow-xl',
-        scope === 'dialog'
-          ? 'bg-[var(--dialog-surface,#ffffff)] dark:bg-[var(--dialog-surface,#0b1426)]'
-          : 'bg-card',
+        // Solid on purpose: --card is translucent, and page content showed through the bar.
+        'bg-[var(--dialog-surface,#ffffff)] dark:bg-[var(--dialog-surface,#0b1426)]',
       )}>
         {error && <ErrorCard error={error} />}
         <div className="flex flex-wrap items-center justify-between gap-3">

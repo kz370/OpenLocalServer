@@ -85,7 +85,7 @@ export function ConfigPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Web config</h1>
           <p className="text-sm text-muted-foreground">
-            Every site's generated config for the web server that renders it. Read it, customise it safely, and roll back any change (§23–29).
+            Every site's generated config for the web server that renders it. Read it, customise it safely, and roll back any change.
           </p>
         </div>
         <Button
@@ -106,7 +106,7 @@ export function ConfigPage() {
         </Button>
       </div>
 
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
       <div className="grid gap-4 lg:grid-cols-[16rem_1fr]">
         <div className="flex min-w-0 flex-col gap-4">
@@ -308,7 +308,7 @@ export function ConfigFilePane({
 
   return (
     <>
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
       <Card>
         <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-4">
           <div className="min-w-0">
@@ -597,7 +597,7 @@ function HistoryPanel({
 
   return (
     <div className="flex flex-col gap-3">
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
       <div className={listed ? 'grid gap-3 md:grid-cols-[15rem_minmax(0,1fr)]' : ''}>
         {listed && (
           <Card className="h-fit">
@@ -722,7 +722,7 @@ function StructuredEditor({ hostname, onApplied, scope }: { hostname: string; on
 
   return (
     <div className="flex flex-col gap-4">
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
       {manual && (
         <p className="rounded-lg border border-warning/40 bg-warning/5 p-3 text-xs">
           This site is Manual, so these settings are stored but not written to its file. Switch it to Managed or Advanced to use them.
@@ -752,7 +752,7 @@ function StructuredEditor({ hostname, onApplied, scope }: { hostname: string; on
         ))}
       </Section>
 
-      <Section title="Reverse-proxy mappings" hint="Send a path on this site to another server, e.g. /api → http://127.0.0.1:8000 (§30)" onAdd={() => setBlocks({ mappings: [...b.mappings, { path: '/api/', upstream: 'http://127.0.0.1:8000' }] })}>
+      <Section title="Reverse-proxy mappings" hint="Send a path on this site to another server, e.g. /api → http://127.0.0.1:8000" onAdd={() => setBlocks({ mappings: [...b.mappings, { path: '/api/', upstream: 'http://127.0.0.1:8000' }] })}>
         {b.mappings.map((m, i) => (
           <Row key={i} onRemove={() => setBlocks({ mappings: b.mappings.filter((_, j) => j !== i) })}>
             <Input placeholder="/api/" value={m.path} onChange={(e) => setBlocks({ mappings: b.mappings.map((x, j) => (j === i ? { ...x, path: e.target.value } : x)) })} />

@@ -73,7 +73,7 @@ export function GitPanel({ projectId }: { projectId: string }) {
   if (!status.available) {
     return (
       <div className="flex flex-col gap-3">
-        <ErrorCard error={error} onDismiss={() => setError(null)} />
+        <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
         <p className="text-sm">Git was not found on this computer.</p>
         <p className="text-sm text-muted-foreground">Install Git for Windows, or a portable Git that OLS keeps in its own folder.</p>
         <div>
@@ -106,7 +106,7 @@ export function GitPanel({ projectId }: { projectId: string }) {
   if (!status.is_repo) {
     return (
       <div className="flex flex-col gap-3">
-        <ErrorCard error={error} onDismiss={() => setError(null)} />
+        <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
         <p className="text-sm">This project is not a Git repository yet.</p>
         <div>
           <Button
@@ -162,7 +162,7 @@ export function GitPanel({ projectId }: { projectId: string }) {
         </div>
       </div>
 
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
       {output && (
         <div className={cn('rounded-lg border p-2', output.ok ? 'border-border' : 'border-destructive/40 bg-destructive/5')}>
           <div className="flex justify-between gap-2">
@@ -263,7 +263,7 @@ function Changes({ projectId, status, reload }: { projectId: string; status: Git
 
   return (
     <div className="flex flex-col gap-4">
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
       {status.files.length === 0 && <p className="text-sm text-muted-foreground">No changes. {status.last_commit && `Last commit: ${status.last_commit.subject} (${timeAgo(status.last_commit.time * 1000)}).`}</p>}
 
       {staged.length > 0 && (
@@ -357,7 +357,7 @@ function History({ projectId }: { projectId: string }) {
   if (!commits) return <Spinner />
   return (
     <div className="flex flex-col gap-1">
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
       {commits.length === 0 && <p className="text-sm text-muted-foreground">No commits yet.</p>}
       {commits.map((c) => (
         <div key={c.hash}>
@@ -440,7 +440,7 @@ function Branches({ projectId, reload }: { projectId: string; reload: () => Prom
 
   return (
     <div className="flex flex-col gap-3">
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
       <div className="flex gap-2">
         <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="new-branch-name" className="h-8 max-w-64 font-mono" />
         <Button
@@ -484,7 +484,7 @@ function Remotes({ projectId, status, reload }: { projectId: string; status: Git
 
   return (
     <div className="flex flex-col gap-3">
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
       {status.remotes.map((r) => {
         const host = hostOf(r.url)
         return (
@@ -588,7 +588,7 @@ function Stash({ projectId, status, reload }: { projectId: string; status: GitSt
     })
   return (
     <div className="flex flex-col gap-3">
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
       <div className="flex gap-2">
         <Input value={message} onChange={(e) => setMessage(e.target.value)} placeholder="What you were doing (optional)" className="h-8 min-w-0 flex-1" />
         <Button size="sm" disabled={busy !== null || status.files.length === 0} onClick={() => stash('push', null)}>

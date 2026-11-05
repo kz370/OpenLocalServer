@@ -66,7 +66,7 @@ export function HtaccessEditor({ hostname }: { hostname: string }) {
   }, [fileForm.syncSaved, hostname, setError])
 
   return <div className="flex min-h-0 flex-1 flex-col gap-3">
-    <ErrorCard error={error} onDismiss={() => setError(null)} />
+    <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
     {server !== 'apache' && <div className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-sm text-warning">The active server is {server === 'nginx' ? 'Nginx' : 'Caddy'}; it does not read .htaccess files.</div>}
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div className="flex items-center gap-2"><Badge variant="secondary">Apache</Badge><span className="text-xs text-muted-foreground">{exists ? 'Saved in the site document root' : 'File will be created when saved'}</span></div>

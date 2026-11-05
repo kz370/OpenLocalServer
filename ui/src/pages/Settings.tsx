@@ -13,7 +13,7 @@ import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import releaseNotes from '../../../release-notes/v2.8.0.md?raw'
+import releaseNotes from '../../../release-notes/v2.9.0.md?raw'
 import { Select, SettingRow, SwitchRow, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { type EditorInfo, type HelperService, type ServiceStatus, type StartupSettings, runCommand, requestExit } from '@/core'
@@ -30,6 +30,7 @@ import {
   SettingsBackupsIcon,
   SettingsDeletedIcon,
   SettingsDiagnosticsIcon,
+  SettingsEditorsIcon,
   SettingsGeneralIcon,
   SettingsManualIcon,
   SettingsMcpIcon,
@@ -48,7 +49,7 @@ type SettingsDraft =
   | { section: 'mcp'; enabled: boolean; token: string; expiryMode: 'none' | 'hours' | 'at'; ttlHours: number; expiresAt: string }
 const SECTIONS: { id: Section; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'general', label: 'General', icon: SettingsGeneralIcon },
-  { id: 'editors', label: 'Editors', icon: SettingsGeneralIcon },
+  { id: 'editors', label: 'Editors', icon: SettingsEditorsIcon },
   { id: 'appearance', label: 'Appearance', icon: SettingsAppearanceIcon },
   { id: 'mcp', label: 'MCP / AI tools', icon: SettingsMcpIcon },
   { id: 'sites', label: 'Sites & domains', icon: SettingsSitesIcon },
@@ -229,9 +230,9 @@ export function SettingsPage() {
         setMcpExpiresAt(draft.expiresAt)
       }
     },
-    onSave: async () => {
+    onSave: async (_draft, saved) => {
       const result = await run('save', async () => {
-        await (section === 'mcp' ? saveMcp() : saveAll())
+        await (section === 'mcp' ? saveMcp() : saveAll(saved))
         return true
       })
       return result === true
@@ -398,7 +399,7 @@ export function SettingsPage() {
 
   useEffect(() => {
     if (section !== 'manual') return
-    void runCommand({ type: 'get_app_guide', version: version || '2.8.0' }).then((r) => {
+    void runCommand({ type: 'get_app_guide', version: version || '2.9.0' }).then((r) => {
       if (r.type === 'app_guide') {
         setManual(r.markdown)
         manualCache.set(r.markdown)
@@ -406,41 +407,63 @@ export function SettingsPage() {
     })
   }, [section, version])
 
-  async function saveAll() {
-    if (startup) {
+  // Saves only the section being edited. Saving every section on each click also rewrote the
+  // Windows startup entry and re-scanned every project folder after a one-switch change.
+  async function saveAll(saved: SettingsDraft) {
+    if (section === 'startup') {
+      if (!startup) return
       const r = await runCommand({ type: 'set_startup_settings', settings: startup })
       if (r.type === 'startup') {
         setStartup(r.settings)
         startupCache.set(r.settings)
       }
+      return
     }
-    for (const { key, value } of [
-      { key: 'exit.confirmation.enabled', value: confirmExit },
-      { key: 'tray.stop_all.confirmation.enabled', value: confirmStopAll },
-      { key: 'diagnostics.auto_fix', value: autoFixDiagnostics },
+    if (section === 'sites') {
+      // Only what changed is written. The domain sync rescans every project folder, rewrites
+      // the hosts file and reloads the web server, so it runs only when automatic domains were
+      // just turned on or the default TLD changed — the two settings that affect it.
+      const before = saved.section === 'sites' ? saved : null
+      if (!before || before.projectsDir !== projectsDir) {
+        await runCommand({ type: 'set_setting', key: 'quickapps.projects_dir', value: projectsDir })
+      }
+      projectsDirCache.set(projectsDir)
+
+      if (!before || before.autoDomains !== autoDomains) {
+        await runCommand({ type: 'set_setting', key: 'domains.auto', value: autoDomains })
+      }
+      autoDomainsCache.set(autoDomains)
+
+      if (!before || before.watchSites !== watchSites) {
+        await runCommand({ type: 'set_setting', key: 'projects.watch', value: watchSites })
+      }
+      watchSitesCache.set(watchSites)
+
+      const tldOf = (tld: string, custom: string) => (tld === 'custom' ? custom.trim().replace(/^\./, '') : tld) || 'local'
+      const tldValue = tldOf(defaultTld, customTld)
+      const tldChanged = !before || tldOf(before.defaultTld, before.customTld) !== tldValue
+      if (tldChanged) {
+        await runCommand({ type: 'set_setting', key: 'domains.default_tld', value: tldValue })
+        invalidateDefaultTldCache()
+      }
+      defaultTldCache.set(defaultTld)
+      customTldCache.set(customTld)
+
+      const autoDomainsTurnedOn = autoDomains && (!before || !before.autoDomains)
+      if (autoDomains && (autoDomainsTurnedOn || tldChanged)) await runCommand({ type: 'sync_auto_domains' })
+      return
+    }
+    const before = saved.section === 'general' ? saved : null
+    for (const { key, value, was } of [
+      { key: 'exit.confirmation.enabled', value: confirmExit, was: before?.confirmExit },
+      { key: 'tray.stop_all.confirmation.enabled', value: confirmStopAll, was: before?.confirmStopAll },
+      { key: 'diagnostics.auto_fix', value: autoFixDiagnostics, was: before?.autoFixDiagnostics },
     ]) {
-      await runCommand({ type: 'set_setting', key, value })
+      if (value !== was) await runCommand({ type: 'set_setting', key, value })
     }
     autoFixDiagnosticsCache.set(autoFixDiagnostics)
     confirmExitCache.set(confirmExit)
     confirmStopAllCache.set(confirmStopAll)
-
-    await runCommand({ type: 'set_setting', key: 'quickapps.projects_dir', value: projectsDir })
-    projectsDirCache.set(projectsDir)
-
-    await runCommand({ type: 'set_setting', key: 'domains.auto', value: autoDomains })
-    autoDomainsCache.set(autoDomains)
-
-    await runCommand({ type: 'set_setting', key: 'projects.watch', value: watchSites })
-    watchSitesCache.set(watchSites)
-
-    const tldValue = defaultTld === 'custom' ? customTld.trim().replace(/^\./, '') : defaultTld
-    await runCommand({ type: 'set_setting', key: 'domains.default_tld', value: tldValue || 'local' })
-    defaultTldCache.set(defaultTld)
-    customTldCache.set(customTld)
-
-    invalidateDefaultTldCache()
-    if (autoDomains) await runCommand({ type: 'sync_auto_domains' })
   }
 
   async function saveMcp() {
@@ -699,18 +722,16 @@ export function SettingsPage() {
       {helper === null ? (
         <Badge variant="secondary">Checking…</Badge>
       ) : helper.status === 'development_version' ? (
-        <Badge variant="destructive">Development version · service {helper.version}, app {version}</Badge>
+        <Badge variant="destructive">Newer helper installed · {helper.version}</Badge>
       ) : helper.status === 'update_available' ? (
-        <Badge variant="warning">Installed · version {helper.version} (app is {version})</Badge>
+        <Badge variant="warning">Helper update available · installed {helper.version}</Badge>
       ) : helper.installed ? (
-        <Badge variant="success">Installed · no more prompts</Badge>
+        <Badge variant="success">Installed · helper {helper.version}</Badge>
       ) : (
         <Badge variant="outline">Not installed</Badge>
       )}
-      {/* The service runs a *copy* of the helper, and nothing refreshes that copy on an
-          update or a move, so an out-of-date one is offered the same reinstall as a
-          missing one — it is the same fix and the same single prompt. A service newer
-          than the app (dev build) is a development version, not something to update. */}
+      {/* The administrator copy has its own version. An OLS app-only release must not
+          offer another elevated reinstall when the helper protocol has not changed. */}
       {helper !== null && (!helper.installed || helper.status === 'update_available') && (
         <Button size="sm" disabled={busy !== null} onClick={() => run('helper', async () => { const r = await runCommand({ type: 'install_helper_service' }); if (r.type === 'helper_service') setHelper(r) })}>
           {busy === 'helper' ? <Spinner /> : <ShieldCheck />} {helper.status === 'update_available' ? 'Update (asks once)' : 'Install (asks once)'}
@@ -736,7 +757,7 @@ export function SettingsPage() {
         <p className="text-sm text-muted-foreground">OLS {version && `v${version}`}</p>
       </div>
 
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
       <div className="flex flex-col gap-6 md:flex-row md:items-start">
         <nav className="flex shrink-0 gap-1 overflow-x-auto md:sticky md:top-0 md:w-56 md:flex-col" aria-label="Settings sections">
@@ -809,7 +830,7 @@ export function SettingsPage() {
                     checked={autoFixDiagnostics}
                     onChange={setAutoFixDiagnostics}
                     title="Automatically fix safe problems"
-                    hint="Runs at startup and every five minutes. Fixes that may replace or remove data always ask first. Saved with the Save button below."
+                    hint="Fixes safe problems as soon as they are found: at startup and when projects or runtimes change. Fixes that may replace or remove data always ask first. A fix that did not work is not retried until you restart the app. Saved with the Save button below."
                   />
                 </CardContent>
               </Card>
@@ -980,7 +1001,7 @@ export function SettingsPage() {
                     </CardDescription>
                   </div>
                   <Badge variant="outline" className="text-xs px-2.5 py-0.5 w-fit border-border/80">
-                    v{version || '2.8.0'}
+                    v{version || '2.9.0'}
                   </Badge>
                 </div>
               </CardHeader>
@@ -1003,7 +1024,7 @@ export function SettingsPage() {
                       )}
                       onClick={() => setManualTab('notes')}
                     >
-                      <Sparkles className="size-4 shrink-0 text-primary" /> {`Release Notes (v${version || '2.8.0'})`}
+                      <Sparkles className="size-4 shrink-0 text-primary" /> {`Release Notes (v${version || '2.9.0'})`}
                     </button>
                   </div>
                   {manualTab === 'manual' && (
@@ -1032,7 +1053,7 @@ export function SettingsPage() {
                 {manualTab === 'notes' ? (
                   <ReleaseNotesView
                     markdown={activeManualMarkdown}
-                    currentVersion={version || '2.8.0'}
+                    currentVersion={version || '2.9.0'}
                   />
                 ) : (
                   <div className="flex-1 rounded-xl border border-border/70 bg-card/40 p-5 text-sm leading-relaxed overflow-y-auto min-h-[350px] max-h-[calc(100vh-280px)]">

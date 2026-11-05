@@ -326,6 +326,7 @@ export function DomainSettings({
   }, [projectPickerOpen])
 
   const [rootTouched, setRootTouched] = useState(false)
+  const selectedProjectId = useRef<string | null>(null)
   const [domainTouched, setDomainTouched] = useState(false)
   /** Set once the user types a localhost prefix, so a later project-name change leaves it alone. */
   const [prefixTouched, setPrefixTouched] = useState(false)
@@ -767,7 +768,7 @@ export function DomainSettings({
           if (detail.type === 'project_detail') {
             let root = matched.path
             const fw = detail.detail.detection.framework
-            const sub = detail.detail.detection.doc_root ?? (fw === 'laravel' || fw === 'symfony' ? 'public' : null)
+            const sub = detail.detail.detection.doc_root
             if (sub) root = `${matched.path}\\${sub}`
             let kind: Domain['kind'] | null = null
             if (fw === 'laravel' || fw === 'symfony' || fw === 'word_press' || fw === 'generic_php') kind = { type: 'php', version: null }
@@ -806,6 +807,7 @@ export function DomainSettings({
     setDomainTouched(false)
     setPrefixTouched(false)
     setServeMode(mode)
+    selectedProjectId.current = project.id
     setD((current) => ({
       ...current,
       project_id: project.id,
@@ -820,6 +822,16 @@ export function DomainSettings({
             ? { type: 'proxy', upstream_port: 8000, upstream_host: null, upstream_https: false }
             : { type: 'static' },
     }))
+
+    // Selecting a project should use its detected web root (for example Laravel's
+    // `public/`), while a later manual folder edit takes precedence.
+    void runCommand({ type: 'get_project_detail', id: project.id })
+      .then((detail) => {
+        if (detail.type !== 'project_detail' || selectedProjectId.current !== project.id) return
+        const sub = detail.detail.detection.doc_root
+        if (sub) setD((current) => ({ ...current, root: `${project.path}\\${sub}` }))
+      })
+      .catch(() => undefined)
   }
 
   // "Add site" from a project arrives with the project chosen: fill in its folder, type and name.
@@ -845,6 +857,7 @@ export function DomainSettings({
   }
 
   const onRootChange = (val: string) => {
+    selectedProjectId.current = null
     setRootTouched(val.trim().length > 0)
     set({ root: val })
   }
@@ -852,6 +865,7 @@ export function DomainSettings({
   async function browseRoot() {
     const picked = await open({ directory: true, title: 'Document root' })
     if (picked && !Array.isArray(picked)) {
+      selectedProjectId.current = null
       setRootTouched(true)
       set({ root: picked })
     }
@@ -1168,7 +1182,7 @@ export function DomainSettings({
                 </div>
               )}
             </div>
-            <Field label="Name template (§48)">
+            <Field label="Name template">
               <Select value={template} onChange={(e) => onTemplateChange(e.target.value)}>
                 <option>{`{project}.${defaultTld}`}</option>
                 <option>{`api.{project}.${defaultTld}`}</option>

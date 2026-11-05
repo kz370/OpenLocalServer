@@ -12,7 +12,7 @@ impl Inner {
             .skip_entries(AUTO_SKIP)
             .iter()
             .any(|entry| entry.value.eq_ignore_ascii_case(&domain.hostname))
-            && (folder.is_empty() || !Path::new(&folder).join(".ols_ignore_me").exists())
+            && (folder.is_empty() || !site_is_ignored(Path::new(&folder)))
     }
 
     pub fn reconcile(&self) -> Result<usize, CoreError> {
@@ -104,7 +104,7 @@ impl Inner {
                 if dir.is_dir()
                     && !hidden
                     && !is_ignored
-                    && !dir.join(".ols_ignore_me").exists()
+                    && !project_is_ignored(&dir)
                     && !hidden_paths
                         .iter()
                         .any(|path| crate::project::same_path(path, &dir.display().to_string()))
@@ -137,7 +137,7 @@ impl Inner {
         let mut created = 0;
         for p in projects.iter().filter(|_| auto_domains) {
             let path = Path::new(&p.path);
-            if !path.is_dir() || path.join(".ols_ignore_me").exists() {
+            if !path.is_dir() || site_is_ignored(path) {
                 continue;
             }
 

@@ -277,8 +277,8 @@ export function DashboardPage({
         </div>
       </div>
 
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
-      {dataError && <ErrorCard error={dataError} onDismiss={() => setDataError(null)} />}
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
+      {dataError && <ErrorCard error={dataError} onDismiss={() => setDataError(null)} overlay />}
 
       {/* Diagnostics: strictly one slim row (<= 44px) in all states so layout never jumps */}
       <DiagnosticsCard

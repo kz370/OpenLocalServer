@@ -288,7 +288,7 @@ export function GitCloneButton({ defaultParent, onDone, standalone }: { defaultP
         }
       >
         <div className="flex flex-col gap-4">
-          <ErrorCard error={error} onDismiss={() => setError(null)} />
+          <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
           <Field label="Repository address">
             <Input value={url} onChange={(e) => onUrlChange(e.target.value)} placeholder="https://github.com/you/shop.git" className="font-mono" autoFocus />
           </Field>
@@ -382,7 +382,7 @@ export function ImportEnvironmentButton({ defaultParent, onDone }: { defaultPare
       <Button size="sm" variant="secondary" onClick={pick} title="Create a project from an exported environment file">
         {busy === 'preview' ? <Spinner /> : <FileUp />} Import environment
       </Button>
-      {error && !preview && <ErrorCard error={error} onDismiss={() => setError(null)} />}
+      {error && !preview && <ErrorCard error={error} onDismiss={() => setError(null)} overlay />}
       <Dialog
         open={preview !== null}
         onClose={() => busy === null && setPreview(null)}
@@ -414,7 +414,7 @@ export function ImportEnvironmentButton({ defaultParent, onDone }: { defaultPare
       >
         {preview && (
           <div className="flex flex-col gap-4 text-sm">
-            <ErrorCard error={error} onDismiss={() => setError(null)} />
+            <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
             {!result ? (
               <>
                 <div className="rounded-lg border border-border p-3">

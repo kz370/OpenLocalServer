@@ -256,7 +256,7 @@ export function WebServerPage({
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Web server</h1>
           <p className="text-sm text-muted-foreground">
-            The server that serves your sites, its ports, and the local HTTPS certificates. Sites themselves live on the Sites page (§44–53).
+            The server that serves your sites, its ports, and the local HTTPS certificates. Sites themselves live on the Sites page.
           </p>
         </div>
         <div className="flex flex-col items-end gap-2">
@@ -340,7 +340,7 @@ export function WebServerPage({
         </div>
       </div>
 
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
       {status?.running && hasChanges && (
         <div className="flex items-center justify-between gap-3 rounded-lg border border-warning/40 bg-warning/10 p-3.5 text-sm shadow-xs">
@@ -459,7 +459,7 @@ export function WebServerPage({
               </div>
             </CardHeader>
             <CardContent className="text-xs text-muted-foreground">
-              Windows asks you to confirm before it adds a root certificate. The private key stays on this computer and is never shown or sent anywhere (§142).
+              Windows asks you to confirm before it adds a root certificate. The private key stays on this computer and is never shown or sent anywhere.
             </CardContent>
           </Card>
 

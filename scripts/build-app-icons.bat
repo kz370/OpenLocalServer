@@ -18,14 +18,14 @@ rem
 rem Requires: ImageMagick (magick on PATH) and the Tauri CLI (cargo tauri icon).
 
 set "ROOT=%~dp0.."
-set "SCRIPT=%~dp0build-app-icons.ps1"
+set "SCRIPT=%~dp0build-app-icons\build-app-icons.ps1"
 
 echo.
 echo === App icons ===
 echo.
 
 if not exist "%SCRIPT%" (
-  echo [x] Problem: scripts\build-app-icons.ps1 is missing.
+  echo [x] Problem: scripts\build-app-icons\build-app-icons.ps1 is missing.
   echo     Cause: incomplete checkout, or the script was renamed.
   echo     Fix: restore the file and run this again.
   goto :fail

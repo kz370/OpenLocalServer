@@ -10,13 +10,13 @@ import {
   useInteractions,
 } from '@floating-ui/react'
 import { Check, ChevronDown, Image as ImageIcon, Search, Trash2, Upload, X } from 'lucide-react'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
+import { IconCategoryFilter } from '@/components/IconCategoryFilter'
 import {
-  FA_ICONS,
-  type FaIconDef,
   SiteLogo,
+  filterFaIcons,
   buildIconSpec,
   parseIconSpec,
 } from '@/components/SiteLogo'
@@ -344,12 +344,9 @@ export function SiteLogoPanel({
     await handleClearCurrentIcon()
   }
 
-  const filteredIcons = FA_ICONS.filter((item: FaIconDef) => {
-    if (category !== 'all' && item.category !== category) return false
-    if (!search) return true
-    const term = search.toLowerCase()
-    return item.id.includes(term) || item.name.toLowerCase().includes(term)
-  })
+  // Deferred so typing stays instant while the grid re-filters a few hundred icons.
+  const deferredSearch = useDeferredValue(search)
+  const filteredIcons = useMemo(() => filterFaIcons(category, deferredSearch), [category, deferredSearch])
   const libraryCategories = useMemo(() => [...new Set(libraryIcons.map((item) => item.category))].sort((a, b) => {
     if (a === '') return -1
     if (b === '') return 1
@@ -364,7 +361,7 @@ export function SiteLogoPanel({
 
   return (
     <div className="flex flex-col gap-4">
-      {error && <ErrorCard error={asDiagnostic(error)} onDismiss={() => setError(null)} />}
+      {error && <ErrorCard error={asDiagnostic(error)} onDismiss={() => setError(null)} overlay />}
 
       {/* Live Preview Box with zero layout shifting */}
       <div className="flex flex-col gap-2 rounded-lg border bg-muted/20 p-3">
@@ -691,63 +688,42 @@ export function SiteLogoPanel({
             )}
           </div>
 
-          {/* Category Filter Chips */}
-          <div className="flex flex-wrap gap-1.5 text-xs">
-            {[
-              { id: 'all', label: 'All' },
-              { id: 'brands', label: 'Brands & CMS' },
-              { id: 'web', label: 'Web' },
-              { id: 'tech', label: 'Tech & Dev' },
-              { id: 'commerce', label: 'Commerce' },
-              { id: 'media', label: 'Media' },
-              { id: 'general', label: 'General' },
-            ].map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                className={`cursor-pointer rounded-full px-2.5 py-0.5 text-[11px] font-medium transition ${
-                  category === c.id
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'
-                }`}
-                onClick={() => setCategory(c.id)}
-              >
-                {c.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Icons Grid with zero layout jumping */}
-          <div className="grid max-h-60 grid-cols-3 gap-2 overflow-y-auto rounded-md border border-border p-2 sm:grid-cols-4 md:grid-cols-6">
-            {filteredIcons.map((item) => {
-              const isSelected = activeFaName === item.id
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => void handleSelectFaIcon(item.id)}
-                  disabled={busy}
-                  className={`group flex cursor-pointer flex-col items-center gap-1.5 rounded-md border p-2 text-center transition-all ${
-                    isSelected
-                      ? 'border-primary bg-primary/10 text-primary shadow-xs'
-                      : 'border-border/60 bg-muted/20 hover:border-border hover:bg-muted/60 text-foreground'
-                  }`}
-                  title={item.name}
-                >
-                  <SiteLogo
-                    icon={isSelected ? currentIcon : item.id}
-                    className="size-6 transition-transform group-hover:scale-110"
-                  />
-                  <span className="w-full truncate text-[11px] leading-tight">{item.name}</span>
-                </button>
-              )
-            })}
-            {filteredIcons.length === 0 && (
-              <div className="col-span-full py-6 text-center text-xs text-muted-foreground">
-                No offline icons found matching &ldquo;{search}&rdquo;.
-              </div>
-            )}
-          </div>
+          {/* Category list (wide) or dropdown (narrow) beside a scrolling icon grid */}
+          <IconCategoryFilter value={category} onChange={setCategory} search={deferredSearch} heightClassName="h-72">
+            {/* Auto-fill columns follow the grid pane's own width, not the window's. */}
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(5.5rem,1fr))] gap-2">
+              {filteredIcons.map((item) => {
+                const isSelected = activeFaName === item.id
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => void handleSelectFaIcon(item.id)}
+                    disabled={busy}
+                    // content-visibility lets the browser skip layout and paint for tiles
+                    // scrolled out of view, so a long grid scrolls as smoothly as a short one.
+                    className={`group flex cursor-pointer flex-col items-center gap-1.5 rounded-md border p-2 text-center transition-all [content-visibility:auto] [contain-intrinsic-size:auto_64px] ${
+                      isSelected
+                        ? 'border-primary bg-primary/10 text-primary shadow-xs'
+                        : 'border-border/60 bg-muted/20 hover:border-border hover:bg-muted/60 text-foreground'
+                    }`}
+                    title={item.name}
+                  >
+                    <SiteLogo
+                      icon={isSelected ? currentIcon : item.id}
+                      className="size-6 transition-transform group-hover:scale-110"
+                    />
+                    <span className="w-full truncate text-[11px] leading-tight">{item.name}</span>
+                  </button>
+                )
+              })}
+              {filteredIcons.length === 0 && (
+                <div className="col-span-full py-6 text-center text-xs text-muted-foreground">
+                  No offline icons found matching &ldquo;{deferredSearch}&rdquo;.
+                </div>
+              )}
+            </div>
+          </IconCategoryFilter>
         </div>
       )}
     </div>

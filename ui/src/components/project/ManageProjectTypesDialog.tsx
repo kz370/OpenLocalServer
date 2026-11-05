@@ -1,8 +1,9 @@
 import { Check, Edit2, GripVertical, Pin, Plus, Sliders, Trash2, X } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useState } from 'react'
 
 import { TechIcon } from '@/components/TechIcon'
-import { FA_ICONS, FontAwesomeIcon } from '@/components/SiteLogo'
+import { IconCategoryFilter } from '@/components/IconCategoryFilter'
+import { FontAwesomeIcon, filterFaIcons } from '@/components/SiteLogo'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
@@ -55,6 +56,9 @@ export function ManageProjectTypesDialog({
   const [iconPickerFor, setIconPickerFor] = useState<string | null>(null)
   const [iconSearch, setIconSearch] = useState('')
   const [iconCategory, setIconCategory] = useState<string>('all')
+  // Shared by both icon pickers. Deferred so typing stays instant while the grid re-filters.
+  const deferredIconSearch = useDeferredValue(iconSearch)
+  const pickerIcons = useMemo(() => filterFaIcons(iconCategory, deferredIconSearch), [iconCategory, deferredIconSearch])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -415,53 +419,36 @@ export function ManageProjectTypesDialog({
               </div>
               <Input value={iconSearch} onChange={(e) => setIconSearch(e.target.value)} placeholder="Search icons…" className="h-8 text-xs" />
               {(() => {
-                const filtered = FA_ICONS.filter((ic) =>
-                  iconSearch.trim() === '' ||
-                  ic.name.toLowerCase().includes(iconSearch.toLowerCase()) ||
-                  ic.id.toLowerCase().includes(iconSearch.toLowerCase()),
-                )
-                const cats = ['all', ...Array.from(new Set(FA_ICONS.map((i) => i.category || 'general')))]
-                const visible = iconCategory === 'all'
-                  ? filtered.slice(0, 180)
-                  : filtered.filter((ic) => (ic.category || 'general') === iconCategory).slice(0, 180)
+                // Memoized at the top of the component; no cap, every icon stays reachable.
+                const visible = pickerIcons
                 return (
                   <>
-                    <div className="flex flex-wrap gap-1 border-b border-border pb-2">
-                      {cats.map((c) => (
-                        <button
-                          key={c}
-                          type="button"
-                          onClick={() => setIconCategory(c)}
-                          className={cn(
-                            'px-2 py-0.5 rounded text-[10px] font-medium capitalize cursor-pointer transition-colors',
-                            iconCategory === c
-                              ? 'bg-primary text-primary-foreground'
-                              : 'bg-muted/40 text-muted-foreground hover:bg-muted',
-                          )}
-                        >
-                          {c}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="grid grid-cols-6 gap-1.5 max-h-44 overflow-y-auto pr-1 pt-1">
-                      {visible.map((ic) => (
-                        <button
-                          key={ic.id}
-                          type="button"
-                          title={ic.name}
-                          onClick={() => {
-                            setNewTypeIcon(ic.id)
-                            setIconPickerFor(null)
-                          }}
-                          className="flex flex-col items-center justify-center gap-1 p-2 rounded-md border border-transparent hover:border-primary/40 hover:bg-primary/5 cursor-pointer transition-colors"
-                        >
-                          <FontAwesomeIcon name={ic.id} className="size-5 text-muted-foreground" />
-                          <span className="text-[9px] text-muted-foreground truncate w-full text-center leading-tight">
-                            {ic.name}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
+                    <IconCategoryFilter
+                      value={iconCategory}
+                      onChange={setIconCategory}
+                      search={deferredIconSearch}
+                      heightClassName="h-56"
+                    >
+                      <div className="grid grid-cols-[repeat(auto-fill,minmax(4.5rem,1fr))] gap-1.5">
+                        {visible.map((ic) => (
+                          <button
+                            key={ic.id}
+                            type="button"
+                            title={ic.name}
+                            onClick={() => {
+                              setNewTypeIcon(ic.id)
+                              setIconPickerFor(null)
+                            }}
+                            className="flex flex-col items-center justify-center gap-1 p-2 rounded-md border border-transparent hover:border-primary/40 hover:bg-primary/5 cursor-pointer transition-colors [content-visibility:auto] [contain-intrinsic-size:auto_52px]"
+                          >
+                            <FontAwesomeIcon name={ic.id} className="size-5 text-muted-foreground" />
+                            <span className="text-[9px] text-muted-foreground truncate w-full text-center leading-tight">
+                              {ic.name}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </IconCategoryFilter>
                   </>
                 )
               })()}
@@ -659,59 +646,42 @@ export function ManageProjectTypesDialog({
                           className="h-8 text-xs"
                         />
                         {(() => {
-                          const filtered = FA_ICONS.filter((ic) =>
-                            iconSearch.trim() === '' ||
-                            ic.name.toLowerCase().includes(iconSearch.toLowerCase()) ||
-                            ic.id.toLowerCase().includes(iconSearch.toLowerCase()),
-                          )
-                          const cats = ['all', ...Array.from(new Set(FA_ICONS.map((i) => i.category || 'general')))]
-                          const visible = iconCategory === 'all'
-                            ? filtered.slice(0, 180)
-                            : filtered.filter((ic) => (ic.category || 'general') === iconCategory).slice(0, 180)
+                          // Memoized at the top of the component; no cap, every icon stays reachable.
+                          const visible = pickerIcons
                           return (
                             <>
-                              <div className="flex flex-wrap gap-1 border-b border-border pb-2">
-                                {cats.map((c) => (
-                                  <button
-                                    key={c}
-                                    type="button"
-                                    onClick={() => setIconCategory(c)}
-                                    className={cn(
-                                      'px-2 py-0.5 rounded text-[10px] font-medium capitalize cursor-pointer transition-colors',
-                                      iconCategory === c
-                                        ? 'bg-primary text-primary-foreground'
-                                        : 'bg-muted/40 text-muted-foreground hover:bg-muted',
-                                    )}
-                                  >
-                                    {c}
-                                  </button>
-                                ))}
-                              </div>
-                              <div className="grid grid-cols-6 gap-1.5 max-h-44 overflow-y-auto pr-1 pt-1">
-                                {visible.map((ic) => (
-                                  <button
-                                    key={ic.id}
-                                    type="button"
-                                    title={ic.name}
-                                    onClick={() => {
-                                      const nextPrefs = {
-                                        ...preferences,
-                                        typeIcons: { ...(preferences.typeIcons ?? {}), [item.id]: ic.id },
-                                      }
-                                      saveProjectFilterPreferences(nextPrefs)
-                                      setPreferences(nextPrefs)
-                                      setIconPickerFor(null)
-                                      void onUpdated()
-                                    }}
-                                    className="flex flex-col items-center justify-center gap-1 p-2 rounded-md border border-transparent hover:border-primary/40 hover:bg-primary/5 cursor-pointer transition-colors"
-                                  >
-                                    <FontAwesomeIcon name={ic.id} className="size-5 text-muted-foreground" />
-                                    <span className="text-[9px] text-muted-foreground truncate w-full text-center leading-tight">
-                                      {ic.name}
-                                    </span>
-                                  </button>
-                                ))}
-                              </div>
+                              <IconCategoryFilter
+                                value={iconCategory}
+                                onChange={setIconCategory}
+                                search={deferredIconSearch}
+                                heightClassName="h-56"
+                              >
+                                <div className="grid grid-cols-[repeat(auto-fill,minmax(4.5rem,1fr))] gap-1.5">
+                                  {visible.map((ic) => (
+                                    <button
+                                      key={ic.id}
+                                      type="button"
+                                      title={ic.name}
+                                      onClick={() => {
+                                        const nextPrefs = {
+                                          ...preferences,
+                                          typeIcons: { ...(preferences.typeIcons ?? {}), [item.id]: ic.id },
+                                        }
+                                        saveProjectFilterPreferences(nextPrefs)
+                                        setPreferences(nextPrefs)
+                                        setIconPickerFor(null)
+                                        void onUpdated()
+                                      }}
+                                      className="flex flex-col items-center justify-center gap-1 p-2 rounded-md border border-transparent hover:border-primary/40 hover:bg-primary/5 cursor-pointer transition-colors [content-visibility:auto] [contain-intrinsic-size:auto_52px]"
+                                    >
+                                      <FontAwesomeIcon name={ic.id} className="size-5 text-muted-foreground" />
+                                      <span className="text-[9px] text-muted-foreground truncate w-full text-center leading-tight">
+                                        {ic.name}
+                                      </span>
+                                    </button>
+                                  ))}
+                                </div>
+                              </IconCategoryFilter>
                             </>
                           )
                         })()}

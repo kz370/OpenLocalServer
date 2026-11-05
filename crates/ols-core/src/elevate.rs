@@ -10,6 +10,11 @@ use std::time::{Duration, Instant};
 
 const ACCESS_DENIED: i32 = 5;
 
+/// Version of the privileged helper protocol/binary, independent of the OLS app release.
+/// Bump only when `ols-helper` changes in a way that requires replacing the installed
+/// administrator copy. App-only releases must not trigger another UAC update prompt.
+pub const ADMIN_HELPER_VERSION: &str = "2.8.0";
+
 /// Where the helper binary lives: `OLS_HELPER_PATH`, then a freshly built copy in the
 /// workspace `target/release` or `target/debug` (so a dev build that rebuilt the helper
 /// is found before any stale copy beside an older app), then beside the running executable
@@ -106,14 +111,12 @@ pub const SERVICE_PIPE: &str = r"\\.\pipe\OpenLocalServerHelper";
 
 /// Installs the helper service (one UAC prompt). Afterwards nothing prompts again.
 ///
-/// Before copying anything, the candidate helper's own `--version` is checked against
-/// the app's `CARGO_PKG_VERSION`. A stale copy beside an older install (for example a
-/// `target\debug\ols-helper.exe` left over from 2.2.0 while the app is 2.3.0) would
-/// otherwise be re-installed as the service and nothing would change. A mismatch is
-/// reported with an actionable message instead of silently installing the wrong version.
+/// Before copying anything, the candidate helper's own version is checked against the
+/// helper-specific version. App-only releases leave this number unchanged, avoiding an
+/// unnecessary elevated reinstall of the protected service copy.
 pub fn install_service() -> Result<(), String> {
     let helper = helper_path().ok_or_else(helper_missing)?;
-    let expected = env!("CARGO_PKG_VERSION");
+    let expected = ADMIN_HELPER_VERSION;
     if let Some(actual) = helper_version(&helper) {
         if actual != expected {
             return Err(format!(
@@ -188,7 +191,7 @@ pub fn service_version_retries(retries: usize) -> Option<String> {
 /// UI already offers to install, and reporting it as "out of date" would send the user
 /// looking for a version difference that is not the problem.
 pub fn service_is_stale() -> Option<bool> {
-    service_version().map(|v| v != env!("CARGO_PKG_VERSION"))
+    service_version().map(|v| v != ADMIN_HELPER_VERSION)
 }
 
 /// One request to the service pipe and the reply it parsed, with the same deadline

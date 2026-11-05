@@ -2,7 +2,7 @@
 # Four variants: light/dark theme x running/stopped.
 #
 #   scripts\build-app-icons.bat
-#   pwsh -File scripts/build-app-icons.ps1 [-Tool auto|magick|ffmpeg]
+#   pwsh -File scripts/build-app-icons/build-app-icons.ps1 [-Tool auto|magick|ffmpeg]
 #
 #   Sources: assets/icon.webp (running, light), assets/stop-icon.webp (stopped,
 # light), assets/icon-dark.webp (running, dark). The stopped-dark twin is derived
@@ -27,7 +27,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$root = Split-Path -Parent $PSScriptRoot
+$root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $src = Join-Path $root 'src-tauri/icons/source'
 $icons = Join-Path $root 'src-tauri/icons'
 $public = Join-Path $root 'ui/public'

@@ -50,6 +50,7 @@ export type CoreCommand =
   | { type: 'sync_auto_domains' }
   | { type: 'remove_project'; id: string }
   | { type: 'ignore_project'; id: string }
+  | { type: 'unignore_site'; project_id: string }
   | { type: 'remove_site_from_list'; hostname: string }
   | { type: 'delete_project'; id: string }
   | { type: 'relocate_project'; id: string; path: string }
@@ -211,8 +212,10 @@ export type CoreCommand =
   | { type: 'set_editor_hidden'; id: string; hidden: boolean }
   | { type: 'get_system_stats' }
   | { type: 'list_migration_sources' }
+  | { type: 'inspect_migration_source'; path: string }
   | { type: 'list_foreign_databases'; source_id: string; password: string }
   | { type: 'migrate_databases'; source_id: string; password: string; databases: string[]; target: string }
+  | { type: 'migrate_databases_resolved'; source_id: string; password: string; databases: string[]; target: string; conflict_policy: 'skip' | 'replace_with_backup' | 'rename_incoming' }
   | { type: 'get_migration_progress' }
   | { type: 'get_helper_service' }
   | { type: 'install_helper_service' }

@@ -4,6 +4,55 @@ use crate::ctx::{table, Ctx, R};
 use ols_core::command::{CoreCommand, CoreResponse};
 use std::path::{Path, PathBuf};
 
+fn set_ignore_marker(path: PathBuf, marker: &str, label: &str, add: bool) -> R<()> {
+    let path = if path.is_absolute() {
+        path
+    } else {
+        std::env::current_dir()
+            .map_err(|e| format!("Could not resolve the selected folder: {e}"))?
+            .join(path)
+    };
+    if !path.is_dir() {
+        return Err(format!(
+            "Cannot change the ignore marker because '{}' is not an accessible folder. Choose an existing project folder.",
+            path.display()
+        ));
+    }
+    let marker_path = path.join(marker);
+    if add {
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&marker_path)
+        {
+            Ok(_) => println!("{label} is now ignored. Project files were kept."),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                println!("{label} is already ignored.");
+            }
+            Err(error) => {
+                return Err(format!(
+                    "Could not create '{}': {error}. Check that you can write to the project folder.",
+                    marker_path.display()
+                ));
+            }
+        }
+    } else {
+        match std::fs::remove_file(&marker_path) {
+            Ok(()) => println!("{label} is no longer ignored."),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                println!("{label} is not ignored.");
+            }
+            Err(error) => {
+                return Err(format!(
+                    "Could not remove '{}': {error}. Check that you can write to the project folder.",
+                    marker_path.display()
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 pub fn domain(ctx: &Ctx) -> R<()> {
     let r = ctx.call(CoreCommand::ListDomains)?;
     if !ctx.print_json(&r) {
@@ -190,6 +239,24 @@ pub fn project(ctx: &Ctx, cmd: ProjectCmd) -> R<()> {
         ProjectCmd::Add { path } => {
             let (_, name) = ctx.project_for_path(&path)?;
             println!("{name} is a project.");
+        }
+        ProjectCmd::Ignore { path } => set_ignore_marker(
+            path,
+            ols_core::app::OLS_IGNORE_PROJECT_MARKER,
+            "Project and site",
+            true,
+        )?,
+        ProjectCmd::Unignore { path } => set_ignore_marker(
+            path,
+            ols_core::app::OLS_IGNORE_PROJECT_MARKER,
+            "Project and site",
+            false,
+        )?,
+        ProjectCmd::IgnoreSite { path } => {
+            set_ignore_marker(path, ols_core::app::OLS_IGNORE_SITE_MARKER, "Site", true)?
+        }
+        ProjectCmd::UnignoreSite { path } => {
+            set_ignore_marker(path, ols_core::app::OLS_IGNORE_SITE_MARKER, "Site", false)?
         }
         ProjectCmd::Remove { name } => {
             let id = ctx.project_id(&name)?;

@@ -403,7 +403,7 @@ impl Core {
                     let mut registered = Vec::with_capacity(candidates.len());
                     for candidate in candidates {
                         if let Some(s) = candidate.to_str() {
-                            if candidate.join(".ols_ignore_me").exists() {
+                            if crate::app::project_is_ignored(&candidate) {
                                 continue;
                             }
                             if hidden_paths
@@ -429,6 +429,7 @@ impl Core {
                     Ok(R::Projects {
                         projects: registered,
                         unconnected_project_ids: None,
+                        site_ignored_project_ids: None,
                     })
                 }
                 C::SyncAutoDomains => Ok(R::Count {
@@ -450,12 +451,13 @@ impl Core {
                         .iter()
                         .filter(|d| hidden_hosts.contains(&d.hostname))
                         .map(|d| crate::app::site_folder(d, &project_snapshot))
+                        .filter(|path| {
+                            !crate::app::site_only_is_ignored(std::path::Path::new(path))
+                        })
                         .collect();
                     let mut projects = i.projects.lock().unwrap().list();
                     projects.retain(|p| {
-                        !std::path::Path::new(&p.path)
-                            .join(".ols_ignore_me")
-                            .exists()
+                        !crate::app::project_is_ignored(std::path::Path::new(&p.path))
                             && !hidden_paths
                                 .iter()
                                 .any(|path| crate::project::same_path(path, &p.path))
@@ -486,9 +488,17 @@ impl Core {
                         .ok()
                         .flatten()
                         .map(|ids| ids.into_iter().collect());
+                    let site_ignored_project_ids = projects
+                        .iter()
+                        .filter(|project| {
+                            crate::app::site_only_is_ignored(std::path::Path::new(&project.path))
+                        })
+                        .map(|project| project.id.clone())
+                        .collect();
                     Ok(R::Projects {
                         projects,
                         unconnected_project_ids,
+                        site_ignored_project_ids: Some(site_ignored_project_ids),
                     })
                 }
                 C::RemoveProject { id } => {
@@ -497,6 +507,11 @@ impl Core {
                 }
                 C::IgnoreProject { id } => {
                     i.ignore_project(&id)?;
+                    i.reconcile()?;
+                    Ok(R::Ok)
+                }
+                C::UnignoreSite { project_id } => {
+                    i.unignore_site(&project_id)?;
                     i.reconcile()?;
                     Ok(R::Ok)
                 }

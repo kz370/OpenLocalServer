@@ -23,7 +23,8 @@ type DirtyFormOptions<T> = {
   enabled: boolean
   busy: boolean
   error: Diagnostic | null
-  onSave: (value: T) => Promise<boolean>
+  /** `saved` is the last saved value, so a save can skip what did not change. */
+  onSave: (value: T, saved: T) => Promise<boolean>
   onRestore: (value: T) => void
   /** Optional normalizer applied before comparing draft to saved (trim, null-collapse, etc.). */
   normalize?: (value: T) => unknown
@@ -129,7 +130,7 @@ export function useDirtyForm<T>({
     if (!dirtyRef.current) return true
     const submittedValue = valueRef.current
     try {
-      const succeeded = await onSaveRef.current(submittedValue)
+      const succeeded = await onSaveRef.current(submittedValue, baselineRef.current.value)
       if (succeeded) {
         updateBaseline(keyRef.current, submittedValue)
         return true

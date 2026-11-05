@@ -154,11 +154,11 @@ export function DatabasesPage() {
           <p className="text-sm text-muted-foreground">Create databases and users, see connection details, and open them in your own tool.</p>
         </div>
         <Button variant="secondary" onClick={() => setMigrating(true)}>
-          <Import /> Import from Laragon / XAMPP / Wamp
+          <Import /> Import databases
         </Button>
       </div>
       <MigrateDialog open={migrating} onClose={() => setMigrating(false)} />
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
       <Tabs
         tabs={[
           { id: 'mariadb', label: 'MariaDB', icon: <TechIcon id="mariadb" /> },
@@ -202,7 +202,7 @@ function ServiceBanner({ service, name }: { service?: ServiceStatus; name: strin
   const isRunning = state === 'running' || (isStopping && service.running)
   return (
     <>
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
       <Card>
         {/* flex-wrap + min-w-0 + shrink-0 on the badge: a squeezed flex row used to
             wrap "● Running on port 3306" out of its pill and push the connection URI
@@ -396,10 +396,20 @@ function ConnectionDetails({ engine, database, path = null }: { engine: string; 
   }, [engine, database, path])
 
   if (error) {
-    return <p className="px-3 py-2 text-xs text-destructive">{error.problem}{error.cause ? ` — ${error.cause}` : ''}{error.fix ? ` ${error.fix}` : ''}</p>
+    return <p className="min-h-36 px-3 py-2 text-xs text-destructive">{error.problem}{error.cause ? ` — ${error.cause}` : ''}{error.fix ? ` ${error.fix}` : ''}</p>
   }
   if (!info) {
-    return <p className="px-3 py-2 text-xs text-muted-foreground">Reading connection details…</p>
+    return (
+      <div className="min-h-36 space-y-2 bg-muted/40 px-3 py-2" role="status" aria-label="Reading connection details…">
+        <p className="text-xs text-muted-foreground">Reading connection details…</p>
+        {Array.from({ length: 6 }, (_, index) => (
+          <div key={index} className="flex items-center gap-2">
+            <span className="h-3 w-16 animate-pulse rounded bg-muted" />
+            <span className="h-3 w-2/3 animate-pulse rounded bg-muted" />
+          </div>
+        ))}
+      </div>
+    )
   }
   const fields = [
     ['Engine', info.engine],
@@ -410,7 +420,7 @@ function ConnectionDetails({ engine, database, path = null }: { engine: string; 
     ['File', info.path],
   ].filter(([, value]) => value !== null && value !== '') as [string, string][]
   return (
-    <div className="space-y-1.5 bg-muted/40 px-3 py-2 text-xs">
+    <div className="min-h-36 space-y-1.5 bg-muted/40 px-3 py-2 text-xs">
       <p className="font-medium text-foreground">Connection details</p>
       <dl className="grid grid-cols-[4.5rem_1fr] gap-x-2 gap-y-0.5">
         {fields.map(([label, value]) => (
@@ -452,7 +462,6 @@ function SqlEngine({ engine, service, ...toolProps }: { engine: 'mariadb' | 'pos
   const [user, setUser] = useState({ user: '', password: '', database: '' })
   const [openDb, setOpenDb] = useState<string | null>(null)
   const [backups, setBackups] = useState<DbBackup[]>(() => sqlBackupsCache.get()[engine] ?? [])
-  const [note, setNote] = useState<string | null>(null)
   const [busyDb, setBusyDb] = useState<string | null>(null)
   const [busyBackup, setBusyBackup] = useState<string | null>(null)
   const { busy, error, setError, run } = useAction()
@@ -488,7 +497,7 @@ function SqlEngine({ engine, service, ...toolProps }: { engine: 'mariadb' | 'pos
   return (
     <div className="flex flex-col gap-4">
       <ServiceBanner service={service} name={ENGINE_NAMES[engine]} />
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
       {running && (
         <div className="grid items-start gap-4 lg:grid-cols-2">
           <Card>
@@ -536,7 +545,7 @@ function SqlEngine({ engine, service, ...toolProps }: { engine: 'mariadb' | 'pos
                       })
                       setNewDb('')
                       setDbUser({ user: '', password: '' })
-                      setNote(
+                      notify.success(
                         newDbCreds === 'custom'
                           ? `Database "${newDb}" and user "${dbUser.user}" created. The password is in the Windows credential store.`
                           : `Database "${newDb}" created (or already existed), owned by the ${engine === 'postgres' ? 'postgres' : 'root'} account.`,
@@ -621,7 +630,6 @@ function SqlEngine({ engine, service, ...toolProps }: { engine: 'mariadb' | 'pos
               <CardDescription>SQL dumps kept by OLS. Restoring first saves the current database as a new backup, so it can be undone.</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-2">
-              {note && <p className="text-xs text-success">{note}</p>}
               {backups.length > 0 && (
                 <Table>
                   <TableHeader>
@@ -649,7 +657,7 @@ function SqlEngine({ engine, service, ...toolProps }: { engine: 'mariadb' | 'pos
                                 setBusyBackup(b.file)
                                 void run('restore', async () => {
                                   const r = await runCommand({ type: 'restore_database', engine, database: b.database, file: b.file })
-                                  setNote(r.type === 'text' && r.text ? `Restored. The previous data is saved at ${r.text}` : 'Restored.')
+                                  notify.success(r.type === 'text' && r.text ? `Restored. The previous data is saved at ${r.text}` : 'Restored.')
                                   await refresh()
                                 }).finally(() => setBusyBackup(null))
                               }}
@@ -781,7 +789,7 @@ function Redis({ service, ...toolProps }: { service?: ServiceStatus } & Database
   return (
     <div className="flex flex-col gap-4">
       <ServiceBanner service={service} name="Redis" />
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
       <Card>
         <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-4 text-sm">
           <div className="min-w-0">
@@ -816,7 +824,7 @@ function Memcached({ service }: { service?: ServiceStatus }) {
   return (
     <div className="flex flex-col gap-4">
       <ServiceBanner service={service} name="Memcached" />
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
       <Card>
         <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-4 text-sm">
           <div className="min-w-0">
@@ -867,7 +875,7 @@ function Sqlite(toolProps: DatabaseToolProps) {
 
   return (
     <div className="flex flex-col gap-4">
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
       {msg && <p className="rounded-lg border border-border bg-muted/40 p-3 text-sm">{msg}</p>}
       <Card>
         <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-5">
@@ -1241,7 +1249,7 @@ function Tools({ dbTools, externalTools, onToolsUpdated }: ToolsProps) {
         </div>
       </div>
 
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
       {/* Main 2-column Grid: Left = Presets Gallery, Right = Register/Edit Form */}
       <div className="grid items-start gap-6 lg:grid-cols-12">
@@ -1713,7 +1721,7 @@ function Tools({ dbTools, externalTools, onToolsUpdated }: ToolsProps) {
         }
       >
         <div className="flex flex-col gap-4 text-xs">
-          <ErrorCard error={importError} onDismiss={() => setImportError(null)} />
+          <ErrorCard error={importError} onDismiss={() => setImportError(null)} overlay />
 
           {/* File Dropzone */}
           <div

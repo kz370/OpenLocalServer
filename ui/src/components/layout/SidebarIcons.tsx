@@ -720,6 +720,39 @@ export function SettingsGeneralIcon({ className, monochrome }: { className?: str
   )
 }
 
+export function SettingsEditorsIcon({ className, monochrome }: { className?: string; monochrome?: boolean }) {
+  if (useIsMonochrome(monochrome)) {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={cn('size-5 shrink-0', className)}>
+        <path d="m8 8-5 4 5 4" />
+        <path d="m16 8 5 4-5 4" />
+        <path d="m14 4-4 16" />
+      </svg>
+    )
+  }
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={cn('size-5 shrink-0', className)}>
+      <defs>
+        <linearGradient id="sb-set-editors-left" x1="3" y1="8" x2="9" y2="16" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#38bdf8" />
+          <stop offset="1" stopColor="#2563eb" />
+        </linearGradient>
+        <linearGradient id="sb-set-editors-right" x1="15" y1="8" x2="21" y2="16" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#a78bfa" />
+          <stop offset="1" stopColor="#7c3aed" />
+        </linearGradient>
+        <linearGradient id="sb-set-editors-slash" x1="10" y1="4" x2="14" y2="20" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#34d399" />
+          <stop offset="1" stopColor="#0d9488" />
+        </linearGradient>
+      </defs>
+      <path d="m8 8-5 4 5 4" stroke="url(#sb-set-editors-left)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="m16 8 5 4-5 4" stroke="url(#sb-set-editors-right)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="m14 4-4 16" stroke="url(#sb-set-editors-slash)" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 export function SettingsMcpIcon({ className, monochrome }: { className?: string; monochrome?: boolean }) {
   if (useIsMonochrome(monochrome)) {
     return (

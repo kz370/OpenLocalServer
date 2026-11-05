@@ -1853,11 +1853,9 @@ export function SiteDomainsPanel({ domain: initialDomain, onSave, busy }: SiteDo
 
       <div className="flex items-center border-t border-border pt-4">
         <div className="flex items-center gap-2">
-          {saveSuccess && (
-            <span className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
-              <Check className="size-3.5" /> Domain settings saved and applied successfully
-            </span>
-          )}
+          <span className="flex min-h-5 items-center gap-1.5 text-xs font-medium text-success">
+            {saveSuccess ? <><Check className="size-3.5" /> Domain settings saved and applied successfully</> : '\u00a0'}
+          </span>
         </div>
       </div>
     </div>

@@ -32,6 +32,20 @@ impl Core {
                     let results = i.journaled("migrate_databases", &title, Some("Imported databases can be dropped from the Databases page; the source was not changed."), None, || i.migrate_databases(&source_id, &password, &databases, &target))?;
                     Ok(R::Migrated { results })
                 }
+                C::MigrateDatabasesResolved {
+                    source_id,
+                    password,
+                    databases,
+                    target,
+                    conflict_policy,
+                } => {
+                    tracing::info!(command = "migrate_databases_resolved", source = %source_id, target = %target, ?conflict_policy);
+                    let title = format!("Import databases into {target}");
+                    let results = i.journaled("migrate_databases", &title, Some("Conflicts were skipped or replaced after a safety backup; source data was not changed."), None, || {
+                        i.migrate_databases_with_conflicts(&source_id, &password, &databases, &target, conflict_policy)
+                    })?;
+                    Ok(R::Migrated { results })
+                }
                 C::GetMigrationProgress => Ok(R::MigrationProgress {
                     progress: i.migration.snapshot(),
                 }),

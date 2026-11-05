@@ -272,7 +272,7 @@ export function LoadPanel({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <ErrorCard error={error} onDismiss={() => setError(null)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
       <div className="flex flex-wrap items-center gap-2">
         <TechIcon id="k6" className="size-5" />
         <h3 className="text-base font-semibold">Load testing</h3>

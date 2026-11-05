@@ -1,4 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
+import { listen } from '@tauri-apps/api/event'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 import {
   Code2,
@@ -14,6 +15,7 @@ import {
   Search,
   Settings,
   SquareTerminal,
+  UserRound,
   X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -25,7 +27,6 @@ import { GitCloneButton } from '@/components/project/ProjectImports'
 import { ProjectSettingsDialog } from '@/components/project/ProjectSettingsDialog'
 import { ProjectTypeFilterBar } from '@/components/project/ProjectTypeFilterBar'
 import { SiteLogo } from '@/components/SiteLogo'
-import { Spinner } from '@/components/Spinner'
 import { TechIcon } from '@/components/TechIcon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -51,7 +52,6 @@ import {
 } from '@/core'
 import { createPersistentCache, getCached } from '@/lib/cache'
 import { confirmAction } from '@/lib/confirm'
-import { usePoll } from '@/lib/hooks'
 import { openAddSiteForProject, openProject, openSettingsSection } from '@/lib/nav'
 import { notify } from '@/lib/notify'
 import {
@@ -75,11 +75,23 @@ function normPath(p: string | null | undefined): string {
   return p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
 }
 
+function ProjectsProgress({ label }: { label: string }) {
+  return (
+    <div className="absolute inset-x-0 top-0 z-10" role="status" aria-label={label}>
+      <div className="h-0.5 overflow-hidden rounded-t-xl bg-muted">
+        <div className="h-full w-1/3 animate-[ols-indeterminate_1.4s_ease-in-out_infinite] bg-primary" />
+      </div>
+      <span className="absolute left-3 top-1 rounded-b bg-card px-2 py-1 text-xs text-muted-foreground shadow-sm">{label}</span>
+    </div>
+  )
+}
+
 export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void }) {
   const [projects, setProjects] = useState<Project[]>(projectsCache.get)
   // Read storage directly because Sites can update this cache while ProjectsPage is unmounted.
   const [domains, setDomains] = useState<DomainSummary[]>(() => getCached('projects_page_domains', []))
   const [unconnectedProjectIds, setUnconnectedProjectIds] = useState<string[] | null>(null)
+  const [siteIgnoredProjectIds, setSiteIgnoredProjectIds] = useState<string[]>([])
   const [editors, setEditors] = useState<EditorInfo[]>(editorsCache.get)
   const [presets, setPresets] = useState<ProjectTypePreset[]>(presetsCache.get)
   const [customTypes, setCustomTypes] = useState<CustomProjectType[]>(customTypesCache.get)
@@ -128,6 +140,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
       if (res.type === 'projects') {
         setProjects(res.projects)
         setUnconnectedProjectIds(res.unconnected_project_ids ?? null)
+        setSiteIgnoredProjectIds(res.site_ignored_project_ids ?? [])
         projectsCache.set(res.projects)
         const hasMissingProjects = res.projects.some(
           (project) => project.health && project.health.status !== 'healthy',
@@ -205,12 +218,25 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
     void refreshAll()
   }, [refreshAll])
 
-  usePoll(refreshAll, 3000)
-
   useEffect(() => {
     const handleFocus = () => void refreshAll()
     window.addEventListener('focus', handleFocus)
     return () => window.removeEventListener('focus', handleFocus)
+  }, [refreshAll])
+
+  useEffect(() => {
+    let alive = true
+    let unlisten: (() => void) | undefined
+    void listen('projects-changed', () => {
+      if (alive) void refreshAll()
+    }).then((dispose) => {
+      if (alive) unlisten = dispose
+      else dispose()
+    })
+    return () => {
+      alive = false
+      unlisten?.()
+    }
   }, [refreshAll])
 
   // Listen for Tauri drag & drop events
@@ -440,6 +466,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
     const hasSite = unconnectedProjectIds != null
       ? !unconnectedProjectIds.includes(p.id)
       : linked.length > 0
+    const siteIgnored = siteIgnoredProjectIds.includes(p.id)
 
     const visibleEditors = editors.filter((ed) => ed.path && !ed.hidden)
 
@@ -465,11 +492,22 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
 
     return [
       {
-        label: 'Create site from project',
+        label: siteIgnored ? 'Unignore site' : 'Create site from project',
         icon: <Globe className="size-4" />,
-        disabled: hasSite || !isHealthy,
-        hint: hasSite ? 'Site already exists' : !isHealthy ? 'Folder missing' : undefined,
+        disabled: (!siteIgnored && hasSite) || !isHealthy,
+        hint: siteIgnored ? 'Remove .ols_ignore_site and restore this site' : hasSite ? 'Site already exists' : !isHealthy ? 'Folder missing' : undefined,
         onSelect: () => {
+          if (siteIgnored) {
+            void runCommand({ type: 'unignore_site', project_id: p.id }).then(async (result) => {
+              if (result.type === 'ok') {
+                await Promise.all([refreshProjects(), refreshDomains()])
+                notify.success(`Restored the site for ${p.name}.`)
+              }
+            }).catch((error: unknown) => {
+              notify.error(`Could not restore the site for ${p.name}.`, { details: String(error) })
+            })
+            return
+          }
           openAddSiteForProject(p.id)
           onNavigate('sites')
         },
@@ -544,20 +582,6 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
         <GitCloneButton defaultParent={effectiveParent} onDone={() => void refreshAll()} standalone={true} />
       </div>
 
-      {removingProject && (
-        <div
-          className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground"
-          role="status"
-          aria-live="polite"
-        >
-          <Spinner className="size-4 shrink-0" />
-          <span>
-            Removing <span className="font-medium text-foreground">{removingProject.name}</span> from
-            the list and updating site configuration…
-          </span>
-        </div>
-      )}
-
       {/* Main card */}
       <Card
         className="relative overflow-hidden"
@@ -585,6 +609,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
         )}
 
         <CardContent className="p-0">
+          {removingProject && <ProjectsProgress label={`Removing ${removingProject.name} from the list and updating site configuration…`} />}
           {/* Top toolbar: Type tabs, missing filter, manage types, and search */}
           <div className="flex flex-col gap-3 p-4 border-b border-border/80">
             {/* Type filter row: All first, chips, +N more popover, Manage types pinned right */}
@@ -630,7 +655,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
           </div>
 
           {/* Table */}
-          <Table wrapperClassName="border-0 rounded-none shadow-none">
+          <Table wrapperClassName={cn('border-0 rounded-none shadow-none transition-opacity', removingProject && 'opacity-90')}>
             <TableHeader>
               <TableRow>
                 <TableHead>Project</TableHead>
@@ -668,7 +693,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
                       key={p.id}
                       data-state={isMenuOpen ? 'selected' : undefined}
                       className={cn(
-                        'group cursor-default',
+                        'group h-[88px] cursor-default',
                         isMenuOpen && 'bg-primary/10 hover:bg-primary/15 shadow-[inset_3px_0_0_0_var(--primary)]',
                       )}
                       onContextMenu={(e) => {
@@ -680,7 +705,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
                       }}
                     >
                       {/* Project Col */}
-                      <TableCell className="min-w-0 py-2.5 first:pl-4">
+                      <TableCell className="h-[88px] min-w-0 py-1.5 first:pl-4">
                         <div className="flex min-w-0 items-center">
                           <button
                             type="button"
@@ -746,12 +771,23 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
                                 <Copy className="size-3" />
                               </button>
                             </div>
+                            <div className="mt-1.5 flex h-4 items-center">
+                              <span className={cn(
+                                'inline-flex h-4 items-center gap-1 rounded px-1.5 text-[10px] leading-none',
+                                p.auto_discovered
+                                  ? 'bg-sky-500/10 text-sky-700 dark:text-sky-300'
+                                  : 'bg-violet-500/10 text-violet-700 dark:text-violet-300',
+                              )}>
+                                {p.auto_discovered ? <FolderSearch className="size-2.5" /> : <UserRound className="size-2.5" />}
+                                {p.auto_discovered ? 'Auto-discovered' : 'Added manually'}
+                              </span>
+                            </div>
                           </div>
                         </div>
                       </TableCell>
 
                       {/* Type Col */}
-                      <TableCell className="w-36 whitespace-nowrap py-2.5 px-3">
+                      <TableCell className="h-[88px] w-36 whitespace-nowrap py-1.5 px-3">
                         <div className="flex items-center gap-1.5">
                           <TechIcon id={typeId} className="size-4 shrink-0 text-muted-foreground" />
                           <span className="text-xs font-medium text-foreground">{typeLabel}</span>
@@ -759,7 +795,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
                       </TableCell>
 
                       {/* Connected Site Col */}
-                      <TableCell className="w-56 whitespace-nowrap py-2.5 px-3">
+                      <TableCell className="h-[88px] w-56 whitespace-nowrap py-1.5 px-3">
                         {primaryDomain ? (
                           <div className="flex items-center gap-1.5">
                             <button
@@ -789,7 +825,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
                       </TableCell>
 
                       {/* Actions Col */}
-                      <TableCell className="w-24 whitespace-nowrap py-2.5 pr-4 pl-3 text-right">
+                      <TableCell className="h-[88px] w-24 whitespace-nowrap py-1.5 pr-4 pl-3 text-right">
                         <div className="flex items-center justify-end gap-1">
                           {!isHealthy && (
                             <Button

@@ -8,7 +8,16 @@ import {
   pickReadableForeground,
   getContrastWarning,
   adjustAccentForMode,
+  rgbToHsl,
+  hslToHex,
 } from '../color.ts'
+import {
+  adaptGradientForMode,
+  backgroundSuitsMode,
+  glassAlphaFor,
+  isBackgroundInherited,
+  resolveBackgroundForMode,
+} from '../background.ts'
 import { BUILTIN_PRESETS, DEFAULT_THEME_ID } from '../presets.ts'
 import { DEFAULT_THEME_SETTINGS, validateThemeSettings } from '../validation.ts'
 import { computeEffectiveTokens, computeEffectiveOptions } from '../apply.ts'
@@ -147,18 +156,100 @@ describe('Theme Settings Validation and Fallback', () => {
     })
     assert.equal(invalidIcons.overrides.sidebarIcons, undefined)
 
-    // Valid background gradient
-    const gradientBg = validateThemeSettings({
+    // Valid per-mode background
+    const perMode = validateThemeSettings({
       overrides: {
-        background: { type: 'gradient', from: '#050B16', to: '#0B1428', angle: 90 },
+        background: {
+          dark: { type: 'gradient', from: '#050B16', to: '#0B1428', angle: 90 },
+          light: { type: 'solid' },
+          sepia: { type: 'solid' },
+        },
       },
     })
-    assert.deepEqual(gradientBg.overrides.background, {
-      type: 'gradient',
-      from: '#050B16',
-      to: '#0B1428',
-      angle: 90,
+    assert.deepEqual(perMode.overrides.background, {
+      dark: { type: 'gradient', from: '#050B16', to: '#0B1428', angle: 90 },
+      light: { type: 'solid' },
     })
+
+    // Empty / garbage per-mode background is dropped
+    const emptyBg = validateThemeSettings({ overrides: { background: { light: 'x' } } })
+    assert.equal(emptyBg.overrides.background, undefined)
+  })
+
+  it('migrates the legacy single background to the per-mode shape', () => {
+    // Dark legacy gradient belongs to dark mode; light mode inherits an adapted copy
+    const darkLegacy = validateThemeSettings({
+      overrides: { background: { type: 'gradient', from: '#050B16', to: '#083344', angle: 135 } },
+    })
+    assert.deepEqual(darkLegacy.overrides.background, {
+      dark: { type: 'gradient', from: '#050B16', to: '#083344', angle: 135 },
+    })
+
+    // Light legacy gradient belongs to light mode
+    const lightLegacy = validateThemeSettings({
+      overrides: { background: { type: 'gradient', from: '#F8FAFF', to: '#E0F2FE', angle: 45 } },
+    })
+    assert.deepEqual(lightLegacy.overrides.background, {
+      light: { type: 'gradient', from: '#F8FAFF', to: '#E0F2FE', angle: 45 },
+    })
+
+    // Legacy solid applies to both modes
+    const solidLegacy = validateThemeSettings({ overrides: { background: { type: 'solid' } } })
+    assert.deepEqual(solidLegacy.overrides.background, {
+      light: { type: 'solid' },
+      dark: { type: 'solid' },
+    })
+  })
+})
+
+describe('Per-mode Background Resolution', () => {
+  const cyberAurora = { type: 'gradient' as const, from: '#050B16', to: '#083344', angle: 135 }
+
+  it('converts between RGB and HSL', () => {
+    const hsl = rgbToHsl({ r: 8, g: 51, b: 68 })
+    assert.equal(hslToHex(hsl.h, hsl.s, hsl.l), '#083344')
+    assert.equal(hslToHex(0, 0, 1), '#ffffff')
+    assert.equal(hslToHex(0, 0, 0), '#000000')
+  })
+
+  it('judges whether a background suits a mode', () => {
+    assert.equal(backgroundSuitsMode({ type: 'solid' }, 'light'), true)
+    assert.equal(backgroundSuitsMode(cyberAurora, 'dark'), true)
+    assert.equal(backgroundSuitsMode(cyberAurora, 'light'), false)
+  })
+
+  it('adapts a dark gradient to a light one with the same hue and angle', () => {
+    const light = adaptGradientForMode(cyberAurora, 'light')
+    assert.equal(light.angle, 135)
+    assert.ok(backgroundSuitsMode(light, 'light'))
+    const srcHue = rgbToHsl(parseColor(cyberAurora.to)!).h
+    const outHue = rgbToHsl(parseColor(light.to)!).h
+    assert.ok(Math.abs(srcHue - outHue) < 3)
+    // Round trip back to dark suits dark
+    assert.ok(backgroundSuitsMode(adaptGradientForMode(light, 'dark'), 'dark'))
+    // Already-suitable gradient passes through unchanged
+    assert.equal(adaptGradientForMode(cyberAurora, 'dark'), cyberAurora)
+  })
+
+  it('resolves explicit, inherited and preset backgrounds per mode', () => {
+    const solid = { type: 'solid' as const }
+    assert.deepEqual(resolveBackgroundForMode(solid, { dark: cyberAurora }, 'dark'), cyberAurora)
+    const inherited = resolveBackgroundForMode(solid, { dark: cyberAurora }, 'light')
+    assert.equal(inherited.type, 'gradient')
+    assert.ok(backgroundSuitsMode(inherited, 'light'))
+    assert.deepEqual(resolveBackgroundForMode(solid, { dark: cyberAurora, light: solid }, 'light'), solid)
+    assert.deepEqual(resolveBackgroundForMode(solid, undefined, 'light'), solid)
+    assert.equal(isBackgroundInherited({ dark: cyberAurora }, 'light'), true)
+    assert.equal(isBackgroundInherited({ dark: cyberAurora }, 'dark'), false)
+  })
+
+  it('keeps default glass opacity when matched and thickens it on a mismatch', () => {
+    assert.equal(glassAlphaFor({ type: 'solid' }, 'light'), 0.6)
+    assert.equal(glassAlphaFor(cyberAurora, 'dark'), 0.45)
+    const mismatched = glassAlphaFor(cyberAurora, 'light')
+    assert.ok(mismatched > 0.8 && mismatched <= 0.9)
+    const black = { type: 'gradient' as const, from: '#000000', to: '#000000', angle: 0 }
+    assert.equal(glassAlphaFor(black, 'light'), 0.9)
   })
 })
 
@@ -196,11 +287,16 @@ describe('Preset Tokens and Effective Derivation', () => {
 
   it('computes effective options with icon and background overrides', () => {
     const defaultPreset = BUILTIN_PRESETS.find((p) => p.id === 'default')!
-    const effective = computeEffectiveOptions(defaultPreset, {
-      sidebarIcons: 'monochrome',
-      background: { type: 'gradient', from: '#000000', to: '#111111', angle: 45 },
-    })
+    const overrides = {
+      sidebarIcons: 'monochrome' as const,
+      background: { dark: { type: 'gradient' as const, from: '#000000', to: '#111111', angle: 45 } },
+    }
+    const effective = computeEffectiveOptions(defaultPreset, overrides, 'dark')
     assert.equal(effective.sidebarIcons, 'monochrome')
-    assert.equal(effective.background.type, 'gradient')
+    assert.deepEqual(effective.background, overrides.background.dark)
+    // Light mode gets an adapted (light) copy, never the dark gradient itself
+    const lightOptions = computeEffectiveOptions(defaultPreset, overrides, 'light')
+    assert.equal(lightOptions.background.type, 'gradient')
+    assert.notDeepEqual(lightOptions.background, overrides.background.dark)
   })
 })

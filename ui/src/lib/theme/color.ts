@@ -75,6 +75,48 @@ export function relativeLuminance(rgb: { r: number; g: number; b: number }): num
 }
 
 /**
+ * Convert RGB (0-255) to HSL (h in degrees 0-360, s and l in 0-1).
+ */
+export function rgbToHsl(rgb: { r: number; g: number; b: number }): { h: number; s: number; l: number } {
+  const r = rgb.r / 255
+  const g = rgb.g / 255
+  const b = rgb.b / 255
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  const l = (max + min) / 2
+  const d = max - min
+  if (d === 0) return { h: 0, s: 0, l }
+  const s = d / (1 - Math.abs(2 * l - 1))
+  let h: number
+  if (max === r) h = ((g - b) / d) % 6
+  else if (max === g) h = (b - r) / d + 2
+  else h = (r - g) / d + 4
+  h *= 60
+  if (h < 0) h += 360
+  return { h, s, l }
+}
+
+/**
+ * Convert HSL (h in degrees, s and l in 0-1) to a #RRGGBB hex string.
+ */
+export function hslToHex(h: number, s: number, l: number): string {
+  const c = (1 - Math.abs(2 * l - 1)) * s
+  const hp = (((h % 360) + 360) % 360) / 60
+  const x = c * (1 - Math.abs((hp % 2) - 1))
+  let rgb: [number, number, number]
+  if (hp < 1) rgb = [c, x, 0]
+  else if (hp < 2) rgb = [x, c, 0]
+  else if (hp < 3) rgb = [0, c, x]
+  else if (hp < 4) rgb = [0, x, c]
+  else if (hp < 5) rgb = [x, 0, c]
+  else rgb = [c, 0, x]
+  const m = l - c / 2
+  return `#${rgb
+    .map((v) => Math.min(255, Math.max(0, Math.round((v + m) * 255))).toString(16).padStart(2, '0'))
+    .join('')}`
+}
+
+/**
  * Calculates WCAG 2.1 contrast ratio between two colors (ranging from 1.0 to 21.0).
  */
 export function contrastRatio(c1: string, c2: string): number {

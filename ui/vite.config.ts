@@ -13,8 +13,23 @@ export default defineConfig({
   },
   clearScreen: false,
   build: {
-    // Main bundle ~1.5 MB (xterm + CodeMirror). Warn only past 1600 kB.
+    // Tauri loads assets from local disk, so chunk size only affects parse time,
+    // not download. Split big vendor libs into their own chunks so no single
+    // chunk crosses the warning limit. Static imports keep load order unchanged.
     chunkSizeWarningLimit: 1600,
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            { name: 'vendor-codemirror', test: /node_modules[\\/](@codemirror|@lezer|codemirror|@marijn|style-mod|w3c-keyname|crelt)[\\/]/ },
+            { name: 'vendor-xterm', test: /node_modules[\\/]@xterm[\\/]/ },
+            { name: 'vendor-icons', test: /node_modules[\\/](simple-icons|lucide-react|@fortawesome)[\\/]/ },
+            { name: 'vendor-react', test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/ },
+            { name: 'vendor', test: /node_modules[\\/]/ },
+          ],
+        },
+      },
+    },
   },
   server: {
     port: 1420,
