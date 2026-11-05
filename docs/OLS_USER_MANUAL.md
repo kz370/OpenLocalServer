@@ -378,6 +378,12 @@ olsc guide
 - **Shorter sidebar:** Settings → **Sidebar** hides pages you don't use. Dashboard, Projects, Sites, Web server, Databases, Services, Runtimes and Settings can't be hidden. Hidden pages still open from search (Ctrl K) and from links.
 - **No slowdown:** nothing Docker-related runs when OLS starts; the Docker page only talks to Docker while it is open.
 
+### Coming next
+- **Command line for Docker:** manage containers, images, volumes and Compose stacks with `olsc docker`.
+- **Warnings for Docker sites:** Diagnostics tells you when a site's container is stopped or missing.
+- **Site bundles keep Docker details:** exports keep a site's Docker link and compose file, but never its passwords.
+- **Dockerize a project:** generate a Dockerfile and compose file for a project in one click.
+
 ### Previous Version Notes (v2.9.0)
 - **Import databases from several places at once:** your installed OLS MariaDB versions, other MySQL/MariaDB installs, or any data folder, in the order you choose.
 - **Duplicate databases:** choose skip, replace (backed up first), or import under a new name. Interrupted imports are recovered on the next start.
