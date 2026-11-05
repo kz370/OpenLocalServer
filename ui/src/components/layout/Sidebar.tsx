@@ -6,106 +6,11 @@ import { runCommand } from '@/core'
 import { useAppMarkPath, usePoll } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 import { backgroundSuitsMode, useTheme } from '@/lib/theme'
-import {
-  CommandsIcon,
-  DashboardIcon,
-  DatabasesIcon,
-  DockerIcon,
-  LogsIcon,
-  MoonThemeIcon,
-  PluginsIcon,
-  ProcessesIcon,
-  ProfilesIcon,
-  ProjectsIcon,
-  QuickAppsIcon,
-  RuntimesIcon,
-  SearchNavIcon,
-  ServicesIcon,
-  SettingsIcon,
-  SitesIcon,
-  SunThemeIcon,
-  SystemThemeIcon,
-  TasksIcon,
-  TunnelsIcon,
-  WebServerIcon,
-} from './SidebarIcons'
+import { DASHBOARD, LOCKED_NAV_ITEMS, NAV_GROUPS, type NavItem, type Page, SETTINGS } from './navItems'
+import { MoonThemeIcon, SearchNavIcon, SunThemeIcon, SystemThemeIcon } from './SidebarIcons'
+import { useHiddenSidebarItems } from '@/lib/sidebarVisibility'
 
-export type Page =
-  | 'dashboard'
-  | 'projects'
-  | 'sites'
-  | 'docker'
-  | 'quickapps'
-  | 'commands'
-  | 'webserver'
-  | 'config'
-  | 'tunnels'
-  | 'profiles'
-  | 'plugins'
-  | 'databases'
-  | 'services'
-  | 'runtimes'
-  | 'logs'
-  | 'processes'
-  | 'tasks'
-  | 'settings'
-
-type NavItem = {
-  id: Page
-  label: string
-  icon: React.ComponentType<{ className?: string }>
-}
-
-const DASHBOARD: NavItem = { id: 'dashboard', label: 'Dashboard', icon: DashboardIcon }
-const SETTINGS: NavItem = { id: 'settings', label: 'Settings', icon: SettingsIcon }
-
-const NAV_GROUPS: { id: string; label: string; items: NavItem[] }[] = [
-  {
-    id: 'sites',
-    label: 'Sites',
-    items: [
-      { id: 'projects', label: 'Projects', icon: ProjectsIcon },
-      { id: 'sites', label: 'Sites', icon: SitesIcon },
-      { id: 'docker', label: 'Docker', icon: DockerIcon },
-      { id: 'quickapps', label: 'Quick Apps', icon: QuickAppsIcon },
-      { id: 'commands', label: 'Commands', icon: CommandsIcon },
-      { id: 'tunnels', label: 'Tunnels', icon: TunnelsIcon },
-    ],
-  },
-  {
-    id: 'web',
-    label: 'Web',
-    items: [
-      { id: 'webserver', label: 'Web server', icon: WebServerIcon },
-    ],
-  },
-  {
-    id: 'data',
-    label: 'Data & services',
-    items: [
-      { id: 'databases', label: 'Databases', icon: DatabasesIcon },
-      { id: 'services', label: 'Services', icon: ServicesIcon },
-      { id: 'runtimes', label: 'Runtimes', icon: RuntimesIcon },
-    ],
-  },
-  {
-    id: 'environment',
-    label: 'Environment',
-    items: [
-      { id: 'profiles', label: 'Profiles', icon: ProfilesIcon },
-      { id: 'plugins', label: 'Plugins', icon: PluginsIcon },
-    ],
-  },
-  {
-    id: 'monitor',
-    label: 'Monitor',
-    items: [
-      { id: 'logs', label: 'Logs', icon: LogsIcon },
-      { id: 'processes', label: 'Processes', icon: ProcessesIcon },
-      { id: 'tasks', label: 'Background tasks', icon: TasksIcon },
-    ],
-  },
-]
+export type { Page } from './navItems'
 
 const SOON_ITEMS: string[] = []
 
@@ -117,6 +22,12 @@ export function Sidebar({ page, onNavigate }: { page: Page; onNavigate: (p: Page
   // §59: always visible when something is public.
   const [publicCount, setPublicCount] = useState(0)
   const network = useOnline()
+  const hidden = useHiddenSidebarItems()
+  // Hidden items stay reachable from search (Ctrl K) and links; the page you are on stays
+  // listed so the sidebar always shows where you are.
+  // §59: Tunnels comes back while a site is public, even if the user hid it.
+  const isShown = (id: Page) =>
+    LOCKED_NAV_ITEMS.has(id) || !hidden.has(id) || page === id || (id === 'tunnels' && publicCount > 0)
 
   const navButton = ({ id, label, icon: Icon }: NavItem) => {
     const isActive = page === id
@@ -200,15 +111,20 @@ export function Sidebar({ page, onNavigate }: { page: Page; onNavigate: (p: Page
 
       <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2">
         {navButton(DASHBOARD)}
-        {NAV_GROUPS.map((g) => (
-          <div key={g.id} className="mt-2.5 flex flex-col gap-0.5">
-            <div className="flex items-center gap-2 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-sidebar-foreground/45">
-              <span>{g.label}</span>
-              <div className="h-px flex-1 bg-sidebar-border/60" />
+        {NAV_GROUPS.map((g) => {
+          const items = g.items.filter((item) => isShown(item.id))
+          // A group whose items are all hidden loses its heading too.
+          if (items.length === 0) return null
+          return (
+            <div key={g.id} className="mt-2.5 flex flex-col gap-0.5">
+              <div className="flex items-center gap-2 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-sidebar-foreground/45">
+                <span>{g.label}</span>
+                <div className="h-px flex-1 bg-sidebar-border/60" />
+              </div>
+              {items.map(navButton)}
             </div>
-            {g.items.map(navButton)}
-          </div>
-        ))}
+          )
+        })}
 
         {SOON_ITEMS.length > 0 && (
           <div className="mt-4 flex items-center gap-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">

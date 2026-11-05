@@ -342,3 +342,8 @@ Sidebar | links | DockerPage in the Sites group, directly under Sites
 CommandPalette | links | DockerPage (Docker)
 api.rs OPERATE | allows | docker_container_action, start_docker_desktop (reads covered by get_/list_ prefixes)
 ols-mcp | maps | ols_docker_* tools and ols_unignore_site to their CoreCommands
+Sidebar | reads | navItems (NAV_GROUPS, LOCKED_NAV_ITEMS) and useHiddenSidebarItems; shows an item when it is locked, not hidden, the current page, or Tunnels while a site is public (§59); drops a group heading when all its items are hidden
+AppearanceSettings | mounts | SidebarItemsSettings (after Sidebar Icon Style)
+SidebarItemsSettings | calls | setHiddenSidebarItems -> set_setting ui.sidebar.hidden
+sidebarVisibility | calls | get_setting ui.sidebar.hidden (once per session)
+CommandPalette | links | every page including hidden ones (hidden pages stay reachable)
