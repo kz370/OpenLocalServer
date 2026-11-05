@@ -26,7 +26,7 @@ code path. Everything is exposed as `CoreCommand`s, so GUI, CLI, HTTP API and MC
 | Proxy site kind | `crates/ols-core/src/domain/types.rs` (`SiteKind::Proxy{upstream_port, upstream_host, upstream_https}`) | A Docker site = proxy site pointed at the container's host port |
 | Self-signed upstream TLS skip | `crates/ols-core/src/web/caddy.rs:257` | Containers serving HTTPS work out of the box |
 | Reverse-proxy quick app | `crates/ols-core/catalog/quick-apps/reverse-proxy.yaml` | Template for the "site from container" flow |
-| Proxy mode in site dialog | `ui/src/components/site/DomainDialog.tsx:1050` | Gains a "Pick a container" picker |
+| Proxy mode in site dialog | `ui/src/components/site/DomainDialog.tsx:1064` | Gains a "Pick a container" picker |
 | Port checker + Hyper-V/Docker excluded ranges | `crates/ols-core/src/port.rs:189` | Free host-port picking for new containers |
 | Background tasks | `crates/ols-core/src/tasks.rs` (§164) | Image pulls, compose up/down, prune |
 | Terminal (portable-pty) | `crates/ols-core/src/terminal.rs` | `docker exec -it` shell in a tab |
