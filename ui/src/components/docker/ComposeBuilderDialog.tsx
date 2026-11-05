@@ -1,8 +1,9 @@
 import { open as openFolder } from '@tauri-apps/plugin-dialog'
-import { AlertTriangle, KeyRound, Plus, Trash2, Wand2 } from 'lucide-react'
+import { AlertTriangle, BookmarkPlus, KeyRound, Pencil, Plus, Trash2, Wand2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import { CodeEditor } from '@/components/CodeEditor'
+import { PresetEditorDialog, blankPreset } from '@/components/docker/PresetEditorDialog'
 import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
 import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
@@ -48,6 +49,7 @@ export function ComposeBuilderDialog({
   const [error, setError] = useState<Diagnostic | null>(null)
   const [busy, setBusy] = useState(false)
   const [nextKey, setNextKey] = useState(1)
+  const [editing, setEditing] = useState<ServicePreset | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -100,11 +102,25 @@ export function ComposeBuilderDialog({
     }
   }, [spec])
 
+  // Your own presets' categories first, then the built-in ones.
   const byCategory = useMemo(() => {
     const map = new Map<string, ServicePreset[]>()
-    for (const p of presets) map.set(p.category, [...(map.get(p.category) ?? []), p])
+    for (const p of [...presets.filter((x) => x.custom), ...presets.filter((x) => !x.custom)])
+      map.set(p.category, [...(map.get(p.category) ?? []), p])
     return [...map.entries()]
   }, [presets])
+
+  async function deletePreset(p: ServicePreset) {
+    if (!(await confirmAction(`Delete your preset "${p.name}"? Compose files already made with it are not changed.`, 'Delete preset?', 'Delete')))
+      return
+    try {
+      const r = await runCommand({ type: 'delete_docker_compose_preset', id: p.id })
+      if (r.type === 'docker_compose_presets') setPresets(r.presets)
+      setPicked((cur) => cur.filter((x) => x.preset !== p.id))
+    } catch (err) {
+      setError(asDiagnostic(err))
+    }
+  }
 
   function add(preset: ServicePreset | 'custom') {
     const base = preset === 'custom' ? 'app' : preset.default_service
@@ -151,6 +167,10 @@ export function ComposeBuilderDialog({
   const shownPlan = spec ? plan : null
 
   return (
+    <>
+      {editing && (
+        <PresetEditorDialog key={editing.id || `new:${editing.image}`} initial={editing} onClose={() => setEditing(null)} onSaved={setPresets} />
+      )}
     <Dialog
       open={open}
       onClose={onClose}
@@ -200,24 +220,42 @@ export function ComposeBuilderDialog({
         <div className="grid grid-cols-1 gap-4 @3xl:grid-cols-2">
           {/* Catalog */}
           <div className="flex flex-col gap-3">
-            <span className="text-sm font-medium">Add services</span>
+            <span className="flex items-center justify-between gap-2">
+              <span className="text-sm font-medium">Add services</span>
+              <Button size="sm" variant="ghost" className="h-7 cursor-pointer text-xs" onClick={() => setEditing(blankPreset())}>
+                <BookmarkPlus className="size-3.5" /> New preset
+              </Button>
+            </span>
             <div className="flex max-h-72 flex-col gap-3 overflow-y-auto pr-1">
               {byCategory.map(([category, items]) => (
                 <div key={category} className="flex flex-col gap-1">
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{category}</span>
                   {items.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => add(p)}
-                      className="flex cursor-pointer items-center justify-between gap-3 rounded-md border bg-card/60 px-3 py-2 text-left text-sm hover:border-primary/50 hover:bg-card"
-                    >
-                      <span className="min-w-0">
-                        <span className="block font-medium">{p.name}</span>
-                        <span className="block truncate text-xs text-muted-foreground">{p.description}</span>
-                      </span>
-                      <Plus className="size-4 shrink-0 text-primary" />
-                    </button>
+                    <div key={p.id} className="flex items-stretch gap-1">
+                      <button
+                        type="button"
+                        onClick={() => add(p)}
+                        className="flex min-w-0 flex-1 cursor-pointer items-center justify-between gap-3 rounded-md border bg-card/60 px-3 py-2 text-left text-sm hover:border-primary/50 hover:bg-card"
+                      >
+                        <span className="min-w-0">
+                          <span className="block font-medium break-words">{p.name}</span>
+                          <span className="block truncate text-xs text-muted-foreground" title={p.description || `${p.image}:${p.tag}`}>
+                            {p.description || `${p.image}:${p.tag}`}
+                          </span>
+                        </span>
+                        <Plus className="size-4 shrink-0 text-primary" />
+                      </button>
+                      {p.custom && (
+                        <span className="flex flex-col justify-center">
+                          <Button size="sm" variant="ghost" className="size-7 cursor-pointer p-0" title={`Edit ${p.name}`} onClick={() => setEditing(p)}>
+                            <Pencil className="size-3.5" />
+                          </Button>
+                          <Button size="sm" variant="ghost" className="size-7 cursor-pointer p-0" title={`Delete ${p.name}`} onClick={() => void deletePreset(p)}>
+                            <Trash2 className="size-3.5 text-destructive/80" />
+                          </Button>
+                        </span>
+                      )}
+                    </div>
                   ))}
                 </div>
               ))}
@@ -291,6 +329,16 @@ export function ComposeBuilderDialog({
                           placeholder="image:tag"
                           className="h-8 min-w-0 flex-1"
                         />
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 shrink-0 cursor-pointer text-xs"
+                          title="Save this image as one of your presets"
+                          disabled={!s.image?.trim()}
+                          onClick={() => setEditing(blankPreset(s.image?.trim() ?? '', s.container_port ?? null))}
+                        >
+                          <BookmarkPlus className="size-3.5" /> Save as preset
+                        </Button>
                         <div className="w-36 shrink-0">
                         <NumberInput
                           value={s.container_port ?? null}
@@ -368,5 +416,6 @@ export function ComposeBuilderDialog({
         )}
       </div>
     </Dialog>
+    </>
   )
 }

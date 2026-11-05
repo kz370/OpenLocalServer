@@ -1,7 +1,7 @@
 import type { AiProvider, AiRequest } from './types/ai'
 import type { QuickCommand, StartupSettings } from './types/apps'
 import type { CustomServiceDef, EnvironmentManifest, Ownership, ProcessId, ProcessSpec } from './types/base'
-import type { BuildSpec, ComposeAction, ContainerUpdate, DockerContainerAction, DockerSiteRequest } from './types/docker'
+import type { BuildSpec, ComposeAction, ContainerUpdate, DockerContainerAction, DockerSiteRequest, ServicePreset } from './types/docker'
 import type { XdebugSettings } from './types/environment'
 import type { LoadProfile } from './types/system'
 import type { AutoBackupSettings, AutoBackupSiteSettings, BundleOptions, OnConflict, Profile, ResourceLimits, RestoreOptions, ScheduledTask, SnapshotOptions, TunnelConfig, Worker } from './types/tasks'
@@ -78,6 +78,8 @@ export type CoreCommand =
   | { type: 'save_docker_compose_file'; path: string; content: string }
   | { type: 'docker_compose_action'; path: string; action: ComposeAction; service?: string | null }
   | { type: 'list_docker_compose_presets' }
+  | { type: 'save_docker_compose_preset'; preset: ServicePreset; previous_id?: string | null }
+  | { type: 'delete_docker_compose_preset'; id: string }
   | { type: 'plan_docker_compose'; spec: BuildSpec }
   | { type: 'create_docker_compose'; spec: BuildSpec; overwrite?: boolean }
   | { type: 'reveal_docker_compose_secrets'; path: string }

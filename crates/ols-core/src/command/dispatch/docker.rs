@@ -154,14 +154,36 @@ impl Core {
                 Ok(R::TaskStarted { id })
             })(),
             C::ListDockerComposePresets => Ok(R::DockerComposePresets {
-                presets: builder::presets(),
+                presets: crate::docker::presets::catalog(&i.docker_custom_presets()),
             }),
-            C::PlanDockerCompose { spec } => builder::plan(&spec, &crate::port::port_is_free)
-                .map(|plan| R::DockerComposePlan { plan }),
+            C::SaveDockerComposePreset {
+                preset,
+                previous_id,
+            } => (|| {
+                tracing::info!(command = "save_docker_compose_preset", name = %preset.name);
+                i.save_docker_preset(preset, previous_id.as_deref())?;
+                Ok(R::DockerComposePresets {
+                    presets: crate::docker::presets::catalog(&i.docker_custom_presets()),
+                })
+            })(),
+            C::DeleteDockerComposePreset { id } => (|| {
+                tracing::info!(command = "delete_docker_compose_preset", id = %id);
+                i.delete_docker_preset(&id)?;
+                Ok(R::DockerComposePresets {
+                    presets: crate::docker::presets::catalog(&i.docker_custom_presets()),
+                })
+            })(),
+            C::PlanDockerCompose { spec } => builder::plan_with(
+                &spec,
+                &crate::docker::presets::catalog(&i.docker_custom_presets()),
+                &crate::port::port_is_free,
+            )
+            .map(|plan| R::DockerComposePlan { plan }),
             C::CreateDockerCompose { spec, overwrite } => (|| {
                 tracing::info!(command = "create_docker_compose", dir = %spec.dir, overwrite);
-                let plan = builder::create(
+                let plan = builder::create_with(
                     &spec,
+                    &crate::docker::presets::catalog(&i.docker_custom_presets()),
                     overwrite,
                     &backups(),
                     &crate::port::port_is_free,

@@ -363,3 +363,5 @@ ols-mcp ols_docker_compose_connect | calls | get_docker_compose_connect / set_do
 DockerPage / ComposeTab | mount | ContainerSettingsDialog (get/update/rename/remove_docker_container)
 rename_docker_container | triggers | Inner::docker_relink_sites (DockerLink.container follows the new name)
 ols-mcp | maps | ols_docker_container_details, ols_docker_container_update (no rename/remove tools)
+ComposeBuilderDialog | mounts | PresetEditorDialog (save/delete_docker_compose_preset); lists list_docker_compose_presets (built-in + custom)
+plan/create_docker_compose | use | presets::catalog(Inner::docker_custom_presets)

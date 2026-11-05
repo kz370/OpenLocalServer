@@ -215,6 +215,17 @@ pub enum CoreCommand {
     },
     /// §166: the compose builder's service catalog.
     ListDockerComposePresets,
+    /// §166: save one of the user's own builder presets ("My presets"). `previous_id`
+    /// renames an existing one.
+    SaveDockerComposePreset {
+        preset: crate::docker::builder::ServicePreset,
+        #[serde(default)]
+        previous_id: Option<String>,
+    },
+    /// §166: delete one of the user's own presets (built-in ones cannot be deleted).
+    DeleteDockerComposePreset {
+        id: String,
+    },
     /// §166: the compose file the builder would write (nothing is written).
     PlanDockerCompose {
         spec: crate::docker::builder::BuildSpec,

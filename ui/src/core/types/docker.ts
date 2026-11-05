@@ -80,6 +80,7 @@ export type ServicePreset = {
   volumes: { source: string; target: string; read_only: boolean }[]
   command: string | null
   working_dir: string | null
+  custom?: boolean
 }
 
 export type BuildService = {

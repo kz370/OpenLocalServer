@@ -371,6 +371,7 @@ olsc guide
 - **Edit and check compose files:** **Edit file** opens the built-in editor. **Check** points out mistakes and asks Docker too; **Save** backs up the old file first.
 - **New compose file:** pick services (databases, caches, Mailpit, Adminer, PHP, Node and more). OLS picks free ports and keeps passwords in the Windows credential store; **Passwords** on the stack shows them.
 - **Connect to OLS:** on a stack, **Connect to OLS** lets its containers open your OLS sites by name, trust OLS's HTTPS certificate, and use OLS's databases and Mailpit (the dialog shows each address). It applies the next time you press Up or Restart, and your compose file is not changed.
+- **Your own presets:** in **New compose file**, **New preset** saves your own service (image, versions, ports, environment, volumes, command). It appears under **My presets**; edit or delete it there. **Save as preset** turns an image you typed into a preset. Variables marked **Secret** get a generated password stored in the Windows credential store.
 - **Create site:** give any container a local domain with HTTPS. The site follows the container if its port changes.
 - **AI assistant (MCP):** new tools for Docker containers, logs, Compose stacks, the compose builder and creating sites, plus one to bring back a hidden site.
 - **Shorter sidebar:** Settings → **Sidebar** hides pages you don't use. Dashboard, Projects, Sites, Web server, Databases, Services, Runtimes and Settings can't be hidden. Hidden pages still open from search (Ctrl K) and from links.

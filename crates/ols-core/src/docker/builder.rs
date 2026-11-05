@@ -65,6 +65,9 @@ pub struct ServicePreset {
     pub volumes: Vec<PresetVolume>,
     pub command: Option<String>,
     pub working_dir: Option<String>,
+    /// Made by the user (Docker → Compose → My presets), not built in.
+    #[serde(default)]
+    pub custom: bool,
 }
 
 fn lit(key: &str, value: &str) -> PresetEnv {
@@ -124,6 +127,7 @@ fn preset(
         volumes,
         command: None,
         working_dir: None,
+        custom: false,
     }
 }
 
@@ -418,7 +422,7 @@ fn secret_var(service: &str, key: &str) -> String {
     format!("OLS_SECRET_{}_{}", clean(service), clean(key))
 }
 
-fn valid_tag(tag: &str) -> bool {
+pub(crate) fn valid_tag(tag: &str) -> bool {
     !tag.is_empty()
         && tag.len() <= 128
         && tag
@@ -426,7 +430,7 @@ fn valid_tag(tag: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'))
 }
 
-fn valid_image(image: &str) -> bool {
+pub(crate) fn valid_image(image: &str) -> bool {
     !image.is_empty()
         && image.len() <= 255
         && image
@@ -437,6 +441,15 @@ fn valid_image(image: &str) -> bool {
 /// Builds the plan. `is_free` says whether a host port can be used (real port check in
 /// the app; a fake in tests).
 pub fn plan(spec: &BuildSpec, is_free: &dyn Fn(u16) -> bool) -> Result<BuildPlan, CoreError> {
+    plan_with(spec, &presets(), is_free)
+}
+
+/// `plan` against a given catalog (built-in plus the user's own presets).
+pub fn plan_with(
+    spec: &BuildSpec,
+    catalog: &[ServicePreset],
+    is_free: &dyn Fn(u16) -> bool,
+) -> Result<BuildPlan, CoreError> {
     let dir = PathBuf::from(&spec.dir);
     if !dir.is_absolute() || !dir.is_dir() {
         return Err(bad(
@@ -452,7 +465,6 @@ pub fn plan(spec: &BuildSpec, is_free: &dyn Fn(u16) -> bool) -> Result<BuildPlan
             "Pick a service such as MariaDB or Redis.",
         ));
     }
-    let catalog = presets();
     let file = COMPOSE_FILE_NAMES
         .iter()
         .map(|n| dir.join(n))
@@ -539,7 +551,8 @@ pub fn plan(spec: &BuildSpec, is_free: &dyn Fn(u16) -> bool) -> Result<BuildPlan
             out.push_str(&format!("    working_dir: {}\n", q(&wd)));
         }
         if let Some(cmd) = command {
-            out.push_str(&format!("    command: {cmd}\n"));
+            // Quoted: a user preset's command is text, never YAML structure.
+            out.push_str(&format!("    command: {}\n", q(&cmd)));
         }
         out.push_str("    restart: unless-stopped\n");
         if !preset_ports.is_empty() {
@@ -667,7 +680,26 @@ pub fn create(
     is_free: &dyn Fn(u16) -> bool,
     store_secret: &dyn Fn(&str, &str) -> Result<(), String>,
 ) -> Result<BuildPlan, CoreError> {
-    let plan = plan(spec, is_free)?;
+    create_with(
+        spec,
+        &presets(),
+        overwrite,
+        backups_dir,
+        is_free,
+        store_secret,
+    )
+}
+
+/// `create` against a given catalog.
+pub fn create_with(
+    spec: &BuildSpec,
+    catalog: &[ServicePreset],
+    overwrite: bool,
+    backups_dir: &Path,
+    is_free: &dyn Fn(u16) -> bool,
+    store_secret: &dyn Fn(&str, &str) -> Result<(), String>,
+) -> Result<BuildPlan, CoreError> {
+    let plan = plan_with(spec, catalog, is_free)?;
     let file = PathBuf::from(&plan.file);
     if plan.exists && !overwrite {
         return Err(bad(

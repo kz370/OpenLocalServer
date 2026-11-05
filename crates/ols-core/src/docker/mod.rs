@@ -12,6 +12,7 @@ pub mod client;
 pub mod compose;
 pub mod connect;
 pub mod details;
+pub mod presets;
 pub mod sites;
 pub mod types;
 
