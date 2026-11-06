@@ -1,6 +1,10 @@
 // §166: Docker page types. Mirrors crates/ols-core/src/docker/types.rs.
 
+/** Engine check result; the UI adds a local "starting" state on top. */
+export type DockerState = 'not_installed' | 'stopped' | 'error' | 'running'
+
 export type DockerStatus = {
+  state: DockerState
   installed: boolean
   running: boolean
   version: string | null

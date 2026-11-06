@@ -7,12 +7,15 @@ import { ServiceIconAction } from '@/components/ServiceIconAction'
 import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { ScrollableList } from '@/components/ScrollableList'
 import { Input } from '@/components/ui/input'
 import { Pagination } from '@/components/ui/pagination'
 import { type Diagnostic, type DockerVolume, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
 import { notify } from '@/lib/notify'
+import { createPersistentCache } from '@/lib/cache'
+
+const volumesCache = createPersistentCache<DockerVolume[] | null>('docker_volumes', null)
 
 import { DiskUsageBar } from './DiskUsageBar'
 import { formatBytes } from './storageFormat'
@@ -21,7 +24,7 @@ type Filter = 'all' | 'used' | 'unused'
 
 /** §166 Volumes tab: who uses each volume, its size, and removal of unused ones. */
 export function VolumesTab({ reloadKey, onRunTask, onChanged }: { reloadKey: number; onRunTask: (id: string) => void; onChanged: () => void }) {
-  const [volumes, setVolumes] = useState<DockerVolume[] | null>(null)
+  const [volumes, setVolumes] = useState<DockerVolume[] | null>(volumesCache.get())
   const [error, setError] = useState<Diagnostic | null>(null)
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
@@ -33,7 +36,10 @@ export function VolumesTab({ reloadKey, onRunTask, onChanged }: { reloadKey: num
     try {
       // Disk usage (read by the bar above) fills in sizes; ask again once it has.
       const r = await runCommand({ type: 'list_docker_volumes' })
-      if (r.type === 'docker_volumes') setVolumes(r.volumes)
+      if (r.type === 'docker_volumes') {
+        volumesCache.set(r.volumes)
+        setVolumes((prev) => (JSON.stringify(prev) === JSON.stringify(r.volumes) ? prev : r.volumes))
+      }
     } catch (err) {
       setError(asDiagnostic(err))
     }
@@ -75,11 +81,14 @@ export function VolumesTab({ reloadKey, onRunTask, onChanged }: { reloadKey: num
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
       <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
-      <DiskUsageBar reloadKey={reloadKey} onRunTask={onRunTask} onError={setError} />
-      <Card className="@container">
-        <CardContent className="flex flex-col gap-3 p-0">
+      <div className="shrink-0">
+        <DiskUsageBar reloadKey={reloadKey} onRunTask={onRunTask} onError={setError} />
+      </div>
+      <ScrollableList
+        className="@container"
+        toolbar={
           <div className="flex flex-col gap-2 border-b p-4 @2xl:flex-row @2xl:items-center">
             <div className="relative min-w-0 flex-1">
               <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -93,6 +102,13 @@ export function VolumesTab({ reloadKey, onRunTask, onChanged }: { reloadKey: num
               ))}
             </div>
           </div>
+        }
+        footer={
+          shown.length > 0 ? (
+            <Pagination label="volumes" total={shown.length} page={current} perPage={perPage} onPage={setPage} onPerPage={(n) => { setPerPage(n); setPage(1) }} className="border-t border-border" />
+          ) : null
+        }
+      >
           {volumes === null ? (
             <p className="flex items-center gap-2 px-4 pb-4 text-sm text-muted-foreground"><Spinner className="size-4" /> Reading volumes…</p>
           ) : rows.length === 0 ? (
@@ -131,11 +147,7 @@ export function VolumesTab({ reloadKey, onRunTask, onChanged }: { reloadKey: num
               ))}
             </div>
           )}
-          {shown.length > 0 && (
-            <Pagination label="volumes" total={shown.length} page={current} perPage={perPage} onPage={setPage} onPerPage={(n) => { setPerPage(n); setPage(1) }} className="border-t border-border" />
-          )}
-        </CardContent>
-      </Card>
+      </ScrollableList>
     </div>
   )
 }

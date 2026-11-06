@@ -7,12 +7,15 @@ import { ServiceIconAction } from '@/components/ServiceIconAction'
 import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { ScrollableList } from '@/components/ScrollableList'
 import { Input } from '@/components/ui/input'
 import { Pagination } from '@/components/ui/pagination'
 import { type Diagnostic, type DockerImage, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
 import { notify } from '@/lib/notify'
+import { createPersistentCache } from '@/lib/cache'
+
+const imagesCache = createPersistentCache<DockerImage[] | null>('docker_images', null)
 
 import { CopyId } from './DockerRows'
 import { DiskUsageBar } from './DiskUsageBar'
@@ -23,7 +26,7 @@ type Filter = 'all' | 'used' | 'unused' | 'dangling'
 
 /** §166 Images tab: pull, run, remove; search, filters and pages. Loads when opened. */
 export function ImagesTab({ reloadKey, onRunTask, onChanged }: { reloadKey: number; onRunTask: (id: string) => void; onChanged: () => void }) {
-  const [images, setImages] = useState<DockerImage[] | null>(null)
+  const [images, setImages] = useState<DockerImage[] | null>(imagesCache.get())
   const [error, setError] = useState<Diagnostic | null>(null)
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
@@ -36,7 +39,10 @@ export function ImagesTab({ reloadKey, onRunTask, onChanged }: { reloadKey: numb
   const load = useCallback(async () => {
     try {
       const r = await runCommand({ type: 'list_docker_images' })
-      if (r.type === 'docker_images') setImages(r.images)
+      if (r.type === 'docker_images') {
+        imagesCache.set(r.images)
+        setImages((prev) => (JSON.stringify(prev) === JSON.stringify(r.images) ? prev : r.images))
+      }
     } catch (err) {
       setError(asDiagnostic(err))
     }
@@ -93,11 +99,14 @@ export function ImagesTab({ reloadKey, onRunTask, onChanged }: { reloadKey: numb
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
       <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
-      <DiskUsageBar reloadKey={reloadKey} onRunTask={onRunTask} onError={setError} />
-      <Card className="@container">
-        <CardContent className="flex flex-col gap-3 p-0">
+      <div className="shrink-0">
+        <DiskUsageBar reloadKey={reloadKey} onRunTask={onRunTask} onError={setError} />
+      </div>
+      <ScrollableList
+        className="@container"
+        toolbar={
           <div className="flex flex-col gap-3 border-b p-4 @3xl:flex-row @3xl:items-center @3xl:justify-between">
             <div className="flex min-w-0 flex-1 items-center gap-2">
               <div className="relative min-w-0 flex-1">
@@ -119,6 +128,13 @@ export function ImagesTab({ reloadKey, onRunTask, onChanged }: { reloadKey: numb
               </Button>
             </form>
           </div>
+        }
+        footer={
+          shown.length > 0 ? (
+            <Pagination label="images" total={shown.length} page={current} perPage={perPage} onPage={setPage} onPerPage={(n) => { setPerPage(n); setPage(1) }} className="border-t border-border" />
+          ) : null
+        }
+      >
           {images === null ? (
             <p className="flex items-center gap-2 px-4 pb-4 text-sm text-muted-foreground"><Spinner className="size-4" /> Reading images…</p>
           ) : rows.length === 0 ? (
@@ -155,11 +171,7 @@ export function ImagesTab({ reloadKey, onRunTask, onChanged }: { reloadKey: numb
               ))}
             </div>
           )}
-          {shown.length > 0 && (
-            <Pagination label="images" total={shown.length} page={current} perPage={perPage} onPage={setPage} onPerPage={(n) => { setPerPage(n); setPage(1) }} className="border-t border-border" />
-          )}
-        </CardContent>
-      </Card>
+      </ScrollableList>
       {runFor && <RunImageDialog image={runFor} onClose={() => setRunFor(null)} onStarted={onChanged} />}
     </div>
   )

@@ -1,8 +1,9 @@
 import { listen } from '@tauri-apps/api/event'
-import { Box, ExternalLink, FileText, Globe, Pause, Play, RefreshCw, RotateCw, Settings2, SquareTerminal } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { ArrowLeft, Box, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Layers, Search, ExternalLink, FileText, Globe, Pause, Play, RotateCw, Settings2, SquareTerminal } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { PageLayout } from '@/components/PageLayout'
+import { ScrollableList } from '@/components/ScrollableList'
 import { ComposeBuilderDialog } from '@/components/docker/ComposeBuilderDialog'
 import { ComposeEditorDialog } from '@/components/docker/ComposeEditorDialog'
 import { ComposeTab } from '@/components/docker/ComposeTab'
@@ -11,10 +12,12 @@ import { ImagesTab } from '@/components/docker/ImagesTab'
 import { VolumesTab } from '@/components/docker/VolumesTab'
 import { Pagination } from '@/components/ui/pagination'
 import { CreateSiteDialog } from '@/components/docker/CreateSiteDialog'
-import { CopyId, GroupHeading, Row, RowList } from '@/components/docker/DockerRows'
+import { DockerGate, type DockerView } from '@/components/docker/DockerGate'
+import { CopyId, Row, RowList } from '@/components/docker/DockerRows'
 import { LogsDialog } from '@/components/docker/LogsDialog'
 import { TaskOutputDialog } from '@/components/docker/TaskOutputDialog'
 import { ErrorCard } from '@/components/ErrorCard'
+import { createPersistentCache } from '@/lib/cache'
 import { asDiagnostic } from '@/lib/diagnostic'
 import { ProjectTerminal } from '@/components/Terminal'
 import { Dialog } from '@/components/ui/dialog'
@@ -23,7 +26,8 @@ import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { CardDescription, CardTitle } from '@/components/ui/card'
 import {
   type Diagnostic,
   type DockerContainer,
@@ -37,10 +41,22 @@ import { cn } from '@/lib/utils'
 /**
  * §166 Docker page (under Sites). Performance rules from the Docker plan §2.5:
  * - Loaded lazily by App, so it adds nothing to the startup bundle.
- * - No timers: data loads when the page opens, after each action, and on Refresh.
+ * - Data loads when the page opens, after each action, and on Refresh.
+ * - The only timer is ONE status poll, and only while Docker is not running: every 1.5 s
+ *   (up to 60 s) after "Start Docker", every 7 s otherwise. It pauses while the window is hidden.
  * - The only live listeners are `task-event` while "Start Docker" or a compose action is
  *   being followed.
  */
+
+const START_POLL_MS = 1500
+const IDLE_POLL_MS = 7000
+const START_TIMEOUT_MS = 60_000
+
+/** Last status seen, so reopening the page shows the right card at once while a fresh check runs. */
+let lastStatus: DockerStatus | null = null
+/** Containers survive page changes and restarts; a background refresh only re-renders when the data differs. */
+const containersCache = createPersistentCache<DockerContainer[] | null>('docker_containers', null)
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 
 type Tab = 'containers' | 'images' | 'volumes' | 'compose'
 
@@ -63,13 +79,21 @@ const STATE_BADGE: Record<string, { label: string; variant: 'success' | 'seconda
 }
 
 export default function DockerPage() {
-  const [status, setStatus] = useState<DockerStatus | null>(null)
-  const [containers, setContainers] = useState<DockerContainer[]>([])
-  const [loading, setLoading] = useState(true)
+  const [status, setStatus] = useState<DockerStatus | null>(lastStatus)
+  const [containers, setContainers] = useState<DockerContainer[]>(containersCache.get() ?? [])
   const [error, setError] = useState<Diagnostic | null>(null)
   const [filter, setFilter] = useState<Filter>('all')
   const [busy, setBusy] = useState<string | null>(null)
   const [startTask, setStartTask] = useState<string | null>(null)
+  const [starting, setStarting] = useState(false)
+  const [composeOnly, setComposeOnly] = useState(false)
+  const [query, setQuery] = useState('')
+  // Groups the user toggled by hand (true = open, false = closed). Others open when something runs.
+  const [groupToggles, setGroupToggles] = useState<Map<string, boolean>>(new Map())
+  const [checking, setChecking] = useState(false)
+  const [containersLoaded, setContainersLoaded] = useState(containersCache.get() !== null)
+  const [startError, setStartError] = useState<string | null>(null)
+  const startedAt = useRef(0)
   const [tab, setTab] = useState<Tab>('containers')
   // Dialogs shared by both tabs.
   const [logsFor, setLogsFor] = useState<string | null>(null)
@@ -88,17 +112,20 @@ export default function DockerPage() {
     try {
       const s = await runCommand({ type: 'get_docker_status' })
       if (s.type !== 'docker_status') return
-      setStatus(s.status)
+      lastStatus = s.status
+      setStatus((prev) => (same(prev, s.status) ? prev : s.status))
       if (s.status.running) {
         const r = await runCommand({ type: 'list_docker_containers', all: true })
-        if (r.type === 'docker_containers') setContainers(r.containers)
+        if (r.type === 'docker_containers') {
+          containersCache.set(r.containers)
+          setContainers((prev) => (same(prev, r.containers) ? prev : r.containers))
+        }
+        setContainersLoaded(true)
       } else {
-        setContainers([])
       }
     } catch (err) {
       setError(asDiagnostic(err))
-    } finally {
-      setLoading(false)
+      setContainersLoaded(true)
     }
   }, [])
 
@@ -115,7 +142,10 @@ export default function DockerPage() {
       const task = event.payload.task
       if (!alive || task.id !== startTask || event.payload.kind !== 'finished') return
       setStartTask(null)
-      if (task.error) setError(task.error)
+      if (task.error) {
+        setStarting(false)
+        setStartError(task.error.cause || task.error.problem)
+      }
       void refresh()
     }).then((dispose) => {
       if (alive) unlisten = dispose
@@ -129,13 +159,81 @@ export default function DockerPage() {
 
   async function startDocker() {
     setError(null)
+    setStartError(null)
+    startedAt.current = Date.now()
+    setStarting(true)
     try {
       const r = await runCommand({ type: 'start_docker_desktop' })
       if (r.type === 'task_started') setStartTask(r.id)
       else void refresh()
     } catch (err) {
-      setError(asDiagnostic(err))
+      setStarting(false)
+      const d = asDiagnostic(err)
+      setStartError(d.cause || d.problem)
     }
+  }
+
+  /** Manual re-check (Retry / Refresh): keeps the spinner up for at least 600 ms so it is visible. */
+  async function recheck() {
+    setStartError(null)
+    setStarting(false)
+    setChecking(true)
+    await Promise.all([refresh(), new Promise((r) => setTimeout(r, 600))])
+    setChecking(false)
+  }
+
+  const engine = status?.state ?? 'stopped'
+  const dockerRunning = engine === 'running'
+  const view: DockerView = !status
+    ? 'checking'
+    : dockerRunning
+      ? 'running'
+      : starting
+        ? 'starting'
+        : startError
+          ? 'error'
+          : engine
+
+  // Docker came up: the start is over, and the tabs load their own data when they mount.
+  useEffect(() => {
+    if (!dockerRunning) return
+    setStarting(false)
+    setStartError(null)
+    setComposeOnly(false)
+  }, [dockerRunning])
+
+  // One status poll while Docker is not running. Fast while starting (with a 60 s limit),
+  // slow otherwise. Paused while hidden. The effect owns the only interval and clears it.
+  const pollMode = !status || dockerRunning ? null : starting ? 'start' : 'idle'
+  useEffect(() => {
+    if (!pollMode) return
+    let inFlight = false
+    const tick = () => {
+      if (document.hidden || inFlight) return
+      if (pollMode === 'start' && Date.now() - startedAt.current > START_TIMEOUT_MS) {
+        setStarting(false)
+        setStartError('Docker did not start within 60 seconds. It may still be starting, or it needs attention in Docker Desktop (for example WSL 2).')
+        return
+      }
+      inFlight = true
+      void refresh().finally(() => {
+        inFlight = false
+      })
+    }
+    const id = window.setInterval(tick, pollMode === 'start' ? START_POLL_MS : IDLE_POLL_MS)
+    document.addEventListener('visibilitychange', tick)
+    return () => {
+      window.clearInterval(id)
+      document.removeEventListener('visibilitychange', tick)
+    }
+  }, [pollMode, refresh])
+
+  function showDetails() {
+    setError({
+      problem: 'Docker is not reachable',
+      cause: [startError, status?.message, status?.endpoint ? `Endpoint: ${status.endpoint}` : null].filter(Boolean).join(' · '),
+      fix: 'Open Docker Desktop and check for a message (WSL 2, permissions, or a stuck engine), then press Retry.',
+    })
   }
 
   async function act(c: DockerContainer, action: DockerContainerAction) {
@@ -174,34 +272,95 @@ export default function DockerPage() {
     }
   }
 
-  const visible = useMemo(
-    () =>
-      containers.filter((c) =>
-        filter === 'running' ? c.state === 'running' : filter === 'sites' ? !!c.ols_site : filter === 'managed' ? c.managed : true,
-      ),
-    [containers, filter],
-  )
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return containers.filter((c) => {
+      if (filter === 'running' && c.state !== 'running') return false
+      if (filter === 'sites' && !c.ols_site) return false
+      if (filter === 'managed' && !c.managed) return false
+      if (!q) return true
+      return [c.name, c.image, c.id, c.compose_project, c.compose_service, c.ols_site, c.status, ...c.ports.map((p) => String(p.host_port ?? ''))]
+        .some((v) => v?.toLowerCase().includes(q))
+    })
+  }, [containers, filter, query])
 
-  // Compose stacks first (the engine order already puts them first), loose containers last.
-  // One page of containers, still grouped by Compose project.
-  const pageCount = Math.max(1, Math.ceil(visible.length / perPage))
-  const currentPage = Math.min(page, pageCount)
-  const pageRows = useMemo(() => visible.slice((currentPage - 1) * perPage, currentPage * perPage), [visible, currentPage, perPage])
-  const groups = useMemo(() => {
-    const map = new Map<string, DockerContainer[]>()
-    for (const c of pageRows) {
-      const key = c.compose_project ?? ''
-      map.set(key, [...(map.get(key) ?? []), c])
+  // Docker Desktop style: one row per Compose project (collapsed by default), then loose containers.
+  // Pages count these rows, so a project is never split across pages.
+  const units = useMemo(() => {
+    const projects = new Map<string, DockerContainer[]>()
+    const loose: DockerContainer[] = []
+    for (const c of visible) {
+      if (c.compose_project) projects.set(c.compose_project, [...(projects.get(c.compose_project) ?? []), c])
+      else loose.push(c)
     }
-    return [...map.entries()]
-  }, [pageRows])
+    return [
+      ...[...projects.entries()].map(([project, rows]) => ({ project, rows })),
+      ...loose.map((c) => ({ project: '', rows: [c] })),
+    ]
+  }, [visible])
+  const pageCount = Math.max(1, Math.ceil(units.length / perPage))
+  const currentPage = Math.min(page, pageCount)
+  const pageUnits = useMemo(() => units.slice((currentPage - 1) * perPage, currentPage * perPage), [units, currentPage, perPage])
+
+  const isOpen = (project: string, rows: DockerContainer[]) =>
+    groupToggles.get(project) ?? rows.some((c) => c.state === 'running' || c.state === 'paused')
+  const projectNames = units.filter((u) => u.project).map((u) => u.project)
+  const setAllGroups = (open: boolean) => setGroupToggles(new Map(projectNames.map((n) => [n, open])))
+
+  /** Runs one action on every container of a project that it applies to, in parallel. */
+  async function actGroup(project: string, rows: DockerContainer[], action: DockerContainerAction) {
+    const targets = rows.filter((c) => {
+      const on = c.state === 'running' || c.state === 'paused'
+      return action === 'start' ? !on : action === 'stop' ? on : action === 'pause' ? c.state === 'running' : action === 'unpause' ? c.state === 'paused' : true
+    })
+    if (targets.length === 0) return
+    setError(null)
+    setBusy(`group:${project}:${action}`)
+    const results = await Promise.allSettled(targets.map((c) => runCommand({ type: 'docker_container_action', id: c.id, action })))
+    const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected')
+    if (failed) setError(asDiagnostic(failed.reason))
+    setBusy(null)
+    void refresh()
+  }
 
   const runningCount = containers.filter((c) => c.state === 'running').length
   const siteCount = containers.filter((c) => c.ols_site).length
 
   return (
     <PageLayout
-      mode="scroll"
+      mode="list"
+      resetKey={tab}
+      toolbar={
+        dockerRunning ? (
+          <div className="flex flex-col gap-3">
+            <RunningLine status={status} loaded={containersLoaded} runningCount={runningCount} total={containers.length} siteCount={siteCount} />
+            <div className="flex gap-1 border-b" role="tablist" aria-label="Docker sections">
+                      {(
+                        [
+                          ['containers', 'Containers'],
+                          ['images', 'Images'],
+                          ['volumes', 'Volumes'],
+                          ['compose', 'Compose'],
+                        ] as const
+                      ).map(([id, label]) => (
+                        <button
+                          key={id}
+                          type="button"
+                          role="tab"
+                          aria-selected={tab === id}
+                          onClick={() => setTab(id)}
+                          className={cn(
+                            '-mb-px cursor-pointer border-b-2 px-3 py-2 text-sm font-medium transition-colors',
+                            tab === id ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground',
+                          )}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+          </div>
+        ) : undefined
+      }
       header={
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Docker</h1>
@@ -212,57 +371,47 @@ export default function DockerPage() {
 
       <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
-      <StatusBar
-        status={status}
-        loading={loading}
-        starting={!!startTask}
-        runningCount={runningCount}
-        total={containers.length}
-        siteCount={siteCount}
-        onRefresh={() => {
-          setLoading(true)
-          void refresh()
-        }}
-        onStart={() => void startDocker()}
-      />
-
-      {status && (status.running || status.installed) && (
-        <div className="flex gap-1 border-b" role="tablist" aria-label="Docker sections">
-          {(
-            [
-              ['containers', 'Containers'],
-              ['images', 'Images'],
-              ['volumes', 'Volumes'],
-              ['compose', 'Compose'],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              aria-selected={tab === id}
-              onClick={() => setTab(id)}
-              className={cn(
-                '-mb-px cursor-pointer border-b-2 px-3 py-2 text-sm font-medium transition-colors',
-                tab === id ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground',
-              )}
-            >
-              {label}
-            </button>
-          ))}
+      <div className={cn('flex min-h-0 flex-1 flex-col', !(dockerRunning && (tab === 'containers' || tab === 'images' || tab === 'volumes')) && 'ols-scroll')}>
+      {composeOnly && !dockerRunning ? (
+        <div className="flex flex-col gap-4">
+          <button type="button" className="inline-flex w-fit cursor-pointer items-center gap-1 text-sm text-primary hover:underline" onClick={() => setComposeOnly(false)}>
+            <ArrowLeft className="size-4" /> Back to Docker
+          </button>
+          <ComposeTab
+            dockerRunning={false}
+            reloadKey={composeReload}
+            onRunTask={setTaskId}
+            onEdit={setEditPath}
+            onNew={() => setBuilderOpen(true)}
+            onLogs={setLogsFor}
+            onCreateSite={(name) => void createSiteFor(name)}
+            onSettings={setSettingsFor}
+            onShell={setShellFor}
+          />
         </div>
-      )}
-
-      {tab === 'images' && status?.running && (
+      ) : (
+      <DockerGate
+        view={view}
+        status={status}
+        startError={startError}
+        canStart={!!status?.desktop_path}
+        loading={checking}
+        onStart={() => void startDocker()}
+        onRetry={() => void recheck()}
+        onRefresh={() => void recheck()}
+        onDetails={showDetails}
+        onCompose={() => setComposeOnly(true)}
+      >
+      {tab === 'images' && (
         <ImagesTab reloadKey={composeReload} onRunTask={setTaskId} onChanged={() => void refresh()} />
       )}
-      {tab === 'volumes' && status?.running && (
+      {tab === 'volumes' && (
         <VolumesTab reloadKey={composeReload} onRunTask={setTaskId} onChanged={() => void refresh()} />
       )}
 
-      {tab === 'compose' && status && (status.running || status.installed) && (
+      {tab === 'compose' && (
         <ComposeTab
-          dockerRunning={status.running}
+          dockerRunning
           reloadKey={composeReload}
           onRunTask={setTaskId}
           onEdit={setEditPath}
@@ -274,42 +423,89 @@ export default function DockerPage() {
         />
       )}
 
-      {tab === 'containers' && status?.running && (
-        <Card>
-          <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 pb-2">
-            <div>
-              <CardTitle className="text-sm">Containers</CardTitle>
-              <CardDescription>Grouped by Compose project. Click a port to open it in your browser.</CardDescription>
-            </div>
-            <div className="flex flex-wrap gap-1" role="tablist" aria-label="Filter containers">
-              {FILTERS.map((f) => (
-                <Button
-                  key={f.id}
-                  size="sm"
-                  role="tab"
-                  aria-selected={filter === f.id}
-                  variant={filter === f.id ? 'secondary' : 'ghost'}
-                  className="h-7 cursor-pointer text-xs"
-                  onClick={() => {
-                    setFilter(f.id)
+      {tab === 'containers' && (
+        <ScrollableList
+          resetKey={`${filter}:${currentPage}`}
+          toolbar={
+            <div className="@container border-b">
+              <div className="px-4 pt-4">
+                <CardTitle className="text-sm">Containers</CardTitle>
+                <CardDescription>Grouped by Compose project. Click a port to open it in your browser.</CardDescription>
+              </div>
+              <div className="flex flex-col gap-2 p-4 @2xl:flex-row @2xl:items-center">
+              <div className="relative min-w-0 flex-1">
+                <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={query}
+                  onChange={(e) => {
+                    setQuery(e.target.value)
                     setPage(1)
                   }}
-                >
-                  {f.label}
-                </Button>
-              ))}
+                  placeholder="Search containers"
+                  aria-label="Search containers"
+                  className="h-8 pl-8"
+                />
+              </div>
+              <div className="flex flex-wrap gap-1" role="tablist" aria-label="Filter containers">
+                {FILTERS.map((f) => (
+                  <Button
+                    key={f.id}
+                    size="sm"
+                    role="tab"
+                    aria-selected={filter === f.id}
+                    variant={filter === f.id ? 'secondary' : 'ghost'}
+                    className="h-8 cursor-pointer text-xs"
+                    onClick={() => {
+                      setFilter(f.id)
+                      setPage(1)
+                    }}
+                  >
+                    {f.label}
+                  </Button>
+                ))}
+                {projectNames.length > 0 && (
+                  <>
+                    <Button size="sm" variant="ghost" className="h-8 cursor-pointer text-xs" onClick={() => setAllGroups(false)} title="Collapse all groups">
+                      <ChevronsDownUp className="size-3.5" /> Collapse all
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-8 cursor-pointer text-xs" onClick={() => setAllGroups(true)} title="Expand all groups">
+                      <ChevronsUpDown className="size-3.5" /> Expand all
+                    </Button>
+                  </>
+                )}
+              </div>
+              </div>
             </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            {visible.length === 0 ? (
+          }
+          footer={
+            units.length > 0 ? (
+              <Pagination
+                label="items"
+                total={units.length}
+                page={currentPage}
+                perPage={perPage}
+                onPage={setPage}
+                onPerPage={(n) => {
+                  setPerPage(n)
+                  setPage(1)
+                }}
+                className="border-t border-border"
+              />
+            ) : null
+          }
+        >
+            {!containersLoaded ? (
+              <p className="flex items-center justify-center gap-2 px-6 py-8 text-sm text-muted-foreground" role="status">
+                <Spinner className="size-4" /> Loading containers…
+              </p>
+            ) : visible.length === 0 ? (
               <p className="px-6 py-8 text-center text-sm text-muted-foreground">
                 {containers.length === 0 ? 'No containers yet. Containers you create with Docker show up here.' : 'No containers match this filter.'}
               </p>
             ) : (
               <RowList>
-                {groups.map(([project, rows]) => [
-                  project && <GroupHeading key={`group:${project}`}>Compose · {project}</GroupHeading>,
-                  ...rows.map((c) => (
+                {pageUnits.map(({ project, rows }) => {
+                  const rowEl = (c: DockerContainer) => (
                     <ContainerRow
                       key={c.id}
                       c={c}
@@ -321,27 +517,29 @@ export default function DockerPage() {
                       onSettings={() => setSettingsFor(c.id)}
                       onShell={() => setShellFor(c.name)}
                     />
-                  )),
-                ])}
+                  )
+                  if (!project) return rowEl(rows[0])
+                  const open = query.trim() !== '' || isOpen(project, rows)
+                  return [
+                    <GroupRow
+                      key={`group:${project}`}
+                      project={project}
+                      rows={rows}
+                      open={open}
+                      busy={busy}
+                      onToggle={() => setGroupToggles((prev) => new Map(prev).set(project, !open))}
+                      onAct={(action) => void actGroup(project, rows, action)}
+                    />,
+                    ...(open ? rows.map(rowEl) : []),
+                  ]
+                })}
               </RowList>
             )}
-            {visible.length > 0 && (
-              <Pagination
-                label="containers"
-                total={visible.length}
-                page={currentPage}
-                perPage={perPage}
-                onPage={setPage}
-                onPerPage={(n) => {
-                  setPerPage(n)
-                  setPage(1)
-                }}
-                className="border-t border-border"
-              />
-            )}
-          </CardContent>
-        </Card>
+        </ScrollableList>
       )}
+      </DockerGate>
+      )}
+      </div>
 
       <LogsDialog container={logsFor} onClose={() => setLogsFor(null)} />
       {shellFor && (
@@ -384,77 +582,73 @@ export default function DockerPage() {
   )
 }
 
-function StatusBar({
-  status,
-  loading,
-  starting,
-  runningCount,
-  total,
-  siteCount,
-  onRefresh,
-  onStart,
-}: {
-  status: DockerStatus | null
-  loading: boolean
-  starting: boolean
-  runningCount: number
-  total: number
-  siteCount: number
-  onRefresh: () => void
-  onStart: () => void
-}) {
-  if (!status) {
-    return (
-      <Card>
-        <CardContent className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
-          <Spinner className="size-4" /> Checking Docker…
-        </CardContent>
-      </Card>
-    )
-  }
+function RunningLine({ status, loaded, runningCount, total, siteCount }: { status: DockerStatus | null; loaded: boolean; runningCount: number; total: number; siteCount: number }) {
   return (
-    <Card>
-      <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
-        <div className="flex min-w-0 flex-wrap items-center gap-3">
-          <span
-            className={cn('size-2.5 shrink-0 rounded-full', status.running ? 'bg-emerald-500' : 'bg-destructive')}
-            aria-hidden
-          />
-          <div className="min-w-0">
-            <p className="text-sm font-medium">
-              {status.running ? `Docker is running${status.version ? ` · ${status.version}` : ''}` : status.installed ? 'Docker is stopped' : 'Docker is not installed'}
-            </p>
-            <p className="truncate text-xs text-muted-foreground" title={status.endpoint}>
-              {status.running
-                ? `${runningCount} running · ${total} total · ${siteCount} linked to sites${status.os_type ? ` · ${status.os_type} containers` : ''}`
-                : (status.message ?? status.endpoint)}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {!status.running && status.desktop_path && (
-            <Button size="sm" className="cursor-pointer" disabled={starting} onClick={onStart}>
-              {starting ? <Spinner className="size-3.5" /> : <Play className="size-3.5" />}
-              {starting ? 'Starting Docker…' : 'Start Docker'}
-            </Button>
-          )}
-          {!status.installed && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="cursor-pointer"
-              onClick={() => void runCommand({ type: 'open_url', url: 'https://www.docker.com/products/docker-desktop/' })}
-            >
-              Get Docker <ExternalLink className="size-3.5" />
-            </Button>
-          )}
-          <Button size="sm" variant="ghost" className="cursor-pointer" disabled={loading} onClick={onRefresh} title="Refresh">
-            <RefreshCw className={cn('size-3.5', loading && 'animate-spin')} />
-            Refresh
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+    <div className="flex items-center gap-2 text-sm">
+      <span className="size-2.5 shrink-0 rounded-full bg-emerald-500" aria-hidden />
+      <span className="font-medium">Docker is running{status?.version ? ` · ${status.version}` : ''}</span>
+      <span className="truncate text-xs text-muted-foreground" title={status?.endpoint}>
+        {loaded ? `${runningCount} running · ${total} total · ${siteCount} linked to sites` : 'Loading containers…'}{status?.os_type ? ` · ${status.os_type} containers` : ''}
+      </span>
+    </div>
+  )
+}
+
+function GroupRow({
+  project,
+  rows,
+  open,
+  busy,
+  onToggle,
+  onAct,
+}: {
+  project: string
+  rows: DockerContainer[]
+  open: boolean
+  busy: string | null
+  onToggle: () => void
+  onAct: (action: DockerContainerAction) => void
+}) {
+  const running = rows.filter((c) => c.state === 'running').length
+  const paused = rows.filter((c) => c.state === 'paused').length
+  const anyOn = running + paused > 0
+  const resume = paused > 0 && running === 0
+  const groupBusy = busy?.startsWith(`group:${project}:`) ?? false
+  const spin = (a: string) => busy === `group:${project}:${a}`
+  return (
+    <div className="flex items-center justify-between gap-3 bg-muted/30 px-4 py-2 hover:bg-muted/40">
+      <button type="button" className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left" aria-expanded={open} onClick={onToggle}>
+        {open ? <ChevronDown className="size-4 shrink-0 text-muted-foreground" /> : <ChevronRight className="size-4 shrink-0 text-muted-foreground" />}
+        <Layers className="size-4 shrink-0 text-sky-500" aria-hidden />
+        <span className="min-w-0 truncate text-sm font-medium">{project}</span>
+        <Badge variant={running > 0 ? 'success' : 'secondary'}>
+          {running}/{rows.length} running
+        </Badge>
+      </button>
+      <span className="flex items-center gap-0.5">
+        <ServiceIconAction
+          title={anyOn ? `Stop all in ${project}` : `Start all in ${project}`}
+          disabled={groupBusy}
+          spinning={spin('start') || spin('stop')}
+          iconColor={anyOn ? 'text-destructive/70' : 'text-emerald-400'}
+          onClick={() => onAct(anyOn ? 'stop' : 'start')}
+        >
+          {anyOn ? <StopIcon /> : <Play className="size-3.5" />}
+        </ServiceIconAction>
+        <ServiceIconAction title={`Restart all in ${project}`} disabled={groupBusy} spinning={spin('restart')} iconColor="text-amber-400" onClick={() => onAct('restart')}>
+          <RotateCw className="size-3.5" />
+        </ServiceIconAction>
+        <ServiceIconAction
+          title={resume ? `Resume all in ${project}` : `Pause all in ${project}`}
+          disabled={groupBusy || !anyOn}
+          spinning={spin('pause') || spin('unpause')}
+          iconColor="text-sky-400"
+          onClick={() => onAct(resume ? 'unpause' : 'pause')}
+        >
+          {resume ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
+        </ServiceIconAction>
+      </span>
+    </div>
   )
 }
 

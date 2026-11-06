@@ -12,9 +12,27 @@ pub(crate) const LABEL_COMPOSE_PROJECT: &str = "com.docker.compose.project";
 const LABEL_COMPOSE_SERVICE: &str = "com.docker.compose.service";
 const LABEL_COMPOSE_FILES: &str = "com.docker.compose.project.config_files";
 
+/// Where Docker is in its life cycle. "Starting" is a UI-only state (after the user presses
+/// Start Docker), so the engine check never returns it.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DockerState {
+    /// Neither Docker Desktop nor the `docker` CLI was found.
+    #[default]
+    NotInstalled,
+    /// Installed, but nothing is listening on the engine endpoint.
+    Stopped,
+    /// Something is there but unusable (permissions, timeout, broken answer).
+    Error,
+    /// The engine answered.
+    Running,
+}
+
 /// Whether Docker is available, as the Docker page's status bar shows it.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DockerStatus {
+    /// Life-cycle state; `running` and `installed` stay for older callers.
+    pub state: DockerState,
     /// Docker Desktop or the `docker` CLI was found on this computer.
     pub installed: bool,
     /// The engine answered.

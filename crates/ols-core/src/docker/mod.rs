@@ -23,7 +23,7 @@ use std::time::{Duration, Instant};
 
 use crate::error::CoreError;
 use client::{ClientError, Endpoint};
-pub use types::{ContainerAction, ContainerSummary, DockerStatus, PortBinding};
+pub use types::{ContainerAction, ContainerSummary, DockerState, DockerStatus, PortBinding};
 
 /// Setting key: overrides where the engine is (`npipe://`, `unix://`, `tcp://`).
 pub const SETTING_ENDPOINT: &str = "docker.endpoint";
@@ -95,12 +95,8 @@ impl DockerManager {
     /// Asks the engine for its version. Never fails: an unreachable engine is a status,
     /// not an error, so the Docker page can show "stopped" with a Start button.
     pub fn status(&self, endpoint: &Endpoint) -> DockerStatus {
-        let desktop_path = find_desktop().map(|p| p.display().to_string());
-        let cli = find_cli().is_some();
         let mut status = DockerStatus {
-            installed: desktop_path.is_some() || cli,
             endpoint: endpoint.display(),
-            desktop_path,
             ..Default::default()
         };
         match self
@@ -109,6 +105,7 @@ impl DockerManager {
         {
             Ok(v) => {
                 status.running = true;
+                status.state = DockerState::Running;
                 // An engine that answers is installed, whatever the file checks found.
                 status.installed = true;
                 status.version = v.version;
@@ -116,6 +113,14 @@ impl DockerManager {
                 status.os_type = v.os;
             }
             Err(e) => {
+                // File checks (PATH walk, Program Files) only run when the engine is down.
+                status.desktop_path = find_desktop().map(|p| p.display().to_string());
+                status.installed = status.desktop_path.is_some() || find_cli().is_some();
+                status.state = match (&e, status.installed) {
+                    (ClientError::NotRunning(_), true) => DockerState::Stopped,
+                    (ClientError::NotRunning(_), false) => DockerState::NotInstalled,
+                    _ => DockerState::Error,
+                };
                 status.message = Some(match e {
                     ClientError::NotRunning(_) if !status.installed => {
                         "Docker is not installed on this computer.".into()

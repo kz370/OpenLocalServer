@@ -32,6 +32,9 @@ import { Dialog } from '@/components/ui/dialog'
 import { type ComposeAction, type ComposeStack, type Diagnostic, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
 import { notify } from '@/lib/notify'
+import { createPersistentCache } from '@/lib/cache'
+
+const stacksCache = createPersistentCache<ComposeStack[] | null>('docker_compose_stacks', null)
 
 const STATE: Record<string, { label: string; variant: 'success' | 'secondary' | 'warning' | 'destructive' | 'outline' }> = {
   running: { label: '● Running', variant: 'success' },
@@ -67,7 +70,9 @@ export function ComposeTab({
   onSettings: (containerId: string) => void
   onShell: (container: string) => void
 }) {
-  const [stacks, setStacks] = useState<ComposeStack[] | null>(null)
+  /** Tooltip for actions that need the engine: "Start Docker first" while it is off. */
+  const needDocker = (t = '') => (dockerRunning ? t : 'Start Docker first')
+  const [stacks, setStacks] = useState<ComposeStack[] | null>(stacksCache.get())
   const [error, setError] = useState<Diagnostic | null>(null)
   const [secretsFor, setSecretsFor] = useState<{ file: string; secrets: [string, string][] } | null>(null)
   const [connectFor, setConnectFor] = useState<string | null>(null)
@@ -75,7 +80,10 @@ export function ComposeTab({
   const load = useCallback(async () => {
     try {
       const r = await runCommand({ type: 'list_docker_compose_stacks' })
-      if (r.type === 'docker_compose_stacks') setStacks(r.stacks)
+      if (r.type === 'docker_compose_stacks') {
+        stacksCache.set(r.stacks)
+        setStacks((prev) => (JSON.stringify(prev) === JSON.stringify(r.stacks) ? prev : r.stacks))
+      }
     } catch (err) {
       setError(asDiagnostic(err))
     }
@@ -122,12 +130,12 @@ export function ComposeTab({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
           Compose files found in your projects, and stacks Docker is running.
-          {!dockerRunning && ' Docker is stopped: you can still create and edit files.'}
         </p>
         <Button size="sm" className="cursor-pointer" onClick={onNew}>
           <Wand2 className="size-3.5" /> New compose file
         </Button>
       </div>
+      {!dockerRunning && <p className="-mt-2 text-xs text-muted-foreground">Start Docker to run this stack. Editing and saving still work.</p>}
 
       {stacks === null ? (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -195,23 +203,23 @@ export function ComposeTab({
                   </p>
                 )}
                 <div className="flex flex-wrap gap-1.5">
-                  <Button size="sm" className="h-7 cursor-pointer text-xs" disabled={!canRun} onClick={() => void act(stack, 'up')}>
+                  <Button size="sm" className="h-7 cursor-pointer text-xs" disabled={!canRun} title={needDocker() || undefined} onClick={() => void act(stack, 'up')}>
                     <Play className="size-3.5" /> Up
                   </Button>
-                  <Button size="sm" variant="outline" className="h-7 cursor-pointer text-xs" disabled={!canRun || stack.running === 0} onClick={() => void act(stack, 'stop')}>
+                  <Button size="sm" variant="outline" className="h-7 cursor-pointer text-xs" disabled={!canRun || stack.running === 0} title={needDocker() || undefined} onClick={() => void act(stack, 'stop')}>
                     <Square className="size-3.5" /> Stop
                   </Button>
-                  <Button size="sm" variant="outline" className="h-7 cursor-pointer text-xs" disabled={!canRun} onClick={() => void act(stack, 'restart')}>
+                  <Button size="sm" variant="outline" className="h-7 cursor-pointer text-xs" disabled={!canRun} title={needDocker() || undefined} onClick={() => void act(stack, 'restart')}>
                     <RotateCw className="size-3.5" /> Restart
                   </Button>
-                  <Button size="sm" variant="outline" className="h-7 cursor-pointer text-xs" disabled={!canRun} onClick={() => void act(stack, 'down')}>
+                  <Button size="sm" variant="outline" className="h-7 cursor-pointer text-xs" disabled={!canRun} title={needDocker() || undefined} onClick={() => void act(stack, 'down')}>
                     <Power className="size-3.5" /> Down
                   </Button>
-                  <Button size="sm" variant="outline" className="h-7 cursor-pointer text-xs" disabled={!canRun} onClick={() => void act(stack, 'pull')}>
+                  <Button size="sm" variant="outline" className="h-7 cursor-pointer text-xs" disabled={!canRun} title={needDocker() || undefined} onClick={() => void act(stack, 'pull')}>
                     <ArrowDownToLine className="size-3.5" /> Pull
                   </Button>
                   {hasBuild && (
-                    <Button size="sm" variant="outline" className="h-7 cursor-pointer text-xs" disabled={!canRun} onClick={() => void act(stack, 'build')}>
+                    <Button size="sm" variant="outline" className="h-7 cursor-pointer text-xs" disabled={!canRun} title={needDocker() || undefined} onClick={() => void act(stack, 'build')}>
                       <Hammer className="size-3.5" /> Build
                     </Button>
                   )}
@@ -253,7 +261,7 @@ export function ComposeTab({
                         actions={
                           <span className="flex items-center justify-end gap-0.5">
                             <ServiceIconAction
-                              title={running ? `Restart ${s.name}` : `Start ${s.name}`}
+                              title={needDocker(running ? `Restart ${s.name}` : `Start ${s.name}`)}
                               disabled={!canRun}
                               iconColor={running ? 'text-amber-400' : 'text-emerald-400'}
                               onClick={() => void act(stack, running ? 'restart' : 'up', s.name)}
@@ -261,15 +269,15 @@ export function ComposeTab({
                               {running ? <RotateCw className="size-3.5" /> : <Play className="size-3.5" />}
                             </ServiceIconAction>
                             <ServiceIconAction
-                              title={s.container ? `Logs of ${s.name}` : 'No container yet'}
-                              disabled={!s.container}
+                              title={needDocker(s.container ? `Logs of ${s.name}` : 'No container yet')}
+                              disabled={!dockerRunning || !s.container}
                               iconColor="text-violet-400"
                               onClick={() => s.container && onLogs(s.container)}
                             >
                               <FileText className="size-3.5" />
                             </ServiceIconAction>
                             <ServiceIconAction
-                              title={running ? `Shell in ${s.name}` : 'Start the service to open a shell'}
+                              title={needDocker(running ? `Shell in ${s.name}` : 'Start the service to open a shell')}
                               disabled={!running || !s.container}
                               iconColor="text-emerald-400"
                               onClick={() => s.container && onShell(s.container)}
@@ -277,7 +285,7 @@ export function ComposeTab({
                               <SquareTerminal className="size-3.5" />
                             </ServiceIconAction>
                             <ServiceIconAction
-                              title={s.container && published.length ? `Create a site for ${s.name}` : 'Start the service with a published port first'}
+                              title={needDocker(s.container && published.length ? `Create a site for ${s.name}` : 'Start the service with a published port first')}
                               disabled={!s.container || !running || published.length === 0}
                               iconColor="text-sky-400"
                               onClick={() => s.container && onCreateSite(s.container)}
@@ -285,8 +293,8 @@ export function ComposeTab({
                               <Globe className="size-3.5" />
                             </ServiceIconAction>
                             <ServiceIconAction
-                              title={s.container_id ? `Settings of ${s.name}` : 'No container yet'}
-                              disabled={!s.container_id}
+                              title={needDocker(s.container_id ? `Settings of ${s.name}` : 'No container yet')}
+                              disabled={!dockerRunning || !s.container_id}
                               iconColor="text-slate-400"
                               onClick={() => s.container_id && onSettings(s.container_id)}
                             >

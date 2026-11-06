@@ -242,6 +242,7 @@ docker::client (crates/ols-core/src/docker/client.rs) | Blocking HTTP/1.1 to the
 docker::types (crates/ols-core/src/docker/types.rs) | `DockerStatus`, `ContainerSummary`, `PortBinding`, `ContainerAction`, `valid_container_ref`, label constants; engine JSON -> summary conversion.
 dispatch_docker (crates/ols-core/src/command/dispatch/docker.rs) | Routes get_docker_status, list_docker_containers, docker_container_action, start_docker_desktop.
 DockerPage (ui/src/pages/Docker.tsx) | Lazy-loaded Docker page under Sites: StatusBar, filters, Compose-grouped container table, ContainerRow actions; no timers.
+ui/src/components/docker/DockerGate.tsx | Single gate for the Docker page: running renders children (status line + tabs); any other state is one centered card (no tabs) with Start/Refresh/Retry/View details and an "Edit compose files without Docker" link.
 ui/src/core/types/docker.ts | DockerStatus, DockerContainer, DockerPortBinding, DockerContainerAction TS mirrors.
 DockerIcon (ui/src/components/layout/SidebarIcons.tsx) | Sidebar icon for the Docker page: Docker's logo (Font Awesome Free brand path, CC BY 4.0); #2496ED colorful, currentColor monochrome.
 ols-mcp Docker tools | ols_docker_status, ols_docker_start, ols_docker_list_containers, ols_docker_container_action; plus ols_unignore_site for the 2.9.0 site-only ignore marker.

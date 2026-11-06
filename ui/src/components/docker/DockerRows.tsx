@@ -18,7 +18,7 @@ export function RowList({ first = 'Name', children }: { first?: string; children
     <div className="@container">
       <div
         className={cn(
-          'hidden gap-x-4 border-b px-4 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground @3xl:grid',
+          'sticky top-0 z-10 hidden gap-x-4 border-b bg-[var(--dialog-surface)] px-4 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground @3xl:grid',
           WIDE_COLS,
         )}
       >
