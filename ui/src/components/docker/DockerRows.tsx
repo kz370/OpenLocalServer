@@ -14,6 +14,7 @@ import { notify } from '@/lib/notify'
 const WIDE_COLS = '@3xl:grid-cols-[minmax(0,2.4fr)_minmax(0,1fr)_minmax(0,1.3fr)_auto]'
 
 /** `repo/name@sha256:<64 hex>` is unreadable; keep the first 12 hex digits. */
+// oxlint-disable-next-line react/only-export-components -- helper shared with other Docker rows; only costs a full reload in dev
 export function shortImage(ref: string): string {
   return ref.replace(/@sha256:([0-9a-f]{12})[0-9a-f]+/, '@sha256:$1…')
 }

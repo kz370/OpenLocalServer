@@ -73,6 +73,10 @@ fn helper_missing() -> String {
 }
 
 pub fn run_helper(args: &[String]) -> Result<(), String> {
+    // Unit tests must never raise a UAC prompt or change the real hosts file / DNS.
+    if cfg!(test) {
+        return Err("administrator changes are disabled while running tests".into());
+    }
     if let Some(result) = via_service(args) {
         return result;
     }
@@ -267,6 +271,9 @@ fn run_elevated_win32(
     show_window: bool,
     timeout: Duration,
 ) -> Result<(), String> {
+    if cfg!(test) {
+        return Err("elevation is disabled while running tests".into());
+    }
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Foundation::{
         CloseHandle, GetLastError, ERROR_CANCELLED, WAIT_OBJECT_0, WAIT_TIMEOUT,

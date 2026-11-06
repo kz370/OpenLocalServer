@@ -169,6 +169,11 @@ impl LocalCa {
     /// scope only affects this Windows account, unlike LocalMachine\Root.
     #[cfg(windows)]
     pub fn trust_current_user(&self) -> Result<(), String> {
+        // Unit tests must never touch the real Windows certificate store (it shows a
+        // security confirmation pop-up).
+        if cfg!(test) {
+            return Err("trusting the CA is disabled while running tests".into());
+        }
         *TRUST_CACHE.lock().unwrap() = None;
         self.ensure_created()?;
         let mut cmd = std::process::Command::new("certutil");
@@ -208,6 +213,9 @@ impl LocalCa {
 
     #[cfg(windows)]
     pub fn untrust_current_user(&self) -> Result<(), String> {
+        if cfg!(test) {
+            return Err("untrusting the CA is disabled while running tests".into());
+        }
         *TRUST_CACHE.lock().unwrap() = None;
         let mut cmd = std::process::Command::new("certutil");
         cmd.args(["-user", "-delstore", "Root", CA_COMMON_NAME]);

@@ -1,6 +1,6 @@
-# Docker — remaining work for 2.10.0 (execution plan for any AI)
+# Docker — work for 2.11.0 (execution plan for any AI)
 
-**Branch:** `release/2.10.0` (already exists, do not create another).
+**Branch:** `release/2.11.0` (already exists, do not create another).
 **Read first:** `AGENTS.md`, `docs/superpowers/plans/2026-11-05-docker-manager.md` (§2.5 performance rules), this file.
 **Already built (do not redo):** Docker page (Containers / Images / Volumes / Compose tabs), container settings + environment edit, shell, compose editor/builder/presets, Connect to OLS, Create site, Reclaim space, site on/off drives container.
 
@@ -21,11 +21,11 @@ Six tasks. **Do them in this order, one per commit.** Each task is independent; 
 
 ### 0.1 Non-negotiable project rules (from AGENTS.md)
 1. **Specs sync.** Any behavior change updates, in the SAME commit: `specs/full_documentation.md`, `specs/catalog.txt`, `specs/relationships.txt`, `specs/data_models.txt` (if types change), `specs/api_reference.md` (if a `CoreCommand` changes), `specs/diagrams/architecture.mmd` (if a layer changes), then append one line to `specs/runtime.md` under `## Log` and keep `Total meaningful source files: N` equal to the real count (add +1 per NEW source file under `crates/` or `ui/src/`; do not count tests inside existing files).
-2. **Version/release docs.** New user-visible feature ⇒ also update `release-notes/v2.10.0.md`, `CHANGELOG.md` (`## [2.10.0]`), and **both** `crates/ols-core/catalog/user_manual.md` and `docs/OLS_USER_MANUAL.md` (Section 17; the two files must stay byte-identical — verify with `diff`). Do not bump the version.
+2. **Version/release docs.** New user-visible feature ⇒ also update `release-notes/v2.11.0.md`, `CHANGELOG.md` (`## [2.11.0]`), and **both** `crates/ols-core/catalog/user_manual.md` and `docs/OLS_USER_MANUAL.md` (Section 17; the two files must stay byte-identical — verify with `diff`). Do not bump the version.
 3. **Errors** shown to users are `Diagnostic{problem,cause,fix}` — use `CoreError::failed_fix(problem, cause, fix)`.
 4. **Secrets** only in the OS keyring. Never in logs, files, or MCP output.
 5. **Images** used as references are `.webp`.
-6. **Commits:** Conventional Commits (`feat:`, `fix:`, `docs:`). End the message with the two trailer lines given in your system reminder (`Co-Authored-By: …` and `Claude-Session: …`). Push with `git push origin release/2.10.0`. **Never** force-push, never rebase, never create a PR unless asked.
+6. **Commits:** Conventional Commits (`feat:`, `fix:`, `docs:`). End the message with the two trailer lines given in your system reminder (`Co-Authored-By: …` and `Claude-Session: …`). Push with `git push origin release/2.11.0`. **Never** force-push, never rebase, never create a PR unless asked.
 7. **Never run `cargo test` while the user runs `cargo tauri dev`.** Ask if unsure.
 
 ### 0.2 Performance rules (Docker must never slow the app)
@@ -367,7 +367,7 @@ In `ComposeTab.tsx` next to **New compose file** add **From a project…** → d
 ## Final checklist (after all six)
 - [ ] `git status` clean; `git log --oneline` shows 6 commits (one per task), each with the two trailer lines.
 - [ ] `specs/runtime.md`: `Total meaningful source files` equals the real count; last Log lines mention each task.
-- [ ] `release-notes/v2.10.0.md`, `CHANGELOG.md`, both manuals updated and the two manuals identical (`diff`).
+- [ ] `release-notes/v2.11.0.md`, `CHANGELOG.md`, both manuals updated and the two manuals identical (`diff`).
 - [ ] Release date is still "in development"/"Unreleased" (the maintainer sets it at release).
-- [ ] `release-notes/v2.10.0.md` has no "Coming before…" section left.
-- [ ] Pushed: `git push origin release/2.10.0` (plain push; no force).
+- [ ] `release-notes/v2.11.0.md` has no "Coming before…" section left.
+- [ ] Pushed: `git push origin release/2.11.0` (plain push; no force).

@@ -72,8 +72,9 @@ echo.
 exit /b 0
 
 :argsdone
-cd /d "%~dp0"
+cd /d "%~dp0.."
 if errorlevel 1 goto :badroot
+if not exist "ui\package.json" goto :badroot
 
 where cargo >nul 2>nul
 if errorlevel 1 goto :nocargo
