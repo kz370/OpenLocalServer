@@ -25,6 +25,7 @@ import { OverflowTabs } from '@/components/ui/OverflowTabs'
 import { Input } from '@/components/ui/input'
 import { FloatingMenu, type MenuAnchor, type MenuItem } from '@/components/ui/menu'
 import { Pagination } from '@/components/ui/pagination'
+import { MiddleTruncate } from '@/components/ui/MiddleTruncate'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { type Domain, type DomainSummary, type EditorInfo, type HealthProgress, type HealthReport, type HealthStep, type Project, type WpProject, runCommand } from '@/core'
 import { getCached, setCached } from '@/lib/cache'
@@ -36,6 +37,11 @@ import { useTheme } from '@/lib/theme'
 import { useWeb } from '@/lib/web'
 import { waitForWebStopped } from '@/lib/wait'
 import { Wizard } from '@/pages/QuickApps'
+
+/** Last path segment, used to spot a project name that just repeats the folder name. */
+function folderBase(path: string) {
+  return path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? ''
+}
 
 /** One row of the table: a site, or a registered project that has no site yet. */
 interface Row {
@@ -1126,7 +1132,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
               onChange={setFilter}
             />
           </div>
-          <Table wrapperClassName={cn('rounded-none border-x-0 border-b-0 bg-transparent transition-opacity', (removing.size > 0 || applying) && 'opacity-90')}>
+          <Table className="table-fixed" wrapperClassName={cn('overflow-x-hidden rounded-none border-x-0 border-b-0 bg-transparent transition-opacity', (removing.size > 0 || applying) && 'opacity-90')}>
             <TableHeader>
               <TableRow>
                 <TableHead className="w-10">
@@ -1138,7 +1144,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                   />
                 </TableHead>
                 <TableHead>Domain</TableHead>
-                <TableHead className="whitespace-nowrap">Status</TableHead>
+                <TableHead className="hidden w-48 whitespace-nowrap @3xl:table-cell">Status</TableHead>
                 <TableHead className="w-24 whitespace-nowrap text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -1216,7 +1222,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                         <div className="min-w-0 flex-1">
                           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                             <button
-                              className={`cursor-pointer truncate text-left font-medium leading-6 hover:underline ${isMenuOpen ? 'text-primary' : ''}`}
+                              className={`max-w-full cursor-pointer truncate text-left font-medium leading-6 hover:underline ${isMenuOpen ? 'text-primary' : ''}`}
                               onClick={openSettings}
                               title={d?.hostname ?? p?.name}
                             >
@@ -1284,28 +1290,68 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                                     {d.server}
                                   </span>
                                 )}
-                                {d && p && p.name !== d.hostname && <span className="shrink-0">{p.name}</span>}
+                                {d && p && p.name !== d.hostname && (
+                                  <span
+                                    className={cn('min-w-0 truncate', !isProxy && p.name === folderBase(folder) && 'hidden @3xl:inline')}
+                                    title={p.name}
+                                  >
+                                    {p.name}
+                                  </span>
+                                )}
                                 {isProxy ? (
-                                  <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground/80" title={proxyTarget ? `Proxy upstream: ${proxyTarget}` : 'Reverse proxy'}>
-                                    {proxyTarget ? `→ ${proxyTarget}` : 'proxy'}
-                                  </span>
+                                  proxyTarget ? (
+                                    <MiddleTruncate className="text-xs text-muted-foreground/80" prefix="→ " text={proxyTarget} title={`Proxy upstream: ${proxyTarget}`} />
+                                  ) : (
+                                    <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground/80" title="Reverse proxy">proxy</span>
+                                  )
                                 ) : (
-                                  <span className="min-w-0 flex-1 truncate" title={folder}>
-                                    {folder}
-                                  </span>
+                                  <MiddleTruncate text={folder} />
                                 )}
                               </>
                             ) : (
                               <>
                                 <TechIcon id="none" className="size-3.5 shrink-0 text-muted-foreground/75" />
-                                <span className="truncate" title={folder}>
-                                  no domain yet · {folder}
-                                </span>
+                                <MiddleTruncate prefix="no domain yet · " text={folder} />
                               </>
                             )}
                           </div>
-                          <div className="mt-1.5 flex h-4 items-center">
+                          <div className="mt-1.5 flex h-4 min-w-0 items-center gap-2 overflow-hidden">
+                            {/* Status column is hidden below @3xl: its info lives here as compact chips. */}
+                            <span className="flex shrink-0 items-center gap-1.5 @3xl:hidden">
+                              <StatusDot site={d} running={!!status?.running} />
+                              {d?.ssl_provider && (
+                                <span className="text-[10px] font-medium text-emerald-500" title={d.ssl_provider === 'lets_encrypt' ? "Secured with Let's Encrypt" : 'Custom SSL Certificate'}>
+                                  SSL
+                                </span>
+                              )}
+                              {d?.broadcast_url && (
+                                <span title={`Broadcasting online: ${d.broadcast_url}`} aria-label="Online">
+                                  <Globe className="size-3 text-sky-400" />
+                                </span>
+                              )}
+                              {d?.ddns_provider && (
+                                <span title={`Dynamic DNS active via ${d.ddns_provider}${d.ddns_last_ip ? ` (IP: ${d.ddns_last_ip})` : ''}`} aria-label="DDNS">
+                                  <Zap className="size-3 text-amber-500" />
+                                </span>
+                              )}
+                              {(d?.aliases ?? []).length > 0 && (
+                                <span className="text-[10px] text-muted-foreground" title={`Aliases: ${d?.aliases?.join(', ')}`}>
+                                  +{d?.aliases?.length}a
+                                </span>
+                              )}
+                              {d?.public_domain && (
+                                <span className="text-[10px] text-warning" title={`Public through Cloudflare: ${d.public_domain}`}>
+                                  Public
+                                </span>
+                              )}
+                              {d?.path_prefix && (
+                                <span className="font-mono text-[10px] text-muted-foreground" title={`Also served at ${localhostUrl(d)}`}>
+                                  /{d.path_prefix}
+                                </span>
+                              )}
+                            </span>
                             <span className={cn(
+                              'shrink-0',
                               'inline-flex h-4 items-center gap-1 rounded px-1.5 text-[10px] leading-none',
                               p?.auto_discovered === true
                                 ? 'bg-sky-500/10 text-sky-700 dark:text-sky-300'
@@ -1370,8 +1416,8 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                         )}
                       </div>
                     </TableCell>
-                    <TableCell className="h-[88px] whitespace-nowrap py-1.5">
-                      <div className="max-h-[72px] overflow-y-auto">
+                    <TableCell className="hidden h-[88px] whitespace-nowrap py-1.5 @3xl:table-cell">
+                      <div className="max-h-[72px] overflow-y-auto overflow-x-hidden">
                       <StatusDot site={d} running={!!status?.running} />
                       {d?.ssl_provider === 'lets_encrypt' && (
                         <div className="mt-0.5 text-[11px] font-medium text-emerald-500" title="Secured with Let's Encrypt">
@@ -1431,7 +1477,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                       )}
                       </div>
                     </TableCell>
-                    <TableCell className="whitespace-nowrap">
+                    <TableCell className="w-24 whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1">
                         <Button size="sm" variant="ghost" className="h-8 w-8 cursor-pointer px-0" onClick={openSettings} title="Settings" aria-label={`Settings for ${d?.hostname ?? p?.name}`}>
                           <Settings2 className="size-3.5" />

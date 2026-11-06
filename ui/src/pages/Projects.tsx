@@ -29,6 +29,7 @@ import { ProjectTypeFilterBar } from '@/components/project/ProjectTypeFilterBar'
 import { SiteLogo } from '@/components/SiteLogo'
 import { TechIcon } from '@/components/TechIcon'
 import { Badge } from '@/components/ui/badge'
+import { MiddleTruncate } from '@/components/ui/MiddleTruncate'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -665,12 +666,12 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
           </div>
 
           {/* Table */}
-          <Table wrapperClassName={cn('border-0 rounded-none shadow-none transition-opacity', removingProject && 'opacity-90')}>
+          <Table className="table-fixed" wrapperClassName={cn('overflow-x-hidden border-0 rounded-none shadow-none transition-opacity', removingProject && 'opacity-90')}>
             <TableHeader>
               <TableRow>
                 <TableHead>Project</TableHead>
-                <TableHead className="w-36 whitespace-nowrap">Type</TableHead>
-                <TableHead className="w-56 whitespace-nowrap">Connected Site</TableHead>
+                <TableHead className="hidden w-36 whitespace-nowrap @2xl:table-cell">Type</TableHead>
+                <TableHead className="hidden w-56 whitespace-nowrap @4xl:table-cell">Connected Site</TableHead>
                 <TableHead className="w-24 whitespace-nowrap text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -765,9 +766,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
                               )}
                             </div>
                             <div className="mt-0.5 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-                              <span className="truncate max-w-md font-mono" title={p.path}>
-                                {p.path}
-                              </span>
+                              <MiddleTruncate className="max-w-md flex-initial font-mono" text={p.path} />
                               <button
                                 type="button"
                                 className="opacity-0 group-hover:opacity-100 hover:text-foreground p-0.5 transition-opacity cursor-pointer shrink-0"
@@ -781,9 +780,30 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
                                 <Copy className="size-3" />
                               </button>
                             </div>
-                            <div className="mt-1.5 flex h-4 items-center">
+                            <div className="mt-1.5 flex h-4 min-w-0 items-center gap-2 overflow-hidden">
+                              {/* Type / Connected Site columns hide at narrow widths: their info moves here. */}
+                              <span className="flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground @2xl:hidden" title={`Type: ${typeLabel}`}>
+                                <TechIcon id={typeId} className="size-3" />
+                                {typeLabel}
+                              </span>
+                              {primaryDomain && (
+                                <button
+                                  type="button"
+                                  className="flex min-w-0 shrink items-center gap-1 font-mono text-[10px] text-primary hover:underline cursor-pointer @4xl:hidden"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    openProject({ id: p.id, site: primaryDomain.hostname })
+                                    onNavigate('sites')
+                                  }}
+                                  title={`Open ${primaryDomain.hostname} in Sites${extraDomainsCount > 0 ? ` (+${extraDomainsCount} more)` : ''}`}
+                                >
+                                  <Globe className="size-3 shrink-0" />
+                                  <span className="truncate">{primaryDomain.hostname}</span>
+                                  {extraDomainsCount > 0 && <span className="shrink-0">+{extraDomainsCount}</span>}
+                                </button>
+                              )}
                               <span className={cn(
-                                'inline-flex h-4 items-center gap-1 rounded px-1.5 text-[10px] leading-none',
+                                'inline-flex h-4 shrink-0 items-center gap-1 rounded px-1.5 text-[10px] leading-none',
                                 p.auto_discovered
                                   ? 'bg-sky-500/10 text-sky-700 dark:text-sky-300'
                                   : 'bg-violet-500/10 text-violet-700 dark:text-violet-300',
@@ -797,7 +817,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
                       </TableCell>
 
                       {/* Type Col */}
-                      <TableCell className="h-[88px] w-36 whitespace-nowrap py-1.5 px-3">
+                      <TableCell className="hidden h-[88px] w-36 whitespace-nowrap py-1.5 px-3 @2xl:table-cell">
                         <div className="flex items-center gap-1.5">
                           <TechIcon id={typeId} className="size-4 shrink-0 text-muted-foreground" />
                           <span className="text-xs font-medium text-foreground">{typeLabel}</span>
@@ -805,7 +825,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
                       </TableCell>
 
                       {/* Connected Site Col */}
-                      <TableCell className="h-[88px] w-56 whitespace-nowrap py-1.5 px-3">
+                      <TableCell className="hidden h-[88px] w-56 whitespace-nowrap py-1.5 px-3 @4xl:table-cell">
                         {primaryDomain ? (
                           <div className="flex items-center gap-1.5">
                             <button
