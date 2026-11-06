@@ -5,9 +5,9 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [2.10.0] — Unreleased
+## [2.10.0] — 2026-11-07
 
-Feature release (in development). Full notes: [`release-notes/v2.10.0.md`](./release-notes/v2.10.0.md).
+Feature release. Full notes: [`release-notes/v2.10.0.md`](./release-notes/v2.10.0.md).
 
 ### Added
 - Docker page under Sites: Docker status as a state machine (not installed / stopped / starting / error / running) shown as one card with Start Docker, Refresh, Retry and details, no empty tabs while Docker is off, and a container list with search and collapsible Compose groups (group start / stop / restart / pause, Collapse / Expand all). Compose files can be edited without Docker.
