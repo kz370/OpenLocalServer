@@ -1,6 +1,7 @@
 import { AlertTriangle, Check, Lock, Play, RefreshCw, RotateCcw, ShieldCheck, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
+import { PageLayout } from '@/components/PageLayout'
 import { ErrorCard } from '@/components/ErrorCard'
 import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
@@ -251,7 +252,9 @@ export function WebServerPage({
       : 'Start the web server with current settings'
 
   return (
-    <div className="flex flex-col gap-6">
+    <PageLayout
+      mode="scroll"
+      header={
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Web server</h1>
@@ -274,7 +277,6 @@ export function WebServerPage({
                 <RotateCcw className="size-3.5 mr-1" /> Discard
               </Button>
             )}
-
             {/* Apply changes / Start web server button */}
             <Button
               variant={status?.running && hasChanges && !validation.error ? 'default' : 'secondary'}
@@ -339,7 +341,8 @@ export function WebServerPage({
           )}
         </div>
       </div>
-
+      }
+    >
       <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
       {status?.running && hasChanges && (
@@ -556,7 +559,7 @@ export function WebServerPage({
           </dl>
         )}
       </Dialog>
-    </div>
+    </PageLayout>
   )
 }
 

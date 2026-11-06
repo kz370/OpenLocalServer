@@ -2,6 +2,7 @@ import { open, save } from '@tauri-apps/plugin-dialog'
 import { Copy, Download, FileUp, Layers, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
+import { PageLayout } from '@/components/PageLayout'
 import { CodeEditor } from '@/components/CodeEditor'
 import { ErrorCard } from '@/components/ErrorCard'
 import { Spinner } from '@/components/Spinner'
@@ -76,7 +77,9 @@ export function ProfilesPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <PageLayout
+      mode="scroll"
+      header={
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Profiles</h1>
@@ -102,6 +105,8 @@ export function ProfilesPage() {
           </Button>
         </div>
       </div>
+      }
+    >
 
       <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
@@ -221,7 +226,7 @@ export function ProfilesPage() {
           </div>
         )}
       </Dialog>
-    </div>
+    </PageLayout>
   )
 }
 

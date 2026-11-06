@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
 
+import { PageLayout } from '@/components/PageLayout'
 import { ErrorCard } from '@/components/ErrorCard'
 import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
@@ -142,7 +143,9 @@ export function TunnelsPage() {
   const current = tunnels.find((t) => t.config.id === selected) ?? null
 
   return (
-    <div className="flex flex-col gap-6">
+    <PageLayout
+      mode="scroll"
+      header={
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Tunnels</h1>
@@ -152,6 +155,8 @@ export function TunnelsPage() {
           <Plus /> New tunnel
         </Button>
       </div>
+      }
+    >
 
       {publicCount > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-success/40 bg-success/10 px-4 py-3 text-sm" role="status">
@@ -265,7 +270,7 @@ export function TunnelsPage() {
           </div>
         )}
       </Dialog>
-    </div>
+    </PageLayout>
   )
 }
 

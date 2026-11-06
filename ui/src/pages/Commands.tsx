@@ -2,6 +2,7 @@ import { listen } from '@tauri-apps/api/event'
 import { Clipboard, FileText, History as HistoryIcon, Pencil, Play, Plus, RefreshCw, Save, Search, SquareTerminal, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { PageLayout } from '@/components/PageLayout'
 import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
 import { ErrorCard } from '@/components/ErrorCard'
@@ -367,7 +368,9 @@ export function CommandsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <PageLayout
+      mode="scroll"
+      header={
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Commands</h1>
@@ -392,6 +395,8 @@ export function CommandsPage() {
           </Button>
         </div>
       </div>
+      }
+    >
 
       <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
@@ -797,7 +802,7 @@ export function CommandsPage() {
           }
         />
       )}
-    </div>
+    </PageLayout>
   )
 }
 

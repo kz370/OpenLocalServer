@@ -2,6 +2,7 @@ import { listen } from '@tauri-apps/api/event'
 import { ChevronRight, Play } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
+import { PageLayout } from '@/components/PageLayout'
 import { Spinner } from '@/components/Spinner'
 import { SystemMonitor } from '@/components/SystemMonitor'
 import { StopIcon } from '@/components/StopIcon'
@@ -143,7 +144,9 @@ export function ProcessesPage() {
   const selectedOutput = selected !== null ? (outputs[selected] ?? []) : []
 
   return (
-    <div className="flex flex-col gap-6">
+    <PageLayout
+      mode="scroll"
+      header={
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Processes</h1>
         <p className="text-sm text-muted-foreground">
@@ -155,6 +158,8 @@ export function ProcessesPage() {
           .
         </p>
       </div>
+      }
+    >
 
       <SystemMonitor stats={stats} />
 
@@ -377,7 +382,7 @@ export function ProcessesPage() {
           </Card>
         )}
       </>
-    </div>
+    </PageLayout>
   )
 }
 

@@ -1,7 +1,7 @@
 # RUNTIME
 
 ## Files to Process
-Total meaningful source files: 336 (excluding target/, node_modules/, .git/, dist/, data/services/postgres runtime data, icon bulk).
+Total meaningful source files: 338 (excluding target/, node_modules/, .git/, dist/, data/services/postgres runtime data, icon bulk).
 
 ### Rust core (crates/ols-core/src, 91 files)
 - src/lib.rs, app/ (mod.rs, domains.rs, projects.rs, quickapp.rs, system.rs, web.rs, tests.rs), command/ (mod.rs, types.rs, dispatch.rs, tests.rs), control.rs, api.rs, paths.rs, settings.rs, secrets.rs, db.rs
@@ -534,3 +534,4 @@ um() fallbacks are gone; min/max clamp both typing and stepping (PHP workers 1-1
 - [2026-11-06] feat(ui): Sites toolbar is compact and one row. Add site stays filled; Add a folder, Scan a folder and Clone from Git form one joined bordered group; a divider separates the ghost Import environment and Import bundle buttons. The toolbar is an `@container`; below `@4xl` the five non-primary buttons are icon-only with `aria-label` and tooltip. New `ui/src/components/site/toolbarStyles.ts`; `GitCloneButton`, `ImportEnvironmentButton` and `SiteImportButton` gain an optional `toolbar` prop (Projects page unchanged). Updated catalog.txt, relationships.txt and full_documentation.md. Files Processed remains 336, matching Files to Process.
 
 - [2026-11-06] fix(ui): Sites/Projects tables never scroll horizontally. Fixed table layout, container-query column hiding (Sites Status <@3xl; Projects Connected Site <@4xl, Type <@2xl) with info moved into the first cell, new components/ui/MiddleTruncate.tsx keeps the folder name visible. Updated catalog.txt and full_documentation.md. No type/API change. Files Processed remains matching Files to Process.
+- [2026-11-07] feat(ui): one-scroller page layout. New `components/PageLayout.tsx` and `components/ScrollableList.tsx`; app shell `<main>` no longer scrolls; all pages migrated (Sites/Projects/Runtimes `list` with sticky opaque table header, Logs `fill`, others `scroll`); Sites bulk bar moved to the list footer; Runtimes table has no fixed pixel columns and the Add a runtime panel is compact. `.ols-scroll` utility in index.css. Updated catalog.txt, relationships.txt, full_documentation.md. Files Processed matches Files to Process (338).

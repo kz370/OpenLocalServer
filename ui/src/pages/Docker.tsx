@@ -2,6 +2,7 @@ import { listen } from '@tauri-apps/api/event'
 import { Box, ExternalLink, FileText, Globe, Pause, Play, RefreshCw, RotateCw, Settings2, SquareTerminal } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
+import { PageLayout } from '@/components/PageLayout'
 import { ComposeBuilderDialog } from '@/components/docker/ComposeBuilderDialog'
 import { ComposeEditorDialog } from '@/components/docker/ComposeEditorDialog'
 import { ComposeTab } from '@/components/docker/ComposeTab'
@@ -199,11 +200,15 @@ export default function DockerPage() {
   const siteCount = containers.filter((c) => c.ols_site).length
 
   return (
-    <div className="flex flex-col gap-6">
+    <PageLayout
+      mode="scroll"
+      header={
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Docker</h1>
         <p className="text-sm text-muted-foreground">Run containers and Compose stacks, edit compose files, and give any container a local site with HTTPS. Docker is optional; OLS never installs it.</p>
       </div>
+      }
+    >
 
       <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
@@ -375,7 +380,7 @@ export default function DockerPage() {
           void refresh()
         }}
       />
-    </div>
+    </PageLayout>
   )
 }
 

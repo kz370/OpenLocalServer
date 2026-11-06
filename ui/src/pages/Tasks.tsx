@@ -1,3 +1,4 @@
+import { PageLayout } from '@/components/PageLayout'
 import { TasksPanel } from '@/components/TasksPanel'
 
 /**
@@ -11,7 +12,9 @@ import { TasksPanel } from '@/components/TasksPanel'
  */
 export function TasksPage() {
   return (
-    <div className="flex flex-col gap-6">
+    <PageLayout
+      mode="scroll"
+      header={
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Background tasks</h1>
         <p className="text-sm text-muted-foreground">
@@ -19,8 +22,10 @@ export function TasksPage() {
           here after restart until you clear it.
         </p>
       </div>
+      }
+    >
 
       <TasksPanel />
-    </div>
+    </PageLayout>
   )
 }

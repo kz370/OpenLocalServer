@@ -11,9 +11,18 @@ const Table = React.forwardRef<HTMLTableElement, React.HTMLAttributes<HTMLTableE
 )
 Table.displayName = 'Table'
 
-const TableHeader = React.forwardRef<HTMLTableSectionElement, React.HTMLAttributes<HTMLTableSectionElement>>(
-  ({ className, ...props }, ref) => (
-    <thead ref={ref} className={cn('bg-muted/75 border-b border-border/80 backdrop-blur-xs', className)} {...props} />
+const TableHeader = React.forwardRef<HTMLTableSectionElement, React.HTMLAttributes<HTMLTableSectionElement> & { sticky?: boolean }>(
+  ({ className, sticky, ...props }, ref) => (
+    <thead
+      ref={ref}
+      className={cn(
+        'bg-muted/75 border-b border-border/80 backdrop-blur-xs',
+        // Opaque so rows never show through; needs a Table with wrapperClassName="overflow-visible".
+        sticky && 'sticky top-0 z-10 bg-[var(--dialog-surface)] backdrop-blur-none [&_th]:bg-[var(--dialog-surface)] [&_th]:shadow-[inset_0_-1px_0_var(--border)]',
+        className,
+      )}
+      {...props}
+    />
   ),
 )
 TableHeader.displayName = 'TableHeader'

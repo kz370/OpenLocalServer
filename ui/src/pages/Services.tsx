@@ -1,6 +1,7 @@
 import { ExternalLink, FileText, Play, RefreshCw, RotateCw } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
+import { PageLayout } from '@/components/PageLayout'
 import { CustomServices } from '@/components/CustomServices'
 import { ErrorCard } from '@/components/ErrorCard'
 import { asDiagnostic } from '@/lib/diagnostic'
@@ -89,11 +90,15 @@ export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => v
   const otherServices = services.filter((s) => s.kind !== 'web')
 
   return (
-    <div className="flex flex-col gap-6">
+    <PageLayout
+      mode="scroll"
+      header={
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Services</h1>
         <p className="text-sm text-muted-foreground">Web servers, mail testing and databases — each one a process you start and stop.</p>
       </div>
+      }
+    >
 
       <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
@@ -133,7 +138,7 @@ export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => v
       </Card>
 
       <CustomServices onChanged={refresh} />
-    </div>
+    </PageLayout>
   )
 }
 

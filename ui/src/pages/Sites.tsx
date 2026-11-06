@@ -13,11 +13,12 @@ import { SiteDialog, type SiteTarget } from '@/components/site/SiteDialog'
 import { SiteLogoDialog, type SiteLogoTarget } from '@/components/site/SiteLogoDialog'
 import { SiteLogo } from '@/components/SiteLogo'
 import { DriftDialog } from '@/components/site/WebApply'
+import { PageLayout } from '@/components/PageLayout'
+import { ScrollableList } from '@/components/ScrollableList'
 import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
 import { TechIcon } from '@/components/TechIcon'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog } from '@/components/ui/dialog'
 import { Field, Select } from '@/components/ui/form'
@@ -975,7 +976,9 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <PageLayout
+      mode="list"
+      header={
       <div className="mb-1">
         <div className="flex items-center justify-between gap-3">
           <h1 className="text-2xl font-semibold tracking-tight">Sites</h1>
@@ -1015,6 +1018,8 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         </div>
         <p className="mt-3 text-sm text-muted-foreground">Every site and the project behind it. Open a site's settings for its domain, web config, environment, terminal, Git and more.</p>
       </div>
+      }
+      toolbar={
       <div className="@container">
       <div className="flex min-h-8 flex-wrap items-center gap-x-2 gap-y-2">
         <Button size="sm" className="h-8 px-3 text-[13px]" onClick={() => setAdding(newDomain())}>
@@ -1036,22 +1041,43 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         </div>
       </div>
       </div>
-
+      }
+    >
       <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
-      <Card className="relative">
-        {(removing.size > 0 || applying) && <PageProgress label={applying ? 'Updating site configuration and hosts file…' : 'Updating the site list…'} />}
-        <CardContent className="p-0">
+      <ScrollableList
+        resetKey={`${query}|${activeFilter}`}
+        overlay={(removing.size > 0 || applying) && <PageProgress label={applying ? 'Updating site configuration and hosts file…' : 'Updating the site list…'} />}
+        toolbar={
           <div className="flex flex-col gap-2 border-b border-border px-4 pb-2 pt-3">
             <div className="flex flex-wrap items-center gap-2">
               <div className="relative min-w-56 flex-1 sm:max-w-sm">
                 <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
                 <Input className="h-8 pl-9" value={query} onChange={(e) => onSearch(e.target.value)} placeholder="Search sites by domain, project or folder" />
               </div>
-              {/* The bulk bar only exists while something is picked, so the toolbar is the
-                  same height whether it is there or not. */}
-              {pickedCount > 0 && (
-                <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Bulk actions">
+            </div>
+            <OverflowTabs
+              tabs={[
+                { id: 'enabled', label: 'Enabled', badge: matches.filter(isRowEnabled).length, icon: <Check className="size-3.5 text-emerald-500" /> },
+                { id: 'disabled', label: 'Disabled', badge: matches.filter(isRowDisabled).length, icon: <CircleOff className="size-3.5 text-rose-500" /> },
+                { id: 'missing', label: 'Folder not found', badge: matches.filter(isRowMissingFolder).length, icon: <FolderX className="size-3.5 text-destructive" /> },
+                ...groupsPresent.map((g) => ({
+                  id: g.id as SiteFilter,
+                  label: g.label,
+                  badge: matches.filter((r) => !isRowMissingFolder(r) && groupOf(r) === g.id).length,
+                  icon: <TechIcon id={g.icon} className="size-3.5" />,
+                })),
+                { id: 'all', label: 'All', badge: matches.length, icon: <List className="size-3.5 text-sky-500" /> },
+              ]}
+              value={activeFilter}
+              onChange={setFilter}
+            />
+          </div>
+        }
+        footer={
+          <>
+            {pickedCount > 0 && (
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-border bg-[var(--dialog-surface)] px-4 py-2">
                   <span className="whitespace-nowrap text-sm text-muted-foreground">
                     {pickedCount} selected
                   </span>
@@ -1104,10 +1130,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                   <Button size="sm" variant="ghost" className="h-8" disabled={busyBulk} onClick={() => setPicked(new Set())}>
                     Clear
                   </Button>
-                </div>
-              )}
-            </div>
-            {pickedCount > 0 && restCount > 0 && (
+{restCount > 0 && (
               <button
                 className="cursor-pointer self-start text-xs text-muted-foreground underline"
                 onClick={() => setPicked(new Set(visibleKeys))}
@@ -1115,25 +1138,29 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                 Select all {visibleKeys.length} matching {visibleKeys.length === 1 ? 'row' : 'rows'}
               </button>
             )}
-            <OverflowTabs
-              tabs={[
-                { id: 'enabled', label: 'Enabled', badge: matches.filter(isRowEnabled).length, icon: <Check className="size-3.5 text-emerald-500" /> },
-                { id: 'disabled', label: 'Disabled', badge: matches.filter(isRowDisabled).length, icon: <CircleOff className="size-3.5 text-rose-500" /> },
-                { id: 'missing', label: 'Folder not found', badge: matches.filter(isRowMissingFolder).length, icon: <FolderX className="size-3.5 text-destructive" /> },
-                ...groupsPresent.map((g) => ({
-                  id: g.id as SiteFilter,
-                  label: g.label,
-                  badge: matches.filter((r) => !isRowMissingFolder(r) && groupOf(r) === g.id).length,
-                  icon: <TechIcon id={g.icon} className="size-3.5" />,
-                })),
-                { id: 'all', label: 'All', badge: matches.length, icon: <List className="size-3.5 text-sky-500" /> },
-              ]}
-              value={activeFilter}
-              onChange={setFilter}
-            />
-          </div>
-          <Table className="table-fixed" wrapperClassName={cn('overflow-x-hidden rounded-none border-x-0 border-b-0 bg-transparent transition-opacity', (removing.size > 0 || applying) && 'opacity-90')}>
-            <TableHeader>
+              </div>
+            )}
+            {visible.length > 0 && (
+              <Pagination
+                label="sites"
+                total={visible.length}
+                page={page}
+                perPage={perPage}
+                onPage={setPage}
+                // A new page size always starts at the top: page 7 of 25 rows per page has no
+                // page 7, and stopping on a page past the end reads as an empty table.
+                onPerPage={(size) => {
+                  setPerPage(size)
+                  setPage(1)
+                }}
+                className="border-t border-border"
+              />
+            )}
+          </>
+        }
+      >
+          <Table className="table-fixed" wrapperClassName={cn('overflow-visible rounded-none border-x-0 border-b-0 bg-transparent transition-opacity', (removing.size > 0 || applying) && 'opacity-90')}>
+            <TableHeader sticky>
               <TableRow>
                 <TableHead className="w-10">
                   <Checkbox
@@ -1562,24 +1589,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
               />
             )
           })()}
-          {visible.length > 0 && (
-            <Pagination
-              label="sites"
-              total={visible.length}
-              page={page}
-              perPage={perPage}
-              onPage={setPage}
-              // A new page size always starts at the top: page 7 of 25 rows per page has no
-              // page 7, and stopping on a page past the end reads as an empty table.
-              onPerPage={(size) => {
-                setPerPage(size)
-                setPage(1)
-              }}
-              className="border-t border-border"
-            />
-          )}
-        </CardContent>
-      </Card>
+      </ScrollableList>
 
       {shownTarget && <SiteDialog key={`${shownTarget.hostname}:${shownTarget.projectId}`} target={shownTarget} web={web} onClose={() => setTarget(null)} onSaved={(hostname) => setTarget((t) => (t ? { ...t, hostname, tab: 'settings' } : t))} />}
 
@@ -1691,6 +1701,6 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
           await Promise.all([refresh(), refreshProjects()])
         }}
       />
-    </div>
+    </PageLayout>
   )
 }

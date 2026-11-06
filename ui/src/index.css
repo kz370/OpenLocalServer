@@ -308,6 +308,15 @@ button:disabled[data-tooltip],
   display: none;
 }
 
+/* The one scroll region of a page (see PageLayout): thin themed bar, no layout shift. */
+.ols-scroll {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--muted-foreground) 45%, transparent) transparent;
+}
+
 /* Nothing in the app scrolls sideways: content wraps instead. */
 html,
 body {

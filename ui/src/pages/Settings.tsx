@@ -2,6 +2,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { Book, Check, Copy, ExternalLink, Eye, EyeOff, FolderPlus, FolderSearch, RefreshCw, ShieldCheck, Sparkles, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
+import { PageLayout } from '@/components/PageLayout'
 import { ErrorCard } from '@/components/ErrorCard'
 import { asDiagnostic } from '@/lib/diagnostic'
 import { ExcludedSitesCard } from '@/components/ExcludedSitesCard'
@@ -755,11 +756,15 @@ export function SettingsPage() {
   )
 
   return (
-    <div className="flex flex-col gap-5">
+    <PageLayout
+      mode="scroll"
+      header={
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
         <p className="text-sm text-muted-foreground">OLS {version && `v${version}`}</p>
       </div>
+      }
+    >
 
       <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
@@ -1195,6 +1200,6 @@ export function SettingsPage() {
 
         </div>
       </div>
-    </div>
+    </PageLayout>
   )
 }

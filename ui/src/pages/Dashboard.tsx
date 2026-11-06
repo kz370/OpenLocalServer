@@ -1,6 +1,7 @@
 import { ChevronDown, FileText, Globe, Home, Play, Repeat, Rocket, RotateCw } from 'lucide-react'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import { PageLayout } from '@/components/PageLayout'
 import { DiagnosticsCard } from '@/components/DiagnosticsCard'
 import { ErrorCard } from '@/components/ErrorCard'
 import { asDiagnostic } from '@/lib/diagnostic'
@@ -153,8 +154,10 @@ export function DashboardPage({
   }, [web?.php_pools])
 
   return (
-    <div className="@container/dashboard dashboard-page-container">
-      {/* Header: title and actions wrap cleanly without clipping */}
+    <PageLayout
+      mode="scroll"
+      className="mx-auto w-full max-w-[1680px]"
+      header={
       <div className="flex flex-wrap items-center justify-between gap-2.5">
         <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
         <div className="flex flex-wrap items-center gap-2">
@@ -277,6 +280,9 @@ export function DashboardPage({
           </Button>
         </div>
       </div>
+      }
+    >
+    <div className="@container/dashboard dashboard-page-container">
 
       <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
       {dataError && <ErrorCard error={dataError} onDismiss={() => setDataError(null)} overlay />}
@@ -488,6 +494,7 @@ export function DashboardPage({
         </div>
       </div>
     </div>
+    </PageLayout>
   )
 }
 

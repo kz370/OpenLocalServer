@@ -2,6 +2,7 @@ import { save } from '@tauri-apps/plugin-dialog'
 import { AlertTriangle, Download, FolderOpen, History, Plus, RefreshCw, RotateCcw, ShieldCheck, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
+import { PageLayout } from '@/components/PageLayout'
 import { CodeEditor, DiffView, type EditorLanguage } from '@/components/CodeEditor'
 import { ErrorCard } from '@/components/ErrorCard'
 import { Spinner } from '@/components/Spinner'
@@ -80,7 +81,9 @@ export function ConfigPage() {
   }, [files])
 
   return (
-    <div className="flex flex-col gap-4">
+    <PageLayout
+      mode="scroll"
+      header={
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Web config</h1>
@@ -105,6 +108,8 @@ export function ConfigPage() {
           Re-apply web config
         </Button>
       </div>
+      }
+    >
 
       <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
@@ -196,7 +201,7 @@ export function ConfigPage() {
           )}
         </div>
       </div>
-    </div>
+    </PageLayout>
   )
 }
 

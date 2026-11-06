@@ -21,6 +21,7 @@ import {
 } from 'lucide-react'
 import { Fragment, useEffect, useState } from 'react'
 
+import { PageLayout } from '@/components/PageLayout'
 import { Spinner } from '@/components/Spinner'
 import { ErrorCard } from '@/components/ErrorCard'
 import { MigrateDialog } from '@/components/MigrateDialog'
@@ -147,7 +148,10 @@ export function DatabasesPage() {
   }, 4000)
 
   return (
-    <div className="flex flex-col gap-6">
+    <PageLayout
+      mode="scroll"
+      resetKey={tab}
+      header={
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Databases</h1>
@@ -157,8 +161,8 @@ export function DatabasesPage() {
           <Import /> Import databases
         </Button>
       </div>
-      <MigrateDialog open={migrating} onClose={() => setMigrating(false)} />
-      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
+      }
+      toolbar={
       <Tabs
         tabs={[
           { id: 'mariadb', label: 'MariaDB', icon: <TechIcon id="mariadb" /> },
@@ -172,6 +176,11 @@ export function DatabasesPage() {
         value={tab}
         onChange={setTab}
       />
+      }
+    >
+      <MigrateDialog open={migrating} onClose={() => setMigrating(false)} />
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
+      <div className="flex flex-col gap-6">
       {(tab === 'mariadb' || tab === 'postgres') && <SqlEngine key={tab} engine={tab} service={services.find((s) => s.id === tab)} dbTools={dbTools} externalTools={externalTools} defaultTools={defaultTools} setDefaultTool={setDefaultTool} />}
       {tab === 'mongodb' && <Mongo service={services.find((s) => s.id === 'mongodb')} dbTools={dbTools} externalTools={externalTools} defaultTools={defaultTools} setDefaultTool={setDefaultTool} />}
       {tab === 'redis' && <Redis service={services.find((s) => s.id === 'redis')} dbTools={dbTools} externalTools={externalTools} defaultTools={defaultTools} setDefaultTool={setDefaultTool} />}
@@ -187,7 +196,8 @@ export function DatabasesPage() {
           }}
         />
       )}
-    </div>
+      </div>
+    </PageLayout>
   )
 }
 

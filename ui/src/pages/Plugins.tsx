@@ -2,6 +2,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { FileArchive, FolderOpen, Plug, Plus, RefreshCw, ShieldCheck, ShieldAlert, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
+import { PageLayout } from '@/components/PageLayout'
 import { ErrorCard } from '@/components/ErrorCard'
 import { PluginConsentDialog } from '@/components/PluginConsentDialog'
 import { Spinner } from '@/components/Spinner'
@@ -66,7 +67,9 @@ export function PluginsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <PageLayout
+      mode="scroll"
+      header={
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Plugins</h1>
@@ -83,6 +86,8 @@ export function PluginsPage() {
           </Button>
         </div>
       </div>
+      }
+    >
 
       <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
@@ -341,6 +346,6 @@ export function PluginsPage() {
           </Field>
         </div>
       </Dialog>
-    </div>
+    </PageLayout>
   )
 }

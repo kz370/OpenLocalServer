@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { PageLayout } from '@/components/PageLayout'
 import { CodeEditor } from '@/components/CodeEditor'
 import { TechIcon, TechTile } from '@/components/TechIcon'
 import { ErrorCard } from '@/components/ErrorCard'
@@ -176,7 +177,9 @@ export function QuickAppsPage({
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <PageLayout
+      mode="scroll"
+      header={
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Quick Apps</h1>
@@ -193,9 +196,9 @@ export function QuickAppsPage({
           </Button>
         </div>
       </div>
-
-      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
-
+      }
+      resetKey={`${query}|${category}|${favOnly}`}
+      toolbar={
       <div className="flex flex-wrap items-center gap-3">
         <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search…" className="w-64" />
         <div className="flex gap-1">
@@ -207,6 +210,9 @@ export function QuickAppsPage({
         </div>
         <Toggle checked={favOnly} onChange={setFavOnly} label="Favorites only" />
       </div>
+      }
+    >
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {shown.map((a) => (
@@ -335,7 +341,7 @@ export function QuickAppsPage({
       <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} onDone={async () => { setImportOpen(false); await refresh() }} />
 
       <DuplicateDialog app={dup} onClose={() => setDup(null)} onDone={async () => { setDup(null); await refresh() }} />
-    </div>
+    </PageLayout>
   )
 }
 

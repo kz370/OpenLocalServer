@@ -20,6 +20,8 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
+import { PageLayout } from '@/components/PageLayout'
+import { ScrollableList } from '@/components/ScrollableList'
 import { type Page } from '@/components/layout/Sidebar'
 import { AddProjectDialog, type AddProjectItem } from '@/components/project/AddProjectDialog'
 import { ManageProjectTypesDialog } from '@/components/project/ManageProjectTypesDialog'
@@ -31,7 +33,6 @@ import { TechIcon } from '@/components/TechIcon'
 import { Badge } from '@/components/ui/badge'
 import { MiddleTruncate } from '@/components/ui/MiddleTruncate'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { FloatingMenu, type MenuAnchor, type MenuItem } from '@/components/ui/menu'
 import { Pagination } from '@/components/ui/pagination'
@@ -576,8 +577,10 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
   const effectiveParent = projects[0]?.path.replace(/[\\/][^\\/]+$/, '') || ''
 
   return (
-    <div className="relative space-y-4">
-      {/* Header */}
+    <PageLayout
+      mode="list"
+      className="relative"
+      header={
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-foreground">Projects</h1>
         <p className="text-sm text-muted-foreground">
@@ -585,17 +588,20 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
         </p>
       </div>
 
-      {/* Action buttons */}
+      }
+      toolbar={
       <div className="flex flex-wrap items-center gap-2">
         <Button onClick={handleAddProjectFolder} className="cursor-pointer gap-2">
           <FolderPlus className="size-4" /> Add project folder
         </Button>
         <GitCloneButton defaultParent={effectiveParent} onDone={() => void refreshAll()} standalone={true} />
       </div>
-
+      }
+    >
       {/* Main card */}
-      <Card
-        className="relative overflow-hidden"
+      <ScrollableList
+        className="overflow-hidden"
+        resetKey={`${query}|${typeTab}|${effectiveMissingOnly}`}
         onDragOver={(e) => {
           e.preventDefault()
           setIsDragOver(true)
@@ -605,7 +611,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
           e.preventDefault()
           setIsDragOver(false)
         }}
-      >
+        overlay={<>
         {/* Drag and Drop Visual Overlay */}
         {isDragOver && (
           <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-background/90 backdrop-blur-xs border-2 border-dashed border-primary rounded-xl p-6 text-center animate-in fade-in duration-150 pointer-events-none">
@@ -618,10 +624,10 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
             </p>
           </div>
         )}
-
-        <CardContent className="p-0">
           {removingProject && <ProjectsProgress label={`Removing ${removingProject.name} from the list and updating site configuration…`} />}
-          {/* Top toolbar: Type tabs, missing filter, manage types, and search */}
+        </>}
+        toolbar={
+          /* Top toolbar: Type tabs, missing filter, manage types, and search */
           <div className="flex flex-col gap-3 p-4 border-b border-border/80">
             {/* Type filter row: All first, chips, +N more popover, Manage types pinned right */}
             <ProjectTypeFilterBar
@@ -664,10 +670,25 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
               )}
             </div>
           </div>
-
+        }
+        footer={total > 0 ? (
+            <Pagination
+              label="projects"
+              total={total}
+              page={page}
+              perPage={perPage}
+              onPage={setPage}
+              onPerPage={(size) => {
+                setPerPage(size)
+                setPage(1)
+              }}
+              className="border-t border-border"
+            />
+        ) : undefined}
+      >
           {/* Table */}
-          <Table className="table-fixed" wrapperClassName={cn('overflow-x-hidden border-0 rounded-none shadow-none transition-opacity', removingProject && 'opacity-90')}>
-            <TableHeader>
+          <Table className="table-fixed" wrapperClassName={cn('overflow-visible border-0 rounded-none shadow-none transition-opacity', removingProject && 'opacity-90')}>
+            <TableHeader sticky>
               <TableRow>
                 <TableHead>Project</TableHead>
                 <TableHead className="hidden w-36 whitespace-nowrap @2xl:table-cell">Type</TableHead>
@@ -953,24 +974,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
                 />
               )
             })()}
-
-          {/* Pagination */}
-          {total > 0 && (
-            <Pagination
-              label="projects"
-              total={total}
-              page={page}
-              perPage={perPage}
-              onPage={setPage}
-              onPerPage={(size) => {
-                setPerPage(size)
-                setPage(1)
-              }}
-              className="border-t border-border"
-            />
-          )}
-        </CardContent>
-      </Card>
+      </ScrollableList>
 
       {/* Add Project Dialog (for drag-drop, context menu, and add button) */}
       <AddProjectDialog
@@ -1006,6 +1010,6 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
         customTypes={customTypes}
         onCustomTypesChanged={refreshCustomTypes}
       />
-    </div>
+    </PageLayout>
   )
 }

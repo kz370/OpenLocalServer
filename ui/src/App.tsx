@@ -328,7 +328,7 @@ export default function App() {
           <NotificationHost onNavigateLogs={openLogs} />
           <CommandPalette onNavigate={navigate} onDoctor={openDoctor} />
           <DoctorDialog open={doctor} onClose={() => setDoctor(false)} />
-          <main className={cn('min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-6 [scrollbar-gutter:stable]', dirtyFormCount > 0 && 'pb-44')}>
+          <main className={cn('flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-6', dirtyFormCount > 0 && 'pb-44')}>
             {page === 'dashboard' && <DashboardPage onNavigate={navigate} onOpenLogs={openLogs} />}
               {page === 'projects' && <ProjectsPage onNavigate={navigate} />}
               {page === 'sites' && <SitesPage onNavigate={navigate} />}

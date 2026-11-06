@@ -3,6 +3,8 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { Bug, Check, Download, FolderSearch, Pause, Play, Puzzle, Settings2, Square, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { PageLayout } from '@/components/PageLayout'
+import { ScrollableList } from '@/components/ScrollableList'
 import { Spinner } from '@/components/Spinner'
 import { ErrorCard } from '@/components/ErrorCard'
 import { PhpExtensionsDialog } from '@/components/PhpExtensionsDialog'
@@ -597,71 +599,53 @@ export function RuntimesPage() {
   })
 
   return (
-    <div className="flex flex-col gap-5">
+    <PageLayout
+      mode="list"
+      header={
       <div className="flex flex-col gap-1">
         <h1 className="text-xl font-semibold tracking-tight">Runtimes</h1>
         <p className="max-w-2xl text-[13px] leading-relaxed text-muted-foreground">
           Languages, databases, and servers managed by OpenLocalServer. Every version runs from its own directory with vendor SHA-256 integrity verification.
         </p>
       </div>
-
-      {installError && (
-        <ErrorCard
-          error={{
-            problem: `${installError.version} could not be installed.`,
-            cause: installError.message,
-            fix: null,
-          }}
-          onDismiss={() => setInstallError(null)}
-          overlay
-        />
-      )}
-
-      <div className="rounded-xl border border-border/60 bg-card/40 p-4">
-        <div className="flex flex-col gap-0.5">
-          <h2 className="text-sm font-semibold leading-none">Add a runtime</h2>
-          <p className="text-xs text-muted-foreground">Use an existing installation or register a custom executable.</p>
-        </div>
-        <div className="mt-3.5 grid gap-3 lg:grid-cols-2">
-          <div className="flex min-w-0 flex-col justify-between gap-3 rounded-lg border border-border/60 bg-background/40 p-3.5 sm:flex-row sm:items-center">
-            <div className="min-w-0">
-              <p className="text-[13px] font-medium leading-none">Add existing versions</p>
-              <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">Scan a folder for installed runtimes.</p>
-            </div>
-            <Button size="sm" variant="secondary" className="h-8 shrink-0 text-xs" onClick={scanPhpFolder} title="Adds every PHP version found in the folder you pick">
-              <FolderSearch /> Add folder
-            </Button>
+      }
+      toolbar={
+      <div className="flex flex-col gap-3">
+      <div className="@container rounded-xl border border-border/60 bg-card/40 px-3 py-2.5">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <div className="min-w-48 flex-1">
+            <h2 className="text-sm font-semibold leading-none">Add a runtime</h2>
+            <p className="mt-1 text-xs text-muted-foreground">Scan an existing install or register one executable.</p>
           </div>
-          <div className="flex min-w-0 flex-col justify-center gap-2.5 rounded-lg border border-border/60 bg-background/40 p-3.5">
-            <div className="min-w-0">
-              <p className="text-[13px] font-medium leading-none">Add one executable</p>
-              <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">Choose its runtime and version, then locate the file.</p>
-            </div>
-            <div className="flex min-w-0 flex-wrap items-center gap-2 sm:flex-nowrap">
-              <Select
-                aria-label="Executable runtime"
-                value={customId}
-                onChange={(e) => setCustomId(e.target.value)}
-                className="w-24 shrink-0"
-                triggerClassName="h-8 text-[13px] px-2.5"
-              >
-                {LOCATABLE.map((id) => (
-                  <option key={id} value={id}>
-                    {id}
-                  </option>
-                ))}
-              </Select>
-              <Input
-                aria-label="Executable version"
-                value={customLabel}
-                onChange={(e) => setCustomLabel(e.target.value)}
-                placeholder="Version (e.g. 8.1.2)"
-                className="h-8 min-w-28 flex-1 text-[13px]"
-              />
-              <Button size="sm" variant="secondary" className="h-8 shrink-0 text-xs" onClick={addCustomInstall}>
-                <FolderSearch /> Locate
-              </Button>
-            </div>
+          <Button size="sm" variant="outline" className="h-8 shrink-0 text-sm" onClick={scanPhpFolder} title="Scan a folder for installed runtimes. Adds every PHP version found in the folder you pick">
+            <FolderSearch /> Scan folder
+          </Button>
+          <div className="hidden h-6 w-px shrink-0 bg-border @2xl:block" role="separator" aria-orientation="vertical" />
+          <div className="flex w-full min-w-0 items-center gap-2 @2xl:w-auto">
+            <span className="hidden shrink-0 text-xs text-muted-foreground @4xl:inline">Single executable</span>
+            <Select
+              aria-label="Executable runtime"
+              value={customId}
+              onChange={(e) => setCustomId(e.target.value)}
+              className="w-[92px] shrink-0"
+              triggerClassName="h-8 text-sm px-2.5"
+            >
+              {LOCATABLE.map((id) => (
+                <option key={id} value={id}>
+                  {id}
+                </option>
+              ))}
+            </Select>
+            <Input
+              aria-label="Executable version"
+              value={customLabel}
+              onChange={(e) => setCustomLabel(e.target.value)}
+              placeholder="Version (e.g. 8.1.2)"
+              className="h-8 min-w-28 flex-1 text-sm @2xl:w-44 @2xl:flex-none"
+            />
+            <Button size="sm" variant="secondary" className="h-8 shrink-0 text-sm" onClick={addCustomInstall}>
+              <FolderSearch /> Locate
+            </Button>
           </div>
         </div>
       </div>
@@ -719,16 +703,29 @@ export function RuntimesPage() {
           </Button>
         )}
       </div>
+      </div>
+      }
+    >
+      {installError && (
+        <ErrorCard
+          error={{
+            problem: `${installError.version} could not be installed.`,
+            cause: installError.message,
+            fix: null,
+          }}
+          onDismiss={() => setInstallError(null)}
+          overlay
+        />
+      )}
 
-      <div className="relative">
-      {loading && <RuntimeProgress />}
-      <Table wrapperClassName={cn('rounded-xl border-border/60 overflow-hidden transition-opacity', loading && 'opacity-90')}>
-        <TableHeader>
+      <ScrollableList resetKey={filter} overlay={loading && <RuntimeProgress />}>
+      <Table className="table-fixed" wrapperClassName={cn('overflow-visible rounded-none border-0 bg-transparent transition-opacity', loading && 'opacity-90')}>
+        <TableHeader sticky>
           <TableRow className="hover:bg-transparent">
-            <TableHead className="h-9 w-[190px] text-[11px] font-medium uppercase tracking-wider">Runtime</TableHead>
-            <TableHead className="h-9 w-[240px] text-[11px] font-medium uppercase tracking-wider">Installed</TableHead>
-            <TableHead className="h-9 w-[220px] text-[11px] font-medium uppercase tracking-wider">Status</TableHead>
-            <TableHead className="h-9 w-[290px] text-right text-[11px] font-medium uppercase tracking-wider">Actions</TableHead>
+            <TableHead className="h-9 w-[22%] text-[11px] font-medium uppercase tracking-wider">Runtime</TableHead>
+            <TableHead className="h-9 w-[28%] text-[11px] font-medium uppercase tracking-wider">Installed</TableHead>
+            <TableHead className="h-9 w-[22%] text-[11px] font-medium uppercase tracking-wider">Status</TableHead>
+            <TableHead className="h-9 text-right text-[11px] font-medium uppercase tracking-wider">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -757,13 +754,13 @@ export function RuntimesPage() {
 
             return (
               <TableRow key={g.id} className="h-14 transition-colors hover:bg-muted/40">
-                <TableCell className="w-[190px] py-3 align-middle">
+                <TableCell className="py-3 align-middle">
                   <span className="flex items-center gap-2 text-[13px] font-medium text-foreground">
                     <TechIcon id={g.id} className="size-4 shrink-0 opacity-90" />
                     <span className="truncate">{g.name}</span>
                   </span>
                 </TableCell>
-                <TableCell className="w-[240px] py-3 align-middle">
+                <TableCell className="py-3 align-middle">
                   {status.totalInstalled === 0 ? (
                     <div className="flex flex-col gap-0.5">
                       <span className="flex items-center gap-1.5 text-xs">
@@ -807,7 +804,7 @@ export function RuntimesPage() {
                     </div>
                   )}
                 </TableCell>
-                <TableCell className="w-[220px] py-3 align-middle">
+                <TableCell className="py-3 align-middle">
                   <div className="flex flex-col gap-0.5">
                     {status.statusKind === 'checking' && (
                       <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -869,8 +866,8 @@ export function RuntimesPage() {
                     })()}
                   </div>
                 </TableCell>
-                <TableCell className="w-[290px] py-3 text-right align-middle">
-                  <div className="flex items-center justify-end gap-2">
+                <TableCell className="py-3 text-right align-middle">
+                  <div className="flex flex-wrap items-center justify-end gap-2">
                     {status.statusKind === 'update_available' && status.targetUpdateVersion && (() => {
                       const updateVersion = status.targetUpdateVersion
                       const isMajor = status.isMajorUpgrade
@@ -924,7 +921,7 @@ export function RuntimesPage() {
           )}
         </TableBody>
       </Table>
-      </div>
+      </ScrollableList>
 
       <Dialog
         open={!!managedGroup}
@@ -1198,6 +1195,6 @@ export function RuntimesPage() {
           </CardContent>
         </Card>
       )}
-    </div>
+    </PageLayout>
   )
 }

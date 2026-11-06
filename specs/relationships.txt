@@ -373,3 +373,5 @@ prune_docker / pull_docker_image | run_in | TaskManager (docker-prune / docker-p
 ols-mcp | maps | ols_docker_list_images, ols_docker_list_volumes, ols_docker_disk_usage, ols_docker_pull_image
 set_domain_enabled / bulk_set_domains_enabled | triggers | Inner::docker_follow_enabled (TaskManager docker-site-power -> DockerManager::container_action) for sites with a DockerLink
 SitesPage | uses | toolbarStyles, GitCloneButton, ImportEnvironmentButton, SiteImportButton (toolbar="group"/"ghost"; labels collapse to icon-only below @4xl)
+ui/src/pages/*.tsx -> ui/src/components/PageLayout.tsx (every page; list pages also -> ScrollableList.tsx -> ui/table.tsx TableHeader sticky)
+ui/src/App.tsx <main> (overflow-hidden flex-col) -> pages via PageLayout

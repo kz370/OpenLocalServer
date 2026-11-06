@@ -3,6 +3,7 @@ import { Clipboard, Download, Eraser, Pause, Play } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
+import { PageLayout } from '@/components/PageLayout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Select, Toggle } from '@/components/ui/form'
@@ -79,14 +80,15 @@ export function LogsPage({
   }
 
   return (
-    <div className="flex h-full flex-col gap-4">
+    <PageLayout
+      mode="fill"
+      header={
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Logs</h1>
         <p className="text-sm text-muted-foreground">Application, web server, processes and Quick App runs. Secrets are redacted before they are written.</p>
       </div>
-
-      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
-
+      }
+      toolbar={
       <Card>
         <CardContent className="flex flex-wrap items-center gap-3 pt-4">
           <Select
@@ -130,8 +132,12 @@ export function LogsPage({
           </div>
         </CardContent>
       </Card>
+      }
+      footer={<p className="text-xs text-muted-foreground">{shown.length} of {lines.length} lines</p>}
+    >
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
-      <div ref={box} className="min-h-72 flex-1 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-all rounded-xl border border-border bg-card p-3 font-mono text-xs leading-relaxed">
+      <div ref={box} className="ols-scroll min-h-0 flex-1 overflow-x-hidden whitespace-pre-wrap break-all rounded-xl border border-border bg-card p-3 font-mono text-xs leading-relaxed">
         {shown.length === 0 && <p className="text-muted-foreground">No log lines{query || level !== 'all' ? ' match the filter' : ' yet'}.</p>}
         {shown.map((l, i) => (
           <div key={i} className={`whitespace-pre-wrap break-all ${SEVERITY_COLOR[l.sev]}`}>
@@ -139,7 +145,6 @@ export function LogsPage({
           </div>
         ))}
       </div>
-      <p className="text-xs text-muted-foreground">{shown.length} of {lines.length} lines</p>
-    </div>
+    </PageLayout>
   )
 }
