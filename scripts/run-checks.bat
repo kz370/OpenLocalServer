@@ -34,6 +34,9 @@ set "MODE=all"
 set "NOUI=0"
 set "FIX=0"
 set "FORCE=0"
+rem Tests that would install the local CA into the Windows certificate store (a security
+rem confirmation pop-up) are never run here: certutil is only reachable from these.
+set "NOCERT=--skip ca:: --skip certs:: --skip a_failed_step_rolls_back"
 
 :args
 if "%~1"=="" goto :argsdone
@@ -104,7 +107,7 @@ if /I "%MODE%"=="quick"  goto :m_quick
 :m_all
 call :fmt
 call :step "Clippy" "cargo clippy -p ols-core -p ols-helper --all-targets" ""
-call :step "Tests: ols-core and ols-helper" "cargo test -p ols-core -p ols-helper -- --skip ca:: --skip certs::" ""
+call :step "Tests: ols-core and ols-helper" "cargo test -p ols-core -p ols-helper -- %NOCERT%" ""
 call :step "Tests: ols-mcp" "cargo test -p ols-mcp" ""
 if "%NOUI%"=="1" goto :summary
 call :step "UI lint" "npm run lint" "ui"
@@ -113,12 +116,12 @@ goto :summary
 
 :m_quick
 call :fmt
-call :step "Tests: Docker" "cargo test -p ols-core docker" ""
+call :step "Tests: Docker" "cargo test -p ols-core docker -- %NOCERT%" ""
 call :step "Tests: ols-mcp" "cargo test -p ols-mcp" ""
 goto :summary
 
 :m_docker
-call :step "Tests: Docker" "cargo test -p ols-core docker" ""
+call :step "Tests: Docker" "cargo test -p ols-core docker -- %NOCERT%" ""
 goto :summary
 
 :summary
@@ -161,7 +164,7 @@ echo.
 echo [%N%] %LABEL% ...
 call :now T0
 if not "%WD%"=="" pushd "%WD%"
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0run-step.ps1" -Command "%CMD%" -Log "%LOG%"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0run-checks\run-step.ps1" -Command "%CMD%" -Log "%LOG%"
 set "RC=%errorlevel%"
 if not "%WD%"=="" popd
 call :now T1
