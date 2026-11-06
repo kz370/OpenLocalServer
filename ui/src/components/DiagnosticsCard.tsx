@@ -6,7 +6,7 @@ import { Spinner } from '@/components/Spinner'
 import type { Page } from '@/components/layout/Sidebar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { asDiagnostic } from '@/components/ErrorCard'
+import { asDiagnostic } from '@/lib/diagnostic'
 import { type Diagnostic, type Finding, type HealthItem, runCommand, runCommandWithin } from '@/core'
 import {
   DIAGNOSTICS_POLL_INTERVAL_MS,

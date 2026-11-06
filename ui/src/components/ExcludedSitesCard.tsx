@@ -1,7 +1,8 @@
 import { Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
-import { asDiagnostic, ErrorCard } from '@/components/ErrorCard'
+import { ErrorCard } from '@/components/ErrorCard'
+import { asDiagnostic } from '@/lib/diagnostic'
 import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'

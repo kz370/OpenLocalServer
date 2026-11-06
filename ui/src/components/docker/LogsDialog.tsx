@@ -1,7 +1,8 @@
 import { RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
+import { ErrorCard } from '@/components/ErrorCard'
+import { asDiagnostic } from '@/lib/diagnostic'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'

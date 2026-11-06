@@ -22,12 +22,12 @@ const NAME_TO_CRON: Record<string, string> = {
 }
 
 /** Splits a schedule into five field values, whatever form it was stored in. */
-export function cronFields(schedule: string): string[] {
+function cronFields(schedule: string): string[] {
   const parts = (NAME_TO_CRON[schedule] ?? schedule).trim().split(/\s+/)
   return FIELDS.map((_, i) => parts[i] ?? '*')
 }
 
-export function joinCron(fields: string[]): string {
+function joinCron(fields: string[]): string {
   return FIELDS.map((_, i) => fields[i]?.trim() || '*').join(' ')
 }
 

@@ -50,7 +50,7 @@ export interface DdnsProviderDef {
   keywords: string
 }
 
-export const DDNS_PROVIDERS: DdnsProviderDef[] = [
+const DDNS_PROVIDERS: DdnsProviderDef[] = [
   // Popular DNS Providers
   {
     id: 'cloudflare',

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 
-import { asDiagnostic } from '@/components/ErrorCard'
+import { asDiagnostic } from '@/lib/diagnostic'
 import type { Diagnostic } from '@/core'
 import { useTheme } from '@/lib/theme'
 

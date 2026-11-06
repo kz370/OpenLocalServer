@@ -1,7 +1,8 @@
 import { Globe } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
-import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
+import { ErrorCard } from '@/components/ErrorCard'
+import { asDiagnostic } from '@/lib/diagnostic'
 import { Spinner } from '@/components/Spinner'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'

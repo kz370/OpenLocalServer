@@ -1,7 +1,8 @@
 import { BookmarkPlus, Plus, Trash2 } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 
-import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
+import { ErrorCard } from '@/components/ErrorCard'
+import { asDiagnostic } from '@/lib/diagnostic'
 import { Spinner } from '@/components/Spinner'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -10,30 +11,6 @@ import { Input, NumberInput } from '@/components/ui/input'
 import { type Diagnostic, type ServicePreset, runCommand } from '@/core'
 
 type EnvRow = { key: string; value: string; secret: boolean }
-
-/** A blank preset, or one started from an image someone typed in the builder. */
-export function blankPreset(image = '', containerPort: number | null = null): ServicePreset {
-  // `nginx:1.28` -> image `nginx`, tag `1.28`. A registry port (`host:5000/app`) stays in the name.
-  const lastSlash = image.lastIndexOf('/')
-  const colon = image.lastIndexOf(':')
-  const hasTag = colon > lastSlash
-  return {
-    id: '',
-    name: '',
-    category: 'My presets',
-    description: '',
-    image: hasTag ? image.slice(0, colon) : image,
-    tag: '',
-    tags: hasTag ? [image.slice(colon + 1)] : [],
-    default_service: 'app',
-    ports: containerPort ? [{ container: containerPort, default_host: Math.max(containerPort, 1024), label: 'Web', web: true }] : [],
-    env: [],
-    volumes: [],
-    command: null,
-    working_dir: null,
-    custom: true,
-  }
-}
 
 function Section({ title, onAdd, children }: { title: string; onAdd: () => void; children: ReactNode }) {
   return (

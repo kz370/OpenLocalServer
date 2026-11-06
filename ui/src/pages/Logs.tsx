@@ -9,36 +9,8 @@ import { Select, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { type LogSource, runCommand } from '@/core'
 import { useAction } from '@/lib/hooks'
+import { SEVERITY_COLOR, type Severity, severityOf } from '@/lib/logSeverity'
 import { confirmAction } from '@/lib/confirm'
-
-export type Severity = 'error' | 'warn' | 'info' | 'debug'
-
-/** Best-effort severity from JSON logs (`"level":"WARN"`) and plain text (`[error]`, `ERROR:`). */
-export function severityOf(line: string): Severity {
-  const l = line.toLowerCase()
-  if (/"level":"(error|fatal)"|\[(emerg|alert|crit|error)\]|\berror\b|✗|failed|fatal/.test(l)) return 'error'
-  if (/"level":"warn|\[warn\]|\bwarn(ing)?\b/.test(l)) return 'warn'
-  if (/"level":"debug|"level":"trace|\[debug\]/.test(l)) return 'debug'
-  return 'info'
-}
-
-export const SEVERITY_COLOR: Record<Severity, string> = {
-  error: 'text-destructive',
-  warn: 'text-warning',
-  info: '',
-  debug: 'text-muted-foreground',
-}
-
-/** Normalize log line for dedupe: strip timestamps, collapse whitespace, lowercase. */
-export function dedupeKey(line: string): string {
-  return line
-    .replace(/\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?/g, '')
-    .replace(/\b\d{2}:\d{2}:\d{2}(?:\.\d+)?\b/g, '')
-    .replace(/^\s*\[[\d\s:.,-]+\]\s*/, '')
-    .trim()
-    .replace(/\s+/g, ' ')
-    .toLowerCase()
-}
 
 /** §117: every log source in one place, live tail, search, filter, copy, export. */
 export function LogsPage({

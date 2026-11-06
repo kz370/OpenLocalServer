@@ -1,7 +1,7 @@
 import { Eraser, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
-import { asDiagnostic } from '@/components/ErrorCard'
+import { asDiagnostic } from '@/lib/diagnostic'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { type Diagnostic, type DockerDiskUsage, runCommand } from '@/core'

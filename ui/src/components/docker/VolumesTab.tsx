@@ -1,7 +1,8 @@
 import { Database, Search, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
+import { ErrorCard } from '@/components/ErrorCard'
+import { asDiagnostic } from '@/lib/diagnostic'
 import { ServiceIconAction } from '@/components/ServiceIconAction'
 import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'

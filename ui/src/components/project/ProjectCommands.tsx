@@ -13,7 +13,8 @@ import { type CommandSource, type DiscoveredCommand, type HistoryEntry, type Pro
 import { timeAgo, useAction } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 import { waitForProcessExit } from '@/lib/wait'
-import { CommandForm, SOURCE_ICON, StateBadge, commandLine, quote, sourceCache } from '@/pages/Commands'
+import { SOURCE_ICON, commandLine, quote, sourceCache } from '@/lib/commandHelpers'
+import { CommandForm, StateBadge } from '@/pages/Commands'
 
 /** A suggestion under the command box. */
 interface Suggestion {

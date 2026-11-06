@@ -3,8 +3,10 @@ import { AlertTriangle, BookmarkPlus, KeyRound, Pencil, Plus, Trash2, Wand2 } fr
 import { useEffect, useMemo, useState } from 'react'
 
 import { CodeEditor } from '@/components/CodeEditor'
-import { PresetEditorDialog, blankPreset } from '@/components/docker/PresetEditorDialog'
-import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
+import { PresetEditorDialog } from '@/components/docker/PresetEditorDialog'
+import { blankPreset } from '@/lib/dockerPresets'
+import { ErrorCard } from '@/components/ErrorCard'
+import { asDiagnostic } from '@/lib/diagnostic'
 import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'

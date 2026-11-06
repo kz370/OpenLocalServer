@@ -2,7 +2,8 @@ import { ChevronDown, FileText, Globe, Home, Play, Repeat, Rocket, RotateCw } fr
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { DiagnosticsCard } from '@/components/DiagnosticsCard'
-import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
+import { ErrorCard } from '@/components/ErrorCard'
+import { asDiagnostic } from '@/lib/diagnostic'
 import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
 import { ServiceMark } from '@/components/TechIcon'

@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { type Diagnostic, type EditorInfo, type Shortcut, runCommand } from '@/core'
-import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
+import { ErrorCard } from '@/components/ErrorCard'
+import { asDiagnostic } from '@/lib/diagnostic'
 
 /** The editors found on this machine, read once and shared by every menu on the page. */
 let editorsCache: Promise<EditorInfo[]> | null = null

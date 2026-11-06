@@ -1,7 +1,8 @@
 import { Copy, FileCode2, Lock, Pencil, Plus, Settings2, Trash2 } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 
-import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
+import { ErrorCard } from '@/components/ErrorCard'
+import { asDiagnostic } from '@/lib/diagnostic'
 import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'

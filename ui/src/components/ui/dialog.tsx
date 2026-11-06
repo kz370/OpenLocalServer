@@ -1,11 +1,9 @@
 import { X } from 'lucide-react'
-import { createContext, useContext, type ReactNode, useEffect } from 'react'
+import { useContext, type ReactNode, useEffect } from 'react'
 
+import { DialogDepthContext } from '@/components/ui/dialogContext'
 import { usePresence } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
-
-/** Tracks modal nesting depth so inner dialogs are automatically layered above outer dialogs. */
-export const DialogDepthContext = createContext<number>(0)
 
 export type DialogLayer = 'default' | 'sub' | 'top' | 'ai' | 'confirm'
 

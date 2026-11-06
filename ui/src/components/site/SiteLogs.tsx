@@ -6,8 +6,9 @@ import { Button } from '@/components/ui/button'
 import { Select, Tabs, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { type CommandSource, type LogSource, runCommand } from '@/core'
-import { SourceProblem, sourceCache } from '@/pages/Commands'
-import { SEVERITY_COLOR, severityOf } from '@/pages/Logs'
+import { sourceCache } from '@/lib/commandHelpers'
+import { SourceProblem } from '@/pages/Commands'
+import { SEVERITY_COLOR, severityOf } from '@/lib/logSeverity'
 
 /**
  * A site's problems and logs in one place: issues found while reading the project's tools

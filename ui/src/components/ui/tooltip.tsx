@@ -12,7 +12,6 @@ import * as React from 'react'
 import { cn } from '@/lib/utils'
 import { parseTooltipShortcut } from '@/lib/tooltip'
 
-export { parseTooltipShortcut } from '@/lib/tooltip'
 
 export interface TooltipProps {
   content: React.ReactNode

@@ -12,15 +12,12 @@ import {
 import { Check, ChevronDown, Image as ImageIcon, Search, Trash2, Upload, X } from 'lucide-react'
 import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
+import { ErrorCard } from '@/components/ErrorCard'
+import { asDiagnostic } from '@/lib/diagnostic'
 import { IconCategoryFilter } from '@/components/IconCategoryFilter'
-import {
-  SiteLogo,
-  filterFaIcons,
-  buildIconSpec,
-  parseIconSpec,
-} from '@/components/SiteLogo'
-import { projectTypeTechIcon } from '@/components/TechIcon'
+import { SiteLogo } from '@/components/SiteLogo'
+import { filterFaIcons, buildIconSpec, parseIconSpec } from '@/components/faIcons'
+import { projectTypeTechIcon } from '@/components/techBrands'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { emit, listen } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 
@@ -6,28 +6,12 @@ import { runCommand } from '@/core'
 import { applyThemeToDom, computeEffectiveOptions, computeEffectiveTokens } from './apply'
 import { BUILTIN_PRESETS, DEFAULT_THEME_ID } from './presets'
 import type { ThemeDefinition, ThemeMode, ThemeOptions, ThemeOverrides, ThemeSettings, ThemeTokens } from './types'
+import { ThemeContext, type ThemeContextValue } from './themeContext'
 import { DEFAULT_THEME_SETTINGS, validateThemeSettings } from './validation'
 
-export interface ThemeContextValue {
-  settings: ThemeSettings
-  mode: ThemeMode
-  resolvedTheme: 'light' | 'dark'
-  preset: ThemeDefinition
-  tokens: ThemeTokens
-  options: ThemeOptions
-  setMode: (mode: ThemeMode) => void
-  setPresetId: (presetId: string) => void
-  setOverrides: (overrides: Partial<ThemeOverrides>) => void
-  resetToDefault: () => void
-  // Legacy aliases
-  theme: ThemeMode
-  setTheme: (theme: ThemeMode) => void
-}
 
-const ThemeContext = createContext<ThemeContextValue | null>(null)
-
-export const STORAGE_KEY_APPEARANCE = 'ols-appearance'
-export const STORAGE_KEY_THEME_LEGACY = 'ols-theme'
+const STORAGE_KEY_APPEARANCE = 'ols-appearance'
+const STORAGE_KEY_THEME_LEGACY = 'ols-theme'
 
 function getSystemTheme(): 'light' | 'dark' {
   if (typeof window === 'undefined') return 'dark'
@@ -214,16 +198,4 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
-}
-
-export function useTheme(): ThemeContextValue {
-  const ctx = useContext(ThemeContext)
-  if (!ctx) {
-    throw new Error('useTheme must be used within ThemeProvider')
-  }
-  return ctx
-}
-
-export function useThemeSafe(): ThemeContextValue | null {
-  return useContext(ThemeContext)
 }

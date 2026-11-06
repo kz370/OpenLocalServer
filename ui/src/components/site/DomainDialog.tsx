@@ -27,7 +27,7 @@ import { buildSitePath, domainToFolderName, getDefaultSitesDir, getDefaultTld, s
 import { useDirtyForm, type DirtyFormScope } from '@/lib/dirtyForms'
 import { type Domain, type DomainSummary, type Project, type QuickEntryView, type SiteFolderInspection, type SystemInstall, runCommand } from '@/core'
 
-export const RESERVED_APP_PORTS: Record<number, string> = {
+const RESERVED_APP_PORTS: Record<number, string> = {
   53: 'DNS server',
   80: 'Web server HTTP',
   443: 'Web server HTTPS',
@@ -81,7 +81,7 @@ function middleTruncate(value: string, maxLength = 54): string {
   return `${value.slice(0, sideLength)}…${value.slice(-sideLength)}`
 }
 
-export function getInitialServeMode(domain: Domain): SiteServeMode {
+function getInitialServeMode(domain: Domain): SiteServeMode {
   if (domain.kind.type === 'php') return 'php'
   if (domain.kind.type === 'static') return 'static'
   if (domain.kind.type === 'proxy') {
@@ -95,39 +95,13 @@ export function getInitialServeMode(domain: Domain): SiteServeMode {
   return 'static'
 }
 
-const emptyBlocks = { headers: [], redirects: [], mappings: [], upstreams: [], includes: [] }
 
-export function splitArgs(line: string): string[] {
+function splitArgs(line: string): string[] {
   const out: string[] = []
   const re = /"([^"]*)"|'([^']*)'|(\S+)/g
   let m: RegExpExecArray | null
   while ((m = re.exec(line))) out.push(m[1] ?? m[2] ?? m[3])
   return out
-}
-
-export function newDomain(): Domain {
-  return {
-    hostname: '',
-    project_id: null,
-    root: '',
-    kind: { type: 'static' },
-    https: true,
-    redirect_https: true,
-    wildcard: false,
-    enabled: true,
-    ownership: 'managed',
-    app: null,
-    blocks: emptyBlocks,
-    generated_hashes: {},
-    server: null,
-    path_prefix: null,
-    ssl_provider: 'local_ca',
-    custom_cert_path: null,
-    custom_key_path: null,
-    lets_encrypt_email: null,
-    auto_broadcast: false,
-    broadcast_provider: 'cloudflare',
-  }
 }
 
 /** The "Add site" dialog. Editing an existing site happens in the site dialog's Settings tab. */

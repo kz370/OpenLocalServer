@@ -4,7 +4,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import type { Page } from '@/components/layout/Sidebar'
 import { Spinner } from '@/components/Spinner'
 import { type CoreCommand, type SearchHit, runCommand, requestExit } from '@/core'
-import { asDiagnostic } from '@/components/ErrorCard'
+import { asDiagnostic } from '@/lib/diagnostic'
 import { usePresence } from '@/lib/hooks'
 import { openProject } from '@/lib/nav'
 import { cn } from '@/lib/utils'

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 
-import { OfflineNotice, useOnline } from '@/components/ReleaseCards'
+import { OfflineNotice } from '@/components/ReleaseCards'
+import { useOnline } from '@/lib/useOnline'
 import { Badge } from '@/components/ui/badge'
 import { runCommand } from '@/core'
 import { useAppMarkPath, usePoll } from '@/lib/hooks'

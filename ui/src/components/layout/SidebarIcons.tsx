@@ -1,7 +1,7 @@
 import { cn } from '@/lib/utils'
 import { useThemeSafe } from '@/lib/theme'
 
-export function useIsMonochrome(explicit?: boolean): boolean {
+function useIsMonochrome(explicit?: boolean): boolean {
   const theme = useThemeSafe()
   if (explicit !== undefined) return explicit
   return theme?.options.sidebarIcons === 'monochrome'

@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
-import { ErrorCard, asDiagnostic } from '@/components/ErrorCard'
+import { ErrorCard } from '@/components/ErrorCard'
+import { asDiagnostic } from '@/lib/diagnostic'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -18,6 +19,7 @@ import { type CommandSource, type DiscoveredCommand, type HistoryEntry, type Pro
 import { timeAgo, useAction, usePoll } from '@/lib/hooks'
 import { createPersistentCache } from '@/lib/cache'
 import { cn } from '@/lib/utils'
+import { SOURCE_ICON, commandLine, quote, sourceCache } from '@/lib/commandHelpers'
 import { waitForProcessExit } from '@/lib/wait'
 import { confirmThen } from '@/lib/confirm'
 
@@ -37,13 +39,6 @@ const categoryRank = (c: string) => {
 }
 const categoryLabel = (c: string) => CATEGORY_LABELS[c] ?? c.charAt(0).toUpperCase() + c.slice(1)
 
-/** Brand icon for each discovered source. */
-export const SOURCE_ICON: Record<string, string> = {
-  artisan: 'laravel',
-  console: 'symfony',
-  composer: 'composer',
-  django: 'django',
-}
 /** The Quick Command category a source's saved commands land in. */
 const SOURCE_CATEGORY: Record<string, string> = {
   artisan: 'laravel',
@@ -54,16 +49,8 @@ const SOURCE_CATEGORY: Record<string, string> = {
 }
 const FRAMEWORKS = ['laravel', 'symfony', 'wordpress', 'generic_php', 'node', 'django', 'flask', 'fast_api', 'generic_python']
 
-/** Discovery runs the project's tools, which takes a second or two: keep it for the session. */
-export const sourceCache = new Map<string, CommandSource[]>()
-
-/** Quotes one argument the way the backend's command-line splitter reads it back. */
-export function quote(arg: string): string {
-  return arg === '' || /[\s"']/.test(arg) ? `"${arg.replace(/"/g, '\\"')}"` : arg
-}
-
 /** The inverse of `quote` for a whole line: whitespace splits, "..." and '...' group. */
-export function splitLine(line: string): string[] {
+function splitLine(line: string): string[] {
   const out: string[] = []
   let cur = ''
   let q: string | null = null
@@ -94,7 +81,6 @@ const slug = (s: string) =>
     .replace(/^-+|-+$/g, '')
     .slice(0, 48) || 'command'
 
-export const commandLine = (c: QuickCommand) => (c.command?.executable ? [c.command.executable, ...c.command.arguments].map(quote).join(' ') : '')
 
 type DialogTab = 'run' | 'details' | 'history'
 

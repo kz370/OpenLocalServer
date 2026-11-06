@@ -1,7 +1,8 @@
 import { LayoutGrid, Search, X } from 'lucide-react'
 import { type ReactNode, useMemo, useState } from 'react'
 
-import { FA_ICON_CATEGORIES, FA_ICONS, FontAwesomeIcon } from '@/components/SiteLogo'
+import { FontAwesomeIcon } from '@/components/SiteLogo'
+import { FA_ICON_CATEGORIES, FA_ICONS } from '@/components/faIcons'
 import { Select } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 

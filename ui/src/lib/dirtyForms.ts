@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 
-import { asDiagnostic } from '@/components/ErrorCard'
+import { asDiagnostic } from '@/lib/diagnostic'
 import { confirmAction } from '@/lib/confirm'
 import type { Diagnostic } from '@/core'
 
