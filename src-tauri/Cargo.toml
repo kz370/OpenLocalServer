@@ -29,6 +29,8 @@ tauri = { version = "2.11.6", features = ["tray-icon", "image-png"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-single-instance = "2"
+# Dev-only MCP bridge (registered under cfg(debug_assertions) in lib.rs).
+tauri-plugin-mcp-bridge = "0.1"
 tracing = "0.1"
 ols-core = { path = "../crates/ols-core" }
 

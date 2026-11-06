@@ -15,6 +15,7 @@
     "core:window:allow-toggle-maximize",
     "core:window:allow-is-maximized",
     "core:window:allow-start-dragging",
+    "mcp-bridge:default",
     "dialog:allow-open",
     "dialog:allow-save",
     {

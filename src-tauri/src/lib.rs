@@ -1807,7 +1807,10 @@ pub fn run() {
     // ols_core::logging::init() above already installs the global tracing subscriber
     // (JSON, redacted, to disk — §118/§141). tauri-plugin-log would try to install a
     // second global logger and panic on startup, so it is intentionally not used here.
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(debug_assertions)]
+    let builder = builder.plugin(tauri_plugin_mcp_bridge::init());
+    builder
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             show_main_window(app);
             let mut pending_add = None;
