@@ -188,7 +188,7 @@ mod project_skip_tests {
             })
             .unwrap();
         let hostname = "history-site.local";
-        inner.remove_domain(&hostname).unwrap();
+        inner.remove_domain(hostname).unwrap();
 
         let items = inner.list_deleted_items();
         assert!(
@@ -266,7 +266,7 @@ mod project_skip_tests {
             })
             .unwrap();
         let hostname = "history-site.local";
-        inner.remove_domain(&hostname).unwrap();
+        inner.remove_domain(hostname).unwrap();
         assert!(!inner.list_deleted_items().is_empty());
 
         assert!(inner.clear_deleted_items().unwrap() > 0);

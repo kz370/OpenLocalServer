@@ -197,9 +197,7 @@ impl ProcessSupervisor {
     pub fn mark_expected_stop(&self, id: ProcessId) -> Option<u32> {
         let (pid, name, changed) = {
             let mut guard = self.processes.lock().unwrap();
-            let Some(rec) = guard.get_mut(&id.0) else {
-                return None;
-            };
+            let rec = guard.get_mut(&id.0)?;
             let changed = !rec.expected_stop;
             rec.expected_stop = true;
             rec.info.state = ProcessState::Stopping;

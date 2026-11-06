@@ -60,19 +60,15 @@ pub enum PortStatusLite {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum ServiceState {
     Starting,
     Stopping,
     Restarting,
     Running,
+    #[default]
     Stopped,
     Error,
-}
-
-impl Default for ServiceState {
-    fn default() -> Self {
-        Self::Stopped
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -449,7 +445,7 @@ impl ServiceManager {
         let cfg = (handle.config)();
         handle
             .web
-            .status(&cfg, &(handle.domains)().as_slice())
+            .status(&cfg, (handle.domains)().as_slice())
             .servers
             .into_iter()
             .map(|s| {

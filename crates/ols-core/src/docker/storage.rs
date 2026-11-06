@@ -146,7 +146,7 @@ pub fn parse_images(v: &Value, containers: &[ContainerSummary]) -> Vec<ImageSumm
             }
         })
         .collect();
-    out.sort_by(|a, b| b.created.cmp(&a.created));
+    out.sort_by_key(|b| std::cmp::Reverse(b.created));
     out
 }
 

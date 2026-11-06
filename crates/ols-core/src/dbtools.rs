@@ -372,9 +372,9 @@ impl ExternalToolStore {
         }
         tool.id = tool.id.trim().to_ascii_lowercase();
         tool.name = tool.name.trim().to_string();
-        if tool.launch_mode.trim().is_empty() {
-            tool.launch_mode = "args".to_string();
-        } else if tool.launch_mode != "args" && tool.launch_mode != "clipboard" {
+        if tool.launch_mode.trim().is_empty()
+            || (tool.launch_mode != "args" && tool.launch_mode != "clipboard")
+        {
             tool.launch_mode = "args".to_string();
         }
         tool.executable = tool.executable.trim().to_string();

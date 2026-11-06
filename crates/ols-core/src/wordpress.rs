@@ -250,7 +250,7 @@ pub fn repair_missing_core(dir: &Path, cache_dir: &Path) -> Result<WpCoreRepair,
                 let client = reqwest::Client::builder()
                     .timeout(std::time::Duration::from_secs(120))
                     .build()?;
-                Ok::<_, reqwest::Error>(client.get(url).send().await?.error_for_status()?.bytes().await?)
+                client.get(url).send().await?.error_for_status()?.bytes().await
             })
             .map_err(|e| {
                 CoreError::failed_fix(

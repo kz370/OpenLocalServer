@@ -1389,7 +1389,7 @@ async fn sync_ionos(
         token.to_string()
     };
 
-    let url = format!("https://api.hosting.ionos.com/dns/v1/dynamic/records");
+    let url = "https://api.hosting.ionos.com/dns/v1/dynamic/records".to_string();
     let payload = json!({
         "domains": [format!("{record_name}.{apex}")],
         "ipv4": ip,

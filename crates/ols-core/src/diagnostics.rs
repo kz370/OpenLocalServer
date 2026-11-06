@@ -43,6 +43,7 @@ struct Builder {
 }
 
 impl Builder {
+    #[allow(clippy::too_many_arguments)]
     fn add(
         &mut self,
         id: impl Into<String>,

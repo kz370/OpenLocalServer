@@ -179,6 +179,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::field_reassign_with_default)]
     fn rejects_values_that_could_inject_ini_lines() {
         let mut s = XdebugSettings::default();
         s.client_host = "127.0.0.1\nzend_extension=evil.dll".into();

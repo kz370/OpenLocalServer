@@ -278,7 +278,10 @@ mod tests {
         let monitor = Monitor::default();
         let folder = dir.path().to_path_buf();
         for _ in 0..100 {
-            if let Some(size) = monitor.folder_sizes(&[folder.clone()]).get(&folder) {
+            if let Some(size) = monitor
+                .folder_sizes(std::slice::from_ref(&folder))
+                .get(&folder)
+            {
                 assert_eq!(*size, 1500);
                 return;
             }

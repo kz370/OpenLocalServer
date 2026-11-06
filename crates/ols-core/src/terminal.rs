@@ -266,6 +266,7 @@ pub fn composer_shim(phar: &Path) -> String {
 impl Inner {
     /// Where the terminal starts and what it sees: the project's folder, its runtimes first on
     /// PATH, its virtual environment active, and `composer` available as a command.
+    #[allow(clippy::type_complexity)]
     pub fn terminal_setup(
         &self,
         project_id: Option<&str>,

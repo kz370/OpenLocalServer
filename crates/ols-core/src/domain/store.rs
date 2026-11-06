@@ -342,7 +342,7 @@ impl DomainStore {
         };
 
         let is_local = |h: Option<&str>| -> bool {
-            h.map_or(true, |v| {
+            h.is_none_or(|v| {
                 let s = v.trim();
                 s.is_empty()
                     || s == "127.0.0.1"

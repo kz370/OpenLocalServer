@@ -4,6 +4,7 @@ use super::types::*;
 use crate::setup::plan_text;
 
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod tests {
     use super::*;
     use crate::command::{Core, CoreCommand, CoreResponse};

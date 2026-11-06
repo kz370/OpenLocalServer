@@ -147,35 +147,6 @@ impl Inner {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn web_autostart_publishes_starting_and_failure_states() {
-        let home = crate::test_support::isolated_home();
-        let mut settings = crate::settings::SettingsService::load(&home.paths).unwrap();
-        settings
-            .set("startup.services", serde_json::json!(["nginx"]))
-            .unwrap();
-        let core = Core::new(settings, home.paths.clone());
-        let mut events = core.services().subscribe_status_events();
-
-        core.inner().run_autostart();
-
-        let states: Vec<_> = std::iter::from_fn(|| events.try_recv().ok())
-            .flat_map(|event| event.services.into_iter().map(|service| service.state))
-            .collect();
-        assert_eq!(
-            states,
-            [
-                crate::service::ServiceState::Starting,
-                crate::service::ServiceState::Error
-            ]
-        );
-    }
-}
-
 // ------------------------------------------------------------------ Windows startup
 
 #[cfg(windows)]
@@ -307,6 +278,35 @@ pub fn migrate_startup_entry() {
             Ok(()) => tracing::info!("rewrote the startup entry to the running executable"),
             Err(e) => tracing::warn!(error = %e, "could not rewrite the startup entry"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn web_autostart_publishes_starting_and_failure_states() {
+        let home = crate::test_support::isolated_home();
+        let mut settings = crate::settings::SettingsService::load(&home.paths).unwrap();
+        settings
+            .set("startup.services", serde_json::json!(["nginx"]))
+            .unwrap();
+        let core = Core::new(settings, home.paths.clone());
+        let mut events = core.services().subscribe_status_events();
+
+        core.inner().run_autostart();
+
+        let states: Vec<_> = std::iter::from_fn(|| events.try_recv().ok())
+            .flat_map(|event| event.services.into_iter().map(|service| service.state))
+            .collect();
+        assert_eq!(
+            states,
+            [
+                crate::service::ServiceState::Starting,
+                crate::service::ServiceState::Error
+            ]
+        );
     }
 }
 

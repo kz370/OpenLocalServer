@@ -503,6 +503,7 @@ impl LoadProfile {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn profile(
     id: &str,
     name: &str,
@@ -1141,7 +1142,7 @@ impl Inner {
                 runs.push(r);
             }
         }
-        runs.sort_by(|a, b| b.started_ms.cmp(&a.started_ms));
+        runs.sort_by_key(|b| std::cmp::Reverse(b.started_ms));
         runs
     }
 
@@ -1462,9 +1463,7 @@ mod tests {
         for i in 1..=100 {
             apply_line(
                 &mut live,
-                &format!(
-                    r#"{{"type":"Point","metric":"http_reqs","data":{{"time":"2026-01-01T00:00:00Z","value":1,"tags":{{}}}}}}"#
-                ),
+                r#"{"type":"Point","metric":"http_reqs","data":{"time":"2026-01-01T00:00:00Z","value":1,"tags":{}}}"#,
                 0,
             );
             apply_line(

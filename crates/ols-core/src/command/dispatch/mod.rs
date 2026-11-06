@@ -1,3 +1,6 @@
+// Handlers hand an unhandled command back to the router as the `Err` side, by design.
+#![allow(clippy::result_large_err)]
+
 pub mod database;
 pub mod docker;
 pub mod domains;

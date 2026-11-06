@@ -560,11 +560,13 @@ mod tests {
         );
         assert!(m.enabled_services().contains(&"redis".to_string()));
 
-        let mut current = EnvironmentManifest::default();
-        current.domain = Some(DomainManifest {
-            hostname: "keep.test".into(),
+        let mut current = EnvironmentManifest {
+            domain: Some(DomainManifest {
+                hostname: "keep.test".into(),
+                ..Default::default()
+            }),
             ..Default::default()
-        });
+        };
         current
             .modes
             .insert("review".into(), ModeManifest::default());

@@ -716,7 +716,7 @@ impl WebManager {
             site_php.insert(d.hostname.clone(), picked.clone());
         }
         self.php
-            .retain(&php_versions_across_servers(ctx, &all, &|v| {
+            .retain(&php_versions_across_servers(ctx, all, &|v| {
                 self.php.pick_version(v)
             }));
         self.state.lock().unwrap().site_php = site_php;
@@ -886,7 +886,7 @@ impl WebManager {
         let write_all = || -> std::io::Result<()> {
             for (path, content, host) in &plan {
                 if let Some(host) = host {
-                    if let Some(old) = std::fs::read_to_string(path).ok() {
+                    if let Ok(old) = std::fs::read_to_string(path) {
                         self.archive(server.id(), host, ConfigPart::Site, ext, &old);
                     }
                 }
@@ -1676,7 +1676,7 @@ impl WebManager {
     ) -> Vec<ConfigVersion> {
         let server_id = self.server_of(cfg, domains, hostname);
         let mut v = self.list_history_raw(&server_id, hostname);
-        v.sort_by(|a, b| b.timestamp_ms.cmp(&a.timestamp_ms));
+        v.sort_by_key(|b| std::cmp::Reverse(b.timestamp_ms));
         v
     }
 

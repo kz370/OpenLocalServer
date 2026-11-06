@@ -5,11 +5,10 @@ use super::types::*;
 /// ever offering a download (§126: never modify an existing install without asking).
 pub fn detect_system_install(id: &str) -> Option<SystemInstall> {
     // Each probe spawns `<tool> --version`, and the UI polls the catalog — remember answers briefly.
-    static CACHE: std::sync::OnceLock<
-        std::sync::Mutex<
-            std::collections::HashMap<String, (std::time::Instant, Option<SystemInstall>)>,
-        >,
-    > = std::sync::OnceLock::new();
+    type Cache = std::sync::Mutex<
+        std::collections::HashMap<String, (std::time::Instant, Option<SystemInstall>)>,
+    >;
+    static CACHE: std::sync::OnceLock<Cache> = std::sync::OnceLock::new();
     const TTL: std::time::Duration = std::time::Duration::from_secs(60);
     let cache = CACHE.get_or_init(Default::default);
     if let Some((at, found)) = cache.lock().unwrap().get(id) {

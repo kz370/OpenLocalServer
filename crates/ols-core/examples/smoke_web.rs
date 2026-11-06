@@ -488,8 +488,7 @@ fn main() {
     let (s, _) = http_get_no_follow("a.test", http);
     check("…and the server kept serving", s == 200, s);
 
-    let edited = good.replace("PHP", "PHP"); // valid, byte-different config
-    let edited = format!("{edited}\n# edited by user\n");
+    let edited = format!("{good}\n# edited by user\n"); // valid, byte-different config
     dispatch(
         &core,
         CoreCommand::WriteWebConfig {

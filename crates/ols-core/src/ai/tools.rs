@@ -203,9 +203,9 @@ impl Inner {
                 .join("\n"),
             "list_databases" => {
                 let engine = s("engine").unwrap_or_else(|| "mariadb".into());
-                match self.services.list_databases(&engine) {
-                    Ok(dbs) => dbs.join("\n"),
-                    Err(e) => return Err(e),
+                {
+                    let dbs = self.services.list_databases(&engine)?;
+                    dbs.join("\n")
                 }
             }
             "list_runtimes" => self

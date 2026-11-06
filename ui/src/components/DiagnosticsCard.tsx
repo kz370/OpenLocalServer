@@ -53,7 +53,7 @@ export function DiagnosticsCard({
   const [findings, setFindings] = useState<Finding[] | null>(null)
   const [scanError, setScanError] = useState<Diagnostic | null>(null)
   const [lastChecked, setLastChecked] = useState<number | null>(null)
-  const [now, setNow] = useState<number>(Date.now())
+  const [now, setNow] = useState<number>(() => Date.now())
   const { busy, run } = useAction()
   const startingServices = useStartingServices()
 

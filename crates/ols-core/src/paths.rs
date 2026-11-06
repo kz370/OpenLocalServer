@@ -177,7 +177,7 @@ impl AppPaths {
         }
         #[cfg(debug_assertions)]
         {
-            return self.root.join("sites");
+            self.root.join("sites")
         }
         #[cfg(not(debug_assertions))]
         {

@@ -70,14 +70,13 @@ impl Inner {
             let mut watched = std::collections::HashSet::new();
             for root in roots {
                 let path = PathBuf::from(root);
-                if path.is_dir() {
-                    if debouncer
+                if path.is_dir()
+                    && debouncer
                         .watcher()
                         .watch(&path, RecursiveMode::NonRecursive)
                         .is_ok()
-                    {
-                        watched.insert(path);
-                    }
+                {
+                    watched.insert(path);
                 }
             }
             // The watcher is non-recursive, so its useful signal for automatic
@@ -131,7 +130,7 @@ impl Inner {
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                         tick_count = tick_count.wrapping_add(1);
                         // Every ~3 seconds (6 * 500ms), sweep health to detect unmounted drives / external deletions
-                        if tick_count % 6 == 0 {
+                        if tick_count.is_multiple_of(6) {
                             let health_changed = lock(&core.projects).sweep_health();
                             if health_changed {
                                 if let Err(error) = core.sync_auto_domains() {
@@ -1069,7 +1068,7 @@ impl Inner {
             }
         }
 
-        names.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+        names.sort_by_key(|a| a.to_lowercase());
         names
             .into_iter()
             .map(|name| crate::project::CustomProjectType {

@@ -41,7 +41,7 @@ fn nothing_is_sent_while_the_assistant_is_off_or_to_a_remote_provider_without_co
     let e = i.ai_start(explain("boom"), false).unwrap_err().to_string();
     assert!(e.contains("outside this computer"), "{e}");
     assert!(
-        i.ai_prompt(&explain("boom")).unwrap().local == false,
+        !i.ai_prompt(&explain("boom")).unwrap().local,
         "the preview says where it goes"
     );
 }

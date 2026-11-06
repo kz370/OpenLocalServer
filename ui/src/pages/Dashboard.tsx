@@ -943,6 +943,7 @@ const TrafficGraph = memo(function TrafficGraph({
     return () => ro.disconnect()
   }, [])
 
+  const [mountedAt] = useState(() => Date.now())
   const { req, kb, end, totalLogReq, totalLogKb } = useMemo(() => {
     const N = 30
     const WIN_MS = 5 * 60 * 1000
@@ -951,7 +952,7 @@ const TrafficGraph = memo(function TrafficGraph({
     let latest = 0
     const parsed = lines.map(parseAccessLine)
     for (const p of parsed) if (p.t !== null && p.t > latest) latest = p.t
-    const endMs = latest > 0 ? latest : Date.now()
+    const endMs = latest > 0 ? latest : mountedAt
     let unparsed = 0
     let unparsedBytes = 0
     let allBytes = 0
@@ -980,7 +981,7 @@ const TrafficGraph = memo(function TrafficGraph({
       totalLogReq: parsed.length,
       totalLogKb: allBytes / 1024,
     }
-  }, [lines])
+  }, [lines, mountedAt])
 
   const N = req.length
   const WIN_MS = 5 * 60 * 1000

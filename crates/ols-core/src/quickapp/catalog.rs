@@ -3,10 +3,10 @@
 //!
 //! * **Built-in** — embedded in the binary. Trusted.
 //! * **Local**    — files the user created, duplicated or edited (`quick-apps/local/`). Trusted
-//!                  by the user. A local file with a built-in's id *overrides* it; deleting
-//!                  the file restores the original.
+//!   by the user. A local file with a built-in's id *overrides* it; deleting
+//!   the file restores the original.
 //! * **Imported** — copied in from a file, folder or Git repository (`quick-apps/imported/`).
-//!                  Untrusted until the user approves the source (§88).
+//!   Untrusted until the user approves the source (§88).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};

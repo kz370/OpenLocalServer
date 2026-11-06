@@ -212,7 +212,7 @@ impl RunManager {
             .values()
             .map(|r| r.view.lock().unwrap().clone())
             .collect();
-        all.sort_by(|a, b| b.started_ms.cmp(&a.started_ms));
+        all.sort_by_key(|b| std::cmp::Reverse(b.started_ms));
         all
     }
 

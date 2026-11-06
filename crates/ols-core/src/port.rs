@@ -36,11 +36,10 @@ pub fn check_port(port: u16) -> PortStatus {
     }
 
     // netstat + tasklist cost ~0.5s and the UI polls this; owners rarely change, so cache.
-    static CACHE: std::sync::OnceLock<
-        std::sync::Mutex<
-            std::collections::HashMap<u16, (std::time::Instant, Option<u32>, Option<String>)>,
-        >,
-    > = std::sync::OnceLock::new();
+    type Cache = std::sync::Mutex<
+        std::collections::HashMap<u16, (std::time::Instant, Option<u32>, Option<String>)>,
+    >;
+    static CACHE: std::sync::OnceLock<Cache> = std::sync::OnceLock::new();
     let cache = CACHE.get_or_init(Default::default);
     if let Some((at, pid, name)) = cache.lock().unwrap().get(&port) {
         if at.elapsed() < std::time::Duration::from_secs(5) {

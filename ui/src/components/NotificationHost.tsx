@@ -64,7 +64,7 @@ function ToastItem({
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const remainingRef = useRef<number | null>(item.duration ?? null)
-  const startTimeRef = useRef<number>(Date.now())
+  const startTimeRef = useRef<number>(0)
 
   const clearTimer = useCallback(() => {
     if (timerRef.current) {
