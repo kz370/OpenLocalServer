@@ -371,7 +371,7 @@ export default function DockerPage() {
 
       <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
-      <div className={cn('flex min-h-0 flex-1 flex-col', !(dockerRunning && (tab === 'containers' || tab === 'images' || tab === 'volumes')) && 'ols-scroll')}>
+      <div className={cn('flex min-h-0 flex-1 flex-col', !(dockerRunning && (tab === 'containers' || tab === 'images' || tab === 'volumes')) && 'ols-scroll pr-3')}>
       {composeOnly && !dockerRunning ? (
         <div className="flex flex-col gap-4">
           <button type="button" className="inline-flex w-fit cursor-pointer items-center gap-1 text-sm text-primary hover:underline" onClick={() => setComposeOnly(false)}>

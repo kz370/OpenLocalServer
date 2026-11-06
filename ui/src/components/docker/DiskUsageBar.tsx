@@ -5,17 +5,21 @@ import { asDiagnostic } from '@/lib/diagnostic'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { type Diagnostic, type DockerDiskUsage, runCommand } from '@/core'
+import { createPersistentCache } from '@/lib/cache'
 import { cn } from '@/lib/utils'
 
 import { ReclaimDialog } from './ReclaimDialog'
 import { formatBytes } from './storageFormat'
 
+const usageCache = createPersistentCache<DockerDiskUsage | null>('docker_disk_usage', null)
+
 /**
- * §166: how much disk Docker uses and how much can be reclaimed. Read when the Images or
- * Volumes tab opens (Docker's own answer is cached for a minute) and on Refresh.
+ * §166: how much disk Docker uses and how much can be reclaimed. Shows the last known
+ * numbers at once (cached, also across restarts) and refreshes them in the background when the Images
+ * or Volumes tab opens; the screen only updates if they changed. Refresh forces a fresh read.
  */
 export function DiskUsageBar({ reloadKey, onRunTask, onError }: { reloadKey: number; onRunTask: (taskId: string) => void; onError: (d: Diagnostic) => void }) {
-  const [usage, setUsage] = useState<DockerDiskUsage | null>(null)
+  const [usage, setUsage] = useState<DockerDiskUsage | null>(usageCache.get())
   const [loading, setLoading] = useState(true)
   const [reclaim, setReclaim] = useState(false)
 
@@ -23,7 +27,10 @@ export function DiskUsageBar({ reloadKey, onRunTask, onError }: { reloadKey: num
     async (fresh: boolean) => {
       try {
         const r = await runCommand({ type: 'get_docker_disk_usage', fresh })
-        if (r.type === 'docker_disk_usage') setUsage(r.usage)
+        if (r.type === 'docker_disk_usage') {
+          usageCache.set(r.usage)
+          setUsage((prev) => (JSON.stringify(prev) === JSON.stringify(r.usage) ? prev : r.usage))
+        }
       } catch (err) {
         onError(asDiagnostic(err))
       } finally {
