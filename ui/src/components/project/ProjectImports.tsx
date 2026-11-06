@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { ErrorCard } from '@/components/ErrorCard'
 import { Spinner } from '@/components/Spinner'
 import { Button } from '@/components/ui/button'
+import { toolbarItemClass, toolbarLabelClass, type ToolbarAppearance } from '@/components/site/toolbarStyles'
 import { Dialog } from '@/components/ui/dialog'
 import { Field, Select, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
@@ -140,7 +141,7 @@ function SshKeyPicker({ value, onChange }: { value: string; onChange: (v: string
 }
 
 /** §125: clone a repository into a new folder, registered as a project with its own site. */
-export function GitCloneButton({ defaultParent, onDone, standalone }: { defaultParent: string; onDone: (p: Project) => void; standalone?: boolean }) {
+export function GitCloneButton({ defaultParent, onDone, standalone, toolbar }: { defaultParent: string; onDone: (p: Project) => void; standalone?: boolean; toolbar?: ToolbarAppearance }) {
   const [openDialog, setOpen] = useState(false)
   const [url, setUrl] = useState('')
   const [domain, setDomain] = useState('')
@@ -207,9 +208,15 @@ export function GitCloneButton({ defaultParent, onDone, standalone }: { defaultP
 
   return (
     <>
-      <Button size="sm" variant="secondary" onClick={() => setOpen(true)} title="Clone a Git repository into a new project">
-        <GitBranch /> Clone from Git
-      </Button>
+      {toolbar ? (
+        <Button size="sm" variant="ghost" className={toolbarItemClass[toolbar]} onClick={() => setOpen(true)} aria-label="Clone from Git" title="Clone from Git: clone a Git repository into a new project">
+          <GitBranch /> <span className={toolbarLabelClass}>Clone from Git</span>
+        </Button>
+      ) : (
+        <Button size="sm" variant="secondary" onClick={() => setOpen(true)} title="Clone a Git repository into a new project">
+          <GitBranch /> Clone from Git
+        </Button>
+      )}
       <Dialog
         open={openDialog}
         onClose={() => busy === null && setOpen(false)}
@@ -356,7 +363,7 @@ export function GitCloneButton({ defaultParent, onDone, standalone }: { defaultP
 }
 
 /** §132: create a project from an exported environment file, after reviewing it. */
-export function ImportEnvironmentButton({ defaultParent, onDone }: { defaultParent: string; onDone: (p: Project) => void }) {
+export function ImportEnvironmentButton({ defaultParent, onDone, toolbar }: { defaultParent: string; onDone: (p: Project) => void; toolbar?: ToolbarAppearance }) {
   const [preview, setPreview] = useState<ImportPreview | null>(null)
   const [name, setName] = useState('')
   const [target, setTarget] = useState('')
@@ -379,9 +386,15 @@ export function ImportEnvironmentButton({ defaultParent, onDone }: { defaultPare
 
   return (
     <>
-      <Button size="sm" variant="secondary" onClick={pick} title="Create a project from an exported environment file">
-        {busy === 'preview' ? <Spinner /> : <FileUp />} Import environment
-      </Button>
+      {toolbar ? (
+        <Button size="sm" variant="ghost" className={toolbarItemClass[toolbar]} onClick={pick} aria-label="Import environment" title="Import environment: create a project from an exported environment file">
+          {busy === 'preview' ? <Spinner /> : <FileUp />} <span className={toolbarLabelClass}>Import environment</span>
+        </Button>
+      ) : (
+        <Button size="sm" variant="secondary" onClick={pick} title="Create a project from an exported environment file">
+          {busy === 'preview' ? <Spinner /> : <FileUp />} Import environment
+        </Button>
+      )}
       {error && !preview && <ErrorCard error={error} onDismiss={() => setError(null)} overlay />}
       <Dialog
         open={preview !== null}

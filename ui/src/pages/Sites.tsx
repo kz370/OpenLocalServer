@@ -8,6 +8,7 @@ import { GitCloneButton, ImportEnvironmentButton } from '@/components/project/Pr
 import { DomainDialog } from '@/components/site/DomainDialog'
 import { newDomain } from '@/lib/newDomain'
 import { SiteExportDialog, SiteImportButton } from '@/components/site/SiteBundle'
+import { toolbarGroupClass, toolbarItemClass, toolbarLabelClass } from '@/components/site/toolbarStyles'
 import { SiteDialog, type SiteTarget } from '@/components/site/SiteDialog'
 import { SiteLogoDialog, type SiteLogoTarget } from '@/components/site/SiteLogoDialog'
 import { SiteLogo } from '@/components/SiteLogo'
@@ -1008,23 +1009,26 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         </div>
         <p className="mt-3 text-sm text-muted-foreground">Every site and the project behind it. Open a site's settings for its domain, web config, environment, terminal, Git and more.</p>
       </div>
-      <div className="flex min-h-8 flex-wrap items-center gap-x-[18px] gap-y-2">
-        <div className="flex shrink-0 flex-nowrap items-center gap-2">
-          <Button size="sm" onClick={() => setAdding(newDomain())}>
-            <Plus /> Add site
+      <div className="@container">
+      <div className="flex min-h-8 flex-wrap items-center gap-x-2 gap-y-2">
+        <Button size="sm" className="h-8 px-3 text-[13px]" onClick={() => setAdding(newDomain())}>
+          <Plus /> Add site
+        </Button>
+        <div className={toolbarGroupClass} role="group" aria-label="Add projects">
+          <Button size="sm" variant="ghost" className={toolbarItemClass.group} onClick={addFolder} aria-label="Add a folder" title="Add a folder: pick one project folder">
+            <FolderPlus /> <span className={toolbarLabelClass}>Add a folder</span>
           </Button>
-          <Button size="sm" variant="secondary" onClick={addFolder} title="Pick one project folder">
-            <FolderPlus /> Add a folder
+          <Button size="sm" variant="ghost" className={toolbarItemClass.group} onClick={scanFolder} aria-label="Scan a folder" title="Scan a folder: pick a workspace folder holding several projects side by side">
+            <FolderSearch /> <span className={toolbarLabelClass}>Scan a folder</span>
           </Button>
-          <Button size="sm" variant="secondary" onClick={scanFolder} title="Pick a workspace folder holding several projects side by side">
-            <FolderSearch /> Scan a folder
-          </Button>
-          <GitCloneButton defaultParent={effectiveParent} onDone={adopt} />
+          <GitCloneButton toolbar="group" defaultParent={effectiveParent} onDone={adopt} />
         </div>
-        <div className="flex shrink-0 flex-nowrap items-center gap-2">
-          <ImportEnvironmentButton defaultParent={effectiveParent} onDone={adopt} />
-          <SiteImportButton onWatch={() => onNavigate('tasks')} />
+        <div className="h-5 w-px shrink-0 bg-border" role="separator" aria-orientation="vertical" />
+        <div className="flex shrink-0 flex-nowrap items-center gap-0.5" role="group" aria-label="Import">
+          <ImportEnvironmentButton toolbar="ghost" defaultParent={effectiveParent} onDone={adopt} />
+          <SiteImportButton toolbar="ghost" onWatch={() => onNavigate('tasks')} />
         </div>
+      </div>
       </div>
 
       <ErrorCard error={error} onDismiss={() => setError(null)} overlay />

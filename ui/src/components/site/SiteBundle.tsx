@@ -6,6 +6,7 @@ import { ErrorCard } from '@/components/ErrorCard'
 import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { toolbarItemClass, toolbarLabelClass, type ToolbarAppearance } from '@/components/site/toolbarStyles'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog } from '@/components/ui/dialog'
 import { Field, Toggle } from '@/components/ui/form'
@@ -273,7 +274,7 @@ function Pick({
  * site that already exists is either updated — after a snapshot of what is there now — or
  * created under a free name.
  */
-export function SiteImportButton({ onWatch }: { onWatch?: () => void }) {
+export function SiteImportButton({ onWatch, toolbar }: { onWatch?: () => void; toolbar?: ToolbarAppearance }) {
   const [preview, setPreview] = useState<BundlePreview | null>(null)
   const [source, setSource] = useState('')
   const [password, setPassword] = useState('')
@@ -319,14 +320,27 @@ export function SiteImportButton({ onWatch }: { onWatch?: () => void }) {
 
   return (
     <>
-      <Button
-        size="sm"
-        variant="secondary"
-        onClick={() => void pick()}
-        title="Import a site bundle exported from OLS"
-      >
-        {busy === 'preview' ? <Spinner /> : <Upload />} Import bundle
-      </Button>
+      {toolbar ? (
+        <Button
+          size="sm"
+          variant="ghost"
+          className={toolbarItemClass[toolbar]}
+          onClick={() => void pick()}
+          aria-label="Import bundle"
+          title="Import bundle: import a site bundle exported from OLS"
+        >
+          {busy === 'preview' ? <Spinner /> : <Upload />} <span className={toolbarLabelClass}>Import bundle</span>
+        </Button>
+      ) : (
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => void pick()}
+          title="Import a site bundle exported from OLS"
+        >
+          {busy === 'preview' ? <Spinner /> : <Upload />} Import bundle
+        </Button>
+      )}
       {error && !preview && <ErrorCard error={error} onDismiss={() => setError(null)} overlay />}
       <Dialog
         open={preview !== null}
