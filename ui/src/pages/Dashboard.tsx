@@ -404,7 +404,7 @@ export function DashboardPage({
                       {' · '}
                       <button
                         type="button"
-                        onClick={() => onNavigate('sites')}
+                        onClick={() => onNavigate('projects')}
                         className="cursor-pointer font-medium text-foreground/80 hover:text-foreground hover:underline underline-offset-2 transition-colors"
                       >
                         {data.project_count} projects

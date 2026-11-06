@@ -19,7 +19,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog } from '@/components/ui/dialog'
-import { Field, Select, Tabs } from '@/components/ui/form'
+import { Field, Select } from '@/components/ui/form'
+import { OverflowTabs } from '@/components/ui/OverflowTabs'
 import { Input } from '@/components/ui/input'
 import { FloatingMenu, type MenuAnchor, type MenuItem } from '@/components/ui/menu'
 import { Pagination } from '@/components/ui/pagination'
@@ -1104,7 +1105,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                 Select all {visibleKeys.length} matching {visibleKeys.length === 1 ? 'row' : 'rows'}
               </button>
             )}
-            <Tabs
+            <OverflowTabs
               tabs={[
                 { id: 'enabled', label: 'Enabled', badge: matches.filter(isRowEnabled).length, icon: <Check className="size-3.5 text-emerald-500" /> },
                 { id: 'disabled', label: 'Disabled', badge: matches.filter(isRowDisabled).length, icon: <CircleOff className="size-3.5 text-rose-500" /> },

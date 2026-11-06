@@ -16,7 +16,7 @@ import {
   useStartingServices,
 } from '@/lib/diagnosticsNotify'
 import { useAction, usePoll } from '@/lib/hooks'
-import { openSitesFilter } from '@/lib/nav'
+import { openProjectsFilter, openSitesFilter } from '@/lib/nav'
 import { notify } from '@/lib/notify'
 import { cn } from '@/lib/utils'
 
@@ -177,10 +177,18 @@ export function DiagnosticsCard({
 
   const active = allFindings?.filter((f) => !f.ignored) ?? []
   const missingFolderFindings = active.filter(isMissingFolderFinding)
+  // project_missing = project not listed in Sites (no domain); site_root_missing = site row.
+  const hasSiteMissing = missingFolderFindings.some((f) => f.id.startsWith('site_root_missing:'))
+  const hasProjectMissing = missingFolderFindings.some((f) => f.id.startsWith('project_missing:'))
 
   function handleManageInSites() {
     openSitesFilter('missing')
     onNavigate?.('sites')
+  }
+
+  function handleManageInProjects() {
+    openProjectsFilter('missing')
+    onNavigate?.('projects')
   }
 
   async function fixAll() {
@@ -313,7 +321,7 @@ export function DiagnosticsCard({
       </div>
 
       <div className="flex items-center gap-1.5 shrink-0">
-        {missingFolderFindings.length > 0 && onNavigate && (
+        {hasSiteMissing && onNavigate && (
           <Button
             size="sm"
             variant="ghost"
@@ -322,6 +330,17 @@ export function DiagnosticsCard({
             title="Open Sites page"
           >
             Manage in Sites
+          </Button>
+        )}
+        {hasProjectMissing && onNavigate && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs text-foreground/80 hover:text-foreground"
+            onClick={handleManageInProjects}
+            title="Open Projects page"
+          >
+            Manage in Projects
           </Button>
         )}
         {canFixAll && (

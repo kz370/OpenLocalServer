@@ -83,7 +83,31 @@ export function onOpenSitesFilter(fn: (filter: string) => void): () => void {
   return () => window.removeEventListener(SITES_FILTER_EVENT, handler)
 }
 
-const SETTINGS_SECTION_EVENT = 'ols:open-settings-section'
+const PROJECTS_FILTER_EVENT = 'ols:open-projects-filter'
+let pendingProjectsFilter: string | null = null
+
+/** Asks the Projects page to apply a filter (e.g. 'missing'); remembered until mounted. */
+export function openProjectsFilter(filter: string) {
+  pendingProjectsFilter = filter
+  window.dispatchEvent(new CustomEvent<string>(PROJECTS_FILTER_EVENT, { detail: filter }))
+}
+
+export function takePendingProjectsFilter(): string | null {
+  const f = pendingProjectsFilter
+  pendingProjectsFilter = null
+  return f
+}
+
+export function onOpenProjectsFilter(fn: (filter: string) => void): () => void {
+  const handler = (e: Event) => {
+    pendingProjectsFilter = null
+    fn((e as CustomEvent<string>).detail)
+  }
+  window.addEventListener(PROJECTS_FILTER_EVENT, handler)
+  return () => window.removeEventListener(PROJECTS_FILTER_EVENT, handler)
+}
+
+const SETTINGS_SECTION_EVENT ='ols:open-settings-section'
 let pendingSettingsSection: string | null = null
 
 /** Asks the Settings page to show a specific section (e.g. 'general'); remembered until mounted. */

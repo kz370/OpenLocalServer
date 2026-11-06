@@ -52,7 +52,7 @@ import {
 } from '@/core'
 import { createPersistentCache, getCached } from '@/lib/cache'
 import { confirmAction } from '@/lib/confirm'
-import { openAddSiteForProject, openProject, openSettingsSection } from '@/lib/nav'
+import { onOpenProjectsFilter, openAddSiteForProject, openProject, openSettingsSection, takePendingProjectsFilter } from '@/lib/nav'
 import { notify } from '@/lib/notify'
 import {
   getProjectDisplayType,
@@ -111,9 +111,19 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
       return 'all'
     }
   })
-  const [missingOnly, setMissingOnly] = useState<boolean>(false)
+  const [missingOnly, setMissingOnly] = useState<boolean>(() => takePendingProjectsFilter() === 'missing')
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(25)
+  useEffect(
+    () =>
+      onOpenProjectsFilter((f) => {
+        if (f === 'missing') {
+          setMissingOnly(true)
+          setPage(1)
+        }
+      }),
+    [],
+  )
 
   const handleSelectTypeTab = useCallback((id: string) => {
     setTypeTab(id)
