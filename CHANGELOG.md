@@ -10,7 +10,7 @@ and the project follows [Semantic Versioning](https://semver.org/).
 Feature release (in development). Full notes: [`release-notes/v2.10.0.md`](./release-notes/v2.10.0.md).
 
 ### Added
-- Docker page under Sites: Docker status, one-click Start Docker, and a container list grouped by Compose project.
+- Docker page under Sites: Docker status as a state machine (not installed / stopped / starting / error / running) shown as one card with Start Docker, Refresh, Retry and details, no empty tabs while Docker is off, and a container list with search and collapsible Compose groups (group start / stop / restart / pause, Collapse / Expand all). Compose files can be edited without Docker.
 - Start, stop, restart, pause and resume containers; click a port to open it; container logs; a shell inside a running container.
 - Container settings: details with copy ID (passwords hidden); rename, restart policy, memory and CPU limits without restarting; remove with confirmation; edit environment variables (recreates the container, keeps its data, rolls back on failure).
 - Images and Volumes tabs with disk usage, Reclaim space (preview first), pull, run and remove; pagination on Containers, Images and Volumes.
@@ -24,7 +24,7 @@ Feature release (in development). Full notes: [`release-notes/v2.10.0.md`](./rel
 - Settings → Sidebar: hide sidebar pages you don't use; core pages always stay.
 
 ### Changed & Improved
-- Docker never slows OLS down: no Docker work at startup, no background checking.
+- Docker never slows OLS down: no Docker work at startup; the page checks only while Docker is stopped (every few seconds, paused when hidden). Lists are cached and refreshed in the background; fixed headers with scrolling rows.
 - The Docker page fits small windows; long names and paths wrap.
 
 ## [2.9.0] — 2026-11-05
