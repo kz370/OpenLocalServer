@@ -13,7 +13,7 @@ import { VolumesTab } from '@/components/docker/VolumesTab'
 import { Pagination } from '@/components/ui/pagination'
 import { CreateSiteDialog } from '@/components/docker/CreateSiteDialog'
 import { DockerGate, type DockerView } from '@/components/docker/DockerGate'
-import { CopyId, Row, RowList } from '@/components/docker/DockerRows'
+import { CopyId, Row, RowList, Truncated } from '@/components/docker/DockerRows'
 import { LogsDialog } from '@/components/docker/LogsDialog'
 import { TaskOutputDialog } from '@/components/docker/TaskOutputDialog'
 import { ErrorCard } from '@/components/ErrorCard'
@@ -465,11 +465,11 @@ export default function DockerPage() {
                 ))}
                 {projectNames.length > 0 && (
                   <>
-                    <Button size="sm" variant="ghost" className="h-8 cursor-pointer text-xs" onClick={() => setAllGroups(false)} title="Collapse all groups">
-                      <ChevronsDownUp className="size-3.5" /> Collapse all
+                    <Button size="icon" variant="ghost" className="size-8 cursor-pointer" onClick={() => setAllGroups(false)} title="Collapse all groups" aria-label="Collapse all groups">
+                      <ChevronsDownUp className="size-4" />
                     </Button>
-                    <Button size="sm" variant="ghost" className="h-8 cursor-pointer text-xs" onClick={() => setAllGroups(true)} title="Expand all groups">
-                      <ChevronsUpDown className="size-3.5" /> Expand all
+                    <Button size="icon" variant="ghost" className="size-8 cursor-pointer" onClick={() => setAllGroups(true)} title="Expand all groups" aria-label="Expand all groups">
+                      <ChevronsUpDown className="size-4" />
                     </Button>
                   </>
                 )}
@@ -530,7 +530,13 @@ export default function DockerPage() {
                       onToggle={() => setGroupToggles((prev) => new Map(prev).set(project, !open))}
                       onAct={(action) => void actGroup(project, rows, action)}
                     />,
-                    ...(open ? rows.map(rowEl) : []),
+                    ...(open
+                      ? [
+                          <div key={`rows:${project}`} className="ml-5 divide-y border-l-2 border-sky-500/40 bg-background/20">
+                            {rows.map(rowEl)}
+                          </div>,
+                        ]
+                      : []),
                   ]
                 })}
               </RowList>
@@ -616,16 +622,16 @@ function GroupRow({
   const groupBusy = busy?.startsWith(`group:${project}:`) ?? false
   const spin = (a: string) => busy === `group:${project}:${a}`
   return (
-    <div className="flex items-center justify-between gap-3 bg-muted/30 px-4 py-2 hover:bg-muted/40">
-      <button type="button" className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left" aria-expanded={open} onClick={onToggle}>
+    <div className="flex items-center justify-between gap-3 bg-muted/40 px-4 py-2.5 hover:bg-muted/50">
+      <button type="button" className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 overflow-hidden text-left" aria-expanded={open} onClick={onToggle}>
         {open ? <ChevronDown className="size-4 shrink-0 text-muted-foreground" /> : <ChevronRight className="size-4 shrink-0 text-muted-foreground" />}
         <Layers className="size-4 shrink-0 text-sky-500" aria-hidden />
-        <span className="min-w-0 truncate text-sm font-medium">{project}</span>
-        <Badge variant={running > 0 ? 'success' : 'secondary'}>
-          {running}/{rows.length} running
-        </Badge>
+        <Truncated text={project} className="min-w-0 flex-1 text-sm font-medium" />
       </button>
-      <span className="flex items-center gap-0.5">
+      <Badge variant={running > 0 ? 'success' : 'secondary'} className="w-28 shrink-0 justify-center whitespace-nowrap">
+        {running}/{rows.length} running
+      </Badge>
+      <span className="flex shrink-0 items-center gap-0.5">
         <ServiceIconAction
           title={anyOn ? `Stop all in ${project}` : `Start all in ${project}`}
           disabled={groupBusy}

@@ -1,5 +1,5 @@
 import { Copy } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { type ReactNode, useLayoutEffect, useRef } from 'react'
 
 import { cn } from '@/lib/utils'
 import { notify } from '@/lib/notify'
@@ -12,6 +12,35 @@ import { notify } from '@/lib/notify'
  * Long names and image references wrap instead of pushing columns off-screen.
  */
 const WIDE_COLS = '@3xl:grid-cols-[minmax(0,2.4fr)_minmax(0,1fr)_minmax(0,1.3fr)_auto]'
+
+/** `repo/name@sha256:<64 hex>` is unreadable; keep the first 12 hex digits. */
+export function shortImage(ref: string): string {
+  return ref.replace(/@sha256:([0-9a-f]{12})[0-9a-f]+/, '@sha256:$1…')
+}
+
+/** One-line text; the app tooltip shows the full text, but only when it is actually cut off. */
+export function Truncated({ text, className }: { text: string; className?: string }) {
+  const ref = useRef<HTMLSpanElement>(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    // The global tooltip host reads `data-tooltip`. Set it by hand (not through React props) so the host
+    // and React never fight over the attribute, and only while the text is actually cut off.
+    const sync = () => {
+      if (el.scrollWidth > el.clientWidth) el.setAttribute('data-tooltip', text)
+      else el.removeAttribute('data-tooltip')
+    }
+    sync()
+    const ro = new ResizeObserver(sync)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [text])
+  return (
+    <span ref={ref} className={cn('block min-w-0 max-w-full overflow-hidden text-ellipsis whitespace-nowrap', className)}>
+      {text}
+    </span>
+  )
+}
 
 export function RowList({ first = 'Name', children }: { first?: string; children: ReactNode }) {
   return (
@@ -63,16 +92,20 @@ export function Row({
       <div className="flex min-w-0 items-start gap-2 @3xl:col-start-1 @3xl:row-start-1">
         {icon && <span className="mt-0.5 shrink-0">{icon}</span>}
         <div className="min-w-0">
-          <div className="font-medium break-words">{title}</div>
-          {subtitle && <div className="text-xs break-all text-muted-foreground">{subtitle}</div>}
+          <div className="text-sm font-medium break-words">{title}</div>
+          {subtitle && (
+            <div className="text-xs break-all text-muted-foreground" title={typeof subtitle === 'string' && shortImage(subtitle) !== subtitle ? subtitle : undefined}>
+              {typeof subtitle === 'string' ? shortImage(subtitle) : subtitle}
+            </div>
+          )}
           {badge && <div className="mt-1 flex flex-wrap gap-1">{badge}</div>}
         </div>
       </div>
       <div className="col-start-2 row-start-1 flex justify-end @3xl:col-start-4">{actions}</div>
       {/* Narrow: ports and status share one wrapped line. Wide: they become grid columns. */}
-      <div className="col-span-2 flex flex-wrap items-center gap-2 @3xl:contents">
-        <div className="flex flex-wrap gap-1 @3xl:col-start-2 @3xl:row-start-1">{ports}</div>
-        <div className="flex flex-col items-start gap-0.5 @3xl:col-start-3 @3xl:row-start-1">{status}</div>
+      <div className="col-span-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 @3xl:contents">
+        <div className="flex flex-wrap items-center gap-1 @3xl:col-start-2 @3xl:row-start-1">{ports}</div>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 @3xl:col-start-3 @3xl:row-start-1 @3xl:flex-col @3xl:items-start">{status}</div>
       </div>
     </div>
   )
