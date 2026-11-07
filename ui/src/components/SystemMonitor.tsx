@@ -69,7 +69,7 @@ export function SystemMonitor({ stats }: { stats: SystemStats | null }) {
           ) : (
             // The header scrolls with the rows (sticky) so a scrollbar can't shift the columns.
             <div className="max-h-72 overflow-y-auto">
-              <div className={`${SITE_GRID} sticky top-0 z-10 h-7 border-b border-border bg-card text-[11px] font-medium uppercase tracking-wide text-muted-foreground`}>
+              <div className={`${SITE_GRID} sticky top-0 z-10 h-7 border-b border-border bg-background text-[11px] font-medium uppercase tracking-wide text-muted-foreground`}>
                 <span>Site</span>
                 <span className="text-right" title="Share of the whole machine's CPU">
                   CPU

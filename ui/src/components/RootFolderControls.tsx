@@ -4,7 +4,7 @@ import { MiddleTruncate } from '@/components/ui/MiddleTruncate'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
 import { TableCell, TableRow } from '@/components/ui/table'
-import { type ListSort, type ListView } from '@/lib/rootFolder'
+import { PROXY_ROOT, type ListSort, type ListView } from '@/lib/rootFolder'
 
 /** "Group by root folder" toggle and a sort choice, shared by the Projects and Sites tables. */
 export function RootFolderControls({ view, onChange }: { view: ListView; onChange: (next: ListView) => void }) {
@@ -42,7 +42,13 @@ export function RootGroupRow({ root, count, colSpan }: { root: string; count: nu
       <TableCell colSpan={colSpan} className="py-1.5 pl-4">
         <div className="flex min-w-0 items-center gap-2 text-xs font-medium text-muted-foreground">
           <FolderOpen className="size-3.5 shrink-0" />
-          {root ? <MiddleTruncate className="max-w-2xl flex-initial font-mono" text={root} /> : <span>No folder</span>}
+          {root === PROXY_ROOT ? (
+            <span>Proxy</span>
+          ) : root ? (
+            <MiddleTruncate className="max-w-2xl flex-initial font-mono" text={root} />
+          ) : (
+            <span>No folder</span>
+          )}
           <span className="shrink-0 rounded bg-background/60 px-1.5 py-0.5 text-[10px] tabular-nums">{count}</span>
         </div>
       </TableCell>

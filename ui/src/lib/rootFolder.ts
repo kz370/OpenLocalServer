@@ -19,11 +19,16 @@ export function rootKeyOf(path: string | null | undefined): string {
   return rootFolderOf(path).replace(/\//g, '\\').toLowerCase()
 }
 
+/** Group key for reverse-proxy rows: they have no folder, so they form their own group. */
+export const PROXY_ROOT = '\u0001proxy'
+
 /** Orders by root folder first, then by name; rows with no folder go last. */
 export function compareByRoot(rootA: string, rootB: string, nameA: string, nameB: string): number {
   if (rootA !== rootB) {
     if (rootA === '') return 1
     if (rootB === '') return -1
+    if (rootA === PROXY_ROOT) return 1
+    if (rootB === PROXY_ROOT) return -1
     return rootA.localeCompare(rootB)
   }
   return nameA.localeCompare(nameB)
