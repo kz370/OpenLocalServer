@@ -12,7 +12,9 @@ use std::time::{Duration, Instant};
 /// encode per icon. On a slow or network drive that alone took seconds per list.
 const PROBE_TTL: Duration = Duration::from_secs(20);
 
-static PROBE_CACHE: OnceLock<Mutex<HashMap<String, (Instant, Option<String>)>>> = OnceLock::new();
+type ProbeCache = Mutex<HashMap<String, (Instant, Option<String>)>>;
+
+static PROBE_CACHE: OnceLock<ProbeCache> = OnceLock::new();
 
 fn probe_cached(key: String, compute: impl FnOnce() -> Option<String>) -> Option<String> {
     let cache = PROBE_CACHE.get_or_init(Default::default);
@@ -406,14 +408,17 @@ pub fn read_site_icon_image(folder: &str) -> Option<String> {
 /// Domain document roots can differ from their linked project folder. Keep uploaded
 /// images ahead of discovered favicons across both locations.
 pub fn read_domain_icon_image(document_root: &str, project_folder: &str) -> Option<String> {
-    probe_cached(format!("domain-icon|{document_root}|{project_folder}"), || {
-        let document_root = Path::new(document_root);
-        let project_folder = Path::new(project_folder);
-        custom_site_icon_image(project_folder)
-            .or_else(|| custom_site_icon_image(document_root))
-            .or_else(|| discovered_site_icon_image(document_root))
-            .or_else(|| discovered_site_icon_image(project_folder))
-    })
+    probe_cached(
+        format!("domain-icon|{document_root}|{project_folder}"),
+        || {
+            let document_root = Path::new(document_root);
+            let project_folder = Path::new(project_folder);
+            custom_site_icon_image(project_folder)
+                .or_else(|| custom_site_icon_image(document_root))
+                .or_else(|| discovered_site_icon_image(document_root))
+                .or_else(|| discovered_site_icon_image(project_folder))
+        },
+    )
 }
 
 /// Recognizes WordPress from its selected type or its conventional core files. This is a
@@ -452,7 +457,9 @@ pub fn project_type_for_icon(folder: &str, stored_type: Option<&str>) -> Option<
     if let Some(kind) = stored_type.filter(|kind| !kind.eq_ignore_ascii_case("auto")) {
         return Some(kind.to_string());
     }
-    probe_cached(format!("type|{folder}"), || project_type_for_icon_uncached(folder, stored_type))
+    probe_cached(format!("type|{folder}"), || {
+        project_type_for_icon_uncached(folder, stored_type)
+    })
 }
 
 fn project_type_for_icon_uncached(folder: &str, stored_type: Option<&str>) -> Option<String> {
@@ -478,12 +485,16 @@ fn project_type_for_icon_uncached(folder: &str, stored_type: Option<&str>) -> Op
 /// Reads a per-project-type fallback named `<type>_fallback.<ext>` from `data/icons`
 /// or one category folder. Examples: `laravel_fallback.webp` and `Web/nestjs_fallback.ico`.
 pub fn read_project_fallback_icon(icons_dir: &Path, project_type: Option<&str>) -> Option<String> {
-    probe_cached(format!("fallback|{}|{project_type:?}", icons_dir.display()), || {
-        read_project_fallback_icon_uncached(icons_dir, project_type)
-    })
+    probe_cached(
+        format!("fallback|{}|{project_type:?}", icons_dir.display()),
+        || read_project_fallback_icon_uncached(icons_dir, project_type),
+    )
 }
 
-fn read_project_fallback_icon_uncached(icons_dir: &Path, project_type: Option<&str>) -> Option<String> {
+fn read_project_fallback_icon_uncached(
+    icons_dir: &Path,
+    project_type: Option<&str>,
+) -> Option<String> {
     let project_type = project_type?
         .rsplit(':')
         .next()?

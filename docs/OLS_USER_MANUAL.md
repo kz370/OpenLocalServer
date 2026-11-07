@@ -375,7 +375,10 @@ olsc guide
 - **Faster lists:** Sites and Projects load faster and show a spinner while loading. Remove from list is instant and works when the folder is gone.
 
 ### Coming next
-- `olsc docker`, Diagnostics warnings for Docker sites, Docker details in site bundles, and a one-click Dockerize for projects.
+- **Command line for Docker:** manage containers, images, volumes and Compose stacks with `olsc docker`.
+- **Warnings for Docker sites:** Diagnostics tells you when a site's container is stopped or missing.
+- **Site bundles keep Docker details:** exports keep a site's Docker link and compose file, but never its passwords.
+- **Dockerize a project:** generate a Dockerfile and compose file for a project in one click.
 
 ### Previous Version Notes (v2.9.0)
 - **Import databases from several places at once:** your installed OLS MariaDB versions, other MySQL/MariaDB installs, or any data folder, in the order you choose.
