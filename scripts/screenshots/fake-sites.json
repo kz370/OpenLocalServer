@@ -1,0 +1,10 @@
+{
+  "comment": "Fake sites for README/website screenshots. seed-fake-sites.ps1 creates each one as a static-HTML folder in data/fake_sites with its own favicon.svg (OLS shows a discovered favicon as the site and project icon) and you add the folders in the app yourself. Edit this list to change what the screenshots show. glyph is one of: cart, book, briefcase, rocket, pen.",
+  "sites": [
+    { "name": "acme-store",   "title": "Acme Store",   "glyph": "cart",      "color": "#e5484d" },
+    { "name": "docs-site",    "title": "Docs",         "glyph": "book",      "color": "#3e63dd" },
+    { "name": "portfolio",    "title": "Portfolio",    "glyph": "briefcase", "color": "#8e4ec6" },
+    { "name": "landing-page", "title": "Landing page", "glyph": "rocket",    "color": "#f76b15" },
+    { "name": "blog-demo",    "title": "Blog",         "glyph": "pen",       "color": "#12a594" }
+  ]
+}
