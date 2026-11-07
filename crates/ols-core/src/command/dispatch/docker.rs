@@ -209,13 +209,20 @@ impl Core {
             C::ValidateDockerCompose { path, content } => (|| {
                 let file = compose::check_compose_path(&path)?;
                 let connect = i.docker_connect_for(&file);
-                compose::validate(&path, &content, connect.as_ref())
+                // Docker's check writes a temporary copy beside the file: only in a stack
+                // folder. Any other file still gets every local rule.
+                let known = i.docker_compose_is_known(&file);
+                compose::validate(&path, &content, connect.as_ref(), known)
                     .map(|check| R::DockerComposeCheck { check })
             })(),
-            C::SaveDockerComposeFile { path, content } => {
+            C::SaveDockerComposeFile { path, content } => (|| {
                 tracing::info!(command = "save_docker_compose_file", path = %path);
+                let file = compose::check_compose_path(&path)?;
+                if !i.docker_compose_is_known(&file) {
+                    return Err(compose::not_a_known_stack(&file));
+                }
                 compose::save_file(&path, &content, &backups()).map(|_| R::Ok)
-            }
+            })(),
             C::DockerComposeAction {
                 path,
                 action,

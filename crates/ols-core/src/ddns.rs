@@ -191,7 +191,51 @@ pub async fn detect_public_ip() -> Result<String, CoreError> {
 }
 
 /// Synchronizes a domain's DNS record with its DNS provider if the server's public IP changed.
+///
+/// Many providers take the token in the request URL, and an HTTP client error quotes that
+/// URL, so every error is scrubbed of the token (and its `user:password` parts and the
+/// second credential field) before it reaches the UI or a log.
 pub async fn sync_domain_ddns(domain: &Domain, force: bool) -> Result<DdnsSyncResult, CoreError> {
+    sync_domain_ddns_unscrubbed(domain, force)
+        .await
+        .map_err(|e| scrub_error(e, &ddns_secret_values(domain)))
+}
+
+/// The values a DDNS error must never show: the token, each `user:password` half, and the
+/// second field (a secret or password for several providers).
+fn ddns_secret_values(domain: &Domain) -> Vec<String> {
+    let mut out = Vec::new();
+    for v in [domain.ddns_token.as_deref(), domain.ddns_zone_id.as_deref()]
+        .into_iter()
+        .flatten()
+    {
+        let v = v.trim();
+        out.push(v.to_string());
+        out.extend(v.split(':').map(|p| p.trim().to_string()));
+    }
+    // Short pieces ("a", "443") would blank out ordinary words in the message.
+    out.retain(|v| v.len() >= 6);
+    out.sort_by_key(|v| std::cmp::Reverse(v.len()));
+    out.dedup();
+    out
+}
+
+fn scrub_error(e: CoreError, secrets: &[String]) -> CoreError {
+    let text = e.to_string();
+    if !secrets.iter().any(|s| text.contains(s.as_str())) {
+        return e;
+    }
+    let mut clean = text;
+    for s in secrets {
+        clean = clean.replace(s.as_str(), "[redacted]");
+    }
+    CoreError::DdnsError(clean)
+}
+
+async fn sync_domain_ddns_unscrubbed(
+    domain: &Domain,
+    force: bool,
+) -> Result<DdnsSyncResult, CoreError> {
     let provider = domain
         .ddns_provider
         .as_deref()
@@ -1418,6 +1462,40 @@ async fn sync_ionos(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ddns_errors_never_quote_the_token() {
+        let d = Domain {
+            hostname: "home.duckdns.org".into(),
+            ddns_token: Some("tok-1234567890abcdef".into()),
+            ddns_zone_id: Some("apikey123:secretpass99".into()),
+            ..Default::default()
+        };
+        let secrets = ddns_secret_values(&d);
+        let e = CoreError::DdnsError(
+            "DuckDNS update request failed: error sending request for url (https://www.duckdns.org/update?domains=home&token=tok-1234567890abcdef&ip=1.2.3.4)".into(),
+        );
+        let text = scrub_error(e, &secrets).to_string();
+        assert!(!text.contains("tok-1234567890abcdef"), "{text}");
+        assert!(
+            text.contains("[redacted]") && text.contains("duckdns.org"),
+            "{text}"
+        );
+        let e = CoreError::DomainError("login apikey123 / secretpass99 refused".into());
+        let text = scrub_error(e, &secrets).to_string();
+        assert!(
+            !text.contains("apikey123") && !text.contains("secretpass99"),
+            "{text}"
+        );
+        // An error without a secret is passed on unchanged.
+        let e = scrub_error(
+            CoreError::DomainError("Unsupported DDNS provider: 'x'".into()),
+            &secrets,
+        );
+        assert!(
+            matches!(e, CoreError::DomainError(ref m) if m == "Unsupported DDNS provider: 'x'")
+        );
+    }
 
     #[tokio::test]
     async fn test_ddns_skips_when_ip_unchanged() {

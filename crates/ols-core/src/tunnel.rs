@@ -412,10 +412,47 @@ pub struct TunnelManager {
     paths: AppPaths,
     configs: Mutex<Vec<TunnelConfig>>,
     live: Mutex<HashMap<String, Live>>,
+    /// Tunnels being started right now. A second start of the same tunnel waits for the
+    /// first instead of launching a second provider (see `begin_start`).
+    starting: Mutex<std::collections::HashSet<String>>,
+    started: std::sync::Condvar,
     runtime: Arc<tokio::runtime::Runtime>,
 }
 
+/// Held for the whole of one `start_tunnel`; dropping it lets a waiting start go on.
+struct StartGuard<'a> {
+    mgr: &'a TunnelManager,
+    id: String,
+}
+
+impl Drop for StartGuard<'_> {
+    fn drop(&mut self) {
+        self.mgr
+            .starting
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&self.id);
+        self.mgr.started.notify_all();
+    }
+}
+
 impl TunnelManager {
+    /// One start per tunnel at a time. A start that arrives while another runs waits for
+    /// it, then sees the tunnel already live and only reports its status.
+    fn begin_start(&self, id: &str) -> StartGuard<'_> {
+        let mut starting = self.starting.lock().unwrap_or_else(|e| e.into_inner());
+        while starting.contains(id) {
+            starting = self
+                .started
+                .wait(starting)
+                .unwrap_or_else(|e| e.into_inner());
+        }
+        starting.insert(id.to_string());
+        StartGuard {
+            mgr: self,
+            id: id.to_string(),
+        }
+    }
     pub fn new(paths: &AppPaths) -> Self {
         let loaded: Vec<TunnelConfig> = crate::db::load_docs(paths, "tunnels").unwrap_or_default();
         let mut configs: Vec<TunnelConfig> = Vec::new();
@@ -440,6 +477,8 @@ impl TunnelManager {
             paths: paths.clone(),
             configs: Mutex::new(configs),
             live: Mutex::new(HashMap::new()),
+            starting: Mutex::new(std::collections::HashSet::new()),
+            started: std::sync::Condvar::new(),
             runtime: Arc::new(runtime),
         };
         if had_dups {
@@ -716,6 +755,8 @@ impl Inner {
         id: &str,
         confirm_exposure: bool,
     ) -> Result<TunnelStatus, CoreError> {
+        // Checked and inserted under one guard: two starts never both launch a provider.
+        let _starting = self.tunnels.begin_start(id);
         let mut c = self
             .tunnels
             .configs
@@ -1276,5 +1317,39 @@ mod tests {
         let mut moved = i.tunnel_status(&c.id).unwrap().config;
         moved.target = "http://127.0.0.1:8124".into();
         assert!(!i.save_tunnel(moved).unwrap().acknowledged);
+    }
+
+    /// Two starts of one tunnel at the same moment (a double click, autostart plus a click)
+    /// must give one running tunnel. The check and the insert were separate steps, so each
+    /// start launched its own provider and the second replaced the first in the live
+    /// table, leaving that first provider running with nothing able to stop it.
+    #[test]
+    fn concurrent_starts_of_one_tunnel_start_it_once() {
+        let (core, _home) = core();
+        let c = core
+            .inner()
+            .save_tunnel(config("http://127.0.0.1:8125"))
+            .unwrap();
+        let n = 8;
+        let barrier = Arc::new(std::sync::Barrier::new(n));
+        let handles: Vec<_> = (0..n)
+            .map(|_| {
+                let (inner, barrier, id) = (core.inner().clone(), barrier.clone(), c.id.clone());
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    inner.start_tunnel(&id, true).unwrap().public_url
+                })
+            })
+            .collect();
+        let urls: std::collections::BTreeSet<Option<String>> =
+            handles.into_iter().map(|h| h.join().unwrap()).collect();
+        assert_eq!(
+            urls.len(),
+            1,
+            "every start reports the same, single tunnel: {urls:?}"
+        );
+        assert!(urls.iter().next().unwrap().is_some());
+        core.inner().stop_all_tunnels();
+        assert!(!core.inner().tunnels.any_running());
     }
 }

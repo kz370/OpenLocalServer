@@ -7,6 +7,10 @@ use std::path::Path;
 pub struct DomainStore {
     paths: AppPaths,
     pub(crate) domains: Vec<Domain>,
+    /// This install's keyring namespace for DDNS tokens (`None`: tokens stay in the rows).
+    ddns_namespace: Option<String>,
+    /// DDNS tokens the keyring holds, by hostname (see `ddns_keyring`).
+    ddns_stored: std::sync::Mutex<super::ddns_keyring::Stored>,
 }
 
 impl DomainStore {
@@ -52,11 +56,23 @@ impl DomainStore {
                 rebased = true;
             }
         }
+        // DDNS credentials: rows from older versions hold them in plain text (moved to the
+        // keyring by the save below); every other site gets them from the keyring.
+        let ddns_namespace = super::ddns_keyring::namespace(paths);
+        let mut ddns_stored = super::ddns_keyring::Stored::default();
+        let mut plaintext_tokens = false;
+        if let Some(ns) = ddns_namespace.as_deref() {
+            for d in domains.iter_mut() {
+                plaintext_tokens |= ddns_stored.fill(ns, d);
+            }
+        }
         let store = Self {
             paths: paths.clone(),
             domains,
+            ddns_namespace,
+            ddns_stored: std::sync::Mutex::new(ddns_stored),
         };
-        if seeded || rebased {
+        if seeded || rebased || (plaintext_tokens && store.ddns_namespace.is_some()) {
             store.persist()?;
         }
         // Roll out new welcome-page designs to installs seeded by older
@@ -382,18 +398,31 @@ impl DomainStore {
     }
 
     pub(crate) fn persist(&self) -> Result<(), CoreError> {
+        let mut keyring = self.ddns_stored.lock().unwrap_or_else(|e| e.into_inner());
         // Written back relative when the root is one of the app's own folders, so moving
         // the install moves the site with it instead of stranding it at a dead path.
         let mut rows: Vec<(String, serde_json::Value)> = Vec::with_capacity(self.domains.len());
+        let mut wanted = std::collections::BTreeSet::new();
         for d in &self.domains {
             let mut stored = d.clone();
             stored.root = self.paths.encode_root(Path::new(&d.root));
+            // DDNS credentials go to the keyring; the row keeps one only when the keyring
+            // would not take it, so it is never lost.
+            if let Some(ns) = self.ddns_namespace.as_deref() {
+                keyring.take(ns, d, &mut stored, &mut wanted);
+            }
             rows.push((
                 d.hostname.clone(),
                 serde_json::to_value(&stored).map_err(|e| CoreError::Db(e.to_string()))?,
             ));
         }
-        db::save_values(&self.paths, "domains", &rows)
+        db::save_values(&self.paths, "domains", &rows)?;
+        // Only once the rows are saved: values of sites that dropped one, were renamed or
+        // were removed. Doing this first could lose a value if the save then failed.
+        if self.ddns_namespace.is_some() {
+            keyring.forget_all_but(&wanted);
+        }
+        Ok(())
     }
 }
 

@@ -480,3 +480,251 @@ fn proxy_sites_cannot_use_reserved_app_ports() {
         );
     }
 }
+
+// ---------------------------------------------------------------- DDNS tokens (keyring)
+
+fn ddns_site(host: &str, token: Option<&str>) -> Domain {
+    Domain {
+        root: "C:/sites/ddns".into(),
+        ddns_provider: Some("duckdns".into()),
+        ddns_token: token.map(str::to_string),
+        ..super::domain(host)
+    }
+}
+
+/// The token as written in the database row, not as the store shows it.
+fn token_in_row(paths: &crate::paths::AppPaths, host: &str) -> Option<String> {
+    db::load_docs::<serde_json::Value>(paths, "domains")
+        .unwrap()
+        .into_iter()
+        .find(|v| v["hostname"] == host)
+        .expect("row exists")["ddns_token"]
+        .as_str()
+        .map(str::to_string)
+}
+
+fn keyring_token(paths: &crate::paths::AppPaths, host: &str) -> Option<String> {
+    let ns = crate::domain::ddns_keyring::namespace(paths).unwrap();
+    crate::secrets::get_secret(&crate::domain::ddns_keyring::key(&ns, host)).unwrap()
+}
+
+fn clean_keyring(paths: &crate::paths::AppPaths, hosts: &[&str]) {
+    let ns = crate::domain::ddns_keyring::namespace(paths).unwrap();
+    for h in hosts {
+        let _ = crate::secrets::delete_secret(&crate::domain::ddns_keyring::key(&ns, h));
+    }
+}
+
+#[test]
+fn an_existing_install_moves_plaintext_ddns_tokens_to_the_keyring() {
+    let home = crate::test_support::isolated_home();
+    DomainStore::load(&home.paths).unwrap();
+    // A row as an older version wrote it: the token in plain text.
+    let legacy = ddns_site("legacy-ddns.test", Some("legacy-token-0001"));
+    let mut rows: Vec<(String, serde_json::Value)> =
+        db::load_docs::<serde_json::Value>(&home.paths, "domains")
+            .unwrap()
+            .into_iter()
+            .map(|v| (v["hostname"].as_str().unwrap().to_string(), v))
+            .collect();
+    rows.push((
+        legacy.hostname.clone(),
+        serde_json::to_value(&legacy).unwrap(),
+    ));
+    db::save_values(&home.paths, "domains", &rows).unwrap();
+    assert_eq!(
+        token_in_row(&home.paths, "legacy-ddns.test").as_deref(),
+        Some("legacy-token-0001")
+    );
+
+    let store = DomainStore::load(&home.paths).unwrap();
+    assert_eq!(
+        store.get("legacy-ddns.test").unwrap().ddns_token.as_deref(),
+        Some("legacy-token-0001"),
+        "DDNS keeps working with the same token"
+    );
+    assert_eq!(
+        token_in_row(&home.paths, "legacy-ddns.test"),
+        None,
+        "the plain-text copy is gone from the database"
+    );
+    assert_eq!(
+        keyring_token(&home.paths, "legacy-ddns.test").as_deref(),
+        Some("legacy-token-0001")
+    );
+    // The next start reads it back from the keyring.
+    let again = DomainStore::load(&home.paths).unwrap();
+    assert_eq!(
+        again.get("legacy-ddns.test").unwrap().ddns_token.as_deref(),
+        Some("legacy-token-0001")
+    );
+    clean_keyring(&home.paths, &["legacy-ddns.test"]);
+}
+
+#[test]
+fn a_fresh_install_never_writes_a_ddns_token_into_the_database() {
+    let home = crate::test_support::isolated_home();
+    let mut store = DomainStore::load(&home.paths).unwrap();
+    store
+        .add(ddns_site("fresh-ddns.test", Some("fresh-token-0002")))
+        .unwrap();
+    assert_eq!(token_in_row(&home.paths, "fresh-ddns.test"), None);
+    assert_eq!(
+        keyring_token(&home.paths, "fresh-ddns.test").as_deref(),
+        Some("fresh-token-0002")
+    );
+    // Changing the token replaces the keyring value.
+    store
+        .update(ddns_site("fresh-ddns.test", Some("fresh-token-0003")))
+        .unwrap();
+    assert_eq!(
+        keyring_token(&home.paths, "fresh-ddns.test").as_deref(),
+        Some("fresh-token-0003")
+    );
+    // Clearing it removes it; removing the site leaves nothing behind.
+    store.update(ddns_site("fresh-ddns.test", None)).unwrap();
+    assert_eq!(keyring_token(&home.paths, "fresh-ddns.test"), None);
+    store
+        .update(ddns_site("fresh-ddns.test", Some("fresh-token-0004")))
+        .unwrap();
+    store.remove("fresh-ddns.test").unwrap();
+    assert_eq!(keyring_token(&home.paths, "fresh-ddns.test"), None);
+    // The install's namespace is random (so two installs never share a key) and stable.
+    let ns = crate::domain::ddns_keyring::namespace(&home.paths).unwrap();
+    assert_eq!(ns.len(), 32);
+    assert!(ns.chars().all(|c| c.is_ascii_hexdigit()));
+    assert_eq!(
+        crate::domain::ddns_keyring::namespace(&home.paths).as_deref(),
+        Some(ns.as_str())
+    );
+    clean_keyring(&home.paths, &["fresh-ddns.test"]);
+}
+
+#[test]
+fn a_credential_store_that_refuses_keeps_the_token_in_the_database() {
+    let home = crate::test_support::isolated_home();
+    let mut store = DomainStore::load(&home.paths).unwrap();
+    crate::domain::ddns_keyring::REFUSE_WRITES.with(|r| r.set(true));
+    store
+        .add(ddns_site("stuck-ddns.test", Some("stuck-token-0005")))
+        .unwrap();
+    crate::domain::ddns_keyring::REFUSE_WRITES.with(|r| r.set(false));
+    assert_eq!(
+        token_in_row(&home.paths, "stuck-ddns.test").as_deref(),
+        Some("stuck-token-0005"),
+        "never lost: it stays where it was"
+    );
+    assert_eq!(keyring_token(&home.paths, "stuck-ddns.test"), None);
+    // Once the store works again, the next start finishes the move.
+    let store = DomainStore::load(&home.paths).unwrap();
+    assert_eq!(
+        store.get("stuck-ddns.test").unwrap().ddns_token.as_deref(),
+        Some("stuck-token-0005")
+    );
+    assert_eq!(token_in_row(&home.paths, "stuck-ddns.test"), None);
+    assert_eq!(
+        keyring_token(&home.paths, "stuck-ddns.test").as_deref(),
+        Some("stuck-token-0005")
+    );
+    clean_keyring(&home.paths, &["stuck-ddns.test"]);
+}
+
+fn secret_in_keyring(paths: &crate::paths::AppPaths, host: &str) -> Option<String> {
+    let ns = crate::domain::ddns_keyring::namespace(paths).unwrap();
+    crate::secrets::get_secret(&crate::domain::ddns_keyring::secret_key(&ns, host)).unwrap()
+}
+
+fn zone_in_row(paths: &crate::paths::AppPaths, host: &str) -> Option<String> {
+    db::load_docs::<serde_json::Value>(paths, "domains")
+        .unwrap()
+        .into_iter()
+        .find(|v| v["hostname"] == host)
+        .expect("row exists")["ddns_zone_id"]
+        .as_str()
+        .map(str::to_string)
+}
+
+#[test]
+fn a_second_ddns_credential_moves_too_but_a_cloudflare_zone_id_stays() {
+    let home = crate::test_support::isolated_home();
+    let mut store = DomainStore::load(&home.paths).unwrap();
+    // GoDaddy: the second field is the API secret.
+    store
+        .add(Domain {
+            ddns_provider: Some("godaddy".into()),
+            ddns_token: Some("gd-key-000001".into()),
+            ddns_zone_id: Some("gd-secret-000001".into()),
+            ..ddns_site("gd-ddns.test", None)
+        })
+        .unwrap();
+    // Cloudflare: the second field is a zone ID, not a secret.
+    store
+        .add(Domain {
+            ddns_provider: Some("cloudflare".into()),
+            ddns_token: Some("cf-token-000001".into()),
+            ddns_zone_id: Some("cf-zone-0000001".into()),
+            ..ddns_site("cf-ddns.test", None)
+        })
+        .unwrap();
+    assert_eq!(zone_in_row(&home.paths, "gd-ddns.test"), None);
+    assert_eq!(
+        secret_in_keyring(&home.paths, "gd-ddns.test").as_deref(),
+        Some("gd-secret-000001")
+    );
+    assert_eq!(
+        zone_in_row(&home.paths, "cf-ddns.test").as_deref(),
+        Some("cf-zone-0000001")
+    );
+    assert_eq!(secret_in_keyring(&home.paths, "cf-ddns.test"), None);
+    assert_eq!(token_in_row(&home.paths, "cf-ddns.test"), None);
+
+    let again = DomainStore::load(&home.paths).unwrap();
+    let gd = again.get("gd-ddns.test").unwrap();
+    assert_eq!(
+        (gd.ddns_token.as_deref(), gd.ddns_zone_id.as_deref()),
+        (Some("gd-key-000001"), Some("gd-secret-000001"))
+    );
+    assert_eq!(
+        again.get("cf-ddns.test").unwrap().ddns_zone_id.as_deref(),
+        Some("cf-zone-0000001")
+    );
+
+    // A site that switches to Cloudflare keeps its second field in the row from then on,
+    // and the old secret leaves the keyring.
+    store
+        .update(Domain {
+            ddns_provider: Some("cloudflare".into()),
+            ddns_token: Some("gd-key-000001".into()),
+            ddns_zone_id: Some("now-a-zone-id".into()),
+            ..ddns_site("gd-ddns.test", None)
+        })
+        .unwrap();
+    assert_eq!(secret_in_keyring(&home.paths, "gd-ddns.test"), None);
+    assert_eq!(
+        zone_in_row(&home.paths, "gd-ddns.test").as_deref(),
+        Some("now-a-zone-id")
+    );
+
+    // Exported copies never carry the credentials.
+    let out = crate::domain::ddns_keyring::without_credentials(Domain {
+        ddns_provider: Some("porkbun".into()),
+        ddns_token: Some("pk".into()),
+        ddns_zone_id: Some("sk".into()),
+        ..ddns_site("x.test", None)
+    });
+    assert_eq!((out.ddns_token, out.ddns_zone_id), (None, None));
+    let cf = crate::domain::ddns_keyring::without_credentials(Domain {
+        ddns_provider: Some("cloudflare".into()),
+        ddns_token: Some("t".into()),
+        ddns_zone_id: Some("zone".into()),
+        ..ddns_site("y.test", None)
+    });
+    assert_eq!(
+        (cf.ddns_token, cf.ddns_zone_id.as_deref()),
+        (None, Some("zone"))
+    );
+    store.remove("gd-ddns.test").unwrap();
+    store.remove("cf-ddns.test").unwrap();
+    assert_eq!(keyring_token(&home.paths, "gd-ddns.test"), None);
+    assert_eq!(keyring_token(&home.paths, "cf-ddns.test"), None);
+}

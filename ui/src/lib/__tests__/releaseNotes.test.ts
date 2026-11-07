@@ -120,3 +120,21 @@ test('filterReleaseNotes filters by search query and counts matches', () => {
   assert.strictEqual(noMatch.matchCount, 0)
   assert.strictEqual(noMatch.filteredSections.length, 0)
 })
+
+test('a bold title is found whether its colon is inside or outside the bold', () => {
+  const parsed = parseReleaseNotes(`# OLS v9.9.9
+
+## Added
+- **Images and Volumes:** sizes, pull, run and remove. **Reclaim space** shows what goes first.
+- **Settings → Sidebar**: hide pages you don't use.
+- **DDNS credentials** are kept in the store. **Note:** re-enter them after an import.
+`)
+  const feats = parsed.sections[0].features
+  assert.strictEqual(feats[0].title, 'Images and Volumes')
+  assert.strictEqual(feats[0].description, 'sizes, pull, run and remove. **Reclaim space** shows what goes first.')
+  assert.strictEqual(feats[1].title, 'Settings → Sidebar')
+  assert.strictEqual(feats[1].description, "hide pages you don't use.")
+  // A leading bold phrase without a colon is the title; the match never runs on into a later one.
+  assert.strictEqual(feats[2].title, 'DDNS credentials')
+  assert.strictEqual(feats[2].description, 'are kept in the store. **Note:** re-enter them after an import.')
+})

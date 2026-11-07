@@ -15,16 +15,9 @@
     "core:window:allow-toggle-maximize",
     "core:window:allow-is-maximized",
     "core:window:allow-start-dragging",
-    "mcp-bridge:default",
     "dialog:allow-open",
     "dialog:allow-save",
-    {
-      "identifier": "fs:allow-read-text-file",
-      "allow": [{ "path": "**/*.json" }]
-    },
-    {
-      "identifier": "fs:allow-write-text-file",
-      "allow": [{ "path": "**/*.json" }]
-    }
+    "fs:allow-read-text-file",
+    "fs:allow-write-text-file"
   ]
 }

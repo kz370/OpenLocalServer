@@ -226,16 +226,43 @@ impl Inner {
                     } else {
                         crate::docker::ContainerAction::Stop
                     };
+                    // Every container is tried: one that fails is reported, never a reason
+                    // to leave the others in the wrong state.
+                    let mut failed = Vec::new();
                     for (hostname, link) in &links {
                         h.begin_step(&format!("{verb} {} for {hostname}", link.container));
                         match find_linked(link, &containers) {
-                            Some(c) => inner.docker.container_action(&ep, &c.id, action)?,
-                            None => h.problem(format!(
-                                "{hostname}: container {} no longer exists.",
-                                link.container
-                            )),
+                            Some(c) => match inner.docker.container_action(&ep, &c.id, action) {
+                                Ok(()) => h.end_step(None),
+                                Err(e) => {
+                                    let d = crate::error::Diagnostic::from(&e);
+                                    h.fail_step(d.cause.clone());
+                                    h.problem(format!("{hostname}: {} {}", d.problem, d.cause));
+                                    failed.push(hostname.clone());
+                                }
+                            },
+                            None => {
+                                h.problem(format!(
+                                    "{hostname}: container {} no longer exists.",
+                                    link.container
+                                ));
+                                h.end_step(None);
+                            }
                         }
-                        h.end_step(None);
+                    }
+                    if !failed.is_empty() {
+                        return Err(CoreError::failed_fix(
+                            format!(
+                                "Docker could not {} the container for {}.",
+                                verb.to_lowercase(),
+                                failed.join(", ")
+                            ),
+                            "Docker refused the request; its message is listed with each site.",
+                            format!(
+                                "Read the message, then {} the container from the Docker page.",
+                                verb.to_lowercase()
+                            ),
+                        ));
                     }
                     Ok::<(), CoreError>(())
                 })();

@@ -179,6 +179,15 @@ pub struct SettingsBackup {
 
 // ------------------------------------------------------------------------ helpers
 
+/// One file name with no folder in it: what a manifest folder entry can be called.
+pub(crate) fn is_plain_file_name(name: &str) -> bool {
+    !name.is_empty()
+        && name != "."
+        && name != ".."
+        && !name.contains(['/', '\\', ':', '\0'])
+        && Path::new(name).file_name() == Some(std::ffi::OsStr::new(name))
+}
+
 fn summary(c: &SnapshotContent) -> Vec<String> {
     let mut s = Vec::new();
     if !c.manifest_files.is_empty() {
@@ -384,6 +393,10 @@ impl Inner {
             .list()
             .into_iter()
             .filter(|d| d.project_id.as_deref() == Some(project_id))
+            // DDNS credentials stay in the OS credential store and are never written into a
+            // snapshot or a bundle (both are plain zips; a bundle's manifest is readable even
+            // when the bundle is encrypted). Restores keep the site's own.
+            .map(crate::domain::ddns_keyring::without_credentials)
             .collect();
         let cfg = self.web_config();
         let mut web_configs = BTreeMap::new();
@@ -758,6 +771,16 @@ impl Inner {
                 .cloned()
                 .unwrap_or_else(|| db.name.clone());
             let result = (|| -> Result<(), String> {
+                // Both names become part of a file path below, and come from the bundle:
+                // checked before anything is written (`create_database` checks too late).
+                if !crate::service::is_safe_identifier(&target)
+                    || !crate::service::is_safe_identifier(&db.engine)
+                {
+                    return Err(format!(
+                        "skipped: \"{}\" / \"{target}\" is not a usable engine and database name",
+                        db.engine
+                    ));
+                }
                 let mut entry = zip.by_name(dump).map_err(|e| e.to_string())?;
                 let tmp = self
                     .paths
@@ -830,6 +853,14 @@ impl Inner {
         let root = PathBuf::from(&project.path);
         // Manifest files, with the manifest's name / site / database adjusted.
         for (name, text) in &c.manifest_files {
+            // A snapshot only ever holds files read straight from the manifest folder, so a
+            // name with a folder in it came from a bundle someone edited: never followed.
+            if !is_plain_file_name(name) {
+                problems.push(format!(
+                    "{name}: skipped, it is not a plain file name (bundle files may only go in the project's manifest folder)"
+                ));
+                continue;
+            }
             let text = if name == "environment.yaml" && !adjust.is_none() {
                 match serde_yaml_ng::from_str::<manifest::EnvironmentManifest>(text) {
                     Ok(mut m) => {
@@ -912,7 +943,20 @@ impl Inner {
                 Some(e) if e.project_id.as_deref().is_some_and(|p| p != project.id) => {
                     Err(format!("{host} belongs to another project"))
                 }
-                Some(_) => self.update_domain(d).map(|_| ()).map_err(|e| e.to_string()),
+                Some(e) => {
+                    // Snapshots and bundles never carry a DDNS token (it lives in the OS
+                    // credential store), so restoring onto a site keeps the one it has.
+                    if d.ddns_token.is_none() {
+                        d.ddns_token = e.ddns_token.clone();
+                    }
+                    if d.ddns_zone_id.is_none()
+                        && crate::domain::ddns_keyring::zone_is_secret(&d)
+                        && d.ddns_provider == e.ddns_provider
+                    {
+                        d.ddns_zone_id = e.ddns_zone_id;
+                    }
+                    self.update_domain(d).map(|_| ()).map_err(|e| e.to_string())
+                }
                 None => self.add_domain(d).map(|_| ()).map_err(|e| e.to_string()),
             };
             match r {
@@ -1620,6 +1664,97 @@ mod tests {
         assert_eq!(free(&[]), "shop_bkp");
         assert_eq!(free(&["shop_bkp"]), "shop_bkp-2");
         assert_eq!(free(&["shop_bkp", "shop_bkp-2"]), "shop_bkp-3");
+    }
+
+    #[test]
+    fn plain_file_names_only() {
+        assert!(is_plain_file_name("environment.yaml"));
+        assert!(is_plain_file_name(".env.local"));
+        for bad in [
+            "",
+            ".",
+            "..",
+            "../x",
+            r"..\x",
+            "a/b",
+            r"a\b",
+            "C:x",
+            r"C:\Windows\x",
+        ] {
+            assert!(!is_plain_file_name(bad), "{bad}");
+        }
+    }
+
+    /// A bundle is a file someone else made: a database name or manifest file name in it
+    /// must never pick where on this computer a file is written.
+    #[test]
+    fn a_crafted_bundle_cannot_write_outside_its_folders() {
+        let (core, home) = core();
+        let inner = core.inner().clone();
+        let id = project(&core, &home.paths.root().join("shop"));
+        let p = inner.projects.lock().unwrap().get(&id).unwrap();
+
+        // A dump whose database name climbs out of the cache folder.
+        let cache = home.paths.cache_dir();
+        std::fs::create_dir_all(&cache).unwrap();
+        let escaped = cache.parent().unwrap().join("escaped-dump.sql");
+        let zip_path = home.paths.root().join("crafted.zip");
+        {
+            let mut z = zip::ZipWriter::new(std::fs::File::create(&zip_path).unwrap());
+            z.start_file("d.sql", zip::write::SimpleFileOptions::default())
+                .unwrap();
+            z.write_all(b"-- not a real dump").unwrap();
+            z.finish().unwrap();
+        }
+        let (mut done, mut problems) = (Vec::new(), Vec::new());
+        inner.restore_dumps(
+            &zip_path,
+            &[DatabaseMeta {
+                engine: "mariadb".into(),
+                name: "x/../../escaped-dump".into(),
+                dump: Some("d.sql".into()),
+            }],
+            None,
+            None,
+            &mut done,
+            &mut problems,
+            None,
+        );
+        assert!(
+            !escaped.exists(),
+            "dump written outside the cache: {}",
+            escaped.display()
+        );
+        assert!(
+            problems.iter().any(|m| m.contains("not a usable")),
+            "{problems:?}"
+        );
+
+        // A manifest file whose name climbs out of the manifest folder.
+        let mut content = inner
+            .snapshot_content(&id, "t", SnapshotOptions::default())
+            .unwrap();
+        let outside = home.paths.root().join("escaped-manifest.txt");
+        content
+            .manifest_files
+            .insert("../../escaped-manifest.txt".into(), "pwned".into());
+        let (mut done, mut problems) = (Vec::new(), Vec::new());
+        inner.apply_config(&content, &p, &Adjust::none(), &mut done, &mut problems);
+        assert!(
+            !outside.exists(),
+            "manifest written outside: {}",
+            outside.display()
+        );
+        assert!(
+            problems.iter().any(|m| m.contains("not a plain file name")),
+            "{problems:?}"
+        );
+        assert!(
+            manifest::dir(Path::new(&p.path))
+                .join("environment.yaml")
+                .is_file(),
+            "the real manifest file is still restored"
+        );
     }
 
     fn core() -> (Core, crate::test_support::IsolatedHome) {

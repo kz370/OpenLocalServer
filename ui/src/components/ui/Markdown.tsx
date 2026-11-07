@@ -1,29 +1,24 @@
 import { Check, Copy } from 'lucide-react'
-import { marked } from 'marked'
 import { useEffect, useId, useMemo, useState } from 'react'
+
+import { escapeHtml, renderMarkdown } from '@/lib/safeMarkdown'
 
 interface MarkdownProps {
   content: string
   className?: string
 }
 
-// Configure marked with sensible defaults
-marked.setOptions({
-  gfm: true,
-  breaks: true,
-})
-
 export function Markdown({ content, className = '' }: MarkdownProps) {
   const containerId = useId()
   const [copiedCodeIndex, setCopiedCodeIndex] = useState<number | null>(null)
 
-  // Parse markdown into HTML string
+  // Markdown to HTML; raw HTML in the text is shown as text (see safeMarkdown).
   const rawHtml = useMemo(() => {
     if (!content) return ''
     try {
-      return marked.parse(content) as string
+      return renderMarkdown(content)
     } catch {
-      return content
+      return escapeHtml(content)
     }
   }, [content])
 
@@ -47,7 +42,7 @@ export function Markdown({ content, className = '' }: MarkdownProps) {
       // Header bar
       const header = document.createElement('div')
       header.className = 'flex items-center justify-between px-3 py-1.5 bg-muted/80 border-b border-border/80 text-[11px] font-mono text-muted-foreground'
-      header.innerHTML = `<span>${lang || 'code'}</span>`
+      header.innerHTML = `<span>${escapeHtml(lang || 'code')}</span>`
 
       // Copy button
       const copyBtn = document.createElement('button')

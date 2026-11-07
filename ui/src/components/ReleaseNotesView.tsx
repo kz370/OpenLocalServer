@@ -6,12 +6,13 @@ import {
   Shield,
   X,
 } from 'lucide-react'
-import { marked, type Tokens } from 'marked'
+import { type Tokens } from 'marked'
 import { useMemo, useState } from 'react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { CodeBlock } from '@/components/ui/Markdown'
+import { escapeHtml, renderMarkdown, renderMarkdownInline } from '@/lib/safeMarkdown'
 import {
   filterReleaseNotes,
   getFeatureIcon,
@@ -65,7 +66,7 @@ export function ReleaseNotesView({
   const isSearching = Boolean(searchQuery.trim())
 
   return (
-    <div className={cn('flex flex-col gap-6 text-foreground', className)}>
+    <div className={cn('@container flex flex-col gap-6 text-foreground', className)}>
       {/* 1. Dedicated Release Header */}
       <ReleaseHeader
         metadata={parsed.metadata}
@@ -258,7 +259,7 @@ function SectionView({
 
       {/* Direct Feature Cards Grid */}
       {section.features.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+        <div className="grid grid-cols-1 @2xl:grid-cols-2 gap-3.5">
           {section.features.map((feature) => (
             <FeatureCard
               key={feature.id}
@@ -323,7 +324,7 @@ function SubsectionView({
       </div>
 
       {subsection.features.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+        <div className="grid grid-cols-1 @2xl:grid-cols-2 gap-3.5">
           {subsection.features.map((feature) => (
             <FeatureCard
               key={feature.id}
@@ -366,9 +367,9 @@ function FeatureCard({
   // Parse inline markdown safely (links, bold, code pills)
   const renderedDescription = useMemo(() => {
     try {
-      return marked.parseInline(feature.description) as string
+      return renderMarkdownInline(feature.description)
     } catch {
-      return feature.description
+      return escapeHtml(feature.description)
     }
   }, [feature.description])
 
@@ -424,7 +425,7 @@ function FeatureCard({
  */
 function ContentBlock({ token }: { token: Tokens.Generic }) {
   if (token.type === 'paragraph') {
-    const html = marked.parseInline(token.text) as string
+    const html = renderMarkdownInline(token.text)
     return (
       <p
         className="text-xs sm:text-sm leading-relaxed text-foreground/90 release-notes-prose"
@@ -438,7 +439,7 @@ function ContentBlock({ token }: { token: Tokens.Generic }) {
   }
 
   if (token.type === 'blockquote') {
-    const html = marked.parse(token.text) as string
+    const html = renderMarkdown(token.text)
     return (
       <blockquote
         className="border-l-2 border-primary/70 bg-primary/5 px-3 py-2 text-xs italic text-foreground rounded-r-md release-notes-prose"
@@ -479,7 +480,7 @@ function ContentBlock({ token }: { token: Tokens.Generic }) {
   // Fallback to parsed html
   const raw = token.raw || token.text || ''
   if (!raw.trim()) return null
-  const html = marked.parse(raw) as string
+  const html = renderMarkdown(raw)
   return (
     <div
       className="text-xs leading-relaxed text-foreground/90 release-notes-prose"

@@ -1,3 +1,4 @@
+pub(crate) mod ddns_keyring;
 pub mod home;
 pub mod methods;
 pub mod store;

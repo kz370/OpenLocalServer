@@ -28,7 +28,7 @@ import { Input } from '@/components/ui/input'
 import { FloatingMenu, type MenuAnchor, type MenuItem } from '@/components/ui/menu'
 import { Pagination } from '@/components/ui/pagination'
 import { MiddleTruncate } from '@/components/ui/MiddleTruncate'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableSpanCell } from '@/components/ui/table'
 import { type Domain, type DomainSummary, type EditorInfo, type HealthProgress, type HealthReport, type HealthStep, type Project, type WpProject, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
 import { PROXY_ROOT, compareByRoot, rootFolderOf, rootKeyOf, sortsByRoot, useListView } from '@/lib/rootFolder'
@@ -1567,7 +1567,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
               })}
               {visible.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center text-sm text-muted-foreground">
+                  <TableSpanCell colSpan={4} className="text-center text-sm text-muted-foreground">
                     {rows.length === 0 && !sitesLoaded
                       ? (
                         <span className="inline-flex items-center gap-2 py-6" role="status">
@@ -1581,7 +1581,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                         : activeFilter === 'missing'
                           ? 'No sites with missing project folders.'
                           : 'No sites of this type.'}
-                  </TableCell>
+                  </TableSpanCell>
                 </TableRow>
               )}
             </TableBody>

@@ -221,6 +221,32 @@ impl crate::app::Inner {
             .collect()
     }
 
+    /// A compose file the Compose tab lists as a stack (see `compose::is_known_stack_file`).
+    /// The engine is asked only when the file is not found in a project or the connected
+    /// set, and a stopped Docker simply contributes no files.
+    pub fn docker_compose_is_known(&self, file: &Path) -> bool {
+        let project_dirs: Vec<PathBuf> = self
+            .projects
+            .lock()
+            .unwrap()
+            .list()
+            .into_iter()
+            .map(|p| PathBuf::from(p.path))
+            .collect();
+        let connected = self.docker_connected();
+        if super::compose::is_known_stack_file(file, &project_dirs, &connected, &[]) {
+            return true;
+        }
+        let engine_files: Vec<String> = self
+            .docker
+            .list_containers(&self.docker_endpoint(), true)
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|c| c.compose_file)
+            .collect();
+        super::compose::is_known_stack_file(file, &[], &connected, &engine_files)
+    }
+
     pub fn docker_is_connected(&self, file: &Path) -> bool {
         self.docker_connected().contains(&path_hash(file))
     }

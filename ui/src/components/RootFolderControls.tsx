@@ -3,7 +3,7 @@ import { FolderOpen, FolderTree } from 'lucide-react'
 import { MiddleTruncate } from '@/components/ui/MiddleTruncate'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
-import { TableCell, TableRow } from '@/components/ui/table'
+import { TableRow, TableSpanCell } from '@/components/ui/table'
 import { PROXY_ROOT, type ListSort, type ListView } from '@/lib/rootFolder'
 
 /** "Group by root folder" toggle and a sort choice, shared by the Projects and Sites tables. */
@@ -39,7 +39,7 @@ export function RootFolderControls({ view, onChange }: { view: ListView; onChang
 export function RootGroupRow({ root, count, colSpan }: { root: string; count: number; colSpan: number }) {
   return (
     <TableRow className="bg-muted/40 hover:bg-muted/40" data-root-group>
-      <TableCell colSpan={colSpan} className="py-1.5 pl-4">
+      <TableSpanCell colSpan={colSpan} className="py-1.5 pl-4">
         <div className="flex min-w-0 items-center gap-2 text-xs font-medium text-muted-foreground">
           <FolderOpen className="size-3.5 shrink-0" />
           {root === PROXY_ROOT ? (
@@ -51,7 +51,7 @@ export function RootGroupRow({ root, count, colSpan }: { root: string; count: nu
           )}
           <span className="shrink-0 rounded bg-background/60 px-1.5 py-0.5 text-[10px] tabular-nums">{count}</span>
         </div>
-      </TableCell>
+      </TableSpanCell>
     </TableRow>
   )
 }

@@ -634,6 +634,8 @@ impl PhpPools {
             .runtimes
             .fetch(&package_url)
             .map_err(|_| format!("PECL has no Windows builds of \"{name}\""))?;
+        // Builds that match but have no pinned hash: never downloaded (see `pecl::pinned`).
+        let mut unverified: Vec<String> = Vec::new();
         // Newest releases often lag behind for older PHP; walk back a few to find a match.
         for release in pecl::releases_newest_first(&String::from_utf8_lossy(&listing))
             .into_iter()
@@ -651,15 +653,30 @@ impl PhpPools {
             ) else {
                 continue;
             };
+            // downloads.php.net publishes no checksums, so only a build whose SHA-256 OLS
+            // ships is downloaded, and it is checked before a single file is unpacked.
+            let Some(expected) = pecl::pinned(&zip_name) else {
+                unverified.push(zip_name);
+                continue;
+            };
             let zip = self
                 .runtimes
                 .fetch(&format!("{package_url}{release}/{zip_name}"))?;
+            pecl::verify(&zip, &expected, &zip_name)?;
             pecl::extract_dlls(&zip, &self.downloaded_ext_dir(version), &name)?;
             let mut map = self.overrides(version);
             map.insert(name.clone(), true);
             self.save_overrides(version, &map)?;
             self.restart(version)?;
             return Ok(release);
+        }
+        if let Some(newest) = unverified.first() {
+            return Err(format!(
+                "{newest} was not downloaded: OLS installs a PECL build only when it ships that \
+                 file's SHA-256, and this build is not in its verified list \
+                 (downloads.php.net publishes no checksums of its own). Update OLS for a newer \
+                 list, or copy a DLL you trust into PHP's ext folder and enable it here."
+            ));
         }
         Err(format!(
             "No recent PECL build of {name} matches PHP {minor} {} x64",
@@ -825,6 +842,52 @@ mod pecl {
 
     pub const RELEASES: &str = "https://downloads.php.net/~windows/pecl/releases/";
 
+    /// The SHA-256 of every PECL build OLS may download, pinned by
+    /// `scripts/pin-pecl-hashes.py` and shipped inside the app (so a changed list needs a new
+    /// signed release, never a download).
+    const PINS: &str = include_str!("../catalog/pecl-pins.json");
+
+    fn pins() -> &'static std::collections::BTreeMap<String, String> {
+        static MAP: std::sync::OnceLock<std::collections::BTreeMap<String, String>> =
+            std::sync::OnceLock::new();
+        MAP.get_or_init(|| {
+            let v: serde_json::Value = serde_json::from_str(PINS).unwrap_or_default();
+            v["builds"]
+                .as_object()
+                .map(|m| {
+                    m.iter()
+                        .filter_map(|(file, hash)| {
+                            let hash = hash.as_str()?.trim().to_ascii_lowercase();
+                            (hash.len() == 64 && hash.chars().all(|c| c.is_ascii_hexdigit()))
+                                .then(|| (file.to_ascii_lowercase(), hash))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        })
+    }
+
+    /// The pinned SHA-256 of one build file, e.g. `php_redis-6.2.0-8.3-nts-vs16-x64.zip`.
+    pub fn pinned(zip_name: &str) -> Option<String> {
+        pins().get(&zip_name.to_ascii_lowercase()).cloned()
+    }
+
+    /// The downloaded bytes are exactly the pinned build, or nothing is unpacked.
+    pub fn verify(bytes: &[u8], expected: &str, zip_name: &str) -> Result<(), String> {
+        use sha2::{Digest, Sha256};
+        let actual: String = Sha256::digest(bytes)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        if actual.eq_ignore_ascii_case(expected) {
+            Ok(())
+        } else {
+            Err(format!(
+                "{zip_name} was downloaded but is not the verified file (SHA-256 {actual}, expected {expected}), so nothing was installed. The download may be damaged or the file was changed on the server; try again later."
+            ))
+        }
+    }
+
     /// Every `href="..."` target in an Apache directory listing.
     fn hrefs(html: &str) -> impl Iterator<Item = &str> {
         html.split("href=\"")
@@ -894,7 +957,7 @@ mod pecl {
         let mut files = Vec::new();
         for i in 0..archive.len() {
             let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
-            let path = entry.name().replace('\\', "/");
+            let path = entry.name().map_err(|e| e.to_string())?.replace('\\', "/");
             let file = path.rsplit('/').next().unwrap_or_default().to_string();
             if !entry.is_file() || !file.to_lowercase().ends_with(".dll") {
                 continue;
@@ -922,6 +985,51 @@ mod pecl {
 
         const RELEASES_HTML: &str = r#"<a href="?C=N;O=D">Name</a><a href="/~windows/pecl/releases/">Parent</a>
             <a href="6.1.0/">6.1.0/</a><a href="6.10.0/">6.10.0/</a><a href="6.2.0RC1/">6.2.0RC1/</a><a href="logs/">logs/</a>"#;
+
+        #[test]
+        fn only_a_byte_exact_pinned_build_passes() {
+            use sha2::{Digest, Sha256};
+            let bytes = b"PK\x03\x04 a pretend build";
+            let good: String = Sha256::digest(bytes)
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect();
+            assert!(verify(bytes, &good, "x.zip").is_ok());
+            assert!(verify(bytes, &good.to_uppercase(), "x.zip").is_ok());
+            let mut tampered = bytes.to_vec();
+            tampered[5] ^= 1;
+            let e = verify(&tampered, &good, "x.zip").unwrap_err();
+            assert!(
+                e.contains("not the verified file") && e.contains(&good),
+                "{e}"
+            );
+            assert!(
+                verify(bytes, "", "x.zip").is_err(),
+                "an empty hash never passes"
+            );
+        }
+
+        #[test]
+        fn the_shipped_pin_list_is_well_formed() {
+            let v: serde_json::Value = serde_json::from_str(PINS).expect("valid JSON");
+            let raw = v["builds"].as_object().expect("a builds object");
+            assert_eq!(
+                pins().len(),
+                raw.len(),
+                "every entry is a 64-hex SHA-256 (a bad one would be silently unusable)"
+            );
+            for (file, hash) in raw {
+                assert!(
+                    file.starts_with("php_") && file.ends_with("-x64.zip"),
+                    "{file}"
+                );
+                assert_eq!(
+                    pinned(&file.to_uppercase()),
+                    Some(hash.as_str().unwrap().to_ascii_lowercase())
+                );
+            }
+            assert!(pinned("php_unknown-1.0.0-8.3-nts-vs16-x64.zip").is_none());
+        }
 
         #[test]
         fn releases_sort_numerically_with_stable_first() {

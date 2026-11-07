@@ -1846,6 +1846,10 @@ pub fn run() {
         .manage(core)
         .manage(AutoFixTrigger(std::sync::Arc::new(tokio::sync::Notify::new())))
         .setup(move |app| {
+            // The dev-only MCP bridge's permission, granted only where the bridge itself is
+            // registered. Kept out of `capabilities/` so a release build never lists it.
+            #[cfg(debug_assertions)]
+            app.add_capability(include_str!("../dev-capabilities/mcp-bridge.json"))?;
             let core = setup_core;
             let confirmation_app = app.handle().clone();
             let confirmation_core = core.clone();
@@ -2261,4 +2265,44 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![run_command, run_health_check, request_exit])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod capability_tests {
+    /// The release capability: no debug-only MCP bridge, and no file-system path the webview
+    /// can read or write on its own. Files are reached only through a file the user picked in
+    /// a dialog (the dialog plugin adds that one path to the fs scope at runtime).
+    #[test]
+    fn the_release_capability_grants_no_dev_bridge_and_no_static_fs_paths() {
+        let text = include_str!("../capabilities/default.json");
+        let cap: serde_json::Value = serde_json::from_str(text).unwrap();
+        let perms = cap["permissions"].as_array().unwrap();
+        assert!(
+            !perms
+                .iter()
+                .any(|p| p.as_str().is_some_and(|s| s.starts_with("mcp-bridge"))),
+            "mcp-bridge belongs to dev-capabilities only"
+        );
+        for p in perms {
+            let id = p
+                .as_str()
+                .or_else(|| p["identifier"].as_str())
+                .unwrap_or_default();
+            if id.starts_with("fs:") {
+                assert!(
+                    p.is_string(),
+                    "{id} must not carry a static path scope (it allowed every .json on disk): {p}"
+                );
+            }
+            assert_ne!(id, "fs:default");
+            assert!(!id.starts_with("fs:scope"), "{id}");
+        }
+        // The dev capability is valid JSON naming only the bridge.
+        let dev: serde_json::Value =
+            serde_json::from_str(include_str!("../dev-capabilities/mcp-bridge.json")).unwrap();
+        assert_eq!(
+            dev["permissions"],
+            serde_json::json!(["mcp-bridge:default"])
+        );
+    }
 }
