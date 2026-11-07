@@ -1,10 +1,11 @@
-import { AlertCircle, AlertTriangle, Check, CheckCircle2, Copy, FileText, Info, RotateCcw, X } from 'lucide-react'
+import { AlertCircle, AlertTriangle, BrushCleaning, Check, CheckCircle2, Copy, FileText, Info, RotateCcw, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { Spinner } from '@/components/Spinner'
 import { Button } from '@/components/ui/button'
 import {
   type NotificationItem,
+  dismissAllNotifications,
   dismissNewestNotification,
   dismissNotification,
   initGlobalNotificationListeners,
@@ -34,6 +35,8 @@ export function NotificationHost({ onNavigateLogs }: { onNavigateLogs?: (source?
 
   // Stack at most 4 visible; older ones queue
   const visible = items.slice(0, 4)
+  // Progress toasts track running tasks, so Dismiss all leaves them alone.
+  const dismissibleCount = items.filter((item) => item.type !== 'progress').length
 
   if (visible.length === 0) return null
 
@@ -42,6 +45,21 @@ export function NotificationHost({ onNavigateLogs }: { onNavigateLogs?: (source?
       aria-label="Notifications"
       className="fixed bottom-4 right-4 z-[9999] flex max-w-sm w-full flex-col-reverse gap-2.5 pointer-events-none"
     >
+      {/* First child of a column-reverse stack, so it sits at the bottom, below the toasts. */}
+      {dismissibleCount >= 2 && (
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={() => dismissAllNotifications()}
+            aria-label={`Dismiss all ${dismissibleCount} notifications`}
+            title="Dismiss all notifications"
+            // Theme-tinted pill with a soft primary glow; glow strengthens on hover/focus.
+            className="pointer-events-auto inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-primary/50 bg-card/95 px-3 py-1.5 text-[11px] font-semibold text-primary shadow-lg shadow-primary/30 ring-1 ring-primary/20 backdrop-blur-xl transition-all duration-200 hover:border-primary hover:bg-primary/15 hover:shadow-primary/50 hover:ring-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+          >
+            <BrushCleaning className="size-3.5" /> Dismiss all ({dismissibleCount})
+          </button>
+        </div>
+      )}
       {visible.map((item) => (
         <ToastItem key={item.id} item={item} onNavigateLogs={onNavigateLogs} />
       ))}
