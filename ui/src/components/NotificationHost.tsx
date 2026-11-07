@@ -53,10 +53,11 @@ export function NotificationHost({ onNavigateLogs }: { onNavigateLogs?: (source?
             onClick={() => dismissAllNotifications()}
             aria-label={`Dismiss all ${dismissibleCount} notifications`}
             title="Dismiss all notifications"
-            // Theme-tinted pill with a soft primary glow; glow strengthens on hover/focus.
-            className="pointer-events-auto inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-primary/50 bg-card/95 px-3 py-1.5 text-[11px] font-semibold text-primary shadow-lg shadow-primary/30 ring-1 ring-primary/20 backdrop-blur-xl transition-all duration-200 hover:border-primary hover:bg-primary/15 hover:shadow-primary/50 hover:ring-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+            // Card pill tinted with theme primary, foreground text, primary border and outer glow
+            // that strengthens on hover/focus.
+            className="pointer-events-auto inline-flex cursor-pointer items-center gap-2 rounded-full border border-primary/80 bg-[color-mix(in_srgb,var(--color-primary)_22%,var(--color-card))] px-4 py-1.5 text-xs font-semibold text-foreground shadow-[0_0_10px_-2px_var(--color-primary)] backdrop-blur-xl transition-all duration-200 hover:border-primary hover:bg-[color-mix(in_srgb,var(--color-primary)_32%,var(--color-card))] hover:shadow-[0_0_16px_0_var(--color-primary)] focus-visible:outline-none focus-visible:shadow-[0_0_16px_0_var(--color-primary)]"
           >
-            <BrushCleaning className="size-3.5" /> Dismiss all ({dismissibleCount})
+            <BrushCleaning className="size-3.5 text-primary" /> Dismiss all ({dismissibleCount})
           </button>
         </div>
       )}
