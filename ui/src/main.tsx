@@ -4,11 +4,18 @@ import { emit } from '@tauri-apps/api/event'
 import './index.css'
 import App from './App.tsx'
 import { TrayConfirmationWindow } from './components/TrayConfirmationWindow'
+import { installSiteCacheInvalidation } from './lib/siteCaches'
 import { ThemeProvider } from './lib/theme'
 
 const isTrayConfirmationWindow = window.location.hash === '#tray-confirmation'
 if (isTrayConfirmationWindow) {
   document.documentElement.classList.add('tray-confirmation-window')
+}
+
+if (!isTrayConfirmationWindow) {
+  // A delete or edit anywhere (another page, the CLI, the API) clears the cached site and
+  // project lists, so the next page that opens rebuilds them instead of painting stale rows.
+  installSiteCacheInvalidation()
 }
 
 createRoot(document.getElementById('root')!).render(

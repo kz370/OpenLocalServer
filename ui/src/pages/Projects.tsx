@@ -18,9 +18,11 @@ import {
   UserRound,
   X,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { PageLayout } from '@/components/PageLayout'
+import { RootFolderControls, RootGroupRow } from '@/components/RootFolderControls'
+import { Spinner } from '@/components/Spinner'
 import { ScrollableList } from '@/components/ScrollableList'
 import { type Page } from '@/components/layout/Sidebar'
 import { AddProjectDialog, type AddProjectItem } from '@/components/project/AddProjectDialog'
@@ -31,6 +33,7 @@ import { ProjectTypeFilterBar } from '@/components/project/ProjectTypeFilterBar'
 import { SiteLogo } from '@/components/SiteLogo'
 import { TechIcon } from '@/components/TechIcon'
 import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
 import { MiddleTruncate } from '@/components/ui/MiddleTruncate'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -56,6 +59,8 @@ import { createPersistentCache, getCached } from '@/lib/cache'
 import { confirmAction } from '@/lib/confirm'
 import { onOpenProjectsFilter, openAddSiteForProject, openProject, openSettingsSection, takePendingProjectsFilter } from '@/lib/nav'
 import { notify } from '@/lib/notify'
+import { compareByRoot, rootFolderOf, rootKeyOf, sortsByRoot, useListView } from '@/lib/rootFolder'
+import { invalidateSiteProjectCaches } from '@/lib/siteCaches'
 import {
   getProjectDisplayType,
   getProjectFilterPreferences,
@@ -77,21 +82,12 @@ function normPath(p: string | null | undefined): string {
   return p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
 }
 
-function ProjectsProgress({ label }: { label: string }) {
-  return (
-    <div className="absolute inset-x-0 top-0 z-10" role="status" aria-label={label}>
-      <div className="h-0.5 overflow-hidden rounded-t-xl bg-muted">
-        <div className="h-full w-1/3 animate-[ols-indeterminate_1.4s_ease-in-out_infinite] bg-primary" />
-      </div>
-      <span className="absolute left-3 top-1 rounded-b bg-card px-2 py-1 text-xs text-muted-foreground shadow-sm">{label}</span>
-    </div>
-  )
-}
-
 export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void }) {
   const [projects, setProjects] = useState<Project[]>(projectsCache.get)
   // Read storage directly because Sites can update this cache while ProjectsPage is unmounted.
   const [domains, setDomains] = useState<DomainSummary[]>(() => getCached('projects_page_domains', []))
+  /** False until the project list has been read from the backend once (or a cached copy exists). */
+  const [projectsLoaded, setProjectsLoaded] = useState(() => projectsCache.get().length > 0)
   const [unconnectedProjectIds, setUnconnectedProjectIds] = useState<string[] | null>(null)
   const [siteIgnoredProjectIds, setSiteIgnoredProjectIds] = useState<string[]>([])
   const [editors, setEditors] = useState<EditorInfo[]>(editorsCache.get)
@@ -138,13 +134,20 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
 
   const [activeMenu, setActiveMenu] = useState<{ id: string; anchor: MenuAnchor } | null>(null)
   const [editingProject, setEditingProject] = useState<Project | null>(null)
-  const [removingProject, setRemovingProject] = useState<Project | null>(null)
 
   // Drag and drop state
   const [isDragOver, setIsDragOver] = useState(false)
   const [addProjectQueue, setAddProjectQueue] = useState<AddProjectItem[]>([])
   const [addProjectOpen, setAddProjectOpen] = useState(false)
   const [manageTypesOpen, setManageTypesOpen] = useState(false)
+
+  // Bulk selection: project ids ticked in the first column.
+  const [picked, setPicked] = useState<Set<string>>(() => new Set())
+  const [busyBulk, setBusyBulk] = useState(false)
+  // Sort by name or root folder, and optional headings per root folder (remembered).
+  const [view, setView] = useListView('ols:projects-view')
+  /** While above zero a bulk action is running and the page ignores backend change events. */
+  const quietRefreshes = useRef(0)
 
   const refreshProjects = useCallback(async () => {
     try {
@@ -154,6 +157,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
         setUnconnectedProjectIds(res.unconnected_project_ids ?? null)
         setSiteIgnoredProjectIds(res.site_ignored_project_ids ?? [])
         projectsCache.set(res.projects)
+        setProjectsLoaded(true)
         const hasMissingProjects = res.projects.some(
           (project) => project.health && project.health.status !== 'healthy',
         )
@@ -240,7 +244,8 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
     let alive = true
     let unlisten: (() => void) | undefined
     void listen('projects-changed', () => {
-      if (alive) void refreshAll()
+      // A bulk action refreshes once at the end; mid-batch refreshes would bring rows back.
+      if (alive && quietRefreshes.current === 0) void refreshAll()
     }).then((dispose) => {
       if (alive) unlisten = dispose
       else dispose()
@@ -330,8 +335,11 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
   }
 
   const allProjects = useMemo(() => {
-    return [...projects].sort((a, b) => a.name.localeCompare(b.name))
-  }, [projects])
+    const byRoot = sortsByRoot(view)
+    return [...projects].sort((a, b) =>
+      byRoot ? compareByRoot(rootKeyOf(a.path), rootKeyOf(b.path), a.name, b.name) : a.name.localeCompare(b.name),
+    )
+  }, [projects, view])
 
   // Group tabs by type
   const typeGroups = useMemo(() => {
@@ -373,12 +381,168 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
     })
   }, [allProjects, effectiveMissingOnly, typeTab, query, domains])
 
+  /** How many of the listed projects share each root folder, for the group headings. */
+  const rootCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const p of filteredProjects) {
+      const key = rootKeyOf(p.path)
+      counts.set(key, (counts.get(key) ?? 0) + 1)
+    }
+    return counts
+  }, [filteredProjects])
+
   // Pagination slice
   const total = filteredProjects.length
   const pageProjects = useMemo(() => {
     const from = (page - 1) * perPage
     return filteredProjects.slice(from, from + perPage)
   }, [filteredProjects, page, perPage])
+
+  // Ticks that point at a project that no longer exists drop away.
+  useEffect(() => {
+    setPicked((prev) => {
+      if (prev.size === 0) return prev
+      const alive = new Set(projects.map((p) => p.id))
+      const next = new Set([...prev].filter((id) => alive.has(id)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [projects])
+
+  const pickedProjects = useMemo(() => allProjects.filter((p) => picked.has(p.id)), [allProjects, picked])
+  const pickedCount = pickedProjects.length
+  const allOnPagePicked = pageProjects.length > 0 && pageProjects.every((p) => picked.has(p.id))
+  const restCount = filteredProjects.filter((p) => !picked.has(p.id)).length
+
+  const togglePicked = (id: string, on: boolean) =>
+    setPicked((prev) => {
+      const next = new Set(prev)
+      if (on) next.add(id)
+      else next.delete(id)
+      return next
+    })
+
+  /** Selected projects that have no site yet and can get one. */
+  const pickedWithoutSite = pickedProjects.filter(
+    (p) => (p.health?.status === 'healthy' || !p.health) && getProjectDomains(p).length === 0 && !siteIgnoredProjectIds.includes(p.id),
+  )
+  /** Selected projects not connected to a site, so they can be hidden. */
+  const pickedHideable = pickedProjects.filter((p) => getProjectDomains(p).length === 0)
+
+  const errorText = (e: unknown) =>
+    e instanceof Error ? e.message : String((e as { problem?: string } | null)?.problem ?? e)
+
+  /** Takes projects out of the list and the selection right away; a refresh restores any that failed. */
+  const dropProjects = (ids: string[]) => {
+    const gone = new Set(ids)
+    setProjects((list) => {
+      const next = list.filter((p) => !gone.has(p.id))
+      projectsCache.set(next)
+      return next
+    })
+    setPicked((prev) => new Set([...prev].filter((id) => !gone.has(id))))
+  }
+
+  /** One batch, one message: how many worked and which ones failed and why. */
+  const reportBulk = (done: string, changed: number, failed: string[]) => {
+    if (failed.length === 0) {
+      notify.success(`${done}: ${changed} project${changed === 1 ? '' : 's'}.`)
+    } else if (changed === 0) {
+      notify.warning(`No projects changed. ${failed.join('; ')}`, { details: failed.join('\n') })
+    } else {
+      notify.batch({
+        operation: 'projects',
+        total: changed + failed.length,
+        succeeded: changed,
+        failed: failed.length,
+        failedItems: failed,
+      })
+    }
+  }
+
+  const runBulk = async (work: () => Promise<void>) => {
+    setBusyBulk(true)
+    try {
+      await work()
+    } finally {
+      setBusyBulk(false)
+      await refreshAll()
+    }
+  }
+
+  const bulkCreateSites = () =>
+    runBulk(async () => {
+      const failed: string[] = []
+      let changed = 0
+      for (const p of pickedWithoutSite) {
+        try {
+          await runCommand({ type: 'create_site_for_project', project_id: p.id })
+          invalidateSiteProjectCaches()
+          changed += 1
+        } catch (e) {
+          failed.push(`${p.name}: ${errorText(e)}`)
+        }
+      }
+      reportBulk('Added a site to', changed, failed)
+      setPicked(new Set())
+    })
+
+  const bulkHide = async () => {
+    const skipped = pickedCount - pickedHideable.length
+    const n = pickedHideable.length
+    const ok = await confirmAction(
+      `This removes ${n} project${n === 1 ? '' : 's'} from your projects list in OpenLocalServer. The folders and all files on disk stay untouched.${skipped > 0 ? ` ${skipped} selected project${skipped === 1 ? ' is' : 's are'} connected to a site and will be skipped.` : ''}`,
+      `Hide ${n} project${n === 1 ? '' : 's'}?`,
+      'Hide projects',
+    )
+    if (!ok) return
+    const targets = pickedHideable
+    quietRefreshes.current += 1
+    dropProjects(targets.map((p) => p.id))
+    const failed: string[] = []
+    let changed = 0
+    try {
+      for (const p of targets) {
+        try {
+          await runCommand({ type: 'remove_project', id: p.id })
+          changed += 1
+        } catch (e) {
+          failed.push(`${p.name}: ${errorText(e)}`)
+        }
+      }
+    } finally {
+      quietRefreshes.current -= 1
+      invalidateSiteProjectCaches()
+      await refreshAll()
+    }
+    reportBulk('Hidden', changed, failed)
+  }
+
+  const bulkRemoveFromList = async () => {
+    const ok = await confirmAction(
+      `Remove ${pickedCount} project${pickedCount === 1 ? '' : 's'} from the list? They are removed from OpenLocalServer but files on disk are not touched.`,
+      `Remove ${pickedCount} project${pickedCount === 1 ? '' : 's'} from list?`,
+      'Remove from list',
+    )
+    if (!ok) return
+    // Rows and the selection bar leave at once; one backend call, one refresh at the end.
+    const targets = pickedProjects
+    quietRefreshes.current += 1
+    dropProjects(targets.map((p) => p.id))
+    let changed = 0
+    const failed: string[] = []
+    try {
+      const res = await runCommand({ type: 'ignore_projects', ids: targets.map((p) => p.id) })
+      changed = res.type === 'count' ? res.count : targets.length
+      if (changed < targets.length) failed.push(`${targets.length - changed} could not be removed`)
+    } catch (e) {
+      failed.push(errorText(e))
+    } finally {
+      quietRefreshes.current -= 1
+      invalidateSiteProjectCaches()
+      await refreshAll()
+    }
+    reportBulk('Removed from list', changed, failed)
+  }
 
   // Handlers
   const handleAddProjectFolder = async () => {
@@ -443,12 +607,15 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
     )
     if (!ok) return
 
+    dropProjects([p.id])
     try {
       await runCommand({ type: 'remove_project', id: p.id })
+      invalidateSiteProjectCaches()
       notify.success(`Hidden "${p.name}" from projects`)
       await refreshAll()
     } catch (e) {
-      notify.error(`Failed to hide project: ${e instanceof Error ? e.message : String(e)}`)
+      notify.error(`Failed to hide project: ${errorText(e)}`)
+      await refreshAll()
     }
   }
 
@@ -459,16 +626,16 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
       'Remove from list',
     )
     if (!ok) return
-    setRemovingProject(p)
-    notify.info(`Removing "${p.name}" from the list…`)
+    // The row leaves at once; the backend (site config re-render, reload) finishes behind it.
+    dropProjects([p.id])
     try {
       await runCommand({ type: 'ignore_project', id: p.id })
+      invalidateSiteProjectCaches()
       notify.success(`Removed "${p.name}" from list`)
-      await refreshAll()
     } catch (e) {
-      notify.error(`Failed to remove project: ${e instanceof Error ? e.message : String(e)}`)
+      notify.error(`Failed to remove project: ${errorText(e)}`)
     } finally {
-      setRemovingProject(null)
+      await refreshAll()
     }
   }
 
@@ -595,6 +762,9 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
           <FolderPlus className="size-4" /> Add project folder
         </Button>
         <GitCloneButton defaultParent={effectiveParent} onDone={() => void refreshAll()} standalone={true} />
+        <div className="ml-auto">
+          <RootFolderControls view={view} onChange={setView} />
+        </div>
       </div>
       }
     >
@@ -624,7 +794,6 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
             </p>
           </div>
         )}
-          {removingProject && <ProjectsProgress label={`Removing ${removingProject.name} from the list and updating site configuration…`} />}
         </>}
         toolbar={
           /* Top toolbar: Type tabs, missing filter, manage types, and search */
@@ -671,25 +840,84 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
             </div>
           </div>
         }
-        footer={total > 0 ? (
-            <Pagination
-              label="projects"
-              total={total}
-              page={page}
-              perPage={perPage}
-              onPage={setPage}
-              onPerPage={(size) => {
-                setPerPage(size)
-                setPage(1)
-              }}
-              className="border-t border-border"
-            />
+        footer={total > 0 || pickedCount > 0 ? (
+          <>
+            {pickedCount > 0 && (
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-border bg-[var(--dialog-surface)] px-4 py-2">
+                <span className="whitespace-nowrap text-sm text-muted-foreground">{pickedCount} selected</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8"
+                  disabled={busyBulk || pickedWithoutSite.length === 0}
+                  onClick={() => void bulkCreateSites()}
+                  title={pickedWithoutSite.length === 0 ? 'Every selected project already has a site, or its folder is missing' : `Give ${pickedWithoutSite.length} project${pickedWithoutSite.length === 1 ? '' : 's'} its <folder>.<tld> site`}
+                >
+                  <Globe className="size-4" /> Create sites
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8"
+                  disabled={busyBulk || pickedHideable.length === 0}
+                  onClick={() => void bulkHide()}
+                  title={pickedHideable.length === 0 ? 'Every selected project is connected to a site' : 'Hide the selected projects that have no site (files stay on disk)'}
+                >
+                  <EyeOff className="size-4" /> Hide
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-destructive hover:bg-destructive/10"
+                  disabled={busyBulk}
+                  onClick={() => void bulkRemoveFromList()}
+                  title="Remove the selected projects from the list (files stay on disk)"
+                >
+                  <X className="size-4" /> Remove from list
+                </Button>
+                <Button size="sm" variant="ghost" className="h-8" disabled={busyBulk} onClick={() => setPicked(new Set())}>
+                  Clear
+                </Button>
+                {restCount > 0 && (
+                  <button
+                    type="button"
+                    className="cursor-pointer self-start text-xs text-muted-foreground underline"
+                    onClick={() => setPicked(new Set(filteredProjects.map((p) => p.id)))}
+                  >
+                    Select all {filteredProjects.length} matching {filteredProjects.length === 1 ? 'project' : 'projects'}
+                  </button>
+                )}
+              </div>
+            )}
+            {total > 0 && (
+              <Pagination
+                label="projects"
+                total={total}
+                page={page}
+                perPage={perPage}
+                onPage={setPage}
+                onPerPage={(size) => {
+                  setPerPage(size)
+                  setPage(1)
+                }}
+                className="border-t border-border"
+              />
+            )}
+          </>
         ) : undefined}
       >
           {/* Table */}
-          <Table className="table-fixed" wrapperClassName={cn('overflow-visible border-0 rounded-none shadow-none transition-opacity', removingProject && 'opacity-90')}>
+          <Table className="table-fixed" wrapperClassName={'overflow-visible border-0 rounded-none shadow-none'}>
             <TableHeader sticky>
               <TableRow>
+                <TableHead className="w-10">
+                  <Checkbox
+                    checked={allOnPagePicked}
+                    onChange={(on) => pageProjects.forEach((p) => togglePicked(p.id, on))}
+                    disabled={pageProjects.length === 0 || busyBulk}
+                    label={allOnPagePicked ? 'Clear the selection on this page' : 'Select every project on this page'}
+                  />
+                </TableHead>
                 <TableHead>Project</TableHead>
                 <TableHead className="hidden w-36 whitespace-nowrap @2xl:table-cell">Type</TableHead>
                 <TableHead className="hidden w-56 whitespace-nowrap @4xl:table-cell">Connected Site</TableHead>
@@ -699,8 +927,14 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
             <TableBody>
               {pageProjects.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="h-32 text-center text-sm text-muted-foreground">
-                    {allProjects.length === 0
+                  <TableCell colSpan={5} className="h-32 text-center text-sm text-muted-foreground">
+                    {allProjects.length === 0 && !projectsLoaded
+                      ? (
+                        <span className="inline-flex items-center gap-2" role="status">
+                          <Spinner className="size-4" /> Loading projects…
+                        </span>
+                      )
+                      : allProjects.length === 0
                       ? 'No projects added yet. Click "Add project folder", drag and drop a folder, or use the Windows Explorer context menu to add one.'
                       : query.trim()
                         ? `No projects matching "${query.trim()}".`
@@ -712,7 +946,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
                   </TableCell>
                 </TableRow>
               ) : (
-                pageProjects.map((p) => {
+                pageProjects.map((p, rowIndex) => {
                   const isHealthy = p.health?.status === 'healthy' || !p.health
                   const isMenuOpen = activeMenu?.id === p.id
                   const linkedDomains = getProjectDomains(p)
@@ -720,9 +954,13 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
                   const extraDomainsCount = linkedDomains.length > 1 ? linkedDomains.length - 1 : 0
                   const { id: typeId, label: typeLabel } = getProjectDisplayType(p, presets, customTypes)
 
+                  const rootKey = rootKeyOf(p.path)
+                  const startsGroup = view.group && (rowIndex === 0 || rootKeyOf(pageProjects[rowIndex - 1].path) !== rootKey)
+
                   return (
+                    <Fragment key={p.id}>
+                    {startsGroup && <RootGroupRow root={rootFolderOf(p.path)} count={rootCounts.get(rootKey) ?? 1} colSpan={5} />}
                     <TableRow
-                      key={p.id}
                       data-state={isMenuOpen ? 'selected' : undefined}
                       className={cn(
                         'group h-[88px] cursor-default',
@@ -736,8 +974,18 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
                         })
                       }}
                     >
+                      {/* Select */}
+                      <TableCell className="h-[88px] w-10 py-1.5">
+                        <Checkbox
+                          checked={picked.has(p.id)}
+                          onChange={(on) => togglePicked(p.id, on)}
+                          disabled={busyBulk}
+                          label={`Select ${p.name}`}
+                        />
+                      </TableCell>
+
                       {/* Project Col */}
-                      <TableCell className="h-[88px] min-w-0 py-1.5 first:pl-4">
+                      <TableCell className="h-[88px] min-w-0 py-1.5">
                         <div className="flex min-w-0 items-center">
                           <button
                             type="button"
@@ -882,7 +1130,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
                             <Button
                               size="sm"
                               variant="outline"
-                              className="h-7 px-2 text-xs border-destructive/40 text-destructive hover:bg-destructive/10 cursor-pointer"
+                              className="mr-2 h-7 px-2 text-xs border-destructive/40 text-destructive hover:bg-destructive/10 cursor-pointer"
                               onClick={(e) => {
                                 e.stopPropagation()
                                 void handleRelocateProject(p)
@@ -937,6 +1185,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
                         </div>
                       </TableCell>
                     </TableRow>
+                    </Fragment>
                   )
                 })
               )}

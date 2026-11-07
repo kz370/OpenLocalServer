@@ -13,9 +13,10 @@ import {
   type WebStatus,
   runCommand,
 } from '@/core'
-import { createPersistentCache } from '@/lib/cache'
+import { createPersistentCache, getCached, setCached } from '@/lib/cache'
 import { useAction, usePoll } from '@/lib/hooks'
 import { notify } from '@/lib/notify'
+import { invalidateSiteProjectCaches } from '@/lib/siteCaches'
 
 /** What a bulk site edit did: how many sites changed, and one line per site it refused. */
 export interface BulkOutcome {
@@ -66,6 +67,8 @@ export function useWeb() {
   const [status, setStatus] = useState<WebStatus | null>(statusCache.get)
   const [cfg, setCfg] = useState<WebConfig | null>(cfgCache.get)
   const [domains, setDomains] = useState<DomainSummary[]>(domainsCache.get)
+  /** False until the site list has been read from the backend once (or a cached copy exists). */
+  const [sitesLoaded, setSitesLoaded] = useState(() => domainsCache.get().length > 0)
   const [certs, setCerts] = useState<CertInfo[]>(certsCache.get)
   const [ca, setCa] = useState<CaInfo | null>(caCache.get)
   const [projects, setProjects] = useState<Project[]>(projectsCache.get)
@@ -129,6 +132,7 @@ export function useWeb() {
       setDomains(d.domains)
       domainsCache.set(d.domains)
     }
+    setSitesLoaded(true)
     if (k.type === 'certificates') {
       setCerts(k.certs)
       certsCache.set(k.certs)
@@ -239,6 +243,7 @@ export function useWeb() {
     setDomains((list) => { const next = list.filter((d) => d.hostname !== hostname); domainsCache.set(next); return next; })
     try {
       const result = await runCommand({ type: 'delete_site', hostname })
+      invalidateSiteProjectCaches()
       await refreshProjects()
       await applyTracked()
       return result
@@ -253,6 +258,7 @@ export function useWeb() {
 
   async function restoreDeletedSite(hostname: string) {
     await runCommand({ type: 'restore_excluded_site', hostname })
+    invalidateSiteProjectCaches()
     await Promise.all([refresh(), refreshProjects()])
     await applyTracked()
   }
@@ -267,6 +273,32 @@ export function useWeb() {
     setDomains((list) => { const next = list.filter((d) => d.hostname !== hostname); domainsCache.set(next); return next; })
     try {
       await runCommand({ type: 'remove_domain', hostname })
+      invalidateSiteProjectCaches()
+      await refreshProjects()
+      await applyTracked()
+    } catch (e) {
+      await refresh().catch(() => undefined)
+      await refreshProjects().catch(() => undefined)
+      throw e
+    } finally {
+      markRemoving(hostname, false)
+    }
+  }
+
+  /**
+   * Remove a site from the list but keep its project. Same shape as `hideSite`: the row leaves
+   * the list at once and the slow half (web config re-render, reload) runs behind it, instead of
+   * waiting for the backend, two refreshes and a hosts sync before anything changes on screen.
+   */
+  async function removeSiteFromList(hostname: string) {
+    if (removing.has(hostname)) return
+    markRemoving(hostname)
+    setDomains((list) => { const next = list.filter((d) => d.hostname !== hostname); domainsCache.set(next); return next; })
+    const cachedDomains = getCached<DomainSummary[]>('projects_page_domains', [])
+    setCached('projects_page_domains', cachedDomains.filter((domain) => domain.hostname !== hostname))
+    try {
+      await runCommand({ type: 'remove_site_from_list', hostname })
+      invalidateSiteProjectCaches()
       await refreshProjects()
       await applyTracked()
     } catch (e) {
@@ -285,6 +317,7 @@ export function useWeb() {
     setProjects((list) => { const next = list.filter((p) => p.id !== id); projectsCache.set(next); return next; })
     try {
       await runCommand({ type: 'delete_project', id })
+      invalidateSiteProjectCaches()
     } catch (e) {
       await refreshProjects().catch(() => undefined)
       throw e
@@ -300,6 +333,7 @@ export function useWeb() {
     setProjects((list) => { const next = list.filter((p) => p.id !== id); projectsCache.set(next); return next; })
     try {
       await runCommand({ type: 'remove_project', id })
+      invalidateSiteProjectCaches()
     } catch (e) {
       await refreshProjects().catch(() => undefined)
       throw e
@@ -312,6 +346,7 @@ export function useWeb() {
   async function relocateProject(id: string, newPath: string) {
     try {
       const res = await runCommand({ type: 'relocate_project', id, path: newPath })
+      invalidateSiteProjectCaches()
       await Promise.all([refresh(), refreshProjects()])
       await applyTracked()
       return res
@@ -341,6 +376,7 @@ export function useWeb() {
     })
     try {
       const res = await runCommand(command)
+      invalidateSiteProjectCaches()
       const outcome: BulkOutcome = res.type === 'bulk' ? { changed: res.changed, skipped: res.skipped } : { changed: 0, skipped: [] }
       await refresh().catch(() => undefined)
       await refreshProjects().catch(() => undefined)
@@ -404,6 +440,7 @@ export function useWeb() {
     setDriftOpen,
     removing,
     applying,
+    sitesLoaded,
     applyTracked,
     deleteSite,
     restoreDeletedSite,
@@ -411,6 +448,7 @@ export function useWeb() {
     deleteProject,
     relocateProject,
     hideSite,
+    removeSiteFromList,
     hideSites,
     reconcileSites,
     hideProjectFromList,

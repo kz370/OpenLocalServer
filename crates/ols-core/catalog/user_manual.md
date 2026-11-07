@@ -364,25 +364,18 @@ olsc guide
 ## 17. Version 2.10.0 Specific Notes & What's New
 
 ### What's New in v2.10.0
-- **Docker page:** a new **Docker** item under **Sites** in the sidebar shows whether Docker is running. When it is stopped, not installed or unreachable, one card explains why and offers **Start Docker**, **Refresh**, **Retry** and **View details**; there are no empty tabs. **Edit compose files without Docker** opens the Compose tab on its own (actions that need Docker say "Start Docker first"). Docker is optional: OLS does not install it, and nothing changes if you don't use it.
-- **Containers:** search your containers, filter them, and see Compose projects as collapsible groups (open when something runs; **Collapse all / Expand all**). Start, stop, restart or pause a whole group at once, or each container on its own. Click a port to open it in your browser, **Logs** to read its output, or **Shell** to open a terminal inside a running container (bash when it has it, otherwise sh).
-- **Container settings:** the gear button opens a container's details (copy its ID, see ports, volumes, networks and settings; passwords stay hidden). On **Settings** you can rename it and change its restart behaviour and memory or CPU limits without restarting it. On **Environment**, **Edit** changes its variables: OLS recreates the container (a few seconds of downtime), keeps its volumes, and restores the old one if anything fails. Hidden passwords stay unless you type a new value. For a Compose container, use **Edit compose file** and press Up instead. **Remove container** asks first and keeps your data volumes.
-- **Images and Volumes:** list images and volumes with sizes and what uses them, pull and run images, remove images and unused volumes. **Reclaim space** shows what a cleanup would remove and how much space it frees before it does anything; unused volumes are off by default because deleting them deletes data. Search, filters and page controls keep long lists easy to use.
-- **Compose:** the **Compose** tab lists compose files in your projects and stacks Docker runs. Use Up, Stop, Restart, Down (keeps data), Pull and Build, and watch the output live.
-- **Edit and check compose files:** **Edit file** opens the built-in editor. **Check** points out mistakes and asks Docker too; **Save** backs up the old file first.
-- **New compose file:** pick services (databases, caches, Mailpit, Adminer, PHP, Node and more). OLS picks free ports and keeps passwords in the Windows credential store; **Passwords** on the stack shows them.
-- **Connect to OLS:** on a stack, **Connect to OLS** lets its containers open your OLS sites by name, trust OLS's HTTPS certificate, and use OLS's databases and Mailpit (the dialog shows each address). It applies the next time you press Up or Restart, and your compose file is not changed.
-- **Your own presets:** in **New compose file**, **New preset** saves your own service (image, versions, ports, environment, volumes, command). It appears under **My presets**; edit or delete it there. **Save as preset** turns an image you typed into a preset. Variables marked **Secret** get a generated password stored in the Windows credential store.
-- **Create site:** give any container a local domain with HTTPS. The site follows the container if its port changes, and turning the site off or on in Sites stops or starts the container.
-- **AI assistant (MCP):** new tools for Docker containers, logs, Compose stacks, the compose builder and creating sites, plus one to bring back a hidden site.
-- **Shorter sidebar:** Settings → **Sidebar** hides pages you don't use. Dashboard, Projects, Sites, Web server, Databases, Services, Runtimes and Settings can't be hidden. Hidden pages still open from search (Ctrl K) and from links.
-- **No slowdown:** nothing Docker-related runs when OLS starts; the Docker page only talks to Docker while it is open, and its lists load from a cache and refresh in the background.
+- **Docker page:** under **Sites**. Search and group containers by Compose project, start, stop, restart or pause them, open ports, read logs, open a shell, and edit settings and environment variables. Docker is optional; OLS never installs it, and nothing runs until you open the page.
+- **Images and Volumes:** sizes, pull, run and remove. **Reclaim space** shows what a cleanup removes first.
+- **Compose:** the **Compose** tab lists stacks (Up, Stop, Down, Pull, Build). **Edit file** opens the editor with **Check**; **New compose file** picks services, free ports and keeps passwords in the Windows credential store. **New preset** saves your own service.
+- **Connect to OLS and Create site:** containers reach your OLS sites and services by name, and any container can get a local HTTPS site.
+- **AI assistant (MCP):** new tools for Docker.
+- **Shorter sidebar:** Settings → **Sidebar** hides pages you don't use. Core pages always stay.
+- **Select several projects:** tick projects on **Projects**, then **Create sites**, **Hide** or **Remove from list** for all of them.
+- **Group and sort by root folder:** on **Projects** and **Sites**, group rows under their parent folder or sort by it. Your choice is remembered.
+- **Faster lists:** Sites and Projects load faster and show a spinner while loading. Remove from list is instant and works when the folder is gone.
 
 ### Coming next
-- **Command line for Docker:** manage containers, images, volumes and Compose stacks with `olsc docker`.
-- **Warnings for Docker sites:** Diagnostics tells you when a site's container is stopped or missing.
-- **Site bundles keep Docker details:** exports keep a site's Docker link and compose file, but never its passwords.
-- **Dockerize a project:** generate a Dockerfile and compose file for a project in one click.
+- `olsc docker`, Diagnostics warnings for Docker sites, Docker details in site bundles, and a one-click Dockerize for projects.
 
 ### Previous Version Notes (v2.9.0)
 - **Import databases from several places at once:** your installed OLS MariaDB versions, other MySQL/MariaDB installs, or any data folder, in the order you choose.

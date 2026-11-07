@@ -222,6 +222,7 @@ impl Core {
                             ))
                         })?;
                     }
+                    crate::app::clear_probe_cache();
                     Ok(R::Ok)
                 }
                 C::RemoveSiteIconImage { hostname, folder } => {
@@ -270,6 +271,7 @@ impl Core {
                             }
                         }
                     }
+                    crate::app::clear_probe_cache();
                     Ok(R::Ok)
                 }
                 C::ReadImageFile { path } => {

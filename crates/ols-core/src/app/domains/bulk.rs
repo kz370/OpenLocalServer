@@ -1,7 +1,46 @@
 use crate::app::*;
 use crate::domain::{BulkOutcome, Domain, Ownership, SiteKind};
 use crate::error::CoreError;
+use std::collections::HashMap;
 use std::path::Path;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
+
+/// How long a folder probe (favicon search, framework detection, WordPress check) is reused.
+/// The site and project lists are read every few seconds and every read probed each folder
+/// again: a dozen stat calls per favicon name per root, a JSON parse per project, a base64
+/// encode per icon. On a slow or network drive that alone took seconds per list.
+const PROBE_TTL: Duration = Duration::from_secs(20);
+
+static PROBE_CACHE: OnceLock<Mutex<HashMap<String, (Instant, Option<String>)>>> = OnceLock::new();
+
+fn probe_cached(key: String, compute: impl FnOnce() -> Option<String>) -> Option<String> {
+    let cache = PROBE_CACHE.get_or_init(Default::default);
+    if let Ok(map) = cache.lock() {
+        if let Some((at, value)) = map.get(&key) {
+            if at.elapsed() < PROBE_TTL {
+                return value.clone();
+            }
+        }
+    }
+    let value = compute();
+    if let Ok(mut map) = cache.lock() {
+        if map.len() > 4000 {
+            map.clear();
+        }
+        map.insert(key, (Instant::now(), value.clone()));
+    }
+    value
+}
+
+/// Forget every cached folder probe, so an icon that was just set or removed shows at once.
+pub fn clear_probe_cache() {
+    if let Some(cache) = PROBE_CACHE.get() {
+        if let Ok(mut map) = cache.lock() {
+            map.clear();
+        }
+    }
+}
 
 impl Inner {
     pub fn rename_domain(&self, hostname: &str, new_hostname: &str) -> Result<Domain, CoreError> {
@@ -358,24 +397,35 @@ fn discovered_site_icon_image(folder: &Path) -> Option<String> {
 /// Reads a manually selected site icon first, then a favicon from the project root or
 /// common document-root folders. Files are bounded to 2 MiB before being returned.
 pub fn read_site_icon_image(folder: &str) -> Option<String> {
-    let folder = Path::new(folder);
-    custom_site_icon_image(folder).or_else(|| discovered_site_icon_image(folder))
+    probe_cached(format!("icon|{folder}"), || {
+        let folder = Path::new(folder);
+        custom_site_icon_image(folder).or_else(|| discovered_site_icon_image(folder))
+    })
 }
 
 /// Domain document roots can differ from their linked project folder. Keep uploaded
 /// images ahead of discovered favicons across both locations.
 pub fn read_domain_icon_image(document_root: &str, project_folder: &str) -> Option<String> {
-    let document_root = Path::new(document_root);
-    let project_folder = Path::new(project_folder);
-    custom_site_icon_image(project_folder)
-        .or_else(|| custom_site_icon_image(document_root))
-        .or_else(|| discovered_site_icon_image(document_root))
-        .or_else(|| discovered_site_icon_image(project_folder))
+    probe_cached(format!("domain-icon|{document_root}|{project_folder}"), || {
+        let document_root = Path::new(document_root);
+        let project_folder = Path::new(project_folder);
+        custom_site_icon_image(project_folder)
+            .or_else(|| custom_site_icon_image(document_root))
+            .or_else(|| discovered_site_icon_image(document_root))
+            .or_else(|| discovered_site_icon_image(project_folder))
+    })
 }
 
 /// Recognizes WordPress from its selected type or its conventional core files. This is a
 /// presentation fallback only; it does not change or persist the project's type.
 pub fn is_wordpress_project(folder: &str, project_type: Option<&str>) -> bool {
+    probe_cached(format!("wp|{folder}|{project_type:?}"), || {
+        is_wordpress_project_uncached(folder, project_type).then(|| "1".to_string())
+    })
+    .is_some()
+}
+
+fn is_wordpress_project_uncached(folder: &str, project_type: Option<&str>) -> bool {
     if project_type
         .and_then(|kind| kind.rsplit(':').next())
         .is_some_and(|kind| kind.eq_ignore_ascii_case("wordpress"))
@@ -402,6 +452,13 @@ pub fn project_type_for_icon(folder: &str, stored_type: Option<&str>) -> Option<
     if let Some(kind) = stored_type.filter(|kind| !kind.eq_ignore_ascii_case("auto")) {
         return Some(kind.to_string());
     }
+    probe_cached(format!("type|{folder}"), || project_type_for_icon_uncached(folder, stored_type))
+}
+
+fn project_type_for_icon_uncached(folder: &str, stored_type: Option<&str>) -> Option<String> {
+    if let Some(kind) = stored_type.filter(|kind| !kind.eq_ignore_ascii_case("auto")) {
+        return Some(kind.to_string());
+    }
     let detection = crate::detection::detect(Path::new(folder));
     match detection.framework {
         crate::detection::Framework::Laravel => Some("laravel"),
@@ -421,6 +478,12 @@ pub fn project_type_for_icon(folder: &str, stored_type: Option<&str>) -> Option<
 /// Reads a per-project-type fallback named `<type>_fallback.<ext>` from `data/icons`
 /// or one category folder. Examples: `laravel_fallback.webp` and `Web/nestjs_fallback.ico`.
 pub fn read_project_fallback_icon(icons_dir: &Path, project_type: Option<&str>) -> Option<String> {
+    probe_cached(format!("fallback|{}|{project_type:?}", icons_dir.display()), || {
+        read_project_fallback_icon_uncached(icons_dir, project_type)
+    })
+}
+
+fn read_project_fallback_icon_uncached(icons_dir: &Path, project_type: Option<&str>) -> Option<String> {
     let project_type = project_type?
         .rsplit(':')
         .next()?

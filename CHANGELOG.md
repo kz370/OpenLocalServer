@@ -10,22 +10,18 @@ and the project follows [Semantic Versioning](https://semver.org/).
 Feature release. Full notes: [`release-notes/v2.10.0.md`](./release-notes/v2.10.0.md).
 
 ### Added
-- Docker page under Sites: Docker status as a state machine (not installed / stopped / starting / error / running) shown as one card with Start Docker, Refresh, Retry and details, no empty tabs while Docker is off, and a container list with search and collapsible Compose groups (group start / stop / restart / pause, Collapse / Expand all). Compose files can be edited without Docker.
-- Start, stop, restart, pause and resume containers; click a port to open it; container logs; a shell inside a running container.
-- Container settings: details with copy ID (passwords hidden); rename, restart policy, memory and CPU limits without restarting; remove with confirmation; edit environment variables (recreates the container, keeps its data, rolls back on failure).
-- Images and Volumes tabs with disk usage, Reclaim space (preview first), pull, run and remove; pagination on Containers, Images and Volumes.
-- Compose tab: stacks from your projects and Docker, with Up / Stop / Restart / Down / Pull / Build and live output.
-- Compose file editor with Check (OLS rules and Docker's own check) and Save with backup.
-- Compose builder: pick services, free ports picked for you, passwords kept in the Windows credential store.
-- Custom presets in the compose builder: create, edit and delete your own services; Save as preset from any image.
-- Create site: a local HTTPS domain for any container that follows the container's port; the site's on/off switch stops and starts its container.
-- Connect to OLS: containers reach OLS sites by name, trust OLS's HTTPS certificate and use OLS services; the compose file is not changed.
-- MCP tools for Docker (status, start, containers, logs, Compose stacks, compose builder, create site) and `ols_unignore_site`.
-- Settings → Sidebar: hide sidebar pages you don't use; core pages always stay.
+- Docker page under Sites: containers grouped by Compose project (search, filters, start/stop/restart/pause, ports, logs, shell, settings and environment editing). Docker stays optional.
+- Images and Volumes tabs with Reclaim space (preview first).
+- Compose tab, built-in compose editor with Check, and a compose builder with your own presets; passwords stay in the Windows credential store.
+- Connect to OLS and Create site: containers reach OLS sites and services, and any container can get a local HTTPS site.
+- MCP tools for Docker and `ols_unignore_site`.
+- Settings → Sidebar: hide pages you don't use.
+- Projects: select several projects, then Create sites, Hide or Remove from list.
+- Projects and Sites: group or sort by root folder.
 
 ### Changed & Improved
-- Docker never slows OLS down: no Docker work at startup; the page checks only while Docker is stopped (every few seconds, paused when hidden). Lists are cached and refreshed in the background; fixed headers with scrolling rows.
-- The Docker page fits small windows; long names and paths wrap.
+- Docker does nothing until its page is open, and its lists load from a cache.
+- Sites and Projects load faster and show a spinner while loading. Remove from list is instant and works when the project folder is gone. The Locate button no longer touches the settings gear.
 
 ## [2.9.0] — 2026-11-05
 

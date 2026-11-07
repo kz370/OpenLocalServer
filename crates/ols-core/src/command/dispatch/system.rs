@@ -510,6 +510,11 @@ impl Core {
                     i.reconcile()?;
                     Ok(R::Ok)
                 }
+                C::IgnoreProjects { ids } => {
+                    let count = i.ignore_projects(&ids)?;
+                    i.reconcile()?;
+                    Ok(R::Count { count })
+                }
                 C::UnignoreSite { project_id } => {
                     i.unignore_site(&project_id)?;
                     i.reconcile()?;

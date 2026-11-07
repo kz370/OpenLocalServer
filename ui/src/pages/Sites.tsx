@@ -1,6 +1,6 @@
 import { open } from '@tauri-apps/plugin-dialog'
 import { Activity, Check, CircleOff, Code2, Copy, Download, ExternalLink, EyeOff, FolderOpen, FolderPlus, FolderSearch, FolderX, Globe, HardDrive, KeyRound, List, ListX, MoreHorizontal, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2, UserRound, Wrench, X, Zap } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Fragment } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
 import type { Page } from '@/components/layout/Sidebar'
@@ -14,6 +14,7 @@ import { SiteLogoDialog, type SiteLogoTarget } from '@/components/site/SiteLogoD
 import { SiteLogo } from '@/components/SiteLogo'
 import { DriftDialog } from '@/components/site/WebApply'
 import { PageLayout } from '@/components/PageLayout'
+import { RootFolderControls, RootGroupRow } from '@/components/RootFolderControls'
 import { ScrollableList } from '@/components/ScrollableList'
 import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
@@ -29,8 +30,8 @@ import { Pagination } from '@/components/ui/pagination'
 import { MiddleTruncate } from '@/components/ui/MiddleTruncate'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { type Domain, type DomainSummary, type EditorInfo, type HealthProgress, type HealthReport, type HealthStep, type Project, type WpProject, runCommand } from '@/core'
-import { getCached, setCached } from '@/lib/cache'
 import { confirmAction } from '@/lib/confirm'
+import { compareByRoot, rootFolderOf, rootKeyOf, sortsByRoot, useListView } from '@/lib/rootFolder'
 import { notify } from '@/lib/notify'
 import { cn } from '@/lib/utils'
 import { onOpenAddSiteForProject, onOpenProject, onOpenSitesFilter, openSettingsSection, takePendingAddSiteProject, takePendingProject, takePendingSitesFilter } from '@/lib/nav'
@@ -146,7 +147,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   // The WordPress sign-in screen lives outside this window, so it is told which colourway
   // the app is showing rather than left to guess from the browser.
   const { resolvedTheme } = useTheme()
-  const { projects, domains, status, busy, error, setError, run, apply, applyTracked, refresh, refreshProjects, reconcileSites, installedPhp, removing, applying } = web
+  const { projects, domains, status, busy, error, setError, run, apply, applyTracked, refresh, refreshProjects, installedPhp, removing, applying, sitesLoaded } = web
   const defaultServer = status?.default_server
   const serverIsRunning = busy === 'stop' || (busy !== 'apply' && !!status?.running)
 
@@ -162,6 +163,8 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   const [dupOf, setDupOf] = useState<string | null>(null)
   const [dupName, setDupName] = useState('')
   const [query, setQuery] = useState('')
+  // Sort by name or root folder, and optional headings per root folder (remembered).
+  const [view, setView] = useListView('ols:sites-view')
   const [filter, setFilter] = useState<SiteFilter>(() => (takePendingSitesFilter() as SiteFilter) || 'enabled')
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null)
   const [activeMenu, setActiveMenu] = useState<{ key: string; anchor: MenuAnchor } | null>(null)
@@ -307,6 +310,13 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     }
   }
 
+  /** The folder a row's site or project lives in (a reverse proxy has none of its own). */
+  const rowFolder = (r: Row): string => {
+    const isProxy = r.site?.kind === 'proxy' || r.site?.group === 'proxy'
+    return isProxy ? (r.project?.path ?? '') : (r.site?.folder ?? r.project?.path ?? '')
+  }
+  const byRoot = sortsByRoot(view)
+
   // 3. Convert buckets into Rows: primary domain first (preferring enabled), extra domains grouped.
   const rows: Row[] = buckets
     .map((b) => {
@@ -322,7 +332,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     .sort((a, b) => {
       const nameA = a.site?.hostname ?? a.project?.name ?? ''
       const nameB = b.site?.hostname ?? b.project?.name ?? ''
-      return nameA.localeCompare(nameB)
+      return byRoot ? compareByRoot(rootKeyOf(rowFolder(a)), rootKeyOf(rowFolder(b)), nameA, nameB) : nameA.localeCompare(nameB)
     })
 
   const isRowMissingFolder = (r: Row) => Boolean(r.project?.health && r.project.health.status !== 'healthy')
@@ -363,6 +373,12 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   // a bulk edit is wanted on, and a checkbox that only appears once the site exists would
   // be useless for it. A batch that needs a site creates the automatic one first.
   const visibleKeys = visible.map((r) => r.key)
+  /** How many listed rows share each root folder, for the group headings. */
+  const rootCounts = new Map<string, number>()
+  for (const r of visible) {
+    const key = rootKeyOf(rowFolder(r))
+    rootCounts.set(key, (rootCounts.get(key) ?? 0) + 1)
+  }
   // A row the search or a delete removed must not stay picked: the next batch would name a
   // site that is not there, and the backend would report it as skipped for no visible
   // reason. The selection is therefore derived from the rows on screen rather than read off
@@ -885,13 +901,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
             'Remove from list',
           )
           if (!ok) return
-          await run(`remove:${key}`, async () => {
-            await runCommand({ type: 'remove_site_from_list', hostname: key })
-            const cachedDomains = getCached<DomainSummary[]>('projects_page_domains', [])
-            setCached('projects_page_domains', cachedDomains.filter((domain) => domain.hostname !== key))
-            await Promise.all([refresh(), refreshProjects()])
-            await reconcileSites()
-          })
+          await run(`remove:${key}`, () => web.removeSiteFromList(key))
         },
       })
       items.push({
@@ -1055,6 +1065,9 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                 <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
                 <Input className="h-8 pl-9" value={query} onChange={(e) => onSearch(e.target.value)} placeholder="Search sites by domain, project or folder" />
               </div>
+              <div className="ml-auto">
+                <RootFolderControls view={view} onChange={setView} />
+              </div>
             </div>
             <OverflowTabs
               tabs={[
@@ -1176,7 +1189,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {pageRows.map((r) => {
+              {pageRows.map((r, rowIndex) => {
                 const { site: d, project: p } = r
                 const openSettings = () => setTarget({ hostname: d?.hostname ?? null, projectId: p?.id ?? null })
                 const isProxy = d?.kind === 'proxy' || d?.group === 'proxy'
@@ -1186,9 +1199,12 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                 // that did nothing.
                 const pending = [d?.hostname, ...r.extraDomains.map((e) => e.hostname), p?.id].filter(Boolean).some((k) => removing.has(k!))
                 const isMenuOpen = activeMenu?.key === r.key
+                const rootKey = rootKeyOf(rowFolder(r))
+                const startsGroup = view.group && (rowIndex === 0 || rootKeyOf(rowFolder(pageRows[rowIndex - 1])) !== rootKey)
                 return (
+                  <Fragment key={r.key}>
+                  {startsGroup && <RootGroupRow root={rootFolderOf(rowFolder(r))} count={rootCounts.get(rootKey) ?? 1} colSpan={4} />}
                   <TableRow
-                    key={r.key}
                     aria-busy={pending}
                     data-state={isMenuOpen ? 'selected' : undefined}
                     className={[
@@ -1544,12 +1560,19 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                       </div>
                     </TableCell>
                   </TableRow>
+                  </Fragment>
                 )
               })}
               {visible.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={4} className="text-center text-sm text-muted-foreground">
-                    {rows.length === 0
+                    {rows.length === 0 && !sitesLoaded
+                      ? (
+                        <span className="inline-flex items-center gap-2 py-6" role="status">
+                          <Spinner className="size-4" /> Loading sites…
+                        </span>
+                      )
+                      : rows.length === 0
                       ? 'No sites yet. Add one, add a project folder, or create one from Quick Apps.'
                       : q
                         ? `No site matches "${query.trim()}".`

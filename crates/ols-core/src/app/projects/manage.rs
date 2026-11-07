@@ -483,6 +483,33 @@ impl Inner {
     }
 
     pub fn ignore_project(&self, id: &str) -> Result<(), CoreError> {
+        self.ignore_project_quiet(id)?;
+        let _ = self.project_events.send(());
+        Ok(())
+    }
+
+    /// Ignores several projects in one go: one project-changed event instead of one per project,
+    /// so the UI refreshes once. Returns how many were ignored; the first error stops the batch.
+    pub fn ignore_projects(&self, ids: &[String]) -> Result<usize, CoreError> {
+        let mut done = 0;
+        let mut first_error = None;
+        for id in ids {
+            match self.ignore_project_quiet(id) {
+                Ok(()) => done += 1,
+                Err(e) => {
+                    first_error = Some(e);
+                    break;
+                }
+            }
+        }
+        let _ = self.project_events.send(());
+        match first_error {
+            Some(e) if done == 0 => Err(e),
+            _ => Ok(done),
+        }
+    }
+
+    fn ignore_project_quiet(&self, id: &str) -> Result<(), CoreError> {
         let path = {
             let projects = self.projects.lock().unwrap();
             projects.get(id).map(|pr| pr.path.clone())
@@ -513,10 +540,18 @@ impl Inner {
                 self.projects.lock().unwrap().remove(id)?;
             } else {
                 let ignore_file = std::path::Path::new(&path).join(".ols_ignore_me");
-                let _ = std::fs::write(&ignore_file, "");
+                if std::fs::write(&ignore_file, "").is_err() {
+                    // The folder is gone (or not writable), so no marker can be left in it. Doing
+                    // nothing here made "Remove from list" silently fail on a missing folder and
+                    // left the row stuck. Drop the project and its sites from OLS instead.
+                    for h in hostnames {
+                        self.domains.lock().unwrap().remove(&h)?;
+                        self.web.restart_app(&h);
+                    }
+                    self.projects.lock().unwrap().remove(id)?;
+                }
             }
         }
-        let _ = self.project_events.send(());
         Ok(())
     }
 

@@ -136,6 +136,10 @@ pub enum CoreCommand {
     IgnoreProject {
         id: String,
     },
+    /// Ignore several projects at once: one reconcile and one UI refresh for the whole batch.
+    IgnoreProjects {
+        ids: Vec<String>,
+    },
     UnignoreSite {
         project_id: String,
     },
