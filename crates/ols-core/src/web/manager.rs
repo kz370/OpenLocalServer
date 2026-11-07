@@ -1758,10 +1758,34 @@ impl WebManager {
     }
 }
 
+/// How much of the end of a log `read_tail` reads. Error logs grow for months; reading the
+/// whole file to show its last lines held hundreds of MB in memory for a few lines.
+const TAIL_BYTES: u64 = 4 * 1024 * 1024;
+
 fn read_tail(path: &Path, lines: usize) -> Vec<String> {
-    let Ok(text) = std::fs::read_to_string(path) else {
+    use std::io::{Read, Seek, SeekFrom};
+    let Ok(mut file) = std::fs::File::open(path) else {
         return Vec::new();
     };
+    let len = file.metadata().map(|m| m.len()).unwrap_or(0);
+    let start = len.saturating_sub(TAIL_BYTES);
+    if file.seek(SeekFrom::Start(start)).is_err() {
+        return Vec::new();
+    }
+    let mut bytes = Vec::new();
+    if file.read_to_end(&mut bytes).is_err() {
+        return Vec::new();
+    }
+    let mut text = String::from_utf8_lossy(&bytes).into_owned();
+    if start > 0 {
+        // The read began mid-line; that partial first line is not shown.
+        match text.find('\n') {
+            Some(i) => {
+                text.drain(..=i);
+            }
+            None => text.clear(),
+        }
+    }
     let all: Vec<&str> = text.lines().collect();
     all[all.len().saturating_sub(lines)..]
         .iter()
@@ -1999,6 +2023,42 @@ fn tld_of(hostname: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_huge_log_is_tailed_from_its_end_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let small = dir.path().join("small.log");
+        std::fs::write(&small, "one\ntwo\nthree\n").unwrap();
+        assert_eq!(read_tail(&small, 2), vec!["two", "three"]);
+        assert_eq!(read_tail(&small, 10), vec!["one", "two", "three"]);
+
+        // Bigger than the window: only the end is read, the cut line is dropped, and the
+        // last lines are exactly the file's last lines.
+        let big = dir.path().join("big.log");
+        let mut text = String::new();
+        let mut i = 0u64;
+        while (text.len() as u64) < TAIL_BYTES + 1024 * 1024 {
+            text.push_str(&format!("line {i:08} some error text\n"));
+            i += 1;
+        }
+        std::fs::write(&big, &text).unwrap();
+        let tail = read_tail(&big, 3);
+        assert_eq!(
+            tail,
+            vec![
+                format!("line {:08} some error text", i - 3),
+                format!("line {:08} some error text", i - 2),
+                format!("line {:08} some error text", i - 1),
+            ]
+        );
+        let many = read_tail(&big, usize::MAX);
+        assert!(
+            many.iter().all(|l| l.starts_with("line ")),
+            "no partial first line"
+        );
+        assert!((many.len() as u64) * 30 <= TAIL_BYTES + 30);
+        assert!(read_tail(&dir.path().join("missing.log"), 5).is_empty());
+    }
     use crate::web::ServerPorts;
 
     fn static_domain(root: &Path) -> Domain {

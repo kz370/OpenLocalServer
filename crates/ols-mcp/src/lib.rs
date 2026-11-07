@@ -1272,8 +1272,9 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
                      \"args\": [], \"cwd\": null, \"timeout_ms\": 1000}})"
                 ));
             }
-            serde_json::from_value::<CoreCommand>(cmd_args)
-                .map_err(|e| format!("failed to deserialize command '{cmd_name}': {e}"))?
+            let cmd = serde_json::from_value::<CoreCommand>(cmd_args)
+                .map_err(|e| format!("failed to deserialize command '{cmd_name}': {e}"))?;
+            guard_raw_command(cmd)?
         }
         "ols_list_projects" => C::ListProjects,
         "ols_add_project" => {
@@ -1325,6 +1326,37 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
         "ols_list_editors" => C::ListEditors,
         _ => return Err(format!("unknown tool: {name}")),
     })
+}
+
+/// The limits the named MCP tools keep, applied to the `ols_run_command` escape hatch too,
+/// which otherwise accepts any `CoreCommand`:
+/// - secrets never travel to an AI client: `GetSecret` and `RevealDockerComposeSecrets`
+///   are refused (OLS itself still reads them where it needs them);
+/// - a tunnel's first public exposure is confirmed by a person in the app, never by an
+///   AI tool: `confirm_exposure` is always false (as in `ols_start_tunnel`);
+/// - an existing compose file is never replaced from here: `overwrite` is always false
+///   (as in `ols_docker_compose_create`).
+///
+/// Every other command passes unchanged.
+fn guard_raw_command(cmd: CoreCommand) -> Result<CoreCommand, String> {
+    use CoreCommand as C;
+    match cmd {
+        C::GetSecret { .. } | C::RevealDockerComposeSecrets { .. } => Err(
+            "ols_run_command cannot read stored secrets: passwords and tokens stay in the OS \
+             credential store. OLS passes them to the services that need them itself; to see \
+             one, open it in the OLS app."
+                .to_string(),
+        ),
+        C::StartTunnel { id, .. } => Ok(C::StartTunnel {
+            id,
+            confirm_exposure: false,
+        }),
+        C::CreateDockerCompose { spec, .. } => Ok(C::CreateDockerCompose {
+            spec,
+            overwrite: false,
+        }),
+        other => Ok(other),
+    }
 }
 
 /// Send a `CoreCommand` to the running OLS app via the local control channel.
@@ -2233,6 +2265,14 @@ async fn handle_request(req: JsonRpcRequest, override_token: Option<&str>) -> Js
     }
 }
 
+/// A well-formed JSON-RPC message with a `method` and no `id`. Nothing this server does
+/// reacts to notifications, so they are read and dropped.
+fn is_notification(line: &str) -> bool {
+    serde_json::from_str::<Value>(line).is_ok_and(|v| {
+        v.is_object() && v.get("id").is_none() && v.get("method").is_some_and(Value::is_string)
+    })
+}
+
 /// Read a line from stdin.
 async fn read_line(stdin: &mut impl BufRead) -> io::Result<Option<String>> {
     let mut line = String::new();
@@ -2264,6 +2304,11 @@ pub async fn run_stdio(override_token: Option<String>) -> io::Result<()> {
             None => break,
         };
         if line.trim().is_empty() {
+            continue;
+        }
+        if is_notification(&line) {
+            // JSON-RPC 2.0: a notification (no `id`, e.g. `notifications/initialized`)
+            // never gets a response. Answering it with a parse error confused MCP hosts.
             continue;
         }
 
@@ -2299,6 +2344,66 @@ pub async fn run_stdio(override_token: Option<String>) -> io::Result<()> {
 mod tests {
     use super::*;
     use ols_core::domain::SiteKind;
+
+    #[test]
+    fn run_command_keeps_the_named_tools_limits() {
+        let raw = |args: Value| {
+            build_command("ols_run_command", &json!({ "command": "x", "args": args }))
+        };
+        let e = raw(json!({"type": "get_secret", "key": "tunnel.ngrok.token"})).unwrap_err();
+        assert!(e.contains("cannot read stored secrets"), "{e}");
+        let e = raw(json!({"type": "reveal_docker_compose_secrets", "path": "C:/s/compose.yaml"}))
+            .unwrap_err();
+        assert!(e.contains("cannot read stored secrets"), "{e}");
+        assert!(matches!(
+            raw(json!({"type": "start_tunnel", "id": "t1", "confirm_exposure": true})).unwrap(),
+            CoreCommand::StartTunnel { ref id, confirm_exposure: false } if id == "t1"
+        ));
+        match raw(json!({
+            "type": "create_docker_compose",
+            "spec": { "dir": "C:/s/shop", "services": [] },
+            "overwrite": true
+        }))
+        .unwrap()
+        {
+            CoreCommand::CreateDockerCompose { overwrite, spec } => {
+                assert!(!overwrite, "never replaces a file from an AI tool");
+                assert_eq!(spec.dir, "C:/s/shop");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        // Everything else is unchanged.
+        assert!(matches!(
+            raw(json!({"type": "list_domains"})).unwrap(),
+            CoreCommand::ListDomains
+        ));
+        assert!(matches!(
+            raw(json!({"type": "set_secret", "key": "k", "value": "v"})).unwrap(),
+            CoreCommand::SetSecret { .. }
+        ));
+    }
+
+    #[test]
+    fn notifications_get_no_response() {
+        assert!(is_notification(
+            r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#
+        ));
+        assert!(is_notification(
+            r#"{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":3}}"#
+        ));
+        // Requests (even with id 0 or null) and broken lines are still answered.
+        assert!(!is_notification(
+            r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#
+        ));
+        assert!(!is_notification(
+            r#"{"jsonrpc":"2.0","id":0,"method":"ping"}"#
+        ));
+        assert!(!is_notification(
+            r#"{"jsonrpc":"2.0","id":null,"method":"ping"}"#
+        ));
+        assert!(!is_notification("{not json"));
+        assert!(!is_notification(r#"{"jsonrpc":"2.0"}"#));
+    }
 
     #[test]
     fn docker_tools_build_commands() {

@@ -658,3 +658,206 @@ fn site_switch_drives_its_container() {
         vec!["POST /containers/a1/stop", "POST /containers/a1/start"]
     );
 }
+
+/// One container that refuses to stop must not keep the others running: every linked
+/// container is tried, and the task ends failed, naming the one that did not stop.
+#[test]
+fn one_failing_container_does_not_stop_the_rest() {
+    use crate::command::CoreCommand;
+    use crate::domain::{DockerLink, Domain, SiteKind};
+    fn engine_with_a_stuck_container(method: &str, path: &str) -> (u16, String) {
+        match (method, path) {
+            ("POST", "/containers/b1/stop") => {
+                (500, r#"{"message":"cannot stop container: zeta"}"#.into())
+            }
+            ("POST", "/containers/a1/stop") => (204, String::new()),
+            _ => engine(method, path),
+        }
+    }
+    let fake = FakeEngine::start(engine_with_a_stuck_container);
+    let home = crate::test_support::isolated_home();
+    let mut settings = crate::settings::SettingsService::load(&home.paths).unwrap();
+    let Endpoint::Tcp(addr) = &fake.endpoint else {
+        unreachable!()
+    };
+    settings
+        .set(
+            SETTING_ENDPOINT,
+            serde_json::Value::String(format!("tcp://{addr}")),
+        )
+        .unwrap();
+    let core = crate::Core::new(settings, home.paths.clone());
+    let root = home.paths.data_dir().join("shop");
+    std::fs::create_dir_all(&root).unwrap();
+    let site = |host: &str, port: u16, container: &str| Domain {
+        hostname: host.into(),
+        root: root.display().to_string(),
+        kind: SiteKind::Proxy {
+            upstream_port: port,
+            upstream_host: None,
+            upstream_https: false,
+        },
+        docker: Some(DockerLink {
+            container: container.into(),
+            container_port: 80,
+            compose_project: None,
+            compose_service: None,
+        }),
+        ..Default::default()
+    };
+    // The stuck container's site sorts first, so the loop meets the failure first.
+    core.inner()
+        .add_domain(site("a-cache.test", 18090, "zeta"))
+        .unwrap();
+    core.inner()
+        .add_domain(site("b-shop.test", 18091, "shop-web-1"))
+        .unwrap();
+    core.dispatch(CoreCommand::BulkSetDomainsEnabled {
+        hostnames: vec!["a-cache.test".into(), "b-shop.test".into()],
+        enabled: false,
+    })
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let task = loop {
+        let t = core
+            .inner()
+            .tasks
+            .list()
+            .into_iter()
+            .find(|t| t.kind == "docker-site-power");
+        match t {
+            Some(t) if !t.state.is_running() => break t,
+            _ if Instant::now() > deadline => panic!("the power task never finished"),
+            _ => std::thread::sleep(Duration::from_millis(10)),
+        }
+    };
+    let posts: Vec<String> = fake
+        .seen
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|s| s.starts_with("POST"))
+        .cloned()
+        .collect();
+    assert!(
+        posts.contains(&"POST /containers/a1/stop".to_string()),
+        "the second container is still stopped after the first failed: {posts:?}"
+    );
+    let error = task.error.expect("the task reports the failure");
+    assert!(error.problem.contains("a-cache.test"), "{error:?}");
+    assert!(
+        task.problems
+            .iter()
+            .any(|p| p.contains("cannot stop container")),
+        "Docker's own message is kept: {:?}",
+        task.problems
+    );
+}
+
+/// The compose editor writes only to stacks OLS knows: a project folder's compose file,
+/// a running stack's own file (from Docker's labels), or a stack made or connected in OLS.
+/// Any other path is refused before a byte is written, and Docker's check (which writes a
+/// temporary copy beside the file) is skipped for it while every local rule still runs.
+#[test]
+fn compose_saves_are_limited_to_known_stacks() {
+    use crate::command::{CoreCommand, CoreResponse};
+    fn engine_with_a_stack(method: &str, path: &str) -> (u16, String) {
+        match (method, path) {
+            ("GET", p) if p.starts_with("/containers/json") => {
+                let file = std::env::var("OLS_TEST_ENGINE_STACK_FILE").unwrap_or_default();
+                let body = serde_json::json!([{
+                    "Id": "s1", "Names": ["/engine-web-1"], "Image": "nginx", "State": "running",
+                    "Status": "Up", "Created": 1, "Ports": [],
+                    "Labels": {
+                        "com.docker.compose.project": "engine",
+                        "com.docker.compose.service": "web",
+                        "com.docker.compose.project.config_files": file,
+                    }
+                }]);
+                (200, body.to_string())
+            }
+            _ => engine(method, path),
+        }
+    }
+    let fake = FakeEngine::start(engine_with_a_stack);
+    let home = crate::test_support::isolated_home();
+    let mut settings = crate::settings::SettingsService::load(&home.paths).unwrap();
+    let Endpoint::Tcp(addr) = &fake.endpoint else {
+        unreachable!()
+    };
+    settings
+        .set(
+            SETTING_ENDPOINT,
+            serde_json::Value::String(format!("tcp://{addr}")),
+        )
+        .unwrap();
+    let core = crate::Core::new(settings, home.paths.clone());
+    let yaml = "services:\n  web:\n    image: nginx:1.28\n";
+    let edited = "services:\n  web:\n    image: nginx:1.29\n";
+    let make = |dir: &std::path::Path| {
+        std::fs::create_dir_all(dir).unwrap();
+        let f = dir.join("compose.yaml");
+        std::fs::write(&f, yaml).unwrap();
+        f
+    };
+    let save = |f: &std::path::Path| {
+        core.dispatch(CoreCommand::SaveDockerComposeFile {
+            path: f.display().to_string(),
+            content: edited.into(),
+        })
+    };
+
+    // A project folder's compose file: saved as before.
+    let project_dir = home.paths.root().join("shop");
+    let in_project = make(&project_dir);
+    core.dispatch(CoreCommand::RegisterProject {
+        path: project_dir.display().to_string(),
+    })
+    .unwrap();
+    assert!(save(&in_project).is_ok());
+    assert!(std::fs::read_to_string(&in_project)
+        .unwrap()
+        .contains("1.29"));
+
+    // A running stack's own file, outside any project: saved.
+    let engine_file = make(&home.paths.root().join("elsewhere").join("engine"));
+    std::env::set_var(
+        "OLS_TEST_ENGINE_STACK_FILE",
+        engine_file.display().to_string(),
+    );
+    assert!(save(&engine_file).is_ok());
+    std::env::remove_var("OLS_TEST_ENGINE_STACK_FILE");
+
+    // A stack connected in OLS (the builder connects every stack it makes): saved.
+    let connected = make(&home.paths.root().join("built"));
+    core.inner().set_docker_connected(&connected, true).unwrap();
+    assert!(save(&connected).is_ok());
+
+    // Anything else: refused, file untouched, nothing created.
+    let stranger = make(&home.paths.root().join("Startup"));
+    let err = save(&stranger).unwrap_err();
+    assert!(err.cause.contains("not a stack OLS knows"), "{err:?}");
+    assert_eq!(std::fs::read_to_string(&stranger).unwrap(), yaml);
+    let missing = home.paths.root().join("nowhere").join("compose.yaml");
+    std::fs::create_dir_all(missing.parent().unwrap()).unwrap();
+    assert!(save(&missing).is_err());
+    assert!(!missing.exists());
+    // A path that climbs out of a project folder is not that project's file.
+    let climbing = project_dir.join("..").join("Startup").join("compose.yaml");
+    assert!(save(&climbing).is_err());
+    assert_eq!(std::fs::read_to_string(&stranger).unwrap(), yaml);
+
+    // Checking an unknown file still runs the local rules, without Docker's temp copy.
+    match core
+        .dispatch(CoreCommand::ValidateDockerCompose {
+            path: stranger.display().to_string(),
+            content: "services: [".into(),
+        })
+        .unwrap()
+    {
+        CoreResponse::DockerComposeCheck { check } => {
+            assert!(!check.ok && !check.docker_checked, "{check:?}")
+        }
+        other => panic!("unexpected {other:?}"),
+    }
+}

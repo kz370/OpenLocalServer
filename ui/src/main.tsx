@@ -4,8 +4,12 @@ import { emit } from '@tauri-apps/api/event'
 import './index.css'
 import App from './App.tsx'
 import { TrayConfirmationWindow } from './components/TrayConfirmationWindow'
+import { disableNativeContextMenu } from './lib/nativeContextMenu'
 import { installSiteCacheInvalidation } from './lib/siteCaches'
 import { ThemeProvider } from './lib/theme'
+
+// No browser right-click menu in the app (text fields keep theirs for Cut / Copy / Paste).
+disableNativeContextMenu()
 
 const isTrayConfirmationWindow = window.location.hash === '#tray-confirmation'
 if (isTrayConfirmationWindow) {

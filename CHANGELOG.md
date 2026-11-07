@@ -23,6 +23,21 @@ Feature release. Full notes: [`release-notes/v2.10.0.md`](./release-notes/v2.10.
 - Docker does nothing until its page is open, and its lists load from a cache.
 - Sites and Projects load faster and show a spinner while loading. Remove from list is instant and works when the project folder is gone. The Locate button no longer touches the settings gear.
 
+### Security
+- DDNS credentials are kept in the Windows credential store (moved on first start; not in snapshots or site bundles).
+- PECL extensions install only when OLS knows the build's SHA-256 (apcu, redis, igbinary, imagick, mongodb, xdebug, pcov, yaml; PHP 8.1–8.5).
+- The compose editor saves only stacks OLS knows; site bundle imports can't write outside their folders.
+- The MCP server can no longer read stored passwords, confirm a tunnel, or overwrite a compose file.
+- Updated rustls, rustls-webpki, webpki-roots, ctutils and zip (RUSTSEC-2026-0346/0347/0348/0349/0381/0382/0385/0367/0368/0369/0429).
+
+### Fixed
+- Compose Check no longer reports a port conflict for TCP + UDP or separate addresses.
+- Turning Docker sites on or off handles every container, even when one fails.
+- Starting a tunnel twice no longer runs two copies.
+- Text like `<name>` in release notes and the manual is visible again.
+- Processes → Usage by site: the table header matches the card.
+- Right-click no longer opens the browser's menu (text fields keep Cut, Copy and Paste).
+
 ## [2.9.0] — 2026-11-05
 
 Feature release. Full notes: [`release-notes/v2.9.0.md`](./release-notes/v2.9.0.md).

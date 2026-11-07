@@ -69,7 +69,7 @@ fn a_truncated_zip_is_recognised_before_it_is_reused() {
     let complete = dir.join("complete.zip");
     let file = std::fs::File::create(&complete).unwrap();
     let mut writer = zip::ZipWriter::new(file);
-    let opts: zip::write::FileOptions<'_, ()> =
+    let opts: zip::write::FileOptions<'_, '_, ()> =
         zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
     writer.add_directory("root/", opts).unwrap();
     writer.start_file("root/bin/postgres.exe", opts).unwrap();

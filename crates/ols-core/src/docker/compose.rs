@@ -204,6 +204,58 @@ pub fn parse_port(v: &serde_yaml_ng::Value) -> Option<ComposePort> {
     }
 }
 
+/// Whether two bind addresses can both hold the same host port and protocol. No address
+/// means every address (IPv4 and IPv6); `0.0.0.0` is every IPv4 address and `::` every IPv6
+/// one; anything else is one address. IPv4 and IPv6 never overlap except through "every".
+fn binds_overlap(a: &str, b: &str) -> bool {
+    fn norm(ip: &str) -> String {
+        ip.trim()
+            .trim_start_matches('[')
+            .trim_end_matches(']')
+            .to_lowercase()
+    }
+    let (a, b) = (norm(a), norm(b));
+    if a.is_empty() || b.is_empty() {
+        return true;
+    }
+    let v6 = |ip: &str| ip.contains(':');
+    if v6(&a) != v6(&b) {
+        return false;
+    }
+    let any = |ip: &str| ip == "0.0.0.0" || ip == "::";
+    any(&a) || any(&b) || a == b
+}
+
+/// The bind address and protocol of one `ports:` entry. Two entries only clash when the
+/// host port and the protocol match and their addresses overlap (`53:53/tcp` +
+/// `53:53/udp` is fine, `8080:80` + `127.0.0.1:8080:80` is not).
+fn port_scope(v: &serde_yaml_ng::Value) -> (String, String) {
+    use serde_yaml_ng::Value;
+    let (mut ip, mut proto) = (String::new(), "tcp".to_string());
+    match v {
+        Value::String(s) => {
+            if let Some((_, p)) = s.split_once('/') {
+                proto = p.trim().to_lowercase();
+            }
+            let head = s.split('/').next().unwrap_or_default();
+            let parts: Vec<&str> = head.rsplitn(3, ':').collect();
+            if parts.len() == 3 {
+                ip = parts[2].to_string();
+            }
+        }
+        Value::Mapping(m) => {
+            if let Some(p) = m.get("protocol").and_then(|p| p.as_str()) {
+                proto = p.to_lowercase();
+            }
+            if let Some(h) = m.get("host_ip").and_then(|h| h.as_str()) {
+                ip = h.to_string();
+            }
+        }
+        _ => {}
+    }
+    (ip, proto)
+}
+
 /// Services as written in the file, in file order.
 pub fn parse_services(doc: &serde_yaml_ng::Value) -> Vec<ComposeService> {
     let Some(services) = doc.get("services").and_then(|s| s.as_mapping()) else {
@@ -270,6 +322,45 @@ pub fn check_compose_path(path: &str) -> Result<PathBuf, CoreError> {
     Ok(p)
 }
 
+fn same_path(a: &Path, b: &Path) -> bool {
+    let norm = |p: &Path| {
+        p.to_string_lossy()
+            .replace('\\', "/")
+            .trim_end_matches('/')
+            .to_lowercase()
+    };
+    norm(a) == norm(b)
+}
+
+/// A compose file OLS knows as a stack, the only kind the editor may write: the same set the
+/// Compose tab lists. That is a compose file at the top of a registered project folder, a
+/// file Docker reports as the source of a stack (`engine_files`), or a stack OLS connected
+/// (every stack the compose builder made is connected when it is made).
+pub fn is_known_stack_file(
+    file: &Path,
+    project_dirs: &[PathBuf],
+    connected: &std::collections::BTreeSet<String>,
+    engine_files: &[String],
+) -> bool {
+    let in_project = file
+        .parent()
+        .is_some_and(|dir| project_dirs.iter().any(|p| same_path(p, dir)));
+    in_project
+        || connected.contains(&path_hash(file))
+        || engine_files.iter().any(|f| same_path(Path::new(f), file))
+}
+
+pub(crate) fn not_a_known_stack(file: &Path) -> CoreError {
+    CoreError::failed_fix(
+        "The compose file was not saved.",
+        format!(
+            "{} is not a stack OLS knows: it is not in a project folder, not a running stack's file, and not a stack made or connected in OLS.",
+            file.display()
+        ),
+        "Add its folder as a project (Projects → Add), then open it from the Compose tab on the Docker page.",
+    )
+}
+
 pub fn read_file(path: &str) -> Result<String, CoreError> {
     let p = check_compose_path(path)?;
     let meta = std::fs::metadata(&p).map_err(|e| {
@@ -318,7 +409,8 @@ pub fn check_text(text: &str) -> ComposeCheck {
     if services.is_empty() {
         check.errors.push("`services:` is empty.".into());
     }
-    let mut host_ports: BTreeMap<u16, String> = BTreeMap::new();
+    // (host port, bind address, protocol, service) of every published port so far.
+    let mut host_ports: Vec<(u16, String, String, String)> = Vec::new();
     for (k, v) in services {
         let name = k.as_str().unwrap_or("?").to_string();
         let image = v.get("image").and_then(|i| i.as_str());
@@ -335,15 +427,22 @@ pub fn check_text(text: &str) -> ComposeCheck {
                 ));
             }
         }
-        for port in v
+        for (port, (ip, proto)) in v
             .get("ports")
             .and_then(|p| p.as_sequence())
             .into_iter()
             .flatten()
-            .filter_map(parse_port)
+            .filter_map(|p| parse_port(p).map(|port| (port, port_scope(p))))
         {
             if let Some(h) = port.host {
-                if let Some(other) = host_ports.insert(h, name.clone()) {
+                let clash = host_ports
+                    .iter()
+                    .find(|(p, other_ip, other_proto, _)| {
+                        *p == h && *other_proto == proto && binds_overlap(other_ip, &ip)
+                    })
+                    .map(|(_, _, _, svc)| svc.clone());
+                host_ports.push((h, ip, proto, name.clone()));
+                if let Some(other) = clash {
                     check.errors.push(format!(
                         "Port {h} on this computer is used by both `{other}` and `{name}`."
                     ));
@@ -414,13 +513,24 @@ pub fn save_file(path: &str, text: &str, backups_dir: &Path) -> Result<(), CoreE
             "Check that the project folder is writable and the file is not open elsewhere.",
         )
     };
-    if p.is_file() {
+    // A compose file that is a symbolic link is saved into the file it points to. Renaming
+    // over the link itself replaced the link with a plain copy, so the real file the user
+    // edits elsewhere silently stayed unchanged.
+    let is_link = std::fs::symlink_metadata(&p).is_ok_and(|m| m.file_type().is_symlink());
+    let write_to = if is_link {
+        std::fs::canonicalize(&p).map_err(|e| io("following the link", e))?
+    } else {
+        p.clone()
+    };
+    if write_to.is_file() {
         let dir = backups_dir.join(path_hash(&p));
         std::fs::create_dir_all(&dir).map_err(|e| io("creating the backup folder", e))?;
         let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S-%3f");
-        std::fs::copy(&p, dir.join(format!("{stamp}.yaml"))).map_err(|e| io("backing up", e))?;
+        std::fs::copy(&write_to, dir.join(format!("{stamp}.yaml")))
+            .map_err(|e| io("backing up", e))?;
         prune_backups(&dir);
     }
+    let p = write_to;
     let tmp = p.with_extension("ols-tmp");
     std::fs::write(&tmp, text).map_err(|e| io("writing", e))?;
     std::fs::rename(&tmp, &p).map_err(|e| {
@@ -679,14 +789,17 @@ pub fn docker_config_check(
 }
 
 /// Full check: local rules, then Docker's own parser when the CLI is present.
+/// `docker_check` is false for a file that is not a known stack: Docker's check writes a
+/// temporary copy next to the file, and OLS writes only into stack folders.
 pub fn validate(
     path: &str,
     text: &str,
     connect: Option<&Connect>,
+    docker_check: bool,
 ) -> Result<ComposeCheck, CoreError> {
     let file = check_compose_path(path)?;
     let mut check = check_text(text);
-    if check.ok {
+    if check.ok && docker_check {
         if let Some(result) = docker_config_check(&file, text, connect) {
             check.docker_checked = true;
             if let Err(msg) = result {
@@ -891,6 +1004,57 @@ mod tests {
     }
 
     #[test]
+    fn same_host_port_on_tcp_and_udp_is_not_a_conflict() {
+        let dns = check_text(
+            "services:\n  dns:\n    image: pihole/pihole:2025.01\n    ports: ['53:53/tcp', '53:53/udp']\n",
+        );
+        assert!(dns.ok, "{dns:?}");
+        let long = check_text(
+            "services:\n  dns:\n    image: pihole/pihole:2025.01\n    ports:\n      - {target: 53, published: 53, protocol: tcp}\n      - {target: 53, published: 53, protocol: udp}\n",
+        );
+        assert!(long.ok, "{long:?}");
+        let ips = check_text(
+            "services:\n  web:\n    image: nginx:1.28\n    ports: ['127.0.0.1:8080:80', '127.0.0.2:8080:80']\n",
+        );
+        assert!(ips.ok, "{ips:?}");
+        // A real clash is still caught.
+        let clash = check_text(
+            "services:\n  a:\n    image: nginx:1.28\n    ports: ['8080:80']\n  b:\n    image: nginx:1.28\n    ports: ['8080:80/tcp']\n",
+        );
+        assert!(!clash.ok, "{clash:?}");
+    }
+
+    #[test]
+    fn wildcard_binds_clash_with_every_address_of_their_family() {
+        let two = |a: &str, b: &str| {
+            check_text(&format!(
+                "services:\n  a:\n    image: nginx:1.28\n    ports: ['{a}']\n  b:\n    image: nginx:1.28\n    ports: ['{b}']\n"
+            ))
+            .ok
+        };
+        // No address = every address, IPv4 and IPv6.
+        assert!(!two("8080:80", "127.0.0.1:8080:80"));
+        assert!(!two("8080:80", "[::1]:8080:80"));
+        assert!(!two("0.0.0.0:8080:80", "127.0.0.1:8080:80"));
+        assert!(!two("[::]:8080:80", "[::1]:8080:80"));
+        assert!(!two("0.0.0.0:8080:80", "8080:80"));
+        // Same specific address twice.
+        assert!(!two("127.0.0.1:8080:80", "127.0.0.1:8080:3000"));
+        // Separate addresses, or one IPv4-only and one IPv6-only wildcard, do not clash.
+        assert!(two("127.0.0.1:8080:80", "127.0.0.2:8080:80"));
+        assert!(two("0.0.0.0:8080:80", "[::]:8080:80"));
+        assert!(two("0.0.0.0:8080:80", "[::1]:8080:80"));
+        // Different protocols never clash; different host ports never clash.
+        assert!(two("8080:80/tcp", "8080:80/udp"));
+        assert!(two("8080:80", "8081:80"));
+        // Long syntax follows the same rules.
+        let long = check_text(
+            "services:\n  a:\n    image: nginx:1.28\n    ports:\n      - {target: 80, published: 8080, host_ip: 127.0.0.1}\n  b:\n    image: nginx:1.28\n    ports: ['8080:80']\n",
+        );
+        assert!(!long.ok, "{long:?}");
+    }
+
+    #[test]
     fn names_follow_compose_rules() {
         let f = Path::new("/x/My Shop!/compose.yaml");
         assert_eq!(project_name(f, None), "myshop");
@@ -977,6 +1141,49 @@ mod tests {
         assert!(
             read_file(&path).unwrap().contains("  b:"),
             "broken text never replaces the file"
+        );
+    }
+
+    #[test]
+    fn save_through_a_symlink_updates_the_real_file_and_keeps_the_link() {
+        let tmp = tempfile::tempdir().unwrap();
+        let real = tmp.path().join("real.yaml");
+        std::fs::write(
+            &real,
+            "services:
+  a:
+    image: redis:7.4
+",
+        )
+        .unwrap();
+        let link = tmp.path().join("compose.yaml");
+        #[cfg(unix)]
+        let made = std::os::unix::fs::symlink(&real, &link).is_ok();
+        #[cfg(windows)]
+        let made = std::os::windows::fs::symlink_file(&real, &link).is_ok();
+        if !made {
+            eprintln!("symlinks need Developer Mode or admin on Windows; skipped");
+            return;
+        }
+        save_file(
+            &link.display().to_string(),
+            "services:
+  b:
+    image: redis:7.4
+",
+            &tmp.path().join("backups"),
+        )
+        .unwrap();
+        assert!(
+            std::fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink(),
+            "the link is still a link"
+        );
+        assert!(
+            std::fs::read_to_string(&real).unwrap().contains("  b:"),
+            "the real file changed"
         );
     }
 

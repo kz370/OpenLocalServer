@@ -68,3 +68,29 @@ Whenever the application version is bumped or changed (e.g. via `scripts/update-
 4. **Website & Landing Page (on version bump):**
    - `index.html` and `website/`: Update version badges, download links (`OLS-<version>-setup.exe`, portable zip, SHA256 checksums), and footer version marks.
    - `README.md`: Update the version badge link (`version-<version>-blue`).
+
+## 6. Security & Behavior Preservation Rules
+
+These rules apply to every code change, feature, bug fix, and refactoring.
+
+1. **Security First:** Follow secure coding practices. Validate and sanitize untrusted input, enforce proper authorization, and never trust client-side validation alone.
+
+2. **No Secrets:** Never hardcode, expose, log, or commit API keys, credentials, tokens, passwords, or sensitive information.
+
+3. **Safe Operations:** Protect filesystem operations against path traversal and unauthorized access. Safely handle external processes, network requests, file uploads, downloads, and archive extraction.
+
+4. **Input & Output Safety:** Prevent SQL injection, XSS, command injection, and other injection vulnerabilities. Use parameterized queries and context-appropriate output encoding.
+
+5. **Dependency Security:** Avoid unnecessary dependencies. Use trusted sources, review dependency vulnerabilities, and verify downloaded executable files and archives using trusted integrity checks.
+
+6. **Error Handling:** Handle failures safely without exposing sensitive information. Never silently suppress errors or leave operations in an inconsistent state.
+
+7. **Behavior Preservation:** Do not change existing functionality, UI, workflows, APIs, configurations, or defaults unless explicitly required to fix a confirmed bug or implement a requested feature.
+
+8. **Minimal Changes:** Make the smallest safe change possible. Avoid unrelated refactoring and breaking changes.
+
+9. **Testing:** Add or update tests for every meaningful change, especially security-sensitive functionality. Run relevant tests, linting, and static analysis before considering work complete.
+
+10. **Security Review:** Before finalizing any change, review the modified code for newly introduced vulnerabilities, unintended side effects, and regressions.
+
+**Golden Rule:** Every change must be secure, tested, and backward-compatible wherever possible. Never sacrifice security or existing functionality for convenience.

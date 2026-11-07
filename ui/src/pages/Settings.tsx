@@ -768,16 +768,19 @@ export function SettingsPage() {
 
       <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
-      <div className="flex flex-col gap-6 md:flex-row md:items-start">
-        <nav className="flex shrink-0 gap-1 overflow-x-auto md:sticky md:top-0 md:w-56 md:flex-col" aria-label="Settings sections">
+      <div className="@container">
+      <div className="flex flex-row items-start gap-4 @4xl:gap-6">
+        <nav className="sticky top-0 flex w-20 shrink-0 flex-col gap-1 @4xl:w-56 max-h-[calc(100vh-10rem)] ols-scroll-thin overscroll-contain overflow-y-auto overflow-x-hidden pr-1.5" aria-label="Settings sections">
           {SECTIONS.map((s) => {
             const isActive = section === s.id
             return (
               <button
                 key={s.id}
                 onClick={() => changeSection(s.id)}
+                title={s.label}
+                aria-label={s.label}
                 className={cn(
-                  'group relative flex items-center gap-3 whitespace-nowrap rounded-xl px-3.5 py-2.5 text-left text-sm font-medium transition-all duration-150',
+                  'group relative flex flex-col items-center gap-1 rounded-xl px-1.5 py-2 text-center text-[11px] font-medium leading-tight transition-all duration-150 @4xl:flex-row @4xl:gap-3 @4xl:px-3.5 @4xl:py-2.5 @4xl:text-left @4xl:text-sm',
                   isActive
                     ? 'border border-primary/70 bg-gradient-to-r from-primary/15 via-primary/5 to-transparent text-foreground font-semibold shadow-xs dark:border-primary/80 dark:from-primary/20 dark:via-primary/5 dark:to-transparent dark:text-white dark:shadow-[0_0_15px_var(--ring)]'
                     : 'border border-transparent text-muted-foreground hover:bg-accent/40 hover:text-foreground',
@@ -787,7 +790,7 @@ export function SettingsPage() {
                   <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-primary shadow-[0_0_8px_var(--primary)]" />
                 )}
                 <s.icon className="size-5 shrink-0 transition-transform duration-150 group-hover:scale-105" />
-                <span className="truncate">{s.label}</span>
+                <span className="w-full break-words @4xl:truncate">{s.label}</span>
               </button>
             )
           })}
@@ -1199,6 +1202,7 @@ export function SettingsPage() {
           )}
 
         </div>
+      </div>
       </div>
     </PageLayout>
   )

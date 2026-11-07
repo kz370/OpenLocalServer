@@ -1487,6 +1487,76 @@ mod tests {
     }
 
     /// The worker closure runs on another thread, so the value it leaves is waited for.
+    /// DDNS credentials live in the OS credential store and never leave with a bundle:
+    /// not in the manifest, not in an encrypted bundle, not anywhere in the zip.
+    #[test]
+    fn a_bundle_never_carries_ddns_credentials() {
+        let home = crate::test_support::isolated_home();
+        let core = crate::command::Core::new(
+            crate::settings::SettingsService::load(&home.paths).unwrap(),
+            home.paths.clone(),
+        );
+        let dir = home.paths.root().join("ddns-shop");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("index.html"), "hi").unwrap();
+        core.dispatch(crate::command::CoreCommand::RegisterProject {
+            path: dir.display().to_string(),
+        })
+        .unwrap();
+        core.inner().sync_auto_domains().unwrap();
+        let host = "ddns-shop.local";
+        let mut d = core
+            .inner()
+            .domains
+            .lock()
+            .unwrap()
+            .get(host)
+            .expect("auto site");
+        d.ddns_provider = Some("porkbun".into());
+        d.ddns_token = Some("pk_bundle_token_123".into());
+        d.ddns_zone_id = Some("sk_bundle_secret_456".into());
+        core.inner().update_domain(d).unwrap();
+
+        let out = home.paths.root().join("out");
+        std::fs::create_dir_all(&out).unwrap();
+        for password in [None, Some("pw-123456")] {
+            let inner = core.inner().clone();
+            let dest = out.display().to_string();
+            let manager = crate::tasks::TaskManager::new();
+            let done = std::sync::Arc::new(std::sync::Mutex::new(None));
+            let keep = done.clone();
+            manager.start("export_sites", "Exporting", "", 0, move |h| {
+                let summary = export(
+                    &inner,
+                    &h,
+                    &[host.to_string()],
+                    BundleOptions::default(),
+                    &dest,
+                    password,
+                )
+                .unwrap();
+                *keep.lock().unwrap() = Some(summary);
+                h.succeed();
+            });
+            let path = wait(&done).path;
+            let mut zip = zip::ZipArchive::new(std::fs::File::open(&path).unwrap()).unwrap();
+            for i in 0..zip.len() {
+                let mut bytes = Vec::new();
+                zip.by_index(i).unwrap().read_to_end(&mut bytes).unwrap();
+                let text = String::from_utf8_lossy(&bytes);
+                assert!(
+                    !text.contains("pk_bundle_token_123") && !text.contains("sk_bundle_secret_456"),
+                    "a DDNS credential is in the bundle (password {password:?})"
+                );
+            }
+        }
+        // The site itself still has both.
+        let d = core.inner().domains.lock().unwrap().get(host).unwrap();
+        assert_eq!(d.ddns_token.as_deref(), Some("pk_bundle_token_123"));
+        assert_eq!(d.ddns_zone_id.as_deref(), Some("sk_bundle_secret_456"));
+        core.inner().domains.lock().unwrap().remove(host).unwrap();
+    }
+
     fn wait<T: Send + 'static>(slot: &std::sync::Arc<std::sync::Mutex<Option<T>>>) -> T {
         for _ in 0..600 {
             if let Some(v) = slot.lock().unwrap().take() {

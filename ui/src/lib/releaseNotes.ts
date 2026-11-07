@@ -298,12 +298,23 @@ export function parseReleaseNotes(markdown: string): ParsedReleaseNotes {
       for (const item of token.items) {
         const text = item.text.trim()
         featureCounter++
-        const boldMatch = text.match(/^\s*(?:\*\*|__)(.*?)(?:\*\*|__):\s*(.*)$/s)
+        // `**Title**: text` or `**Title:** text` (the notes use both). The title never
+        // contains `*`/`_`, so it cannot run on into a later bold phrase.
+        const boldMatch = text.match(/^\s*(?:\*\*|__)([^*_]+?)(?::\s*(?:\*\*|__)|(?:\*\*|__)\s*:)\s*(.*)$/s)
         if (boldMatch) {
           targetList.push({
             id: `feat-${featureCounter}`,
             title: boldMatch[1].trim(),
             description: boldMatch[2].trim(),
+            rawText: text,
+          })
+        } else if (/^\s*(?:\*\*|__)[^*_]+?(?:\*\*|__)/.test(text)) {
+          // `**Docker page** (Sites → Docker): search…`: the leading bold phrase is the title.
+          const lead = text.match(/^\s*(?:\*\*|__)([^*_]+?)(?:\*\*|__)\s*(.*)$/s)!
+          targetList.push({
+            id: `feat-${featureCounter}`,
+            title: lead[1].trim(),
+            description: lead[2].trim(),
             rawText: text,
           })
         } else {

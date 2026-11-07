@@ -317,6 +317,22 @@ button:disabled[data-tooltip],
   scrollbar-color: color-mix(in oklab, var(--muted-foreground) 45%, transparent) transparent;
 }
 
+/* Extra-thin scrollbar for small side lists (Settings menu). */
+.ols-scroll-thin {
+  /* scrollbar-color is inherited from .ols-scroll and, when set, makes Chromium
+     ignore the ::-webkit-scrollbar rules below. Reset it so they apply. */
+  scrollbar-width: auto;
+  scrollbar-color: auto;
+  scrollbar-gutter: auto;
+}
+.ols-scroll-thin::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.ols-scroll-thin::-webkit-scrollbar-thumb {
+  border-width: 0;
+}
+
 /* Nothing in the app scrolls sideways: content wraps instead. */
 html,
 body {

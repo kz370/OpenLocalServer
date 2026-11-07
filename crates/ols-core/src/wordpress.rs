@@ -286,7 +286,16 @@ pub fn repair_missing_core(dir: &Path, cache_dir: &Path) -> Result<WpCoreRepair,
                 "Try the repair again to download a fresh archive.",
             )
         })?;
-        let entry_name = entry.name().to_owned();
+        let entry_name = entry
+            .name()
+            .map_err(|e| {
+                CoreError::failed_fix(
+                    "The WordPress core archive could not be read.",
+                    e.to_string(),
+                    "Try the repair again to download a fresh archive.",
+                )
+            })?
+            .into_owned();
         let Some(relative) = entry_name.strip_prefix("wordpress/") else {
             continue;
         };

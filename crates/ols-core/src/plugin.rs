@@ -420,7 +420,7 @@ pub fn extract_plugin_zip(zip_path: &Path, dest: &Path) -> Result<(), String> {
         let Some(rel) = entry.enclosed_name() else {
             return Err(format!(
                 "'{}' would be written outside the plugin folder",
-                entry.name()
+                entry.name().unwrap_or_default()
             ));
         };
         let out = dest.join(&rel);

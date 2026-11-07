@@ -53,6 +53,25 @@ const SQL_ENGINES: &[&str] = &["mariadb", "postgres"];
 /// A run already going must never be doubled by the clock or by the button.
 static RUNNING: AtomicBool = AtomicBool::new(false);
 
+/// Holds the "a pass is running" flag and clears it when dropped, so a pass that panics
+/// (a poisoned lock, a bug in one dump) cannot leave every later pass refused as "already
+/// running" until OLS is restarted.
+struct RunningPass(&'static AtomicBool);
+
+impl RunningPass {
+    fn acquire(flag: &'static AtomicBool) -> Option<Self> {
+        flag.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .ok()
+            .map(|_| RunningPass(flag))
+    }
+}
+
+impl Drop for RunningPass {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
+
 fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -812,17 +831,12 @@ impl Inner {
     }
 
     fn start_pass(&self, only: Option<&BTreeSet<String>>) -> Result<AutoBackupRun, CoreError> {
-        if RUNNING
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-            .is_err()
-        {
+        let Some(_running) = RunningPass::acquire(&RUNNING) else {
             return Err(svc(
                 "An automatic backup is already running. Wait for it to finish, or check the backups already written on the Projects and Databases pages.",
             ));
-        }
-        let result = self.auto_backup_pass(only);
-        RUNNING.store(false, Ordering::SeqCst);
-        result
+        };
+        self.auto_backup_pass(only)
     }
 
     fn auto_backup_pass(
@@ -1022,6 +1036,27 @@ pub fn clock_tick(inner: &std::sync::Arc<Inner>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_pass_that_panics_releases_the_running_flag() {
+        static FLAG: AtomicBool = AtomicBool::new(false);
+        let first = RunningPass::acquire(&FLAG).expect("free at first");
+        assert!(RunningPass::acquire(&FLAG).is_none(), "one pass at a time");
+        drop(first);
+        let panicked = std::panic::catch_unwind(|| {
+            let _held = RunningPass::acquire(&FLAG).unwrap();
+            panic!("a dump crashed");
+        });
+        assert!(panicked.is_err());
+        assert!(
+            !FLAG.load(Ordering::SeqCst),
+            "the flag is cleared even though the pass panicked"
+        );
+        assert!(
+            RunningPass::acquire(&FLAG).is_some(),
+            "the next pass can run"
+        );
+    }
     use crate::command::{Core, CoreCommand, CoreResponse};
     use crate::domain::{Domain, Ownership, SiteKind};
 

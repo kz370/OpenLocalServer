@@ -68,8 +68,10 @@ export function SystemMonitor({ stats }: { stats: SystemStats | null }) {
             <p className="text-sm text-muted-foreground">No sites are running.</p>
           ) : (
             // The header scrolls with the rows (sticky) so a scrollbar can't shift the columns.
+            // Its background is the card's own colour painted over the page background: the
+            // same shade as the card, but opaque, so rows never show through it.
             <div className="max-h-72 overflow-y-auto">
-              <div className={`${SITE_GRID} sticky top-0 z-10 h-7 border-b border-border bg-card text-[11px] font-medium uppercase tracking-wide text-muted-foreground`}>
+              <div className={`${SITE_GRID} sticky top-0 z-10 h-7 border-b border-border [background:linear-gradient(var(--card),var(--card)),var(--background)] text-[11px] font-medium uppercase tracking-wide text-muted-foreground`}>
                 <span>Site</span>
                 <span className="text-right" title="Share of the whole machine's CPU">
                   CPU

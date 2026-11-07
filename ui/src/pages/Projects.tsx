@@ -43,6 +43,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableSpanCell,
   TableHead,
   TableHeader,
   TableRow,
@@ -927,7 +928,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
             <TableBody>
               {pageProjects.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="h-32 text-center text-sm text-muted-foreground">
+                  <TableSpanCell colSpan={5} className="h-32 text-center text-sm text-muted-foreground">
                     {allProjects.length === 0 && !projectsLoaded
                       ? (
                         <span className="inline-flex items-center gap-2" role="status">
@@ -943,7 +944,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
                           : typeTab !== 'all'
                             ? `No projects under the "${typeGroups.tabs.find((t) => t.id === typeTab)?.label ?? typeTab}" type.`
                             : 'No projects found.'}
-                  </TableCell>
+                  </TableSpanCell>
                 </TableRow>
               ) : (
                 pageProjects.map((p, rowIndex) => {

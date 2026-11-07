@@ -28,10 +28,10 @@ import { Input } from '@/components/ui/input'
 import { FloatingMenu, type MenuAnchor, type MenuItem } from '@/components/ui/menu'
 import { Pagination } from '@/components/ui/pagination'
 import { MiddleTruncate } from '@/components/ui/MiddleTruncate'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableSpanCell } from '@/components/ui/table'
 import { type Domain, type DomainSummary, type EditorInfo, type HealthProgress, type HealthReport, type HealthStep, type Project, type WpProject, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
-import { compareByRoot, rootFolderOf, rootKeyOf, sortsByRoot, useListView } from '@/lib/rootFolder'
+import { PROXY_ROOT, compareByRoot, rootFolderOf, rootKeyOf, sortsByRoot, useListView } from '@/lib/rootFolder'
 import { notify } from '@/lib/notify'
 import { cn } from '@/lib/utils'
 import { onOpenAddSiteForProject, onOpenProject, onOpenSitesFilter, openSettingsSection, takePendingAddSiteProject, takePendingProject, takePendingSitesFilter } from '@/lib/nav'
@@ -315,6 +315,8 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     const isProxy = r.site?.kind === 'proxy' || r.site?.group === 'proxy'
     return isProxy ? (r.project?.path ?? '') : (r.site?.folder ?? r.project?.path ?? '')
   }
+  /** Group key: proxies get their own group, everything else its parent folder. */
+  const rowRootKey = (r: Row): string => (r.site?.kind === 'proxy' || r.site?.group === 'proxy' ? PROXY_ROOT : rootKeyOf(rowFolder(r)))
   const byRoot = sortsByRoot(view)
 
   // 3. Convert buckets into Rows: primary domain first (preferring enabled), extra domains grouped.
@@ -332,7 +334,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     .sort((a, b) => {
       const nameA = a.site?.hostname ?? a.project?.name ?? ''
       const nameB = b.site?.hostname ?? b.project?.name ?? ''
-      return byRoot ? compareByRoot(rootKeyOf(rowFolder(a)), rootKeyOf(rowFolder(b)), nameA, nameB) : nameA.localeCompare(nameB)
+      return byRoot ? compareByRoot(rowRootKey(a), rowRootKey(b), nameA, nameB) : nameA.localeCompare(nameB)
     })
 
   const isRowMissingFolder = (r: Row) => Boolean(r.project?.health && r.project.health.status !== 'healthy')
@@ -376,7 +378,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   /** How many listed rows share each root folder, for the group headings. */
   const rootCounts = new Map<string, number>()
   for (const r of visible) {
-    const key = rootKeyOf(rowFolder(r))
+    const key = rowRootKey(r)
     rootCounts.set(key, (rootCounts.get(key) ?? 0) + 1)
   }
   // A row the search or a delete removed must not stay picked: the next batch would name a
@@ -1199,11 +1201,11 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                 // that did nothing.
                 const pending = [d?.hostname, ...r.extraDomains.map((e) => e.hostname), p?.id].filter(Boolean).some((k) => removing.has(k!))
                 const isMenuOpen = activeMenu?.key === r.key
-                const rootKey = rootKeyOf(rowFolder(r))
-                const startsGroup = view.group && (rowIndex === 0 || rootKeyOf(rowFolder(pageRows[rowIndex - 1])) !== rootKey)
+                const rootKey = rowRootKey(r)
+                const startsGroup = view.group && (rowIndex === 0 || rowRootKey(pageRows[rowIndex - 1]) !== rootKey)
                 return (
                   <Fragment key={r.key}>
-                  {startsGroup && <RootGroupRow root={rootFolderOf(rowFolder(r))} count={rootCounts.get(rootKey) ?? 1} colSpan={4} />}
+                  {startsGroup && <RootGroupRow root={rootKey === PROXY_ROOT ? PROXY_ROOT : rootFolderOf(rowFolder(r))}count={rootCounts.get(rootKey) ?? 1} colSpan={4} />}
                   <TableRow
                     aria-busy={pending}
                     data-state={isMenuOpen ? 'selected' : undefined}
@@ -1565,7 +1567,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
               })}
               {visible.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center text-sm text-muted-foreground">
+                  <TableSpanCell colSpan={4} className="text-center text-sm text-muted-foreground">
                     {rows.length === 0 && !sitesLoaded
                       ? (
                         <span className="inline-flex items-center gap-2 py-6" role="status">
@@ -1579,7 +1581,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                         : activeFilter === 'missing'
                           ? 'No sites with missing project folders.'
                           : 'No sites of this type.'}
-                  </TableCell>
+                  </TableSpanCell>
                 </TableRow>
               )}
             </TableBody>

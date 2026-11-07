@@ -1,0 +1,6 @@
+{
+  "identifier": "dev-mcp-bridge",
+  "description": "Debug builds only: the MCP bridge used to drive the app from an MCP client during development. Added at runtime under cfg(debug_assertions) in src/lib.rs; never part of a release build.",
+  "windows": ["main", "tray-confirmation"],
+  "permissions": ["mcp-bridge:default"]
+}

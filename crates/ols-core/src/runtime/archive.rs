@@ -115,7 +115,11 @@ pub(crate) fn extract_zip(
 
     for i in 0..zip.len() {
         let mut entry = zip.by_index(i).map_err(std::io::Error::other)?;
-        let name = entry.name().replace('\\', "/");
+        // A name zip cannot decode is refused, never guessed at.
+        let name = entry
+            .name()
+            .map_err(std::io::Error::other)?
+            .replace('\\', "/");
         let relative = name.strip_prefix(&prefix).unwrap_or(&name);
         if relative.is_empty() {
             continue;

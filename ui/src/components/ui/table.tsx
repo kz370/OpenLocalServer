@@ -69,4 +69,39 @@ const TableCell = React.forwardRef<HTMLTableCellElement, React.TdHTMLAttributes<
 )
 TableCell.displayName = 'TableCell'
 
-export { Table, TableHeader, TableBody, TableRow, TableHead, TableCell }
+/** How many columns the table's header row shows right now (hidden headers don't count). */
+function visibleColumns(table: HTMLTableElement): number {
+  const row = table.tHead?.rows[0]
+  if (!row) return 0
+  return Array.from(row.cells)
+    .filter((c) => getComputedStyle(c).display !== 'none')
+    .reduce((n, c) => n + c.colSpan, 0)
+}
+
+/**
+ * A cell spanning the whole row: group headings, empty and loading rows.
+ *
+ * A fixed `colSpan` counts columns a container query hides on narrow windows, and in a
+ * `table-fixed` table those hidden columns come back as empty ones that take a share of
+ * the width. That pushed the Actions column into the middle of the row. This cell spans
+ * exactly the columns the header shows, and recounts when the table is resized.
+ */
+const TableSpanCell = ({ colSpan, ...props }: React.TdHTMLAttributes<HTMLTableCellElement>) => {
+  const ref = React.useRef<HTMLTableCellElement>(null)
+  const [span, setSpan] = React.useState(colSpan)
+  React.useLayoutEffect(() => {
+    const table = ref.current?.closest('table')
+    if (!table) return
+    const count = () => {
+      const n = visibleColumns(table)
+      if (n > 0) setSpan(n)
+    }
+    count()
+    const observer = new ResizeObserver(count)
+    observer.observe(table)
+    return () => observer.disconnect()
+  }, [])
+  return <TableCell ref={ref} colSpan={span} {...props} />
+}
+
+export { Table, TableHeader, TableBody, TableRow, TableHead, TableCell, TableSpanCell }

@@ -271,6 +271,8 @@ SettingsPage (General) | renders | Diagnostics card (autoFixDiagnostics setting 
 SettingsPage, ResourcesCard, ConfigPage, and SiteDialog forms | register_with | the shared dirtyForms registry; deferred values compare against saved snapshots, while instant-apply toggles and service actions stay outside it
 DirtySaveBar | renders_for | dirty app/dialog forms only; Save runs registered callbacks, Discard restores snapshots, Ctrl+S saves, and navigation/unload guards protect unsaved changes
 SiteDialog | scopes | its DomainSettings, Domains & Aliases, web-config, and .htaccess drafts to the dialog Save bar, using the dialog surface token and leaving the site sidebar unobscured
+Markdown (components/ui/Markdown.tsx) | uses | safeMarkdown::renderMarkdown (raw HTML escaped, unsafe URL schemes replaced)
+ReleaseNotesView | uses | safeMarkdown::renderMarkdown & renderMarkdownInline
 ReleaseNotesView | uses | releaseNotes::parseReleaseNotes & filterReleaseNotes (tokenizes raw Markdown with marked.lexer and maps topic icons)
 PluginsPage | renders | PluginConsentDialog (when turning on a plugin)
 PluginConsentDialog | uses | pluginConsent (buildPluginConsentSummary, formatDownloadSource, extractHostname, formatSize)
@@ -375,4 +377,10 @@ set_domain_enabled / bulk_set_domains_enabled | triggers | Inner::docker_follow_
 SitesPage | uses | toolbarStyles, GitCloneButton, ImportEnvironmentButton, SiteImportButton (toolbar="group"/"ghost"; labels collapse to icon-only below @4xl)
 ui/src/pages/*.tsx -> ui/src/components/PageLayout.tsx (every page; list pages also -> ScrollableList.tsx -> ui/table.tsx TableHeader sticky)
 ui/src/App.tsx <main> (overflow-hidden flex-col) -> pages via PageLayout
-ProjectsPage / SitesPage | use | RootFolderControls + rootFolder (sort and group by root folder), siteCaches (invalidate cached site/project lists after a delete or edit); ProjectsPage bulk Remove from list | calls | ignore_projects (batch ignore_project)
+ProjectsPage / SitesPage | use | RootFolderControls + rootFolder (sort and group by root folder; SitesPage puts proxy sites in a separate Proxy group), siteCaches (invalidate cached site/project lists after a delete or edit); ProjectsPage bulk Remove from list | calls | ignore_projects (batch ignore_project)
+DomainStore | stores_credentials_in | domain::ddns_keyring -> secrets (OS keyring)
+snapshots::snapshot_content | strips | domain::ddns_keyring::without_credentials
+PhpManager::install_extension | verifies_against | catalog/pecl-pins.json
+dispatch::SaveDockerComposeFile | requires | Inner::docker_compose_is_known (projects, connected set, engine config_files)
+ols-mcp ols_run_command | filtered_by | guard_raw_command
+TauriApp (debug) | add_capability | dev-capabilities/mcp-bridge.json

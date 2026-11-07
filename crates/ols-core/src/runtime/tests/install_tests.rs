@@ -76,7 +76,7 @@ fn extract_zip_strips_archive_root_and_preserves_structure() {
     // Build a tiny real zip: root/bin/tool.txt
     let file = std::fs::File::create(&archive).unwrap();
     let mut writer = zip::ZipWriter::new(file);
-    let opts: zip::write::FileOptions<'_, ()> =
+    let opts: zip::write::FileOptions<'_, '_, ()> =
         zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
     writer.add_directory("root/", opts).unwrap();
     writer.add_directory("root/bin/", opts).unwrap();
