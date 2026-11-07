@@ -1,6 +1,7 @@
-import { AlertTriangle, Check, CheckCircle2, ChevronRight, Database, FolderOpen, RotateCw, Search, XCircle } from 'lucide-react'
+import { AlertTriangle, Check, CheckCircle2, ChevronRight, Copy, Database, Download, FolderOpen, RotateCw, Search, XCircle } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { open as openFolder } from '@tauri-apps/plugin-dialog'
+import { open as openFolder, save as saveDialog } from '@tauri-apps/plugin-dialog'
+import { writeTextFile } from '@tauri-apps/plugin-fs'
 
 import { Spinner } from '@/components/Spinner'
 import { TechTile } from '@/components/TechIcon'
@@ -10,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { type Diagnostic, type MigratedDb, type MigrationProgress, type MigrationSource, runCommand } from '@/core'
 import { formatBytes, usePoll } from '@/lib/hooks'
 import { confirmAction } from '@/lib/confirm'
+import { notify } from '@/lib/notify'
 import { cn } from '@/lib/utils'
 
 interface SourceImport {
@@ -38,6 +40,8 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [progress, setProgress] = useState<MigrationProgress | null>(null)
+  /** Snapshot of the last finished import run, shown as the Import report section. */
+  const [report, setReport] = useState<ImportReport | null>(null)
 
   // The scan / import command blocks until it is done, so ask where it is up to meanwhile.
   usePoll(async () => {
@@ -149,7 +153,19 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
         )
         if (!ok) return
       }
+      setReport(null)
+      const finished: MigratedDb[] = []
+      const reportSources: ImportReport['sources'] = []
+      let failedSources = 0
       for (const sourceId of importableSourceIds) {
+        const source = sources?.find((item) => item.id === sourceId)
+        const entry: ImportReport['sources'][number] = {
+          label: source?.label ?? sourceId,
+          dataDir: source?.data_dir ?? '',
+          results: [],
+          error: null,
+        }
+        reportSources.push(entry)
         setActiveSourceId(sourceId)
         updateImport(sourceId, { results: null, error: null })
         try {
@@ -162,11 +178,29 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
             target: 'mariadb',
             conflict_policy: conflictPolicy,
           })
-          if (r.type === 'migrated') updateImport(sourceId, { results: r.results })
+          if (r.type === 'migrated') {
+            finished.push(...r.results)
+            entry.results = r.results
+            // Clear the selection once a source is done so the Import button resets;
+            // per-database results stay visible on the tiles.
+            updateImport(sourceId, { results: r.results, picked: [] })
+          }
         } catch (e) {
           const d = e as Diagnostic
-          updateImport(sourceId, { error: d.cause || d.problem })
+          failedSources += 1
+          entry.error = d.cause || d.problem
+          updateImport(sourceId, { error: entry.error })
         }
+      }
+      setReport({ finishedAt: new Date(), policy: conflictPolicy, sources: reportSources })
+      const done = tally(finished)
+      const summary = `${done.imported} imported · ${done.skipped} skipped · ${done.failed} failed`
+      if (failedSources > 0) {
+        notify.error(`Import finished with errors: ${summary}; ${failedSources} source${failedSources === 1 ? '' : 's'} could not be imported. See the source rows for details.`)
+      } else if (done.failed > 0) {
+        notify.warning(`Import finished with failures: ${summary}. Hover a failed database for details.`)
+      } else {
+        notify.success(`Databases imported into MariaDB: ${summary}.`)
       }
     })
 
@@ -192,8 +226,8 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
     failed: results.filter((result) => !result.ok && !result.detail.startsWith('Skipped')).length,
   })
   const totals = tally(allResults)
-  const footerStatus = allResults.length > 0 && busy === null
-    ? `${totals.imported} imported · ${totals.skipped} skipped · ${totals.failed} failed`
+  const footerStatus = allResults.length > 0 && busy === null && selectedCount === 0
+    ?`${totals.imported} imported · ${totals.skipped} skipped · ${totals.failed} failed`
     : selectedSourceIds.length === 0
       ? 'Select a source to start.'
       : unscannedCount > 0
@@ -423,6 +457,8 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
           <p className="-mt-1 text-[11px] text-muted-foreground">{CONFLICT_POLICIES.find((policy) => policy.id === conflictPolicy)?.hint}</p>
         </section>
 
+        {report && busy === null && <ImportReportPanel report={report} />}
+
         {busy !== null && !selectedSourceIds.includes(activeSourceId ?? '') && (
           <div className="rounded-md border border-border">
             <ProgressPanel progress={progress} />
@@ -437,6 +473,145 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
 }
 
 type ConflictPolicy = 'skip' | 'replace_with_backup' | 'rename_incoming'
+
+/** Result of one finished import run. Never holds passwords. */
+interface ImportReport {
+  finishedAt: Date
+  policy: ConflictPolicy
+  sources: { label: string; dataDir: string; results: MigratedDb[]; error: string | null }[]
+}
+
+type ResultStatus = 'Imported' | 'Skipped' | 'Failed'
+
+function resultStatus(result: MigratedDb): ResultStatus {
+  if (result.ok) return 'Imported'
+  return result.detail.startsWith('Skipped') ? 'Skipped' : 'Failed'
+}
+
+/** Plain-text version of the report for Copy / Save. */
+function reportToText(report: ImportReport) {
+  const policy = CONFLICT_POLICIES.find((item) => item.id === report.policy)?.label ?? report.policy
+  const all = report.sources.flatMap((source) => source.results)
+  const count = (status: ResultStatus) => all.filter((result) => resultStatus(result) === status).length
+  const lines = [
+    'OLS database import report',
+    `Finished: ${report.finishedAt.toLocaleString()}`,
+    'Target: MariaDB',
+    `If a database already exists: ${policy}`,
+    `Totals: ${count('Imported')} imported, ${count('Skipped')} skipped, ${count('Failed')} failed`,
+  ]
+  for (const source of report.sources) {
+    lines.push('', `Source: ${source.label}${source.dataDir ? ` (${source.dataDir})` : ''}`)
+    if (source.error) lines.push(`  ERROR: ${source.error}`)
+    for (const result of source.results) lines.push(`  [${resultStatus(result)}] ${result.name}: ${result.detail}`)
+    if (!source.error && source.results.length === 0) lines.push('  No databases processed.')
+  }
+  return `${lines.join('\n')}\n`
+}
+
+/** Step 4: per-source, per-database outcome of the last import, with Copy and Save. */
+function ImportReportPanel({ report }: { report: ImportReport }) {
+  const [saving, setSaving] = useState(false)
+  const all = report.sources.flatMap((source) => source.results)
+  const count = (status: ResultStatus) => all.filter((result) => resultStatus(result) === status).length
+  const failedSources = report.sources.filter((source) => source.error).length
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(reportToText(report))
+      notify.success('Import report copied to the clipboard.')
+    } catch (e) {
+      notify.error('Could not copy the import report.', { details: `Clipboard access failed: ${String(e)}. Use Save report… instead.` })
+    }
+  }
+
+  const saveToFile = async () => {
+    setSaving(true)
+    try {
+      const stamp = report.finishedAt.toISOString().slice(0, 19).replaceAll(':', '-')
+      const path = await saveDialog({
+        title: 'Save import report',
+        defaultPath: `ols-import-report-${stamp}.txt`,
+        filters: [{ name: 'Text', extensions: ['txt'] }],
+      })
+      if (!path) return
+      await writeTextFile(path, reportToText(report))
+      notify.success(`Import report saved to ${path}.`)
+    } catch (e) {
+      notify.error('Could not save the import report.', { details: `Writing the file failed: ${String(e)}. Pick a folder you can write to and try again.` })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <section className="flex flex-col gap-2" aria-label="Import report">
+      <StepHeader
+        step={4}
+        title="Import report"
+        hint={report.finishedAt.toLocaleTimeString()}
+        action={
+          <div className="flex items-center gap-1">
+            <Button size="sm" variant="ghost" onClick={() => void copy()}>
+              <Copy /> Copy
+            </Button>
+            <Button size="sm" variant="ghost" disabled={saving} onClick={() => void saveToFile()}>
+              {saving ? <Spinner /> : <Download />} Save report…
+            </Button>
+          </div>
+        }
+      />
+      <div className="flex flex-wrap gap-2 text-xs">
+        <span className="rounded-full bg-success/10 px-2 py-0.5 text-success">{count('Imported')} imported</span>
+        <span className="rounded-full bg-muted/60 px-2 py-0.5 text-muted-foreground">{count('Skipped')} skipped</span>
+        <span className={cn('rounded-full px-2 py-0.5', count('Failed') > 0 ? 'bg-destructive/10 text-destructive' : 'bg-muted/60 text-muted-foreground')}>
+          {count('Failed')} failed
+        </span>
+        {failedSources > 0 && (
+          <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-destructive">
+            {failedSources} source{failedSources === 1 ? '' : 's'} failed
+          </span>
+        )}
+      </div>
+      <div className="max-h-56 overflow-y-auto rounded-md border border-border">
+        {report.sources.map((source) => (
+          <div key={`${source.label}:${source.dataDir}`} className="border-b border-border last:border-b-0">
+            <div className="truncate bg-muted/30 px-2.5 py-1 text-xs font-medium" title={source.dataDir}>
+              {source.label}
+            </div>
+            {source.error && <p className="px-2.5 py-1 text-xs text-destructive">{source.error}</p>}
+            {source.results.length > 0 && (
+              <table className="w-full text-xs">
+                <tbody>
+                  {source.results.map((result) => {
+                    const status = resultStatus(result)
+                    return (
+                      <tr key={result.name} className="border-t border-border/50">
+                        <td className="w-1/3 truncate px-2.5 py-1 font-mono">{result.name}</td>
+                        <td
+                          className={cn(
+                            'w-20 px-2 py-1 font-medium',
+                            status === 'Imported' ? 'text-success' : status === 'Failed' ? 'text-destructive' : 'text-muted-foreground',
+                          )}
+                        >
+                          {status}
+                        </td>
+                        <td className="break-words px-2 py-1 text-muted-foreground">{result.detail}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            )}
+            {!source.error && source.results.length === 0 && (
+              <p className="px-2.5 py-1 text-xs text-muted-foreground">No databases processed.</p>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
 
 const CONFLICT_POLICIES: { id: ConflictPolicy; label: string; hint: string }[] = [
   { id: 'skip', label: 'Skip (default)', hint: 'Keeps the database already in OLS and skips the incoming one.' },
