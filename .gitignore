@@ -59,3 +59,4 @@ ignored/*
 *.pdb
 *.ilk
 target-ci/*
+target-audit/*
