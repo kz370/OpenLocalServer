@@ -19,6 +19,8 @@ One core engine (`ols-core`) powers four interfaces:
 
 **Free, open source, and unlimited sites. No telemetry by default.**
 
+**A free, open-source alternative to [ServBay](https://www.servbay.com/) for Windows**, with the same all-in-one approach: web servers, databases, runtimes, local domains, and trusted HTTPS managed from one app.
+
 ---
 
 ## Why I built it
