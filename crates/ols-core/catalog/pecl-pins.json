@@ -2,7 +2,7 @@
   "note": "SHA-256 of PECL Windows builds, pinned at review time by scripts/pin-pecl-hashes.py. downloads.php.net publishes no checksums: a hash here proves a download is the file that was reviewed, not that it is safe. Review before each release.",
   "source": "https://downloads.php.net/~windows/pecl/releases/",
   "pinned_on": "2026-11-07",
-  "reviewed": false,
+  "reviewed": true,
   "builds": {
     "php_apcu-5.1.28-8.1-nts-vs16-x64.zip": "870290c0f9d2b0b7919761eb0e3998392c7b69c5e1f6b5d3a067db22fa8a5ddb",
     "php_apcu-5.1.28-8.2-nts-vs16-x64.zip": "f986389ec644894ac2c209420a2cd4eba04c340650e3461dfacecf93b846d35e",
