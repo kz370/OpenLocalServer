@@ -60,6 +60,9 @@ pub enum CoreResponse {
     ProcessStarted {
         id: ProcessId,
     },
+    IdleSettings {
+        settings: crate::idle::IdleSettings,
+    },
     LanInfo {
         info: crate::lan::LanInfo,
     },

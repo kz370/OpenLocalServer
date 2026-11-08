@@ -140,6 +140,15 @@ impl Core {
         use crate::service::ServiceState;
 
         let services = self.services();
+        // §179: a manual start, stop or restart wins over "sleep when unused": its wake
+        // listener must free the port before the service is touched.
+        match &command {
+            CoreCommand::StartService { id }
+            | CoreCommand::StopService { id }
+            | CoreCommand::RestartService { id } => self.inner.idle.release(id),
+            CoreCommand::StopAll => self.inner.idle.release_all(),
+            _ => {}
+        }
         let transitions = match &command {
             CoreCommand::StartService { id } => {
                 if services.is_running_and_ready(id) {

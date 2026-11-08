@@ -1,4 +1,4 @@
-import { ChevronDown, FileText, Globe, Home, Play, Repeat, Rocket, RotateCw } from 'lucide-react'
+import { ChevronDown, FileText, Globe, Home, Moon, Play, Repeat, Rocket, RotateCw } from 'lucide-react'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { PageLayout } from '@/components/PageLayout'
@@ -682,6 +682,7 @@ function ServicesWidget({
                           >
                             {s.name}
                           </span>
+                          {s.sleeping && <Moon className="size-3 shrink-0 text-muted-foreground" aria-label="Sleeping" />}
                         </div>
 
                         {/* Col 2: Port: fixed ~64px, right-aligned, monospace */}

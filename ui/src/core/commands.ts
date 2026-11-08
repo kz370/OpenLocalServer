@@ -1,6 +1,6 @@
 import type { AiProvider, AiRequest } from './types/ai'
 import type { QuickCommand, StartupSettings } from './types/apps'
-import type { CustomServiceDef, EnvironmentManifest, Ownership, ProcessId, ProcessSpec, ReclaimItem, RemoteDb, SiteImportChoice } from './types/base'
+import type { CustomServiceDef, EnvironmentManifest, Ownership, ProcessId, IdleSettings, ProcessSpec, ReclaimItem, RemoteDb, SiteImportChoice } from './types/base'
 import type { BuildSpec, ComposeAction, ContainerUpdate, DockerContainerAction, DockerizeOptions, DockerSiteRequest, EnvEdit, PruneTargets, RunSpec, ServicePreset } from './types/docker'
 import type { XdebugSettings } from './types/environment'
 import type { LoadProfile } from './types/system'
@@ -256,6 +256,8 @@ export type CoreCommand =
   | { type: 'open_url'; url: string }
   | { type: 'open_in_editor'; path: string }
   | { type: 'open_in_editor_at'; path: string; line: number }
+  | { type: 'get_idle_settings' }
+  | { type: 'set_idle_settings'; settings: IdleSettings }
   | { type: 'set_site_lan'; hostname: string; on: boolean }
   | { type: 'get_lan_info'; hostname: string }
   | { type: 'start_ca_share' }

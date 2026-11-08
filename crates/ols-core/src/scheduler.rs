@@ -447,6 +447,7 @@ pub fn start_clock(inner: &Arc<Inner>) {
                     inner.scheduler_tick();
                     crate::auto_backup::clock_tick(&inner);
                     crate::lan::tick(&inner);
+                    crate::idle::tick(&inner);
                 }
                 None => return,
             }

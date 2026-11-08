@@ -87,8 +87,23 @@ impl Core {
                 }
 
                 C::ListServices => Ok(R::Services {
-                    services: i.services.list(),
+                    services: {
+                        let mut list = i.services.list();
+                        for s in &mut list {
+                            s.sleeping = i.idle.is_sleeping(&s.id);
+                        }
+                        list
+                    },
                 }),
+                C::GetIdleSettings => Ok(R::IdleSettings {
+                    settings: crate::idle::load(i),
+                }),
+                C::SetIdleSettings { settings } => {
+                    tracing::info!(command = "set_idle_settings");
+                    Ok(R::IdleSettings {
+                        settings: crate::idle::save(i, settings)?,
+                    })
+                }
                 C::GetServiceAggregate => Ok(R::ServiceAggregate {
                     aggregate: self.service_aggregate(),
                 }),

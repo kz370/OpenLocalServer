@@ -334,3 +334,5 @@ olsc project audit / runtime eol (crates/ols-cli/src/commands/db.rs) | Package a
 lan (crates/ols-core/src/lan.rs) | §178 LAN name per site: `LanInfo`, `lan_ipv4`, `lan_alias`, `qr_svg`, `Inner::set_site_lan`, `get_lan_info`, `tick`.
 lan_share (crates/ols-core/src/lan_share.rs) | §178 Temporary certificate page: `Share`, `start`, `pem_to_der`, `mobileconfig`, `Inner::start_ca_share`, `stop_ca_share`.
 PhoneSection / PhoneCertDialog (ui/src/components/site/PhoneCertDialog.tsx) | Open on my phone section of the site's domains tab and the certificate dialog.
+idle (crates/ols-core/src/idle.rs) | §179 Sleep when unused: `IdleConfig`, `IdleSettings`, `established_on_ports`, `should_sleep`, `IdleState`, `load`, `save`, `tick`. Setting `services.idle`.
+Services page (ui/src/pages/Services.tsx) | Sleep when unused popover and Sleeping badge.

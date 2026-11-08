@@ -191,6 +191,9 @@ pub struct ServiceStatus {
     /// `web:<id>:error` and the caller has to name one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub log_source: Option<String>,
+    /// §179: stopped by "Sleep when unused" and waiting for a connection or a manual start.
+    #[serde(default)]
+    pub sleeping: bool,
 }
 
 /// Everything an external DB tool needs to open a connection (§102).
@@ -481,6 +484,7 @@ impl ServiceManager {
                     version: None,
                     sites: Some(s.sites),
                     log_source: Some(log_source),
+                    sleeping: false,
                 }
             })
             .collect()
@@ -593,6 +597,7 @@ impl ServiceManager {
             id: def.id.clone(),
             name: def.name,
             log_source: Some(format!("service:{}", def.id)),
+            sleeping: false,
         }
     }
 
@@ -757,6 +762,7 @@ impl ServiceManager {
                     version: None,
                     sites: None,
                     log_source: Some(format!("service:{id}")),
+                    sleeping: false,
                 },
             };
         }
@@ -797,6 +803,7 @@ impl ServiceManager {
             version: versions.into_iter().next(),
             sites: None,
             log_source: Some(format!("service:{id}")),
+            sleeping: false,
         }
     }
 
@@ -2354,6 +2361,7 @@ mod tests {
             version: None,
             sites: None,
             log_source: None,
+            sleeping: false,
         }
     }
 

@@ -429,3 +429,6 @@ Runtimes page | reads | get_eol_report (badges)
 dispatch::SetSiteLan | calls | Inner::set_site_lan -> DomainStore::update + apply_web (alias in SiteSpec.aliases and certs::names_for)
 scheduler::start_clock | ticks | lan::tick (only when a site has lan on)
 dispatch::StartCaShare | calls | Inner::start_ca_share -> lan_share::start (thread ols-ca-share)
+scheduler::start_clock | ticks | idle::tick (netstat only when a service has it on)
+idle::tick | stops | ServiceManager::stop -> spawn_waker (127.0.0.1:<port>) -> Inner::start_service_and_wait
+Core::dispatch | releases | IdleState::release before Start/Stop/Restart/StopAll

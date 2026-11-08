@@ -1,4 +1,4 @@
-import { ExternalLink, FileText, Play, RefreshCw, RotateCw } from 'lucide-react'
+import { ExternalLink, FileText, Moon, Play, RefreshCw, RotateCw } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { PageLayout } from '@/components/PageLayout'
@@ -9,10 +9,16 @@ import { ServiceIconAction } from '@/components/ServiceIconAction'
 import { StopIcon } from '@/components/StopIcon'
 import { ServiceMark } from '@/components/TechIcon'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Dialog } from '@/components/ui/dialog'
+import { Field, SwitchRow } from '@/components/ui/form'
+import { NumberInput } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import {
   type Diagnostic,
+  type IdleConfig,
+  type IdleSettings,
   type PortStatus,
   type ServiceLifecycleState,
   type ServiceStatus,
@@ -33,6 +39,7 @@ const servicesListCache = createPersistentCache<ServiceStatus[]>('services_list'
 export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => void }) {
   const [services, setServices] = useState<ServiceStatus[]>(servicesListCache.get)
   const [error, setError] = useState<Diagnostic | null>(null)
+  const [idleFor, setIdleFor] = useState<ServiceStatus | null>(null)
   const serviceStatuses = useServiceStatuses()
 
   async function refresh() {
@@ -133,11 +140,13 @@ export function ServicesPage({ onOpenLogs }: { onOpenLogs: (source: string) => v
             onAct={act}
             onOpenLogs={onOpenLogs}
             onError={setError}
+            onIdle={setIdleFor}
           />
         </CardContent>
       </Card>
 
       <CustomServices onChanged={refresh} />
+      <IdleDialog service={idleFor} onClose={() => setIdleFor(null)} onError={setError} />
     </PageLayout>
   )
 }
@@ -149,6 +158,7 @@ function ServiceTable({
   onAct,
   onOpenLogs,
   onError,
+  onIdle,
   portLabel,
 }: {
   services: ServiceStatus[]
@@ -156,6 +166,8 @@ function ServiceTable({
   onAct: (s: ServiceStatus, action: ServiceAction) => void
   onOpenLogs: (source: string) => void
   onError: (e: Diagnostic) => void
+  /** Opens "Sleep when unused" for a service that supports it. */
+  onIdle?: (s: ServiceStatus) => void
   portLabel?: (s: ServiceStatus) => string
 }) {
   return (
@@ -222,7 +234,13 @@ function ServiceTable({
               ) : (
                 <span className="flex flex-col items-start gap-1">
                   <span className="flex flex-wrap items-center gap-1.5">
-                    <Badge variant="secondary">Stopped</Badge>
+                    {s.sleeping ? (
+                      <Badge variant="secondary">
+                        <Moon className="mr-1 size-3" /> Sleeping
+                      </Badge>
+                    ) : (
+                      <Badge variant="secondary">Stopped</Badge>
+                    )}
                     {s.port_status === 'in_use' && <Badge variant="warning">port in use</Badge>}
                   </span>
                   {s.installed && s.port !== null && s.port_status === 'in_use' && <PortHolder port={s.port} />}
@@ -272,6 +290,11 @@ function ServiceTable({
                     >
                       <RefreshCw className="size-3.5" />
                     </ServiceIconAction>
+                    {onIdle && IDLE_SERVICES.includes(s.id) && (
+                      <ServiceIconAction title={`Sleep ${s.name} when unused`} disabled={isPending} iconColor="text-indigo-400" onClick={() => onIdle(s)}>
+                        <Moon className="size-3.5" />
+                      </ServiceIconAction>
+                    )}
                     <ServiceIconAction
                       title={`View ${s.name} logs`}
                       disabled={!s.log_source}
@@ -334,3 +357,63 @@ function PortHolder({ port }: { port: number }) {
     </span>
   )
 }
+
+/** The services that can sleep when unused (§179). */
+const IDLE_SERVICES = ['mariadb', 'postgres', 'redis', 'mongodb', 'memcached']
+
+/**
+ * §179 Sleep when unused: stops a service after N minutes without connections and starts it
+ * again when an app connects. Off by default. Rendered outside the table's card.
+ */
+function IdleDialog({ service, onClose, onError }: { service: ServiceStatus | null; onClose: () => void; onError: (e: Diagnostic) => void }) {
+  const [all, setAll] = useState<IdleSettings>({})
+  const [cfg, setCfg] = useState<IdleConfig>({ enabled: false, minutes: 30, wake_on_connect: true })
+
+  useEffect(() => {
+    if (!service) return
+    void runCommand({ type: 'get_idle_settings' })
+      .then((r) => {
+        if (r.type !== 'idle_settings') return
+        setAll(r.settings)
+        setCfg(r.settings[service.id] ?? { enabled: false, minutes: 30, wake_on_connect: true })
+      })
+      .catch((e) => onError(asDiagnostic(e)))
+  }, [service, onError])
+
+  async function save() {
+    if (!service) return
+    try {
+      await runCommand({ type: 'set_idle_settings', settings: { ...all, [service.id]: cfg } })
+      onClose()
+    } catch (e) {
+      onError(asDiagnostic(e))
+    }
+  }
+
+  return (
+    <Dialog
+      open={service !== null}
+      onClose={onClose}
+      title={service ? `Sleep ${service.name} when unused` : 'Sleep when unused'}
+      description="Saves memory and battery on a laptop."
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={() => void save()}>Save</Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-3">
+        <SwitchRow checked={cfg.enabled} onChange={(v) => setCfg({ ...cfg, enabled: v })} title="Sleep when unused" hint="Stops the service after a while without connections." />
+        <Field label="Minutes without connections (5 to 240)">
+          <NumberInput label="Minutes" value={cfg.minutes} min={5} max={240} disabled={!cfg.enabled} onChange={(v) => setCfg({ ...cfg, minutes: v ?? 30 })} className="h-8 w-28" />
+        </Field>
+        <SwitchRow checked={cfg.wake_on_connect} disabled={!cfg.enabled} onChange={(v) => setCfg({ ...cfg, wake_on_connect: v })} title="Start again when an app connects" hint="OLS listens on 127.0.0.1 and starts the service for the first connection." />
+        <p className="text-xs text-muted-foreground">The first connection waits a few seconds while the service starts. A second new connection in that same moment may fail once. Apps that connect to the network address or ::1 do not wake it.</p>
+      </div>
+    </Dialog>
+  )
+}
+

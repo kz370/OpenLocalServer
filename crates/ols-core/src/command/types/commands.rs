@@ -789,6 +789,11 @@ pub enum CoreCommand {
     OpenInEditor {
         path: String,
     },
+    /// §179: services sleep when unused. Never on the API or MCP.
+    GetIdleSettings,
+    SetIdleSettings {
+        settings: crate::idle::IdleSettings,
+    },
     /// §178: open a site on your phone. Never on the API or MCP.
     SetSiteLan {
         hostname: String,

@@ -370,6 +370,7 @@ export interface ServiceStatus {
   sites?: number
   /** Log source holding this service's own output, so Logs can open on it directly. */
   log_source?: string
+  sleeping?: boolean
 }
 
 export interface ServiceAggregate {
@@ -537,3 +538,11 @@ export interface LanInfo {
   qr_svg: string | null
   warnings: string[]
 }
+
+/** §179 Sleep when unused, per service. */
+export interface IdleConfig {
+  enabled: boolean
+  minutes: number
+  wake_on_connect: boolean
+}
+export type IdleSettings = Record<string, IdleConfig>

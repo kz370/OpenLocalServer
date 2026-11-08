@@ -599,6 +599,7 @@ fn set_stopping_tray(app: &AppHandle) {
 /// Stops everything OpenLocalServer started and waits before allowing the app to exit.
 fn shutdown(core: &Core) -> bool {
     ols_core::control::close(&core.inner().paths);
+    core.inner().idle.release_all();
     core.inner().stop_all_tunnels();
     core.inner().stop_all_workers();
     core.inner().terminals.close_all();

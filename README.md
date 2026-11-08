@@ -227,6 +227,7 @@ Grab the latest installer (`OLS-2.12.0-setup.exe`) from the [Releases page](http
 - **Database per Git branch:** each branch gets its own copy of the database; switching branches switches `.env` (project Git tab, or `olsc db branch`).
 - **Pull a server database:** copy staging or production over SSH with fake emails, names, phones and passwords (project Backups tab, or `olsc db pull`).
 - **Open a site on your phone:** scan a QR code on the same Wi-Fi and install OLS's certificate once (guided) for working HTTPS (site settings, Open on my phone).
+- **Services sleep when unused:** MariaDB, PostgreSQL, Redis, MongoDB and Memcached stop after a while without connections and start again when an app connects (Services page, off by default).
 - **Import sites from Laragon, XAMPP and WampServer:** the import dialog lists their sites and adds the ones you pick, with trusted HTTPS; the old tools are not changed.
 
 ### 🐳 Docker

@@ -40,6 +40,7 @@ pub mod exec;
 pub mod git;
 pub mod health;
 pub mod hosts;
+pub mod idle;
 pub mod inspector;
 pub mod journal;
 pub mod lan;
