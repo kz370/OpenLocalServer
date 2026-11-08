@@ -157,6 +157,10 @@ export interface BundlePreview {
   options: BundleOptions
   sites: BundlePreviewSite[]
   problems: string[]
+  /** Sites linked to a Docker container (2.11.0). */
+  docker_links?: number
+  /** A bundled compose file uses OLS-supplied passwords, which are never exported. */
+  compose_files_need_passwords?: boolean
 }
 
 export interface BundleSiteResult {

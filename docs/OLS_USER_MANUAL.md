@@ -364,6 +364,7 @@ olsc guide
 ## 17. Version 2.10.0 Specific Notes & What's New
 
 ### What's New in v2.11.0 (in development)
+- **Site bundles keep Docker details:** an exported site keeps its Docker link, and its compose file when you include Project files. Passwords are never included: after importing, open Docker → Compose → Passwords, or recreate the stack. OLS does not start anything on import.
 - **Warnings for Docker sites:** the Dashboard and Repair tell you when a site's container is stopped (press **Start**), missing, or when Docker is not running. OLS only asks Docker when a site is linked to a container, and never starts a container on its own.
 - **Command line for Docker:** `olsc docker ps`, `olsc docker start|stop|restart <container>`, `olsc docker logs <container>`, `olsc docker images`, `olsc docker volumes`, `olsc docker df`, `olsc docker pull <image>`, `olsc docker compose up|down|… <file>`, `olsc docker compose check <file>` and `olsc docker prune --dry-run`. Removing containers, images and volumes stays in the app.
 - **Live Docker page:** the container list refreshes by itself when a container starts, stops or is recreated, and linked sites follow to the new port. OLS only listens while the Docker page is open.

@@ -381,6 +381,12 @@ export function SiteImportButton({ onWatch, toolbar }: { onWatch?: () => void; t
               </div>
             )}
 
+            {((preview.docker_links ?? 0) > 0 || preview.compose_files_need_passwords) && (
+              <div className="rounded-lg border border-border bg-muted/40 p-3 text-xs">
+                This site uses Docker. Passwords for its compose stack are not included: open Docker → Compose → Passwords after importing, or recreate the stack.
+              </div>
+            )}
+
             {needsPassword && (
               <Field
                 label="Bundle password"
