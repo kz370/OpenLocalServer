@@ -108,6 +108,22 @@ export type BuildPlan = {
   warnings: string[]
 }
 
+export type DockerizePlan = {
+  kind: 'node' | 'php' | 'python' | 'static'
+  dockerfile: string | null
+  compose: string
+  dockerfile_path: string
+  compose_path: string
+  existing: string[]
+  port: number
+  notes: string[]
+  php_extensions: string[]
+  unknown_extensions: string[]
+  detected: string[]
+  disclaimer: string
+  checklist: string[]
+}
+
 export type DockerSiteRequest = { container: string; container_port: number; hostname: string; https: boolean }
 
 export type OlsEndpoint = {

@@ -66,6 +66,8 @@ export type CoreCommand =
   | { type: 'list_wp_projects' }
   | { type: 'get_docker_status' }
   | { type: 'docker_watch'; on: boolean }
+  | { type: 'plan_dockerize'; project_id: string }
+  | { type: 'create_dockerize'; project_id: string; overwrite_compose?: boolean }
   | { type: 'start_docker_desktop' }
   | { type: 'list_docker_containers'; all?: boolean }
   | { type: 'docker_container_action'; id: string; action: DockerContainerAction }

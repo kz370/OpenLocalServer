@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { PageLayout } from '@/components/PageLayout'
 import { ScrollableList } from '@/components/ScrollableList'
 import { ComposeBuilderDialog } from '@/components/docker/ComposeBuilderDialog'
+import { DockerizeDialog } from '@/components/docker/DockerizeDialog'
 import { ComposeEditorDialog } from '@/components/docker/ComposeEditorDialog'
 import { ComposeTab } from '@/components/docker/ComposeTab'
 import { ContainerSettingsDialog } from '@/components/docker/ContainerSettingsDialog'
@@ -101,6 +102,7 @@ export default function DockerPage() {
   const [siteFor, setSiteFor] = useState<DockerContainer | null>(null)
   const [editPath, setEditPath] = useState<string | null>(null)
   const [builderOpen, setBuilderOpen] = useState(false)
+  const [dockerizeOpen, setDockerizeOpen] = useState(false)
   const [taskId, setTaskId] = useState<string | null>(null)
   const [settingsFor, setSettingsFor] = useState<string | null>(null)
   const [shellFor, setShellFor] = useState<string | null>(null)
@@ -416,6 +418,7 @@ export default function DockerPage() {
             onRunTask={setTaskId}
             onEdit={setEditPath}
             onNew={() => setBuilderOpen(true)}
+            onDockerize={() => setDockerizeOpen(true)}
             onLogs={setLogsFor}
             onCreateSite={(name) => void createSiteFor(name)}
             onSettings={setSettingsFor}
@@ -449,6 +452,7 @@ export default function DockerPage() {
           onRunTask={setTaskId}
           onEdit={setEditPath}
           onNew={() => setBuilderOpen(true)}
+          onDockerize={() => setDockerizeOpen(true)}
           onLogs={setLogsFor}
           onCreateSite={(name) => void createSiteFor(name)}
           onSettings={setSettingsFor}
@@ -608,6 +612,7 @@ export default function DockerPage() {
           onSaved={() => setComposeReload((n) => n + 1)}
         />
       )}
+      <DockerizeDialog open={dockerizeOpen} onClose={() => setDockerizeOpen(false)} onCreated={(f, start) => void composeCreated(f, start)} />
       <ComposeBuilderDialog open={builderOpen} onClose={() => setBuilderOpen(false)} onCreated={(f, start) => void composeCreated(f, start)} />
       <TaskOutputDialog
         taskId={taskId}

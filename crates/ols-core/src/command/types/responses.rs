@@ -444,6 +444,9 @@ pub enum CoreResponse {
     DockerComposePresets {
         presets: Vec<crate::docker::builder::ServicePreset>,
     },
+    DockerizePlan {
+        plan: crate::docker::dockerize::DockerizePlan,
+    },
     DockerComposePlan {
         plan: crate::docker::builder::BuildPlan,
     },

@@ -553,6 +553,18 @@ fn mcp_tools() -> Vec<McpTool> {
             }),
         },
         McpTool {
+            name: "ols_docker_dockerize".into(),
+            description: Some("Generate a Dockerfile, compose.yaml and .dockerignore for a registered project from what OLS detects (PHP, Node, Python or static). They are a starting point, not guaranteed to work. Never replaces an existing file. By default (dry_run) it only returns the plan.".to_string()),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "project_id": { "type": "string", "description": "A project id from ols_list_projects." },
+                    "dry_run": { "type": "boolean", "description": "Only return the plan. Default true." }
+                },
+                "required": ["project_id"]
+            }),
+        },
+        McpTool {
             name: "ols_docker_create_site".into(),
             description: Some("Give a running container a local site (e.g. shop.test) with HTTPS: a reverse proxy to the container's published port that follows the container if its port changes. Re-applies the web server config afterwards.".to_string()),
             input_schema: json!({
@@ -1207,6 +1219,17 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
                 }
             }
         }
+        "ols_docker_dockerize" => {
+            let project_id = req_str!("project_id");
+            if opt_bool!("dry_run").unwrap_or(true) {
+                C::PlanDockerize { project_id }
+            } else {
+                C::CreateDockerize {
+                    project_id,
+                    overwrite_compose: false,
+                }
+            }
+        }
         "ols_docker_create_site" => C::DockerCreateSite {
             request: ols_core::docker::sites::DockerSiteRequest {
                 container: req_str!("container"),
@@ -1354,6 +1377,10 @@ fn guard_raw_command(cmd: CoreCommand) -> Result<CoreCommand, String> {
         C::CreateDockerCompose { spec, .. } => Ok(C::CreateDockerCompose {
             spec,
             overwrite: false,
+        }),
+        C::CreateDockerize { project_id, .. } => Ok(C::CreateDockerize {
+            project_id,
+            overwrite_compose: false,
         }),
         other => Ok(other),
     }
@@ -2407,6 +2434,32 @@ mod tests {
 
     #[test]
     fn docker_tools_build_commands() {
+        assert!(matches!(
+            build_command("ols_docker_dockerize", &json!({ "project_id": "p1" })).unwrap(),
+            CoreCommand::PlanDockerize { project_id } if project_id == "p1"
+        ));
+        assert!(matches!(
+            build_command(
+                "ols_docker_dockerize",
+                &json!({ "project_id": "p1", "dry_run": false })
+            )
+            .unwrap(),
+            CoreCommand::CreateDockerize {
+                overwrite_compose: false,
+                ..
+            }
+        ));
+        assert!(matches!(
+            guard_raw_command(CoreCommand::CreateDockerize {
+                project_id: "p1".into(),
+                overwrite_compose: true
+            })
+            .unwrap(),
+            CoreCommand::CreateDockerize {
+                overwrite_compose: false,
+                ..
+            }
+        ));
         assert!(matches!(
             build_command("ols_docker_pull_image", &json!({ "reference": "nginx:1.28" })).unwrap(),
             CoreCommand::PullDockerImage { reference } if reference == "nginx:1.28"

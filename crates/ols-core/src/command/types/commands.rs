@@ -245,6 +245,17 @@ pub enum CoreCommand {
         #[serde(default)]
         overwrite: bool,
     },
+    /// 2.11.0: what Dockerize would write for a project (nothing is written).
+    PlanDockerize {
+        project_id: String,
+    },
+    /// 2.11.0: writes a Dockerfile, compose file and .dockerignore for a project. A Dockerfile
+    /// that exists is kept; an existing compose file needs `overwrite_compose` (backed up).
+    CreateDockerize {
+        project_id: String,
+        #[serde(default)]
+        overwrite_compose: bool,
+    },
     /// §166: the generated passwords of a stack, for connection details (UI only).
     RevealDockerComposeSecrets {
         path: String,

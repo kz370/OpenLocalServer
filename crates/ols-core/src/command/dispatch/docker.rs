@@ -26,6 +26,26 @@ impl Core {
                 i.mark_docker_sites(&mut containers);
                 Ok(R::DockerContainers { containers })
             })(),
+            C::PlanDockerize { project_id } => (|| {
+                let (dir, kind) = i.dockerize_project(&project_id)?;
+                crate::docker::dockerize::plan(&dir, kind.as_deref(), &crate::port::port_is_free)
+                    .map(|plan| R::DockerizePlan { plan })
+            })(),
+            C::CreateDockerize {
+                project_id,
+                overwrite_compose,
+            } => (|| {
+                tracing::info!(command = "create_dockerize", project = %project_id, overwrite_compose);
+                let (dir, kind) = i.dockerize_project(&project_id)?;
+                let plan = crate::docker::dockerize::plan(
+                    &dir,
+                    kind.as_deref(),
+                    &crate::port::port_is_free,
+                )?;
+                crate::docker::dockerize::write(&plan, overwrite_compose, &backups())?;
+                i.set_docker_connected(std::path::Path::new(&plan.compose_path), true)?;
+                Ok(R::DockerizePlan { plan })
+            })(),
             C::DockerWatch { on } => {
                 i.docker_watch(on);
                 Ok(R::Ok)

@@ -12,6 +12,7 @@ pub mod client;
 pub mod compose;
 pub mod connect;
 pub mod details;
+pub mod dockerize;
 pub mod events;
 pub mod presets;
 pub mod sites;

@@ -29,6 +29,9 @@ import { FloatingMenu, type MenuAnchor, type MenuItem } from '@/components/ui/me
 import { Pagination } from '@/components/ui/pagination'
 import { MiddleTruncate } from '@/components/ui/MiddleTruncate'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableSpanCell } from '@/components/ui/table'
+import { DockerizeDialog } from '@/components/docker/DockerizeDialog'
+import { useDockerizeMenu } from '@/lib/dockerizeMenu'
+import { DockerIcon } from '@/components/layout/SidebarIcons'
 import { type Domain, type DomainSummary, type EditorInfo, type HealthProgress, type HealthReport, type HealthStep, type Project, type WpProject, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
 import { PROXY_ROOT, compareByRoot, rootFolderOf, rootKeyOf, sortsByRoot, useListView } from '@/lib/rootFolder'
@@ -144,6 +147,8 @@ let cachedWpProjects: WpProject[] = []
 
 export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   const web = useWeb()
+  const dockerizeMenu = useDockerizeMenu()
+  const [dockerizeFor, setDockerizeFor] = useState<string | null>(null)
   // The WordPress sign-in screen lives outside this window, so it is told which colourway
   // the app is showing rather than left to guess from the browser.
   const { resolvedTheme } = useTheme()
@@ -744,6 +749,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       })
     }
     if (p) items.push({ label: 'Terminal', icon: <SquareTerminal />, disabled: !isHealthy, onSelect: () => setTarget({ hostname: d?.hostname ?? null, projectId: p.id, tab: 'terminal' }) })
+    if (p && dockerizeMenu) items.push({ label: 'Dockerize…', icon: <DockerIcon />, disabled: !isHealthy, hint: isHealthy ? 'Make a Dockerfile and compose file for this project' : 'Project folder is not accessible', onSelect: () => setDockerizeFor(p.id) })
     // WordPress gets a passwordless admin entry. The backend answers with a link that works
     // once, from this machine, for a few minutes; no password is read, asked for or stored.
     const wp = p ? wpProjects.find((w) => w.project_id === p.id) : undefined
@@ -1718,6 +1724,8 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
           <Input value={dupName} onChange={(e) => setDupName(e.target.value)} />
         </Field>
       </Dialog>
+
+      <DockerizeDialog open={dockerizeFor != null} projectId={dockerizeFor} onClose={() => setDockerizeFor(null)} />
 
       <SiteLogoDialog
         target={logoTarget}

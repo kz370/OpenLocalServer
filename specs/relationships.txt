@@ -360,6 +360,9 @@ docker::compose::run_action | uses | exec::run_streaming (docker compose), secre
 docker::builder::create | uses | crypto::random_password, secrets::set_secret, compose::save_file (when replacing)
 Inner::docker_create_site | uses | DockerManager::list_containers, Inner::add_domain (proxy site with DockerLink)
 Inner::diagnose | calls | Inner::check_docker (only when an enabled site has a DockerLink: DockerManager::status + list_containers, docker::sites::find_linked)
+dispatch_docker | calls | docker::dockerize::plan / write (create_dockerize also marks the stack connected via set_docker_connected)
+ProjectsPage / SitesPage | opens | DockerizeDialog from the Dockerize… menu item when useDockerizeMenu() is true
+SidebarItemsSettings | calls | setDockerizeMenu -> set_setting ui.docker.dockerize_menu
 auto_fix_findings (repair.rs) | calls | Inner::diagnose_without_docker (background fixes never ask Docker)
 DockerPage | mounts | ComposeTab, ComposeEditorDialog, ComposeBuilderDialog, TaskOutputDialog, LogsDialog, CreateSiteDialog
 CreateSiteDialog | calls | docker_create_site then apply_web (background) and open_url

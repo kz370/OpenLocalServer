@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import type { Diagnostic } from '@/core'
+import { setDockerizeMenu, useDockerizeMenuSetting } from '@/lib/dockerizeMenu'
 import { setHiddenSidebarItems, useHiddenSidebarItems } from '@/lib/sidebarVisibility'
 
 /**
@@ -16,6 +17,8 @@ import { setHiddenSidebarItems, useHiddenSidebarItems } from '@/lib/sidebarVisib
  */
 export function SidebarItemsSettings() {
   const hidden = useHiddenSidebarItems()
+  const dockerizeMenu = useDockerizeMenuSetting()
+  const dockerHidden = hidden.has('docker')
   const [error, setError] = useState<Diagnostic | null>(null)
 
   const sections: { id: string; label: string; items: NavItem[] }[] = [
@@ -98,6 +101,22 @@ export function SidebarItemsSettings() {
               })}
             </div>
           ))}
+        </div>
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-card/60 px-3 py-2">
+          <span className="min-w-0 flex-1 text-sm">
+            <span className="block">Dockerize in right-click menus</span>
+            <span className="block text-xs text-muted-foreground">
+              Adds Dockerize… to the Projects and Sites menus.
+              {dockerHidden ? ' Hidden now because the Docker page is hidden from the sidebar.' : ''}
+            </span>
+          </span>
+          <Switch
+            size="sm"
+            checked={dockerizeMenu && !dockerHidden}
+            disabled={dockerHidden}
+            label={`${dockerizeMenu ? 'Hide' : 'Show'} Dockerize in right-click menus`}
+            onChange={(v) => setDockerizeMenu(v).catch((err) => setError(asDiagnostic(err)))}
+          />
         </div>
       </CardContent>
     </Card>

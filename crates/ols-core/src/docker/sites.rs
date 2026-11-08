@@ -188,6 +188,29 @@ impl Inner {
         changed
     }
 
+    /// The folder and type of a registered project, for Dockerize.
+    pub fn dockerize_project(
+        &self,
+        project_id: &str,
+    ) -> Result<(std::path::PathBuf, Option<String>), CoreError> {
+        let project = self
+            .projects
+            .lock()
+            .unwrap()
+            .get(project_id)
+            .ok_or_else(|| {
+                CoreError::failed_fix(
+                    "That project was not found.",
+                    format!("No project has the id \"{project_id}\"."),
+                    "Pick the project from the list on the Projects page.",
+                )
+            })?;
+        Ok((
+            std::path::PathBuf::from(&project.path),
+            project.project_type,
+        ))
+    }
+
     /// Re-applies the web config as a background task after sites moved to new ports.
     /// Does nothing when `moved` is empty.
     pub fn docker_apply_site_moves(self: &Arc<Self>, moved: Vec<String>) {

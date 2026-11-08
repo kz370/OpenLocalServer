@@ -5,6 +5,7 @@ import {
   FileCode2,
   FileText,
   Globe,
+  Container,
   Hammer,
   KeyRound,
   Layers,
@@ -55,6 +56,7 @@ export function ComposeTab({
   onRunTask,
   onEdit,
   onNew,
+  onDockerize,
   onLogs,
   onCreateSite,
   onSettings,
@@ -65,6 +67,7 @@ export function ComposeTab({
   onRunTask: (taskId: string) => void
   onEdit: (path: string) => void
   onNew: () => void
+  onDockerize: () => void
   onLogs: (container: string) => void
   onCreateSite: (container: string) => void
   onSettings: (containerId: string) => void
@@ -131,9 +134,14 @@ export function ComposeTab({
         <p className="text-sm text-muted-foreground">
           Compose files found in your projects, and stacks Docker is running.
         </p>
-        <Button size="sm" className="cursor-pointer" onClick={onNew}>
-          <Wand2 className="size-3.5" /> New compose file
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" className="cursor-pointer" onClick={onDockerize}>
+            <Container className="size-3.5" /> From a project…
+          </Button>
+          <Button size="sm" className="cursor-pointer" onClick={onNew}>
+            <Wand2 className="size-3.5" /> New compose file
+          </Button>
+        </div>
       </div>
       {!dockerRunning && <p className="-mt-2 text-xs text-muted-foreground">Start Docker to run this stack. Editing and saving still work.</p>}
 
