@@ -222,6 +222,12 @@ pub enum CoreResponse {
     DbBackups {
         backups: Vec<crate::dbbackup::DbBackup>,
     },
+    XdebugProfiles {
+        files: Vec<crate::profiler::ProfileFile>,
+    },
+    XdebugProfile {
+        profile: Box<crate::profiler::Profile>,
+    },
     DefenderStatus {
         state: crate::defender::DefenderState,
         excluded_by_ols: Vec<String>,

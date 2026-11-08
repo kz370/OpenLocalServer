@@ -238,6 +238,36 @@ export interface GuardSnapshot {
   kind: string
 }
 
+/** Profiler (§174). */
+export interface XdebugProfileFile {
+  file: string
+  php_version: string
+  host: string | null
+  created_ms: number
+  size: number
+}
+
+export interface XdebugProfileFn {
+  name: string
+  file: string
+  self_ns: number
+  inclusive_ns: number
+  calls: number
+}
+
+export interface CallNode {
+  name: string
+  inclusive_ns: number
+  calls: number
+  children: CallNode[]
+}
+
+export interface XdebugProfile {
+  total_time_ns: number
+  functions: XdebugProfileFn[]
+  tree: CallNode
+}
+
 /** Windows Defender exclusions (§173). */
 export interface DefenderState {
   available: boolean

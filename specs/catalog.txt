@@ -313,3 +313,5 @@ SiteImportPanel (ui/src/components/SiteImportPanel.tsx) | Sites tab in MigrateDi
 defender (crates/ols-core/src/defender.rs) | §173 Defender exclusions: `DefenderState`, `DevDriveInfo`, `DefenderStatus`, `valid_exclusion_path`, `pick_suggestions`, `Inner::defender_status`, `add_defender_exclusion`, `remove_defender_exclusion`, `defender_advice`. Setting `defender.excluded_by_ols`.
 ols-helper defender-exclude-add / defender-exclude-remove (crates/ols-helper/src/main.rs) | Validated Add-MpPreference / Remove-MpPreference for one existing folder.
 PerformanceSettings (ui/src/components/settings/PerformanceSettings.tsx) | Settings → Performance card.
+profiler (crates/ols-core/src/profiler.rs) | §174 Xdebug profile viewer: `ProfileFile`, `FnStat`, `CallNode`, `Profile`, `parse_cachegrind`, `toggle_profiling`, `Inner::list_profiles`, `get_profile`, `delete_profiles`, `set_site_profiling`.
+ProfilerPanel (ui/src/components/project/ProfilerPanel.tsx) | Profiler tool tab (`profiler` in projectToolTabs.ts, after `xdebug`).

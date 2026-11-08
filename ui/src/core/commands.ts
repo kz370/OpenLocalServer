@@ -182,6 +182,10 @@ export type CoreCommand =
   | { type: 'list_db_backups'; engine: string; database: string | null }
   | { type: 'restore_database'; engine: string; database: string; file: string }
   | { type: 'delete_db_backup'; engine: string; file: string }
+  | { type: 'list_xdebug_profiles' }
+  | { type: 'get_xdebug_profile'; file: string }
+  | { type: 'delete_xdebug_profiles'; files: string[] }
+  | { type: 'set_site_profiling'; hostname: string; on: boolean }
   | { type: 'get_defender_status' }
   | { type: 'add_defender_exclusion'; path: string }
   | { type: 'remove_defender_exclusion'; path: string }

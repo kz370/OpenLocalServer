@@ -164,6 +164,9 @@ The **Commands** page provides quick access to framework and project CLI actions
 - **WP-CLI (WordPress):** Core update, plugin install, database export.
 - **Interactive Terminal:** Open a built-in terminal or launch Windows Terminal / PowerShell with the project environment variables pre-loaded.
 
+### Profiler
+**Why is this page slow?** Open the project, choose the **Profiler** tab and switch on **Profile requests that ask for it** (Xdebug must be on for the site's PHP version: Runtimes → PHP). Press **Profile a request**: OLS opens your site with `?XDEBUG_TRIGGER=1`. For pages where that query string confuses the router, use the Xdebug helper browser extension or set a cookie `XDEBUG_TRIGGER=1`. Only requests that ask for profiling are slowed down. Press **Refresh** in the list and **Open** the new profile: you see the total time, the top functions (sort by self time, total time or calls; click one to open its file) and a call chart whose width is the share of the parent. The chart is approximate, because Xdebug records totals per function, not every path. Profiles are plain files in OLS's PHP folder; delete them when you are done.
+
 ---
 
 ## 8. Runtimes & Extensions (PHP, Node, Python)
@@ -384,6 +387,7 @@ Windows Defender scans every file that `npm install` and `composer install` writ
 - **PHP upgrade check:** before switching a site to a newer PHP, OLS checks its Composer packages, extensions and every PHP file with the new version, then switches with one click (and back). `olsc php check-upgrade <site> <version>` does the same from the command line.
 - **Bring your sites from Laragon, XAMPP or WampServer:** the import dialog now also lists their sites and adds the ones you pick, with trusted HTTPS. Their files and settings are not changed.
 - **Faster installs on Windows:** Settings → Performance can exclude your project folders from Windows Defender's real-time scan (with a clear warning, and only folders OLS knows), and explains Dev Drive.
+- **Profiler:** each project's Profiler tab profiles a request with Xdebug and shows where the time went: top functions and a call chart, inside OLS.
 
 ### What's New in v2.11.0
 - **Dockerize a project:** **Docker → Compose → From a project…**, or right-click a project or site → **Dockerize…**. OLS looks at the project (PHP, Node, Python, Go, Rust, Ruby, Java, .NET or a static site), shows what it found, then shows the Dockerfile, compose file and .dockerignore before it writes anything. The project is copied into the image, so it is fast on Windows. Choose **Development** (edits are synced into the container with **Create and watch**) or **Production** (a small multi-stage image that runs as a non-root user). Tick the services your project needs (MariaDB, PostgreSQL, MongoDB, Redis, RabbitMQ, Meilisearch, Mailpit, Adminer): OLS adds them as version-pinned images, generates their passwords and keeps them in the Windows credential store, and passes your app the connection settings. For PHP it adds the extensions the project asks for. Existing files are never overwritten. OLS generated these files from what it could detect in your project. They are a starting point, not a guaranteed working setup. Review them, then build and test before you rely on them. Hide the right-click entry in Settings → Sidebar; it is also hidden when the Docker page is hidden from the sidebar.

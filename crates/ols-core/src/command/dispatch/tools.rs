@@ -14,6 +14,22 @@ impl Core {
         let mut unhandled = None;
         let outcome: Result<CoreResponse, CoreError> = (|| {
             let res = match command {
+                C::ListXdebugProfiles => Ok(R::XdebugProfiles {
+                    files: i.list_profiles(),
+                }),
+                C::GetXdebugProfile { file } => Ok(R::XdebugProfile {
+                    profile: Box::new(i.get_profile(&file)?),
+                }),
+                C::DeleteXdebugProfiles { files } => {
+                    i.delete_profiles(&files)?;
+                    Ok(R::Ok)
+                }
+                C::SetSiteProfiling { hostname, on } => {
+                    tracing::info!(command = "set_site_profiling", hostname = %hostname, on);
+                    Ok(R::Xdebug {
+                        report: i.set_site_profiling(&hostname, on)?,
+                    })
+                }
                 C::GetDefenderStatus => {
                     let s = i.defender_status();
                     Ok(R::DefenderStatus {

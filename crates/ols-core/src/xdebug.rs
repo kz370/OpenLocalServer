@@ -81,7 +81,7 @@ impl XdebugSettings {
         let mut modes = self.modes.clone();
         modes.sort_by_key(|m| MODES.iter().position(|x| x == m));
         modes.dedup();
-        format!(
+        let mut block = format!(
             "[xdebug]\nxdebug.mode={}\nxdebug.start_with_request={}\nxdebug.client_host={}\nxdebug.client_port={}\nxdebug.idekey={}\nxdebug.output_dir=\"{}\"\n",
             modes.join(","),
             self.start_with_request,
@@ -89,7 +89,15 @@ impl XdebugSettings {
             self.client_port,
             self.idekey,
             output_dir.display().to_string().replace('\\', "/"),
-        )
+        );
+        // §174: plain-text profiles named by time and host, so OLS can read them without a
+        // gzip decoder and tell which site wrote one. Nothing is added without `profile`.
+        if modes.iter().any(|m| m == "profile") {
+            block.push_str(
+                "xdebug.profiler_output_name=cachegrind.out.%u.%H\nxdebug.use_compression=0\n",
+            );
+        }
+        block
     }
 }
 
@@ -176,6 +184,21 @@ mod tests {
         );
         assert!(block.contains("xdebug.client_port=9003\n"));
         assert!(block.contains("xdebug.output_dir=\"C:/data/xdebug\"\n"));
+    }
+
+    #[test]
+    fn profile_mode_adds_two_lines_and_nothing_else_changes() {
+        let plain = XdebugSettings::default().ini_block(Path::new(r"C:\data\xdebug"));
+        assert!(!plain.contains("profiler_output_name"));
+        assert!(!plain.contains("use_compression"));
+        let with = XdebugSettings {
+            modes: vec!["debug".into(), "profile".into()],
+            ..Default::default()
+        }
+        .ini_block(Path::new(r"C:\data\xdebug"));
+        assert!(with.contains("xdebug.profiler_output_name=cachegrind.out.%u.%H\n"));
+        assert!(with.contains("xdebug.use_compression=0\n"));
+        assert!(with.contains("xdebug.mode=debug,profile\n"));
     }
 
     #[test]

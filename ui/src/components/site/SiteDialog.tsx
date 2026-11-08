@@ -2,6 +2,7 @@ import { listen } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
 import {
   Bug,
+  Gauge,
   Camera,
   FileCode2,
   FileKey2,
@@ -71,6 +72,7 @@ const TAB_ICON: Record<Exclude<SiteTab, 'settings' | 'domains' | 'icon' | 'confi
   node: <TechIcon id="node" />,
   python: <TechIcon id="python" />,
   xdebug: <Bug />,
+  profiler: <Gauge />,
   load: <TechIcon id="k6" />,
 }
 
@@ -239,7 +241,7 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
   const toolItems = TOOL_TABS.flatMap((t) => (t.id === 'terminal' ? [t, { id: 'commands' as SiteTab, label: 'Commands' }] : [t]))
   // Tooling (mail, runtimes, testing) lives under its own heading: it is not project setup.
   const PROJECT_TOOL_IDS: SiteTab[] = ['environment', 'terminal', 'commands', 'env', 'git', 'workers', 'backups', 'repair']
-  const DEV_TOOL_IDS: SiteTab[] = ['mail', 'composer', 'node', 'python', 'xdebug', 'load']
+  const DEV_TOOL_IDS: SiteTab[] = ['mail', 'composer', 'node', 'python', 'xdebug', 'profiler', 'load']
   const projectItems: { id: SiteTab; label: string }[] = projectId
     ? [{ id: 'overview', label: 'Overview' }, ...toolItems.filter((t) => PROJECT_TOOL_IDS.includes(t.id as SiteTab))]
     : []

@@ -409,3 +409,5 @@ dispatch::ImportSiteCandidates | starts | task site-import -> Inner::import_site
 Inner::add_defender_exclusion | requires | defender::check_add (suggestions only) -> elevate::run_helper(defender-exclude-add) -> ols-helper valid_exclusion_path
 diagnostics::check_defender | reads | Inner.defender_cache (no PowerShell)
 ols-mcp guard_raw_command | refuses | AddDefenderExclusion, RemoveDefenderExclusion
+dispatch::SetSiteProfiling | calls | Inner::set_site_profiling -> profiler::toggle_profiling -> PhpManager::set_xdebug_settings (restarts the pool)
+XdebugSettings::ini_block | adds_when_profile | xdebug.profiler_output_name, xdebug.use_compression

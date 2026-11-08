@@ -12,6 +12,7 @@ import { SaveButton } from '@/components/SaveButton'
 import { BackupsPanel } from '@/components/project/BackupsPanel'
 import { WorkersPanel } from '@/components/project/WorkersPanel'
 import { XdebugDialog } from '@/components/XdebugDialog'
+import { ProfilerPanel } from '@/components/project/ProfilerPanel'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Field, Select } from '@/components/ui/form'
@@ -80,6 +81,7 @@ export function ProjectTools({ detail, start, refreshKey, tab }: { detail: Proje
       {tab === 'node' && <NodePanel projectId={id} info={managers} busy={busy} go={go} />}
       {tab === 'python' && <PythonPanel projectId={id} info={venv} busy={busy} go={go} />}
       {tab === 'xdebug' && <XdebugPanel detail={detail} />}
+      {tab === 'profiler' && <ProfilerPanel detail={detail} />}
       {tab === 'load' && <LoadPanel projectId={id} />}
     </>
   )

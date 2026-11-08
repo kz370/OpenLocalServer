@@ -604,6 +604,19 @@ pub enum CoreCommand {
     /// §170: scans registered projects for folders that can be rebuilt (background task).
     /// §171: what would break if this site ran `target` (background task).
     /// §173: Defender state, OLS's exclusions, suggestions and Dev Drive info (runs PowerShell).
+    /// §174: Xdebug profiles written by requests (read-only).
+    ListXdebugProfiles,
+    GetXdebugProfile {
+        file: String,
+    },
+    DeleteXdebugProfiles {
+        files: Vec<String>,
+    },
+    /// §174: turns the `profile` Xdebug mode on or off for the PHP version a site runs on.
+    SetSiteProfiling {
+        hostname: String,
+        on: bool,
+    },
     GetDefenderStatus,
     /// §173: excludes one suggested folder (needs the helper; consent happens in the UI).
     AddDefenderExclusion {

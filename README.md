@@ -208,6 +208,7 @@ Grab the latest installer (`OLS-2.12.0-setup.exe`) from the [Releases page](http
 - **Quick Commands:** Auto-discovered Composer, npm, and manage.py scripts with 1-click execution and terminal ring buffer, plus preconfigured commands for Laravel, Node, and Python.
 - **Portable by design:** Paths inside the install folder are stored relative, so you can rename the install folder or move it to another drive and every app-owned site keeps working.
 - **Free up space:** clear rebuildable `node_modules`, `vendor` and build caches from projects you have not used for a while (Projects → Free up space, or `olsc project reclaim`).
+- **Profiler:** profile a request with Xdebug and see the top functions and a call chart inside OLS (project Profiler tab).
 
 ### 🗄️ Databases & Services
 
