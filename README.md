@@ -282,6 +282,7 @@ Docker is optional: OLS never installs it, and nothing Docker-related runs until
   - **Services & Tunnels:** `ols_list_services`, `ols_start_service`, `ols_stop_service`, `ols_restart_service`, `ols_list_tunnels`, `ols_start_tunnel`, `ols_stop_tunnel`.
   - **Databases & Tables:** `ols_list_databases`, `ols_create_database`, `ols_list_tables`, `ols_execute_sql` (also callable as `ols_query_database`).
   - **Migration guard:** `ols_list_migration_snapshots` lists the database copies saved before migrations (read-only).
+  - **Security & branches (read-only):** `ols_list_audit_results` (package vulnerability checks), `ols_get_eol_report` (versions that no longer get security fixes), `ols_get_branch_db` (a project's database-per-branch setting).
   - **Web Server, Commands & Tasks:** `ols_apply_web`, `ols_validate_web`, `ols_run_command`, `ols_list_tasks`.
   - **Docker:** `ols_docker_status`, `ols_docker_start`, `ols_docker_list_containers`, `ols_docker_container_action`, `ols_docker_container_logs`, `ols_docker_container_details`, `ols_docker_container_update`, `ols_docker_create_site`, `ols_docker_compose_list`, `ols_docker_compose_check`, `ols_docker_compose_action`, `ols_docker_compose_connect`, `ols_docker_compose_presets`, `ols_docker_compose_create`. No tool removes or renames containers, and `ols_docker_compose_create` never replaces an existing file.
   - **Hidden sites:** `ols_unignore_site` brings back a site hidden with `.ols_ignore_site`.
@@ -291,7 +292,7 @@ Docker is optional: OLS never installs it, and nothing Docker-related runs until
   > **Heads-up:** MCP tools can create, change, and remove sites and run SQL against your local databases. Only connect AI hosts you trust.
 - **Command Line (`olsc`):**
   - Drive OLS from any shell: `olsc setup`, `olsc doctor`, `olsc repair`, `olsc status`, `olsc start`, `olsc stop`, `olsc restart`.
-  - Full subcommands: `project` (incl. `ignore`, `unignore`, `ignore-site`, `unignore-site`), `runtime`, `php`, `service`, `domain`, `certificate`, `tunnel`, `docker`, `worker`, `snapshot`, `quick-app`, `quick-command`, `plugin`, `catalog`, `api`, `update`, `shell-menu`, `support-bundle`, `network`, `test load` (k6), `search`, `guide`.
+  - Full subcommands: `project` (incl. `ignore`, `unignore`, `ignore-site`, `unignore-site`, `reclaim`, `audit`), `runtime` (incl. `eol`), `php` (incl. `check-upgrade`), `db` (`guard`, `branch`, `pull`, `remotes`), `service`, `domain`, `certificate`, `tunnel`, `docker`, `worker`, `snapshot`, `quick-app`, `quick-command`, `plugin`, `catalog`, `api`, `update`, `shell-menu`, `support-bundle`, `network`, `test load` (k6), `search`, `guide`.
   - Optional log assistant: `olsc ai` (off until you turn it on; bring your own model via LM Studio, Ollama, Hugging Face, OpenRouter, or any OpenAI-compatible server).
   - Background daemon: Automatically runs in the background (`olsc daemon`) when the GUI is closed.
 - **Local HTTP API (`127.0.0.1:7420`):** Bearer token authenticated JSON API mirroring `CoreCommand` operations with read-only and operate scopes. See [docs/API.md](./docs/API.md).
@@ -392,6 +393,12 @@ olsc restart                                             # Restart running servi
 olsc project list                                        # List registered projects
 olsc service list                                        # List background services (MariaDB, PostgreSQL, Redis, Mailpit...)
 olsc runtime list                                        # List installed and available runtimes
+olsc runtime eol                                         # Installed versions that no longer get security fixes
+olsc project audit <project>                             # Check Composer/npm/pnpm packages for known vulnerabilities
+olsc project reclaim --days 90                           # Find rebuildable node_modules/vendor/caches in idle projects
+olsc php check-upgrade <site> 8.4                        # See what would break before switching a site's PHP
+olsc db guard list                                       # Database copies saved before migrations
+olsc db branch status <project>                          # Database per Git branch
 
 olsc tunnel list                                         # List configured public tunnels
 olsc tunnel start <name> --yes                           # Start a tunnel by name or project

@@ -154,38 +154,46 @@
         </div>
       </section>
 
-      <!-- ── 2.11.0 release highlights ────────────────────────── -->
-      <section class="section" id="release-2-11">
+      <!-- ── 2.12.0 release highlights ────────────────────────── -->
+      <section class="section" id="release-2-12">
         <div class="wrap">
           <div class="section__head reveal">
-            <div class="eyebrow">What's new · v2.11.0</div>
-            <h2>Dockerize any project in one click</h2>
-            <p>OLS 2.11.0 turns a project folder into a working Docker setup. It looks at what the project uses, shows you the files first, and never overwrites anything. Docker stays optional.</p>
+            <div class="eyebrow">What's new · v2.12.0</div>
+            <h2>Safer migrations, better debugging, and your phone</h2>
+            <p>OLS 2.12.0 protects your data before it changes, shows you what your code is doing, and lets you test on a real phone. Everything new is opt-in or runs only when you ask.</p>
           </div>
           <div class="features">
             <article class="card reveal">
-              <h3>Dockerize a project</h3>
-              <p>Makes a Dockerfile, a compose file and a <code>.dockerignore</code> for PHP, Node, Python, Go, Rust, Ruby, Java, .NET or static projects. Also in the right-click menu of Projects and Sites.</p>
+              <h3>Migration guard</h3>
+              <p>Before OLS runs a migration (Laravel, Symfony, Django, Prisma, Sequelize, Alembic, WP-CLI) it saves the project's database. <strong>Rewind</strong> puts it back.</p>
             </article>
             <article class="card reveal">
-              <h3>Fast on Windows</h3>
-              <p>The project is copied into the image instead of mounted from your Windows folder. In Development mode, <code>docker compose watch</code> keeps the container in sync while you edit.</p>
+              <h3>Dump viewer</h3>
+              <p><code>dump()</code> and <code>dd()</code> from Laravel and Symfony show up inside OLS with clickable file and line, instead of breaking the page.</p>
             </article>
             <article class="card reveal">
-              <h3>Production mode</h3>
-              <p>Builds a small multi-stage image with no dev packages that runs as a non-root user.</p>
+              <h3>Database per Git branch</h3>
+              <p>Each branch gets its own copy of the database, and switching branches switches <code>.env</code> for you. Your main database stays untouched.</p>
             </article>
             <article class="card reveal">
-              <h3>Real services</h3>
-              <p>Detects MariaDB, PostgreSQL, MongoDB, Redis, RabbitMQ, Meilisearch and Mailpit, and adds them as version-pinned images with health checks. Passwords are generated and kept in the Windows credential store, never in the files.</p>
+              <h3>Open a site on your phone</h3>
+              <p>Scan a QR code on the same Wi-Fi and install OLS's certificate once, with guided steps, for working HTTPS on a real phone.</p>
             </article>
             <article class="card reveal">
-              <h3>Docker page updates instantly</h3>
-              <p>When a container starts, stops or is recreated, the list refreshes within a second and linked sites move to the new port. It only listens while the page is open.</p>
+              <h3>Security checks</h3>
+              <p>Diagnostics flags PHP, Node, Python and database versions that no longer get security fixes, and each project's Security tab checks Composer, npm and pnpm packages for known vulnerabilities.</p>
             </article>
             <article class="card reveal">
-              <h3>CLI, warnings and bundles</h3>
-              <p>Manage Docker with <code>olsc docker</code> (including <code>olsc docker dockerize</code> and <code>compose watch</code>), get Diagnostics warnings for stopped or missing site containers, and keep Docker details when you export a site bundle.</p>
+              <h3>Pull a server database</h3>
+              <p>Copy staging or production over SSH with fake emails, names, phone numbers and passwords. The downloaded file is deleted right after import.</p>
+            </article>
+            <article class="card reveal">
+              <h3>PHP upgrade check and Profiler</h3>
+              <p>See what would break before switching a site to a newer PHP, then see where a slow request spent its time, inside OLS.</p>
+            </article>
+            <article class="card reveal">
+              <h3>Free up space and sleeping services</h3>
+              <p>Clear old <code>node_modules</code>, <code>vendor</code> and build caches, and let MariaDB, PostgreSQL, Redis, MongoDB and Memcached sleep when unused (off by default).</p>
             </article>
           </div>
         </div>

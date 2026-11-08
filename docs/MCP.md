@@ -13,6 +13,8 @@ Each MCP tool maps one-to-one to an OLS `CoreCommand`, so an LLM can discover an
 - **Tunnels**: `ols_list_tunnels`, `ols_start_tunnel`, `ols_stop_tunnel`
 - **Databases**: `ols_list_databases`, `ols_create_database`, `ols_list_tables` (list tables in MariaDB/MySQL, PostgreSQL, or SQLite), `ols_execute_sql` (view table content, schema, or modify data and tables via SQL)
 - **Migration guard**: `ols_list_migration_snapshots` (database copies OLS saved before migrations; read-only, Rewind is app/CLI only)
+- **Security checks** (2.12.0, read-only): `ols_list_audit_results`, `ols_get_eol_report`
+- **Database per branch** (2.12.0, read-only): `ols_get_branch_db`
 - **Web server**: `ols_apply_web`, `ols_validate_web`
 - **Tasks**: `ols_list_tasks`
 - **Projects**: `ols_unignore_site` (bring back a site hidden with `.ols_ignore_site`)
@@ -150,6 +152,21 @@ View table content or execute SQL:
     }
   }
 }
+```
+
+## Read-only tools added in 2.12.0
+
+All four only read. Turning a feature on, starting a check, rewinding a database and pulling data are done in the OLS app or with `olsc`. `ols_run_command` refuses the commands that pull server databases, share a site on the network, serve the local certificate or change which services sleep.
+
+| Tool | Arguments | Returns |
+| --- | --- | --- |
+| `ols_list_migration_snapshots` | `project_id` (optional string, from `ols_list_projects`) | Database copies saved before migrations, newest first: id, project, engine, database, time, size, the command (secrets removed) and its kind. |
+| `ols_list_audit_results` | none | The newest package check of each project that was checked: per tool (`composer`, `npm`, `pnpm`, `pip-audit`) the findings with package, severity (`critical`/`high`/`moderate`/`low`/`unknown`), title, advisory, link, affected versions and fix. |
+| `ols_get_eol_report` | none | Installed runtimes and databases with `status` (`supported`, `security_only` with `until`, `ended` with `since`, `unknown`) and the sites that use them. Offline. |
+| `ols_get_branch_db` | `project_id` (required string) | Whether Database per branch is on, the current branch and database, the branch-to-database map, branches that no longer exist and any waiting switch. |
+
+```json
+{ "name": "ols_get_branch_db", "arguments": { "project_id": "shop" } }
 ```
 
 ## Authentication
