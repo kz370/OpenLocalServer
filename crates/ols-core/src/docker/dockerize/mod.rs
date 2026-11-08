@@ -331,6 +331,23 @@ fn is_wordpress(dir: &Path) -> bool {
     .any(|n| exists(dir, n))
 }
 
+/// A plain PHP project: no composer.json, just `.php` files at the top (or `public/index.php`).
+fn has_php_files(dir: &Path) -> bool {
+    if exists(dir, "public/index.php") {
+        return true;
+    }
+    std::fs::read_dir(dir)
+        .map(|rd| {
+            rd.flatten().any(|e| {
+                e.file_type().is_ok_and(|t| t.is_file())
+                    && e.path()
+                        .extension()
+                        .is_some_and(|x| x.eq_ignore_ascii_case("php"))
+            })
+        })
+        .unwrap_or(false)
+}
+
 /// Extension names the project asks for. `declared` come from composer files; `guessed` from
 /// `.env.example` / `.env` and the kind of project.
 pub(crate) fn needed_php_extensions(
@@ -586,6 +603,8 @@ pub fn plan(
         b
     } else if exists(d, "requirements.txt") || exists(d, "pyproject.toml") {
         stacks::python(d, &sig, mode)
+    } else if has_php_files(d) {
+        stacks::php(d, &sig, mode, false, false)
     } else if exists(d, "index.html") {
         stacks::static_site(mode)
     } else {
@@ -598,7 +617,7 @@ pub fn plan(
             .unwrap_or_default();
         return Err(bad(
             "OLS could not recognise this project.",
-            format!("None of composer.json, package.json, go.mod, Cargo.toml, Gemfile, pom.xml, build.gradle, a .csproj file, requirements.txt, pyproject.toml or index.html was found at the top of the folder.{hint}"),
+            format!("None of composer.json, package.json, go.mod, Cargo.toml, Gemfile, pom.xml, build.gradle, a .csproj file, requirements.txt, pyproject.toml, a .php file or index.html was found at the top of the folder.{hint}"),
             "Dockerize supports PHP, Node, Python, Go, Rust, Ruby, Java, .NET and static sites. Write a Dockerfile by hand for anything else.",
         ));
     };

@@ -344,6 +344,20 @@ fn service_detection_from_dependencies() {
 }
 
 #[test]
+fn plain_php_without_composer_is_recognised() {
+    let d = dir();
+    put(d.path(), "index.php", "<?php echo 1;");
+    let p = make(d.path());
+    assert_eq!(p.kind, "php");
+    assert!(p.dockerfile.unwrap().contains("FROM php:"));
+
+    let d = dir();
+    std::fs::create_dir(d.path().join("public")).unwrap();
+    put(d.path(), "public/index.php", "<?php");
+    assert_eq!(make(d.path()).kind, "php");
+}
+
+#[test]
 fn wordpress_without_composer_is_recognised() {
     let d = dir();
     put(d.path(), "wp-config.php", "<?php");
