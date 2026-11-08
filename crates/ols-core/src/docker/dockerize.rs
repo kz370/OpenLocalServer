@@ -650,7 +650,9 @@ pub fn plan(
     let head = header(&built.detected);
     let name = slug(project_dir);
     let mut compose_text = format!(
-        "{head}services:\n  {name}:\n    build: .\n    ports:\n      - {}\n",
+        "{head}services:\n  {name}:\n    build: .\n    image: {}\n    ports:\n      - {}\n",
+        // Names the image OLS builds, so it is easy to find on the Images tab.
+        yq(&format!("{name}:local")),
         yq(&format!("127.0.0.1:{host}:{}", built.port))
     );
     if built.dev_mount {
@@ -798,6 +800,10 @@ mod tests {
                 assert!(first[2].starts_with("# Detected: "));
             }
             assert!(compose::check_text(&p.compose).ok, "{kind}");
+            assert!(
+                p.compose.contains(":local\""),
+                "{kind}: the built image is named"
+            );
         }
     }
 
