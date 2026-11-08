@@ -2,7 +2,7 @@
 
 > A free, open-source local development environment manager for Windows — runtimes, sites, databases, and trusted HTTPS, without touching your system by hand.
 
-[![Version](https://img.shields.io/badge/version-2.10.0-blue)](./CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.11.0-blue)](./CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-0078D6)](./docs/STATUS.md)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue)](./LICENSE)
 [![Shell](https://img.shields.io/badge/shell-Tauri_2-orange)](./src-tauri/tauri.conf.json)
@@ -277,7 +277,7 @@ Docker is optional: OLS never installs it, and nothing Docker-related runs until
   > **Heads-up:** MCP tools can create, change, and remove sites and run SQL against your local databases. Only connect AI hosts you trust.
 - **Command Line (`olsc`):**
   - Drive OLS from any shell: `olsc setup`, `olsc doctor`, `olsc repair`, `olsc status`, `olsc start`, `olsc stop`, `olsc restart`.
-  - Full subcommands: `project` (incl. `ignore`, `unignore`, `ignore-site`, `unignore-site`), `runtime`, `php`, `service`, `domain`, `certificate`, `tunnel`, `worker`, `snapshot`, `quick-app`, `quick-command`, `plugin`, `catalog`, `api`, `update`, `shell-menu`, `support-bundle`, `network`, `test load` (k6), `search`, `guide`.
+  - Full subcommands: `project` (incl. `ignore`, `unignore`, `ignore-site`, `unignore-site`), `runtime`, `php`, `service`, `domain`, `certificate`, `tunnel`, `docker`, `worker`, `snapshot`, `quick-app`, `quick-command`, `plugin`, `catalog`, `api`, `update`, `shell-menu`, `support-bundle`, `network`, `test load` (k6), `search`, `guide`.
   - Optional log assistant: `olsc ai` (off until you turn it on; bring your own model via LM Studio, Ollama, Hugging Face, OpenRouter, or any OpenAI-compatible server).
   - Background daemon: Automatically runs in the background (`olsc daemon`) when the GUI is closed.
 - **Local HTTP API (`127.0.0.1:7420`):** Bearer token authenticated JSON API mirroring `CoreCommand` operations with read-only and operate scopes. See [docs/API.md](./docs/API.md).

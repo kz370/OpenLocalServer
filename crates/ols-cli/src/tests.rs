@@ -32,3 +32,103 @@ fn ordinary_paths_are_left_alone() {
         PathBuf::from(r"C:\UNC\folder")
     );
 }
+
+mod docker_cli {
+    use crate::args::{Cli, Cmd, ComposeCmd, DockerCmd};
+    use clap::Parser;
+
+    fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
+        let mut all = vec!["olsc"];
+        all.extend_from_slice(args);
+        Cli::try_parse_from(all)
+    }
+
+    fn docker(args: &[&str]) -> DockerCmd {
+        let mut all = vec!["docker"];
+        all.extend_from_slice(args);
+        match parse(&all).unwrap().cmd {
+            Cmd::Docker(d) => d,
+            _ => panic!("not a docker command"),
+        }
+    }
+
+    #[test]
+    fn every_form_parses() {
+        assert!(matches!(docker(&["status"]), DockerCmd::Status));
+        assert!(matches!(docker(&["ps"]), DockerCmd::Ps { all: false }));
+        assert!(matches!(
+            docker(&["ps", "--all"]),
+            DockerCmd::Ps { all: true }
+        ));
+        for a in ["start", "stop", "restart", "pause", "unpause"] {
+            assert!(parse(&["docker", a, "web"]).is_ok(), "{a}");
+        }
+        assert!(matches!(
+            docker(&["logs", "web", "-n", "50"]),
+            DockerCmd::Logs { tail: 50, .. }
+        ));
+        assert!(matches!(
+            docker(&["logs", "web"]),
+            DockerCmd::Logs { tail: 200, .. }
+        ));
+        assert!(matches!(docker(&["images"]), DockerCmd::Images));
+        assert!(matches!(docker(&["volumes"]), DockerCmd::Volumes));
+        assert!(matches!(
+            docker(&["df", "--fresh"]),
+            DockerCmd::Df { fresh: true }
+        ));
+        assert!(matches!(
+            docker(&["pull", "redis:7"]),
+            DockerCmd::Pull { .. }
+        ));
+        assert!(matches!(
+            docker(&["compose", "list"]),
+            DockerCmd::Compose(ComposeCmd::List)
+        ));
+        for a in ["up", "down", "stop", "start", "restart", "pull", "build"] {
+            assert!(
+                parse(&["docker", "compose", a, "compose.yaml", "--service", "db"]).is_ok(),
+                "{a}"
+            );
+        }
+        assert!(matches!(
+            docker(&["compose", "check", "compose.yaml"]),
+            DockerCmd::Compose(ComposeCmd::Check { .. })
+        ));
+        assert!(matches!(
+            docker(&[
+                "prune",
+                "--dry-run",
+                "--stopped",
+                "--dangling",
+                "--unused-images",
+                "--build-cache"
+            ]),
+            DockerCmd::Prune {
+                stopped: true,
+                dangling: true,
+                unused_images: true,
+                build_cache: true,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn prune_without_dry_run_is_rejected() {
+        assert!(parse(&["docker", "prune"]).is_err());
+        assert!(parse(&["docker", "prune", "--stopped"]).is_err());
+    }
+
+    #[test]
+    fn destructive_commands_do_not_exist() {
+        for bad in [
+            &["docker", "rm", "web"][..],
+            &["docker", "volume", "rm", "data"],
+            &["docker", "recreate", "web"],
+            &["docker", "exec", "web", "sh"],
+        ] {
+            assert!(parse(bad).is_err(), "{bad:?}");
+        }
+    }
+}

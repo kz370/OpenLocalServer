@@ -17,7 +17,7 @@
 - **Ctrl+K** searches everything and runs commands.
 
 ## The command line
-`olsc status`, `olsc start`, `olsc stop`, `olsc doctor`, `olsc repair`, `olsc setup`, `olsc project …`, `olsc service …`,
+`olsc status`, `olsc start`, `olsc stop`, `olsc doctor`, `olsc repair`, `olsc setup`, `olsc project …`, `olsc service …`, `olsc docker …`,
 `olsc plugin …`, `olsc catalog …`, `olsc test load`, `olsc ai …`, `olsc api …`, `olsc update …`, `olsc support-bundle`.
 `ols <command> --help` explains each. The CLI talks to the app when it is open and starts a background core otherwise.
 

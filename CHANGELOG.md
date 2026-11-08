@@ -11,6 +11,7 @@ Feature release. Full notes: [`release-notes/v2.11.0.md`](./release-notes/v2.11.
 
 ### Added
 - Docker page updates live while it is open: container starts, stops and recreates refresh the list and move linked sites to the new port (no polling; one event stream that stops with the page).
+- `olsc docker`: status, containers (start, stop, restart, pause, unpause, logs), images, volumes, disk usage, pull, Compose stacks (list, up, down, stop, start, restart, pull, build, check) and `prune --dry-run`. Nothing is removed from the command line.
 
 ## [2.10.0] — 2026-11-07
 

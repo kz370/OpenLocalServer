@@ -1,4 +1,5 @@
 pub mod ai;
+pub mod docker;
 pub mod extensions;
 pub mod projects;
 pub mod services;
@@ -48,6 +49,7 @@ pub fn run(ctx: &Ctx, cmd: Cmd) -> R<()> {
         Cmd::Network => system::network(ctx),
         Cmd::Test(t) => extensions::test(ctx, t),
         Cmd::Ai(c) => ai::ai_cmd(ctx, c),
+        Cmd::Docker(d) => docker::docker(ctx, d),
         Cmd::Guide { version } => system::guide(ctx, version),
     }
 }

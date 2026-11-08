@@ -99,6 +99,9 @@ pub enum Cmd {
         /// Specific version to view (default: current version).
         version: Option<String>,
     },
+    /// Docker: containers, images, volumes and Compose stacks (nothing is deleted from here).
+    #[command(subcommand)]
+    Docker(DockerCmd),
     // @@cli-cmds
     /// Run the core in the background without the window (started automatically when needed).
     Daemon {
@@ -388,3 +391,97 @@ pub struct AiRun {
     pub preview: bool,
 }
 // @@cli-enums
+
+#[derive(Subcommand)]
+pub enum DockerCmd {
+    /// Whether the Docker engine is installed and running.
+    Status,
+    /// Containers (running ones; `--all` adds stopped ones).
+    Ps {
+        #[arg(short, long)]
+        all: bool,
+    },
+    /// Start a container.
+    Start(ContainerArg),
+    /// Stop a container.
+    Stop(ContainerArg),
+    /// Restart a container.
+    Restart(ContainerArg),
+    /// Pause a container.
+    Pause(ContainerArg),
+    /// Unpause a container.
+    Unpause(ContainerArg),
+    /// A container's recent output.
+    Logs {
+        container: String,
+        #[arg(short = 'n', long, default_value_t = 200)]
+        tail: u32,
+    },
+    /// Images and their sizes.
+    Images,
+    /// Volumes and what uses them.
+    Volumes,
+    /// Disk used by Docker and how much is reclaimable.
+    Df {
+        /// Read it again instead of using the last answer (slow on a big engine).
+        #[arg(long)]
+        fresh: bool,
+    },
+    /// Download an image.
+    Pull { image: String },
+    /// Compose stacks.
+    #[command(subcommand)]
+    Compose(ComposeCmd),
+    /// Show what a cleanup would remove. Removing is done in the app, never from here.
+    Prune {
+        /// Required: this command only shows the plan.
+        #[arg(long, required = true)]
+        dry_run: bool,
+        /// Stopped containers.
+        #[arg(long)]
+        stopped: bool,
+        /// Untagged images nothing uses.
+        #[arg(long)]
+        dangling: bool,
+        /// Every image no container uses.
+        #[arg(long)]
+        unused_images: bool,
+        /// Build cache.
+        #[arg(long)]
+        build_cache: bool,
+    },
+}
+
+#[derive(clap::Args)]
+pub struct ContainerArg {
+    /// Container name or id.
+    pub container: String,
+}
+
+#[derive(clap::Args)]
+pub struct ComposeTarget {
+    /// The compose file.
+    pub file: PathBuf,
+    /// Only this service.
+    #[arg(long)]
+    pub service: Option<String>,
+}
+
+#[derive(Subcommand)]
+pub enum ComposeCmd {
+    /// Compose stacks found in your projects and running on Docker.
+    List,
+    /// Create and start the stack.
+    Up(ComposeTarget),
+    /// Stop and remove the stack's containers (volumes are kept).
+    Down(ComposeTarget),
+    Stop(ComposeTarget),
+    Start(ComposeTarget),
+    Restart(ComposeTarget),
+    Pull(ComposeTarget),
+    Build(ComposeTarget),
+    /// Check a compose file without changing it.
+    Check {
+        file: PathBuf,
+    },
+}
