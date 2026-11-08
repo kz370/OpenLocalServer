@@ -131,7 +131,7 @@ fn kind_at_depth(
                 rest = &rest[1..];
             }
             if p != "npm" {
-                if let Some(k) = node_tool(&rest) {
+                if let Some(k) = node_tool(rest) {
                     return Some(k);
                 }
             }
