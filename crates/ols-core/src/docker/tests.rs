@@ -984,3 +984,65 @@ fn startup_starts_no_events_thread() {
     assert_eq!(events::watch_threads(&core.inner().docker), 0);
     assert_eq!(fake.hits(), 0);
 }
+
+#[test]
+fn diagnostics_ask_docker_only_when_a_site_is_linked() {
+    use crate::command::{CoreCommand, CoreResponse};
+    use crate::domain::{DockerLink, Domain, SiteKind};
+    let fake = FakeEngine::start(engine);
+    let Endpoint::Tcp(addr) = &fake.endpoint else {
+        unreachable!()
+    };
+    let (core, home) = core_for(addr);
+    let root = home.paths.data_dir().join("shop");
+    std::fs::create_dir_all(&root).unwrap();
+    let site = |host: &str, port: u16, link: Option<DockerLink>| Domain {
+        hostname: host.into(),
+        root: root.display().to_string(),
+        kind: SiteKind::Proxy {
+            upstream_port: port,
+            upstream_host: None,
+            upstream_https: false,
+        },
+        docker: link,
+        ..Default::default()
+    };
+    core.inner()
+        .add_domain(site("plain.test", 18081, None))
+        .unwrap();
+    let CoreResponse::Diagnostics { findings } =
+        core.dispatch(CoreCommand::RunDiagnostics).unwrap()
+    else {
+        panic!("expected findings")
+    };
+    assert!(findings.iter().all(|f| !f.id.starts_with("docker-")));
+    assert_eq!(fake.hits(), 0, "no linked site, no Docker request");
+
+    core.inner()
+        .add_domain(site(
+            "shop.test",
+            18080,
+            Some(DockerLink {
+                container: "shop-web-1".into(),
+                container_port: 80,
+                compose_project: None,
+                compose_service: None,
+            }),
+        ))
+        .unwrap();
+    // The background auto-fix path never asks Docker.
+    let _ = core.inner().diagnose_without_docker();
+    assert_eq!(fake.hits(), 0);
+
+    let CoreResponse::Diagnostics { findings } =
+        core.dispatch(CoreCommand::RunDiagnostics).unwrap()
+    else {
+        panic!("expected findings")
+    };
+    let f = findings
+        .iter()
+        .find(|f| f.id == "docker-site-stopped:shop.test")
+        .expect("a stopped container is reported");
+    assert!(!f.auto_fixable);
+    assert!(fake.hits() <= 2, "one status and one list at most");
+}

@@ -11,7 +11,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::app::Inner;
 use crate::command::CoreCommand;
-use crate::domain::SiteKind;
+use crate::docker::sites::find_linked;
+use crate::docker::{ContainerAction, ContainerSummary};
+use crate::domain::{Domain, SiteKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -73,6 +75,15 @@ impl Builder {
 impl Inner {
     /// Every finding, most severe first. Ignored ones are flagged and sorted last.
     pub fn diagnose(&self) -> Vec<Finding> {
+        self.diagnose_with(true)
+    }
+
+    /// Like `diagnose`, without the Docker notices: the background auto-fix never talks to Docker.
+    pub fn diagnose_without_docker(&self) -> Vec<Finding> {
+        self.diagnose_with(false)
+    }
+
+    fn diagnose_with(&self, docker: bool) -> Vec<Finding> {
         let mut b = Builder {
             findings: Vec::new(),
         };
@@ -84,6 +95,9 @@ impl Inner {
         self.check_php(&mut b);
         self.check_journal(&mut b);
         self.check_machine(&mut b);
+        if docker {
+            self.check_docker(&mut b);
+        }
 
         let ignored = self.ignored_diagnostics();
         for f in &mut b.findings {
@@ -575,9 +589,231 @@ impl Inner {
     }
 }
 
+impl Inner {
+    /// Sites linked to a container (2.11.0). Does nothing, and asks Docker nothing, unless an
+    /// enabled site has a Docker link; then it makes one status call (2 s limit) and, if the
+    /// engine answers, one container list (cached 2 s).
+    fn check_docker(&self, b: &mut Builder) {
+        let domains = self.domains.lock().unwrap().list();
+        if !domains.iter().any(|d| d.enabled && d.docker.is_some()) {
+            return;
+        }
+        let endpoint = self.docker_endpoint();
+        let engine = if self.docker.status(&endpoint).running {
+            match self.docker.list_containers(&endpoint, true) {
+                Ok(containers) => Some(containers),
+                // Running but unreadable: say nothing rather than guess.
+                Err(_) => return,
+            }
+        } else {
+            None
+        };
+        b.findings
+            .extend(docker_findings_from(&domains, engine.as_deref()));
+    }
+}
+
+/// The Docker notices for linked sites. Pure: `engine` is `None` when Docker is not running.
+/// A disabled site is skipped (turning a site off stops its container on purpose). None of
+/// these is auto-fixable: a stopped container may be stopped on purpose.
+pub(crate) fn docker_findings_from(
+    domains: &[Domain],
+    engine: Option<&[ContainerSummary]>,
+) -> Vec<Finding> {
+    let linked: Vec<_> = domains
+        .iter()
+        .filter(|d| d.enabled)
+        .filter_map(|d| d.docker.as_ref().map(|l| (d, l)))
+        .collect();
+    if linked.is_empty() {
+        return Vec::new();
+    }
+    let mut b = Builder {
+        findings: Vec::new(),
+    };
+    match engine {
+        None => b.add(
+            format!("docker-off:{}", linked.len()),
+            Severity::Info,
+            format!(
+                "Docker is not running, so {} site(s) cannot reach their container",
+                linked.len()
+            ),
+            format!(
+                "Sites linked to a container: {}.",
+                linked
+                    .iter()
+                    .map(|(d, _)| d.hostname.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            "Start Docker Desktop, then start the containers.",
+            Some(CoreCommand::StartDockerDesktop),
+            vec![],
+        ),
+        Some(containers) => {
+            for (d, link) in linked {
+                match find_linked(link, containers) {
+                    None => b.add(
+                        format!("docker-site-missing:{}", d.hostname),
+                        Severity::Warning,
+                        format!("{} points at a container that does not exist", d.hostname),
+                        format!(
+                            "No container named \"{}\" was found, so the site shows an error.",
+                            link.container
+                        ),
+                        "Run Up on the container's stack or recreate the container, or remove the Docker link from the site.",
+                        None,
+                        vec![],
+                    ),
+                    Some(c) if c.state != "running" => b.add(
+                        format!("docker-site-stopped:{}", d.hostname),
+                        Severity::Warning,
+                        format!("{} points at a container that is stopped", d.hostname),
+                        format!("The container \"{}\" is {}.", c.name, c.state),
+                        "Start the container.",
+                        Some(CoreCommand::DockerContainerAction {
+                            id: c.name.clone(),
+                            action: ContainerAction::Start,
+                        }),
+                        vec![],
+                    ),
+                    Some(_) => {}
+                }
+            }
+        }
+    }
+    for f in &mut b.findings {
+        f.auto_fixable = false;
+    }
+    b.findings
+}
+
 fn norm_path(p: &str) -> String {
     p.trim()
         .replace('\\', "/")
         .trim_end_matches('/')
         .to_lowercase()
+}
+
+#[cfg(test)]
+mod docker_tests {
+    use super::*;
+    use crate::domain::DockerLink;
+
+    fn site(host: &str, container: &str, enabled: bool, linked: bool) -> Domain {
+        Domain {
+            hostname: host.into(),
+            enabled,
+            docker: linked.then(|| DockerLink {
+                container: container.into(),
+                container_port: 80,
+                compose_project: None,
+                compose_service: None,
+            }),
+            ..Default::default()
+        }
+    }
+
+    fn container(name: &str, state: &str) -> ContainerSummary {
+        ContainerSummary {
+            id: format!("id-{name}"),
+            name: name.into(),
+            image: "nginx".into(),
+            state: state.into(),
+            status: String::new(),
+            created: 0,
+            ports: vec![],
+            compose_project: None,
+            compose_service: None,
+            compose_file: None,
+            ols_site: None,
+            managed: false,
+            image_id: String::new(),
+            volumes: vec![],
+        }
+    }
+
+    #[test]
+    fn no_links_no_findings() {
+        let plain = [site("a.test", "", true, false)];
+        assert!(docker_findings_from(&plain, None).is_empty());
+        assert!(docker_findings_from(&plain, Some(&[])).is_empty());
+    }
+
+    #[test]
+    fn a_running_container_is_fine() {
+        let sites = [site("shop.test", "web", true, true)];
+        assert!(docker_findings_from(&sites, Some(&[container("web", "running")])).is_empty());
+    }
+
+    #[test]
+    fn a_stopped_container_warns_with_a_manual_start() {
+        let sites = [site("shop.test", "web", true, true)];
+        let f = docker_findings_from(&sites, Some(&[container("web", "exited")]));
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].id, "docker-site-stopped:shop.test");
+        assert_eq!(f[0].severity, Severity::Warning);
+        assert!(!f[0].auto_fixable);
+        assert!(matches!(
+            f[0].fix_command,
+            Some(CoreCommand::DockerContainerAction {
+                action: ContainerAction::Start,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn a_missing_container_warns_without_a_fix() {
+        let sites = [site("shop.test", "web", true, true)];
+        let f = docker_findings_from(&sites, Some(&[container("other", "running")]));
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].id, "docker-site-missing:shop.test");
+        assert!(f[0].fix_command.is_none());
+        assert!(!f[0].auto_fixable);
+    }
+
+    #[test]
+    fn docker_down_with_links_is_one_info() {
+        let sites = [
+            site("a.test", "a", true, true),
+            site("b.test", "b", true, true),
+            site("c.test", "", true, false),
+        ];
+        let f = docker_findings_from(&sites, None);
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].id, "docker-off:2");
+        assert_eq!(f[0].severity, Severity::Info);
+        assert!(!f[0].auto_fixable);
+        assert!(matches!(
+            f[0].fix_command,
+            Some(CoreCommand::StartDockerDesktop)
+        ));
+    }
+
+    #[test]
+    fn disabled_sites_are_left_alone_and_ids_are_stable() {
+        let sites = [
+            site("off.test", "x", false, true),
+            site("b.test", "b", true, true),
+            site("a.test", "a", true, true),
+        ];
+        let cs = [container("a", "exited"), container("b", "exited")];
+        let ids: Vec<_> = docker_findings_from(&sites, Some(&cs))
+            .into_iter()
+            .map(|f| f.id)
+            .collect();
+        assert_eq!(
+            ids,
+            vec!["docker-site-stopped:b.test", "docker-site-stopped:a.test"]
+        );
+        assert_eq!(
+            ids,
+            docker_findings_from(&sites, Some(&cs))
+                .into_iter()
+                .map(|f| f.id)
+                .collect::<Vec<_>>()
+        );
+    }
 }
