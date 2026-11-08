@@ -38,6 +38,8 @@ const NEVER: &[&str] = &[
     "list_remote_dbs",
     "get_anonymize_rules",
     "suggest_anonymize_rules",
+    // 178: the LAN address of this computer.
+    "get_lan_info",
     "get_secret",
     "set_secret",
     "delete_secret",

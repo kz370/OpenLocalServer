@@ -60,6 +60,14 @@ pub enum CoreResponse {
     ProcessStarted {
         id: ProcessId,
     },
+    LanInfo {
+        info: crate::lan::LanInfo,
+    },
+    CaShare {
+        url: String,
+        qr_svg: String,
+        expires_ms: u64,
+    },
     AuditResults {
         results: Vec<crate::audit::AuditResult>,
     },

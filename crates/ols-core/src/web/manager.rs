@@ -756,7 +756,14 @@ impl WebManager {
                 public_domain: d.public_domain.clone(),
                 forwarded_tls: false,
                 path_prefix: d.path_prefix.clone(),
-                aliases: d.aliases.clone(),
+                aliases: {
+                    let mut names = d.aliases.clone();
+                    // §178: the LAN name is one more server name; absent when sharing is off.
+                    if let (true, Some(lan)) = (d.lan, d.lan_alias.as_ref()) {
+                        names.push(lan.clone());
+                    }
+                    names
+                },
                 missing_folder,
             };
             path_specs.push(spec.clone());

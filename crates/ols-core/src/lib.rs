@@ -42,6 +42,8 @@ pub mod health;
 pub mod hosts;
 pub mod inspector;
 pub mod journal;
+pub mod lan;
+pub mod lan_share;
 pub mod loadtest;
 pub mod logging;
 pub mod mail;

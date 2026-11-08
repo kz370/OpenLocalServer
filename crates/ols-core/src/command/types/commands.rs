@@ -789,6 +789,16 @@ pub enum CoreCommand {
     OpenInEditor {
         path: String,
     },
+    /// §178: open a site on your phone. Never on the API or MCP.
+    SetSiteLan {
+        hostname: String,
+        on: bool,
+    },
+    GetLanInfo {
+        hostname: String,
+    },
+    StartCaShare,
+    StopCaShare,
     /// §169: security and end-of-life checks.
     AuditProject {
         project_id: String,

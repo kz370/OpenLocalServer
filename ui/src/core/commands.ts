@@ -256,6 +256,10 @@ export type CoreCommand =
   | { type: 'open_url'; url: string }
   | { type: 'open_in_editor'; path: string }
   | { type: 'open_in_editor_at'; path: string; line: number }
+  | { type: 'set_site_lan'; hostname: string; on: boolean }
+  | { type: 'get_lan_info'; hostname: string }
+  | { type: 'start_ca_share' }
+  | { type: 'stop_ca_share' }
   | { type: 'audit_project'; project_id: string }
   | { type: 'audit_all_projects' }
   | { type: 'list_audit_results' }

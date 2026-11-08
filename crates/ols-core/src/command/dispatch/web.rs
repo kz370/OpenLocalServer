@@ -14,6 +14,28 @@ impl Core {
         let mut unhandled = None;
         let outcome: Result<CoreResponse, CoreError> = (|| {
             let res = match command {
+                C::SetSiteLan { hostname, on } => {
+                    tracing::info!(command = "set_site_lan", hostname = %hostname, on);
+                    Ok(R::LanInfo {
+                        info: i.set_site_lan(&hostname, on)?,
+                    })
+                }
+                C::GetLanInfo { hostname } => Ok(R::LanInfo {
+                    info: i.get_lan_info(&hostname)?,
+                }),
+                C::StartCaShare => {
+                    tracing::info!(command = "start_ca_share");
+                    let (url, expires_ms) = i.start_ca_share()?;
+                    Ok(R::CaShare {
+                        qr_svg: crate::lan::qr_svg(&url),
+                        url,
+                        expires_ms,
+                    })
+                }
+                C::StopCaShare => {
+                    i.stop_ca_share();
+                    Ok(R::Ok)
+                }
                 C::GetCaInfo => Ok(R::CaInfo {
                     info: i.certs.ca_info(),
                 }),

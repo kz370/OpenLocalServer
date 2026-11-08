@@ -133,6 +133,8 @@ pub struct Inner {
     pub php_upgrade: Mutex<HashMap<String, crate::php_upgrade::PhpUpgradeReport>>,
     /// §175: running dump servers, project id -> (process, port).
     pub dump_servers: Mutex<HashMap<String, (crate::process::ProcessId, u16)>>,
+    /// §178: the running certificate page for phones, if any.
+    pub ca_share: Mutex<Option<crate::lan_share::Share>>,
     pub(crate) pending_site_undo: Mutex<HashMap<String, PendingSiteUndo>>,
     pub(crate) project_events: broadcast::Sender<()>,
 }
@@ -330,6 +332,7 @@ impl Inner {
             defender_cache: Mutex::new(None),
             php_upgrade: Mutex::new(HashMap::new()),
             dump_servers: Mutex::new(HashMap::new()),
+            ca_share: Mutex::new(None),
             pending_site_undo: Mutex::new(HashMap::new()),
             project_events,
             paths,

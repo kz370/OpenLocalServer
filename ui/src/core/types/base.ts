@@ -528,3 +528,12 @@ export interface EolItem {
   status: EolStatus
   used_by: string[]
 }
+
+/** §178 Open a site on your phone. */
+export interface LanInfo {
+  on: boolean
+  ip: string | null
+  url: string | null
+  qr_svg: string | null
+  warnings: string[]
+}

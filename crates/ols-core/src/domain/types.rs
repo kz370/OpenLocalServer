@@ -207,6 +207,12 @@ pub struct Domain {
     /// Additional domain names (aliases) mapped to this same site.
     #[serde(default)]
     pub aliases: Vec<String>,
+    /// §178: also answer to a name a phone on the same network can look up.
+    #[serde(default)]
+    pub lan: bool,
+    /// The LAN name OLS computed (`<site>.<ip>.sslip.io`); never typed by the user.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lan_alias: Option<String>,
     /// Dynamic DNS provider ("cloudflare", "duckdns", "custom", or None).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ddns_provider: Option<String>,
@@ -287,6 +293,8 @@ impl Default for Domain {
             custom_key_path: None,
             lets_encrypt_email: None,
             auto_broadcast: false,
+            lan: false,
+            lan_alias: None,
             broadcast_provider: None,
             aliases: Vec::new(),
             ddns_provider: None,

@@ -122,6 +122,12 @@ impl CertificateManager {
                 names.push(clean.to_string());
             }
         }
+        // §178: the phone-friendly name, only while sharing is on.
+        if let (true, Some(lan)) = (domain.lan, domain.lan_alias.as_deref()) {
+            if !names.contains(&lan.to_string()) {
+                names.push(lan.to_string());
+            }
+        }
         if domain.wildcard {
             names.push(format!("*.{}", domain.hostname));
         }
@@ -374,6 +380,8 @@ mod tests {
             custom_key_path: None,
             lets_encrypt_email: None,
             auto_broadcast: false,
+            lan: false,
+            lan_alias: None,
             broadcast_provider: None,
             ..Default::default()
         }

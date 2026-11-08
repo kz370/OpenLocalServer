@@ -25,6 +25,8 @@ pub(crate) fn domain(host: &str) -> Domain {
         custom_key_path: None,
         lets_encrypt_email: None,
         auto_broadcast: false,
+        lan: false,
+        lan_alias: None,
         broadcast_provider: None,
         ..Default::default()
     }

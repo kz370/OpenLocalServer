@@ -331,3 +331,6 @@ eol (crates/ols-core/src/eol.rs) | §169 End-of-life: `EolStatus`, `EolItem`, `s
 audit (crates/ols-core/src/audit.rs) | §169 Package audit: `AuditResult`, `AuditTool`, `AuditFinding`, `parse_composer`, `parse_npm`, `parse_pnpm`, `parse_pip_audit`, `audit_project`, `run_task`, `list_results`.
 SecurityPanel / SecuritySummaryCard (ui/src/components/project/SecurityPanel.tsx) | Security tool tab (`security` in projectToolTabs.ts, after `repair`) and the Dashboard Security card.
 olsc project audit / runtime eol (crates/ols-cli/src/commands/db.rs) | Package audit and end-of-life from the command line.
+lan (crates/ols-core/src/lan.rs) | §178 LAN name per site: `LanInfo`, `lan_ipv4`, `lan_alias`, `qr_svg`, `Inner::set_site_lan`, `get_lan_info`, `tick`.
+lan_share (crates/ols-core/src/lan_share.rs) | §178 Temporary certificate page: `Share`, `start`, `pem_to_der`, `mobileconfig`, `Inner::start_ca_share`, `stop_ca_share`.
+PhoneSection / PhoneCertDialog (ui/src/components/site/PhoneCertDialog.tsx) | Open on my phone section of the site's domains tab and the certificate dialog.

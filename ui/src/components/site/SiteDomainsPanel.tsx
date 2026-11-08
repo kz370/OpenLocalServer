@@ -34,6 +34,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { FormSection, Select, Toggle } from '@/components/ui/form'
+import { PhoneSection } from './PhoneCertDialog'
 import { Input } from '@/components/ui/input'
 import { type Domain, type SslProvider, type TunnelStatus, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
@@ -1476,6 +1477,8 @@ export function SiteDomainsPanel({ domain: initialDomain, onSave, busy }: SiteDo
           )}
         </div>
       </FormSection>
+
+      <PhoneSection hostname={domain.hostname} />
 
       {/* 3. SSL / HTTPS Certificate Provider */}
       <FormSection

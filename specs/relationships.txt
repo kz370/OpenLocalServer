@@ -426,3 +426,6 @@ ols-mcp guard_raw_command | refuses | ListRemoteDbs, SaveRemoteDb, DeleteRemoteD
 Inner::diagnose_with | calls | diagnostics::check_eol -> Inner::eol_report -> eol::status
 dispatch::AuditProject / AuditAllProjects | start | task audit -> audit::run_task -> audit_project -> project_program(composer|npm|pnpm)
 Runtimes page | reads | get_eol_report (badges)
+dispatch::SetSiteLan | calls | Inner::set_site_lan -> DomainStore::update + apply_web (alias in SiteSpec.aliases and certs::names_for)
+scheduler::start_clock | ticks | lan::tick (only when a site has lan on)
+dispatch::StartCaShare | calls | Inner::start_ca_share -> lan_share::start (thread ols-ca-share)
