@@ -183,6 +183,9 @@ OLS isolates development runtimes without polluting your Windows system `PATH`:
   - Python venv virtual environments isolated per project with pip package management.
   - Run arbitrary Python scripts or start FastAPI, Flask, and Django apps with process supervision.
 
+### PHP upgrade check
+Open a PHP site's settings and pick a newer PHP version: OLS offers **Check this site with PHP 8.4 first?** Press **Check**. OLS runs the new PHP over your project without changing it: it asks Composer whether your packages allow that PHP, compares the extensions your project needs with the ones that PHP has, and compiles every PHP file with it (skipping `vendor`, caches and `storage`). The report lists **blockers** (the site would break), **warnings** (for example a deprecated feature or an extension you must turn on) and notes; click a file name to open it in your editor. Press **Switch to 8.4** (or **Switch anyway** after a confirmation); a toast offers **Switch back** to the old version. If the project already has `phpcompatibility/php-compatibility`, OLS uses it too, but never installs it. From the command line: `olsc php check-upgrade shop.test 8.4`.
+
 ---
 
 ## 9. Databases & Infrastructure Services
@@ -372,6 +375,7 @@ olsc guide
 ### What's New in v2.12.0 (in development)
 - **Migration guard:** before OLS runs a migration (Laravel, Symfony, Django, Prisma, Sequelize, Alembic, WP-CLI), it saves the project's database. **Rewind** in the toast or in the project's Backups tab puts it back. Turn it off, or set the size limit, in Settings → Databases. Commands typed into the built-in terminal are not covered.
 - **Free up space:** Projects → Free up space finds `node_modules`, `vendor` and build caches in projects you have not used for a while and deletes the ones you pick (they can be rebuilt any time). `olsc project reclaim` does the same from the command line.
+- **PHP upgrade check:** before switching a site to a newer PHP, OLS checks its Composer packages, extensions and every PHP file with the new version, then switches with one click (and back). `olsc php check-upgrade <site> <version>` does the same from the command line.
 
 ### What's New in v2.11.0
 - **Dockerize a project:** **Docker → Compose → From a project…**, or right-click a project or site → **Dockerize…**. OLS looks at the project (PHP, Node, Python, Go, Rust, Ruby, Java, .NET or a static site), shows what it found, then shows the Dockerfile, compose file and .dockerignore before it writes anything. The project is copied into the image, so it is fast on Windows. Choose **Development** (edits are synced into the container with **Create and watch**) or **Production** (a small multi-stage image that runs as a non-root user). Tick the services your project needs (MariaDB, PostgreSQL, MongoDB, Redis, RabbitMQ, Meilisearch, Mailpit, Adminer): OLS adds them as version-pinned images, generates their passwords and keeps them in the Windows credential store, and passes your app the connection settings. For PHP it adds the extensions the project asks for. Existing files are never overwritten. OLS generated these files from what it could detect in your project. They are a starting point, not a guaranteed working setup. Review them, then build and test before you rely on them. Hide the right-click entry in Settings → Sidebar; it is also hidden when the Docker page is hidden from the sidebar.

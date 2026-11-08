@@ -48,6 +48,7 @@ pub mod network;
 pub mod nodepm;
 pub mod paths;
 pub mod php;
+pub mod php_upgrade;
 pub mod plugin;
 pub mod port;
 pub mod process;

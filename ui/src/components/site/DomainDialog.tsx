@@ -22,6 +22,7 @@ import { Dialog } from '@/components/ui/dialog'
 import { Field, FormSection, Select, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Tooltip } from '@/components/ui/tooltip'
+import { PhpUpgradeDialog } from '@/components/site/PhpUpgradeDialog'
 import { cn } from '@/lib/utils'
 import { buildSitePath, domainToFolderName, getDefaultSitesDir, getDefaultTld, slugify } from '@/lib/sites'
 import { useDirtyForm, type DirtyFormScope } from '@/lib/dirtyForms'
@@ -235,6 +236,7 @@ export function DomainSettings({
   onOpenDomainsTab?: () => void
 }) {
   const [d, setD] = useState<Domain>(domain)
+  const [upgradeTarget, setUpgradeTarget] = useState<string | null>(null)
   const [allDomains, setAllDomains] = useState<DomainSummary[]>(existingDomains || [])
 
   useEffect(() => {
@@ -1498,6 +1500,26 @@ export function DomainSettings({
                 </option>
               ))}
             </Select>
+            {!isNew && domain.kind.type === 'php' && d.kind.type === 'php' && d.kind.version && d.kind.version !== domain.kind.version && (domain.kind.version === null || phpNewer(d.kind.version, domain.kind.version)) && (
+              <p className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                Check this site with PHP {d.kind.version} first?
+                <Button type="button" size="sm" variant="secondary" className="h-6 cursor-pointer px-2 text-xs" onClick={() => setUpgradeTarget(d.kind.type === 'php' ? d.kind.version : null)}>
+                  Check
+                </Button>
+              </p>
+            )}
+            {upgradeTarget && (
+              <PhpUpgradeDialog
+                hostname={domain.hostname}
+                from={domain.kind.type === 'php' ? domain.kind.version : null}
+                target={upgradeTarget}
+                onClose={() => setUpgradeTarget(null)}
+                onSwitched={() => {
+                  setUpgradeTarget(null)
+                  set({ kind: { type: 'php', version: upgradeTarget } })
+                }}
+              />
+            )}
           </Field>
         )}
 
@@ -1918,6 +1940,14 @@ export function DomainSettings({
  * One "PHP 8.3" choice per minor version (the server picks the newest 8.3.x), plus each
  * exact version when several share a minor, so a specific build can be pinned.
  */
+/** Is PHP version `a` newer than `b`? Compares dotted numbers. */
+function phpNewer(a: string, b: string): boolean {
+  const pa = a.split('.').map((p) => parseInt(p, 10) || 0)
+  const pb = b.split('.').map((p) => parseInt(p, 10) || 0)
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) > (pb[i] ?? 0)
+  return false
+}
+
 function phpOptions(installed: string[], current: string | null): { value: string; label: string }[] {
   const key = (v: string) => v.split('.').map((p) => parseInt(p, 10) || 0)
   const desc = (a: string, b: string) => {

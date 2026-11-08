@@ -46,6 +46,39 @@ pub fn php(ctx: &Ctx, cmd: PhpCmd) -> R<()> {
             })?;
             println!("PHP {version} is now the default for projects that don't ask for a version.");
         }
+        PhpCmd::CheckUpgrade { hostname, version } => {
+            let started = ctx.call(CoreCommand::CheckPhpUpgrade {
+                hostname: hostname.clone(),
+                target: version,
+            })?;
+            super::docker::follow(ctx, started)?;
+            if ctx.json {
+                return Ok(());
+            }
+            let CoreResponse::PhpUpgradeReport { report } =
+                ctx.call(CoreCommand::GetPhpUpgradeReport { hostname })?
+            else {
+                return Err("unexpected reply".into());
+            };
+            let Some(report) = report else {
+                return Err("no report was made".into());
+            };
+            println!(
+                "{}: PHP {} -> {}, {} files checked.",
+                report.hostname, report.from, report.to, report.files_checked
+            );
+            for it in &report.items {
+                let place = match (&it.file, it.line) {
+                    (Some(f), Some(l)) => format!(" ({f}:{l})"),
+                    (Some(f), None) => format!(" ({f})"),
+                    _ => String::new(),
+                };
+                println!("[{}] {}{place}", it.level, it.title);
+            }
+            if !report.can_switch {
+                return Err("Blockers found: the site would break on that PHP.".into());
+            }
+        }
     }
     Ok(())
 }

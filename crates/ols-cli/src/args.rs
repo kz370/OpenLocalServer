@@ -187,6 +187,8 @@ pub enum RuntimeCmd {
 pub enum PhpCmd {
     /// Make a PHP version the default for projects that don't ask for one.
     Use { version: String },
+    /// Check what would break if a site ran a newer PHP (nothing is changed).
+    CheckUpgrade { hostname: String, version: String },
 }
 
 #[derive(Subcommand)]

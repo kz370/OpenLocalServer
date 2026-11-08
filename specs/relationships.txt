@@ -403,3 +403,5 @@ dispatch::RewindGuardSnapshot | starts | task guard-rewind -> migration_guard::r
 ols-mcp ols_list_migration_snapshots | maps_to | ListGuardSnapshots
 dispatch::ScanReclaim | starts | task reclaim-scan -> Inner::scan_reclaim -> Inner.reclaim
 dispatch::ReclaimFolders | starts | task reclaim -> Inner::reclaim_folders -> reclaim::delete_candidate (re-validates) ; checks supervisor.any_alive_in_dir
+dispatch::CheckPhpUpgrade | starts | task php-upgrade-check -> Inner::check_php_upgrade -> exec::run_capture(target php.exe), composer.phar, PhpManager::extensions
+PhpUpgradeDialog | switches_with | update_domain + apply_web (same path as site settings)

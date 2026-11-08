@@ -14,6 +14,21 @@ impl Core {
         let mut unhandled = None;
         let outcome: Result<CoreResponse, CoreError> = (|| {
             let res = match command {
+                C::CheckPhpUpgrade { hostname, target } => {
+                    let inner = i.clone();
+                    let title = format!("Check {hostname} with PHP {target}");
+                    let task_target = format!("{hostname}@{target}");
+                    let id =
+                        i.tasks
+                            .start("php-upgrade-check", &title, &task_target, 0, move |h| {
+                                let r = inner.check_php_upgrade(&hostname, &target, &h);
+                                crate::command::report(&h, r);
+                            });
+                    Ok(R::TaskStarted { id })
+                }
+                C::GetPhpUpgradeReport { hostname } => Ok(R::PhpUpgradeReport {
+                    report: i.php_upgrade.lock().unwrap().get(&hostname).cloned(),
+                }),
                 C::ScanReclaim => {
                     let inner = i.clone();
                     let id = i.tasks.start(

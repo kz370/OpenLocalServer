@@ -188,6 +188,7 @@ Grab the latest installer (`OLS-2.12.0-setup.exe`) from the [Releases page](http
 - **Custom domains, site broadcast & Dynamic DNS (DDNS):** Support for 12+ DNS providers (Cloudflare, DuckDNS, No-IP, Dynu, ClouDNS, HE.net, Route53, Namecheap, GoDaddy, Porkbun, DigitalOcean, and custom webhooks) with auto-sync and IP change detection.
   - **Site Broadcast panel:** Live broadcast status and 1-click public URL copying integrated into the Site Domains panel.
   - **Router & port forwarding troubleshooting:** Guides for resolving HTTP Error 522 and CGNAT restrictions.
+- **PHP upgrade check:** see what would break before switching a site to a newer PHP (packages, extensions, every file), then switch with one click and switch back if needed (`olsc php check-upgrade`).
 
 ### 🧩 Projects & Reproducible Environments
 

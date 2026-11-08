@@ -305,3 +305,6 @@ GuardSection / MigrationGuardSettings (ui/src/components/project/BackupsPanel.ts
 reclaim (crates/ols-core/src/reclaim.rs) | §170 Free up space: closed-list rebuildable folders in registered projects; `ReclaimReport`, `ReclaimProject`, `ReclaimCandidate`, `ReclaimItem`, `Inner::scan_reclaim`, `Inner::reclaim_folders`, `delete_candidate`.
 ReclaimDialog (ui/src/components/project/ReclaimDialog.tsx) | Free up space dialog opened from the Projects toolbar.
 olsc project reclaim (crates/ols-cli/src/commands/db.rs `reclaim`) | `--days N`, `--delete`, `--yes`.
+php_upgrade (crates/ols-core/src/php_upgrade.rs) | §171 PHP upgrade check: `PhpUpgradeReport`, `UpgradeItem`, parsers, `Inner::check_php_upgrade`.
+PhpUpgradeDialog (ui/src/components/site/PhpUpgradeDialog.tsx) | Report dialog with Switch / Switch back; opened from the PHP version field in site settings when a newer version is picked.
+olsc php check-upgrade (crates/ols-cli/src/commands/services.rs) | `<hostname> <version>`; exit 1 on blockers.

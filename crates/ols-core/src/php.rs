@@ -116,7 +116,7 @@ impl PhpPools {
     }
 
     /// The folder holding `php.exe`, `php-cgi.exe` and `ext/` for `version`.
-    fn install_dir_of(&self, version: &str) -> PathBuf {
+    pub(crate) fn install_dir_of(&self, version: &str) -> PathBuf {
         match self
             .external
             .lock()

@@ -182,6 +182,8 @@ export type CoreCommand =
   | { type: 'list_db_backups'; engine: string; database: string | null }
   | { type: 'restore_database'; engine: string; database: string; file: string }
   | { type: 'delete_db_backup'; engine: string; file: string }
+  | { type: 'check_php_upgrade'; hostname: string; target: string }
+  | { type: 'get_php_upgrade_report'; hostname: string }
   | { type: 'scan_reclaim' }
   | { type: 'get_reclaim_report' }
   | { type: 'reclaim_folders'; items: ReclaimItem[] }

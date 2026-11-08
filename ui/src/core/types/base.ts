@@ -238,6 +238,26 @@ export interface GuardSnapshot {
   kind: string
 }
 
+/** PHP upgrade check (§171). */
+export interface UpgradeItem {
+  level: 'blocker' | 'warning' | 'info'
+  title: string
+  detail: string
+  file?: string | null
+  line?: number | null
+}
+
+export interface PhpUpgradeReport {
+  hostname: string
+  from: string
+  to: string
+  checked_ms: number
+  items: UpgradeItem[]
+  files_checked: number
+  truncated: boolean
+  can_switch: boolean
+}
+
 /** Free up space (§170). */
 export interface ReclaimCandidate {
   relative: string

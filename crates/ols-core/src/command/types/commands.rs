@@ -602,6 +602,14 @@ pub enum CoreCommand {
     },
     /// §168: database copies saved before migrations, newest first.
     /// §170: scans registered projects for folders that can be rebuilt (background task).
+    /// §171: what would break if this site ran `target` (background task).
+    CheckPhpUpgrade {
+        hostname: String,
+        target: String,
+    },
+    GetPhpUpgradeReport {
+        hostname: String,
+    },
     ScanReclaim,
     GetReclaimReport,
     /// §170: permanently deletes chosen rebuildable folders (background task).

@@ -222,6 +222,9 @@ pub enum CoreResponse {
     DbBackups {
         backups: Vec<crate::dbbackup::DbBackup>,
     },
+    PhpUpgradeReport {
+        report: Option<crate::php_upgrade::PhpUpgradeReport>,
+    },
     ReclaimReport {
         report: Option<crate::reclaim::ReclaimReport>,
     },
