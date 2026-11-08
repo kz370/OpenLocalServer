@@ -1,7 +1,7 @@
 import type { BuildPlan, DockerizePlan, ComposeCheck, ComposeStack, ConnectInfo, ContainerDetails, DockerContainer, DockerDiskUsage, DockerImage, DockerVolume, PrunePlan, DockerStatus, ServicePreset } from './types/docker'
 import type { AiDetected, AiJobView, AiModel, AiPrompt, AiState, AiTestResult } from './types/ai'
 import type { DashboardData, HealthItem, HistoryEntry, LogSource, QuickCommand, QuickEntryDetail, QuickEntryView, QuickPlanResult, RunView, StartupSettings } from './types/apps'
-import type { CatalogEntry, CommandHistoryEntry, CustomInstall, CustomServiceDef, DbBackup, GuardSnapshot, PhpUpgradeReport, ReclaimReport, DbTool, DeletedItem, EnvironmentManifest, PortStatus, ProcessId, ProcessInfo, Project, ProjectDetail, ProjectTypePreset, CustomProjectType, ProjectFolderInspection, ServiceAggregate, ServiceStatus, Shortcut, WpProject } from './types/base'
+import type { CatalogEntry, CommandHistoryEntry, CustomInstall, CustomServiceDef, DbBackup, GuardSnapshot, PhpUpgradeReport, SiteImportCandidate, ReclaimReport, DbTool, DeletedItem, EnvironmentManifest, PortStatus, ProcessId, ProcessInfo, Project, ProjectDetail, ProjectTypePreset, CustomProjectType, ProjectFolderInspection, ServiceAggregate, ServiceStatus, Shortcut, WpProject } from './types/base'
 import type { CommandSource, ComposerInfo, EditorInfo, EnvDiffRow, EnvFileInfo, EnvFileView, EnvironmentPlan, Finding, MailCheck, MailEnvPlan, ManifestInfo, MigratedDb, MigrationProgress, MigrationSource, Operation, PackageManagerInfo, PhpExtensions, SetupReport, SiteFolderInspection, SystemStats, VenvInfo, XdebugReport } from './types/environment'
 import type { ApiStatus, CatalogView, DoctorReport, GitBranch, GitCommit, GitStatus, LoadOverview, LoadProfile, LoadRun, NetworkStatus, PluginDetection, PluginInfo, RecordedRequest, RepairPlan, RepairReport, SearchHit, ShellMenuStatus, UpdateInfo, UpdaterStatus } from './types/system'
 import type { AutoBackupRun, AutoBackupStatus, BundleImportResult, BundlePreview, CloneResult, CpuCapStatus, ImportPreview, ModeResult, ModesView, Profile, ResourceLimits, RestoreResult, SettingsBackup, SnapshotInfo, TaskRun, TaskStatus, TaskView, TunnelProvider, TunnelStatus, WorkerPreset, WorkerStatus } from './types/tasks'
@@ -52,6 +52,7 @@ export type CoreResponse =
   | { type: 'services'; services: ServiceStatus[] }
   | { type: 'service_aggregate'; aggregate: ServiceAggregate }
   | { type: 'db_backups'; backups: DbBackup[] }
+  | { type: 'site_import_candidates'; candidates: SiteImportCandidate[] }
   | { type: 'php_upgrade_report'; report: PhpUpgradeReport | null }
   | { type: 'reclaim_report'; report: ReclaimReport | null }
   | { type: 'guard_snapshots'; snapshots: GuardSnapshot[] }

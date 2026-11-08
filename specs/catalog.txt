@@ -308,3 +308,5 @@ olsc project reclaim (crates/ols-cli/src/commands/db.rs `reclaim`) | `--days N`,
 php_upgrade (crates/ols-core/src/php_upgrade.rs) | §171 PHP upgrade check: `PhpUpgradeReport`, `UpgradeItem`, parsers, `Inner::check_php_upgrade`.
 PhpUpgradeDialog (ui/src/components/site/PhpUpgradeDialog.tsx) | Report dialog with Switch / Switch back; opened from the PHP version field in site settings when a newer version is picked.
 olsc php check-upgrade (crates/ols-cli/src/commands/services.rs) | `<hostname> <version>`; exit 1 on blockers.
+migrate_sites (crates/ols-core/src/migrate_sites.rs) | §172 site import: `SiteImportCandidate`, `SiteImportChoice`, `RawVhost`, parsers, `scan_roots`, `Inner::list_site_import_candidates`, `Inner::import_site_candidates`.
+SiteImportPanel (ui/src/components/SiteImportPanel.tsx) | Sites tab in MigrateDialog.

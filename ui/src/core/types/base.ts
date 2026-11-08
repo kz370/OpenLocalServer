@@ -238,6 +238,24 @@ export interface GuardSnapshot {
   kind: string
 }
 
+/** Import sites from Laragon / XAMPP / WampServer (§172). */
+export interface SiteImportCandidate {
+  source: string
+  hostname: string
+  aliases: string[]
+  document_root: string
+  project_root: string
+  exists: boolean
+  already_in_ols: boolean
+  note: string | null
+}
+
+export interface SiteImportChoice {
+  hostname: string
+  document_root: string
+  new_hostname?: string | null
+}
+
 /** PHP upgrade check (§171). */
 export interface UpgradeItem {
   level: 'blocker' | 'warning' | 'info'

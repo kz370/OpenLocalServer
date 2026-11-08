@@ -42,6 +42,7 @@ pub mod mail;
 pub mod manifest;
 pub mod mcp_auth;
 pub mod migrate;
+pub mod migrate_sites;
 pub mod migration_guard;
 pub mod monitor;
 pub mod network;

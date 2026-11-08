@@ -1,6 +1,6 @@
 import type { AiProvider, AiRequest } from './types/ai'
 import type { QuickCommand, StartupSettings } from './types/apps'
-import type { CustomServiceDef, EnvironmentManifest, Ownership, ProcessId, ProcessSpec, ReclaimItem } from './types/base'
+import type { CustomServiceDef, EnvironmentManifest, Ownership, ProcessId, ProcessSpec, ReclaimItem, SiteImportChoice } from './types/base'
 import type { BuildSpec, ComposeAction, ContainerUpdate, DockerContainerAction, DockerizeOptions, DockerSiteRequest, EnvEdit, PruneTargets, RunSpec, ServicePreset } from './types/docker'
 import type { XdebugSettings } from './types/environment'
 import type { LoadProfile } from './types/system'
@@ -182,6 +182,8 @@ export type CoreCommand =
   | { type: 'list_db_backups'; engine: string; database: string | null }
   | { type: 'restore_database'; engine: string; database: string; file: string }
   | { type: 'delete_db_backup'; engine: string; file: string }
+  | { type: 'list_site_import_candidates' }
+  | { type: 'import_site_candidates'; items: SiteImportChoice[] }
   | { type: 'check_php_upgrade'; hostname: string; target: string }
   | { type: 'get_php_upgrade_report'; hostname: string }
   | { type: 'scan_reclaim' }

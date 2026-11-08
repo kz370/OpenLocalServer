@@ -489,6 +489,21 @@ impl Core {
                 C::GetSystemStats => Ok(R::SystemStats {
                     stats: Box::new(i.system_stats()),
                 }),
+                C::ListSiteImportCandidates => Ok(R::SiteImportCandidates {
+                    candidates: i.list_site_import_candidates(),
+                }),
+                C::ImportSiteCandidates { items } => {
+                    tracing::info!(command = "import_site_candidates", count = items.len());
+                    let inner = i.clone();
+                    let total = items.len();
+                    let id = i
+                        .tasks
+                        .start("site-import", "Import sites", "all", total, move |h| {
+                            let r = inner.import_site_candidates(&items, &h);
+                            crate::command::report(&h, r);
+                        });
+                    Ok(R::TaskStarted { id })
+                }
                 C::ListMigrationSources => Ok(R::MigrationSources {
                     sources: crate::migrate::detect_managed(&i.paths, &i.runtimes),
                 }),

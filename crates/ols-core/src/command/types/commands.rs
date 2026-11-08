@@ -794,6 +794,12 @@ pub enum CoreCommand {
     },
     ListEditors,
     GetSystemStats,
+    /// §172: sites found in Laragon, XAMPP and WampServer (read-only).
+    ListSiteImportCandidates,
+    /// §172: adds chosen sites from those tools (background task `site-import`).
+    ImportSiteCandidates {
+        items: Vec<crate::migrate_sites::SiteImportChoice>,
+    },
     ListMigrationSources,
     InspectMigrationSource {
         path: String,

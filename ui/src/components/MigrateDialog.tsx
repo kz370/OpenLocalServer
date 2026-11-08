@@ -7,7 +7,9 @@ import { Spinner } from '@/components/Spinner'
 import { TechTile } from '@/components/TechIcon'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
+import { Tabs } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { SiteImportPanel } from '@/components/SiteImportPanel'
 import { type Diagnostic, type MigratedDb, type MigrationProgress, type MigrationSource, runCommand } from '@/core'
 import { formatBytes, usePoll } from '@/lib/hooks'
 import { confirmAction } from '@/lib/confirm'
@@ -29,6 +31,7 @@ interface SourceImport {
  * no .sql export needed, and the original files are only ever read.
  */
 export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [tab, setTab] = useState<'sites' | 'databases'>('databases')
   const [sources, setSources] = useState<MigrationSource[] | null>(null)
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([])
   const [sourceImports, setSourceImports] = useState<Record<string, SourceImport>>({})
@@ -240,10 +243,15 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
     <Dialog
       open={open}
       onClose={() => busy === null && onClose()}
-      title="Import databases"
-      description="Copy databases from another local MySQL/MariaDB data folder. Source files are never changed."
+      title={tab === 'sites' ? 'Import sites and databases' : 'Import databases'}
+      description={tab === 'sites' ? 'Bring over the sites you had in Laragon, XAMPP or WampServer. Their files and settings are never changed.' : 'Copy databases from another local MySQL/MariaDB data folder. Source files are never changed.'}
       size="wide"
       footer={
+        tab === 'sites' ? (
+          <Button variant="ghost" onClick={onClose}>
+            Close
+          </Button>
+        ) : (
         <>
           <span className="mr-auto truncate text-xs text-muted-foreground">{footerStatus}</span>
           <Button variant="ghost" disabled={busy !== null} onClick={onClose}>
@@ -253,9 +261,22 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
             {busy === 'import' ? <Spinner /> : <Database />} Import {selectedCount || ''} into MariaDB
           </Button>
         </>
+        )
       }
     >
       <div className="flex flex-col gap-4">
+        <Tabs
+          tabs={[
+            { id: 'sites' as const, label: 'Sites' },
+            { id: 'databases' as const, label: 'Databases' },
+          ]}
+          value={tab}
+          onChange={setTab}
+        />
+        {tab === 'sites' ? (
+          <SiteImportPanel />
+        ) : (
+          <>
         {/* Step 1: pick sources (click order = import order). */}
         <section className="flex flex-col gap-2">
           <StepHeader
@@ -467,6 +488,8 @@ export function MigrateDialog({ open, onClose }: { open: boolean; onClose: () =>
 
         {error && <p className="text-sm text-destructive">{error}</p>}
         {notice && <p className="text-xs text-muted-foreground">{notice}</p>}
+          </>
+        )}
       </div>
     </Dialog>
   )

@@ -222,6 +222,9 @@ pub enum CoreResponse {
     DbBackups {
         backups: Vec<crate::dbbackup::DbBackup>,
     },
+    SiteImportCandidates {
+        candidates: Vec<crate::migrate_sites::SiteImportCandidate>,
+    },
     PhpUpgradeReport {
         report: Option<crate::php_upgrade::PhpUpgradeReport>,
     },
