@@ -646,7 +646,8 @@ fn hostile_extension_names_are_contained() {
         p.notes,
         p.unknown_extensions
     );
-    assert!(!all.contains("rm -rf"));
+    // The apt cache clean-up line legitimately contains "rm -rf": look for the attack text.
+    assert!(!all.contains("ext-gd; rm"));
     assert!(!all.contains("curl evil"));
     assert!(
         !p.unknown_extensions.is_empty(),

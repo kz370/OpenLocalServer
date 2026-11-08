@@ -53,7 +53,7 @@
         <div class="nav__cta">
           <a
             class="btn btn--primary btn--sm"
-            href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-2.10.0-setup.exe"
+            href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-2.11.0-setup.exe"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" />
@@ -95,7 +95,7 @@
             <div class="hero__actions">
               <a
                 class="btn btn--primary"
-                href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-2.10.0-setup.exe"
+                href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-2.11.0-setup.exe"
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" />
@@ -110,16 +110,16 @@
               </a>
             </div>
             <p class="hero__note">
-              Windows 10 / 11, 64-bit. <code>OLS-2.10.0-setup.exe</code>, a
-              <a href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-2.10.0-portable-win-x64.zip">portable zip</a>,
-              and <a href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-2.10.0-SHA256SUMS.txt">SHA-256 sums</a>
+              Windows 10 / 11, 64-bit. <code>OLS-2.11.0-setup.exe</code>, a
+              <a href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-2.11.0-portable-win-x64.zip">portable zip</a>,
+              and <a href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-2.11.0-SHA256SUMS.txt">SHA-256 sums</a>
               to check either against. Source on
               <a href="https://github.com/kz370/OpenLocalServer">GitHub</a>.
             </p>
             <ul class="facts">
               <li>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
-                v2.10.0
+                v2.11.0
               </li>
               <li>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
@@ -154,38 +154,38 @@
         </div>
       </section>
 
-      <!-- ── 2.10.0 release highlights ────────────────────────── -->
-      <section class="section" id="release-2-10">
+      <!-- ── 2.11.0 release highlights ────────────────────────── -->
+      <section class="section" id="release-2-11">
         <div class="wrap">
           <div class="section__head reveal">
-            <div class="eyebrow">What's new · v2.10.0</div>
-            <h2>Docker, managed like the rest of your sites</h2>
-            <p>OLS 2.10.0 adds a Docker page: run containers and Compose stacks, build and edit compose files, connect containers to your OLS sites and services, and give any container a local domain with HTTPS. Docker stays optional, and nothing Docker-related runs until you open the page.</p>
+            <div class="eyebrow">What's new · v2.11.0</div>
+            <h2>Dockerize any project in one click</h2>
+            <p>OLS 2.11.0 turns a project folder into a working Docker setup. It looks at what the project uses, shows you the files first, and never overwrites anything. Docker stays optional.</p>
           </div>
           <div class="features">
             <article class="card reveal">
-              <h3>Containers and Compose stacks</h3>
-              <p>Start, stop, restart and pause containers, read their logs, and run Up, Down, Pull and Build on the stacks in your projects with live output.</p>
+              <h3>Dockerize a project</h3>
+              <p>Makes a Dockerfile, a compose file and a <code>.dockerignore</code> for PHP, Node, Python, Go, Rust, Ruby, Java, .NET or static projects. Also in the right-click menu of Projects and Sites.</p>
             </article>
             <article class="card reveal">
-              <h3>Compose builder and editor</h3>
-              <p>Pick services such as MariaDB, PostgreSQL, Redis or Mailpit, or your own presets. OLS picks free ports and keeps passwords in the Windows credential store, never in the file. Check a file before you run it.</p>
+              <h3>Fast on Windows</h3>
+              <p>The project is copied into the image instead of mounted from your Windows folder. In Development mode, <code>docker compose watch</code> keeps the container in sync while you edit.</p>
             </article>
             <article class="card reveal">
-              <h3>A site for any container</h3>
-              <p>Give a container a local domain with trusted HTTPS in one click. If it comes back on another port, the site follows it.</p>
+              <h3>Production mode</h3>
+              <p>Builds a small multi-stage image with no dev packages that runs as a non-root user.</p>
             </article>
             <article class="card reveal">
-              <h3>Connect to OLS</h3>
-              <p>One switch lets a stack's containers reach your OLS sites by name, trust OLS's local certificate and use its databases and Mailpit, without changing your compose file.</p>
+              <h3>Real services</h3>
+              <p>Detects MariaDB, PostgreSQL, MongoDB, Redis, RabbitMQ, Meilisearch and Mailpit, and adds them as version-pinned images with health checks. Passwords are generated and kept in the Windows credential store, never in the files.</p>
             </article>
             <article class="card reveal">
-              <h3>Container settings</h3>
-              <p>Copy a container's ID, see its ports, volumes and networks, and change its restart policy and memory or CPU limits without restarting it.</p>
+              <h3>Docker page updates instantly</h3>
+              <p>When a container starts, stops or is recreated, the list refreshes within a second and linked sites move to the new port. It only listens while the page is open.</p>
             </article>
             <article class="card reveal">
-              <h3>A sidebar you choose</h3>
-              <p>Settings → Sidebar hides the pages you don't use. The core pages always stay, and hidden pages still open from search.</p>
+              <h3>CLI, warnings and bundles</h3>
+              <p>Manage Docker with <code>olsc docker</code>, get Diagnostics warnings for stopped or missing site containers, and keep Docker details when you export a site bundle.</p>
             </article>
           </div>
         </div>
@@ -647,7 +647,7 @@
             <div class="step">
               <h3>Install the app</h3>
               <p>
-                Run the downloaded <code>OLS-2.10.0-setup.exe</code> and open OLS.
+                Run the downloaded <code>OLS-2.11.0-setup.exe</code> and open OLS.
                 Windows 10 or 11, 64-bit.
               </p>
             </div>
@@ -927,11 +927,11 @@
                   <small>Installer, portable zip, checksums</small>
                 </span>
               </a>
-              <a href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-2.10.0-SHA256SUMS.txt">
+              <a href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-2.11.0-SHA256SUMS.txt">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 12l2 2 4-4" /><rect x="3" y="4" width="18" height="16" rx="2" /></svg>
                 <span>
                   <b>Verify a download</b>
-                  <small>OLS-2.10.0-SHA256SUMS.txt</small>
+                  <small>OLS-2.11.0-SHA256SUMS.txt</small>
                 </span>
               </a>
               <a href="https://github.com/kz370/OpenLocalServer/blob/main/CONTRIBUTING.md">
@@ -963,7 +963,7 @@
           <div class="cta__actions">
             <a
               class="btn btn--primary"
-              href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-2.10.0-setup.exe"
+              href="https://github.com/kz370/OpenLocalServer/releases/latest/download/OLS-2.11.0-setup.exe"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" />
@@ -1039,7 +1039,7 @@
           </div>
         </div>
         <div class="footer__base">
-          <span>OLS 2.10.0 · Windows 10 / 11 64-bit</span>
+          <span>OLS 2.11.0 · Windows 10 / 11 64-bit</span>
           <span class="spacer"></span>
           <span>GPL-3.0-only</span>
           <span>Built with Rust · Tauri 2 · React 19</span>
