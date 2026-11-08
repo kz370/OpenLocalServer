@@ -198,6 +198,13 @@ pub struct BundlePreview {
     pub sites: Vec<BundlePreviewSite>,
     /// Read once, up front, so a damaged bundle is refused before anything is created.
     pub problems: Vec<String>,
+    /// Sites in the bundle that are linked to a Docker container (2.11.0).
+    #[serde(default)]
+    pub docker_links: usize,
+    /// A bundled compose file uses `${OLS_SECRET_*}` passwords. Those live in the Windows
+    /// credential store and are never exported, so they must be created again.
+    #[serde(default)]
+    pub compose_files_need_passwords: bool,
 }
 
 /// What one site of an import did.
@@ -781,6 +788,8 @@ pub fn preview(inner: &Inner, source: &str) -> Result<BundlePreview, CoreError> 
         .collect();
     let mut problems = Vec::new();
     let mut sites = Vec::new();
+    let mut docker_links = 0usize;
+    let mut compose_files_need_passwords = false;
     for site in &m.sites {
         let existing: Vec<String> = site
             .hostnames
@@ -815,6 +824,11 @@ pub fn preview(inner: &Inner, source: &str) -> Result<BundlePreview, CoreError> 
         let free = inner.free_project_name(&site.project_name);
         let suggested = match serde_json::from_str::<SnapshotContent>(&site.settings) {
             Ok(content) => {
+                docker_links += content
+                    .domains
+                    .iter()
+                    .filter(|d| d.docker.is_some())
+                    .count();
                 let adjust = Adjust::new(
                     &content,
                     &free,
@@ -840,6 +854,9 @@ pub fn preview(inner: &Inner, source: &str) -> Result<BundlePreview, CoreError> 
             summary,
         });
     }
+    if m.options.files {
+        compose_files_need_passwords = bundled_compose_needs_passwords(source, &m);
+    }
     if m.encrypted {
         problems.push(
             "this bundle is encrypted: its .env files and database dumps need the export \
@@ -858,7 +875,42 @@ pub fn preview(inner: &Inner, source: &str) -> Result<BundlePreview, CoreError> 
         options: m.options,
         sites,
         problems,
+        docker_links,
+        compose_files_need_passwords,
     })
+}
+
+/// The compose file names OLS looks for at the top of a project folder.
+const COMPOSE_NAMES: [&str; 4] = [
+    "compose.yaml",
+    "compose.yml",
+    "docker-compose.yaml",
+    "docker-compose.yml",
+];
+
+/// True when a bundled project's top-level compose file uses `${OLS_SECRET_*}` values. Reads
+/// at most 256 KB per file and only text already inside the zip; the keyring is never asked.
+fn bundled_compose_needs_passwords(source: &str, m: &BundleManifest) -> bool {
+    let Ok(file) = std::fs::File::open(source) else {
+        return false;
+    };
+    let Ok(mut zip) = zip::ZipArchive::new(file) else {
+        return false;
+    };
+    for site in &m.sites {
+        for name in COMPOSE_NAMES {
+            let Ok(entry) = zip.by_name(&format!("{}/files/{name}", site.dir)) else {
+                continue;
+            };
+            let mut text = String::new();
+            if entry.take(256 * 1024).read_to_string(&mut text).is_ok()
+                && !crate::docker::compose::secret_vars(&text).is_empty()
+            {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 // ------------------------------------------------------------------------ import
@@ -1555,6 +1607,161 @@ mod tests {
         assert_eq!(d.ddns_token.as_deref(), Some("pk_bundle_token_123"));
         assert_eq!(d.ddns_zone_id.as_deref(), Some("sk_bundle_secret_456"));
         core.inner().domains.lock().unwrap().remove(host).unwrap();
+    }
+
+    /// 2.11.0: a site's Docker link travels in the bundle, a bundled compose file that uses
+    /// OLS-supplied passwords is flagged in the preview, and nothing asks the keyring.
+    #[test]
+    fn a_bundle_keeps_the_docker_link_and_flags_compose_passwords() {
+        let home = crate::test_support::isolated_home();
+        let core = crate::command::Core::new(
+            crate::settings::SettingsService::load(&home.paths).unwrap(),
+            home.paths.clone(),
+        );
+        let dir = home.paths.root().join("shop-stack");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("index.php"), "<?php").unwrap();
+        std::fs::write(
+            dir.join("compose.yaml"),
+            "services:\n  db:\n    image: mariadb:11\n    environment:\n      MARIADB_ROOT_PASSWORD: ${OLS_SECRET_DB_PASSWORD:?x}\n",
+        )
+        .unwrap();
+        let id = match core.dispatch(crate::command::CoreCommand::RegisterProject {
+            path: dir.display().to_string(),
+        }) {
+            Ok(crate::command::CoreResponse::Project { project }) => project.id,
+            other => panic!("expected a project, got {other:?}"),
+        };
+        core.inner().sync_auto_domains().unwrap();
+        let host = "shop-stack.local";
+        let link = crate::domain::DockerLink {
+            container: "shop-stack-web-1".into(),
+            container_port: 80,
+            compose_project: Some("shop-stack".into()),
+            compose_service: Some("web".into()),
+        };
+        let mut domain = core
+            .inner()
+            .domains
+            .lock()
+            .unwrap()
+            .list()
+            .into_iter()
+            .find(|d| d.hostname == host)
+            .expect("the project's site");
+        domain.docker = Some(link.clone());
+        core.inner().update_domain(domain).unwrap();
+
+        let out = home.paths.root().join("out");
+        std::fs::create_dir_all(&out).unwrap();
+        let export_with = |files: bool| {
+            let inner = core.inner().clone();
+            let dest = out.display().to_string();
+            let manager = crate::tasks::TaskManager::new();
+            let slot = std::sync::Arc::new(std::sync::Mutex::new(None));
+            let keep = slot.clone();
+            manager.start("export_sites", "Exporting", "", 0, move |h| {
+                let summary = export(
+                    &inner,
+                    &h,
+                    &[host.to_string()],
+                    BundleOptions {
+                        settings: true,
+                        env: true,
+                        databases: false,
+                        files,
+                    },
+                    &dest,
+                    None,
+                )
+                .unwrap();
+                *keep.lock().unwrap() = Some(summary);
+                h.succeed();
+            });
+            wait(&slot).path
+        };
+        let with_files = export_with(true);
+        let without_files = export_with(false);
+
+        let p = preview(core.inner(), &with_files).unwrap();
+        assert_eq!(p.docker_links, 1);
+        assert!(p.compose_files_need_passwords);
+        let p = preview(core.inner(), &without_files).unwrap();
+        assert_eq!(p.docker_links, 1);
+        assert!(!p.compose_files_need_passwords, "no files, no compose file");
+
+        core.inner().domains.lock().unwrap().remove(host).unwrap();
+        core.inner().projects.lock().unwrap().remove(&id).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        let inner = core.inner().clone();
+        let manager = crate::tasks::TaskManager::new();
+        let slot = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let keep = slot.clone();
+        manager.start("import_sites", "Importing", "", 0, move |h| {
+            let r = import_bundle(
+                &inner,
+                &h,
+                &with_files,
+                None,
+                OnConflict::Rename,
+                Some("shop-stack"),
+                crate::snapshots::RestoreOptions {
+                    config: true,
+                    env: true,
+                    databases: false,
+                    files: true,
+                },
+            )
+            .unwrap();
+            *keep.lock().unwrap() = Some(r);
+            h.succeed();
+        });
+        let result = wait(&slot);
+        assert_eq!(result.sites[0].problems, Vec::<String>::new());
+        let imported = core
+            .inner()
+            .domains
+            .lock()
+            .unwrap()
+            .list()
+            .into_iter()
+            .find(|d| d.hostname == host)
+            .expect("the site came back");
+        assert_eq!(imported.docker, Some(link), "the Docker link survives");
+        let restored = core
+            .inner()
+            .projects
+            .lock()
+            .unwrap()
+            .list()
+            .into_iter()
+            .next()
+            .expect("the project came back")
+            .path;
+        assert!(
+            PathBuf::from(restored).join("compose.yaml").exists(),
+            "the compose file travels with the project files"
+        );
+    }
+
+    /// An older bundle has neither new field and still previews.
+    #[test]
+    fn the_new_preview_fields_default_for_old_data() {
+        let old = r#"{"source":"x","label":"l","created_ms":1,"encrypted":false,
+            "options":{"settings":true,"env":true,"databases":false,"files":false},
+            "sites":[],"problems":[]}"#;
+        let p: BundlePreview = serde_json::from_str(old).unwrap();
+        assert_eq!(p.docker_links, 0);
+        assert!(!p.compose_files_need_passwords);
+    }
+
+    /// Export never reads the keyring: passwords of a compose stack stay where they are.
+    #[test]
+    fn the_bundle_code_never_reads_the_keyring_for_compose() {
+        let source = include_str!("sitebundle.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap();
+        assert!(!production.contains(concat!("secrets::get", "_secret")));
+        assert!(!production.contains("reveal_compose_secrets"));
     }
 
     fn wait<T: Send + 'static>(slot: &std::sync::Arc<std::sync::Mutex<Option<T>>>) -> T {

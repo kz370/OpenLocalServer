@@ -66,7 +66,7 @@ export type ComposeStack = {
 
 export type ComposeCheck = { ok: boolean; errors: string[]; warnings: string[]; docker_checked: boolean }
 
-export type ComposeAction = 'up' | 'down' | 'stop' | 'start' | 'restart' | 'pull' | 'build'
+export type ComposeAction = 'up' | 'down' | 'stop' | 'start' | 'restart' | 'pull' | 'build' | 'watch'
 
 export type PresetEnvValue = { kind: 'literal'; value: string } | { kind: 'secret' }
 
@@ -106,6 +106,43 @@ export type BuildPlan = {
   ports: { service: string; label: string; host: number; container: number; web: boolean }[]
   secrets: string[]
   warnings: string[]
+}
+
+export type DockerizeMode = 'dev' | 'prod'
+
+export type DockerizeOptions = { mode?: DockerizeMode; services?: string[] | null }
+
+export type DockerizeService = {
+  id: string
+  name: string
+  service: string
+  image: string
+  reason: string
+  detected: boolean
+  selected: boolean
+  optional: boolean
+}
+
+export type DockerizePlan = {
+  kind: 'node' | 'php' | 'python' | 'static' | 'go' | 'rust' | 'ruby' | 'java' | 'dotnet'
+  mode: DockerizeMode
+  dockerfile: string | null
+  compose: string
+  dockerignore: string | null
+  services: DockerizeService[]
+  workers: string[]
+  secrets: string[]
+  watch: boolean
+  dockerfile_path: string
+  compose_path: string
+  existing: string[]
+  port: number
+  notes: string[]
+  php_extensions: string[]
+  unknown_extensions: string[]
+  detected: string[]
+  disclaimer: string
+  checklist: string[]
 }
 
 export type DockerSiteRequest = { container: string; container_port: number; hostname: string; https: boolean }

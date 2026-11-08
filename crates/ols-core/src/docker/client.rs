@@ -223,6 +223,15 @@ fn not_running(endpoint: &Endpoint, e: &std::io::Error) -> ClientError {
 }
 
 fn connect(endpoint: &Endpoint, timeout: Duration) -> Result<Box<dyn Stream>, ClientError> {
+    connect_with(endpoint, timeout, timeout)
+}
+
+/// Like `connect`, with a separate socket read timeout (named pipes have none).
+fn connect_with(
+    endpoint: &Endpoint,
+    timeout: Duration,
+    read_timeout: Duration,
+) -> Result<Box<dyn Stream>, ClientError> {
     use std::io::ErrorKind as K;
     let is_absent = |e: &std::io::Error| {
         matches!(
@@ -245,7 +254,7 @@ fn connect(endpoint: &Endpoint, timeout: Duration) -> Result<Box<dyn Stream>, Cl
                     not_running(endpoint, &e)
                 }
             })?;
-            let _ = s.set_read_timeout(Some(timeout));
+            let _ = s.set_read_timeout(Some(read_timeout));
             let _ = s.set_write_timeout(Some(timeout));
             Ok(Box::new(s))
         }
@@ -258,7 +267,7 @@ fn connect(endpoint: &Endpoint, timeout: Duration) -> Result<Box<dyn Stream>, Cl
                     ClientError::Protocol(format!("connecting to {}: {e}", endpoint.display()))
                 }
             })?;
-            let _ = s.set_read_timeout(Some(timeout));
+            let _ = s.set_read_timeout(Some(read_timeout));
             let _ = s.set_write_timeout(Some(timeout));
             Ok(Box::new(s))
         }
@@ -352,6 +361,197 @@ fn decode_chunked(mut data: &[u8]) -> Option<Vec<u8>> {
     }
 }
 
+/// Reads a long-lived response (the engine's `/events` stream) and calls `on_event` with
+/// `Some(line)` for every JSON line and with `None` roughly every `poll` while idle.
+///
+/// Returns `Ok(())` when `stop` becomes true (checked at least every `poll`) and an error
+/// when the engine hangs up or breaks. A helper thread owns the blocking read so a stream
+/// without read timeouts (a Windows named pipe) can never block the caller; on a pipe
+/// that helper ends at the next event or when the engine closes.
+pub fn stream_lines(
+    endpoint: &Endpoint,
+    path: &str,
+    stop: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+    poll: Duration,
+    mut on_event: impl FnMut(Option<&str>),
+) -> Result<(), ClientError> {
+    use std::sync::atomic::Ordering;
+    let raw = build_request("GET", path, None);
+    let mut stream = connect_with(endpoint, Duration::from_secs(3), poll)?;
+    stream
+        .write_all(&raw)
+        .and_then(|_| stream.flush())
+        .map_err(|e| ClientError::Protocol(format!("could not send the request: {e}")))?;
+    let (tx, rx) = mpsc::channel::<Result<Vec<u8>, ClientError>>();
+    let reader_stop = stop.clone();
+    std::thread::Builder::new()
+        .name("ols-docker-events-read".into())
+        .spawn(move || {
+            let mut chunk = [0u8; 8 * 1024];
+            while !reader_stop.load(Ordering::Relaxed) {
+                match stream.read(&mut chunk) {
+                    Ok(0) => {
+                        let _ = tx.send(Err(ClientError::Protocol(
+                            "Docker closed the stream".into(),
+                        )));
+                        return;
+                    }
+                    Ok(n) => {
+                        if tx.send(Ok(chunk[..n].to_vec())).is_err() {
+                            return;
+                        }
+                    }
+                    Err(e)
+                        if matches!(
+                            e.kind(),
+                            std::io::ErrorKind::WouldBlock
+                                | std::io::ErrorKind::TimedOut
+                                | std::io::ErrorKind::Interrupted
+                        ) => {}
+                    Err(e) => {
+                        let _ = tx.send(Err(ClientError::Protocol(format!(
+                            "reading Docker's events: {e}"
+                        ))));
+                        return;
+                    }
+                }
+            }
+        })
+        .map_err(|e| ClientError::Protocol(format!("could not start a reader thread: {e}")))?;
+    let mut decoder = StreamDecoder::default();
+    loop {
+        if stop.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+        match rx.recv_timeout(poll) {
+            Ok(Ok(bytes)) => {
+                for line in decoder.feed(&bytes)? {
+                    on_event(Some(&line));
+                }
+                if decoder.finished {
+                    return Err(ClientError::Protocol("Docker ended the stream".into()));
+                }
+            }
+            Ok(Err(e)) => return Err(e),
+            Err(mpsc::RecvTimeoutError::Timeout) => on_event(None),
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return if stop.load(Ordering::Relaxed) {
+                    Ok(())
+                } else {
+                    Err(ClientError::Protocol("the events reader stopped".into()))
+                }
+            }
+        }
+    }
+}
+
+/// Incremental decoder for an HTTP/1.1 response whose body never ends: strips the
+/// headers, undoes chunked framing and yields complete text lines.
+#[derive(Default)]
+pub(crate) struct StreamDecoder {
+    buf: Vec<u8>,
+    headers_done: bool,
+    chunked: bool,
+    error_status: Option<u16>,
+    text: Vec<u8>,
+    pub(crate) finished: bool,
+}
+
+impl StreamDecoder {
+    pub(crate) fn feed(&mut self, bytes: &[u8]) -> Result<Vec<String>, ClientError> {
+        self.buf.extend_from_slice(bytes);
+        if self.buf.len() > MAX_RESPONSE {
+            return Err(ClientError::Protocol(
+                "Docker's stream was too large".into(),
+            ));
+        }
+        if !self.headers_done {
+            let Some(split) = self.buf.windows(4).position(|w| w == b"\r\n\r\n") else {
+                return Ok(Vec::new());
+            };
+            let head = String::from_utf8_lossy(&self.buf[..split]).to_string();
+            let mut lines = head.split("\r\n");
+            let status: u16 = lines
+                .next()
+                .and_then(|l| l.split_whitespace().nth(1))
+                .and_then(|s| s.parse().ok())
+                .ok_or_else(|| ClientError::Protocol("Docker sent an invalid answer".into()))?;
+            self.chunked = lines.any(|l| {
+                l.split_once(':').is_some_and(|(n, v)| {
+                    n.trim().eq_ignore_ascii_case("transfer-encoding")
+                        && v.trim().eq_ignore_ascii_case("chunked")
+                })
+            });
+            self.buf.drain(..split + 4);
+            self.headers_done = true;
+            if !(200..300).contains(&status) {
+                self.error_status = Some(status);
+            }
+        }
+        if let Some(status) = self.error_status {
+            return Err(ClientError::Http {
+                status,
+                message: String::from_utf8_lossy(&self.buf).trim().to_string(),
+            });
+        }
+        if self.chunked {
+            self.finished = decode_chunk_stream(&mut self.buf, &mut self.text)?;
+        } else {
+            self.text.append(&mut self.buf);
+        }
+        let mut out = Vec::new();
+        while let Some(end) = self.text.iter().position(|b| *b == b'\n') {
+            let line: Vec<u8> = self.text.drain(..=end).collect();
+            let line = String::from_utf8_lossy(&line).trim().to_string();
+            if !line.is_empty() {
+                out.push(line);
+            }
+        }
+        Ok(out)
+    }
+}
+
+/// Moves every complete chunk from `buf` into `out`; leaves a partial chunk in `buf`.
+/// Returns `true` once the terminating zero-size chunk was seen.
+pub(crate) fn decode_chunk_stream(
+    buf: &mut Vec<u8>,
+    out: &mut Vec<u8>,
+) -> Result<bool, ClientError> {
+    loop {
+        let Some(line_end) = buf.windows(2).position(|w| w == b"\r\n") else {
+            return Ok(false);
+        };
+        let size = std::str::from_utf8(&buf[..line_end])
+            .ok()
+            .and_then(|t| t.split(';').next())
+            .and_then(|t| usize::from_str_radix(t.trim(), 16).ok())
+            .ok_or_else(|| ClientError::Protocol("Docker sent a broken chunk".into()))?;
+        if size == 0 {
+            buf.clear();
+            return Ok(true);
+        }
+        let total = line_end + 2 + size + 2;
+        if buf.len() < total {
+            return Ok(false);
+        }
+        out.extend_from_slice(&buf[line_end + 2..line_end + 2 + size]);
+        buf.drain(..total);
+    }
+}
+
+/// Percent-encodes everything but unreserved characters (for a query value).
+pub fn url_encode(text: &str) -> String {
+    let mut out = String::new();
+    for b in text.bytes() {
+        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~') {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -402,5 +602,64 @@ mod tests {
         assert_eq!(r.body, b"[{}]");
 
         assert!(parse_response(b"garbage").is_err());
+    }
+
+    #[test]
+    fn stream_decoder_handles_split_chunks() {
+        let mut d = StreamDecoder::default();
+        let all = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n8\r\n{\"a\":1}\n\r\n4\r\n{\"b\"\r\n";
+        let mut lines = Vec::new();
+        // One byte at a time: every split point must work.
+        for b in all.iter() {
+            lines.extend(d.feed(&[*b]).unwrap());
+        }
+        assert_eq!(lines, vec!["{\"a\":1}".to_string()]);
+        lines.extend(d.feed(b"4\r\n:2}\n\r\n0\r\n\r\n").unwrap());
+        assert_eq!(lines.last().unwrap(), "{\"b\":2}");
+        assert!(d.finished);
+    }
+
+    #[test]
+    fn stream_decoder_reports_http_errors() {
+        let mut d = StreamDecoder::default();
+        let e = d.feed(b"HTTP/1.1 500 X\r\n\r\nboom").unwrap_err();
+        assert!(matches!(e, ClientError::Http { status: 500, .. }));
+    }
+
+    #[test]
+    fn stream_stops_on_flag_within_a_poll() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        std::thread::spawn(move || {
+            // Accept and say nothing, like an engine with no events.
+            let _keep = listener.accept();
+            std::thread::sleep(Duration::from_secs(5));
+        });
+        let stop = Arc::new(AtomicBool::new(false));
+        let flag = stop.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(300));
+            flag.store(true, Ordering::Relaxed);
+        });
+        let started = std::time::Instant::now();
+        let result = stream_lines(
+            &Endpoint::Tcp(addr),
+            "/events",
+            &stop,
+            Duration::from_millis(250),
+            |_| {},
+        );
+        assert!(result.is_ok());
+        assert!(started.elapsed() < Duration::from_millis(1200));
+    }
+
+    #[test]
+    fn url_encode_escapes_json() {
+        assert_eq!(
+            url_encode(r#"{"a":["b"]}"#),
+            "%7B%22a%22%3A%5B%22b%22%5D%7D"
+        );
     }
 }

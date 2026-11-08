@@ -2137,6 +2137,21 @@ pub fn run() {
                 }
             });
 
+            // §167: Docker live updates. The core only sends while the Docker page is open
+            // (`docker_watch`), so this idle forwarder costs nothing otherwise.
+            let docker_handle = app.handle().clone();
+            let mut docker_events = core.inner().docker.subscribe();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    match docker_events.recv().await {
+                        Ok(()) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                            let _ = docker_handle.emit("docker-event", ());
+                        }
+                        Err(_) => break,
+                    }
+                }
+            });
+
             // Quick App runs: notify once when each finishes.
             let run_core = core.clone();
             std::thread::spawn(move || {

@@ -22,23 +22,50 @@ impl Core {
                 let mut containers = i.docker.list_containers(&i.docker_endpoint(), all)?;
                 // Sites follow their container to a new port; re-apply only when one moved.
                 let moved = i.sync_docker_sites(&containers);
-                if !moved.is_empty() {
-                    let inner = i.clone();
-                    i.tasks.start(
-                        "docker-site-sync",
-                        "Update Docker sites to new ports",
-                        "docker-sites",
-                        1,
-                        move |h| {
-                            h.begin_step(&format!("Re-apply web config for {}", moved.join(", ")));
-                            let r = inner.apply_web(&[]).map(|_| ());
-                            crate::command::report(&h, r);
-                        },
-                    );
-                }
+                i.docker_apply_site_moves(moved);
                 i.mark_docker_sites(&mut containers);
                 Ok(R::DockerContainers { containers })
             })(),
+            C::PlanDockerize {
+                project_id,
+                options,
+            } => (|| {
+                let (dir, kind) = i.dockerize_project(&project_id)?;
+                crate::docker::dockerize::plan(
+                    &dir,
+                    kind.as_deref(),
+                    &crate::port::port_is_free,
+                    &options,
+                )
+                .map(|plan| R::DockerizePlan { plan })
+            })(),
+            C::CreateDockerize {
+                project_id,
+                overwrite_compose,
+                options,
+            } => (|| {
+                tracing::info!(command = "create_dockerize", project = %project_id, overwrite_compose, mode = ?options.mode);
+                let (dir, kind) = i.dockerize_project(&project_id)?;
+                let plan = crate::docker::dockerize::plan(
+                    &dir,
+                    kind.as_deref(),
+                    &crate::port::port_is_free,
+                    &options,
+                )?;
+                crate::docker::dockerize::write(
+                    &plan,
+                    overwrite_compose,
+                    &backups(),
+                    &|key| matches!(crate::secrets::get_secret(key), Ok(Some(_))),
+                    &crate::secrets::set_secret,
+                )?;
+                i.set_docker_connected(std::path::Path::new(&plan.compose_path), true)?;
+                Ok(R::DockerizePlan { plan })
+            })(),
+            C::DockerWatch { on } => {
+                i.docker_watch(on);
+                Ok(R::Ok)
+            }
             C::DockerContainerAction { id, action } => {
                 tracing::info!(command = "docker_container_action", id = %id, ?action);
                 i.docker

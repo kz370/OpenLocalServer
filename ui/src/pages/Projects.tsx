@@ -38,6 +38,9 @@ import { MiddleTruncate } from '@/components/ui/MiddleTruncate'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { FloatingMenu, type MenuAnchor, type MenuItem } from '@/components/ui/menu'
+import { DockerizeDialog } from '@/components/docker/DockerizeDialog'
+import { useDockerizeMenu } from '@/lib/dockerizeMenu'
+import { DockerIcon } from '@/components/layout/SidebarIcons'
 import { Pagination } from '@/components/ui/pagination'
 import {
   Table,
@@ -85,6 +88,8 @@ function normPath(p: string | null | undefined): string {
 
 export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void }) {
   const [projects, setProjects] = useState<Project[]>(projectsCache.get)
+  const dockerizeMenu = useDockerizeMenu()
+  const [dockerizeFor, setDockerizeFor] = useState<string | null>(null)
   // Read storage directly because Sites can update this cache while ProjectsPage is unmounted.
   const [domains, setDomains] = useState<DomainSummary[]>(() => getCached('projects_page_domains', []))
   /** False until the project list has been read from the backend once (or a cached copy exists). */
@@ -718,6 +723,17 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
         disabled: !isHealthy,
         onSelect: () => void handleOpenTerminal(p),
       },
+      ...(dockerizeMenu
+        ? [
+            {
+              label: 'Dockerize…',
+              icon: <DockerIcon className="size-4" />,
+              disabled: !isHealthy,
+              hint: isHealthy ? 'Make a Dockerfile and compose file for this project' : 'Folder missing',
+              onSelect: () => setDockerizeFor(p.id),
+            } as MenuItem,
+          ]
+        : []),
       'separator',
       {
         label: 'Settings',
@@ -1225,6 +1241,8 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
               )
             })()}
       </ScrollableList>
+
+      <DockerizeDialog open={dockerizeFor != null} projectId={dockerizeFor} onClose={() => setDockerizeFor(null)} />
 
       {/* Add Project Dialog (for drag-drop, context menu, and add button) */}
       <AddProjectDialog

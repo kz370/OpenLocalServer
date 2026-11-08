@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { PageLayout } from '@/components/PageLayout'
 import { ScrollableList } from '@/components/ScrollableList'
 import { ComposeBuilderDialog } from '@/components/docker/ComposeBuilderDialog'
+import { DockerizeDialog } from '@/components/docker/DockerizeDialog'
 import { ComposeEditorDialog } from '@/components/docker/ComposeEditorDialog'
 import { ComposeTab } from '@/components/docker/ComposeTab'
 import { ContainerSettingsDialog } from '@/components/docker/ContainerSettingsDialog'
@@ -45,7 +46,8 @@ import { cn } from '@/lib/utils'
  * - The only timer is ONE status poll, and only while Docker is not running: every 1.5 s
  *   (up to 60 s) after "Start Docker", every 7 s otherwise. It pauses while the window is hidden.
  * - The only live listeners are `task-event` while "Start Docker" or a compose action is
- *   being followed.
+ *   being followed, and `docker-event` (the engine's event stream, ref-counted in the core)
+ *   while the page is open, visible and Docker runs.
  */
 
 const START_POLL_MS = 1500
@@ -100,6 +102,7 @@ export default function DockerPage() {
   const [siteFor, setSiteFor] = useState<DockerContainer | null>(null)
   const [editPath, setEditPath] = useState<string | null>(null)
   const [builderOpen, setBuilderOpen] = useState(false)
+  const [dockerizeOpen, setDockerizeOpen] = useState(false)
   const [taskId, setTaskId] = useState<string | null>(null)
   const [settingsFor, setSettingsFor] = useState<string | null>(null)
   const [shellFor, setShellFor] = useState<string | null>(null)
@@ -202,6 +205,38 @@ export default function DockerPage() {
     setComposeOnly(false)
   }, [dockerRunning])
 
+  // Live updates: while the page is open, visible and Docker runs, the core follows the
+  // engine's event stream and sends `docker-event`; no timer, nothing runs when hidden.
+  useEffect(() => {
+    if (!dockerRunning) return
+    let alive = true
+    let watching = false
+    let unlisten: (() => void) | undefined
+    let timer: number | undefined
+    const setWatch = (on: boolean) => {
+      if (watching === on) return
+      watching = on
+      void runCommand({ type: 'docker_watch', on }).catch(() => {})
+    }
+    const onVisibility = () => setWatch(!document.hidden)
+    setWatch(!document.hidden)
+    document.addEventListener('visibilitychange', onVisibility)
+    void listen('docker-event', () => {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(() => void refresh(), 300)
+    }).then((dispose) => {
+      if (alive) unlisten = dispose
+      else dispose()
+    })
+    return () => {
+      alive = false
+      window.clearTimeout(timer)
+      document.removeEventListener('visibilitychange', onVisibility)
+      unlisten?.()
+      setWatch(false)
+    }
+  }, [dockerRunning, refresh])
+
   // One status poll while Docker is not running. Fast while starting (with a 60 s limit),
   // slow otherwise. Paused while hidden. The effect owns the only interval and clears it.
   const pollMode = !status || dockerRunning ? null : starting ? 'start' : 'idle'
@@ -260,12 +295,12 @@ export default function DockerPage() {
     }
   }
 
-  async function composeCreated(file: string, start: boolean) {
+  async function composeCreated(file: string, start: boolean, watch = false) {
     setComposeReload((n) => n + 1)
     setTab('compose')
     if (!start) return
     try {
-      const r = await runCommand({ type: 'docker_compose_action', path: file, action: 'up' })
+      const r = await runCommand({ type: 'docker_compose_action', path: file, action: watch ? 'watch' : 'up' })
       if (r.type === 'task_started') setTaskId(r.id)
     } catch (err) {
       setError(asDiagnostic(err))
@@ -383,6 +418,7 @@ export default function DockerPage() {
             onRunTask={setTaskId}
             onEdit={setEditPath}
             onNew={() => setBuilderOpen(true)}
+            onDockerize={() => setDockerizeOpen(true)}
             onLogs={setLogsFor}
             onCreateSite={(name) => void createSiteFor(name)}
             onSettings={setSettingsFor}
@@ -416,6 +452,7 @@ export default function DockerPage() {
           onRunTask={setTaskId}
           onEdit={setEditPath}
           onNew={() => setBuilderOpen(true)}
+          onDockerize={() => setDockerizeOpen(true)}
           onLogs={setLogsFor}
           onCreateSite={(name) => void createSiteFor(name)}
           onSettings={setSettingsFor}
@@ -575,6 +612,7 @@ export default function DockerPage() {
           onSaved={() => setComposeReload((n) => n + 1)}
         />
       )}
+      <DockerizeDialog open={dockerizeOpen} onClose={() => setDockerizeOpen(false)} onCreated={(f, start, watch) => void composeCreated(f, start, watch)} />
       <ComposeBuilderDialog open={builderOpen} onClose={() => setBuilderOpen(false)} onCreated={(f, start) => void composeCreated(f, start)} />
       <TaskOutputDialog
         taskId={taskId}

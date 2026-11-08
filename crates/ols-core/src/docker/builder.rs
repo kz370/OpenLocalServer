@@ -412,7 +412,7 @@ fn q(s: &str) -> String {
     out
 }
 
-fn secret_var(service: &str, key: &str) -> String {
+pub(crate) fn secret_var(service: &str, key: &str) -> String {
     let clean = |s: &str| {
         s.to_uppercase()
             .chars()

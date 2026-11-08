@@ -99,6 +99,8 @@ pub enum ComposeAction {
     Restart,
     Pull,
     Build,
+    /// 2.11.0: builds, starts and keeps the stack in sync with edits (runs until stopped).
+    Watch,
 }
 
 impl ComposeAction {
@@ -112,6 +114,7 @@ impl ComposeAction {
             ComposeAction::Restart => &["restart"],
             ComposeAction::Pull => &["pull"],
             ComposeAction::Build => &["build"],
+            ComposeAction::Watch => &["watch"],
         }
     }
 
@@ -124,6 +127,7 @@ impl ComposeAction {
             ComposeAction::Restart => "Restart",
             ComposeAction::Pull => "Pull images",
             ComposeAction::Build => "Build images",
+            ComposeAction::Watch => "Start and watch (watch)",
         }
     }
 }
@@ -944,7 +948,7 @@ pub fn run_action(
     if task.cancel_requested() {
         return Err(CoreError::failed("Stopped", "Stopped by the user."));
     }
-    if out.exit_code == Some(0) {
+    if out.exit_code == Some(0) || (action == ComposeAction::Watch && out.timed_out) {
         task.end_step(None);
         return Ok(());
     }

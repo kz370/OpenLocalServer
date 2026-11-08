@@ -521,6 +521,8 @@ fn is_background_auto_fixable(command: &CoreCommand) -> bool {
         CoreCommand::ApplyWeb { .. }
             | CoreCommand::StartService { .. }
             | CoreCommand::RestartService { .. }
+            | CoreCommand::DockerContainerAction { .. }
+            | CoreCommand::StartDockerDesktop
     )
 }
 
@@ -681,7 +683,8 @@ impl Core {
 }
 
 fn auto_fix_findings(inner: &Inner) -> Vec<Finding> {
-    let mut findings = inner.diagnose();
+    // Never asks Docker: background fixes must not wake the engine.
+    let mut findings = inner.diagnose_without_docker();
     let projects = inner.projects.lock().unwrap().list();
     for project in projects {
         match inner.diagnose_project(&project.id) {

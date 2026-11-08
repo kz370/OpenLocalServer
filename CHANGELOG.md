@@ -5,6 +5,17 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.11.0] — 2026-11-08
+
+Feature release. Full notes: [`release-notes/v2.11.0.md`](./release-notes/v2.11.0.md).
+
+### Added
+- Docker page updates live while it is open: container starts, stops and recreates refresh the list and move linked sites to the new port (no polling; one event stream that stops with the page).
+- `olsc docker`: status, containers (start, stop, restart, pause, unpause, logs), images, volumes, disk usage, pull, Compose stacks (list, up, down, stop, start, restart, pull, build, check) and `prune --dry-run`. Nothing is removed from the command line.
+- Diagnostics notices for Docker sites: container stopped (with a Start button), container missing, and Docker not running. Nothing is asked of Docker when no site is linked, and none of these is fixed automatically.
+- Site bundles keep a site's Docker link and compose file, never its passwords; the import preview adds `docker_links` and `compose_files_need_passwords` and shows a notice.
+- Dockerize a project: Dockerfile, compose file and `.dockerignore` for PHP, Node, Python, Go, Rust, Ruby, Java, .NET and static projects. The project is copied into the image, Development mode uses `docker compose watch`, Production mode builds multi-stage non-root images, and detected services (database, cache, queue, mail, search) are added as pinned images with generated passwords. Never overwrites; `Dockerize…` in the Projects and Sites right-click menus (setting `ui.docker.dockerize_menu`), MCP `ols_docker_dockerize`.
+
 ## [2.10.0] — 2026-11-07
 
 Feature release. Full notes: [`release-notes/v2.10.0.md`](./release-notes/v2.10.0.md).

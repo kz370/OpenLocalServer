@@ -363,6 +363,13 @@ olsc guide
 
 ## 17. Version 2.10.0 Specific Notes & What's New
 
+### What's New in v2.11.0 (in development)
+- **Dockerize a project:** **Docker → Compose → From a project…**, or right-click a project or site → **Dockerize…**. OLS looks at the project (PHP, Node, Python, Go, Rust, Ruby, Java, .NET or a static site), shows what it found, then shows the Dockerfile, compose file and .dockerignore before it writes anything. The project is copied into the image, so it is fast on Windows. Choose **Development** (edits are synced into the container with **Create and watch**) or **Production** (a small multi-stage image that runs as a non-root user). Tick the services your project needs (MariaDB, PostgreSQL, MongoDB, Redis, RabbitMQ, Meilisearch, Mailpit, Adminer): OLS adds them as version-pinned images, generates their passwords and keeps them in the Windows credential store, and passes your app the connection settings. For PHP it adds the extensions the project asks for. Existing files are never overwritten. OLS generated these files from what it could detect in your project. They are a starting point, not a guaranteed working setup. Review them, then build and test before you rely on them. Hide the right-click entry in Settings → Sidebar; it is also hidden when the Docker page is hidden from the sidebar.
+- **Site bundles keep Docker details:** an exported site keeps its Docker link, and its compose file when you include Project files. Passwords are never included: after importing, open Docker → Compose → Passwords, or recreate the stack. OLS does not start anything on import.
+- **Warnings for Docker sites:** the Dashboard and Repair tell you when a site's container is stopped (press **Start**), missing, or when Docker is not running. OLS only asks Docker when a site is linked to a container, and never starts a container on its own.
+- **Command line for Docker:** `olsc docker ps`, `olsc docker start|stop|restart <container>`, `olsc docker logs <container>`, `olsc docker images`, `olsc docker volumes`, `olsc docker df`, `olsc docker pull <image>`, `olsc docker compose up|down|… <file>`, `olsc docker compose check <file>` and `olsc docker prune --dry-run`. Removing containers, images and volumes stays in the app.
+- **Live Docker page:** the container list refreshes by itself when a container starts, stops or is recreated, and linked sites follow to the new port. OLS only listens while the Docker page is open.
+
 ### What's New in v2.10.0
 - **Docker page:** under **Sites**. Search and group containers by Compose project, start, stop, restart or pause them, open ports, read logs, open a shell, and edit settings and environment variables. Docker is optional; OLS never installs it, and nothing runs until you open the page.
 - **Images and Volumes:** sizes, pull, run and remove. **Reclaim space** shows what a cleanup removes first.
@@ -382,7 +389,7 @@ olsc guide
 - **Command line for Docker:** manage containers, images, volumes and Compose stacks with `olsc docker`.
 - **Warnings for Docker sites:** Diagnostics tells you when a site's container is stopped or missing.
 - **Site bundles keep Docker details:** exports keep a site's Docker link and compose file, but never its passwords.
-- **Dockerize a project:** generate a Dockerfile and compose file for a project in one click.
+- **Dockerize a project:** generate a Dockerfile, compose file and .dockerignore for a project in one click, with real service images, watch mode and a production mode.
 
 ### Previous Version Notes (v2.9.0)
 - **Import databases from several places at once:** your installed OLS MariaDB versions, other MySQL/MariaDB installs, or any data folder, in the order you choose.

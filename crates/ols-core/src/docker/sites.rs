@@ -188,6 +188,49 @@ impl Inner {
         changed
     }
 
+    /// The folder and type of a registered project, for Dockerize.
+    pub fn dockerize_project(
+        &self,
+        project_id: &str,
+    ) -> Result<(std::path::PathBuf, Option<String>), CoreError> {
+        let project = self
+            .projects
+            .lock()
+            .unwrap()
+            .get(project_id)
+            .ok_or_else(|| {
+                CoreError::failed_fix(
+                    "That project was not found.",
+                    format!("No project has the id \"{project_id}\"."),
+                    "Pick the project from the list on the Projects page.",
+                )
+            })?;
+        Ok((
+            std::path::PathBuf::from(&project.path),
+            project.project_type,
+        ))
+    }
+
+    /// Re-applies the web config as a background task after sites moved to new ports.
+    /// Does nothing when `moved` is empty.
+    pub fn docker_apply_site_moves(self: &Arc<Self>, moved: Vec<String>) {
+        if moved.is_empty() {
+            return;
+        }
+        let inner = self.clone();
+        self.tasks.start(
+            "docker-site-sync",
+            "Update Docker sites to new ports",
+            "docker-sites",
+            1,
+            move |h| {
+                h.begin_step(&format!("Re-apply web config for {}", moved.join(", ")));
+                let r = inner.apply_web(&[]).map(|_| ());
+                crate::command::report(&h, r);
+            },
+        );
+    }
+
     /// A Docker site follows its on/off switch: turning it off stops its container, turning it
     /// on starts it. Runs as a background task so the site change never waits for Docker, and
     /// does nothing at all (no Docker request) when none of the sites is linked to a container.
