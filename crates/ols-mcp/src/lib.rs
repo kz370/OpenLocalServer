@@ -295,6 +295,22 @@ fn mcp_tools() -> Vec<McpTool> {
             }),
         },
         McpTool {
+            name: "ols_list_audit_results".into(),
+            description: Some(
+                "List the newest package security check (Composer, npm, pnpm, pip-audit) of every project that was checked: findings with package, severity, title, link and fix. Read-only; running a check is done in the app (project Security tab) or with `olsc project audit`."
+                    .to_string(),
+            ),
+            input_schema: json!({ "type": "object", "properties": {} }),
+        },
+        McpTool {
+            name: "ols_get_eol_report".into(),
+            description: Some(
+                "Show which installed PHP, Node.js, Python and database versions no longer get security fixes (end of life), with the sites that use them. Offline and read-only."
+                    .to_string(),
+            ),
+            input_schema: json!({ "type": "object", "properties": {} }),
+        },
+        McpTool {
             name: "ols_get_branch_db".into(),
             description: Some(
                 "Show a project's Database per Git branch setting: whether it is on, the current branch and database, and the branch-to-database map. Read-only; turning it on or off is done in the app (project Git tab) or with `olsc db branch`."
@@ -1120,6 +1136,8 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
         "ols_list_migration_snapshots" => C::ListGuardSnapshots {
             project_id: opt_str!("project_id"),
         },
+        "ols_list_audit_results" => C::ListAuditResults,
+        "ols_get_eol_report" => C::GetEolReport,
         "ols_get_branch_db" => C::GetBranchDb {
             project_id: req_str!("project_id"),
         },
@@ -2731,6 +2749,18 @@ mod tests {
             confirm_real_data: false,
         };
         assert!(guard_raw_command(cmd).is_err());
+    }
+
+    #[test]
+    fn build_command_security_tools() {
+        assert!(matches!(
+            build_command("ols_list_audit_results", &json!({})).unwrap(),
+            CoreCommand::ListAuditResults
+        ));
+        assert!(matches!(
+            build_command("ols_get_eol_report", &json!({})).unwrap(),
+            CoreCommand::GetEolReport
+        ));
     }
 
     #[test]

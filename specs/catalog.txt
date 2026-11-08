@@ -327,3 +327,7 @@ anonymize (crates/ols-core/src/anonymize.rs) | §177 Anonymizing rules: `Rules`,
 ServiceManager::run_sql_in (crates/ols-core/src/service.rs) | SQL inside one database with a caller-chosen timeout.
 ServerPullSection / PullDialog (ui/src/components/project/BackupsPanel.tsx) | Pull from a server section of the Backups tab.
 olsc db pull / remotes (crates/ols-cli/src/commands/db.rs) | Pull a server database; list profiles.
+eol (crates/ols-core/src/eol.rs) | §169 End-of-life: `EolStatus`, `EolItem`, `status`, `cycle_of`, `product_for`, `Inner::eol_report`. Data `catalog/eol.json` from `scripts/update-eol.py`.
+audit (crates/ols-core/src/audit.rs) | §169 Package audit: `AuditResult`, `AuditTool`, `AuditFinding`, `parse_composer`, `parse_npm`, `parse_pnpm`, `parse_pip_audit`, `audit_project`, `run_task`, `list_results`.
+SecurityPanel / SecuritySummaryCard (ui/src/components/project/SecurityPanel.tsx) | Security tool tab (`security` in projectToolTabs.ts, after `repair`) and the Dashboard Security card.
+olsc project audit / runtime eol (crates/ols-cli/src/commands/db.rs) | Package audit and end-of-life from the command line.

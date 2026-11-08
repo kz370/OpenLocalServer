@@ -17,8 +17,8 @@ import { Select } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { TechIcon } from '@/components/TechIcon'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { type CatalogEntry, type CustomInstall, type Diagnostic, type RuntimeEvent, runCommand } from '@/core'
-import { formatBytes, usePoll } from '@/lib/hooks'
+import { type CatalogEntry, type CustomInstall, type Diagnostic, type EolItem, type RuntimeEvent, runCommand } from '@/core'
+import { eolLabel, formatBytes, usePoll } from '@/lib/hooks'
 import { createPersistentCache } from '@/lib/cache'
 import { confirmAction } from '@/lib/confirm'
 import { notify } from '@/lib/notify'
@@ -115,6 +115,7 @@ export function RuntimesPage() {
   const [cachedCatalogIds, setCachedCatalogIds] = useState<Set<string>>(new Set())
   const [verifiedKeys, setVerifiedKeys] = useState<Set<string>>(cachedVerifiedKeys)
   const [filter, setFilter] = useState<'all' | 'updates' | 'installed'>('all')
+  const [eolItems, setEolItems] = useState<EolItem[]>([])
 
   const [installError, setInstallError] = useState<{ id: string; version: string; message: string } | null>(null)
   const [pending, setPending] = useState<Set<string>>(new Set())
@@ -263,6 +264,15 @@ export function RuntimesPage() {
       await runCommand({ type: 'remove_custom_install', id: entry.id, label: entry.label })
       await refresh()
     })
+
+  // §169: end-of-life badges, read once when the page opens (offline data).
+  useEffect(() => {
+    void runCommand({ type: 'get_eol_report' })
+      .then((r) => {
+        if (r.type === 'eol_report') setEolItems(r.items)
+      })
+      .catch(() => undefined)
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -586,6 +596,10 @@ export function RuntimesPage() {
   const isSelectedPrerelease = isPrerelease(selectedInstall)
   const installingChoice = selectedInstallEvent?.kind === 'progress' || selectedInstallPending
   const installedRows = managedGroup?.rows.filter((r) => r.kind === 'custom' || r.entry?.installed) ?? []
+  const eolFor = (version: string) => {
+    const item = eolItems.find((i) => i.runtime === managedGroup?.id && i.version === version)
+    return item ? eolLabel(item.status) : null
+  }
   const managedInstalledCount = managedGroup?.rows.filter((r) => r.kind === 'managed' && r.entry?.installed).length ?? 0
   const activeDownloads = [...new Set([...Object.keys(progress), ...pending])].flatMap((key) => {
     const [id, version] = [key.slice(0, key.indexOf('@')), key.slice(key.indexOf('@') + 1)]
@@ -1158,6 +1172,10 @@ export function RuntimesPage() {
                             </Badge>
                           )}
                           {row.kind === 'custom' && <Badge variant="outline" className="px-1.5 text-[11px] font-normal text-muted-foreground">Yours</Badge>}
+                          {(() => {
+                            const eol = eolFor(row.version)
+                            return eol ? <Badge variant={eol.variant} className="px-1.5 text-[11px] font-normal">{eol.variant === 'destructive' ? 'Ended' : 'Security fixes only'}</Badge> : null
+                          })()}
                         </div>
                         {row.custom?.path
                           ? <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">{row.custom.path}</p>

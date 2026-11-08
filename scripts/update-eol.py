@@ -21,8 +21,36 @@ def date_or_none(value):
 def fetch(product):
     url = f"https://endoflife.date/api/{product}.json"
     req = urllib.request.Request(url, headers={"User-Agent": "OpenLocalServer-update-eol"})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            return json.load(resp)
+    except OSError as e:
+        print(f"{product}: endoflife.date unreachable ({e}); using the same data from its GitHub repository")
+        return fetch_from_github(product)
+
+
+def _iso(v):
+    # Dates parse as datetime.date; the API gives ISO strings.
+    return v.isoformat() if hasattr(v, "isoformat") else v
+
+
+def fetch_from_github(product):
+    """The API's own source: front matter of products/<product>.md in endoflife-date/endoflife.date."""
+    import yaml  # PyYAML, only needed for this fallback
+
+    url = f"https://raw.githubusercontent.com/endoflife-date/endoflife.date/master/products/{product}.md"
+    req = urllib.request.Request(url, headers={"User-Agent": "OpenLocalServer-update-eol"})
     with urllib.request.urlopen(req, timeout=20) as resp:
-        return json.load(resp)
+        text = resp.read().decode("utf-8")
+    releases = yaml.safe_load(text.split("---", 2)[1])["releases"]
+    out = []
+    for r in releases:
+        entry = {"cycle": str(r["releaseCycle"]), "eol": _iso(r.get("eol"))}
+        support = r.get("eoas", r.get("support"))
+        if support is not None:
+            entry["support"] = _iso(support)
+        out.append(entry)
+    return out
 
 
 def cycle_key(item):

@@ -36,6 +36,95 @@ pub fn db(ctx: &Ctx, cmd: DbCmd) -> R<()> {
     }
 }
 
+/// `olsc project audit <project>|--all`: runs the check, then prints a table.
+pub fn audit(ctx: &Ctx, project: Option<String>, all: bool) -> R<()> {
+    let started = match (&project, all) {
+        (Some(p), false) => ctx.call(CoreCommand::AuditProject {
+            project_id: ctx.project_id(p)?,
+        })?,
+        (None, true) => ctx.call(CoreCommand::AuditAllProjects)?,
+        _ => return Err("Give a project, or --all.".into()),
+    };
+    follow(ctx, started)?;
+    if ctx.json {
+        return Ok(());
+    }
+    let CoreResponse::AuditResults { results } = ctx.call(CoreCommand::ListAuditResults)? else {
+        return Err("unexpected reply".into());
+    };
+    let wanted = match &project {
+        Some(p) => Some(ctx.project_id(p)?),
+        None => None,
+    };
+    let mut rows = vec![vec![
+        "PROJECT".into(),
+        "TOOL".into(),
+        "CRITICAL".into(),
+        "HIGH".into(),
+        "MODERATE".into(),
+        "LOW".into(),
+    ]];
+    for r in results
+        .iter()
+        .filter(|r| wanted.as_ref().is_none_or(|w| *w == r.project_id))
+    {
+        for t in &r.tools {
+            let n = |sev: &str| {
+                t.findings
+                    .iter()
+                    .filter(|f| f.severity == sev)
+                    .count()
+                    .to_string()
+            };
+            let tool = if t.ok {
+                t.tool.clone()
+            } else {
+                format!("{} (failed)", t.tool)
+            };
+            rows.push(vec![
+                r.project_id.clone(),
+                tool,
+                n("critical"),
+                n("high"),
+                n("moderate"),
+                n("low"),
+            ]);
+        }
+    }
+    table(rows);
+    Ok(())
+}
+
+/// `olsc runtime eol`.
+pub fn eol(ctx: &Ctx) -> R<()> {
+    let r = ctx.call(CoreCommand::GetEolReport)?;
+    if ctx.print_json(&r) {
+        return Ok(());
+    }
+    let CoreResponse::EolReport { items } = r else {
+        return Err("unexpected reply".into());
+    };
+    let mut rows = vec![vec![
+        "RUNTIME".into(),
+        "VERSION".into(),
+        "STATUS".into(),
+        "USED BY".into(),
+    ]];
+    rows.extend(items.into_iter().map(|i| {
+        let status = match i.status {
+            ols_core::eol::EolStatus::Supported => "supported".to_string(),
+            ols_core::eol::EolStatus::SecurityOnly { until } => {
+                format!("security fixes until {until}")
+            }
+            ols_core::eol::EolStatus::Ended { since } => format!("ended {since}"),
+            ols_core::eol::EolStatus::Unknown => "unknown".to_string(),
+        };
+        vec![i.runtime, i.version, status, i.used_by.join(", ")]
+    }));
+    table(rows);
+    Ok(())
+}
+
 fn remotes(ctx: &Ctx, project: String) -> R<()> {
     let r = ctx.call(CoreCommand::ListRemoteDbs {
         project_id: ctx.project_id(&project)?,

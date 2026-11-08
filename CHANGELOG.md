@@ -19,6 +19,7 @@ Feature release. Full notes: [`release-notes/v2.12.0.md`](./release-notes/v2.12.
 - **Dump viewer:** turn it on in Settings, start it in a project's Dumps tab, and `dump()` / `dd()` output from Laravel and Symfony appears in OLS with clickable file and line, instead of on the page.
 - **Database per Git branch:** turn it on in a project's Git tab, and each branch gets its own copy of the database; switching branches switches `.env` for you.
 - **Pull a server database:** save an SSH profile for staging or production, then pull its database into OLS with fake emails, names, phone numbers and passwords (rules in `.openlocalserver/anonymize.yaml`, which OLS can draft for you). The downloaded file is deleted right after import.
+- **Security checks:** Diagnostics warns when a site uses a PHP, Node, Python or database version that no longer gets security fixes, and each project's new Security tab checks its Composer, npm and pnpm packages for known vulnerabilities.
 
 ## [2.11.0] — 2026-11-08
 

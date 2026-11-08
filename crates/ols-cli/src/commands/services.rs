@@ -33,6 +33,7 @@ pub fn runtime(ctx: &Ctx, cmd: RuntimeCmd) -> R<()> {
             }
         }
         RuntimeCmd::Install { id, version } => install(ctx, &id, version.as_deref())?,
+        RuntimeCmd::Eol => super::db::eol(ctx)?,
     }
     Ok(())
 }

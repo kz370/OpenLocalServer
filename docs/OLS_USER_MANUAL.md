@@ -308,6 +308,11 @@ When something is not working, OLS diagnoses and fixes it:
 - **Support Bundle Generation:**
   - Exports a safe, redacted ZIP bundle containing sanitized diagnostics for bug reporting.
 
+### Security checks
+**Know when something you run is out of date or vulnerable.** Two checks, both in plain words:
+- **End of life (offline):** Diagnostics warns when an installed PHP, Node.js, Python, MariaDB, PostgreSQL, MongoDB, Redis or Nginx version no longer gets security fixes (and shows an info note while it only gets security fixes). The dates are built into OLS from endoflife.date and are refreshed with each release; nothing is looked up while you work. The Runtimes page shows an **Ended** or **Security fixes only** badge next to each installed version, and `olsc runtime eol` prints the same list.
+- **Package vulnerabilities (on demand):** open a project, choose the **Security** tab and press **Check now**. OLS asks Composer (`composer audit`), npm (`npm audit`) and pnpm (`pnpm audit`) what they know about the packages in your lock files, using the project's own PHP and Node, and lists each finding with its severity, a link and a fix. If `pip-audit` is already installed in the project's virtual environment it is used for Python; OLS never installs it. Yarn projects are not checked yet. The Dashboard has a small **Security** card with totals and **Check all projects**. `olsc project audit <project>` or `--all` does the same from the command line. Checks need the internet and never run by themselves.
+
 ---
 
 ## 14. AI Assistant & Model Context Protocol (MCP)
@@ -414,6 +419,7 @@ Windows Defender scans every file that `npm install` and `composer install` writ
 - **Dump viewer:** turn it on in Settings, start it in a project's Dumps tab, and `dump()` / `dd()` output from Laravel and Symfony appears in OLS with clickable file and line, instead of on the page.
 - **Database per Git branch:** turn it on in a project's Git tab, and each branch gets its own copy of the database; switching branches switches `.env` for you.
 - **Pull a server database:** save an SSH profile for staging or production, then pull its database into OLS with fake emails, names, phone numbers and passwords (rules in `.openlocalserver/anonymize.yaml`, which OLS can draft for you). The downloaded file is deleted right after import.
+- **Security checks:** Diagnostics warns when a site uses a PHP, Node, Python or database version that no longer gets security fixes, and each project's new Security tab checks its Composer, npm and pnpm packages for known vulnerabilities.
 
 ### What's New in v2.11.0
 - **Dockerize a project:** **Docker → Compose → From a project…**, or right-click a project or site → **Dockerize…**. OLS looks at the project (PHP, Node, Python, Go, Rust, Ruby, Java, .NET or a static site), shows what it found, then shows the Dockerfile, compose file and .dockerignore before it writes anything. The project is copied into the image, so it is fast on Windows. Choose **Development** (edits are synced into the container with **Create and watch**) or **Production** (a small multi-stage image that runs as a non-root user). Tick the services your project needs (MariaDB, PostgreSQL, MongoDB, Redis, RabbitMQ, Meilisearch, Mailpit, Adminer): OLS adds them as version-pinned images, generates their passwords and keeps them in the Windows credential store, and passes your app the connection settings. For PHP it adds the extensions the project asks for. Existing files are never overwritten. OLS generated these files from what it could detect in your project. They are a starting point, not a guaranteed working setup. Review them, then build and test before you rely on them. Hide the right-click entry in Settings → Sidebar; it is also hidden when the Docker page is hidden from the sidebar.

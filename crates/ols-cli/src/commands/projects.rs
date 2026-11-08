@@ -237,6 +237,7 @@ pub fn project(ctx: &Ctx, cmd: ProjectCmd) -> R<()> {
             }
         }
         ProjectCmd::Reclaim { days, delete, yes } => super::db::reclaim(ctx, days, delete, yes)?,
+        ProjectCmd::Audit { project, all } => super::db::audit(ctx, project, all)?,
         ProjectCmd::Add { path } => {
             let (_, name) = ctx.project_for_path(&path)?;
             println!("{name} is a project.");

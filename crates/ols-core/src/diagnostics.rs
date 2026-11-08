@@ -93,6 +93,7 @@ impl Inner {
         self.check_services(&mut b);
         self.check_projects(&mut b);
         self.check_php(&mut b);
+        self.check_eol(&mut b);
         self.check_journal(&mut b);
         self.check_machine(&mut b);
         self.check_defender(&mut b);
@@ -518,6 +519,61 @@ impl Inner {
                     None,
                     vec![],
                 );
+            }
+        }
+    }
+
+    /// §169: versions that no longer get security fixes. Uses the compiled-in dates and the
+    /// installed versions only: no network, no processes.
+    fn check_eol(&self, b: &mut Builder) {
+        use crate::eol::EolStatus;
+        let mut seen = std::collections::HashSet::new();
+        for item in self.eol_report() {
+            let Some(product) = crate::eol::product_for(&item.runtime) else {
+                continue;
+            };
+            let Some(cycle) = crate::eol::cycle_of(product, &item.version) else {
+                continue;
+            };
+            let id = format!("eol:{}:{cycle}", item.runtime);
+            if !seen.insert(id.clone()) {
+                continue;
+            }
+            let name = match item.runtime.as_str() {
+                "php" => "PHP",
+                "node" => "Node.js",
+                "python" => "Python",
+                "mariadb" => "MariaDB",
+                "postgres" => "PostgreSQL",
+                "mongodb" => "MongoDB",
+                "redis" => "Redis",
+                other => other,
+            };
+            let sites = if item.used_by.is_empty() {
+                format!("{name} {cycle} is installed on this computer.")
+            } else {
+                format!("Sites still using it: {}.", item.used_by.join(", "))
+            };
+            match &item.status {
+                EolStatus::Ended { since } => b.add(
+                    id,
+                    Severity::Warning,
+                    format!("{name} {cycle} no longer gets security fixes (ended {since})."),
+                    sites,
+                    "Install a newer version on the Runtimes page, then check the site with PHP upgrade check (Site > PHP).",
+                    None,
+                    vec![],
+                ),
+                EolStatus::SecurityOnly { until } => b.add(
+                    id,
+                    Severity::Info,
+                    format!("{name} {cycle} only gets security fixes until {until}."),
+                    sites,
+                    "Plan an upgrade to a newer version on the Runtimes page.",
+                    None,
+                    vec![],
+                ),
+                _ => {}
             }
         }
     }

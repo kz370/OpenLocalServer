@@ -227,3 +227,23 @@ mod db_pull_cli {
         assert!(Cli::try_parse_from(["olsc", "db", "remotes", "shop"]).is_ok());
     }
 }
+
+mod security_cli {
+    use crate::args::{Cli, Cmd, ProjectCmd, RuntimeCmd};
+    use clap::Parser;
+
+    #[test]
+    fn audit_and_eol_parse() {
+        match Cli::try_parse_from(["olsc", "project", "audit", "--all"])
+            .unwrap()
+            .cmd
+        {
+            Cmd::Project(ProjectCmd::Audit { project, all }) => assert!(project.is_none() && all),
+            _ => panic!("not project audit"),
+        }
+        assert!(matches!(
+            Cli::try_parse_from(["olsc", "runtime", "eol"]).unwrap().cmd,
+            Cmd::Runtime(RuntimeCmd::Eol)
+        ));
+    }
+}

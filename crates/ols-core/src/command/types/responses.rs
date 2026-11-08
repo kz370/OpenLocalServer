@@ -60,6 +60,12 @@ pub enum CoreResponse {
     ProcessStarted {
         id: ProcessId,
     },
+    AuditResults {
+        results: Vec<crate::audit::AuditResult>,
+    },
+    EolReport {
+        items: Vec<crate::eol::EolItem>,
+    },
     RemoteDbs {
         remotes: Vec<crate::remote_db::RemoteDb>,
     },

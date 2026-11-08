@@ -490,3 +490,41 @@ export interface RemoteDb {
   db_port: number | null
   has_password: boolean
 }
+
+/** §169 Package audit and end-of-life. */
+export interface AuditFinding {
+  package: string
+  severity: 'critical' | 'high' | 'moderate' | 'low' | 'unknown' | string
+  title: string
+  advisory?: string | null
+  url?: string | null
+  affected?: string | null
+  fix?: string | null
+}
+
+export interface AuditTool {
+  tool: string
+  ok: boolean
+  error?: string | null
+  findings: AuditFinding[]
+  info: string[]
+}
+
+export interface AuditResult {
+  project_id: string
+  checked_ms: number
+  tools: AuditTool[]
+}
+
+export type EolStatus =
+  | { state: 'supported' }
+  | { state: 'security_only'; until: string }
+  | { state: 'ended'; since: string }
+  | { state: 'unknown' }
+
+export interface EolItem {
+  runtime: string
+  version: string
+  status: EolStatus
+  used_by: string[]
+}

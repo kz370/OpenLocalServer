@@ -4,7 +4,7 @@ import { listen } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 
 import { asDiagnostic } from '@/lib/diagnostic'
-import type { Diagnostic } from '@/core'
+import type { Diagnostic, EolStatus } from '@/core'
 import { useTheme } from '@/lib/theme'
 
 /** Runs `fn` now and then every `ms` while the component is mounted. Skips a tick while the previous one is still pending, so slow core commands (dashboard, services) never pile up and starve the IPC thread pool. */
@@ -76,6 +76,13 @@ export function timeAgo(ms: number): string {
   if (s < 3600) return `${Math.round(s / 60)}m ago`
   if (s < 86400) return `${Math.round(s / 3600)}h ago`
   return `${Math.round(s / 86400)}d ago`
+}
+
+/** Plain words for an end-of-life status (§169); null when there is nothing to say. */
+export function eolLabel(s: EolStatus): { text: string; variant: 'destructive' | 'warning' } | null {
+  if (s.state === 'ended') return { text: `Ended ${s.since}`, variant: 'destructive' }
+  if (s.state === 'security_only') return { text: `Security fixes only until ${s.until}`, variant: 'warning' }
+  return null
 }
 
 export function formatBytes(n: number): string {

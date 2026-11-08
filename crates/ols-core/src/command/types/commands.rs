@@ -789,6 +789,13 @@ pub enum CoreCommand {
     OpenInEditor {
         path: String,
     },
+    /// §169: security and end-of-life checks.
+    AuditProject {
+        project_id: String,
+    },
+    AuditAllProjects,
+    ListAuditResults,
+    GetEolReport,
     /// §177: pull a server database over SSH, with anonymizing. Never on the API or MCP.
     ListRemoteDbs {
         project_id: String,

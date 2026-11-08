@@ -30,6 +30,50 @@ impl Core {
                         report: i.set_site_profiling(&hostname, on)?,
                     })
                 }
+                C::ListAuditResults => Ok(R::AuditResults {
+                    results: crate::audit::list_results(i),
+                }),
+                C::GetEolReport => Ok(R::EolReport {
+                    items: i.eol_report(),
+                }),
+                C::AuditProject { project_id } => {
+                    i.ensure_project_available(&project_id)?;
+                    tracing::info!(command = "audit_project", project = %project_id);
+                    let inner = i.clone();
+                    let target = project_id.clone();
+                    let tid = i.tasks.start(
+                        "audit",
+                        "Check packages for known problems",
+                        &target,
+                        1,
+                        move |h| {
+                            let r = crate::audit::run_task(&inner, &h, Some(&project_id));
+                            if let Ok(text) = &r {
+                                h.result(text.clone());
+                            }
+                            crate::command::report(&h, r);
+                        },
+                    );
+                    Ok(R::TaskStarted { id: tid })
+                }
+                C::AuditAllProjects => {
+                    tracing::info!(command = "audit_all_projects");
+                    let inner = i.clone();
+                    let tid = i.tasks.start(
+                        "audit",
+                        "Check packages for known problems",
+                        "all",
+                        1,
+                        move |h| {
+                            let r = crate::audit::run_task(&inner, &h, None);
+                            if let Ok(text) = &r {
+                                h.result(text.clone());
+                            }
+                            crate::command::report(&h, r);
+                        },
+                    );
+                    Ok(R::TaskStarted { id: tid })
+                }
                 C::SetDumpCapture { on } => {
                     tracing::info!(command = "set_dump_capture", on);
                     i.set_dump_capture(on)?;

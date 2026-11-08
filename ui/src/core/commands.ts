@@ -256,6 +256,10 @@ export type CoreCommand =
   | { type: 'open_url'; url: string }
   | { type: 'open_in_editor'; path: string }
   | { type: 'open_in_editor_at'; path: string; line: number }
+  | { type: 'audit_project'; project_id: string }
+  | { type: 'audit_all_projects' }
+  | { type: 'list_audit_results' }
+  | { type: 'get_eol_report' }
   | { type: 'list_remote_dbs'; project_id: string }
   | { type: 'save_remote_db'; project_id: string; remote: RemoteDb; password?: string | null }
   | { type: 'delete_remote_db'; project_id: string; id: string }

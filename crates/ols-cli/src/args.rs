@@ -171,6 +171,13 @@ pub enum ProjectCmd {
         #[arg(long)]
         yes: bool,
     },
+    /// Check a project's Composer, npm and pnpm packages for known vulnerabilities.
+    Audit {
+        project: Option<String>,
+        /// Check every project, one after another.
+        #[arg(long)]
+        all: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -181,6 +188,8 @@ pub enum RuntimeCmd {
         id: String,
         version: Option<String>,
     },
+    /// Installed versions that no longer get security fixes (offline).
+    Eol,
 }
 
 #[derive(Subcommand)]
