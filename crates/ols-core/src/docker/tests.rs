@@ -4,7 +4,7 @@
 use super::*;
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 /// A fake engine: answers each request with `respond(method, path)` and counts them.
@@ -860,4 +860,127 @@ fn compose_saves_are_limited_to_known_stacks() {
         }
         other => panic!("unexpected {other:?}"),
     }
+}
+
+// ---- §167 live updates ----
+
+/// An engine whose `/events` answers with two chunked lines, then keeps the socket open
+/// until the client hangs up. Everything else is an empty container list.
+fn events_engine() -> (String, Arc<AtomicUsize>) {
+    use std::io::Read;
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap().to_string();
+    let streams = Arc::new(AtomicUsize::new(0));
+    let counter = streams.clone();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let counter = counter.clone();
+            std::thread::spawn(move || {
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut line = String::new();
+                let _ = reader.read_line(&mut line);
+                let mut header = String::new();
+                while reader.read_line(&mut header).is_ok() && header != "\r\n" {
+                    header.clear();
+                }
+                if line.contains("/events") {
+                    counter.fetch_add(1, Ordering::SeqCst);
+                    let _ = write!(
+                        stream,
+                        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n11\r\n{{\"status\":\"die\"}}\n\r\n12\r\n{{\"status\":\"start\"}}\n\r\n"
+                    );
+                    let mut sink = [0u8; 64];
+                    // Held open until the client closes (or the test ends).
+                    while matches!(reader.get_mut().read(&mut sink), Ok(n) if n > 0) {}
+                } else {
+                    let _ = write!(
+                        stream,
+                        "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n[]"
+                    );
+                }
+            });
+        }
+    });
+    (addr, streams)
+}
+
+fn core_for(addr: &str) -> (crate::Core, crate::test_support::IsolatedHome) {
+    let home = crate::test_support::isolated_home();
+    let mut settings = crate::settings::SettingsService::load(&home.paths).unwrap();
+    settings
+        .set(
+            SETTING_ENDPOINT,
+            serde_json::Value::String(format!("tcp://{addr}")),
+        )
+        .unwrap();
+    (crate::Core::new(settings, home.paths.clone()), home)
+}
+
+fn wait_for(mut cond: impl FnMut() -> bool) -> bool {
+    let end = std::time::Instant::now() + Duration::from_secs(3);
+    while std::time::Instant::now() < end {
+        if cond() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    cond()
+}
+
+#[test]
+fn watch_ticks_then_stops_cleanly() {
+    let (addr, streams) = events_engine();
+    let (core, _home) = core_for(&addr);
+    let docker = &core.inner().docker;
+    let mut rx = docker.subscribe();
+    assert!(!docker.watching());
+
+    core.inner().docker_watch(true);
+    assert!(docker.watching());
+    let started = std::time::Instant::now();
+    assert!(wait_for(|| rx.try_recv().is_ok()), "no tick from events");
+    assert!(started.elapsed() < Duration::from_secs(2));
+
+    core.inner().docker_watch(false);
+    assert!(!docker.watching());
+    assert!(wait_for(|| events::watch_threads(docker) == 0));
+
+    // A second watch session works the same.
+    core.inner().docker_watch(true);
+    assert!(wait_for(|| rx.try_recv().is_ok()), "no tick after restart");
+    assert!(streams.load(Ordering::SeqCst) >= 2);
+    core.inner().docker_watch(false);
+    assert!(wait_for(|| events::watch_threads(docker) == 0));
+}
+
+#[test]
+fn watchers_are_ref_counted() {
+    let (addr, _streams) = events_engine();
+    let (core, _home) = core_for(&addr);
+    let docker = &core.inner().docker;
+    core.inner().docker_watch(true);
+    core.inner().docker_watch(true);
+    core.inner().docker_watch(false);
+    assert!(docker.watching());
+    assert_eq!(events::watch_threads(docker), 1);
+    core.inner().docker_watch(false);
+    assert!(!docker.watching());
+    assert!(wait_for(|| events::watch_threads(docker) == 0));
+    // An extra stop never underflows.
+    core.inner().docker_watch(false);
+    assert!(!docker.watching());
+}
+
+#[test]
+fn startup_starts_no_events_thread() {
+    let fake = FakeEngine::start(engine);
+    let Endpoint::Tcp(addr) = &fake.endpoint else {
+        unreachable!()
+    };
+    let (core, _home) = core_for(addr);
+    let _ = core.dispatch(crate::command::CoreCommand::GetDashboard);
+    assert!(!core.inner().docker.watching());
+    assert_eq!(events::watch_threads(&core.inner().docker), 0);
+    assert_eq!(fake.hits(), 0);
 }

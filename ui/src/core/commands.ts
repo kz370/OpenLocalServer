@@ -65,6 +65,7 @@ export type CoreCommand =
   | { type: 'run_in_project'; project_id: string; runtime_id: string; args: string[] }
   | { type: 'list_wp_projects' }
   | { type: 'get_docker_status' }
+  | { type: 'docker_watch'; on: boolean }
   | { type: 'start_docker_desktop' }
   | { type: 'list_docker_containers'; all?: boolean }
   | { type: 'docker_container_action'; id: string; action: DockerContainerAction }

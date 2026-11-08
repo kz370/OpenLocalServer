@@ -5,6 +5,13 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.11.0] — 2026-11-08
+
+Feature release. Full notes: [`release-notes/v2.11.0.md`](./release-notes/v2.11.0.md).
+
+### Added
+- Docker page updates live while it is open: container starts, stops and recreates refresh the list and move linked sites to the new port (no polling; one event stream that stops with the page).
+
 ## [2.10.0] — 2026-11-07
 
 Feature release. Full notes: [`release-notes/v2.10.0.md`](./release-notes/v2.10.0.md).

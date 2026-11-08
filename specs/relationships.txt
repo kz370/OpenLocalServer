@@ -339,6 +339,9 @@ ManageProjectTypesDialog | wraps | both icon grids in IconCategoryFilter (height
 Inner | owns | DockerManager (created with no I/O; first engine request happens on the first Docker command)
 dispatch_docker | uses | Inner::docker_endpoint (setting docker.endpoint > DOCKER_HOST > platform default) and DockerManager
 DockerManager | uses | docker::client::request (one connection per request, worker thread, hard timeout)
+dispatch_docker | calls | Inner::docker_watch (docker_watch{on}; ref-counted, one ols-docker-events thread only while the Docker page is open)
+Inner::docker_watch | uses | docker::client::stream_lines, DockerManager::list_containers, Inner::sync_docker_sites, Inner::docker_apply_site_moves, DockerManager events broadcast
+src-tauri forwarder | subscribes | DockerManager::subscribe and emits the window event docker-event
 DockerManager::start_desktop | runs_in | TaskManager task `docker-start` (reported via command::report)
 DockerPage | calls | get_docker_status, list_docker_containers, docker_container_action, start_docker_desktop, open_url
 DockerPage | listens | task-event (only while a Start Docker task runs)

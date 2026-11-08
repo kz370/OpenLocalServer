@@ -22,23 +22,14 @@ impl Core {
                 let mut containers = i.docker.list_containers(&i.docker_endpoint(), all)?;
                 // Sites follow their container to a new port; re-apply only when one moved.
                 let moved = i.sync_docker_sites(&containers);
-                if !moved.is_empty() {
-                    let inner = i.clone();
-                    i.tasks.start(
-                        "docker-site-sync",
-                        "Update Docker sites to new ports",
-                        "docker-sites",
-                        1,
-                        move |h| {
-                            h.begin_step(&format!("Re-apply web config for {}", moved.join(", ")));
-                            let r = inner.apply_web(&[]).map(|_| ());
-                            crate::command::report(&h, r);
-                        },
-                    );
-                }
+                i.docker_apply_site_moves(moved);
                 i.mark_docker_sites(&mut containers);
                 Ok(R::DockerContainers { containers })
             })(),
+            C::DockerWatch { on } => {
+                i.docker_watch(on);
+                Ok(R::Ok)
+            }
             C::DockerContainerAction { id, action } => {
                 tracing::info!(command = "docker_container_action", id = %id, ?action);
                 i.docker

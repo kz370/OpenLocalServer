@@ -363,6 +363,9 @@ olsc guide
 
 ## 17. Version 2.10.0 Specific Notes & What's New
 
+### What's New in v2.11.0 (in development)
+- **Live Docker page:** the container list refreshes by itself when a container starts, stops or is recreated, and linked sites follow to the new port. OLS only listens while the Docker page is open.
+
 ### What's New in v2.10.0
 - **Docker page:** under **Sites**. Search and group containers by Compose project, start, stop, restart or pause them, open ports, read logs, open a shell, and edit settings and environment variables. Docker is optional; OLS never installs it, and nothing runs until you open the page.
 - **Images and Volumes:** sizes, pull, run and remove. **Reclaim space** shows what a cleanup removes first.

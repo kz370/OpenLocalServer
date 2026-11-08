@@ -12,6 +12,7 @@ pub mod client;
 pub mod compose;
 pub mod connect;
 pub mod details;
+pub mod events;
 pub mod presets;
 pub mod sites;
 pub mod storage;
@@ -52,17 +53,48 @@ const DF_TIMEOUT: Duration = Duration::from_secs(60);
 const PRUNE_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 const PULL_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 
-#[derive(Default)]
 pub struct DockerManager {
     containers: Mutex<Option<CachedList>>,
+    /// Live-update watchers (Docker page open) and the stop flag of the events thread.
+    pub(crate) watch: Mutex<events::WatchState>,
+    /// One `()` per debounced burst of container events.
+    pub(crate) events: tokio::sync::broadcast::Sender<()>,
     disk: Mutex<Option<(Instant, Endpoint, serde_json::Value)>>,
     /// Engine requests made in this session (tests assert none happen at startup).
     requests: AtomicU64,
 }
 
+impl Default for DockerManager {
+    /// No I/O and no thread: the events stream starts only with `Inner::docker_watch(true)`.
+    fn default() -> Self {
+        Self {
+            containers: Mutex::default(),
+            watch: Mutex::default(),
+            events: tokio::sync::broadcast::channel(8).0,
+            disk: Mutex::default(),
+            requests: AtomicU64::default(),
+        }
+    }
+}
+
 impl DockerManager {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Next container-change tick (debounced). Cheap: nothing runs until a watcher starts.
+    pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<()> {
+        self.events.subscribe()
+    }
+
+    /// True while the events stream has at least one watcher.
+    pub fn watching(&self) -> bool {
+        events::watching(self)
+    }
+
+    /// Drops the cached container list so the next `list_containers` asks the engine.
+    pub fn forget_list(&self) {
+        *self.lock_cache() = None;
     }
 
     /// Engine requests made so far in this session.

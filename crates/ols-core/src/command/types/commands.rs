@@ -176,6 +176,11 @@ pub enum CoreCommand {
     ListWpProjects,
     /// §166: Docker engine status for the Docker page (never fails; "stopped" is a status).
     GetDockerStatus,
+    /// §167: the Docker page is open (`on`) or closed: starts / stops the live events stream.
+    /// Ref-counted; UI only (not on the HTTP API).
+    DockerWatch {
+        on: bool,
+    },
     /// §166: Launch Docker Desktop and wait for the engine, as a background task.
     StartDockerDesktop,
     /// §166: Containers, `all` includes stopped ones. Cached for 2 s.

@@ -45,7 +45,8 @@ import { cn } from '@/lib/utils'
  * - The only timer is ONE status poll, and only while Docker is not running: every 1.5 s
  *   (up to 60 s) after "Start Docker", every 7 s otherwise. It pauses while the window is hidden.
  * - The only live listeners are `task-event` while "Start Docker" or a compose action is
- *   being followed.
+ *   being followed, and `docker-event` (the engine's event stream, ref-counted in the core)
+ *   while the page is open, visible and Docker runs.
  */
 
 const START_POLL_MS = 1500
@@ -201,6 +202,38 @@ export default function DockerPage() {
     setStartError(null)
     setComposeOnly(false)
   }, [dockerRunning])
+
+  // Live updates: while the page is open, visible and Docker runs, the core follows the
+  // engine's event stream and sends `docker-event`; no timer, nothing runs when hidden.
+  useEffect(() => {
+    if (!dockerRunning) return
+    let alive = true
+    let watching = false
+    let unlisten: (() => void) | undefined
+    let timer: number | undefined
+    const setWatch = (on: boolean) => {
+      if (watching === on) return
+      watching = on
+      void runCommand({ type: 'docker_watch', on }).catch(() => {})
+    }
+    const onVisibility = () => setWatch(!document.hidden)
+    setWatch(!document.hidden)
+    document.addEventListener('visibilitychange', onVisibility)
+    void listen('docker-event', () => {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(() => void refresh(), 300)
+    }).then((dispose) => {
+      if (alive) unlisten = dispose
+      else dispose()
+    })
+    return () => {
+      alive = false
+      window.clearTimeout(timer)
+      document.removeEventListener('visibilitychange', onVisibility)
+      unlisten?.()
+      setWatch(false)
+    }
+  }, [dockerRunning, refresh])
 
   // One status poll while Docker is not running. Fast while starting (with a 60 s limit),
   // slow otherwise. Paused while hidden. The effect owns the only interval and clears it.
